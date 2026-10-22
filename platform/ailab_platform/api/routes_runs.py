@@ -196,6 +196,20 @@ def get_preview(run_id: str, name: str, user: User = Depends(current_user), db: 
     return Response(content=data, media_type=media, headers={"Cache-Control": "private, max-age=86400, immutable"})
 
 
+SSE_FAST_POLLS = 8  # ~2 s of quiet at the fast rate before backing off
+
+
+def sse_poll_delay(idle_polls: int) -> float:
+    """Seconds until the next poll of a run's events.
+
+    Fast (0.25 s) while events flow and for ~2 s after the last one: a streamed answer arrives in batches about
+    0.25 s apart, so a single empty poll in between must not drop the stream to the slow rate and make it
+    stutter. After that, 1 s: 200 idle viewers at 4 polls/s would be 800 DB queries/s. Jitter spreads them out.
+    """
+    base = 0.25 if idle_polls < SSE_FAST_POLLS else 1.0
+    return base + random.uniform(0, 0.05 if base < 1 else 0.15)
+
+
 def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str]:
     with SessionLocal() as db:
         rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
@@ -243,10 +257,7 @@ async def stream_events(
                 idle += 1
                 if idle % 20 == 0:
                     yield ": ping\n\n"
-            # Poll fast while events are flowing, slowly when idle: 200 viewers at
-            # 4 polls/s would be 800 DB queries/s. Jitter avoids a thundering herd.
-            delay = 0.25 if events else 1.0
-            await asyncio.sleep(delay + random.uniform(0, 0.15))
+            await asyncio.sleep(sse_poll_delay(idle))
 
     return StreamingResponse(
         gen(),

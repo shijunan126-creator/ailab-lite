@@ -43,3 +43,10 @@ def test_stream_auth_rejects_a_bad_token() -> None:
     with pytest.raises(HTTPException) as exc:
         current_user_short(_request("not-a-token"))  # type: ignore[arg-type]
     assert exc.value.status_code == 401
+
+
+def test_streaming_keeps_the_fast_poll_through_short_gaps() -> None:
+    from ailab_platform.api.routes_runs import SSE_FAST_POLLS, sse_poll_delay
+
+    assert all(sse_poll_delay(i) < 0.31 for i in range(SSE_FAST_POLLS))  # a gap between two answer batches
+    assert sse_poll_delay(SSE_FAST_POLLS) >= 1.0  # really idle: back off
