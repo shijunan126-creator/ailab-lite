@@ -41,7 +41,9 @@ if _is_sqlite:
         # the last transactions, which is the right trade-off for the lite profile.
         cur.execute("PRAGMA synchronous=NORMAL")
         cur.execute("PRAGMA foreign_keys=ON")
-        cur.execute("PRAGMA busy_timeout=5000")
+        # SQLite has one writer at a time: under load, waiting for the lock beats failing the write (a status
+        # update or usage record lost as "database is locked"). Keep the generous wait.
+        cur.execute("PRAGMA busy_timeout=30000")
         cur.execute("PRAGMA temp_store=MEMORY")
         cur.close()
 
