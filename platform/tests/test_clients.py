@@ -84,3 +84,37 @@ def test_client_rejects_error_responses(monkeypatch) -> None:
     monkeypatch.setattr(httpx, "Client", lambda **kwargs: BadClient())
     with pytest.raises(ClientError, match="503"):
         PlatformClient(base_url="http://api", token="t").get_run("r")
+
+
+def test_short_lived_clients_are_closed(monkeypatch) -> None:
+    """A Worker file and an Agent message each make their own client; with a pool inside, it must be closed."""
+    from ailab_platform.agent import main as agent_main
+    from ailab_platform.queue import InMemoryQueue
+    from ailab_platform.worker import pipeline
+
+    closed: list[str] = []
+
+    class Sync:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            closed.append("worker")
+
+        def get_file(self, file_id):
+            return {"status": "ready"}  # already processed: returns at once
+
+    monkeypatch.setattr(pipeline, "PlatformClient", Sync)
+    assert pipeline.process_file("f1") == {"file_id": "f1", "skipped": "ready"}
+
+    class Async:
+        async def aclose(self):
+            closed.append("agent")
+
+    monkeypatch.setattr(agent_main, "AsyncPlatformClient", Async)
+    q = InMemoryQueue()
+    from ailab_platform.config import settings
+
+    q.enqueue(settings.run_queue, {})  # malformed: dropped right away
+    asyncio.run(agent_main.handle_message(None, q, q.dequeue(settings.run_queue, "c", timeout=1)))
+    assert closed == ["worker", "agent"]
