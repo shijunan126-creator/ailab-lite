@@ -212,3 +212,4 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - k3s备份本轮57对象/252762640B，暂停四个写服务后create/verify/restore/verify共4.14s、RSS60.1MiB；空目录恢复API的100MiB下载哈希、JPEG预览、Run均通过。不是生产RPO/RTO或异机介质验收。
 - 最终Linux PG16+Redis+全局S3+原生clamd全套753 passed/9 skipped/101.26s；真实provider/Keycloak gate另跑通过；Portal11测试与production build通过，Ruff通过。未验真实OSB Office+S3联合部署、完整mock故障矩阵的真实版本、并发/长期负载、hostNetwork公网防火墙、gVisor/付费模型。清理状态见验收证据cleanup.log；只停止不删除专用profile。
 - 清理最终状态（15:26 +08）：专用platform namespace/PVC、临时容器/卷、自建镜像/悬空构建层均删除，OSB/Portal/API/转发均停止；Colima ailab-verify=Stopped，profile与上游基础镜像保留；私密token/kubeconfig副本已删除。本地cache保留有限数据备份与证据，没有任务服务运行。
+- Redis 健康检查用独立短超时客户端，但不要给它的连接池设上限：redis-py 的普通连接池满了直接抛错（不排队），readiness、liveness、metrics 同时 ping 时会把健康的 Redis 判成宕机（`tests/contracts/test_queue_health.py` 有并发回归）。

@@ -87,9 +87,8 @@ class RedisQueue(JobQueue):
         # Health requests must finish within the probes' ten-second timeout even
         # when Redis accepts connections but stops answering. Queue I/O keeps its
         # longer blocking-read budget; health checks never retry a stalled socket.
-        self._health_client = redis.Redis.from_url(
-            url, socket_timeout=1, socket_connect_timeout=1, retry=Retry(NoBackoff(), 0), max_connections=1
-        )
+        # No pool cap: a capped pool raises when full, so two concurrent probes would report Redis as down.
+        self._health_client = redis.Redis.from_url(url, socket_timeout=1, socket_connect_timeout=1, retry=Retry(NoBackoff(), 0))
         self._groups: set[str] = set()
         self._claim_cursors: dict[str, str] = {}
 
