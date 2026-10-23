@@ -22,6 +22,7 @@ def file_dict(file: FileObject) -> dict:
         "meta": file.meta or {},
         "created_at": file.created_at,
         "download_url": f"/v1/files/{file.id}/content",
+        "preview": (file.meta or {}).get("preview"),
         "thumbnail_url": f"/v1/files/{file.id}/thumbnail" if (file.meta or {}).get("thumb_key") else None,
     }
 

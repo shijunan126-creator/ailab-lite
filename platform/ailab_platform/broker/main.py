@@ -16,6 +16,7 @@ from ..obs import RequestContextMiddleware, setup_logging
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
+from .render import LibraryRenderer
 from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseError, LeaseLostError, LeaseManager
 
 setup_logging("broker")
@@ -53,6 +54,16 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware, service="broker")
 router = APIRouter(prefix="/internal", tags=["leases"])
+
+
+@router.post("/render", dependencies=[Depends(require_scope("sandbox:render"))])
+def render_library_file(body: dict) -> dict:
+    if set(body) != {"file_id", "job_id"} or not all(isinstance(v, str) and 1 <= len(v) <= 100 for v in body.values()):
+        raise HTTPException(status_code=422, detail="file_id and job_id required")
+    try:
+        return LibraryRenderer(get_manager()).render(body["file_id"], body["job_id"])
+    except (LeaseError, SandboxError) as exc:
+        raise HTTPException(status_code=429 if isinstance(exc, CapacityError) else 502, detail=str(exc)) from exc
 
 
 @router.post("/leases", response_model=LeaseOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_scope("sandbox:use"))])

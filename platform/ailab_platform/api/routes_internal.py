@@ -18,6 +18,7 @@ from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..deps import get_db
 from ..events import append_event
@@ -415,12 +416,23 @@ def _enqueue_thumbnail(file: FileObject) -> None:
             log.warning("thumbnail queue unavailable for %s", file.id, exc_info=True)
 
 
-def _bound_file(db: Session, file_id: str, principal: ServicePrincipal, run_id: str | None, job: str) -> FileObject:
+def _bound_file(
+    db: Session, file_id: str, principal: ServicePrincipal, run_id: str | None, job: str, preview_job: str | None = None
+) -> FileObject:
     file = db.get(FileObject, file_id)
     if file is None:
         raise HTTPException(status_code=404, detail="file not found")
     if principal.service == "legacy":
         return file  # explicit dev/test compatibility, never enabled in secure
+    if job == "preview" and principal.service == "broker":
+        # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
+        meta = file.meta or {}
+        pending = (meta.get("preview") or {}).get("status") == "pending"
+        if "files:read_for_preview" not in principal.scopes or file.status != FileStatus.READY or not pending or not preview_job:
+            raise HTTPException(status_code=403, detail="no pending preview job for this file")
+        if meta.get("preview_job_id") != preview_job:
+            raise HTTPException(status_code=403, detail="preview job superseded")
+        return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
         if not allowed:
@@ -473,7 +485,7 @@ def _bound_file(db: Session, file_id: str, principal: ServicePrincipal, run_id: 
     return file
 
 
-FILE_READ = require_scope("files:read_for_run", "files:read_pending")
+FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview")
 FileJob = Literal["processing", "thumbnail", "preview"]
 
 
@@ -482,10 +494,11 @@ def internal_get_file(
     file_id: str,
     run_id: str | None = None,
     job: FileJob = "processing",
+    preview_job: str | None = None,
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
 ) -> dict:
-    return file_dict(_bound_file(db, file_id, principal, run_id, job))
+    return file_dict(_bound_file(db, file_id, principal, run_id, job, preview_job))
 
 
 @router.get("/files/{file_id}/content")
@@ -493,10 +506,11 @@ def internal_get_file_content(
     file_id: str,
     run_id: str | None = None,
     job: FileJob = "processing",
+    preview_job: str | None = None,
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
 ) -> Response:
-    file = _bound_file(db, file_id, principal, run_id, job)
+    file = _bound_file(db, file_id, principal, run_id, job, preview_job)
     db.close()
     from .routes_files import _ClosingStreamingResponse
 
@@ -519,8 +533,14 @@ def internal_patch_file(
     db: Session = Depends(get_db),
 ) -> dict:
     file = _bound_file(db, file_id, principal, None, job)
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        return _apply_file_patch(db, file, body, principal, job)
+
+
+def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal: ServicePrincipal, job: str) -> dict:
     if principal.service != "legacy" and job != "processing":
-        allowed = {"thumb_key"} if job == "thumbnail" else {"preview_key", "preview_content_type", "preview_error"}
+        allowed = {"thumb_key", "display_key"} if job == "thumbnail" else set()  # previews complete via /preview
         if body.status is not None or not set(body.meta or {}) <= allowed:
             raise HTTPException(status_code=403, detail="derived jobs cannot change scan or processing state")
         for key, value in (body.meta or {}).items():
@@ -539,3 +559,39 @@ def internal_patch_file(
     db.commit()
     db.refresh(file)
     return file_dict(file)
+
+
+@router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])
+def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
+    """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
+    file = db.get(FileObject, file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="file not found")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        meta = dict(file.meta or {})
+        if file.status != FileStatus.READY or meta.get("preview_job_id") != body.job_id:
+            raise HTTPException(status_code=409, detail="preview job superseded")
+        preview = body.preview
+        if preview.status not in {"ready", "failed"}:
+            raise HTTPException(status_code=400, detail="invalid completion")
+        assets = {name: asset.model_dump() for name, asset in body.assets.items()}
+        for name, asset in assets.items():
+            if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
+                raise HTTPException(status_code=400, detail="invalid asset")
+        expected = set(preview.pages or []) if preview.kind == "pages" else {preview.data} if preview.kind == "sheets" else set()
+        if preview.status == "ready" and preview.kind in {"pages", "sheets"} and (not expected or set(assets) != expected):
+            raise HTTPException(status_code=400, detail="manifest assets do not match")
+        if (meta.get("preview") or {}).get("status") != "pending":
+            return {"ok": True}
+        meta["preview"] = preview.model_dump(exclude_unset=True)
+        for asset in assets.values():
+            if asset["content_type"] != ("image/jpeg" if preview.kind == "pages" else "application/json"):
+                raise HTTPException(status_code=400, detail="invalid asset content type")
+        meta["preview_assets"] = assets
+        if preview.image == "display.webp":
+            meta["display_key"] = f"derived/{file_id}/display.webp"
+            meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+        file.meta = meta
+        db.commit()
+        return {"ok": True}

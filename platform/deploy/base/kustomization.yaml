@@ -6,6 +6,7 @@ resources:
 - objects
 - database
 - queue
+- scanner
 - apps
 - gateway
 - network.yaml

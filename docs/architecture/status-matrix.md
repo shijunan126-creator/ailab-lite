@@ -21,5 +21,9 @@
 | Broker 租约所有权与重启对账（F4/T06） | 资源标签 + LeaseStore CAS、启动/周期对账、Redis 清空后从标签重建、删除失败退避重试、续租与最长寿命 | `tests/faults/test_broker_recovery.py`（mock + Redis）；真实 Docker/OpenSandbox 契约未跑 |
 | Broker 准入（T08 的 Broker 部分） | 静态总量/内存预算、每用户上限、FIFO、有截止时间的队列、预览渲染保留槽 | 单 Broker；无分布式调度与持久等待队列 |
 | Agent 续租与租约丢失恢复 | 契约已提供（renew/status，410 `lease_lost`/`lease_expired`） | Agent runtime 接入待 T07 |
+| 真实扫描（T04） | Scanner 端口、ClamAV TCP/Unix INSTREAM、dev 用 EICAR stub；不可用保持 pending，退避后标 scan_exhausted；base 部署单实例 clamd（约 1.5 GiB） | 真实 clamd 契约需 `AILAB_TEST_CLAMD`；未在 k3s 验收 |
+| 隔离解析（T04/F3） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB、ZIP 膨胀检查；缩略图解码同一执行器 | macOS 故障测试通过；Linux RLIMIT_AS 与容器压测待验收 |
+| 资料库预览（用户需求 / T19 预览部分） | 按需生成并缓存：pages/sheets/image/text；Office/PDF 在 Broker 的 render 保留槽沙箱里渲染，读文件绑定到当前预览任务；ETag/304/CSP；删除清理 | mock + 本机真实 Office/PDF 工具验证；真实 OpenSandbox 未验收 |
+| Outbox（T09 起步） | `outbox` 表与派发器，目前承载预览入队 | Run/上传入队尚未迁入 outbox |
 
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)。

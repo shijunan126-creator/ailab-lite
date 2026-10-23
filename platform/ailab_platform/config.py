@@ -180,6 +180,14 @@ class Settings(BaseSettings):
     monthly_token_limit: int = Field(default=30_000_000, ge=0)
     library_quota_bytes: int = Field(default=20 * 1024**3, ge=0)  # per user, rejected files excluded
 
+    # Worker: scanning and the limited parser process (the scanner is selected above, with the secure checks)
+    clamd_address: str = "tcp://platform-clamav:3310"
+    scan_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    parse_memory_mb: int = Field(default=192, ge=96, le=256)
+    parse_cpu_seconds: int = Field(default=45, ge=1, le=90)
+    parse_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    scan_retry_backoff_seconds: float = Field(default=5, gt=0, le=60)
+
     # Queues
     queue_backend: Literal["redis", "memory"] = "redis"  # redis | memory
     # Streams, not the old list keys (a list key would raise WRONGTYPE).

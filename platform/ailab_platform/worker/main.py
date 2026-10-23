@@ -20,7 +20,8 @@ from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue
-from .pipeline import process_file
+from .pipeline import ScanUnavailable, process_file
+from .preview import process_preview
 
 setup_logging("worker")
 log = logging.getLogger("ailab.worker")
@@ -59,18 +60,26 @@ def _obsolete_job(exc: Exception) -> bool:
 
 
 def _handle(queue, msg, file_id) -> None:
+    preview_only = msg.payload.get("preview_only") is True
+    if preview_only:
+        try:
+            process_preview(file_id, msg.payload.get("job_id", ""))
+        except Exception:
+            log.exception("preview job could not complete for %s", file_id)
+            return
+        queue.ack(settings.file_queue, msg)
+        return
     thumbnail_only = msg.payload.get("thumbnail_only") is True
     if file_id and msg.deliveries > settings.file_max_attempts:
         if thumbnail_only:
             log.warning("abandoning thumbnail for %s after %d attempts", file_id, msg.deliveries - 1)
             queue.ack(settings.file_queue, msg)
             return
-        log.error("file %s could not be scanned after %d attempts; rejecting it", file_id, msg.deliveries - 1)
+        log.error("file %s could not be scanned after %d attempts; quarantining it", file_id, msg.deliveries - 1)
         try:
             _patch(
                 file_id,
-                meta={"processing": "error", "scan": {"ok": False, "reason": "scan failed repeatedly"}},
-                status="rejected",
+                meta={"processing": "scan_unavailable", "scan_exhausted": True, "scan_attempts": msg.deliveries - 1},
             )
         except Exception as exc:
             if _obsolete_job(exc):
@@ -89,6 +98,21 @@ def _handle(queue, msg, file_id) -> None:
             outcome = "rejected" if "rejected" in result else "skipped" if "skipped" in result else "ready"
             metrics.FILES.labels(outcome).inc()
             metrics.FILE_SECONDS.observe(time.perf_counter() - started)
+        except ScanUnavailable:
+            metrics.FILES.labels("error").inc()
+            for attempt in range(1, settings.file_max_attempts):
+                if _stop.wait(min(60, settings.scan_retry_backoff_seconds * 2 ** (attempt - 1))):
+                    return
+                try:
+                    process_file(file_id)
+                    break
+                except ScanUnavailable:
+                    continue
+                except Exception:
+                    log.exception("scan retry could not complete for %s", file_id)
+                    return
+            queue.ack(settings.file_queue, msg)
+            return
         except Exception as exc:
             if _obsolete_job(exc):
                 log.info("dropping obsolete file job %s", file_id)

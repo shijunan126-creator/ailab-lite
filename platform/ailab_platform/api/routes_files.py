@@ -7,6 +7,7 @@ import hashlib
 import logging
 import os
 import tempfile
+import uuid
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -22,10 +23,11 @@ from sqlalchemy import literal_column, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
+from ..contracts.file_preview import PREVIEW_VERSION, FilePreview, preview_kind, text_manifest
 from ..deps import current_user, get_db
 from ..library import THUMBNAIL_VERSION, delete_file_rows, delete_storage_objects, owned_project
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, User, new_id, utcnow
+from ..models import FileObject, FileStatus, OutboxMessage, User, new_id, utcnow
 from ..queue import get_queue
 from ..quota import enforce_library_quota
 from ..schemas import FileBatch, FileOut, LibraryFilePatch
@@ -298,6 +300,100 @@ def download_thumbnail(
     if if_none_match and any(value.strip().removeprefix("W/") in (etag, "*") for value in if_none_match.split(",")):
         return Response(status_code=304, headers=headers)
     return _ClosingStreamingResponse(get_storage().stream(key), media_type="image/webp", headers=headers)
+
+
+def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
+    file = _owned_file(db, file_id, user)
+    if file.status != FileStatus.READY:
+        raise HTTPException(status_code=404, detail="preview not found")
+    return file
+
+
+@router.get("/{file_id}/preview", response_model=FilePreview, response_model_exclude_unset=True)
+def get_preview(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    file = _ready_file(db, file_id, user)
+    cached = (file.meta or {}).get("preview")
+    now = datetime.now(UTC).timestamp()
+    if cached and (cached["status"] != "pending" or now - (file.meta or {}).get("preview_requested_at", 0) <= 300):
+        return cached
+    # Same user lock as deletion: concurrent opens use the committed manifest, without storage reads.
+    with user_critical_section(db, user.id):
+        file = _ready_file(db, file_id, user)
+        meta = dict(file.meta or {})
+        cached = meta.get("preview")
+        if cached and (cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300):
+            return cached
+        job_id = None
+        kind = "image" if meta.get("display_key") else preview_kind(file.filename, file.content_type)
+        suffix = Path(file.filename).suffix.lower()
+        if kind is None:
+            manifest = {"status": "unsupported", "kind": None}
+        elif kind == "text":
+            manifest = (
+                text_manifest(file.filename, meta)
+                if meta.get("text_key")
+                else {"status": "failed", "kind": "text", "reason": "text_unavailable"}
+            )
+        elif kind == "image" and (suffix == ".svg" or file.content_type.split(";")[0] == "image/svg+xml"):
+            manifest = {"status": "ready", "kind": "image", "image": "original"}
+        elif kind == "image" and meta.get("display_key"):
+            manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
+        else:
+            manifest = {"status": "pending", "kind": kind}
+            job_id = uuid.uuid4().hex
+            meta.update(preview_requested_at=now, preview_job_id=job_id)
+            db.add(
+                OutboxMessage(id=job_id, topic=settings.file_queue, payload={"file_id": file_id, "preview_only": True, "job_id": job_id})
+            )
+        meta["preview"] = manifest
+        file.meta = meta
+        db.commit()
+        if job_id:
+            from .preview_dispatch import dispatch_preview_jobs
+
+            try:
+                dispatch_preview_jobs(job_id)
+            except Exception:
+                log.warning("preview request retained in outbox", exc_info=True)
+        return manifest
+
+
+@router.get("/{file_id}/preview/{name}")
+def preview_asset(
+    file_id: str,
+    name: str,
+    if_none_match: str | None = Header(default=None),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> Response:
+    file = _ready_file(db, file_id, user)
+    meta = file.meta or {}
+    manifest = meta.get("preview") or {}
+    allowed = [*manifest.get("pages", []), manifest.get("data"), manifest.get("image"), manifest.get("text")]
+    if manifest.get("status") != "ready" or name not in allowed or name in {".", ".."} or "/" in name or "\\" in name:
+        raise HTTPException(status_code=404, detail="preview asset not found")
+    asset = (meta.get("preview_assets") or {}).get(name) or {}
+    if name == "original":
+        key, mime, digest = file.storage_key, "image/svg+xml", file.sha256
+    elif name == "display.webp":
+        key, mime, digest = meta.get("display_key"), "image/webp", asset.get("sha256") or file.sha256
+    elif name == "text.txt":
+        key, mime, digest = meta.get("text_key"), "text/plain; charset=utf-8", file.sha256
+    else:
+        key, mime, digest = asset.get("key"), asset.get("content_type"), asset.get("sha256")
+    if not key or not digest:
+        raise HTTPException(status_code=404, detail="preview asset not found")
+    etag = '"' + hashlib.sha256(f"{digest}:{PREVIEW_VERSION}:{name}".encode()).hexdigest() + '"'
+    headers = {
+        "Cache-Control": "private, max-age=31536000, immutable",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'; sandbox",
+    }
+    db.close()
+    if if_none_match and any(v.strip().removeprefix("W/") in (etag, "*") for v in if_none_match.split(",")):
+        return Response(status_code=304, headers=headers)
+    return _ClosingStreamingResponse(get_storage().stream(key), media_type=mime, headers=headers)
 
 
 @router.patch("/{file_id}", response_model=FileOut)

@@ -42,7 +42,10 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
     keys = []
     for file in files:
         meta = file.meta or {}
-        keys.extend(filter(None, (file.storage_key, meta.get("derived_key"), meta.get("text_key"), meta.get("thumb_key"))))
+        keys.extend(
+            filter(None, (file.storage_key, meta.get("derived_key"), meta.get("text_key"), meta.get("thumb_key"), meta.get("display_key")))
+        )
+        keys.append(f"derived/{file.id}/")
     # Clear links within the selection too, so FK enforcement does not depend on delete order.
     db.execute(update(FileObject).where(FileObject.parent_id.in_(ids)).values(parent_id=None))
     db.execute(delete(Artifact).where(Artifact.file_id.in_(ids)))
@@ -54,6 +57,9 @@ def delete_storage_objects(keys: list[str]) -> None:
     storage = get_storage()
     for key in dict.fromkeys(keys):
         try:
-            storage.delete(key)
+            if key.endswith("/"):
+                storage.delete_prefix(key)  # every page, not only the first
+            else:
+                storage.delete(key)
         except Exception:
             log.warning("could not delete object %s", key, exc_info=True)

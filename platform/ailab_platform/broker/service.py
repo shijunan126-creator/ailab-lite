@@ -244,6 +244,13 @@ class LeaseManager:
         with self._condition:
             return self.admission.status(run_id)
 
+    def put_input(self, lease: dict, path: str, data: bytes) -> None:
+        """Inject a platform file while a lease is being prepared (inside acquire's prepare callback).
+
+        Unlike put_file this is for trusted platform inputs, so it is not bound by the agent's write cap.
+        """
+        self._provider_call("put_file", lease["provider_ref"], self._checked(path), data)
+
     @staticmethod
     def default_spec(image: str | None = None, ttl_seconds: int | None = None) -> SandboxSpec:
         return SandboxSpec(
@@ -407,7 +414,7 @@ class LeaseManager:
                 data = self.platform.get_file_bytes(file_id, run_id=run_id)
                 name = _unique_name(_safe_name(meta.get("filename") or file_id), used)
                 path = f"/workspace/inputs/{name}"
-                self._provider_call("put_file", lease["provider_ref"], path, data)
+                self.put_input(lease, path, data)
                 injected.append({"file_id": file_id, "filename": name, "path": path})
             lease["inputs"] = injected
             if run.get("workspace_restore_key"):

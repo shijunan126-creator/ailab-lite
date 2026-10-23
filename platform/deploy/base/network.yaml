@@ -53,6 +53,9 @@ spec:
     - podSelector:
         matchLabels:
           app: platform-agent
+    - podSelector:
+        matchLabels:
+          app: platform-worker
     ports:
     - protocol: TCP
       port: 8081

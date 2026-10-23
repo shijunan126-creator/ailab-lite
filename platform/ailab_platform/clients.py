@@ -8,6 +8,7 @@ that boundary explicit.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, NamedTuple
 
 import httpx
@@ -94,16 +95,19 @@ class _PlatformApi(_Service):
     def _commit_artifact(self, payload) -> Request:
         return self._req("POST", "/internal/artifacts", timeout=60, json=payload)
 
-    def _get_file(self, file_id, run_id=None, job="processing") -> Request:
-        return self._req("GET", f"/internal/files/{file_id}", params={"job": job, **({"run_id": run_id} if run_id else {})})
+    def _get_file(self, file_id, run_id=None, job="processing", preview_job=None) -> Request:
+        return self._req("GET", f"/internal/files/{file_id}", params=_file_params(run_id, job, preview_job))
 
-    def _get_file_bytes(self, file_id, run_id=None, job="processing") -> Request:
-        return self._req(
-            "GET", f"/internal/files/{file_id}/content", timeout=120, params={"job": job, **({"run_id": run_id} if run_id else {})}
-        )
+    def _get_file_bytes(self, file_id, run_id=None, job="processing", preview_job=None) -> Request:
+        return self._req("GET", f"/internal/files/{file_id}/content", timeout=120, params=_file_params(run_id, job, preview_job))
 
     def _patch_file(self, file_id, meta, status, job="processing") -> Request:
         return self._req("PATCH", f"/internal/files/{file_id}", json={"meta": meta, "status": status}, params={"job": job})
+
+
+def _file_params(run_id: str | None, job: str, preview_job: str | None) -> dict:
+    """What the API binds a file read to: the caller's run, its processing job, or a pending preview job."""
+    return {"job": job, **({"run_id": run_id} if run_id else {}), **({"preview_job": preview_job} if preview_job else {})}
 
 
 class PlatformClient(_PlatformApi):
@@ -152,13 +156,21 @@ class PlatformClient(_PlatformApi):
     def commit_artifact(self, payload: dict) -> dict:
         return self._send(self._commit_artifact(payload)).json()
 
-    def get_file(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> dict:
-        return self._send(self._get_file(file_id, run_id, job)).json()
+    def get_file(self, file_id: str, *, run_id: str | None = None, job: str = "processing", preview_job: str | None = None) -> dict:
+        return self._send(self._get_file(file_id, run_id, job, preview_job)).json()
 
-    def get_file_bytes(self, file_id: str, *, max_bytes: int | None = None, run_id: str | None = None, job: str = "processing") -> bytes:
+    def get_file_bytes(
+        self,
+        file_id: str,
+        *,
+        max_bytes: int | None = None,
+        run_id: str | None = None,
+        job: str = "processing",
+        preview_job: str | None = None,
+    ) -> bytes:
+        req = self._get_file_bytes(file_id, run_id, job, preview_job)
         if max_bytes is None:
-            return self._send(self._get_file_bytes(file_id, run_id, job)).content
-        req = self._get_file_bytes(file_id, run_id, job)
+            return self._send(req).content
         with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
             if response.status_code >= 400:
                 response.read()
@@ -169,6 +181,32 @@ class PlatformClient(_PlatformApi):
                     raise ValueError("file exceeds bounded read limit")
                 data.extend(chunk)
             return bytes(data)
+
+    def download_file(self, file_id: str, target, *, max_bytes: int, job: str = "processing") -> None:
+        deadline = time.monotonic() + 120
+        req = self._get_file_bytes(file_id, job=job)
+        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+            if response.status_code >= 400:
+                response.read()
+                _raise(req.method, req.url, response)
+            size = 0
+            with open(target, "wb") as stream:
+                for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("download deadline exceeded")
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("file exceeds bounded read limit")
+                    stream.write(chunk)
+
+    def complete_preview(self, file_id: str, job_id: str, preview: dict, assets: dict) -> dict:
+        return self._send(
+            self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
+        ).json()
+
+    def render_preview(self, file_id: str, job_id: str) -> dict:
+        req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()
 
     def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None, *, job: str = "processing") -> dict:
         return self._send(self._patch_file(file_id, meta, status, job)).json()
