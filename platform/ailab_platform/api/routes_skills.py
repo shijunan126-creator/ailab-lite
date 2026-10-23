@@ -9,14 +9,16 @@ it (see skillfiles.py); delete the file and the skill is gone.
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
-from sqlalchemy import select
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select, text, tuple_
 from sqlalchemy.orm import Session
 
 from ..agent.prompts import skills
+from ..audit import record_audit
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, User
+from ..models import REVIEW_PREDICATES, Department, FileObject, FileStatus, SkillApproval, SkillPolicy, User, UserRole
+from ..skill_policy import effective_policy, run_disabled_skills
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -64,14 +66,37 @@ def personal_skills(db: Session, user: User) -> list[dict]:
 def usable_personal(db: Session, user: User) -> dict[str, dict]:
     """name -> skill for the personal skills that work and are switched on."""
     off = set(disabled_skills(user))
-    return {s["name"]: s for s in personal_skills(db, user) if not s.get("error") and s["name"] not in off}
+    _, policy = effective_policy(db, user)
+    if policy == "disabled":
+        return {}
+    candidates = [s for s in personal_skills(db, user) if not s.get("error") and s["name"] not in off]
+    ids = [s["file_id"] for s in candidates]
+    approvals = {}
+    for start in range(0, len(ids), 200):
+        approvals.update(
+            {a.file_id: a.state for a in db.scalars(select(SkillApproval).where(SkillApproval.file_id.in_(ids[start : start + 200])))}
+        )
+    return {
+        s["name"]: s
+        for s in candidates
+        if approvals.get(s["file_id"]) != "disabled" and (policy == "allowed" or approvals.get(s["file_id"]) == "allowed")
+    }
 
 
 @router.get("")
 def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
-    off = disabled_skills(user)
+    off = run_disabled_skills(db, user)
+    allowed = usable_personal(db, user)
     builtin = [
-        {"name": n, "title": m["title"], "description": m["description"], "scope": "builtin", "builtin": True, "enabled": n not in off}
+        {
+            "name": n,
+            "title": m["title"],
+            "description": m["description"],
+            "scope": "builtin",
+            "builtin": True,
+            "enabled": n not in off,
+            **{k: m[k] for k in ("version", "sha256", "license", "requires", "roles")},
+        }
         for n, m in skills().items()
     ]
     personal = [
@@ -81,7 +106,7 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
             "description": s.get("description", ""),
             "scope": "personal",
             "builtin": False,
-            "enabled": not s.get("error") and s.get("name") not in off,
+            "enabled": s.get("name") in allowed,
             "file_id": s["file_id"],
             "filename": s["filename"],
             "kind": s.get("kind"),
@@ -95,10 +120,13 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
 
 @router.put("/{name}")
 def toggle_skill(name: str, body: SkillToggle, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    denied, personal_policy = effective_policy(db, user)
     builtin = skills()
     personal = {s["name"]: s for s in personal_skills(db, user) if not s.get("error")}
     if name not in builtin and name not in personal:
         raise HTTPException(status_code=404, detail=f"unknown skill: {name}")
+    if body.enabled and (name in denied or (name in personal and personal_policy == "disabled")):
+        raise HTTPException(403, "技能已被管理员禁用")
     known = set(builtin) | set(personal)
     with user_critical_section(db, user.id):
         db.refresh(user)  # current_user was loaded before the lock: another request may have changed settings
@@ -108,3 +136,146 @@ def toggle_skill(name: str, body: SkillToggle, user: User = Depends(current_user
         user.settings = {**(user.settings or {}), "disabled_skills": sorted(off)}  # a new dict: SQLAlchemy sees the change
         db.commit()
     return {"name": name, "enabled": body.enabled, "scope": "builtin" if name in builtin else "personal"}
+
+
+class PolicyInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    scope: str = Field(default="global", max_length=40)
+    name: str = Field(max_length=64)
+    state: str = Field(max_length=16)
+
+
+class ReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    state: str = Field(max_length=16)
+
+
+def _admin(user):
+    if "platform_admin" not in user.principal.roles:
+        raise HTTPException(403, "forbidden")
+
+
+@router.get("/admin/policies")
+def admin_policies(after: str = "", user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _admin(user)
+    scope, _, name = after.partition(":")
+    if len(after) > 106:
+        raise HTTPException(422, "invalid cursor")
+    rows = list(
+        db.scalars(
+            select(SkillPolicy)
+            .where(tuple_(SkillPolicy.scope, SkillPolicy.name) > (scope, name))
+            .order_by(SkillPolicy.scope, SkillPolicy.name)
+            .limit(101)
+        )
+    )
+    return {
+        "items": [{"scope": p.scope, "name": p.name, "state": p.state} for p in rows[:100]],
+        "next_cursor": f"{rows[99].scope}:{rows[99].name}" if len(rows) > 100 else None,
+    }
+
+
+@router.put("/admin/policies")
+def set_policy(body: PolicyInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _admin(user)
+    if body.scope != "global" and not db.get(Department, body.scope):
+        raise HTTPException(422, "unknown department")
+    if body.name not in skills() and body.name != "*personal*":
+        raise HTTPException(422, "unknown skill")
+    states = {"allowed", "review", "disabled"} if body.name == "*personal*" else {"allowed", "disabled"}
+    if body.state not in states:
+        raise HTTPException(422, "invalid state")
+    # A stable platform-admin row serializes policy upserts across writers and API replicas.
+    anchor = db.scalar(select(UserRole.user_id).where(UserRole.role == "platform_admin").order_by(UserRole.user_id).limit(1))
+    with user_critical_section(db, anchor or user.id):
+        row = db.get(SkillPolicy, (body.scope, body.name), populate_existing=True)
+        if row:
+            row.state = body.state
+        else:
+            db.add(SkillPolicy(**body.model_dump()))
+        record_audit(db, "skills.policy", "skill", body.name, actor_id=user.id, detail={"fields": [body.scope, body.name, body.state]})
+        db.commit()
+    return body.model_dump()
+
+
+def review_queue(after: str, limit: int, dialect: str):
+    """Personal skills awaiting a decision: the owner's effective policy is review, nothing is decided yet, not removed.
+
+    The file-id keyset walks the sparse ix_files_skill_review index; the policy checks are small EXISTS lookups.
+    """
+    return (
+        select(FileObject)
+        .join(User, User.id == FileObject.user_id)
+        .outerjoin(SkillApproval, SkillApproval.file_id == FileObject.id)
+        .where(
+            FileObject.id > after,
+            text(REVIEW_PREDICATES[dialect]),
+            select(SkillPolicy.scope)
+            .where(
+                SkillPolicy.name == "*personal*",
+                SkillPolicy.state == "review",
+                (SkillPolicy.scope == "global") | (SkillPolicy.scope == User.dept_id),
+            )
+            .exists(),
+            ~select(SkillPolicy.scope)
+            .where(
+                SkillPolicy.name == "*personal*",
+                SkillPolicy.state == "disabled",
+                (SkillPolicy.scope == "global") | (SkillPolicy.scope == User.dept_id),
+            )
+            .exists(),
+            FileObject.status == FileStatus.READY,
+            FileObject.is_head == 1,
+            FileObject.deleted_at.is_(None),
+            FileObject.purged_at.is_(None),
+            SkillApproval.file_id.is_(None),
+        )
+        .order_by(FileObject.id)
+        .limit(limit + 1)
+    )
+
+
+@router.get("/admin/reviews")
+def pending_reviews(after: str = "", limit: int = 50, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _admin(user)
+    if not 1 <= limit <= 100 or len(after) > 40:
+        raise HTTPException(422, "invalid page")
+    # Metadata only: never disclose another user's instruction text.
+    rows = db.scalars(review_queue(after, limit, db.get_bind().dialect.name)).all()
+    items = [{"file_id": f.id, "name": f.meta["skill"]["name"], "owner_id": f.user_id} for f in rows[:limit]]
+    return {"items": items, "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
+
+
+@router.put("/admin/reviews/{file_id}")
+def review_skill(file_id: str, body: ReviewInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _admin(user)
+    if body.state not in {"allowed", "disabled"}:
+        raise HTTPException(422, "invalid state")
+    file = db.get(FileObject, file_id)
+    if not file:
+        raise HTTPException(404, "not found")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        if not (file.meta or {}).get("skill") or file.deleted_at or file.purged_at or not file.is_head:
+            raise HTTPException(409, "skill unavailable")
+        row = db.get(SkillApproval, file_id, populate_existing=True)
+        if row:
+            row.state = body.state
+        else:
+            db.add(SkillApproval(file_id=file_id, state=body.state))
+        record_audit(db, "skills.review", "file", file_id, actor_id=user.id, detail={"fields": [body.state]})
+        db.commit()
+    return {"file_id": file_id, "state": body.state}
+
+
+def skill_input_for(db: Session, owner: User | None) -> dict:
+    """Shared bootstrap fields for legacy GET and T14 model-input; ownership comes from the Run."""
+    if owner is None:
+        return {"disabled_skills": sorted(skills()), "personal_skills": []}
+    return {
+        "disabled_skills": run_disabled_skills(db, owner),
+        "personal_skills": [
+            {k: skill[k] for k in ("name", "title", "description", "file_id", "filename", "kind")}
+            for skill in usable_personal(db, owner).values()
+        ],
+    }

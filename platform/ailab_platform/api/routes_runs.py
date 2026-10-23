@@ -26,6 +26,7 @@ from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunSta
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut
+from ..skill_policy import run_disabled_skills
 from ..storage import get_storage
 from .routes_skills import usable_personal
 from .serializers import run_dict
@@ -77,7 +78,7 @@ def start_run(
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
     if skill:
-        if skill in ((user.settings or {}).get("disabled_skills") or []):
+        if skill in run_disabled_skills(db, user):
             raise HTTPException(status_code=400, detail=f"技能「{skill}」已关闭，可在侧栏「技能」里打开")
         known = skills().get(skill) or usable_personal(db, user).get(skill)
         if not known:

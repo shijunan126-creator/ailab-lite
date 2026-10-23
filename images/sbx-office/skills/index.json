@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "skills": {
+    "pptx": {
+      "description": "做演示文稿 / PPT / 汇报材料（.pptx）：多种版式、配色主题、图标、原生图表、配图；支持多轮修改",
+      "license": "NOASSERTION",
+      "name": "pptx",
+      "requires": [
+        "python-pptx",
+        "matplotlib",
+        "pandas",
+        "libreoffice",
+        "pdftoppm"
+      ],
+      "roles": [],
+      "sha256": "6a3fb142845f9cc4f8a426d8cf5cd05c3fee39ebe80402976ac2c2ee112fdd43",
+      "version": "1.0.0"
+    },
+    "xlsx": {
+      "description": "做 Excel 表格 / 报表 / 数据分析（.xlsx）：表头样式、数字格式、公式、合计行、原生图表；支持多轮修改",
+      "license": "NOASSERTION",
+      "name": "xlsx",
+      "requires": [
+        "openpyxl",
+        "pandas",
+        "libreoffice"
+      ],
+      "roles": [],
+      "sha256": "68f0e3c42ed18687e0860b3494836b4195495e5393e1400862f618139971a37b",
+      "version": "1.0.0"
+    }
+  }
+}

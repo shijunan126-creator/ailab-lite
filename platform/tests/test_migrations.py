@@ -461,3 +461,43 @@ def test_transactional_jobs_upgrade_seed_roundtrip_and_index_plans(engine):
     _upgrade_to(engine, "0014")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM outbox WHERE id='r1'")).scalar() == 1
+
+
+def test_skill_policies_round_trip_and_review_queue_uses_its_sparse_index(engine):
+    from ailab_platform.api.routes_skills import review_queue
+
+    _upgrade_to(engine, "0016")
+    # Each head is its own lineage: uq_files_lineage_head allows one head per lineage_id.
+    files = (
+        "INSERT INTO files (id, lineage_id, user_id, filename, content_type, size, sha256, storage_key, status, version, meta, created_at, "
+        "is_head)"
+    )
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text(files + " VALUES ('existing', 'existing', 'u1', 'a.txt', 'text/plain', 1, '', 'a.txt', 'ready', 1, '{}', '2026-01-01', 1)")
+        )
+    _upgrade_to(engine, "0017")
+    meta = "CAST(:meta AS JSON)" if engine.dialect.name == "postgresql" else ":meta"
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO skill_policies (scope, name, state) VALUES ('global', 'pptx', 'disabled')"))
+        conn.execute(text("INSERT INTO skill_approvals (file_id, state) VALUES ('existing', 'allowed')"))
+        rows = [{"id": f"candidate{i:05}", "meta": '{"skill":{"name":"test"}}' if i % 100 == 0 else "{}"} for i in range(5000)]
+        conn.execute(
+            text(files + f" VALUES (:id, :id, 'u1', 'a.txt', 'text/plain', 1, '', 'a.txt', 'ready', 1, {meta}, '2026-01-01', 1)"),
+            rows,
+        )
+        conn.execute(text("ANALYZE files"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        # The production query itself, not a simplified copy of its predicate.
+        statement = review_queue("candidate00000", 25, engine.dialect.name)
+        sql = str(statement.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+        plan = " ".join(str(r) for r in conn.execute(text(prefix + sql)))
+        assert "ix_files_skill_review" in plan, plan
+    _downgrade_to(engine, "0016")
+    with engine.connect() as conn:
+        assert "skill_policies" not in inspect(conn).get_table_names()
+        assert conn.execute(text("SELECT count(*) FROM files WHERE id = 'existing'")).scalar() == 1
+    _upgrade_to(engine, "0017")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM skill_policies")).scalar() == 0

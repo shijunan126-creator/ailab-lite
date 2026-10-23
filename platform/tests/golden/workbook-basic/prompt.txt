@@ -1,0 +1,2 @@
+Create an XLSX workbook using input.json. Sheet Data must contain amounts 2 and 3 and preserve the title Repository golden. Do not invent external data.
+Add a SUM formula for the Amount total.
