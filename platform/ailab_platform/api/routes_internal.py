@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from .. import metrics
 from ..catalog import get_catalog
 from ..config import settings
+from ..contracts.file_preview import PreviewCompletion
 from ..deps import get_db, service_auth
 from ..events import append_event
 from ..library import thumbnail_candidate
@@ -410,14 +411,52 @@ def internal_patch_file(file_id: str, body: FilePatch, db: Session = Depends(get
     file = db.get(FileObject, file_id)
     if file is None:
         raise HTTPException(status_code=404, detail="file not found")
-    if body.meta is not None:
-        merged = dict(file.meta or {})
-        merged.update(body.meta)
-        file.meta = merged
-    if body.status is not None:
-        if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
-            raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
-        file.status = body.status
-    db.commit()
-    db.refresh(file)
-    return file_dict(file)
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        if body.meta is not None:
+            merged = dict(file.meta or {})
+            merged.update(body.meta)
+            file.meta = merged
+        if body.status is not None:
+            if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
+                raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
+            file.status = body.status
+        db.commit()
+        db.refresh(file)
+        return file_dict(file)
+
+
+@router.post("/files/{file_id}/preview")
+def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
+    """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
+    file = db.get(FileObject, file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="file not found")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        meta = dict(file.meta or {})
+        if file.status != FileStatus.READY or meta.get("preview_job_id") != body.job_id:
+            raise HTTPException(status_code=409, detail="preview job superseded")
+        preview = body.preview
+        if preview.status not in {"ready", "failed"}:
+            raise HTTPException(status_code=400, detail="invalid completion")
+        assets = {name: asset.model_dump() for name, asset in body.assets.items()}
+        for name, asset in assets.items():
+            if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
+                raise HTTPException(status_code=400, detail="invalid asset")
+        expected = set(preview.pages or []) if preview.kind == "pages" else {preview.data} if preview.kind == "sheets" else set()
+        if preview.status == "ready" and preview.kind in {"pages", "sheets"} and (not expected or set(assets) != expected):
+            raise HTTPException(status_code=400, detail="manifest assets do not match")
+        if (meta.get("preview") or {}).get("status") != "pending":
+            return {"ok": True}
+        meta["preview"] = preview.model_dump(exclude_unset=True)
+        for asset in assets.values():
+            if asset["content_type"] != ("image/jpeg" if preview.kind == "pages" else "application/json"):
+                raise HTTPException(status_code=400, detail="invalid asset content type")
+        meta["preview_assets"] = assets
+        if preview.image == "display.webp":
+            meta["display_key"] = f"derived/{file_id}/display.webp"
+            meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+        file.meta = meta
+        db.commit()
+        return {"ok": True}

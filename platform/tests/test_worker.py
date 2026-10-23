@@ -202,12 +202,13 @@ def test_worker_message_handling(monkeypatch) -> None:
     assert q.outstanding(settings.file_queue) == [{"file_id": "f2"}]
     assert patched[-1] == ("f2", {"processing": "error"}, None)
 
-    # poison -> rejected (fail closed, and then deletable), acked, never marked ready
+    # poison -> visibly quarantined, acked, never marked ready
     msg = q.dequeue(settings.file_queue, "w", timeout=1, visibility_seconds=0)
     msg.deliveries = settings.file_max_attempts + 1
     worker_main.handle_message(q, msg)
     assert q.outstanding(settings.file_queue) == []
-    assert patched[-1][0] == "f2" and patched[-1][2] == "rejected"
+    assert patched[-1][0] == "f2" and patched[-1][1]["scan_exhausted"] is True
+    assert patched[-1][2] is None
     assert all(status != "ready" for _, _, status in patched)
 
 

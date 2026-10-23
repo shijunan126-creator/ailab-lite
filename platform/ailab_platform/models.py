@@ -225,3 +225,14 @@ class ModelUsage(Base):
     # must not rewrite what past calls cost.
     weight: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OutboxMessage(Base):
+    """Undelivered effects; removed only after successful at-least-once publication."""
+
+    __tablename__ = "outbox"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    topic: Mapped[str] = mapped_column(String(120))
+    payload: Mapped[dict] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

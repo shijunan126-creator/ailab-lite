@@ -1,0 +1,160 @@
+"""Only imported inside the limited child process (never in a Worker thread)."""
+
+from __future__ import annotations
+
+import warnings
+from pathlib import Path, PurePath
+
+MAX_TEXT = 200_000
+TEXT_SUFFIXES = {
+    ".txt",
+    ".md",
+    ".markdown",
+    ".csv",
+    ".tsv",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".xml",
+    ".html",
+    ".log",
+    ".py",
+    ".sh",
+    ".js",
+    ".ts",
+    ".tsx",
+    ".jsx",
+    ".css",
+    ".sql",
+    ".go",
+    ".rs",
+    ".java",
+    ".c",
+    ".cpp",
+    ".h",
+    ".toml",
+    ".ini",
+}
+
+
+def images(source: Path, out: Path, options: dict) -> dict:
+    from PIL import Image, ImageOps
+
+    if source.stat().st_size > options.get("max_bytes", 20 * 1024 * 1024):
+        raise ValueError("input_limit")
+    Image.MAX_IMAGE_PIXELS = options.get("pillow_pixels", 128_000_000)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", Image.DecompressionBombWarning)
+        with Image.open(source) as image:
+            if image.format in {"EPS", "WMF", "PDF"}:
+                raise ValueError("corrupt")
+            bound = options.get("jpeg_pixels", 128_000_000) if image.format == "JPEG" else options.get("decoded_pixels", 16_000_000)
+            if image.width * image.height > bound:
+                raise ValueError("pixel_limit")
+            image.seek(0)
+            image.draft("RGB", (2048, 2048))
+            image.thumbnail((2048, 2048))
+            with ImageOps.exif_transpose(image) as oriented:
+                mode = "RGBA" if "A" in oriented.getbands() or "transparency" in oriented.info else "RGB"
+                with oriented.convert(mode) as display:
+                    display.save(out / "display.webp", "WEBP", quality=80, method=4)
+                    display.thumbnail((480, 480))
+                    display.save(out / "thumb.webp", "WEBP", quality=75, method=4)
+    return {"image": "display.webp", "thumbnail": "thumb.webp"}
+
+
+def _pdf(data: Path) -> dict:
+    from pypdf import PdfReader
+
+    reader = PdfReader(data)
+    pages = len(reader.pages)
+    text = "\n".join((page.extract_text() or "") for page in reader.pages[:20])
+    return {"kind": "pdf", "pages": pages, "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
+
+
+def _docx(data: Path) -> dict:
+    import docx
+
+    doc = docx.Document(data)
+    text = "\n".join(p.text for p in doc.paragraphs if p.text)
+    for table in doc.tables:
+        for row in table.rows:
+            text += "\n" + "\t".join(cell.text for cell in row.cells)
+    return {
+        "kind": "docx",
+        "paragraphs": len(doc.paragraphs),
+        "chars": len(text),
+        "truncated": len(text) > MAX_TEXT,
+        "text": text[:MAX_TEXT],
+    }
+
+
+def _pptx(data: Path) -> dict:
+    from pptx import Presentation
+
+    prs = Presentation(data)
+    chunks: list[str] = []
+    for slide in prs.slides:
+        for shape in slide.shapes:
+            if shape.has_text_frame and shape.text.strip():
+                chunks.append(shape.text)
+    text = "\n".join(chunks)
+    return {"kind": "pptx", "slides": len(prs.slides), "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
+
+
+def _xlsx(data: Path) -> dict:
+    import openpyxl
+
+    wb = openpyxl.load_workbook(data, read_only=True, data_only=True)
+    chunks: list[str] = []
+    for ws in wb.worksheets[:20]:
+        chunks.append(f"# {ws.title}")
+        for row in ws.iter_rows(max_row=200, max_col=40, values_only=True):
+            chunks.append("\t".join("" if v is None else str(v) for v in row))
+    text = "\n".join(chunks)
+    wb.close()
+    return {"kind": "xlsx", "sheets": len(wb.worksheets), "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
+
+
+def extract_path(data: Path, filename: str, content_type: str) -> dict:
+    suffix = PurePath(filename).suffix.lower()
+    if suffix == ".pdf" or content_type == "application/pdf":
+        return _pdf(data)
+    if suffix == ".docx":
+        return _docx(data)
+    if suffix == ".pptx":
+        return _pptx(data)
+    if suffix in {".xlsx", ".xlsm"}:
+        return _xlsx(data)
+
+    if suffix in TEXT_SUFFIXES or content_type.startswith("text/"):
+        with data.open(encoding="utf-8", errors="replace") as stream:
+            text = stream.read(MAX_TEXT + 1)
+        return {"kind": "text", "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
+
+    return {"kind": "binary", "chars": 0, "text": "", "bytes": data.stat().st_size}
+
+
+def run(operation: str, source: Path, output: Path, options: dict) -> dict:
+    filename = options.get("filename", source.name)
+    from ..sandbox_tools.render_preview import check_archive
+
+    check_archive(source)
+    if operation == "images":
+        return images(source, output, options)
+    if operation == "sheets":
+        from ..sandbox_tools.render_preview import sheets
+
+        return sheets(source, output, recalculate=False)
+    if operation == "extract":
+        from .. import skillfiles
+
+        info = extract_path(source, filename, options.get("content_type", ""))
+        try:
+            found = skillfiles.inspect(source.read_bytes(), filename) if Path(filename).suffix.lower() in {".zip", ".md"} else None
+            if found:
+                info["skill"] = found
+        except skillfiles.SkillFileError as exc:
+            info["skill_error"] = str(exc)
+        return info
+    raise ValueError("unknown operation")

@@ -26,6 +26,8 @@ data:
   AILAB_SANDBOX_PROVIDER: opensandbox
   AILAB_OSB_DOMAIN: 127.0.0.1:8090
   AILAB_SANDBOX_IMAGE: harbor.ailab.local/sandbox/sbx-office:lite
+  AILAB_SCANNER_BACKEND: clamav
+  AILAB_CLAMD_ADDRESS: tcp://platform-clamav:3310
   AILAB_MAX_AGENT_STEPS: "24"
   AILAB_MAX_SANDBOXES: "1"
   AILAB_WORKSPACE_TTL_DAYS: "3"  # keep the last workspace of a conversation for three days
@@ -268,13 +270,15 @@ spec:
             - configMapRef: {name: platform-auth, optional: true}  # AILAB_REGISTRATION, set by deploy.sh --registration
             - secretRef: {name: platform-secrets}
           env:
+            - name: AILAB_BROKER_BASE_URL
+              value: http://platform-broker:8081
             - name: AILAB_API_BASE_URL
               value: http://platform-api:8080
           ports: [{containerPort: 8083}]
           volumeMounts: [{name: data, mountPath: /data}]
           resources:
-            requests: {cpu: 50m, memory: 96Mi}
-            limits: {cpu: 300m, memory: 256Mi}
+            requests: {cpu: 50m, memory: 128Mi}
+            limits: {cpu: 300m, memory: 384Mi}
           readinessProbe:
             httpGet: {path: /readyz, port: 8083}
             initialDelaySeconds: 5
@@ -301,3 +305,67 @@ metadata:
 spec:
   selector: {app: platform-worker}
   ports: [{name: http, port: 8083, targetPort: 8083}]
+---
+# One shared scanner, not one sidecar per Worker. Signatures require roughly 1 GiB RSS;
+# reserve 1.5 GiB and allow 2 GiB during signature reload. Startup scans fail closed.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: platform-clamav}
+  template:
+    metadata:
+      labels: {app: platform-clamav}
+    spec:
+      containers:
+        - name: clamd
+          image: clamav/clamav:1.4
+          ports: [{containerPort: 3310}]
+          resources:
+            requests: {cpu: 100m, memory: 1536Mi}
+            limits: {cpu: 500m, memory: 2Gi}
+          startupProbe:
+            tcpSocket: {port: 3310}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: {port: 3310}
+            periodSeconds: 10
+          volumeMounts: [{name: signatures, mountPath: /var/lib/clamav}]
+      volumes:
+        - name: signatures
+          persistentVolumeClaim: {claimName: platform-clamav}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  selector: {app: platform-clamav}
+  ports: [{name: clamd, port: 3310, targetPort: 3310}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-broker
+  namespace: platform
+spec:
+  selector: {app: platform-broker}
+  ports: [{name: http, port: 8081, targetPort: 8081}]

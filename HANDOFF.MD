@@ -87,3 +87,15 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 W1 扫描隔离与资料库预览
+
+- 分支 arch/w1-worker-preview，基于 6666573。协议与合并清单：docs/reviews/2026-10-23-worker-preview.md；状态表已补建。没有改 Portal UI、LeaseManager 内部，也没有推送。
+- scan_unavailable 绝不能当 clean：文件保持 pending，默认 3 次、5/10 秒退避，用尽写 scan_exhausted；清空标志并重新入队才恢复人工重试。thumbnail_only/preview_only 分支均不能回退 READY。
+- 不可信文档/图片/ZIP/skill 检查进受限子进程；Linux AS 192 MiB、CPU 45 秒、墙钟60秒、输出16MiB，macOS AS 不可靠，改 RSS watchdog。Worker Pod 改384MiB，避免只预算子进程而漏算父进程。进程不继承服务密钥环境；ZIP先查2048项/128MiB/200倍限制。
+- read_only Excel 可能没有 max_row/max_column（write_only 生成的文件就是例子），必须 calculate_dimension；逐格 ws.cell 会反复扫描 XML，改成两个 iter_rows 流并行读。复用 renderer.sheets(recalculate=False)，Worker 不能因为宿主有 soffice 就调用它。流式模式的列宽/合并/图表元数据暂为空，详见审查记录。
+- 短 Unix socket 路径用 /tmp；pytest 的 macOS tmp_path 可能超过 AF_UNIX 的路径长度。OOM 用大量小 XML 节点触发分配；单个巨型文本节点会先撞 libxml 的文本限制，不能用该 corrupt 冒充内存验收。
+- Office/PDF 按需沙箱渲染；RenderContexts 为无 Run 的资料库作业提供公开租约输入上下文，D 合并时必须保留或替换成正式文件任务入口。57页 PDF 验证只产40页并返回总57页。SVG original 强制 CSP sandbox，文本固定 text/plain。
+- 基线没有 outbox；新增保留编号 0011_preview（revision0011/down_revision0008）建 outbox，manifest仍在files.meta。预览请求和副作用同事务，派发失败留记录。API内部文件meta回写补用户锁，避免缩略图回写覆盖同时请求的preview。B/E/A 合并时协调scope、部署与迁移heads。
+- 本机测量（合成样本，非生产承诺）：20MiB PPTX 子进程峰值93.9MiB、父进程峰值80.3MiB（峰值和174.3MiB保守预算），10MiB XLSX 子34.6MiB、父79.5MiB（和114.2MiB）；含 Worker import 的耗时1.122/4.096秒。单页 DOCX mock+真实Office工具2.625秒、输出23,437字节、租约全释放；原始 JSON/复现脚本已入库。
+- 最终验证：SQLite + Redis 435 passed / 10 skipped（9项PG专用、1项真实clamd）；PG16 + Redis 444 passed / 1 skipped（clamd）。Ruff check/format、依赖锁一致性、diff check通过；Portal 4测试与生产build通过。未启动真实clamd/Docker/OpenSandbox/k3s，未验证Linux AS与生产内存。测试仅使用本任务Redis16430、PG15430一次性库。

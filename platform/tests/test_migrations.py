@@ -252,3 +252,20 @@ def test_projects_upgrade_and_downgrade_preserve_referenced_rows(tmp_path) -> No
     with eng.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
     eng.dispose()
+
+
+def test_preview_outbox_migration_and_bounded_dispatch_plan(engine):
+    _upgrade_to(engine, "0011")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO outbox (id, topic, payload, created_at) VALUES ('job', 'files', '{}', '2026-01-01 00:00:00')"))
+        if engine.dialect.name == "sqlite":
+            plan = " ".join(str(row) for row in conn.execute(text("EXPLAIN QUERY PLAN SELECT * FROM outbox ORDER BY id LIMIT 20")))
+            assert "INDEX" in plan
+        else:
+            conn.execute(text("SET LOCAL enable_seqscan = off"))
+            plan = " ".join(str(row) for row in conn.execute(text("EXPLAIN SELECT * FROM outbox ORDER BY id LIMIT 20")))
+            assert "outbox_pkey" in plan
+    _downgrade_to(engine, "0008")
+    assert "outbox" not in inspect(engine).get_table_names()
+    _upgrade_to(engine, "0011")
+    assert "outbox" in inspect(engine).get_table_names()

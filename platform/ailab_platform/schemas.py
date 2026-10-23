@@ -187,6 +187,7 @@ class FileOut(ORMModel):
     created_at: datetime
     download_url: str = ""
     thumbnail_url: str | None = None
+    preview: dict | None = None
 
 
 class LibraryFilePatch(BaseModel):

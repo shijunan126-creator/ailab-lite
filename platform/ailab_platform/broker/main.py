@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
@@ -15,12 +16,15 @@ from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
+from .render import LibraryRenderer
 from .service import ArtifactRejected, CapacityError, LeaseError, LeaseManager
 
 setup_logging("broker")
 log = logging.getLogger("ailab.broker")
 
 _manager: LeaseManager | None = None
+_renderer: LibraryRenderer | None = None
+_renderer_lock = threading.Lock()
 
 
 def get_manager() -> LeaseManager:
@@ -48,6 +52,21 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware, service="broker")
 router = APIRouter(prefix="/internal", tags=["leases"], dependencies=[Depends(service_auth)])
+
+
+@router.post("/render")
+def render_library_file(body: dict) -> dict:
+    global _renderer
+    if set(body) != {"file_id", "job_id"} or not all(isinstance(v, str) and 1 <= len(v) <= 100 for v in body.values()):
+        raise HTTPException(status_code=422, detail="file_id and job_id required")
+    manager = get_manager()
+    with _renderer_lock:
+        if _renderer is None or _renderer.manager is not manager:
+            _renderer = LibraryRenderer(manager)
+    try:
+        return _renderer.render(body["file_id"], body["job_id"])
+    except (LeaseError, SandboxError) as exc:
+        raise HTTPException(status_code=429 if isinstance(exc, CapacityError) else 502, detail=str(exc)) from exc
 
 
 @router.post("/leases", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)

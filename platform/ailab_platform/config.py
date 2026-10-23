@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -125,6 +127,15 @@ class Settings(BaseSettings):
     daily_token_limit: int = 2_000_000  # per user, prompt + completion, UTC day
     monthly_token_limit: int = 30_000_000
     library_quota_bytes: int = 20 * 1024**3  # per user, rejected files excluded
+
+    # Worker bounds; B owns the final profile/scanner selector validation.
+    scanner_backend: Literal["stub", "clamav"] = "stub"
+    clamd_address: str = "tcp://platform-clamav:3310"
+    scan_timeout_seconds: float = Field(default=30, gt=0, le=120)
+    parse_memory_mb: int = Field(default=192, ge=96, le=256)
+    parse_cpu_seconds: int = Field(default=45, ge=1, le=90)
+    parse_timeout_seconds: float = Field(default=60, gt=0, le=120)
+    scan_retry_backoff_seconds: float = Field(default=5, gt=0, le=60)
 
     # Queues
     queue_backend: str = "redis"  # redis | memory

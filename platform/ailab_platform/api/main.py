@@ -19,6 +19,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
+from .preview_dispatch import dispatch_forever
 from .reaper import reap_forever, workspace_cleanup_forever
 from .routes_auth import router as auth_router
 from .routes_conversations import router as conversations_router
@@ -40,9 +41,11 @@ async def lifespan(_: FastAPI):
     register_once("api-state", ApiStateCollector())
     init_db()
     log.info("platform api ready db=%s storage=%s", settings.database_url, settings.storage_backend)
+    preview_dispatch = asyncio.create_task(dispatch_forever(), name="preview-outbox")
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     yield
+    preview_dispatch.cancel()
     reaper.cancel()
     workspace_cleanup.cancel()
 

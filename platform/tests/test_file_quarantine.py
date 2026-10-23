@@ -35,6 +35,10 @@ class _Bridge:
             json=_kwargs.get("json"),
         )
 
+    def stream(self, method, url, **kwargs):
+        parsed = urlsplit(url)
+        return self._c.stream(method, parsed.path, **kwargs)
+
     def close(self):
         pass
 
