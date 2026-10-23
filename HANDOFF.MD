@@ -87,3 +87,24 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 T18 文件版本与回收站（arch/w2-file-versions）
+
+- 基线 `609c1d3` 实际未对同名产物设置 parent/version；本轮在 `user_critical_section` 内按同会话同名产物找链、按整链 max(version)+1 分配。上传从旧版分支也必须取整链最大号，不能 parent.version+1；unique(lineage_id,version) 与单 head 部分唯一索引兜底。
+- `0014` 暂接 `0008`，合并时由 lead 重接。SQLite 只 ADD/DROP COLUMN，不重建 files；旧 parent 链回填根 id，保留全部 file id/FK。历史重复版本号按 (version,created_at,id) 稳定重编号；断链/跨用户/环拒绝迁移。迁移仅改元数据，不连接对象存储；既有超限链在下次写版本时收敛。降级不恢复旧重复编号。
+- 默认 `max_file_versions=10`、`trash_days=30`（配置范围校验）。超限只 tombstone 旧行、提交后清对象，旧 Run/Artifact 引用仍在、content=410。恢复旧版独立 copy 原对象及 derived 前缀，递归改写派生 key；保留扫描状态，不能把 pending/rejected 复制成 READY。回收站里的版本回退保留回收站状态，显式 `/restore` 再解除。
+- 普通/批量 delete（兼容 alias）/项目删除均整链入站；trash 继续计配额，连回收站的 rejected 文件也计；purge 才释放。移动/收藏作用整链，项目计数只算 live head。项目删除分批 200 个 lineage，清 FK 并记 trashed_from_project_id；已经入站的链也要解除 FK，不能让首批更新误清其他批次的 project_id。
+- `DELETE /v1/trash` 按 200 批次清理，请求开始时间作截止，避免追逐不断新增的删除；count 是 lineage 数。batch count 保持输入去重后 id 数。cursor 是上一页末项 file id；保留原 offset。`purge_expired_trash` 每轮最多 200 head，锁内再次确认过期，集成到既有 reaper；函数独立，方便与 E/A 合并。
+- 物理清理唯一入口仍是 `delete_file_rows`，包含登记的 key 和 `derived/{id}/` 全前缀。保留原提交后 best-effort 删除；对象存储故障/提交后 kill 的孤儿收敛待 E/T09 GC/outbox 集成，未声称生产级故障验收。真实 S3 拷贝的 RSS/磁盘/时延未测。
+- SQLite 要在 head 部分索引键里覆盖 is_head/deleted_at/purged_at（图片还含 content_type）才显示 COVERING INDEX；PG 为 Index Only Scan/Heap Fetches=0。列表先索引取 id，再批量取详情和版本数，禁止 N+1；substring q 仍需读候选行。10 万行原始计划和成本追加在 library-query-plans 文档；新索引约 12 MiB（PG），无新依赖。
+- 保留 files_router 的 `/v1/files` 前缀，另注册 trash_router；不要改前缀让 C 后续新增预览装饰器误挂到 `/v1/{id}/preview`。本轮只在已有 thumbnail 路由补 purged guard，未实现或覆盖 C 的新 preview 路由。`routes_runs` 附件与 `routes_skills` 个人技能需同步过滤 trashed/purged；否则删除文件还能被新消息/技能引用。
+- 分页取 id 与详情是两个查询，期间可能移入站、换 head 或 purge；第二次读取必须重新过滤可见性并忽略已消失 id，否则会 KeyError/500。用 SQLAlchemy after_cursor_execute 注入真实的交错删除回归覆盖。
+- 并发回归不要在每个线程启动 `with TestClient(app)` lifespan：Alembic 全局代理会互相覆盖而报 KeyError/config；共享测试外层 lifespan，线程只创建无 context 的客户端发请求。reaper 测试必须只让自己的两份文件到期，避免误算同进程其他用例留下的用户回收站。
+- 行为红绿：隔离的 `609c1d3` 副本 3 项（删除留对象、只列 head、恢复旧版）均红，当前实现同样 3 项均绿。完整验证与最终计数见下方本轮验收记录。未 push；临时 PostgreSQL 15490 / Redis 16490 仅本轮使用，结束后关闭。
+
+### 本轮验收记录
+
+- Python 3.12 / GNU coreutils+findutils：SQLite + Redis `414 passed, 11 skipped`（10 项 PG 迁移及 1 项 PG 并发条件跳过）；临时 PG16 + Redis `425 passed`，包含现存 parent 链/FK 的 upgrade → downgrade → upgrade、模型漂移、历史重复号及跨用户链检查。
+- 浏览器 E2E `34 passed`；最后分页竞态修复另复验上传 → 回收站下载 → 恢复 → 最终 purge：`1 passed, 28 deselected`。E2E 临时副本 production build 通过；Portal Node tests `4 passed`。
+- Ruff check / format check、依赖锁一致性、git diff --check 均通过。测试与计划只用独立临时目录、PG 15490 和 Redis 16490，未读取开发者 .env/var 数据。
+- 临时 PostgreSQL/Redis 已关闭，15490/16490 已确认无监听；无 push。
