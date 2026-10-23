@@ -220,3 +220,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 新 session 以 `docs/progress/current.md` 接续；历史验收留在 reviews/updates，计划在 roadmap/design，能力状态只在 status-matrix。用户已要求剩余功能先暂停，不能把设计文档里的阶段顺序当作开工授权。
 - Broker 并发 OOM 是按单次峰值推算的风险，现有证据没有双请求并发 OOMKill 实测；报告应区分测量值与推断。Redis health pool 后续在 `826899c` 去掉了连接数上限，旧真实组件报告中的“最多1连接”只描述当时版本。
 - 发布包含 workflow 的分支时，HTTPS OAuth token 可能缺 `workflow` scope；本轮已验证当前账号 SSH 能写仓库，用显式 `git push git@github.com:shijunan126-creator/ailab-lite.git HEAD:feat/arch-hardening`，并核对 GitHub ref SHA。不要通过删 CI 变更绕过权限；临时 `-c remote.origin.url=...` 可能叠加原 URL，导致先报 HTTPS 失败再 SSH 成功，不能仅凭整体退出码判断远端结果。
+
+## 2026-10-23 CI 结构更新
+
+- PR 范围必须用 base...head 全量 diff，不能只看最后一次 push：连续推送取消旧运行后，若仅看文档补丁就可能漏验前面的代码。删除/重命名用 no-renames 保留两个路径；未知路径全套，Skill Markdown 不属于文档跳过白名单。
+- E2E fixture 已执行 Portal Node tests 与隔离 production build；不另起重复 build job。双库 matrix 不互相 fail-fast，S3 不依赖 Python 的成败；最终稳定 `CI` 明确检查选中项，不允许意外 skip 变绿。
+- `test_parser_wall_timeout_kills_child` 原来对极小文件设 1ms 超时；Linux coverage 下父进程可能晚于 child 退出才被调度，测试不一定触发 watchdog。现在启动真实阻塞 child，验证超时和 SIGKILL/reap，不靠解析器速度。
+- Actions 的 job 级 env 不允许 `runner.temp` context，改在 step 写 GITHUB_ENV；actionlint 会捕获此类表达式错误。CI MinIO 不再拉失效 tag，改官方固定源码+SHA256与二进制缓存；版本/校验和/冷缓存验收必须同步。

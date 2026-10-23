@@ -4,41 +4,39 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  python:
-    runs-on: ubuntu-latest
+  changes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      code: ${{ steps.scope.outputs.code }}
+      backend: ${{ steps.scope.outputs.backend }}
+      e2e: ${{ steps.scope.outputs.e2e }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - run: python3 -m unittest discover -s .github/tests
+      - id: scope
+        run: python3 .github/scripts/ci_scope.py
+
+  quality:
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
     defaults:
       run:
         working-directory: platform
-    services:
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: pg
-          POSTGRES_DB: ailab
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
-    env:
-      # Exercise the real RedisQueue branch (the default run skips it).
-      AILAB_TEST_REDIS_URL: redis://127.0.0.1:6379/15
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -46,25 +44,79 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: platform/constraints.txt
-      - name: Lockfile is consistent with pyproject.toml
-        run: bash scripts/lock_deps.sh --check
-      - name: Install (pinned)
-        run: pip install -c constraints.txt -e '.[dev,postgres]'
-      - name: Ruff
-        run: ruff check . && ruff format --check .
-      - name: Tests (SQLite, real Redis)
-        run: pytest -q --cov=ailab_platform --cov-report=term-missing
-      - name: Tests on PostgreSQL (whole suite + migrations)
+      - run: bash scripts/lock_deps.sh --check
+      - run: pip install -c constraints.txt -e '.[dev]'
+      - run: ruff check --config pyproject.toml . ../.github && ruff format --config pyproject.toml --check . ../.github
+      - run: python scripts/check_imports.py
+
+  python:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    defaults:
+      run:
+        working-directory: platform
+    services:
+      redis:
+        image: redis:7-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+      postgres:
+        image: ${{ matrix.database == 'postgres' && 'postgres:16-alpine' || '' }}
+        env:
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: ailab
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      AILAB_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+      AILAB_TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:pg@127.0.0.1:5432/ailab' || '' }}
+      AILAB_TEST_POSTGRES_URL: ${{ matrix.database == 'postgres' && 'postgresql+psycopg://postgres:pg@127.0.0.1:5432/ailab_mig' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: platform/constraints.txt
+      - run: pip install -c constraints.txt -e '.[dev,postgres]'
+      - name: PostgreSQL client and migration database
+        if: matrix.database == 'postgres'
         run: |
-          PGPASSWORD=pg psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE ailab_mig'
-          AILAB_TEST_DATABASE_URL=postgresql+psycopg://postgres:pg@127.0.0.1:5432/ailab \
-          AILAB_TEST_POSTGRES_URL=postgresql+psycopg://postgres:pg@127.0.0.1:5432/ailab_mig \
-          pytest -q --no-cov
+          test -x /usr/lib/postgresql/16/bin/pg_dump
+          echo /usr/lib/postgresql/16/bin >> "$GITHUB_PATH"
+          PGPASSWORD=pg /usr/lib/postgresql/16/bin/psql -h 127.0.0.1 -U postgres -c 'CREATE DATABASE ailab_mig'
+      - name: Tests (SQLite coverage / PostgreSQL full suite)
+        env:
+          DATABASE: ${{ matrix.database }}
+        run: |
+          mkdir -p test-results
+          args=()
+          if [ "$DATABASE" = sqlite ]; then
+            args+=(--cov=ailab_platform --cov-report=term-missing --cov-report=xml:test-results/coverage.xml)
+          fi
+          pytest tests -ra --durations=10 --junitxml=test-results/results.xml "${args[@]}"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: python-${{ matrix.database }}
+          path: platform/test-results/
+          retention-days: 7
 
   storage-contracts:
-    # Separate from PG/Redis/E2E so a small runner can run one group at a time.
-    needs: python
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: platform
@@ -77,67 +129,80 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: platform/constraints.txt
       - run: pip install -c constraints.txt -e '.[dev]'
-      - name: MinIO service container (contract fixture only)
+      - name: Fixture binary directory
+        run: echo "CI_MINIO_DIR=$RUNNER_TEMP/minio-bin" >> "$GITHUB_ENV"
+      - uses: actions/cache@v6
+        id: minio
+        with:
+          path: ${{ runner.temp }}/minio-bin
+          key: minio-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('platform/scripts/ci_minio.sh') }}
+      - uses: actions/setup-go@v7
+        if: steps.minio.outputs.cache-hit != 'true'
+        with:
+          go-version: '1.24.2'
+          cache: false
+      - name: Build fixed MinIO source (cold cache only)
+        if: steps.minio.outputs.cache-hit != 'true'
+        run: bash scripts/ci_minio.sh
+      - name: Start real MinIO
+        env:
+          MINIO_ROOT_USER: ${{ env.AILAB_TEST_S3_ACCESS_KEY }}
+          MINIO_ROOT_PASSWORD: ${{ env.AILAB_TEST_S3_SECRET_KEY }}
+          MINIO_BROWSER: 'off'
         run: |
-          docker run -d --name contract-minio -p 127.0.0.1:19450:9000 \
-            -e MINIO_ROOT_USER="$AILAB_TEST_S3_ACCESS_KEY" \
-            -e MINIO_ROOT_PASSWORD="$AILAB_TEST_S3_SECRET_KEY" \
-            minio/minio:RELEASE.2025-04-22T22-12-26Z server /data
-          for i in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:19450/minio/health/ready && break
+          mkdir -p test-results
+          "$CI_MINIO_DIR/minio" server "$RUNNER_TEMP/minio-data" --address 127.0.0.1:19450 > test-results/minio.log 2>&1 &
+          echo "MINIO_PID=$!" >> "$GITHUB_ENV"
+          for _ in $(seq 1 30); do
+            curl -fsS --max-time 2 "$AILAB_TEST_S3_URL/minio/health/ready" && break
             sleep 1
           done
-          curl -fsS http://127.0.0.1:19450/minio/health/ready
-      - run: pytest tests/contracts/test_storage.py -ra
-      - name: Stop service container
+          curl -fsS --max-time 2 "$AILAB_TEST_S3_URL/minio/health/ready"
+      - run: pytest tests/contracts/test_storage.py -ra --junitxml=test-results/storage.xml
+      - name: Stop service
         if: always()
-        run: docker rm -f contract-minio
-
-  portal:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: platform/portal
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+        run: if [ -n "${MINIO_PID:-}" ]; then kill "$MINIO_PID"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: platform/portal/package-lock.json
-      - run: npm ci --no-audit --no-fund
-      - run: npm run build
+          name: storage-contracts
+          path: platform/test-results/
+          retention-days: 7
 
   shell:
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
-      - name: Install shellcheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
-      - name: Kustomize overlays
+      - name: Workflow syntax and expressions
+        run: docker run --rm -v "$PWD:/work" -w /work rhysd/actionlint:1.7.12 -color
+      - name: ShellCheck and Kustomize overlays
         run: |
+          sudo apt-get update && sudo apt-get install -y shellcheck
           kubectl kustomize platform/deploy/overlays/dev > /tmp/dev.yaml
           kubectl kustomize platform/deploy/overlays/lite > /tmp/lite.yaml
           kubectl kustomize deploy/overlays/lite > /tmp/sandbox.yaml
-      - name: ShellCheck
-        run: shellcheck -S warning deploy.sh tests/*.sh platform/scripts/*.sh
+          shellcheck -S warning deploy.sh tests/*.sh platform/scripts/*.sh
+          bash -n deploy.sh
 
   e2e:
-    # The Portal and the services in a real browser: login, running a task and its SSE timeline, downloads,
-    # the quarantine of infected uploads, and that the access token never reaches page scripts.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # The fixture owns Portal Node tests + an isolated production build, avoiding a duplicate build job.
+    needs: changes
+    if: needs.changes.outputs.e2e == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     services:
       redis:
         image: redis:7-alpine
-        ports:
-          - 6379:6379
+        ports: [6379:6379]
         options: >-
           --health-cmd "redis-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+          --health-interval 5s --health-timeout 3s --health-retries 10
     env:
       AILAB_E2E: "1"
       AILAB_TEST_REDIS_URL: redis://127.0.0.1:6379/15
@@ -160,13 +225,42 @@ jobs:
         working-directory: platform/portal
         run: npm ci --no-audit --no-fund
       - name: Chromium
-        run: playwright install --with-deps chromium
-      - name: Browser tests
         working-directory: platform
-        run: pytest e2e -q
-      - name: Service logs
-        if: failure()
-        uses: actions/upload-artifact@v7
+        run: playwright install --with-deps chromium
+      - name: Browser tests (includes Portal tests/build)
+        working-directory: platform
+        run: pytest e2e -ra --durations=10 --junitxml=test-results/e2e.xml
+      - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: e2e-logs
-          path: platform/e2e-logs
+          name: e2e
+          path: |
+            platform/test-results/
+            platform/e2e-logs/
+          retention-days: 7
+
+  ci:
+    # Keep one stable required check, including documentation-only PRs and failed dependency jobs.
+    name: CI
+    needs: [changes, quality, python, storage-contracts, shell, e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    steps:
+      - name: Require selected suites to pass
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          python3 - <<'CHECK'
+          import json, os
+          jobs = json.loads(os.environ['RESULTS'])
+          bad = [name for name, job in jobs.items() if job['result'] not in ('success', 'skipped')]
+          outputs = jobs['changes'].get('outputs', {})
+          if set(outputs) != {'code', 'backend', 'e2e'} or any(v not in ('true', 'false') for v in outputs.values()):
+              raise SystemExit('Invalid scope outputs')
+          selected = {'quality': 'code', 'shell': 'code', 'python': 'backend', 'storage-contracts': 'backend', 'e2e': 'e2e'}
+          missing = [name for name, flag in selected.items() if outputs.get(flag) == 'true' and jobs[name]['result'] != 'success']
+          if jobs['changes']['result'] != 'success' or bad or missing:
+              raise SystemExit(f'CI failed: {sorted(set(bad + missing))}')
+          print('All selected checks passed.')
+          CHECK

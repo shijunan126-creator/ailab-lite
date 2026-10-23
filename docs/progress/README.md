@@ -28,5 +28,7 @@
 
 ## 交付记录
 
+- [2026-10-23：CI 分层、执行范围与真实 S3 fixture 更新](updates/2026-10-23-ci-refresh.md)
+
 - [2026-10-23：main 集成、阶段成果提 PR、进度体系](updates/2026-10-23-main-integration.md)
 - 前期全量审查见 [审查记录](../reviews/2026-10-23-full-review.md)；真实组件实测见 [验收报告](../reviews/2026-10-23-real-components.md)。
