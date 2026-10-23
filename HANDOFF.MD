@@ -87,3 +87,13 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 身份 / 管理 API / OIDC（T13 / T17）
+
+- 新迁移 `0013 -> 0008`，lead 合并时重接；SQLite users 只 ADD/DROP COLUMN，不 batch 重建。带现有 Run/Token、部门父子和审计，开启外键的升/降/再升及双库 schema drift 通过。
+- Principal 附在 request.state，current_user 仍返回 User；认证角色 joinedload 保持原会话列表 ≤3 次 SQL，不能用额外 selectin 查询放宽旧性能门槛。
+- Next 的 req.url 可能把 127.0.0.1/LAN 主机归一成 localhost；OIDC 回调必须返回相对 Location，绝对本地重定向会让 Cookie 跨主机失效。跨站 IdP 回跳已用生产 Portal + Playwright 红/绿验证；流程 Cookie 用 Lax，平台 Cookie 保持 Strict/httpOnly。
+- 部门/策略保持数组响应，keyset 下一页在 X-Next-Cursor；Portal 通用代理必须透传。dept_admin 范围进入 SQL，不能取全量后过滤；无任何管理员内容读取特权。
+- 本基线 ModelUsage 无 dept_id。合并 A 后补 usage 写入快照、冻结 weighted_amount、全局报表索引，并把 limits_for 接入 storage/concurrency/summary；本分支仅改 token 准入一个点。详见 `docs/reviews/2026-10-23-identity-implementation.md`。
+- OIDC 上游令牌不出 API；只按 iss/sub 建联，不按 email 自动合并。真实 Keycloak 测试由 AILAB_TEST_OIDC_ISSUER gate，未配置即跳过，不把 fake issuer 验收称作企业 SSO 验收。
+- 本轮最终验证：SQLite+Redis 463 passed / 10 skipped；PG16+Redis 472 passed / 1 skipped；浏览器 E2E 34 passed；Portal Node 9 passed、build、Ruff、依赖锁一致性通过。真实 Keycloak gate 未配置。临时服务仅用 16470/15470，结束后关闭；无开发库操作。
