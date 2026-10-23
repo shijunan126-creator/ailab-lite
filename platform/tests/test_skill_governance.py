@@ -133,16 +133,27 @@ def test_sandbox_index_that_differs_from_the_broker_source_is_refused(attestatio
     assert error.value.status_code == 409
 
 
-def test_verifier_failure_and_mock_sandbox_are_unverified(attestations):
+def test_verifier_failure_is_unverified(attestations):
     manager, _ = fake_manager(exit_code=2, stdout="")
     with pytest.raises(HTTPException) as error:
         verify_lease_index(manager, "lease-d")
     assert error.value.status_code == 503 and error.value.detail == "skill_verification_failed"
+
+
+def test_mock_sandbox_attests_the_host_directory_it_serves(attestations, monkeypatch, tmp_path):
+    """No exec and no image: the index of the checkout the mock exposes, still checked against its manifests."""
     mock, calls = fake_manager(provider="mock")
+    result = verify_lease_index(mock, "lease-e")
+    assert result["verified"] and result["image_ref"] == "host-checkout" and calls == []
+    drifted = tmp_path / "skills"
+    shutil.copytree(settings.skills_path, drifted)
+    target = drifted / "xlsx" / "scripts" / "build_xlsx.py"
+    target.write_bytes(target.read_bytes() + b"\n# drift\n")
+    monkeypatch.setattr(broker_skills, "MOCK_SKILLS", drifted)
+    broker_skills._attested.clear()
     with pytest.raises(HTTPException) as error:
-        verify_lease_index(mock, "lease-e")
-    assert error.value.status_code == 503 and error.value.detail == "skill_index_unverified"
-    assert calls == []
+        verify_lease_index(mock, "lease-f")
+    assert error.value.status_code == 409
 
 
 def test_sandbox_index_route_requires_a_lease_id():

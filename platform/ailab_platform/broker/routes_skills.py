@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..config import settings
 from ..sandbox import SandboxError
+from ..sandbox.mock import SKILLS as MOCK_SKILLS
 from ..service_auth import require_scope
 from ..skill_index import checked_index
 from .service import LeaseError, LeaseLostError
@@ -25,10 +26,16 @@ _attested: OrderedDict[tuple[str, str], dict] = OrderedDict()
 
 
 def verify_lease_index(manager, lease_id: str) -> dict:
-    if manager.provider.name == "mock":
-        # The mock runs the host checkout, so comparing it with the checkout proves nothing about an image.
-        raise HTTPException(503, "skill_index_unverified")
     lease = manager.get(lease_id)
+    if manager.provider.name == "mock":
+        # The mock serves /opt/skills from the host checkout (sandbox/mock.py), so there is no image to attest: check
+        # the directory it actually serves, which still catches a checkout whose files drifted from its index.
+        # The secure profile refuses the mock provider, so this never stands in for an image attestation.
+        try:
+            index = checked_index(MOCK_SKILLS)
+        except (ValueError, OSError) as exc:
+            raise HTTPException(409, "skill_index_mismatch") from exc
+        return _checked_result(_HostIndex(index), lease_id, lease["provider_ref"], "host-checkout")
     key = (lease_id, lease["provider_ref"])
     if key not in _attested:
         result = manager.exec(lease_id, VERIFY_COMMAND, 30)
@@ -36,6 +43,13 @@ def verify_lease_index(manager, lease_id: str) -> dict:
         while len(_attested) > MAX_ATTESTATIONS:
             _attested.popitem(last=False)
     return _attested[key]
+
+
+class _HostIndex:
+    """The shape of a verifier exec result, for the index the mock computed on the host."""
+
+    def __init__(self, index: dict):
+        self.exit_code, self.stdout = 0, json.dumps(index)
 
 
 def _checked_result(result, lease_id: str, provider_ref: str, image_ref: str) -> dict:
