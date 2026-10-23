@@ -111,7 +111,20 @@ class RedisQueue(JobQueue):
 
     def enqueue(self, name: str, payload: dict) -> None:
         self._ensure_group(name)
-        self.client.xadd(name, {"p": json.dumps(payload, ensure_ascii=False)})
+        encoded = json.dumps(payload, ensure_ascii=False)
+        if payload.get("schema_version") == 1 and payload.get("job_id"):
+            # One outstanding transport entry per durable job. A lost stream invalidates its ID map.
+            self.client.eval(self._ENQUEUE_JOB, 2, name, f"{name}:jobs", payload["job_id"], encoded)
+        else:
+            self.client.xadd(name, {"p": encoded})
+
+    _ENQUEUE_JOB = """
+local old = redis.call('HGET', KEYS[2], ARGV[1])
+if old and #redis.call('XRANGE', KEYS[1], old, old) > 0 then return old end
+local id = redis.call('XADD', KEYS[1], '*', 'p', ARGV[2])
+redis.call('HSET', KEYS[2], ARGV[1], id)
+return id
+"""
 
     def _deliveries(self, name: str, msg_id: str) -> int:
         rows = self.client.xpending_range(name, self.GROUP, min=msg_id, max=msg_id, count=1)
@@ -151,10 +164,16 @@ class RedisQueue(JobQueue):
 
     # XACK and XDEL must be atomic: a crash between them leaves an entry that
     # is already acked but still returned by XRANGE (outstanding()/reaper).
-    _ACK = "redis.call('XACK', KEYS[1], ARGV[1], ARGV[2]); return redis.call('XDEL', KEYS[1], ARGV[2])"
+    _ACK = """
+redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
+if ARGV[3] ~= '' and redis.call('HGET', KEYS[2], ARGV[3]) == ARGV[2] then
+    redis.call('HDEL', KEYS[2], ARGV[3])
+end
+return redis.call('XDEL', KEYS[1], ARGV[2])
+"""
 
     def ack(self, name: str, message: Message) -> None:
-        self.client.eval(self._ACK, 1, name, self.GROUP, message.id)
+        self.client.eval(self._ACK, 2, name, f"{name}:jobs", self.GROUP, message.id, message.payload.get("job_id", ""))
 
     def outstanding(self, name: str) -> list[dict]:
         return [self._decode(e)[1] for e in self.client.xrange(name, "-", "+")]
@@ -194,6 +213,9 @@ class InMemoryQueue(JobQueue):
 
     def enqueue(self, name: str, payload: dict) -> None:
         with self._lock:
+            if payload.get("schema_version") == 1 and payload.get("job_id"):
+                if any(e[0].get("job_id") == payload["job_id"] for e in self._entries.get(name, {}).values()):
+                    return
             self._seq += 1
             self._entries.setdefault(name, OrderedDict())[str(self._seq)] = [json.loads(json.dumps(payload)), 0, None]
 

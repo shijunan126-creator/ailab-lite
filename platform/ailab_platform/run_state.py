@@ -60,10 +60,7 @@ def transition_run(
     won = db.execute(
         update(Run).where(Run.id == run_id, Run.status == run.status).values(**values).execution_options(synchronize_session=False)
     ).rowcount
-    if commit:
-        db.commit()
-    else:
-        db.flush()
+    db.flush()
     db.refresh(run)
     if not won:
         return run, False  # someone else moved it first; theirs stands
@@ -74,11 +71,13 @@ def transition_run(
         if started.tzinfo is None:  # SQLite drops tzinfo
             started = started.replace(tzinfo=UTC)
         metrics.RUN_SECONDS.labels(new_status).observe(max(0.0, (now - started).total_seconds()))
-    append_event(db, run.id, "run.status", {"status": run.status}, commit=commit)
+    append_event(db, run.id, "run.status", {"status": run.status}, commit=False)
     if new_status == RunStatus.SUCCEEDED:
-        append_event(db, run.id, "run.completed", {"summary": run.summary, "result": run.result}, commit=commit)
+        append_event(db, run.id, "run.completed", {"summary": run.summary, "result": run.result}, commit=False)
     elif new_status == RunStatus.FAILED:
-        append_event(db, run.id, "run.failed", {"error": run.error}, commit=commit)
+        append_event(db, run.id, "run.failed", {"error": run.error}, commit=False)
     elif new_status == RunStatus.CANCELED:
-        append_event(db, run.id, "run.canceled", {"reason": reason}, commit=commit)
+        append_event(db, run.id, "run.canceled", {"reason": reason}, commit=False)
+    if commit:
+        db.commit()
     return run, True

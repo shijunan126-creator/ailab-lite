@@ -1,12 +1,7 @@
-"""Background repair of work the queue lost track of.
+"""Background expiry and lifecycle maintenance.
 
-The queue redelivers messages whose consumer died. This covers what the queue
-itself cannot: a row committed but never enqueued (API crashed in between, or
-the enqueue failed), and a message wiped from the queue (Redis restarted without
-persistence) while its run was still marked running.
-
-Single-instance: with several API replicas it needs leader election (or a
-lock), otherwise replicas would race to requeue the same rows.
+Outbox dispatch exclusively recovers jobs after publication or Redis failures.
+Legacy running orphans without durable ownership are failed, never re-enqueued.
 """
 
 from __future__ import annotations
@@ -21,7 +16,6 @@ from sqlalchemy.orm import Session
 from .. import metrics
 from ..config import settings
 from ..db import SessionLocal
-from ..events import append_event
 from ..library import delete_storage_objects, purge_lineages
 from ..library import schedule_object_deletion as _schedule_delete
 from ..locks import user_critical_section
@@ -46,45 +40,21 @@ def reap_once(db: Session, queue: JobQueue, now: datetime | None = None) -> dict
     stats = {"runs_requeued": 0, "runs_failed": 0, "files_requeued": 0}
     expire_reservations(db, now)
 
-    queued_runs = {p.get("run_id") for p in queue.outstanding(settings.run_queue)}
-    for run in db.scalars(select(Run).where(Run.status.in_(RunStatus.ACTIVE))):
-        if run.id in queued_runs:
-            continue
-        if run.status == RunStatus.QUEUED:
-            if _aware(run.created_at) > cutoff:
-                continue
-            queue.enqueue(settings.run_queue, {"run_id": run.id})
-            append_event(db, run.id, "run.requeued", {"reason": "no queue message found"})
-            stats["runs_requeued"] += 1
-            metrics.REAPER_ACTIONS.labels("run_requeued").inc()
-            log.warning("requeued run %s: it was queued but had no queue message", run.id)
-        else:  # running
-            if queue.is_locked(run_lock_key(run.id)):
-                continue  # an agent is actively executing it
-            started = _aware(run.started_at) or _aware(run.created_at)
-            if started > cutoff:
-                continue
-            _, changed = transition_run(
-                db,
-                run.id,
-                RunStatus.FAILED,
-                error="agent lost: the run was executing but no agent or queue message remains",
-            )
-            stats["runs_failed"] += int(changed)
-            if changed:
-                metrics.REAPER_ACTIONS.labels("run_failed").inc()
-            log.warning("failed run %s: running with no agent and no queue message", run.id)
+    # Durable outbox owns recovery. Reaper only detects legacy running orphans;
+    # absence from Redis is never evidence that an owned durable job is lost.
+    from ..models import OutboxMessage
 
-    queued_files = {p.get("file_id") for p in queue.outstanding(settings.file_queue)}
-    for file in db.scalars(select(FileObject).where(FileObject.status == FileStatus.PENDING)):
-        if (file.meta or {}).get("processing") != "queued" or file.id in queued_files:
+    for run in db.scalars(select(Run).where(Run.status == RunStatus.RUNNING)):
+        job = db.scalar(select(OutboxMessage.id).where(OutboxMessage.id == run.id).limit(1))
+        if job or queue.is_locked(run_lock_key(run.id)):
             continue
-        if _aware(file.created_at) > cutoff:
+        started = _aware(run.started_at) or _aware(run.created_at)
+        if started > cutoff:
             continue
-        queue.enqueue(settings.file_queue, {"file_id": file.id})
-        stats["files_requeued"] += 1
-        metrics.REAPER_ACTIONS.labels("file_requeued").inc()
-        log.warning("requeued file %s: pending scan had no queue message", file.id)
+        _, changed = transition_run(db, run.id, RunStatus.FAILED, error="agent lost: no durable job or agent remains")
+        stats["runs_failed"] += int(changed)
+        if changed:
+            metrics.REAPER_ACTIONS.labels("run_failed").inc()
     return stats
 
 

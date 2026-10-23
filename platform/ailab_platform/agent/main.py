@@ -1,4 +1,4 @@
-"""Agent Service entrypoint: one Redis consumer, one sandbox at a time."""
+"""Bounded Agent pools with a dedicated Chat lane and durable job handback."""
 
 from __future__ import annotations
 
@@ -8,16 +8,18 @@ import os
 import signal
 import socket
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
 
+from .. import metrics, obs
 from ..catalog import get_catalog
 from ..clients import AsyncPlatformClient
 from ..config import settings
+from ..contracts.jobs import JobEnvelope, RunStatus
 from ..deps import metrics_auth
 from ..metrics import metrics_response
-from ..models import RunStatus
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import Message, get_queue, run_lock_key
 from .loop import AgentLoop
@@ -40,38 +42,86 @@ def visibility_seconds() -> int:
     return settings.run_timeout_seconds + 60
 
 
-async def handle_message(loop: AgentLoop, queue, msg: Message) -> None:
+async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None = None) -> None:
     """Process one run message. On shutdown (CancelledError) the run is handed back to the queue."""
-    platform = AsyncPlatformClient()  # holds a connection pool now: close it with the message
+    topic = topic or settings.run_queue
+    platform = AsyncPlatformClient()
+    token = None
+    job_id = msg.payload.get("job_id")
+    owned_runtime = None
+    trace_context = getattr(obs, "traceparent_var", None)
+    trace_token = None
     try:
-        await _handle_message(loop, queue, msg, platform)
+        if "schema_version" in msg.payload:
+            envelope = JobEnvelope.model_validate(msg.payload)
+            if envelope.kind != "run":
+                raise ValueError("non-run envelope on Agent stream")
+            if trace_context is not None:
+                trace_token = trace_context.set(envelope.traceparent)
+            claim = await platform.job_action(job_id, "claim", consumer=CONSUMER)
+            if claim["state"] != "claimed":
+                await asyncio.to_thread(queue.ack, topic, msg)
+                return
+            token = claim["token"]
+            msg.payload["attempt"] = claim["attempt"]
+            queue_wait = getattr(metrics, "QUEUE_WAIT_SECONDS", None)
+            if queue_wait is not None and envelope.enqueued_at is not None:
+                queue_wait.labels(envelope.mode).observe(max(0, (datetime.now(UTC) - envelope.enqueued_at).total_seconds()))
+        if loop is None:
+            owned_runtime = loop = AgentLoop(platform=platform)
+        await _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token))
+        if token:
+            state = await platform.get_run_state(msg.payload["run_id"])
+            if state["status"] not in RunStatus.TERMINAL:
+                raise RuntimeError("run is not terminal; retain durable job")
+            await platform.job_action(job_id, "ack", token=token)
+            await asyncio.to_thread(queue.ack, topic, msg)
+    except asyncio.CancelledError:
+        if token:
+            # Releasing durable ownership precedes transport ACK; API failure leaves the lease intact.
+            try:
+                await platform.job_action(job_id, "release", token=token)
+                await asyncio.to_thread(queue.ack, topic, msg)
+            except Exception:
+                log.exception("durable handback failed; lease expiry will recover the job")
+        raise
     finally:
+        if owned_runtime is not None:
+            await owned_runtime.broker.aclose()
         await platform.aclose()
+        if trace_token is not None:
+            trace_context.reset(trace_token)
 
 
-async def _handle_message(loop: AgentLoop, queue, msg: Message, platform) -> None:
+async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, topic=None, durable=False) -> None:
+    topic = topic or settings.run_queue
+
+    async def ack_transport():
+        if not durable:
+            await asyncio.to_thread(queue.ack, topic, msg)
+
     run_id = msg.payload.get("run_id")
     if not run_id:
         log.warning("dropping malformed run message: %s", msg.payload)
-        await asyncio.to_thread(queue.ack, settings.run_queue, msg)
+        await ack_transport()
         return
 
     # A message re-queued at shutdown starts a fresh delivery count, so it carries its own.
-    attempt = max(msg.deliveries, int(msg.payload.get("attempt", 1)))
+    attempt = int(msg.payload["attempt"]) if durable else max(msg.deliveries, int(msg.payload.get("attempt", 1)))
     if attempt > settings.run_max_attempts:
         log.error("run %s attempted %d times; giving up", run_id, attempt)
         try:
             await platform.set_run_status(run_id, RunStatus.FAILED, error=f"agent crashed or hung {attempt - 1} times; giving up")
         except Exception:
             log.exception("could not mark run %s failed", run_id)
-        await asyncio.to_thread(queue.ack, settings.run_queue, msg)
+        await ack_transport()
         return
 
     lock = run_lock_key(run_id)
-    token = await asyncio.to_thread(queue.acquire_lock, lock, settings.run_timeout_seconds + 30)
+    token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.run_timeout_seconds + 30)
     if token is None:
         log.warning("run %s is already being executed elsewhere; dropping duplicate message", run_id)
-        await asyncio.to_thread(queue.ack, settings.run_queue, msg)
+        await ack_transport()
         return
 
     log.info("picked run %s (attempt %d)", run_id, attempt)
@@ -87,9 +137,11 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform) -> Non
         except asyncio.CancelledError:
             # Shutting down (rolling deploy, SIGTERM). Waiting for the visibility timeout would
             # leave the run stalled for ~16 minutes, so hand it to the next agent right away.
+            if durable:
+                raise
             try:
-                await asyncio.to_thread(queue.enqueue, settings.run_queue, {"run_id": run_id, "attempt": attempt + 1})
-                await asyncio.to_thread(queue.ack, settings.run_queue, msg)
+                await asyncio.to_thread(queue.enqueue, topic, {"run_id": run_id, "attempt": attempt + 1})
+                await ack_transport()
                 log.info("run %s handed back to the queue for another agent", run_id)
             except Exception:
                 log.exception("could not hand run %s back; it will be redelivered after the visibility timeout", run_id)
@@ -100,34 +152,62 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform) -> Non
                 await platform.set_run_status(run_id, RunStatus.FAILED, error="agent crashed unexpectedly")
             except Exception:
                 log.exception("could not mark crashed run %s failed", run_id)
-        await asyncio.to_thread(queue.ack, settings.run_queue, msg)
+        await ack_transport()
     finally:
-        await asyncio.to_thread(queue.release_lock, lock, token)
+        if not durable:
+            await asyncio.to_thread(queue.release_lock, lock, token)
 
 
 async def consume_forever() -> None:
-    loop = AgentLoop()
-    while True:
-        queue = get_queue()
-        try:
-            msg = await asyncio.to_thread(queue.dequeue, settings.run_queue, CONSUMER, 2, visibility_seconds())
-        except Exception:
-            log.exception("run queue unavailable; retrying")
-            await asyncio.sleep(3)
-            continue
-        if msg is None:
-            continue
-        rid = request_id_var.set(str(msg.payload.get("run_id") or NO_REQUEST))  # every log line about this run carries its id
-        try:
-            await handle_message(loop, queue, msg)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            # e.g. the queue went away between process and ack: the message will
-            # be redelivered after the visibility timeout and the run lock guards it.
-            log.exception("could not finish handling run message %s", msg.id)
-        finally:
-            request_id_var.reset(rid)
+    # Fixed consumers take capacity before dequeue: no unbounded task or message prefetch.
+    shared = asyncio.Semaphore(settings.agent_concurrency)
+
+    async def pool(topic, slots):
+        async def consume(index):
+            while True:
+                async with shared:
+                    queue = get_queue()
+                    try:
+                        msg = await asyncio.to_thread(queue.dequeue, topic, f"{CONSUMER}-{index}", 1, visibility_seconds())
+                    except Exception:
+                        log.exception("run queue unavailable; retrying")
+                        await asyncio.sleep(1)
+                        continue
+                    if msg is None:
+                        continue
+                    rid = request_id_var.set(str(msg.payload.get("request_id") or msg.payload.get("run_id") or NO_REQUEST))
+                    try:
+                        await handle_message(None, queue, msg, topic)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        log.exception("could not finish handling run message")
+                    finally:
+                        request_id_var.reset(rid)
+
+        await asyncio.gather(*(consume(index) for index in range(slots)))
+
+    tasks = [
+        asyncio.create_task(pool(f"{settings.run_queue}:chat", settings.chat_reserved_slots)),
+        asyncio.create_task(pool(f"{settings.run_queue}:work", settings.agent_concurrency - settings.chat_reserved_slots)),
+    ]
+    group = asyncio.gather(*tasks, return_exceptions=True)
+    # If a dependency ignores cancellation past the drain deadline, retain an observer
+    # for its eventual result; the durable lease remains the recovery authority.
+    group.add_done_callback(lambda completed: completed.exception() if not completed.cancelled() else None)
+    try:
+        await asyncio.shield(group)
+    finally:
+        for task in tasks:
+            task.cancel()
+        _, pending = await asyncio.wait(tasks, timeout=settings.drain_seconds)
+        if pending:
+            for task in pending:
+                task.cancel()
+            await asyncio.sleep(0)
+            log.error("Agent drain deadline exceeded; unacknowledged durable jobs will recover")
+        if group.done():
+            await group
 
 
 def begin_drain(loop: asyncio.AbstractEventLoop) -> None:

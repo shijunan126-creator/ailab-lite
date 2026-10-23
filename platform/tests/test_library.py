@@ -114,13 +114,14 @@ def test_thumbnail_response_caching_ownership_and_cleanup(api, monkeypatch):
 def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monkeypatch):
     import hashlib
 
-    from ailab_platform.api import routes_internal
     from ailab_platform.queue import InMemoryQueue
     from ailab_platform.worker.pipeline import process_file
     from tests.test_worker import image_bytes
 
     q = InMemoryQueue()
-    monkeypatch.setattr(routes_internal, "get_queue", lambda: q)
+    from ailab_platform.api import preview_dispatch
+
+    monkeypatch.setattr(preview_dispatch, "get_queue", lambda: q)
     run = api.post("/v1/runs", json={"prompt": "image"}).json()
     assert api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"}).status_code == 200
     data = image_bytes()
@@ -137,8 +138,9 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
     response = api.post("/internal/artifacts", headers=SERVICE, json=body)
     assert response.status_code == 200, response.text
     fid = response.json()["file_id"]
+    preview_dispatch.dispatch_preview_jobs(f"thumb_{fid}")
     msg = q.dequeue(settings.file_queue, "w", timeout=1)
-    assert msg.payload == {"file_id": fid, "thumbnail_only": True}
+    assert msg.payload["file_id"] == fid and msg.payload["kind"] == "thumbnail"
 
     class Platform:
         def get_file(self, file_id, **context):
@@ -163,7 +165,7 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
     def fail_queue():
         raise RuntimeError("offline")
 
-    monkeypatch.setattr(routes_internal, "get_queue", fail_queue)
+    monkeypatch.setattr(preview_dispatch, "get_queue", fail_queue)
     get_storage().put_bytes(key, data)
     response = api.post("/internal/artifacts", headers=SERVICE, json=body)
     assert response.status_code == 200  # queue outage must not fail an artifact commit
@@ -189,19 +191,42 @@ def test_backfill_only_enqueues_ready_missing_images_in_batches(api, monkeypatch
     api.patch(f"/internal/files/{candidates[2]['id']}", headers=SERVICE, json={"meta": {"thumb_key": "existing"}})
     api.patch(f"/internal/files/{candidates[6]['id']}", headers=SERVICE, json={"status": "rejected"})
     q = InMemoryQueue()
-    monkeypatch.setattr(backfill, "get_queue", lambda: q)
+
+    class BackfillClient:
+        def __init__(self, **kwargs):
+            pass
+
+        def thumbnail_batch(self, cursor, limit):
+            response = api.post("/internal/jobs/thumbnails/backfill", headers=SERVICE, json={"cursor": cursor, "limit": limit})
+            assert response.status_code == 200, response.text
+            return response.json()
+
+        def close(self):
+            pass
+
+    from ailab_platform.api import preview_dispatch
+
+    monkeypatch.setattr(backfill, "PlatformClient", BackfillClient)
+    monkeypatch.setattr(preview_dispatch, "get_queue", lambda: q)
     before = [api.get(f"/v1/files/{f['id']}").json() for f in candidates]
     backfill.backfill_thumbnails(batch_size=1)
     assert before == [api.get(f"/v1/files/{f['id']}").json() for f in candidates]
-    ids = {msg["file_id"] for msg in q.outstanding(settings.file_queue)}
+    from sqlalchemy import select
+
+    from ailab_platform.models import OutboxMessage
+
+    with SessionLocal() as db:
+        ids = {m.payload["file_id"] for m in db.scalars(select(OutboxMessage)) if m.payload.get("kind") == "thumbnail"}
     expected = {f["id"] for f in candidates[:2]}
     assert ids & {f["id"] for f in candidates} == expected
     for file in candidates[:2]:
         api.patch(f"/internal/files/{file['id']}", headers=SERVICE, json={"meta": {"thumb_key": "created"}})
     q2 = InMemoryQueue()
-    monkeypatch.setattr(backfill, "get_queue", lambda: q2)
+    monkeypatch.setattr(preview_dispatch, "get_queue", lambda: q2)
     backfill.backfill_thumbnails(batch_size=2)
-    assert not expected & {msg["file_id"] for msg in q2.outstanding(settings.file_queue)}
+    with SessionLocal() as db:
+        after = {m.id for m in db.scalars(select(OutboxMessage)) if m.payload.get("file_id") in expected}
+    assert len(after) == 4  # one scan and one existing thumbnail intent per candidate; no duplicate intents
 
 
 def test_filters_order_search_and_pagination(api):

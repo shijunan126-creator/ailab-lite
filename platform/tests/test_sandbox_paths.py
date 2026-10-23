@@ -95,5 +95,5 @@ def test_redis_ack_is_one_atomic_script() -> None:
 
     script, numkeys, args = q.client.calls[0]
     assert "XACK" in script and "XDEL" in script
-    assert numkeys == 1
-    assert args == ("ailab:stream:runs", "workers", "1-0")
+    assert numkeys == 2
+    assert args == ("ailab:stream:runs", "ailab:stream:runs:jobs", "workers", "1-0", "")

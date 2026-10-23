@@ -37,11 +37,11 @@ from ..library import (
     trim_file_versions,
 )
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, OutboxMessage, User, new_id, utcnow
-from ..queue import get_queue
+from ..models import FileObject, FileStatus, User, new_id, utcnow
 from ..quota import enforce_library_quota
 from ..schemas import FileBatch, FileOut, LibraryFilePatch
 from ..storage import get_storage
+from .jobs import stage_job
 from .serializers import file_dict, file_dicts
 
 router = APIRouter(prefix="/v1/files", tags=["files"])
@@ -131,6 +131,8 @@ async def upload_file(
                     assign_file_version(db, row, parent)
                     db.add(row)
                     keys = trim_file_versions(db, row)
+                    db.flush()
+                    stage_job(db, "file", file_id=row.id)
                     db.commit()
                     delete_storage_objects(keys)
                     db.refresh(row)
@@ -144,10 +146,6 @@ async def upload_file(
         tmp.close()
         os.unlink(tmp.name)
 
-    try:
-        get_queue().enqueue(settings.file_queue, {"file_id": file.id})
-    except Exception:
-        log.warning("file worker queue unavailable for %s", file.id, exc_info=True)
     return file_dict(file)
 
 
@@ -390,9 +388,7 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
             manifest = {"status": "pending", "kind": kind}
             job_id = uuid.uuid4().hex
             meta.update(preview_requested_at=now, preview_job_id=job_id)
-            db.add(
-                OutboxMessage(id=job_id, topic=settings.file_queue, payload={"file_id": file_id, "preview_only": True, "job_id": job_id})
-            )
+            stage_job(db, "preview", file_id=file_id, job_id=job_id)
         meta["preview"] = manifest
         file.meta = meta
         db.commit()
@@ -560,6 +556,7 @@ def complete_upload(file_id: str, user: User = Depends(current_user), db: Sessio
             file.size = size
             file.sha256 = digest.hexdigest()
             file.meta = {"processing": "queued"}
+            stage_job(db, "file", file_id=file.id)
             db.commit()
         except Exception as exc:
             db.rollback()
@@ -576,10 +573,6 @@ def complete_upload(file_id: str, user: User = Depends(current_user), db: Sessio
             storage.delete(signed_key)
         except Exception:
             log.warning("could not delete completed upload object %s", signed_key, exc_info=True)
-    try:
-        get_queue().enqueue(settings.file_queue, {"file_id": file.id})
-    except Exception:
-        log.warning("file worker queue unavailable for %s", file.id, exc_info=True)
     return file_dict(file)
 
 

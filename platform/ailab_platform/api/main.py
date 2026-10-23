@@ -19,6 +19,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
+from .jobs import router as jobs_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_admin import router as admin_router
@@ -113,6 +114,7 @@ app.include_router(trash_router)
 app.include_router(projects_router)
 app.include_router(internal_router)
 app.include_router(model_context_router)
+app.include_router(jobs_router)
 
 
 @app.get("/healthz")

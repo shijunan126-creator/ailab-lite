@@ -243,6 +243,11 @@ class Settings(BaseSettings):
     # Streams, not the old list keys (a list key would raise WRONGTYPE).
     run_queue: str = "ailab:stream:runs"
     file_queue: str = "ailab:stream:files"
+    agent_concurrency: int = Field(default=3, ge=2, le=32)
+    chat_reserved_slots: int = Field(default=1, ge=1, le=31)
+    drain_seconds: float = Field(default=20, gt=0, le=120)
+    outbox_max_attempts: int = Field(default=10, ge=1)
+    job_deadline_seconds: int = Field(default=86400, ge=60)
     run_max_attempts: int = Field(default=3, gt=0)  # deliveries before a run is failed as a poison message
     file_max_attempts: int = Field(default=3, gt=0)
     reaper_interval_seconds: int = Field(default=60, gt=0)
@@ -251,6 +256,12 @@ class Settings(BaseSettings):
     # The Portal proxies the API same-origin, so browsers need no CORS access. Leave empty unless a
     # separate browser app calls the API directly (then also give it its own login, not a shared token).
     cors_origins: str = ""
+
+    @model_validator(mode="after")
+    def agent_slots(self):
+        if self.chat_reserved_slots >= self.agent_concurrency:
+            raise ValueError("chat_reserved_slots must be less than agent_concurrency")
+        return self
 
     @field_validator("quota_timezone")
     @classmethod

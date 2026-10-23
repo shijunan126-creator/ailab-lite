@@ -234,14 +234,14 @@ def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: preview(api, fid), range(8)))
     assert all(p["status"] == "pending" for p in results)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("preview_only") and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 1
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.meta = {**file.meta, "preview_requested_at": datetime.now(UTC).timestamp() - 301}
         db.commit()
     preview(api, fid)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("preview_only") and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 2 and jobs[0]["job_id"] != jobs[1]["job_id"]
 
 
@@ -261,14 +261,20 @@ def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
     monkeypatch.setattr(q, "enqueue", unavailable)
     assert preview(api, fid)["status"] == "pending"
     with SessionLocal() as db:
-        message = db.scalar(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid))
+        message = db.scalar(
+            select(OutboxMessage).where(
+                OutboxMessage.payload["file_id"].as_string() == fid, OutboxMessage.payload["kind"].as_string() == "preview"
+            )
+        )
         assert message is not None
         job_id = message.id
     monkeypatch.setattr(q, "enqueue", enqueue)
-    dispatch_preview_jobs(job_id)
+    from datetime import timedelta
+
+    dispatch_preview_jobs(job_id, now=datetime.now(UTC) + timedelta(seconds=5))
     assert any(m.get("job_id") == job_id for m in q.outstanding(settings.file_queue))
     with SessionLocal() as db:
-        assert db.get(OutboxMessage, job_id) is None
+        assert db.get(OutboxMessage, job_id) is not None  # publication is not consumer ACK
 
 
 def test_worker_preview_concurrent_messages_render_once(api, monkeypatch):

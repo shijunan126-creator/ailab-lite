@@ -23,7 +23,6 @@ from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
-from ..queue import get_queue
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut
@@ -132,16 +131,14 @@ def start_run(
         if conversation is not None:
             conversation.model = model_id
             conversation.updated_at = utcnow()
+        db.flush()
+        from .jobs import stage_job
+
+        stage_job(db, "run", run_id=run.id, mode=mode)
+        append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model}, commit=False)
         db.commit()
         db.refresh(run)
 
-    append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model})
-    try:
-        get_queue().enqueue(settings.run_queue, {"run_id": run.id})
-    except Exception as exc:
-        log.exception("failed to enqueue run %s", run.id)
-        transition_run(db, run.id, RunStatus.FAILED, error=f"queue unavailable: {exc}")
-        raise HTTPException(status_code=503, detail="run queue unavailable") from exc
     return run
 
 

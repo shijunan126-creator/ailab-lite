@@ -48,11 +48,11 @@ def _run(db, status, **kw) -> Run:
 LATER = datetime.now(UTC) + timedelta(seconds=10_000)
 
 
-def test_queued_run_without_a_message_is_requeued(db) -> None:
+def test_queued_run_without_outbox_is_not_invented_by_reaper(db) -> None:
     q = InMemoryQueue()
-    run = _run(db, RunStatus.QUEUED)
-    assert reap_once(db, q, now=LATER)["runs_requeued"] == 1
-    assert q.outstanding(settings.run_queue) == [{"run_id": run.id}]
+    _run(db, RunStatus.QUEUED)
+    assert reap_once(db, q, now=LATER)["runs_requeued"] == 0
+    assert q.outstanding(settings.run_queue) == []
     assert reap_once(db, q, now=LATER)["runs_requeued"] == 0  # now it has a message
 
 
@@ -87,7 +87,7 @@ def test_running_run_with_a_live_agent_is_left_alone(db) -> None:
     assert run.status == RunStatus.RUNNING
 
 
-def test_pending_file_without_a_message_is_requeued(db) -> None:
+def test_pending_file_without_outbox_is_not_invented_by_reaper(db) -> None:
     q = InMemoryQueue()
     file = FileObject(
         id=new_id("fil"),
@@ -108,7 +108,7 @@ def test_pending_file_without_a_message_is_requeued(db) -> None:
     db.add_all([file, waiting])
     db.commit()
     stats = reap_once(db, q, now=LATER)
-    assert stats["files_requeued"] == 1
+    assert stats["files_requeued"] == 0
     queued = q.outstanding(settings.file_queue)
-    assert {"file_id": file.id} in queued
+    assert {"file_id": file.id} not in queued
     assert {"file_id": waiting.id} not in queued  # still waiting for the client's upload

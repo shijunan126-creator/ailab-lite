@@ -27,6 +27,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from .contracts.jobs import RunStatus as RunStatus
+
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:20]}"
@@ -38,17 +40,6 @@ def utcnow() -> datetime:
 
 class Base(DeclarativeBase):
     pass
-
-
-class RunStatus:
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-    TERMINAL = {SUCCEEDED, FAILED, CANCELED}
-    ACTIVE = {QUEUED, RUNNING}
 
 
 class FileStatus:
@@ -485,7 +476,7 @@ class UsageReservation(Base):
 
 
 class OutboxMessage(Base):
-    """Undelivered effects; removed only after successful at-least-once publication."""
+    """Durable jobs retained through publication until an authenticated consumer ACK."""
 
     __tablename__ = "outbox"
 
@@ -493,3 +484,25 @@ class OutboxMessage(Base):
     topic: Mapped[str] = mapped_column(String(120))
     payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default="1970-01-01 00:00:00")
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[str | None] = mapped_column(String(40))
+    deliveries: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    needs_attention: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    __table_args__ = (Index("ix_outbox_due", "needs_attention", "next_attempt_at", "id"), Index("ix_outbox_created_at", "created_at", "id"))
+
+
+class RunAttempt(Base):
+    __tablename__ = "run_attempts"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    agent_instance: Mapped[str] = mapped_column(String(120))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("run_id", "number"),)

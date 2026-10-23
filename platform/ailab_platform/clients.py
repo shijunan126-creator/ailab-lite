@@ -79,6 +79,9 @@ class _PlatformApi(_Service):
     def default_base_url(self) -> str:  # type: ignore[override]
         return settings.api_base_url
 
+    def _job_action(self, job_id, action, **body) -> Request:
+        return self._req("POST", f"/internal/jobs/{job_id}/{action}", timeout=10, json=body)
+
     def _get_run(self, run_id: str) -> Request:
         return self._req("GET", f"/internal/runs/{run_id}")
 
@@ -87,7 +90,7 @@ class _PlatformApi(_Service):
 
     def _set_run_status(self, run_id, status, summary=None, error=None, result=None) -> Request:
         body = {"status": status, "summary": summary, "error": error, "result": result}
-        return self._req("POST", f"/internal/runs/{run_id}/status", json=body)
+        return self._req("POST", f"/internal/runs/{run_id}/transition", json=body)
 
     def _append_event(self, run_id, type_, payload=None) -> Request:
         return self._req("POST", f"/internal/runs/{run_id}/events", json={"type": type_, "payload": payload or {}})
@@ -147,6 +150,16 @@ class PlatformClient(_PlatformApi):
 
     def get_run(self, run_id: str) -> dict:
         return self._send(self._get_run(run_id)).json()
+
+    def thumbnail_batch(self, cursor: str, limit: int) -> dict:
+        return self._send(self._req("POST", "/internal/jobs/thumbnails/backfill", json={"cursor": cursor, "limit": limit})).json()
+
+    def transition_run(self, run_id, status, *, events=(), attempt_id=None, **values) -> dict:
+        body = {"status": status, "events": list(events), "attempt_id": attempt_id, **values}
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/transition", json=body)).json()
+
+    def job_action(self, job_id, action, **body) -> dict:
+        return self._send(self._job_action(job_id, action, **body)).json()
 
     def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return self._send(self._set_run_status(run_id, status, summary, error, result)).json()
@@ -263,6 +276,13 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def get_run_state(self, run_id: str) -> dict:
         return (await self._send(self._get_run_state(run_id))).json()
+
+    async def transition_run(self, run_id, status, *, events=(), attempt_id=None, **values) -> dict:
+        body = {"status": status, "events": list(events), "attempt_id": attempt_id, **values}
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/transition", json=body))).json()
+
+    async def job_action(self, job_id, action, **body) -> dict:
+        return (await self._send(self._job_action(job_id, action, **body))).json()
 
     async def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return (await self._send(self._set_run_status(run_id, status, summary, error, result))).json()

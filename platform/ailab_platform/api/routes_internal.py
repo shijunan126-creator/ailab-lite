@@ -28,7 +28,6 @@ from ..library import assign_file_version, delete_storage_objects, thumbnail_can
 from ..locks import user_critical_section
 from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, User, new_id
 from ..ports.service_auth import RunContext
-from ..queue import get_queue
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
 from ..run_state import InvalidTransition, transition_run
 from ..schemas import (
@@ -42,6 +41,7 @@ from ..schemas import (
     RunDetail,
     RunStateOut,
     RunStatusIn,
+    RunTransitionIn,
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
@@ -212,6 +212,37 @@ def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(ge
     return run_dict(db, run, detail=True)
 
 
+@router.post("/runs/{run_id}/transition", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
+def internal_transition(run_id: str, body: RunTransitionIn, db: Session = Depends(get_db)) -> dict:
+    from ..models import OutboxMessage
+
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        db.refresh(run)
+        if body.attempt_id is not None:
+            job = db.scalar(select(OutboxMessage).where(OutboxMessage.id == run_id).with_for_update())
+            now = datetime.now(UTC)
+            until = job.claimed_until if job else None
+            if until is not None and until.tzinfo is None:
+                until = until.replace(tzinfo=UTC)
+            if job is None or job.claim_token != body.attempt_id or until is None or until <= now:
+                raise HTTPException(409, "stale_attempt")
+        try:
+            result = body.result
+            if result is not None:
+                result = {**result, "usage_totals": run_usage_totals(db, run_id)}
+            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
+            if changed:
+                for event in body.events:
+                    append_event(db, run_id, event.type, event.payload, commit=False)
+            db.commit()
+        except InvalidTransition as exc:
+            raise HTTPException(409, f"invalid transition: {exc}") from exc
+    if changed and (run.result or {}).get("workspace_saved"):
+        _drop_older_workspaces(db, run)
+    return run_dict(db, run, detail=True)
+
+
 def _drop_older_workspaces(db: Session, run: Run) -> None:
     """Only the newest workspace of a conversation is ever restored; delete the ones before it (best effort)."""
     storage = get_storage()
@@ -346,7 +377,8 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
     ).first()
     if existing is not None:
         storage.delete(body.staging_key)
-        _enqueue_thumbnail(existing[1])
+        _enqueue_thumbnail(db, existing[1])
+        db.commit()
         return _artifact_out(*existing)
 
     try:
@@ -410,6 +442,22 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
         db.add(file)
         db.add(artifact)
         keys = trim_file_versions(db, file)
+        append_event(
+            db,
+            run.id,
+            "artifact.created",
+            {
+                "artifact_id": artifact.id,
+                "file_id": file.id,
+                "filename": file.filename,
+                "size": file.size,
+                "content_type": file.content_type,
+                "role": artifact.role,
+                "download_url": f"/v1/files/{file.id}/content",
+            },
+            commit=False,
+        )
+        _enqueue_thumbnail(db, file)
         db.commit()
     except Exception:
         db.rollback()
@@ -420,30 +468,14 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
     db.refresh(artifact)
     storage.delete(body.staging_key)
 
-    append_event(
-        db,
-        run.id,
-        "artifact.created",
-        {
-            "artifact_id": artifact.id,
-            "file_id": file.id,
-            "filename": file.filename,
-            "size": file.size,
-            "content_type": file.content_type,
-            "role": artifact.role,
-            "download_url": f"/v1/files/{file.id}/content",
-        },
-    )
-    _enqueue_thumbnail(file)
     return _artifact_out(artifact, file)
 
 
-def _enqueue_thumbnail(file: FileObject) -> None:
+def _enqueue_thumbnail(db: Session, file: FileObject) -> None:
     if file.status == FileStatus.READY and not (file.meta or {}).get("thumb_key") and thumbnail_candidate(file.filename, file.content_type):
-        try:
-            get_queue().enqueue(settings.file_queue, {"file_id": file.id, "thumbnail_only": True})
-        except Exception:
-            log.warning("thumbnail queue unavailable for %s", file.id, exc_info=True)
+        from .jobs import stage_job
+
+        stage_job(db, "thumbnail", file_id=file.id)
 
 
 def _bound_file(

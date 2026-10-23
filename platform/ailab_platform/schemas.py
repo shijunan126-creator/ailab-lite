@@ -297,6 +297,11 @@ class EventIn(BaseModel):
     payload: dict = Field(default_factory=dict)
 
 
+class RunTransitionIn(RunStatusIn):
+    events: list[EventIn] = Field(default_factory=list, max_length=50)
+    attempt_id: str | None = Field(default=None, max_length=40)
+
+
 class UsageIn(BaseModel):
     model: str = ""
     prompt_tokens: int = Field(default=0, ge=0)

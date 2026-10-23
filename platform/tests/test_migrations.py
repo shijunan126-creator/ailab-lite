@@ -421,3 +421,43 @@ def test_file_lineage_backfill_rejects_cross_owner_parent_even_if_root_was_alrea
             )
     with pytest.raises(RuntimeError, match="invalid file parent chain"):
         _upgrade_to(engine, "0013")
+
+
+def test_transactional_jobs_upgrade_seed_roundtrip_and_index_plans(engine):
+    _upgrade_to(engine, "0013")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text("INSERT INTO outbox (id, topic, payload, created_at) VALUES ('preview-old', 'files', :payload, '2026-01-01 00:00:00')"),
+            {"payload": '{"file_id":"f-old","preview_only":true}'},
+        )
+    _upgrade_to(engine, "0014")
+    with engine.begin() as conn:
+        from sqlalchemy import JSON, DateTime, String, column, select, table
+
+        jobs = table("outbox", column("id", String), column("topic", String), column("payload", JSON), column("created_at", DateTime))
+        seeded = {row.id: row.payload for row in conn.execute(select(jobs))}
+        assert seeded["r1"]["kind"] == "run" and seeded["r1"]["schema_version"] == 1
+        assert seeded["preview-old"]["kind"] == "preview"
+        rows = [{"id": f"future-{i:05}", "topic": "files", "payload": "{}", "created": "2099-01-01 00:00:00"} for i in range(10000)]
+        conn.execute(
+            text("INSERT INTO outbox (id,topic,payload,created_at,next_attempt_at) VALUES (:id,:topic,:payload,:created,:created)"), rows
+        )
+        conn.execute(text("ANALYZE outbox"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        due = " ".join(
+            str(r)
+            for r in conn.execute(
+                text(
+                    prefix + "SELECT id FROM outbox WHERE needs_attention=0 AND next_attempt_at <= '2027-01-01' "
+                    "ORDER BY next_attempt_at,id LIMIT 50"
+                )
+            )
+        )
+        oldest = " ".join(str(r) for r in conn.execute(text(prefix + "SELECT created_at FROM outbox ORDER BY created_at,id LIMIT 1")))
+        assert "ix_outbox_due" in due
+        assert "ix_outbox_created_at" in oldest
+    _downgrade_to(engine, "0013")
+    _upgrade_to(engine, "0014")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM outbox WHERE id='r1'")).scalar() == 1

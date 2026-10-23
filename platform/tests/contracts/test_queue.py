@@ -20,7 +20,7 @@ def queue(request):
     try:
         yield q, name
     finally:
-        q.client.delete(name)
+        q.client.delete(name, f"{name}:jobs")
         q.client.close()
 
 
@@ -66,3 +66,20 @@ def test_xautoclaim_scan_cursor_progresses_past_live_pending(queue):
         if found:
             break
     assert found and found.id == messages[-1].id
+
+
+def test_versioned_job_publication_is_bounded_and_stale_ack_cannot_remove_replay(queue):
+    q, name = queue
+    payload = {"schema_version": 1, "job_id": "durable", "kind": "file"}
+    for _ in range(10):
+        q.enqueue(name, payload)
+    assert q.length(name) == 1
+    first = q.dequeue(name, timeout=0)
+    q.ack(name, first)
+    q.enqueue(name, payload)
+    q.ack(name, first)
+    assert q.length(name) == 1
+    second = q.dequeue(name, timeout=0)
+    assert second.id != first.id
+    q.ack(name, second)
+    assert q.length(name) == 0
