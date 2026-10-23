@@ -104,6 +104,7 @@ class InternalRunDetail(RunDetail):
 
     history: list[dict] = Field(default_factory=list)
     workspace_restore_key: str | None = None
+    workspace_expired: bool = False  # the conversation's last workspace was dropped by the retention window
     disabled_skills: list[str] = Field(default_factory=list)
     personal_skills: list[dict] = Field(default_factory=list)
 

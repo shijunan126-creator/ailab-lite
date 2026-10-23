@@ -22,7 +22,7 @@ from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, llm_for
 from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
-from .prompts import history_messages, personal_header, skills, system_prompt_for, user_prompt
+from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
 from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
@@ -402,7 +402,8 @@ class AgentLoop:
             messages: list[dict] = [
                 {
                     "role": "system",
-                    "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text),
+                    "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                    + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
                 },
                 *history_messages(run.get("history")),
                 {"role": "user", "content": user_prompt(run["prompt"], run.get("input_files"))},
