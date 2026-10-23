@@ -184,29 +184,3 @@ spec:
     ports:
     - protocol: TCP
       port: 8080
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: platform-clamav
-  namespace: platform
-spec:
-  podSelector:
-    matchLabels:
-      app: platform-clamav
-  policyTypes:
-  - Ingress
-  ingress:
-  - from:
-    - podSelector:
-        matchLabels:
-          app: platform-agent
-    - podSelector:
-        matchLabels:
-          app: platform-worker
-    - podSelector:
-        matchLabels:
-          app: platform-broker
-    ports:
-    - protocol: TCP
-      port: 3310
