@@ -25,6 +25,7 @@ from packaging.utils import InvalidSdistFilename, InvalidWheelFilename, canonica
 from packaging.version import InvalidVersion, Version
 
 from .. import web
+from ..clients import ClientError
 from ..config import settings
 from ..paths import WORKSPACE, PathError, normalize_path
 
@@ -153,22 +154,24 @@ archive, dest, max_files, max_bytes = sys.argv[1], sys.argv[2], int(sys.argv[3])
 tmp = dest + '.partial'
 shutil.rmtree(tmp, ignore_errors=True)
 files = total = 0
-with tarfile.open(archive, 'r:gz') as tar:
-    for member in tar:
-        files += 1
-        total += member.size if member.isfile() else 0
-        parts = member.name.split('/', 1)
-        if len(parts) < 2 or not parts[1] or not (member.isfile() or member.isdir() or member.issym()):
-            continue
-        if files > max_files or total > max_bytes:
-            shutil.rmtree(tmp, ignore_errors=True)
-            print(json.dumps({'error': f'archive expands past {max_files} files or {max_bytes} bytes'}))
-            sys.exit(3)
-        member.name = parts[1]
-        tar.extract(member, tmp, filter='data')
-shutil.rmtree(dest, ignore_errors=True)
-os.replace(tmp, dest)
-os.remove(archive)
+try:
+    with tarfile.open(archive, 'r:gz') as tar:
+        for member in tar:
+            files += 1
+            total += member.size if member.isfile() else 0
+            parts = member.name.split('/', 1)
+            if len(parts) < 2 or not parts[1] or not (member.isfile() or member.isdir() or member.issym()):
+                continue
+            if files > max_files or total > max_bytes:
+                print(json.dumps({'error': f'archive expands past {max_files} files or {max_bytes} bytes'}))
+                sys.exit(3)
+            member.name = parts[1]
+            tar.extract(member, tmp, filter='data')
+    shutil.rmtree(dest, ignore_errors=True)
+    os.replace(tmp, dest)
+finally:
+    shutil.rmtree(tmp, ignore_errors=True)
+    os.remove(archive)
 print(json.dumps({'entries': files, 'bytes': total}))
 """
 REPO_RE = re.compile(r"^([A-Za-z0-9_.-]{1,100})/([A-Za-z0-9_.-]{1,100})$")
@@ -416,8 +419,20 @@ async def save_skill(args: dict, run_id: str, lease_id: str, broker, platform) -
         filename = f"{name}.zip" if path.endswith(".zip") else f"{name}.md"
     else:
         data, filename = str(content).encode("utf-8"), f"{name}.md"
-    saved = await platform.save_skill(run_id, name, mode, filename, data)
+    try:
+        saved = await platform.save_skill(run_id, name, mode, filename, data)
+    except ClientError as exc:
+        if exc.status not in (404, 413, 422):
+            raise  # 409 is a lost run and must stop the attempt
+        raise NetToolError(_detail(exc)) from exc
     return {"ok": True, **saved}
+
+
+def _detail(exc: ClientError) -> str:
+    try:
+        return str(json.loads(exc.body).get("detail"))
+    except (ValueError, AttributeError):
+        return str(exc)
 
 
 TOOLS: list[dict[str, Any]] = [

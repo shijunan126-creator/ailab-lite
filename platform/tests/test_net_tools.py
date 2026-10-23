@@ -334,6 +334,7 @@ def test_archive_entries_leaving_the_tree_are_refused(tmp_path, entries) -> None
     result, dest = _extract(tmp_path, _tar(entries))
     assert result.returncode != 0
     assert not (tmp_path / "escape.txt").exists() and not dest.exists()
+    assert list(tmp_path.iterdir()) == []  # neither the partial tree nor the archive is left behind
 
 
 def test_absolute_names_land_inside_the_destination(tmp_path) -> None:
@@ -462,7 +463,7 @@ def test_a_saved_skill_is_pending_until_scanned_and_create_never_overwrites() ->
         assert _save(c, run_id, name, "create", SKILL_MD.format(name=name).encode(), "s1").json() == first.json()  # a retry
         pending = [s for s in c.get("/v1/skills", headers=me).json() if s["scope"] == "personal"]
         assert [s["error"] for s in pending] == ["安全扫描中"]
-        assert _save(c, run_id, name, "create", b"x").status_code == 409  # the name is taken, even while pending
+        assert _save(c, run_id, name, "create", b"x").status_code == 422  # the name is taken, even while pending
         process_file(first.json()["file_id"], platform=_ApiClient(c), storage=get_storage())
         ready = [s for s in c.get("/v1/skills", headers=me).json() if s["scope"] == "personal"]
         assert [(s["name"], s["error"]) for s in ready] == [(name, None)]
@@ -481,7 +482,7 @@ def test_builtin_names_and_mismatched_skill_files_are_refused() -> None:
     with TestClient(app) as c:
         me = _user(c)
         run_id = _running(c, me)
-        assert _save(c, run_id, "pptx", "create", SKILL_MD.format(name="pptx").encode()).status_code == 409
+        assert _save(c, run_id, "pptx", "create", SKILL_MD.format(name="pptx").encode()).status_code == 422
         name = f"claim-{uuid.uuid4().hex[:6]}"
         saved = _save(c, run_id, name, "create", SKILL_MD.format(name="someone-else").encode()).json()
         process_file(saved["file_id"], platform=_ApiClient(c), storage=get_storage())
@@ -495,3 +496,26 @@ def test_saving_needs_the_scope_and_a_running_run() -> None:
         run = c.post("/v1/runs", headers=me, json={"prompt": "x"}).json()
         params = {"name": "abc", "mode": "create", "filename": "abc.md"}
         assert c.post(f"/internal/runs/{run['id']}/skills", params=params, content=b"x").status_code in (401, 403)
+
+
+def test_a_refused_save_is_a_tool_error_and_the_run_continues() -> None:
+    """409 on the internal API means a lost attempt; a name conflict must not look like one and crash the run."""
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.clients import ClientError
+    from ailab_platform.llm import LLMResponse, ToolCall
+
+    from .test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": "chat"}}
+
+        async def save_skill(self, run_id, name, mode, filename, data):
+            raise ClientError("POST", "/internal/runs/x/skills", 422, json.dumps({"detail": "已有同名个人技能 notes"}))
+
+    call = ToolCall(id="c1", name="save_skill", arguments={"name": "notes", "mode": "create", "content": "x"})
+    llm = ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="已有同名技能，要更新吗？")])
+    platform = Platform()
+    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
+    assert "已有同名个人技能 notes" in llm.seen_messages[1][-1]["content"]
+    assert platform.statuses[-1][0] == "succeeded"

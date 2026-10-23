@@ -537,6 +537,7 @@ async def internal_save_skill(
     """A personal skill written by the model, saved for the run's owner only.
 
     It enters the same path as an uploaded skill (PENDING, scan, review policy), so saving never makes it trusted.
+    Refusals the model can act on are 422/404: on this internal API 409 means the attempt lost its run (fencing).
     create refuses a name in use; update adds a version to the user's own skill, keeping the old one restorable.
     Built-in skills and other users' skills are never candidates.
     """
@@ -573,10 +574,10 @@ async def internal_save_skill(
                 if run.status != RunStatus.RUNNING:
                     raise HTTPException(409, f"run is {run.status}")
                 if name in builtin_skills():
-                    raise HTTPException(409, f"{name} 是通用技能，不能被个人技能覆盖；请换个名字")
+                    raise HTTPException(422, f"{name} 是通用技能，不能被个人技能覆盖；请换个名字")
                 heads = _skill_heads(db, run.user_id, name)
                 if mode == "create" and heads:
-                    raise HTTPException(409, f"已有同名个人技能 {name}；要改它请用 mode=update（会保留旧版本）")
+                    raise HTTPException(422, f"已有同名个人技能 {name}；要改它请用 mode=update（会保留旧版本）")
                 if mode == "update" and not heads:
                     raise HTTPException(404, f"没有名为 {name} 的个人技能；新建请用 mode=create")
                 enforce_library_quota(db, run.user_id, size)
