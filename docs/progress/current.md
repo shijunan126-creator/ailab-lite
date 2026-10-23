@@ -26,4 +26,4 @@
 
 合并 README 修复后，调用 GitHub README API 确认首页 path 为根目录 `README.md`；核对 [CI 更新记录](updates/2026-10-23-ci-refresh.md) 与 main 的远端检查。处理实际集成/CI 阻塞后，由用户决定合并与何时恢复后续功能；获准开工时优先按 [路线图](roadmap.md) 阶段 1 的故障契约和性能标准执行。
 
-本轮根因、改动与验收见 [README 首页修复](updates/2026-10-23-readme-display.md)。
+已创建 [PR #31](https://github.com/shijunan126-creator/ailab-lite/pull/31) 修复首页显示，等待合并；本轮根因、改动与验收见 [README 首页修复](updates/2026-10-23-readme-display.md)。

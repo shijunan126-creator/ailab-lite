@@ -6,6 +6,6 @@
 
 修复：CI 说明改名为 `.github/CI.md`，同步契约文档链接和 CI 文档白名单；根目录 README 不修改。陷阱已记录到 HANDOFF。
 
-基线 `origin/main@6caab9b`（PR #30 已由用户合并），分支 `fix/repository-readme`。此修复单独提 PR；合并前 main 仍会展示旧的 `.github/README.md`。
+基线 `origin/main@6caab9b`（PR #30 已由用户合并），分支 `fix/repository-readme`。此修复已提交 [PR #31](https://github.com/shijunan126-creator/ailab-lite/pull/31)；合并前 main 仍会展示旧的 `.github/README.md`。
 
 验证：根 README 与基线逐字节一致；`.github/` 无 README 覆盖文件；CI scope 的 5 项测试、Ruff、actionlint、相对链接与 diff 检查通过。不涉及业务或 UI 源码，不重复完整后端/浏览器验收。合并后用 README API 确认返回根目录 `README.md`，完成线上展示验收。
