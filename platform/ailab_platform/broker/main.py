@@ -192,11 +192,14 @@ def readyz() -> Response:
     except Exception:
         redis_ok = False
     provider_ok = manager.provider.health()
-    ok = redis_ok and provider_ok
+    # Leases live in Redis: without it the Broker can do nothing. Without the sandbox provider it still releases,
+    # snapshots and delivers for runs in progress, so it stays in its Service and reports the degradation.
+    ok = redis_ok
     return JSONResponse(
         status_code=200 if ok else 503,
         content={
             "ok": ok,
+            "degraded": redis_ok and not provider_ok,
             "redis": redis_ok,
             "provider": manager.provider.name,
             "provider_healthy": provider_ok,

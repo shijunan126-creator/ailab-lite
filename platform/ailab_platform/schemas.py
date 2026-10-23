@@ -69,7 +69,7 @@ class PromptRequest(BaseModel):
 
 class RunCreate(PromptRequest):
     title: str | None = Field(default=None, max_length=200)
-    file_ids: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"  # chat: answer in words only, no tools, never a sandbox
     skill: str | None = Field(default=None, max_length=40)  # a skill the user picked (implies work)
@@ -145,7 +145,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
-    file_ids: list[str] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=40)

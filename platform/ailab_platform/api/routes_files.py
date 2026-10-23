@@ -91,31 +91,38 @@ async def upload_file(
         key = f"uploads/{user.id}/{file_id}/{filename}"
         try:
             await asyncio.to_thread(storage.put_file, key, tmp.name, content_type)
-            with user_critical_section(db, user.id):  # quota check and the file row are one step
-                if project_id is not None:
-                    owned_project(db, project_id, user)
-                enforce_library_quota(db, user.id, size)
-                version = 1
-                if parent_id:
-                    parent = _owned_file(db, parent_id, user)
-                    version = parent.version + 1
-                file = FileObject(
-                    id=file_id,
-                    user_id=user.id,
-                    filename=filename,
-                    content_type=content_type,
-                    size=size,
-                    sha256=digest.hexdigest(),
-                    storage_key=key,
-                    status=FileStatus.PENDING,
-                    version=version,
-                    parent_id=parent_id,
-                    project_id=project_id,
-                    meta={"processing": "queued"},
-                )
-                db.add(file)
-                db.commit()
-                db.refresh(file)
+
+            def record() -> FileObject:
+                # The per-user lock can be held for a while by another request of this user (an artifact being
+                # hashed): wait for it in a worker thread, never on the event loop that serves everyone.
+                with user_critical_section(db, user.id):  # quota check and the file row are one step
+                    if project_id is not None:
+                        owned_project(db, project_id, user)
+                    enforce_library_quota(db, user.id, size)
+                    version = 1
+                    if parent_id:
+                        parent = _owned_file(db, parent_id, user)
+                        version = parent.version + 1
+                    row = FileObject(
+                        id=file_id,
+                        user_id=user.id,
+                        filename=filename,
+                        content_type=content_type,
+                        size=size,
+                        sha256=digest.hexdigest(),
+                        storage_key=key,
+                        status=FileStatus.PENDING,
+                        version=version,
+                        parent_id=parent_id,
+                        project_id=project_id,
+                        meta={"processing": "queued"},
+                    )
+                    db.add(row)
+                    db.commit()
+                    db.refresh(row)
+                    return row
+
+            file = await asyncio.to_thread(record)
         except Exception:
             storage.delete(key)
             raise

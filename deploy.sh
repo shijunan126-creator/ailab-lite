@@ -248,11 +248,15 @@ build_images() {
   [ "$DRY" = 1 ] && return
   local id; id=$(docker image inspect "$PLATFORM_IMAGE" --format '{{.Id}}'); id=${id#sha256:}
   docker save "$PLATFORM_IMAGE" | nice -n 19 k3s ctr -n k8s.io images import - >/dev/null
-  # `docker save` can silently produce a broken archive, so check that k3s really holds this exact image
-  # ctr images ls reports the manifest digest; Docker's .Id is the configuration digest. CRI exposes that
-  # same configuration id, so compare like with like instead of rejecting every valid import.
-  local imported; imported=$(k3s crictl inspecti "$PLATFORM_IMAGE" | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["id"])')
-  [ "$imported" = "sha256:$id" ] || die "imported image does not match the one just built (${id:0:12}); not deploying a stale or broken image"
+  # `docker save` can silently produce a broken archive, so check that k3s really holds this exact image.
+  # What Docker's .Id is depends on its image store: the config digest with the classic store (CRI's image
+  # id), the index/manifest digest with the containerd snapshotter (what `ctr images ls` lists). Either match
+  # proves the import; neither means a stale or broken image.
+  local config_id listed
+  config_id=$(k3s crictl inspecti "$PLATFORM_IMAGE" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["id"])' 2>/dev/null || true)
+  listed=$(k3s ctr -n k8s.io images ls 2>/dev/null | awk -v ref="docker.io/library/$PLATFORM_IMAGE" '$1 == ref {print $3}')
+  [ "$config_id" = "sha256:$id" ] || [ "$listed" = "sha256:$id" ] \
+    || die "imported image does not match the one just built (${id:0:12}); not deploying a stale or broken image"
   ok "built and imported (${id:0:12})"
 }
 

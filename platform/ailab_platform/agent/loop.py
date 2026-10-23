@@ -449,14 +449,15 @@ class AgentLoop:
                     final_summary = response.content
                     await self._event(run_id, "agent.message", {"step": step, "content": response.content})
 
+                if offered == [] and response.tool_calls:
+                    # no tools were offered (chat mode): keep the words, ignore the calls
+                    log.warning("run %s: model asked for tools in a words-only turn; ignoring", run_id)
+                    response.tool_calls = []
+                if not response.tool_calls:
+                    finished = True  # an answer that is already complete counts even if it crossed the budget
+                    break
                 if total_tokens >= settings.run_max_tokens:
                     error = f"token limit reached ({total_tokens} >= {settings.run_max_tokens})"
-                    break
-                if offered == [] and response.tool_calls:
-                    raise RuntimeError("model returned tool calls when tools are disabled for this turn")
-
-                if not response.tool_calls:
-                    finished = True
                     break
 
                 assistant: dict = {
@@ -490,9 +491,7 @@ class AgentLoop:
                 out_of_steps = True
                 messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
                 response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
-                await record(response)
-                if total_tokens >= settings.run_max_tokens:
-                    error = f"token limit reached ({total_tokens} >= {settings.run_max_tokens})"
+                await record(response)  # the last call either way: the budget decides nothing more here
                 if response.content:
                     final_summary = response.content
                     await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})

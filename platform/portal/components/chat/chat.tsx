@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Conversation, ConversationDetail, downloadUrl, filesByIds, ModelInfo, Preview, Project, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, downloadUrl, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, Run, streamRun } from "../../lib/api";
 import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged } from "../app-shell";
@@ -39,7 +39,7 @@ function useInitialFiles(active: boolean): Attachment[] | undefined {
   useEffect(() => {
     if (!active) return;
     const url = new URL(window.location.href);
-    const ids = (url.searchParams.get("files") || "").split(",").filter(Boolean).slice(0, 50);
+    const ids = (url.searchParams.get("files") || "").split(",").filter(Boolean).slice(0, MAX_ATTACHMENTS);
     if (!ids.length) return;
     url.searchParams.delete("files");
     window.history.replaceState(null, "", url.pathname + url.search); // a reload must not attach them again

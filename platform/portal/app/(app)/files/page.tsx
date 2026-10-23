@@ -21,7 +21,7 @@ import FileTile, { isImage, thumbUrl } from "../../../components/library/file-ti
 import Modal from "../../../components/library/modal";
 import { MoveDialog, NewProjectInput } from "../../../components/library/projects";
 import { Category, useLibrary } from "../../../components/library/use-library";
-import { api, archiveUrl, downloadUrl, FileItem, Info, Project, uploadFile } from "../../../lib/api";
+import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
 import { formatBytes, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
 
@@ -449,9 +449,10 @@ function Library() {
           <span className="select-count">已选 {chosen.length} 项</span>
           <span className="select-sep" />
           <a
-            className={`select-action ${readyChosen.length ? "" : "disabled"}`}
-            href={readyChosen.length ? chatHref(readyChosen) : undefined}
-            aria-disabled={!readyChosen.length}
+            className={`select-action ${readyChosen.length && readyChosen.length <= MAX_ATTACHMENTS ? "" : "disabled"}`}
+            href={readyChosen.length && readyChosen.length <= MAX_ATTACHMENTS ? chatHref(readyChosen) : undefined}
+            aria-disabled={!readyChosen.length || readyChosen.length > MAX_ATTACHMENTS}
+            title={readyChosen.length > MAX_ATTACHMENTS ? `一条消息最多带 ${MAX_ATTACHMENTS} 个文件，已选 ${readyChosen.length} 个` : undefined}
           >
             <IconMessage size={15} /> 对话
           </a>

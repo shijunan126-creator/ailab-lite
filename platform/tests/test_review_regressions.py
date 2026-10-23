@@ -44,6 +44,13 @@ def test_blank_prompt_is_rejected_without_creating_a_run(api, prompt):
         assert response.status_code == 422, response.text
 
 
+def test_a_message_carries_at_most_fifty_attachments(api):
+    conv = api.post("/v1/conversations", headers=AUTH, json={}).json()["id"]
+    for path in ("/v1/runs", f"/v1/conversations/{conv}/messages"):
+        response = api.post(path, headers=AUTH, json={"prompt": "hi", "file_ids": [f"f{i}" for i in range(51)]})
+        assert response.status_code == 422, response.text
+
+
 def test_api_timestamps_are_unambiguous_utc(api):
     conv = api.post("/v1/conversations", headers=AUTH, json={}).json()
     run = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "time"}).json()
@@ -126,15 +133,21 @@ def test_download_header_quotes_untrusted_filenames():
     assert "%0D%0A" in header  # the original filename is retained in the encoded parameter
 
 
-@pytest.mark.parametrize("with_tool", [False, True])
-def test_token_limit_applies_to_final_answers_and_precedes_tool_execution(monkeypatch, with_tool):
+def test_token_limit_stops_before_tools_run(monkeypatch):
     monkeypatch.setattr(settings, "run_max_tokens", 100)
-    calls = [ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})] if with_tool else []
+    calls = [ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})]
     llm = ScriptedLLM([LLMResponse(content="over budget", tool_calls=calls, usage={"prompt_tokens": 101})])
     platform, broker = _run(llm)
     assert platform.statuses[-1][0] == "failed"
     assert "token limit" in platform.statuses[-1][1]["error"]
     assert broker.leases == 0 and broker.put_calls == []
+
+
+def test_a_complete_answer_that_crosses_the_budget_still_counts(monkeypatch):
+    """The user has seen the whole answer stream in: failing the run then would only throw it away."""
+    monkeypatch.setattr(settings, "run_max_tokens", 100)
+    platform, _ = _run(ScriptedLLM([LLMResponse(content="the full answer", usage={"prompt_tokens": 101})]))
+    assert platform.statuses[-1][0] == "succeeded" and platform.statuses[-1][1]["summary"] == "the full answer"
 
 
 def test_recovered_run_keeps_the_tokens_consumed_by_earlier_attempts(monkeypatch):
@@ -150,25 +163,50 @@ def test_recovered_run_keeps_the_tokens_consumed_by_earlier_attempts(monkeypatch
     assert llm.seen_messages == []
 
 
-def test_chat_mode_refuses_unsolicited_tool_calls():
+def test_chat_mode_ignores_unsolicited_tool_calls():
     class ChatPlatform(FakePlatform):
         async def get_run(self, run_id):
             return {**await super().get_run(run_id), "options": {"mode": "chat"}}
 
     call = ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})
-    platform, broker = _run(ScriptedLLM([LLMResponse(tool_calls=[call])]), platform=ChatPlatform())
-    assert broker.leases == 0 and broker.put_calls == []
-    assert platform.statuses[-1][0] == "failed"
+    llm = ScriptedLLM([LLMResponse(content="只是文字", tool_calls=[call])])
+    platform, broker = _run(llm, platform=ChatPlatform())
+    assert broker.leases == 0 and broker.put_calls == []  # nothing ran
+    assert platform.statuses[-1][0] == "succeeded" and platform.statuses[-1][1]["summary"] == "只是文字"  # the words survive
 
 
-def test_eof_without_a_completion_marker_is_not_a_success():
+def test_eof_without_a_completion_marker_is_not_a_success(monkeypatch):
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
     chunk = {"choices": [{"delta": {"content": "partial answer"}}]}
-    client = OpenAICompatibleClient(
-        "https://llm.test",
-        transport=httpx.MockTransport(lambda _: httpx.Response(200, text=f"data: {json.dumps(chunk)}\n\n")),
-    )
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(200, text=f"data: {json.dumps(chunk)}\n\n")
+
+    client = OpenAICompatibleClient("https://llm.test", transport=httpx.MockTransport(respond))
+    shown = []
+
+    async def on_text(text):
+        shown.append(text)
+
     with pytest.raises(LLMError, match="incomplete"):
-        asyncio.run(client.chat_stream([], [], "m"))
+        asyncio.run(client.chat_stream([], [], "m", on_text=on_text))
+    assert len(calls) == 1 and shown == ["partial answer"]  # what the user saw is not repeated by a retry
+
+
+def test_a_stream_cut_before_any_text_is_retried(monkeypatch):
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
+    chunk = {"choices": [{"delta": {"content": "answer"}, "finish_reason": "stop"}]}
+    bodies = ["", f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"]
+    client = OpenAICompatibleClient("https://llm.test", transport=httpx.MockTransport(lambda _: httpx.Response(200, text=bodies.pop(0))))
+    shown = []
+
+    async def on_text(text):
+        shown.append(text)
+
+    assert asyncio.run(client.chat_stream([], [], "m", on_text=on_text)).content == "answer"
+    assert shown == ["answer"] and bodies == []
 
 
 @pytest.mark.parametrize("early", [False, True])
@@ -227,6 +265,25 @@ def test_readiness_returns_unavailable_when_a_dependency_or_consumer_is_down(mon
     response = TestClient(module.app).get("/readyz")
     assert response.status_code == 503
     assert response.json()["ok"] is False
+
+
+def test_api_stays_ready_but_degraded_without_redis(monkeypatch):
+    from ailab_platform.api import main as api_main
+
+    monkeypatch.setattr(api_main, "get_queue", lambda: SimpleNamespace(ping=lambda: False))
+    response = TestClient(api_main.app).get("/readyz")
+    assert response.status_code == 200  # login, conversations and downloads keep working
+    assert response.json()["degraded"] is True and response.json()["checks"]["queue"] is False
+
+
+def test_broker_stays_ready_but_degraded_without_the_sandbox_provider(monkeypatch):
+    from ailab_platform.broker import main as broker_main
+
+    manager = SimpleNamespace(redis=SimpleNamespace(ping=lambda: True), provider=SimpleNamespace(name="mock", health=lambda: False))
+    monkeypatch.setattr(broker_main, "get_manager", lambda: manager)
+    response = TestClient(broker_main.app).get("/readyz")
+    assert response.status_code == 200  # still releases and snapshots the runs in progress
+    assert response.json()["degraded"] is True and response.json()["provider_healthy"] is False
 
 
 def test_artifact_delivery_obeys_the_library_quota_and_retry_is_free(api, monkeypatch):
