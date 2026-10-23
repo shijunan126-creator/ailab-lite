@@ -215,7 +215,11 @@ def _fresh_signup_throttle(monkeypatch):
 def test_open_registration_creates_a_logged_in_account(_fresh_signup_throttle) -> None:
     name = f"new{uuid.uuid4().hex[:8]}"
     with TestClient(app) as c:
-        assert c.get("/v1/auth/options").json() == {"registration": "open", "oidc": {"enabled": False, "label": settings.oidc_label}}
+        assert c.get("/v1/auth/options").json() == {
+            "registration": "open",
+            "oidc": {"enabled": False, "label": settings.oidc_label},
+            "password": True,
+        }
         r = _register(c, name.upper(), display_name="小明")
         assert r.status_code == 201, r.text
         body = r.json()

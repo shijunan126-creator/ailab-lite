@@ -324,3 +324,12 @@ def test_route_guard_catches_removed_scope_on_included_endpoint():
 def test_secure_profile_rejects_wrong_service_identity():
     with pytest.raises(RuntimeError, match="running service"):
         secure_settings().validate_secrets("broker")
+
+
+def test_a_sandbox_lease_must_outlive_the_run_that_holds_it():
+    from pydantic import ValidationError
+
+    from ailab_platform.config import Settings
+
+    with pytest.raises(ValidationError, match="run_timeout_seconds"):
+        Settings(_env_file=None, sandbox_ttl_seconds=600, run_timeout_seconds=900)

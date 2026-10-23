@@ -255,6 +255,9 @@ class Settings(BaseSettings):
             raise ValueError("render reservation must leave at least one general slot")
         if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
             raise ValueError("render memory reservation must leave general memory")
+        # The Agent does not renew leases yet, so a run's sandbox must outlive the run itself.
+        if self.sandbox_ttl_seconds <= self.run_timeout_seconds:
+            raise ValueError("sandbox_ttl_seconds must exceed run_timeout_seconds until the Agent renews its lease")
         return self
 
     @property
