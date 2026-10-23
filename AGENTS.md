@@ -52,7 +52,7 @@ platform/ailab_platform/
 
 - Ownership is decided in the API from the authenticated principal; never accept a `user_id` from the agent or the model.
 - Internal endpoints check the caller's service scope and, where relevant, bind the request to a `run_id`/`job_id`.
-- `AILAB_PROFILE=secure` refuses mock sandboxes, local storage outside dev, default credentials and stub scanners. Add a check there for any new unsafe default.
+- `AILAB_PROFILE=secure` refuses mock sandboxes, unknown backends, default credentials, stub scanners and models not on the allow-list. Add a check there for any new unsafe default.
 - Never log secrets, tokens, presigned URLs or database passwords. Never put sandbox credentials into messages or events.
 - Untrusted files are parsed only in the Worker's limited subprocess or inside a sandbox.
 
