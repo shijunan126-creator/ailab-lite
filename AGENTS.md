@@ -1,6 +1,15 @@
 # AGENTS.md
 
-Rules for anyone (human or agent) changing this repository. Read this file and [HANDOFF.MD](HANDOFF.MD) before starting; HANDOFF records the traps already hit.
+Rules for anyone (human or agent) changing this repository. Start with this file, [current work](docs/progress/current.md), and [HANDOFF.MD](HANDOFF.MD). The [progress index](docs/progress/README.md) links goals, plans, capability status and evidence; do not infer current authorization from an old session or plan.
+
+## 0. Resume and maintain continuity
+
+- Before editing, read `docs/progress/current.md` for the active goal, authorized scope, paused work, blockers and next action; then read the relevant roadmap, status-matrix rows and linked design/review. Read `HANDOFF.MD` for known traps. For Portal work also read `platform/portal/AGENTS.md`.
+- Verify the actual worktree, branch, HEAD, `git status --short --branch` and remote/base before relying on recorded state. Preserve existing edits. Report stale or conflicting records and reconcile them with code, evidence and the latest user instruction.
+- Keep one source for each kind of information: `current.md` for the latest handoff; `roadmap.md` for goals/order/acceptance; `docs/architecture/status-matrix.md` for capability state; dated files in `docs/progress/updates/` for session outcomes and validation; `docs/reviews/` for detailed evidence; `HANDOFF.MD` for reusable traps; architecture ADRs for decisions. Link rather than copy long tables or logs.
+- Update these records in the same change when scope, status, a blocker or a decision changes, and before handing off or stopping. `current.md` must state what was done, what remains, the next concrete action, branch/base and validation links. Dated updates must distinguish current checks from historical evidence and name the tested commit or code baseline, skipped checks and residual risk. Never record tokens, cookies, signed URLs or personal data.
+- A plan is not permission to implement it. Preserve explicit pauses and pending product decisions across sessions; do not start the next roadmap item automatically. “Implemented”, “locally verified”, “externally accepted” and “merged to main” are separate claims. Portal-only support does not complete the backend contract.
+- Do not mark a task done from test counts alone. Check its acceptance criteria, record untested boundaries, and leave the next session a usable next step. No timestamp-only updates or duplicate status files.
 
 ## 1. What we are building
 
@@ -103,5 +112,5 @@ Tests build their own isolated settings (`tests/conftest.py`). Never point a tes
 
 - Work on a branch; keep unrelated user changes (e.g. `.DS_Store`) untouched.
 - Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`).
-- Update `HANDOFF.MD` with any trap you hit and `docs/architecture/status-matrix.md` when a capability changes state. Record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`.
+- Maintain the continuity records in section 0 with every meaningful change. Add reusable traps to `HANDOFF.MD`, update `docs/architecture/status-matrix.md` when a capability changes state, and record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`. A handoff is incomplete if only the chat response contains its outcome or next step.
 - Before saying "done": lint, full Python suite, Portal build, and for UI changes a real browser check (see HANDOFF for the Playwright route).

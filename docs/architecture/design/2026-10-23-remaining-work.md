@@ -1,6 +1,6 @@
 # 剩余工作设计（T07 / T08 / T09 / T14 / T15 / T16 / T19 / T20）
 
-2026-10-23。基线 `feat/arch-hardening`。当前状态见 [status-matrix](../status-matrix.md)，范围与默认决策见 [ADR 0001](../adr/0001-single-node-scope.md)。本文只做设计，不含实现。
+2026-10-23。基线 `feat/arch-hardening`。当前状态见 [status-matrix](../status-matrix.md)，范围与默认决策见 [ADR 0001](../adr/0001-single-node-scope.md)。本文只做设计，不含实现。执行顺序与启动条件见 [路线图](../../progress/roadmap.md)，最新授权范围见 [当前工作](../../progress/current.md)。
 
 ## 0. 先确认目标
 
@@ -231,7 +231,7 @@ AgentRuntime.start(run) / resume(run, checkpoint) / cancel(run) / snapshot(run)
 
 ## 8. F8 余项 · Broker 流式注入
 
-**实测（2026-10-23，2 vCPU / 8 GiB k3s，见 [验收报告](../../reviews/2026-10-23-real-components.md)）**：50 MiB 注入时 Broker 峰值 RSS 约 265 MiB，100 MiB 交付时约 284 MiB，Pod 上限 384 MiB。单次能通过，两个并发大文件就会触发 OOMKill。因此本项提前到阶段 1，与 T09 并行。
+**实测（2026-10-23，2 vCPU / 8 GiB k3s，见 [验收报告](../../reviews/2026-10-23-real-components.md)）**：50 MiB 注入时 Broker 峰值 RSS 约 265 MiB，100 MiB 交付时约 284 MiB，Pod 上限 384 MiB。单次能通过；按单次增量推算，并发大文件有超过限额的 OOMKill 风险，尚未做双请求并发故障实测。因此本项提前到阶段 1，与 T09 并行。
 
 Broker 目前从 API 取整份 bytes，再 put 到沙箱（最多 50 MB，Pod 上限 384 MiB）。
 

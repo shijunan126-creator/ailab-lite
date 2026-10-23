@@ -5,6 +5,8 @@
 目标：在本机（2 vCPU / 7.7 GB，x86_64，无 KVM）上按组验证 AILab 的关键组件，**组件与大集群一致**，
 只在 `deploy/overlays/lite` 里改数值。不跑完整平台，一次只起一组，测完拆掉。
 
+开发接续从 [项目进度](docs/progress/README.md) 进入：先读 [当前工作](docs/progress/current.md)，再按任务查路线图、能力状态和验收证据。开发规则见 [AGENTS.md](AGENTS.md)。
+
 ## 快速开始：一键部署
 
 在一台**已装好 Docker 和 k3s** 的 Linux 机器上（建议 ≥ 2 vCPU / 7 GB 内存，x86_64 或 arm64）：

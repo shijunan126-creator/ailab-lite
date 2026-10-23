@@ -2,6 +2,8 @@
 
 更新于 2026-10-23，分支 `feat/arch-hardening`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
 
+项目接续、计划和验收记录入口见 [项目进度](../progress/README.md)，最新授权范围见 [当前工作](../progress/current.md)。本页只维护能力状态；“合入”指当前集成分支，不代表已合入远端 main。
+
 未开始与部分完成的任务（T07/T08/T09/T14/T15/T16/T19/T20 及 Broker 流式注入）的方案见 [剩余工作设计](design/2026-10-23-remaining-work.md)，暂不实施。
 
 “完成”表示代码、迁移与回归测试都已合入，并在本机 SQLite 和 PostgreSQL 16 + Redis 两套测试中通过；“未验收”列出仍需真实外部组件或目标机器才能确认的部分。
@@ -89,3 +91,7 @@
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)、[账本契约](usage-ledger.md)。
 
 2026-10-23 真实组件的命令、资源表、修复与验收边界见 [真实组件验收](../reviews/2026-10-23-real-components.md)。单轮小机通过不等于生产规模、并发容量或公网安全承诺。
+
+## main 集成补充（2026-10-23）
+
+main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/search`，显式配置 Agent 到 Service 的地址，NetworkPolicy 仅放行 Agent。新回归与 dev/lite 渲染已通过，完整集成验收见 [本轮记录](../progress/updates/2026-10-23-main-integration.md)。尚未重跑真实 SearXNG 外部引擎或包含它的 2 vCPU / 8 GiB 容量验收；此前真实组件数据不覆盖该新增服务。

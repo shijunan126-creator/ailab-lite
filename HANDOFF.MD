@@ -2,7 +2,7 @@
 
 ## 开始新任务
 
-- 先读本文，再检查 `git status --short --branch`；保留已有修改。
+- 先读 `AGENTS.md`、[当前工作](docs/progress/current.md) 和本文，再检查真实 worktree、branch、HEAD 与 `git status --short --branch`；保留已有修改。目标/计划/验收入口见 [项目进度](docs/progress/README.md)，不要把下方历史分支记录当作当前状态。
 - Python 设置、engine 和目录在 import 时初始化。测试入口必须先设置隔离环境，参见 `platform/tests/conftest.py`；不要使用开发者 `.env` 或真实数据库跑清库测试。
 - `AILAB_TEST_DATABASE_URL` 会清空指定 PostgreSQL 的 public schema。只传一次性数据库。
 - 本轮完整审查记录：`docs/reviews/2026-10-23-full-review.md`。
@@ -213,3 +213,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 最终Linux PG16+Redis+全局S3+原生clamd全套753 passed/9 skipped/101.26s；真实provider/Keycloak gate另跑通过；Portal11测试与production build通过，Ruff通过。未验真实OSB Office+S3联合部署、完整mock故障矩阵的真实版本、并发/长期负载、hostNetwork公网防火墙、gVisor/付费模型。清理状态见验收证据cleanup.log；只停止不删除专用profile。
 - 清理最终状态（15:26 +08）：专用platform namespace/PVC、临时容器/卷、自建镜像/悬空构建层均删除，OSB/Portal/API/转发均停止；Colima ailab-verify=Stopped，profile与上游基础镜像保留；私密token/kubeconfig副本已删除。本地cache保留有限数据备份与证据，没有任务服务运行。
 - Redis 健康检查用独立短超时客户端，但不要给它的连接池设上限：redis-py 的普通连接池满了直接抛错（不排队），readiness、liveness、metrics 同时 ping 时会把健康的 Redis 判成宕机（`tests/contracts/test_queue_health.py` 有并发回归）。
+
+## 2026-10-23 main 集成与跨 session 接续
+
+- main 的 SearXNG 改动原在已删除的 `platform/deploy/k8s/platform.yaml`；解决 modify/delete 冲突不能只删旧文件。检索资源已迁入 `base/search`，共享 config 显式设 `AILAB_SEARXNG_URL=http://platform-searxng:8080`（默认是 localhost），default-deny 下另加仅 Agent 可访问的 ingress。回归见 `platform/tests/test_web_deployment.py`，缺失配置时红、集成后绿。应用代码升级不额外重启检索服务。
+- 新 session 以 `docs/progress/current.md` 接续；历史验收留在 reviews/updates，计划在 roadmap/design，能力状态只在 status-matrix。用户已要求剩余功能先暂停，不能把设计文档里的阶段顺序当作开工授权。
+- Broker 并发 OOM 是按单次峰值推算的风险，现有证据没有双请求并发 OOMKill 实测；报告应区分测量值与推断。Redis health pool 后续在 `826899c` 去掉了连接数上限，旧真实组件报告中的“最多1连接”只描述当时版本。
