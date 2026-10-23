@@ -7,13 +7,15 @@ and the same 1 CPU / 1.5 GiB limits as the sandbox overlay.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import time
+from datetime import datetime
 
 from ..config import settings
 from ..paths import PathError, normalize_path
-from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider
+from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
 
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 
@@ -36,10 +38,18 @@ class DockerSandbox(SandboxProvider):
     def _name(self, lease_id: str) -> str:
         return "ailab-sbx-" + _NAME_RE.sub("-", lease_id)[:48]
 
-    def acquire(self, lease_id: str, image: str, ttl_seconds: int | None = None) -> str:
+    def acquire(
+        self,
+        lease_id: str,
+        image: str,
+        ttl_seconds: int | None = None,
+        *,
+        spec: SandboxSpec | None = None,
+        labels: dict[str, str] | None = None,
+    ) -> str:
         name = self._name(lease_id)
         expires = int(time.time()) + (ttl_seconds or settings.sandbox_ttl_seconds) + SANDBOX_EXPIRY_GRACE_SECONDS
-        _run(["docker", "rm", "-f", name])
+        spec = spec or SandboxSpec(image=image, ttl=ttl_seconds or settings.sandbox_ttl_seconds)
         args = [
             "docker",
             "run",
@@ -53,11 +63,11 @@ class DockerSandbox(SandboxProvider):
             "--network",
             "none",
             "--memory",
-            "1536m",
+            str(spec.memory),
             "--memory-swap",
-            "1536m",
+            str(spec.memory),
             "--cpus",
-            "1",
+            str(spec.cpu),
             "--pids-limit",
             "256",
             "--cap-drop",
@@ -70,13 +80,17 @@ class DockerSandbox(SandboxProvider):
             "/tmp:rw,size=256m",
             image or self.image,
         ]
+        # Labels survive Broker/Redis restarts. Docker labels are immutable; mutable
+        # state/expiry uses a root-only file under /run, never the user workspace.
+        for key, value in (labels or {}).items():
+            args[-1:-1] = ["--label", f"{key}={value}"]
         proc = _run(args, timeout=120)
         if proc.returncode != 0:
             raise SandboxError(f"docker run failed: {proc.stderr.decode('utf-8', 'replace')[-800:]}")
         for _ in range(40):
             state = _run(["docker", "inspect", "-f", "{{.State.Running}}", name], timeout=10)
             if state.returncode == 0 and state.stdout.decode().strip() == "true":
-                return name
+                return proc.stdout.decode().strip() or name
             time.sleep(0.25)
         logs = _run(["docker", "logs", "--tail", "30", name], timeout=10)
         raise SandboxError(f"sandbox did not start: {logs.stderr.decode('utf-8', 'replace')[-800:]}")
@@ -163,34 +177,62 @@ class DockerSandbox(SandboxProvider):
                 continue
         return out[:500]
 
-    def release(self, sandbox_id: str) -> None:
-        _run(["docker", "rm", "-f", sandbox_id], timeout=60)
-
-    def cleanup_orphans(self) -> None:
-        proc = _run(["docker", "ps", "-aq", "--filter", "label=ailab.lease"], timeout=20)
+    def inspect(self, provider_ref: str) -> SandboxResource | None:
+        proc = _run(["docker", "inspect", provider_ref], timeout=20)
         if proc.returncode != 0:
-            return
-        ids = proc.stdout.decode().split()
-        if ids:
-            _run(["docker", "rm", "-f", *ids], timeout=60)
+            if any(s in proc.stderr.decode("utf-8", "replace").lower() for s in ("no such object:", "no such container:")):
+                return None
+            raise SandboxError("docker inspect failed")
+        info = json.loads(proc.stdout)[0]
+        labels = info["Config"].get("Labels") or {}
+        running = info["State"]["Running"]
+        if running:
+            meta = _run(["docker", "exec", "-u", "0", provider_ref, "cat", "/run/ailab-lease.json"], timeout=20)
+            if meta.returncode == 0:
+                labels.update(json.loads(meta.stdout))
+            elif b"No such file" not in meta.stderr:
+                raise SandboxError("docker lease metadata unavailable")
+        return SandboxResource(info["Id"], labels, running)
 
-    def reap_expired(self) -> int:
-        """Docker has no native TTL: remove containers whose ailab.expires label has passed."""
+    def list_owned(self, owner: str) -> list[SandboxResource]:
+        proc = _run(["docker", "ps", "-aq", "--no-trunc", "--filter", f"label=ailab.owner={owner}"], timeout=20)
+        if proc.returncode != 0:
+            raise SandboxError("docker list failed")
+        return [resource for ref in proc.stdout.decode().split() if (resource := self.inspect(ref)) is not None]
+
+    def update_metadata(self, provider_ref: str, labels: dict[str, str]) -> None:
+        current = self.inspect(provider_ref)
+        if current is None:
+            raise SandboxError("sandbox disappeared")
+        data = json.dumps({**current.labels, **labels}).encode()
         proc = _run(
-            ["docker", "ps", "-a", "--filter", "label=ailab.expires", "--format", '{{.ID}} {{.Label "ailab.expires"}}'],
+            [
+                "docker",
+                "exec",
+                "-i",
+                "-u",
+                "0",
+                provider_ref,
+                "sh",
+                "-c",
+                "umask 077; cat > /run/ailab-lease.json.tmp && mv /run/ailab-lease.json.tmp /run/ailab-lease.json",
+            ],
             timeout=20,
+            input_bytes=data,
         )
         if proc.returncode != 0:
-            return 0
-        now = time.time()
-        stale = []
-        for line in proc.stdout.decode().splitlines():
-            cid, _, exp = line.partition(" ")
-            if exp.isdigit() and int(exp) <= now:
-                stale.append(cid)
-        if stale:
-            _run(["docker", "rm", "-f", *stale], timeout=60)
-        return len(stale)
+            raise SandboxError("docker metadata update failed")
+
+    def renew(self, provider_ref: str, until: datetime) -> None:
+        # Docker has no native expiration. Broker reconciliation enforces this deadline.
+        self.update_metadata(provider_ref, {"ailab.expires_at": until.isoformat()})
+
+    def release(self, sandbox_id: str) -> None:
+        proc = _run(["docker", "rm", "-f", sandbox_id], timeout=60)
+        if proc.returncode != 0 and not any(
+            s in proc.stderr.decode("utf-8", "replace").lower() for s in ("no such object:", "no such container:")
+        ):
+            raise SandboxError("docker delete failed")
 
     def health(self) -> bool:
         proc = _run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=20)

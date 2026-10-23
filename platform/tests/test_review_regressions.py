@@ -279,7 +279,9 @@ def test_api_stays_ready_but_degraded_without_redis(monkeypatch):
 def test_broker_stays_ready_but_degraded_without_the_sandbox_provider(monkeypatch):
     from ailab_platform.broker import main as broker_main
 
-    manager = SimpleNamespace(redis=SimpleNamespace(ping=lambda: True), provider=SimpleNamespace(name="mock", health=lambda: False))
+    manager = SimpleNamespace(
+        redis=SimpleNamespace(ping=lambda: True), provider=SimpleNamespace(name="mock", health=lambda: False), is_ready=lambda: True
+    )
     monkeypatch.setattr(broker_main, "get_manager", lambda: manager)
     response = TestClient(broker_main.app).get("/readyz")
     assert response.status_code == 200  # still releases and snapshots the runs in progress

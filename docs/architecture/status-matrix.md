@@ -18,5 +18,8 @@
 | RunContext / Worker 文件状态授权 | 已实现 | 跨服务、跨用户、未附加文件、READY 扫描回写拒绝；会话附件与产物双库覆盖 |
 | K8s Secret 最小分发 | 已实现配置 | 独立令牌 + verifier、幂等升级经 fake kubectl 和 manifest 测试；未操作真实集群 |
 | SA TokenReview / TLS 自动轮换 | 未实现 | 保留 ServiceAuthenticator port，见 [ADR 0002](adr/0002-service-identity.md) |
+| Broker 租约所有权与重启对账（F4/T06） | 资源标签 + LeaseStore CAS、启动/周期对账、Redis 清空后从标签重建、删除失败退避重试、续租与最长寿命 | `tests/faults/test_broker_recovery.py`（mock + Redis）；真实 Docker/OpenSandbox 契约未跑 |
+| Broker 准入（T08 的 Broker 部分） | 静态总量/内存预算、每用户上限、FIFO、有截止时间的队列、预览渲染保留槽 | 单 Broker；无分布式调度与持久等待队列 |
+| Agent 续租与租约丢失恢复 | 契约已提供（renew/status，410 `lease_lost`/`lease_expired`） | Agent runtime 接入待 T07 |
 
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)。

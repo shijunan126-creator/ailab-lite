@@ -216,7 +216,9 @@ def test_broker_metrics_cover_acquire_exec_capacity_and_leases(monkeypatch) -> N
     assert sample("ailab_sandbox_exec_seconds_count", provider="mock") == execs + 1
 
     collected = {m.name: m.samples[0].value for m in metrics.BrokerStateCollector(lambda: manager).collect()}
-    assert collected == {"ailab_sandbox_leases_active": 1.0, "ailab_sandbox_capacity": float(settings.max_sandboxes)}
+    assert collected["ailab_sandbox_leases_active"] == 1.0
+    assert collected["ailab_sandbox_capacity"] == float(settings.max_sandboxes)
+    assert "ailab_sandbox_leases_by_state" in collected
 
     monkeypatch.setattr(settings, "max_sandboxes", 1)
     rejected = sample("ailab_sandbox_capacity_rejections_total")
