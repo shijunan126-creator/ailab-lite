@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -84,8 +85,24 @@ class Settings(BaseSettings):
     # Sandbox control plane. mock | docker | opensandbox
     sandbox_provider: str = "mock"
     sandbox_image: str = "harbor.ailab.local/sandbox/sbx-office:lite"
-    sandbox_ttl_seconds: int = 4 * 3600
-    max_sandboxes: int = 1
+    sandbox_ttl_seconds: int = Field(default=1200, ge=1)
+    max_sandboxes: int = Field(default=2, ge=1)
+    # Broker lease ownership and single-machine admission; no idle sandbox reuse.
+    broker_owner: str = Field(default="single-node", pattern=r"^[a-zA-Z0-9_.-]{1,64}$")
+    broker_lock_ttl_seconds: int = Field(default=30, ge=3)
+    broker_reconcile_interval_seconds: float = Field(default=10, gt=0)
+    broker_release_retry_seconds: float = Field(default=2, gt=0)
+    broker_record_retention_seconds: int = Field(default=3600, ge=0)
+    sandbox_max_lifetime_seconds: int = Field(default=4 * 3600, ge=1)
+    sandbox_cpu: float = Field(default=1, gt=0)
+    sandbox_memory_bytes: int = Field(default=1536 * 1024**2, ge=1)
+    sandbox_disk_bytes: int = Field(default=4 * 1024**3, ge=1)
+    sandbox_total_memory_bytes: int = Field(default=3 * 1024**3, ge=1)
+    sandbox_max_per_user: int = Field(default=1, ge=1)
+    sandbox_queue_limit: int = Field(default=32, ge=1)
+    sandbox_render_reserved_slots: int = Field(default=1, ge=0)
+    sandbox_render_memory_bytes: int = Field(default=768 * 1024**2, ge=0)
+    sandbox_render_max_ttl_seconds: int = Field(default=120, ge=1)
     sandbox_exec_timeout_seconds: int = 120
     max_artifact_bytes: int = 100 * 1024 * 1024  # one delivered file
     max_sandbox_read_bytes: int = 10 * 1024 * 1024  # read_file tool
@@ -139,6 +156,16 @@ class Settings(BaseSettings):
     # The Portal proxies the API same-origin, so browsers need no CORS access. Leave empty unless a
     # separate browser app calls the API directly (then also give it its own login, not a shared token).
     cors_origins: str = ""
+
+    @model_validator(mode="after")
+    def validate_broker_limits(self):
+        if self.sandbox_ttl_seconds > self.sandbox_max_lifetime_seconds:
+            raise ValueError("sandbox ttl exceeds max lifetime")
+        if self.sandbox_render_reserved_slots >= self.max_sandboxes:
+            raise ValueError("render reservation must leave at least one general slot")
+        if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
+            raise ValueError("render memory reservation must leave general memory")
+        return self
 
     @property
     def storage_path(self) -> Path:

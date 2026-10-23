@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import tempfile
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
+from ailab_platform.adapters.lease_store_memory import MemoryLeaseStore
 from ailab_platform.broker.service import LeaseManager
 from ailab_platform.sandbox.mock import MockSandbox
 
@@ -15,19 +18,20 @@ class _Platform:
         return {}
 
     def get_run(self, run_id):
-        return {"id": run_id, "input_file_ids": []}
+        return {"id": run_id, "user_id": "user_test", "input_file_ids": []}
 
 
 class _SpyProvider(MockSandbox):
     def __init__(self) -> None:
         super().__init__()
+        self.root = Path(tempfile.mkdtemp(prefix="ailab-broker-test-"))
         self.acquired_ttl: list[int | None] = []
         self.released: list[str] = []
         self.reaped = 0
 
-    def acquire(self, lease_id, image, ttl_seconds=None):
+    def acquire(self, lease_id, image, ttl_seconds=None, **kwargs):
         self.acquired_ttl.append(ttl_seconds)
-        return super().acquire(lease_id, image, ttl_seconds)
+        return super().acquire(lease_id, image, ttl_seconds, **kwargs)
 
     def release(self, sandbox_id):
         self.released.append(sandbox_id)
@@ -40,7 +44,9 @@ class _SpyProvider(MockSandbox):
 
 def _manager() -> tuple[LeaseManager, _SpyProvider, FakeRedis]:
     provider, fake = _SpyProvider(), FakeRedis()
-    manager = LeaseManager(provider=provider, platform=_Platform(), storage=object(), redis_client=fake)
+    manager = LeaseManager(
+        provider=provider, platform=_Platform(), storage=object(), redis_client=fake, store=MemoryLeaseStore(), start_background=False
+    )
     return manager, provider, fake
 
 
@@ -64,7 +70,7 @@ def test_expired_lease_is_reaped_even_after_its_redis_ttl_elapsed() -> None:
 
     assert provider.released == [lease["sandbox_id"]]
     assert manager.active_leases() == []
-    assert provider.reaped == 1  # the provider-side backstop is swept on every pass
+    assert manager.status(lease["lease_id"])["state"] == "released"
 
 
 # ---- path enforcement, size limits, input injection ------------------------------------
@@ -89,7 +95,7 @@ class _ApiStub(_Platform):
         self.files, self.run_inputs, self.committed = files, run_inputs, []
 
     def get_run(self, run_id):
-        return {"id": run_id, "input_file_ids": self.run_inputs}
+        return {"id": run_id, "user_id": "user_test", "input_file_ids": self.run_inputs}
 
     def get_file(self, file_id):
         return self.files[file_id]
@@ -111,7 +117,11 @@ class _ApiStub(_Platform):
 
 def _manager_with(api: _ApiStub):
     provider, fake, storage = _SpyProvider(), FakeRedis(), _Storage()
-    return LeaseManager(provider=provider, platform=api, storage=storage, redis_client=fake), provider, storage
+    return (
+        LeaseManager(provider=provider, platform=api, storage=storage, redis_client=fake, store=MemoryLeaseStore(), start_background=False),
+        provider,
+        storage,
+    )
 
 
 def test_inputs_come_from_the_run_not_from_the_caller() -> None:
@@ -219,6 +229,7 @@ def test_expired_lease_is_unusable_even_while_its_record_lingers() -> None:
 def test_capacity_is_a_typed_error_not_a_string_match(monkeypatch) -> None:
     manager, provider, _ = _manager()
     monkeypatch.setattr(settings, "max_sandboxes", 1)
+    monkeypatch.setattr(settings, "sandbox_render_reserved_slots", 0)
     manager.create("run_1")
     with pytest.raises(CapacityError):
         manager.create("run_2")
@@ -226,6 +237,7 @@ def test_capacity_is_a_typed_error_not_a_string_match(monkeypatch) -> None:
     def no_room(*_a, **_k):
         raise SandboxError("insufficient capacity on node")  # a provider fault that merely says "capacity"
 
+    manager.release(manager.active_leases()[0]["lease_id"])
     monkeypatch.setattr(settings, "max_sandboxes", 5)
     monkeypatch.setattr(provider, "acquire", no_room)
     with pytest.raises(LeaseError) as exc:

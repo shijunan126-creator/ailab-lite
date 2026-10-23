@@ -229,7 +229,26 @@ class AsyncBrokerClient(_Service):
     async def create_lease(self, run_id: str, ttl_seconds: int | None = None, image: str | None = None) -> dict:
         # The Broker learns the run's input files from the API, not from us.
         body = {"run_id": run_id, "image": image, "ttl_seconds": ttl_seconds}
-        return (await self._send(self._req("POST", "/internal/leases", timeout=180, json=body))).json()
+        return (
+            await self._send(
+                self._req(
+                    "POST",
+                    "/internal/leases",
+                    timeout=settings.sandbox_wait_seconds + settings.osb_request_timeout_seconds + 180,
+                    json=body,
+                )
+            )
+        ).json()
+
+    async def renew(self, lease_id: str, ttl_seconds: int | None = None) -> dict:
+        params = {"ttl_seconds": ttl_seconds} if ttl_seconds is not None else {}
+        return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/renew", params=params))).json()
+
+    async def lease_status(self, lease_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/leases/{lease_id}/status"))).json()
+
+    async def admission_status(self, run_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/admission/{run_id}"))).json()
 
     async def exec(self, lease_id: str, cmd: str, timeout_seconds: int | None = None) -> dict:
         req = self._req(

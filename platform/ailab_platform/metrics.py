@@ -39,6 +39,10 @@ SANDBOX_ACQUIRE_SECONDS = Histogram(
 )
 SANDBOX_EXEC_SECONDS = Histogram("ailab_sandbox_exec_seconds", "Command execution in a sandbox", ["provider"], buckets=_SLOW)
 SANDBOX_CAPACITY_REJECTIONS = Counter("ailab_sandbox_capacity_rejections_total", "Lease requests turned away because all slots were taken")
+SANDBOX_ADMISSION_WAIT_SECONDS = Histogram("ailab_sandbox_admission_wait_seconds", "Time waiting for admission", buckets=_SLOW)
+SANDBOX_RECONCILE_ACTIONS = Counter("ailab_sandbox_reconcile_actions_total", "Lease reconciliation actions", ["action"])
+SANDBOX_PROVIDER_ERRORS = Counter("ailab_sandbox_provider_errors_total", "Sandbox provider errors", ["provider", "operation"])
+
 ARTIFACT_BYTES = Counter("ailab_artifact_bytes_total", "Bytes delivered from sandboxes")
 WORKSPACE_SNAPSHOTS_EXPIRED = Counter("ailab_workspace_snapshots_expired_total", "Workspace snapshots deleted by their TTL")
 
@@ -121,8 +125,20 @@ class BrokerStateCollector(Collector):
         except Exception:
             log.warning("could not count leases for /metrics", exc_info=True)
         capacity.add_metric([], settings.max_sandboxes)
+        states = GaugeMetricFamily("ailab_sandbox_leases_by_state", "Desired leases by state", labels=["state"])
+        try:
+            from collections import Counter
+
+            from .ports.lease_store import LEASE_STATES
+
+            counts = Counter(x["state"] for x in self._manager().store.all())
+            for state in LEASE_STATES:
+                states.add_metric([state], counts[state])
+        except Exception:
+            log.warning("could not count lease states for /metrics", exc_info=True)
         yield active
         yield capacity
+        yield states
 
 
 _registered: set[str] = set()

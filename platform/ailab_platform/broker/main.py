@@ -15,7 +15,7 @@ from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
-from .service import ArtifactRejected, CapacityError, LeaseError, LeaseManager
+from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseError, LeaseLostError, LeaseManager
 
 setup_logging("broker")
 log = logging.getLogger("ailab.broker")
@@ -38,11 +38,15 @@ async def lifespan(_: FastAPI):
     register_once("broker-state", BrokerStateCollector(get_manager))
     try:
         manager.recover()
-        manager.start_cleanup_thread()
         log.info("sandbox broker ready provider=%s", manager.provider.name)
     except Exception:
-        log.exception("broker startup recovery failed; continuing")
-    yield
+        log.exception("broker startup recovery failed")
+        manager.close()
+        raise
+    try:
+        yield
+    finally:
+        manager.close()
 
 
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
@@ -59,9 +63,15 @@ def create_lease(body: LeaseCreate) -> dict:
             inputs=[i.model_dump() for i in body.inputs],
             image=body.image,
             ttl_seconds=body.ttl_seconds,
+            wait_seconds=settings.sandbox_wait_seconds,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LeaseError as exc:
-        raise HTTPException(status_code=429 if isinstance(exc, CapacityError) else 502, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=429 if isinstance(exc, CapacityError) else 503 if isinstance(exc, BrokerOwnershipError) else 502,
+            detail=exc.detail(),
+        ) from exc
     return {
         "lease_id": lease["lease_id"],
         "run_id": lease["run_id"],
@@ -79,12 +89,35 @@ def list_leases() -> dict:
     return {"leases": get_manager().active_leases()}
 
 
+@router.get("/admission/{run_id}")
+def admission_status(run_id: str) -> dict:
+    return get_manager().admission_status(run_id)
+
+
+@router.get("/leases/{lease_id}/status")
+def lease_status(lease_id: str) -> dict:
+    try:
+        return get_manager().status(lease_id)
+    except LeaseError as exc:
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
+
+
+@router.post("/leases/{lease_id}/renew")
+def renew_lease(lease_id: str, ttl_seconds: int | None = Query(default=None, ge=1)) -> dict:
+    try:
+        return get_manager().renew(lease_id, ttl_seconds)
+    except LeaseError as exc:
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
+    except SandboxError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+
 @router.get("/leases/{lease_id}")
 def get_lease(lease_id: str) -> dict:
     try:
         return get_manager().get(lease_id)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
 
 
 @router.post("/leases/{lease_id}/exec", response_model=ExecOut)
@@ -92,7 +125,7 @@ def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     try:
         result = get_manager().exec(lease_id, body.cmd, body.timeout_seconds)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return asdict(result)
@@ -107,7 +140,7 @@ def put_file(
     try:
         get_manager().put_file(lease_id, path, payload)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "path": path, "bytes": len(payload)}
@@ -118,7 +151,7 @@ def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
     try:
         return {"files": get_manager().list_files(lease_id, path)}
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -128,7 +161,7 @@ def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     try:
         data = get_manager().get_file(lease_id, path)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return Response(content=data, media_type="application/octet-stream")
@@ -139,7 +172,7 @@ def commit_artifact(lease_id: str, body: CommitIn) -> dict:
     try:
         return get_manager().commit(lease_id, body.path, body.filename, body.role)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except ArtifactRejected as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:
@@ -153,7 +186,7 @@ def refresh_previews(lease_id: str) -> dict:
     try:
         return {"previews": get_manager().refresh_previews(lease_id)}
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -163,7 +196,7 @@ def snapshot_workspace(lease_id: str) -> dict:
     try:
         return get_manager().snapshot(lease_id)
     except LeaseError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except ArtifactRejected as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:
@@ -172,7 +205,10 @@ def snapshot_workspace(lease_id: str) -> dict:
 
 @router.delete("/leases/{lease_id}", status_code=status.HTTP_204_NO_CONTENT)
 def release_lease(lease_id: str) -> Response:
-    get_manager().release(lease_id)
+    try:
+        get_manager().release(lease_id)
+    except LeaseError as exc:
+        raise HTTPException(status_code=503, detail=exc.detail()) from exc
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -194,7 +230,10 @@ def readyz() -> Response:
     provider_ok = manager.provider.health()
     # Leases live in Redis: without it the Broker can do nothing. Without the sandbox provider it still releases,
     # snapshots and delivers for runs in progress, so it stays in its Service and reports the degradation.
-    ok = redis_ok
+    try:
+        ok = redis_ok and manager.is_ready()
+    except Exception:
+        ok = False
     return JSONResponse(
         status_code=200 if ok else 503,
         content={

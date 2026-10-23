@@ -87,3 +87,14 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 Broker 租约恢复与准入（W1）
+
+- 启动不再删光租约。Provider 创建即写 owner/lease/run/user/created_at，Redis CAS 保存期望状态；有效资源重启接管，Redis 清空从资源元数据重建。`releasing` 删除失败保留记录和容量，2→60 秒退避；不能把连接失败当作资源不存在。
+- Docker label 不可变：续租/状态放在容器 root-only `/run/ailab-lease.json`，不能放进用户 workspace/快照；OSB 用 lifecycle metadata。Docker 无原生 TTL，Broker 宕机期间不会自动回收；disk 规格仍未落实文件系统配额。
+- `acquire(SandboxSpec, LeasePrincipal, *, wait_seconds=None, on_queued=None, prepare=None) -> LeaseHandle`，`release(handle)`；C 的 render 必须 `system=True/profile=render`，ttl/max_lifetime 都≤120 秒，memory≤保留内存。文件/exec 传 `handle.lease_id`。完整接口、错误、设置见 ADR 0003。
+- 普通/短 render 分保留槽与内存，符合条件者 FIFO，单用户超限不堵其他用户；队列上限32、截止300秒，释放通知唤醒，位置通过事件/`GET /internal/admission/{run_id}`暴露。队列重启后需调用方重试；不重放工具、不做 idle reuse。
+- Agent 对 `POST /internal/leases/{id}/renew` 每60秒心跳；最长4小时，默认TTL20分钟。`lease_lost/lease_expired` 为410可恢复错误，runtime 后续应终止当前轮并按安全checkpoint恢复。现有 runtime 未在本分支接入心跳。
+- 同owner仅一个Broker/一个uvicorn worker，Redis TTL30秒锁与独立心跳；第二实例启动失败，失锁停止服务。Redis flush 恢复会先对账再准入；这不是分布式选主/HA。对账列表是快照，新创建资源必须再inspect，不能误判丢失。渲染更新缓存必须合并最新CAS版本，不能覆盖同时心跳。
+- 配置默认总槽位改2（含一个render保留槽），总内存3GiB，render768MiB；仅改 `.env.example` 与部署清单的相应总数，合并时与B/E的profile/部署配置对齐。自定义总槽1需显式关闭reserve或增大总数。无业务DB迁移。
+- 故障测试仅允许flush本轮临时Redis **16440**；真实Provider通过 `AILAB_TEST_DOCKER=1` / `AILAB_TEST_OSB_URL`选跑。性能诊断：2个mock资源、200次对账，真实Redis每次2.476ms wall/2.038ms CPU、峰值Python临时分配226.3KiB、进程RSS49.2MiB；不代表Docker/OSB或生产2vCPU实测。本轮最终验收：SQLite+Redis 449 passed/10 skipped，PostgreSQL16+Redis 457 passed/2 skipped（仅Docker/OSB真实契约未启用）；含48项内存/Redis故障测试，Portal 4项与生产build、Ruff check/format、依赖锁一致性均通过。临时Redis16440、PG15440验证后关闭。
