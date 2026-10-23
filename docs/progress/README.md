@@ -28,7 +28,7 @@
 
 ## 交付记录
 
-- [2026-10-23：恢复剩余开发，F8流式传输首阶段验收](updates/2026-10-23-remaining-implementation.md)
+- [2026-10-23：剩余开发接续、F8及Runtime/OCR最终集成验收](updates/2026-10-23-remaining-implementation.md)
 
 - [2026-10-23：恢复 GitHub 首页的原始 README](updates/2026-10-23-readme-display.md)
 

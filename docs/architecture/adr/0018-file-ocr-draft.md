@@ -1,6 +1,6 @@
 # ADR 0018 草案 · 文件 OCR 与对话多模态输入
 
-状态：草案，待主 Agent 审核。来源：T19 子任务（分支 `t3/worker-ocr-vision`）。实现已在该分支提交，但未集成、未外部验收，未测真实付费 vision。
+状态：accepted（本地实现），2026-10-23。T19子任务已在a1547fe集成，4f9f3cb补齐多模态与运行恢复契约；[最终验收](../../reviews/2026-10-23-t07-runtime.md)。真实付费vision未验。
 
 ## 决定
 
@@ -23,15 +23,13 @@
 - **PDF 分析**只在配置了 `ocr_alias` 时运行，在受限解析子进程里逐页提取文字，低文字页数超上限即提前停止。成本约等于一次额外的 PDF 文字提取，受子进程 CPU/墙钟限制。目标机耗时未测。
 - 无新依赖。
 
-## 迁移链（需主 Agent 处理）
+## 迁移与输入契约
 
-- 提交保留的 `down_revision`：`0016 → 0014`（队列子任务），`0018 → 0017`（skills 子任务）。分支内这两个版本尚不存在，不提交空 stub。与 HEAD 上 `0016 → 0014` 的既有缺口相同，alembic 在两者落地前不可解析。
-- 本分支测试时临时改为 `0016 → 0013`、`0018 → 0016` 以形成线性链，SQLite 与 PostgreSQL 16 迁移、漂移检查通过。该临时改动不在提交中。
+正式链为0014→0016→0017→0018→0019，双库升/降/再升及漂移通过；不再使用子任务临时改链。AgentLoop已接input_content，并按图片限制vision候选；checkpoint存图片文件引用，恢复时重新授权读取。Worker files:ocr scope已同步ADR0002。
 
 ## 未验证与边界
 
 - 真实付费 vision 未调用，全部 HTTP 测试使用本地可控的 OpenAI 兼容上游。
 - 目标机的 CPU、RSS 与渲染耗时未测。
-- 主 Agent 需要接线：`agent/loop.py` 在组装附件时调用 `input_content`，并在 `has_image_part(messages)` 为真时要求候选模型具备 vision。ADR 0002 的 scope 表还需为 worker 增加 `files:ocr`。
 - Worker 与 API 必须同时升级。旧 Worker 不会处理 `kind=ocr` 信封，旧 API 不会排队 OCR。
 - Portal 没有 UI 改动。

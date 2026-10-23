@@ -1,0 +1,43 @@
+{
+  "chat_count": 20,
+  "work_count": 2,
+  "office_bytes": 20999722,
+  "office_ready_seconds": 2.9362827080185525,
+  "chat_p95_seconds": 4.682685935443442,
+  "ttft_p95_seconds": 4.09144408814318,
+  "wall_seconds": 8.779015375010204,
+  "services": {
+    "api": {
+      "cpu_seconds": 3.762683,
+      "memory_peak_mib": 224.71484375,
+      "rss_end_mib": 156.98046875,
+      "oom_kill": 0
+    },
+    "broker": {
+      "cpu_seconds": 0.18362600000000007,
+      "memory_peak_mib": 79.16015625,
+      "rss_end_mib": 93.9140625,
+      "oom_kill": 0
+    },
+    "agent": {
+      "cpu_seconds": 1.1606500000000002,
+      "memory_peak_mib": 82.625,
+      "rss_end_mib": 98.65234375,
+      "oom_kill": 0
+    },
+    "worker": {
+      "cpu_seconds": 0.1685549999999998,
+      "memory_peak_mib": 99.1953125,
+      "rss_end_mib": 96.203125,
+      "oom_kill": 0
+    },
+    "portal": {
+      "cpu_seconds": 1.059887,
+      "memory_peak_mib": 94.9375,
+      "rss_end_mib": 128.84765625,
+      "oom_kill": 0
+    }
+  },
+  "data_bytes": 46945071,
+  "scope": "five services and Redis; mock models/sandbox, stub scanner, local SQLite/storage; host load generator"
+}

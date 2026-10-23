@@ -7,6 +7,22 @@
 - `AILAB_TEST_DATABASE_URL` 会清空指定 PostgreSQL 的 public schema。只传一次性数据库。
 - 本轮完整审查记录：`docs/reviews/2026-10-23-full-review.md`。
 
+## 2026-10-23 Runtime / OCR 最终集成陷阱
+
+- 交付幂等命中也可能清理重试staging对象，路径校验必须在查旧结果/任何delete之前；不能只在新产物分支校验。
+- 上游tool call id只在单次响应内有意义；跨响应复用会把后续exec/提问/交付错误去重。持久身份由平台Run+模型步数+本步ordinal生成，模型协议仍保留原id。
+- 暂停释放并发槽，因此回答与resume必须和新Run创建共享用户锁、重查额度/容量与会话存活。等待问题必须阻止同会话新一轮；删除会话/项目也要取消waiting_user/interrupted。pause即结束attempt，不等传输ACK。
+- 中断也是Portal的静止状态，不能用turn-meta出现作为“续跑完成”的E2E证据。等明确回复/真实终态；暂停SSE关闭后回答要按已显示seq重连，否则重复delta。
+- 图片不能每步把base64复制进4MiB checkpoint；只保存授权文件引用，恢复时重新授权读归一化图。token预算按vision开销，离线模型也要兼容multipart文本回退。
+- checkpoint step天然增加，不能据此断言工作区落后；在文件工具开始前持久dirty，快照成功后清除。GC用终态事务冻结expires_at及范围索引；SQLite join全历史checkpoint再排序会漏掉性能目标。
+- 最终统一基线、双库/浏览器/真实Docker与性能证据见 `docs/reviews/2026-10-23-t07-runtime.md`。六个工具边界用BaseException模拟硬中断，不把它写成六次真实SIGKILL；真实SIGKILL提交后恢复和三槽SIGTERM另有测试。
+
+## 2026-10-23 持久任务集成与中断接手
+
+- 新文件处理分支（如OCR）不能只写裸 `OutboxMessage(topic,payload)`；T09生产者须用 `stage_job` 和 `JobEnvelope`，同步扩展kind、API claim/业务完成判断、Worker分派与ACK。只mock处理函数的测试会漏掉信封/认领/重投断层，必须覆盖生产者到消费者及重复投递。
+- 合并文件里没有冲突标记不代表Git冲突已经解除：同时核对MERGE_HEAD、index unmerged与未暂存修改；验收前保留前任尚未完成的适配。
+- T3运行因429失败后，CLI宿主进程仍可能存在。以activeRunId、终态和worktree提交/改动核对实际进度，不能把进程存在写成“子任务仍在跑”，也不能把子任务局部绿当作集成验收。
+
 ## 2026-10-23 全量审查踩坑与约束
 
 - 预签名 PUT 在完成上传后仍能重用。完成必须先冻结独立对象，再哈希/扫描；不能把已签名的原始 key 作为最终可信对象。
