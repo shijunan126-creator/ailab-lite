@@ -28,6 +28,8 @@
 
 ## 交付记录
 
+- [2026-10-23：恢复 GitHub 首页的原始 README](updates/2026-10-23-readme-display.md)
+
 - [2026-10-23：CI 分层、执行范围与真实 S3 fixture 更新](updates/2026-10-23-ci-refresh.md)
 
 - [2026-10-23：main 集成、阶段成果提 PR、进度体系](updates/2026-10-23-main-integration.md)
