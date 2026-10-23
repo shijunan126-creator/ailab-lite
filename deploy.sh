@@ -314,8 +314,8 @@ deploy_platform() {
     done
   fi
   if [ "$DRY" != 1 ]; then
-    for d in redis api broker agent worker public; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
-    ok "6 deployments ready"
+    for d in redis searxng clamav api broker agent worker public; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
+    ok "8 deployments ready"
     # Pods of the previous generation may still be shutting down; one of them must not take the smoke test's run.
     local i
     for i in $(seq 1 90); do

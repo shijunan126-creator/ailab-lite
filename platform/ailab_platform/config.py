@@ -190,6 +190,15 @@ class Settings(BaseSettings):
     openverse_token: str = ""
     image_search_timeout_seconds: int = Field(default=20, gt=0)
 
+    # Web research, executed by the Agent outside the sandbox (the sandbox itself has no egress).
+    web_search_provider: str = "none"  # none | searxng | mock
+    searxng_url: str = "http://127.0.0.1:8888"
+    web_search_timeout_seconds: int = 15
+    web_fetch_timeout_seconds: int = 20
+    web_max_bytes: int = 2 * 1024 * 1024
+    web_max_chars: int = 20_000
+    web_max_results: int = 5
+
     # Directory holding <skill>/SKILL.md. Unset = the repo checkout (dev); the
     # image sets it to /opt/ailab/skills.
     skills_dir: Path | None = None

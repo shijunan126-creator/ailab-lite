@@ -25,7 +25,7 @@ from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, ModelCall, llm_for, model_ca
 from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
-from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_turn
+from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
 
@@ -461,7 +461,12 @@ class AgentLoop:
             out_of_steps = False
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
-            offered = [] if mode == "chat" or (spec is not None and not spec.tools) else None
+            if spec is not None and not spec.tools:
+                offered = []
+            elif mode == "chat":
+                offered = tools_for_chat()
+            else:
+                offered = None
             for step in range(settings.max_agent_steps):
                 if await self._is_canceled(run_id):
                     raise RunCanceled()

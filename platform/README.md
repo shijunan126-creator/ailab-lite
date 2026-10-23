@@ -274,6 +274,27 @@ bash scripts/dev_up.sh
 （端口 8090、API key `dev-osb-key`），并等待 `/health`。`scripts/osb_down.sh` 只停 server，不动平台服务。
 SDK 是可选依赖：`pip install -e '.[opensandbox]'`。
 
+## 外部信息（SearXNG）
+
+沙箱默认 `egress: deny`。需要最新外部信息时，Agent 在**沙箱外**调用两个工具：
+
+- `web_search(query)`：查询私有 SearXNG，返回标题、URL、摘要；
+- `read_url(url)`：抓取公开网页，校验 SSRF、限制大小/超时/重定向，抽出正文供模型阅读。
+
+结果只以文本返回给模型；沙箱仍然没有网络路由，模型也不能把网页里的指令当成系统指令。
+SearXNG 是唯一访问公网搜索源的组件，部署在 `platform-searxng`（ClusterIP，不对外暴露）。
+
+配置：
+
+```env
+AILAB_WEB_SEARCH_PROVIDER=searxng
+AILAB_SEARXNG_URL=http://platform-searxng:8080
+AILAB_WEB_MAX_BYTES=2097152
+AILAB_WEB_MAX_CHARS=20000
+```
+
+生产中把 SearXNG 放在受控出口，并给它配置搜索引擎白名单/限流；不要让 sandbox 直接访问它。
+
 ## k3s 部署（已验证）
 
 > 最省事的方式是仓库根目录的 `./deploy.sh`（下面每一步它都做了，并带冒烟测试）。以下是手动步骤，便于理解和排错。
