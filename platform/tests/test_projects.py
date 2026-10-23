@@ -128,7 +128,7 @@ def test_upload_and_artifact_inherit_project(api):
     assert api.get(f"/v1/projects/{p['id']}").json()["files"] == 2
 
 
-def test_project_delete_removes_ledger_storage_and_cancels_run(api):
+def test_project_delete_trashes_files_and_cancels_run(api):
     p = project(api)
     conv = api.post("/v1/conversations", json={"project_id": p["id"]}).json()
     run = api.post(f"/v1/conversations/{conv['id']}/messages", json={"prompt": "create"}).json()
@@ -147,16 +147,17 @@ def test_project_delete_removes_ledger_storage_and_cancels_run(api):
         db.commit()
     response = api.delete(f"/v1/projects/{p['id']}")
     assert response.status_code == 204, response.text
-    assert all(not get_storage().exists(key) for key in keys)
+    assert all(get_storage().exists(key) for key in keys)
     with SessionLocal() as db:
         assert db.get(Project, p["id"]) is None
         assert db.get(Conversation, conv["id"]).deleted_at is not None
         assert db.get(Conversation, conv["id"]).project_id is None
         assert db.get(Run, run["id"]).status == "canceled"
-        assert db.scalar(select(func.count()).select_from(Artifact).where(Artifact.file_id == out["file_id"])) == 0
-        assert db.get(FileObject, parent["id"]) is None
-        assert db.get(FileObject, out["file_id"]) is None
-        assert db.get(FileObject, child["id"]).parent_id is None
+        assert db.scalar(select(func.count()).select_from(Artifact).where(Artifact.file_id == out["file_id"])) == 1
+        assert db.get(FileObject, parent["id"]).deleted_at is not None
+        assert db.get(FileObject, out["file_id"]).deleted_at is not None
+        assert db.get(FileObject, child["id"]).parent_id == parent["id"]
+        assert db.get(FileObject, child["id"]).deleted_at is not None
         assert db.scalar(select(RunEvent).where(RunEvent.run_id == run["id"], RunEvent.type == "run.canceled")) is not None
     assert api.get(f"/v1/conversations/{conv['id']}").status_code == 404
 
@@ -171,7 +172,8 @@ def test_project_delete_rolls_back_cancellation_on_failure(api, monkeypatch):
     def fail(*args, **kwargs):
         raise RuntimeError("deletion failed")
 
-    monkeypatch.setattr(routes_projects, "delete_file_rows", fail)
+    upload(api, project_id=p["id"])
+    monkeypatch.setattr(routes_projects, "trash_lineages", fail)
     with pytest.raises(RuntimeError, match="deletion failed"):
         api.delete(f"/v1/projects/{p['id']}")
     with SessionLocal() as db:

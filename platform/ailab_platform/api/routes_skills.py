@@ -34,7 +34,13 @@ def personal_skills(db: Session, user: User) -> list[dict]:
     builtin = skills()
     files = db.scalars(
         select(FileObject)
-        .where(FileObject.user_id == user.id, FileObject.status == FileStatus.READY)
+        .where(
+            FileObject.user_id == user.id,
+            FileObject.status == FileStatus.READY,
+            FileObject.is_head == 1,
+            FileObject.deleted_at.is_(None),
+            FileObject.purged_at.is_(None),
+        )
         .order_by(FileObject.created_at.desc())
     )
     out, seen = [], set()

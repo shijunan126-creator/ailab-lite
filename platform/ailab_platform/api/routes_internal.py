@@ -22,7 +22,7 @@ from ..catalog import get_catalog
 from ..config import settings
 from ..deps import get_db, service_auth
 from ..events import append_event
-from ..library import thumbnail_candidate
+from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
 from ..models import Artifact, Conversation, FileObject, FileStatus, ModelUsage, Project, Run, RunStatus, User, new_id
 from ..queue import get_queue
@@ -66,7 +66,7 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
     out, budget = [], ATTACHMENTS_CHARS
     for file_id in run.input_file_ids or []:
         f = db.get(FileObject, file_id)
-        if f is None:
+        if f is None or f.deleted_at is not None or f.purged_at is not None:
             continue
         meta = f.meta or {}
         text = ""
@@ -342,15 +342,34 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
         status=FileStatus.READY,
         meta={"source": "sandbox", "run_id": run.id},
     )
+    parent = None
+    if run.conversation_id:
+        parent = db.scalar(
+            select(FileObject)
+            .join(Artifact, Artifact.file_id == FileObject.id)
+            .join(Run, Run.id == Artifact.run_id)
+            .where(
+                Run.conversation_id == run.conversation_id,
+                FileObject.user_id == run.user_id,
+                FileObject.filename == filename,
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
+            .order_by(FileObject.created_at.desc(), FileObject.version.desc())
+            .limit(1)
+        )
     artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role)
     try:
+        assign_file_version(db, file, parent)
         db.add(file)
         db.add(artifact)
+        keys = trim_file_versions(db, file)
         db.commit()
     except Exception:
         db.rollback()
         storage.delete(final_key)  # nothing references it; the staging copy is still there for the retry
         raise
+    delete_storage_objects(keys)
     db.refresh(file)
     db.refresh(artifact)
     storage.delete(body.staging_key)
@@ -392,8 +411,10 @@ def internal_get_file(file_id: str, db: Session = Depends(get_db)) -> dict:
 @router.get("/files/{file_id}/content")
 def internal_get_file_content(file_id: str, db: Session = Depends(get_db)) -> Response:
     file = db.get(FileObject, file_id)
-    if file is None:
+    if file is None or file.deleted_at is not None:
         raise HTTPException(status_code=404, detail="file not found")
+    if file.purged_at is not None:
+        raise HTTPException(status_code=410, detail="version purged")
     db.close()  # the stream reads storage only; don't hold a pool connection for it
     return StreamingResponse(
         get_storage().stream(file.storage_key),

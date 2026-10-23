@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import metrics
@@ -63,7 +63,9 @@ def library_bytes(db: Session, user_id: str) -> int:
     return int(
         db.scalar(
             select(func.coalesce(func.sum(FileObject.size), 0)).where(
-                FileObject.user_id == user_id, FileObject.status != FileStatus.REJECTED
+                FileObject.user_id == user_id,
+                or_(FileObject.status != FileStatus.REJECTED, FileObject.deleted_at.is_not(None)),
+                FileObject.purged_at.is_(None),
             )
         )
         or 0
@@ -73,4 +75,4 @@ def library_bytes(db: Session, user_id: str) -> int:
 def enforce_library_quota(db: Session, user_id: str, incoming: int) -> None:
     if library_bytes(db, user_id) + incoming > settings.library_quota_bytes:
         metrics.QUOTA_REJECTIONS.labels("library").inc()
-        raise HTTPException(status_code=413, detail="library quota exceeded; delete files or ask for more space")
+        raise HTTPException(status_code=413, detail="library quota exceeded; purge trash or ask for more space")

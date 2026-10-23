@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -124,7 +125,10 @@ class Settings(BaseSettings):
     cached_token_weight: float = 0.1
     daily_token_limit: int = 2_000_000  # per user, prompt + completion, UTC day
     monthly_token_limit: int = 30_000_000
-    library_quota_bytes: int = 20 * 1024**3  # per user, rejected files excluded
+    library_quota_bytes: int = 20 * 1024**3  # per user; active rejected files excluded, trash included
+
+    max_file_versions: int = Field(default=10, ge=1, le=100)
+    trash_days: int = Field(default=30, ge=1, le=3650)
 
     # Queues
     queue_backend: str = "redis"  # redis | memory

@@ -22,6 +22,8 @@ from .. import metrics
 from ..config import settings
 from ..db import SessionLocal
 from ..events import append_event
+from ..library import delete_storage_objects, purge_lineages
+from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, Run, RunStatus
 from ..queue import JobQueue, get_queue, run_lock_key
 from ..run_state import transition_run
@@ -80,6 +82,7 @@ def reap_once(db: Session, queue: JobQueue, now: datetime | None = None) -> dict
         stats["files_requeued"] += 1
         metrics.REAPER_ACTIONS.labels("file_requeued").inc()
         log.warning("requeued file %s: pending scan had no queue message", file.id)
+    purge_expired_trash(db, now)
     return stats
 
 
@@ -158,3 +161,33 @@ async def reap_forever() -> None:
             await asyncio.to_thread(_tick)
         except Exception:
             log.exception("reaper pass failed")
+
+
+def purge_expired_trash(db: Session, now: datetime | None = None, *, batch_size: int = 200) -> int:
+    """One bounded pass; recheck expiry under the same user lock as restore/delete."""
+    now = now or datetime.now(UTC)
+    candidates = list(
+        db.execute(
+            select(FileObject.user_id, FileObject.lineage_id)
+            .where(FileObject.is_head == 1, FileObject.deleted_at.is_not(None), FileObject.purge_at <= now)
+            .order_by(FileObject.purge_at)
+            .limit(batch_size)
+        )
+    )
+    count = 0
+    for user_id, lineage_id in candidates:
+        with user_critical_section(db, user_id):
+            due = db.scalar(
+                select(FileObject.id).where(
+                    FileObject.user_id == user_id,
+                    FileObject.lineage_id == lineage_id,
+                    FileObject.is_head == 1,
+                    FileObject.deleted_at.is_not(None),
+                    FileObject.purge_at <= now,
+                )
+            )
+            keys = purge_lineages(db, user_id, [lineage_id]) if due else []
+            db.commit()
+        delete_storage_objects(keys)
+        count += int(due is not None)
+    return count

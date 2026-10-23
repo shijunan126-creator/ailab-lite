@@ -252,3 +252,70 @@ def test_projects_upgrade_and_downgrade_preserve_referenced_rows(tmp_path) -> No
     with eng.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
     eng.dispose()
+
+
+def test_file_lineage_backfill_and_roundtrip_preserve_existing_references(engine) -> None:
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for fid, parent, version in (("root", None, 1), ("child", "root", 2), ("grandchild", "child", 3), ("separate", None, 1)):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,'u1','a.txt','text/plain',1,'','a.txt','ready',:version,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "parent": parent, "version": version},
+            )
+        conn.execute(text("INSERT INTO artifacts (id,run_id,file_id,role,created_at) VALUES ('a1','r1','child','output','2026-01-01')"))
+        conn.execute(text("UPDATE runs SET input_file_ids='[\"root\"]' WHERE id='r1'"))
+    for _ in range(2):
+        _upgrade_to(engine, "0014")
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT id,lineage_id,version,is_head FROM files ORDER BY id")).all()
+            assert rows == [("child", "root", 2, 0), ("grandchild", "root", 3, 1), ("root", "root", 1, 0), ("separate", "separate", 1, 1)]
+            assert conn.execute(text("SELECT file_id FROM artifacts WHERE id='a1'")).scalar() == "child"
+            assert conn.execute(text("SELECT parent_id FROM files WHERE id='grandchild'")).scalar() == "child"
+            assert conn.execute(text("SELECT input_file_ids FROM runs WHERE id='r1'")).scalar() in ('["root"]', ["root"])
+        _downgrade_to(engine, "0008")
+    _upgrade_to(engine, "0014")
+
+
+def test_file_lineage_backfill_renumbers_legacy_duplicate_branches(engine) -> None:
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for fid, parent, version in (("root", None, 1), ("a", "root", 2), ("b", "root", 2)):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,'u1','a.txt','text/plain',1,'','a.txt','ready',:version,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "parent": parent, "version": version},
+            )
+    _upgrade_to(engine, "0014")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id,lineage_id,version,is_head FROM files ORDER BY version")).all() == [
+            ("root", "root", 1, 0),
+            ("a", "root", 2, 0),
+            ("b", "root", 3, 1),
+        ]
+
+
+def test_file_lineage_backfill_rejects_cross_owner_parent_even_if_root_was_already_seen(engine) -> None:
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("INSERT INTO users (id,email,display_name,created_at) VALUES ('u2','other@b.c','','2026-01-01')"))
+        for fid, uid, parent in (("root", "u1", None), ("foreign-child", "u2", "root")):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,:uid,'a.txt','text/plain',1,'','a.txt','ready',1,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "uid": uid, "parent": parent},
+            )
+    with pytest.raises(RuntimeError, match="invalid file parent chain"):
+        _upgrade_to(engine, "0014")

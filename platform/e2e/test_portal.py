@@ -317,6 +317,16 @@ def test_an_upload_is_scanned_then_downloadable_then_deletable(logged_in, stack,
     row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
     row.get_by_role("menuitem", name="删除", exact=True).click()
     page.wait_for_function("(n) => !document.body.innerText.includes(n)", arg=name, timeout=15000)
+    trashed = page.request.get(f"{stack.portal}/api/v1/files?trashed=true").json()
+    file = next(f for f in trashed if f["filename"] == name)
+    assert file["deleted_at"] and file["purge_at"]
+    assert page.request.get(f"{stack.portal}/api/v1/files/{file['id']}/content").status == 200
+    assert page.request.post(f"{stack.portal}/api/v1/files/{file['id']}/restore").ok
+    page.reload()
+    _row(page, name).wait_for()
+    assert page.request.delete(f"{stack.portal}/api/v1/files/{file['id']}").status == 204
+    assert page.request.post(f"{stack.portal}/api/v1/files/batch", data={"ids": [file["id"]], "action": "purge"}).ok
+    assert page.request.get(f"{stack.portal}/api/v1/files/{file['id']}").status == 404
 
 
 def test_an_infected_upload_is_rejected_and_cannot_be_downloaded(logged_in, stack, tmp_path) -> None:
