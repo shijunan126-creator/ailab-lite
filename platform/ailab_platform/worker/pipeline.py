@@ -141,6 +141,14 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                 )
             except IsolationError as exc:
                 info = {"kind": "error", "error": str(exc), "chars": 0}
+        ocr_pdf = None
+        if info.get("kind") == "pdf" and settings.ocr_alias:  # no OCR configured means no page analysis cost
+            from .ocr import analyze_pdf
+
+            try:
+                ocr_pdf = analyze_pdf(source, Path(tmp) / "ocr-pdf")
+            except IsolationError:
+                ocr_pdf = {"error": "pdf_analysis_failed"}
         text = info.pop("text", "")
         skill = {k: info.pop(k) for k in ("skill", "skill_error") if k in info}
         derived = {
@@ -155,10 +163,19 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
             derived["text_key"] = f"derived/{file_id}/text.txt"
             storage.put_bytes(derived["text_key"], text.encode("utf-8"), "text/plain; charset=utf-8")
         storage.put_bytes(key, json.dumps(derived, ensure_ascii=False).encode(), "application/json")
+        # READY and the OCR state commit together; the API queues the OCR job in that same transaction.
+        ocr_candidate = info.get("kind") == "pdf" or (meta.get("content_type") or "").startswith("image/")
+        if not ocr_candidate:
+            ocr = {}
+        elif settings.ocr_alias:
+            ocr = {"ocr": "pending", **({"ocr_pdf": ocr_pdf} if ocr_pdf is not None else {})}
+        else:
+            ocr = {"ocr": "unavailable", "ocr_reason": "vision_not_configured"}
         platform.patch_file(
             file_id,
             meta={
                 "processing": "done",
+                **ocr,
                 "scan": scan,
                 "extract": info,
                 "derived_key": key,

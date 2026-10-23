@@ -84,6 +84,7 @@ class ModelSpec:
             "description": self.description,
             "weight": self.weight,
             "tools": self.supports({"tools"}),
+            "capabilities": sorted(self.capabilities if self.capabilities is not None else (["tools"] if self.tools else [])),
         }
 
 

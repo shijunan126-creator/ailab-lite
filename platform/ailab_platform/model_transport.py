@@ -99,7 +99,8 @@ class ModelTransport(LLMClient):
         call = model_call.get()
         if call is not None:
             payload["max_tokens"] = call.max_output_tokens
-            headers["x-run-id"] = call.run_id
+            if call.run_id:
+                headers["x-run-id"] = call.run_id
             headers["x-call-id"] = call.call_id
             call.actual_backend = self.upstream_model or model
         if stream:

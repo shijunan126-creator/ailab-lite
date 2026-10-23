@@ -140,6 +140,10 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     from ..sandbox_tools.render_preview import check_archive
 
     check_archive(source)
+    if operation == "ocr_pdf":
+        from .ocr import low_text_pages
+
+        return low_text_pages(source, output, **options)
     if operation == "images":
         return images(source, output, options)
     if operation == "sheets":

@@ -6,6 +6,7 @@ import json
 import re
 
 from .catalog import Catalog, ModelSpec
+from .config import settings
 from .llm import LLMError
 
 
@@ -14,9 +15,22 @@ class TokenEstimator:
         self.factors: dict[str, float] = {}
 
     def raw(self, value: object) -> int:
-        text = json.dumps(value, ensure_ascii=False)
+        images = 0
+
+        def bounded(item):
+            nonlocal images
+            if isinstance(item, dict):
+                if item.get("type") == "image_url":
+                    images += 1
+                    return {"type": "image_url"}
+                return {key: bounded(val) for key, val in item.items()}
+            if isinstance(item, list):
+                return [bounded(val) for val in item]
+            return item
+
+        text = json.dumps(bounded(value), ensure_ascii=False)
         wide = len(re.findall(r"[^\x00-\x7f]", text))
-        return 32 + wide + (len(text) - wide + 3) // 4
+        return images * settings.vision_input_tokens + 32 + wide + (len(text) - wide + 3) // 4
 
     def estimate(self, alias: str, value: object) -> int:
         return int(self.raw(value) * self.factors.get(alias, 1.0)) + 1

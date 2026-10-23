@@ -111,11 +111,11 @@ def enforce_token_quota(db: Session, user_id: str, incoming_milli: int = 0) -> N
 
 
 def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
-    run = db.get(Run, body.run_id)
-    if run is None:
-        raise HTTPException(404, "run not found")
+    owner = db.get(Run, body.run_id) if body.subject == "run" else db.get(FileObject, body.file_id)
+    if owner is None:
+        raise HTTPException(404, "usage subject not found")
     try:
-        with user_critical_section(db, run.user_id):
+        with user_critical_section(db, owner.user_id):
             old = db.get(UsageReservation, body.call_id, populate_existing=True)
             if old:
                 if any(getattr(old, key) != value for key, value in body.model_dump().items()):
@@ -124,22 +124,24 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
                 return old
             if db.scalar(select(ModelUsage.id).where(ModelUsage.call_id == body.call_id)) is not None:
                 raise _error(409, UsageErrorCode.CALL_CONFLICT)
-            db.refresh(run)
-            if run.status not in RunStatus.ACTIVE:
-                raise _error(409, UsageErrorCode.RUN_NOT_ACTIVE)
-            mode = (run.options or {}).get("mode", "work")
-            if body.mode != mode:
-                raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
+            db.refresh(owner)
+            if body.subject == "run":
+                if owner.status not in RunStatus.ACTIVE:
+                    raise _error(409, UsageErrorCode.RUN_NOT_ACTIVE)
+                if body.mode != (owner.options or {}).get("mode", "work"):
+                    raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
+            elif owner.status != FileStatus.READY or owner.deleted_at or owner.purged_at:
+                raise HTTPException(409, "file is not ready for OCR")
             spec = get_catalog().get(body.alias)
             if spec is None or not spec.available:
                 raise _error(400, UsageErrorCode.MODEL_UNAVAILABLE)
             weight, cached = snapshot_weight(spec.weight), snapshot_weight(settings.cached_token_weight)
             amount = reserved_amount(body.estimated_input_tokens, body.max_output_tokens, weight, cached)
-            enforce_token_quota(db, run.user_id, amount)
+            enforce_token_quota(db, owner.user_id, amount)
             now = datetime.now(UTC)
             reservation = UsageReservation(
                 **body.model_dump(),
-                user_id=run.user_id,
+                user_id=owner.user_id,
                 weight=weight,
                 cached_token_weight=cached,
                 policy_version=POLICY_VERSION,
@@ -178,6 +180,8 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
         row = ModelUsage(
             call_id=reservation.call_id,
             run_id=reservation.run_id,
+            subject=reservation.subject,
+            file_id=reservation.file_id,
             user_id=reservation.user_id,
             dept_id=owner.dept_id if owner else None,  # snapshot: a later move does not move this usage
             attempt_id=reservation.attempt_id,
@@ -206,8 +210,9 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
         )
     reservation.status = row.status
     db.flush()
-    run = db.get(Run, reservation.run_id, populate_existing=True)
-    run.result = {**(run.result or {}), "usage_totals": run_usage_totals(db, run.id)}
+    run = db.get(Run, reservation.run_id, populate_existing=True) if reservation.run_id else None
+    if run is not None:
+        run.result = {**(run.result or {}), "usage_totals": run_usage_totals(db, run.id)}
     db.flush()
     return row
 

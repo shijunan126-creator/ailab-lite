@@ -1,4 +1,4 @@
-"""File processing Worker: parse, preview, scan; no OCR in the lite profile."""
+"""File processing Worker: parse, preview, scan, and drive OCR jobs (model inference stays in the API)."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue
+from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
 
@@ -51,10 +52,14 @@ def _patch(file_id: str, **kw) -> None:
 
 
 def _obsolete_job(exc: Exception) -> bool:
-    if not isinstance(exc, ClientError) or exc.status not in {403, 404}:
+    if not isinstance(exc, ClientError) or exc.status not in {403, 404, 409}:
         return False
     try:
-        return json.loads(exc.body).get("detail") in {"file not found", "file is not eligible for this processing job"}
+        return json.loads(exc.body).get("detail") in {
+            "file not found",
+            "file is not eligible for this processing job",
+            "OCR requires a clean, ready file",
+        }
     except (ValueError, AttributeError):
         return False
 
@@ -67,6 +72,19 @@ def _handle(queue, msg, file_id) -> None:
         except Exception:
             log.exception("preview job could not complete for %s", file_id)
             return
+        queue.ack(settings.file_queue, msg)
+        return
+    if msg.payload.get("ocr_only") is True:
+        platform = PlatformClient(service="worker")
+        try:
+            process_ocr(file_id, platform)
+        except Exception as exc:
+            if not _obsolete_job(exc):
+                # Unacked: the API keeps the job pending, so redelivery resumes it without touching the file's readiness.
+                log.warning("OCR for %s not finished yet; will retry", file_id, exc_info=True)
+                return
+        finally:
+            platform.close()
         queue.ack(settings.file_queue, msg)
         return
     thumbnail_only = msg.payload.get("thumbnail_only") is True

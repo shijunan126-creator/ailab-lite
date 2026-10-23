@@ -26,7 +26,7 @@ from ..deps import get_db
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, User, new_id
+from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
 from ..ports.service_auth import RunContext
 from ..queue import get_queue
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
@@ -45,6 +45,7 @@ from ..schemas import (
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
+from .routes_ocr import request_ocr
 from .routes_skills import usable_personal
 from .serializers import file_dict, run_dict
 
@@ -72,10 +73,11 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
         if f is None or f.deleted_at is not None or f.purged_at is not None:
             continue
         meta = f.meta or {}
+        keys = [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]
         text = ""
-        if meta.get("text_key"):
+        for key in filter(None, keys):  # native extraction and OCR text of scanned pages sit side by side
             try:
-                text = storage.get_bytes(meta["text_key"]).decode("utf-8", "replace")
+                text = "\n".join(filter(None, [text, storage.get_bytes(key).decode("utf-8", "replace")]))
             except Exception:
                 log.warning("attachment text missing for %s", file_id, exc_info=True)
         total = len(text) or int((meta.get("extract") or {}).get("chars") or 0)
@@ -86,6 +88,9 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
         out.append(
             {
                 "file_id": f.id,
+                "id": f.id,
+                "content_type": f.content_type,
+                "meta": {"ocr": meta.get("ocr", "unavailable")},
                 "filename": f.filename,
                 "kind": (meta.get("extract") or {}).get("kind", ""),
                 "chars": total,
@@ -250,10 +255,14 @@ def internal_usage_retired(run_id: str) -> None:
 
 @router.post("/usage/reserve", response_model=ReservationOut, dependencies=[Depends(require_scope("usage:reserve"))])
 def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) -> dict:
+    if body.subject != "run":
+        raise HTTPException(403, "file usage is reserved by the OCR service")
     row = reserve_usage(db, body)
     return {
         "call_id": row.call_id,
         "run_id": row.run_id,
+        "subject": row.subject,
+        "file_id": row.file_id,
         "attempt_id": row.attempt_id,
         "status": row.status,
         "reserved_amount": row.reserved_amount,
@@ -266,11 +275,16 @@ def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) 
 
 @router.post("/usage/settle", response_model=UsageOut, dependencies=[Depends(require_scope("usage:write"))])
 def internal_settle_usage(body: SettleUsageIn, db: Session = Depends(get_db)) -> dict:
+    reservation = db.get(UsageReservation, body.call_id)
+    if reservation is not None and reservation.subject != "run":
+        raise HTTPException(403, "file usage is settled by the OCR service")
     row = settle_usage(db, body)
     totals = run_usage_totals(db, row.run_id)
     return {
         "call_id": row.call_id,
         "run_id": row.run_id,
+        "subject": row.subject,
+        "file_id": row.file_id,
         "attempt_id": row.attempt_id,
         "mode": row.mode,
         "alias": row.alias,
@@ -588,6 +602,8 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
+        request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
     db.commit()
     db.refresh(file)
     return file_dict(file)
