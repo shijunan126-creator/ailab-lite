@@ -210,15 +210,21 @@ class PlatformClient(_PlatformApi):
     ) -> None:
         deadline = time.monotonic() + 120
         req = self._get_file_bytes(file_id, run_id, job, preview_job)
-        with span("internal.download"), self._http.stream(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req)) as response:
+        kwargs = _traced_kwargs(req)
+        kwargs["headers"] = {**kwargs["headers"], "Accept-Encoding": "identity"}
+        with span("internal.download"), self._http.stream(req.method, req.url, timeout=httpx.Timeout(10, connect=5), **kwargs) as response:
             if response.status_code >= 400:
                 # Error bodies are untrusted too; do not buffer an arbitrarily
                 # large HTML/proxy error while handling a bounded download.
-                detail = next(response.iter_bytes(chunk_size=4096), b"").decode("utf-8", "replace")
+                detail = next(response.iter_raw(), b"")[:4096].decode("utf-8", "replace")
                 raise ClientError(req.method, req.url, response.status_code, detail)
+            if response.headers.get("content-encoding", "identity").lower() != "identity":
+                raise ClientError(req.method, req.url, 502, "unexpected file transfer encoding")
             size = 0
             with open(target, "wb") as stream:
-                for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                # Do not coalesce network reads into a full 64KiB block: a peer
+                # trickling bytes could otherwise postpone the deadline check.
+                for chunk in response.iter_raw():
                     if time.monotonic() >= deadline:
                         raise TimeoutError("download deadline exceeded")
                     size += len(chunk)
