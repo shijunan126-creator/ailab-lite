@@ -10,7 +10,7 @@
 
 - 工作树：`/Users/michael/Developer/ailab-lite`，分支 `feat/remaining-work`，基线 `origin/main@6410fe9`。
 - PR #30、#31 已合并；本轮 GitHub README API 已确认首页读取根目录 `README.md`。
-- 主 Agent：F8 注入/交付/工作区快照的有界流与取消清理；并行任务：T09/T08 队列可靠性与并发、T14 模型网关与上下文、T15 会话分页。T07 依赖队列契约，T19 依赖模型能力，T16 随集成补观测与负载验证。
+- F8主Agent实现已提交并验收；已审核集成UI预览/T15分页（`2e415cb`），本机复验浏览器7项通过；T14模型/上下文/计费标题（`96654e6`）已集成待与T09联合验收，0016暂依赖未集成的0014。T16基础指标/有界可选OTLP已集成，定向37项通过、红证据7项；GPT medium并行任务：T09/T08、T19 OCR、T20 Skills。T07待T09集成后启动。
 - 子任务隔离 worktree，主 Agent 审查后集成。保留既有 `.DS_Store`；不自动部署生产或合并远端 PR。
 - 能力状态以 [状态矩阵](../architecture/status-matrix.md) 为准，执行顺序和验收见 [路线图](roadmap.md)。
 
@@ -18,7 +18,7 @@
 
 - F8 已在 `9b74813` 实现有界流式传输；真实 Docker/OSB 契约、双库及双路压力通过，RSS约66–69MiB。证据和未测边界见 [F8报告](../reviews/2026-10-23-broker-streaming.md)。100MiB扩限压力触及384MiB页缓存回收，无OOM；不代表整栈容量。
 - CI 已改为固定源码与 SHA256 构建/缓存真实 MinIO，首轮远端验收待完成，见 [CI 更新记录](updates/2026-10-23-ci-refresh.md)。SearXNG 新服务尚未纳入真实小机容量验收，沿用 main 的 `latest` 镜像和静态搜索服务 key，发布加固待办见路线图。
-- 真实组件数据为前次专用 VM 的历史结果，本轮不重启该环境；公网防火墙、gVisor、长期并发、企业 IdP 与付费模型边界见验收报告。
+- 专用Colima ailab-verify已由本轮为F8启动（2CPU/8GiB），新建OSB与临时PG15511/Redis16511；只用于隔离验收，整个任务结束时清理。F8历史整栈结果与本轮I/O探针需区分；公网防火墙、gVisor、长期并发、企业IdP与付费模型仍未验。
 
 ## 下一步
 
