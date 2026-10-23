@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -134,8 +135,11 @@ class Settings(BaseSettings):
     max_archive_bytes: int = 1024**3
     max_parse_bytes: int = 20 * 1024 * 1024  # Worker parser cap; bigger files keep metadata only
     # A prompt token the upstream served from its cache costs this fraction of a normal one (design: x0.1).
-    cached_token_weight: float = 0.1
-    daily_token_limit: int = 2_000_000  # per user, prompt + completion, UTC day
+    cached_token_weight: float = Field(default=0.1, ge=0, le=100, allow_inf_nan=False)
+    quota_timezone: str = "UTC"
+    usage_reservation_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
+    model_max_output_tokens: int = Field(default=8192, ge=1, le=10_000_000)
+    daily_token_limit: int = 2_000_000  # per user, weighted tokens in quota_timezone
     monthly_token_limit: int = 30_000_000
     library_quota_bytes: int = 20 * 1024**3  # per user, rejected files excluded
 
@@ -152,6 +156,15 @@ class Settings(BaseSettings):
     # The Portal proxies the API same-origin, so browsers need no CORS access. Leave empty unless a
     # separate browser app calls the API directly (then also give it its own login, not a shared token).
     cors_origins: str = ""
+
+    @field_validator("quota_timezone")
+    @classmethod
+    def valid_quota_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("quota_timezone must be an IANA timezone") from exc
+        return value
 
     @property
     def storage_path(self) -> Path:

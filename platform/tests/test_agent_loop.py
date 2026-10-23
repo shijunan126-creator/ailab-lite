@@ -13,6 +13,8 @@ class FakePlatform:
     def __init__(self) -> None:
         self.statuses: list[tuple[str, dict]] = []
         self.events: list[tuple[str, dict]] = []
+        self.reservations = {}
+        self.settlements = {}
 
     async def get_run(self, run_id):
         return {"id": run_id, "user_id": "usr_42", "status": "queued", "model": "m", "prompt": "hi", "input_files": []}
@@ -28,8 +30,17 @@ class FakePlatform:
     async def append_event(self, run_id, type_, payload=None):
         self.events.append((type_, payload or {}))
 
-    async def record_usage(self, *a, **k):
-        pass
+    async def get_run_usage(self, run_id):
+        prior = getattr(self, "prior_usage", {})
+        return {"prompt_tokens": prior.get("prompt_tokens", 0), "completion_tokens": prior.get("completion_tokens", 0)}
+
+    async def reserve_usage(self, payload):
+        self.reservations[payload["call_id"]] = payload
+        return {"status": "open"}
+
+    async def settle_usage(self, payload):
+        self.settlements[payload["call_id"]] = payload
+        return {**payload, "run_tokens": sum(p["input_tokens"] + p["output_tokens"] for p in self.settlements.values())}
 
 
 class FakeBroker:

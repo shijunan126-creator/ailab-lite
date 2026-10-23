@@ -24,6 +24,7 @@ from ..db import SessionLocal
 from ..events import append_event
 from ..models import FileObject, FileStatus, Run, RunStatus
 from ..queue import JobQueue, get_queue, run_lock_key
+from ..quota import expire_reservations
 from ..run_state import transition_run
 from ..storage import get_storage
 
@@ -40,6 +41,7 @@ def reap_once(db: Session, queue: JobQueue, now: datetime | None = None) -> dict
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(seconds=settings.reaper_grace_seconds)
     stats = {"runs_requeued": 0, "runs_failed": 0, "files_requeued": 0}
+    expire_reservations(db, now)
 
     queued_runs = {p.get("run_id") for p in queue.outstanding(settings.run_queue)}
     for run in db.scalars(select(Run).where(Run.status.in_(RunStatus.ACTIVE))):

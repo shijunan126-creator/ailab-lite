@@ -154,8 +154,8 @@ def test_recovered_run_keeps_the_tokens_consumed_by_earlier_attempts(monkeypatch
     monkeypatch.setattr(settings, "run_max_tokens", 100)
 
     class RecoveredPlatform(FakePlatform):
-        async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "usage": {"prompt_tokens": 80, "completion_tokens": 20}}
+        async def get_run_usage(self, run_id):
+            return {"prompt_tokens": 80, "completion_tokens": 20}
 
     llm = ScriptedLLM([])
     platform, _ = _run(llm, platform=RecoveredPlatform())

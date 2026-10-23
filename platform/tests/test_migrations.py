@@ -252,3 +252,40 @@ def test_projects_upgrade_and_downgrade_preserve_referenced_rows(tmp_path) -> No
     with eng.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
     eng.dispose()
+
+
+def test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows(engine, monkeypatch):
+    from ailab_platform.config import settings
+
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE runs SET options = '{\"mode\": \"chat\"}' WHERE id = 'r1'"))
+        conn.execute(
+            text(
+                "INSERT INTO model_usage (run_id, model, prompt_tokens, cached_tokens, completion_tokens, weight, created_at) "
+                "VALUES ('r1', 'old-alias', 100, 80, 10, 3, '2026-01-01 00:00:00')"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO run_events (run_id, seq, type, payload, created_at) VALUES ('r1', 1, 'run.created', '{}', '2026-01-01')")
+        )
+    monkeypatch.setattr(settings, "cached_token_weight", 0.4)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT call_id, user_id, alias, mode, weighted_amount, policy_version, status, dept_id FROM model_usage")
+        ).one()
+        assert row == ("legacy-1", "u1", "old-alias", "chat", 186000, "legacy", "settled", None)
+    monkeypatch.setattr(settings, "cached_token_weight", 0.9)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT weighted_amount FROM model_usage")).scalar() == 186000
+    _downgrade_to(engine, "0008")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM run_events")).scalar() == 1
+        assert conn.execute(text("SELECT count(*) FROM runs")).scalar() == 1
+        assert conn.execute(text("SELECT prompt_tokens, cached_tokens, completion_tokens FROM model_usage")).one() == (100, 80, 10)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

@@ -99,3 +99,13 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 未改 Broker/Worker：注入仍整份 HTTP bytes（默认上传50MiB且 Broker 此处无额外 cap）、交付100MiB、workspace60MiB；Worker 先整份下载默认50MiB再以20MiB决定 parse，thumbnail 输入20MiB，解压/图像内存另计；preview 页面/JSON bytes 路径没有本分支的统一限额。交给 C/D/lead 测整机 RSS。Local atomic-write crash 临时文件、冻结后 DB 失败且删除也失败的主对象，仍需维护窗口/后续通用孤儿扫描收敛。
 - 本机没有 Docker daemon，MinIO 官方 darwin-arm64 下载返回410；S3 真实契约跳过，CI 独立 MinIO service-container job 已配置但未远端执行。kubectl 三个 overlay 渲染通过，`apply --dry-run=client --validate=false` 仍需 API discovery，报 localhost:8080 connection refused；无真实集群部署/NetworkPolicy/防火墙验收。
 - 最终验证：纯 SQLite/Local/memory 全套 **401 passed / 37 skipped**；临时 PG16(15450)+Redis(16450) 全套 **429 passed / 9 skipped**（8 S3 + 1 memory 不适用 Redis 游标）；契约分项 Local8、memory2、Redis3、SQLite DB3、PG DB3、GC双库各7+容量1、备份5（SQLite恢复/损坏/引用/脱敏+PG真实导入）。Portal4测试与生产构建、Ruff check/format、ShellCheck、bash -n、依赖锁一致性通过；无 UI 改动未跑浏览器E2E。Local50/100MiB探针 Python峰值148697B、RSS增278528/688128B、0.15/0.38s；非目标小机/整机验收。临时服务均需在交付前停止。
+
+## 2026-10-23 调用级账本与硬用户配额
+
+- `0009`：先 reserve、再调用、最后 settle；`call_id` 是幂等单位，真实重跑必须新 ID。旧 blind usage POST 返回 410，API/Agent 与服务鉴权 allowlist 要一起切换。新内部路由为 `POST /internal/usage/reserve`、`POST /internal/usage/settle`、`GET /internal/runs/{id}/usage`；完整 Portal/服务契约见 `docs/architecture/usage-ledger.md`。
+- 用户锁内只做检查与数据库提交；日/月用已结算整数 milli + 全部 open 预留。过期不等于释放，reaper 每轮最多 200 条转 unreconciled；晚到 settle 原行修正，终态 Run 仍能补账。取消只有确认未发出模型请求才零费用释放，已发出的中断计 estimated/settled；408/5xx 不能当作确定未消费。
+- SQLite 迁移绑定 Decimal 必须给 `sa.column` 声明 Numeric，否则报不支持 decimal.Decimal。迁移按 500 条 keyset 冻结旧缓存折扣与金额，legacy 不随配置重算。SQLite 无时区、PostgreSQL 会返回服务器时区；幂等响应时间都要显式转 UTC。
+- `Run.result.usage_totals` 是账本聚合快照。状态提交与旧工作区清理写整份 result 时也必须持同一用户锁、刷新并合并，否则晚到结算总数会丢；已补红绿回归。用量页面必须同一 SQL snapshot 读取 settled + reserved，分开 SELECT 会在结算切换期间双计；CLI 对账总数同样用单条投影/聚合查询。
+- 运行预算仍为原始 input + output 的软上限，reasoning 已包含在 output；Agent 从账本恢复总数，记账后、工具前拦截下一步，已完成最终回答跨预算仍成功。计量请求有 call/run 头和 max_tokens；模糊失败不得在同一个预留下偷偷再发一次推理。模型专用 tokenizer、真实上游 max_tokens 强制执行未验收。
+- 成本：每模型调用 2 次事务、4 个业务写（比旧路径多 3 写/1 commit），不新增依赖/后台服务。300 调用本机测量，SQLite/PostgreSQL 预留锁 p95 1.10/1.87 ms，结算锁 p95 1.23/2.26 ms；200 条过期回收 247/377 ms。8,000 行双库 EXPLAIN 检查窗口、open、过期和对账索引；按用户周期 SUM 仍随历史行数增长。
+- 最终验证：Ruff check/format 通过；SQLite + Redis 全套 405 passed / 11 PostgreSQL 项 skipped；PostgreSQL 16 + Redis 全套 416 passed / 0 skipped；Portal 4 tests + production build、Chromium E2E 34 项通过。临时服务只用 16410/15410，结束后关闭；未改 .env/开发数据库，未推送或创建 PR。

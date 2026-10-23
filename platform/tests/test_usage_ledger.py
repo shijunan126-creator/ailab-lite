@@ -21,6 +21,7 @@ from ailab_platform.llm import LLMResponse, OpenAICompatibleClient
 from ailab_platform.models import ModelUsage, User
 from ailab_platform.queue import InMemoryQueue
 from ailab_platform.quota import tokens_used_since
+from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -41,8 +42,7 @@ def _used_today() -> int:
 
 def _record(api, model: str, prompt: int, completion: int = 0, cached: int = 0) -> str:
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": model}).json()["id"]
-    body = {"model": model, "prompt_tokens": prompt, "completion_tokens": completion, "cached_tokens": cached}
-    assert api.post(f"/internal/runs/{run_id}/usage", headers=SERVICE, json=body).status_code == 200
+    record_usage(api, run_id, model, prompt, completion, cached)
     return run_id
 
 
@@ -51,7 +51,9 @@ def test_changing_a_weight_later_does_not_rewrite_past_calls(api, monkeypatch) -
     _record(api, "test-pro", prompt=100)  # weight 3 when recorded
     assert _used_today() - before == 300
 
-    monkeypatch.setattr(catalog_mod.Catalog, "weight_of", lambda self, model_id: 10.0)  # an admin edits models.toml
+    from dataclasses import replace
+
+    monkeypatch.setitem(catalog_mod.get_catalog().models, "test-pro", replace(catalog_mod.get_catalog().get("test-pro"), weight=10))
     assert _used_today() - before == 300, "history must keep the weight it was recorded with"
     _record(api, "test-pro", prompt=100)
     assert _used_today() - before == 300 + 1000, "new calls use the new weight"
@@ -65,9 +67,10 @@ def test_cached_prompt_tokens_are_discounted(api) -> None:
 
 
 def test_cached_tokens_cannot_exceed_the_prompt(api) -> None:
-    before = _used_today()
-    _record(api, "test-fast", prompt=100, cached=5000)  # nonsense from a buggy upstream
-    assert _used_today() - before == 10  # all 100 prompt tokens counted as cached, nothing negative
+    bad = api.post(
+        "/internal/usage/settle", headers=SERVICE, json={"call_id": "bad", "status": "settled", "input_tokens": 100, "cached_tokens": 5000}
+    )
+    assert bad.status_code == 422
 
 
 def test_run_detail_reports_cached_tokens(api) -> None:
@@ -78,7 +81,7 @@ def test_run_detail_reports_cached_tokens(api) -> None:
 
 def test_negative_numbers_are_refused(api) -> None:
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).json()["id"]
-    bad = api.post(f"/internal/runs/{run_id}/usage", headers=SERVICE, json={"model": "m", "prompt_tokens": -5})
+    bad = api.post("/internal/usage/settle", headers=SERVICE, json={"call_id": "bad", "status": "settled", "input_tokens": -5})
     assert bad.status_code == 422
     with SessionLocal() as db:
         assert db.scalar(select(ModelUsage).where(ModelUsage.run_id == run_id)) is None
@@ -109,8 +112,9 @@ def test_agent_reports_cached_tokens_to_the_platform() -> None:
     seen = []
 
     class Platform(FakePlatform):
-        async def record_usage(self, run_id, model, prompt, completion, cached=0):
-            seen.append((model, prompt, completion, cached))
+        async def settle_usage(self, payload):
+            seen.append((payload["actual_backend"], payload["input_tokens"], payload["output_tokens"], payload["cached_tokens"]))
+            return await super().settle_usage(payload)
 
     llm = ScriptedLLM([LLMResponse(content="done", usage={"prompt_tokens": 50, "completion_tokens": 5, "cached_tokens": 30})])
     asyncio.run(AgentLoop(platform=Platform(), broker=RichBroker(), llm=llm).process("run_1"))
