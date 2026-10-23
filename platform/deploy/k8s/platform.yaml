@@ -28,6 +28,7 @@ data:
   AILAB_SANDBOX_IMAGE: harbor.ailab.local/sandbox/sbx-office:lite
   AILAB_MAX_AGENT_STEPS: "24"
   AILAB_MAX_SANDBOXES: "1"
+  AILAB_WEB_SEARCH_PROVIDER: "searxng"
   AILAB_WORKSPACE_TTL_DAYS: "3"  # keep the last workspace of a conversation for three days
 ---
 apiVersion: v1
@@ -222,6 +223,8 @@ spec:
               value: http://platform-api:8080
             - name: AILAB_BROKER_BASE_URL
               value: http://$(HOST_IP):8081
+            - name: AILAB_SEARXNG_URL
+              value: http://platform-searxng:8080
           ports: [{containerPort: 8082}]
           volumeMounts:
             - {name: models, mountPath: /etc/ailab, readOnly: true}
@@ -301,3 +304,75 @@ metadata:
 spec:
   selector: {app: platform-worker}
   ports: [{name: http, port: 8083, targetPort: 8083}]
+
+---
+# Private metasearch for the Agent. It is the only component that talks to
+# public search engines; the sandbox keeps its default-deny egress.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-searxng
+  namespace: platform
+data:
+  settings.yml: |
+    use_default_settings: true
+    general:
+      instance_name: "AILab Search"
+    search:
+      safe_search: 0
+      formats:
+        - html
+        - json
+    server:
+      secret_key: "ailab-lite-searxng-change-me"
+      limiter: false
+      public_instance: false
+      image_proxy: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-searxng
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: platform-searxng}
+  template:
+    metadata:
+      labels: {app: platform-searxng}
+    spec:
+      containers:
+        - name: searxng
+          image: searxng/searxng:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SEARXNG_BASE_URL
+              value: http://platform-searxng:8080/
+          ports: [{containerPort: 8080}]
+          volumeMounts:
+            - name: settings
+              mountPath: /etc/searxng/settings.yml
+              subPath: settings.yml
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 512Mi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8080}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: settings
+          configMap: {name: platform-searxng}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-searxng
+  namespace: platform
+spec:
+  selector: {app: platform-searxng}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
