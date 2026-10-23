@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="860" viewBox="0 0 1500 860" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m0891b2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0891b2"/></marker><marker id="m15803d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker><marker id="m2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="m64748b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#64748b"/></marker><marker id="m7c3aed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="ma16207" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#a16207"/></marker><marker id="mc2410c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker></defs>
+<rect width="1500" height="860" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">模型路由与降级</text>
+<text x="218.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">应用只认别名，换模型不改代码</text>
+<rect x="1200.5" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1222.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">使用场景</text>
+<rect x="1276.5" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1298.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">网关别名</text>
+<rect x="1352.5" y="24" width="16" height="12" rx="2" ry="2" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1374.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">模型池</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">降级</text>
+<rect x="30" y="90" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="119.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Chat 对话（默认）</text>
+<text x="180.0" y="141.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">日常问答、写作、翻译、总结</text>
+<rect x="30" y="182" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="211.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Chat 上传图片 / 截图</text>
+<text x="180.0" y="233.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">看图理解、图表解读</text>
+<rect x="30" y="274" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="303.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">扫描件 / 图片取文字</text>
+<text x="180.0" y="325.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">文件处理 Worker · ocr_extract 工具</text>
+<rect x="30" y="366" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="395.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Work · 专家</text>
+<text x="180.0" y="417.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">多步复杂任务、数据分析、Coding</text>
+<rect x="30" y="458" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="487.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Work · 标准 / 子 Agent</text>
+<text x="180.0" y="509.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">简单任务、整理、格式转换</text>
+<rect x="30" y="550" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="579.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">会话标题 · 摘要 · 上下文压缩</text>
+<text x="180.0" y="601.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent Service 内部调用</text>
+<rect x="30" y="642" width="300" height="74" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="180.0" y="671.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">资料库语义检索 / RAG</text>
+<text x="180.0" y="693.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">向量化与重排</text>
+<rect x="470" y="148" width="230" height="64" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="585.0" y="182.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">ailab-chat</text>
+<rect x="470" y="298" width="230" height="64" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="585.0" y="332.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">ailab-ocr</text>
+<rect x="470" y="418" width="230" height="64" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="585.0" y="452.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">ailab-agent-pro</text>
+<rect x="470" y="538" width="230" height="64" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="585.0" y="572.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">ailab-agent</text>
+<rect x="470" y="658" width="230" height="64" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="585.0" y="692.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">ailab-embed / rerank</text>
+<path d="M330.0,127.0 L350.0,127.0 L350.0,170.0 L468.0,170.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<path d="M330.0,219.0 L365.0,219.0 L365.0,180.0 L468.0,180.0" fill="none" stroke="#0891b2" stroke-width="1.6" marker-end="url(#m0891b2)"/>
+<path d="M330.0,311.0 L380.0,311.0 L380.0,340.0 L468.0,340.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<path d="M330.0,403.0 L395.0,403.0 L395.0,440.0 L468.0,440.0" fill="none" stroke="#c2410c" stroke-width="1.6" marker-end="url(#mc2410c)"/>
+<path d="M330.0,495.0 L410.0,495.0 L410.0,570.0 L468.0,570.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<path d="M330.0,587.0 L425.0,587.0 L425.0,190.0 L468.0,190.0" fill="none" stroke="#64748b" stroke-width="1.6" marker-end="url(#m64748b)"/>
+<path d="M330.0,679.0 L440.0,679.0 L440.0,680.0 L468.0,680.0" fill="none" stroke="#a16207" stroke-width="1.6" marker-end="url(#ma16207)"/>
+<rect x="800" y="140" width="380" height="80" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="990.0" y="172.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Qwen3.6-35B-A3B（多模态）</text>
+<text x="990.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP2 × 10 实例 · Atlas-05/06/07</text>
+<rect x="1131.2" y="131" width="42.8" height="18" rx="9" ry="9" fill="#ea580c" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1152.6" y="144.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">20 卡</text>
+<path d="M700.0,180.0 L798.0,180.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="800" y="290" width="380" height="80" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="990.0" y="322.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">DeepSeek-OCR-2 · PaddleOCR-VL</text>
+<text x="990.0" y="344.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP1 × 各 1 · Atlas-07</text>
+<rect x="1137.8" y="281" width="36.2" height="18" rx="9" ry="9" fill="#ea580c" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1155.9" y="294.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">2 卡</text>
+<path d="M700.0,330.0 L798.0,330.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="800" y="410" width="380" height="80" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="990.0" y="442.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">DeepSeek-V4.1-Flash</text>
+<text x="990.0" y="464.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">1P1D：P Atlas-01/02 · D Atlas-03/04</text>
+<rect x="1131.2" y="401" width="42.8" height="18" rx="9" ry="9" fill="#ea580c" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1152.6" y="414.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">32 卡</text>
+<path d="M700.0,450.0 L798.0,450.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="800" y="530" width="380" height="80" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="990.0" y="562.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Qwen3.8-27B（稠密 · 多模态）</text>
+<text x="990.0" y="584.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP2 × 4 实例 · Atlas-08</text>
+<rect x="1137.8" y="521" width="36.2" height="18" rx="9" ry="9" fill="#ea580c" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1155.9" y="534.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">8 卡</text>
+<path d="M700.0,570.0 L798.0,570.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="800" y="650" width="380" height="80" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="990.0" y="682.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Qwen3-Embedding · Qwen3-Reranker</text>
+<text x="990.0" y="704.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP1 × 各 1 · Atlas-07</text>
+<rect x="1137.8" y="641" width="36.2" height="18" rx="9" ry="9" fill="#ea580c" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1155.9" y="654.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">2 卡</text>
+<path d="M700.0,690.0 L798.0,690.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="1210" y="70" width="270" height="690" rx="10" ry="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1"/>
+<text x="1224.0" y="94.0" font-size="14" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">降级（Agent Service 自动）</text>
+<rect x="1226" y="118" width="238" height="92" rx="8" ry="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+<text x="1240.0" y="144.0" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="start" style="white-space:pre">ailab-agent-pro 不可用</text>
+<text x="1240.0" y="168.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ ailab-agent（27B）</text>
+<text x="1240.0" y="192.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">27B 也不可用 → 直接 ailab-chat</text>
+<rect x="1226" y="228" width="238" height="92" rx="8" ry="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+<text x="1240.0" y="254.0" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="start" style="white-space:pre">ailab-agent 不可用</text>
+<text x="1240.0" y="278.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ ailab-chat（35B）</text>
+<rect x="1226" y="338" width="238" height="92" rx="8" ry="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+<text x="1240.0" y="364.0" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="start" style="white-space:pre">ailab-chat 不可用</text>
+<text x="1240.0" y="388.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ ailab-agent（27B）</text>
+<rect x="1226" y="448" width="238" height="92" rx="8" ry="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+<text x="1240.0" y="474.0" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="start" style="white-space:pre">ailab-ocr 不可用</text>
+<text x="1240.0" y="498.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ ailab-chat（多模态）</text>
+<rect x="1226" y="558" width="238" height="92" rx="8" ry="8" fill="#ffffff" stroke="#fca5a5" stroke-width="1.2"/>
+<text x="1240.0" y="584.0" font-size="13" font-weight="700" fill="#b91c1c" text-anchor="start" style="white-space:pre">ailab-embed 不可用</text>
+<text x="1240.0" y="608.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ 检索降级为关键词</text>
+<text x="1226.0" y="680.0" font-size="11.5" font-weight="400" fill="#7f1d1d" text-anchor="start" style="white-space:pre">连接失败 / 5xx / 首 token 超时才切换，</text>
+<text x="1226.0" y="700.0" font-size="11.5" font-weight="400" fill="#7f1d1d" text-anchor="start" style="white-space:pre">已开始输出的流不中途换模型；</text>
+<text x="1226.0" y="720.0" font-size="11.5" font-weight="400" fill="#7f1d1d" text-anchor="start" style="white-space:pre">界面提示“已切换模型”，按实际模型计量。</text>
+<text x="1226.0" y="740.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">（Higress 无“失败换模型”插件）</text>
+<rect x="20" y="744" width="1180" height="104" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="768.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">规则</text>
+<text x="40.0" y="790.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 别名 = GPUStack 里的模型名 / 模型路由名，由 GPUStack 写进 Higress；部署名带版本（如 dsv41flash-w8a8-r20260910），换版本在 GPUStack 里切。</text>
+<text x="40.0" y="814.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 同一 Run 内尽量不切模型（前缀缓存会失效）；子 Agent / 摘要等“旁路调用”可以用更小的模型。</text>
+<text x="40.0" y="838.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• Work 默认档位在 P0 评测后确定：若 27B 在评测集上成功率接近 DeepSeek，则默认“标准”，DeepSeek 留给复杂任务。</text>
+</svg>

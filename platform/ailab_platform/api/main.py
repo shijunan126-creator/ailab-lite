@@ -19,10 +19,14 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
-from .reaper import reap_forever, workspace_cleanup_forever
+from .preview_dispatch import dispatch_forever
+from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
+from .routes_admin import router as admin_router
+from .routes_auth import me
 from .routes_auth import router as auth_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
+from .routes_files import trash_router
 from .routes_internal import router as internal_router
 from .routes_projects import router as projects_router
 from .routes_runs import router as runs_router
@@ -32,17 +36,39 @@ setup_logging("api")
 log = logging.getLogger("ailab.api")
 
 
+def warn_storage_capacity() -> None:
+    from sqlalchemy import func, select
+
+    if settings.provisioned_storage_bytes:
+        with SessionLocal() as db:
+            users = db.scalar(select(func.count()).select_from(User))
+        budget = users * settings.library_quota_bytes
+        if budget > settings.provisioned_storage_bytes:
+            log.warning(
+                "storage overcommitted users=%d quota_bytes=%d logical_bytes=%d provisioned_bytes=%d",
+                users,
+                settings.library_quota_bytes,
+                budget,
+                settings.provisioned_storage_bytes,
+            )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    settings.validate_secrets()
+    settings.validate_secrets("api")
     settings.ensure_dirs()
     get_catalog()  # fail at startup, not on the first request, if models.toml is broken
     register_once("api-state", ApiStateCollector())
     init_db()
-    log.info("platform api ready db=%s storage=%s", settings.database_url, settings.storage_backend)
+    warn_storage_capacity()
+    log.info("platform api ready db=%s storage=%s", settings.redacted()["database_url"], settings.storage_backend)
+    preview_dispatch = asyncio.create_task(dispatch_forever(), name="preview-outbox")
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
+    lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
     yield
+    lifecycle_cleanup.cancel()
+    preview_dispatch.cancel()
     reaper.cancel()
     workspace_cleanup.cancel()
 
@@ -76,10 +102,13 @@ async def reject_oversized_upload(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
+app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)
 app.include_router(files_router)
+app.include_router(trash_router)
 app.include_router(projects_router)
 app.include_router(internal_router)
 

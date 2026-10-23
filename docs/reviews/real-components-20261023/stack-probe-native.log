@@ -1,0 +1,5 @@
+FILE clean.txt ready 42.061 clean
+FILE eicar.com rejected 1.533 infected
+FILE chinese.docx ready 2.553 clean
+LIBRARY_DOCX {'status': 'ready', 'kind': 'pages', 'pages': ['p-1.jpg'], 'page_count': 1} seconds 8.119
+WORK succeeded seconds 14.192 error  artifacts [{'id': 'art_0605db414df840da8e50', 'file_id': 'fil_15b750540d074b58bab2', 'role': 'output', 'filename': 'ailab-demo.pptx', 'content_type': 'application/octet-stream', 'size': 77883, 'sha256': '837129063bde58ac17eee41b0a836d9744edce09c21f1ee25b3834dcc0f0b1c8', 'download_url': '/v1/files/fil_15b750540d074b58bab2/content'}]

@@ -160,7 +160,7 @@ def _chain_sigterm(loop: asyncio.AbstractEventLoop) -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _task
-    settings.validate_secrets()
+    settings.validate_secrets("agent")
     settings.ensure_dirs()
     system_prompt()  # raises if the skill file is missing
     _task = asyncio.create_task(consume_forever(), name="agent-consumer")

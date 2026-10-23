@@ -1,0 +1,145 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="900" viewBox="0 0 1500 900" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m0e7490" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#0e7490"/></marker><marker id="m2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="m7c3aed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="mdc2626" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker></defs>
+<rect width="1500" height="900" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Agent Service 内部结构</text>
+<text x="347.6" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">Agent 循环在沙箱外 · 沙箱只是“手”</text>
+<rect x="1235.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1257.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">自建</text>
+<rect x="1288.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1310.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">开源组件</text>
+<rect x="1364.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1386.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">数据</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">沙箱</text>
+<rect x="20" y="80" width="290" height="190" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="165.0" y="129.8" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Platform API</text>
+<text x="165.0" y="152.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">POST 消息 → 创建 Run</text>
+<text x="165.0" y="171.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">取消 / 继续 / 回答 ask_user</text>
+<text x="165.0" y="190.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">配额前置检查（额度、并发 Run）</text>
+<text x="165.0" y="209.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">SSE 推送（Last-Event-ID 续读）</text>
+<text x="165.0" y="228.5" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">/internal：Run 信息 · 消息 · 账本 ⇄</text>
+<path d="M312.0,236.0 L328.0,236.0" fill="none" stroke="#7c3aed" stroke-width="1.4" marker-end="url(#m7c3aed)" marker-start="url(#m7c3aed)"/>
+<rect x="20" y="320" width="290" height="200" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="165.0" y="384.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Valkey</text>
+<text x="165.0" y="407.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">run 队列（Stream 消费组）</text>
+<text x="165.0" y="426.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">事件流 run:{id}:events（24h）</text>
+<text x="165.0" y="445.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">取消标记 cancel:{run}</text>
+<text x="165.0" y="464.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">限流计数 · 分布式锁</text>
+<rect x="20" y="580" width="290" height="110" rx="8" ry="8" fill="#ffffff" stroke="#334155" stroke-width="1.5"/>
+<text x="165.0" y="618.8" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">浏览器 Portal</text>
+<text x="165.0" y="641.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">实时显示：思考、计划、工具卡片、</text>
+<text x="165.0" y="659.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">产出文件、排队位置、沙箱状态</text>
+<path d="M110.0,270.0 L110.0,318.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="127.6" y="287.5" width="44.8" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="150.0" y="298.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">① 入队</text>
+<path d="M220.0,318.0 L220.0,270.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="239.6" y="287.5" width="44.8" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="262.0" y="298.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">⑥ 事件</text>
+<path d="M60.0,270.0 L60.0,300.0 L8.0,300.0 L8.0,635.0 L18.0,635.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="26" y="449.5" width="28.7" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="30.0" y="460.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">SSE</text>
+<rect x="330" y="62" width="800" height="826" rx="10" ry="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+<text x="344.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Agent Service（Python · ≥2 副本 · 无状态可水平扩展）</text>
+<rect x="350" y="100" width="760" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="730.0" y="131.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">② Run Dispatcher：从 Stream 领取 Run（Worker 崩溃时由其他副本 XAUTOCLAIM 接管）→ 按会话加载 checkpoint</text>
+<path d="M310.0,380.0 L320.0,380.0 L320.0,128.0 L348.0,128.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="350" y="172" width="760" height="366" rx="10" ry="10" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+<text x="364.0" y="196.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Agent Runtime（LangGraph 图 + deepagents 中间件）</text>
+<rect x="380" y="214" width="210" height="76" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="485.0" y="235.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">组装上下文</text>
+<text x="485.0" y="257.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">系统提示 · Skills 索引</text>
+<text x="485.0" y="276.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">历史 · todos · 文件约定</text>
+<rect x="650" y="214" width="210" height="76" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="755.0" y="235.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">③ LLM 决策</text>
+<text x="755.0" y="257.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">流式输出</text>
+<text x="755.0" y="276.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">思考 + tool calls</text>
+<rect x="650" y="334" width="210" height="76" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="755.0" y="355.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">④ 执行工具</text>
+<text x="755.0" y="377.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">沙箱内 / 沙箱外</text>
+<text x="755.0" y="396.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">限时 · 可取消</text>
+<rect x="380" y="334" width="210" height="76" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="485.0" y="355.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">观察结果</text>
+<text x="485.0" y="377.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">&gt;32KB 截断落盘</text>
+<text x="485.0" y="396.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">写 checkpoint</text>
+<path d="M590.0,252.0 L648.0,252.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M755.0,290.0 L755.0,332.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M650.0,372.0 L592.0,372.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M485.0,334.0 L485.0,292.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<text x="620.0" y="316.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="middle" style="white-space:pre">循环</text>
+<rect x="920" y="214" width="170" height="76" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1005.0" y="235.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">结束</text>
+<text x="1005.0" y="257.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">无 tool call → 完成</text>
+<text x="1005.0" y="276.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">ask_user → 等用户</text>
+<path d="M860.0,252.0 L918.0,252.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="920" y="334" width="170" height="76" rx="8" ry="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="1005.0" y="355.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">护栏停止</text>
+<text x="1005.0" y="377.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">80 步 / 60 min</text>
+<text x="1005.0" y="396.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Token 上限 · 取消</text>
+<path d="M860.0,372.0 L918.0,372.0" fill="none" stroke="#dc2626" stroke-width="1.6" marker-end="url(#mdc2626)"/>
+<rect x="370" y="434" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="456.0" y="454.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">规划 write_todos</text>
+<rect x="552" y="434" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="638.0" y="454.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">上下文压缩（&gt;60%）</text>
+<rect x="734" y="434" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="820.0" y="454.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Skills 渐进披露</text>
+<rect x="916" y="434" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="1002.0" y="454.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">子 Agent（task）</text>
+<rect x="370" y="480" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="456.0" y="500.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">取消检查</text>
+<rect x="552" y="480" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="638.0" y="500.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">用量 → /internal/usage</text>
+<rect x="734" y="480" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="820.0" y="500.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">事件发布 → Valkey</text>
+<rect x="916" y="480" width="172" height="36" rx="8" ry="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5"/>
+<text x="1002.0" y="500.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">重试 2 次 → 降级链</text>
+<text x="370.0" y="428.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">中间件</text>
+<rect x="350" y="554" width="760" height="318" rx="10" ry="10" fill="#ffffff" stroke="#94a3b8" stroke-width="1"/>
+<text x="364.0" y="578.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">工具层</text>
+<rect x="370" y="592" width="350" height="210" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="382.0" y="641.9" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">沙箱内工具（经 OpenSandbox execd）</text>
+<text x="382.0" y="664.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">bash / run_python（默认 120s，最长 600s）</text>
+<text x="382.0" y="683.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">read_file · write_file · edit_file</text>
+<text x="382.0" y="702.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ls · glob · grep</text>
+<text x="382.0" y="721.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">load_skill（读 /opt/skills/*/SKILL.md）</text>
+<text x="382.0" y="740.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">render_preview（LibreOffice/Chromium → PNG）</text>
+<text x="382.0" y="759.5" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">零密钥 · 默认禁止出网</text>
+<rect x="740" y="592" width="350" height="210" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="752.0" y="632.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">沙箱外工具（Agent Service 内执行）</text>
+<text x="752.0" y="655.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">library_search / library_fetch（资料库，经 Broker）</text>
+<text x="752.0" y="674.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">deliver_file（交付 → 归档）</text>
+<text x="752.0" y="693.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">inspect_visual（多模态模型检查版式）</text>
+<text x="752.0" y="712.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ocr_extract（扫描件取文字 → ailab-ocr）</text>
+<text x="752.0" y="731.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">web_search / web_fetch（可选，域名白名单）</text>
+<text x="752.0" y="750.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ask_user（中断，等待用户回复）</text>
+<text x="752.0" y="769.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">task（委派子 Agent，共享沙箱）</text>
+<rect x="1160" y="190" width="320" height="112" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1320.0" y="219.8" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Higress AI 网关 → 模型</text>
+<text x="1320.0" y="242.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">别名 agent-pro / agent / chat / ocr</text>
+<text x="1320.0" y="261.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">服务 Key + x-user-id · x-run-id</text>
+<text x="1320.0" y="280.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">降级链由 Agent 执行，不在网关</text>
+<path d="M810.0,214.0 L810.0,198.0 L1140.0,198.0 L1140.0,230.0 L1158.0,230.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="970.7" y="181.5" width="58.599999999999994" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1000.0" y="192.0" font-size="11.5" font-weight="700" fill="#2563eb" text-anchor="middle" style="white-space:pre">LLM 调用</text>
+<rect x="1160" y="330" width="320" height="112" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1320.0" y="359.8" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">PostgreSQL · agent_ckpt 库</text>
+<text x="1320.0" y="382.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">checkpoints（每步一次，可恢复）</text>
+<text x="1320.0" y="401.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent Service 只直写这一个库；</text>
+<text x="1320.0" y="420.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">消息/Run/账本经 Platform API</text>
+<path d="M1110.0,386.0 L1158.0,386.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="1160" y="600" width="320" height="100" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1320.0" y="633.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Sandbox Broker</text>
+<text x="1320.0" y="656.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">acquire / renew / release</text>
+<text x="1320.0" y="675.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">准入 · 文件注入 / 归档</text>
+<rect x="1160" y="740" width="320" height="132" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1320.0" y="779.8" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Kata 沙箱（OpenSandbox）</text>
+<text x="1320.0" y="802.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">execd：命令 · 文件 · 中断</text>
+<text x="1320.0" y="821.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">/workspace · /opt/skills</text>
+<text x="1320.0" y="840.5" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Python · Node · LibreOffice · Chromium</text>
+<path d="M545.0,802.0 L545.0,840.0 L1158.0,840.0" fill="none" stroke="#0e7490" stroke-width="1.6" marker-end="url(#m0e7490)"/>
+<rect x="713.75" y="823.5" width="272.5" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="850.0" y="834.0" font-size="11.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">exec / 文件读写（经 ingress，带单沙箱令牌）</text>
+<path d="M1090.0,650.0 L1158.0,650.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1079.75" y="633.5" width="88.5" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1124.0" y="644.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">首次调用时领取</text>
+<path d="M1320.0,700.0 L1320.0,738.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+</svg>

@@ -7,6 +7,8 @@ that boundary explicit.
 
 from __future__ import annotations
 
+import asyncio
+import time
 from typing import Any, NamedTuple
 
 import httpx
@@ -16,6 +18,8 @@ from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var
 
 # One client per process, not one per call: a Run makes 15-25 internal calls and
 # 200 concurrent runs would otherwise build thousands of connection pools.
+USAGE_RETRY_BACKOFF_SECONDS = 0.2
+
 _LIMITS = httpx.Limits(max_connections=64, max_keepalive_connections=32, keepalive_expiry=30.0)
 
 
@@ -42,10 +46,12 @@ class _Service:
     """Describes each call once; the sync and async clients only differ in how they send it."""
 
     default_base_url: str = ""
+    default_service: str = "api"
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
         self.base_url = (base_url or self.default_base_url).rstrip("/")
-        self.token = token or settings.service_token
+        self.service = service or self.default_service
+        self.token = token if token is not None else settings.caller_token(self.service)
 
     @property
     def headers(self) -> dict[str, str]:
@@ -77,34 +83,43 @@ class _PlatformApi(_Service):
     def _append_event(self, run_id, type_, payload=None) -> Request:
         return self._req("POST", f"/internal/runs/{run_id}/events", json={"type": type_, "payload": payload or {}})
 
-    def _record_usage(self, run_id, model, prompt_tokens, completion_tokens, cached_tokens=0) -> Request:
-        body = {
-            "model": model,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "cached_tokens": cached_tokens,
-        }
-        return self._req("POST", f"/internal/runs/{run_id}/usage", json=body)
+    def _reserve_usage(self, payload: dict) -> Request:
+        return self._req("POST", "/internal/usage/reserve", timeout=5, json=payload)
+
+    def _settle_usage(self, payload: dict) -> Request:
+        return self._req("POST", "/internal/usage/settle", timeout=5, json=payload)
+
+    def _get_run_usage(self, run_id: str) -> Request:
+        return self._req("GET", f"/internal/runs/{run_id}/usage", timeout=5)
 
     def _commit_artifact(self, payload) -> Request:
         return self._req("POST", "/internal/artifacts", timeout=60, json=payload)
 
-    def _get_file(self, file_id) -> Request:
-        return self._req("GET", f"/internal/files/{file_id}")
+    def _get_file(self, file_id, run_id=None, job="processing", preview_job=None) -> Request:
+        return self._req("GET", f"/internal/files/{file_id}", params=_file_params(run_id, job, preview_job))
 
-    def _get_file_bytes(self, file_id) -> Request:
-        return self._req("GET", f"/internal/files/{file_id}/content", timeout=120)
+    def _get_file_bytes(self, file_id, run_id=None, job="processing", preview_job=None) -> Request:
+        return self._req("GET", f"/internal/files/{file_id}/content", timeout=120, params=_file_params(run_id, job, preview_job))
 
-    def _patch_file(self, file_id, meta, status) -> Request:
-        return self._req("PATCH", f"/internal/files/{file_id}", json={"meta": meta, "status": status})
+    def _patch_file(self, file_id, meta, status, job="processing") -> Request:
+        return self._req("PATCH", f"/internal/files/{file_id}", json={"meta": meta, "status": status}, params={"job": job})
+
+
+def _file_params(run_id: str | None, job: str, preview_job: str | None) -> dict:
+    """What the API binds a file read to: the caller's run, its processing job, or a pending preview job."""
+    return {"job": job, **({"run_id": run_id} if run_id else {}), **({"preview_job": preview_job} if preview_job else {})}
 
 
 class PlatformClient(_PlatformApi):
     """Synchronous internal-API client (Broker / Worker)."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.Client(timeout=30, limits=_LIMITS)
+    @property
+    def default_service(self) -> str:
+        return settings.service_name
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.Client(timeout=30, limits=_LIMITS, trust_env=False)
 
     def _send(self, req: Request) -> httpx.Response:
         r = self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
@@ -129,19 +144,33 @@ class PlatformClient(_PlatformApi):
     def append_event(self, run_id: str, type_: str, payload: dict | None = None) -> dict:
         return self._send(self._append_event(run_id, type_, payload)).json()
 
-    def record_usage(self, run_id: str, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> None:
-        self._send(self._record_usage(run_id, model, prompt_tokens, completion_tokens, cached_tokens))
+    def reserve_usage(self, payload: dict) -> dict:
+        return self._send(self._reserve_usage(payload)).json()
+
+    def settle_usage(self, payload: dict) -> dict:
+        return self._send(self._settle_usage(payload)).json()
+
+    def get_run_usage(self, run_id: str) -> dict:
+        return self._send(self._get_run_usage(run_id)).json()
 
     def commit_artifact(self, payload: dict) -> dict:
         return self._send(self._commit_artifact(payload)).json()
 
-    def get_file(self, file_id: str) -> dict:
-        return self._send(self._get_file(file_id)).json()
+    def get_file(self, file_id: str, *, run_id: str | None = None, job: str = "processing", preview_job: str | None = None) -> dict:
+        return self._send(self._get_file(file_id, run_id, job, preview_job)).json()
 
-    def get_file_bytes(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
+    def get_file_bytes(
+        self,
+        file_id: str,
+        *,
+        max_bytes: int | None = None,
+        run_id: str | None = None,
+        job: str = "processing",
+        preview_job: str | None = None,
+    ) -> bytes:
+        req = self._get_file_bytes(file_id, run_id, job, preview_job)
         if max_bytes is None:
-            return self._send(self._get_file_bytes(file_id)).content
-        req = self._get_file_bytes(file_id)
+            return self._send(req).content
         with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
             if response.status_code >= 400:
                 response.read()
@@ -153,16 +182,44 @@ class PlatformClient(_PlatformApi):
                 data.extend(chunk)
             return bytes(data)
 
-    def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None) -> dict:
-        return self._send(self._patch_file(file_id, meta, status)).json()
+    def download_file(self, file_id: str, target, *, max_bytes: int, job: str = "processing") -> None:
+        deadline = time.monotonic() + 120
+        req = self._get_file_bytes(file_id, job=job)
+        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+            if response.status_code >= 400:
+                response.read()
+                _raise(req.method, req.url, response)
+            size = 0
+            with open(target, "wb") as stream:
+                for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("download deadline exceeded")
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise ValueError("file exceeds bounded read limit")
+                    stream.write(chunk)
+
+    def complete_preview(self, file_id: str, job_id: str, preview: dict, assets: dict) -> dict:
+        return self._send(
+            self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
+        ).json()
+
+    def render_preview(self, file_id: str, job_id: str) -> dict:
+        req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()
+
+    def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None, *, job: str = "processing") -> dict:
+        return self._send(self._patch_file(file_id, meta, status, job)).json()
 
 
 class AsyncPlatformClient(_PlatformApi):
     """Asynchronous internal-API client (Agent)."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS)
+    default_service = "agent"
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     async def _send(self, req: Request) -> httpx.Response:
         r = await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
@@ -190,20 +247,42 @@ class AsyncPlatformClient(_PlatformApi):
     async def append_event(self, run_id: str, type_: str, payload: dict | None = None) -> dict:
         return (await self._send(self._append_event(run_id, type_, payload))).json()
 
-    async def record_usage(self, run_id: str, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> None:
-        await self._send(self._record_usage(run_id, model, prompt_tokens, completion_tokens, cached_tokens))
+    async def _usage_retry(self, request: Request) -> dict:
+        for attempt in range(4):
+            try:
+                async with asyncio.timeout(5):
+                    return (await self._send(request)).json()
+            except ClientError as exc:
+                if exc.status not in {408, 429, 500, 502, 503, 504} or attempt == 3:
+                    raise
+            except (httpx.TransportError, TimeoutError):
+                if attempt == 3:
+                    raise
+            await asyncio.sleep(USAGE_RETRY_BACKOFF_SECONDS * 2**attempt)
+        raise AssertionError("unreachable")
 
-    async def get_file_bytes(self, file_id: str) -> bytes:
+    async def reserve_usage(self, payload: dict) -> dict:
+        return await self._usage_retry(self._reserve_usage(payload))
+
+    async def settle_usage(self, payload: dict) -> dict:
+        return await self._usage_retry(self._settle_usage(payload))
+
+    async def get_run_usage(self, run_id: str) -> dict:
+        return (await self._send(self._get_run_usage(run_id))).json()
+
+    async def get_file_bytes(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> bytes:
         """A personal skill's file. The agent only asks for ids the API listed in the run's personal_skills."""
-        return (await self._send(self._get_file_bytes(file_id))).content
+        return (await self._send(self._get_file_bytes(file_id, run_id, job))).content
 
 
 class AsyncBrokerClient(_Service):
     """Agent -> Broker: acquire a lease, run commands, move bytes, commit."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS)
+    default_service = "agent"
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     @property
     def default_base_url(self) -> str:  # type: ignore[override]
@@ -229,7 +308,26 @@ class AsyncBrokerClient(_Service):
     async def create_lease(self, run_id: str, ttl_seconds: int | None = None, image: str | None = None) -> dict:
         # The Broker learns the run's input files from the API, not from us.
         body = {"run_id": run_id, "image": image, "ttl_seconds": ttl_seconds}
-        return (await self._send(self._req("POST", "/internal/leases", timeout=180, json=body))).json()
+        return (
+            await self._send(
+                self._req(
+                    "POST",
+                    "/internal/leases",
+                    timeout=settings.sandbox_wait_seconds + settings.osb_request_timeout_seconds + 180,
+                    json=body,
+                )
+            )
+        ).json()
+
+    async def renew(self, lease_id: str, ttl_seconds: int | None = None) -> dict:
+        params = {"ttl_seconds": ttl_seconds} if ttl_seconds is not None else {}
+        return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/renew", params=params))).json()
+
+    async def lease_status(self, lease_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/leases/{lease_id}/status"))).json()
+
+    async def admission_status(self, run_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/admission/{run_id}"))).json()
 
     async def exec(self, lease_id: str, cmd: str, timeout_seconds: int | None = None) -> dict:
         req = self._req(

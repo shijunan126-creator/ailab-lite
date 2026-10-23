@@ -8,14 +8,18 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -55,6 +59,11 @@ class FileStatus:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("uq_users_issuer_subject", "issuer", "external_subject", unique=True),
+        Index("ix_users_created_id", "created_at", "id"),
+        Index("ix_users_dept_created_id", "dept_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("usr"))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -67,7 +76,115 @@ class User(Base):
     settings: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dept_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    quota_policy_id: Mapped[str | None] = mapped_column(ForeignKey("quota_policies.id"), index=True, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     tokens: Mapped[list[ApiToken]] = relationship(back_populates="user")
+    role_rows: Mapped[list[UserRole]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+    department: Mapped[Department | None] = relationship(lazy="joined")
+    quota_policy: Mapped[QuotaPolicy | None] = relationship(lazy="joined")
+
+    @property
+    def principal(self):
+        from .contracts.identity import Principal
+
+        return Principal(
+            self.id, self.issuer, self.external_subject, self.dept_id, frozenset(r.role for r in self.role_rows) or frozenset({"user"})
+        )
+
+    @property
+    def default_quota_policy(self):
+        from sqlalchemy import select
+        from sqlalchemy.orm import object_session
+
+        db = object_session(self)
+        return db.scalar(select(QuotaPolicy).where(QuotaPolicy.is_default.is_(True))) if db else None
+
+    @property
+    def quota_fallback(self):
+        from .config import settings
+        from .domain.quota_policy import Limits
+
+        return Limits(
+            settings.daily_token_limit, settings.monthly_token_limit, settings.library_quota_bytes, settings.max_active_runs_per_user
+        )
+
+
+class QuotaPolicy(Base):
+    __tablename__ = "quota_policies"
+    __table_args__ = (
+        Index(
+            "uq_quota_policies_default",
+            "is_default",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default = true"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("qpol"))
+    name: Mapped[str] = mapped_column(String(120))
+    daily_tokens: Mapped[int] = mapped_column(BigInteger)
+    monthly_tokens: Mapped[int] = mapped_column(BigInteger)
+    library_bytes: Mapped[int] = mapped_column(BigInteger)
+    max_concurrent_runs: Mapped[int] = mapped_column(Integer)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dept"))
+    name: Mapped[str] = mapped_column(String(120))
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), index=True, nullable=True)
+    quota_policy_id: Mapped[str | None] = mapped_column(ForeignKey("quota_policies.id"), index=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    quota_policy: Mapped[QuotaPolicy | None] = relationship(lazy="joined")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (Index("ix_user_roles_role_user", "role", "user_id"),)
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_at_id", "at", "id"),
+        Index("ix_audit_request_at", "request_id", "at"),
+        Index("ix_audit_actor_at_id", "actor_id", "at", "id"),
+        Index("ix_audit_action_at_id", "action", "at", "id"),
+        Index("ix_audit_target_at_id", "target_type", "target_id", "at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("aud"))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    actor_service: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    action: Mapped[str] = mapped_column(String(80))
+    target_type: Mapped[str] = mapped_column(String(40))
+    target_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="success")
+    request_id: Mapped[str] = mapped_column(String(64))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class OIDCFlow(Base):
+    """Short-lived server-side PKCE material; a separate secret binds the flow to the browser."""
+
+    __tablename__ = "oidc_flows"
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    binding_hash: Mapped[str] = mapped_column(String(64))
+    verifier: Mapped[str] = mapped_column(String(128))
+    nonce: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ApiToken(Base):
@@ -101,6 +218,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("ix_conversations_user_updated", "user_id", "updated_at"),
+        Index("ix_conversations_deleted", "deleted_at", "id"),
         Index(
             "ix_conversations_user_project_live",
             "user_id",
@@ -122,7 +240,11 @@ class Conversation(Base):
 
 class Run(Base):
     __tablename__ = "runs"
-    __table_args__ = (Index("ix_runs_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_runs_conversation_id_id", "conversation_id", "id"),
+        Index("ix_runs_user_created", "user_id", "created_at"),
+        Index("ix_runs_finished", "status", "finished_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
@@ -148,7 +270,10 @@ class Run(Base):
 
 class RunEvent(Base):
     __tablename__ = "run_events"
-    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_run_event_seq"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "seq", name="uq_run_event_seq"),
+        Index("ix_run_events_created", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
@@ -164,6 +289,73 @@ class FileObject(Base):
     __tablename__ = "files"
     __table_args__ = (
         Index("ix_files_user_created", "user_id", "created_at"),
+        Index("ix_files_status_created", "status", "created_at", "id"),
+        Index("ix_files_parent_id", "parent_id"),
+        Index("uq_files_lineage_version", "lineage_id", "version", unique=True),
+        Index("uq_files_lineage_head", "lineage_id", sqlite_where=text("is_head = 1"), postgresql_where=text("is_head = 1"), unique=True),
+        Index("ix_files_lineage_retained", "lineage_id", "purged_at", "version"),
+        Index(
+            "ix_files_live_created",
+            "user_id",
+            "created_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+        ),
+        Index(
+            "ix_files_live_project",
+            "user_id",
+            "project_id",
+            "created_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+        ),
+        Index(
+            "ix_files_live_starred",
+            "user_id",
+            "starred_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND starred_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND starred_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_files_live_images",
+            "user_id",
+            "created_at",
+            "id",
+            "is_head",
+            "content_type",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND content_type LIKE 'image/%'"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND content_type LIKE 'image/%'"),
+        ),
+        Index(
+            "ix_files_trash",
+            "user_id",
+            "deleted_at",
+            "id",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_files_purge_due",
+            "purge_at",
+            "user_id",
+            "lineage_id",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+        ),
         Index(
             "ix_files_user_starred",
             "user_id",
@@ -193,6 +385,13 @@ class FileObject(Base):
     status: Mapped[str] = mapped_column(String(20), default=FileStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("files.id"), nullable=True)
+    # No FK to the root: a lineage survives retention of its oldest object.
+    lineage_id: Mapped[str] = mapped_column(String(40), default=lambda context: context.get_current_parameters()["id"], server_default="")
+    is_head: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trashed_from_project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -212,10 +411,29 @@ class Artifact(Base):
 
 class ModelUsage(Base):
     __tablename__ = "model_usage"
-    __table_args__ = (Index("ix_model_usage_run_created", "run_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_model_usage_run_created", "run_id", "created_at"),
+        Index("ix_model_usage_user_created", "user_id", "created_at"),
+        Index("ix_model_usage_status_id", "status", "id"),
+        Index("ix_model_usage_call_id", "call_id", unique=True),
+        Index("ix_model_usage_created_dept", "created_at", "dept_id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    # Not a foreign key: the ledger outlives the runs it records (a purged conversation's usage still counts).
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    mode: Mapped[str] = mapped_column(String(20), default="work", server_default="work")
+    alias: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    actual_backend: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cached_token_weight: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0.1"), server_default="0.1")
+    weighted_amount: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    policy_version: Mapped[str] = mapped_column(String(40), default="legacy", server_default="legacy")
+    status: Mapped[str] = mapped_column(String(20), default="settled", server_default="settled")
     model: Mapped[str] = mapped_column(String(120), default="")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -224,4 +442,51 @@ class ModelUsage(Base):
     # The model's quota weight *when the call was recorded*. Changing a weight in models.toml later
     # must not rewrite what past calls cost.
     weight: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LifecycleDeletion(Base):
+    """Durable object cleanup intent, committed with deletion of the business owner."""
+
+    __tablename__ = "lifecycle_deletions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(500), unique=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    is_prefix: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UsageReservation(Base):
+    __tablename__ = "usage_reservations"
+    __table_args__ = (
+        Index("ix_usage_reservations_user_status", "user_id", "status"),
+        Index("ix_usage_reservations_status_expires", "status", "expires_at", "call_id"),
+        Index("ix_usage_reservations_run", "run_id"),
+    )
+
+    call_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(40))  # like ModelUsage.run_id, kept after the run is purged
+    user_id: Mapped[str] = mapped_column(String(40))
+    attempt_id: Mapped[str] = mapped_column(String(80))
+    mode: Mapped[str] = mapped_column(String(20))
+    alias: Mapped[str] = mapped_column(String(120))
+    max_output_tokens: Mapped[int] = mapped_column(Integer)
+    estimated_input_tokens: Mapped[int] = mapped_column(Integer)
+    weight: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    cached_token_weight: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    policy_version: Mapped[str] = mapped_column(String(40))
+    reserved_amount: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class OutboxMessage(Base):
+    """Undelivered effects; removed only after successful at-least-once publication."""
+
+    __tablename__ = "outbox"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    topic: Mapped[str] = mapped_column(String(120))
+    payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

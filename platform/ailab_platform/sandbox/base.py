@@ -10,6 +10,11 @@ from __future__ import annotations
 import shlex
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from datetime import datetime
+
+from ..contracts.sandbox import LeaseHandle as LeaseHandle
+from ..contracts.sandbox import SandboxResource as SandboxResource
+from ..contracts.sandbox import SandboxSpec as SandboxSpec
 
 
 class SandboxError(RuntimeError):
@@ -33,12 +38,35 @@ class SandboxProvider(ABC):
     name = "base"
 
     @abstractmethod
-    def acquire(self, lease_id: str, image: str, ttl_seconds: int | None = None) -> str:
-        """Create a sandbox and return the provider-side id.
+    def acquire(
+        self,
+        lease_id: str,
+        image: str,
+        ttl_seconds: int | None = None,
+        *,
+        spec: SandboxSpec | None = None,
+        labels: dict[str, str] | None = None,
+    ) -> str:
+        """Create a resource with ownership metadata before it becomes discoverable."""
 
-        ``ttl_seconds`` is the lease lifetime; the sandbox itself must expire
-        ``SANDBOX_EXPIRY_GRACE_SECONDS`` later even if nobody releases it.
-        """
+    @abstractmethod
+    def inspect(self, provider_ref: str) -> SandboxResource | None:
+        """None means confirmed absent; dependency failures must raise SandboxError."""
+
+    @abstractmethod
+    def list_owned(self, owner: str) -> list[SandboxResource]: ...
+
+    @abstractmethod
+    def update_metadata(self, provider_ref: str, labels: dict[str, str]) -> None:
+        """Trusted control-plane metadata, inaccessible to user commands."""
+
+    @abstractmethod
+    def renew(self, provider_ref: str, until: datetime) -> None:
+        """Extend the provider backstop to until + expiry grace, where supported."""
+
+    def cancel_exec(self, provider_ref: str) -> bool:
+        """False means cancellation requires releasing the entire sandbox."""
+        return False
 
     @abstractmethod
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult: ...

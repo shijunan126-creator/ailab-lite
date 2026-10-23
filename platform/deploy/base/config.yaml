@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: platform
+data:
+  AILAB_ENV: k3s
+  AILAB_PROFILE: dev
+  AILAB_SERVICE_TOKEN: ''
+  AILAB_DEV_TOKEN: ''
+  AILAB_OSB_API_KEY: ''
+  AILAB_TRUSTED_PROXIES: '[]'
+  AILAB_ADMIN_USERNAME: admin
+  AILAB_REDIS_URL: redis://platform-redis:6379/0
+  AILAB_DATABASE_URL: postgresql+psycopg://ailab@platform-postgres:5432/ailab
+  AILAB_STORAGE_ROOT: /data/storage
+  AILAB_SANDBOX_PROVIDER: opensandbox
+  AILAB_OSB_DOMAIN: opensandbox:8090
+  AILAB_SANDBOX_IMAGE: harbor.ailab.local/sandbox/sbx-office:lite
+  AILAB_SCANNER_BACKEND: clamav
+  AILAB_CLAMD_ADDRESS: tcp://platform-clamav:3310
+  AILAB_MAX_AGENT_STEPS: '24'
+  AILAB_MAX_SANDBOXES: '2'
+  AILAB_WORKSPACE_TTL_DAYS: '3'
+  AILAB_API_BASE_URL: http://platform-api:8080
+  AILAB_BROKER_BASE_URL: http://platform-broker:8081
+  AILAB_AGENT_BASE_URL: http://platform-agent:8082
+  AILAB_WORKER_BASE_URL: http://platform-worker:8083
+  AILAB_PROVISIONED_STORAGE_BYTES: '42949672960'
+  AILAB_WEB_SEARCH_PROVIDER: searxng
+  AILAB_SEARXNG_URL: http://platform-searxng:8080

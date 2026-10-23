@@ -5,9 +5,13 @@ import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { IconDownload, IconFile } from "../icons";
 import Markdown from "../markdown";
+import { useFileViewer } from "../preview/file-viewer";
 
 export type Step = { name: string; label: string; detail?: string; status: "running" | "ok" | "failed" | "note"; output?: string };
+export type PlanStep = { id: string; title: string; status: "pending" | "running" | "done" | "skipped" | "failed" };
 export type Item =
+  | { kind: "plan"; steps: PlanStep[] }
+  | { kind: "ask"; id: string; question: string; options: string[]; allowText: boolean; answer?: string }
   | { kind: "text"; step: number; text: string }
   | { kind: "thinking"; step: number; text: string; seconds: number; done: boolean }
   | { kind: "steps"; steps: Step[] };
@@ -102,6 +106,29 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       }
       break;
     }
+    case "plan.updated": {
+      // one plan per turn, kept where it first appeared and updated in place
+      const plan = next.find((it) => it.kind === "plan") as Extract<Item, { kind: "plan" }> | undefined;
+      if (plan) plan.steps = p.steps || [];
+      else next.push({ kind: "plan", steps: p.steps || [] });
+      break;
+    }
+    case "agent.ask_user":
+      if (!next.some((it) => it.kind === "ask" && it.id === p.question_id))
+        next.push({ kind: "ask", id: p.question_id, question: p.question || "", options: p.options || [], allowText: p.allow_text !== false });
+      break;
+    case "agent.ask_answered":
+      for (const it of next) if (it.kind === "ask" && it.id === p.question_id) it.answer = p.answer ?? "";
+      break;
+    case "run.resumed":
+      note("从中断处继续", undefined, "ok");
+      break;
+    case "agent.model_fallback":
+      note("已换用备用模型", [p.from_label || p.from, p.to_label || p.to].filter(Boolean).join(" → ") || undefined);
+      break;
+    case "agent.context_compacted":
+      note("已整理较早的对话", p.turns ? `${p.turns} 轮` : undefined);
+      break;
     case "agent.skill":
       note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
       break;
@@ -146,6 +173,86 @@ function Thinking({ item, live }: { item: Extract<Item, { kind: "thinking" }>; l
         <span className="chev">{shown ? "▾" : "▸"}</span>
       </button>
       {shown ? <div className="thinking-body">{item.text}</div> : null}
+    </div>
+  );
+}
+
+const PLAN_MARK: Record<PlanStep["status"], string> = { pending: "", running: "running", done: "ok", skipped: "note", failed: "failed" };
+
+function Plan({ steps }: { steps: PlanStep[] }) {
+  const done = steps.filter((s) => s.status === "done").length;
+  return (
+    <div className="plan" aria-label="计划">
+      <div className="plan-head">
+        <span>计划</span>
+        <span className="hint">
+          {done} / {steps.length}
+        </span>
+      </div>
+      <ol className="steps-list">
+        {steps.map((s) => (
+          <li key={s.id} className={`step ${PLAN_MARK[s.status] || "pending"}`}>
+            <span className="step-mark" />
+            <div className="step-body">
+              <div className="step-label">{s.title}</div>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+/** The agent stopped to ask. Answered here or from the composer; the run continues on its own afterwards. */
+function Ask({ runId, item, live }: { runId: string; item: Extract<Item, { kind: "ask" }>; live: boolean }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const answered = item.answer !== undefined;
+  async function answer(value: string) {
+    if (!value.trim() || busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/v1/runs/${runId}/answer`, { method: "POST", body: JSON.stringify({ question_id: item.id, answer: value.trim() }) });
+    } catch (err: any) {
+      setError(String(err?.message || err));
+      setBusy(false);
+    }
+  }
+  return (
+    <div className={`ask ${answered ? "answered" : ""}`}>
+      <div className="ask-q">{item.question}</div>
+      {answered ? (
+        <div className="ask-a">{item.answer}</div>
+      ) : live ? (
+        <>
+          {item.options.length ? (
+            <div className="ask-options">
+              {item.options.map((o) => (
+                <button key={o} className="secondary sm" disabled={busy} onClick={() => answer(o)}>
+                  {o}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {item.allowText ? (
+            <form
+              className="ask-form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                answer(text);
+              }}
+            >
+              <input type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder={item.options.length ? "或者直接写下你的回答" : "你的回答"} disabled={busy} />
+              <button type="submit" className="sm" disabled={busy || !text.trim()}>
+                回答
+              </button>
+            </form>
+          ) : null}
+          {error ? <div className="alert error">{error}</div> : null}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -197,6 +304,7 @@ export default function Turn({
   modelName,
   previewKey,
   onPreview,
+  onResume,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -204,9 +312,11 @@ export default function Turn({
   modelName: (id: string) => string;
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
+  onResume?: (run: Run) => void;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const files = useFileViewer();
   const shown = items ?? history;
   const terminal = isTerminal(run.status);
   const textShown = shown?.some((it) => it.kind === "text" && it.text.trim());
@@ -232,10 +342,10 @@ export default function Turn({
         ) : null}
         {run.input_files?.length ? (
           <div className="attach-row">
-            {run.input_files.map((f) => (
-              <span key={f.file_id} className="attach-chip">
+            {run.input_files.map((f, _, all) => (
+              <button key={f.file_id} className="attach-chip open" onClick={() => files.open(all.map((x) => x.file_id), f.file_id)}>
                 <IconFile size={13} /> {f.filename}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}
@@ -249,6 +359,10 @@ export default function Turn({
               it.text.trim() ? <Markdown key={i} text={it.text} /> : null
             ) : it.kind === "thinking" ? (
               it.text.trim() ? <Thinking key={i} item={it} live={live} /> : null
+            ) : it.kind === "plan" ? (
+              <Plan key={i} steps={it.steps} />
+            ) : it.kind === "ask" ? (
+              <Ask key={i} runId={run.id} item={it} live={!terminal} />
             ) : (
               <Steps key={i} steps={it.steps} open={live && i === shown.length - 1} />
             )
@@ -267,6 +381,14 @@ export default function Turn({
           ) : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{run.error}</div> : null}
           {run.status === "canceled" ? <div className="hint">已停止</div> : null}
+          {(run.status === "interrupted" || (run.status === "failed" && run.resumable)) && onResume ? (
+            <div className="resume">
+              {run.status === "interrupted" ? <span className="hint">已中断</span> : null}
+              <button className="secondary sm" onClick={() => onResume(run)}>
+                继续
+              </button>
+            </div>
+          ) : null}
 
           {run.artifacts?.length ? (
             <div className="files">
@@ -281,11 +403,17 @@ export default function Turn({
                     </div>
                     <div className="meta">{formatBytes(a.size)}</div>
                   </div>
-                  {PREVIEWABLE.test(a.filename) && previewKey(run, a.filename) ? (
-                    <button className="secondary sm" onClick={() => onPreview(previewKey(run, a.filename)!)}>
-                      预览
-                    </button>
-                  ) : null}
+                  <button
+                    className="secondary sm"
+                    onClick={() => {
+                      // the live pane follows a file through later turns; anything else opens on its own
+                      const key = PREVIEWABLE.test(a.filename) ? previewKey(run, a.filename) : null;
+                      if (key) onPreview(key);
+                      else files.open(run.artifacts!.map((x) => x.file_id), a.file_id);
+                    }}
+                  >
+                    预览
+                  </button>
                   <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
                     <IconDownload size={15} /> 下载
                   </a>
@@ -308,6 +436,7 @@ export default function Turn({
           ) : null}
         </div>
       </div>
+      {files.viewer}
     </div>
   );
 }

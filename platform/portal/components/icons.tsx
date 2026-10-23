@@ -217,3 +217,25 @@ export const IconChevronRight = (p: Props) => (
     <path d="m9 18 6-6-6-6" />
   </Svg>
 );
+
+export const IconRestore = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6" />
+    <path d="M4 4v4.6h4.6" />
+  </Svg>
+);
+
+export const IconHistory = (p: Props) => (
+  <Svg {...p}>
+    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6" />
+    <path d="M4 4v4.6h4.6" />
+    <path d="M12 8v4l3 2" />
+  </Svg>
+);
+
+export const IconShield = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 3 5 6v5c0 4.4 3 8.3 7 10 4-1.7 7-5.6 7-10V6z" />
+    <path d="m9 12 2 2 4-4" />
+  </Svg>
+);

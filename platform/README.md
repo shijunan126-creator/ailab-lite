@@ -26,7 +26,7 @@ T2/T3/T4 尚未就绪的依赖用可替换适配器顶替（见文末对照表�
   输入注入 `/workspace/inputs` → 产出 `answer.md`。
 - `pytest`：约 170 个测试，覆盖率门槛 70%；真实 Redis 和 PostgreSQL 的变体通过环境变量开启（见「测试与 CI」），CI 里两者都跑。
 - Portal：`/`、`/runs/[id]`、`/files` 均返回 200，SSE 时间线可用。
-- **k3s 部署**：`deploy/k8s/platform.yaml` 已实际跑通（5 个 Pod Running，API NodePort 30080，
+- **k3s 部署**：`deploy/overlays/lite`（基于 `deploy/base`）已实际跑通（5 个 Pod Running，API NodePort 30080，
   Broker hostNetwork 8081），k3s 版 e2e 同样产出 `ailab-demo.pptx`。
 
 ## 组件与职责
@@ -318,7 +318,7 @@ bash scripts/osb_up.sh
 AILAB_KEY_DEEPSEEK=sk-... bash scripts/k8s_secrets.sh   # 随机令牌 + 模型 Key；已存在则不动
 NO_RESTART=1 bash scripts/k8s_models.sh               # 模型目录 → ConfigMap
 eval "$(bash scripts/k8s_secrets.sh env)"   # 之后的 e2e 脚本用 API 令牌，登录 Portal 用 $AILAB_ADMIN_PASSWORD
-k3s kubectl apply -f deploy/k8s/platform.yaml
+k3s kubectl apply -k deploy/overlays/lite
 k3s kubectl -n platform rollout status deploy/platform-api --timeout=180s
 bash scripts/k8s_status.sh
 

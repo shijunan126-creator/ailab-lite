@@ -14,12 +14,14 @@ import logging
 import time
 from collections.abc import Awaitable
 from typing import TypeVar
+from uuid import uuid4
 
 from .. import metrics, skillfiles
 from ..catalog import get_catalog
 from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
-from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, llm_for
+from ..contracts.usage import UsageStatus
+from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, ModelCall, llm_for, model_call
 from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
@@ -145,6 +147,10 @@ class AgentLoop:
         finally:
             if not task.done():
                 task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     async def _acquire_lease(self, run_id: str) -> dict:
         """Take a sandbox, waiting in line (like the design's waiting_sandbox) when at capacity."""
@@ -216,7 +222,7 @@ class AgentLoop:
     # ---- personal skills: read from the user's library, their files copied into the sandbox
     async def _read_personal(self, turn: _Turn, run_id: str, name: str) -> str:
         skill = turn.personal[name]
-        data = await self.platform.get_file_bytes(skill["file_id"])
+        data = await self.platform.get_file_bytes(skill["file_id"], run_id=run_id)
         try:
             text, files = skillfiles.unpack(data, skill["filename"])
         except (skillfiles.SkillFileError, KeyError, ValueError) as exc:
@@ -280,38 +286,79 @@ class AgentLoop:
         call_started = time.perf_counter()
         writer = _DeltaWriter(self, run_id, step)
         thinker = _DeltaWriter(self, run_id, step, "agent.thinking")
+        offered = tools_for_turn() if tools is None else tools
+        # UTF-8 bytes plus framing is a conservative input bound without a model-specific
+        # tokenizer dependency. Settlement estimates are explicitly marked estimated.
+        estimated_input = len(json.dumps({"messages": messages, "tools": offered}, ensure_ascii=False).encode()) + 256
+        call = ModelCall(uuid4().hex, run_id, settings.model_max_output_tokens, actual_backend=model)
+        await self.platform.reserve_usage(
+            {
+                "call_id": call.call_id,
+                "run_id": run_id,
+                "attempt_id": run["_attempt_id"],
+                "alias": model,
+                "mode": (run.get("options") or {}).get("mode", "work"),
+                "max_output_tokens": call.max_output_tokens,
+                "estimated_input_tokens": estimated_input,
+            }
+        )
+        token = model_call.set(call)
 
         async def on_text(text: str) -> None:
-            await thinker.flush()  # thinking is over once the answer starts
+            await thinker.flush()
             await writer(text)
 
+        async def submit() -> dict:
+            usage = call.usage
+            status = UsageStatus.SETTLED if usage else UsageStatus.ESTIMATED if call.reached_model else UsageStatus.RELEASED
+            output = max(0, (call.output_bytes + 3) // 4)
+            payload = {
+                "call_id": call.call_id,
+                "actual_backend": call.actual_backend,
+                "input_tokens": usage.get("prompt_tokens", estimated_input if call.reached_model else 0),
+                "cached_tokens": usage.get("cached_tokens", 0),
+                "output_tokens": usage.get("completion_tokens", output if call.reached_model else 0),
+                "reasoning_tokens": usage.get("reasoning_tokens", 0),
+                "status": status,
+            }
+            return await self.platform.settle_usage(payload)
+
         try:
+            if await self._is_canceled(run_id):
+                raise RunCanceled()
             response = await self._interruptible(
                 run_id,
                 llm.chat_stream(
                     messages,
-                    tools_for_turn() if tools is None else tools,
+                    offered,
                     model,
                     user_id=run.get("user_id"),
                     on_text=on_text,
                     on_reasoning=thinker,
                 ),
             )
-        except RunCanceled:
-            metrics.LLM_CALLS.labels(model_label, "canceled").inc()
+        except BaseException:
+            metrics.LLM_CALLS.labels(model_label, "error").inc()
+            try:
+                await submit()
+            except Exception:
+                log.warning("usage settlement pending reaper call=%s", call.call_id, exc_info=True)
+            raise
+        else:
+            if response.usage:
+                call.usage = response.usage
+            # Exhausted settlement retries stop execution before tools or another call.
+            # The durable intent remains charged until the reaper makes the gap visible.
+            settled = await submit()
+            run["_ledger_tokens"] = settled["run_tokens"]
             await thinker.flush()
             await writer.flush()
-            raise
-        except Exception:
-            metrics.LLM_CALLS.labels(model_label, "error").inc()
+            response.thinking_seconds = thinker.seconds
+            metrics.LLM_CALLS.labels(model_label, "ok").inc()
+            return response
+        finally:
+            model_call.reset(token)
             metrics.LLM_SECONDS.labels(model_label).observe(time.perf_counter() - call_started)
-            raise
-        await thinker.flush()
-        await writer.flush()
-        response.thinking_seconds = thinker.seconds
-        metrics.LLM_CALLS.labels(model_label, "ok").inc()
-        metrics.LLM_SECONDS.labels(model_label).observe(time.perf_counter() - call_started)
-        return response
 
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
@@ -376,13 +423,15 @@ class AgentLoop:
 
         run_started = time.perf_counter()
         outcome = "error"  # replaced below once we know how the run ended
+        run["_attempt_id"] = f"{attempt}-{uuid4().hex}"
         turn = _Turn(run)
         final_summary = ""
-        prior_usage = run.get("usage") or {}
-        total_tokens = prior_usage.get("prompt_tokens", 0) + prior_usage.get("completion_tokens", 0)
         finished = False
         error: str | None = None
         try:
+            # The API ledger is the source of the resumed Run's soft budget.
+            prior = await self.platform.get_run_usage(run_id)
+            total_tokens = prior["prompt_tokens"] + prior["completion_tokens"]
             model = run.get("model") or ""
             llm = self.llm or llm_for(model)  # fails the run early if the model is gone from the catalog
             options = run.get("options") or {}
@@ -409,22 +458,6 @@ class AgentLoop:
                 {"role": "user", "content": user_prompt(run["prompt"], run.get("input_files"))},
             ]
 
-            async def record(response) -> None:
-                nonlocal total_tokens
-                if not response.usage:
-                    return
-                total_tokens += response.usage.get("prompt_tokens", 0) + response.usage.get("completion_tokens", 0)
-                try:
-                    await self.platform.record_usage(
-                        run_id,
-                        model,
-                        response.usage.get("prompt_tokens", 0),
-                        response.usage.get("completion_tokens", 0),
-                        response.usage.get("cached_tokens", 0),
-                    )
-                except Exception:
-                    log.warning("usage record failed run=%s", run_id, exc_info=True)
-
             out_of_steps = False
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
@@ -445,7 +478,7 @@ class AgentLoop:
                     messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
 
                 response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
-                await record(response)
+                total_tokens = run["_ledger_tokens"]
                 if response.reasoning_content:
                     turn.thinking.append(response.reasoning_content)
                     turn.thinking_seconds += response.thinking_seconds
@@ -494,9 +527,11 @@ class AgentLoop:
             if not finished and error is None:
                 # Out of steps: rather than ending on a bare error, let the model tell the user where things stand.
                 out_of_steps = True
+                if total_tokens >= settings.run_max_tokens:
+                    raise RuntimeError(f"token limit reached ({total_tokens} >= {settings.run_max_tokens})")
                 messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
                 response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
-                await record(response)  # the last call either way: the budget decides nothing more here
+                total_tokens = run["_ledger_tokens"]
                 if response.content:
                     final_summary = response.content
                     await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})

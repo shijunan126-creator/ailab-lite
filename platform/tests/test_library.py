@@ -106,6 +106,8 @@ def test_thumbnail_response_caching_ownership_and_cleanup(api, monkeypatch):
         api.patch(f"/internal/files/{file['id']}", headers=SERVICE, json={"status": status})
         assert api.get(url, headers={"If-None-Match": etag}).status_code == 404
     assert api.delete(f"/v1/files/{file['id']}").status_code == 204
+    assert get_storage().exists(key)
+    assert batch(api, [file["id"]], "purge").status_code == 200
     assert not get_storage().exists(key)
 
 
@@ -139,7 +141,7 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
     assert msg.payload == {"file_id": fid, "thumbnail_only": True}
 
     class Platform:
-        def get_file(self, file_id):
+        def get_file(self, file_id, **context):
             return api.get(f"/internal/files/{file_id}", headers=SERVICE).json()
 
         def get_file_bytes(self, file_id, **kwargs):
@@ -284,9 +286,9 @@ def test_batch_delete_parent_rule_and_storage_cleanup(api):
     child = upload(api, "child.txt", parent_id=parent["id"])
     other = upload(api, "other.txt")
     response = batch(api, [parent["id"], other["id"]], "delete")
-    assert response.status_code == 409 and "child.txt" in response.json()["detail"]
-    assert api.get(f"/v1/files/{other['id']}").status_code == 200
-    assert api.delete(f"/v1/files/{parent['id']}").status_code == 409
+    assert response.status_code == 200
+    assert api.get(f"/v1/files/{other['id']}").json()["deleted_at"]
+    assert api.get(f"/v1/files/{child['id']}").json()["deleted_at"]
     ids = [parent["id"], child["id"], other["id"]]
     with SessionLocal() as db:
         file = db.get(FileObject, child["id"])
@@ -296,6 +298,8 @@ def test_batch_delete_parent_rule_and_storage_cleanup(api):
             get_storage().put_bytes(key, b"derived")
         db.commit()
     assert batch(api, ids, "delete").json() == {"count": 3}
+    assert all(get_storage().exists(key) for key in keys)
+    assert batch(api, [parent["id"], other["id"]], "purge").json() == {"count": 2}
     assert all(not get_storage().exists(key) for key in keys)
     assert all(api.get(f"/v1/files/{file_id}").status_code == 404 for file_id in ids)
 

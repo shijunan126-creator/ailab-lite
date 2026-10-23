@@ -1,0 +1,260 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="1000" viewBox="0 0 1500 1000" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="mc2410c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker></defs>
+<rect width="1500" height="1000" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">物理部署与节点角色</text>
+<text x="266.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">11 台服务器 + 1 套存储 · 每个组件跑在哪里</text>
+<rect x="1136.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1158.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">平台服务</text>
+<rect x="1212.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1234.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">开源基础组件</text>
+<rect x="1311.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1333.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">沙箱</text>
+<rect x="1364.0" y="24" width="16" height="12" rx="2" ry="2" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1386.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">推理</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">数据</text>
+<rect x="20" y="62" width="1460" height="122" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="13" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">平台服务（无状态，≥2 副本，强制跨节点；K8s 在三台 TaiShan 间自动分布；带 * 的为单副本）</text>
+<rect x="40" y="98" width="228" height="32" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="154.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Higress（2 副本 + VIP）</text>
+<rect x="280" y="98" width="228" height="32" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="394.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Keycloak</text>
+<rect x="520" y="98" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="634.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Portal</text>
+<rect x="760" y="98" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="874.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Platform API</text>
+<rect x="1000" y="98" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1114.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent Service</text>
+<rect x="1240" y="98" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1354.0" y="116.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Sandbox Broker</text>
+<rect x="40" y="138" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="154.0" y="156.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">文件 Worker（Kata）</text>
+<rect x="280" y="138" width="228" height="32" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="394.0" y="156.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">OpenSandbox 控制器</text>
+<rect x="520" y="138" width="228" height="32" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="634.0" y="156.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">OpenBao</text>
+<rect x="760" y="138" width="228" height="32" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="874.0" y="156.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">ClamAV</text>
+<rect x="1000" y="138" width="228" height="32" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1114.0" y="156.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">包镜像*（PyPI/npm）</text>
+<rect x="30" y="196" width="460" height="274" rx="10" ry="10" fill="#ffffff" stroke="#334155" stroke-width="1.8"/>
+<text x="44.0" y="220.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-01</text>
+<text x="44.0" y="240.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">鲲鹏 ARM64 · 128 核 · 内存待定 · openEuler 24.03（4K 页）</text>
+<rect x="44" y="252" width="432" height="34" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="260.0" y="271.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">控制面：apiserver · scheduler · ctrl-mgr · etcd#1</text>
+<text x="44.0" y="310.0" font-size="12.5" font-weight="700" fill="#6d28d9" text-anchor="start" style="white-space:pre">有状态 / 单活组件（示例分布）</text>
+<rect x="44" y="318" width="140" height="30" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="114.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">PostgreSQL 主</text>
+<rect x="190" y="318" width="140" height="30" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="260.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Valkey 主</text>
+<rect x="336" y="318" width="140" height="30" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="406.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">GPUStack Server*</text>
+<rect x="44" y="360" width="432" height="98" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="58.0" y="380.0" font-size="13" font-weight="700" fill="#0e7490" text-anchor="start" style="white-space:pre">沙箱池（namespace: sandbox · Kata microVM）</text>
+<rect x="58" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="95" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="132" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="169" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="206" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="243" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="280" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="317" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="354" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="391" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="428" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<text x="58.0" y="428.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">约 180 个 / 台（512 GB 时，受内存限制）</text>
+<text x="58.0" y="448.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">预热池 5～15 · CPU 超分约 1:3～1:4</text>
+<rect x="520" y="196" width="460" height="274" rx="10" ry="10" fill="#ffffff" stroke="#334155" stroke-width="1.8"/>
+<text x="534.0" y="220.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-02</text>
+<text x="534.0" y="240.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">鲲鹏 ARM64 · 128 核 · 内存待定 · openEuler 24.03（4K 页）</text>
+<rect x="534" y="252" width="432" height="34" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="750.0" y="271.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">控制面：apiserver · scheduler · ctrl-mgr · etcd#2</text>
+<text x="534.0" y="310.0" font-size="12.5" font-weight="700" fill="#6d28d9" text-anchor="start" style="white-space:pre">有状态 / 单活组件（示例分布）</text>
+<rect x="534" y="318" width="140" height="30" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="604.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">PostgreSQL 备</text>
+<rect x="680" y="318" width="140" height="30" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="750.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Valkey 备</text>
+<rect x="826" y="318" width="140" height="30" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="896.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">OpenSandbox Server*</text>
+<rect x="534" y="360" width="432" height="98" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="548.0" y="380.0" font-size="13" font-weight="700" fill="#0e7490" text-anchor="start" style="white-space:pre">沙箱池（namespace: sandbox · Kata microVM）</text>
+<rect x="548" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="585" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="622" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="659" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="696" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="733" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="770" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="807" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="844" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="881" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="918" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<text x="548.0" y="428.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">约 180 个 / 台（512 GB 时，受内存限制）</text>
+<text x="548.0" y="448.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">预热池 5～15 · CPU 超分约 1:3～1:4</text>
+<rect x="1010" y="196" width="460" height="274" rx="10" ry="10" fill="#ffffff" stroke="#334155" stroke-width="1.8"/>
+<text x="1024.0" y="220.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-03</text>
+<text x="1024.0" y="240.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">鲲鹏 ARM64 · 128 核 · 内存待定 · openEuler 24.03（4K 页）</text>
+<rect x="1024" y="252" width="432" height="34" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1240.0" y="271.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">控制面：apiserver · scheduler · ctrl-mgr · etcd#3</text>
+<text x="1024.0" y="310.0" font-size="12.5" font-weight="700" fill="#6d28d9" text-anchor="start" style="white-space:pre">有状态 / 单活组件（示例分布）</text>
+<rect x="1024" y="318" width="140" height="30" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1094.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">监控 VM/Loki</text>
+<rect x="1170" y="318" width="140" height="30" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1240.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Harbor</text>
+<rect x="1316" y="318" width="140" height="30" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1386.0" y="335.7" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Valkey 哨兵 #3</text>
+<rect x="1024" y="360" width="432" height="98" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1038.0" y="380.0" font-size="13" font-weight="700" fill="#0e7490" text-anchor="start" style="white-space:pre">沙箱池（namespace: sandbox · Kata microVM）</text>
+<rect x="1038" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1075" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1112" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1149" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1186" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1223" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1260" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1297" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1334" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1371" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<rect x="1408" y="390" width="30" height="16" rx="4" ry="4" fill="#a5f3fc" stroke="#0891b2" stroke-width="1"/>
+<text x="1038.0" y="428.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">约 180 个 / 台（512 GB 时，受内存限制）</text>
+<text x="1038.0" y="448.0" font-size="12" font-weight="400" fill="#0e7490" text-anchor="start" style="white-space:pre">预热池 5～15 · CPU 超分约 1:3～1:4</text>
+<text x="1470.0" y="490.0" font-size="11.5" font-weight="400" fill="#64748b" text-anchor="end" style="white-space:pre">* 单副本组件：节点故障时由 K8s 自动漂移到其他节点（1～3 min）· 堡垒机、出网代理、模型入库主机放现有运维机或 VM（可选）</text>
+<rect x="20" y="500" width="1460" height="266" rx="10" ry="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1"/>
+<text x="34.0" y="524.0" font-size="13.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">智算区 · 8 × Atlas 800T A2（每台 8 × 910B 64GB · 4 × 鲲鹏 920）· GPUStack Worker（Docker + Ascend Docker Runtime）</text>
+<rect x="36" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="120.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-01</text>
+<rect x="48.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="66.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="85.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="103.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="122.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="140.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="159.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="177.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<text x="120.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">DeepSeek · Prefill</text>
+<text x="120.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">P 实例（主）+ PD Router</text>
+<text x="120.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="120.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="216" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="300.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-02</text>
+<rect x="228.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="246.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="265.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="283.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="302.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="320.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="339.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="357.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fdba74" stroke="#c2410c" stroke-width="0.8"/>
+<text x="300.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">DeepSeek · Prefill</text>
+<text x="300.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">P 实例（从）</text>
+<text x="300.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="300.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="396" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="480.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-03</text>
+<rect x="408.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="426.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="445.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="463.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="482.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="500.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="519.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="537.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<text x="480.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">DeepSeek · Decode</text>
+<text x="480.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">D 实例（主）</text>
+<text x="480.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="480.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="576" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="660.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-04</text>
+<rect x="588.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="606.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="625.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="643.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="662.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="680.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="699.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="717.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fed7aa" stroke="#c2410c" stroke-width="0.8"/>
+<text x="660.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">DeepSeek · Decode</text>
+<text x="660.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">D 实例（从）</text>
+<text x="660.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="660.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="756" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="840.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-05</text>
+<rect x="768.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="786.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="805.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="823.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="842.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="860.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="879.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="897.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<text x="840.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Qwen3.6-35B-A3B</text>
+<text x="840.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP2 × 4 实例</text>
+<text x="840.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="840.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="936" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1020.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-06</text>
+<rect x="948.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="966.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="985.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1003.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1022.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1040.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1059.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1077.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<text x="1020.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Qwen3.6-35B-A3B</text>
+<text x="1020.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP2 × 4 实例</text>
+<text x="1020.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="1020.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="1116" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1200.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-07</text>
+<rect x="1128.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1146.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1165.0" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1183.5" y="580" width="14" height="18" rx="2" ry="2" fill="#93c5fd" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1202.0" y="580" width="14" height="18" rx="2" ry="2" fill="#ddd6fe" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1220.5" y="580" width="14" height="18" rx="2" ry="2" fill="#ddd6fe" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1239.0" y="580" width="14" height="18" rx="2" ry="2" fill="#fde68a" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1257.5" y="580" width="14" height="18" rx="2" ry="2" fill="#fde68a" stroke="#c2410c" stroke-width="0.8"/>
+<text x="1200.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">35B × 2 · OCR × 2</text>
+<text x="1200.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Embedding · Reranker</text>
+<text x="1200.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="1200.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="1296" y="544" width="168" height="196" rx="8" ry="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1380.0" y="568.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Atlas-08</text>
+<rect x="1308.0" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1326.5" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1345.0" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1363.5" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1382.0" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1400.5" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1419.0" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<rect x="1437.5" y="580" width="14" height="18" rx="2" ry="2" fill="#86efac" stroke="#c2410c" stroke-width="0.8"/>
+<text x="1380.0" y="624.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Qwen3.8-27B</text>
+<text x="1380.0" y="644.0" font-size="11.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TP2 × 4 实例</text>
+<text x="1380.0" y="676.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">GPUStack Worker</text>
+<text x="1380.0" y="694.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">npu-exporter</text>
+<rect x="30" y="540" width="726" height="204" rx="10" ry="10" fill="none" stroke="#c2410c" stroke-width="2" stroke-dasharray="6 4"/>
+<text x="393.0" y="760.0" font-size="12" font-weight="700" fill="#c2410c" text-anchor="middle" style="white-space:pre">DeepSeek-V4.1-Flash 1P1D（P 16 卡 + D 16 卡）· KV 传输与跨机通信走 NPU 参数面 RoCE 200GE</text>
+<rect x="20" y="790" width="1460" height="76" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="750.0" y="820.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">OceanStor Pacific 9950（≈99 TB）</text>
+<text x="750.0" y="843.2" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">NFS /models：8 台 Atlas 只读挂载（同一路径）　｜　S3：资料库、镜像、日志、备份（仅平台服务账户）　｜　Huawei CSI：K8s 共享卷</text>
+<path d="M160.0,470.0 L160.0,498.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)" marker-start="url(#m2563eb)"/>
+<rect x="166" y="479.5" width="311.6000000000001" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="170.0" y="490.0" font-size="11.5" font-weight="400" fill="#2563eb" text-anchor="start" style="white-space:pre">推理（Higress → Worker → vLLM）/ GPUStack 管理</text>
+<path d="M1100.0,766.0 L1100.0,788.0" fill="none" stroke="#c2410c" stroke-width="1.6" marker-end="url(#mc2410c)" marker-start="url(#mc2410c)"/>
+<text x="1110.0" y="782.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">NFS 读权重</text>
+<rect x="20" y="882" width="1460" height="104" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="906.0" font-size="13.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">逻辑网络平面（组网另行设计，这里只列需求）</text>
+<line x1="40" y1="940" x2="80" y2="940" stroke="#2563eb" stroke-width="4"/>
+<text x="90.0" y="934.0" font-size="13" font-weight="700" fill="#2563eb" text-anchor="start" style="white-space:pre">业务网</text>
+<text x="90.0" y="956.0" font-size="11.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">用户 → Higress → 平台；平台 → Atlas 推理 API</text>
+<line x1="400" y1="940" x2="440" y2="940" stroke="#16a34a" stroke-width="4"/>
+<text x="450.0" y="934.0" font-size="13" font-weight="700" fill="#16a34a" text-anchor="start" style="white-space:pre">存储网</text>
+<text x="450.0" y="956.0" font-size="11.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Atlas/TaiShan ↔ Pacific，建议 ≥100GE</text>
+<line x1="760" y1="940" x2="800" y2="940" stroke="#ea580c" stroke-width="4"/>
+<text x="810.0" y="934.0" font-size="13" font-weight="700" fill="#ea580c" text-anchor="start" style="white-space:pre">NPU 参数面</text>
+<text x="810.0" y="956.0" font-size="11.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">每卡 200GE RoCE，跨机推理必需（hccn_tool 检查）</text>
+<line x1="1120" y1="940" x2="1160" y2="940" stroke="#64748b" stroke-width="4"/>
+<text x="1170.0" y="934.0" font-size="13" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">管理网</text>
+<text x="1170.0" y="956.0" font-size="11.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">BMC/iBMC、SSH 经堡垒机</text>
+</svg>

@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="820" viewBox="0 0 1500 820" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m15803d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker><marker id="m2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="m7c3aed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker><marker id="mdc2626" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker></defs>
+<rect width="1500" height="820" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Token 计量与配额</text>
+<text x="256.4" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">业务计量在平台（精确到会话） · 流量保护在网关（限流）</text>
+<rect x="1228.1" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1250.1" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">平台</text>
+<rect x="1281.1" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1303.1" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">网关/模型</text>
+<rect x="1364.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1386.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">数据</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">判定</text>
+<rect x="40" y="100" width="190" height="100" rx="8" ry="8" fill="#ffffff" stroke="#334155" stroke-width="1.5"/>
+<text x="135.0" y="142.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">用户发消息</text>
+<text x="135.0" y="165.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Chat 或 Work</text>
+<path d="M230.0,150.0 L278.0,150.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="280" y="90" width="240" height="120" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="400.0" y="124.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">① Platform API 额度检查</text>
+<text x="400.0" y="146.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">日 / 月加权 Token 余额</text>
+<text x="400.0" y="164.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">并发 Run 数</text>
+<text x="400.0" y="183.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">部门池是否用尽</text>
+<path d="M520.0,150.0 L568.0,150.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<rect x="528.5" y="132.5" width="31.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="544.0" y="143.0" font-size="11.5" font-weight="400" fill="#15803d" text-anchor="middle" style="white-space:pre">通过</text>
+<path d="M360.0,210.0 L360.0,260.0" fill="none" stroke="#dc2626" stroke-width="1.6" marker-end="url(#mdc2626)"/>
+<rect x="300" y="262" width="200" height="76" rx="8" ry="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="400.0" y="293.5" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">超额：Work / 旗舰暂停</text>
+<text x="400.0" y="312.0" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">Chat 降级到快速模型</text>
+<rect x="570" y="90" width="220" height="120" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="680.0" y="124.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Agent Service</text>
+<text x="680.0" y="146.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">每次 LLM 调用</text>
+<text x="680.0" y="164.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">服务 Key + x-user-id</text>
+<text x="680.0" y="183.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">+ x-run-id</text>
+<path d="M790.0,150.0 L838.0,150.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="840" y="80" width="260" height="140" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="970.0" y="114.9" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">② Higress 网关</text>
+<text x="970.0" y="137.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">服务 Key 鉴权</text>
+<text x="970.0" y="155.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">按 x-user-id 限流（TPM）</text>
+<text x="970.0" y="174.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">ai-statistics：Token 指标</text>
+<text x="970.0" y="192.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">别名 → 实例池</text>
+<path d="M1100.0,150.0 L1148.0,150.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="1150" y="90" width="310" height="120" rx="8" ry="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+<text x="1305.0" y="124.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">GPUStack Worker → vLLM</text>
+<text x="1305.0" y="146.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">返回 usage：input / cached /</text>
+<text x="1305.0" y="164.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">output / reasoning tokens</text>
+<text x="1305.0" y="183.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（请求带 include_usage）</text>
+<path d="M680.0,210.0 L680.0,300.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="686" y="277.5" width="281.7000000000001" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="690.0" y="288.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">③ 每次调用 → Platform API /internal/usage</text>
+<rect x="500" y="302" width="360" height="150" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="680.0" y="341.7" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">usage_ledger（PostgreSQL，按月分区）</text>
+<text x="680.0" y="363.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">user · dept · conversation · run · mode</text>
+<text x="680.0" y="382.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">model_alias · input / cached / output</text>
+<text x="680.0" y="400.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">weighted = Σ token × 模型权重</text>
+<text x="680.0" y="419.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">source = web | api</text>
+<path d="M860.0,377.0 L958.0,377.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="863.6" y="359.5" width="90.79999999999998" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="909.0" y="370.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">每 5 min 聚合</text>
+<rect x="960" y="312" width="240" height="130" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1080.0" y="351.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">聚合表</text>
+<text x="1080.0" y="373.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">user_usage_daily</text>
+<text x="1080.0" y="391.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">dept_usage_monthly</text>
+<text x="1080.0" y="410.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">model_usage_hourly</text>
+<path d="M1080.0,312.0 L1080.0,248.0 L440.0,248.0 L440.0,212.0" fill="none" stroke="#7c3aed" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#m7c3aed)"/>
+<rect x="738.5" y="231.5" width="123.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="800.0" y="242.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">余额回写，供下次检查</text>
+<rect x="40" y="380" width="420" height="220" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="52.0" y="416.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">加权规则（示例，可配置）</text>
+<text x="52.0" y="439.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ailab-agent-pro（DeepSeek-V4.1-Flash）  × 3</text>
+<text x="52.0" y="457.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ailab-agent（Qwen3.8-27B）  × 1</text>
+<text x="52.0" y="476.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ailab-chat（Qwen3.6-35B-A3B）  × 0.3</text>
+<text x="52.0" y="495.5" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">ailab-ocr / embed / rerank  × 0.1</text>
+<text x="52.0" y="514.3" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">缓存命中的输入 Token  × 0.1</text>
+<text x="52.0" y="533.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre"></text>
+<text x="52.0" y="551.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">额度近似反映真实算力消耗，</text>
+<text x="52.0" y="570.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">鼓励用合适的模型做合适的事</text>
+<rect x="1220" y="312" width="240" height="130" rx="8" ry="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+<text x="1340.0" y="351.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Prometheus · Loki</text>
+<text x="1340.0" y="373.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">指标：consumer × model</text>
+<text x="1340.0" y="391.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">日志：含 user_id、run_id</text>
+<text x="1340.0" y="410.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（可逐用户对账）</text>
+<path d="M1095.0,220.0 L1095.0,290.0 L1340.0,290.0 L1340.0,310.0" fill="none" stroke="#475569" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#m475569)"/>
+<rect x="960" y="480" width="500" height="110" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1210.0" y="518.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">④ 每日对账</text>
+<text x="1210.0" y="540.5" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">平台账本合计 vs 网关指标合计</text>
+<text x="1210.0" y="559.3" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">偏差 &gt; 2% 告警（漏记 / 绕过网关 / 计费 Bug）</text>
+<path d="M1080.0,442.0 L1080.0,478.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M1340.0,442.0 L1340.0,478.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="20" y="620" width="1460" height="186" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="644.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">⑤ 谁看到什么</text>
+<rect x="40" y="662" width="340" height="126" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="210.0" y="698.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">普通用户</text>
+<text x="210.0" y="721.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">今日 / 本月用量 + 进度条</text>
+<text x="210.0" y="739.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">每条回复的 Token 明细</text>
+<text x="210.0" y="758.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">按模型、模式的分布</text>
+<rect x="400" y="662" width="340" height="126" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="570.0" y="698.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">部门管理员</text>
+<text x="570.0" y="721.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">成员用量排行与趋势</text>
+<text x="570.0" y="739.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">在部门池内分配额度</text>
+<text x="570.0" y="758.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">临时追加额度</text>
+<rect x="760" y="662" width="340" height="126" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="930.0" y="698.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">平台管理员</text>
+<text x="930.0" y="721.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">全局用量 · 各模型利用率</text>
+<text x="930.0" y="739.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">成本折算 · 权重配置</text>
+<text x="930.0" y="758.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">异常用量告警</text>
+<rect x="1120" y="662" width="340" height="126" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1290.0" y="698.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">开发者（二期）</text>
+<text x="1290.0" y="721.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">API Key 用量</text>
+<text x="1290.0" y="739.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TPM 限额（按 Key）</text>
+<text x="1290.0" y="758.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Higress 侧额度 ai-quota</text>
+</svg>

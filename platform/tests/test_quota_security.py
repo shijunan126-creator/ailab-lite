@@ -11,6 +11,7 @@ from ailab_platform.config import Settings, settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, User
 from ailab_platform.quota import tokens_used_since
+from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -37,9 +38,9 @@ def test_daily_token_quota_blocks_new_runs(api, monkeypatch) -> None:
     monkeypatch.setattr(settings, "daily_token_limit", used + 10)
     assert api.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).status_code == 201
 
-    api.post(f"/internal/runs/{first}/usage", headers=SERVICE, json={"model": "m", "prompt_tokens": 8, "completion_tokens": 2})
+    record_usage(api, first, "test-fast", 8, 2)
     blocked = api.post("/v1/runs", headers=AUTH, json={"prompt": "x"})
-    assert blocked.status_code == 429 and "daily" in blocked.json()["detail"]
+    assert blocked.status_code == 429 and blocked.json()["detail"]["window"] == "daily_tokens"
 
 
 def test_library_quota_blocks_uploads_and_ignores_rejected_files(api, monkeypatch) -> None:
@@ -105,26 +106,15 @@ def test_production_refuses_defaults() -> None:
         _settings(env="prod", dev_token="dev-demo-token", service_token="dev-service-token").validate_secrets()
 
 
-def test_production_refuses_short_service_token() -> None:
-    with pytest.raises(RuntimeError, match="shorter"):
-        _settings(env="prod", **{**GOOD, "service_token": "short"}).validate_secrets()
-
-
-def test_production_osb_key_only_matters_with_opensandbox() -> None:
-    base = {**GOOD, "osb_api_key": "dev-osb-key"}
-    _settings(env="prod", sandbox_provider="docker", **base).validate_secrets()
-    with pytest.raises(RuntimeError, match="OSB_API_KEY"):
-        _settings(env="prod", sandbox_provider="opensandbox", **base).validate_secrets()
-
-
-def test_production_with_real_secrets_starts() -> None:
-    _settings(env="prod", **GOOD).validate_secrets()
+def test_production_refuses_custom_shared_service_token() -> None:
+    with pytest.raises(RuntimeError, match="legacy"):
+        _settings(env="prod", **GOOD).validate_secrets()
 
 
 # ---- deleting files / refusing oversized uploads early ----------------------------------------------
 
 
-def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) -> None:
+def test_purge_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) -> None:
     from ailab_platform.quota import library_bytes
     from ailab_platform.storage import get_storage
 
@@ -138,6 +128,11 @@ def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) 
     assert get_storage().exists(key)
 
     assert api.delete(f"/v1/files/{f['id']}", headers=AUTH).status_code == 204
+    assert api.get(f"/v1/files/{f['id']}", headers=AUTH).json()["deleted_at"]
+    assert get_storage().exists(key)
+    with SessionLocal() as db:
+        assert library_bytes(db, user.id) == before + 5
+    assert api.post("/v1/files/batch", headers=AUTH, json={"ids": [f["id"]], "action": "purge"}).status_code == 200
     assert api.get(f"/v1/files/{f['id']}", headers=AUTH).status_code == 404
     assert not get_storage().exists(key)
     with SessionLocal() as db:
@@ -147,10 +142,11 @@ def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) 
 def test_delete_is_owner_only_and_keeps_version_chains(api) -> None:
     v1 = api.post("/v1/files", headers=AUTH, files={"upload": ("d.txt", b"v1", "text/plain")}).json()
     v2 = api.post(f"/v1/files?parent_id={v1['id']}", headers=AUTH, files={"upload": ("d.txt", b"v2", "text/plain")}).json()
-    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 409  # v2 builds on it
+    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 204
+    assert api.get(f"/v1/files/{v2['id']}", headers=AUTH).json()["deleted_at"]
     assert api.delete(f"/v1/files/{v2['id']}", headers=AUTH).status_code == 204
     assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 204
-    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 404
+    assert api.get(f"/v1/files/{v1['id']}", headers=AUTH).json()["deleted_at"]
     assert api.delete("/v1/files/fil_x", headers={"Authorization": "Bearer nope"}).status_code == 401
 
 

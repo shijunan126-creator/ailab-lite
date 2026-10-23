@@ -14,6 +14,7 @@ from ailab_platform.api.main import app
 from ailab_platform.catalog import CatalogError, get_catalog, load_catalog, parse_catalog
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMError, MockLLM, OpenAICompatibleClient, llm_for, reset_llm_cache
+from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -146,7 +147,7 @@ def test_quota_counts_weighted_tokens(api, monkeypatch) -> None:
     pro = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": "test-pro"}).json()["id"]
     fast = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": "test-fast"}).json()["id"]
     for run_id, model in ((pro, "test-pro"), (fast, "test-fast")):
-        api.post(f"/internal/runs/{run_id}/usage", headers=SERVICE, json={"model": model, "prompt_tokens": 80, "completion_tokens": 20})
+        record_usage(api, run_id, model, 80, 20)
     with SessionLocal() as db:
         # 100 tokens at weight 3 plus 100 tokens at weight 1
         assert tokens_used_since(db, user.id, day) - before == 400
@@ -192,7 +193,7 @@ def test_usage_endpoint_reports_weighted_usage_against_the_limits(api, monkeypat
     assert api.get("/v1/usage").status_code == 401
     before = api.get("/v1/usage", headers=AUTH).json()
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": "test-pro"}).json()["id"]
-    api.post(f"/internal/runs/{run_id}/usage", headers=SERVICE, json={"model": "test-pro", "prompt_tokens": 10, "completion_tokens": 0})
+    record_usage(api, run_id, "test-pro", 10)
     after = api.get("/v1/usage", headers=AUTH).json()
     assert after["daily_tokens"]["used"] - before["daily_tokens"]["used"] == 30  # 10 tokens x weight 3
     assert after["daily_tokens"]["limit"] == settings.daily_token_limit

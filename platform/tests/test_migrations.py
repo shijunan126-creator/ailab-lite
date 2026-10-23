@@ -252,3 +252,172 @@ def test_projects_upgrade_and_downgrade_preserve_referenced_rows(tmp_path) -> No
     with eng.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
     eng.dispose()
+
+
+def test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows(engine, monkeypatch):
+    from ailab_platform.config import settings
+
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE runs SET options = '{\"mode\": \"chat\"}' WHERE id = 'r1'"))
+        conn.execute(
+            text(
+                "INSERT INTO model_usage (run_id, model, prompt_tokens, cached_tokens, completion_tokens, weight, created_at) "
+                "VALUES ('r1', 'old-alias', 100, 80, 10, 3, '2026-01-01 00:00:00')"
+            )
+        )
+        conn.execute(
+            text("INSERT INTO run_events (run_id, seq, type, payload, created_at) VALUES ('r1', 1, 'run.created', '{}', '2026-01-01')")
+        )
+    monkeypatch.setattr(settings, "cached_token_weight", 0.4)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT call_id, user_id, alias, mode, weighted_amount, policy_version, status, dept_id FROM model_usage")
+        ).one()
+        assert row == ("legacy-1", "u1", "old-alias", "chat", 186000, "legacy", "settled", None)
+    monkeypatch.setattr(settings, "cached_token_weight", 0.9)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT weighted_amount FROM model_usage")).scalar() == 186000
+    _downgrade_to(engine, "0008")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM run_events")).scalar() == 1
+        assert conn.execute(text("SELECT count(*) FROM runs")).scalar() == 1
+        assert conn.execute(text("SELECT prompt_tokens, cached_tokens, completion_tokens FROM model_usage")).one() == (100, 80, 10)
+    run_migrations(engine)
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_preview_outbox_migration_and_bounded_dispatch_plan(engine):
+    _upgrade_to(engine, "0011")
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO outbox (id, topic, payload, created_at) VALUES ('job', 'files', '{}', '2026-01-01 00:00:00')"))
+        if engine.dialect.name == "sqlite":
+            plan = " ".join(str(row) for row in conn.execute(text("EXPLAIN QUERY PLAN SELECT * FROM outbox ORDER BY id LIMIT 20")))
+            assert "INDEX" in plan
+        else:
+            conn.execute(text("SET LOCAL enable_seqscan = off"))
+            plan = " ".join(str(row) for row in conn.execute(text("EXPLAIN SELECT * FROM outbox ORDER BY id LIMIT 20")))
+            assert "outbox_pkey" in plan
+    _downgrade_to(engine, "0008")
+    assert "outbox" not in inspect(engine).get_table_names()
+    _upgrade_to(engine, "0011")
+    assert "outbox" in inspect(engine).get_table_names()
+
+
+def test_identity_roundtrip_preserves_existing_users_and_references(engine):
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE users SET username = 'admin' WHERE id = 'u1'"))
+        conn.execute(
+            text("INSERT INTO api_tokens (id, user_id, name, token_hash, created_at) VALUES ('t1', 'u1', 'session', 'hash', '2026-01-01')")
+        )
+    _upgrade_to(engine, "0012")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT role FROM user_roles WHERE user_id = 'u1' ORDER BY role")).scalars().all() == [
+            "platform_admin",
+            "user",
+        ]
+        conn.execute(
+            text(
+                "INSERT INTO quota_policies (id, name, daily_tokens, monthly_tokens, library_bytes, max_concurrent_runs, is_default) "
+                "VALUES ('qp', 'Policy', 10, 20, 21474836480, 2, true)"
+            )
+        )
+        conn.execute(text("INSERT INTO departments (id, name, created_at, quota_policy_id) VALUES ('d', 'Dept', '2026-01-01', 'qp')"))
+        conn.execute(text("INSERT INTO departments (id, name, parent_id, created_at) VALUES ('child', 'Child', 'd', '2026-01-01')"))
+        conn.execute(
+            text(
+                "UPDATE users SET dept_id='d', quota_policy_id='qp', issuer='https://idp.example', external_subject='subject' WHERE id='u1'"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO audit_log (id, at, actor_id, action, target_type, target_id, outcome, request_id, detail) "
+                "VALUES ('a', '2026-01-01', 'u1', 'test', 'user', 'u1', 'success', 'request', '{}')"
+            )
+        )
+    _downgrade_to(engine, "0008")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT user_id FROM runs WHERE id='r1'")).scalar() == "u1"
+        assert conn.execute(text("SELECT user_id FROM api_tokens WHERE id='t1'")).scalar() == "u1"
+    run_migrations(engine)  # to head: the models describe the latest schema
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id, dept_id, issuer FROM users WHERE id='u1'")).one() == ("u1", None, None)
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        if engine.dialect.name == "sqlite":
+            assert conn.execute(text("PRAGMA foreign_key_check")).all() == []
+
+
+def test_file_lineage_backfill_and_roundtrip_preserve_existing_references(engine) -> None:
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for fid, parent, version in (("root", None, 1), ("child", "root", 2), ("grandchild", "child", 3), ("separate", None, 1)):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,'u1','a.txt','text/plain',1,'','a.txt','ready',:version,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "parent": parent, "version": version},
+            )
+        conn.execute(text("INSERT INTO artifacts (id,run_id,file_id,role,created_at) VALUES ('a1','r1','child','output','2026-01-01')"))
+        conn.execute(text("UPDATE runs SET input_file_ids='[\"root\"]' WHERE id='r1'"))
+    for _ in range(2):
+        _upgrade_to(engine, "0013")
+        with engine.connect() as conn:
+            rows = conn.execute(text("SELECT id,lineage_id,version,is_head FROM files ORDER BY id")).all()
+            assert rows == [("child", "root", 2, 0), ("grandchild", "root", 3, 1), ("root", "root", 1, 0), ("separate", "separate", 1, 1)]
+            assert conn.execute(text("SELECT file_id FROM artifacts WHERE id='a1'")).scalar() == "child"
+            assert conn.execute(text("SELECT parent_id FROM files WHERE id='grandchild'")).scalar() == "child"
+            assert conn.execute(text("SELECT input_file_ids FROM runs WHERE id='r1'")).scalar() in ('["root"]', ["root"])
+        _downgrade_to(engine, "0008")
+    _upgrade_to(engine, "0013")
+
+
+def test_file_lineage_backfill_renumbers_legacy_duplicate_branches(engine) -> None:
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for fid, parent, version in (("root", None, 1), ("a", "root", 2), ("b", "root", 2)):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,'u1','a.txt','text/plain',1,'','a.txt','ready',:version,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "parent": parent, "version": version},
+            )
+    _upgrade_to(engine, "0013")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id,lineage_id,version,is_head FROM files ORDER BY version")).all() == [
+            ("root", "root", 1, 0),
+            ("a", "root", 2, 0),
+            ("b", "root", 3, 1),
+        ]
+
+
+def test_file_lineage_backfill_rejects_cross_owner_parent_even_if_root_was_already_seen(engine) -> None:
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("INSERT INTO users (id,email,display_name,created_at) VALUES ('u2','other@b.c','','2026-01-01')"))
+        for fid, uid, parent in (("root", "u1", None), ("foreign-child", "u2", "root")):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,content_type,size,sha256,storage_key,status,version,parent_id,meta,created_at) "
+                    "VALUES (:id,:uid,'a.txt','text/plain',1,'','a.txt','ready',1,:parent,'{}','2026-01-01')"
+                ),
+                {"id": fid, "uid": uid, "parent": parent},
+            )
+    with pytest.raises(RuntimeError, match="invalid file parent chain"):
+        _upgrade_to(engine, "0013")

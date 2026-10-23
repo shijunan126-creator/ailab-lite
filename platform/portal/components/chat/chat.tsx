@@ -11,6 +11,7 @@ import { IconChevronRight, IconFolder } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane from "./preview-pane";
+import QuotaBanner from "./quota-banner";
 import Turn, { Item, reduceEvent } from "./turn";
 
 function useModels() {
@@ -182,11 +183,20 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const projectId = id ? detail?.project_id || null : project?.id || null;
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
   const running = turns.some((t) => !isTerminal(t.status));
+  // a question the agent is waiting on: the composer answers it instead of starting a new turn
+  const waiting = turns.find((t) => t.status === "waiting_user");
+  const question = waiting
+    ? ([...(items[waiting.id] || [])].reverse().find((it) => it.kind === "ask" && it.answer === undefined) as Extract<Item, { kind: "ask" }> | undefined)
+    : undefined;
 
   async function send(prompt: string, fileIds: string[], options: SendOptions = { mode: "work" }): Promise<boolean> {
     setBusy(true);
     setError("");
     try {
+      if (waiting && question) {
+        await api(`/v1/runs/${waiting.id}/answer`, { method: "POST", body: JSON.stringify({ question_id: question.id, answer: prompt }) });
+        return true;
+      }
       let convId = id;
       if (!convId)
         convId = (await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model, project_id: projectId || undefined }) })).id;
@@ -213,6 +223,18 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
+  async function resume(run: Run) {
+    setError("");
+    try {
+      const resumed = await api<Run>(`/v1/runs/${run.id}/resume`, { method: "POST" });
+      setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
+      stick.current = true;
+      follow(resumed);
+    } catch (err: any) {
+      setError(String(err?.message || err));
+    }
+  }
+
   async function stop() {
     const active = turns.find((t) => !isTerminal(t.status));
     if (active) await api(`/v1/runs/${active.id}/cancel`, { method: "POST" }).catch(() => undefined);
@@ -221,19 +243,22 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   const showPane = paneOpen && previews.length > 0;
   const composer = (
+    <>
+    <QuotaBanner refresh={streaming} />
     <Composer
       models={models}
       model={model}
       onModel={setModel}
       busy={busy}
-      running={running}
+      running={running && !question}
       onSend={send}
       onStop={stop}
       autoFocus
-      placeholder={id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
+      placeholder={question ? "回答上面的问题" : id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
       projectId={projectId}
       initialFiles={initialFiles}
     />
+    </>
   );
 
   return (
@@ -284,6 +309,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                       setSelected(f);
                       setPaneOpen(true);
                     }}
+                    onResume={resume}
                   />
                 ))}
               </div>

@@ -1,0 +1,71 @@
+# One shared scanner, not one sidecar per Worker. Signatures need roughly 1 GiB RSS; reserve 1.5 GiB and
+# allow 2 GiB during a signature reload. While clamd is down uploads stay pending (fail closed).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: platform-clamav}
+  template:
+    metadata:
+      labels: {app: platform-clamav}
+    spec:
+      containers:
+        - name: clamd
+          # ClamAV 1.5.4 Debian, multiarch index (amd64/arm64/ppc64le).
+          image: clamav/clamav-debian@sha256:d7ede3cefeaf3b8a72ebcdee849d13f504bbca3f3b3cfade5bc7b6ee06a4f62c
+          ports: [{containerPort: 3310}]
+          resources:
+            requests: {cpu: 100m, memory: 1536Mi}
+            limits: {cpu: 500m, memory: 2Gi}
+          startupProbe:
+            tcpSocket: {port: 3310}
+            periodSeconds: 10
+            failureThreshold: 60
+          readinessProbe:
+            tcpSocket: {port: 3310}
+            periodSeconds: 10
+          volumeMounts: [{name: signatures, mountPath: /var/lib/clamav}]
+      volumes:
+        - name: signatures
+          persistentVolumeClaim: {claimName: platform-clamav}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests: {storage: 1Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  selector: {app: platform-clamav}
+  ports: [{name: clamd, port: 3310, targetPort: 3310}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-clamav
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels: {app: platform-clamav}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: platform-worker}
+      ports:
+        - {protocol: TCP, port: 3310}

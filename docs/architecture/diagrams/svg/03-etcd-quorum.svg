@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="930" viewBox="0 0 1500 930" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+<rect width="1500" height="930" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">etcd 是什么 · 三个成员怎么放</text>
+<text x="405.2" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">K8s 控制面高可用的关键</text>
+<rect x="20" y="62" width="1460" height="300" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① etcd 的作用：Kubernetes 的“数据库”</text>
+<rect x="50" y="110" width="230" height="210" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="62.0" y="160.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">谁在读写集群状态</text>
+<text x="62.0" y="183.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">kube-scheduler（调度）</text>
+<text x="62.0" y="202.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">controller-manager</text>
+<text x="62.0" y="221.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">OpenSandbox 控制器</text>
+<text x="62.0" y="240.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">CNPG（PG 主备切换）</text>
+<text x="62.0" y="259.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">kubelet（节点上报）</text>
+<text x="62.0" y="278.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">kubectl / GitOps</text>
+<path d="M280.0,215.0 L350.0,215.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="299.5" y="196.5" width="31.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="315.0" y="207.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">读写</text>
+<rect x="352" y="160" width="170" height="110" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="437.0" y="198.2" font-size="15" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">kube-apiserver</text>
+<text x="437.0" y="221.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">T1、T2、T3 三活</text>
+<text x="437.0" y="240.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">kube-vip VIP 对外</text>
+<path d="M522.0,215.0 L590.0,215.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="529.0" y="196.5" width="54.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="556.0" y="207.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">唯一存储</text>
+<rect x="592" y="100" width="330" height="230" rx="12" ry="12" fill="#fff" stroke="#7c3aed" stroke-width="2"/>
+<text x="757.0" y="126.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">etcd 集群（Raft 一致性协议）</text>
+<circle cx="650" cy="185" r="34" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+<text x="650.0" y="181.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">etcd</text>
+<text x="650.0" y="199.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">成员 1</text>
+<circle cx="757" cy="185" r="34" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+<text x="757.0" y="181.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">etcd</text>
+<text x="757.0" y="199.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">成员 2</text>
+<circle cx="864" cy="185" r="34" fill="#f5f3ff" stroke="#7c3aed" stroke-width="2"/>
+<text x="864.0" y="181.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">etcd</text>
+<text x="864.0" y="199.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">成员 3</text>
+<text x="757.0" y="248.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">所有 Pod、沙箱、配置、Secret、</text>
+<text x="757.0" y="268.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">节点状态都存在这里</text>
+<text x="757.0" y="300.0" font-size="12.5" font-weight="700" fill="#7c3aed" text-anchor="middle" style="white-space:pre">每次写入需要“过半数”成员确认</text>
+<text x="960.0" y="112.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">为什么必须 3 个、而且要在 3 台不同的机器上？</text>
+<text x="960.0" y="142.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">成员数</text>
+<text x="1060.0" y="142.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">需要存活</text>
+<text x="1160.0" y="142.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">能容忍坏几个</text>
+<line x1="960" y1="150" x2="1440" y2="150" stroke="#e2e8f0" stroke-width="1"/>
+<text x="960.0" y="168.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">2</text>
+<text x="1060.0" y="168.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">2</text>
+<text x="1160.0" y="168.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">0 ✗（坏一个就停）</text>
+<line x1="960" y1="176" x2="1440" y2="176" stroke="#e2e8f0" stroke-width="1"/>
+<text x="960.0" y="194.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">3</text>
+<text x="1060.0" y="194.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">2</text>
+<text x="1160.0" y="194.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">1 ✓</text>
+<line x1="960" y1="202" x2="1440" y2="202" stroke="#e2e8f0" stroke-width="1"/>
+<text x="960.0" y="220.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">5</text>
+<text x="1060.0" y="220.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">3</text>
+<text x="1160.0" y="220.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">2 ✓</text>
+<line x1="960" y1="228" x2="1440" y2="228" stroke="#e2e8f0" stroke-width="1"/>
+<text x="960.0" y="262.0" font-size="13" font-weight="700" fill="#dc2626" text-anchor="start" style="white-space:pre">失去“过半数”（仲裁）后：</text>
+<text x="960.0" y="284.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">• 已在运行的 Pod、沙箱、模型都会继续跑 ✓</text>
+<text x="960.0" y="304.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">• 但不能新建沙箱、不能调度、PG 不能自动切主、</text>
+<text x="960.0" y="324.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">• 服务不能漂移、不能改配置 → 平台“半瘫”</text>
+<rect x="20" y="380" width="1460" height="530" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="404.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② 放置方式：三台 TaiShan 各一个 etcd（kubeadm stacked 控制面）</text>
+<rect x="40" y="418" width="900" height="476" rx="12" ry="12" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.8"/>
+<text x="56.0" y="446.0" font-size="15.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">三台 TaiShan · 每台一个 etcd 成员</text>
+<rect x="886.0" y="431" width="40.0" height="22" rx="11" ry="11" fill="#4f46e5" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="906.0" y="446.0" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" style="white-space:pre">采用</text>
+<rect x="54" y="466" width="284.0" height="92" rx="8" ry="8" fill="#fff" stroke="#334155" stroke-width="1.5"/>
+<text x="196.0" y="486.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">TaiShan-01</text>
+<text x="196.0" y="503.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">控制面 + 工作节点</text>
+<rect x="171.0" y="520" width="50" height="22" rx="11" ry="11" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="196.0" y="535.0" font-size="11.5" font-weight="700" fill="#5b21b6" text-anchor="middle" style="white-space:pre">etcd1</text>
+<rect x="348.0" y="466" width="284.0" height="92" rx="8" ry="8" fill="#fff" stroke="#334155" stroke-width="1.5"/>
+<text x="490.0" y="486.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">TaiShan-02</text>
+<text x="490.0" y="503.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">控制面 + 工作节点</text>
+<rect x="465.0" y="520" width="50" height="22" rx="11" ry="11" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="490.0" y="535.0" font-size="11.5" font-weight="700" fill="#5b21b6" text-anchor="middle" style="white-space:pre">etcd2</text>
+<rect x="642.0" y="466" width="284.0" height="92" rx="8" ry="8" fill="#fff" stroke="#334155" stroke-width="1.5"/>
+<text x="784.0" y="486.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">TaiShan-03</text>
+<text x="784.0" y="503.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">控制面 + 工作节点</text>
+<rect x="759.0" y="520" width="50" height="22" rx="11" ry="11" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="784.0" y="535.0" font-size="11.5" font-weight="700" fill="#5b21b6" text-anchor="middle" style="white-space:pre">etcd3</text>
+<text x="56.0" y="588.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">单台物理机故障时：</text>
+<text x="64.0" y="614.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-01 宕机</text>
+<text x="240.0" y="614.0" font-size="12.5" font-weight="700" fill="#15803d" text-anchor="start" style="white-space:pre">2/3 存活 ✓</text>
+<text x="64.0" y="640.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-02 宕机</text>
+<text x="240.0" y="640.0" font-size="12.5" font-weight="700" fill="#15803d" text-anchor="start" style="white-space:pre">2/3 存活 ✓</text>
+<text x="64.0" y="666.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">TaiShan-03 宕机</text>
+<text x="240.0" y="666.0" font-size="12.5" font-weight="700" fill="#15803d" text-anchor="start" style="white-space:pre">2/3 存活 ✓</text>
+<line x1="56" y1="698" x2="924" y2="698" stroke="#cbd5e1" stroke-width="1"/>
+<text x="56.0" y="722.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">• 任意一台坏都不影响控制面；kube-apiserver 三台都跑，前面用 kube-vip 提供 VIP</text>
+<text x="56.0" y="744.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">• etcd 数据放每台的本地 SSD/NVMe（对时延敏感，不放 NFS）；每日快照到 S3</text>
+<text x="56.0" y="766.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">• 三台同时是工作节点：平台服务和沙箱都可以调度上去（kubeadm 默认的控制面污点要去掉）</text>
+<text x="56.0" y="788.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">• 给 etcd 和 kube-apiserver 预留资源（每节点系统预留 8 核 / 32 GB），沙箱优先级最低，先被驱逐</text>
+<text x="56.0" y="810.0" font-size="12.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">• 同时坏两台才会失去仲裁：此时已运行的负载继续跑，按 Runbook 从快照恢复</text>
+<rect x="960" y="418" width="500" height="476" rx="12" ry="12" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.8"/>
+<text x="976.0" y="446.0" font-size="15.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">不再需要的旧方案</text>
+<rect x="1394.0" y="431" width="52.0" height="22" rx="11" ry="11" fill="#94a3b8" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1420.0" y="446.0" font-size="12" font-weight="700" fill="#fff" text-anchor="middle" style="white-space:pre">已撤销</text>
+<text x="976.0" y="466.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">只有两台 TaiShan 时，第三个成员必须另找地方：</text>
+<text x="976.0" y="488.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre"></text>
+<text x="976.0" y="510.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">A. 新增一台小管理节点（8C32G）</text>
+<text x="976.0" y="532.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">B. 放在 Atlas-01（只跑一个 etcd 进程）</text>
+<text x="976.0" y="554.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">C. 一台 TaiShan 上起两个 VM（不推荐）</text>
+<text x="976.0" y="576.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre"></text>
+<text x="976.0" y="598.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">现在三台通算，三个成员各占一台物理机，</text>
+<text x="976.0" y="620.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">以上方案都不需要了：</text>
+<text x="976.0" y="642.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">• 智算节点上不再跑任何控制面进程</text>
+<text x="976.0" y="664.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">• 不需要为 etcd 单独申请机器</text>
+<text x="976.0" y="686.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">• 不需要在鲲鹏上做虚拟化</text>
+<text x="976.0" y="708.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre"></text>
+<text x="976.0" y="730.0" font-size="12.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">提醒：鲲鹏 920 不支持嵌套虚拟化，</text>
+<text x="976.0" y="752.0" font-size="12.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">沙箱节点必须是物理机，不能是 VM</text>
+</svg>

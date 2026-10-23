@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="900" viewBox="0 0 1500 900" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+<rect width="1500" height="900" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Skills 体系 · 开发、发布与运行时加载</text>
+<text x="506.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">自研为主 · 参考 MIT 开源实现 · 随镜像版本发布</text>
+<rect x="1288.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1310.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">自建</text>
+<rect x="1341.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1363.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">开源参考</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">沙箱</text>
+<rect x="20" y="62" width="560" height="470" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① 首批 Skills（P1）</text>
+<rect x="40" y="102" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="126.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">pptx-builder</text>
+<text x="190.0" y="126.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">公司母版填充 + HTML 设计 → 可编辑 PPT</text>
+<rect x="40" y="148" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="172.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">docx-writer</text>
+<text x="190.0" y="172.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Markdown→pandoc(公司 reference.docx) / 模板填充</text>
+<rect x="40" y="194" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="218.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">xlsx-analyst</text>
+<text x="190.0" y="218.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">pandas 分析 · 格式化 · 原生图表 · 公式重算</text>
+<rect x="40" y="240" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="264.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">pdf-toolkit</text>
+<text x="190.0" y="264.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">生成 · 合并拆分 · 提取文字表格 · 转图片</text>
+<rect x="40" y="286" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="310.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">doc-convert</text>
+<text x="190.0" y="310.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Office ⇄ PDF ⇄ Markdown（LibreOffice/pandoc）</text>
+<rect x="40" y="332" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="356.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">chart-maker</text>
+<text x="190.0" y="356.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">matplotlib / ECharts，中文字体与配色规范</text>
+<rect x="40" y="378" width="520" height="38" rx="6" ry="6" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.2"/>
+<text x="54.0" y="402.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">data-analysis</text>
+<text x="190.0" y="402.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">CSV/Excel 清洗、统计、透视、结论摘要</text>
+<rect x="40" y="424" width="520" height="38" rx="6" ry="6" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="54.0" y="448.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">doc-review</text>
+<text x="190.0" y="448.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">读取文档 → 校对、改写、批注（P2）</text>
+<rect x="40" y="470" width="520" height="38" rx="6" ry="6" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="4 3"/>
+<text x="54.0" y="494.0" font-size="13" font-weight="700" fill="#3730a3" text-anchor="start" style="white-space:pre">ocr-reader</text>
+<text x="190.0" y="494.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">扫描件 / 图片 OCR（tesseract 或 VL 模型，P2）</text>
+<rect x="600" y="62" width="880" height="470" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="614.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② 可参考的开源实现（只借鉴模式与代码，保留 MIT 声明）</text>
+<rect x="620" y="108" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="136.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">MiniMax-AI/skills</text>
+<rect x="820" y="120" width="37.8" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="838.9" y="134.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">MIT</text>
+<text x="920.0" y="136.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">pptx-generator(PptxGenJS) · minimax-docx(.NET OpenXML) · xlsx · pdf；结构最完整</text>
+<rect x="620" y="164" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="192.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">ppt-master</text>
+<rect x="820" y="176" width="37.8" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="838.9" y="190.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">MIT</text>
+<text x="920.0" y="192.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">每页 SVG → 原生 DrawingML，不依赖浏览器；需剔除 PyMuPDF(AGPL) 等依赖</text>
+<rect x="620" y="220" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="248.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">PPTAgent / DeepPresenter</text>
+<rect x="820" y="232" width="37.8" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="838.9" y="246.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">MIT</text>
+<text x="920.0" y="248.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">模板学习 + 多 Agent 生成；已做成 Skill 形态</text>
+<rect x="620" y="276" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="304.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">dom-to-pptx</text>
+<rect x="820" y="288" width="37.8" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="838.9" y="302.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">MIT</text>
+<text x="920.0" y="304.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">HTML/CSS → 可编辑 PPTX（PptxGenJS），HTML 设计路线的核心组件</text>
+<rect x="620" y="332" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="360.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">DeerFlow 2.x skills</text>
+<rect x="820" y="344" width="37.8" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="838.9" y="358.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">MIT</text>
+<text x="920.0" y="360.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">skill-creator · data-analysis · deep-research 的组织方式</text>
+<rect x="620" y="388" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="416.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">openai/skills · pdf</text>
+<rect x="820" y="400" width="84.0" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="862.0" y="414.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">Apache-2.0</text>
+<text x="920.0" y="416.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">仅 pdf skill 可用（仓库已标记废弃）</text>
+<rect x="620" y="444" width="840" height="46" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="636.0" y="472.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">agentskills.io 规范</text>
+<rect x="820" y="456" width="84.0" height="20" rx="10.0" ry="10.0" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.2"/>
+<text x="862.0" y="470.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">Apache-2.0</text>
+<text x="920.0" y="472.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">SKILL.md 格式标准，40+ 客户端支持</text>
+<text x="620.0" y="508.0" font-size="12.5" font-weight="700" fill="#dc2626" text-anchor="start" style="white-space:pre">✕ 不用：Anthropic docx/pptx/xlsx/pdf（专有许可）· DeerFlow ppt-generation（整页图片不可编辑）</text>
+<rect x="20" y="548" width="1460" height="150" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="572.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">③ 发布流水线（Skill 和沙箱镜像一起版本化）</text>
+<rect x="40" y="594" width="210" height="86" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="145.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">skills/ Git 仓库</text>
+<text x="145.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">SKILL.md · scripts/</text>
+<text x="145.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">templates/ · tests/</text>
+<path d="M250.0,637.0 L278.0,637.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="278" y="594" width="210" height="86" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="383.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">CI 校验</text>
+<text x="383.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">格式 · 单元测试</text>
+<text x="383.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">密钥扫描 · 许可证检查</text>
+<path d="M488.0,637.0 L516.0,637.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="516" y="594" width="210" height="86" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="621.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">评测集回归</text>
+<text x="621.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">真实办公任务</text>
+<text x="621.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">成功率不下降</text>
+<path d="M726.0,637.0 L754.0,637.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="754" y="594" width="210" height="86" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="859.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">构建 sbx-office:2026.11.1</text>
+<text x="859.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Skills 打进 /opt/skills</text>
+<text x="859.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">签名推送 Harbor</text>
+<path d="M964.0,637.0 L992.0,637.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="992" y="594" width="210" height="86" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1097.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">登记 Skills 索引</text>
+<text x="1097.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">名称 · 描述 · 版本</text>
+<text x="1097.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">适用角色 → 平台 DB</text>
+<path d="M1202.0,637.0 L1230.0,637.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1230" y="594" width="210" height="86" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1335.0" y="620.4" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Pool 模板更新</text>
+<text x="1335.0" y="642.3" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">预热池滚动替换</text>
+<text x="1335.0" y="660.6" font-size="11.8" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">可一键回滚</text>
+<rect x="20" y="714" width="1460" height="172" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="738.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">④ 运行时：渐进披露（省上下文）</text>
+<rect x="40" y="756" width="260" height="110" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="170.0" y="794.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">系统提示</text>
+<text x="170.0" y="816.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">只放 Skills 索引：</text>
+<text x="170.0" y="835.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">名称 + 一句描述（约 50 Token/个）</text>
+<path d="M300.0,811.0 L330.0,811.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="330" y="756" width="260" height="110" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="460.0" y="803.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Agent 判断需要</text>
+<text x="460.0" y="825.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">“做 PPT” → 选中 pptx-builder</text>
+<path d="M590.0,811.0 L620.0,811.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="620" y="756" width="260" height="110" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="750.0" y="794.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">load_skill</text>
+<text x="750.0" y="816.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">读 /opt/skills/pptx-builder/SKILL.md</text>
+<text x="750.0" y="835.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（完整说明 2～5k Token）</text>
+<path d="M880.0,811.0 L910.0,811.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="910" y="756" width="260" height="110" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1040.0" y="794.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">按说明执行</text>
+<text x="1040.0" y="816.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">运行 scripts/*.py|js</text>
+<text x="1040.0" y="835.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">使用 templates/ 母版</text>
+<path d="M1170.0,811.0 L1200.0,811.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1200" y="756" width="260" height="110" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1330.0" y="794.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">产出到 outputs/</text>
+<text x="1330.0" y="816.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">render_preview 自检</text>
+<text x="1330.0" y="835.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">deliver_file 交付</text>
+</svg>

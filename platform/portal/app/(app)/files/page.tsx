@@ -10,6 +10,7 @@ import {
   IconFolderPlus,
   IconMessage,
   IconMore,
+  IconRestore,
   IconSearch,
   IconStar,
   IconTrash,
@@ -17,9 +18,9 @@ import {
   IconX,
   IconCheck,
 } from "../../../components/icons";
-import FileTile, { isImage, thumbUrl } from "../../../components/library/file-tile";
-import Modal from "../../../components/library/modal";
+import FileTile, { thumbUrl } from "../../../components/library/file-tile";
 import { MoveDialog, NewProjectInput } from "../../../components/library/projects";
+import FileViewer from "../../../components/preview/file-viewer";
 import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
 import { formatBytes, timeAgo } from "../../../lib/format";
@@ -32,7 +33,14 @@ const TABS: [Tab, string][] = [
   ["starred", "收藏"],
   ["images", "图像"],
   ["projects", "项目"],
+  ["trash", "回收站"],
 ];
+const DAY = 86_400_000;
+
+function purgeText(file: FileItem): string {
+  const days = file.purge_at ? Math.max(0, Math.ceil((new Date(file.purge_at).getTime() - Date.now()) / DAY)) : null;
+  return days === null ? "" : days === 0 ? "今天永久删除" : `${days} 天后永久删除`;
+}
 
 function statusText(file: FileItem): string | null {
   if (file.status === "rejected") return "已拒绝";
@@ -67,9 +75,12 @@ function Library() {
   const [over, setOver] = useState(false);
   const [notice, setNotice] = useState("");
   const [maxUpload, setMaxUpload] = useState(0);
+  const [undo, setUndo] = useState<FileItem[] | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const showsFiles = tab !== "projects" || !!projectId;
+  const trash = tab === "trash";
+  const canUpload = showsFiles && !trash;
   const { files, setFiles, loaded, more, error, reload, loadMore } = useLibrary(
     { category: tab === "projects" ? "all" : tab, projectId, q },
     showsFiles
@@ -121,7 +132,7 @@ function Library() {
     }
   }
 
-  function batch(action: "star" | "unstar" | "move" | "delete", list: FileItem[], extra: Record<string, unknown> = {}) {
+  function batch(action: "star" | "unstar" | "move" | "trash" | "restore" | "purge", list: FileItem[], extra: Record<string, unknown> = {}) {
     if (list.length > BATCH) return Promise.reject(new Error(`一次最多处理 ${BATCH} 个文件`));
     return api<{ count: number }>("/v1/files/batch", { method: "POST", body: JSON.stringify({ action, ids: list.map((f) => f.id), ...extra }) });
   }
@@ -132,17 +143,45 @@ function Library() {
     run(() => batch(on ? "star" : "unstar", list));
   }
 
+  // Deleting only moves to the trash, so it asks nothing and offers an undo instead.
   function remove(list: FileItem[]) {
-    const label = list.length === 1 ? `「${list[0].filename}」` : `这 ${list.length} 个文件`;
-    if (!confirm(`删除${label}？无法恢复。`)) return;
     run(
-      () => batch("delete", list),
+      () => batch("trash", list),
+      () => {
+        setSelected(new Set());
+        setUndo(list);
+        projectsChanged();
+      }
+    );
+  }
+
+  function restore(list: FileItem[]) {
+    setUndo(null);
+    run(
+      () => batch("restore", list),
       () => {
         setSelected(new Set());
         projectsChanged();
       }
     );
   }
+
+  function purge(list: FileItem[]) {
+    const label = list.length === 1 ? `「${list[0].filename}」` : `这 ${list.length} 个文件`;
+    if (!confirm(`永久删除${label}及其所有版本？无法恢复。`)) return;
+    run(() => batch("purge", list), () => setSelected(new Set()));
+  }
+
+  function emptyTrash() {
+    if (!confirm("清空回收站？其中的文件将永久删除，无法恢复。")) return;
+    run(() => api("/v1/trash", { method: "DELETE" }));
+  }
+
+  useEffect(() => {
+    if (!undo) return;
+    const timer = setTimeout(() => setUndo(null), 6000);
+    return () => clearTimeout(timer);
+  }, [undo]);
 
   function move(list: FileItem[], target: string | null) {
     setMoving(null);
@@ -180,12 +219,23 @@ function Library() {
   function onDrop(event: DragEvent) {
     event.preventDefault();
     setOver(false);
-    if (!busy && showsFiles && event.dataTransfer.files.length) upload(event.dataTransfer.files);
+    if (!busy && canUpload && event.dataTransfer.files.length) upload(event.dataTransfer.files);
   }
 
   const allOn = files.length > 0 && files.every((f) => selected.has(f.id));
   const allStarred = chosen.length > 0 && chosen.every((f) => f.starred);
   const readyChosen = chosen.filter((f) => f.status === "ready");
+
+  const trashActions = (f: FileItem) => (
+    <div className="row-actions">
+      <button className="icon-btn" onClick={() => restore([f])} title="恢复" aria-label={`恢复 ${f.filename}`}>
+        <IconRestore size={16} />
+      </button>
+      <button className="icon-btn danger-hover" onClick={() => purge([f])} title="永久删除" aria-label={`永久删除 ${f.filename}`}>
+        <IconTrash size={16} />
+      </button>
+    </div>
+  );
 
   const rowActions = (f: FileItem) => (
     <div className="row-actions">
@@ -258,6 +308,10 @@ function Library() {
   const empty =
     q ? (
       <div className="empty">没有匹配「{q}」的文件</div>
+    ) : trash ? (
+      <div className="empty">
+        <strong>回收站是空的</strong>
+      </div>
     ) : tab === "starred" ? (
       <div className="empty">
         <strong>还没有收藏</strong>点文件旁的星标即可收藏。
@@ -277,7 +331,7 @@ function Library() {
     <main
       className={`page page-library ${over ? "drag-over" : ""}`}
       onDragOver={(e) => {
-        if (!showsFiles || !e.dataTransfer.types.includes("Files")) return;
+        if (!canUpload || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
         setOver(true);
       }}
@@ -286,7 +340,13 @@ function Library() {
       <div className="library-head">
         <h1>资料库</h1>
         <span className="spacer" />
-        {showsFiles ? (
+        {trash ? (
+          files.length ? (
+            <button className="secondary" onClick={emptyTrash}>
+              <IconTrash size={16} /> 清空回收站
+            </button>
+          ) : null
+        ) : showsFiles ? (
           <button
             className="secondary"
             disabled={busy}
@@ -372,7 +432,7 @@ function Library() {
         <div className={`image-grid ${selected.size ? "selecting" : ""}`}>
           {files.map((f) => (
             <div key={f.id} className={`image-card ${selected.has(f.id) ? "on" : ""} ${menuFor === f.id ? "menu-open" : ""}`}>
-              <button className="image-thumb" onClick={() => (selected.size ? toggle(f.id) : isImage(f) && f.status === "ready" && setViewing(f))} aria-label={f.filename}>
+              <button className="image-thumb" onClick={() => (selected.size ? toggle(f.id) : setViewing(f))} aria-label={f.filename}>
                 {thumbUrl(f) ? <img src={thumbUrl(f)!} alt="" loading="lazy" decoding="async" /> : <FileTile file={f} size={44} />}
                 {statusText(f) ? <span className="status queued">{statusText(f)}</span> : null}
               </button>
@@ -404,17 +464,20 @@ function Library() {
           {files.map((f) => {
             const st = statusText(f);
             const inProject = !projectId ? projectName(f.project_id) : undefined;
+            const open = () => (selected.size || trash ? toggle(f.id) : setViewing(f)); // the trash only selects
             return (
               <div key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>
                 {checkbox(f)}
-                <FileTile file={f} size={36} />
+                <button className="lib-open" onClick={open} aria-label={trash ? `选择 ${f.filename}` : `预览 ${f.filename}`}>
+                  <FileTile file={f} size={36} />
+                </button>
                 <div className="grow">
-                  <div className="name" title={f.filename}>
+                  <button className="name" title={f.filename} onClick={open}>
                     {f.filename}
-                  </div>
+                  </button>
                   <div className="meta">
-                    {formatBytes(f.size)} · {timeAgo(f.created_at)}
-                    {f.version > 1 ? ` · v${f.version}` : ""}
+                    {formatBytes(f.size)} · {trash ? purgeText(f) : timeAgo(f.created_at)}
+                    {(f.versions || 0) > 1 ? ` · ${f.versions} 个版本` : ""}
                     {inProject ? (
                       <a className="meta-project" href={`/files?project=${f.project_id}`}>
                         <IconFolder size={12} /> {inProject}
@@ -427,9 +490,9 @@ function Library() {
                     ) : null}
                   </div>
                 </div>
-                {st ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
-                {starButton(f)}
-                {rowActions(f)}
+                {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
+                {trash ? trashActions(f) : starButton(f)}
+                {trash ? null : rowActions(f)}
               </div>
             );
           })}
@@ -444,7 +507,22 @@ function Library() {
         </div>
       ) : null}
 
-      {chosen.length ? (
+      {chosen.length && trash ? (
+        <div className="select-bar" role="toolbar" aria-label="批量操作">
+          <span className="select-count">已选 {chosen.length} 项</span>
+          <span className="select-sep" />
+          <button className="select-action" onClick={() => restore(chosen)}>
+            <IconRestore size={15} /> 恢复
+          </button>
+          <button className="select-action danger" onClick={() => purge(chosen)}>
+            <IconTrash size={15} /> 永久删除
+          </button>
+          <span className="select-sep" />
+          <button className="select-action icon" onClick={() => setSelected(new Set())} aria-label="取消选择" title="取消选择">
+            <IconX size={15} />
+          </button>
+        </div>
+      ) : chosen.length ? (
         <div className="select-bar" role="toolbar" aria-label="批量操作">
           <span className="select-count">已选 {chosen.length} 项</span>
           <span className="select-sep" />
@@ -484,10 +562,27 @@ function Library() {
         />
       ) : null}
 
+      {undo && !chosen.length ? (
+        <div className="select-bar toast" role="status">
+          <span className="select-count">{undo.length === 1 ? `「${undo[0].filename}」` : `${undo.length} 个文件`}已移到回收站</span>
+          <button className="select-action" onClick={() => restore(undo)}>
+            撤销
+          </button>
+        </div>
+      ) : null}
+
       {viewing ? (
-        <Modal title={viewing.filename} onClose={() => setViewing(null)} className="modal-image">
-          <img src={downloadUrl(viewing.download_url)} alt={viewing.filename} />
-        </Modal>
+        <FileViewer
+          files={files}
+          file={viewing}
+          onOpen={setViewing}
+          onClose={() => setViewing(null)}
+          onChanged={(head) => {
+            setViewing(head);
+            reload();
+          }}
+          chatHref={(f) => chatHref([f])}
+        />
       ) : null}
 
       {over ? (

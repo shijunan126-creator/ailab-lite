@@ -10,23 +10,24 @@ import hashlib
 import logging
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
+from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import StreamingResponse
-from sqlalchemy import select
+from sqlalchemy import exists, func, select
 from sqlalchemy.orm import Session
 
-from .. import metrics
-from ..catalog import get_catalog
 from ..config import settings
-from ..deps import get_db, service_auth
+from ..contracts.file_preview import PreviewCompletion
+from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
+from ..deps import get_db
 from ..events import append_event
-from ..library import thumbnail_candidate
+from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, ModelUsage, Project, Run, RunStatus, User, new_id
+from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, User, new_id
+from ..ports.service_auth import RunContext
 from ..queue import get_queue
-from ..quota import enforce_library_quota
+from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
 from ..run_state import InvalidTransition, transition_run
 from ..schemas import (
     ArtifactIn,
@@ -39,13 +40,13 @@ from ..schemas import (
     RunDetail,
     RunStateOut,
     RunStatusIn,
-    UsageIn,
 )
+from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
 from .routes_skills import usable_personal
 from .serializers import file_dict, run_dict
 
-router = APIRouter(prefix="/internal", tags=["internal"], dependencies=[Depends(service_auth)])
+router = APIRouter(prefix="/internal", tags=["internal"])
 log = logging.getLogger("ailab.api.internal")
 
 
@@ -66,7 +67,7 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
     out, budget = [], ATTACHMENTS_CHARS
     for file_id in run.input_file_ids or []:
         f = db.get(FileObject, file_id)
-        if f is None:
+        if f is None or f.deleted_at is not None or f.purged_at is not None:
             continue
         meta = f.meta or {}
         text = ""
@@ -140,7 +141,7 @@ def _earlier_turns(db: Session, run: Run) -> list[Run]:
     )
 
 
-@router.get("/runs/{run_id}", response_model=InternalRunDetail)
+@router.get("/runs/{run_id}", response_model=InternalRunDetail, dependencies=[Depends(require_scope("runs:read"))])
 def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The run, and for a conversation turn: the earlier turns (for the model) and the workspace to restore (for the Broker)."""
     run = _run_or_404(db, run_id)
@@ -174,20 +175,25 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     return out
 
 
-@router.get("/runs/{run_id}/state", response_model=RunStateOut)
+@router.get("/runs/{run_id}/state", response_model=RunStateOut, dependencies=[Depends(require_scope("runs:read"))])
 def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The cheap status poll the Agent uses while a command/model call is running."""
     run = _run_or_404(db, run_id)
     return {"status": run.status, "finished_at": run.finished_at}
 
 
-@router.post("/runs/{run_id}/status", response_model=RunDetail)
+@router.post("/runs/{run_id}/status", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
 def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(get_db)) -> dict:
-    _run_or_404(db, run_id)
+    run = _run_or_404(db, run_id)
     if body.status not in {RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED}:
         raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
     try:
-        run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=body.result)
+        with user_critical_section(db, run.user_id):
+            db.refresh(run)
+            result = body.result
+            if result is not None:
+                result = {**result, "usage_totals": run_usage_totals(db, run_id)}
+            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result)
     except InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=f"invalid transition: {exc}") from exc
     if changed and (run.result or {}).get("workspace_saved"):
@@ -207,12 +213,14 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
         except Exception:
             log.warning("could not delete workspace of %s", turn.id, exc_info=True)
             continue
-        result["workspace_saved"] = False
-        turn.result = result
-    db.commit()
+        with user_critical_section(db, run.user_id):
+            # Storage I/O may overlap a late usage settlement; merge the current JSON.
+            db.refresh(turn)
+            turn.result = {**(turn.result or {}), "workspace_saved": False}
+            db.commit()
 
 
-@router.post("/runs/{run_id}/events", response_model=EventOut)
+@router.post("/runs/{run_id}/events", response_model=EventOut, dependencies=[Depends(require_scope("runs:events"))])
 def internal_append_event(run_id: str, body: EventIn, db: Session = Depends(get_db)) -> dict:
     _run_or_404(db, run_id)
     event = append_event(db, run_id, body.type, body.payload)
@@ -224,26 +232,53 @@ def internal_append_event(run_id: str, body: EventIn, db: Session = Depends(get_
     }
 
 
-@router.post("/runs/{run_id}/usage")
-def internal_usage(run_id: str, body: UsageIn, db: Session = Depends(get_db)) -> dict:
+@router.post("/runs/{run_id}/usage", dependencies=[Depends(require_scope("usage:write"))])
+def internal_usage_retired(run_id: str) -> None:
+    raise HTTPException(410, {"code": UsageErrorCode.RESERVATION_REQUIRED})
+
+
+@router.post("/usage/reserve", response_model=ReservationOut, dependencies=[Depends(require_scope("usage:reserve"))])
+def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) -> dict:
+    row = reserve_usage(db, body)
+    return {
+        "call_id": row.call_id,
+        "run_id": row.run_id,
+        "attempt_id": row.attempt_id,
+        "status": row.status,
+        "reserved_amount": row.reserved_amount,
+        "weight": str(row.weight),
+        "cached_token_weight": str(row.cached_token_weight),
+        "policy_version": row.policy_version,
+        "expires_at": row.expires_at.replace(tzinfo=UTC) if row.expires_at.tzinfo is None else row.expires_at.astimezone(UTC),
+    }
+
+
+@router.post("/usage/settle", response_model=UsageOut, dependencies=[Depends(require_scope("usage:write"))])
+def internal_settle_usage(body: SettleUsageIn, db: Session = Depends(get_db)) -> dict:
+    row = settle_usage(db, body)
+    totals = run_usage_totals(db, row.run_id)
+    return {
+        "call_id": row.call_id,
+        "run_id": row.run_id,
+        "attempt_id": row.attempt_id,
+        "mode": row.mode,
+        "alias": row.alias,
+        "actual_backend": row.actual_backend,
+        "input_tokens": row.prompt_tokens,
+        "cached_tokens": row.cached_tokens,
+        "output_tokens": row.completion_tokens,
+        "reasoning_tokens": row.reasoning_tokens,
+        "weighted_amount": row.weighted_amount,
+        "policy_version": row.policy_version,
+        "status": row.status,
+        "run_tokens": totals["prompt_tokens"] + totals["completion_tokens"],
+    }
+
+
+@router.get("/runs/{run_id}/usage", dependencies=[Depends(require_scope("runs:read"))])
+def internal_run_usage(run_id: str, db: Session = Depends(get_db)) -> dict:
     _run_or_404(db, run_id)
-    model = metrics.model_label(body.model)
-    metrics.MODEL_TOKENS.labels(model, "prompt").inc(body.prompt_tokens)
-    metrics.MODEL_TOKENS.labels(model, "completion").inc(body.completion_tokens)
-    metrics.MODEL_TOKENS.labels(model, "cached").inc(min(body.cached_tokens, body.prompt_tokens))
-    db.add(
-        ModelUsage(
-            run_id=run_id,
-            model=body.model,
-            prompt_tokens=body.prompt_tokens,
-            completion_tokens=body.completion_tokens,
-            cached_tokens=min(body.cached_tokens, body.prompt_tokens),
-            # Frozen now: a later edit of models.toml must not change what this call cost.
-            weight=get_catalog().weight_of(body.model),
-        )
-    )
-    db.commit()
-    return {"ok": True}
+    return run_usage_totals(db, run_id)
 
 
 def _artifact_out(artifact: Artifact, file: FileObject) -> dict:
@@ -263,7 +298,7 @@ def _artifact_filename(name: str) -> str:
     return name[:200] if name not in ("", ".", "..") else "artifact"
 
 
-@router.post("/artifacts", response_model=CommitOut)
+@router.post("/artifacts", response_model=CommitOut, dependencies=[Depends(require_scope("artifacts:commit_for_run"))])
 def internal_commit_artifact(body: ArtifactIn, db: Session = Depends(get_db)) -> dict:
     """Second half of the two-phase delivery. Safe to retry.
 
@@ -342,15 +377,34 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
         status=FileStatus.READY,
         meta={"source": "sandbox", "run_id": run.id},
     )
+    parent = None
+    if run.conversation_id:
+        parent = db.scalar(
+            select(FileObject)
+            .join(Artifact, Artifact.file_id == FileObject.id)
+            .join(Run, Run.id == Artifact.run_id)
+            .where(
+                Run.conversation_id == run.conversation_id,
+                FileObject.user_id == run.user_id,
+                FileObject.filename == filename,
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
+            .order_by(FileObject.created_at.desc(), FileObject.version.desc())
+            .limit(1)
+        )
     artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role)
     try:
+        assign_file_version(db, file, parent)
         db.add(file)
         db.add(artifact)
+        keys = trim_file_versions(db, file)
         db.commit()
     except Exception:
         db.rollback()
         storage.delete(final_key)  # nothing references it; the staging copy is still there for the retry
         raise
+    delete_storage_objects(keys)
     db.refresh(file)
     db.refresh(artifact)
     storage.delete(body.staging_key)
@@ -381,21 +435,107 @@ def _enqueue_thumbnail(file: FileObject) -> None:
             log.warning("thumbnail queue unavailable for %s", file.id, exc_info=True)
 
 
-@router.get("/files/{file_id}", response_model=FileOut)
-def internal_get_file(file_id: str, db: Session = Depends(get_db)) -> dict:
+def _bound_file(
+    db: Session, file_id: str, principal: ServicePrincipal, run_id: str | None, job: str, preview_job: str | None = None
+) -> FileObject:
     file = db.get(FileObject, file_id)
-    if file is None:
+    if file is None or file.deleted_at is not None:  # the trash is the owner's alone
         raise HTTPException(status_code=404, detail="file not found")
-    return file_dict(file)
+    if file.purged_at is not None:
+        raise HTTPException(status_code=410, detail="version purged")
+    if principal.service == "legacy":
+        return file  # explicit dev/test compatibility, never enabled in secure
+    if job == "preview" and principal.service == "broker":
+        # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
+        meta = file.meta or {}
+        pending = (meta.get("preview") or {}).get("status") == "pending"
+        if "files:read_for_preview" not in principal.scopes or file.status != FileStatus.READY or not pending or not preview_job:
+            raise HTTPException(status_code=403, detail="no pending preview job for this file")
+        if meta.get("preview_job_id") != preview_job:
+            raise HTTPException(status_code=403, detail="preview job superseded")
+        return file
+    if principal.service == "worker":
+        allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
+        if not allowed:
+            raise HTTPException(status_code=403, detail="file is not eligible for this processing job")
+        return file
+    if not run_id:
+        raise HTTPException(status_code=403, detail="run_id required")
+    run = _run_or_404(db, run_id)
+    if run.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
+        raise HTTPException(status_code=403, detail="run is not active")
+    context = RunContext(run.id, run.user_id, run.conversation_id)
+    if file.user_id != context.user_id or file.status != FileStatus.READY:
+        raise HTTPException(status_code=404, detail="file not found for run")
+    attached = file.id in (run.input_file_ids or [])
+    if not attached and run.conversation_id:
+        elements = (
+            func.json_array_elements_text(Run.input_file_ids).table_valued("value")
+            if db.bind.dialect.name == "postgresql"
+            else func.json_each(Run.input_file_ids).table_valued("value")
+        )
+        attached = bool(
+            db.scalar(
+                select(
+                    exists().where(
+                        Run.conversation_id == run.conversation_id,
+                        Run.user_id == run.user_id,
+                        exists(select(1).select_from(elements).where(elements.c.value == file.id)).correlate(Run),
+                    )
+                )
+            )
+        )
+        if not attached:
+            attached = (
+                db.scalar(
+                    select(Artifact.id)
+                    .join(Run, Run.id == Artifact.run_id)
+                    .where(Artifact.file_id == file.id, Run.conversation_id == run.conversation_id, Run.user_id == run.user_id)
+                    .limit(1)
+                )
+                is not None
+            )
+    if not attached:
+        attached = db.scalar(select(Artifact.id).where(Artifact.run_id == run.id, Artifact.file_id == file.id).limit(1)) is not None
+    # Enabled personal skills are a second explicit, API-controlled attachment source.
+    if not attached and principal.service == "agent":
+        owner = db.get(User, run.user_id)
+        attached = bool(owner and any(skill["file_id"] == file.id for skill in usable_personal(db, owner).values()))
+    if not attached:
+        raise HTTPException(status_code=404, detail="file not attached to run")
+    return file
+
+
+FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview")
+FileJob = Literal["processing", "thumbnail", "preview"]
+
+
+@router.get("/files/{file_id}", response_model=FileOut)
+def internal_get_file(
+    file_id: str,
+    run_id: str | None = None,
+    job: FileJob = "processing",
+    preview_job: str | None = None,
+    principal: ServicePrincipal = Depends(FILE_READ),
+    db: Session = Depends(get_db),
+) -> dict:
+    return file_dict(_bound_file(db, file_id, principal, run_id, job, preview_job))
 
 
 @router.get("/files/{file_id}/content")
-def internal_get_file_content(file_id: str, db: Session = Depends(get_db)) -> Response:
-    file = db.get(FileObject, file_id)
-    if file is None:
-        raise HTTPException(status_code=404, detail="file not found")
-    db.close()  # the stream reads storage only; don't hold a pool connection for it
-    return StreamingResponse(
+def internal_get_file_content(
+    file_id: str,
+    run_id: str | None = None,
+    job: FileJob = "processing",
+    preview_job: str | None = None,
+    principal: ServicePrincipal = Depends(FILE_READ),
+    db: Session = Depends(get_db),
+) -> Response:
+    file = _bound_file(db, file_id, principal, run_id, job, preview_job)
+    db.close()
+    from .routes_files import _ClosingStreamingResponse
+
+    return _ClosingStreamingResponse(
         get_storage().stream(file.storage_key),
         media_type=file.content_type,
         headers={
@@ -406,10 +546,29 @@ def internal_get_file_content(file_id: str, db: Session = Depends(get_db)) -> Re
 
 
 @router.patch("/files/{file_id}", response_model=FileOut)
-def internal_patch_file(file_id: str, body: FilePatch, db: Session = Depends(get_db)) -> dict:
-    file = db.get(FileObject, file_id)
-    if file is None:
-        raise HTTPException(status_code=404, detail="file not found")
+def internal_patch_file(
+    file_id: str,
+    body: FilePatch,
+    job: FileJob = "processing",
+    principal: ServicePrincipal = Depends(require_scope("files:patch_processing", "files:preview_write")),
+    db: Session = Depends(get_db),
+) -> dict:
+    file = _bound_file(db, file_id, principal, None, job)
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        return _apply_file_patch(db, file, body, principal, job)
+
+
+def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal: ServicePrincipal, job: str) -> dict:
+    if principal.service != "legacy" and job != "processing":
+        allowed = {"thumb_key", "display_key"} if job == "thumbnail" else set()  # previews complete via /preview
+        if body.status is not None or not set(body.meta or {}) <= allowed:
+            raise HTTPException(status_code=403, detail="derived jobs cannot change scan or processing state")
+        for key, value in (body.meta or {}).items():
+            if key.endswith("_key") and (
+                not isinstance(value, str) or not value.startswith(f"derived/{file.id}/") or ".." in value.split("/")
+            ):
+                raise HTTPException(status_code=403, detail="derived key must belong to this file")
     if body.meta is not None:
         merged = dict(file.meta or {})
         merged.update(body.meta)
@@ -421,3 +580,39 @@ def internal_patch_file(file_id: str, body: FilePatch, db: Session = Depends(get
     db.commit()
     db.refresh(file)
     return file_dict(file)
+
+
+@router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])
+def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
+    """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
+    file = db.get(FileObject, file_id)
+    if file is None:
+        raise HTTPException(status_code=404, detail="file not found")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        meta = dict(file.meta or {})
+        if file.status != FileStatus.READY or meta.get("preview_job_id") != body.job_id:
+            raise HTTPException(status_code=409, detail="preview job superseded")
+        preview = body.preview
+        if preview.status not in {"ready", "failed"}:
+            raise HTTPException(status_code=400, detail="invalid completion")
+        assets = {name: asset.model_dump() for name, asset in body.assets.items()}
+        for name, asset in assets.items():
+            if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
+                raise HTTPException(status_code=400, detail="invalid asset")
+        expected = set(preview.pages or []) if preview.kind == "pages" else {preview.data} if preview.kind == "sheets" else set()
+        if preview.status == "ready" and preview.kind in {"pages", "sheets"} and (not expected or set(assets) != expected):
+            raise HTTPException(status_code=400, detail="manifest assets do not match")
+        if (meta.get("preview") or {}).get("status") != "pending":
+            return {"ok": True}
+        meta["preview"] = preview.model_dump(exclude_unset=True)
+        for asset in assets.values():
+            if asset["content_type"] != ("image/jpeg" if preview.kind == "pages" else "application/json"):
+                raise HTTPException(status_code=400, detail="invalid asset content type")
+        meta["preview_assets"] = assets
+        if preview.image == "display.webp":
+            meta["display_key"] = f"derived/{file_id}/display.webp"
+            meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+        file.meta = meta
+        db.commit()
+        return {"ok": True}

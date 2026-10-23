@@ -10,7 +10,17 @@ export function redirectIfUnauthorized(resp: Response): void {
   }
 }
 
-export type Me = { id: string; username: string | null; display_name: string; email: string };
+export type Role = "user" | "dept_admin" | "platform_admin" | "auditor";
+export type Ref = { id: string; name: string };
+export type Me = {
+  id: string;
+  username: string | null;
+  display_name: string;
+  email: string;
+  roles?: Role[];
+  dept?: Ref | null;
+  can_admin?: boolean;
+};
 
 export type Run = {
   id: string;
@@ -29,6 +39,7 @@ export type Run = {
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   result?: { previews?: Preview[]; [key: string]: any };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
+  resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
@@ -92,7 +103,15 @@ export type ModelInfo = {
 };
 
 export type Limit = { used: number; limit: number };
-export type Usage = { daily_tokens: Limit; monthly_tokens: Limit; library_bytes: Limit; resets_at_utc: string };
+export type TokenWindow = Limit & { reserved: number; percent: number; resets_at: string }; // weighted tokens; percent counts reservations
+export type UsageAlert = { code: "near_limit" | "exceeded"; window: "daily_tokens" | "monthly_tokens"; resets_at: string };
+export type Usage = {
+  daily_tokens: TokenWindow;
+  monthly_tokens: TokenWindow;
+  library_bytes: Limit;
+  resets_at_utc: string;
+  alerts: UsageAlert[];
+};
 
 export type Info = {
   env: string;
@@ -115,7 +134,33 @@ export type FileItem = {
   project_id?: string | null;
   starred?: boolean;
   thumbnail_url?: string | null; // a small WebP the Worker made; absent for non-images and before processing
+  preview?: FilePreview | null; // null until someone first opens it
+  lineage_id?: string; // every version of a file shares it
+  versions?: number;
+  is_head?: boolean;
+  deleted_at?: string | null; // in the trash since
+  purge_at?: string | null; // removed for good at
+  purged?: boolean; // an old version whose content is gone
 };
+
+/** How a library file can be shown in place (GET /v1/files/{id}/preview). Rendered once, on first open, then cached. */
+export type FilePreview = {
+  status: "ready" | "pending" | "failed" | "unsupported";
+  kind?: "pages" | "sheets" | "image" | "text" | null;
+  pages?: string[];
+  page_count?: number | null; // the whole document; pages may stop earlier
+  data?: string; // sheets.json, same format as a run's sheet previews
+  image?: string;
+  text?: string;
+  format?: "markdown" | "code" | "plain";
+  language?: string | null;
+  truncated?: boolean;
+  reason?: string;
+};
+
+export function filePreviewUrl(fileId: string, name: string): string {
+  return `${API_BASE}/v1/files/${fileId}/preview/${encodeURIComponent(name)}`;
+}
 
 /** A project groups conversations and files; deleting it deletes both. */
 export type Project = {
@@ -178,22 +223,64 @@ export async function uploadFile(file: File, projectId?: string | null): Promise
   return (await resp.json()) as FileItem;
 }
 
+const RETRY_MS = [500, 1000, 2000, 4000, 8000];
+const MAX_FAILURES = 8; // consecutive attempts that delivered nothing
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+  });
+}
+
+/** Follow a run's events until it ends. A dropped connection (network, proxy, server restart) resumes after the
+ *  last event received, so nothing is missed or shown twice; only repeated failures give up. */
 export async function streamRun(
   runId: string,
   onEvent: (event: EventItem) => void,
   signal: AbortSignal,
   onEnd?: () => void
 ): Promise<void> {
-  const resp = await fetch(`${API_BASE}/v1/runs/${runId}/events`, { signal });
-  redirectIfUnauthorized(resp);
-  if (!resp.ok || !resp.body) throw new Error(`event stream ${resp.status}`);
-  const reader = resp.body.getReader();
+  let after = 0;
+  let failures = 0;
+  while (!signal.aborted) {
+    let ended = false;
+    let delivered = false;
+    try {
+      const resp = await fetch(`${API_BASE}/v1/runs/${runId}/events?after=${after}`, { signal });
+      redirectIfUnauthorized(resp);
+      if (resp.status === 401 || resp.status === 404) throw Object.assign(new Error(`event stream ${resp.status}`), { fatal: true });
+      if (!resp.ok || !resp.body) throw new Error(`event stream ${resp.status}`);
+      ended = await readEvents(resp.body, (event) => {
+        if (event.seq && event.seq <= after) return; // already shown before the reconnect
+        if (event.seq) after = event.seq;
+        delivered = true;
+        onEvent(event);
+      });
+    } catch (err: any) {
+      if (signal.aborted) return;
+      if (err?.fatal || failures + 1 >= MAX_FAILURES) throw err;
+    }
+    if (ended) {
+      onEnd?.();
+      return;
+    }
+    if (signal.aborted) return;
+    failures = delivered ? 0 : failures + 1;
+    const base = RETRY_MS[Math.min(failures, RETRY_MS.length - 1)];
+    await sleep(base + Math.random() * base * 0.3, signal);
+  }
+}
+
+/** Reads one SSE response. True when the server said the run is over (stream.end). */
+async function readEvents(body: ReadableStream<Uint8Array>, onEvent: (event: EventItem) => void): Promise<boolean> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) return false;
       buffer += decoder.decode(value, { stream: true });
       let idx = buffer.indexOf("\n\n");
       while (idx >= 0) {
@@ -201,16 +288,12 @@ export async function streamRun(
         buffer = buffer.slice(idx + 2);
         const event = parseChunk(chunk);
         if (event) {
-          if (event.type === "stream.end") {
-            onEnd?.();
-            return;
-          }
+          if (event.type === "stream.end") return true;
           onEvent(event);
         }
         idx = buffer.indexOf("\n\n");
       }
     }
-    onEnd?.();
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();

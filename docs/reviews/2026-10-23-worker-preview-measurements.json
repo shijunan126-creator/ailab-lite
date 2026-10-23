@@ -1,0 +1,31 @@
+{
+  "host": "macOS-15.8.2-arm64-arm-64bit",
+  "fixtures": [
+    {
+      "operation": "extract",
+      "bytes": 20971510,
+      "seconds": 1.122,
+      "kind": "pptx",
+      "sampled_worker_tree_peak_rss_bytes": 119013376,
+      "peak_rss_bytes": 98500608,
+      "cpu_seconds": 0.12202099999999999,
+      "worker_parent_peak_rss_bytes": 84230144
+    },
+    {
+      "operation": "sheets",
+      "bytes": 10485750,
+      "seconds": 4.096,
+      "kind": "sheets",
+      "sampled_worker_tree_peak_rss_bytes": 120307712,
+      "peak_rss_bytes": 36290560,
+      "cpu_seconds": 2.7356219999999998,
+      "worker_parent_peak_rss_bytes": 83410944
+    }
+  ],
+  "docx_mock_render": {
+    "seconds": 2.625,
+    "pages": 1,
+    "output_bytes": 23437,
+    "active_leases_after": 0
+  }
+}

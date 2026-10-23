@@ -18,6 +18,7 @@ import sys
 from sqlalchemy import select
 
 from .accounts import AccountError, create_user, normalize_username, revoke_sessions, set_password
+from .audit import record_audit
 from .db import SessionLocal, init_db
 from .models import User, utcnow
 
@@ -74,6 +75,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 for user in db.scalars(select(User).where(User.username.is_not(None)).order_by(User.created_at)):
                     print(f"{user.username:<24}{'disabled' if user.disabled_at else 'active':<10}{user.email}")
+            if args.command != "list":
+                action = {"add": "users.create", "passwd": "users.password", "disable": "users.disable", "enable": "users.enable"}[
+                    args.command
+                ]
+                record_audit(db, action, "user", user.id, actor_service="account-cli")
             db.commit()
         except AccountError as exc:
             db.rollback()

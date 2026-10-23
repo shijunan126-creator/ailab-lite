@@ -8,6 +8,7 @@ import shutil
 
 from openpyxl import Workbook
 
+from ailab_platform.adapters.lease_store_memory import MemoryLeaseStore
 from ailab_platform.broker.service import LeaseManager
 from ailab_platform.sandbox.mock import MockSandbox
 from ailab_platform.storage import LocalStorage
@@ -20,7 +21,7 @@ class _Api:
         self.runs: dict[str, dict] = {}
 
     def get_run(self, run_id):
-        return {"id": run_id, "input_file_ids": [], **self.runs.get(run_id, {})}
+        return {"id": run_id, "user_id": "user_test", "input_file_ids": [], **self.runs.get(run_id, {})}
 
     def append_event(self, *_a, **_k):
         return {}
@@ -29,7 +30,16 @@ class _Api:
 def _manager(tmp_path):
     api = _Api()
     storage = LocalStorage(tmp_path / "store")
-    return LeaseManager(provider=MockSandbox(), platform=api, storage=storage, redis_client=FakeRedis()), api, storage
+    provider = MockSandbox()
+    provider.root = tmp_path / "sandboxes"
+    provider.root.mkdir()
+    return (
+        LeaseManager(
+            provider=provider, platform=api, storage=storage, redis_client=FakeRedis(), store=MemoryLeaseStore(), start_background=False
+        ),
+        api,
+        storage,
+    )
 
 
 def _xlsx(value: int) -> bytes:
@@ -104,3 +114,20 @@ def test_a_preview_that_cannot_be_rendered_is_reported_not_retried(tmp_path, mon
     [failed] = manager.refresh_previews(lease)
     assert failed["filename"] == "deck.pptx" and failed["error"]
     assert manager.refresh_previews(lease) == []
+
+
+def test_preview_cache_update_preserves_concurrent_heartbeat(tmp_path, monkeypatch) -> None:
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("run-heartbeat")
+    lid = lease["lease_id"]
+    manager.put_file(lid, "/workspace/outputs/data.xlsx", _xlsx(1))
+    fingerprints = manager._fingerprints
+    renewed_expiry = []
+
+    def heartbeat_during_render(ref):
+        renewed_expiry.append(manager.renew(lid)["expires_at"])
+        return fingerprints(ref)
+
+    monkeypatch.setattr(manager, "_fingerprints", heartbeat_during_render)
+    assert manager.refresh_previews(lid)[0]["version"] == 1
+    assert manager.get(lid)["expires_at"] == renewed_expiry[0]

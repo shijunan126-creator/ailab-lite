@@ -8,15 +8,18 @@ path, and the per-sandbox token replaces this server-side API key.
 
 from __future__ import annotations
 
+import base64
+import re
 import shlex
 import threading
-from datetime import timedelta
+import time
+from datetime import UTC, datetime, timedelta
 
 import httpx
 
 from ..config import settings
 from ..paths import PathError, normalize_path
-from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider
+from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
 
 
 def _checked(path: str) -> str:
@@ -30,12 +33,49 @@ def _join(messages) -> str:
     return "\n".join((m.text or "") for m in messages).strip("\n")
 
 
+_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?\Z")
+_ENCODED = re.compile(r"b32\.(\d+)\Z")
+_CHUNK = re.compile(r"\.b32-\d+\Z")
+
+
+def _encode_metadata(labels: dict[str, str]) -> dict[str, str]:
+    # OSB validates metadata as Kubernetes labels, including timestamps and JSON.
+    # Keep ordinary identity labels readable/filterable; encode other values per
+    # field so a metadata PATCH cannot overwrite unrelated concurrent changes.
+    result = {}
+    for key, value in labels.items():
+        if _LABEL.fullmatch(value) and not _ENCODED.fullmatch(value):
+            result[key] = value
+            continue
+        encoded = base64.b32encode(value.encode()).decode().rstrip("=")
+        chunks = [encoded[i : i + 63] for i in range(0, len(encoded), 63)]
+        result[key] = f"b32.{len(chunks)}"
+        result.update({f"{key}.b32-{i}": chunk for i, chunk in enumerate(chunks)})
+    return result
+
+
+def _decode_metadata(labels: dict[str, str]) -> dict[str, str]:
+    result = {}
+    for key, value in labels.items():
+        if _CHUNK.search(key):
+            continue
+        marker = _ENCODED.fullmatch(value)
+        if marker:
+            try:
+                encoded = "".join(labels[f"{key}.b32-{i}"] for i in range(int(marker[1])))
+                value = base64.b32decode(encoded + "=" * (-len(encoded) % 8)).decode()
+            except (KeyError, ValueError, UnicodeError) as exc:
+                raise SandboxError("invalid OpenSandbox lease metadata") from exc
+        result[key] = value
+    return result
+
+
 class OpenSandboxProvider(SandboxProvider):
     name = "opensandbox"
 
     def __init__(self) -> None:
         try:
-            from opensandbox import SandboxSync
+            from opensandbox import SandboxManagerSync, SandboxSync
             from opensandbox.config import ConnectionConfigSync
         except ImportError as exc:  # pragma: no cover - optional dependency
             raise SandboxError(
@@ -49,7 +89,9 @@ class OpenSandboxProvider(SandboxProvider):
             api_key=settings.osb_api_key,
             request_timeout=timedelta(seconds=settings.osb_request_timeout_seconds),
         )
+        self._manager = SandboxManagerSync.create(connection_config=self._config)
         self._cache: dict[str, object] = {}
+        self._executions: dict[str, set[str]] = {}
         self._lock = threading.Lock()
 
     def _remember(self, sandbox) -> str:
@@ -70,13 +112,22 @@ class OpenSandboxProvider(SandboxProvider):
             self._cache[sandbox_id] = sandbox
         return sandbox
 
-    def acquire(self, lease_id: str, image: str, ttl_seconds: int | None = None) -> str:
+    def acquire(
+        self,
+        lease_id: str,
+        image: str,
+        ttl_seconds: int | None = None,
+        *,
+        spec: SandboxSpec | None = None,
+        labels: dict[str, str] | None = None,
+    ) -> str:
         from opensandbox.models import NetworkPolicy
 
         # OpenSandbox's timeout is an absolute expiry (extended only via renew()),
         # not an idle timeout, so it must cover the whole lease.
         lifetime = (ttl_seconds or settings.sandbox_ttl_seconds) + SANDBOX_EXPIRY_GRACE_SECONDS
 
+        spec = spec or SandboxSpec(image=image, ttl=ttl_seconds or settings.sandbox_ttl_seconds)
         try:
             sandbox = self._SandboxSync.create(
                 image or settings.sandbox_image,
@@ -84,7 +135,8 @@ class OpenSandboxProvider(SandboxProvider):
                 timeout=timedelta(seconds=lifetime),
                 ready_timeout=timedelta(seconds=90),
                 network_policy=NetworkPolicy(default_action="deny"),
-                resource={"cpu": "1", "memory": "1536M"},
+                resource={"cpu": str(spec.cpu), "memory": str(spec.memory)},
+                metadata=_encode_metadata(labels or {}),
             )
         except Exception as exc:
             raise SandboxError(f"OpenSandbox create failed: {exc}") from exc
@@ -92,17 +144,31 @@ class OpenSandboxProvider(SandboxProvider):
 
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         from opensandbox.models.execd import RunCommandOpts
+        from opensandbox.models.execd_sync import ExecutionHandlersSync
 
         if isinstance(cmd, (list, tuple)):
             cmd = " ".join(shlex.quote(str(part)) for part in cmd)
         sandbox = self._sandbox(sandbox_id)
+        execution_ids: set[str] = set()
+
+        def remember(event):
+            execution_ids.add(event.id)
+            with self._lock:
+                self._executions.setdefault(sandbox_id, set()).add(event.id)
+
         try:
             execution = sandbox.commands.run(
                 cmd,
                 opts=RunCommandOpts(working_directory="/workspace", timeout=timedelta(seconds=timeout)),
+                handlers=ExecutionHandlersSync(on_init=remember),
             )
         except Exception as exc:
-            raise SandboxError(f"OpenSandbox exec failed: {exc}") from exc
+            raise SandboxError("OpenSandbox exec failed") from exc
+        finally:
+            with self._lock:
+                self._executions.get(sandbox_id, set()).difference_update(execution_ids)
+                if not self._executions.get(sandbox_id):
+                    self._executions.pop(sandbox_id, None)
         exit_code = execution.exit_code
         if exit_code is None:
             exit_code = 1 if execution.error else 0
@@ -164,18 +230,77 @@ class OpenSandboxProvider(SandboxProvider):
                 continue
         return out[:500]
 
-    def release(self, sandbox_id: str) -> None:
+    def cancel_exec(self, provider_ref: str) -> bool:
         with self._lock:
-            sandbox = self._cache.pop(sandbox_id, None)
-        if sandbox is None:
-            try:
-                sandbox = self._SandboxSync.connect(sandbox_id, connection_config=self._config)
-            except Exception:
-                return
+            execution_ids = list(self._executions.get(provider_ref, set()))
         try:
-            sandbox.destroy()
+            for execution_id in execution_ids:
+                self._sandbox(provider_ref).commands.interrupt(execution_id)
         except Exception as exc:
-            raise SandboxError(f"OpenSandbox destroy failed: {exc}") from exc
+            raise SandboxError("OpenSandbox interrupt failed") from exc
+        return True
+
+    def _forget(self, provider_ref: str) -> None:
+        with self._lock:
+            sandbox = self._cache.pop(provider_ref, None)
+        if sandbox is not None:
+            sandbox.close()
+
+    @staticmethod
+    def _absent(exc: Exception) -> bool:
+        # Only a lifecycle 404 proves absence. Never treat a connection failure as deletion.
+        return getattr(exc, "status_code", None) == 404
+
+    def inspect(self, provider_ref: str) -> SandboxResource | None:
+        try:
+            info = self._manager.get_sandbox_info(provider_ref)
+        except Exception as exc:
+            if self._absent(exc):
+                self._forget(provider_ref)
+                return None
+            raise SandboxError("OpenSandbox inspect failed") from exc
+        return SandboxResource(info.id, _decode_metadata(info.metadata or {}), info.status.state.lower() == "running")
+
+    def list_owned(self, owner: str) -> list[SandboxResource]:
+        from opensandbox.models import SandboxFilter
+
+        resources = []
+        # Pagination is bounded by a deadline as well as the server's last page.
+        deadline, page = time.monotonic() + settings.osb_request_timeout_seconds, 1
+        while time.monotonic() < deadline:
+            try:
+                result = self._manager.list_sandbox_infos(
+                    SandboxFilter(metadata=_encode_metadata({"ailab.owner": owner}), page_size=100, page=page)
+                )
+            except Exception as exc:
+                raise SandboxError("OpenSandbox list failed") from exc
+            resources.extend(
+                SandboxResource(i.id, _decode_metadata(i.metadata or {}), i.status.state.lower() == "running") for i in result.sandbox_infos
+            )
+            if not result.pagination.has_next_page:
+                return resources
+            page += 1
+        raise SandboxError("OpenSandbox list deadline exceeded")
+
+    def update_metadata(self, provider_ref: str, labels: dict[str, str]) -> None:
+        try:
+            self._manager.patch_sandbox_metadata(provider_ref, _encode_metadata(labels))
+        except Exception as exc:
+            raise SandboxError("OpenSandbox metadata update failed") from exc
+
+    def renew(self, provider_ref: str, until: datetime) -> None:
+        try:
+            self._manager.renew_sandbox(provider_ref, until - datetime.now(UTC) + timedelta(seconds=SANDBOX_EXPIRY_GRACE_SECONDS))
+        except Exception as exc:
+            raise SandboxError("OpenSandbox renew failed") from exc
+
+    def release(self, sandbox_id: str) -> None:
+        try:
+            self._manager.kill_sandbox(sandbox_id)
+        except Exception as exc:
+            if not self._absent(exc):
+                raise SandboxError("OpenSandbox delete failed") from exc
+        self._forget(sandbox_id)
 
     def health(self) -> bool:
         try:

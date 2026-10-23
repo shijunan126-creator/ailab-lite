@@ -2,7 +2,7 @@
 
 ## 开始新任务
 
-- 先读本文，再检查 `git status --short --branch`；保留已有修改。
+- 先读 `AGENTS.md`、[当前工作](docs/progress/current.md) 和本文，再检查真实 worktree、branch、HEAD 与 `git status --short --branch`；保留已有修改。目标/计划/验收入口见 [项目进度](docs/progress/README.md)，不要把下方历史分支记录当作当前状态。
 - Python 设置、engine 和目录在 import 时初始化。测试入口必须先设置隔离环境，参见 `platform/tests/conftest.py`；不要使用开发者 `.env` 或真实数据库跑清库测试。
 - `AILAB_TEST_DATABASE_URL` 会清空指定 PostgreSQL 的 public schema。只传一次性数据库。
 - 本轮完整审查记录：`docs/reviews/2026-10-23-full-review.md`。
@@ -87,3 +87,143 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 W1 ops：存储、部署、备份与生命周期
+
+- 分支 `arch/w1-ops` 从 `6666573` 建立；不推送。`Storage` Protocol 在 `ports/storage.py`，原 `storage` 导入仍可用；`put_stream(..., max_bytes=...)` 原子限额，`open_stream` 必须用 with（异常/提前结束也关闭），`list_prefix` 返回 `ObjectPage(items,cursor)`，最大 1000。仅遍历一页不会遍历全桶；workspace GC 已改分页。Local copy 先 pin 文件描述符，避免 signed key 被替换后读取不同 inode。S3 spool 使用磁盘并关 multipart 线程；尚未在真实 S3 验收。
+- Redis `XAUTOCLAIM` 必须续用返回游标：每次从 0 开始会被前面的活跃 pending 永久挡住；`timeout=0` 不可传 Redis `BLOCK 0`（无限阻塞）。内存队列也序列化 payload，避免生产者/消费者突变影响重投。
+- 迁移 `0010_lifecycle.py`（合并后编号）新增 `lifecycle_deletions` 与 GC 索引，并去掉 model_usage → runs 的外键；会话 purge 清理 RunEvent/Artifact/Run，保留账本（见下文“合并 ledger 与 lifecycle”）。
+- GC 按用户锁检查 presign，至少等签名 900 秒加宽限；完成后的独立 obj_* 冻结对象不作为原始 staging 删除。DB 删除与对象删除意图同事务提交，存储失败重试；会话和事件分批，prefix 物理删除有总预算。固定指标 kind，不放用户/run/file。配置默认：batch100、间隔3600s、presign/orphan86400s、events/conversation30d、trash30d（只预留），workspace 仍3d。详见 backup-restore runbook。
+- 备份 SQLite 用 online backup；PG 导出 snapshot 给 pg_dump 与引用清单共用；对象 JSONL 按块复制/哈希，不硬链接，脱敏 models.toml 的字面凭据含注释也必须清掉。`backup.json` 只在全部 verify 后写入。恢复拒绝非空目录；PG 先恢复 SQL，运维显式导入新空库。跨 DB/S3 不能原子快照，确定性备份窗口要停写/GC；RPO/RTO 必须实际数据演练，不能沿用目标架构数字。
+- 部署改为 `platform/deploy/base` + `overlays/dev|lite`；lite 命令仍 `sudo ./deploy.sh`，`--dry-run` 无需集群/不会部署。API NodePort 改由 public nginx 网关 allow-list `/v1/`；内部服务 ClusterIP，Broker DNS 独立端点。base NetworkPolicy 用 k3s 自带控制器；lite Broker hostNetwork 不受可移植 Pod policy 保证，8081/8090 需宿主防火墙。dev PG 独立；lite 保留 SQLite 数据兼容，独立升级 DB 要迁移。ClamAV slot 在 base/scanner，C 加资源与 Worker-only policy。PVC lite40Gi/dev20Gi，旧 local-path PVC 不能假定可扩容；容量设置须与实际盘/PVC一起核验。
+- 仍是整份内存的路径：Broker 注入运行附件与资料库渲染输入（经 HTTP 取整份 bytes，上限为上传上限 50 MiB，Broker Pod 384 MiB）、交付 100 MiB、workspace 60 MiB。Worker 已改为流式下载到临时文件再交给受限子进程。整机 RSS 未在目标机器上测；Local 原子写崩溃留下的临时文件、冻结后 DB 失败且删除也失败的主对象，仍需后续通用孤儿扫描收敛。
+- 本机没有 Docker daemon，MinIO 官方 darwin-arm64 下载返回410；S3 真实契约跳过，CI 独立 MinIO service-container job 已配置但未远端执行。kubectl 三个 overlay 渲染通过，`apply --dry-run=client --validate=false` 仍需 API discovery，报 localhost:8080 connection refused；无真实集群部署/NetworkPolicy/防火墙验收。
+- 最终验证：纯 SQLite/Local/memory 全套 **401 passed / 37 skipped**；临时 PG16(15450)+Redis(16450) 全套 **429 passed / 9 skipped**（8 S3 + 1 memory 不适用 Redis 游标）；契约分项 Local8、memory2、Redis3、SQLite DB3、PG DB3、GC双库各7+容量1、备份5（SQLite恢复/损坏/引用/脱敏+PG真实导入）。Portal4测试与生产构建、Ruff check/format、ShellCheck、bash -n、依赖锁一致性通过；无 UI 改动未跑浏览器E2E。Local50/100MiB探针 Python峰值148697B、RSS增278528/688128B、0.15/0.38s；非目标小机/整机验收。临时服务均需在交付前停止。
+
+## 2026-10-23 调用级账本与硬用户配额
+
+- `0009`：先 reserve、再调用、最后 settle；`call_id` 是幂等单位，真实重跑必须新 ID。旧 blind usage POST 返回 410，API/Agent 与服务鉴权 allowlist 要一起切换。新内部路由为 `POST /internal/usage/reserve`、`POST /internal/usage/settle`、`GET /internal/runs/{id}/usage`；完整 Portal/服务契约见 `docs/architecture/usage-ledger.md`。
+- 用户锁内只做检查与数据库提交；日/月用已结算整数 milli + 全部 open 预留。过期不等于释放，reaper 每轮最多 200 条转 unreconciled；晚到 settle 原行修正，终态 Run 仍能补账。取消只有确认未发出模型请求才零费用释放，已发出的中断计 estimated/settled；408/5xx 不能当作确定未消费。
+- SQLite 迁移绑定 Decimal 必须给 `sa.column` 声明 Numeric，否则报不支持 decimal.Decimal。迁移按 500 条 keyset 冻结旧缓存折扣与金额，legacy 不随配置重算。SQLite 无时区、PostgreSQL 会返回服务器时区；幂等响应时间都要显式转 UTC。
+- `Run.result.usage_totals` 是账本聚合快照。状态提交与旧工作区清理写整份 result 时也必须持同一用户锁、刷新并合并，否则晚到结算总数会丢；已补红绿回归。用量页面必须同一 SQL snapshot 读取 settled + reserved，分开 SELECT 会在结算切换期间双计；CLI 对账总数同样用单条投影/聚合查询。
+- 运行预算仍为原始 input + output 的软上限，reasoning 已包含在 output；Agent 从账本恢复总数，记账后、工具前拦截下一步，已完成最终回答跨预算仍成功。计量请求有 call/run 头和 max_tokens；模糊失败不得在同一个预留下偷偷再发一次推理。模型专用 tokenizer、真实上游 max_tokens 强制执行未验收。
+- 成本：每模型调用 2 次事务、4 个业务写（比旧路径多 3 写/1 commit），不新增依赖/后台服务。300 调用本机测量，SQLite/PostgreSQL 预留锁 p95 1.10/1.87 ms，结算锁 p95 1.23/2.26 ms；200 条过期回收 247/377 ms。8,000 行双库 EXPLAIN 检查窗口、open、过期和对账索引；按用户周期 SUM 仍随历史行数增长。
+- 最终验证：Ruff check/format 通过；SQLite + Redis 全套 405 passed / 11 PostgreSQL 项 skipped；PostgreSQL 16 + Redis 全套 416 passed / 0 skipped；Portal 4 tests + production build、Chromium E2E 34 项通过。临时服务只用 16410/15410，结束后关闭；未改 .env/开发数据库，未推送或创建 PR。
+
+## 2026-10-23 合并 ledger 与 lifecycle
+
+- 账本不引用 runs：`model_usage.run_id`、`usage_reservations.run_id` 是普通字符串，不是外键（0012 删除旧 FK）。软删对话 30 天后清除 runs/events/artifacts，但它们的用量仍计入额度窗口、管理报表与对账；不要再在 purge 里删 `ModelUsage`。SQLite 上 FK 无名，迁移用 batch 的 `naming_convention` 命名后再删；model_usage 无表引用，batch 重建安全。
+- 迁移链最终见“合并 C / G / I 的集成点”。
+
+## 2026-10-23 T03/T05 严格配置与服务身份
+
+- `AILAB_PROFILE` 优先；旧 env：test→test，dev/smoke/k3s→dev，其余→secure。k3s 清单保留显式 dev 兼容，不能据此宣称已安全上线。secure 同一启动门禁检查 mock、stub、默认秘密、共享令牌、身份、注册和外部模型；ClamAV 仅定义 scanner_backend，实现在 C 分支。
+- 不给被调方分发调用方原始令牌：每进程只挂 `platform-{service}-identity`，共同的 `AILAB_SERVICE_CREDENTIALS` 仅含 sha256 verifier。Secret 脚本重跑保留令牌；读取身份失败不能当作不存在后重建。旧共享令牌仅 dev/test 警告兼容，真实 E2E 已禁用它。模型 Secret 仅 API/Agent，OSB key 仅 Broker。
+- Uvicorn 默认会先解释 XFF 并改写 peer；只改登录 handler 不够。所有仓库启动入口 `--no-proxy-headers`，应用按 `trusted_proxies` 从右向左验证。默认不信代理；部署应填实际 Portal/反代 CIDR。
+- 内部 httpx 必须 `trust_env=False`：本机环境代理曾截走内部请求，导致 E2E 个人技能 Run `httpx.ReadError`。关闭后完整 E2E 通过；模型等外部请求不在此修改范围。
+- FastAPI 0.156 的 `include_router` 是延迟挂载，顶层 app.routes 只遍历 APIRoute 会漏掉全部业务路由。scope 巡检须读 effective_route_contexts；新增/撤掉 scope 的测试覆盖 included prefix。
+- Agent/Broker 文件请求必带 run_id；仅同用户、活跃 Run、附件/同会话材料/产物，个人技能为 API 明确列出的系统附件。Broker service.py 与 Agent loop.py 只改凭据和上下文传递。Worker 的 READY 派生任务带 job=thumbnail/preview，不能写 scan/status；已处理/删除文件的普通重投须 ACK，认证失败须重试，包括 poison 分支。
+- 并行合并：A 的 reserve 用 `Depends(require_scope("usage:reserve"))`，settle 用 usage:write；C 的 READY 派生回写用 files:preview_write 并保留 job/状态/字段限制，Worker→Broker render 仅 sandbox:render，不能开放 sandbox:use；通用调用可用 `PlatformClient(service="worker")` / `AsyncBrokerClient(service="worker")`，不要加载其他服务令牌。scope 表和完整设置见 ADR 0002。
+- 无迁移。超出文件 ownership 的最小改动：api/main.py（启动门禁身份、日志脱敏）、agent/loop.py、broker/service.py、worker/pipeline.py（调用凭据/上下文）、queue.py（拒绝未知工厂值）、dev_up.sh（禁止 Uvicorn 预处理 XFF）、tests/E2E（新契约）及本文/ADR/status-matrix。
+- 最终验证（GNU PATH；仅 Redis 16420、PG16 15420 的一次性库）：SQLite+Redis 424 passed / 8 PG 项 skipped（49.43s）；PG+Redis 432 passed（55.05s）；四服务独立身份、共享令牌禁用的 E2E 34 passed（81.37s，含 Portal tests/build）。Ruff check/format、ShellCheck warning、bash syntax、lock_deps、diff check 通过。基线配置替换回归 18 failed，移除 XFF/Run 文件绑定 2 failed，恢复后绿；路由无 scope 的 direct/included 测试均被 guard 拒绝。固定 5 verifier 的认证微基准 100,000 次约 3.04 µs/次；双库新文件绑定查询 EXPLAIN 使用既有 Run 索引，无新增迁移/后台任务。临时服务验收后关闭；未推送。真实 k3s、TokenReview/TLS、ClamAV、Docker/OpenSandbox、S3 不在本分支验收范围。
+
+## 2026-10-23 合并 service-auth 与 deploy 重构
+
+- B 修改的 `platform/deploy/k8s/platform.yaml` 已被 E 拆成 `deploy/base` + overlays；每个服务只挂自己的 `platform-<svc>-identity`、共享 `platform-service-verifiers`，api/agent 另挂 `platform-model-secrets`，原 `platform-secrets` 只按 key 单取 invite/dev token/admin 密码/OSB key。所有 uvicorn 加 `--no-proxy-headers`（XFF 只信 `trusted_proxies`）。
+- 渲染 overlays 需要 kustomize ≥ 5.7（k3s 1.34 自带 kubectl 内嵌版本即可）。kustomize 5.4.3 处理 lite overlay 中顶层 `$patch: delete` 会 nil pointer panic，不是清单错误。
+- 新增内部端点必须 `dependencies=[Depends(require_scope(...))]`，路由巡检测试会拦截遗漏；ledger 的 reserve 用 `usage:reserve`、settle/旧 usage 用 `usage:write`、GET run usage 用 `runs:read`。
+
+## 2026-10-23 Broker 租约恢复与准入（W1）
+
+- 启动不再删光租约。Provider 创建即写 owner/lease/run/user/created_at，Redis CAS 保存期望状态；有效资源重启接管，Redis 清空从资源元数据重建。`releasing` 删除失败保留记录和容量，2→60 秒退避；不能把连接失败当作资源不存在。
+- Docker label 不可变：续租/状态放在容器 root-only `/run/ailab-lease.json`，不能放进用户 workspace/快照；OSB 用 lifecycle metadata。Docker 无原生 TTL，Broker 宕机期间不会自动回收；disk 规格仍未落实文件系统配额。
+- `acquire(SandboxSpec, LeasePrincipal, *, wait_seconds=None, on_queued=None, prepare=None) -> LeaseHandle`，`release(handle)`；C 的 render 必须 `system=True/profile=render`，ttl/max_lifetime 都≤120 秒，memory≤保留内存。文件/exec 传 `handle.lease_id`。完整接口、错误、设置见 ADR 0003。
+- 普通/短 render 分保留槽与内存，符合条件者 FIFO，单用户超限不堵其他用户；队列上限32、截止300秒，释放通知唤醒，位置通过事件/`GET /internal/admission/{run_id}`暴露。队列重启后需调用方重试；不重放工具、不做 idle reuse。
+- Agent 对 `POST /internal/leases/{id}/renew` 每60秒心跳；最长4小时，默认TTL20分钟。`lease_lost/lease_expired` 为410可恢复错误，runtime 后续应终止当前轮并按安全checkpoint恢复。现有 runtime 未在本分支接入心跳。
+- 同owner仅一个Broker/一个uvicorn worker，Redis TTL30秒锁与独立心跳；第二实例启动失败，失锁停止服务。Redis flush 恢复会先对账再准入；这不是分布式选主/HA。对账列表是快照，新创建资源必须再inspect，不能误判丢失。渲染更新缓存必须合并最新CAS版本，不能覆盖同时心跳。
+- 配置默认总槽位改2（含一个render保留槽），总内存3GiB，render768MiB；仅改 `.env.example` 与部署清单的相应总数，合并时与B/E的profile/部署配置对齐。自定义总槽1需显式关闭reserve或增大总数。无业务DB迁移。
+- 故障测试仅允许flush本轮临时Redis **16440**；真实Provider通过 `AILAB_TEST_DOCKER=1` / `AILAB_TEST_OSB_URL`选跑。性能诊断：2个mock资源、200次对账，真实Redis每次2.476ms wall/2.038ms CPU、峰值Python临时分配226.3KiB、进程RSS49.2MiB；不代表Docker/OSB或生产2vCPU实测。本轮最终验收：SQLite+Redis 449 passed/10 skipped，PostgreSQL16+Redis 457 passed/2 skipped（仅Docker/OSB真实契约未启用）；含48项内存/Redis故障测试，Portal 4项与生产build、Ruff check/format、依赖锁一致性均通过。临时Redis16440、PG15440验证后关闭。
+
+## 2026-10-23 W1 扫描隔离与资料库预览
+
+- 分支 arch/w1-worker-preview，基于 6666573。协议与合并清单：docs/reviews/2026-10-23-worker-preview.md；状态表已补建。没有改 Portal UI、LeaseManager 内部，也没有推送。
+- scan_unavailable 绝不能当 clean：文件保持 pending，默认 3 次、5/10 秒退避，用尽写 scan_exhausted；清空标志并重新入队才恢复人工重试。thumbnail_only/preview_only 分支均不能回退 READY。
+- 不可信文档/图片/ZIP/skill 检查进受限子进程；Linux AS 192 MiB、CPU 45 秒、墙钟60秒、输出16MiB，macOS AS 不可靠，改 RSS watchdog。Worker Pod 改384MiB，避免只预算子进程而漏算父进程。进程不继承服务密钥环境；ZIP先查2048项/128MiB/200倍限制。
+- read_only Excel 可能没有 max_row/max_column（write_only 生成的文件就是例子），必须 calculate_dimension；逐格 ws.cell 会反复扫描 XML，改成两个 iter_rows 流并行读。复用 renderer.sheets(recalculate=False)，Worker 不能因为宿主有 soffice 就调用它。流式模式的列宽/合并/图表元数据暂为空，详见审查记录。
+- 短 Unix socket 路径用 /tmp；pytest 的 macOS tmp_path 可能超过 AF_UNIX 的路径长度。OOM 用大量小 XML 节点触发分配；单个巨型文本节点会先撞 libxml 的文本限制，不能用该 corrupt 冒充内存验收。
+- Office/PDF 按需沙箱渲染（合并后改为 `acquire` render 保留槽 + 预览任务绑定，RenderContexts 已删除）。57页 PDF 验证只产40页并返回总57页。SVG original 强制 CSP sandbox，文本固定 text/plain。
+- 迁移 0011_preview 建 outbox，manifest 仍在 files.meta。预览请求和副作用同事务，派发失败留记录。API内部文件meta回写补用户锁，避免缩略图回写覆盖同时请求的preview。
+- 本机测量（合成样本，非生产承诺）：20MiB PPTX 子进程峰值93.9MiB、父进程峰值80.3MiB（峰值和174.3MiB保守预算），10MiB XLSX 子34.6MiB、父79.5MiB（和114.2MiB）；含 Worker import 的耗时1.122/4.096秒。单页 DOCX mock+真实Office工具2.625秒、输出23,437字节、租约全释放；原始 JSON/复现脚本已入库。
+- 最终验证：SQLite + Redis 435 passed / 10 skipped（9项PG专用、1项真实clamd）；PG16 + Redis 444 passed / 1 skipped（clamd）。Ruff check/format、依赖锁一致性、diff check通过；Portal 4测试与生产build通过。未启动真实clamd/Docker/OpenSandbox/k3s，未验证Linux AS与生产内存。测试仅使用本任务Redis16430、PG15430一次性库。
+
+## 2026-10-23 身份 / 管理 API / OIDC（T13 / T17）
+
+- 迁移 0012_identity；SQLite users 只 ADD/DROP COLUMN，不 batch 重建。带现有 Run/Token、部门父子和审计，开启外键的升/降/再升及双库 schema drift 通过。
+- Principal 附在 request.state，current_user 仍返回 User；认证角色 joinedload 保持原会话列表 ≤3 次 SQL，不能用额外 selectin 查询放宽旧性能门槛。
+- Next 的 req.url 可能把 127.0.0.1/LAN 主机归一成 localhost；OIDC 回调必须返回相对 Location，绝对本地重定向会让 Cookie 跨主机失效。跨站 IdP 回跳已用生产 Portal + Playwright 红/绿验证；流程 Cookie 用 Lax，平台 Cookie 保持 Strict/httpOnly。
+- 部门/策略保持数组响应，keyset 下一页在 X-Next-Cursor；Portal 通用代理必须透传。dept_admin 范围进入 SQL，不能取全量后过滤；无任何管理员内容读取特权。
+- 本基线 ModelUsage 无 dept_id。合并 A 后补 usage 写入快照、冻结 weighted_amount、全局报表索引，并把 limits_for 接入 storage/concurrency/summary；本分支仅改 token 准入一个点。详见 `docs/reviews/2026-10-23-identity-implementation.md`。
+- OIDC 上游令牌不出 API；只按 iss/sub 建联，不按 email 自动合并。真实 Keycloak 测试由 AILAB_TEST_OIDC_ISSUER gate，未配置即跳过，不把 fake issuer 验收称作企业 SSO 验收。
+- 本轮最终验证：SQLite+Redis 463 passed / 10 skipped；PG16+Redis 472 passed / 1 skipped；浏览器 E2E 34 passed；Portal Node 9 passed、build、Ruff、依赖锁一致性通过。真实 Keycloak gate 未配置。临时服务仅用 16470/15470，结束后关闭；无开发库操作。
+
+## 2026-10-23 T18 文件版本与回收站（arch/w2-file-versions）
+
+- 基线 `609c1d3` 实际未对同名产物设置 parent/version；本轮在 `user_critical_section` 内按同会话同名产物找链、按整链 max(version)+1 分配。上传从旧版分支也必须取整链最大号，不能 parent.version+1；unique(lineage_id,version) 与单 head 部分唯一索引兜底。
+- 迁移 0013_file_versions。SQLite 只 ADD/DROP COLUMN，不重建 files；旧 parent 链回填根 id，保留全部 file id/FK。历史重复版本号按 (version,created_at,id) 稳定重编号；断链/跨用户/环拒绝迁移。迁移仅改元数据，不连接对象存储；既有超限链在下次写版本时收敛。降级不恢复旧重复编号。
+- 默认 `max_file_versions=10`、`trash_days=30`（配置范围校验）。超限只 tombstone 旧行、提交后清对象，旧 Run/Artifact 引用仍在、content=410。恢复旧版独立 copy 原对象及 derived 前缀，递归改写派生 key；保留扫描状态，不能把 pending/rejected 复制成 READY。回收站里的版本回退保留回收站状态，显式 `/restore` 再解除。
+- 普通/批量 delete（兼容 alias）/项目删除均整链入站；trash 继续计配额，连回收站的 rejected 文件也计；purge 才释放。移动/收藏作用整链，项目计数只算 live head。项目删除分批 200 个 lineage，清 FK 并记 trashed_from_project_id；已经入站的链也要解除 FK，不能让首批更新误清其他批次的 project_id。
+- `DELETE /v1/trash` 按 200 批次清理，请求开始时间作截止，避免追逐不断新增的删除；count 是 lineage 数。batch count 保持输入去重后 id 数。cursor 是上一页末项 file id；保留原 offset。`purge_expired_trash` 每轮最多 200 head，锁内再次确认过期，集成到既有 reaper；函数独立，方便与 E/A 合并。
+- 物理清理唯一入口仍是 `delete_file_rows`，包含登记的 key 和 `derived/{id}/` 全前缀。保留原提交后 best-effort 删除；对象存储故障/提交后 kill 的孤儿收敛待 E/T09 GC/outbox 集成，未声称生产级故障验收。真实 S3 拷贝的 RSS/磁盘/时延未测。
+- SQLite 要在 head 部分索引键里覆盖 is_head/deleted_at/purged_at（图片还含 content_type）才显示 COVERING INDEX；PG 为 Index Only Scan/Heap Fetches=0。列表先索引取 id，再批量取详情和版本数，禁止 N+1；substring q 仍需读候选行。10 万行原始计划和成本追加在 library-query-plans 文档；新索引约 12 MiB（PG），无新依赖。
+- 保留 files_router 的 `/v1/files` 前缀，另注册 trash_router；不要改前缀让 C 后续新增预览装饰器误挂到 `/v1/{id}/preview`。本轮只在已有 thumbnail 路由补 purged guard，未实现或覆盖 C 的新 preview 路由。`routes_runs` 附件与 `routes_skills` 个人技能需同步过滤 trashed/purged；否则删除文件还能被新消息/技能引用。
+- 分页取 id 与详情是两个查询，期间可能移入站、换 head 或 purge；第二次读取必须重新过滤可见性并忽略已消失 id，否则会 KeyError/500。用 SQLAlchemy after_cursor_execute 注入真实的交错删除回归覆盖。
+- 并发回归不要在每个线程启动 `with TestClient(app)` lifespan：Alembic 全局代理会互相覆盖而报 KeyError/config；共享测试外层 lifespan，线程只创建无 context 的客户端发请求。reaper 测试必须只让自己的两份文件到期，避免误算同进程其他用例留下的用户回收站。
+- 行为红绿：隔离的 `609c1d3` 副本 3 项（删除留对象、只列 head、恢复旧版）均红，当前实现同样 3 项均绿。完整验证与最终计数见下方本轮验收记录。未 push；临时 PostgreSQL 15490 / Redis 16490 仅本轮使用，结束后关闭。
+
+### 本轮验收记录
+
+- Python 3.12 / GNU coreutils+findutils：SQLite + Redis `414 passed, 11 skipped`（10 项 PG 迁移及 1 项 PG 并发条件跳过）；临时 PG16 + Redis `425 passed`，包含现存 parent 链/FK 的 upgrade → downgrade → upgrade、模型漂移、历史重复号及跨用户链检查。
+- 浏览器 E2E `34 passed`；最后分页竞态修复另复验上传 → 回收站下载 → 恢复 → 最终 purge：`1 passed, 28 deselected`。E2E 临时副本 production build 通过；Portal Node tests `4 passed`。
+- Ruff check / format check、依赖锁一致性、git diff --check 均通过。测试与计划只用独立临时目录、PG 15490 和 Redis 16490，未读取开发者 .env/var 数据。
+- 临时 PostgreSQL/Redis 已关闭，15490/16490 已确认无监听；无 push。
+
+## 2026-10-23 合并 C / G / I 的集成点
+
+- 迁移链已整理为单调编号：0008 → 0009 ledger → 0010 lifecycle → 0011 preview outbox → 0012 identity → 0013 file versions。模型漂移检查必须在 head 上做（`run_migrations`），升到中间版本再比对全量 models 必然失败。
+- 资料库渲染：Broker `LibraryRenderer` 用 `acquire(SandboxSpec(profile="render"), LeasePrincipal(system=True))` 走准入的 render 保留槽，不得再替换 `manager.platform` 或伪造 Run。Broker 读文件以 `job=preview&preview_job=<id>` 绑定到 API 记录的当前 pending 预览任务（scope `files:read_for_preview`）；Worker 的缩略图/预览任务同样要带 `job`，否则 B 的绑定会 403。
+- 额度：统一走 `quota.user_limits`（用户策略 → 部门策略 → 默认策略 → settings），覆盖 token 预留、资料库空间、并发 Run 和用量摘要；不要再直接读 `settings.*_limit`。
+- 用量报表只读账本：`weighted_amount` 是 milli 单位（÷1000 才是加权 Token），部门取调用时快照 `model_usage.dept_id`，不 join runs（对话被清除后用量仍在）。
+- 删除：`DELETE /v1/files/{id}` 现在进回收站，派生对象保留到 purge。`library.delete_file_rows` 在同一事务写 `lifecycle_deletions` 持久意图，提交后仍立即尝试删除；失败由 lifecycle 的 `drain_object_deletions` 重试。回收站过期清理在 `lifecycle_once` 中（每小时），不在每分钟的 reaper 里。
+- 内部读文件统一经 `_bound_file`：回收站中的文件 404，已清理版本 410。
+- 资料库界面 E2E 在 `platform/e2e/test_library_ui.py`；设 `AILAB_E2E_SHOTS=/tmp/x` 会保存各状态截图供人工检查。macOS 上 mock 沙箱用宿主 LibreOffice 渲染，宿主未配置 CJK 回退字体时中文字形会被丢掉（只剩英文与线条），这不是渲染器问题；生产沙箱镜像装有 Noto CJK 与微软雅黑/宋体别名。
+- 全局 `button` 样式带 `align-items/justify-content: center`。把整张卡片或整行做成 button 时要显式覆盖（`align-items: stretch; justify-content: flex-start`），否则内容居中。
+
+## 2026-10-23 真实组件与原生 ARM64 验收
+
+- 工作树 `t3-4a3b78af`，分支 `verify/real-components`，基线 `feat/arch-hardening@9c0c808`；仅本地提交。完整命令、数据与未覆盖边界：`docs/reviews/2026-10-23-real-components.md` 和同目录 `real-components-20261023/`。
+- Colima 只用专用 profile `ailab-verify`（2CPU/8GiB/60GiB/k3s），必须 `--activate=false`，Docker 显式 `--context colima-ailab-verify`，kubectl 通过该 VM 的 `sudo k3s kubectl`。宿主缺 kubectl 时 start 在建 VM 前失败；Colima 的 Mac `/tmp` 不共享，bind 会成为空目录，必须用共享用户目录。中断后 profile 曾停止，原采样未落盘，不能把不完整数字当结论；重启后所有 PID/映射和 OSB 进程要重新建立。
+- `clamav/clamav:1.4` 缺 arm64，不能据此说 ClamAV 没有 ARM64。用户指出 `clamav/clamav-debian:latest`，实测 1.5.4 原生支持，最终清单固定 multiarch digest。冷启动先等签名与 PING；曾用的 amd64 模拟数字不用于最终性能验收。原生契约通过，pause→pending/scan_unavailable 30.027s，unpause→ready 36.858s；这是进程停滞恢复，未测重新下载/加载签名。
+- MinIO Docker Hub 指定镜像不可拉，Quay 401、官方二进制410；本轮固定官方源码 tag 构建真实 MinIO。CI仍引用旧DockerHub tag，待维护镜像源，不把本地源码构建通过当CI通过。PostgreSQL16 restore 用PG16客户端；PG17 pg_dump 会写 transaction_timeout 导致向PG16导入失败。
+- OSB metadata 被按Kubernetes label校验：时间戳、JSON、preview:job_id 都不能原样传。adapter逐字段base32分块/读回解码，owner普通值保留可筛选，PATCH缩短须忽略旧尾块。真实OSB/Docker生命周期、Broker重启/移除该owner Redis记录/外部删除资源均通过。
+- Linux RLIMIT_AS下libxml C层分配失败是XMLSyntaxError/ERR_NO_MEMORY，不是Python MemoryError；按结构化错误码归为memory_limit。原真实OOM测试红→绿，不能把corrupt当作OOM验收。
+- 当前Chromium的IdP302回调不经过Playwright route拦截，Keycloak gate需真实本地callback listener，不能打印授权码。Keycloak realm导入文件必须匹配 `<realm>-realm.json`。Portal实际登录、组→角色/部门、Strict/httpOnly、停用/注销均已验。
+- Redis健康检测不能复用业务队列15s超时和自动重试：本轮真实暂停Redis超过10s探针预算，独立1s connect/read无重试pool修复；API按既定合同返回200/degraded，Agent/Worker返回503，恢复均200。每个RedisQueue最多多1连接，无新增依赖。
+- 原生负载：50MiB上传3.600s；20MiB PPTX扫描+解析27.906s；DOCX上传到预览9.057s；Broker注入50MiB 3.570s/peak RSS265.4MiB，交付100MiB 3.020s/284.4MiB，limit384MiB。Worker peak173.2MiB、clamd容器1084.7MiB，无OOM但有CPU节流。Broker整文件缓冲仍是设计债务，单次通过不证明并发安全。采样0.1s、886样本、采样器CPU1.884s；健康探测修复后另采5s空闲RSS，未重复全部负载。
+- k3s备份本轮57对象/252762640B，暂停四个写服务后create/verify/restore/verify共4.14s、RSS60.1MiB；空目录恢复API的100MiB下载哈希、JPEG预览、Run均通过。不是生产RPO/RTO或异机介质验收。
+- 最终Linux PG16+Redis+全局S3+原生clamd全套753 passed/9 skipped/101.26s；真实provider/Keycloak gate另跑通过；Portal11测试与production build通过，Ruff通过。未验真实OSB Office+S3联合部署、完整mock故障矩阵的真实版本、并发/长期负载、hostNetwork公网防火墙、gVisor/付费模型。清理状态见验收证据cleanup.log；只停止不删除专用profile。
+- 清理最终状态（15:26 +08）：专用platform namespace/PVC、临时容器/卷、自建镜像/悬空构建层均删除，OSB/Portal/API/转发均停止；Colima ailab-verify=Stopped，profile与上游基础镜像保留；私密token/kubeconfig副本已删除。本地cache保留有限数据备份与证据，没有任务服务运行。
+- Redis 健康检查用独立短超时客户端，但不要给它的连接池设上限：redis-py 的普通连接池满了直接抛错（不排队），readiness、liveness、metrics 同时 ping 时会把健康的 Redis 判成宕机（`tests/contracts/test_queue_health.py` 有并发回归）。
+
+## 2026-10-23 main 集成与跨 session 接续
+
+- main 的 SearXNG 改动原在已删除的 `platform/deploy/k8s/platform.yaml`；解决 modify/delete 冲突不能只删旧文件。检索资源已迁入 `base/search`，共享 config 显式设 `AILAB_SEARXNG_URL=http://platform-searxng:8080`（默认是 localhost），default-deny 下另加仅 Agent 可访问的 ingress。回归见 `platform/tests/test_web_deployment.py`，缺失配置时红、集成后绿。应用代码升级不额外重启检索服务。
+- 新 session 以 `docs/progress/current.md` 接续；历史验收留在 reviews/updates，计划在 roadmap/design，能力状态只在 status-matrix。用户已要求剩余功能先暂停，不能把设计文档里的阶段顺序当作开工授权。
+- Broker 并发 OOM 是按单次峰值推算的风险，现有证据没有双请求并发 OOMKill 实测；报告应区分测量值与推断。Redis health pool 后续在 `826899c` 去掉了连接数上限，旧真实组件报告中的“最多1连接”只描述当时版本。
+- 发布包含 workflow 的分支时，HTTPS OAuth token 可能缺 `workflow` scope；本轮已验证当前账号 SSH 能写仓库，用显式 `git push git@github.com:shijunan126-creator/ailab-lite.git HEAD:feat/arch-hardening`，并核对 GitHub ref SHA。不要通过删 CI 变更绕过权限；临时 `-c remote.origin.url=...` 可能叠加原 URL，导致先报 HTTPS 失败再 SSH 成功，不能仅凭整体退出码判断远端结果。
+
+## 2026-10-23 CI 结构更新
+
+- PR 范围必须用 base...head 全量 diff，不能只看最后一次 push：连续推送取消旧运行后，若仅看文档补丁就可能漏验前面的代码。删除/重命名用 no-renames 保留两个路径；未知路径全套，Skill Markdown 不属于文档跳过白名单。
+- E2E fixture 已执行 Portal Node tests 与隔离 production build；不另起重复 build job。双库 matrix 不互相 fail-fast，S3 不依赖 Python 的成败；最终稳定 `CI` 明确检查选中项，不允许意外 skip 变绿。
+- `test_parser_wall_timeout_kills_child` 原来对极小文件设 1ms 超时；Linux coverage 下父进程可能晚于 child 退出才被调度，测试不一定触发 watchdog。现在启动真实阻塞 child，验证超时和 SIGKILL/reap，不靠解析器速度。
+- Actions 的 job 级 env 不允许 `runner.temp` context，改在 step 写 GITHUB_ENV；actionlint 会捕获此类表达式错误。CI MinIO 不再拉失效 tag，改官方固定源码+SHA256与二进制缓存；版本/校验和/冷缓存验收必须同步。

@@ -24,7 +24,7 @@ from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
 from ..queue import get_queue
-from ..quota import enforce_token_quota, usage_summary
+from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut
 from ..storage import get_storage
@@ -95,7 +95,7 @@ def start_run(
         enforce_token_quota(db, user.id)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
-        if active >= settings.max_active_runs_per_user:
+        if active >= user_limits(db, user.id).max_concurrent_runs:
             metrics.QUOTA_REJECTIONS.labels("active_runs").inc()
             raise HTTPException(status_code=429, detail="too many active runs for this user")
         if conversation is not None:
@@ -115,8 +115,8 @@ def start_run(
 
         inputs: list[str] = []
         for file_id in file_ids:
-            file = db.get(FileObject, file_id)
-            if file is None or file.user_id != user.id:
+            file = db.get(FileObject, file_id, populate_existing=True)
+            if file is None or file.user_id != user.id or file.deleted_at is not None or file.purged_at is not None:
                 raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
             if file.status != FileStatus.READY:
                 raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")

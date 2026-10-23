@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+<rect width="1500" height="960" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">沙箱镜像 sbx-office · 分层与依赖</text>
+<text x="467.6" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">arm64 原生构建 · 离线可用 · 约 2.3～3.0 GB</text>
+<rect x="1320.3" y="24" width="16" height="12" rx="2" ry="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1342.3" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">包含</text>
+<rect x="1373.3" y="24" width="16" height="12" rx="2" ry="2" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="1395.3" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">排除 / 注意</text>
+<rect x="40" y="80" width="900" height="62" rx="8" ry="8" fill="#e0e7ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="56.0" y="117.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L6 Skills 与工具</text>
+<text x="250.0" y="106.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">/opt/skills/*：SKILL.md · scripts · 公司模板（PPT 母版、公文模板）</text>
+<text x="250.0" y="127.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">/opt/ailab-tools：render_preview · recalc_xlsx · html2pptx · docx_check</text>
+<rect x="40" y="150" width="900" height="62" rx="8" ry="8" fill="#fef9c3" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="56.0" y="187.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L5 字体 ≈300 MB</text>
+<text x="250.0" y="176.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">Noto Sans/Serif CJK（思源）· 霞鹜文楷 · 朱雀仿宋 · HarmonyOS Sans SC（可选）</text>
+<text x="250.0" y="197.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">Liberation · Carlito · Caladea · DejaVu + fontconfig 映射（见下）</text>
+<rect x="40" y="220" width="900" height="62" rx="8" ry="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+<text x="56.0" y="257.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L4 Node 22 包 ≈150 MB</text>
+<text x="250.0" y="246.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">pptxgenjs · docx · exceljs · dom-to-pptx（内部 fork）· playwright</text>
+<text x="250.0" y="267.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">echarts + resvg-js · sharp · mermaid-cli · pdf-lib · markdown-it</text>
+<rect x="40" y="290" width="900" height="62" rx="8" ry="8" fill="#dbeafe" stroke="#2563eb" stroke-width="1.5"/>
+<text x="56.0" y="327.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L3 Python 包 ≈800 MB</text>
+<text x="250.0" y="316.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">文档 / PDF / 转换 / 数据 / 图表 / 通用（见右侧分组）</text>
+<text x="250.0" y="337.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">统一用内网 PyPI 镜像构建，运行时禁止联网安装（内网镜像白名单兜底）</text>
+<rect x="40" y="360" width="900" height="62" rx="8" ry="8" fill="#cffafe" stroke="#0891b2" stroke-width="1.5"/>
+<text x="56.0" y="397.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L2 浏览器 ≈350 MB</text>
+<text x="250.0" y="386.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">Playwright 预置 Chromium（Chrome for Testing arm64），只装一份</text>
+<text x="250.0" y="407.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">供 dom-to-pptx、kaleido、mermaid-cli、网页截图共用</text>
+<rect x="40" y="430" width="900" height="62" rx="8" ry="8" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="56.0" y="467.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L1 系统工具 ≈1 GB</text>
+<text x="250.0" y="456.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">LibreOffice headless（Writer/Calc/Impress）· poppler-utils · qpdf · pandoc</text>
+<text x="250.0" y="477.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">graphviz · ImageMagick · fontconfig · tesseract + chi_sim（可选，OCR）</text>
+<rect x="40" y="500" width="900" height="62" rx="8" ry="8" fill="#f1f5f9" stroke="#475569" stroke-width="1.5"/>
+<text x="56.0" y="537.0" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">L0 基础</text>
+<text x="250.0" y="526.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">Debian 13 arm64 slim（不用 Ubuntu 24.04：其 Chromium 只有 snap 包）</text>
+<text x="250.0" y="547.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">Python 3.12 · Node 22 LTS · 非 root 用户 10001</text>
+<rect x="970" y="62" width="510" height="500" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="984.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">L3 Python 包分组</text>
+<text x="990.0" y="124.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">文档</text>
+<text x="1070.0" y="124.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">python-pptx · python-docx · docxtpl(LGPL) · openpyxl</text>
+<text x="1070.0" y="144.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">XlsxWriter · python-calamine · unoserver</text>
+<text x="990.0" y="186.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">PDF</text>
+<text x="1070.0" y="186.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">reportlab · WeasyPrint · pypdf · pdfplumber</text>
+<text x="1070.0" y="206.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">pdfminer.six · pypdfium2 · pikepdf · pdf2image</text>
+<text x="1070.0" y="226.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">img2pdf</text>
+<text x="990.0" y="268.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">转换/读取</text>
+<text x="1070.0" y="268.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">markitdown · mammoth · pypandoc</text>
+<text x="990.0" y="310.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">数据</text>
+<text x="1070.0" y="310.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">pandas · numpy · scipy · statsmodels · pyarrow</text>
+<text x="1070.0" y="330.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">duckdb · polars</text>
+<text x="990.0" y="372.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">图表</text>
+<text x="1070.0" y="372.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">matplotlib · seaborn</text>
+<text x="1070.0" y="392.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">plotly + kaleido（指向共用 Chromium）· pyecharts</text>
+<text x="1070.0" y="412.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">vl-convert</text>
+<text x="990.0" y="454.0" font-size="13" font-weight="700" fill="#1d4ed8" text-anchor="start" style="white-space:pre">通用</text>
+<text x="1070.0" y="454.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Pillow · Jinja2 · lxml · beautifulsoup4 · fonttools</text>
+<text x="1070.0" y="474.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">opencv-headless（可选）</text>
+<rect x="970" y="578" width="510" height="230" rx="10" ry="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1"/>
+<text x="984.0" y="602.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">排除 / 需注意</text>
+<text x="990.0" y="620.0" font-size="12.2" font-weight="400" fill="#b91c1c" text-anchor="start" style="white-space:pre">• 排除 PyMuPDF / pymupdf4llm（AGPL）→ 用 pypdfium2</text>
+<text x="990.0" y="646.0" font-size="12.2" font-weight="400" fill="#b91c1c" text-anchor="start" style="white-space:pre">• 排除 pycel（GPL）· tabula-py（需 Java）</text>
+<text x="990.0" y="672.0" font-size="12.2" font-weight="400" fill="#b91c1c" text-anchor="start" style="white-space:pre">• 排除 Anthropic 文档 Skills（专有许可）</text>
+<text x="990.0" y="698.0" font-size="12.2" font-weight="400" fill="#b91c1c" text-anchor="start" style="white-space:pre">• 排除 DeerFlow ppt skill（整页图片，不可编辑）</text>
+<text x="990.0" y="724.0" font-size="12.2" font-weight="400" fill="#92400e" text-anchor="start" style="white-space:pre">• 注意 Ghostscript 为 AGPL（仅 OCR 时需要，子进程调用）</text>
+<text x="990.0" y="750.0" font-size="12.2" font-weight="400" fill="#92400e" text-anchor="start" style="white-space:pre">• 注意 docxtpl / img2pdf / cairosvg 为 LGPL（不修改即可）</text>
+<text x="990.0" y="776.0" font-size="12.2" font-weight="400" fill="#92400e" text-anchor="start" style="white-space:pre">• 注意 HarmonyOS Sans 为华为专有许可（需声明，法务确认）</text>
+<rect x="40" y="580" width="900" height="228" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="54.0" y="604.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">fontconfig 字体映射（只影响服务器端渲染/预览）</text>
+<text x="60.0" y="626.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">微软雅黑 / 等线 / 黑体</text>
+<text x="250.0" y="626.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  Noto Sans CJK SC</text>
+<text x="500.0" y="626.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">宋体 / 新宋体</text>
+<text x="690.0" y="626.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  Noto Serif CJK SC</text>
+<text x="60.0" y="660.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">楷体</text>
+<text x="250.0" y="660.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  霞鹜文楷 LXGW WenKai</text>
+<text x="500.0" y="660.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">仿宋</text>
+<text x="690.0" y="660.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  朱雀仿宋</text>
+<text x="60.0" y="694.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">Calibri / Cambria</text>
+<text x="250.0" y="694.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  Carlito / Caladea</text>
+<text x="500.0" y="694.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">Arial / Times New Roman</text>
+<text x="690.0" y="694.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→  Liberation Sans / Serif</text>
+<text x="60.0" y="742.0" font-size="12.2" font-weight="400" fill="#92400e" text-anchor="start" style="white-space:pre">生成文件时在 OOXML 里写真实的微软字体名（微软雅黑 / 等线），员工用 Office 打开时显示正常；</text>
+<text x="60.0" y="764.0" font-size="12.2" font-weight="400" fill="#92400e" text-anchor="start" style="white-space:pre">没有开源字体与宋体 / 雅黑度量完全一致 → 服务器预览可能有轻微换行差异，以版式自检截图为准。</text>
+<rect x="20" y="824" width="1460" height="120" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="848.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">构建与分发</text>
+<rect x="40" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="145.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Dockerfile（Git）</text>
+<path d="M250.0,894.0 L280.0,894.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="280" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="385.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">鲲鹏上原生构建 arm64</text>
+<path d="M490.0,894.0 L520.0,894.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="520" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="625.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Trivy 扫描 · cosign 签名</text>
+<path d="M730.0,894.0 L760.0,894.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="760" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="865.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">推送 Harbor（锁定 digest）</text>
+<path d="M970.0,894.0 L1000.0,894.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1000" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1105.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">DaemonSet 预拉取到 2 台节点</text>
+<path d="M1210.0,894.0 L1240.0,894.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1240" y="866" width="210" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1345.0" y="897.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">更新 Pool 模板 → 预热池滚动替换</text>
+</svg>

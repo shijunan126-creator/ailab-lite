@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs></defs>
+<rect width="1500" height="960" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">存储规划 · OceanStor Pacific 9950</text>
+<text x="506.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">模型权重走 NFS · 资料库走 S3 · 数据库在本地 NVMe</text>
+<rect x="20" y="62" width="1460" height="230" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① 空间分配（规划约 58 TB）</text>
+<text x="40.0" y="110.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">情况 1：99 TB 是可用容量</text>
+<text x="233.2" y="110.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">→ 余量充足，按此规划</text>
+<rect x="40" y="122" width="215.15151515151516" height="46" rx="0" ry="0" fill="#fdba74" stroke="#ffffff" stroke-width="1.5"/>
+<text x="147.6" y="142.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">模型权重 /models</text>
+<text x="147.6" y="159.0" font-size="11" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">15 TB · NFS</text>
+<rect x="255.15151515151516" y="122" width="358.5858585858586" height="46" rx="0" ry="0" fill="#86efac" stroke="#ffffff" stroke-width="1.5"/>
+<text x="434.4" y="142.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">用户资料库</text>
+<text x="434.4" y="159.0" font-size="11" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">25 TB · S3</text>
+<rect x="613.7373737373738" y="122" width="28.68686868686869" height="46" rx="0" ry="0" fill="#bbf7d0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="628.1" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="642.4242424242425" y="122" width="28.68686868686869" height="46" rx="0" ry="0" fill="#a5f3fc" stroke="#ffffff" stroke-width="1.5"/>
+<text x="656.8" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="671.1111111111112" y="122" width="57.37373737373738" height="46" rx="0" ry="0" fill="#c4b5fd" stroke="#ffffff" stroke-width="1.5"/>
+<text x="699.8" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">4</text>
+<rect x="728.4848484848486" y="122" width="43.03030303030303" height="46" rx="0" ry="0" fill="#ddd6fe" stroke="#ffffff" stroke-width="1.5"/>
+<text x="750.0" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">3</text>
+<rect x="771.5151515151516" y="122" width="28.68686868686869" height="46" rx="0" ry="0" fill="#e2e8f0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="785.9" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="800.2020202020203" y="122" width="71.71717171717172" height="46" rx="0" ry="0" fill="#fde68a" stroke="#ffffff" stroke-width="1.5"/>
+<text x="836.1" y="150.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">5</text>
+<rect x="871.919191919192" y="122" width="588.0808080808081" height="46" rx="0" ry="0" fill="#f8fafc" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="1166.0" y="142.0" font-size="12" font-weight="700" fill="#15803d" text-anchor="middle" style="white-space:pre">余量</text>
+<text x="1166.0" y="159.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">41 TB（41%）</text>
+<text x="40.0" y="190.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">小段：2 预览/缩略图 · 2 镜像仓库 · 4 日志+审计 · 3 DB 备份 · 2 K8s 共享卷（单位 TB）</text>
+<text x="40.0" y="220.0" font-size="14" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">情况 2：99 TB 是裸容量（EC 4+2～6+2 后约 66～74 TB 可用）</text>
+<text x="490.8" y="220.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">→ 余量偏紧：资料库降到 15 GB/人 或推迟 RAG</text>
+<rect x="40" y="232" width="215.15151515151516" height="46" rx="0" ry="0" fill="#fdba74" stroke="#ffffff" stroke-width="1.5"/>
+<text x="147.6" y="252.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">模型权重 /models</text>
+<text x="147.6" y="269.0" font-size="11" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">15 TB · NFS</text>
+<rect x="255.15151515151516" y="232" width="358.5858585858586" height="46" rx="0" ry="0" fill="#86efac" stroke="#ffffff" stroke-width="1.5"/>
+<text x="434.4" y="252.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">用户资料库</text>
+<text x="434.4" y="269.0" font-size="11" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">25 TB · S3</text>
+<rect x="613.7373737373738" y="232" width="28.68686868686869" height="46" rx="0" ry="0" fill="#bbf7d0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="628.1" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="642.4242424242425" y="232" width="28.68686868686869" height="46" rx="0" ry="0" fill="#a5f3fc" stroke="#ffffff" stroke-width="1.5"/>
+<text x="656.8" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="671.1111111111112" y="232" width="57.37373737373738" height="46" rx="0" ry="0" fill="#c4b5fd" stroke="#ffffff" stroke-width="1.5"/>
+<text x="699.8" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">4</text>
+<rect x="728.4848484848486" y="232" width="43.03030303030303" height="46" rx="0" ry="0" fill="#ddd6fe" stroke="#ffffff" stroke-width="1.5"/>
+<text x="750.0" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">3</text>
+<rect x="771.5151515151516" y="232" width="28.68686868686869" height="46" rx="0" ry="0" fill="#e2e8f0" stroke="#ffffff" stroke-width="1.5"/>
+<text x="785.9" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">2</text>
+<rect x="800.2020202020203" y="232" width="71.71717171717172" height="46" rx="0" ry="0" fill="#fde68a" stroke="#ffffff" stroke-width="1.5"/>
+<text x="836.1" y="260.0" font-size="11" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">5</text>
+<rect x="871.919191919192" y="232" width="172.12121212121212" height="46" rx="0" ry="0" fill="#f8fafc" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4 3"/>
+<text x="958.0" y="252.0" font-size="12" font-weight="700" fill="#dc2626" text-anchor="middle" style="white-space:pre">余量</text>
+<text x="958.0" y="269.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">12 TB（17%）</text>
+<rect x="1044.0404040404042" y="232" width="415.95959595959596" height="46" rx="0" ry="0" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1"/>
+<text x="1252.0" y="252.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">EC 冗余开销</text>
+<text x="1252.0" y="269.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">≈29 TB</text>
+<rect x="20" y="308" width="1460" height="330" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="332.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② 数据 → 协议 → 谁能访问</text>
+<text x="44.0" y="352.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">数据</text>
+<text x="230.0" y="352.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">存放 / 协议</text>
+<text x="600.0" y="352.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">访问方</text>
+<rect x="40" y="364" width="1420" height="32" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="385.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">模型权重</text>
+<text x="230.0" y="385.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">NFS 文件系统 ai-models</text>
+<text x="600.0" y="385.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">8 台 Atlas 只读（同一路径 /models）；入库主机读写 staging</text>
+<rect x="40" y="402" width="1420" height="32" rx="4" ry="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="423.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">用户资料库</text>
+<text x="230.0" y="423.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">S3 桶 ailab-library（版本管理）</text>
+<text x="600.0" y="423.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Platform API / Broker / 文件 Worker（各自账户）；浏览器用预签名 URL</text>
+<rect x="40" y="440" width="1420" height="32" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="461.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">上传临时区</text>
+<text x="230.0" y="461.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">S3 桶 ailab-upload-tmp（1 天过期）</text>
+<text x="600.0" y="461.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">分片上传中转</text>
+<rect x="40" y="478" width="1420" height="32" rx="4" ry="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="499.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">镜像 / 日志 / 审计</text>
+<text x="230.0" y="499.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">S3 桶 ailab-registry / ailab-logs</text>
+<text x="600.0" y="499.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Harbor、Loki；审计归档可开 WORM</text>
+<rect x="40" y="516" width="1420" height="32" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="537.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">数据库备份</text>
+<text x="230.0" y="537.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">S3 桶 ailab-backup</text>
+<text x="600.0" y="537.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">CNPG WAL 持续归档 + 每日全量，保留 30 天</text>
+<rect x="40" y="554" width="1420" height="32" rx="4" ry="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="575.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">K8s 共享卷</text>
+<text x="230.0" y="575.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">NFS（Huawei CSI 4.13，ARM64）</text>
+<text x="600.0" y="575.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">少量需要共享文件系统的组件</text>
+<rect x="40" y="592" width="1420" height="32" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="52.0" y="613.0" font-size="13" font-weight="700" fill="#dc2626" text-anchor="start" style="white-space:pre">沙箱</text>
+<text x="230.0" y="613.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">—— 不能访问任何存储 ——</text>
+<text x="600.0" y="613.0" font-size="12.5" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">文件进出只经 Broker 中转</text>
+<rect x="20" y="654" width="700" height="292" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="678.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">③ 模型目录规范（NFS）</text>
+<text x="44.0" y="704.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">/models</text>
+<text x="44.0" y="732.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">├── repo/            正式库（Atlas 只读）</text>
+<text x="44.0" y="760.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">│   └── &lt;org&gt;/&lt;model&gt;/&lt;quant&gt;/&lt;revision&gt;/</text>
+<text x="44.0" y="788.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">│       ├── *.safetensors · config.json · tokenizer*</text>
+<text x="44.0" y="816.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">│       ├── MANIFEST.sha256   加载前校验</text>
+<text x="44.0" y="844.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">│       └── MODEL_CARD.md     来源·许可证·评测·负责人</text>
+<text x="44.0" y="872.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">├── staging/         下载、量化中（仅入库主机可写）</text>
+<text x="44.0" y="900.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">└── archive/         下线版本，保留 30 天</text>
+<rect x="740" y="654" width="740" height="292" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="754.0" y="678.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">④ 不放在 Pacific 上的数据（TaiShan 本地 NVMe）</text>
+<rect x="760" y="696" width="340" height="110" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="930.0" y="734.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">PostgreSQL（CNPG）</text>
+<text x="930.0" y="756.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">主备各一份，流复制</text>
+<text x="930.0" y="775.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">数据库不放 NFS；9950 无块存储</text>
+<rect x="1120" y="696" width="340" height="110" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1290.0" y="734.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">etcd · Valkey</text>
+<text x="1290.0" y="756.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">etcd：本地 SSD（时延敏感）</text>
+<text x="1290.0" y="775.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Valkey：本地盘（可丢）</text>
+<rect x="760" y="820" width="340" height="110" rx="8" ry="8" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+<text x="930.0" y="858.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">指标 TSDB</text>
+<text x="930.0" y="880.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">VictoriaMetrics 本地盘</text>
+<text x="930.0" y="899.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">TSDB 不适合 NFS</text>
+<rect x="1120" y="820" width="340" height="110" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1290.0" y="858.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">沙箱镜像层 / 临时盘</text>
+<text x="1290.0" y="880.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">containerd 本地 · 预拉取</text>
+<text x="1290.0" y="899.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">随沙箱销毁</text>
+</svg>

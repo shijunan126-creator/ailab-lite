@@ -3,14 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds } from "../../lib/api";
 
-export type Category = "all" | "starred" | "images";
+export type Category = "all" | "starred" | "images" | "trash";
 export type LibraryFilter = { category: Category; projectId?: string | null; q?: string };
 
 const PAGE = 100;
 const MAX = 200; // the API's largest page
 
 function query(filter: LibraryFilter, limit: number, offset: number): string {
-  const params = new URLSearchParams({ category: filter.category, limit: String(limit), offset: String(offset) });
+  const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (filter.category === "trash") params.set("trashed", "true");
+  else params.set("category", filter.category);
   if (filter.projectId) params.set("project_id", filter.projectId);
   if (filter.q?.trim()) params.set("q", filter.q.trim());
   return `/v1/files?${params}`;

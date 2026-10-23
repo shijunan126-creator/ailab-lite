@@ -5,6 +5,8 @@
 目标：在本机（2 vCPU / 7.7 GB，x86_64，无 KVM）上按组验证 AILab 的关键组件，**组件与大集群一致**，
 只在 `deploy/overlays/lite` 里改数值。不跑完整平台，一次只起一组，测完拆掉。
 
+开发接续从 [项目进度](docs/progress/README.md) 进入：先读 [当前工作](docs/progress/current.md)，再按任务查路线图、能力状态和验收证据。开发规则见 [AGENTS.md](AGENTS.md)。
+
 ## 快速开始：一键部署
 
 在一台**已装好 Docker 和 k3s** 的 Linux 机器上（建议 ≥ 2 vCPU / 7 GB 内存，x86_64 或 arm64）：
@@ -69,7 +71,7 @@ Portal 默认只监听本机，从自己电脑看用 `ssh -L 3000:127.0.0.1:3000
 `platform/` 已实现架构图里的 Portal、Platform API、Agent Service、Sandbox Broker、文件处理 Worker，
 并用 dev 适配器跑通“帮我做 PPT”端到端：SQLite 代替 CNPG、本机 Redis 代替 Valkey、本地目录代替
 SeaweedFS、OpenSandbox dev server（Docker runtime）或 Docker CLI 代替 k8s/gVisor 沙箱、
-模型目录（DeepSeek 官方 API / mock）暂代 Higress/GPUStack，用户在界面选模型。平台服务已通过 `platform/deploy/k8s/platform.yaml` 跑在现有 k3s
+模型目录（DeepSeek 官方 API / mock）暂代 Higress/GPUStack，用户在界面选模型。平台服务已通过 `platform/deploy/overlays/lite`（kustomize）跑在现有 k3s
 （`platform` 命名空间，API NodePort 30080）。T3/T4 就绪后只改 `.env` 和对应 adapter。详见
 [platform/README.md](platform/README.md)。
 

@@ -9,17 +9,34 @@ Only standard tools of the sandbox image are used: LibreOffice, pdftoppm, openpy
 
 from __future__ import annotations
 
+import csv
 import json
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import zipfile
 from pathlib import Path
 
-PAGES = {".pptx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf"}
-SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv"}
+PAGES = {".pptx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
+SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv"}
 MAX_PAGES = 40
 MAX_ROWS, MAX_COLS = 200, 40
+MAX_SHEETS = 20
+MAX_CELL_CHARS = 2000
+MAX_SHEET_CHARS = 1_000_000
+
+
+def check_archive(source: Path) -> None:
+    if source.suffix.lower() not in {".docx", ".xlsx", ".xlsm", ".pptx", ".odt", ".ods", ".odp", ".odf", ".zip"}:
+        return
+    with zipfile.ZipFile(source) as archive:
+        entries = archive.infolist()
+        if len(entries) > 2048 or sum(entry.file_size for entry in entries) > 128 * 1024 * 1024:
+            raise ValueError("archive_limit")
+        if any(entry.file_size > max(1, entry.compress_size) * 200 for entry in entries):
+            raise ValueError("archive_limit")
 
 
 def soffice(src: Path, fmt: str, outdir: Path) -> Path:
@@ -29,7 +46,7 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
             ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
             check=True,
             capture_output=True,
-            timeout=180,
+            timeout=90,
         )
     finally:
         shutil.rmtree(profile, ignore_errors=True)
@@ -42,14 +59,17 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
 def pages(src: Path, out: Path) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
+        info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
+        match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
+        count = int(match[1]) if match else None
         subprocess.run(
             ["pdftoppm", "-jpeg", "-jpegopt", "quality=82", "-scale-to", "1280", "-l", str(MAX_PAGES), str(pdf), str(out / "p")],
             check=True,
             capture_output=True,
-            timeout=180,
+            timeout=90,
         )
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
-    return {"kind": "pages", "pages": names}
+    return {"kind": "pages", "pages": names, "page_count": count}
 
 
 def _color(c) -> str | None:
@@ -84,35 +104,67 @@ def _display(v, fmt: str) -> str:
     return str(v)
 
 
-def sheets(src: Path, out: Path) -> dict:
+def sheets(src: Path, out: Path, *, recalculate: bool = True) -> dict:
+    if src.suffix.lower() in {".csv", ".tsv"}:
+        rows = []
+        count = 0
+        with src.open(encoding="utf-8-sig", errors="replace", newline="") as stream:
+            csv.field_size_limit(200_000)
+            for row in csv.reader(stream, delimiter="\t" if src.suffix.lower() == ".tsv" else ","):
+                count += 1
+                if count > MAX_ROWS:
+                    break
+                rows.append([{"v": v[:2000]} for v in row[:MAX_COLS]])
+        payload = {
+            "sheets": [
+                {
+                    "name": src.stem,
+                    "rows": rows,
+                    "widths": [],
+                    "merged": [],
+                    "charts": 0,
+                    "truncated": count > MAX_ROWS,
+                    "size": [count, max(map(len, rows), default=0)],
+                }
+            ],
+            "errors": [],
+        }
+        (out / "sheets.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        return {"kind": "sheets", "data": "sheets.json", "errors": []}
     from openpyxl import load_workbook
 
     with tempfile.TemporaryDirectory() as tmp:
         native = src.suffix.lower() in (".xlsx", ".xlsm")
-        if shutil.which("soffice"):
+        if recalculate and shutil.which("soffice"):
             # LibreOffice recalculates on load and stores the results, so formula cells get values (openpyxl alone cannot)
             recalced = soffice(src, "xlsx:Calc MS Excel 2007 XML", Path(tmp))
         elif native:
             recalced = src  # no LibreOffice (a dev machine): formulas are shown as written, without values
         else:
             raise RuntimeError("LibreOffice is needed to preview this kind of spreadsheet")
-        values = load_workbook(recalced, data_only=True)
-        styles = load_workbook(src if native else recalced)
+        values = load_workbook(recalced, data_only=True, read_only=not recalculate)
+        styles = load_workbook(src if native else recalced, read_only=not recalculate)
         result = []
         errors = []
-        for ws in values.worksheets:
+        char_budget = MAX_SHEET_CHARS
+        for ws in values.worksheets[:MAX_SHEETS]:
+            if ws.max_row is None or ws.max_column is None:
+                ws.calculate_dimension(force=True)
             st = styles[ws.title] if ws.title in styles.sheetnames else ws
             nrows, ncols = min(ws.max_row, MAX_ROWS), min(ws.max_column, MAX_COLS)
             rows = []
-            for r in range(1, nrows + 1):
+            for value_row, style_row in zip(
+                ws.iter_rows(max_row=nrows, max_col=ncols), st.iter_rows(max_row=nrows, max_col=ncols), strict=True
+            ):
                 row = []
-                for c in range(1, ncols + 1):
-                    cell, sc = ws.cell(r, c), st.cell(r, c)
-                    text = _display(cell.value, sc.number_format)
+                for cell, sc in zip(value_row, style_row, strict=True):
+                    text = _display(cell.value, sc.number_format)[:MAX_CELL_CHARS]
                     if not text and isinstance(sc.value, str) and sc.value.startswith("=") and recalced is src:
-                        text = sc.value
+                        text = sc.value[:MAX_CELL_CHARS]
                     if text.startswith("#") and text.rstrip("!?0/") in ("#DIV", "#REF", "#VALUE", "#NAME", "#N/A", "#NUM", "#NULL"):
                         errors.append(f"{ws.title}!{cell.coordinate} {text}")
+                    text = text[: max(0, char_budget)]
+                    char_budget -= len(text)
                     item = {"v": text}
                     if sc.font is not None and sc.font.bold:
                         item["b"] = 1
@@ -133,19 +185,21 @@ def sheets(src: Path, out: Path) -> dict:
             for c in range(1, ncols + 1):
                 from openpyxl.utils import get_column_letter
 
-                dim = st.column_dimensions.get(get_column_letter(c))
+                dim = getattr(st, "column_dimensions", {}).get(get_column_letter(c))
                 widths.append(round(dim.width, 1) if dim is not None and dim.width else None)
             result.append(
                 {
                     "name": ws.title,
                     "rows": rows,
                     "widths": widths,
-                    "merged": [str(m) for m in st.merged_cells.ranges][:200],
+                    "merged": [str(m) for m in st.merged_cells.ranges][:200] if hasattr(st, "merged_cells") else [],
                     "charts": len(getattr(st, "_charts", [])),
-                    "truncated": ws.max_row > MAX_ROWS or ws.max_column > MAX_COLS,
+                    "truncated": ws.max_row > MAX_ROWS or ws.max_column > MAX_COLS or char_budget <= 0,
                     "size": [ws.max_row, ws.max_column],
                 }
             )
+        values.close()
+        styles.close()
     (out / "sheets.json").write_text(json.dumps({"sheets": result, "errors": errors[:50]}, ensure_ascii=False), encoding="utf-8")
     return {"kind": "sheets", "data": "sheets.json", "errors": errors[:20]}
 
@@ -155,6 +209,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
     ext = src.suffix.lower()
     try:
+        check_archive(src)
         if ext in PAGES:
             result = pages(src, out)
         elif ext in SHEETS:

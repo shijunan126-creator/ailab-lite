@@ -10,22 +10,27 @@ import shlex
 import threading
 import time
 import uuid
+from collections.abc import Callable
+from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import redis
 
 from .. import metrics
+from ..adapters.lease_store_redis import RedisLeaseStore
 from ..clients import PlatformClient
 from ..config import settings
+from ..domain.admission import AdmissionDecision, AdmissionPolicy, LeasePrincipal
 from ..paths import OUTPUTS, PathError, normalize_path
+from ..ports.capacity import CapacityProvider, StaticCapacityProvider
+from ..ports.lease_store import LIVE_STATES, LeaseStore
 from ..sandbox import ExecResult, SandboxError, get_provider
+from ..sandbox.base import LeaseHandle, SandboxResource, SandboxSpec
 from ..sandbox_tools import RENDER_PREVIEW
 from ..storage import get_storage
 
 log = logging.getLogger("ailab.broker")
-
-LEASE_RECORD_GRACE_SECONDS = 3600
 
 # Platform-owned files inside the sandbox live here; they are left out of workspace snapshots.
 TOOL_DIR = "/workspace/.ailab"
@@ -36,11 +41,46 @@ MAX_PREVIEWS_PER_CALL = 3
 
 
 class LeaseError(RuntimeError):
-    pass
+    code = "lease_provider_error"
+    recoverable = True
+
+    def detail(self) -> dict:
+        return {"code": self.code, "message": str(self), "recoverable": self.recoverable}
+
+
+class LeaseLostError(LeaseError):
+    code = "lease_lost"
+
+
+class LeaseExpiredError(LeaseLostError):
+    code = "lease_expired"
+
+
+class LeaseConflictError(LeaseError):
+    code = "lease_conflict"
+
+
+class BrokerOwnershipError(LeaseError):
+    code = "broker_ownership_lost"
 
 
 class CapacityError(LeaseError):
-    """No free sandbox slot right now; the caller should wait and retry."""
+    """Typed admission failure; never infer capacity from provider error text."""
+
+    code = "sandbox_admission_rejected"
+
+
+class AdmissionRejected(CapacityError):
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(f"sandbox capacity: {reason}")
+
+    def detail(self) -> dict:
+        return {**super().detail(), "reason": self.reason}
+
+
+class AdmissionTimeout(AdmissionRejected):
+    code = "sandbox_queue_deadline"
 
 
 class ArtifactRejected(RuntimeError):
@@ -52,7 +92,9 @@ def _safe_name(name: str) -> str:
 
 
 def _expired(lease: dict) -> bool:
-    return datetime.fromisoformat(lease["expires_at"]) <= datetime.now(UTC)
+    return min(
+        datetime.fromisoformat(lease["expires_at"]), datetime.fromisoformat(lease.get("max_expires_at", lease["expires_at"]))
+    ) <= datetime.now(UTC)
 
 
 def _unique_name(name: str, used: set[str]) -> str:
@@ -69,131 +111,357 @@ def _unique_name(name: str, used: set[str]) -> str:
 
 
 class LeaseManager:
-    def __init__(self, provider=None, platform=None, storage=None, redis_client=None) -> None:
+    def __init__(
+        self,
+        provider=None,
+        platform=None,
+        storage=None,
+        redis_client=None,
+        *,
+        store: LeaseStore | None = None,
+        capacity: CapacityProvider | None = None,
+        start_background: bool = True,
+    ) -> None:
         self.provider = provider or get_provider()
-        self.platform = platform or PlatformClient()
+        self.platform = platform or PlatformClient(service="broker")
         self.storage = storage or get_storage()
-        self.redis = redis_client or redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=5)
-        self.prefix = "ailab:lease:"
-        self.index_key = "ailab:leases:active"
-        self._lock = threading.Lock()
+        self.redis = (
+            redis_client
+            if redis_client is not None
+            else redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5)
+        )
+        self.owner = settings.broker_owner
+        self.store = store if store is not None else RedisLeaseStore(self.redis, self.owner)
+        self.capacity = capacity or StaticCapacityProvider()
+        self._condition = threading.Condition(threading.RLock())
+        self._stripes = [threading.RLock() for _ in range(64)]
+        self._reconcile_lock = threading.Lock()
+        self._start_lock = threading.RLock()
+        self._token = uuid.uuid4().hex
+        self._start_background = start_background
+        self._recovering = False
+        self._generation = 0
+        self._started = False
+        self._fenced = False
+        self._inflight: set[str] = set()
+        self._pending_runs: set[str] = set()
+        self._stop = threading.Event()
+        self._threads: list[threading.Thread] = []
+        self.admission = AdmissionPolicy(
+            self.capacity,
+            self.active_leases,
+            lambda: settings.sandbox_max_per_user,
+            lambda: settings.sandbox_queue_limit,
+            lambda: settings.sandbox_render_max_ttl_seconds,
+        )
 
-    # ---------------------------------------------------------------- lifecycle
-    def _key(self, lease_id: str) -> str:
-        return f"{self.prefix}{lease_id}"
+    def _notify(self) -> None:
+        with self._condition:
+            self._generation += 1
+            self._condition.notify_all()
 
-    def _load(self, lease_id: str, allow_expired: bool = False) -> dict:
-        raw = self.redis.get(self._key(lease_id))
-        if not raw:
-            raise LeaseError(f"lease not found: {lease_id}")
-        lease = json.loads(raw)
-        # The record outlives expires_at on purpose (see _save), so expiry is checked here.
-        if not allow_expired and _expired(lease):
-            raise LeaseError(f"lease expired: {lease_id}")
-        return lease
+    def is_ready(self) -> bool:
+        return self._started and not self._fenced and not self._recovering and self.store.owns(self._token)
+
+    def _stripe(self, lease_id: str):
+        return self._stripes[hash(lease_id) % len(self._stripes)]
+
+    @staticmethod
+    def _id(handle: str | LeaseHandle) -> str:
+        return handle.lease_id if isinstance(handle, LeaseHandle) else handle
+
+    def _assert_owner(self) -> None:
+        if self._fenced or not self.store.owns(self._token):
+            raise BrokerOwnershipError("broker ownership lost; reconcile before serving requests")
+
+    def _ensure_started(self) -> None:
+        if not self._started:
+            self.recover()
+        self._assert_owner()
+
+    def _provider_call(self, operation: str, *args, **kwargs):
+        self._assert_owner()
+        try:
+            return getattr(self.provider, operation)(*args, **kwargs)
+        except Exception:
+            metrics.SANDBOX_PROVIDER_ERRORS.labels(self.provider.name, operation).inc()
+            raise
 
     def _save(self, lease: dict) -> None:
-        expires_at = datetime.fromisoformat(lease["expires_at"])
-        remaining = int((expires_at - datetime.now(UTC)).total_seconds())
-        # Keep the record past expiry: cleanup_once finds expired leases by reading
-        # them, so a key that vanishes exactly at expires_at would never be reaped.
-        ttl = max(1, remaining) + LEASE_RECORD_GRACE_SECONDS
-        self.redis.set(self._key(lease["lease_id"]), json.dumps(lease, ensure_ascii=False), ex=ttl)
-        self.redis.sadd(self.index_key, lease["lease_id"])
+        self._assert_owner()
+        version = lease.get("version")
+        if not self.store.cas(lease["lease_id"], version, lease):
+            raise LeaseConflictError("lease changed concurrently")
+        lease["version"] = (version or 0) + 1
 
-    def _drop(self, lease_id: str) -> None:
-        self.redis.delete(self._key(lease_id))
-        self.redis.srem(self.index_key, lease_id)
+    def _load(self, handle: str | LeaseHandle, allow_expired: bool = False) -> dict:
+        self._ensure_started()
+        if self._recovering:
+            raise BrokerOwnershipError("broker is rebuilding lease ownership")
+        lease_id = self._id(handle)
+        lease = self.store.get(lease_id)
+        if not lease:
+            raise LeaseLostError(f"lease not found: {lease_id}")
+        if allow_expired:
+            return lease
+        if lease["state"] != "active":
+            raise LeaseLostError(f"lease is {lease['state']}: {lease_id}")
+        if _expired(lease):
+            raise LeaseExpiredError(f"lease expired: {lease_id}")
+        if isinstance(handle, LeaseHandle) and handle.provider_ref != lease["provider_ref"]:
+            raise LeaseLostError("lease handle does not match its resource")
+        try:
+            resource = self._provider_call("inspect", lease["provider_ref"])
+        except SandboxError as exc:
+            raise LeaseError("sandbox inspection unavailable") from exc
+        if resource and (resource.labels.get("ailab.owner") != self.owner or resource.labels.get("ailab.lease_id") != lease_id):
+            raise LeaseLostError("sandbox identity does not match lease")
+        if resource is None or not resource.running:
+            with self._stripe(lease_id):
+                current = self.store.get(lease_id)
+                if current and current["state"] == "active":
+                    if resource is None:
+                        self._finish(current, "failed", "lease_lost")
+                    else:
+                        self.release(lease_id, reason="lease_lost")
+            raise LeaseLostError(f"sandbox disappeared: {lease_id}")
+        return lease
 
     def active_leases(self) -> list[dict]:
-        out: list[dict] = []
-        for lease_id in self.redis.smembers(self.index_key):
-            raw = self.redis.get(self._key(lease_id))
-            if not raw:
-                self.redis.srem(self.index_key, lease_id)
-                continue
-            out.append(json.loads(raw))
-        return out
+        # Creating and releasing resources occupy capacity until deletion is confirmed.
+        return self.store.live()
+
+    def status(self, handle: str | LeaseHandle) -> dict:
+        self._ensure_started()
+        if self._recovering:
+            raise BrokerOwnershipError("broker is rebuilding lease ownership")
+        lease = self.store.get(self._id(handle))
+        if lease is None:
+            raise LeaseLostError("lease not found")
+        return lease
+
+    def admission_status(self, run_id: str) -> dict:
+        with self._condition:
+            return self.admission.status(run_id)
+
+    def put_input(self, lease: dict, path: str, data: bytes) -> None:
+        """Inject a platform file while a lease is being prepared (inside acquire's prepare callback).
+
+        Unlike put_file this is for trusted platform inputs, so it is not bound by the agent's write cap.
+        """
+        self._provider_call("put_file", lease["provider_ref"], self._checked(path), data)
+
+    @staticmethod
+    def default_spec(image: str | None = None, ttl_seconds: int | None = None) -> SandboxSpec:
+        return SandboxSpec(
+            image=image or settings.sandbox_image,
+            cpu=settings.sandbox_cpu,
+            memory=settings.sandbox_memory_bytes,
+            disk=settings.sandbox_disk_bytes,
+            ttl=ttl_seconds if ttl_seconds is not None else settings.sandbox_ttl_seconds,
+            max_lifetime=settings.sandbox_max_lifetime_seconds,
+        )
+
+    @staticmethod
+    def _metadata(lease: dict) -> dict[str, str]:
+        labels = {
+            f"ailab.{key}": str(lease[key])
+            for key in ("owner", "lease_id", "run_id", "user_id", "created_at", "expires_at", "max_expires_at", "state")
+        }
+        labels["ailab.spec"] = json.dumps(lease["spec"], separators=(",", ":"))
+        # Only recovery-critical fields; preview caches stay ephemeral in Redis.
+        labels["ailab.inputs"] = json.dumps(lease.get("inputs", []), ensure_ascii=False)
+        labels["ailab.preview_seq"] = str(lease.get("preview_seq", 0))
+        return labels
+
+    def acquire(
+        self,
+        spec: SandboxSpec,
+        principal: LeasePrincipal,
+        *,
+        wait_seconds: float | None = None,
+        on_queued: Callable[[AdmissionDecision], None] | None = None,
+        prepare: Callable[[dict], None] | None = None,
+    ) -> LeaseHandle:
+        """Trusted service API. prepare runs before activation; C can omit it for render jobs.
+
+        Queue entries are in-process, bounded and deadline-driven. If the Broker
+        restarts a waiting caller must retry; no sandbox has been reserved yet.
+        """
+        self._ensure_started()
+        if spec.max_lifetime > settings.sandbox_max_lifetime_seconds:
+            raise AdmissionRejected("spec_exceeds_max_lifetime")
+        self._release_expired()
+        started = time.perf_counter()
+        wait = settings.sandbox_wait_seconds if wait_seconds is None else max(0, wait_seconds)
+        deadline, request_id = time.monotonic() + wait, uuid.uuid4().hex
+        last_position = None
+        with self._condition:
+            if principal.run_id in self._pending_runs:
+                raise AdmissionRejected("run_already_waiting")
+            self._pending_runs.add(principal.run_id)
+        try:
+            while True:
+                with self._condition:
+                    self._assert_owner()
+                    if self._recovering:
+                        raise BrokerOwnershipError("broker is reconciling after store loss")
+                    generation = self._generation
+                    existing = next((x for x in self.active_leases() if x["run_id"] == principal.run_id), None)
+                    if existing:
+                        if existing["user_id"] != principal.user_id:
+                            raise LeaseError("run principal mismatch")
+                        if existing["state"] != "active" or _expired(existing):
+                            raise AdmissionRejected("run_lease_not_active")
+                        return LeaseHandle(existing["lease_id"], existing["provider_ref"])
+                    decision = self.admission.admit(
+                        principal, spec, request_id=request_id, wait_seconds=max(0, deadline - time.monotonic())
+                    )
+                    if decision.status == "rejected":
+                        metrics.SANDBOX_CAPACITY_REJECTIONS.inc()
+                        if decision.reason == "queue_deadline":
+                            raise AdmissionTimeout("queue_deadline")
+                        raise AdmissionRejected(decision.reason or "capacity")
+                    if decision.status == "admitted":
+                        now = datetime.now(UTC)
+                        lease_id = f"lease_{uuid.uuid4().hex}"
+                        lease = {
+                            "lease_id": lease_id,
+                            "owner": self.owner,
+                            "run_id": principal.run_id,
+                            "user_id": principal.user_id,
+                            "provider": self.provider.name,
+                            "provider_ref": None,
+                            "sandbox_id": None,
+                            "image": spec.image,
+                            "spec": asdict(spec),
+                            "state": "creating",
+                            "created_at": now.isoformat(),
+                            "expires_at": (now + timedelta(seconds=spec.ttl)).isoformat(),
+                            "max_expires_at": (now + timedelta(seconds=spec.max_lifetime)).isoformat(),
+                            "create_deadline": (now + timedelta(seconds=settings.osb_request_timeout_seconds + 150)).isoformat(),
+                        }
+                        self._save(lease)
+                        self._inflight.add(lease_id)
+                        break
+                    position = decision.position
+                # Event delivery never holds the admission condition across an HTTP call.
+                if on_queued and position != last_position:
+                    on_queued(decision)
+                last_position = position
+                with self._condition:
+                    # Do not miss a release while the progress callback runs.
+                    remaining = deadline - time.monotonic()
+                    if remaining > 0 and generation == self._generation:
+                        self._condition.wait(remaining)
+        finally:
+            with self._condition:
+                self._pending_runs.discard(principal.run_id)
+                self.admission.cancel(request_id)
+                self._notify()
+            metrics.SANDBOX_ADMISSION_WAIT_SECONDS.observe(time.perf_counter() - started)
+
+        try:
+            with self._stripe(lease_id):
+                ref = self._provider_call("acquire", lease_id, spec.image, ttl_seconds=spec.ttl, spec=spec, labels=self._metadata(lease))
+                self._assert_owner()
+                lease.update(provider_ref=ref, sandbox_id=ref)
+                self._save(lease)
+                if prepare:
+                    prepare(lease)
+                self._provider_call("renew", ref, datetime.fromisoformat(lease["expires_at"]))
+                if _expired(lease):
+                    raise LeaseExpiredError("lease expired during sandbox preparation")
+                lease["state"] = "active"
+                # Activation reaches the resource first, so a crash/Redis flush can
+                # only adopt fully staged input, never a partially prepared sandbox.
+                self._provider_call("update_metadata", ref, self._metadata(lease))
+                self._save(lease)
+        except Exception as exc:
+            if not isinstance(exc, BrokerOwnershipError):
+                self.release(lease_id, reason="creation_failed")
+            if isinstance(exc, LeaseError):
+                raise
+            raise LeaseError("could not acquire or prepare sandbox") from exc
+        finally:
+            with self._condition:
+                self._inflight.discard(lease_id)
+                self._notify()
+        metrics.SANDBOX_ACQUIRE_SECONDS.observe(time.perf_counter() - started)
+        return LeaseHandle(lease_id, ref)
 
     def create(
         self,
         run_id: str,
-        inputs: list[dict] | None = None,  # ignored: the Broker reads the run's inputs from the API
+        inputs: list[dict] | None = None,
         image: str | None = None,
         ttl_seconds: int | None = None,
+        *,
+        wait_seconds: float = 0,
     ) -> dict:
-        self._release_expired()  # an expired lease still holds a sandbox: free it before counting capacity
-        with self._lock:
-            existing = next((lease for lease in self.active_leases() if lease["run_id"] == run_id and not _expired(lease)), None)
-            if existing:
-                return existing
-            active = self.active_leases()
-            if len(active) >= settings.max_sandboxes:
-                metrics.SANDBOX_CAPACITY_REJECTIONS.inc()
-                raise CapacityError(f"sandbox capacity reached ({settings.max_sandboxes})")
+        # Ownership and attachments come only from the API, never the Agent's body.
+        run = self.platform.get_run(run_id)
+        user_id = run.get("user_id")
+        if not user_id:
+            raise LeaseError("API run has no authenticated owner")
 
-            started = time.perf_counter()
-            lease_id = f"lease_{uuid.uuid4().hex[:16]}"
-            try:
-                sandbox_id = self.provider.acquire(
-                    lease_id, image or settings.sandbox_image, ttl_seconds=ttl_seconds or settings.sandbox_ttl_seconds
-                )
-            except SandboxError as exc:
-                raise LeaseError(f"could not acquire sandbox: {exc}") from exc
-
-            ttl = ttl_seconds or settings.sandbox_ttl_seconds
-            now = datetime.now(UTC)
-            lease = {
-                "lease_id": lease_id,
-                "run_id": run_id,
-                "provider": self.provider.name,
-                "sandbox_id": sandbox_id,
-                "image": image or settings.sandbox_image,
-                "created_at": now.isoformat(),
-                "expires_at": (now + timedelta(seconds=ttl)).isoformat(),
-            }
-            self._save(lease)
-
-        # Input injection happens outside the capacity lock: it is I/O bound and
-        # only touches this lease's sandbox.
-        try:
-            # The caller only names the run; which files belong to it is the API's
-            # call, so a compromised Agent cannot pull in someone else's files.
-            run = self.platform.get_run(run_id)
-            used: set[str] = set()
-            injected: list[dict] = []
+        def prepare(lease: dict) -> None:
+            injected, used = [], set()
             for file_id in run.get("input_file_ids") or []:
-                meta = self.platform.get_file(file_id)
+                meta = self.platform.get_file(file_id, run_id=run_id)
                 if meta.get("status") != "ready":
                     raise LeaseError(f"input file {file_id} is {meta.get('status')}")
-                data = self.platform.get_file_bytes(file_id)
+                data = self.platform.get_file_bytes(file_id, run_id=run_id)
                 name = _unique_name(_safe_name(meta.get("filename") or file_id), used)
                 path = f"/workspace/inputs/{name}"
-                self.provider.put_file(sandbox_id, path, data)
+                self.put_input(lease, path, data)
                 injected.append({"file_id": file_id, "filename": name, "path": path})
             lease["inputs"] = injected
-            restore_key = run.get("workspace_restore_key")
-            if restore_key:
-                self._restore_workspace(lease, restore_key)
-            self._save(lease)
-        except Exception as exc:
-            log.exception("input injection failed for %s", lease_id)
-            self.release(lease_id, reason="input_injection_failed")
-            raise LeaseError(f"input injection failed: {exc}") from exc
+            if run.get("workspace_restore_key"):
+                self._restore_workspace(lease, run["workspace_restore_key"])
 
-        metrics.SANDBOX_ACQUIRE_SECONDS.observe(time.perf_counter() - started)
+        def queued(decision: AdmissionDecision) -> None:
+            try:
+                self.platform.append_event(
+                    run_id, "agent.waiting_sandbox", {"position": decision.position, "request_id": decision.request_id}
+                )
+            except Exception:
+                log.warning("could not record sandbox admission progress")
+
+        handle = self.acquire(
+            self.default_spec(image, ttl_seconds),
+            LeasePrincipal(user_id, run_id),
+            wait_seconds=wait_seconds,
+            on_queued=queued,
+            prepare=prepare,
+        )
+        lease = self.get(handle)
         try:
-            self.platform.append_event(
-                run_id,
-                "sandbox.leased",
-                {"lease_id": lease_id, "sandbox_id": sandbox_id, "provider": self.provider.name},
-            )
+            self.platform.append_event(run_id, "sandbox.leased", {"lease_id": handle.lease_id, "provider": self.provider.name})
         except Exception:
-            log.warning("could not record sandbox.leased for %s", run_id, exc_info=True)
+            log.warning("could not record sandbox.leased")
         return lease
 
-    def get(self, lease_id: str) -> dict:
-        return self._load(lease_id)
+    def get(self, handle: str | LeaseHandle) -> dict:
+        return self._load(handle)
+
+    def renew(self, handle: str | LeaseHandle, ttl_seconds: int | None = None) -> dict:
+        lease_id = self._id(handle)
+        with self._stripe(lease_id):
+            lease = self._load(handle)
+            ttl = ttl_seconds if ttl_seconds is not None else lease["spec"]["ttl"]
+            if ttl <= 0 or ttl > lease["spec"]["ttl"]:
+                raise LeaseError("heartbeat ttl must be within the original lease ttl")
+            until = min(datetime.now(UTC) + timedelta(seconds=ttl), datetime.fromisoformat(lease["max_expires_at"]))
+            self._provider_call("renew", lease["provider_ref"], until)
+            lease["expires_at"] = until.isoformat()
+            self._provider_call("update_metadata", lease["provider_ref"], self._metadata(lease))
+            self._save(lease)
+            return lease
+
+    def cancel_exec(self, handle: str | LeaseHandle) -> bool:
+        lease = self._load(handle)
+        return self._provider_call("cancel_exec", lease["provider_ref"])
 
     # ---------------------------------------------------------------- workspace across turns
     def _restore_workspace(self, lease: dict, key: str) -> None:
@@ -201,8 +469,8 @@ class LeaseManager:
         sandbox_id = lease["sandbox_id"]
         try:
             data = self.storage.get_bytes(key)
-            self.provider.put_file(sandbox_id, SNAPSHOT_PATH, data)
-            res = self.provider.exec(sandbox_id, f"tar -xzf {SNAPSHOT_PATH} -C /workspace && rm -f {SNAPSHOT_PATH}", 120)
+            self._provider_call("put_file", sandbox_id, SNAPSHOT_PATH, data)
+            res = self._provider_call("exec", sandbox_id, f"tar -xzf {SNAPSHOT_PATH} -C /workspace && rm -f {SNAPSHOT_PATH}", 120)
             if res.exit_code != 0:
                 raise SandboxError(res.stderr[-300:] or f"tar exit {res.exit_code}")
             lease["restored"] = True
@@ -221,23 +489,23 @@ class LeaseManager:
             f"mkdir -p {TOOL_DIR} && tar -czf {SNAPSHOT_PATH} -C /workspace --exclude=./.ailab --exclude=./inputs . "
             f"&& stat -c %s {SNAPSHOT_PATH}"
         )
-        res = self.provider.exec(sandbox_id, cmd, 180)
+        res = self._provider_call("exec", sandbox_id, cmd, 180)
         size_line = (res.stdout.strip().splitlines() or [""])[-1]
         if res.exit_code != 0 or not size_line.isdigit():
             raise SandboxError(f"workspace snapshot failed: {res.stderr[-300:]}")
         size = int(size_line)
         if size > settings.max_workspace_bytes:
             raise ArtifactRejected(f"workspace is {size} bytes compressed; the limit is {settings.max_workspace_bytes}")
-        data = self.provider.get_file(sandbox_id, SNAPSHOT_PATH)
+        data = self._provider_call("get_file", sandbox_id, SNAPSHOT_PATH)
         key = f"workspaces/{lease['run_id']}.tgz"
         self.storage.put_bytes(key, data, "application/gzip")
-        self.provider.exec(sandbox_id, f"rm -f {SNAPSHOT_PATH}", 30)
+        self._provider_call("exec", sandbox_id, f"rm -f {SNAPSHOT_PATH}", 30)
         return {"key": key, "size": size}
 
     # ---------------------------------------------------------------- live previews
     def _fingerprints(self, sandbox_id: str) -> dict[str, str]:
         names = " -o ".join(f"-iname '{p}'" for p in PREVIEW_PATTERNS)
-        res = self.provider.exec(sandbox_id, f"find {OUTPUTS} -maxdepth 1 -type f \\( {names} \\) -printf '%p\\t%s:%T@\\n'", 30)
+        res = self._provider_call("exec", sandbox_id, f"find {OUTPUTS} -maxdepth 1 -type f \\( {names} \\) -printf '%p\\t%s:%T@\\n'", 30)
         out: dict[str, str] = {}
         for line in res.stdout.splitlines():
             path, _, fp = line.partition("\t")
@@ -259,7 +527,7 @@ class LeaseManager:
         if not changed:
             return []
         if not lease.get("preview_tool"):
-            self.provider.put_file(sandbox_id, PREVIEW_SCRIPT, RENDER_PREVIEW.read_bytes())
+            self._provider_call("put_file", sandbox_id, PREVIEW_SCRIPT, RENDER_PREVIEW.read_bytes())
             lease["preview_tool"] = True
         manifests = []
         for path in changed:
@@ -269,7 +537,7 @@ class LeaseManager:
             outdir = f"{TOOL_DIR}/preview/{seq}"
             filename = Path(path).name
             started = time.perf_counter()
-            res = self.provider.exec(sandbox_id, f"python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir}", 300)
+            res = self._provider_call("exec", sandbox_id, f"python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir}", 300)
             try:
                 result = json.loads((res.stdout.strip().splitlines() or ["{}"])[-1])
             except json.JSONDecodeError:
@@ -282,12 +550,12 @@ class LeaseManager:
                     names = []
                     for name in result.get("pages", []):
                         self.storage.put_bytes(
-                            f"previews/{run_id}/{seq}/{name}", self.provider.get_file(sandbox_id, f"{outdir}/{name}"), "image/jpeg"
+                            f"previews/{run_id}/{seq}/{name}", self._provider_call("get_file", sandbox_id, f"{outdir}/{name}"), "image/jpeg"
                         )
                         names.append(f"{seq}/{name}")
                     manifest.update(kind="pages", pages=names)
                 elif result.get("kind") == "sheets":
-                    data = self.provider.get_file(sandbox_id, f"{outdir}/sheets.json")
+                    data = self._provider_call("get_file", sandbox_id, f"{outdir}/sheets.json")
                     self.storage.put_bytes(f"previews/{run_id}/{seq}/sheets.json", data, "application/json")
                     manifest.update(kind="sheets", data=f"{seq}/sheets.json", errors=result.get("errors", []))
                 else:
@@ -296,25 +564,74 @@ class LeaseManager:
                 log.warning("storing preview %s of %s failed", seq, path, exc_info=True)
                 manifest["error"] = f"could not store the preview: {exc}"[:300]
             manifest["seconds"] = round(time.perf_counter() - started, 1)
-            self.provider.exec(sandbox_id, f"rm -rf {outdir}", 30)
+            self._provider_call("exec", sandbox_id, f"rm -rf {outdir}", 30)
             manifests.append(manifest)
         lease["preview_fp"] = seen
-        self._save(lease)
+        with self._stripe(lease_id):
+            # Rendering does not block heartbeats. Merge only preview fields into
+            # the latest lease version, preserving renew/release decisions.
+            latest = self._load(lease_id)
+            latest.update({key: lease[key] for key in ("preview_fp", "preview_seq", "preview_tool") if key in lease})
+            self._provider_call("update_metadata", latest["provider_ref"], self._metadata(latest))
+            self._save(latest)
         return manifests
 
-    def release(self, lease_id: str, reason: str = "released") -> None:
-        try:
-            lease = self._load(lease_id, allow_expired=True)
-        except LeaseError:
+    def _finish(self, lease: dict, state: str, reason: str) -> None:
+        lease.update(state=state, reason=reason, closed_at=datetime.now(UTC).isoformat())
+        self._save(lease)
+        with self._condition:
+            self._notify()
+
+    def release(self, handle: str | LeaseHandle, reason: str = "released") -> None:
+        self._ensure_started()
+        lease_id = self._id(handle)
+        with self._stripe(lease_id):
+            lease = self.store.get(lease_id)
+            if not lease and self._recovering:
+                raise BrokerOwnershipError("broker is rebuilding lease ownership")
+            if not lease or lease["state"] in {"released", "failed"}:
+                return
+            if isinstance(handle, LeaseHandle) and lease["provider_ref"] != handle.provider_ref:
+                raise LeaseLostError("lease handle does not match its resource")
+            if lease["state"] != "releasing":
+                lease.update(state="releasing", reason=reason, retry_at=0, release_attempts=0)
+                self._save(lease)
+            self._delete_resource(lease)
+
+    def _delete_resource(self, lease: dict) -> None:
+        self._assert_owner()
+        ref = lease.get("provider_ref")
+        if not ref:
+            # A timed-out create may still finish on the provider. Keep the intent
+            # until list_owned finds it or the create deadline has elapsed.
+            if datetime.fromisoformat(lease["create_deadline"]) > datetime.now(UTC):
+                return
+            self._finish(lease, "failed", "creation_failed")
             return
-        with self._lock:
-            try:
-                self.provider.release(lease["sandbox_id"])
-            except Exception:
-                log.warning("provider release failed for %s", lease_id, exc_info=True)
-            self._drop(lease_id)
         try:
-            self.platform.append_event(lease["run_id"], "sandbox.released", {"lease_id": lease_id, "reason": reason})
+            resource = self._provider_call("inspect", ref)
+            if resource is not None:
+                try:
+                    self._provider_call("update_metadata", ref, self._metadata(lease))
+                except Exception:
+                    log.warning("could not persist releasing intent on resource")
+                self._provider_call("release", ref)
+                if self._provider_call("inspect", ref) is not None:
+                    raise SandboxError("provider has not confirmed deletion")
+        except Exception:
+            attempts = int(lease.get("release_attempts", 0)) + 1
+            lease.update(
+                release_attempts=attempts, retry_at=time.time() + min(60, settings.broker_release_retry_seconds * 2 ** min(attempts - 1, 6))
+            )
+            self._save(lease)
+            metrics.SANDBOX_RECONCILE_ACTIONS.labels("delete_retry").inc()
+            return
+        self._finish(lease, "released", lease.get("reason", "released"))
+        metrics.SANDBOX_RECONCILE_ACTIONS.labels("released").inc()
+        try:
+            self.platform.append_event(
+                lease["run_id"], "sandbox.released", {"lease_id": lease["lease_id"], "reason": lease.get("reason", "released")}
+            )
         except Exception:
             pass
 
@@ -323,7 +640,16 @@ class LeaseManager:
         lease = self._load(lease_id)
         timeout = timeout or settings.sandbox_exec_timeout_seconds
         with metrics.SANDBOX_EXEC_SECONDS.labels(self.provider.name).time():
-            return self.provider.exec(lease["sandbox_id"], cmd, timeout)
+            try:
+                result = self._provider_call("exec", lease["sandbox_id"], cmd, timeout)
+                if result.exit_code != 0:
+                    # A killed container may return an exit status instead of raising.
+                    self._load(lease_id)
+                return result
+            except SandboxError:
+                # A resource can vanish after the preflight inspection.
+                self._load(lease_id)
+                raise
 
     @staticmethod
     def _checked(path: str, under: str = "/workspace") -> str:
@@ -337,29 +663,29 @@ class LeaseManager:
         path = self._checked(path)
         if len(data) > settings.max_sandbox_write_bytes:
             raise SandboxError(f"file too large to write ({len(data)} > {settings.max_sandbox_write_bytes} bytes)")
-        self.provider.put_file(lease["sandbox_id"], path, data)
+        self._provider_call("put_file", lease["sandbox_id"], path, data)
 
     def get_file(self, lease_id: str, path: str) -> bytes:
         lease = self._load(lease_id)
         path = self._checked(path)
-        size = self.provider.file_size(lease["sandbox_id"], path)
+        size = self._provider_call("file_size", lease["sandbox_id"], path)
         if size > settings.max_sandbox_read_bytes:
             raise SandboxError(f"file too large to read ({size} > {settings.max_sandbox_read_bytes} bytes)")
-        return self.provider.get_file(lease["sandbox_id"], path)
+        return self._provider_call("get_file", lease["sandbox_id"], path)
 
     def list_files(self, lease_id: str, path: str) -> list[dict]:
         lease = self._load(lease_id)
-        return self.provider.list_files(lease["sandbox_id"], self._checked(path))
+        return self._provider_call("list_files", lease["sandbox_id"], self._checked(path))
 
     def commit(self, lease_id: str, path: str, filename: str | None = None, role: str = "output") -> dict:
         lease = self._load(lease_id)
         path = self._checked(path, OUTPUTS)  # only /workspace/outputs is archived
         if path == OUTPUTS:
             raise SandboxError("deliver a file inside /workspace/outputs, not the directory")
-        size = self.provider.file_size(lease["sandbox_id"], path)
+        size = self._provider_call("file_size", lease["sandbox_id"], path)
         if size > settings.max_artifact_bytes:
             raise ArtifactRejected(f"{path} is {size} bytes; the limit is {settings.max_artifact_bytes}")
-        data = self.provider.get_file(lease["sandbox_id"], path)
+        data = self._provider_call("get_file", lease["sandbox_id"], path)
         name = _safe_name(filename or Path(path).name)
         staging_key = f"staging/{lease_id}/{uuid.uuid4().hex}/{name}"
         self.storage.put_bytes(staging_key, data, mimetypes.guess_type(name)[0] or "application/octet-stream")
@@ -387,41 +713,202 @@ class LeaseManager:
 
     # ---------------------------------------------------------------- housekeeping
     def recover(self) -> None:
-        """Dev restart policy: drop orphan containers and stale lease records."""
-        cleanup = getattr(self.provider, "cleanup_orphans", None)
-        if callable(cleanup):
+        """Acquire single-Broker ownership, then reconcile desired and observed state."""
+        with self._start_lock:
+            if self._fenced or not self.store.claim_owner(self._token, settings.broker_lock_ttl_seconds):
+                self._fenced = True
+                raise BrokerOwnershipError("another live Broker owns this instance group")
+            self._started = True
+            # Owner heartbeat must run even while a slow provider is being reconciled.
+            if self._start_background:
+                self.start_cleanup_thread()
+            self._recovering = True
             try:
-                cleanup()
+                self.cleanup_once()
             except Exception:
-                log.warning("orphan cleanup failed", exc_info=True)
-        for key in self.redis.scan_iter(f"{self.prefix}*"):
-            self.redis.delete(key)
-        self.redis.delete(self.index_key)
+                self._fenced = True
+                raise
+            finally:
+                self._recovering = False
+
+    def _from_resource(self, resource: SandboxResource) -> dict | None:
+        labels = resource.labels
+        try:
+            spec = SandboxSpec(**json.loads(labels["ailab.spec"]))
+            lease = {
+                key: labels[f"ailab.{key}"]
+                for key in ("owner", "lease_id", "run_id", "user_id", "created_at", "expires_at", "max_expires_at", "state")
+            }
+            if lease["owner"] != self.owner or not lease["lease_id"] or not lease["user_id"] or not lease["run_id"]:
+                return None
+            for key in ("created_at", "expires_at", "max_expires_at"):
+                if datetime.fromisoformat(lease[key]).tzinfo is None:
+                    return None
+            if lease["state"] not in LIVE_STATES:
+                return None
+            lease.update(
+                spec=asdict(spec),
+                provider=self.provider.name,
+                provider_ref=resource.provider_ref,
+                sandbox_id=resource.provider_ref,
+                image=spec.image,
+                inputs=json.loads(labels.get("ailab.inputs", "[]")),
+                create_deadline=lease["created_at"],
+                preview_seq=int(labels.get("ailab.preview_seq", "0")),
+            )
+            return lease
+        except (KeyError, ValueError, TypeError):
+            return None
 
     def _release_expired(self) -> None:
         for lease in self.active_leases():
-            if _expired(lease):
-                log.info("lease %s expired", lease["lease_id"])
+            if lease["state"] == "active" and _expired(lease):
                 self.release(lease["lease_id"], reason="expired")
 
     def cleanup_once(self) -> None:
-        self._release_expired()
-        try:
-            reaped = self.provider.reap_expired()
-            if reaped:
-                log.warning("reaped %d sandbox(es) past provider expiry", reaped)
-        except Exception:
-            log.warning("provider reap failed", exc_info=True)
+        self._assert_owner()
+        with self._reconcile_lock:
+            resources = self._provider_call("list_owned", self.owner)
+            by_id = {r.provider_ref: r for r in resources}
+            # Redis is disposable: fully labelled active resources rebuild desired state.
+            # Incomplete/expired resources are orphans; never stage them a second time.
+            for resource in resources:
+                lease_id = resource.labels.get("ailab.lease_id", "")
+                with self._stripe(lease_id):
+                    lease = self.store.get(lease_id) if lease_id else None
+                    if lease and lease.get("provider_ref") is None and lease["state"] in LIVE_STATES:
+                        lease.update(provider_ref=resource.provider_ref, sandbox_id=resource.provider_ref)
+                        self._save(lease)
+                    elif lease is None:
+                        rebuilt = self._from_resource(resource)
+                        if rebuilt and rebuilt["state"] == "active" and resource.running and not _expired(rebuilt):
+                            self._save(rebuilt)
+                            metrics.SANDBOX_RECONCILE_ACTIONS.labels("rebuilt").inc()
+                            continue
+                        # Assign an identity even to an incompletely labelled orphan so
+                        # failed deletion remains tracked and backed off across passes.
+                        lease = rebuilt or {
+                            "lease_id": f"orphan_{uuid.uuid5(uuid.NAMESPACE_URL, resource.provider_ref).hex}",
+                            "owner": self.owner,
+                            "run_id": "",
+                            "user_id": "",
+                            "provider": self.provider.name,
+                            "provider_ref": resource.provider_ref,
+                            "sandbox_id": resource.provider_ref,
+                            "spec": asdict(self.default_spec()),
+                            "created_at": datetime.now(UTC).isoformat(),
+                            "expires_at": datetime.now(UTC).isoformat(),
+                            "create_deadline": datetime.now(UTC).isoformat(),
+                            "max_expires_at": datetime.now(UTC).isoformat(),
+                        }
+                        lease.update(state="releasing", reason="orphan", retry_at=0)
+                        if self.store.get(lease["lease_id"]) is None:
+                            self._save(lease)
+                            metrics.SANDBOX_RECONCILE_ACTIONS.labels("orphan").inc()
+                    elif lease.get("provider_ref") != resource.provider_ref or lease["state"] in {"released", "failed"}:
+                        # Duplicate resource / terminal intent: never adopt a new mapping.
+                        orphan_id = f"orphan_{uuid.uuid5(uuid.NAMESPACE_URL, resource.provider_ref).hex}"
+                        if self.store.get(orphan_id) is None:
+                            orphan = {
+                                **lease,
+                                "lease_id": orphan_id,
+                                "provider_ref": resource.provider_ref,
+                                "sandbox_id": resource.provider_ref,
+                                "state": "releasing",
+                                "reason": "orphan",
+                                "retry_at": 0,
+                            }
+                            orphan.pop("version", None)
+                            self._save(orphan)
+            for candidate in self.store.all():
+                lease_id = candidate["lease_id"]
+                with self._stripe(lease_id):
+                    lease = self.store.get(lease_id)
+                    if not lease:
+                        continue
+                    if lease["state"] in {"released", "failed"}:
+                        if time.time() - datetime.fromisoformat(lease["closed_at"]).timestamp() > settings.broker_record_retention_seconds:
+                            self.store.delete(lease_id, lease["version"])
+                        continue
+                    resource = by_id.get(lease.get("provider_ref"))
+                    if resource is None and lease.get("provider_ref") and lease["state"] in {"active", "creating"}:
+                        # The list is a snapshot; allocation may finish after it was read.
+                        resource = self._provider_call("inspect", lease["provider_ref"])
+                    if lease["state"] == "creating" and lease_id in self._inflight:
+                        continue
+                    if lease["state"] == "active":
+                        if resource is None or not resource.running:
+                            if resource is None:
+                                self._finish(lease, "failed", "lease_lost")
+                            else:
+                                self.release(lease_id, reason="lease_lost")
+                            metrics.SANDBOX_RECONCILE_ACTIONS.labels("lost").inc()
+                        elif _expired(lease):
+                            self.release(lease_id, reason="expired")
+                        else:
+                            metrics.SANDBOX_RECONCILE_ACTIONS.labels("adopted").inc()
+                    elif lease["state"] == "creating":
+                        # A restart interrupted creation/staging. Provider active metadata
+                        # proves staging completed just before the final store CAS.
+                        rebuilt = self._from_resource(resource) if resource else None
+                        if rebuilt and rebuilt["state"] == "active" and resource.running and not _expired(rebuilt):
+                            lease.update(rebuilt)
+                            self._save(lease)
+                        else:
+                            self.release(lease_id, reason="creation_interrupted")
+                    elif lease["state"] == "releasing" and lease.get("retry_at", 0) <= time.time():
+                        self._delete_resource(lease)
+            with self._condition:
+                self._notify()
 
     def start_cleanup_thread(self) -> threading.Thread:
-        def loop() -> None:
-            while True:
-                time.sleep(60)
+        if self._threads:
+            return self._threads[-1]
+
+        def heartbeat() -> None:
+            while not self._stop.wait(settings.broker_lock_ttl_seconds / 3):
+                try:
+                    # A Redis flush removes this lock too. Only one process may reclaim it;
+                    # admission stays unavailable until provider reconciliation completes.
+                    missing = not self.store.owns(self._token)
+                    if missing:
+                        self._recovering = True
+                    if not self.store.claim_owner(self._token, settings.broker_lock_ttl_seconds):
+                        raise BrokerOwnershipError("broker owner lock taken by another process")
+                    if missing:
+                        self.cleanup_once()
+                        self._recovering = False
+                        self._notify()
+                except Exception:
+                    self._fenced = True
+                    with self._condition:
+                        self._notify()
+                    log.error("broker fenced after ownership failure")
+                    return
+
+        def reconcile() -> None:
+            while not self._stop.wait(settings.broker_reconcile_interval_seconds):
                 try:
                     self.cleanup_once()
+                except BrokerOwnershipError:
+                    if self._fenced:
+                        return
                 except Exception:
-                    log.warning("lease cleanup failed", exc_info=True)
+                    log.warning("lease reconciliation failed", exc_info=True)
 
-        thread = threading.Thread(target=loop, name="lease-cleanup", daemon=True)
-        thread.start()
-        return thread
+        for name, target in (("broker-owner", heartbeat), ("lease-reconcile", reconcile)):
+            thread = threading.Thread(target=target, name=name, daemon=True)
+            self._threads.append(thread)
+            thread.start()
+        return self._threads[-1]
+
+    def close(self) -> None:
+        """Stop housekeeping without destroying active resources; next Broker adopts them."""
+        self._stop.set()
+        with self._condition:
+            self._fenced = True
+            self._notify()
+        for thread in self._threads:
+            thread.join(timeout=1)
+        if not any(thread.is_alive() for thread in self._threads):
+            self.store.release_owner(self._token)

@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { api, Conversation, downloadUrl, Project } from "../lib/api";
+import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
 import { formatBytes, timeAgo } from "../lib/format";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
 import { IconDownload, IconFolder, IconMore, IconPencil, IconTrash } from "./icons";
 import ConversationMenu from "./conversation-menu";
 import FileTile from "./library/file-tile";
+import FileViewer from "./preview/file-viewer";
 import { useLibrary } from "./library/use-library";
 
 /** A project's front page: start a chat in it, and see what is already in it. */
@@ -20,6 +21,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
   const [name, setName] = useState(project.name);
   const [menu, setMenu] = useState(false);
   const menuBox = useRef<HTMLDivElement | null>(null);
+  const [viewing, setViewing] = useState<FileItem | null>(null);
   const { files, loaded } = useLibrary({ category: "all", projectId: project.id }, tab === "files"); // only once opened
 
   useEffect(() => setName(project.name), [project.name]);
@@ -51,8 +53,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
 
   async function remove() {
     setMenu(false);
-    const what = [project.conversations ? `${project.conversations} 个对话` : "", project.files ? `${project.files} 个文件` : ""].filter(Boolean).join("和");
-    if (!confirm(`删除项目「${project.name}」？${what ? `其中的 ${what}会一起删除，` : ""}无法恢复。`)) return;
+    const lost = project.conversations ? `其中的 ${project.conversations} 个对话会一起删除。` : "";
+    const kept = project.files ? `${project.files} 个文件会移到回收站。` : "";
+    if (!confirm(`删除项目「${project.name}」？${lost}${kept}`)) return;
     await api(`/v1/projects/${project.id}`, { method: "DELETE" });
     projectsChanged();
     conversationsChanged();
@@ -150,8 +153,10 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
         <div className="project-list">
           {files.map((f) => (
             <div key={f.id} className="project-row">
-              <FileTile file={f} size={30} />
-              <span className="grow name">{f.filename}</span>
+              <button className="project-file" onClick={() => setViewing(f)} aria-label={`预览 ${f.filename}`}>
+                <FileTile file={f} size={30} />
+                <span className="grow name">{f.filename}</span>
+              </button>
               <span className="meta">
                 {f.status === "pending" ? "扫描中" : f.status === "rejected" ? "已拒绝" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
               </span>
@@ -164,6 +169,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
           ))}
         </div>
       )}
+      {viewing ? (
+        <FileViewer files={files} file={viewing} onOpen={setViewing} onClose={() => setViewing(null)} chatHref={(f) => `/p/${project.id}?files=${f.id}`} />
+      ) : null}
     </div>
   );
 }

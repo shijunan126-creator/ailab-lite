@@ -16,6 +16,7 @@ from ailab_platform.api.main import app
 from ailab_platform.clients import PlatformClient
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMResponse, ToolCall
+from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -179,17 +180,10 @@ def test_run_lifecycle_is_counted_and_timed(api) -> None:
 def test_tokens_are_counted_per_model_and_kind(api) -> None:
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": "test-fast"}).json()["id"]
     base = {k: sample("ailab_model_tokens_total", model="test-fast", kind=k) for k in ("prompt", "completion", "cached")}
-    other = sample("ailab_model_tokens_total", model="other", kind="prompt")
-    api.post(
-        f"/internal/runs/{run_id}/usage",
-        headers=SERVICE,
-        json={"model": "test-fast", "prompt_tokens": 100, "completion_tokens": 7, "cached_tokens": 60},
-    )
-    api.post(f"/internal/runs/{run_id}/usage", headers=SERVICE, json={"model": "made-up-by-a-buggy-caller", "prompt_tokens": 5})
+    record_usage(api, run_id, "test-fast", 100, 7, 60)
     assert sample("ailab_model_tokens_total", model="test-fast", kind="prompt") == base["prompt"] + 100
     assert sample("ailab_model_tokens_total", model="test-fast", kind="completion") == base["completion"] + 7
     assert sample("ailab_model_tokens_total", model="test-fast", kind="cached") == base["cached"] + 60
-    assert sample("ailab_model_tokens_total", model="other", kind="prompt") == other + 5
 
 
 def test_quota_rejections_are_counted(api, monkeypatch) -> None:
@@ -222,7 +216,9 @@ def test_broker_metrics_cover_acquire_exec_capacity_and_leases(monkeypatch) -> N
     assert sample("ailab_sandbox_exec_seconds_count", provider="mock") == execs + 1
 
     collected = {m.name: m.samples[0].value for m in metrics.BrokerStateCollector(lambda: manager).collect()}
-    assert collected == {"ailab_sandbox_leases_active": 1.0, "ailab_sandbox_capacity": float(settings.max_sandboxes)}
+    assert collected["ailab_sandbox_leases_active"] == 1.0
+    assert collected["ailab_sandbox_capacity"] == float(settings.max_sandboxes)
+    assert "ailab_sandbox_leases_by_state" in collected
 
     monkeypatch.setattr(settings, "max_sandboxes", 1)
     rejected = sample("ailab_sandbox_capacity_rejections_total")

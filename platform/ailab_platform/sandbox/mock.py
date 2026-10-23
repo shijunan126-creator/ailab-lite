@@ -6,15 +6,19 @@ exercised before T1/T2 images and OpenSandbox are ready.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import threading
 import time
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from ..config import BASE_DIR, settings
-from .base import ExecResult, SandboxError, SandboxProvider
+from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
 
 SKILLS = BASE_DIR.parent / "images" / "sbx-office" / "skills"
 TOOLS = BASE_DIR.parent / "images" / "sbx-office"
@@ -24,6 +28,8 @@ class MockSandbox(SandboxProvider):
     name = "mock"
 
     def __init__(self) -> None:
+        self._process_lock = threading.Lock()
+        self._processes: dict[str, set[subprocess.Popen]] = {}
         self.root = settings.data_dir / "sandboxes"
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -50,11 +56,61 @@ class MockSandbox(SandboxProvider):
             raise SandboxError(f"path escapes sandbox: {path}")
         return target
 
-    def acquire(self, lease_id: str, image: str, ttl_seconds: int | None = None) -> str:
+    def acquire(
+        self,
+        lease_id: str,
+        image: str,
+        ttl_seconds: int | None = None,
+        *,
+        spec: SandboxSpec | None = None,
+        labels: dict[str, str] | None = None,
+    ) -> str:
         root = self._sandbox_root(lease_id)
         (root / "workspace" / "inputs").mkdir(parents=True, exist_ok=True)
         (root / "workspace" / "outputs").mkdir(parents=True, exist_ok=True)
+        self.update_metadata(lease_id, labels or {})
         return lease_id
+
+    def inspect(self, provider_ref: str) -> SandboxResource | None:
+        root = self._sandbox_root(provider_ref)
+        if not root.exists():
+            return None
+        meta = root / "lease.json"
+        return SandboxResource(provider_ref, json.loads(meta.read_text()) if meta.exists() else {})
+
+    def list_owned(self, owner: str) -> list[SandboxResource]:
+        resources = (self.inspect(p.name) for p in sorted(self.root.iterdir()) if p.is_dir())
+        return [r for r in resources if r and r.labels.get("ailab.owner") == owner]
+
+    def update_metadata(self, provider_ref: str, labels: dict[str, str]) -> None:
+        root = self._sandbox_root(provider_ref)
+        # Kept outside workspace snapshots. This mock has no security boundary.
+        meta = root / "lease.json"
+        existing = json.loads(meta.read_text()) if meta.exists() else {}
+        temporary = root / "lease.json.tmp"
+        temporary.write_text(json.dumps({**existing, **labels}))
+        temporary.replace(meta)
+
+    def renew(self, provider_ref: str, until: datetime) -> None:
+        self.update_metadata(
+            provider_ref,
+            {
+                "ailab.expires_at": until.isoformat(),
+                "ailab.provider_expires_at": (until + timedelta(seconds=SANDBOX_EXPIRY_GRACE_SECONDS)).isoformat(),
+            },
+        )
+
+    def reap_expired(self) -> int:
+        count = 0
+        for path in self.root.iterdir():
+            if not path.is_dir():
+                continue
+            resource = self.inspect(path.name)
+            expires = resource.labels.get("ailab.provider_expires_at") if resource else None
+            if expires and datetime.fromisoformat(expires) <= datetime.now(UTC):
+                self.release(path.name)
+                count += 1
+        return count
 
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = cmd
@@ -66,29 +122,52 @@ class MockSandbox(SandboxProvider):
         env["PATH"] = f"{Path(sys.executable).parent}:{env.get('PATH', '')}"
         started = time.monotonic()
         try:
-            proc = subprocess.run(
+            proc = subprocess.Popen(
                 translated,
                 shell=True,
                 cwd=root / "workspace",
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=timeout,
                 env=env,
+                start_new_session=True,
             )
-            host_ws = str(root / "workspace")  # report sandbox paths, as a real sandbox would
-            return ExecResult(
-                exit_code=proc.returncode,
-                stdout=proc.stdout[-8000:].replace(host_ws, "/workspace"),
-                stderr=proc.stderr[-8000:].replace(host_ws, "/workspace"),
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
-        except subprocess.TimeoutExpired as exc:
-            return ExecResult(
-                exit_code=124,
-                stdout=(exc.stdout or "") if isinstance(exc.stdout, str) else "",
-                stderr=f"timeout after {timeout}s",
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
+        except OSError as exc:
+            raise SandboxError("mock sandbox unavailable") from exc
+        with self._process_lock:
+            self._processes.setdefault(sandbox_id, set()).add(proc)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            exit_code = proc.returncode
+        except subprocess.TimeoutExpired:
+            self._kill_group(proc)
+            stdout, stderr = proc.communicate(timeout=5)
+            stderr, exit_code = f"timeout after {timeout}s", 124
+        finally:
+            with self._process_lock:
+                self._processes.get(sandbox_id, set()).discard(proc)
+                if not self._processes.get(sandbox_id):
+                    self._processes.pop(sandbox_id, None)
+        host_ws = str(root / "workspace")
+        return ExecResult(
+            exit_code,
+            stdout[-8000:].replace(host_ws, "/workspace"),
+            stderr[-8000:].replace(host_ws, "/workspace"),
+            int((time.monotonic() - started) * 1000),
+        )
+
+    @staticmethod
+    def _kill_group(proc: subprocess.Popen) -> None:
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def cancel_exec(self, provider_ref: str) -> bool:
+        with self._process_lock:
+            for proc in self._processes.get(provider_ref, set()):
+                self._kill_group(proc)
+        return True
 
     def put_file(self, sandbox_id: str, path: str, data: bytes) -> None:
         target = self._translate(sandbox_id, path)
@@ -123,4 +202,7 @@ class MockSandbox(SandboxProvider):
         return out[:500]
 
     def release(self, sandbox_id: str) -> None:
-        shutil.rmtree(self._sandbox_root(sandbox_id), ignore_errors=True)
+        self.cancel_exec(sandbox_id)
+        root = self._sandbox_root(sandbox_id)
+        if root.exists():
+            shutil.rmtree(root)

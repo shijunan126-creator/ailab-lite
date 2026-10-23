@@ -22,6 +22,18 @@ class _RecordingProvider(SandboxProvider):
     def acquire(self, lease_id: str, image: str, ttl_seconds: int | None = None) -> str:
         return lease_id
 
+    def inspect(self, provider_ref):
+        raise NotImplementedError
+
+    def list_owned(self, owner):
+        raise NotImplementedError
+
+    def update_metadata(self, provider_ref, labels):
+        raise NotImplementedError
+
+    def renew(self, provider_ref, until):
+        raise NotImplementedError
+
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         self.cmd = cmd
         return ExecResult(exit_code=0, stdout="12\n", stderr="", duration_ms=1)

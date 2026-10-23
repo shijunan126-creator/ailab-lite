@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-broker
+  namespace: platform
+spec:
+  template:
+    spec:
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  template:
+    spec:
+      containers:
+      - name: api
+        env:
+        - name: PGPASSWORD
+          $patch: delete
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  namespace: platform
+data:
+  AILAB_DATABASE_URL: sqlite:////data/platform.db
+  AILAB_OSB_DOMAIN: 127.0.0.1:8090
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: platform-postgres
+  namespace: platform
+$patch: delete
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-postgres
+  namespace: platform
+$patch: delete

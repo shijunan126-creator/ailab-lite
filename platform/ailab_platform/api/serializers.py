@@ -2,13 +2,22 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
-from sqlalchemy.orm import Session
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session, object_session
 
 from ..models import Artifact, FileObject, ModelUsage, Run
 
 
-def file_dict(file: FileObject) -> dict:
+def file_dict(file: FileObject, versions: int | None = None) -> dict:
+    if versions is None:
+        db = object_session(file)
+        versions = (
+            db.scalar(
+                select(func.count()).select_from(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.purged_at.is_(None))
+            )
+            if db
+            else int(file.purged_at is None)
+        )
     return {
         "id": file.id,
         "project_id": file.project_id,
@@ -19,10 +28,19 @@ def file_dict(file: FileObject) -> dict:
         "sha256": file.sha256,
         "status": file.status,
         "version": file.version,
+        "lineage_id": file.lineage_id,
+        "versions": versions,
+        "is_head": bool(file.is_head),
+        "deleted_at": file.deleted_at,
+        "purge_at": file.purge_at,
+        "purged": file.purged_at is not None,
+        "trashed_from_project_id": file.trashed_from_project_id,
         "meta": file.meta or {},
         "created_at": file.created_at,
         "download_url": f"/v1/files/{file.id}/content",
-        "thumbnail_url": f"/v1/files/{file.id}/thumbnail" if (file.meta or {}).get("thumb_key") else None,
+        # a purged version keeps its row, not its derived objects
+        "preview": (file.meta or {}).get("preview") if file.purged_at is None else None,
+        "thumbnail_url": f"/v1/files/{file.id}/thumbnail" if file.purged_at is None and (file.meta or {}).get("thumb_key") else None,
     }
 
 
@@ -74,3 +92,16 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
             "calls": len(usage),
         }
     return out
+
+
+def file_dicts(db: Session, files: list[FileObject]) -> list[dict]:
+    if not files:
+        return []
+    counts = dict(
+        db.execute(
+            select(FileObject.lineage_id, func.count())
+            .where(FileObject.lineage_id.in_({f.lineage_id for f in files}), FileObject.purged_at.is_(None))
+            .group_by(FileObject.lineage_id)
+        ).all()
+    )
+    return [file_dict(file, counts.get(file.lineage_id, 0)) for file in files]

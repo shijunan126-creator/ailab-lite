@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="780" viewBox="0 0 1500 780" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m15803d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker><marker id="m2563eb" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/></marker><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker></defs>
+<rect width="1500" height="780" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">文件生命周期 · 资料库 ⇄ 沙箱</text>
+<text x="400.4" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">输入和最终产出永久保存，中间文件随沙箱销毁</text>
+<rect x="1184.5" y="24" width="16" height="12" rx="2" ry="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1206.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">永久（资料库）</text>
+<rect x="1295.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1317.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">临时（沙箱）</text>
+<rect x="1394.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1416.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">中转服务</text>
+<rect x="20" y="62" width="430" height="560" rx="10" ry="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">用户资料库（Pacific S3 · 永久）</text>
+<rect x="44" y="106" width="382" height="120" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="235.0" y="140.3" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">输入文件</text>
+<text x="235.0" y="162.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">用户上传 → 立即入库（自动）</text>
+<text x="235.0" y="181.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">带会话关联、标签、SHA256</text>
+<text x="235.0" y="199.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">u/{user}/files/{file}/{ver}</text>
+<rect x="44" y="356" width="382" height="150" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="235.0" y="396.1" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">最终产出（带版本）</text>
+<text x="235.0" y="418.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">report.pptx  v1 → v2 → v3</text>
+<text x="235.0" y="436.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">关联：会话、Run、使用的模型</text>
+<text x="235.0" y="455.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">可预览、下载、回退、另存为</text>
+<text x="235.0" y="473.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">同名再次交付 = 新版本</text>
+<rect x="44" y="246" width="382" height="90" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="235.0" y="274.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">其他历史文件</text>
+<text x="235.0" y="296.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent 按需检索：library_search</text>
+<text x="235.0" y="315.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">并拉取：library_fetch</text>
+<rect x="44" y="526" width="382" height="80" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="235.0" y="558.5" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">配额 20 GB · 回收站 30 天</text>
+<text x="235.0" y="580.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">历史版本最多 10 个 · 计入配额</text>
+<rect x="490" y="62" width="420" height="560" rx="10" ry="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+<text x="504.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Sandbox Broker（中转，不落盘）</text>
+<rect x="514" y="100" width="372" height="128" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="700.0" y="128.9" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">领取沙箱时：注入</text>
+<text x="700.0" y="151.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">向 Platform API 取本会话文件清单</text>
+<text x="700.0" y="169.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（输入 + 每个产出的最新版本，已校验归属）</text>
+<text x="700.0" y="188.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">按清单从 S3 流式读出 → execd 写入</text>
+<text x="700.0" y="206.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">单次 ≤ 1 GB，单文件 ≤ 200 MB</text>
+<rect x="514" y="240" width="372" height="110" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="700.0" y="269.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">运行中：按需拉取</text>
+<text x="700.0" y="291.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent 调用 library_fetch</text>
+<text x="700.0" y="309.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Platform API 校验 file_id 归属</text>
+<text x="700.0" y="328.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">经 execd 文件接口写入 inputs/</text>
+<rect x="514" y="362" width="372" height="146" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="700.0" y="399.9" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">交付 / 兜底归档</text>
+<text x="700.0" y="422.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">deliver_file 立即归档；Run 结束 / 释放前兜底</text>
+<text x="700.0" y="440.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">① prepare：Platform API 去重、查配额、</text>
+<text x="700.0" y="459.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">    分配版本号（不足则拒绝，不写 S3）</text>
+<text x="700.0" y="477.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">② 流式写 S3　③ commit：登记版本</text>
+<rect x="514" y="520" width="372" height="86" rx="8" ry="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="700.0" y="546.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">安全边界</text>
+<text x="700.0" y="568.2" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">沙箱不挂载存储，也不持有 S3 凭据</text>
+<text x="700.0" y="586.8" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">Broker 只搬运；归属判定只在 Platform API</text>
+<rect x="950" y="62" width="530" height="560" rx="10" ry="10" fill="#ecfeff" stroke="#0891b2" stroke-width="1"/>
+<text x="964.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">沙箱 /workspace（Kata VM · 临时）</text>
+<rect x="974" y="106" width="482" height="90" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="986.0" y="143.8" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">/workspace/inputs/</text>
+<text x="986.0" y="166.0" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">注入的输入文件（约定只读）</text>
+<rect x="974" y="216" width="482" height="170" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5" stroke-dasharray="5 3"/>
+<text x="986.0" y="266.1" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">/workspace/ 其他目录（工作区）</text>
+<text x="986.0" y="288.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">extract.py · build_slides.js · tmp.png</text>
+<text x="986.0" y="306.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">slide_render/*.png（版式自检截图）</text>
+<text x="986.0" y="325.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">~/.cache · pip cache · LibreOffice profile</text>
+<text x="986.0" y="343.8" font-size="12" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">→ 沙箱销毁即全部消失，不进入资料库</text>
+<rect x="974" y="406" width="482" height="100" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="986.0" y="439.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">/workspace/outputs/</text>
+<text x="986.0" y="461.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">最终产出：final.pptx、report.docx、analysis.xlsx</text>
+<text x="986.0" y="480.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">约定：只有这里的文件会被归档</text>
+<rect x="974" y="526" width="482" height="80" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="986.0" y="558.5" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">/opt/skills/（只读，随镜像发布）</text>
+<text x="986.0" y="580.5" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">SKILL.md · 脚本 · 公司模板 · 字体</text>
+<path d="M426.0,166.0 L512.0,166.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<path d="M886.0,166.0 L972.0,151.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<rect x="911.05" y="134.5" width="37.9" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="930.0" y="145.0" font-size="11.5" font-weight="400" fill="#15803d" text-anchor="middle" style="white-space:pre">①注入</text>
+<path d="M426.0,291.0 L512.0,291.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<path d="M886.0,295.0 L940.0,295.0 L940.0,170.0 L972.0,170.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<rect x="921.05" y="309.5" width="37.9" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="940.0" y="320.0" font-size="11.5" font-weight="400" fill="#15803d" text-anchor="middle" style="white-space:pre">②拉取</text>
+<path d="M1215.0,196.0 L1215.0,214.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M1215.0,386.0 L1215.0,404.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M972.0,456.0 L888.0,456.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="911.05" y="439.5" width="37.9" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="930.0" y="450.0" font-size="11.5" font-weight="400" fill="#2563eb" text-anchor="middle" style="white-space:pre">③交付</text>
+<path d="M512.0,450.0 L428.0,450.0" fill="none" stroke="#2563eb" stroke-width="1.6" marker-end="url(#m2563eb)"/>
+<rect x="440.7" y="433.5" width="58.599999999999994" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="470.0" y="444.0" font-size="11.5" font-weight="400" fill="#2563eb" text-anchor="middle" style="white-space:pre">归档 v+1</text>
+<rect x="20" y="640" width="1460" height="124" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="664.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">下次回到同一会话（沙箱早已销毁）</text>
+<rect x="44" y="682" width="250" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="169.0" y="713.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">用户：“把第 3 页改成柱状图”</text>
+<path d="M294.0,710.0 L336.0,710.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="336" y="682" width="250" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="461.0" y="713.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Broker 领取新沙箱</text>
+<path d="M586.0,710.0 L628.0,710.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="628" y="682" width="250" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="753.0" y="713.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">注入 report.pptx 最新版 v1</text>
+<path d="M878.0,710.0 L920.0,710.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="920" y="682" width="250" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1045.0" y="713.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent 在 v1 基础上修改</text>
+<path d="M1170.0,710.0 L1212.0,710.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1212" y="682" width="250" height="56" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1337.0" y="713.0" font-size="12.5" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">交付 → 资料库 v2</text>
+</svg>

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Status of the k3s deployment (after `kubectl apply -f deploy/k8s/platform.yaml`).
+# Status of the k3s deployment (after `kubectl apply -k deploy/overlays/lite`).
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 

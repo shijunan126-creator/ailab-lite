@@ -1,0 +1,416 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-api
+  template:
+    metadata:
+      labels:
+        app: platform-api
+    spec:
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+      - name: fix-data-perms
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - sh
+        - -c
+        - mkdir -p /data/storage && chown 10001:10001 /data /data/storage
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      containers:
+      - name: api
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - uvicorn
+        - ailab_platform.api.main:app
+        - --no-proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8080'
+        envFrom:
+        - configMapRef:
+            name: platform-config
+        - configMapRef:
+            name: platform-auth
+            optional: true
+        - secretRef:
+            name: platform-api-identity
+        - secretRef:
+            name: platform-service-verifiers
+        - secretRef:
+            name: platform-model-secrets
+        ports:
+        - containerPort: 8080
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: models
+          mountPath: /etc/ailab
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 384Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 20
+        env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: platform-database
+              key: password
+        - name: AILAB_INVITE_CODE
+          valueFrom:
+            secretKeyRef:
+              name: platform-secrets
+              key: AILAB_INVITE_CODE
+              optional: true
+        - name: AILAB_DEV_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: platform-secrets
+              key: AILAB_DEV_TOKEN
+              optional: true
+        - name: AILAB_ADMIN_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: platform-secrets
+              key: AILAB_ADMIN_PASSWORD
+              optional: true
+        - name: AILAB_SERVICE_NAME
+          value: api
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: platform-data
+      - name: models
+        configMap:
+          name: platform-models
+  strategy:
+    type: Recreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  selector:
+    app: platform-api
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-broker
+  namespace: platform
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: platform-broker
+  template:
+    metadata:
+      labels:
+        app: platform-broker
+    spec:
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+      - name: fix-data-perms
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - sh
+        - -c
+        - mkdir -p /data/storage && chown 10001:10001 /data /data/storage
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      containers:
+      - name: broker
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - uvicorn
+        - ailab_platform.broker.main:app
+        - --no-proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8081'
+        envFrom:
+        - configMapRef:
+            name: platform-config
+        - configMapRef:
+            name: platform-auth
+            optional: true
+        - secretRef:
+            name: platform-broker-identity
+        - secretRef:
+            name: platform-service-verifiers
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: models
+          mountPath: /etc/ailab
+          readOnly: true
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 384Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+        env:
+        - name: AILAB_OSB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: platform-secrets
+              key: AILAB_OSB_API_KEY
+              optional: true
+        - name: AILAB_SERVICE_NAME
+          value: broker
+      volumes:
+      - name: models
+        configMap:
+          name: platform-models
+      - name: data
+        persistentVolumeClaim:
+          claimName: platform-data
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-agent
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-agent
+  template:
+    metadata:
+      labels:
+        app: platform-agent
+    spec:
+      containers:
+      - name: agent
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - uvicorn
+        - ailab_platform.agent.main:app
+        - --no-proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8082'
+        envFrom:
+        - configMapRef:
+            name: platform-config
+        - configMapRef:
+            name: platform-auth
+            optional: true
+        - secretRef:
+            name: platform-agent-identity
+        - secretRef:
+            name: platform-service-verifiers
+        - secretRef:
+            name: platform-model-secrets
+        ports:
+        - containerPort: 8082
+        volumeMounts:
+        - name: models
+          mountPath: /etc/ailab
+          readOnly: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 96Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8082
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+        env:
+        - name: AILAB_SERVICE_NAME
+          value: agent
+      volumes:
+      - name: models
+        configMap:
+          name: platform-models
+  strategy:
+    type: Recreate
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-worker
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: platform-worker
+  template:
+    metadata:
+      labels:
+        app: platform-worker
+    spec:
+      securityContext:
+        fsGroup: 10001
+      initContainers:
+      - name: fix-data-perms
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - sh
+        - -c
+        - mkdir -p /data/storage && chown 10001:10001 /data /data/storage
+        securityContext:
+          runAsUser: 0
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      containers:
+      - name: worker
+        image: ailab-platform:lite
+        imagePullPolicy: Never
+        command:
+        - uvicorn
+        - ailab_platform.worker.main:app
+        - --no-proxy-headers
+        - --host
+        - 0.0.0.0
+        - --port
+        - '8083'
+        envFrom:
+        - configMapRef:
+            name: platform-config
+        - configMapRef:
+            name: platform-auth
+            optional: true
+        - secretRef:
+            name: platform-worker-identity
+        - secretRef:
+            name: platform-service-verifiers
+        ports:
+        - containerPort: 8083
+        volumeMounts:
+        - name: data
+          mountPath: /data
+        - name: models
+          mountPath: /etc/ailab
+          readOnly: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 128Mi
+          limits:
+            cpu: 300m
+            memory: 384Mi
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8083
+          initialDelaySeconds: 5
+          periodSeconds: 10
+          timeoutSeconds: 10
+        env:
+        - name: AILAB_SERVICE_NAME
+          value: worker
+      volumes:
+      - name: models
+        configMap:
+          name: platform-models
+      - name: data
+        persistentVolumeClaim:
+          claimName: platform-data
+  strategy:
+    type: Recreate
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-agent
+  namespace: platform
+spec:
+  selector:
+    app: platform-agent
+  ports:
+  - name: http
+    port: 8082
+    targetPort: 8082
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-worker
+  namespace: platform
+spec:
+  selector:
+    app: platform-worker
+  ports:
+  - name: http
+    port: 8083
+    targetPort: 8083
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-broker
+  namespace: platform
+spec:
+  selector:
+    app: platform-broker
+  ports:
+  - name: http
+    port: 8081
+    targetPort: 8081

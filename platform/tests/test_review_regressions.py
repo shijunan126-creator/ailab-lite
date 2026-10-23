@@ -121,6 +121,8 @@ def test_deleting_a_file_cleans_up_extracted_text(api):
     storage.put_bytes(text_key, b"private extracted text")
     api.patch(f"/internal/files/{file_id}", headers=SERVICE, json={"meta": {"text_key": text_key}})
     assert api.delete(f"/v1/files/{file_id}", headers=AUTH).status_code == 204
+    assert storage.exists(text_key)
+    assert api.post("/v1/files/batch", headers=AUTH, json={"ids": [file_id], "action": "purge"}).status_code == 200
     assert not storage.exists(text_key)
 
 
@@ -154,8 +156,8 @@ def test_recovered_run_keeps_the_tokens_consumed_by_earlier_attempts(monkeypatch
     monkeypatch.setattr(settings, "run_max_tokens", 100)
 
     class RecoveredPlatform(FakePlatform):
-        async def get_run(self, run_id):
-            return {**await super().get_run(run_id), "usage": {"prompt_tokens": 80, "completion_tokens": 20}}
+        async def get_run_usage(self, run_id):
+            return {"prompt_tokens": 80, "completion_tokens": 20}
 
     llm = ScriptedLLM([])
     platform, _ = _run(llm, platform=RecoveredPlatform())
@@ -279,7 +281,9 @@ def test_api_stays_ready_but_degraded_without_redis(monkeypatch):
 def test_broker_stays_ready_but_degraded_without_the_sandbox_provider(monkeypatch):
     from ailab_platform.broker import main as broker_main
 
-    manager = SimpleNamespace(redis=SimpleNamespace(ping=lambda: True), provider=SimpleNamespace(name="mock", health=lambda: False))
+    manager = SimpleNamespace(
+        redis=SimpleNamespace(ping=lambda: True), provider=SimpleNamespace(name="mock", health=lambda: False), is_ready=lambda: True
+    )
     monkeypatch.setattr(broker_main, "get_manager", lambda: manager)
     response = TestClient(broker_main.app).get("/readyz")
     assert response.status_code == 200  # still releases and snapshots the runs in progress
