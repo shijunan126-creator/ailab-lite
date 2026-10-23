@@ -1,0 +1,23 @@
+
+> ailab-portal@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ a successful 204 DELETE has no JSON body (15.871667ms)
+✔ SSE reader releases its lock on stream.end (3.008834ms)
+✔ filesByIds asks for all ids in one request, and none for an empty list (1.519167ms)
+✔ archiveUrl repeats and encodes ids (0.086416ms)
+✔ a dropped event stream resumes after the last event, without repeats (2.832333ms)
+✔ the stream gives up after repeated failures, and stops at once when aborted (4.165709ms)
+✔ OIDC start keeps binding material in an httpOnly Lax cookie (4.618667ms)
+✔ OIDC start rejects cross-site requests without contacting upstream (0.547208ms)
+✔ OIDC callback exchanges on the server, sets the existing platform cookie and redirects without tokens (1.187292ms)
+✔ missing binding and refused OIDC callback clear the flow and never set a platform token (0.594042ms)
+✔ proxy preserves the array-list keyset cursor header (0.402875ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 351.72625
