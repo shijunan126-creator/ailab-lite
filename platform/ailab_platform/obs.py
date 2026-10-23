@@ -97,6 +97,15 @@ class RequestContextMiddleware:
         self.log = logging.getLogger(f"ailab.{service}.http")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "lifespan" and settings.otel_endpoint:
+            from .telemetry import provider, shutdown
+
+            provider()  # Invalid optional configuration must fail at startup.
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                shutdown()
+            return
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
