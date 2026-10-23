@@ -102,6 +102,7 @@ class RunDetail(RunOut):
 class InternalRunDetail(RunDetail):
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 
+    needs_conversation_title: bool = False
     history: list[dict] = Field(default_factory=list)
     workspace_restore_key: str | None = None
     workspace_expired: bool = False  # the conversation's last workspace was dropped by the retention window
@@ -139,6 +140,8 @@ class ConversationPatch(BaseModel):
 
     @model_validator(mode="after")
     def require_changes(self):
+        if "title" in self.model_fields_set and (self.title is None or not self.title.strip()):
+            raise ValueError("title must not be blank")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self
@@ -162,6 +165,7 @@ class ConversationOut(UTCModel):
 
 
 class ConversationDetail(ConversationOut):
+    has_more: bool = False
     turns: list[RunDetail] = Field(default_factory=list)
     previews: list[dict] = Field(default_factory=list)
 

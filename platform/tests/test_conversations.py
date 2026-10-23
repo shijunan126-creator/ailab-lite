@@ -49,12 +49,15 @@ def test_a_conversation_collects_turns_and_gets_a_title() -> None:
         assert busy.status_code == 409
 
         _finish(
-            c, first.json()["id"], "做好了", previews=[{"filename": "deck.pptx", "kind": "pages", "pages": ["1/p-01.jpg"], "version": 1}]
+            c,
+            first.json()["id"],
+            "# 城市更新演示方案\n做好了",
+            previews=[{"filename": "deck.pptx", "kind": "pages", "pages": ["1/p-01.jpg"], "version": 1}],
         )
         second = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "第三页换成图表"}).json()
 
         detail = c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()
-        assert detail["title"] == "帮我做一个关于城市更新的 PPT"
+        assert detail["title"] == "城市更新演示方案"
         assert [t["prompt"] for t in detail["turns"]] == ["帮我做一个关于城市更新的 PPT\n细节…", "第三页换成图表"]
         assert detail["previews"][0]["filename"] == "deck.pptx" and detail["previews"][0]["run_id"] == first.json()["id"]
         assert detail["last_status"] == "queued"
@@ -64,7 +67,7 @@ def test_a_conversation_collects_turns_and_gets_a_title() -> None:
 
         internal = c.get(f"/internal/runs/{second['id']}", headers=SERVICE).json()
         assert internal["history"] == [
-            {"prompt": "帮我做一个关于城市更新的 PPT\n细节…", "reply": "做好了", "status": "succeeded", "files": []}
+            {"prompt": "帮我做一个关于城市更新的 PPT\n细节…", "reply": "# 城市更新演示方案\n做好了", "status": "succeeded", "files": []}
         ]
         assert internal["workspace_restore_key"] is None  # the first turn saved none
         public = c.get(f"/v1/runs/{second['id']}", headers=AUTH).json()

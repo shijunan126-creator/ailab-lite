@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 from sqlalchemy.orm import Session
 
 from ..deps import current_user, get_db
@@ -90,13 +90,35 @@ def create_conversation(body: ConversationCreate, user: User = Depends(current_u
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
-def get_conversation(conversation_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+def get_conversation(
+    conversation_id: str,
+    before: str | None = None,
+    limit: int = Query(default=20, ge=1, le=100),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> dict:
     conv = _owned(db, conversation_id, user)
-    turns = _turns(db, conv)
+    query = select(Run).where(Run.conversation_id == conv.id, Run.user_id == user.id)
+    if before:
+        cursor = db.get(Run, before)
+        if cursor is None or cursor.conversation_id != conv.id:
+            raise HTTPException(status_code=404, detail="turn not found")
+        query = query.where(tuple_(Run.created_at, Run.id) < (cursor.created_at, cursor.id))
+    rows = list(db.scalars(query.order_by(Run.created_at.desc(), Run.id.desc()).limit(limit + 1)))
+    turns = list(reversed(rows[:limit]))
+    last_status = db.scalar(
+        select(Run.status).where(Run.conversation_id == conv.id).order_by(Run.created_at.desc(), Run.id.desc()).limit(1)
+    )
+    display_turns = []
+    for run in turns:
+        out = run_dict(db, run, detail=True)
+        out["result"] = {key: value for key, value in out["result"].items() if key in {"previews", "thinking"}}
+        display_turns.append(out)
     return {
-        **conversation_out(conv, turns[-1].status if turns else None),
-        "turns": [run_dict(db, run, detail=True) for run in turns],
+        **conversation_out(conv, last_status),
+        "turns": display_turns,
         "previews": latest_previews(turns),
+        "has_more": len(rows) > limit,
     }
 
 

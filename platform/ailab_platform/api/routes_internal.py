@@ -15,11 +15,13 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import exists, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
+from ..conversation_titles import apply_result_title
 from ..deps import get_db
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
@@ -157,6 +159,8 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             for f in db.scalars(select(FileObject).join(Artifact, Artifact.file_id == FileObject.id).where(Artifact.run_id == turn.id))
         ]
         history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
+    conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
+    out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
@@ -193,7 +197,14 @@ def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(ge
             result = body.result
             if result is not None:
                 result = {**result, "usage_totals": run_usage_totals(db, run_id)}
-            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result)
+            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
+            if changed and run.status == RunStatus.SUCCEEDED:
+                try:
+                    with db.begin_nested():
+                        apply_result_title(db, run)
+                except SQLAlchemyError:
+                    logging.getLogger("ailab.api.titles").warning("automatic title update failed")
+            db.commit()
     except InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=f"invalid transition: {exc}") from exc
     if changed and (run.result or {}).get("workspace_saved"):

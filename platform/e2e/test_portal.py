@@ -230,7 +230,10 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
 def test_a_spreadsheet_is_previewed_live_and_can_be_revised(logged_in) -> None:
     page = logged_in
     _start_conversation(page, "做一个 Excel 表格")
-    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)  # appears while the turn is still running
+    page.wait_for_selector(".composer-dock button:has-text('打开预览')", timeout=60000)
+    assert page.locator(".preview-pane").count() == 0
+    page.click(".composer-dock button:has-text('打开预览')")
+    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
     _wait_for_turns(page, 1)
     grid = page.inner_text(".preview-pane .sheet-grid")
     assert "华东" in grid and "合计" in grid

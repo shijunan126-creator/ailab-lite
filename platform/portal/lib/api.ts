@@ -78,7 +78,7 @@ export type Conversation = {
   last_status?: string | null;
 };
 
-export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[] };
+export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[]; has_more: boolean };
 
 export function previewUrl(runId: string, name: string): string {
   return `${API_BASE}/v1/runs/${runId}/previews/${name}`;
