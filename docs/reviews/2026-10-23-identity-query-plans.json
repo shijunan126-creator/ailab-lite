@@ -1,0 +1,140 @@
+{
+  "sqlite": {
+    "users_global": {
+      "sql": "SELECT id FROM users WHERE (created_at,id)<('2026-02-01','z') ORDER BY created_at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 121, 'SEARCH users USING COVERING INDEX ix_users_created_id ((created_at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.107
+    },
+    "users_dept": {
+      "sql": "SELECT id FROM users WHERE dept_id='d001' AND (created_at,id)<('2026-02-01','z') ORDER BY created_at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 59, 'SEARCH users USING COVERING INDEX ix_users_dept_created_id (dept_id=? AND (created_at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.152
+    },
+    "audit_global": {
+      "sql": "SELECT id FROM audit_log WHERE (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 132, 'SEARCH audit_log USING COVERING INDEX ix_audit_at_id ((at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.128
+    },
+    "audit_actor": {
+      "sql": "SELECT id FROM audit_log WHERE actor_id='u00001' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 41, 'SEARCH audit_log USING COVERING INDEX ix_audit_actor_at_id (actor_id=? AND (at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.036
+    },
+    "audit_action": {
+      "sql": "SELECT id FROM audit_log WHERE action='users.update' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 134, 'SEARCH audit_log USING COVERING INDEX ix_audit_action_at_id (action=? AND (at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.138
+    },
+    "audit_target": {
+      "sql": "SELECT id FROM audit_log WHERE target_type='user' AND target_id='u00001' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "(4, 0, 42, 'SEARCH audit_log USING COVERING INDEX ix_audit_target_at_id (target_type=? AND target_id=? AND (at,id)<(?,?))')"
+      ],
+      "mean_ms": 0.048
+    },
+    "audit_failure": {
+      "sql": "SELECT id FROM audit_log WHERE request_id='r' AND at>='2026-02-01' AND outcome='failure' LIMIT 1",
+      "plan": [
+        "(4, 0, 146, 'SEARCH audit_log USING INDEX ix_audit_request_at (request_id=? AND at>?)')"
+      ],
+      "mean_ms": 0.039
+    },
+    "user_roles": {
+      "sql": "SELECT user_id FROM user_roles WHERE role='user' AND user_id='u00001'",
+      "plan": [
+        "(2, 0, 39, 'SEARCH user_roles USING COVERING INDEX sqlite_autoindex_user_roles_1 (user_id=? AND role=?)')"
+      ],
+      "mean_ms": 0.034
+    }
+  },
+  "postgres": {
+    "users_global": {
+      "sql": "SELECT id FROM users WHERE (created_at,id)<('2026-02-01','z') ORDER BY created_at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=0.29..6.15 rows=101 width=15)',)",
+        "('  ->  Index Only Scan Backward using ix_users_created_id on users  (cost=0.29..581.47 rows=10000 width=15)',)",
+        "(\"        Index Cond: (ROW(created_at, id) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text))\",)"
+      ],
+      "mean_ms": 0.168
+    },
+    "users_dept": {
+      "sql": "SELECT id FROM users WHERE dept_id='d001' AND (created_at,id)<('2026-02-01','z') ORDER BY created_at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=117.43..117.68 rows=100 width=15)',)",
+        "('  ->  Sort  (cost=117.43..117.68 rows=100 width=15)',)",
+        "('        Sort Key: created_at DESC, id DESC',)",
+        "('        ->  Bitmap Heap Scan on users  (cost=5.31..114.10 rows=100 width=15)',)",
+        "(\"              Recheck Cond: (((dept_id)::text = 'd001'::text) AND (ROW(created_at, (id)::text) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text)))\",)",
+        "('              ->  Bitmap Index Scan on ix_users_dept_created_id  (cost=0.00..5.29 rows=100 width=0)',)",
+        "(\"                    Index Cond: (((dept_id)::text = 'd001'::text) AND (ROW(created_at, (id)::text) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text)))\",)"
+      ],
+      "mean_ms": 0.23
+    },
+    "audit_global": {
+      "sql": "SELECT id FROM audit_log WHERE (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=0.29..6.54 rows=101 width=15)',)",
+        "('  ->  Index Only Scan Backward using ix_audit_at_id on audit_log  (cost=0.29..1239.16 rows=20000 width=15)',)",
+        "(\"        Index Cond: (ROW(at, id) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text))\",)"
+      ],
+      "mean_ms": 0.195
+    },
+    "audit_actor": {
+      "sql": "SELECT id FROM audit_log WHERE actor_id='u00001' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=0.29..11.76 rows=2 width=15)',)",
+        "('  ->  Index Only Scan Backward using ix_audit_actor_at_id on audit_log  (cost=0.29..11.76 rows=2 width=15)',)",
+        "(\"        Index Cond: ((actor_id = 'u00001'::text) AND (ROW(at, id) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text)))\",)"
+      ],
+      "mean_ms": 0.119
+    },
+    "audit_action": {
+      "sql": "SELECT id FROM audit_log WHERE action='users.update' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=0.29..6.80 rows=101 width=15)',)",
+        "('  ->  Index Scan Backward using ix_audit_at_id on audit_log  (cost=0.29..1289.16 rows=20000 width=15)',)",
+        "(\"        Index Cond: (ROW(at, (id)::text) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text))\",)",
+        "(\"        Filter: ((action)::text = 'users.update'::text)\",)"
+      ],
+      "mean_ms": 0.231
+    },
+    "audit_target": {
+      "sql": "SELECT id FROM audit_log WHERE target_type='user' AND target_id='u00001' AND (at,id)<('2026-02-01','z') ORDER BY at DESC,id DESC LIMIT 101",
+      "plan": [
+        "('Limit  (cost=0.29..10.08 rows=2 width=15)',)",
+        "('  ->  Index Only Scan Backward using ix_audit_target_at_id on audit_log  (cost=0.29..10.08 rows=2 width=15)',)",
+        "(\"        Index Cond: ((target_type = 'user'::text) AND (target_id = 'u00001'::text) AND (ROW(at, id) < ROW('2026-02-01 00:00:00+08'::timestamp with time zone, 'z'::text)))\",)"
+      ],
+      "mean_ms": 0.164
+    },
+    "audit_failure": {
+      "sql": "SELECT id FROM audit_log WHERE request_id='r' AND at>='2026-02-01' AND outcome='failure' LIMIT 1",
+      "plan": [
+        "('Limit  (cost=0.29..6.06 rows=1 width=7)',)",
+        "('  ->  Index Scan using ix_audit_request_at on audit_log  (cost=0.29..6.06 rows=1 width=7)',)",
+        "(\"        Index Cond: (((request_id)::text = 'r'::text) AND (at >= '2026-02-01 00:00:00+08'::timestamp with time zone))\",)",
+        "(\"        Filter: ((outcome)::text = 'failure'::text)\",)"
+      ],
+      "mean_ms": 0.107
+    },
+    "user_roles": {
+      "sql": "SELECT user_id FROM user_roles WHERE role='user' AND user_id='u00001'",
+      "plan": [
+        "('Index Only Scan using ix_user_roles_role_user on user_roles  (cost=0.29..8.30 rows=1 width=7)',)",
+        "(\"  Index Cond: ((role = 'user'::text) AND (user_id = 'u00001'::text))\",)"
+      ],
+      "mean_ms": 0.084
+    }
+  },
+  "rss_mib": 92.3
+}

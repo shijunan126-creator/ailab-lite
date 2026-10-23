@@ -15,22 +15,35 @@ from .catalog import get_catalog
 from .config import settings
 from .contracts.usage import ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageStatus
 from .domain.ledger import MILLI, POLICY_VERSION, reserved_amount, snapshot_weight, weighted_amount
+from .domain.quota_policy import Limits, limits_for
 from .locks import user_critical_section
-from .models import FileObject, FileStatus, ModelUsage, Run, RunStatus, UsageReservation
+from .models import FileObject, FileStatus, ModelUsage, Run, RunStatus, UsageReservation, User
 
 
 def _error(status: int, code: UsageErrorCode, **detail):
     return HTTPException(status_code=status, detail={"code": code, **detail})
 
 
-def quota_windows(now: datetime | None = None) -> dict[str, tuple[datetime, datetime, int]]:
+def user_limits(db: Session, user_id: str) -> Limits:
+    """The user's own policy, else their department's, else the default policy, else settings."""
+    user = db.get(User, user_id)
+    if user is None:
+        return Limits(
+            settings.daily_token_limit, settings.monthly_token_limit, settings.library_quota_bytes, settings.max_active_runs_per_user
+        )
+    return limits_for(user)
+
+
+def quota_windows(now: datetime | None = None, limits: Limits | None = None) -> dict[str, tuple[datetime, datetime, int]]:
+    daily = limits.daily_tokens if limits else settings.daily_token_limit
+    monthly = limits.monthly_tokens if limits else settings.monthly_token_limit
     local = (now or datetime.now(UTC)).astimezone(ZoneInfo(settings.quota_timezone))
     day = local.replace(hour=0, minute=0, second=0, microsecond=0)
     month = day.replace(day=1)
     next_month = (month.replace(day=28) + timedelta(days=4)).replace(day=1)
     return {
-        "daily_tokens": (day.astimezone(UTC), (day + timedelta(days=1)).astimezone(UTC), settings.daily_token_limit),
-        "monthly_tokens": (month.astimezone(UTC), next_month.astimezone(UTC), settings.monthly_token_limit),
+        "daily_tokens": (day.astimezone(UTC), (day + timedelta(days=1)).astimezone(UTC), daily),
+        "monthly_tokens": (month.astimezone(UTC), next_month.astimezone(UTC), monthly),
     }
 
 
@@ -63,7 +76,8 @@ def _reserved_milli(db: Session, user_id: str) -> int:
 
 
 def usage_summary(db: Session, user_id: str) -> dict:
-    windows = quota_windows()
+    limits = user_limits(db, user_id)
+    windows = quota_windows(limits=limits)
     # One statement sees reservation and settlement at the same database snapshot.
     # Separate SELECTs can count one call twice while it moves between the two tables.
     amounts = db.execute(
@@ -82,14 +96,14 @@ def usage_summary(db: Session, user_id: str) -> dict:
         code = "exceeded" if total >= limit * MILLI else "near_limit" if total * 5 >= limit * MILLI * 4 else None
         if code:
             out["alerts"].append({"code": code, "window": name, "resets_at": reset.isoformat()})
-    out["library_bytes"] = {"used": library_bytes(db, user_id), "limit": settings.library_quota_bytes}
+    out["library_bytes"] = {"used": library_bytes(db, user_id), "limit": limits.library_bytes}
     out["resets_at_utc"] = windows["daily_tokens"][1].isoformat()  # existing Portal clients
     return out
 
 
 def enforce_token_quota(db: Session, user_id: str, incoming_milli: int = 0) -> None:
     reserved = _reserved_milli(db, user_id)
-    for name, (start, reset, limit) in quota_windows().items():
+    for name, (start, reset, limit) in quota_windows(limits=user_limits(db, user_id)).items():
         total = _used_milli(db, user_id, start, reset) + reserved
         if total + incoming_milli > limit * MILLI or (not incoming_milli and total >= limit * MILLI):
             metrics.QUOTA_REJECTIONS.labels(name).inc()
@@ -160,10 +174,12 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
     if row is not None and row.status != UsageStatus.UNRECONCILED:
         return row
     if row is None:
+        owner = db.get(User, reservation.user_id)
         row = ModelUsage(
             call_id=reservation.call_id,
             run_id=reservation.run_id,
             user_id=reservation.user_id,
+            dept_id=owner.dept_id if owner else None,  # snapshot: a later move does not move this usage
             attempt_id=reservation.attempt_id,
             mode=reservation.mode,
             alias=reservation.alias,
@@ -254,6 +270,6 @@ def library_bytes(db: Session, user_id: str) -> int:
 
 
 def enforce_library_quota(db: Session, user_id: str, incoming: int) -> None:
-    if library_bytes(db, user_id) + incoming > settings.library_quota_bytes:
+    if library_bytes(db, user_id) + incoming > user_limits(db, user_id).library_bytes:
         metrics.QUOTA_REJECTIONS.labels("library").inc()
         raise HTTPException(status_code=413, detail="library quota exceeded; delete files or ask for more space")

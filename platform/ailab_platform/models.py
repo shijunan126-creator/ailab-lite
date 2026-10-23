@@ -13,6 +13,7 @@ from decimal import Decimal
 from sqlalchemy import (
     JSON,
     BigInteger,
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -58,6 +59,11 @@ class FileStatus:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("uq_users_issuer_subject", "issuer", "external_subject", unique=True),
+        Index("ix_users_created_id", "created_at", "id"),
+        Index("ix_users_dept_created_id", "dept_id", "created_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("usr"))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
@@ -70,7 +76,115 @@ class User(Base):
     settings: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
+    issuer: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    external_subject: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    dept_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), nullable=True)
+    quota_policy_id: Mapped[str | None] = mapped_column(ForeignKey("quota_policies.id"), index=True, nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     tokens: Mapped[list[ApiToken]] = relationship(back_populates="user")
+    role_rows: Mapped[list[UserRole]] = relationship(cascade="all, delete-orphan", lazy="selectin")
+    department: Mapped[Department | None] = relationship(lazy="joined")
+    quota_policy: Mapped[QuotaPolicy | None] = relationship(lazy="joined")
+
+    @property
+    def principal(self):
+        from .contracts.identity import Principal
+
+        return Principal(
+            self.id, self.issuer, self.external_subject, self.dept_id, frozenset(r.role for r in self.role_rows) or frozenset({"user"})
+        )
+
+    @property
+    def default_quota_policy(self):
+        from sqlalchemy import select
+        from sqlalchemy.orm import object_session
+
+        db = object_session(self)
+        return db.scalar(select(QuotaPolicy).where(QuotaPolicy.is_default.is_(True))) if db else None
+
+    @property
+    def quota_fallback(self):
+        from .config import settings
+        from .domain.quota_policy import Limits
+
+        return Limits(
+            settings.daily_token_limit, settings.monthly_token_limit, settings.library_quota_bytes, settings.max_active_runs_per_user
+        )
+
+
+class QuotaPolicy(Base):
+    __tablename__ = "quota_policies"
+    __table_args__ = (
+        Index(
+            "uq_quota_policies_default",
+            "is_default",
+            unique=True,
+            sqlite_where=text("is_default = 1"),
+            postgresql_where=text("is_default = true"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("qpol"))
+    name: Mapped[str] = mapped_column(String(120))
+    daily_tokens: Mapped[int] = mapped_column(BigInteger)
+    monthly_tokens: Mapped[int] = mapped_column(BigInteger)
+    library_bytes: Mapped[int] = mapped_column(BigInteger)
+    max_concurrent_runs: Mapped[int] = mapped_column(Integer)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dept"))
+    name: Mapped[str] = mapped_column(String(120))
+    parent_id: Mapped[str | None] = mapped_column(ForeignKey("departments.id"), index=True, nullable=True)
+    quota_policy_id: Mapped[str | None] = mapped_column(ForeignKey("quota_policies.id"), index=True, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    quota_policy: Mapped[QuotaPolicy | None] = relationship(lazy="joined")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (Index("ix_user_roles_role_user", "role", "user_id"),)
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(String(32), primary_key=True)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+    __table_args__ = (
+        Index("ix_audit_at_id", "at", "id"),
+        Index("ix_audit_request_at", "request_id", "at"),
+        Index("ix_audit_actor_at_id", "actor_id", "at", "id"),
+        Index("ix_audit_action_at_id", "action", "at", "id"),
+        Index("ix_audit_target_at_id", "target_type", "target_id", "at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("aud"))
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    actor_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    actor_service: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    action: Mapped[str] = mapped_column(String(80))
+    target_type: Mapped[str] = mapped_column(String(40))
+    target_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(32), default="success")
+    request_id: Mapped[str] = mapped_column(String(64))
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class OIDCFlow(Base):
+    """Short-lived server-side PKCE material; a separate secret binds the flow to the browser."""
+
+    __tablename__ = "oidc_flows"
+
+    state_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    binding_hash: Mapped[str] = mapped_column(String(64))
+    verifier: Mapped[str] = mapped_column(String(128))
+    nonce: Mapped[str] = mapped_column(String(128))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ApiToken(Base):
@@ -229,6 +343,7 @@ class ModelUsage(Base):
         Index("ix_model_usage_user_created", "user_id", "created_at"),
         Index("ix_model_usage_status_id", "status", "id"),
         Index("ix_model_usage_call_id", "call_id", unique=True),
+        Index("ix_model_usage_created_dept", "created_at", "dept_id"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)

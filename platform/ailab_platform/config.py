@@ -17,7 +17,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -93,6 +93,40 @@ class Settings(BaseSettings):
     registrations_per_hour: int = Field(default=30, gt=0)
     login_max_failures: int = Field(default=5, gt=0)  # per username and per client address ...
     login_window_seconds: int = Field(default=300, gt=0)  # ... within this many seconds
+
+    # Identity / OIDC (independent of roles and service credentials).
+    auth_backend: Literal["local", "oidc", "both"] = "local"
+    oidc_label: str = "统一身份登录"
+    oidc_issuer: str = ""
+    oidc_client_id: str = ""
+    oidc_client_secret: SecretStr = SecretStr("")
+    oidc_redirect_uri: str = ""  # exact Portal /api/auth/oidc/callback URL registered at the IdP
+    oidc_groups_claim: str = "groups"  # dotted claim path
+    oidc_role_mapping: dict[str, list[Literal["user", "dept_admin", "platform_admin", "auditor"]]] = Field(default_factory=dict)
+    oidc_department_mapping: dict[str, str] = Field(default_factory=dict)  # IdP group -> department id
+    oidc_jwks_ttl_seconds: int = Field(default=300, ge=10, le=3600)
+    oidc_flow_ttl_seconds: int = Field(default=600, ge=60, le=900)
+    oidc_http_timeout_seconds: int = Field(default=15, ge=1, le=60)
+
+    @model_validator(mode="after")
+    def validate_identity(self):
+        if self.auth_backend in {"oidc", "both"}:
+            if not self.oidc_client_id:
+                raise ValueError("OIDC requires AILAB_OIDC_CLIENT_ID")
+            for name in ("oidc_issuer", "oidc_redirect_uri"):
+                value = getattr(self, name)
+                url = urlsplit(value)
+                local = self.env in INSECURE_ENVS and url.hostname in {"localhost", "127.0.0.1", "::1"}
+                if (
+                    not url.hostname
+                    or url.username
+                    or url.password
+                    or url.fragment
+                    or url.query
+                    or (url.scheme != "https" and not (local and url.scheme == "http"))
+                ):
+                    raise ValueError(f"AILAB_{name.upper()} must be an absolute HTTPS URL (loopback HTTP allowed in dev/test)")
+        return self
 
     # Models: which ones exist, how each is reached and which key it uses is the catalog's business
     # (models.toml, see catalog.py). Nothing here names a model or holds a key.

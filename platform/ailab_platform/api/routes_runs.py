@@ -24,7 +24,7 @@ from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
 from ..queue import get_queue
-from ..quota import enforce_token_quota, usage_summary
+from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut
 from ..storage import get_storage
@@ -95,7 +95,7 @@ def start_run(
         enforce_token_quota(db, user.id)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
-        if active >= settings.max_active_runs_per_user:
+        if active >= user_limits(db, user.id).max_concurrent_runs:
             metrics.QUOTA_REJECTIONS.labels("active_runs").inc()
             raise HTTPException(status_code=429, detail="too many active runs for this user")
         if conversation is not None:

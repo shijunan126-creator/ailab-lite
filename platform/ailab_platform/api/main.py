@@ -21,6 +21,8 @@ from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
+from .routes_admin import router as admin_router
+from .routes_auth import me
 from .routes_auth import router as auth_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
@@ -99,6 +101,8 @@ async def reject_oversized_upload(request: Request, call_next):
 
 
 app.include_router(auth_router)
+app.include_router(admin_router)
+app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)

@@ -25,5 +25,9 @@
 | 隔离解析（T04/F3） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB、ZIP 膨胀检查；缩略图解码同一执行器 | macOS 故障测试通过；Linux RLIMIT_AS 与容器压测待验收 |
 | 资料库预览（用户需求 / T19 预览部分） | 按需生成并缓存：pages/sheets/image/text；Office/PDF 在 Broker 的 render 保留槽沙箱里渲染，读文件绑定到当前预览任务；ETag/304/CSP；删除清理 | mock + 本机真实 Office/PDF 工具验证；真实 OpenSandbox 未验收 |
 | Outbox（T09 起步） | `outbox` 表与派发器，目前承载预览入队 | Run/上传入队尚未迁入 outbox |
+| 身份 / RBAC / 部门 / 审计（T13） | 稳定 user_id、(issuer, subject) 唯一、部门、角色（成员/部门管理员/平台管理员/审计员）、额度策略、与变更同事务的审计、管理 API；没有任何跨用户内容读取端点 | 管理台 UI 在 `/admin` |
+| 额度策略接入 | 用户策略 → 部门策略 → 默认策略 → settings，统一经 `quota.user_limits` 用于 token 预留、资料库空间、并发 Run 与用量摘要 | — |
+| 部门用量报表 | 按账本冻结金额与调用时的部门快照汇总，不经 runs（被清除的对话仍计入）；`(created_at, dept_id)` 索引 | 报表大范围扫描性能未压测 |
+| OIDC（T17） | 授权码 + PKCE/state/nonce、JWKS 缓存与未知 kid 刷新、组映射、停用拒绝；浏览器不接触上游 Token | 真实 Keycloak 需 `AILAB_TEST_OIDC_ISSUER`，未验收 |
 
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)。

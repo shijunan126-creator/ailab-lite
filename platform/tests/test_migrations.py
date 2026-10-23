@@ -306,3 +306,51 @@ def test_preview_outbox_migration_and_bounded_dispatch_plan(engine):
     assert "outbox" not in inspect(engine).get_table_names()
     _upgrade_to(engine, "0011")
     assert "outbox" in inspect(engine).get_table_names()
+
+
+def test_identity_roundtrip_preserves_existing_users_and_references(engine):
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            conn.execute(text("PRAGMA foreign_keys=ON"))
+    _upgrade_to(engine, "0008")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE users SET username = 'admin' WHERE id = 'u1'"))
+        conn.execute(
+            text("INSERT INTO api_tokens (id, user_id, name, token_hash, created_at) VALUES ('t1', 'u1', 'session', 'hash', '2026-01-01')")
+        )
+    _upgrade_to(engine, "0012")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT role FROM user_roles WHERE user_id = 'u1' ORDER BY role")).scalars().all() == [
+            "platform_admin",
+            "user",
+        ]
+        conn.execute(
+            text(
+                "INSERT INTO quota_policies (id, name, daily_tokens, monthly_tokens, library_bytes, max_concurrent_runs, is_default) "
+                "VALUES ('qp', 'Policy', 10, 20, 21474836480, 2, true)"
+            )
+        )
+        conn.execute(text("INSERT INTO departments (id, name, created_at, quota_policy_id) VALUES ('d', 'Dept', '2026-01-01', 'qp')"))
+        conn.execute(text("INSERT INTO departments (id, name, parent_id, created_at) VALUES ('child', 'Child', 'd', '2026-01-01')"))
+        conn.execute(
+            text(
+                "UPDATE users SET dept_id='d', quota_policy_id='qp', issuer='https://idp.example', external_subject='subject' WHERE id='u1'"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO audit_log (id, at, actor_id, action, target_type, target_id, outcome, request_id, detail) "
+                "VALUES ('a', '2026-01-01', 'u1', 'test', 'user', 'u1', 'success', 'request', '{}')"
+            )
+        )
+    _downgrade_to(engine, "0008")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT user_id FROM runs WHERE id='r1'")).scalar() == "u1"
+        assert conn.execute(text("SELECT user_id FROM api_tokens WHERE id='t1'")).scalar() == "u1"
+    _upgrade_to(engine, "0012")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id, dept_id, issuer FROM users WHERE id='u1'")).one() == ("u1", None, None)
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+        if engine.dialect.name == "sqlite":
+            assert conn.execute(text("PRAGMA foreign_key_check")).all() == []

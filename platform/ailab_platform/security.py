@@ -6,7 +6,7 @@ import ipaddress
 
 from fastapi import Request
 from sqlalchemy import or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from .config import settings
 from .db import hash_token
@@ -37,7 +37,7 @@ def authenticate(db: Session, token: str | None) -> User | None:
     )
     if row is None:
         return None
-    user = db.get(User, row.user_id)
+    user = db.get(User, row.user_id, options=[joinedload(User.role_rows)])
     return None if user is None or user.disabled_at is not None else user
 
 
