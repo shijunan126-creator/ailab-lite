@@ -53,8 +53,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
 
   async function remove() {
     setMenu(false);
-    const what = [project.conversations ? `${project.conversations} 个对话` : "", project.files ? `${project.files} 个文件` : ""].filter(Boolean).join("和");
-    if (!confirm(`删除项目「${project.name}」？${what ? `其中的 ${what}会一起删除，` : ""}无法恢复。`)) return;
+    const lost = project.conversations ? `其中的 ${project.conversations} 个对话会一起删除。` : "";
+    const kept = project.files ? `${project.files} 个文件会移到回收站。` : "";
+    if (!confirm(`删除项目「${project.name}」？${lost}${kept}`)) return;
     await api(`/v1/projects/${project.id}`, { method: "DELETE" });
     projectsChanged();
     conversationsChanged();

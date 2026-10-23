@@ -116,6 +116,12 @@ export type FileItem = {
   starred?: boolean;
   thumbnail_url?: string | null; // a small WebP the Worker made; absent for non-images and before processing
   preview?: FilePreview | null; // null until someone first opens it
+  lineage_id?: string; // every version of a file shares it
+  versions?: number;
+  is_head?: boolean;
+  deleted_at?: string | null; // in the trash since
+  purge_at?: string | null; // removed for good at
+  purged?: boolean; // an old version whose content is gone
 };
 
 /** How a library file can be shown in place (GET /v1/files/{id}/preview). Rendered once, on first open, then cached. */

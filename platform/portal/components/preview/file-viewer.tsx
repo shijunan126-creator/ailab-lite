@@ -3,8 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, FileItem, FilePreview, filePreviewUrl, filesByIds } from "../../lib/api";
-import { IconChevronRight, IconDownload, IconMessage, IconX } from "../icons";
+import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, IconX } from "../icons";
 import FileTile from "../library/file-tile";
+import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
 import Sheets from "./sheets";
 
@@ -170,20 +171,89 @@ function Body({ file }: { file: FileItem }) {
   }
 }
 
+/** Every version of the file; picking one shows it in place. Loaded only when opened. */
+function Versions({ file, shown, onPick }: { file: FileItem; shown: FileItem; onPick: (version: FileItem) => void }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<FileItem[] | null>(null);
+  const box = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let stale = false;
+    api<FileItem[]>(`/v1/files/${file.id}/versions`)
+      .then((v) => !stale && setList(v))
+      .catch(() => !stale && setList([]));
+    const close = (e: MouseEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    document.addEventListener("mousedown", close);
+    return () => {
+      stale = true;
+      document.removeEventListener("mousedown", close);
+    };
+  }, [open, file.id]);
+  return (
+    <div className="viewer-versions" ref={box}>
+      <button className={`viewer-chip ${shown.id !== file.id ? "on" : ""}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label="版本历史">
+        <IconHistory size={15} /> v{shown.version}
+      </button>
+      {open ? (
+        <div className="viewer-menu" role="menu">
+          {!list ? <div className="viewer-menu-wait" /> : null}
+          {list?.map((v) => (
+            <button
+              key={v.id}
+              role="menuitemradio"
+              aria-checked={v.id === shown.id}
+              className="viewer-menu-item"
+              disabled={v.purged}
+              onClick={() => {
+                setOpen(false);
+                onPick(v);
+              }}
+            >
+              <span className="v">v{v.version}</span>
+              <span className="grow">{v.purged ? "已清理" : `${timeAgo(v.created_at)} · ${formatBytes(v.size)}`}</span>
+              {v.id === shown.id ? <IconCheck size={14} /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /** Opens a library file in place. ← → step through the list it was opened from; Esc closes. */
 export default function FileViewer({
   files,
   file,
   onOpen,
   onClose,
+  onChanged,
   chatHref,
 }: {
   files: FileItem[];
   file: FileItem;
   onOpen: (file: FileItem) => void;
   onClose: () => void;
+  onChanged?: (head: FileItem) => void; // an old version was restored: the list has a new head
   chatHref?: (file: FileItem) => string;
 }) {
+  const [version, setVersion] = useState<FileItem | null>(null);
+  const [restoring, setRestoring] = useState(false);
+  useEffect(() => setVersion(null), [file.id]);
+  const shown = version || file;
+
+  async function restoreVersion(old: FileItem) {
+    setRestoring(true);
+    try {
+      const head = await api<FileItem>(`/v1/files/${old.id}/restore-version`, { method: "POST" });
+      setVersion(null);
+      onChanged ? onChanged(head) : onOpen(head);
+    } catch (err: any) {
+      alert(`恢复失败：${err?.message || err}`);
+    } finally {
+      setRestoring(false);
+    }
+  }
+
   const index = files.findIndex((f) => f.id === file.id);
   const prev = index > 0 ? files[index - 1] : null;
   const next = index >= 0 && index < files.length - 1 ? files[index + 1] : null;
@@ -211,18 +281,24 @@ export default function FileViewer({
   return createPortal(
     <div className="viewer" role="dialog" aria-modal="true" aria-label={file.filename}>
       <header className="viewer-bar">
-        <FileTile file={file} size={28} />
-        <span className="viewer-name" title={file.filename}>
-          {file.filename}
+        <FileTile file={shown} size={28} />
+        <span className="viewer-name" title={shown.filename}>
+          {shown.filename}
         </span>
-        {file.status === "ready" ? (
+        {(file.versions || 0) > 1 ? <Versions file={file} shown={shown} onPick={(v) => setVersion(v.id === file.id ? null : v)} /> : null}
+        {version ? (
+          <button className="viewer-chip primary" disabled={restoring} onClick={() => restoreVersion(version)}>
+            恢复此版本
+          </button>
+        ) : null}
+        {shown.status === "ready" ? (
           <>
-            {chatHref ? (
+            {chatHref && !version ? (
               <a className="icon-btn" href={chatHref(file)} title="围绕它对话" aria-label={`围绕 ${file.filename} 对话`}>
                 <IconMessage size={18} />
               </a>
             ) : null}
-            <a className="icon-btn" href={downloadUrl(file.download_url)} title="下载" aria-label={`下载 ${file.filename}`}>
+            <a className="icon-btn" href={downloadUrl(shown.download_url)} title="下载" aria-label={`下载 ${shown.filename}`}>
               <IconDownload size={18} />
             </a>
           </>
@@ -232,7 +308,7 @@ export default function FileViewer({
         </button>
       </header>
       <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <Body key={file.id} file={file} />
+        <Body key={shown.id} file={shown} />
         {prev ? (
           <button className="viewer-nav prev" onClick={() => onOpen(prev)} aria-label="上一个文件">
             <IconChevronRight size={22} />
