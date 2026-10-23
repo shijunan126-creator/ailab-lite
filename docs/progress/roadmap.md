@@ -2,7 +2,7 @@
 
 更新：2026-10-23。目标是在 2 vCPU / 约 8 GiB 单机上可靠完成 Chat、Work、文件处理与多轮产物编辑；未来扩机只替换 adapter/部署，不重写授权、账本、文件交付和 Portal 协议。
 
-当前执行范围见 [current.md](current.md)。**下表后续阶段均未获恢复实施授权**；实现细节与估算见 [剩余工作设计](../architecture/design/2026-10-23-remaining-work.md)，不重复维护状态。各 T 项当前完成度只在 [状态矩阵](../architecture/status-matrix.md) 更新。
+当前执行范围见 [current.md](current.md)。**用户已于 2026-10-23 恢复剩余工作实施，优先 F8，并行推进独立项**；实现细节与估算见 [剩余工作设计](../architecture/design/2026-10-23-remaining-work.md)，不重复维护状态。各 T 项当前完成度只在 [状态矩阵](../architecture/status-matrix.md) 更新。
 
 ## 阶段与验收目标
 
