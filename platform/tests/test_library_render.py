@@ -2,6 +2,7 @@
 
 import io
 import shutil
+from pathlib import Path
 
 import pytest
 from docx import Document
@@ -19,7 +20,7 @@ def setup_renderer(tmp_path, content, filename):
         "filename": filename,
         "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
     }
-    api.get_file_bytes = lambda fid, **bound: content
+    api.download_file = lambda fid, target, **bound: Path(target).write_bytes(content)
     return manager, LibraryRenderer(manager), storage
 
 
@@ -66,8 +67,8 @@ def test_render_uses_the_reserved_render_class_and_reads_bound_to_its_job(tmp_pa
     """A render is a system lease of the render profile; every file read names the preview job."""
     manager, renderer, _ = setup_renderer(tmp_path, b"broken", "bad.pdf")
     reads, acquired = [], []
-    original_get = manager.platform.get_file_bytes
-    manager.platform.get_file_bytes = lambda fid, **bound: reads.append(bound) or original_get(fid, **bound)
+    original_get = manager.platform.download_file
+    manager.platform.download_file = lambda fid, target, **bound: reads.append(bound) or original_get(fid, target, **bound)
     original_acquire = manager.acquire
     manager.acquire = lambda spec, principal, **kw: acquired.append((spec, principal)) or original_acquire(spec, principal, **kw)
     with pytest.raises(LeaseError, match="render_failed"):

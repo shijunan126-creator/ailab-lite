@@ -1,10 +1,10 @@
 # 单机能力状态
 
-更新于 2026-10-23，分支 `feat/arch-hardening`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
+更新于 2026-10-23，分支 `feat/remaining-work`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
 
 项目接续、计划和验收记录入口见 [项目进度](../progress/README.md)，最新授权范围见 [当前工作](../progress/current.md)。本页只维护能力状态；“合入”指当前集成分支，不代表已合入远端 main。
 
-未开始与部分完成的任务（T07/T08/T09/T14/T15/T16/T19/T20 及 Broker 流式注入）的方案见 [剩余工作设计](design/2026-10-23-remaining-work.md)，暂不实施。
+未开始与部分完成的任务（T07/T08/T09/T14/T15/T16/T19/T20 及 Broker 流式注入）的方案见 [剩余工作设计](design/2026-10-23-remaining-work.md)，用户已恢复实施，优先 F8；并行任务未通过主 Agent 审核前保持原能力状态。
 
 “完成”表示代码、迁移与回归测试都已合入，并在本机 SQLite 和 PostgreSQL 16 + Redis 两套测试中通过；“未验收”列出仍需真实外部组件或目标机器才能确认的部分。
 
@@ -57,6 +57,7 @@
 |---|---|---|
 | 租约所有权与对账（T06） | 资源带 owner/lease_id/run_id 标签；LeaseStore CAS；启动与周期对账；Redis 清空后从标签重建；删除失败退避重试；续租与最长寿命；检测到第二个 Broker 拒绝启动 | Docker/OSB 生命周期各 1 passed、真实重启/Redis 记录丢失/外部删除共 2 passed；其他故障组合未验；Agent 每 60 秒续租尚未接入（因此配置强制 `sandbox_ttl_seconds > run_timeout_seconds`） |
 | 准入（T08 Broker 部分） | 静态总量与内存预算、每用户上限、FIFO、带截止时间的有界队列、预览渲染保留槽 | 单 Broker；无分布式调度 |
+| 大文件传输（F8） | 已实现 API → 磁盘临时文件 → provider 流上传；交付/快照/恢复/预览输出按块，实际传输计限额；失败与取消清理、重启回收 owner 临时目录 | 真实 Docker/OSB 流式契约通过；2CPU/8GiB、Broker384MiB、双路50MiB注入/交付/快照和双路100MiB扩限压力通过，RSS约68MiB；完整双库验收与报告整理中；非五服务联合负载 |
 
 ## 文件
 

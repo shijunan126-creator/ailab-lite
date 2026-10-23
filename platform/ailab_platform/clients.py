@@ -182,13 +182,17 @@ class PlatformClient(_PlatformApi):
                 data.extend(chunk)
             return bytes(data)
 
-    def download_file(self, file_id: str, target, *, max_bytes: int, job: str = "processing") -> None:
+    def download_file(
+        self, file_id: str, target, *, max_bytes: int, job: str = "processing", run_id: str | None = None, preview_job: str | None = None
+    ) -> None:
         deadline = time.monotonic() + 120
-        req = self._get_file_bytes(file_id, job=job)
+        req = self._get_file_bytes(file_id, run_id, job, preview_job)
         with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
             if response.status_code >= 400:
-                response.read()
-                _raise(req.method, req.url, response)
+                # Error bodies are untrusted too; do not buffer an arbitrarily
+                # large HTML/proxy error while handling a bounded download.
+                detail = next(response.iter_bytes(chunk_size=4096), b"").decode("utf-8", "replace")
+                raise ClientError(req.method, req.url, response.status_code, detail)
             size = 0
             with open(target, "wb") as stream:
                 for chunk in response.iter_bytes(chunk_size=64 * 1024):

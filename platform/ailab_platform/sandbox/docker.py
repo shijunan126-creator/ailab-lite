@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 
 from ..config import settings
 from ..paths import PathError, normalize_path
 from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .transfer import TRANSFER_SECONDS, TransferLimitError
 
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 
@@ -157,6 +160,51 @@ class DockerSandbox(SandboxProvider):
         if proc.returncode != 0:
             raise SandboxError(f"get_file failed: {proc.stderr.decode('utf-8', 'replace')[-400:]}")
         return proc.stdout
+
+    def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
+        path = self._check_path(path)
+        script = (
+            'p="$1"; parent=$(dirname "$p"); rp=$(realpath -m "$parent") || exit 1; '
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
+            '[ ! -L "$p" ] || exit 1; mkdir -p "$parent" || exit 1; '
+            'tmp=$(mktemp "$parent/.ailab-upload.XXXXXXXX") || exit 1; '
+            "trap 'rm -f \"$tmp\"' EXIT; "
+            f'head -c {max_bytes + 1} > "$tmp" && [ "$(stat -c %s "$tmp")" -le {max_bytes} ] && mv -f "$tmp" "$p"'
+        )
+        with source.open("rb") as stream:
+            if source.stat().st_size > max_bytes:
+                raise TransferLimitError("file exceeds transfer limit")
+            self._transfer(["docker", "exec", "-i", "-u", "10001", sandbox_id, "sh", "-c", script, "sh", path], stdin=stream)
+
+    def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
+        path = self._check_path(path)
+        q = shlex.quote(path)
+        script = (
+            f'parent=$(dirname {q}); rp=$(realpath -m "$parent") || exit 1; '
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
+            f"[ ! -L {q} ] && [ -f {q} ] && head -c {max_bytes + 1} -- {q}"
+        )
+        with target.open("wb") as stream:
+            self._transfer(["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", script], stdout=stream)
+        if target.stat().st_size > max_bytes:
+            raise TransferLimitError("file exceeds transfer limit")
+
+    @staticmethod
+    def _transfer(args: list[str], *, stdin=None, stdout=None) -> None:
+        try:
+            # File descriptors go directly to the child: communicate() must not
+            # retain an entire input or output in the Broker heap.
+            proc = subprocess.run(
+                args,
+                stdin=stdin,
+                stdout=stdout if stdout is not None else subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=TRANSFER_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SandboxError("docker file transfer failed or timed out") from exc
+        if proc.returncode:
+            raise SandboxError("docker file transfer failed")
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         path = self._check_path(path)

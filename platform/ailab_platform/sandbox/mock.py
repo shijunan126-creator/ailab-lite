@@ -19,6 +19,7 @@ from pathlib import Path
 
 from ..config import BASE_DIR, settings
 from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .transfer import CHUNK_SIZE, copy_chunks
 
 SKILLS = BASE_DIR.parent / "images" / "sbx-office" / "skills"
 TOOLS = BASE_DIR.parent / "images" / "sbx-office"
@@ -179,6 +180,24 @@ class MockSandbox(SandboxProvider):
         if not target.is_file():
             raise SandboxError(f"file not found in sandbox: {path}")
         return target.read_bytes()
+
+    def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
+        target = self._translate(sandbox_id, path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        temporary = target.with_name(f".upload-{os.urandom(12).hex()}")
+        try:
+            with source.open("rb") as src, temporary.open("xb") as dst:
+                copy_chunks(iter(lambda: src.read(CHUNK_SIZE), b""), dst, max_bytes=max_bytes)
+            temporary.replace(target)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+    def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
+        source = self._translate(sandbox_id, path)
+        if not source.is_file():
+            raise SandboxError("not a regular file in the sandbox")
+        with source.open("rb") as src, target.open("wb") as dst:
+            copy_chunks(iter(lambda: src.read(CHUNK_SIZE), b""), dst, max_bytes=max_bytes)
 
     def file_size(self, sandbox_id: str, path: str) -> int:
         target = self._translate(sandbox_id, path)

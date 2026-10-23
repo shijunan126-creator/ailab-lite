@@ -231,3 +231,13 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 ## 2026-10-23 GitHub 首页 README 优先级
 
 - GitHub 首页优先读取 `.github/README.md`，然后才是根目录 `README.md`、`docs/README.md`。新增 CI 说明时误用 `.github/README.md`，导致原项目说明虽然没删却从首页被替换。CI 说明改为 `.github/CI.md`；今后不要把普通维护文档命名为 `.github/README.*`。可通过 GitHub `GET /repos/{owner}/{repo}/readme` 返回的 path 核对实际展示文件。
+
+
+## 2026-10-23 F8 Broker 流式传输
+
+- `PlatformClient.download_file` 复用 Worker 流式路径时必须增加 run_id / preview_job 绑定，不能为了流式化丢服务授权上下文。API 错误页也按小块读取，避免错误体完整缓冲。
+- OpenSandbox 1.1.1 的公开 `files.write_file(path, binary IOBase)` 与 `read_bytes_stream` 已支持流式；前者按64KiB读，后者需要显式 close（超限也一样）。不要传 bytes 或调用 read_bytes。新上传先写同目录随机文件，成功后 mv；清理失败不能掩盖原传输错误。
+- 临时文件放 data_dir 的磁盘卷，不能默认放 /tmp（可能是tmpfs）；按owner隔离，单Broker成功领取所有权后回收前任崩溃遗留。每次正常/异常/取消均关闭流并删除本地spool。`CancelledError` 是 BaseException，acquire 只捕获 Exception 会留下 creating 沙箱；已补红绿回归。
+- 文件 stat 只是预检：交付过程中可增长，provider 必须按实际字节限额；最终 size/hash 来自冻结的本地文件。Docker 直接用文件描述符接 exec 流，不增加 tar 打包；get 用 limit+1 检测超限，put 原子替换。
+- RSS 与cgroup内存不是同一指标：双路100MiB扩限压力的RSS约68MiB，但文件页缓存触发384MiB cgroup reclaim（max事件，无OOM）；不能用低RSS声称内存还有同量余量。压测必须保持真实sandbox1536MiB预算：早期夹具误设256MiB，在50MiB不可压缩快照上传时sandbox本身OOM，不能误归为Broker OOM。
+- 并发探针须先 manager.recover，与HTTP lifespan一致；直接并发首次create会正确碰到 recovering 准入拒绝，不能当正常流式并发故障。真实测量边界与原始曲线见本轮 Broker streaming 审查记录。

@@ -6,11 +6,15 @@ import hashlib
 import json
 import logging
 import mimetypes
+import re
 import shlex
+import shutil
+import tempfile
 import threading
 import time
 import uuid
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,6 +31,7 @@ from ..ports.capacity import CapacityProvider, StaticCapacityProvider
 from ..ports.lease_store import LIVE_STATES, LeaseStore
 from ..sandbox import ExecResult, SandboxError, get_provider
 from ..sandbox.base import LeaseHandle, SandboxResource, SandboxSpec
+from ..sandbox.transfer import CHUNK_SIZE, TransferLimitError, copy_chunks
 from ..sandbox_tools import RENDER_PREVIEW
 from ..storage import get_storage
 
@@ -131,6 +136,7 @@ class LeaseManager:
             else redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_connect_timeout=5, socket_timeout=5)
         )
         self.owner = settings.broker_owner
+        self._transfer_root = settings.data_dir / "broker-transfers" / hashlib.sha256(self.owner.encode()).hexdigest()[:20]
         self.store = store if store is not None else RedisLeaseStore(self.redis, self.owner)
         self.capacity = capacity or StaticCapacityProvider()
         self._condition = threading.Condition(threading.RLock())
@@ -250,6 +256,39 @@ class LeaseManager:
         Unlike put_file this is for trusted platform inputs, so it is not bound by the agent's write cap.
         """
         self._provider_call("put_file", lease["provider_ref"], self._checked(path), data)
+
+    @contextmanager
+    def transfer_file(self):
+        # /data is disk-backed in both deployment overlays. /tmp may be tmpfs,
+        # which would merely move the same OOM risk out of the Python heap.
+        root = self._transfer_root
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        with tempfile.TemporaryDirectory(prefix="transfer-", dir=root) as directory:
+            yield Path(directory) / "file"
+
+    def inject_file(self, lease: dict, file_id: str, path: str, **binding) -> None:
+        with self.transfer_file() as local:
+            self.platform.download_file(file_id, local, max_bytes=settings.max_upload_bytes, **binding)
+            self._provider_call(
+                "put_file_from_path", lease["provider_ref"], self._checked(path), local, max_bytes=settings.max_upload_bytes
+            )
+
+    def _download(self, lease: dict, path: str, local: Path, limit: int) -> None:
+        size = self._provider_call("file_size", lease["sandbox_id"], path)
+        if size > limit:
+            raise TransferLimitError(f"file is {size} bytes; the limit is {limit}")
+        self._provider_call("get_file_to_path", lease["sandbox_id"], path, local, max_bytes=limit)
+
+    def store_file(self, lease: dict, path: str, key: str, content_type: str, limit: int) -> tuple[int, str]:
+        with self.transfer_file() as local:
+            self._download(lease, path, local, limit)
+            digest = hashlib.sha256()
+            with local.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(CHUNK_SIZE), b""):
+                    digest.update(chunk)
+                stream.seek(0)
+                self.storage.put_stream(key, stream, content_type, max_bytes=limit)
+            return local.stat().st_size, digest.hexdigest()
 
     @staticmethod
     def default_spec(image: str | None = None, ttl_seconds: int | None = None) -> SandboxSpec:
@@ -377,10 +416,10 @@ class LeaseManager:
                 # only adopt fully staged input, never a partially prepared sandbox.
                 self._provider_call("update_metadata", ref, self._metadata(lease))
                 self._save(lease)
-        except Exception as exc:
+        except BaseException as exc:
             if not isinstance(exc, BrokerOwnershipError):
                 self.release(lease_id, reason="creation_failed")
-            if isinstance(exc, LeaseError):
+            if isinstance(exc, LeaseError) or not isinstance(exc, Exception):
                 raise
             raise LeaseError("could not acquire or prepare sandbox") from exc
         finally:
@@ -411,10 +450,9 @@ class LeaseManager:
                 meta = self.platform.get_file(file_id, run_id=run_id)
                 if meta.get("status") != "ready":
                     raise LeaseError(f"input file {file_id} is {meta.get('status')}")
-                data = self.platform.get_file_bytes(file_id, run_id=run_id)
                 name = _unique_name(_safe_name(meta.get("filename") or file_id), used)
                 path = f"/workspace/inputs/{name}"
-                self.put_input(lease, path, data)
+                self.inject_file(lease, file_id, path, run_id=run_id)
                 injected.append({"file_id": file_id, "filename": name, "path": path})
             lease["inputs"] = injected
             if run.get("workspace_restore_key"):
@@ -468,8 +506,10 @@ class LeaseManager:
         """Unpack the previous turn's workspace. A failure costs the continuity, not the turn."""
         sandbox_id = lease["sandbox_id"]
         try:
-            data = self.storage.get_bytes(key)
-            self._provider_call("put_file", sandbox_id, SNAPSHOT_PATH, data)
+            with self.transfer_file() as local:
+                with self.storage.open_stream(key) as chunks, local.open("wb") as stream:
+                    copy_chunks(chunks, stream, max_bytes=settings.max_workspace_bytes)
+                self._provider_call("put_file_from_path", sandbox_id, SNAPSHOT_PATH, local, max_bytes=settings.max_workspace_bytes)
             res = self._provider_call("exec", sandbox_id, f"tar -xzf {SNAPSHOT_PATH} -C /workspace && rm -f {SNAPSHOT_PATH}", 120)
             if res.exit_code != 0:
                 raise SandboxError(res.stderr[-300:] or f"tar exit {res.exit_code}")
@@ -494,12 +534,13 @@ class LeaseManager:
         if res.exit_code != 0 or not size_line.isdigit():
             raise SandboxError(f"workspace snapshot failed: {res.stderr[-300:]}")
         size = int(size_line)
-        if size > settings.max_workspace_bytes:
-            raise ArtifactRejected(f"workspace is {size} bytes compressed; the limit is {settings.max_workspace_bytes}")
-        data = self._provider_call("get_file", sandbox_id, SNAPSHOT_PATH)
         key = f"workspaces/{lease['run_id']}.tgz"
-        self.storage.put_bytes(key, data, "application/gzip")
-        self._provider_call("exec", sandbox_id, f"rm -f {SNAPSHOT_PATH}", 30)
+        try:
+            size, _ = self.store_file(lease, SNAPSHOT_PATH, key, "application/gzip", settings.max_workspace_bytes)
+        except TransferLimitError as exc:
+            raise ArtifactRejected(str(exc)) from exc
+        finally:
+            self._provider_call("exec", sandbox_id, f"rm -f {SNAPSHOT_PATH}", 30)
         return {"key": key, "size": size}
 
     # ---------------------------------------------------------------- live previews
@@ -547,16 +588,34 @@ class LeaseManager:
                 if result.get("error"):
                     manifest["error"] = str(result["error"])[:300]
                 elif result.get("kind") == "pages":
+                    page_names = result.get("pages", [])
+                    if (
+                        not isinstance(page_names, list)
+                        or not 1 <= len(page_names) <= 40
+                        or any(not isinstance(name, str) or not re.fullmatch(r"p-\d+\.jpg", name) for name in page_names)
+                    ):
+                        raise SandboxError("invalid preview output")
                     names = []
-                    for name in result.get("pages", []):
-                        self.storage.put_bytes(
-                            f"previews/{run_id}/{seq}/{name}", self._provider_call("get_file", sandbox_id, f"{outdir}/{name}"), "image/jpeg"
+                    total = 0
+                    for name in page_names:
+                        size, _ = self.store_file(
+                            lease,
+                            f"{outdir}/{name}",
+                            f"previews/{run_id}/{seq}/{name}",
+                            "image/jpeg",
+                            min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024 - total),
                         )
+                        total += size
                         names.append(f"{seq}/{name}")
                     manifest.update(kind="pages", pages=names)
                 elif result.get("kind") == "sheets":
-                    data = self._provider_call("get_file", sandbox_id, f"{outdir}/sheets.json")
-                    self.storage.put_bytes(f"previews/{run_id}/{seq}/sheets.json", data, "application/json")
+                    self.store_file(
+                        lease,
+                        f"{outdir}/sheets.json",
+                        f"previews/{run_id}/{seq}/sheets.json",
+                        "application/json",
+                        settings.max_sandbox_read_bytes,
+                    )
                     manifest.update(kind="sheets", data=f"{seq}/sheets.json", errors=result.get("errors", []))
                 else:
                     manifest["error"] = "renderer returned nothing usable"
@@ -668,10 +727,9 @@ class LeaseManager:
     def get_file(self, lease_id: str, path: str) -> bytes:
         lease = self._load(lease_id)
         path = self._checked(path)
-        size = self._provider_call("file_size", lease["sandbox_id"], path)
-        if size > settings.max_sandbox_read_bytes:
-            raise SandboxError(f"file too large to read ({size} > {settings.max_sandbox_read_bytes} bytes)")
-        return self._provider_call("get_file", lease["sandbox_id"], path)
+        with self.transfer_file() as local:
+            self._download(lease, path, local, settings.max_sandbox_read_bytes)
+            return local.read_bytes()
 
     def list_files(self, lease_id: str, path: str) -> list[dict]:
         lease = self._load(lease_id)
@@ -685,22 +743,26 @@ class LeaseManager:
         size = self._provider_call("file_size", lease["sandbox_id"], path)
         if size > settings.max_artifact_bytes:
             raise ArtifactRejected(f"{path} is {size} bytes; the limit is {settings.max_artifact_bytes}")
-        data = self._provider_call("get_file", lease["sandbox_id"], path)
         name = _safe_name(filename or Path(path).name)
         staging_key = f"staging/{lease_id}/{uuid.uuid4().hex}/{name}"
-        self.storage.put_bytes(staging_key, data, mimetypes.guess_type(name)[0] or "application/octet-stream")
+        try:
+            size, sha256 = self.store_file(
+                lease, path, staging_key, mimetypes.guess_type(name)[0] or "application/octet-stream", settings.max_artifact_bytes
+            )
+        except TransferLimitError as exc:
+            raise ArtifactRejected(str(exc)) from exc
         payload = {
             "run_id": lease["run_id"],
             "staging_key": staging_key,
             "filename": name,
             "content_type": mimetypes.guess_type(name)[0] or "application/octet-stream",
-            "size": len(data),
-            "sha256": hashlib.sha256(data).hexdigest(),
+            "size": size,
+            "sha256": sha256,
             "role": role,
         }
         try:
             delivered = self.platform.commit_artifact(payload)
-            metrics.ARTIFACT_BYTES.inc(len(data))
+            metrics.ARTIFACT_BYTES.inc(size)
             return delivered
         except Exception:
             log.exception("artifact commit failed for lease %s staging=%s", lease_id, staging_key)
@@ -718,6 +780,11 @@ class LeaseManager:
             if self._fenced or not self.store.claim_owner(self._token, settings.broker_lock_ttl_seconds):
                 self._fenced = True
                 raise BrokerOwnershipError("another live Broker owns this instance group")
+            if not self._started:
+                # Only the new fenced owner may reclaim spools left by a killed
+                # predecessor. Never sweep another owner or live transfers.
+                if self._transfer_root.exists():
+                    shutil.rmtree(self._transfer_root)
             self._started = True
             # Owner heartbeat must run even while a slow provider is being reconciled.
             if self._start_background:

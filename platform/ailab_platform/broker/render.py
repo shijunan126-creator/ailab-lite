@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import shlex
@@ -49,8 +48,7 @@ class LibraryRenderer:
         source = "/workspace/inputs/input" + suffix
 
         def prepare(lease: dict) -> None:
-            data = platform.get_file_bytes(file_id, job="preview", preview_job=job_id, max_bytes=settings.max_upload_bytes)
-            self.manager.put_input(lease, source, data)
+            self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)
             self.manager.put_input(lease, "/workspace/.ailab/render_preview.py", SCRIPT.read_bytes())
 
         principal = LeasePrincipal(user_id="system:preview", run_id=f"preview:{job_id}", system=True)
@@ -95,13 +93,16 @@ class LibraryRenderer:
             for name in names:
                 if time.monotonic() - started >= 120:
                     raise LeaseError("render_timeout")
-                data = self.manager.get_file(lease_id, f"/workspace/.ailab/preview/{name}")
-                total += len(data)
-                if total > 32 * 1024 * 1024:
-                    raise LeaseError("preview_output_limit")
                 key = f"derived/{file_id}/preview/{name}"
-                self.manager.storage.put_bytes(key, data, mime)
-                assets[name] = {"key": key, "content_type": mime, "sha256": hashlib.sha256(data).hexdigest()}
+                size, digest = self.manager.store_file(
+                    self.manager.get(lease_id),
+                    f"/workspace/.ailab/preview/{name}",
+                    key,
+                    mime,
+                    min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024 - total),
+                )
+                total += size
+                assets[name] = {"key": key, "content_type": mime, "sha256": digest}
             return {"preview": preview, "assets": assets}
         finally:
             self.manager.release(handle, reason="preview_complete")
