@@ -80,8 +80,16 @@ class RedisQueue(JobQueue):
 
     def __init__(self, url: str):
         import redis
+        from redis.backoff import NoBackoff
+        from redis.retry import Retry
 
         self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=15, socket_connect_timeout=5)
+        # Health requests must finish within the probes' ten-second timeout even
+        # when Redis accepts connections but stops answering. Queue I/O keeps its
+        # longer blocking-read budget; health checks never retry a stalled socket.
+        self._health_client = redis.Redis.from_url(
+            url, socket_timeout=1, socket_connect_timeout=1, retry=Retry(NoBackoff(), 0), max_connections=1
+        )
         self._groups: set[str] = set()
         self._claim_cursors: dict[str, str] = {}
 
@@ -169,7 +177,7 @@ class RedisQueue(JobQueue):
 
     def ping(self) -> bool:
         try:
-            return bool(self.client.ping())
+            return bool(self._health_client.ping())
         except Exception:
             return False
 
