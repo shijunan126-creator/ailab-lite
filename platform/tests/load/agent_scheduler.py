@@ -12,10 +12,12 @@ import statistics
 import sys
 import time
 
+from tests import conftest  # noqa: F401 -- isolate settings before service imports
+
+# isort: split
 from ailab_platform.agent import main
 from ailab_platform.config import settings
 from ailab_platform.queue import InMemoryQueue
-from tests import conftest  # noqa: F401 -- isolate settings before service imports
 
 
 def rss_mib():
@@ -30,6 +32,8 @@ async def measure(work_seconds):
     running, peak = 0, 0
     work_ready, work_done = asyncio.Event(), asyncio.Event()
     baseline = rss_mib()
+    cpu_start = resource.getrusage(resource.RUSAGE_SELF)
+    started = time.monotonic()
     chats_done = asyncio.Event()
 
     async def process(self, run_id, attempt=1):
@@ -38,7 +42,8 @@ async def measure(work_seconds):
         peak = max(peak, running)
         try:
             if run_id.startswith("work"):
-                work_ready.set()
+                if running == 2:
+                    work_ready.set()
                 await asyncio.sleep(work_seconds)
                 work_done.set()
             else:
@@ -70,6 +75,13 @@ async def measure(work_seconds):
             "rss_baseline_mib": baseline,
             "rss_peak_mib": rss_mib(),
             "rss_increment_mib": rss_mib() - baseline,
+            "cpu_seconds": (
+                resource.getrusage(resource.RUSAGE_SELF).ru_utime
+                + resource.getrusage(resource.RUSAGE_SELF).ru_stime
+                - cpu_start.ru_utime
+                - cpu_start.ru_stime
+            ),
+            "wall_seconds": time.monotonic() - started,
         }
         assert peak <= settings.agent_concurrency
         assert result["chat_queue_p95_seconds"] < 1
