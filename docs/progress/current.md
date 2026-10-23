@@ -13,6 +13,7 @@
 - 工作树：仓库主 checkout `/Users/michael/Developer/ailab-lite`，分支 `feat/arch-hardening`；base 为 `origin/main`。
 - 已整合先前各功能分支及真实组件验收。最新 main `951ec16`（SearXNG 联网检索）已通过 merge commit `6f7e377` 合入本分支；采用 merge 保留祖先关系。
 - 本轮补齐检索在新部署结构中的资源、Service 地址和 Agent 专用 ingress，未恢复已废弃的单文件清单。进度入口、路线图与 AGENTS 接续要求已建立。
+- 已推送 `origin/feat/arch-hardening`，创建 [PR #30](https://github.com/shijunan126-creator/ailab-lite/pull/30) → `main`。2026-10-23 16:12 +08 核对：OPEN、MERGEABLE，CI 正在运行；未合入 main。后续发布跟进文档提交不改变已测代码。
 - 能力逐项状态以 [状态矩阵](../architecture/status-matrix.md) 为准；本轮验证与 PR 发布记录见 [交付记录](updates/2026-10-23-main-integration.md)。已有 `.DS_Store` 保留，不纳入本轮新增提交。
 
 ## 保留的问题

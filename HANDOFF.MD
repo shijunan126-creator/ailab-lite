@@ -219,3 +219,4 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - main 的 SearXNG 改动原在已删除的 `platform/deploy/k8s/platform.yaml`；解决 modify/delete 冲突不能只删旧文件。检索资源已迁入 `base/search`，共享 config 显式设 `AILAB_SEARXNG_URL=http://platform-searxng:8080`（默认是 localhost），default-deny 下另加仅 Agent 可访问的 ingress。回归见 `platform/tests/test_web_deployment.py`，缺失配置时红、集成后绿。应用代码升级不额外重启检索服务。
 - 新 session 以 `docs/progress/current.md` 接续；历史验收留在 reviews/updates，计划在 roadmap/design，能力状态只在 status-matrix。用户已要求剩余功能先暂停，不能把设计文档里的阶段顺序当作开工授权。
 - Broker 并发 OOM 是按单次峰值推算的风险，现有证据没有双请求并发 OOMKill 实测；报告应区分测量值与推断。Redis health pool 后续在 `826899c` 去掉了连接数上限，旧真实组件报告中的“最多1连接”只描述当时版本。
+- 发布包含 workflow 的分支时，HTTPS OAuth token 可能缺 `workflow` scope；本轮已验证当前账号 SSH 能写仓库，用显式 `git push git@github.com:shijunan126-creator/ailab-lite.git HEAD:feat/arch-hardening`，并核对 GitHub ref SHA。不要通过删 CI 变更绕过权限；临时 `-c remote.origin.url=...` 可能叠加原 URL，导致先报 HTTPS 失败再 SSH 成功，不能仅凭整体退出码判断远端结果。

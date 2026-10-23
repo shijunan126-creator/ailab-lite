@@ -38,4 +38,8 @@ PostgreSQL 命令在上述 Python 命令前指定 `AILAB_TEST_REDIS_URL=redis://
 
 ## 发布与接续
 
-PR 发布后补链接与远端状态核对时间。剩余功能继续暂停；下一 session 先看 [current.md](../current.md)，重查 PR / CI，不能从旧设计自动开工。
+已推送 `origin/feat/arch-hardening`，创建 [PR #30](https://github.com/shijunan126-creator/ailab-lite/pull/30) → `main`，并登记到当前 T3 thread。2026-10-23 16:12 +08 核对：OPEN、MERGEABLE；python/portal/shell/e2e 检查正在运行，不能声称远端 CI 已通过。文档主体提交 `edb70b4`；其后的发布记录补充仅改 Markdown，不改变已测代码。
+
+HTTPS OAuth 凭据缺少 `workflow` scope，推送工作流文件时被拒；已使用当前账号现有 SSH 身份成功推送，并用 GitHub ref 确认远端 SHA 与本地一致，未删除工作流变更或扩大 token 权限。
+
+剩余功能继续暂停；下一 session 先看 [current.md](../current.md)，重查 PR / CI，不能从旧设计自动开工。
