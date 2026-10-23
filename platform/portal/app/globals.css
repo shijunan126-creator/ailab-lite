@@ -898,3 +898,6 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .quota-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 550; }
 .quota-banner span { margin-left: auto; font-weight: 400; opacity: .85; }
 .quota-banner.over { background: var(--danger-soft); color: var(--danger); }
+.auth-form .sso { display: flex; justify-content: center; width: 100%; }
+.auth-or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--faint); font-size: 12px; }
+.auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }

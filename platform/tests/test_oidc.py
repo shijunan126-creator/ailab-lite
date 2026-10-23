@@ -267,3 +267,16 @@ def test_login_backend_options_and_settings_validation(issuer, monkeypatch):
             oidc_client_id="c",
             oidc_redirect_uri="https://portal.example/api/auth/oidc/callback",
         )
+
+
+@pytest.mark.parametrize(("backend", "oidc", "password"), [("local", False, True), ("oidc", True, False), ("both", True, True)])
+def test_login_options_say_which_methods_are_offered(monkeypatch, backend, oidc, password):
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api.main import app
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "auth_backend", backend)
+    with TestClient(app) as client:
+        body = client.get("/v1/auth/options").json()
+    assert body["oidc"]["enabled"] is oidc and body["password"] is password

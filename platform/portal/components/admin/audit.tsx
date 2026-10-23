@@ -4,32 +4,33 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { admin, AuditEntry, reason } from "../../lib/admin";
 import { formatDate } from "../../lib/format";
 
-// Known actions read as words; anything newer shows its code until it is named here.
+// The API's action names (exact match); anything newer shows its code until it is named here.
 const ACTION_LABEL: Record<string, string> = {
   "auth.login": "登录",
-  "auth.login_failed": "登录失败",
   "auth.logout": "退出登录",
   "auth.register": "注册",
-  "user.create": "新建用户",
-  "user.update": "修改用户",
-  "user.disable": "停用用户",
-  "user.enable": "启用用户",
-  "user.password_reset": "重置密码",
-  "user.roles": "修改角色",
-  "department.create": "新建部门",
-  "department.update": "修改部门",
-  "department.delete": "删除部门",
-  "quota_policy.create": "新建额度",
-  "quota_policy.update": "修改额度",
-  "quota_policy.delete": "删除额度",
+  "users.create": "新建用户",
+  "users.update": "修改用户",
+  "users.password": "修改密码",
+  "users.list": "查看用户",
+  "departments.create": "新建部门",
+  "departments.update": "修改部门",
+  "departments.delete": "删除部门",
+  "departments.list": "查看部门",
+  "quota-policies.create": "新建额度",
+  "quota-policies.update": "修改额度",
+  "quota-policies.delete": "删除额度",
+  "quota-policies.list": "查看额度",
+  "usage.list": "查看用量",
+  "audit.list": "查看审计",
 };
 
-const FILTERS: [string, string][] = [
-  ["", "全部操作"],
-  ["auth", "登录与注册"],
-  ["user", "用户"],
-  ["department", "部门"],
-  ["quota_policy", "额度"],
+const GROUPS: [string, string[]][] = [
+  ["账号", ["auth.login", "auth.logout", "auth.register"]],
+  ["用户", ["users.create", "users.update", "users.password"]],
+  ["部门", ["departments.create", "departments.update", "departments.delete"]],
+  ["额度", ["quota-policies.create", "quota-policies.update", "quota-policies.delete"]],
+  ["查看", ["users.list", "departments.list", "quota-policies.list", "usage.list", "audit.list"]],
 ];
 
 export default function AuditSection() {
@@ -64,10 +65,15 @@ export default function AuditSection() {
     <section className="admin-section">
       <div className="admin-toolbar">
         <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="按操作筛选">
-          {FILTERS.map(([k, label]) => (
-            <option key={k} value={k}>
-              {label}
-            </option>
+          <option value="">全部操作</option>
+          {GROUPS.map(([group, actions]) => (
+            <optgroup key={group} label={group}>
+              {actions.map((k) => (
+                <option key={k} value={k}>
+                  {ACTION_LABEL[k]}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </div>
@@ -81,11 +87,9 @@ export default function AuditSection() {
               <span className="col who">{e.actor?.name || e.actor_service || "系统"}</span>
               <span className="grow">
                 <span className="name">{ACTION_LABEL[e.action] || e.action}</span>
-                <span className="meta">
-                  {e.target_type} · {e.target_id}
-                </span>
+                <span className="meta">{[e.target_type, e.target_id].filter(Boolean).join(" · ")}</span>
               </span>
-              <span className={`status ${e.outcome === "success" || e.outcome === "ok" ? "succeeded" : "failed"}`}>{e.outcome === "success" || e.outcome === "ok" ? "成功" : e.outcome === "denied" ? "拒绝" : "失败"}</span>
+              <span className={`status ${e.outcome === "success" ? "succeeded" : "failed"}`}>{e.outcome === "success" ? "成功" : "失败"}</span>
             </button>
             {open === e.id ? (
               <pre className="audit-detail">{JSON.stringify({ request_id: e.request_id, ...(e.detail || {}) }, null, 2)}</pre>

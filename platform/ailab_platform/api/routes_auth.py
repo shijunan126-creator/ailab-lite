@@ -79,6 +79,7 @@ def auth_options() -> dict:
     return {
         "registration": registration_mode(),
         "oidc": {"enabled": settings.auth_backend in {"oidc", "both"}, "label": settings.oidc_label},
+        "password": settings.auth_backend in {"local", "both"},
     }
 
 
