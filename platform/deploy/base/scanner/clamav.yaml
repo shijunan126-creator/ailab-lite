@@ -16,7 +16,8 @@ spec:
     spec:
       containers:
         - name: clamd
-          image: clamav/clamav:1.4
+          # ClamAV 1.5.4 Debian, multiarch index (amd64/arm64/ppc64le).
+          image: clamav/clamav-debian@sha256:d7ede3cefeaf3b8a72ebcdee849d13f504bbca3f3b3cfade5bc7b6ee06a4f62c
           ports: [{containerPort: 3310}]
           resources:
             requests: {cpu: 100m, memory: 1536Mi}
