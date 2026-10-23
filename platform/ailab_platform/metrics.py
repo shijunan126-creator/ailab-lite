@@ -40,6 +40,7 @@ SANDBOX_ACQUIRE_SECONDS = Histogram(
 SANDBOX_EXEC_SECONDS = Histogram("ailab_sandbox_exec_seconds", "Command execution in a sandbox", ["provider"], buckets=_SLOW)
 SANDBOX_CAPACITY_REJECTIONS = Counter("ailab_sandbox_capacity_rejections_total", "Lease requests turned away because all slots were taken")
 ARTIFACT_BYTES = Counter("ailab_artifact_bytes_total", "Bytes delivered from sandboxes")
+WORKSPACE_SNAPSHOTS_EXPIRED = Counter("ailab_workspace_snapshots_expired_total", "Workspace snapshots deleted by their TTL")
 
 AGENT_RUN_SECONDS = Histogram("ailab_agent_run_seconds", "Time the Agent spent on one run", ["outcome"], buckets=_SLOW)
 AGENT_RECOVERED = Counter("ailab_agent_recovered_total", "Runs restarted because an earlier attempt did not finish")

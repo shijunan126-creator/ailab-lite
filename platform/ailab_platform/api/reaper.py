@@ -25,6 +25,7 @@ from ..events import append_event
 from ..models import FileObject, FileStatus, Run, RunStatus
 from ..queue import JobQueue, get_queue, run_lock_key
 from ..run_state import transition_run
+from ..storage import get_storage
 
 log = logging.getLogger("ailab.api.reaper")
 
@@ -83,6 +84,55 @@ def reap_once(db: Session, queue: JobQueue, now: datetime | None = None) -> dict
 
 
 REAPER_LOCK = "ailab:lock:reaper"
+WORKSPACE_GC_LOCK = "ailab:lock:workspace-gc"
+
+
+def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
+    """Delete workspace snapshots whose object-store timestamp is older than the TTL.
+
+    The TTL is enforced on the object store itself (S3 LastModified / local mtime),
+    so a missing or stale database flag cannot keep a snapshot alive forever.
+    """
+    if settings.workspace_ttl_days <= 0:  # 0 = keep snapshots (until a newer turn replaces them)
+        return 0
+    now = now or datetime.now(UTC)
+    cutoff = now - timedelta(days=settings.workspace_ttl_days)
+    storage = storage or get_storage()
+    removed = 0
+    for item in storage.list_prefix("workspaces/"):
+        modified = item.modified_at
+        if modified.tzinfo is None:  # a custom backend may return a naive timestamp
+            modified = modified.replace(tzinfo=UTC)
+        if modified >= cutoff:
+            continue
+        try:
+            storage.delete(item.key)
+        except Exception:
+            log.warning("could not delete expired workspace %s", item.key, exc_info=True)
+            continue
+        removed += 1
+    if removed:
+        metrics.WORKSPACE_SNAPSHOTS_EXPIRED.inc(removed)
+        log.info("deleted %d workspace snapshot(s) older than %d days", removed, settings.workspace_ttl_days)
+    return removed
+
+
+def _workspace_tick() -> int:
+    interval = max(60, settings.workspace_cleanup_interval_seconds)
+    queue = get_queue()
+    # Several API replicas may run the janitor; one pass per interval is enough.
+    if queue.acquire_lock(WORKSPACE_GC_LOCK, max(1, int(interval * 0.8))) is None:
+        return 0
+    return purge_expired_workspaces()
+
+
+async def workspace_cleanup_forever() -> None:
+    while True:
+        await asyncio.sleep(max(60, settings.workspace_cleanup_interval_seconds))
+        try:
+            await asyncio.to_thread(_workspace_tick)
+        except Exception:
+            log.exception("workspace cleanup pass failed")
 
 
 def reap_guarded(queue: JobQueue, session_factory=SessionLocal) -> dict[str, int] | None:

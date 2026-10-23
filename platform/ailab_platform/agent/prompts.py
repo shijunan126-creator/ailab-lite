@@ -74,6 +74,12 @@ def system_prompt(disabled: frozenset[str] = frozenset()) -> str:
     return BASE_PROMPT.replace("{skills}", index or "（用户关闭了所有技能：需要做文件时，用沙箱里的 Python 库自己完成）")
 
 
+WORKSPACE_EXPIRED_NOTE = """
+
+# 上一轮的工作区已过期
+这个对话上一轮留下的文件（规格文件、脚本、outputs）超过了保留期，已被平台清理，这一轮的沙箱里没有它们。
+用户要在原文件上修改时，先告诉他这一点；已交付的文件还在他的资料库里，可以请他作为附件重新上传，或者按对话内容重新生成。"""
+
 CHAT_MODE_NOTE = """
 
 # 本轮是「对话」模式

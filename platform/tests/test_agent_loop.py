@@ -406,6 +406,9 @@ def test_a_conversation_turn_saves_its_workspace_only_if_it_used_a_sandbox() -> 
         ScriptedLLM([LLMResponse(tool_calls=[work]), LLMResponse(content="ok")]), platform=ConversationPlatform(), broker=broker
     )
     assert broker.snapshots == 1 and platform.statuses[-1][1]["result"]["workspace_saved"] is True
+    saved = platform.statuses[-1][1]["result"]
+    assert saved["workspace_bytes"] == 10
+    assert saved["workspace_saved_at"]
 
 
 def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
@@ -507,3 +510,13 @@ def test_cancel_checks_use_the_light_state_endpoint() -> None:
     platform = Counting()
     _run(ScriptedLLM([LLMResponse(tool_calls=[step]), LLMResponse(content="ok")]), platform=platform)
     assert platform.light >= 2 and platform.full == 1  # the run is read in full once, at the start
+
+
+def test_the_model_is_told_when_the_last_workspace_expired() -> None:
+    class Expired(ConversationPlatform):
+        async def get_run(self, run_id):
+            return {**(await super().get_run(run_id)), "workspace_expired": True}
+
+    llm = ScriptedLLM([LLMResponse(content="ok")])
+    _run(llm, platform=Expired())
+    assert "上一轮的工作区已过期" in llm.seen_messages[0][0]["content"]
