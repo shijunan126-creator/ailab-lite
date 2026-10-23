@@ -25,6 +25,7 @@ from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, llm_for
 from ..model_policy import ModelPolicy, estimator
 from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
+from ..telemetry import span
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
 from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
@@ -401,17 +402,18 @@ class AgentLoop:
         try:
             if await self._is_canceled(run_id):
                 raise RunCanceled()
-            response = await self._interruptible(
-                run_id,
-                llm.chat_stream(
-                    messages,
-                    offered,
-                    model,
-                    user_id=run.get("user_id"),
-                    on_text=on_text,
-                    on_reasoning=on_reasoning,
-                ),
-            )
+            with span("model.call", model=model_label):
+                response = await self._interruptible(
+                    run_id,
+                    llm.chat_stream(
+                        messages,
+                        offered,
+                        model,
+                        user_id=run.get("user_id"),
+                        on_text=on_text,
+                        on_reasoning=on_reasoning,
+                    ),
+                )
         except BaseException as exc:
             if isinstance(exc, LLMError):
                 exc.output_started = exc.output_started or call.emitted or bool(call.output_bytes)
@@ -548,10 +550,12 @@ class AgentLoop:
             if wanted in turn.disabled_skills:
                 raise ToolError(f"技能 {wanted} 已被用户关闭，不能使用；用沙箱里的 Python 库自己完成")
             if wanted in turn.personal:
-                result = {"ok": True, "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))}
+                with span("agent.tool", tool=tool):
+                    result = {"ok": True, "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))}
             else:
                 lease_id = await self._ensure_lease(turn, run_id) if call.name in SANDBOX_TOOLS else (turn.lease_id or "")
-                result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker))
+                with span("agent.tool", tool=tool):
+                    result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker))
         except RunCanceled:
             raise
         except ToolError as exc:
