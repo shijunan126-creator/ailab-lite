@@ -227,3 +227,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - E2E fixture 已执行 Portal Node tests 与隔离 production build；不另起重复 build job。双库 matrix 不互相 fail-fast，S3 不依赖 Python 的成败；最终稳定 `CI` 明确检查选中项，不允许意外 skip 变绿。
 - `test_parser_wall_timeout_kills_child` 原来对极小文件设 1ms 超时；Linux coverage 下父进程可能晚于 child 退出才被调度，测试不一定触发 watchdog。现在启动真实阻塞 child，验证超时和 SIGKILL/reap，不靠解析器速度。
 - Actions 的 job 级 env 不允许 `runner.temp` context，改在 step 写 GITHUB_ENV；actionlint 会捕获此类表达式错误。CI MinIO 不再拉失效 tag，改官方固定源码+SHA256与二进制缓存；版本/校验和/冷缓存验收必须同步。
+
+## 2026-10-23 GitHub 首页 README 优先级
+
+- GitHub 首页优先读取 `.github/README.md`，然后才是根目录 `README.md`、`docs/README.md`。新增 CI 说明时误用 `.github/README.md`，导致原项目说明虽然没删却从首页被替换。CI 说明改为 `.github/CI.md`；今后不要把普通维护文档命名为 `.github/README.*`。可通过 GitHub `GET /repos/{owner}/{repo}/readme` 返回的 path 核对实际展示文件。

@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 DOC_FILES = {
-    ".github/README.md",
+    ".github/CI.md",
     "README.md",
     "AGENTS.md",
     "CLAUDE.md",
