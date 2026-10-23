@@ -268,7 +268,7 @@ class MockLLM(LLMClient):
         script, closing = None, ""
         system = str(messages[0].get("content") or "") if messages else ""
         picked = next((k for k in ("pptx", "xlsx") if f"本轮已选技能：{k}" in system), "")
-        if not tools:  # chat mode: words only
+        if "exec" not in {t.get("function", {}).get("name") for t in tools or []}:  # no sandbox offered (chat): words only
             pass
         elif picked == "pptx" or _wants_ppt(prompt):
             script, closing = _PPT, "已完成：演示文稿已生成并交付到资料库，右侧可以预览。想调整哪一页、换什么配色，直接告诉我。"
