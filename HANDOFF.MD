@@ -92,7 +92,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 分支 `arch/w1-ops` 从 `6666573` 建立；不推送。`Storage` Protocol 在 `ports/storage.py`，原 `storage` 导入仍可用；`put_stream(..., max_bytes=...)` 原子限额，`open_stream` 必须用 with（异常/提前结束也关闭），`list_prefix` 返回 `ObjectPage(items,cursor)`，最大 1000。仅遍历一页不会遍历全桶；workspace GC 已改分页。Local copy 先 pin 文件描述符，避免 signed key 被替换后读取不同 inode。S3 spool 使用磁盘并关 multipart 线程；尚未在真实 S3 验收。
 - Redis `XAUTOCLAIM` 必须续用返回游标：每次从 0 开始会被前面的活跃 pending 永久挡住；`timeout=0` 不可传 Redis `BLOCK 0`（无限阻塞）。内存队列也序列化 payload，避免生产者/消费者突变影响重投。
-- 新迁移 `0012_lifecycle.py`，`down_revision="0008"`，新增 `lifecycle_deletions` 与五个 GC 索引；双库升级/降级/漂移及 EXPLAIN 验证。合并 A 的 0009 等迁移时需合并 Alembic heads；会话 purge 当前清理 RunEvent/Artifact/ModelUsage/Run，必须整合 A 新账本/outbox/reservation/checkpoint 外键及保留要求，不能直接套旧删除表清单。
+- 迁移 `0010_lifecycle.py`（合并后编号）新增 `lifecycle_deletions` 与 GC 索引，并去掉 model_usage → runs 的外键；会话 purge 清理 RunEvent/Artifact/Run，保留账本（见下文“合并 ledger 与 lifecycle”）。
 - GC 按用户锁检查 presign，至少等签名 900 秒加宽限；完成后的独立 obj_* 冻结对象不作为原始 staging 删除。DB 删除与对象删除意图同事务提交，存储失败重试；会话和事件分批，prefix 物理删除有总预算。固定指标 kind，不放用户/run/file。配置默认：batch100、间隔3600s、presign/orphan86400s、events/conversation30d、trash30d（只预留），workspace 仍3d。详见 backup-restore runbook。
 - 备份 SQLite 用 online backup；PG 导出 snapshot 给 pg_dump 与引用清单共用；对象 JSONL 按块复制/哈希，不硬链接，脱敏 models.toml 的字面凭据含注释也必须清掉。`backup.json` 只在全部 verify 后写入。恢复拒绝非空目录；PG 先恢复 SQL，运维显式导入新空库。跨 DB/S3 不能原子快照，确定性备份窗口要停写/GC；RPO/RTO 必须实际数据演练，不能沿用目标架构数字。
 - 部署改为 `platform/deploy/base` + `overlays/dev|lite`；lite 命令仍 `sudo ./deploy.sh`，`--dry-run` 无需集群/不会部署。API NodePort 改由 public nginx 网关 allow-list `/v1/`；内部服务 ClusterIP，Broker DNS 独立端点。base NetworkPolicy 用 k3s 自带控制器；lite Broker hostNetwork 不受可移植 Pod policy 保证，8081/8090 需宿主防火墙。dev PG 独立；lite 保留 SQLite 数据兼容，独立升级 DB 要迁移。ClamAV slot 在 base/scanner，C 加资源与 Worker-only policy。PVC lite40Gi/dev20Gi，旧 local-path PVC 不能假定可扩容；容量设置须与实际盘/PVC一起核验。
@@ -113,7 +113,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 ## 2026-10-23 合并 ledger 与 lifecycle
 
 - 账本不引用 runs：`model_usage.run_id`、`usage_reservations.run_id` 是普通字符串，不是外键（0012 删除旧 FK）。软删对话 30 天后清除 runs/events/artifacts，但它们的用量仍计入额度窗口、管理报表与对账；不要再在 purge 里删 `ModelUsage`。SQLite 上 FK 无名，迁移用 batch 的 `naming_convention` 命名后再删；model_usage 无表引用，batch 重建安全。
-- 迁移链：0008 → 0009（ledger）→ 0012（lifecycle）。后续分支均以 down_revision="0008" 起草，合并时按顺序重挂。
+- 迁移链最终见“合并 C / G / I 的集成点”。
 
 ## 2026-10-23 T03/T05 严格配置与服务身份
 
@@ -151,14 +151,14 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 不可信文档/图片/ZIP/skill 检查进受限子进程；Linux AS 192 MiB、CPU 45 秒、墙钟60秒、输出16MiB，macOS AS 不可靠，改 RSS watchdog。Worker Pod 改384MiB，避免只预算子进程而漏算父进程。进程不继承服务密钥环境；ZIP先查2048项/128MiB/200倍限制。
 - read_only Excel 可能没有 max_row/max_column（write_only 生成的文件就是例子），必须 calculate_dimension；逐格 ws.cell 会反复扫描 XML，改成两个 iter_rows 流并行读。复用 renderer.sheets(recalculate=False)，Worker 不能因为宿主有 soffice 就调用它。流式模式的列宽/合并/图表元数据暂为空，详见审查记录。
 - 短 Unix socket 路径用 /tmp；pytest 的 macOS tmp_path 可能超过 AF_UNIX 的路径长度。OOM 用大量小 XML 节点触发分配；单个巨型文本节点会先撞 libxml 的文本限制，不能用该 corrupt 冒充内存验收。
-- Office/PDF 按需沙箱渲染；RenderContexts 为无 Run 的资料库作业提供公开租约输入上下文，D 合并时必须保留或替换成正式文件任务入口。57页 PDF 验证只产40页并返回总57页。SVG original 强制 CSP sandbox，文本固定 text/plain。
-- 基线没有 outbox；新增保留编号 0011_preview（revision0011/down_revision0008）建 outbox，manifest仍在files.meta。预览请求和副作用同事务，派发失败留记录。API内部文件meta回写补用户锁，避免缩略图回写覆盖同时请求的preview。B/E/A 合并时协调scope、部署与迁移heads。
+- Office/PDF 按需沙箱渲染（合并后改为 `acquire` render 保留槽 + 预览任务绑定，RenderContexts 已删除）。57页 PDF 验证只产40页并返回总57页。SVG original 强制 CSP sandbox，文本固定 text/plain。
+- 迁移 0011_preview 建 outbox，manifest 仍在 files.meta。预览请求和副作用同事务，派发失败留记录。API内部文件meta回写补用户锁，避免缩略图回写覆盖同时请求的preview。
 - 本机测量（合成样本，非生产承诺）：20MiB PPTX 子进程峰值93.9MiB、父进程峰值80.3MiB（峰值和174.3MiB保守预算），10MiB XLSX 子34.6MiB、父79.5MiB（和114.2MiB）；含 Worker import 的耗时1.122/4.096秒。单页 DOCX mock+真实Office工具2.625秒、输出23,437字节、租约全释放；原始 JSON/复现脚本已入库。
 - 最终验证：SQLite + Redis 435 passed / 10 skipped（9项PG专用、1项真实clamd）；PG16 + Redis 444 passed / 1 skipped（clamd）。Ruff check/format、依赖锁一致性、diff check通过；Portal 4测试与生产build通过。未启动真实clamd/Docker/OpenSandbox/k3s，未验证Linux AS与生产内存。测试仅使用本任务Redis16430、PG15430一次性库。
 
 ## 2026-10-23 身份 / 管理 API / OIDC（T13 / T17）
 
-- 新迁移 `0013 -> 0008`，lead 合并时重接；SQLite users 只 ADD/DROP COLUMN，不 batch 重建。带现有 Run/Token、部门父子和审计，开启外键的升/降/再升及双库 schema drift 通过。
+- 迁移 0012_identity；SQLite users 只 ADD/DROP COLUMN，不 batch 重建。带现有 Run/Token、部门父子和审计，开启外键的升/降/再升及双库 schema drift 通过。
 - Principal 附在 request.state，current_user 仍返回 User；认证角色 joinedload 保持原会话列表 ≤3 次 SQL，不能用额外 selectin 查询放宽旧性能门槛。
 - Next 的 req.url 可能把 127.0.0.1/LAN 主机归一成 localhost；OIDC 回调必须返回相对 Location，绝对本地重定向会让 Cookie 跨主机失效。跨站 IdP 回跳已用生产 Portal + Playwright 红/绿验证；流程 Cookie 用 Lax，平台 Cookie 保持 Strict/httpOnly。
 - 部门/策略保持数组响应，keyset 下一页在 X-Next-Cursor；Portal 通用代理必须透传。dept_admin 范围进入 SQL，不能取全量后过滤；无任何管理员内容读取特权。
@@ -169,7 +169,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 ## 2026-10-23 T18 文件版本与回收站（arch/w2-file-versions）
 
 - 基线 `609c1d3` 实际未对同名产物设置 parent/version；本轮在 `user_critical_section` 内按同会话同名产物找链、按整链 max(version)+1 分配。上传从旧版分支也必须取整链最大号，不能 parent.version+1；unique(lineage_id,version) 与单 head 部分唯一索引兜底。
-- `0014` 暂接 `0008`，合并时由 lead 重接。SQLite 只 ADD/DROP COLUMN，不重建 files；旧 parent 链回填根 id，保留全部 file id/FK。历史重复版本号按 (version,created_at,id) 稳定重编号；断链/跨用户/环拒绝迁移。迁移仅改元数据，不连接对象存储；既有超限链在下次写版本时收敛。降级不恢复旧重复编号。
+- 迁移 0013_file_versions。SQLite 只 ADD/DROP COLUMN，不重建 files；旧 parent 链回填根 id，保留全部 file id/FK。历史重复版本号按 (version,created_at,id) 稳定重编号；断链/跨用户/环拒绝迁移。迁移仅改元数据，不连接对象存储；既有超限链在下次写版本时收敛。降级不恢复旧重复编号。
 - 默认 `max_file_versions=10`、`trash_days=30`（配置范围校验）。超限只 tombstone 旧行、提交后清对象，旧 Run/Artifact 引用仍在、content=410。恢复旧版独立 copy 原对象及 derived 前缀，递归改写派生 key；保留扫描状态，不能把 pending/rejected 复制成 READY。回收站里的版本回退保留回收站状态，显式 `/restore` 再解除。
 - 普通/批量 delete（兼容 alias）/项目删除均整链入站；trash 继续计配额，连回收站的 rejected 文件也计；purge 才释放。移动/收藏作用整链，项目计数只算 live head。项目删除分批 200 个 lineage，清 FK 并记 trashed_from_project_id；已经入站的链也要解除 FK，不能让首批更新误清其他批次的 project_id。
 - `DELETE /v1/trash` 按 200 批次清理，请求开始时间作截止，避免追逐不断新增的删除；count 是 lineage 数。batch count 保持输入去重后 id 数。cursor 是上一页末项 file id；保留原 offset。`purge_expired_trash` 每轮最多 200 head，锁内再次确认过期，集成到既有 reaper；函数独立，方便与 E/A 合并。
