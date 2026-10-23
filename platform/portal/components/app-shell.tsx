@@ -34,7 +34,7 @@ function UserMenu({ me }: { me: Me | null }) {
   }
 
   const name = me?.display_name || me?.username || "";
-  const pct = usage ? Math.min(100, Math.round((usage.daily_tokens.used / Math.max(1, usage.daily_tokens.limit)) * 100)) : 0;
+  const pct = usage ? Math.min(100, Math.round(usage.daily_tokens.percent)) : 0; // counts answers still in progress
   return (
     <div className="user-menu" ref={box}>
       {open ? (

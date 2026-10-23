@@ -103,7 +103,15 @@ export type ModelInfo = {
 };
 
 export type Limit = { used: number; limit: number };
-export type Usage = { daily_tokens: Limit; monthly_tokens: Limit; library_bytes: Limit; resets_at_utc: string };
+export type TokenWindow = Limit & { reserved: number; percent: number; resets_at: string }; // weighted tokens; percent counts reservations
+export type UsageAlert = { code: "near_limit" | "exceeded"; window: "daily_tokens" | "monthly_tokens"; resets_at: string };
+export type Usage = {
+  daily_tokens: TokenWindow;
+  monthly_tokens: TokenWindow;
+  library_bytes: Limit;
+  resets_at_utc: string;
+  alerts: UsageAlert[];
+};
 
 export type Info = {
   env: string;

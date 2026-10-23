@@ -11,6 +11,7 @@ import { IconChevronRight, IconFolder } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane from "./preview-pane";
+import QuotaBanner from "./quota-banner";
 import Turn, { Item, reduceEvent } from "./turn";
 
 function useModels() {
@@ -242,6 +243,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   const showPane = paneOpen && previews.length > 0;
   const composer = (
+    <>
+    <QuotaBanner refresh={streaming} />
     <Composer
       models={models}
       model={model}
@@ -255,6 +258,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       projectId={projectId}
       initialFiles={initialFiles}
     />
+    </>
   );
 
   return (
