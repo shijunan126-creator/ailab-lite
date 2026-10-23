@@ -1,69 +1,87 @@
-"""Object storage abstraction.
-
-Dev uses a local directory; T4 swaps in SeaweedFS/S3 with the same interface.
-Business code only deals in opaque keys such as ``runs/<run>/<file>/x.pptx``.
-"""
+"""Local and S3 adapters for the bounded Storage port."""
 
 from __future__ import annotations
 
+import hashlib
+import heapq
+import json
 import os
-import shutil
+import tempfile
 import uuid
-from abc import ABC, abstractmethod
-from collections.abc import Iterator
-from dataclasses import dataclass
+from collections.abc import Iterable, Iterator
+from contextlib import closing, contextmanager
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
+from typing import BinaryIO
 
 from .config import settings
+from .ports.storage import ObjectInfo, ObjectPage, Storage, StoredObject
+
+CHUNK_SIZE = 64 * 1024
 
 
-@dataclass(frozen=True)
-class StoredObject:
-    key: str
-    size: int
-    modified_at: datetime
+def _safe_key(key: str) -> str:
+    if not key or key.startswith("/") or "\\" in key or any(p in ("", ".", "..") for p in key.split("/")):
+        raise ValueError(f"invalid storage key: {key!r}")
+    if PurePosixPath(key).parts[0] == ".metadata":
+        raise ValueError("storage metadata namespace is reserved")
+    return key
 
 
-class Storage(ABC):
-    @abstractmethod
-    def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None: ...
+def _prefix(prefix: str) -> str:
+    return _safe_key(prefix.rstrip("/")) + ("/" if prefix.endswith("/") else "") if prefix else ""
 
-    @abstractmethod
-    def get_bytes(self, key: str) -> bytes: ...
 
-    def list_prefix(self, prefix: str) -> list[StoredObject]:
-        """Objects under a prefix, with their size and last-modified time.
+def _chunks(source: Iterable[bytes] | BinaryIO, max_bytes: int) -> Iterator[bytes]:
+    if max_bytes < 0:
+        raise ValueError("max_bytes must be nonnegative")
+    total = 0
+    chunks = iter(lambda: source.read(CHUNK_SIZE), b"") if hasattr(source, "read") else iter(source)
+    for chunk in chunks:
+        if not isinstance(chunk, bytes):
+            raise TypeError("storage streams must yield bytes")
+        total += len(chunk)
+        if total > max_bytes:
+            raise ValueError(f"object exceeds {max_bytes} bytes")
+        yield chunk
 
-        Only the workspace TTL janitor needs this; a custom storage can keep
-        the default and opt out of object-level expiry.
-        """
-        return []
+
+class _StorageMethods:
+    def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+        self.put_stream(key, [data], content_type, max_bytes=len(data))
 
     def put_file(self, key: str, path: str | Path, content_type: str = "application/octet-stream") -> None:
-        """Upload a file without materializing it as one bytes object (default fallback)."""
-        self.put_bytes(key, Path(path).read_bytes(), content_type)
+        with open(path, "rb") as source:
+            self.put_stream(key, source, content_type, max_bytes=os.fstat(source.fileno()).st_size)
+
+    def get_bytes(self, key: str) -> bytes:
+        with self.open_stream(key) as chunks:
+            return b"".join(chunks)
+
+    @contextmanager
+    def open_stream(self, key: str, chunk_size: int = CHUNK_SIZE):
+        with closing(self.stream(key, chunk_size)) as chunks:
+            yield chunks
 
     def size(self, key: str) -> int:
-        return len(self.get_bytes(key))
+        return self.info(key).size
 
-    def stream(self, key: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
-        """Yield an object in chunks; the default fallback loads it once."""
-        yield self.get_bytes(key)
-
-    @abstractmethod
-    def delete(self, key: str) -> None: ...
-
-    @abstractmethod
-    def exists(self, key: str) -> bool: ...
-
-    @abstractmethod
-    def copy(self, src_key: str, dst_key: str) -> None:
-        """Copy an object, overwriting dst. Idempotent, so callers can retry."""
+    def delete_prefix(self, prefix: str) -> int:
+        if not prefix:
+            raise ValueError("refuse deleting the entire store")
+        cursor = None
+        removed = 0
+        while True:
+            page = self.list_prefix(prefix, cursor=cursor)
+            for item in page:
+                self.delete(item.key)
+                removed += 1
+            cursor = page.cursor
+            if cursor is None:
+                return removed
 
     def commit(self, staging_key: str, final_key: str) -> None:
-        """Make a staged object visible at its final key (copy, then drop the staging object)."""
         self.copy(staging_key, final_key)
         self.delete(staging_key)
 
@@ -74,98 +92,126 @@ class Storage(ABC):
         return None
 
 
-def _safe_key(key: str) -> str:
-    if not key or key.startswith("/") or "\\" in key:
-        raise ValueError(f"invalid storage key: {key!r}")
-    parts = PurePosixPath(key).parts
-    if any(p in ("", ".", "..") for p in parts):
-        raise ValueError(f"invalid storage key: {key!r}")
-    return "/".join(parts)
-
-
-class LocalStorage(Storage):
+class LocalStorage(_StorageMethods):
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, key: str) -> Path:
         path = (self.root / _safe_key(key)).resolve()
-        if self.root not in path.parents and path != self.root:
+        if self.root not in path.parents:
             raise ValueError(f"storage key escapes root: {key!r}")
         return path
 
-    def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+    def _meta(self, key: str) -> Path:
+        return self.root / ".metadata" / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+
+    def put_stream(self, key, source, content_type="application/octet-stream", *, max_bytes):
         path = self._path(key)
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
-        with open(tmp, "wb") as fh:
-            fh.write(data)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, path)
-
-    def get_bytes(self, key: str) -> bytes:
-        return self._path(key).read_bytes()
-
-    def put_file(self, key: str, path: str | Path, content_type: str = "application/octet-stream") -> None:
-        dst = self._path(key)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dst.with_name(f".{dst.name}.{uuid.uuid4().hex}.tmp")
+        staging = self.root / ".metadata"
+        staging.mkdir(exist_ok=True)
+        tmp = staging / f"{uuid.uuid4().hex}.tmp"
+        digest = hashlib.sha256()
         try:
-            shutil.copyfile(path, tmp)
-            os.replace(tmp, dst)
+            with open(tmp, "xb") as fh:
+                for chunk in _chunks(source, max_bytes):
+                    fh.write(chunk)
+                    digest.update(chunk)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, path)
+            stat = path.stat()
+            meta = self._meta(key)
+            meta.parent.mkdir(exist_ok=True)
+            meta_tmp = meta.with_suffix(f".{uuid.uuid4().hex}.tmp")
+            try:
+                meta_tmp.write_text(
+                    json.dumps({"size": stat.st_size, "mtime": stat.st_mtime_ns, "etag": digest.hexdigest(), "content_type": content_type})
+                )
+                os.replace(meta_tmp, meta)
+            finally:
+                meta_tmp.unlink(missing_ok=True)
         finally:
-            if tmp.exists():
-                tmp.unlink(missing_ok=True)
+            tmp.unlink(missing_ok=True)
 
     def size(self, key: str) -> int:
         return self._path(key).stat().st_size
 
-    def list_prefix(self, prefix: str) -> list[StoredObject]:
-        base = self._path(prefix.rstrip("/"))
-        if not base.is_dir():
-            return []
-        out: list[StoredObject] = []
-        for path in base.rglob("*"):
-            if not path.is_file():
-                continue
-            stat = path.stat()
-            out.append(
-                StoredObject(
-                    key=path.relative_to(self.root).as_posix(),
-                    size=stat.st_size,
-                    modified_at=datetime.fromtimestamp(stat.st_mtime, UTC),
-                )
-            )
-        return out
+    def info(self, key: str) -> ObjectInfo:
+        path = self._path(key)
+        stat = path.stat()
+        try:
+            meta = json.loads(self._meta(key).read_text())
+        except FileNotFoundError:
+            meta = {}
+        if meta.get("size") == stat.st_size and meta.get("mtime") == stat.st_mtime_ns:
+            return ObjectInfo(stat.st_size, meta["etag"], meta["content_type"])
+        with path.open("rb") as fh:
+            digest = hashlib.file_digest(fh, "sha256").hexdigest()
+        return ObjectInfo(stat.st_size, digest, meta.get("content_type", "application/octet-stream"))
 
-    def stream(self, key: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    def list_prefix(self, prefix: str, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
+        prefix = _prefix(prefix)
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+
+        # Heap retains only limit+1 keys; scandir does not allocate a whole
+        # directory listing. A local page still costs one prefix-tree traversal.
+        base = self._path(prefix.rstrip("/")) if prefix.endswith("/") else self._path(prefix).parent if prefix else self.root
+
+        def candidates(directory):
+            try:
+                with os.scandir(directory) as entries:
+                    for entry in entries:
+                        if entry.is_symlink() or (directory == self.root and entry.name == ".metadata"):
+                            continue
+                        path = Path(entry.path)
+                        if entry.is_dir(follow_symlinks=False):
+                            yield from candidates(path)
+                        elif entry.is_file(follow_symlinks=False):
+                            key = path.relative_to(self.root).as_posix()
+                            if key.startswith(prefix) and (cursor is None or key > cursor):
+                                yield key
+            except FileNotFoundError:
+                return
+
+        keys = heapq.nsmallest(limit + 1, candidates(base))
+        items = []
+        for key in keys[:limit]:
+            try:
+                stat = self._path(key).stat()
+            except FileNotFoundError:
+                continue
+            items.append(StoredObject(key, stat.st_size, datetime.fromtimestamp(stat.st_mtime, UTC)))
+        return ObjectPage(items, keys[limit - 1] if len(keys) > limit else None)
+
+    def stream(self, key: str, chunk_size: int = CHUNK_SIZE) -> Iterator[bytes]:
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
         with open(self._path(key), "rb") as fh:
             while chunk := fh.read(chunk_size):
                 yield chunk
 
     def delete(self, key: str) -> None:
-        path = self._path(key)
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
+        self._path(key).unlink(missing_ok=True)
+        self._meta(key).unlink(missing_ok=True)
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
 
     def copy(self, src_key: str, dst_key: str) -> None:
-        src = self._path(src_key)
-        dst = self._path(dst_key)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dst.with_name(f".{dst.name}.{uuid.uuid4().hex}.tmp")
-        shutil.copyfile(src, tmp)
-        os.replace(tmp, dst)
+        # Pin one inode before reading its size; replacing the signed source cannot
+        # change the copy halfway through a completion.
+        info = self.info(src_key)
+        with self._path(src_key).open("rb") as source:
+            self.put_stream(dst_key, source, info.content_type, max_bytes=os.fstat(source.fileno()).st_size)
 
 
-class S3Storage(Storage):
+class S3Storage(_StorageMethods):
     def __init__(self) -> None:
         import boto3
+        from botocore.config import Config
 
         self.bucket = settings.s3_bucket
         self.client = boto3.client(
@@ -174,41 +220,43 @@ class S3Storage(Storage):
             aws_access_key_id=settings.s3_access_key or None,
             aws_secret_access_key=settings.s3_secret_key or None,
             region_name=settings.s3_region,
+            config=Config(connect_timeout=5, read_timeout=30, retries={"max_attempts": 2}),
         )
 
-    def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
-        import io
+    def put_stream(self, key, source, content_type="application/octet-stream", *, max_bytes):
+        from boto3.s3.transfer import TransferConfig
 
-        self.client.put_object(Bucket=self.bucket, Key=_safe_key(key), Body=io.BytesIO(data), ContentType=content_type)
+        # Arbitrary iterators are not seekable; spool to disk, never a second full RAM copy.
+        with tempfile.TemporaryFile() as spool:
+            for chunk in _chunks(source, max_bytes):
+                spool.write(chunk)
+            spool.seek(0)
+            self.client.upload_fileobj(
+                spool,
+                self.bucket,
+                _safe_key(key),
+                ExtraArgs={"ContentType": content_type},
+                Config=TransferConfig(use_threads=False, multipart_chunksize=5 * 1024 * 1024),
+            )
 
-    def get_bytes(self, key: str) -> bytes:
-        body = self.client.get_object(Bucket=self.bucket, Key=_safe_key(key))["Body"]
-        try:
-            return body.read()
-        finally:
-            body.close()
+    def info(self, key: str) -> ObjectInfo:
+        item = self.client.head_object(Bucket=self.bucket, Key=_safe_key(key))
+        return ObjectInfo(int(item["ContentLength"]), item["ETag"].strip('"'), item.get("ContentType", "application/octet-stream"))
 
-    def put_file(self, key: str, path: str | Path, content_type: str = "application/octet-stream") -> None:
-        self.client.upload_file(str(path), self.bucket, _safe_key(key), ExtraArgs={"ContentType": content_type})
+    def list_prefix(self, prefix: str, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
+        if not 1 <= limit <= 1000:
+            raise ValueError("limit must be between 1 and 1000")
+        args = {"Bucket": self.bucket, "Prefix": _prefix(prefix), "MaxKeys": limit}
+        if cursor:
+            args["ContinuationToken"] = cursor
+        page = self.client.list_objects_v2(**args)
+        return ObjectPage(
+            [StoredObject(i["Key"], int(i["Size"]), i["LastModified"]) for i in page.get("Contents", [])], page.get("NextContinuationToken")
+        )
 
-    def size(self, key: str) -> int:
-        return int(self.client.head_object(Bucket=self.bucket, Key=_safe_key(key))["ContentLength"])
-
-    def list_prefix(self, prefix: str) -> list[StoredObject]:
-        out: list[StoredObject] = []
-        paginator = self.client.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=self.bucket, Prefix=_safe_key(prefix)):
-            for item in page.get("Contents", []):
-                out.append(
-                    StoredObject(
-                        key=item["Key"],
-                        size=int(item["Size"]),
-                        modified_at=item["LastModified"],
-                    )
-                )
-        return out
-
-    def stream(self, key: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
+    def stream(self, key: str, chunk_size: int = CHUNK_SIZE) -> Iterator[bytes]:
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
         body = self.client.get_object(Bucket=self.bucket, Key=_safe_key(key))["Body"]
         try:
             yield from body.iter_chunks(chunk_size)
@@ -222,7 +270,7 @@ class S3Storage(Storage):
         from botocore.exceptions import ClientError
 
         try:
-            self.client.head_object(Bucket=self.bucket, Key=_safe_key(key))
+            self.info(key)
             return True
         except ClientError as exc:
             if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
@@ -230,11 +278,10 @@ class S3Storage(Storage):
             raise
 
     def copy(self, src_key: str, dst_key: str) -> None:
-        self.client.copy_object(
-            Bucket=self.bucket,
-            Key=_safe_key(dst_key),
-            CopySource={"Bucket": self.bucket, "Key": _safe_key(src_key)},
-        )
+        if src_key == dst_key:
+            self.info(src_key)
+            return
+        self.client.copy_object(Bucket=self.bucket, Key=_safe_key(dst_key), CopySource={"Bucket": self.bucket, "Key": _safe_key(src_key)})
 
     def presign_put(self, key: str, expires: int = 900) -> str | None:
         return self.client.generate_presigned_url("put_object", Params={"Bucket": self.bucket, "Key": _safe_key(key)}, ExpiresIn=expires)

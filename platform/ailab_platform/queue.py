@@ -81,8 +81,9 @@ class RedisQueue(JobQueue):
     def __init__(self, url: str):
         import redis
 
-        self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=15)
+        self.client = redis.Redis.from_url(url, decode_responses=True, socket_timeout=15, socket_connect_timeout=5)
         self._groups: set[str] = set()
+        self._claim_cursors: dict[str, str] = {}
 
     def _ensure_group(self, name: str) -> None:
         if name in self._groups:
@@ -115,11 +116,16 @@ class RedisQueue(JobQueue):
         def attempt() -> Message | None:
             self._ensure_group(name)
             # 1) take over anything a dead/hung consumer left unacked
-            claimed = self.client.xautoclaim(name, self.GROUP, consumer, min_idle_time=visibility_seconds * 1000, start_id="0-0", count=1)
+            claimed = self.client.xautoclaim(
+                name, self.GROUP, consumer, min_idle_time=visibility_seconds * 1000, start_id=self._claim_cursors.get(name, "0-0"), count=1
+            )
+            self._claim_cursors[name] = claimed[0]
             entries = claimed[1]
             if not entries:
                 # 2) otherwise the next new message
-                res = self.client.xreadgroup(self.GROUP, consumer, {name: ">"}, count=1, block=max(1, timeout) * 1000)
+                res = self.client.xreadgroup(
+                    self.GROUP, consumer, {name: ">"}, count=1, **({"block": timeout * 1000} if timeout > 0 else {})
+                )
                 entries = res[0][1] if res else []
             if not entries:
                 return None
@@ -182,7 +188,7 @@ class InMemoryQueue(JobQueue):
     def enqueue(self, name: str, payload: dict) -> None:
         with self._lock:
             self._seq += 1
-            self._entries.setdefault(name, OrderedDict())[str(self._seq)] = [payload, 0, None]
+            self._entries.setdefault(name, OrderedDict())[str(self._seq)] = [json.loads(json.dumps(payload)), 0, None]
 
     def _take(self, name: str, visibility_seconds: int) -> Message | None:
         now = self._clock()
@@ -199,7 +205,7 @@ class InMemoryQueue(JobQueue):
                     return None
             entry[1] += 1
             entry[2] = now
-            return Message(id=msg_id, payload=entry[0], deliveries=entry[1])
+            return Message(id=msg_id, payload=json.loads(json.dumps(entry[0])), deliveries=entry[1])
 
     def dequeue(self, name, consumer="default", timeout=2, visibility_seconds=DEFAULT_VISIBILITY_SECONDS):
         deadline = time.monotonic() + timeout
