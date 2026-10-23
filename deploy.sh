@@ -305,14 +305,14 @@ deploy_platform() {
   if [ "$was_deployed" = 1 ]; then
     # Same image tag: restart to pick up new code/config - but only what apply left unchanged. Restarting a
     # deployment apply just changed starts a second generation of pods while the first is still coming up.
-    for d in api broker agent worker; do
+    for d in searxng api broker agent worker; do
       printf '%s\n' "$applied" | grep -q "deployment.apps/platform-$d configured" && continue
       run $KUBECTL -n "$NS" rollout restart "deploy/platform-$d" >/dev/null
     done
   fi
   if [ "$DRY" != 1 ]; then
-    for d in redis api broker agent worker; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
-    ok "5 deployments ready"
+    for d in redis searxng api broker agent worker; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
+    ok "6 deployments ready"
     # Pods of the previous generation may still be shutting down; one of them must not take the smoke test's run.
     local i
     for i in $(seq 1 90); do
