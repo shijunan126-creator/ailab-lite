@@ -6,18 +6,22 @@ endpoints instead of touching the database or object storage ledger directly.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
+import re
+import tempfile
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy import exists, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from ..agent.prompts import skills as builtin_skills
 from ..config import settings
 from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
@@ -45,6 +49,7 @@ from ..schemas import (
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
+from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
 from .runtime_fence import fence_attempt
@@ -499,6 +504,125 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
     return _artifact_out(artifact, file)
 
 
+SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+
+
+def _skill_heads(db: Session, user_id: str, name: str) -> list[FileObject]:
+    """The user's live personal skills that are, or were saved to become, `name`; newest first."""
+    rows = db.scalars(
+        select(FileObject)
+        .where(
+            FileObject.user_id == user_id,
+            FileObject.purpose == "skill",
+            FileObject.is_head == 1,
+            FileObject.deleted_at.is_(None),
+            FileObject.purged_at.is_(None),
+        )
+        .order_by(FileObject.created_at.desc())
+    )
+    return [f for f in rows if ((f.meta or {}).get("skill") or {}).get("name") == name or (f.meta or {}).get("skill_claim") == name]
+
+
+@router.post("/runs/{run_id}/skills", status_code=201, dependencies=[Depends(require_scope("skills:save_for_run"))])
+async def internal_save_skill(
+    run_id: str,
+    request: Request,
+    name: str = Query(...),
+    mode: Literal["create", "update"] = Query(...),
+    filename: str = Query(...),
+    x_run_attempt: str | None = Header(default=None),
+    x_delivery_id: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
+    """A personal skill written by the model, saved for the run's owner only.
+
+    It enters the same path as an uploaded skill (PENDING, scan, review policy), so saving never makes it trusted.
+    Refusals the model can act on are 422/404: on this internal API 409 means the attempt lost its run (fencing).
+    create refuses a name in use; update adds a version to the user's own skill, keeping the old one restorable.
+    Built-in skills and other users' skills are never candidates.
+    """
+    if not SKILL_NAME.match(name):
+        raise HTTPException(422, "invalid skill name")
+    if not filename.endswith((".zip", ".md")):
+        raise HTTPException(422, "skill file must be .zip or .md")
+    if not x_delivery_id or not x_delivery_id.startswith(run_id + ":") or len(x_delivery_id) > 160:
+        raise HTTPException(422, "stable delivery identity required")
+    limit = min(settings.max_upload_bytes, settings.max_sandbox_read_bytes)
+    storage = get_storage()
+    with tempfile.NamedTemporaryFile(prefix="ailab-skill-") as tmp:
+        digest, size = hashlib.sha256(), 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > limit:
+                raise HTTPException(413, f"skill exceeds {limit} bytes")
+            digest.update(chunk)
+            tmp.write(chunk)
+        tmp.flush()
+        if size == 0:
+            raise HTTPException(400, "empty skill")
+
+        def record() -> dict:
+            from ..models import RunDelivery
+
+            run = _run_or_404(db, run_id)
+            with user_critical_section(db, run.user_id):
+                db.refresh(run)
+                fence_attempt(db, run.id, x_run_attempt)
+                prior = db.get(RunDelivery, (run.id, x_delivery_id))
+                if prior:
+                    return prior.result
+                if run.status != RunStatus.RUNNING:
+                    raise HTTPException(409, f"run is {run.status}")
+                if name in builtin_skills():
+                    raise HTTPException(422, f"{name} 是通用技能，不能被个人技能覆盖；请换个名字")
+                heads = _skill_heads(db, run.user_id, name)
+                if mode == "create" and heads:
+                    raise HTTPException(422, f"已有同名个人技能 {name}；要改它请用 mode=update（会保留旧版本）")
+                if mode == "update" and not heads:
+                    raise HTTPException(404, f"没有名为 {name} 的个人技能；新建请用 mode=create")
+                enforce_library_quota(db, run.user_id, size)
+                file_id = new_id("fil")
+                key = f"skills/{run.user_id}/{file_id}/{filename}"
+                storage.put_file(key, tmp.name, "application/zip" if filename.endswith(".zip") else "text/markdown")
+                try:
+                    row = FileObject(
+                        id=file_id,
+                        user_id=run.user_id,
+                        filename=filename,
+                        content_type="application/zip" if filename.endswith(".zip") else "text/markdown",
+                        size=size,
+                        sha256=digest.hexdigest(),
+                        storage_key=key,
+                        status=FileStatus.PENDING,
+                        purpose="skill",
+                        meta={"processing": "queued", "skill_claim": name, "source": "agent", "run_id": run.id},
+                    )
+                    assign_file_version(db, row, heads[0] if heads else None)
+                    db.add(row)
+                    keys = trim_file_versions(db, row)
+                    db.flush()
+                    stage_job(db, "file", file_id=row.id)
+                    result = {
+                        "file_id": row.id,
+                        "name": name,
+                        "mode": mode,
+                        "version": row.version,
+                        "status": "pending",
+                        "note": "已保存为个人技能，安全扫描与审核通过后可用",
+                    }
+                    append_event(db, run.id, "skill.saved", {k: result[k] for k in ("file_id", "name", "mode", "version")}, commit=False)
+                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    storage.delete(key)
+                    raise
+                delete_storage_objects(keys)
+                return result
+
+        return await asyncio.to_thread(record)
+
+
 def _enqueue_thumbnail(db: Session, file: FileObject) -> None:
     if file.status == FileStatus.READY and not (file.meta or {}).get("thumb_key") and thumbnail_candidate(file.filename, file.content_type):
         from .jobs import stage_job
@@ -643,6 +767,11 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
     if body.meta is not None:
         merged = dict(file.meta or {})
         merged.update(body.meta)
+        claim = merged.get("skill_claim")
+        if claim and merged.get("skill") and merged["skill"].get("name") != claim:
+            # Saved as one name, its SKILL.md says another: it must not quietly replace a different skill.
+            merged.pop("skill")
+            merged["skill_error"] = f"SKILL.md 里的 name 与保存时的名称 {claim} 不一致"
         file.meta = merged
         if merged.get("skill") or merged.get("skill_error"):
             head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file

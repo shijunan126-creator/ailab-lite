@@ -749,6 +749,14 @@ class LeaseManager:
             raise SandboxError(f"file too large to write ({len(data)} > {settings.max_sandbox_write_bytes} bytes)")
         self._provider_call("put_file", lease["sandbox_id"], path, data)
 
+    def put_fetched(self, lease_id: str, path: str, local: Path, size: int) -> None:
+        """A public download the Agent fetched outside the sandbox, already spooled to disk by the route."""
+        lease = self._load(lease_id)
+        path = self._checked(path)
+        if size > settings.web_download_max_bytes:
+            raise SandboxError(f"download too large ({size} > {settings.web_download_max_bytes} bytes)")
+        self._provider_call("put_file_from_path", lease["sandbox_id"], path, local, max_bytes=settings.web_download_max_bytes)
+
     def get_file(self, lease_id: str, path: str) -> bytes:
         lease = self._load(lease_id)
         path = self._checked(path)

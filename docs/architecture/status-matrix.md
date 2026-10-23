@@ -111,3 +111,7 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 ## 2026-10-24 预览与工作过程
 
 全屏/聊天复用原生连续页面滚动；单一工作过程区域按事件顺序显示公开叙述、计划变化和工具活动，保留提问与恢复。0021为Run新增持久running区间计时，浏览器不自行累计。行为、旧数据处理、成本和验收见[专项记录](../reviews/2026-10-24-preview-work-process.md)。
+
+## 2026-10-24 受控联网
+
+沙箱保持 `--network none` + gVisor；Agent 以只连已检查公网地址的客户端读取网页/GitHub issue、下载文件、获取 GitHub 公开仓库和 PyPI 依赖，Broker 流式注入沙箱。URL 来源检查、每运行请求/字节预算、归档展开上限、runsc 根 overlay 4 GiB 上限；个人技能可经 Chat/Work 新建或按版本更新，走扫描与审核。已在当前 Docker Compose + runsc 运行环境真实验收并部署，k3s/OpenSandbox 路径、npm/私有仓库、并发联网负载与低带宽泄露信号未验或未消除，见 [ADR 0007](adr/0007-controlled-public-fetch.md) 与 [验收记录](../reviews/2026-10-24-controlled-network.md)。

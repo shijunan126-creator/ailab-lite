@@ -6,7 +6,8 @@ import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
 
-from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Response, status
+from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
 from ..config import settings
@@ -166,6 +167,28 @@ def put_file(
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "path": path, "bytes": len(payload)}
+
+
+@router.put("/leases/{lease_id}/fetched", dependencies=[Depends(require_scope("sandbox:use"))])
+async def put_fetched(lease_id: str, request: Request, path: str = Query(..., min_length=1)) -> dict:
+    """Streams the body to the Broker's disk spool, so a 100 MiB download never sits in this pod's memory."""
+    manager = get_manager()
+    limit = settings.web_download_max_bytes
+    with manager.transfer_file() as local:
+        size = 0
+        with local.open("wb") as out:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > limit:
+                    raise HTTPException(status_code=413, detail=f"download exceeds {limit} bytes")
+                out.write(chunk)
+        try:
+            await run_in_threadpool(manager.put_fetched, lease_id, path, local, size)
+        except LeaseError as exc:
+            raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
+        except SandboxError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "path": path, "bytes": size}
 
 
 @router.get("/leases/{lease_id}/files/list", dependencies=[Depends(require_scope("sandbox:use"))])

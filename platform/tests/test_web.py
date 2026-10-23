@@ -8,7 +8,7 @@ from ailab_platform import web
 
 
 def test_extract_html_strips_scripts_and_keeps_title() -> None:
-    title, text = web.extract_html(
+    title, text, _links = web.extract_html(
         "<html><head><title>OpenAI 新闻</title><style>x{}</style></head>"
         "<body><script>alert(1)</script><h1>今日新闻</h1><p>第一条&nbsp;内容</p>"
         "<nav>菜单</nav></body></html>"
@@ -56,6 +56,6 @@ def test_chat_mode_offers_only_read_only_web_tools(monkeypatch) -> None:
 
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     names = {tool["function"]["name"] for tool in tools.tools_for_chat()}
-    assert names == {"web_search", "read_url"}
+    assert names == {"web_search", "read_url", "save_skill"}
     work_names = {tool["function"]["name"] for tool in tools.tools_for_turn()}
     assert {"web_search", "read_url"} <= work_names

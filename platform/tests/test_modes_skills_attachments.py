@@ -102,11 +102,25 @@ def _run(llm, platform, broker=None):
     return broker
 
 
-def test_chat_mode_offers_no_tools_and_never_starts_a_sandbox() -> None:
+def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     llm = _Recording([LLMResponse(content="只用文字回答")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
-    assert llm.offered == [[]] and broker.leases == 0
+    assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [["save_skill"]] and broker.leases == 0
     assert "「对话」模式" in llm.seen_messages[0][0]["content"]
+
+
+def test_chat_mode_saves_a_skill_written_as_text_without_a_sandbox() -> None:
+    saved = []
+
+    class Platform(_Platform):
+        async def save_skill(self, run_id, name, mode, filename, data):
+            saved.append((run_id, name, mode, filename, data))
+            return {"file_id": "f9", "name": name, "mode": mode, "version": 1, "status": "pending"}
+
+    call = ToolCall(id="c1", name="save_skill", arguments={"name": "notes", "mode": "create", "content": "---\nname: notes\n---\n"})
+    llm = _Recording([LLMResponse(tool_calls=[call]), LLMResponse(content="已保存")])
+    broker = _run(llm, Platform(options={"mode": "chat"}))
+    assert saved == [("run_1", "notes", "create", "notes.md", b"---\nname: notes\n---\n")] and broker.leases == 0
 
 
 def test_a_picked_skill_comes_preloaded() -> None:

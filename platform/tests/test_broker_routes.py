@@ -76,3 +76,20 @@ def test_canceled_lease_is_a_conflict(broker, monkeypatch):
     response = client.post("/internal/leases", headers={"X-Service-Token": settings.service_token}, json={"run_id": "canceled"})
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "run_canceled"
+
+
+def test_fetched_downloads_stream_into_the_sandbox_within_the_limit(broker, monkeypatch):
+    client, manager, _provider = broker
+    headers = {"X-Service-Token": settings.service_token}
+    lease_id = client.post("/internal/leases", headers=headers, json={"run_id": "fetch"}).json()["lease_id"]
+    monkeypatch.setattr(settings, "web_download_max_bytes", 1024)
+    put = client.put(
+        f"/internal/leases/{lease_id}/fetched", headers=headers, params={"path": "/workspace/downloads/a.bin"}, content=b"x" * 1000
+    )
+    assert put.status_code == 200 and put.json()["bytes"] == 1000
+    assert manager.get_file(lease_id, "/workspace/downloads/a.bin") == b"x" * 1000
+    big = client.put(f"/internal/leases/{lease_id}/fetched", headers=headers, params={"path": "/workspace/b.bin"}, content=b"x" * 2048)
+    assert big.status_code == 413
+    outside = client.put(f"/internal/leases/{lease_id}/fetched", headers=headers, params={"path": "/etc/x"}, content=b"x")
+    assert outside.status_code == 400
+    assert not list(manager._transfer_root.glob("transfer-*"))  # spools are removed on every path

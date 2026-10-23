@@ -215,6 +215,11 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2 * 1024 * 1024
     web_max_chars: int = 20_000
     web_max_results: int = 5
+    # Downloads (files, repository archives, packages) are fetched here too and streamed into the sandbox.
+    web_download_timeout_seconds: int = Field(default=120, gt=0)
+    web_download_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one file
+    web_run_download_bytes: int = Field(default=512 * 1024 * 1024, gt=0)  # everything one run fetches
+    web_run_requests: int = Field(default=120, gt=0)  # external requests one run may start
 
     # Directory holding <skill>/SKILL.md. Unset = the repo checkout (dev); the
     # image sets it to /opt/ailab/skills.

@@ -48,8 +48,10 @@ Portal 的主界面是**对话**：左边对话列表，中间消息，右边预
 - **一条消息 = 一个 Run**（`runs.conversation_id`）。`POST /v1/conversations/{id}/messages` 建 Run；同一对话同一时间只答一条（409）。
   Agent 拿到的 Run 里带 `history`（前面各轮的问题、回答、产出文件名，最近 12 轮）。
 - **普通问答不起沙箱**：沙箱在模型第一次调用需要它的工具（exec / 读写文件 / 交付 / 搜图）时才领，纯文字回答几秒内开始出字。
-- **对话 / 工作模式**（输入框左下角，浏览器记住选择）：「对话」这一轮不给模型任何工具，保证不起沙箱；「工作」把工具交给模型，
-  由它判断要不要动手（`runs.options.mode`）。
+- **对话 / 工作模式**（输入框左下角，浏览器记住选择）：「对话」只提供不需要沙箱的工具（只读的 web_search / read_url、保存个人技能 save_skill），
+  没提供的工具即使模型调用也不会执行，保证不起沙箱；「工作」把工具交给模型，由它判断要不要动手（`runs.options.mode`）。
+- **受控联网**（工作模式）：download_url / fetch_repo / fetch_packages 由 Agent 在沙箱外获取公开资源，经 Broker 流式写入无网络的沙箱，
+  规则见 [ADR 0007](../docs/architecture/adr/0007-controlled-public-fetch.md)。
 - **技能按钮**（工作模式下）：「PPT 生成」「Excel 表格」「数据分析」。点了以后这条消息带 `skill`，Agent 把那份技能说明直接放进系统提示
   （不再等模型自己 `load_skill`），并明确要产出文件；只对这一条消息生效。API 校验技能名必须存在。
 - **技能**（侧栏「技能」，参照 Claude.ai 的 Customize > Skills）分两类：

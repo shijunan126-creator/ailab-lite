@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 import httpx
 from PIL import Image
 
+from . import web
 from .config import settings
 
 log = logging.getLogger("ailab.images")
@@ -59,12 +60,8 @@ def _public_host(url: str) -> None:
         raise ImageSearchError(f"cannot resolve {parsed.hostname}") from exc
     for info in infos:
         ip = ipaddress.ip_address(info[4][0])
-        if not ip.is_global:
+        if not web.is_public(ip):
             raise ImageSearchError(f"refusing {parsed.hostname}: resolves to a non-public address")
-
-
-async def _check_request(request: httpx.Request) -> None:
-    _public_host(str(request.url))
 
 
 def slug(text: str) -> str:
@@ -150,23 +147,20 @@ async def _openverse(query: str, orientation: str) -> list[dict]:
 
 
 async def _download(url: str) -> bytes:
-    async with httpx.AsyncClient(
-        timeout=settings.image_search_timeout_seconds,
-        headers={"User-Agent": USER_AGENT},
-        follow_redirects=True,
-        max_redirects=3,
-        event_hooks={"request": [_check_request]},
-    ) as client:
-        async with client.stream("GET", url) as resp:
-            if resp.status_code >= 400:
-                raise ImageSearchError(f"download returned {resp.status_code}")
-            chunks, total = [], 0
-            async for chunk in resp.aiter_bytes():
-                total += len(chunk)
-                if total > MAX_DOWNLOAD_BYTES:
-                    raise ImageSearchError("image too large")
-                chunks.append(chunk)
-            return b"".join(chunks)
+    # The pinned client connects only to the address it checked, so a DNS answer that changes after
+    # _public_host cannot redirect the download inside; every redirect is checked the same way.
+    try:
+        async with web.public_client(settings.image_search_timeout_seconds) as client:
+            async with web.open_public(client, url) as resp:
+                chunks, total = [], 0
+                async for chunk in resp.aiter_bytes():
+                    total += len(chunk)
+                    if total > MAX_DOWNLOAD_BYTES:
+                        raise ImageSearchError("image too large")
+                    chunks.append(chunk)
+                return b"".join(chunks)
+    except web.WebError as exc:
+        raise ImageSearchError(str(exc)) from exc
 
 
 def _mock_picture(query: str, i: int) -> tuple[bytes, int, int]:

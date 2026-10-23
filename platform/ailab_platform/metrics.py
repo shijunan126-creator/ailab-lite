@@ -62,7 +62,22 @@ FILES = Counter("ailab_files_processed_total", "Uploaded files the Worker finish
 FILE_SECONDS = Histogram("ailab_file_processing_seconds", "Worker time per uploaded file", buckets=_SLOW)
 SCAN_EXHAUSTED = Counter("ailab_scan_exhausted_total", "Files that exhausted scan retries")
 
-KNOWN_TOOLS = frozenset({"list_files", "read_file", "write_file", "exec", "deliver_file", "finish", "web_search", "read_url"})
+KNOWN_TOOLS = frozenset(
+    {
+        "list_files",
+        "read_file",
+        "write_file",
+        "exec",
+        "deliver_file",
+        "finish",
+        "web_search",
+        "read_url",
+        "download_url",
+        "fetch_repo",
+        "fetch_packages",
+        "save_skill",
+    }
+)
 
 
 def tool_label(name: str) -> str:

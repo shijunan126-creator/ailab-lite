@@ -1,24 +1,21 @@
 # 当前工作
 
-更新：2026-10-24。用户10月23日授权：修复全部已知问题，完成真实验收后部署；公司模板和业务样本明确跳过。上一轮已完成部署与收口。本轮新增授权：连续滚动预览、统一工作过程和可靠计时，将全部前序工作提交PR；CI通过后合并main并同步本地main。仍不使用subagent。
+更新：2026-10-24。用户授权：实现安全、完整的受控联网并真实验收、部署；更新 README；提交 PR，CI 通过后合并 main；最后委派 Codex（gpt-6.1-sol, medium）把本项目迁移到移动硬盘（APFS 分区、挂载、应对拔插、验证）。
 
 ## 已完成
 
-- 项目文件在全部/收藏/图像/回收站按文件夹归档，顶层不再平铺；连续表格、窄屏与键盘操作通过浏览器验收。
-- 技能独立用途和页面管理，共享总存储配额；资料库/搜索/普通附件隐藏，pending/rejected/无效技能可删除释放空间。
-- 项目规范化重名拒绝；同目录文件自动编号，移动/恢复/版本/预签名/产物共用分配；迁移0020保留已有ID与对象。
-- 补齐生成TXT预览和多编码文本；流式独立250ms刷新；模型目录容量与后台标题预算修复。
-- 取消贯通排队/创建/运行，Docker独立过期停止移除；真实负载发现的旧启动快照误回收已修复。
-- 双库完整回归、真实沙箱/传输/扫描、浏览器、模型、告警、实际进程故障恢复、备份恢复与联合负载已验；已在现有运行环境部署并核验数据和交互。
+- 受控联网：沙箱保持 `--network none` + gVisor，Agent 获取公开资源后经 Broker 流式注入；网页/GitHub issue、下载、仓库、PyPI 依赖、个人技能保存。决策 [ADR 0007](../architecture/adr/0007-controlled-public-fetch.md)，证据 [专项验收](../reviews/2026-10-24-controlled-network.md)，本轮记录 [更新](updates/2026-10-24-controlled-network.md)。
+- 已部署到现有本机运行环境（Colima VM 内 Docker Compose），同时上线了此前未部署的 PR #32 内容和迁移 0021；runsc 根 overlay 4 GiB 上限写入 Colima profile。
+- README 已更新。前序工作（PR #32）已在 main。
 
 ## 代码与证据
 
-- 工作树 `/Users/michael/Developer/ailab-lite`，`feat/remaining-work`（后端基线`fefca5e`），基于 `origin/main@6410fe9`；前序修复已提交`1978676`，本轮UI与验收记录随当前提交交付，三个未跟踪`.DS_Store`保留。
-- 交付使用可核验内容哈希的源码快照，运行镜像的134个Python源码哈希已核对；个人部署明细只在本机独立HANDOFF，不进入仓库。
-- 结果与残余适用范围：[最终更新](updates/2026-10-24-library-runtime.md)、[详细验收](../reviews/2026-10-23-library-runtime-acceptance.md)、[能力矩阵](../architecture/status-matrix.md)。旧“尚未修复/未验收”记录以这些最终结果为准，不覆盖原始失败证据。
+- 分支 `feat/safe-network-access`，base `origin/main@5fc9103`；三个未跟踪 `.DS_Store` 保留。HANDOFF 中原有一条未提交记录（PG15511 随旧 VM 删除）随本分支提交。
+- 部署明细、备份位置、验收脚本只在本机独立 HANDOFF。
 
-## 当前实施与下一步
+## 下一步
 
-已实现复用的连续页面预览和按时间顺序的统一工作过程；API持久化累计running时间，排队/等待用户/暂停不计入，历史未知时长不估算。双库完整回归、Portal测试/构建和真实浏览器已完成，见[本轮更新](updates/2026-10-24-preview-work-process.md)和[专项验收](../reviews/2026-10-24-preview-work-process.md)。已创建覆盖全部前序工作的[PR #32](https://github.com/shijunan126-creator/ailab-lite/pull/32)，产品/测试提交`c07543e`。下一步：等待PR最新head完整CI；全绿后按用户授权合并main，再将本地main快进到远端并核对SHA。当前尚未合并；不以旧main绿灯替代本PR检查。
+1. PR 的 CI 全绿后合并 main，本地 main 快进并核对 SHA（PR 链接见本轮更新/PR 描述）。
+2. Codex 子任务执行移动硬盘迁移；其结果、挂载方式与拔插行为记录在本机独立 HANDOFF，并回填此处。迁移完成前不要假定运行环境在原路径。
 
-公司模板/业务golden按指示跳过；不自动续跑用户原失败任务，不启动无关路线图事项。前轮运行环境已部署，本轮连续预览/过程区与0021尚未部署，不能混称已上线。短时负载不推导为任意规模、企业IdP或24小时稳定性承诺。
+不自动开展路线图其他事项。残余风险（低带宽泄露信号、npm/私有仓库、k3s 路径未验）见专项验收。

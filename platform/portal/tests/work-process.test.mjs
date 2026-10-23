@@ -37,3 +37,11 @@ test('status header uses the persisted clock, never browser wall time or a legac
  assert.equal(workHeading({status:'canceled',work_ms:125750}),'已取消 · 工作总时长：2分5秒');
  assert.equal(workHeading({status:'succeeded',started_at:'2000-01-01',finished_at:'2026-01-01',work_ms:null}),'工作已完成');
 });
+test('network and skill tools read as their actions, with the source they used',()=>{
+ const label=(name,args)=>reduceEvent([],event('agent.tool_call',{step:1,name,arguments:args}))[0].steps[0];
+ assert.deepEqual([label('fetch_repo',{repo:'o/r',ref:'v1'}).label,label('fetch_repo',{repo:'o/r',ref:'v1'}).detail],['获取仓库','o/r@v1']);
+ assert.equal(label('fetch_packages',{packages:['rich','six']}).detail,'rich six');
+ assert.equal(label('download_url',{url:'https://x.test/a.png'}).label,'下载文件');
+ assert.equal(label('save_skill',{name:'s',mode:'update'}).label,'更新个人技能');
+ assert.equal(label('save_skill',{name:'s',mode:'create'}).label,'保存个人技能');
+});

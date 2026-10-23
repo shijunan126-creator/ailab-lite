@@ -296,3 +296,15 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 过程条目的CSS类必须加前缀（如process-ask），不能复用内层Ask的`.ask`，否则重复样式与可访问定位冲突。已展开按钮的文本包含折叠符号和布局换行，计时稳定性应比较其实际状态文本span，不能把整个按钮innerText当时长。
 - PostgreSQL容器初始化时临时server的Unix socket可能先就绪；验收库创建前应检查TCP主server就绪，再确认目标库存在。不能让一次createdb失败后继续全套测试，造成无关的成批迁移错误。
 - 纯UI滚动验收使用确定性渲染页，经真实授权预览端点读取；宿主Office/字体是否可用另有集成测试。不可用的PPT渲染不能被误判成滚动组件缺页。
+- 本机（Mac）原来留着的 PG15511 测试库随旧 Colima VM（`~/.colima`）于 2026-10-24 删除，数据为一次性测试数据。需要时重建：`postgres:16`，`POSTGRES_USER=ailab POSTGRES_DB=ailab_test POSTGRES_HOST_AUTH_METHOD=trust`，监听 `127.0.0.1:15511`；Redis16511 同理按需新建。重建后先检查 TCP 主 server 就绪再跑全套测试。详情见 `~/Documents/AILab-local/HANDOFF.MD`。
+
+## 2026-10-24 受控联网
+
+- 先解析检查再交给 httpx 连接是 TOCTOU：httpx 会再次解析，DNS 重绑定可指向内网。必须用自定义 httpcore 网络后端解析一次、检查全部答案、直连检查过的 IP（TLS 仍按主机名校验）。`ipaddress.is_global` 把 NAT64 `64:ff9b::/96` 判为全局，需另查内嵌 IPv4（映射/NAT64/6to4/Teredo）。外部请求客户端一律 `trust_env=False`，图片下载原来就漏了这一点。
+- 内部 API 的 409 专指 attempt 失去 Run（fencing），Agent 会直接中止 Run。业务冲突（如同名技能）必须用 422/404，否则一次正常拒绝会变成 “agent crashed unexpectedly”。
+- Chat 一旦提供任何工具（如 save_skill），原来“tools 为空就忽略调用”的保护就失效；必须按本轮实际提供的工具名决定是否执行，否则模型发来的 write_file 会在 Chat 里起沙箱。
+- 镜像只装运行时依赖：模块级导入只在 dev 环境里间接存在的包（如 packaging）测试全绿、上线即启动失败。`tests/test_runtime_dependencies.py` 检查这一点；新增第三方导入先声明到 pyproject 并跑 `lock_deps.sh --check`。
+- runsc 根 overlay 默认 `root:self` 由宿主文件承载、没有大小上限，`--memory` 不限制磁盘（512 MiB 内存下写入 900 MiB 成功）。用 `--overlay2=root:self,size=4g` 作为 Docker runtimeArgs；在 Colima 上要写进 profile 的 `docker.runtimes`，只改 VM 内 daemon.json 会被重启覆盖。改 daemon.json 后 `kill -HUP dockerd` 即可让新容器生效，不必重启服务。
+- `tarfile` 的 data filter 会去掉前导 `/`（绝对名落在目标目录内，不报错），但对 `..` 和绝对链接抛异常；解压脚本要在 finally 里清理部分目录，否则拒绝后留下半个仓库。
+- URL 来源提取的正则只取 ASCII URL 字符；否则“链接。”里的中文句号会并进 URL，导致用户给的链接被判为未授权。
+- 离线演示（MockLLM）原以“tools 是否为空”区分 Chat/Work；Chat 有了 save_skill 后它会去调沙箱工具。Mock 只能按本轮实际提供的工具名决定脚本。E2E 依赖 Redis（默认 6379），本机没有时用 `AILAB_TEST_REDIS_URL` 指向一次性实例，否则整套报 broker did not come up。
