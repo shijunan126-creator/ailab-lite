@@ -1,0 +1,32 @@
+{
+  "title": "Repository golden",
+  "sheets": [
+    {
+      "name": "Data",
+      "title": "Repository golden",
+      "columns": [
+        "Item",
+        {
+          "name": "Amount",
+          "format": "number"
+        }
+      ],
+      "rows": [
+        [
+          "A",
+          2
+        ],
+        [
+          "B",
+          3
+        ]
+      ],
+      "total": {
+        "label": "Total",
+        "sum": [
+          "Amount"
+        ]
+      }
+    }
+  ]
+}

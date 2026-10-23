@@ -3,7 +3,8 @@
 * Every request carries an id: taken from an incoming ``X-Request-ID`` (if it is sane) or generated,
   returned in the response header, stamped on every log line, and forwarded on internal calls, so one
   user action can be followed from the Portal through the API, Broker and back.
-* The Agent uses the run id as the id while it works on a run, so everything about one run is one search.
+* Durable jobs preserve the initiating request id across the queue and service calls;
+  legacy jobs without one fall back to the run id.
 * ``AILAB_LOG_FORMAT=json`` switches the logs to one JSON object per line.
 """
 
@@ -14,6 +15,7 @@ import logging
 import re
 import time
 import uuid
+from contextlib import nullcontext
 from contextvars import ContextVar
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -22,6 +24,17 @@ from .config import settings
 
 NO_REQUEST = "-"
 request_id_var: ContextVar[str] = ContextVar("request_id", default=NO_REQUEST)
+traceparent_var: ContextVar[str | None] = ContextVar("traceparent", default=None)
+
+_TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})\Z")
+
+
+def clean_traceparent(value: str | None) -> str | None:
+    match = _TRACEPARENT.fullmatch(value or "")
+    if not match or int(match[1], 16) == 0 or int(match[2], 16) == 0:
+        return None
+    return value
+
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -85,6 +98,15 @@ class RequestContextMiddleware:
         self.log = logging.getLogger(f"ailab.{service}.http")
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] == "lifespan" and settings.otel_endpoint:
+            from .telemetry import provider, shutdown
+
+            provider()  # Invalid optional configuration must fail at startup.
+            try:
+                await self.app(scope, receive, send)
+            finally:
+                shutdown()
+            return
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -93,6 +115,7 @@ class RequestContextMiddleware:
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
         rid = clean_request_id(headers.get(REQUEST_ID_HEADER.lower()))
         token = request_id_var.set(rid)
+        trace_token = traceparent_var.set(clean_traceparent(headers.get("traceparent")))
         started = time.perf_counter()
         status = 500
 
@@ -100,6 +123,13 @@ class RequestContextMiddleware:
             nonlocal status
             if message["type"] == "http.response.start":
                 status = message["status"]
+                if current_span is not None:
+                    current_span.set_attribute("http.response.status_code", status)
+                    current_span.set_attribute("http.route", getattr(scope.get("route"), "path", "unmatched"))
+                    if status >= 500:
+                        from opentelemetry.trace import Status, StatusCode
+
+                        current_span.set_status(Status(StatusCode.ERROR))
                 message.setdefault("headers", [])
                 message["headers"] = [*message["headers"], (REQUEST_ID_HEADER.lower().encode(), rid.encode())]
                 # Time to first byte: a response that streams for minutes (SSE) must not look like a slow request.
@@ -114,6 +144,10 @@ class RequestContextMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, send_with_id)
+            from .telemetry import span
+
+            with nullcontext(None) if scope["path"] in QUIET_PATHS else span("http.request", method=scope["method"]) as current_span:
+                await self.app(scope, receive, send_with_id)
         finally:
+            traceparent_var.reset(trace_token)
             request_id_var.reset(token)

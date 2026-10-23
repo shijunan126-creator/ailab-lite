@@ -30,6 +30,21 @@ def _send(page, prompt: str, model: str | None = None) -> None:
     page.keyboard.press("Enter")
 
 
+def test_narrative_arrives_before_the_model_finishes(logged_in, stack):
+    from playwright.sync_api import expect
+
+    page = logged_in
+    text = "环境已就绪：python-docx 和中文字体可用。下面开始编写文档生成脚本。"
+    _send(page, "验证流式衔接", "test-fast")
+    try:
+        expect(page.get_by_text(text, exact=True)).to_be_visible(timeout=10000)
+        assert page.locator(".turn-meta").count() == 0
+    finally:
+        assert httpx.post(stack.agent + "/e2e/release-stream", timeout=5).is_success
+    page.locator(".turn-meta").wait_for(timeout=10000)
+    expect(page.get_by_text(text, exact=True)).to_have_count(1)
+
+
 def _start_conversation(page, prompt: str, model: str = "test-fast") -> str:
     _send(page, prompt, model)
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
@@ -192,7 +207,7 @@ def test_a_plain_question_is_answered_without_a_sandbox(logged_in, stack) -> Non
     answer = page.inner_text(".msg.assistant .md")
     assert "离线演示模型" in answer and "本对话第 1 轮" in answer
     assert page.locator(".msg.assistant strong").count() >= 1  # markdown rendered, not shown as **raw**
-    assert page.locator(".steps").count() == 0  # no tools, no sandbox
+    assert page.locator(".work-entry.process-steps .step").count() == 0  # no tools, no sandbox
     page.wait_for_selector(f".conv-item.on a[href='/c/{conv}']")
 
 
@@ -230,7 +245,10 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
 def test_a_spreadsheet_is_previewed_live_and_can_be_revised(logged_in) -> None:
     page = logged_in
     _start_conversation(page, "做一个 Excel 表格")
-    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)  # appears while the turn is still running
+    page.wait_for_selector(".composer-dock button:has-text('打开预览')", timeout=60000)
+    assert page.locator(".preview-pane").count() == 0
+    page.click(".composer-dock button:has-text('打开预览')")
+    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
     _wait_for_turns(page, 1)
     grid = page.inner_text(".preview-pane .sheet-grid")
     assert "华东" in grid and "合计" in grid
@@ -253,9 +271,13 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "读取技能 pptx" in steps and "交付文件" in steps
-    # the browser tests run the mock sandbox on the host, which has no LibreOffice to render slides
-    assert "预览生成失败" in steps or page.locator(".preview-pane img").count() > 0
-    assert "ailab-demo.pptx" in page.inner_text(".file-card")
+    # The host may have Office installed. A successful render is now opened explicitly.
+    if "预览生成失败" not in steps:
+        assert page.locator(".preview-pane").count() == 0
+        page.click(".composer-dock button:has-text('打开预览')")
+        page.wait_for_selector(".preview-pane img", timeout=15000)
+    filename = page.locator(".file-card .name").inner_text()
+    assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 
 
 def test_the_chosen_model_is_remembered(logged_in, stack) -> None:
@@ -387,18 +409,27 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_the_models_thinking_is_shown_and_folds_away(logged_in) -> None:
+def test_work_process_replaces_raw_thinking_and_survives_reload(logged_in):
+    from playwright.sync_api import expect
+
     page = logged_in
     _start_conversation(page, "你好呀")
     _wait_for_turns(page, 1)
-    head = page.locator(".thinking-head")
-    head.wait_for(timeout=15000)
-    assert "已深度思考" in head.inner_text()
-    assert page.locator(".thinking-body").count() == 0  # folded once the answer is there
+    process = page.get_by_role("region", name="工作过程")
+    expect(process).to_have_count(1)
+    head = process.locator(".steps-head")
+    expect(head).to_contain_text("工作总时长：")
+    assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    assert "离线演示模型" in page.inner_text(".thinking-body")
-    page.reload()  # kept with the run, not only in the live stream
-    page.wait_for_selector(".thinking-head")
+    expect(process).to_contain_text("梳理任务")
+    assert "用户说：" not in process.inner_text()
+    assert page.locator(".thinking-head, .thinking-body").count() == 0
+    duration = head.locator("span").nth(1).inner_text()
+    page.reload()
+    page.locator(".turn-meta").wait_for()
+    expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
+    page.locator(".steps-head").click()
+    expect(page.get_by_role("region", name="工作过程")).to_contain_text("梳理任务")
 
 
 def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
@@ -428,7 +459,7 @@ def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     _start_conversation(page, "在沙箱里执行一条命令")  # would use the sandbox in work mode
     _wait_for_turns(page, 1)
     assert "离线演示模型" in page.inner_text(".msg.assistant .md")
-    assert page.locator(".steps").count() == 0
+    assert page.locator(".work-entry.process-steps .step").count() == 0
     assert page.inner_text(".msg.user .attach-chip") == "对话模式"
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered
@@ -444,7 +475,8 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "已加载技能" in steps and "交付文件" in steps
-    assert "ailab-demo.pptx" in page.inner_text(".file-card")
+    filename = page.locator(".file-card .name").inner_text()
+    assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
     assert page.inner_text(".msg.user .attach-chip") == "PPT 生成"
     assert page.locator(".skill-tag").count() == 0  # one message only
 
@@ -517,7 +549,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             page.wait_for_selector(".skill-row:not(.off):has-text('演示文稿（PPT）')")
 
 
-def test_a_personal_skill_uploaded_to_the_library_can_be_picked(logged_in, stack, tmp_path) -> None:
+def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, stack, tmp_path) -> None:
     page = logged_in
     name = f"weekly-{uuid.uuid4().hex[:6]}"
     skill = tmp_path / "SKILL.md"
@@ -530,8 +562,10 @@ def test_a_personal_skill_uploaded_to_the_library_can_be_picked(logged_in, stack
     assert row.locator("button[role=switch]").get_attribute("aria-checked") == "true"
     assert name in row.inner_text()
 
-    page.goto(stack.portal + "/files")  # it is a file in the library
-    page.get_by_role("link", name="个人技能 · 周报助手", exact=True).wait_for()
+    page.goto(stack.portal + "/files")
+    page.get_by_role("button", name="上传", exact=True).wait_for()
+    assert page.get_by_role("link", name="个人技能 · 周报助手", exact=True).count() == 0
+    assert not any(f["filename"] == "SKILL.md" for f in page.request.get(stack.portal + "/api/v1/files").json())
 
     page.goto(stack.portal + "/")
     page.click(".skill-chip:has-text('周报助手')")

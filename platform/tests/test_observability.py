@@ -16,6 +16,7 @@ from ailab_platform.api.main import app
 from ailab_platform.clients import PlatformClient
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMResponse, ToolCall
+from tests.run_claims import attempt_headers
 from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -76,6 +77,37 @@ def test_internal_calls_forward_the_current_id() -> None:
         assert client._get_run("run_1").kwargs["headers"]["X-Request-ID"] == "run_forwarded"
     finally:
         obs.request_id_var.reset(token)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [None, "", "00-" + "0" * 32 + "-" + "1" * 16 + "-01", "00-" + "1" * 32 + "-" + "0" * 16 + "-01", "bad\nheader"],
+)
+def test_invalid_traceparents_are_not_forwarded(value):
+    assert obs.clean_traceparent(value) is None
+
+
+def test_traceparent_crosses_http_boundary_without_leaking_between_requests():
+    import httpx
+
+    traceparent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+    seen = []
+
+    async def downstream(scope, receive, send):
+        with PlatformClient(base_url="http://internal", token="fixture") as client:
+            seen.append(client._get_run("run").kwargs["headers"].get("traceparent"))
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=obs.RequestContextMiddleware(downstream, "api"))
+        async with httpx.AsyncClient(transport=transport, base_url="http://fixture") as client:
+            assert (await client.get("/", headers={"traceparent": traceparent})).status_code == 204
+            assert (await client.get("/")).status_code == 204
+        assert obs.traceparent_var.get() is None
+
+    asyncio.run(scenario())
+    assert seen == [traceparent, None]
 
 
 # --------------------------------------------------------------------------------------------- logs
@@ -166,13 +198,35 @@ def test_metrics_expose_queue_depth_run_states_and_process_memory(api) -> None:
     assert api.get("/metrics", headers=SERVICE).headers["content-type"].startswith("text/plain")
 
 
+def test_metrics_expose_unacknowledged_work_health_without_identifiers(api):
+    body = api.get("/metrics", headers=SERVICE).text
+    for name in ["ailab_outbox_backlog", "ailab_outbox_oldest_seconds", "ailab_usage_unreconciled"]:
+        assert f"{name} " in body
+    assert "user_id=" not in body and "run_id=" not in body and "file_id=" not in body
+
+
+def test_queue_depth_includes_both_run_lanes(monkeypatch):
+    from ailab_platform import queue as queue_module
+    from ailab_platform.queue import InMemoryQueue
+
+    queue = InMemoryQueue()
+    monkeypatch.setattr(queue_module, "get_queue", lambda: queue)
+    queue.enqueue(f"{settings.run_queue}:chat", {"run_id": "chat"})
+    queue.enqueue(f"{settings.run_queue}:work", {"run_id": "work"})
+    collected = {metric.name: metric for metric in metrics.ApiStateCollector().collect()}
+    samples = collected["ailab_queue_depth"].samples
+    assert {s.labels["queue"]: s.value for s in samples} == {"runs": 2, "chat": 1, "work": 1, "files": 0}
+
+
 def test_run_lifecycle_is_counted_and_timed(api) -> None:
     ok = sample("ailab_runs_total", status="succeeded")
     secs = sample("ailab_run_seconds_count", status="succeeded")
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "x", "model": "test-fast"}).json()["id"]
     for status in ("running", "succeeded"):
-        api.post(f"/internal/runs/{run_id}/status", headers=SERVICE, json={"status": status})
-    api.post(f"/internal/runs/{run_id}/status", headers=SERVICE, json={"status": "succeeded"})  # repeated: not counted twice
+        api.post(f"/internal/runs/{run_id}/status", headers=attempt_headers(api, run_id), json={"status": status})
+    api.post(
+        f"/internal/runs/{run_id}/status", headers=attempt_headers(api, run_id), json={"status": "succeeded"}
+    )  # repeated: not counted twice
     assert sample("ailab_runs_total", status="succeeded") == ok + 1
     assert sample("ailab_run_seconds_count", status="succeeded") == secs + 1
 
@@ -236,7 +290,9 @@ def test_agent_metrics_cover_the_run_the_model_calls_and_the_tools() -> None:
     tools = sample("ailab_tool_calls_total", tool="other", ok="false")
     recovered = sample("ailab_agent_recovered_total")
     steps = [LLMResponse(tool_calls=[ToolCall(id="c", name="not-a-real-tool", arguments={})]), LLMResponse(content="done")]
-    asyncio.run(AgentLoop(platform=FakePlatform(), broker=RichBroker(), llm=ScriptedLLM(steps)).process("run_1", attempt=2))
+    asyncio.run(
+        AgentLoop(platform=FakePlatform(), broker=RichBroker(), llm=ScriptedLLM(steps)).process("run_1", attempt=2, attempt_id="att_2")
+    )
     assert sample("ailab_agent_run_seconds_count", outcome="succeeded") == runs + 1
     assert sample("ailab_llm_calls_total", model="other", outcome="ok") == calls + 2
     assert sample("ailab_tool_calls_total", tool="other", ok="false") == tools + 1  # an invented tool name is one label
@@ -253,7 +309,7 @@ def test_agent_failure_and_cancel_outcomes_are_distinguished() -> None:
 
     failed_calls = sample("ailab_llm_calls_total", model="other", outcome="error")
     errors = sample("ailab_agent_run_seconds_count", outcome="error")
-    asyncio.run(AgentLoop(platform=FakePlatform(), broker=RichBroker(), llm=Exploding([])).process("run_1"))
+    asyncio.run(AgentLoop(platform=FakePlatform(), broker=RichBroker(), llm=Exploding([])).process("run_1", attempt_id="att_1"))
     assert sample("ailab_llm_calls_total", model="other", outcome="error") == failed_calls + 1
     assert sample("ailab_agent_run_seconds_count", outcome="error") == errors + 1
 

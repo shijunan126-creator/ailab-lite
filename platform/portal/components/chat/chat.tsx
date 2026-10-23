@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Conversation, ConversationDetail, downloadUrl, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, Run, streamRun } from "../../lib/api";
+import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged } from "../app-shell";
@@ -59,7 +60,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [items, setItems] = useState<Record<string, Item[]>>({}); // run id -> live items (runs streamed in this page)
   const [livePreviews, setLivePreviews] = useState<Preview[]>([]);
-  const [paneOpen, setPaneOpen] = useState(true);
+  const [paneOpen, setPaneOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -67,24 +68,38 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const scroller = useRef<HTMLDivElement | null>(null);
   const stick = useRef(true);
   const loadSeq = useRef(0);
+  const detailController = useRef<AbortController | null>(null);
+  const olderController = useRef<AbortController | null>(null);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const prependHeight = useRef<number | null>(null);
+  const actionController = useRef(new AbortController());
+  useEffect(() => {
+    actionController.current = new AbortController();
+    return () => { actionController.current.abort(); streamController.current?.abort(); };
+  }, []);
   const streamController = useRef<AbortController | null>(null);
+  const eventCursors = useRef<Record<string, number>>({});
 
   const loadDetail = useCallback(async () => {
     if (!id) return null;
+    detailController.current?.abort();
+    const controller = new AbortController();
+    detailController.current = controller;
     const seq = ++loadSeq.current;
     try {
-      const d = await api<ConversationDetail>(`/v1/conversations/${id}`);
+      const d = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20`, { signal: controller.signal });
       if (seq !== loadSeq.current) return null;
-      setDetail(d);
+      setDetail((previous) => refreshConversation(previous, d));
       return d;
     } catch (err: any) {
-      if (seq === loadSeq.current) setError(String(err?.message || err));
+      if (!controller.signal.aborted && seq === loadSeq.current) setError(String(err?.message || err));
       return null;
     }
   }, [id]);
 
   const follow = useCallback(
     (run: Run) => {
+      if (actionController.current.signal.aborted) return new AbortController();
       streamController.current?.abort();
       const controller = new AbortController();
       streamController.current = controller;
@@ -94,14 +109,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         run.id,
         (event) => {
           if (controller.signal.aborted) return;
+          if (event.seq) eventCursors.current[run.id] = event.seq;
           setItems((prev) => ({ ...prev, [run.id]: reduceEvent(prev[run.id] || [], event) }));
           if (event.type === "preview.updated") {
             const p: Preview = { ...event.payload, run_id: run.id };
             setLivePreviews((prev) => [...prev.filter((x) => x.filename !== p.filename), p]);
-            setSelected(p.filename);
-            setPaneOpen(true);
           }
-          if (["artifact.created", "run.completed", "run.failed", "run.canceled"].includes(event.type)) loadDetail();
+          if (["run.status", "artifact.created", "run.completed", "run.failed", "run.canceled"].includes(event.type)) loadDetail();
         },
         controller.signal,
         () => {
@@ -109,7 +123,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           setStreaming(null);
           loadDetail();
           conversationsChanged();
-        }
+        },
+        eventCursors.current[run.id] || 0
       ).catch((err) => {
         if (!controller.signal.aborted) {
           setStreaming(null);
@@ -130,15 +145,38 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail().then((d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
-      if (last && !isTerminal(last.status)) controller = follow(last);
+      if (last && (!isTerminal(last.status) || last.status === "interrupted")) controller = follow(last);
     });
     return () => {
       disposed = true;
       ++loadSeq.current;
+      detailController.current?.abort();
+      olderController.current?.abort();
       controller?.abort();
       streamController.current?.abort();
     };
   }, [id, loadDetail, follow]);
+
+  async function loadOlder() {
+    if (!id || !detail?.has_more || !detail.turns.length || olderController.current) return;
+    const controller = new AbortController();
+    olderController.current = controller;
+    setLoadingOlder(true);
+    try {
+      const page = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20&before=${encodeURIComponent(detail.turns[0].id)}`, { signal: controller.signal });
+      if (controller.signal.aborted) return;
+      const el = scroller.current;
+      prependHeight.current = el ? el.scrollHeight - el.scrollTop : null;
+      stick.current = false;
+      setDetail((d) => d && d.id === page.id ? { ...d, turns: mergeTurns(page.turns, d.turns),
+        previews: mergePreviews(page.previews, d.previews), has_more: page.has_more } : d);
+    } catch (err: any) {
+      if (!controller.signal.aborted) setError(String(err?.message || err));
+    } finally {
+      if (olderController.current === controller) olderController.current = null;
+      if (!controller.signal.aborted) setLoadingOlder(false);
+    }
+  }
 
   useEffect(() => {
     const moved = (e: Event) => {
@@ -150,9 +188,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }, [id]);
 
   // keep the newest message in view while it streams, unless the user scrolled up to read
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = scroller.current;
-    if (el && stick.current) el.scrollTop = el.scrollHeight;
+    if (el && prependHeight.current !== null) {
+      el.scrollTop = el.scrollHeight - prependHeight.current;
+      prependHeight.current = null;
+    } else if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [items, detail]);
 
   const previews = useMemo(() => {
@@ -184,7 +225,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
   const running = turns.some((t) => !isTerminal(t.status));
   // a question the agent is waiting on: the composer answers it instead of starting a new turn
-  const waiting = turns.find((t) => t.status === "waiting_user");
+  const waiting = turns.find((t) => t.status === "waiting_user" || t.status === "interrupted");
   const question = waiting
     ? ([...(items[waiting.id] || [])].reverse().find((it) => it.kind === "ask" && it.answer === undefined) as Extract<Item, { kind: "ask" }> | undefined)
     : undefined;
@@ -193,15 +234,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setBusy(true);
     setError("");
     try {
+      const signal = actionController.current.signal;
       if (waiting && question) {
-        await api(`/v1/runs/${waiting.id}/answer`, { method: "POST", body: JSON.stringify({ question_id: question.id, answer: prompt }) });
+        await answer(waiting, question.id, prompt);
         return true;
       }
       let convId = id;
       if (!convId)
-        convId = (await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model, project_id: projectId || undefined }) })).id;
+        convId = (await api<Conversation>("/v1/conversations", { method: "POST", signal, body: JSON.stringify({ model, project_id: projectId || undefined }) })).id;
       const run = await api<Run>(`/v1/conversations/${convId}/messages`, {
-        method: "POST",
+        method: "POST", signal,
         body: JSON.stringify({ prompt, model: model || undefined, file_ids: fileIds, ...options }),
       });
       if (!id) {
@@ -223,10 +265,19 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
+  async function answer(run: Run, questionId: string, value: string) {
+    const resumed = await api<Run>(`/v1/runs/${run.id}/answer`, {
+      method: "POST", signal: actionController.current.signal,
+      body: JSON.stringify({ question_id: questionId, answer: value }),
+    });
+    setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
+    follow(resumed);
+  }
+
   async function resume(run: Run) {
     setError("");
     try {
-      const resumed = await api<Run>(`/v1/runs/${run.id}/resume`, { method: "POST" });
+      const resumed = await api<Run>(`/v1/runs/${run.id}/resume`, { method: "POST", signal: actionController.current.signal });
       setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
       stick.current = true;
       follow(resumed);
@@ -293,9 +344,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               onScroll={(e) => {
                 const el = e.currentTarget;
                 stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+                if (el.scrollTop < 80) void loadOlder();
               }}
             >
               <div className="messages-inner">
+                {detail?.has_more ? <button className="link older-turns" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? "加载中…" : "更早的消息"}</button> : null}
                 {detail === null && !error ? <div className="hint">加载中…</div> : null}
                 {turns.map((t) => (
                   <Turn
@@ -310,6 +363,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                       setPaneOpen(true);
                     }}
                     onResume={resume}
+                    onAnswer={answer}
                   />
                 ))}
               </div>
@@ -317,7 +371,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
               {!paneOpen && previews.length ? (
-                <button className="link" onClick={() => setPaneOpen(true)}>
+                <button className="link" onClick={() => { setSelected((value) => value || previews[previews.length - 1]?.filename || null); setPaneOpen(true); }}>
                   打开预览（{previews.length}）
                 </button>
               ) : null}

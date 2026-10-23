@@ -14,7 +14,9 @@ from typing import Any, NamedTuple
 import httpx
 
 from .config import settings
-from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var
+from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var, traceparent_var
+from .runtime_context import attempt_id_var, delivery_id_var
+from .telemetry import span
 
 # One client per process, not one per call: a Run makes 15-25 internal calls and
 # 200 concurrent runs would otherwise build thousands of connection pools.
@@ -42,6 +44,12 @@ class Request(NamedTuple):
     kwargs: dict
 
 
+def _traced_kwargs(req: Request) -> dict:
+    if traceparent := traceparent_var.get():
+        return {**req.kwargs, "headers": {**req.kwargs["headers"], "traceparent": traceparent}}
+    return req.kwargs
+
+
 class _Service:
     """Describes each call once; the sync and async clients only differ in how they send it."""
 
@@ -59,9 +67,15 @@ class _Service:
 
     def _req(self, method: str, path: str, timeout: float = 30, **kwargs) -> Request:
         headers = dict(self.headers)
+        if attempt := attempt_id_var.get():
+            headers["X-Run-Attempt"] = attempt
+        if delivery := delivery_id_var.get():
+            headers["X-Delivery-Id"] = delivery
         rid = request_id_var.get()
         if rid != NO_REQUEST:  # carry the correlation id into the next service's logs
             headers[REQUEST_ID_HEADER] = rid
+        if traceparent := traceparent_var.get():
+            headers["traceparent"] = traceparent
         return Request(method, f"{self.base_url}{path}", timeout, {"headers": headers, **kwargs})
 
 
@@ -69,6 +83,9 @@ class _PlatformApi(_Service):
     @property
     def default_base_url(self) -> str:  # type: ignore[override]
         return settings.api_base_url
+
+    def _job_action(self, job_id, action, **body) -> Request:
+        return self._req("POST", f"/internal/jobs/{job_id}/{action}", timeout=10, json=body)
 
     def _get_run(self, run_id: str) -> Request:
         return self._req("GET", f"/internal/runs/{run_id}")
@@ -78,7 +95,7 @@ class _PlatformApi(_Service):
 
     def _set_run_status(self, run_id, status, summary=None, error=None, result=None) -> Request:
         body = {"status": status, "summary": summary, "error": error, "result": result}
-        return self._req("POST", f"/internal/runs/{run_id}/status", json=body)
+        return self._req("POST", f"/internal/runs/{run_id}/transition", json=body)
 
     def _append_event(self, run_id, type_, payload=None) -> Request:
         return self._req("POST", f"/internal/runs/{run_id}/events", json={"type": type_, "payload": payload or {}})
@@ -122,9 +139,10 @@ class PlatformClient(_PlatformApi):
         self._http = httpx.Client(timeout=30, limits=_LIMITS, trust_env=False)
 
     def _send(self, req: Request) -> httpx.Response:
-        r = self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
-        _raise(req.method, req.url, r)
-        return r
+        with span("internal.http", method=req.method):
+            r = self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
+            _raise(req.method, req.url, r)
+            return r
 
     def close(self) -> None:
         self._http.close()
@@ -135,8 +153,27 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def ocr(self, file_id: str, *, prepare: bool = False) -> dict:
+        suffix = "/prepare" if prepare else ""
+        # The API bounds one OCR run by its total model timeout; the read timeout must outlast it.
+        timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
+        return self._send(self._req("POST", f"/internal/files/{file_id}/ocr{suffix}", timeout=timeout, json={})).json()
+
+    def get_run_state(self, run_id: str) -> dict:
+        return self._send(self._get_run_state(run_id)).json()
+
     def get_run(self, run_id: str) -> dict:
         return self._send(self._get_run(run_id)).json()
+
+    def thumbnail_batch(self, cursor: str, limit: int) -> dict:
+        return self._send(self._req("POST", "/internal/jobs/thumbnails/backfill", json={"cursor": cursor, "limit": limit})).json()
+
+    def transition_run(self, run_id, status, *, events=(), attempt_id=None, **values) -> dict:
+        body = {"status": status, "events": list(events), "attempt_id": attempt_id, **values}
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/transition", json=body)).json()
+
+    def job_action(self, job_id, action, **body) -> dict:
+        return self._send(self._job_action(job_id, action, **body)).json()
 
     def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return self._send(self._set_run_status(run_id, status, summary, error, result)).json()
@@ -171,7 +208,7 @@ class PlatformClient(_PlatformApi):
         req = self._get_file_bytes(file_id, run_id, job, preview_job)
         if max_bytes is None:
             return self._send(req).content
-        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+        with span("internal.download"), self._http.stream(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req)) as response:
             if response.status_code >= 400:
                 response.read()
                 _raise(req.method, req.url, response)
@@ -182,16 +219,26 @@ class PlatformClient(_PlatformApi):
                 data.extend(chunk)
             return bytes(data)
 
-    def download_file(self, file_id: str, target, *, max_bytes: int, job: str = "processing") -> None:
+    def download_file(
+        self, file_id: str, target, *, max_bytes: int, job: str = "processing", run_id: str | None = None, preview_job: str | None = None
+    ) -> None:
         deadline = time.monotonic() + 120
-        req = self._get_file_bytes(file_id, job=job)
-        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+        req = self._get_file_bytes(file_id, run_id, job, preview_job)
+        kwargs = _traced_kwargs(req)
+        kwargs["headers"] = {**kwargs["headers"], "Accept-Encoding": "identity"}
+        with span("internal.download"), self._http.stream(req.method, req.url, timeout=httpx.Timeout(10, connect=5), **kwargs) as response:
             if response.status_code >= 400:
-                response.read()
-                _raise(req.method, req.url, response)
+                # Error bodies are untrusted too; do not buffer an arbitrarily
+                # large HTML/proxy error while handling a bounded download.
+                detail = next(response.iter_raw(), b"")[:4096].decode("utf-8", "replace")
+                raise ClientError(req.method, req.url, response.status_code, detail)
+            if response.headers.get("content-encoding", "identity").lower() != "identity":
+                raise ClientError(req.method, req.url, 502, "unexpected file transfer encoding")
             size = 0
             with open(target, "wb") as stream:
-                for chunk in response.iter_bytes(chunk_size=64 * 1024):
+                # Do not coalesce network reads into a full 64KiB block: a peer
+                # trickling bytes could otherwise postpone the deadline check.
+                for chunk in response.iter_raw():
                     if time.monotonic() >= deadline:
                         raise TimeoutError("download deadline exceeded")
                     size += len(chunk)
@@ -222,9 +269,11 @@ class AsyncPlatformClient(_PlatformApi):
         self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     async def _send(self, req: Request) -> httpx.Response:
-        r = await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
-        _raise(req.method, req.url, r)
-        return r
+        with span("internal.http", method=req.method):
+            async with asyncio.timeout(req.timeout):
+                r = await self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
+            _raise(req.method, req.url, r)
+            return r
 
     async def aclose(self) -> None:
         await self._http.aclose()
@@ -235,11 +284,41 @@ class AsyncPlatformClient(_PlatformApi):
     async def __aexit__(self, *exc) -> None:
         await self.aclose()
 
+    async def get_file_image(self, file_id: str, run_id: str) -> bytes:
+        response = await self._send(self._req("GET", f"/internal/files/{file_id}/vision", params={"run_id": run_id}))
+        if len(response.content) > settings.ocr_page_max_bytes:
+            raise ValueError("image_size_limit")
+        return response.content
+
     async def get_run(self, run_id: str) -> dict:
-        return (await self._send(self._get_run(run_id))).json()
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
+
+    async def get_checkpoint(self, run_id: str) -> dict | None:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
+
+    async def put_checkpoint(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/checkpoint", json=payload))).json()
+
+    async def pause_run(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/pause", json=payload))).json()
+
+    async def get_model_context(self, run_id: str, after: str | None = None) -> dict:
+        return (
+            await self._send(self._req("GET", f"/internal/runs/{run_id}/model-context", params={"after": after} if after else {}))
+        ).json()
+
+    async def save_model_summary(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/model-summary", json=payload))).json()
 
     async def get_run_state(self, run_id: str) -> dict:
         return (await self._send(self._get_run_state(run_id))).json()
+
+    async def transition_run(self, run_id, status, *, events=(), attempt_id=None, **values) -> dict:
+        body = {"status": status, "events": list(events), "attempt_id": attempt_id, **values}
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/transition", json=body))).json()
+
+    async def job_action(self, job_id, action, **body) -> dict:
+        return (await self._send(self._job_action(job_id, action, **body))).json()
 
     async def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return (await self._send(self._set_run_status(run_id, status, summary, error, result))).json()
@@ -289,7 +368,8 @@ class AsyncBrokerClient(_Service):
         return settings.broker_base_url
 
     async def _raw(self, req: Request) -> httpx.Response:
-        return await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
+        async with asyncio.timeout(req.timeout):
+            return await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
 
     async def _send(self, req: Request) -> httpx.Response:
         r = await self._raw(req)

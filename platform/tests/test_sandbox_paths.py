@@ -44,6 +44,12 @@ class _RecordingProvider(SandboxProvider):
     def get_file(self, sandbox_id: str, path: str) -> bytes:
         raise NotImplementedError
 
+    def put_file_from_path(self, *args, **kwargs):
+        raise NotImplementedError
+
+    def get_file_to_path(self, *args, **kwargs):
+        raise NotImplementedError
+
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         raise NotImplementedError
 
@@ -89,5 +95,5 @@ def test_redis_ack_is_one_atomic_script() -> None:
 
     script, numkeys, args = q.client.calls[0]
     assert "XACK" in script and "XDEL" in script
-    assert numkeys == 1
-    assert args == ("ailab:stream:runs", "workers", "1-0")
+    assert numkeys == 2
+    assert args == ("ailab:stream:runs", "ailab:stream:runs:jobs", "workers", "1-0", "")

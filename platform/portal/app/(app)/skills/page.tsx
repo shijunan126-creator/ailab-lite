@@ -1,5 +1,7 @@
 "use client";
 
+import { formatBytes } from "../../../lib/format";
+
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconChart, IconDownload, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
 import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
@@ -52,13 +54,13 @@ function SkillRow({ s, busy, onToggle, onDelete }: { s: Skill; busy: boolean; on
         {s.description ? <div className="skill-desc">{s.description}</div> : null}
         {s.scope === "personal" ? (
           <div className="skill-file hint">
-            资料库文件：{s.filename}
+            技能文件：{s.filename}
             {s.error ? <span className="error">　无法使用：{s.error}</span> : null}
           </div>
         ) : null}
       </div>
       {onDelete ? (
-        <button className="link danger-text" onClick={onDelete} title="删除这个技能（同时从资料库删除文件）">
+        <button className="link danger-text" onClick={onDelete} title="删除这个技能">
           删除
         </button>
       ) : null}
@@ -68,21 +70,28 @@ function SkillRow({ s, busy, onToggle, onDelete }: { s: Skill; busy: boolean; on
 }
 
 export default function SkillsPage() {
+  const [storage, setStorage] = useState<{used_bytes: number; limit_bytes: number; available_bytes: number} | null>(null);
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
   const picker = useRef<HTMLInputElement | null>(null);
+  const generation = useRef(0);
+  const disposed = useRef(false);
 
-  const load = useCallback(
-    () =>
-      api<Skill[]>("/v1/skills")
-        .then(setSkills)
-        .catch((e) => setError(String(e?.message || e))),
-    []
-  );
+  const load = useCallback(() => {
+    const current = ++generation.current;
+    const active = () => !disposed.current && generation.current === current;
+    api<{used_bytes: number; limit_bytes: number; available_bytes: number}>("/v1/skills/storage")
+      .then((value) => { if (active()) setStorage(value); }).catch(() => undefined);
+    return api<Skill[]>("/v1/skills")
+      .then((value) => { if (active()) setSkills(value); })
+      .catch((e) => { if (active()) setError(String(e?.message || e)); });
+  }, []);
   useEffect(() => {
+    disposed.current = false;
     load();
+    return () => { disposed.current = true; generation.current++; };
   }, [load]);
 
   async function toggle(s: Skill, enabled: boolean) {
@@ -102,9 +111,10 @@ export default function SkillsPage() {
   async function upload(list: FileList) {
     setError("");
     for (const file of Array.from(list)) {
+      if (disposed.current) return;
       const form = new FormData();
       form.append("upload", file);
-      const resp = await fetch(`${API_BASE}/v1/files`, { method: "POST", body: form });
+      const resp = await fetch(`${API_BASE}/v1/files?purpose=skill`, { method: "POST", body: form });
       redirectIfUnauthorized(resp);
       if (!resp.ok) {
         setError(`${file.name}：上传失败（${resp.status}）`);
@@ -115,7 +125,9 @@ export default function SkillsPage() {
       // the Worker scans the file and recognises the skill; wait for it
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 1000));
+        if (disposed.current) return;
         const f = await api<FileItem>(`/v1/files/${item.id}`).catch(() => null);
+        if (disposed.current) return;
         if (f && f.status !== "pending") {
           if (f.status === "rejected") setError(`${file.name}：没有通过安全扫描`);
           else if (!f.meta?.skill && !f.meta?.skill_error) setError(`${file.name}：不是技能文件（需要带 name、description 的 SKILL.md，或包含它的 .zip）`);
@@ -129,8 +141,8 @@ export default function SkillsPage() {
   }
 
   async function remove(s: Skill) {
-    if (!s.file_id || !confirm(`删除个人技能「${s.title}」？资料库里的文件 ${s.filename} 也会删除。`)) return;
-    const resp = await fetch(`${API_BASE}/v1/files/${s.file_id}`, { method: "DELETE" });
+    if (!s.file_id || !confirm(`删除个人技能「${s.title}」？技能文件将永久删除并释放存储空间。`)) return;
+    const resp = await fetch(`${API_BASE}/v1/skills/files/${s.file_id}`, { method: "DELETE" });
     redirectIfUnauthorized(resp);
     if (!resp.ok) setError(`删除失败（${resp.status}）`);
     load();
@@ -162,6 +174,7 @@ export default function SkillsPage() {
 
       <div className="section-title" style={{ marginTop: 32 }}>
         个人技能
+        {storage ? <span className="hint">已用 {formatBytes(storage.used_bytes)} · 剩余 {formatBytes(storage.available_bytes)}</span> : null}
         <span className="spacer" />
         <button className="link" onClick={downloadTemplate}>
           <IconDownload size={15} /> 下载模板
@@ -171,7 +184,7 @@ export default function SkillsPage() {
         </button>
         <input ref={picker} type="file" accept=".md,.zip" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
       </div>
-      <p className="hint section-hint">保存在你自己的资料库里，只有你能看到和使用。一个 SKILL.md，或者 SKILL.md 连同脚本、素材打成的 .zip。</p>
+      <p className="hint section-hint">支持 SKILL.md 或包含脚本与素材的 ZIP。</p>
       <section className="card skill-list">
         {uploading.map((n) => (
           <div key={n} className="skill-row off">

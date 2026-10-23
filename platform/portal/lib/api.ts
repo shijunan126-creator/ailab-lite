@@ -34,6 +34,7 @@ export type Run = {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+  work_ms?: number | null;
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string }[];
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
@@ -78,7 +79,7 @@ export type Conversation = {
   last_status?: string | null;
 };
 
-export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[] };
+export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[]; has_more: boolean };
 
 export function previewUrl(runId: string, name: string): string {
   return `${API_BASE}/v1/runs/${runId}/previews/${name}`;
@@ -239,9 +240,9 @@ export async function streamRun(
   runId: string,
   onEvent: (event: EventItem) => void,
   signal: AbortSignal,
-  onEnd?: () => void
+  onEnd?: () => void,
+  after = 0
 ): Promise<void> {
-  let after = 0;
   let failures = 0;
   while (!signal.aborted) {
     let ended = false;
@@ -316,3 +317,6 @@ function parseChunk(chunk: string): EventItem | null {
     return { seq: id, type, payload: { raw: data.join("\n") } };
   }
 }
+
+export type SkillPolicy = { scope: string; name: string; state: "allowed" | "review" | "disabled" };
+export type SkillReview = { file_id: string; name: string; owner_id: string };

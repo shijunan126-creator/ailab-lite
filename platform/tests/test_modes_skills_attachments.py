@@ -43,16 +43,17 @@ def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
 
     monkeypatch.setattr(routes_internal, "ATTACHMENT_CHARS", 50)
     with TestClient(app) as c:
-        ids = []
+        ids, names = [], []
         for name, body in (("long.txt", "字" * 80), ("short.txt", "hello")):
             up = c.post("/v1/files", headers=AUTH, files={"upload": (name, body.encode(), "text/plain")}).json()
             process_file(up["id"], platform=_ApiClient(c), storage=get_storage())
             ids.append(up["id"])
+            names.append(up["filename"])
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "总结附件", "file_ids": ids}).json()
         files = c.get(f"/internal/runs/{run['id']}", headers=SERVICE).json()["input_files"]
         assert [(f["filename"], f["chars"], len(f["text"]), f["truncated"]) for f in files] == [
-            ("long.txt", 80, 50, True),
-            ("short.txt", 5, 5, False),
+            (names[0], 80, 50, True),
+            (names[1], 5, 5, False),
         ]
         assert "text" not in c.get(f"/v1/runs/{run['id']}", headers=AUTH).json()["input_files"][0]  # only the agent gets it
 
@@ -97,7 +98,7 @@ class _Recording(ScriptedLLM):
 
 def _run(llm, platform, broker=None):
     broker = broker or FakeBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))
     return broker
 
 

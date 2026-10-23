@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds } from "../../lib/api";
 
 export type Category = "all" | "starred" | "images" | "trash";
-export type LibraryFilter = { category: Category; projectId?: string | null; q?: string };
+export type LibraryFilter = { category: Category; projectId?: string | null; q?: string; grouped?: boolean };
+
+export type LibraryFolder = {id: string; name: string; files: number};
 
 const PAGE = 100;
 const MAX = 200; // the API's largest page
@@ -14,12 +16,16 @@ function query(filter: LibraryFilter, limit: number, offset: number): string {
   if (filter.category === "trash") params.set("trashed", "true");
   else params.set("category", filter.category);
   if (filter.projectId) params.set("project_id", filter.projectId);
+  else if (filter.grouped) params.set("scope", "root");
   if (filter.q?.trim()) params.set("q", filter.q.trim());
   return `/v1/files?${params}`;
 }
 
 /** One filtered view of the library. Responses that arrive after the filter changed are dropped. */
 export function useLibrary(filter: LibraryFilter, enabled = true) {
+  const [folders, setFolders] = useState<LibraryFolder[]>([]);
+  const [folderMore, setFolderMore] = useState(false);
+  const folderCursor = useRef("");
   const [files, setFiles] = useState<FileItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [more, setMore] = useState(false);
@@ -27,15 +33,26 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
   const seq = useRef(0); // every request: drops a response overtaken by a newer one
   const view = useRef(0); // the filter: drops scan polls started for a view that is no longer shown
   const count = useRef(0);
-  const key = `${filter.category}|${filter.projectId || ""}|${filter.q?.trim() || ""}`;
+  const key = `${filter.category}|${filter.projectId || ""}|${filter.q?.trim() || ""}|${filter.grouped || false}`;
+  const folderQuery = (after = "") => {
+    const params = new URLSearchParams({limit: String(PAGE), after});
+    if (filter.category === "trash") params.set("trashed", "true");
+    else params.set("category", filter.category);
+    if (filter.q?.trim()) params.set("q", filter.q.trim());
+    return `/v1/files/folders?${params}`;
+  };
+  const fetchFolders = (after = "") => filter.grouped && !filter.projectId ? api<LibraryFolder[]>(folderQuery(after)) : Promise.resolve([]);
 
   // Refetch what is on screen (at least one page): after a change, and while scans are pending.
   const reload = useCallback(async () => {
     const mine = ++seq.current;
     const limit = Math.min(MAX, Math.max(PAGE, count.current));
     try {
-      const list = await api<FileItem[]>(query(filter, limit, 0));
+      const [list, grouped] = await Promise.all([api<FileItem[]>(query(filter, limit, 0)), fetchFolders()]);
       if (mine !== seq.current) return;
+      setFolders(grouped);
+      folderCursor.current = grouped.at(-1)?.id || "";
+      setFolderMore(grouped.length === PAGE);
       count.current = list.length;
       setFiles(list);
       setMore(list.length === limit);
@@ -50,8 +67,13 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
   const loadMore = useCallback(async () => {
     const mine = ++seq.current;
     try {
-      const list = await api<FileItem[]>(query(filter, PAGE, count.current));
+      const [list, grouped] = await Promise.all([api<FileItem[]>(query(filter, PAGE, count.current)), folderMore ? fetchFolders(folderCursor.current) : Promise.resolve([])]);
       if (mine !== seq.current) return;
+      if (folderMore) {
+        setFolders(prev => [...prev, ...grouped]);
+        folderCursor.current = grouped.at(-1)?.id || folderCursor.current;
+        setFolderMore(grouped.length === PAGE);
+      }
       setFiles((prev) => {
         const seen = new Set(prev.map((f) => f.id));
         const next = [...prev, ...list.filter((f) => !seen.has(f.id))];
@@ -62,7 +84,7 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
     } catch (err: any) {
       if (mine === seq.current) setError(String(err?.message || err));
     }
-  }, [key]);
+  }, [key, folderMore]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -95,5 +117,5 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
     return () => clearInterval(timer);
   }, [pending, enabled]);
 
-  return { files, setFiles, loaded, more, error, reload, loadMore };
+  return { files, folders, setFiles, loaded, more: more || folderMore, error, reload, loadMore };
 }

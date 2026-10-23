@@ -9,15 +9,38 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import time
 from datetime import datetime
+from pathlib import Path
 
 from ..config import settings
 from ..paths import PathError, normalize_path
 from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .transfer import TRANSFER_SECONDS, TransferLimitError
 
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
+
+# PID 1 is a trusted, isolated supervisor. Exiting stops every process in the PID
+# namespace; Docker --rm then removes the writable layer even if the Broker died.
+EXPIRY_SUPERVISOR = """
+import json, os, sys, time
+from datetime import datetime
+deadline, maximum, grace = map(float, sys.argv[1:])
+while time.time() < deadline:
+    try:
+        with open('/run/ailab-lease.json') as f:
+            meta = json.loads(f.read(65536))
+        if meta.get('ailab.state') == 'releasing':
+            break
+        expires = datetime.fromisoformat(meta['ailab.expires_at']).timestamp()
+        deadline = min(expires + grace, maximum)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    time.sleep(min(1, max(0, deadline - time.time())))
+os._exit(0)
+"""
 
 
 def _run(args: list[str], timeout: int | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
@@ -54,6 +77,9 @@ class DockerSandbox(SandboxProvider):
             "docker",
             "run",
             "-d",
+            "--rm",
+            "--runtime",
+            settings.sandbox_runtime,
             "--name",
             name,
             "--label",
@@ -75,15 +101,29 @@ class DockerSandbox(SandboxProvider):
             "--security-opt",
             "no-new-privileges",
             "--user",
-            "10001",
+            "0",
             "--tmpfs",
             "/tmp:rw,size=256m",
+            "--entrypoint",
+            "python",
             image or self.image,
         ]
         # Labels survive Broker/Redis restarts. Docker labels are immutable; mutable
         # state/expiry uses a root-only file under /run, never the user workspace.
         for key, value in (labels or {}).items():
             args[-1:-1] = ["--label", f"{key}={value}"]
+        args.extend(
+            [
+                "-I",
+                "-S",
+                "-u",
+                "-c",
+                EXPIRY_SUPERVISOR,
+                str(expires),
+                str(time.time() + spec.max_lifetime + SANDBOX_EXPIRY_GRACE_SECONDS),
+                str(SANDBOX_EXPIRY_GRACE_SECONDS),
+            ]
+        )
         proc = _run(args, timeout=120)
         if proc.returncode != 0:
             raise SandboxError(f"docker run failed: {proc.stderr.decode('utf-8', 'replace')[-800:]}")
@@ -158,6 +198,51 @@ class DockerSandbox(SandboxProvider):
             raise SandboxError(f"get_file failed: {proc.stderr.decode('utf-8', 'replace')[-400:]}")
         return proc.stdout
 
+    def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
+        path = self._check_path(path)
+        script = (
+            'p="$1"; parent=$(dirname "$p"); rp=$(realpath -m "$parent") || exit 1; '
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
+            '[ ! -L "$p" ] || exit 1; mkdir -p "$parent" || exit 1; '
+            'tmp=$(mktemp "$parent/.ailab-upload.XXXXXXXX") || exit 1; '
+            "trap 'rm -f \"$tmp\"' EXIT; "
+            f'head -c {max_bytes + 1} > "$tmp" && [ "$(stat -c %s "$tmp")" -le {max_bytes} ] && mv -f "$tmp" "$p"'
+        )
+        with source.open("rb") as stream:
+            if source.stat().st_size > max_bytes:
+                raise TransferLimitError("file exceeds transfer limit")
+            self._transfer(["docker", "exec", "-i", "-u", "10001", sandbox_id, "sh", "-c", script, "sh", path], stdin=stream)
+
+    def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
+        path = self._check_path(path)
+        q = shlex.quote(path)
+        script = (
+            f'parent=$(dirname {q}); rp=$(realpath -m "$parent") || exit 1; '
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
+            f"[ ! -L {q} ] && [ -f {q} ] && head -c {max_bytes + 1} -- {q}"
+        )
+        with target.open("wb") as stream:
+            self._transfer(["docker", "exec", "-u", "10001", sandbox_id, "sh", "-c", script], stdout=stream)
+        if target.stat().st_size > max_bytes:
+            raise TransferLimitError("file exceeds transfer limit")
+
+    @staticmethod
+    def _transfer(args: list[str], *, stdin=None, stdout=None) -> None:
+        try:
+            # File descriptors go directly to the child: communicate() must not
+            # retain an entire input or output in the Broker heap.
+            proc = subprocess.run(
+                args,
+                stdin=stdin,
+                stdout=stdout if stdout is not None else subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                timeout=TRANSFER_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise SandboxError("docker file transfer failed or timed out") from exc
+        if proc.returncode:
+            raise SandboxError("docker file transfer failed")
+
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         path = self._check_path(path)
         proc = _run(
@@ -224,7 +309,7 @@ class DockerSandbox(SandboxProvider):
             raise SandboxError("docker metadata update failed")
 
     def renew(self, provider_ref: str, until: datetime) -> None:
-        # Docker has no native expiration. Broker reconciliation enforces this deadline.
+        # PID 1 reads this protected file independently of Broker reconciliation.
         self.update_metadata(provider_ref, {"ailab.expires_at": until.isoformat()})
 
     def release(self, sandbox_id: str) -> None:

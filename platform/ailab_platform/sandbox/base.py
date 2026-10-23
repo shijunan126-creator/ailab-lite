@@ -11,6 +11,7 @@ import shlex
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 from ..contracts.sandbox import LeaseHandle as LeaseHandle
 from ..contracts.sandbox import SandboxResource as SandboxResource
@@ -76,6 +77,14 @@ class SandboxProvider(ABC):
 
     @abstractmethod
     def get_file(self, sandbox_id: str, path: str) -> bytes: ...
+
+    @abstractmethod
+    def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
+        """Upload a bounded local file without materializing it as bytes."""
+
+    @abstractmethod
+    def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
+        """Download with an enforced byte limit; callers discard partial local output on error."""
 
     @abstractmethod
     def list_files(self, sandbox_id: str, path: str) -> list[dict]: ...

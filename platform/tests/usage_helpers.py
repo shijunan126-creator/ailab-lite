@@ -2,19 +2,20 @@
 
 from uuid import uuid4
 
-SERVICE = {"X-Service-Token": "test-service"}
+from tests.run_claims import SERVICE, owned_headers
 
 
 def record_usage(api, run_id, model, prompt_tokens=0, completion_tokens=0, cached_tokens=0):
     call_id = uuid4().hex
+    headers = owned_headers(api, run_id)
     run = api.get(f"/internal/runs/{run_id}", headers=SERVICE).json()
     reserved = api.post(
         "/internal/usage/reserve",
-        headers=SERVICE,
+        headers=headers,
         json={
             "call_id": call_id,
             "run_id": run_id,
-            "attempt_id": "test",
+            "attempt_id": headers["X-Run-Attempt"],
             "alias": model,
             "mode": (run.get("options") or {}).get("mode", "work"),
             "estimated_input_tokens": max(0, prompt_tokens),
@@ -24,9 +25,10 @@ def record_usage(api, run_id, model, prompt_tokens=0, completion_tokens=0, cache
     assert reserved.status_code == 200, reserved.text
     settled = api.post(
         "/internal/usage/settle",
-        headers=SERVICE,
+        headers=headers,
         json={
             "call_id": call_id,
+            "attempt_id": headers["X-Run-Attempt"],
             "actual_backend": model,
             "input_tokens": prompt_tokens,
             "output_tokens": completion_tokens,

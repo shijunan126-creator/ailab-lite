@@ -23,7 +23,7 @@ import { MoveDialog, NewProjectInput } from "../../../components/library/project
 import FileViewer from "../../../components/preview/file-viewer";
 import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
-import { formatBytes, timeAgo } from "../../../lib/format";
+import { formatBytes, formatDate, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
 
 type Tab = Category | "projects";
@@ -60,7 +60,7 @@ function Library() {
   const router = useRouter();
   const params = useSearchParams();
   const projectId = params.get("project");
-  const tab: Tab = projectId ? "projects" : ((TABS.find(([k]) => k === params.get("c"))?.[0] as Tab) || "all");
+  const tab: Tab = (TABS.find(([k]) => k === params.get("c"))?.[0] as Tab) || (projectId ? "projects" : "all");
   const projects = useProjects();
   const project = projectId ? projects?.find((p) => p.id === projectId) : null;
 
@@ -81,8 +81,8 @@ function Library() {
   const showsFiles = tab !== "projects" || !!projectId;
   const trash = tab === "trash";
   const canUpload = showsFiles && !trash;
-  const { files, setFiles, loaded, more, error, reload, loadMore } = useLibrary(
-    { category: tab === "projects" ? "all" : tab, projectId, q },
+  const { files, folders, setFiles, loaded, more, error, reload, loadMore } = useLibrary(
+    { category: tab === "projects" ? "all" : tab, projectId, q, grouped: true },
     showsFiles
   );
 
@@ -110,7 +110,9 @@ function Library() {
 
   function go(next: Tab) {
     setSearch("");
-    router.push(next === "all" ? "/files" : `/files?c=${next}`);
+    const query = new URLSearchParams({c: next});
+    if (projectId && next !== "projects") query.set("project", projectId);
+    router.push(`/files?${query}`);
   }
 
   function toggle(id: string) {
@@ -382,15 +384,27 @@ function Library() {
 
       {projectId ? (
         <div className="library-crumb">
-          <a href="/files?c=projects">项目</a>
+          <a href={`/files?c=${tab}`}>{TABS.find(([key]) => key === tab)?.[1] || "资料库"}</a>
           <IconChevronRight size={14} />
-          <span>{project?.name || "…"}</span>
+          <span>{project?.name || files[0]?.meta?.trashed_project_name || "已删除项目"}</span>
           <span className="spacer" />
-          <a href={`/p/${projectId}`}>打开项目</a>
+          {project ? <a href={`/p/${projectId}`}>打开项目</a> : null}
         </div>
       ) : null}
 
       {error || notice ? <div className="alert error library-alert">{notice || error}</div> : null}
+
+      {showsFiles && loaded && !projectId && folders.length > 0 ? (
+        <div className="project-grid library-folders">
+          {folders.map(folder => (
+            <a className="project-card" key={folder.id} href={`/files?c=${tab}&project=${folder.id}`}>
+              <span className="project-mark"><IconFolder size={22} /></span>
+              <span className="project-card-name" title={folder.name}>{folder.name}</span>
+              <span className="meta">{folder.files} 个文件</span>
+            </a>
+          ))}
+        </div>
+      ) : null}
 
       {!showsFiles ? (
         <div className="project-grid">
@@ -427,7 +441,7 @@ function Library() {
       ) : !loaded ? (
         <div className="empty">加载中…</div>
       ) : files.length === 0 ? (
-        empty
+        folders.length ? null : empty
       ) : tab === "images" ? (
         <div className={`image-grid ${selected.size ? "selecting" : ""}`}>
           {files.map((f) => (
@@ -448,55 +462,65 @@ function Library() {
           ))}
         </div>
       ) : (
-        <div className={`file-list ${selected.size ? "selecting" : ""}`}>
-          <div className="file-list-head">
-            <button
-              className={`check ${allOn ? "on" : selected.size ? "some" : ""}`}
-              role="checkbox"
-              aria-checked={allOn ? true : selected.size ? "mixed" : false}
-              aria-label="全选"
-              onClick={() => setSelected(allOn ? new Set() : new Set(files.map((f) => f.id)))}
-            >
-              {allOn ? <IconCheck size={12} /> : selected.size ? <span className="dash" /> : null}
-            </button>
-            <span>名称</span>
-          </div>
-          {files.map((f) => {
-            const st = statusText(f);
-            const inProject = !projectId ? projectName(f.project_id) : undefined;
-            const open = () => (selected.size || trash ? toggle(f.id) : setViewing(f)); // the trash only selects
-            return (
-              <div key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>
-                {checkbox(f)}
-                <button className="lib-open" onClick={open} aria-label={trash ? `选择 ${f.filename}` : `预览 ${f.filename}`}>
-                  <FileTile file={f} size={36} />
+        <table className={`file-list ${selected.size ? "selecting" : ""}`} aria-label="资料库文件">
+          <thead>
+            <tr className="file-list-head">
+              <th className="lib-col-check" scope="col">
+                <button
+                  className={`check ${allOn ? "on" : selected.size ? "some" : ""}`}
+                  role="checkbox"
+                  aria-checked={allOn ? true : selected.size ? "mixed" : false}
+                  aria-label="全选"
+                  onClick={() => setSelected(allOn ? new Set() : new Set(files.map((f) => f.id)))}
+                >
+                  {allOn ? <IconCheck size={12} /> : selected.size ? <span className="dash" /> : null}
                 </button>
-                <div className="grow">
-                  <button className="name" title={f.filename} onClick={open}>
-                    {f.filename}
-                  </button>
-                  <div className="meta">
-                    {formatBytes(f.size)} · {trash ? purgeText(f) : timeAgo(f.created_at)}
-                    {(f.versions || 0) > 1 ? ` · ${f.versions} 个版本` : ""}
-                    {inProject ? (
-                      <a className="meta-project" href={`/files?project=${f.project_id}`}>
-                        <IconFolder size={12} /> {inProject}
-                      </a>
-                    ) : null}
-                    {f.meta?.skill ? (
-                      <a className="meta-project" href="/skills">
-                        个人技能 · {f.meta.skill.title}
-                      </a>
-                    ) : null}
-                  </div>
-                </div>
-                {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
-                {trash ? trashActions(f) : starButton(f)}
-                {trash ? null : rowActions(f)}
-              </div>
-            );
-          })}
-        </div>
+              </th>
+              <th scope="col">名称</th>
+              <th className="lib-col-size" scope="col">大小</th>
+              <th className="lib-col-date" scope="col">{trash ? "保留时间" : "创建时间"}</th>
+
+              <th className="lib-col-actions" scope="col" aria-label="操作" />
+            </tr>
+          </thead>
+          <tbody>
+            {files.map((f) => {
+              const st = statusText(f);
+              const open = () => (selected.size || trash ? toggle(f.id) : setViewing(f)); // the trash only selects
+              return (
+                <tr key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>
+                  <td className="lib-col-check">{checkbox(f)}</td>
+                  <td>
+                    <div className="lib-file">
+                      <button className="lib-open" onClick={open} aria-label={trash ? `选择 ${f.filename}` : `预览 ${f.filename}`}>
+                        <FileTile file={f} size={32} />
+                      </button>
+                      <div className="grow">
+                        <button className="name" title={f.filename} onClick={open}>{f.filename}</button>
+                        <div className="meta">
+                          <span className="lib-mobile-meta">{formatBytes(f.size)} · {trash ? purgeText(f) : timeAgo(f.created_at)}</span>
+                          {(f.versions || 0) > 1 ? <span>{f.versions} 个版本</span> : null}
+                          {f.meta?.skill ? <a className="meta-project" href="/skills">个人技能 · {f.meta.skill.title}</a> : null}
+                          {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
+                        </div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="lib-col-size">{formatBytes(f.size)}</td>
+                  <td className="lib-col-date" title={trash ? undefined : formatDate(f.created_at)}>
+                    {trash ? purgeText(f) : <time dateTime={f.created_at}>{timeAgo(f.created_at)}</time>}
+                  </td>
+
+                  <td className="lib-col-actions">
+                    <div className="lib-actions">
+                      {trash ? trashActions(f) : <>{starButton(f)}{rowActions(f)}</>}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       )}
 
       {showsFiles && more ? (

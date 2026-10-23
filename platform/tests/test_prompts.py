@@ -40,6 +40,14 @@ def test_missing_skills_fail_loudly(monkeypatch, tmp_path) -> None:
 def test_skills_dir_override(monkeypatch, tmp_path) -> None:
     (tmp_path / "custom").mkdir()
     (tmp_path / "custom" / "SKILL.md").write_text("---\nname: custom\ndescription: CUSTOM SKILL\n---\nbody", encoding="utf-8")
+    (tmp_path / "custom" / "skill.toml").write_text(
+        'name = "custom"\nversion = "1.0.0"\ndescription = "CUSTOM SKILL"\nlicense = "NOASSERTION"\nrequires = []\nroles = []\n'
+    )
+    import json
+
+    from ailab_platform.skill_index import build_index
+
+    (tmp_path / "index.json").write_text(json.dumps(build_index(tmp_path)))
     monkeypatch.setattr(settings, "skills_dir", tmp_path)
     assert "- custom：CUSTOM SKILL" in prompts.system_prompt()
     assert prompts.load_skill("custom").endswith("body")

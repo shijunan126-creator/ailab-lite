@@ -234,14 +234,14 @@ def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: preview(api, fid), range(8)))
     assert all(p["status"] == "pending" for p in results)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("preview_only") and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 1
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.meta = {**file.meta, "preview_requested_at": datetime.now(UTC).timestamp() - 301}
         db.commit()
     preview(api, fid)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("preview_only") and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 2 and jobs[0]["job_id"] != jobs[1]["job_id"]
 
 
@@ -261,14 +261,20 @@ def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
     monkeypatch.setattr(q, "enqueue", unavailable)
     assert preview(api, fid)["status"] == "pending"
     with SessionLocal() as db:
-        message = db.scalar(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid))
+        message = db.scalar(
+            select(OutboxMessage).where(
+                OutboxMessage.payload["file_id"].as_string() == fid, OutboxMessage.payload["kind"].as_string() == "preview"
+            )
+        )
         assert message is not None
         job_id = message.id
     monkeypatch.setattr(q, "enqueue", enqueue)
-    dispatch_preview_jobs(job_id)
+    from datetime import timedelta
+
+    dispatch_preview_jobs(job_id, now=datetime.now(UTC) + timedelta(seconds=5))
     assert any(m.get("job_id") == job_id for m in q.outstanding(settings.file_queue))
     with SessionLocal() as db:
-        assert db.get(OutboxMessage, job_id) is None
+        assert db.get(OutboxMessage, job_id) is not None  # publication is not consumer ACK
 
 
 def test_worker_preview_concurrent_messages_render_once(api, monkeypatch):
@@ -373,3 +379,21 @@ def test_preview_completion_rejects_untrusted_manifest(api, tamper):
     response = api.post(f"/internal/files/{fid}/preview", headers=SERVICE, json=body)
     assert response.status_code in {400, 409, 422}
     assert preview(api, fid)["status"] == "pending"
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "gb18030"])
+def test_text_artifact_without_extracted_text_gets_a_preview(api, encoding):
+    api.headers.update(AUTH)
+    from tests.run_claims import attempt_headers
+    from tests.test_projects import artifact
+
+    run = api.post("/v1/runs", json={"prompt": "文字产物"}).json()
+    api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"})
+    file = artifact(api, run["id"], "中文第一行\n第二行".encode(encoding))
+    result = api.get(f"/v1/files/{file['file_id']}/preview")
+    assert result.status_code == 200 and result.json()["status"] == "pending"
+    current = api.get(f"/v1/files/{file['file_id']}").json()
+    process_preview(file["file_id"], current["meta"]["preview_job_id"], ApiClient(api))
+    assert api.get(f"/v1/files/{file['file_id']}/preview").json()["status"] == "ready"
+    text = api.get(f"/v1/files/{file['file_id']}/preview/text.txt")
+    assert text.text == "中文第一行\n第二行"

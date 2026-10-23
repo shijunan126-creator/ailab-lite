@@ -10,9 +10,9 @@ from fastapi.testclient import TestClient
 from ailab_platform.api.main import app
 from ailab_platform.config import settings
 from ailab_platform.storage import get_storage
+from tests.run_claims import attempt_headers, owned_headers
 
 AUTH = {"Authorization": "Bearer test-token"}
-SERVICE = {"X-Service-Token": "test-service"}
 
 
 @pytest.fixture()
@@ -23,7 +23,7 @@ def api():
 
 def _running_run(api) -> str:
     run = api.post("/v1/runs", headers=AUTH, json={"prompt": "make a file"}).json()
-    api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+    api.post(f"/internal/runs/{run['id']}/transition", headers=owned_headers(api, run["id"]), json={"status": "running"})
     return run["id"]
 
 
@@ -41,7 +41,10 @@ def _stage(data: bytes, name="out.md") -> dict:
 
 
 def _commit(api, run_id, body):
-    return api.post("/internal/artifacts", headers=SERVICE, json={"run_id": run_id, **body})
+    # The delivery identity is the staged content: a retry of the same delivery returns what it recorded the first time.
+    delivery = f"{run_id}:{body['staging_key']}"
+    headers = {**attempt_headers(api, run_id), "X-Delivery-Id": delivery}
+    return api.post("/internal/artifacts", headers=headers, json={"run_id": run_id, **body})
 
 
 def test_commit_creates_one_artifact_and_removes_staging(api) -> None:
@@ -71,6 +74,18 @@ def test_retry_after_staging_was_already_consumed_is_idempotent(api) -> None:
     assert not get_storage().exists(body["staging_key"])
     retry = _commit(api, run_id, body)  # response was lost; staging is already gone
     assert retry.status_code == 200 and retry.json()["file_id"] == first.json()["file_id"]
+
+
+def test_duplicate_delivery_cannot_delete_an_object_outside_staging(api) -> None:
+    run_id = _running_run(api)
+    body = _stage(b"payload")
+    assert _commit(api, run_id, body).status_code == 200
+    key = "uploads/other-owner/keep.txt"
+    get_storage().put_bytes(key, b"keep")
+    headers = {**attempt_headers(api, run_id), "X-Delivery-Id": f"{run_id}:{body['staging_key']}"}
+    response = api.post("/internal/artifacts", headers=headers, json={"run_id": run_id, **body, "staging_key": key})
+    assert response.status_code == 400
+    assert get_storage().get_bytes(key) == b"keep"
 
 
 def test_changed_content_is_a_new_artifact(api) -> None:

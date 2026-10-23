@@ -117,7 +117,7 @@ def test_agent_reports_cached_tokens_to_the_platform() -> None:
             return await super().settle_usage(payload)
 
     llm = ScriptedLLM([LLMResponse(content="done", usage={"prompt_tokens": 50, "completion_tokens": 5, "cached_tokens": 30})])
-    asyncio.run(AgentLoop(platform=Platform(), broker=RichBroker(), llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=Platform(), broker=RichBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     assert seen == [("m", 50, 5, 30)]
 
 

@@ -7,6 +7,22 @@
 - `AILAB_TEST_DATABASE_URL` 会清空指定 PostgreSQL 的 public schema。只传一次性数据库。
 - 本轮完整审查记录：`docs/reviews/2026-10-23-full-review.md`。
 
+## 2026-10-23 Runtime / OCR 最终集成陷阱
+
+- 交付幂等命中也可能清理重试staging对象，路径校验必须在查旧结果/任何delete之前；不能只在新产物分支校验。
+- 上游tool call id只在单次响应内有意义；跨响应复用会把后续exec/提问/交付错误去重。持久身份由平台Run+模型步数+本步ordinal生成，模型协议仍保留原id。
+- 暂停释放并发槽，因此回答与resume必须和新Run创建共享用户锁、重查额度/容量与会话存活。等待问题必须阻止同会话新一轮；删除会话/项目也要取消waiting_user/interrupted。pause即结束attempt，不等传输ACK。
+- 中断也是Portal的静止状态，不能用turn-meta出现作为“续跑完成”的E2E证据。等明确回复/真实终态；暂停SSE关闭后回答要按已显示seq重连，否则重复delta。
+- 图片不能每步把base64复制进4MiB checkpoint；只保存授权文件引用，恢复时重新授权读归一化图。token预算按vision开销，离线模型也要兼容multipart文本回退。
+- checkpoint step天然增加，不能据此断言工作区落后；在文件工具开始前持久dirty，快照成功后清除。GC用终态事务冻结expires_at及范围索引；SQLite join全历史checkpoint再排序会漏掉性能目标。
+- 最终统一基线、双库/浏览器/真实Docker与性能证据见 `docs/reviews/2026-10-23-t07-runtime.md`。六个工具边界用BaseException模拟硬中断，不把它写成六次真实SIGKILL；真实SIGKILL提交后恢复和三槽SIGTERM另有测试。
+
+## 2026-10-23 持久任务集成与中断接手
+
+- 新文件处理分支（如OCR）不能只写裸 `OutboxMessage(topic,payload)`；T09生产者须用 `stage_job` 和 `JobEnvelope`，同步扩展kind、API claim/业务完成判断、Worker分派与ACK。只mock处理函数的测试会漏掉信封/认领/重投断层，必须覆盖生产者到消费者及重复投递。
+- 合并文件里没有冲突标记不代表Git冲突已经解除：同时核对MERGE_HEAD、index unmerged与未暂存修改；验收前保留前任尚未完成的适配。
+- T3运行因429失败后，CLI宿主进程仍可能存在。以activeRunId、终态和worktree提交/改动核对实际进度，不能把进程存在写成“子任务仍在跑”，也不能把子任务局部绿当作集成验收。
+
 ## 2026-10-23 全量审查踩坑与约束
 
 - 预签名 PUT 在完成上传后仍能重用。完成必须先冻结独立对象，再哈希/扫描；不能把已签名的原始 key 作为最终可信对象。
@@ -231,3 +247,52 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 ## 2026-10-23 GitHub 首页 README 优先级
 
 - GitHub 首页优先读取 `.github/README.md`，然后才是根目录 `README.md`、`docs/README.md`。新增 CI 说明时误用 `.github/README.md`，导致原项目说明虽然没删却从首页被替换。CI 说明改为 `.github/CI.md`；今后不要把普通维护文档命名为 `.github/README.*`。可通过 GitHub `GET /repos/{owner}/{repo}/readme` 返回的 path 核对实际展示文件。
+
+
+## 2026-10-23 F8 Broker 流式传输
+
+- `PlatformClient.download_file` 复用 Worker 流式路径时必须增加 run_id / preview_job 绑定，不能为了流式化丢服务授权上下文。API 错误页也按小块读取，避免错误体完整缓冲。
+- OpenSandbox 1.1.1 的公开 `files.write_file(path, binary IOBase)` 与 `read_bytes_stream` 已支持流式；前者按64KiB读，后者需要显式 close（超限也一样）。不要传 bytes 或调用 read_bytes。新上传先写同目录随机文件，成功后 mv；清理失败不能掩盖原传输错误。
+- 临时文件放 data_dir 的磁盘卷，不能默认放 /tmp（可能是tmpfs）；按owner隔离，单Broker成功领取所有权后回收前任崩溃遗留。每次正常/异常/取消均关闭流并删除本地spool。`CancelledError` 是 BaseException，acquire 只捕获 Exception 会留下 creating 沙箱；已补红绿回归。
+- 文件 stat 只是预检：交付过程中可增长，provider 必须按实际字节限额；最终 size/hash 来自冻结的本地文件。Docker 直接用文件描述符接 exec 流，不增加 tar 打包；get 用 limit+1 检测超限，put 原子替换。
+- RSS 与cgroup内存不是同一指标：双路100MiB扩限压力的RSS约68MiB，但文件页缓存触发384MiB cgroup reclaim（max事件，无OOM）；不能用低RSS声称内存还有同量余量。压测必须保持真实sandbox1536MiB预算：早期夹具误设256MiB，在50MiB不可压缩快照上传时sandbox本身OOM，不能误归为Broker OOM。
+- 并发探针须先 manager.recover，与HTTP lifespan一致；直接并发首次create会正确碰到 recovering 准入拒绝，不能当正常流式并发故障。真实测量边界与原始曲线见本轮 Broker streaming 审查记录。
+
+## 2026-10-23 资料库连续表格
+
+- 列表的表头与正文必须共享同一个 table 布局；分别使用 flex 且给每行圆角会失去连续分隔与列对齐。用真实 thead/tbody、固定辅助列宽、每个单元格的下边框，不给文件名单元格设 overflow:hidden（会裁掉弹出菜单）。
+- 窄屏隐藏独立大小/时间/项目列时，需在文件名下保留信息与项目链接；长文件名/项目名都截断，保留 title。项目详情中不重复展示所属项目列。
+- hover 隐藏操作不能只让最内层按钮显现；祖先 opacity:0 会让键盘 focus 仍不可见。文件行 focus-within 和展开菜单状态也必须显示操作区。
+- 动态切换主题后直接截屏可能拍到 CSS transition 的中间色；E2E 截图使用 animations="disabled"，手机截图先关闭侧栏遮罩。表格真实几何与交互回归见 `platform/e2e/test_library_ui.py::test_library_table_keeps_columns_and_row_boundaries`，验证入口见 `docs/progress/updates/2026-10-23-library-table.md`。
+
+## 2026-10-23 流式缓冲与模型容量
+
+- “每隔250ms刷新”不能只在 on_text/on_reasoning 收到下一块时检查时钟：短叙述后模型可能连续数秒只生成隐藏的工具参数。必须有独立定时刷新，并在正常结束、异常、取消时刷新尾部；刷新与回调共享锁，刷新任务归属于单次模型调用，终止时取消并等待回收。空缓冲不得触发 API/DB 写入。
+- 模型目录的 context_tokens/max_output_tokens 必须按实际模型能力配置。隐藏的全局8192上限会让更大的目录值失效；全局上限现在仅在运维显式配置时生效。预留额度与上游 max_tokens 必须一致，输出截断不能执行残缺工具或盲目重试。
+- E2E 的流式等待触发词只匹配完整用户输入，不能包含匹配：自动标题请求会带上原始内容，误触发测试闸门会导致标题超时，掩盖已经成功到达页面的叙述。浏览器回归先验证完整句子可见，再显式放行模拟模型，不用固定sleep假装流式验收。
+- 提高最大输出不会预先分配全部内存，也不等于实际一定输出这么多；但会增加账本的在途预留，以及真的长输出的时间/内存。保留用户额度、单Run预算、超时与checkpoint上限，不把短文本合成探针当1M上下文/384K生成的容量验收。
+
+## 2026-10-23 对话删除与沙箱准入审查
+
+- 删除对话把Run改为canceled不等于同步回收沙箱。Agent的 `_acquire_lease` 等待Broker准入/创建HTTP期间不检查取消，Broker准入后也未重查Run状态；探针确认取消后仍可拿到租约。后续finally/租约可兜底，但不能承诺2秒内回收。修复须贯通两端，不能只取消客户端HTTP而留下服务端创建。该旧审查已由本轮取消贯通修复替代，最终证据见 `docs/reviews/2026-10-23-library-runtime-acceptance.md`。
+- 旧审查中的Docker独立TTL缺口已由可信PID1监督与--rm移除兜底修复。正常释放、失败重试、进程故障后的最终收敛与物理清除期限应分开描述。对话删除保留资料库产物，工作区/断点/软删历史分别有保留期。
+
+
+## 2026-10-23 命名空间与真实回收竞态
+
+- 项目/文件重名用规范化哈希作唯一键；移动、恢复、新版本、产物和预签名必须共用分配逻辑。SQLite表达式索引的coalesce空字符串要固定SQL字面量；绑定参数不会匹配该表达式索引。
+- 技能文件用途必须在上传时指定，Worker识别历史技能时也迁移整条版本链；仅在UI隐藏不够，普通附件输入仍须在API拒绝。无效/pending/rejected技能也必须能在技能页管理和删除。
+- READY的文本产物不一定经过Worker提取，不能永久缓存text_unavailable；派生文本在受限Worker内提取，不能在API直接解析不可信文件。
+- provider列表是历史快照，可能读取到启动中的running=false，而持有stripe后租约已经active。删除前必须重新inspect确认当前停止/不存在；不能因旧列表误删正在执行的render沙箱。真实联合负载复现了此问题，单独mock绿不能替代组合验收。
+- 并发跑冷启动Keycloak、构建、E2E和双库性能断言会污染小机时延。一次PG500轮首屏p95=199ms，隔离复验64.65ms；保留失败证据，按实际隔离负载重新测量，不放宽150ms标准。
+- 实际Agent SIGKILL恢复同时受持久claim和Redis pending可见性期限约束。只加速数据库时间不会让旧transport立即可见；加速验收必须明确两者，不声称生产配置立即接管。
+
+- 思考模型的max_tokens包含reasoning，自动标题的40字约束不能直接换算成64输出token；应使用既有后台调用2048预算并在显示时截断。真实主回复成功而标题64-token调用length，是单独的预算错误；保留独立账本身份，标题失败不能丢正文。
+
+## 2026-10-24 连续预览与工作时长
+
+- 全屏和聊天侧页面预览只用一个原生滚动组件；不要给wheel绑“下一页”操作，触控板惯性会误翻多页。分页按钮/缩略图应滚动到实际页面，滚动容器contain防止传给外层。
+- 工作时长由API状态CAS持久结算running区间；用户等待/暂停/业务排队不计入，running内的模型/工具/沙箱等待计入。旧行未知净时长不估算；前端不按Date.now重新累计，不新增每秒刷新任务。
+- 过程条目的CSS类必须加前缀（如process-ask），不能复用内层Ask的`.ask`，否则重复样式与可访问定位冲突。已展开按钮的文本包含折叠符号和布局换行，计时稳定性应比较其实际状态文本span，不能把整个按钮innerText当时长。
+- PostgreSQL容器初始化时临时server的Unix socket可能先就绪；验收库创建前应检查TCP主server就绪，再确认目标库存在。不能让一次createdb失败后继续全套测试，造成无关的成批迁移错误。
+- 纯UI滚动验收使用确定性渲染页，经真实授权预览端点读取；宿主Office/字体是否可用另有集成测试。不可用的PPT渲染不能被误判成滚动组件缺页。

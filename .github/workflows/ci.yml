@@ -48,6 +48,8 @@ jobs:
       - run: pip install -c constraints.txt -e '.[dev]'
       - run: ruff check --config pyproject.toml . ../.github && ruff format --config pyproject.toml --check . ../.github
       - run: python scripts/check_imports.py
+      - run: python scripts/check_skills.py
+      - run: python tests/golden/run.py --self-test
 
   python:
     needs: changes

@@ -19,6 +19,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
+from .jobs import router as jobs_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_admin import router as admin_router
@@ -28,8 +29,12 @@ from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_internal import router as internal_router
+from .routes_model_context import router as model_context_router
+from .routes_ocr import router as ocr_router
+from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
 from .routes_runs import router as runs_router
+from .routes_runtime import router as runtime_router
 from .routes_skills import router as skills_router
 
 setup_logging("api")
@@ -111,6 +116,11 @@ app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)
 app.include_router(internal_router)
+app.include_router(ocr_router)
+app.include_router(vision_router)
+app.include_router(model_context_router)
+app.include_router(jobs_router)
+app.include_router(runtime_router)
 
 
 @app.get("/healthz")

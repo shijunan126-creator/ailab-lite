@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     allow_external_models: bool = False
     trusted_proxies: list[str] = Field(default_factory=list)
     log_format: Literal["text", "json"] = "text"  # text | json (one object per line, with the request id)
+    otel_endpoint: str = ""  # Full OTLP/HTTP traces URL; empty means no SDK/exporter is loaded.
+    otel_sample_ratio: float = Field(default=0.05, ge=0, le=1)
     api_base_url: str = "http://127.0.0.1:8080"
     broker_base_url: str = "http://127.0.0.1:8081"
     agent_base_url: str = "http://127.0.0.1:8082"
@@ -131,7 +133,18 @@ class Settings(BaseSettings):
     # Models: which ones exist, how each is reached and which key it uses is the catalog's business
     # (models.toml, see catalog.py). Nothing here names a model or holds a key.
     models_file: Path | None = None  # default: platform/models.toml (the image sets /etc/ailab/models.toml)
+    vision_input_tokens: int = Field(default=4096, ge=85, le=100_000)
+    ocr_alias: str = ""
+    ocr_max_pages: int = Field(default=20, ge=1, le=40)
+    ocr_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024)
+    ocr_page_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1024, le=4 * 1024 * 1024)
+    ocr_min_page_chars: int = Field(default=40, ge=1, le=1000)
+    ocr_max_output_tokens: int = Field(default=4096, ge=128, le=8192)
+    ocr_deadline_seconds: int = Field(default=1800, gt=0, le=86400)  # a job still pending after this fails explicitly
     llm_timeout_seconds: int = Field(default=120, gt=0)
+    ttft_timeout_seconds: float = Field(default=30, gt=0)
+    llm_idle_timeout_seconds: float = Field(default=60, gt=0)
+    llm_total_timeout_seconds: float | None = Field(default=None, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)  # extra attempts on 429 / 5xx / network errors
     llm_retry_backoff_seconds: float = Field(default=1.0, gt=0)  # doubled each retry
     # Send the model's reasoning_content back in assistant turns. Whether that is
@@ -140,7 +153,11 @@ class Settings(BaseSettings):
 
     # Sandbox control plane. mock | docker | opensandbox
     sandbox_provider: Literal["mock", "docker", "opensandbox"] = "mock"
+    sandbox_runtime: Literal["runc", "runsc"] = "runc"
     sandbox_image: str = "harbor.ailab.local/sandbox/sbx-office:lite"
+    runtime_heartbeat_seconds: float = Field(default=60, gt=0, le=60)
+    checkpoint_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
+    ask_user_timeout_hours: int = Field(default=72, ge=1, le=720)
     sandbox_ttl_seconds: int = Field(default=1200, ge=1)
     max_sandboxes: int = Field(default=2, ge=1)
     # Broker lease ownership and single-machine admission; no idle sandbox reuse.
@@ -217,7 +234,8 @@ class Settings(BaseSettings):
     cached_token_weight: float = Field(default=0.1, ge=0, le=1, allow_inf_nan=False)
     quota_timezone: str = "UTC"
     usage_reservation_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
-    model_max_output_tokens: int = Field(default=8192, ge=1, le=10_000_000)
+    # Optional operator ceiling; the model catalog owns each model's actual output capacity.
+    model_max_output_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
     daily_token_limit: int = Field(default=2_000_000, ge=0)  # per user, weighted tokens in quota_timezone
     monthly_token_limit: int = Field(default=30_000_000, ge=0)
     library_quota_bytes: int = Field(default=20 * 1024**3, ge=0)  # per user; active rejected files excluded, trash included
@@ -238,6 +256,11 @@ class Settings(BaseSettings):
     # Streams, not the old list keys (a list key would raise WRONGTYPE).
     run_queue: str = "ailab:stream:runs"
     file_queue: str = "ailab:stream:files"
+    agent_concurrency: int = Field(default=3, ge=2, le=32)
+    chat_reserved_slots: int = Field(default=1, ge=1, le=31)
+    drain_seconds: float = Field(default=20, gt=0, le=120)
+    outbox_max_attempts: int = Field(default=10, ge=1)
+    job_deadline_seconds: int = Field(default=86400, ge=60)
     run_max_attempts: int = Field(default=3, gt=0)  # deliveries before a run is failed as a poison message
     file_max_attempts: int = Field(default=3, gt=0)
     reaper_interval_seconds: int = Field(default=60, gt=0)
@@ -246,6 +269,12 @@ class Settings(BaseSettings):
     # The Portal proxies the API same-origin, so browsers need no CORS access. Leave empty unless a
     # separate browser app calls the API directly (then also give it its own login, not a shared token).
     cors_origins: str = ""
+
+    @model_validator(mode="after")
+    def agent_slots(self):
+        if self.chat_reserved_slots >= self.agent_concurrency:
+            raise ValueError("chat_reserved_slots must be less than agent_concurrency")
+        return self
 
     @field_validator("quota_timezone")
     @classmethod
@@ -256,6 +285,22 @@ class Settings(BaseSettings):
             raise ValueError("quota_timezone must be an IANA timezone") from exc
         return value
 
+    @field_validator("otel_endpoint")
+    @classmethod
+    def valid_otel_endpoint(cls, value: str) -> str:
+        if value:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("otel_endpoint must be an HTTP(S) URL without credentials, query or fragment")
+        return value
+
     @model_validator(mode="after")
     def validate_broker_limits(self):
         if self.sandbox_ttl_seconds > self.sandbox_max_lifetime_seconds:
@@ -264,9 +309,6 @@ class Settings(BaseSettings):
             raise ValueError("render reservation must leave at least one general slot")
         if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
             raise ValueError("render memory reservation must leave general memory")
-        # The Agent does not renew leases yet, so a run's sandbox must outlive the run itself.
-        if self.sandbox_ttl_seconds <= self.run_timeout_seconds:
-            raise ValueError("sandbox_ttl_seconds must exceed run_timeout_seconds until the Agent renews its lease")
         return self
 
     @property

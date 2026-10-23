@@ -8,18 +8,20 @@ compare-and-swap on the status we read, so two writers racing resolve to one win
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from . import metrics
 from .events import append_event
-from .models import Run, RunStatus
+from .models import Run, RunCheckpoint, RunStatus
 
 ALLOWED: dict[str, set[str]] = {
     RunStatus.QUEUED: {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELED},
-    RunStatus.RUNNING: {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED},
+    RunStatus.RUNNING: {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED, RunStatus.WAITING_USER, RunStatus.INTERRUPTED},
+    RunStatus.WAITING_USER: {RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELED},
+    RunStatus.INTERRUPTED: {RunStatus.QUEUED, RunStatus.CANCELED},
 }
 
 
@@ -49,6 +51,13 @@ def transition_run(
 
     now = datetime.now(UTC)
     values: dict = {"status": new_status, "updated_at": now}
+    elapsed = run.work_ms
+    if run.status == RunStatus.RUNNING and run.work_started_at is not None and elapsed is not None:
+        since = run.work_started_at
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        elapsed += max(0, int((now - since).total_seconds() * 1000))
+    values.update(work_ms=elapsed, work_started_at=now if new_status == RunStatus.RUNNING else None)
     if new_status == RunStatus.RUNNING and run.started_at is None:
         values["started_at"] = now
     if new_status in RunStatus.TERMINAL:
@@ -60,25 +69,28 @@ def transition_run(
     won = db.execute(
         update(Run).where(Run.id == run_id, Run.status == run.status).values(**values).execution_options(synchronize_session=False)
     ).rowcount
-    if commit:
-        db.commit()
-    else:
-        db.flush()
+    db.flush()
     db.refresh(run)
     if not won:
         return run, False  # someone else moved it first; theirs stands
 
+    if new_status in RunStatus.TERMINAL:
+        # At most two rows per run. A frozen deadline makes lifecycle an indexed
+        # range scan instead of joining/sorting every historical checkpoint.
+        db.execute(update(RunCheckpoint).where(RunCheckpoint.run_id == run_id).values(expires_at=now + timedelta(days=7)))
     metrics.RUNS.labels(new_status).inc()
     if new_status in RunStatus.TERMINAL:
         started = run.started_at or run.created_at
         if started.tzinfo is None:  # SQLite drops tzinfo
             started = started.replace(tzinfo=UTC)
         metrics.RUN_SECONDS.labels(new_status).observe(max(0.0, (now - started).total_seconds()))
-    append_event(db, run.id, "run.status", {"status": run.status}, commit=commit)
+    append_event(db, run.id, "run.status", {"status": run.status}, commit=False)
     if new_status == RunStatus.SUCCEEDED:
-        append_event(db, run.id, "run.completed", {"summary": run.summary, "result": run.result}, commit=commit)
+        append_event(db, run.id, "run.completed", {"summary": run.summary, "result": run.result}, commit=False)
     elif new_status == RunStatus.FAILED:
-        append_event(db, run.id, "run.failed", {"error": run.error}, commit=commit)
+        append_event(db, run.id, "run.failed", {"error": run.error}, commit=False)
     elif new_status == RunStatus.CANCELED:
-        append_event(db, run.id, "run.canceled", {"reason": reason}, commit=commit)
+        append_event(db, run.id, "run.canceled", {"reason": reason}, commit=False)
+    if commit:
+        db.commit()
     return run, True

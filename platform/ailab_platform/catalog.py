@@ -10,7 +10,7 @@ import logging
 import os
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 
@@ -51,11 +51,19 @@ class ModelSpec:
     upstream_model: str = ""
     weight: float = 1.0
     tools: bool = True
+    fallback: list[str] = field(default_factory=list)
+    context_tokens: int = 32768
+    max_output_tokens: int = 8192
+    capabilities: list[str] | None = None
     default: bool = False
     enabled: bool = True
     # Thinking models (DeepSeek V4.x) refuse the next turn of a tool conversation unless the previous
     # reasoning_content is sent back; others reject or ignore it. Hence a per-model switch.
     echo_reasoning: bool = False
+
+    def supports(self, required: set[str]) -> bool:
+        declared = set(self.capabilities) if self.capabilities is not None else ({"tools"} if self.tools else set())
+        return required <= declared
 
     def api_key(self) -> str:
         return secret(self.api_key_env) if self.api_key_env else ""
@@ -75,7 +83,8 @@ class ModelSpec:
             "name": self.name,
             "description": self.description,
             "weight": self.weight,
-            "tools": self.tools,
+            "tools": self.supports({"tools"}),
+            "capabilities": sorted(self.capabilities if self.capabilities is not None else (["tools"] if self.tools else [])),
         }
 
 
@@ -127,9 +136,27 @@ def parse_catalog(data: dict) -> Catalog:
             raise CatalogError(f"{where} ({mid}): api_key_env must start with {KEY_ENV_PREFIX}")
         if not spec.weight > 0:
             raise CatalogError(f"{where} ({mid}): weight must be > 0")
+        if not isinstance(spec.fallback, list) or any(not isinstance(x, str) for x in spec.fallback):
+            raise CatalogError(f"{where}: fallback must be an alias list")
+        if spec.capabilities is not None and (
+            not isinstance(spec.capabilities, list)
+            or any(not isinstance(c, str) or c not in {"tools", "vision"} for c in spec.capabilities)
+        ):
+            raise CatalogError(f"{where}: invalid capabilities")
+        if (
+            type(spec.context_tokens) is not int
+            or type(spec.max_output_tokens) is not int
+            or not 128 <= spec.context_tokens <= 10_000_000
+            or not 1 <= spec.max_output_tokens < spec.context_tokens
+        ):
+            raise CatalogError(f"{where}: invalid context/output budget")
         specs.append(spec)
     if sum(1 for s in specs if s.default) > 1:
         raise CatalogError("more than one model is marked default")
+    aliases = {s.id for s in specs}
+    for spec in specs:
+        if set(spec.fallback) - aliases or spec.id in spec.fallback:
+            raise CatalogError(f"{spec.id}: unknown or self fallback")
     return Catalog(specs)
 
 

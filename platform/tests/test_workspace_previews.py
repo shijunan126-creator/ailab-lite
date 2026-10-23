@@ -60,10 +60,11 @@ def test_the_workspace_comes_back_in_the_next_turn_without_inputs_or_platform_fi
     manager.put_file(first["lease_id"], "/workspace/outputs/deck.pptx", b"PK fake")
     manager.put_file(first["lease_id"], "/workspace/inputs/upload.txt", b"user upload")
     saved = manager.snapshot(first["lease_id"])
-    assert saved["key"] == "workspaces/run_1.tgz" and storage.exists(saved["key"])
+    # every snapshot is its own immutable object, so a checkpoint's archive is never overwritten by a later one
+    assert saved["key"].startswith("workspaces/run_1/") and saved["key"].endswith(".tgz") and storage.exists(saved["key"])
     manager.release(first["lease_id"])
 
-    api.runs["run_2"] = {"workspace_restore_key": "workspaces/run_1.tgz"}
+    api.runs["run_2"] = {"workspace_restore_key": saved["key"]}
     second = manager.create("run_2")
     assert second["restored"] is True
     files = {f["path"] for f in manager.list_files(second["lease_id"], "/workspace")}

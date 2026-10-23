@@ -13,20 +13,21 @@ from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import exists, func, select
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from sqlalchemy import exists, func, select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
+from ..conversation_titles import apply_result_title
 from ..deps import get_db
 from ..events import append_event
-from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
+from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, User, new_id
+from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
 from ..ports.service_auth import RunContext
-from ..queue import get_queue
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
 from ..run_state import InvalidTransition, transition_run
 from ..schemas import (
@@ -40,14 +41,19 @@ from ..schemas import (
     RunDetail,
     RunStateOut,
     RunStatusIn,
+    RunTransitionIn,
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
-from .routes_skills import usable_personal
+from .routes_ocr import request_ocr
+from .routes_skills import skill_input_for, usable_personal
+from .runtime_fence import fence_attempt
 from .serializers import file_dict, run_dict
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 log = logging.getLogger("ailab.api.internal")
+# Statuses an Agent may write through /transition. Others are reached through their own, checked, endpoints.
+AGENT_STATUSES = frozenset({RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED})
 
 
 def _run_or_404(db: Session, run_id: str) -> Run:
@@ -70,10 +76,11 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
         if f is None or f.deleted_at is not None or f.purged_at is not None:
             continue
         meta = f.meta or {}
+        keys = [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]
         text = ""
-        if meta.get("text_key"):
+        for key in filter(None, keys):  # native extraction and OCR text of scanned pages sit side by side
             try:
-                text = storage.get_bytes(meta["text_key"]).decode("utf-8", "replace")
+                text = "\n".join(filter(None, [text, storage.get_bytes(key).decode("utf-8", "replace")]))
             except Exception:
                 log.warning("attachment text missing for %s", file_id, exc_info=True)
         total = len(text) or int((meta.get("extract") or {}).get("chars") or 0)
@@ -84,6 +91,9 @@ def _attachment_texts(db: Session, run: Run) -> list[dict]:
         out.append(
             {
                 "file_id": f.id,
+                "id": f.id,
+                "content_type": f.content_type,
+                "meta": {"ocr": meta.get("ocr", "unavailable")},
                 "filename": f.filename,
                 "kind": (meta.get("extract") or {}).get("kind", ""),
                 "chars": total,
@@ -157,19 +167,19 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             for f in db.scalars(select(FileObject).join(Artifact, Artifact.file_id == FileObject.id).where(Artifact.run_id == turn.id))
         ]
         history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
+    conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
+    out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
-    out["disabled_skills"] = list(((owner.settings if owner else None) or {}).get("disabled_skills") or [])
-    out["personal_skills"] = (
-        [{k: s[k] for k in ("name", "title", "description", "file_id", "filename", "kind")} for s in usable_personal(db, owner).values()]
-        if owner
-        else []
-    )
+    out.update(skill_input_for(db, owner))
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if (t.result or {}).get("workspace_saved")), None)
     alive = newest is not None and workspace_alive(newest, now)
-    out["workspace_restore_key"] = workspace_key(newest.id) if alive else None
+    own = (run.runtime_meta or {}).get("workspace")
+    out["workspace_restore_key"] = (
+        own["key"] if own else ((newest.result or {}).get("workspace_key") or workspace_key(newest.id)) if alive else None
+    )
     # the last turn left files, but they are past the retention window: tell the model instead of letting it hunt
     out["workspace_expired"] = newest is not None and not alive
     return out
@@ -179,23 +189,45 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The cheap status poll the Agent uses while a command/model call is running."""
     run = _run_or_404(db, run_id)
-    return {"status": run.status, "finished_at": run.finished_at}
+    return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
 
 
 @router.post("/runs/{run_id}/status", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
-def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(get_db)) -> dict:
-    run = _run_or_404(db, run_id)
-    if body.status not in {RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED}:
+def internal_set_status(
+    run_id: str, body: RunStatusIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    # Legacy spelling shares exactly the same fence and transaction.
+    return internal_transition(run_id, RunTransitionIn(**body.model_dump()), x_run_attempt, db)
+
+
+@router.post("/runs/{run_id}/transition", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
+def internal_transition(
+    run_id: str, body: RunTransitionIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    # waiting_user and interrupted need a question or a safe checkpoint, so only /pause may set them; queued only via the API.
+    if body.status not in AGENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
-    try:
-        with user_critical_section(db, run.user_id):
-            db.refresh(run)
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        db.refresh(run)
+        fence_attempt(db, run_id, x_run_attempt or body.attempt_id)
+        try:
             result = body.result
             if result is not None:
                 result = {**result, "usage_totals": run_usage_totals(db, run_id)}
-            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result)
-    except InvalidTransition as exc:
-        raise HTTPException(status_code=409, detail=f"invalid transition: {exc}") from exc
+            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
+            if changed:
+                for event in body.events:
+                    append_event(db, run_id, event.type, event.payload, commit=False)
+                if run.status == RunStatus.SUCCEEDED:
+                    try:
+                        with db.begin_nested():
+                            apply_result_title(db, run)
+                    except SQLAlchemyError:
+                        logging.getLogger("ailab.api.titles").warning("automatic title update failed")
+            db.commit()
+        except InvalidTransition as exc:
+            raise HTTPException(409, f"invalid transition: {exc}") from exc
     if changed and (run.result or {}).get("workspace_saved"):
         _drop_older_workspaces(db, run)
     return run_dict(db, run, detail=True)
@@ -209,7 +241,7 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
         if not result.get("workspace_saved"):
             continue
         try:
-            storage.delete(workspace_key(turn.id))
+            storage.delete((turn.result or {}).get("workspace_key") or workspace_key(turn.id))
         except Exception:
             log.warning("could not delete workspace of %s", turn.id, exc_info=True)
             continue
@@ -221,9 +253,13 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
 
 
 @router.post("/runs/{run_id}/events", response_model=EventOut, dependencies=[Depends(require_scope("runs:events"))])
-def internal_append_event(run_id: str, body: EventIn, db: Session = Depends(get_db)) -> dict:
-    _run_or_404(db, run_id)
-    event = append_event(db, run_id, body.type, body.payload)
+def internal_append_event(
+    run_id: str, body: EventIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        fence_attempt(db, run_id, x_run_attempt)
+        event = append_event(db, run_id, body.type, body.payload)
     return {
         "seq": event.seq,
         "type": event.type,
@@ -239,10 +275,14 @@ def internal_usage_retired(run_id: str) -> None:
 
 @router.post("/usage/reserve", response_model=ReservationOut, dependencies=[Depends(require_scope("usage:reserve"))])
 def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) -> dict:
+    if body.subject != "run":
+        raise HTTPException(403, "file usage is reserved by the OCR service")
     row = reserve_usage(db, body)
     return {
         "call_id": row.call_id,
         "run_id": row.run_id,
+        "subject": row.subject,
+        "file_id": row.file_id,
         "attempt_id": row.attempt_id,
         "status": row.status,
         "reserved_amount": row.reserved_amount,
@@ -255,11 +295,19 @@ def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) 
 
 @router.post("/usage/settle", response_model=UsageOut, dependencies=[Depends(require_scope("usage:write"))])
 def internal_settle_usage(body: SettleUsageIn, db: Session = Depends(get_db)) -> dict:
+    reservation = db.get(UsageReservation, body.call_id)
+    if reservation is not None:
+        if reservation.subject != "run":
+            raise HTTPException(403, "file usage is settled by the OCR service")
+        if reservation.attempt_id != body.attempt_id:
+            raise HTTPException(409, "call_identity_mismatch")
     row = settle_usage(db, body)
     totals = run_usage_totals(db, row.run_id)
     return {
         "call_id": row.call_id,
         "run_id": row.run_id,
+        "subject": row.subject,
+        "file_id": row.file_id,
         "attempt_id": row.attempt_id,
         "mode": row.mode,
         "alias": row.alias,
@@ -299,7 +347,12 @@ def _artifact_filename(name: str) -> str:
 
 
 @router.post("/artifacts", response_model=CommitOut, dependencies=[Depends(require_scope("artifacts:commit_for_run"))])
-def internal_commit_artifact(body: ArtifactIn, db: Session = Depends(get_db)) -> dict:
+def internal_commit_artifact(
+    body: ArtifactIn,
+    x_run_attempt: str | None = Header(default=None),
+    x_delivery_id: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
     """Second half of the two-phase delivery. Safe to retry.
 
     Same (run, filename, sha256) returns the artifact that already exists instead
@@ -309,12 +362,26 @@ def internal_commit_artifact(body: ArtifactIn, db: Session = Depends(get_db)) ->
     run = _run_or_404(db, body.run_id)
     with user_critical_section(db, run.user_id):
         db.refresh(run)
-        return _commit_artifact(body, db, run)
+        fence_attempt(db, run.id, x_run_attempt)
+        from ..models import RunDelivery
+
+        if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
+            raise HTTPException(422, "stable delivery identity required")
+        if not body.staging_key.startswith("staging/") or ".." in body.staging_key.split("/"):
+            raise HTTPException(400, "staging_key must be under staging/")
+        prior = db.get(RunDelivery, (run.id, x_delivery_id))
+        if prior:
+            get_storage().delete(body.staging_key)
+            db.commit()
+            return prior.result
+        return _commit_artifact(body, db, run, x_delivery_id)
 
 
-def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
+def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) -> dict:
     if not body.staging_key.startswith("staging/"):
         raise HTTPException(status_code=400, detail="staging_key must be under staging/")
+    from ..models import RunDelivery
+
     storage = get_storage()
 
     def reject(code: int, detail: str) -> HTTPException:
@@ -335,7 +402,9 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
     ).first()
     if existing is not None:
         storage.delete(body.staging_key)
-        _enqueue_thumbnail(existing[1])
+        _enqueue_thumbnail(db, existing[1])
+        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(*existing)))
+        db.commit()
         return _artifact_out(*existing)
 
     try:
@@ -399,6 +468,24 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
         db.add(file)
         db.add(artifact)
         keys = trim_file_versions(db, file)
+        append_event(
+            db,
+            run.id,
+            "artifact.created",
+            {
+                "artifact_id": artifact.id,
+                "file_id": file.id,
+                "filename": file.filename,
+                "size": file.size,
+                "content_type": file.content_type,
+                "role": artifact.role,
+                "download_url": f"/v1/files/{file.id}/content",
+            },
+            commit=False,
+        )
+        _enqueue_thumbnail(db, file)
+        db.flush()
+        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(artifact, file)))
         db.commit()
     except Exception:
         db.rollback()
@@ -409,30 +496,14 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
     db.refresh(artifact)
     storage.delete(body.staging_key)
 
-    append_event(
-        db,
-        run.id,
-        "artifact.created",
-        {
-            "artifact_id": artifact.id,
-            "file_id": file.id,
-            "filename": file.filename,
-            "size": file.size,
-            "content_type": file.content_type,
-            "role": artifact.role,
-            "download_url": f"/v1/files/{file.id}/content",
-        },
-    )
-    _enqueue_thumbnail(file)
     return _artifact_out(artifact, file)
 
 
-def _enqueue_thumbnail(file: FileObject) -> None:
+def _enqueue_thumbnail(db: Session, file: FileObject) -> None:
     if file.status == FileStatus.READY and not (file.meta or {}).get("thumb_key") and thumbnail_candidate(file.filename, file.content_type):
-        try:
-            get_queue().enqueue(settings.file_queue, {"file_id": file.id, "thumbnail_only": True})
-        except Exception:
-            log.warning("thumbnail queue unavailable for %s", file.id, exc_info=True)
+        from .jobs import stage_job
+
+        stage_job(db, "thumbnail", file_id=file.id)
 
 
 def _bound_file(
@@ -573,10 +644,21 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         merged = dict(file.meta or {})
         merged.update(body.meta)
         file.meta = merged
+        if merged.get("skill") or merged.get("skill_error"):
+            head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file
+            head.purpose, head.project_id = "skill", None
+            reserve_filename(db, head)
+            db.execute(
+                update(FileObject)
+                .where(FileObject.lineage_id == file.lineage_id)
+                .values(purpose="skill", project_id=None, filename=head.filename, name_key=head.name_key)
+            )
     if body.status is not None:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
+        request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
     db.commit()
     db.refresh(file)
     return file_dict(file)
@@ -600,14 +682,24 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         for name, asset in assets.items():
             if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
                 raise HTTPException(status_code=400, detail="invalid asset")
-        expected = set(preview.pages or []) if preview.kind == "pages" else {preview.data} if preview.kind == "sheets" else set()
-        if preview.status == "ready" and preview.kind in {"pages", "sheets"} and (not expected or set(assets) != expected):
+        expected = (
+            set(preview.pages or [])
+            if preview.kind == "pages"
+            else {preview.data}
+            if preview.kind == "sheets"
+            else {preview.text}
+            if preview.kind == "text"
+            else set()
+        )
+        if preview.status == "ready" and preview.kind in {"pages", "sheets", "text"} and (not expected or set(assets) != expected):
             raise HTTPException(status_code=400, detail="manifest assets do not match")
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
         meta["preview"] = preview.model_dump(exclude_unset=True)
         for asset in assets.values():
-            if asset["content_type"] != ("image/jpeg" if preview.kind == "pages" else "application/json"):
+            if asset["content_type"] != {"pages": "image/jpeg", "sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(
+                preview.kind
+            ):
                 raise HTTPException(status_code=400, detail="invalid asset content type")
         meta["preview_assets"] = assets
         if preview.image == "display.webp":

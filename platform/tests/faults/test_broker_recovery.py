@@ -153,6 +153,20 @@ def test_missing_resource_is_a_typed_lease_failure(env):
     assert manager.status(handle)["state"] == "failed"
 
 
+def test_stale_startup_listing_does_not_delete_a_running_resource(env, monkeypatch):
+    from dataclasses import replace
+
+    make, provider, _, _ = env
+    manager = make()
+    handle = take(manager)
+    listing = provider.list_owned
+    monkeypatch.setattr(provider, "list_owned", lambda owner: [replace(r, running=False) for r in listing(owner)])
+    manager.cleanup_once()
+    assert manager.status(handle)["state"] == "active"
+    assert provider.inspect(handle.provider_ref).running
+    assert provider.deletes == 0
+
+
 def test_redis_flush_rebuilds_from_labels_including_renewed_expiry(env):
     make, provider, _, flush = env
     manager = make()
@@ -482,3 +496,65 @@ def test_rebuild_in_progress_is_unavailable_not_false_lease_loss(env):
     manager._recovering = False
     manager.cleanup_once()
     assert manager.get(handle)["state"] == "active"
+
+
+def test_canceling_a_queued_acquisition_never_creates_a_resource(env, monkeypatch):
+    from ailab_platform.broker.service import LeaseCanceledError
+
+    monkeypatch.setattr(settings, "max_sandboxes", 2)
+    make, provider, _, _ = env
+    manager = make()
+    first = take(manager)
+    canceled, checked = threading.Event(), threading.Event()
+
+    def ensure_active():
+        checked.set()
+        if canceled.is_set():
+            raise LeaseCanceledError("canceled")
+
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        future = pool.submit(manager.acquire, spec(), LeasePrincipal("u2", "canceled-run"), wait_seconds=10, ensure_active=ensure_active)
+        assert checked.wait(2)
+        canceled.set()
+        with pytest.raises(LeaseCanceledError):
+            future.result(timeout=3)
+    assert len(provider.list_owned(manager.owner)) == 1
+    manager.release(first)
+
+
+def test_canceling_during_creation_removes_the_new_resource(env):
+    from ailab_platform.broker.service import LeaseCanceledError
+
+    make, provider, _, _ = env
+    manager = make()
+    active = True
+
+    def ensure_active():
+        if not active:
+            raise LeaseCanceledError("canceled during create")
+
+    def prepare(lease):
+        nonlocal active
+        active = False
+
+    with pytest.raises(LeaseCanceledError):
+        manager.acquire(spec(), LeasePrincipal("u", "cancel-create"), prepare=prepare, ensure_active=ensure_active)
+    assert provider.list_owned(manager.owner) == []
+    assert manager.active_leases() == []
+
+
+def test_terminal_run_is_reconciled_without_waiting_for_ttl(env):
+    make, provider, _, _ = env
+    manager = make()
+    handle = take(manager)
+
+    class Platform:
+        def get_run(self, run_id):
+            return {"status": "canceled"}
+
+        def append_event(self, *args):
+            pass
+
+    manager.platform = Platform()
+    manager.cleanup_once()
+    assert provider.inspect(handle.provider_ref) is None

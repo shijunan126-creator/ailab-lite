@@ -88,9 +88,11 @@ class RunOut(ORMModel):
     summary: str
     error: str
     result: dict
+    resumable: bool = False
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    work_ms: int | None = None
 
 
 class RunDetail(RunOut):
@@ -102,6 +104,7 @@ class RunDetail(RunOut):
 class InternalRunDetail(RunDetail):
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 
+    needs_conversation_title: bool = False
     history: list[dict] = Field(default_factory=list)
     workspace_restore_key: str | None = None
     workspace_expired: bool = False  # the conversation's last workspace was dropped by the retention window
@@ -139,6 +142,8 @@ class ConversationPatch(BaseModel):
 
     @model_validator(mode="after")
     def require_changes(self):
+        if "title" in self.model_fields_set and (self.title is None or not self.title.strip()):
+            raise ValueError("title must not be blank")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self
@@ -162,6 +167,7 @@ class ConversationOut(UTCModel):
 
 
 class ConversationDetail(ConversationOut):
+    has_more: bool = False
     turns: list[RunDetail] = Field(default_factory=list)
     previews: list[dict] = Field(default_factory=list)
 
@@ -277,6 +283,7 @@ class CommitOut(BaseModel):
 
 
 class RunStateOut(BaseModel):
+    job_id: str | None = None
     status: str
     finished_at: datetime | None = None
 
@@ -291,6 +298,11 @@ class RunStatusIn(BaseModel):
 class EventIn(BaseModel):
     type: str = Field(min_length=1, max_length=60)
     payload: dict = Field(default_factory=dict)
+
+
+class RunTransitionIn(RunStatusIn):
+    events: list[EventIn] = Field(default_factory=list, max_length=50)
+    attempt_id: str | None = Field(default=None, max_length=40)
 
 
 class UsageIn(BaseModel):

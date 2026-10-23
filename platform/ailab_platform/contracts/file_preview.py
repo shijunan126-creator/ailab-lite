@@ -69,7 +69,7 @@ class FilePreview(BaseModel):
 
 class PreviewAsset(BaseModel):
     key: str = Field(max_length=500)
-    content_type: Literal["image/jpeg", "application/json"]
+    content_type: Literal["image/jpeg", "application/json", "text/plain; charset=utf-8"]
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 

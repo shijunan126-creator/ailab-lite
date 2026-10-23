@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from ailab_platform.api.reaper import purge_expired_workspaces
 from ailab_platform.api.routes_internal import workspace_alive, workspace_key
 from ailab_platform.storage import LocalStorage
+from tests.run_claims import attempt_headers
 
 
 def test_expired_workspace_objects_are_deleted(tmp_path) -> None:
@@ -79,11 +80,11 @@ def test_an_expired_workspace_is_reported_to_the_agent(monkeypatch) -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=auth, json={}).json()
         one = c.post(f"/v1/conversations/{conv['id']}/messages", headers=auth, json={"prompt": "做个表"}).json()
-        c.post(f"/internal/runs/{one['id']}/status", headers=service, json={"status": "running"})
+        c.post(f"/internal/runs/{one['id']}/status", headers=attempt_headers(c, one["id"]), json={"status": "running"})
         old = (datetime.now(UTC) - timedelta(days=4)).isoformat()
         c.post(
             f"/internal/runs/{one['id']}/status",
-            headers=service,
+            headers=attempt_headers(c, one["id"]),
             json={"status": "succeeded", "summary": "ok", "result": {"workspace_saved": True, "workspace_saved_at": old}},
         )
         two = c.post(f"/v1/conversations/{conv['id']}/messages", headers=auth, json={"prompt": "改一下"}).json()

@@ -23,9 +23,13 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+from . import naming
+from .contracts.jobs import RunStatus as RunStatus
 
 
 def new_id(prefix: str) -> str:
@@ -38,17 +42,6 @@ def utcnow() -> datetime:
 
 class Base(DeclarativeBase):
     pass
-
-
-class RunStatus:
-    QUEUED = "queued"
-    RUNNING = "running"
-    SUCCEEDED = "succeeded"
-    FAILED = "failed"
-    CANCELED = "canceled"
-
-    TERMINAL = {SUCCEEDED, FAILED, CANCELED}
-    ACTIVE = {QUEUED, RUNNING}
 
 
 class FileStatus:
@@ -203,11 +196,17 @@ class ApiToken(Base):
 
 class Project(Base):
     __tablename__ = "projects"
-    __table_args__ = (Index("ix_projects_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (
+        Index("ix_projects_user_updated", "user_id", "updated_at"),
+        Index("uq_projects_user_name", "user_id", "name_key", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("prj"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    name_key: Mapped[str] = mapped_column(
+        String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["name"])
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -231,6 +230,8 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cnv"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     model: Mapped[str] = mapped_column(String(120), default="")  # the last model picked here
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -242,7 +243,9 @@ class Run(Base):
     __tablename__ = "runs"
     __table_args__ = (
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
+        Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
+        Index("ix_runs_waiting", "status", "waiting_since", "id"),
         Index("ix_runs_finished", "status", "finished_at", "id"),
     )
 
@@ -256,12 +259,17 @@ class Run(Base):
     input_file_ids: Mapped[list] = mapped_column(JSON, default=list)
     # how the user asked: {"mode": "chat" | "work", "skill": "pptx" | ...} (empty for runs from before)
     options: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
+    waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checkpoint_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    runtime_meta: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    work_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=0)
+    work_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     events: Mapped[list[RunEvent]] = relationship(back_populates="run", cascade="all, delete-orphan", order_by="RunEvent.seq")
@@ -378,6 +386,10 @@ class FileObject(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
     starred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     filename: Mapped[str] = mapped_column(String(255))
+    name_key: Mapped[str] = mapped_column(
+        String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["filename"])
+    )
+    purpose: Mapped[str] = mapped_column(String(16), default="library", server_default="library")
     content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
     size: Mapped[int] = mapped_column(Integer, default=0)
     sha256: Mapped[str] = mapped_column(String(64), default="")
@@ -421,7 +433,9 @@ class ModelUsage(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Not a foreign key: the ledger outlives the runs it records (a purged conversation's usage still counts).
-    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
+    file_id: Mapped[str | None] = mapped_column(String(40))
     call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -465,7 +479,9 @@ class UsageReservation(Base):
     )
 
     call_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    run_id: Mapped[str] = mapped_column(String(40))  # like ModelUsage.run_id, kept after the run is purged
+    run_id: Mapped[str | None] = mapped_column(String(40))
+    subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
+    file_id: Mapped[str | None] = mapped_column(String(40))
     user_id: Mapped[str] = mapped_column(String(40))
     attempt_id: Mapped[str] = mapped_column(String(80))
     mode: Mapped[str] = mapped_column(String(20))
@@ -482,7 +498,7 @@ class UsageReservation(Base):
 
 
 class OutboxMessage(Base):
-    """Undelivered effects; removed only after successful at-least-once publication."""
+    """Durable jobs retained through publication until an authenticated consumer ACK."""
 
     __tablename__ = "outbox"
 
@@ -490,3 +506,106 @@ class OutboxMessage(Base):
     topic: Mapped[str] = mapped_column(String(120))
     payload: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, server_default="1970-01-01 00:00:00")
+    last_error: Mapped[str | None] = mapped_column(String(120))
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_token: Mapped[str | None] = mapped_column(String(40))
+    deliveries: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    needs_attention: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+
+    __table_args__ = (
+        Index("ix_outbox_claim_token", "claim_token"),
+        Index("ix_outbox_due", "needs_attention", "next_attempt_at", "id"),
+        Index("ix_outbox_created_at", "created_at", "id"),
+    )
+
+
+class RunAttempt(Base):
+    __tablename__ = "run_attempts"
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), index=True)
+    number: Mapped[int] = mapped_column(Integer)
+    agent_instance: Mapped[str] = mapped_column(String(120))
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    outcome: Mapped[str | None] = mapped_column(String(40))
+    __table_args__ = (UniqueConstraint("run_id", "number"),)
+
+
+class SkillPolicy(Base):
+    """Global (scope='global') or department policy for a built-in skill, or '*personal*' for personal skills."""
+
+    __tablename__ = "skill_policies"
+    scope: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+
+
+class SkillApproval(Base):
+    """A platform admin's decision on one personal skill file while its owner's policy is 'review'."""
+
+    __tablename__ = "skill_approvals"
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+
+
+# The review queue must spell the predicate exactly like the sparse index so both planners can use it.
+REVIEW_PREDICATES = {
+    "sqlite": "json_extract(meta, '$.skill.name') IS NOT NULL AND status = 'ready' "
+    "AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL",
+    "postgresql": "(meta -> 'skill' ->> 'name') IS NOT NULL AND status = 'ready' "
+    "AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL",
+}
+Index(
+    "ix_files_skill_review",
+    FileObject.id,
+    sqlite_where=text(REVIEW_PREDICATES["sqlite"]),
+    postgresql_where=text(REVIEW_PREDICATES["postgresql"]),
+)
+
+
+class RunCheckpoint(Base):
+    __tablename__ = "run_checkpoints"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    step: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(String(40))
+    state_key: Mapped[str] = mapped_column(String(500), index=True)
+    plan: Mapped[list] = mapped_column(JSON, default=list)
+    tool_log: Mapped[dict] = mapped_column(JSON, default=dict)
+    deliveries: Mapped[dict] = mapped_column(JSON, default=dict)
+    runtime_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("ix_run_checkpoints_expiry", "expires_at", "run_id", "step"),)
+
+
+class RunDelivery(Base):
+    __tablename__ = "run_deliveries"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    result: Mapped[dict] = mapped_column(JSON)
+
+
+Index(
+    "ix_files_folder_listing",
+    FileObject.user_id,
+    FileObject.purpose,
+    FileObject.is_head,
+    FileObject.deleted_at,
+    FileObject.purged_at,
+    FileObject.project_id,
+    FileObject.created_at,
+    FileObject.id,
+)
+Index(
+    "uq_files_folder_name",
+    FileObject.user_id,
+    FileObject.purpose,
+    func.coalesce(FileObject.project_id, ""),
+    FileObject.name_key,
+    unique=True,
+    sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+    postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+)

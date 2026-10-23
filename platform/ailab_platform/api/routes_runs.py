@@ -23,10 +23,10 @@ from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
-from ..queue import get_queue
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut
+from ..skill_policy import run_disabled_skills
 from ..storage import get_storage
 from .routes_skills import usable_personal
 from .serializers import run_dict
@@ -78,7 +78,7 @@ def start_run(
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
     if skill:
-        if skill in ((user.settings or {}).get("disabled_skills") or []):
+        if skill in run_disabled_skills(db, user):
             raise HTTPException(status_code=400, detail=f"技能「{skill}」已关闭，可在侧栏「技能」里打开")
         known = skills().get(skill) or usable_personal(db, user).get(skill)
         if not known:
@@ -104,11 +104,8 @@ def start_run(
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
-            if not conversation.title:
-                first_line = prompt.strip().splitlines()[0] if prompt.strip() else "新对话"
-                conversation.title = first_line[:40] + ("…" if len(first_line) > 40 else "")
             busy = db.scalar(
-                select(func.count()).select_from(Run).where(Run.conversation_id == conversation.id, Run.status.in_(RunStatus.ACTIVE))
+                select(func.count()).select_from(Run).where(Run.conversation_id == conversation.id, Run.status.not_in(RunStatus.TERMINAL))
             )
             if busy:
                 raise HTTPException(status_code=409, detail="this conversation is still answering the previous message")
@@ -116,7 +113,13 @@ def start_run(
         inputs: list[str] = []
         for file_id in file_ids:
             file = db.get(FileObject, file_id, populate_existing=True)
-            if file is None or file.user_id != user.id or file.deleted_at is not None or file.purged_at is not None:
+            if (
+                file is None
+                or file.user_id != user.id
+                or file.purpose != "library"
+                or file.deleted_at is not None
+                or file.purged_at is not None
+            ):
                 raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
             if file.status != FileStatus.READY:
                 raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")
@@ -135,16 +138,14 @@ def start_run(
         if conversation is not None:
             conversation.model = model_id
             conversation.updated_at = utcnow()
+        db.flush()
+        from .jobs import stage_job
+
+        stage_job(db, "run", run_id=run.id, mode=mode)
+        append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model}, commit=False)
         db.commit()
         db.refresh(run)
 
-    append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model})
-    try:
-        get_queue().enqueue(settings.run_queue, {"run_id": run.id})
-    except Exception as exc:
-        log.exception("failed to enqueue run %s", run.id)
-        transition_run(db, run.id, RunStatus.FAILED, error=f"queue unavailable: {exc}")
-        raise HTTPException(status_code=503, detail="run queue unavailable") from exc
     return run
 
 
@@ -174,9 +175,12 @@ def get_run(run_id: str, user: User = Depends(current_user), db: Session = Depen
 @router.post("/runs/{run_id}/cancel", response_model=RunDetail)
 def cancel_run(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     run = _get_owned_run(db, run_id, user)
-    if run.status in RunStatus.TERMINAL:
-        raise HTTPException(status_code=409, detail=f"run already {run.status}")
-    run, _ = transition_run(db, run.id, RunStatus.CANCELED, reason="user_requested")
+    with user_critical_section(db, user.id):
+        db.refresh(run)
+        if run.status in RunStatus.TERMINAL:
+            raise HTTPException(status_code=409, detail=f"run already {run.status}")
+        run, _ = transition_run(db, run.id, RunStatus.CANCELED, reason="user_requested", commit=False)
+        db.commit()
     return run_dict(db, run, detail=True)
 
 
@@ -184,11 +188,12 @@ def cancel_run(run_id: str, user: User = Depends(current_user), db: Session = De
 def event_history(
     run_id: str,
     after: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[RunEvent]:
     _get_owned_run(db, run_id, user)
-    return list_events(db, run_id, after)
+    return list_events(db, run_id, after, limit)
 
 
 PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json)$")
@@ -261,7 +266,7 @@ async def stream_events(
                 last_id = seq
                 data = json.dumps(payload, ensure_ascii=False)
                 yield f"id: {seq}\nevent: {type_}\ndata: {data}\n\n"
-            if current_status in RunStatus.TERMINAL and not events:
+            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events:
                 yield "event: stream.end\ndata: {}\n\n"
                 return
             if events:

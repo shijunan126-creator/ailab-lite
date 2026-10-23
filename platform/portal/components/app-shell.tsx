@@ -89,8 +89,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const projects = useProjects();
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
+  const listController = useRef<AbortController | null>(null);
 
-  const load = useCallback(() => api<Conversation[]>("/v1/conversations").then(setConversations).catch(() => undefined), []);
+  const load = useCallback(() => {
+    listController.current?.abort();
+    const controller = new AbortController();
+    listController.current = controller;
+    return api<Conversation[]>("/v1/conversations", { signal: controller.signal })
+      .then((rows) => { if (!controller.signal.aborted) setConversations(rows); })
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     api<Me>("/v1/auth/me").then(setMe).catch(() => setMe(null));
@@ -98,7 +106,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     setCollapsed(window.innerWidth < 760 || localStorage.getItem("ailab.sidebar") === "closed");
     load();
     window.addEventListener(CONVERSATIONS_CHANGED, load);
-    return () => window.removeEventListener(CONVERSATIONS_CHANGED, load);
+    return () => {
+      listController.current?.abort();
+      window.removeEventListener(CONVERSATIONS_CHANGED, load);
+    };
   }, [load]);
 
   // a conversation that is still answering: keep its "回答中…" fresh
@@ -173,7 +184,11 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <span className="conv-title">{c.title || "新对话"}</span>
                 <span className="conv-time">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
               </a>
-              <ConversationMenu conv={c} onDeleted={() => c.id === current && router.push("/")} />
+              <ConversationMenu conv={c} onDeleted={() => {
+                listController.current?.abort();
+                setConversations((rows) => rows?.filter((row) => row.id !== c.id) || null);
+                if (c.id === current) router.push("/");
+              }} />
             </div>
           ))}
         </nav>

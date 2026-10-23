@@ -12,6 +12,7 @@ from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import Artifact, Conversation, FileObject, Project, Run, RunEvent
 from ailab_platform.storage import get_storage
+from tests.run_claims import attempt_headers, delivery_headers
 from tests.test_conversations import _other_user
 
 AUTH = {"Authorization": "Bearer test-token"}
@@ -43,7 +44,7 @@ def artifact(api, run_id, data=b"output") -> dict:
     get_storage().put_bytes(key, data)
     response = api.post(
         "/internal/artifacts",
-        headers=SERVICE,
+        headers=delivery_headers(attempt_headers(api, run_id), run_id, key),
         json={
             "run_id": run_id,
             "staging_key": key,
@@ -121,7 +122,7 @@ def test_upload_and_artifact_inherit_project(api):
     assert upload(api, project_id=p["id"])["project_id"] == p["id"]
     conv = api.post("/v1/conversations", json={"project_id": p["id"]}).json()
     run = api.post(f"/v1/conversations/{conv['id']}/messages", json={"prompt": "create"}).json()
-    api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+    api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"})
     out = artifact(api, run["id"])
     file = api.get(f"/v1/files/{out['file_id']}").json()
     assert file["project_id"] == p["id"] and not file["starred"]
@@ -132,7 +133,7 @@ def test_project_delete_trashes_files_and_cancels_run(api):
     p = project(api)
     conv = api.post("/v1/conversations", json={"project_id": p["id"]}).json()
     run = api.post(f"/v1/conversations/{conv['id']}/messages", json={"prompt": "create"}).json()
-    api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+    api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"})
     out = artifact(api, run["id"])
     parent = upload(api, project_id=p["id"])
     child = upload(api, parent_id=parent["id"])

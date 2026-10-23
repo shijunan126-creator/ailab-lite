@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -10,6 +10,7 @@ from ..deps import current_user, get_db
 from ..library import live_file_predicates, owned_project, trash_lineages
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, Project, Run, RunStatus, User, utcnow
+from ..naming import name_key
 from ..run_state import transition_run
 from ..schemas import ProjectIn, ProjectOut
 
@@ -26,7 +27,7 @@ def _project_rows(db: Session, user_id: str, project_id: str | None = None) -> l
     )
     files = (
         select(FileObject.project_id, func.count().label("count"))
-        .where(FileObject.user_id == user_id, *live_file_predicates())
+        .where(FileObject.user_id == user_id, FileObject.purpose == "library", *live_file_predicates())
         .where(FileObject.project_id == project_id if project_id is not None else FileObject.project_id.is_not(None))
         .group_by(FileObject.project_id)
         .subquery()
@@ -60,10 +61,14 @@ def list_projects(user: User = Depends(current_user), db: Session = Depends(get_
 
 @router.post("", response_model=ProjectOut, status_code=status.HTTP_201_CREATED)
 def create_project(body: ProjectIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    project = Project(user_id=user.id, name=body.name)
-    db.add(project)
-    db.commit()
-    return _project_rows(db, user.id, project.id)[0]
+    with user_critical_section(db, user.id):
+        key = name_key(body.name)
+        if db.scalar(select(Project.id).where(Project.user_id == user.id, Project.name_key == key).limit(1)):
+            raise HTTPException(409, "已有同名项目，请换一个名称")
+        project = Project(user_id=user.id, name=body.name.strip(), name_key=key)
+        db.add(project)
+        db.commit()
+        return _project_rows(db, user.id, project.id)[0]
 
 
 @router.get("/{project_id}", response_model=ProjectOut)
@@ -76,7 +81,11 @@ def get_project(project_id: str, user: User = Depends(current_user), db: Session
 def rename_project(project_id: str, body: ProjectIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     with user_critical_section(db, user.id):
         project = owned_project(db, project_id, user)
-        project.name = body.name
+        key = name_key(body.name)
+        if db.scalar(select(Project.id).where(Project.user_id == user.id, Project.name_key == key, Project.id != project_id).limit(1)):
+            raise HTTPException(409, "已有同名项目，请换一个名称")
+        project.name_key = key
+        project.name = body.name.strip()
         project.updated_at = utcnow()
         db.commit()
         return _project_rows(db, user.id, project_id)[0]
@@ -87,7 +96,7 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
     with user_critical_section(db, user.id):
         project = owned_project(db, project_id, user)
         conversation_ids = select(Conversation.id).where(Conversation.project_id == project.id)
-        runs = db.scalars(select(Run).where(Run.conversation_id.in_(conversation_ids), Run.status.in_(RunStatus.ACTIVE))).all()
+        runs = db.scalars(select(Run).where(Run.conversation_id.in_(conversation_ids), Run.status.not_in(RunStatus.TERMINAL))).all()
         for run in runs:
             transition_run(db, run.id, RunStatus.CANCELED, reason="project_deleted", commit=False)
         # Retain the soft-deleted threads and their run history without a dangling project FK.
@@ -100,6 +109,8 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
                 .limit(200)
             )
         ):
+            for head in db.scalars(select(FileObject).where(FileObject.lineage_id.in_(lineages), FileObject.is_head == 1)):
+                head.meta = {**(head.meta or {}), "trashed_project_name": project.name}
             trash_lineages(db, user.id, lineages, project_id=project.id)
         db.delete(project)
         db.commit()

@@ -7,9 +7,10 @@ import asyncio
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
+from tests.runtime_fakes import CheckpointFake
 
 
-class FakePlatform:
+class FakePlatform(CheckpointFake):
     def __init__(self) -> None:
         self.statuses: list[tuple[str, dict]] = []
         self.events: list[tuple[str, dict]] = []
@@ -21,6 +22,11 @@ class FakePlatform:
 
     async def set_run_status(self, run_id, status, **kw):
         self.statuses.append((status, kw))
+        return {}
+
+    async def transition_run(self, run_id, status, *, events=(), **values):
+        await self.set_run_status(run_id, status, **values)
+        self.events.extend((event["type"], event["payload"]) for event in events)
         return {}
 
     async def get_run_state(self, run_id):
@@ -90,9 +96,9 @@ class ScriptedLLM(LLMClient):
         return self.responses.pop(0)
 
 
-def _run(llm, platform=None, broker=None):
+def _run(llm, platform=None, broker=None, attempt_id="att_1"):
     platform, broker = platform or FakePlatform(), broker or FakeBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id=attempt_id))
     return platform, broker
 
 
@@ -149,6 +155,7 @@ class RichBroker(FakeBroker):
         self.outputs = outputs or []
         self.lease_failures = lease_failures
         self.slow_exec = slow_exec
+        self.exec_started = False
         self.commits: list[str] = []
         self.released = 0
         self.listings = 0
@@ -168,6 +175,7 @@ class RichBroker(FakeBroker):
         return {"filename": filename or path.rsplit("/", 1)[-1], "size": 1}
 
     async def exec(self, lease_id, cmd, timeout=None):
+        self.exec_started = True
         if self.slow_exec:
             await asyncio.sleep(30)  # a long-running command
         return {"exit_code": 0, "stdout": "", "stderr": ""}
@@ -258,7 +266,7 @@ def test_cancel_interrupts_a_running_tool_and_frees_the_sandbox(monkeypatch) -> 
         async def get_run(self, run_id):
             self.calls += 1
             run = await super().get_run(run_id)
-            if self.calls > 3:  # the user clicks cancel while the command runs
+            if broker.exec_started:  # cancel only once the command actually started
                 run["status"] = "canceled"
             return run
 
@@ -331,7 +339,9 @@ def test_run_resolves_its_model_from_the_catalog() -> None:
             return {**await super().get_run(run_id), "model": "test-fast", "prompt": "你好"}
 
     platform = P()
-    asyncio.run(AgentLoop(platform=platform, broker=RichBroker()).process("run_1"))  # no llm injected: catalog -> MockLLM
+    asyncio.run(
+        AgentLoop(platform=platform, broker=RichBroker()).process("run_1", attempt_id="att_1")
+    )  # no llm injected: catalog -> MockLLM
     assert platform.statuses[-1][0] == "succeeded"
 
 
@@ -341,7 +351,7 @@ def test_run_for_a_model_that_left_the_catalog_fails_cleanly() -> None:
             return {**await super().get_run(run_id), "model": "retired-model"}
 
     platform, broker = P(), RichBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker).process("run_1", attempt_id="att_1"))
     status, kw = platform.statuses[-1][0], platform.statuses[-1][1]
     assert status == "failed" and "not available" in kw["error"]
     assert broker.released == 0  # failed before a sandbox was leased
@@ -370,12 +380,34 @@ def test_a_chat_answer_needs_no_sandbox_and_streams() -> None:
     assert platform.statuses[-1][0] == "succeeded" and platform.statuses[-1][1]["summary"] == "一段" * 100
 
 
-def test_load_skill_needs_no_sandbox() -> None:
-    broker = FakeBroker()
+def test_load_skill_requires_attested_sandbox() -> None:
+    import httpx
+
+    from ailab_platform.config import settings
+    from ailab_platform.skill_index import checked_index
+
+    class AttestedBroker(FakeBroker):
+        def _req(self, method, path, **kwargs):
+            assert path == "/internal/skills/index"
+            return kwargs
+
+        async def _send(self, req):
+            return httpx.Response(
+                200,
+                json={
+                    "verified": True,
+                    "lease_id": req["params"]["lease_id"],
+                    "provider_ref": "container",
+                    "image_ref": "office@sha256:fixture",
+                    "index": checked_index(settings.skills_path),
+                },
+            )
+
+    broker = AttestedBroker()
     read = ToolCall(id="c1", name="load_skill", arguments={"name": "pptx"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(content="ok")])
     _run(llm, broker=broker)
-    assert broker.leases == 0
+    assert broker.leases == 1
     tool_msg = llm.seen_messages[1][-1]
     assert tool_msg["role"] == "tool" and "build.py" in tool_msg["content"]
 
@@ -531,3 +563,33 @@ def test_the_model_is_told_when_the_last_workspace_expired() -> None:
     llm = ScriptedLLM([LLMResponse(content="ok")])
     _run(llm, platform=Expired())
     assert "上一轮的工作区已过期" in llm.seen_messages[0][0]["content"]
+
+
+def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):
+    import pytest
+
+    from ailab_platform.agent.loop import RunCanceled
+
+    monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
+
+    async def scenario():
+        waiting, closed = asyncio.Event(), asyncio.Event()
+
+        class Platform(FakePlatform):
+            async def get_run_state(self, run_id):
+                return {"status": "canceled" if waiting.is_set() else "running"}
+
+        class Broker(FakeBroker):
+            async def create_lease(self, *args, **kwargs):
+                waiting.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    closed.set()
+
+        loop = AgentLoop(platform=Platform(), broker=Broker())
+        with pytest.raises(RunCanceled):
+            await asyncio.wait_for(loop._acquire_lease("run_1"), timeout=1)
+        assert closed.is_set()
+
+    asyncio.run(scenario())

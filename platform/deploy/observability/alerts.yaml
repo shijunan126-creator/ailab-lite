@@ -1,0 +1,47 @@
+# Apply only where Prometheus Operator is installed; excluded from lite/base.
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: ailab
+spec:
+  groups:
+  - name: ailab
+    rules:
+    - alert: AILabServiceUnavailable
+      expr: up{job=~"ailab-.*"} == 0
+      for: 1m
+      labels: {severity: critical}
+      annotations: {summary: "AILab 服务连续一分钟无法采集"}
+    - alert: AILabOutboxStalled
+      expr: ailab_outbox_oldest_seconds > 300
+      for: 2m
+      labels: {severity: warning}
+      annotations: {summary: "AILab 持久任务超过五分钟未确认"}
+    - alert: AILabUsageUnreconciled
+      expr: ailab_usage_unreconciled > 0
+      for: 1h
+      labels: {severity: warning}
+      annotations: {summary: "AILab 用量账本存在长期未对账调用"}
+    - alert: AILabChatQueueSlow
+      expr: histogram_quantile(0.95, sum by (le) (rate(ailab_queue_wait_seconds_bucket{mode="chat"}[5m]))) > 5
+      for: 5m
+      labels: {severity: warning}
+      annotations: {summary: "AILab Chat 排队 P95 超过五秒"}
+    - alert: AILabScannerUnavailable
+      expr: kube_deployment_status_replicas_available{deployment="platform-clamav"} < 1
+      for: 2m
+      labels: {severity: critical}
+      annotations: {summary: "AILab ClamAV 无可用副本，上传保持隔离"}
+    - alert: AILabScanRetriesExhausted
+      expr: sum(increase(ailab_scan_exhausted_total[10m])) > 0
+      labels: {severity: warning}
+      annotations: {summary: "AILab 有文件扫描重试耗尽"}
+    - alert: AILabOOMKilled
+      expr: increase(kube_pod_container_status_restarts_total{namespace="platform"}[10m]) > 0 and on (namespace, pod, container) kube_pod_container_status_last_terminated_reason{reason="OOMKilled"} == 1
+      labels: {severity: critical}
+      annotations: {summary: "AILab 容器发生 OOM 重启"}
+    - alert: AILabVolumeAlmostFull
+      expr: kubelet_volume_stats_used_bytes{namespace="platform"} / kubelet_volume_stats_capacity_bytes{namespace="platform"} > 0.8
+      for: 10m
+      labels: {severity: warning}
+      annotations: {summary: "AILab 数据卷使用率超过 80%"}

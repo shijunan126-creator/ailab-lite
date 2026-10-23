@@ -18,6 +18,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.models import Artifact, FileObject, Run
 from ailab_platform.quota import library_bytes
 from ailab_platform.storage import get_storage
+from tests.run_claims import attempt_headers, delivery_headers
 from tests.test_conversations import _other_user
 from tests.test_library import batch, listed, ready
 from tests.test_projects import AUTH, SERVICE, project
@@ -218,7 +219,8 @@ def test_empty_trash_is_owned_counts_lineages_and_is_idempotent(api):
 def test_concurrent_artifact_commits_allocate_consecutive_versions(api):
     conv = api.post("/v1/conversations", json={}).json()
     run = api.post(f"/v1/conversations/{conv['id']}/messages", json={"prompt": "write"}).json()
-    api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+    owner = attempt_headers(api, run["id"])
+    api.post(f"/internal/runs/{run['id']}/status", headers=owner, json={"status": "running"})
     barrier = Barrier(5)
 
     def commit(i):
@@ -233,7 +235,7 @@ def test_concurrent_artifact_commits_allocate_consecutive_versions(api):
             "sha256": hashlib.sha256(data).hexdigest(),
         }
         barrier.wait(timeout=10)
-        response = TestClient(app).post("/internal/artifacts", headers=SERVICE, json=body)
+        response = TestClient(app).post("/internal/artifacts", headers=delivery_headers(owner, run["id"], key), json=body)
         assert response.status_code == 200, response.text
         return response.json()
 
@@ -298,7 +300,11 @@ def test_project_delete_covers_more_than_one_batch_and_already_trashed(api):
         db.add_all(
             [
                 FileObject(
-                    id=f"test-many-{i}-{p['id']}", user_id=owner, project_id=p["id"], filename="many.txt", storage_key=f"many/{p['id']}/{i}"
+                    id=f"test-many-{i}-{p['id']}",
+                    user_id=owner,
+                    project_id=p["id"],
+                    filename=f"many-{i}.txt",
+                    storage_key=f"many/{p['id']}/{i}",
                 )
                 for i in range(205)
             ]
@@ -368,9 +374,9 @@ def test_same_name_in_later_turn_versions_only_within_its_conversation(api):
 
     def output(conversation, data):
         run = api.post(f"/v1/conversations/{conversation['id']}/messages", json={"prompt": "write"}).json()
-        api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+        api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"})
         result = artifact(api, run["id"], data)
-        api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "succeeded"})
+        api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "succeeded"})
         return api.get(f"/v1/files/{result['file_id']}").json()
 
     conv = api.post("/v1/conversations", json={}).json()

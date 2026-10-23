@@ -1,29 +1,24 @@
 # 当前工作
 
-更新：2026-10-23。接续时先核对实际 Git / PR 状态，本文不是实时远端状态。
+更新：2026-10-24。用户10月23日授权：修复全部已知问题，完成真实验收后部署；公司模板和业务样本明确跳过。上一轮已完成部署与收口。本轮新增授权：连续滚动预览、统一工作过程和可靠计时，将全部前序工作提交PR；CI通过后合并main并同步本地main。仍不使用subagent。
 
-## 当前目标与范围
+## 已完成
 
-用户反馈原始 README 从首页消失。本轮修复 GitHub README 选择优先级：将 CI 说明从 `.github/README.md` 改名为 `.github/CI.md` 并修正引用，根目录项目说明保持原内容。此前 PR #30 已合入 main。
+- 项目文件在全部/收藏/图像/回收站按文件夹归档，顶层不再平铺；连续表格、窄屏与键盘操作通过浏览器验收。
+- 技能独立用途和页面管理，共享总存储配额；资料库/搜索/普通附件隐藏，pending/rejected/无效技能可删除释放空间。
+- 项目规范化重名拒绝；同目录文件自动编号，移动/恢复/版本/预签名/产物共用分配；迁移0020保留已有ID与对象。
+- 补齐生成TXT预览和多编码文本；流式独立250ms刷新；模型目录容量与后台标题预算修复。
+- 取消贯通排队/创建/运行，Docker独立过期停止移除；真实负载发现的旧启动快照误回收已修复。
+- 双库完整回归、真实沙箱/传输/扫描、浏览器、模型、告警、实际进程故障恢复、备份恢复与联合负载已验；已在现有运行环境部署并核验数据和交互。
 
-**剩余功能仍暂停实施**：T07/T08/T09/T14/T15/T16/T19/T20 和 F8 流式改造仅保留设计。用户本轮新增授权是 CI 更新；不要自动进入后续开发。
+## 代码与证据
 
-## 分支与交付
+- 工作树 `/Users/michael/Developer/ailab-lite`，`feat/remaining-work`（后端基线`fefca5e`），基于 `origin/main@6410fe9`；前序修复已提交`1978676`，本轮UI与验收记录随当前提交交付，三个未跟踪`.DS_Store`保留。
+- 交付使用可核验内容哈希的源码快照，运行镜像的134个Python源码哈希已核对；个人部署明细只在本机独立HANDOFF，不进入仓库。
+- 结果与残余适用范围：[最终更新](updates/2026-10-24-library-runtime.md)、[详细验收](../reviews/2026-10-23-library-runtime-acceptance.md)、[能力矩阵](../architecture/status-matrix.md)。旧“尚未修复/未验收”记录以这些最终结果为准，不覆盖原始失败证据。
 
-- 工作树：仓库主 checkout `/Users/michael/Developer/ailab-lite`，分支 `fix/repository-readme`；base 为 `origin/main@6caab9b`。
-- 已整合先前各功能分支及真实组件验收。最新 main `951ec16`（SearXNG 联网检索）已通过 merge commit `6f7e377` 合入本分支；采用 merge 保留祖先关系。
-- 本轮补齐检索在新部署结构中的资源、Service 地址和 Agent 专用 ingress，未恢复已废弃的单文件清单。进度入口、路线图与 AGENTS 接续要求已建立。
-- 已推送 `origin/feat/arch-hardening`，创建 [PR #30](https://github.com/shijunan126-creator/ailab-lite/pull/30) → `main`。2026-10-23 本轮核对：PR #30 已 MERGED，main 为 `6caab9b`。本轮 README 修复单独提 PR，不向已合并分支追加。
-- 能力逐项状态以 [状态矩阵](../architecture/status-matrix.md) 为准；本轮验证与 PR 发布记录见 [交付记录](updates/2026-10-23-main-integration.md)。已有 `.DS_Store` 保留，不纳入本轮新增提交。
+## 当前实施与下一步
 
-## 保留的问题
+已实现复用的连续页面预览和按时间顺序的统一工作过程；API持久化累计running时间，排队/等待用户/暂停不计入，历史未知时长不估算。双库完整回归、Portal测试/构建和真实浏览器已完成，见[本轮更新](updates/2026-10-24-preview-work-process.md)和[专项验收](../reviews/2026-10-24-preview-work-process.md)。已创建覆盖全部前序工作的[PR #32](https://github.com/shijunan126-creator/ailab-lite/pull/32)，产品/测试提交`c07543e`。下一步：等待PR最新head完整CI；全绿后按用户授权合并main，再将本地main快进到远端并核对SHA。当前尚未合并；不以旧main绿灯替代本PR检查。
 
-- Broker 大文件仍整份缓冲：单次峰值 265–284 MiB，limit 384 MiB，并发 OOM 风险待测与改造；不是已复现的双请求 OOMKill。
-- CI 已改为固定源码与 SHA256 构建/缓存真实 MinIO，首轮远端验收待完成，见 [CI 更新记录](updates/2026-10-23-ci-refresh.md)。SearXNG 新服务尚未纳入真实小机容量验收，沿用 main 的 `latest` 镜像和静态搜索服务 key，发布加固待办见路线图。
-- 真实组件数据为前次专用 VM 的历史结果，本轮不重启该环境；公网防火墙、gVisor、长期并发、企业 IdP 与付费模型边界见验收报告。
-
-## 下一步
-
-合并 README 修复后，调用 GitHub README API 确认首页 path 为根目录 `README.md`；核对 [CI 更新记录](updates/2026-10-23-ci-refresh.md) 与 main 的远端检查。处理实际集成/CI 阻塞后，由用户决定合并与何时恢复后续功能；获准开工时优先按 [路线图](roadmap.md) 阶段 1 的故障契约和性能标准执行。
-
-已创建 [PR #31](https://github.com/shijunan126-creator/ailab-lite/pull/31) 修复首页显示，等待合并；本轮根因、改动与验收见 [README 首页修复](updates/2026-10-23-readme-display.md)。
+公司模板/业务golden按指示跳过；不自动续跑用户原失败任务，不启动无关路线图事项。前轮运行环境已部署，本轮连续预览/过程区与0021尚未部署，不能混称已上线。短时负载不推导为任意规模、企业IdP或24小时稳定性承诺。

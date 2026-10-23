@@ -1,0 +1,51 @@
+"""The same process header survives pause, stop, failure, reload and replay."""
+
+import re
+
+import httpx
+import pytest
+from playwright.sync_api import expect
+
+pytestmark = pytest.mark.e2e
+
+
+def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged_in, stack):
+    page = logged_in
+    page.wait_for_selector("select option", state="attached")
+    page.select_option("select", "test-fast")
+    page.fill("textarea", "验证流式衔接")
+    page.keyboard.press("Enter")
+    page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
+    region = page.get_by_role("region", name="工作过程")
+    try:
+        expect(region).to_have_count(1)
+        expect(region.locator(".steps-head")).to_contain_text("正在工作中")
+        expect(region).to_contain_text("环境已就绪")
+        details = page.request.get(stack.portal + "/api/v1/conversations/" + page.url.rsplit("/", 1)[-1]).json()
+        run = details["turns"][-1]
+        assert page.request.post(stack.portal + f"/api/v1/runs/{run['id']}/cancel").ok
+        expect(region.locator(".steps-head")).to_contain_text("已取消", timeout=15000)
+        page.locator(".turn-meta").wait_for()
+        text = region.locator(".steps-head > span").nth(1).inner_text()
+        page.reload()
+        page.locator(".turn-meta").wait_for()
+        expect(page.locator(".steps-head > span").nth(1)).to_have_text(text)
+        page.locator(".steps-head").click()
+        expect(page.get_by_role("region", name="工作过程")).to_contain_text("环境已就绪")
+        assert page.locator(".thinking-body").count() == 0
+    finally:
+        httpx.post(stack.agent + "/e2e/release-stream", timeout=5).raise_for_status()
+
+
+def test_failure_keeps_one_header_and_persisted_duration(logged_in):
+    page = logged_in
+    page.wait_for_selector("select option", state="attached")
+    page.fill("textarea", "验证失败状态")
+    page.keyboard.press("Enter")
+    region = page.get_by_role("region", name="工作过程")
+    expect(region.locator(".steps-head")).to_contain_text("执行失败", timeout=20000)
+    page.locator(".turn-meta").wait_for()
+    text = region.locator(".steps-head > span").nth(1).inner_text()
+    assert "工作总时长：" in text
+    page.reload()
+    expect(page.locator(".steps-head > span").nth(1)).to_have_text(text)

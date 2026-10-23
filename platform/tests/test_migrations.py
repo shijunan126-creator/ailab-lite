@@ -85,6 +85,30 @@ def test_running_twice_is_harmless(engine) -> None:
     assert _version(engine) == _head()
 
 
+def test_runtime_upgrade_downgrade_preserves_existing_run_and_file_usage(engine):
+    _upgrade_to(engine, "0018")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0019")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE runs SET checkpoint_step = 1, status = 'running' WHERE id = 'r1'"))
+        conn.execute(
+            text(
+                "INSERT INTO run_checkpoints (run_id,step,attempt_id,state_key,plan,tool_log,deliveries,runtime_version,created_at) "
+                "VALUES ('r1',1,'attempt','checkpoints/r1/state.gz','[]','{}','{}',1,'2026-01-01 00:00:00')"
+            )
+        )
+        conn.execute(text("INSERT INTO run_deliveries (run_id,delivery_id,result) VALUES ('r1','r1:tool','{}')"))
+    _downgrade_to(engine, "0018")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT status FROM runs WHERE id = 'r1'")) == "running"
+    _upgrade_to(engine, "0019")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT checkpoint_step FROM runs WHERE id = 'r1'")) == 0
+        assert conn.scalar(text("SELECT count(*) FROM run_checkpoints")) == 0
+    assert {column["name"] for column in inspect(engine).get_columns("model_usage")} >= {"subject", "file_id"}
+
+
 def test_database_created_before_migrations_is_stamped_and_upgraded_keeping_its_data(engine) -> None:
     """The deployment that already exists: tables from create_all (revision 0001), no alembic_version."""
     _upgrade_to(engine, "0001")
@@ -421,3 +445,130 @@ def test_file_lineage_backfill_rejects_cross_owner_parent_even_if_root_was_alrea
             )
     with pytest.raises(RuntimeError, match="invalid file parent chain"):
         _upgrade_to(engine, "0013")
+
+
+def test_transactional_jobs_upgrade_seed_roundtrip_and_index_plans(engine):
+    _upgrade_to(engine, "0013")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text("INSERT INTO outbox (id, topic, payload, created_at) VALUES ('preview-old', 'files', :payload, '2026-01-01 00:00:00')"),
+            {"payload": '{"file_id":"f-old","preview_only":true}'},
+        )
+    _upgrade_to(engine, "0014")
+    with engine.begin() as conn:
+        from sqlalchemy import JSON, DateTime, String, column, select, table
+
+        jobs = table("outbox", column("id", String), column("topic", String), column("payload", JSON), column("created_at", DateTime))
+        seeded = {row.id: row.payload for row in conn.execute(select(jobs))}
+        assert seeded["r1"]["kind"] == "run" and seeded["r1"]["schema_version"] == 1
+        assert seeded["preview-old"]["kind"] == "preview"
+        rows = [{"id": f"future-{i:05}", "topic": "files", "payload": "{}", "created": "2099-01-01 00:00:00"} for i in range(10000)]
+        conn.execute(
+            text("INSERT INTO outbox (id,topic,payload,created_at,next_attempt_at) VALUES (:id,:topic,:payload,:created,:created)"), rows
+        )
+        conn.execute(text("ANALYZE outbox"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        due = " ".join(
+            str(r)
+            for r in conn.execute(
+                text(
+                    prefix + "SELECT id FROM outbox WHERE needs_attention=0 AND next_attempt_at <= '2027-01-01' "
+                    "ORDER BY next_attempt_at,id LIMIT 50"
+                )
+            )
+        )
+        oldest = " ".join(str(r) for r in conn.execute(text(prefix + "SELECT created_at FROM outbox ORDER BY created_at,id LIMIT 1")))
+        assert "ix_outbox_due" in due
+        assert "ix_outbox_created_at" in oldest
+    _downgrade_to(engine, "0013")
+    _upgrade_to(engine, "0014")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM outbox WHERE id='r1'")).scalar() == 1
+
+
+def test_skill_policies_round_trip_and_review_queue_uses_its_sparse_index(engine):
+    from ailab_platform.api.routes_skills import review_queue
+
+    _upgrade_to(engine, "0016")
+    # Each head is its own lineage: uq_files_lineage_head allows one head per lineage_id.
+    files = (
+        "INSERT INTO files (id, lineage_id, user_id, filename, content_type, size, sha256, storage_key, status, version, meta, created_at, "
+        "is_head)"
+    )
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text(files + " VALUES ('existing', 'existing', 'u1', 'a.txt', 'text/plain', 1, '', 'a.txt', 'ready', 1, '{}', '2026-01-01', 1)")
+        )
+    _upgrade_to(engine, "0017")
+    meta = "CAST(:meta AS JSON)" if engine.dialect.name == "postgresql" else ":meta"
+    with engine.begin() as conn:
+        conn.execute(text("INSERT INTO skill_policies (scope, name, state) VALUES ('global', 'pptx', 'disabled')"))
+        conn.execute(text("INSERT INTO skill_approvals (file_id, state) VALUES ('existing', 'allowed')"))
+        rows = [{"id": f"candidate{i:05}", "meta": '{"skill":{"name":"test"}}' if i % 100 == 0 else "{}"} for i in range(5000)]
+        conn.execute(
+            text(files + f" VALUES (:id, :id, 'u1', 'a.txt', 'text/plain', 1, '', 'a.txt', 'ready', 1, {meta}, '2026-01-01', 1)"),
+            rows,
+        )
+    _upgrade_to(engine, "head")  # production ORM also includes later additive columns
+    with engine.begin() as conn:
+        conn.execute(text("ANALYZE files"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        # The production query itself, not a simplified copy of its predicate.
+        statement = review_queue("candidate00000", 25, engine.dialect.name)
+        sql = str(statement.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+        plan = " ".join(str(r) for r in conn.execute(text(prefix + sql)))
+        assert "ix_files_skill_review" in plan, plan
+    _downgrade_to(engine, "0016")
+    with engine.connect() as conn:
+        assert "skill_policies" not in inspect(conn).get_table_names()
+        assert conn.execute(text("SELECT count(*) FROM files WHERE id = 'existing'")).scalar() == 1
+    _upgrade_to(engine, "0017")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM skill_policies")).scalar() == 0
+
+
+def test_library_namespaces_preserve_legacy_objects_and_disambiguate_names(engine):
+    _upgrade_to(engine, "0019")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for pid in ("p1", "p2"):
+            conn.execute(
+                text("INSERT INTO projects (id,user_id,name,created_at,updated_at) VALUES (:id,'u1','重复项目','2026-01-01','2026-01-01')"),
+                {"id": pid},
+            )
+        for fid in ("f1", "f2", "f3"):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,storage_key,status,created_at,lineage_id,"
+                    "is_head,meta,content_type,size,sha256,version) "
+                    "VALUES (:id,'u1','重复.txt',:key,'ready','2026-01-01',:id,1,'{}','text/plain',1,'x',1)"
+                ),
+                {"id": fid, "key": f"uploads/{fid}/original"},
+            )
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert len(set(conn.execute(text("SELECT name FROM projects")).scalars())) == 2
+        rows = conn.execute(text("SELECT id,filename,storage_key FROM files ORDER BY id")).all()
+        assert len(set(row.filename for row in rows)) == 3
+        assert all(row.storage_key == f"uploads/{row.id}/original" for row in rows)
+    _downgrade_to(engine, "0019")
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM files")).scalar() == 3
+
+
+def test_work_time_upgrade_downgrade_preserves_legacy_history(engine):
+    _upgrade_to(engine, "0020")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE runs SET status='succeeded', summary='preserved' WHERE id='r1'"))
+    _upgrade_to(engine, "0021")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT summary, work_ms, work_started_at FROM runs WHERE id='r1'")).one()
+        assert row == ("preserved", None, None)
+    _downgrade_to(engine, "0020")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT summary FROM runs WHERE id='r1'")).scalar() == "preserved"
+    _upgrade_to(engine, "0021")

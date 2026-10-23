@@ -13,11 +13,12 @@ from ..config import settings
 from ..deps import metrics_auth
 from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
+from ..runtime_context import RuntimeContextMiddleware
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
 from .render import LibraryRenderer
-from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseError, LeaseLostError, LeaseManager
+from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseCanceledError, LeaseError, LeaseLostError, LeaseManager
 
 setup_logging("broker")
 log = logging.getLogger("ailab.broker")
@@ -53,6 +54,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware, service="broker")
+app.add_middleware(RuntimeContextMiddleware)
 router = APIRouter(prefix="/internal", tags=["leases"])
 
 
@@ -81,7 +83,15 @@ def create_lease(body: LeaseCreate) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LeaseError as exc:
         raise HTTPException(
-            status_code=429 if isinstance(exc, CapacityError) else 503 if isinstance(exc, BrokerOwnershipError) else 502,
+            status_code=(
+                409
+                if isinstance(exc, LeaseCanceledError)
+                else 429
+                if isinstance(exc, CapacityError)
+                else 503
+                if isinstance(exc, BrokerOwnershipError)
+                else 502
+            ),
             detail=exc.detail(),
         ) from exc
     return {
@@ -225,6 +235,9 @@ def release_lease(lease_id: str) -> Response:
 
 
 app.include_router(router)
+from .routes_skills import router as skills_router  # noqa: E402
+
+app.include_router(skills_router)
 
 
 @app.get("/healthz")

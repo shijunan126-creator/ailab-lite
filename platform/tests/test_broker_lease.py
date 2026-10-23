@@ -89,6 +89,12 @@ class _Storage:
     def put_bytes(self, key, data, content_type="x"):
         self.objects[key] = data
 
+    def put_stream(self, key, source, content_type="x", *, max_bytes):
+        data = source.read(max_bytes + 1)
+        if len(data) > max_bytes:
+            raise ValueError("too large")
+        self.put_bytes(key, data, content_type)
+
 
 class _ApiStub(_Platform):
     def __init__(self, files: dict[str, dict], run_inputs: list[str]) -> None:
@@ -102,6 +108,12 @@ class _ApiStub(_Platform):
 
     def get_file_bytes(self, file_id, **context):
         return self.files[file_id]["bytes"]
+
+    def download_file(self, file_id, target, *, max_bytes, **context):
+        data = self.files[file_id]["bytes"]
+        if len(data) > max_bytes:
+            raise ValueError("too large")
+        Path(target).write_bytes(data)
 
     def commit_artifact(self, payload):
         self.committed.append(payload)

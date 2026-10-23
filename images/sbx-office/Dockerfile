@@ -21,6 +21,8 @@ RUN fc-cache -f
 
 # L6 Skills 与工具
 COPY skills/ /opt/skills/
+COPY skill_index.py /opt/ailab-tools/skill_index.py
+RUN python /opt/ailab-tools/skill_index.py /opt/skills --check --requirements
 COPY smoke/ /opt/ailab-tools/smoke/
 
 # 运行时约定：非 root、/workspace/{inputs,outputs}

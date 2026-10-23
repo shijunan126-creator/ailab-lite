@@ -16,6 +16,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.llm import LLMResponse, OpenAICompatibleClient
 from ailab_platform.models import ModelUsage, UsageReservation
 from ailab_platform.quota import expire_reservations
+from tests.run_claims import owned_headers
 from tests.test_agent_loop import FakePlatform, RichBroker, ScriptedLLM, _run
 from tests.test_ledger_protocol import AUTH, api  # noqa: F401
 
@@ -23,6 +24,7 @@ from tests.test_ledger_protocol import AUTH, api  # noqa: F401
 def test_settle_api_outage_is_reaped_and_late_delivery_corrects_the_same_call(api, monkeypatch):  # noqa: F811
     monkeypatch.setattr("ailab_platform.clients.USAGE_RETRY_BACKOFF_SECONDS", 0)
     run_id = api.post("/v1/runs", headers=AUTH, json={"prompt": "hi", "model": "test-fast"}).json()["id"]
+    attempt_id = owned_headers(api, run_id)["X-Run-Attempt"]
     submitted = []
 
     async def scenario():
@@ -42,7 +44,7 @@ def test_settle_api_outage_is_reaped_and_late_delivery_corrects_the_same_call(ap
         monkeypatch.setattr(platform, "_send", failing)
         try:
             llm = ScriptedLLM([LLMResponse(content="answer", usage={"prompt_tokens": 20, "completion_tokens": 5})])
-            await AgentLoop(platform=platform, broker=RichBroker(), llm=llm).process(run_id)
+            await AgentLoop(platform=platform, broker=RichBroker(), llm=llm).process(run_id, attempt_id=attempt_id)
             assert len(submitted) == 4 and all(body == submitted[0] for body in submitted)
             with SessionLocal() as db:
                 reservation = db.get(UsageReservation, submitted[0]["call_id"])
@@ -75,7 +77,9 @@ def test_broken_stream_is_estimated_and_ambiguous_inference_is_never_retried():
     platform, _ = _run(llm)
     assert len(seen) == 1
     body = json.loads(seen[0].content)
-    assert body["max_tokens"] == settings.model_max_output_tokens
+    from ailab_platform.catalog import ModelSpec
+
+    assert body["max_tokens"] == (settings.model_max_output_tokens or ModelSpec("m", "M").max_output_tokens)
     settled = next(iter(platform.settlements.values()))
     assert settled["status"] == "estimated" and settled["output_tokens"] > 0
     assert settled["actual_backend"] == "real-backend-42"
@@ -129,8 +133,9 @@ def test_cancel_during_stream_settles_partial_consumption_and_closes_it(monkeypa
 
 def test_rerun_has_new_call_ids_and_attempt_ids():
     platform = FakePlatform()
-    _run(ScriptedLLM([LLMResponse(content="first", usage={"prompt_tokens": 2})]), platform=platform)
-    _run(ScriptedLLM([LLMResponse(content="second", usage={"prompt_tokens": 3})]), platform=platform)
+    _run(ScriptedLLM([LLMResponse(content="first", usage={"prompt_tokens": 2})]), platform=platform, attempt_id="att_1")
+    platform.checkpoint = None  # the first attempt died before any checkpoint, so the rerun starts from scratch
+    _run(ScriptedLLM([LLMResponse(content="second", usage={"prompt_tokens": 3})]), platform=platform, attempt_id="att_2")
     assert len(platform.settlements) == 2
     assert len({r["attempt_id"] for r in platform.reservations.values()}) == 2
 

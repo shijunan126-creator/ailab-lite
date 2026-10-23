@@ -1,0 +1,1 @@
+Create a two-slide PPTX using input.json. Preserve the title Repository golden and put Checks on slide two. Do not invent external data.

@@ -70,10 +70,14 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "options": run.options or {},
         "summary": run.summary,
         "error": run.error,
-        "result": run.result or {},
+        "result": {**(run.result or {}), **{k: v for k, v in (run.runtime_meta or {}).items() if k in {"plan", "question"}}},
+        "resumable": run.status == "interrupted"
+        and run.checkpoint_step > 0
+        and not ((run.runtime_meta or {}).get("question") and not (run.runtime_meta or {}).get("answer")),
         "created_at": run.created_at,
         "started_at": run.started_at,
         "finished_at": run.finished_at,
+        "work_ms": run.work_ms,
     }
     if detail:
         rows = db.execute(

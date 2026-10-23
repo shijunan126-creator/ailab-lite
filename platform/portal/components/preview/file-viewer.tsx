@@ -8,6 +8,7 @@ import FileTile from "../library/file-tile";
 import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
 import Sheets from "./sheets";
+import DocumentPages from "./pages";
 
 const POLL_MS = 1500;
 
@@ -40,39 +41,12 @@ function usePreview(file: FileItem): FilePreview | null {
 
 function PageScroll({ file, preview }: { file: FileItem; preview: FilePreview }) {
   const pages = preview.pages || [];
-  const [current, setCurrent] = useState(1);
-  const box = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const root = box.current;
-    if (!root) return;
-    const seen = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) if (e.isIntersecting) setCurrent(Number((e.target as HTMLElement).dataset.page));
-      },
-      { root, rootMargin: "-45% 0px -45% 0px" } // the page crossing the middle of the view is the current one
-    );
-    root.querySelectorAll("[data-page]").forEach((el) => seen.observe(el));
-    return () => seen.disconnect();
-  }, [pages.length]);
   const total = preview.page_count || pages.length;
-  return (
-    <div className="viewer-pages" ref={box}>
-      {pages.map((name, i) => (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img key={name} data-page={i + 1} src={filePreviewUrl(file.id, name)} alt={`第 ${i + 1} 页`} loading={i < 2 ? "eager" : "lazy"} decoding="async" />
-      ))}
-      {total > pages.length ? (
-        <a className="viewer-more" href={downloadUrl(file.download_url)}>
-          <IconDownload size={15} /> 下载查看全部 {total} 页
-        </a>
-      ) : null}
-      {pages.length > 1 ? (
-        <span className="viewer-counter">
-          {current} / {total}
-        </span>
-      ) : null}
-    </div>
-  );
+  return <DocumentPages pages={pages} src={(name) => filePreviewUrl(file.id, name)} documentKey={file.id} total={total}>
+    {total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
+      <IconDownload size={15} /> 下载查看全部 {total} 页
+    </a> : null}
+  </DocumentPages>;
 }
 
 function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {

@@ -1,0 +1,39 @@
+{
+  "runs": 10000,
+  "outbox": 10000,
+  "checkpoints": 1000,
+  "plans": {
+    "waiting": [
+      [
+        4,
+        0,
+        108,
+        "SEARCH runs USING COVERING INDEX ix_runs_waiting (status=? AND waiting_since<?)"
+      ]
+    ],
+    "claim": [
+      [
+        3,
+        0,
+        42,
+        "SEARCH outbox USING INDEX ix_outbox_claim_token (claim_token=?)"
+      ]
+    ],
+    "checkpoint_object": [
+      [
+        4,
+        0,
+        40,
+        "SEARCH run_checkpoints USING INDEX ix_run_checkpoints_state_key (state_key=?)"
+      ]
+    ],
+    "checkpoint_gc": [
+      [
+        4,
+        0,
+        89,
+        "SEARCH run_checkpoints USING COVERING INDEX ix_run_checkpoints_expiry (expires_at<?)"
+      ]
+    ]
+  }
+}

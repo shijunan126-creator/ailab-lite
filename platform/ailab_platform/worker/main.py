@@ -1,4 +1,4 @@
-"""File processing Worker: parse, preview, scan; no OCR in the lite profile."""
+"""File processing Worker: parse, preview, scan, and drive OCR jobs (model inference stays in the API)."""
 
 from __future__ import annotations
 
@@ -13,13 +13,15 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
 
-from .. import metrics
+from .. import metrics, obs
 from ..clients import ClientError, PlatformClient
 from ..config import settings
+from ..contracts.jobs import JobEnvelope
 from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue
+from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
 
@@ -35,10 +37,47 @@ FILE_VISIBILITY_SECONDS = 600
 
 def handle_message(queue, msg) -> None:
     file_id = msg.payload.get("file_id")
-    rid = request_id_var.set(str(file_id or NO_REQUEST))  # log lines about this file carry its id
+    trace_context = getattr(obs, "traceparent_var", None)
+    trace_token = None
+    rid = request_id_var.set(str(msg.payload.get("request_id") or file_id or NO_REQUEST))  # log lines about this file carry its id
     try:
-        _handle(queue, msg, file_id)
+        if "schema_version" not in msg.payload:
+            _handle(queue, msg, file_id)
+            return
+        envelope = JobEnvelope.model_validate(msg.payload)
+        if trace_context is not None:
+            trace_token = trace_context.set(envelope.traceparent)
+        if envelope.kind == "run":
+            raise ValueError("run envelope on Worker stream")
+        client = PlatformClient(service="worker")
+        try:
+            claim = client.job_action(envelope.job_id, "claim", consumer=CONSUMER)
+            if claim["state"] != "claimed":
+                queue.ack(settings.file_queue, msg)
+                return
+            token = claim["token"]
+            msg.deliveries = claim["attempt"]
+            # Existing pipeline takes the preview identity from the same stable job_id.
+            msg.payload["preview_only"] = envelope.kind == "preview"
+            msg.payload["thumbnail_only"] = envelope.kind == "thumbnail"
+            msg.payload["ocr_only"] = envelope.kind == "ocr"
+
+            class Completion:
+                completed = False
+
+                def ack(self, *args):
+                    self.completed = True
+
+            completion = Completion()
+            _handle(completion, msg, file_id)
+            if completion.completed:
+                client.job_action(envelope.job_id, "ack", token=token)
+                queue.ack(settings.file_queue, msg)
+        finally:
+            client.close()
     finally:
+        if trace_token is not None:
+            trace_context.reset(trace_token)
         request_id_var.reset(rid)
 
 
@@ -51,10 +90,14 @@ def _patch(file_id: str, **kw) -> None:
 
 
 def _obsolete_job(exc: Exception) -> bool:
-    if not isinstance(exc, ClientError) or exc.status not in {403, 404}:
+    if not isinstance(exc, ClientError) or exc.status not in {403, 404, 409}:
         return False
     try:
-        return json.loads(exc.body).get("detail") in {"file not found", "file is not eligible for this processing job"}
+        return json.loads(exc.body).get("detail") in {
+            "file not found",
+            "file is not eligible for this processing job",
+            "OCR requires a clean, ready file",
+        }
     except (ValueError, AttributeError):
         return False
 
@@ -67,6 +110,19 @@ def _handle(queue, msg, file_id) -> None:
         except Exception:
             log.exception("preview job could not complete for %s", file_id)
             return
+        queue.ack(settings.file_queue, msg)
+        return
+    if msg.payload.get("ocr_only") is True:
+        platform = PlatformClient(service="worker")
+        try:
+            process_ocr(file_id, platform)
+        except Exception as exc:
+            if not _obsolete_job(exc):
+                # Unacked: the API keeps the job pending, so redelivery resumes it without touching the file's readiness.
+                log.warning("OCR for %s not finished yet; will retry", file_id, exc_info=True)
+                return
+        finally:
+            platform.close()
         queue.ack(settings.file_queue, msg)
         return
     thumbnail_only = msg.payload.get("thumbnail_only") is True
@@ -87,6 +143,9 @@ def _handle(queue, msg, file_id) -> None:
                 return
             log.warning("could not reject file %s", file_id, exc_info=True)
             return  # leave the message unacked and try again later
+        counter = getattr(metrics, "SCAN_EXHAUSTED", None)
+        if counter is not None:
+            counter.inc()
         metrics.FILES.labels("rejected").inc()
         queue.ack(settings.file_queue, msg)
         return
@@ -111,6 +170,10 @@ def _handle(queue, msg, file_id) -> None:
                 except Exception:
                     log.exception("scan retry could not complete for %s", file_id)
                     return
+            else:
+                counter = getattr(metrics, "SCAN_EXHAUSTED", None)
+                if counter is not None:
+                    counter.inc()
             queue.ack(settings.file_queue, msg)
             return
         except Exception as exc:

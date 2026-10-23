@@ -26,8 +26,10 @@ def _value(text: str, series: str) -> float:
     return float(match.group(1)) if match else 0.0
 
 
-def _run_to_completion(stack, prompt: str, model: str = "test-fast") -> str:
+def _run_to_completion(stack, prompt: str, model: str = "test-fast", request_id: str | None = None) -> str:
     headers = {"Authorization": f"Bearer {TOKEN}"}
+    if request_id:
+        headers["X-Request-ID"] = request_id
     run_id = httpx.post(f"{stack.api}/v1/runs", headers=headers, json={"prompt": prompt, "model": model}, timeout=10).json()["id"]
     deadline = time.time() + 90
     while time.time() < deadline:
@@ -92,12 +94,13 @@ def test_the_portal_passes_request_ids_through_to_the_api(logged_in, stack) -> N
 
 
 def test_one_run_can_be_followed_through_the_logs_of_three_services(stack) -> None:
-    run_id = _run_to_completion(stack, "你好，在沙箱里执行一条命令")
+    request_id = f"e2e-trace-{uuid.uuid4().hex[:12]}"
+    run_id = _run_to_completion(stack, "你好，在沙箱里执行一条命令", request_id=request_id)
     time.sleep(0.5)  # let the last log lines reach the files
     for service in ("api", "broker", "agent"):
-        lines = [line for line in (stack.log_dir / f"{service}.log").read_text(errors="replace").splitlines() if f"[{run_id}]" in line]
+        lines = [line for line in (stack.log_dir / f"{service}.log").read_text(errors="replace").splitlines() if f"[{request_id}]" in line]
         assert lines, f"no log line for {run_id} in the {service} log"
-    api_lines = [line for line in (stack.log_dir / "api.log").read_text(errors="replace").splitlines() if f"[{run_id}]" in line]
-    assert any("/internal/runs/" in line and "status" in line for line in api_lines), (
-        "the Agent's status calls carry the run id into the API log"
+    api_lines = [line for line in (stack.log_dir / "api.log").read_text(errors="replace").splitlines() if f"[{request_id}]" in line]
+    assert any(f"/internal/runs/{run_id}/transition" in line for line in api_lines), (
+        "the durable job and Agent transitions preserve the initiating request id"
     )

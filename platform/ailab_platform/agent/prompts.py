@@ -12,6 +12,7 @@ from pathlib import Path
 
 from .. import web
 from ..config import settings
+from ..skill_index import checked_index
 from ..skillfiles import frontmatter
 
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
@@ -48,15 +49,23 @@ outputs 里没交付的文件在本轮结束时也会自动归档。
 
 @lru_cache
 def skills() -> dict[str, dict]:
-    """name -> {"description", "path"} for every <skills_dir>/<name>/SKILL.md."""
+    """name -> manifest fields plus title/description/path for every <skills_dir>/<name>/SKILL.md.
+
+    The directory must match its index.json; this runs once per process, so drift needs a restart and a new index.
+    """
     root: Path = settings.skills_path
     if not root.is_dir():
         raise FileNotFoundError(f"skills directory not found at {root}; set AILAB_SKILLS_DIR")
+    if not any(root.glob("*/SKILL.md")):
+        raise FileNotFoundError(f"no skills (*/SKILL.md) under {root}; set AILAB_SKILLS_DIR")
+    manifest = checked_index(root)["skills"]
     found = {}
     for skill_md in sorted(root.glob("*/SKILL.md")):
         meta = frontmatter(skill_md.read_text(encoding="utf-8"))
         name = meta.get("name") or skill_md.parent.name
-        found[name] = {"title": meta.get("title") or name, "description": meta.get("description", ""), "path": skill_md}
+        if name != skill_md.parent.name:
+            raise ValueError(f"SKILL.md name {name!r} differs from directory {skill_md.parent.name!r}")
+        found[name] = {**manifest[name], "title": meta.get("title") or name, "description": meta.get("description", ""), "path": skill_md}
     if not found:
         raise FileNotFoundError(f"no skills (*/SKILL.md) under {root}; set AILAB_SKILLS_DIR")
     return found

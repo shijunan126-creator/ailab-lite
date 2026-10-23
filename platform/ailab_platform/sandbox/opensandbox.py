@@ -9,17 +9,22 @@ path, and the per-sandbox token replaces this server-side API key.
 from __future__ import annotations
 
 import base64
+import io
 import re
 import shlex
 import threading
 import time
+import uuid
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import httpx
 
 from ..config import settings
 from ..paths import PathError, normalize_path
 from .base import SANDBOX_EXPIRY_GRACE_SECONDS, ExecResult, SandboxError, SandboxProvider, SandboxResource, SandboxSpec
+from .transfer import CHUNK_SIZE, TransferLimitError, TransferReader, copy_chunks
 
 
 def _checked(path: str) -> str:
@@ -209,6 +214,54 @@ class OpenSandboxProvider(SandboxProvider):
             return bytes(sandbox.files.read_bytes(path))
         except Exception as exc:
             raise SandboxError(f"OpenSandbox read_bytes failed: {exc}") from exc
+
+    def put_file_from_path(self, sandbox_id: str, path: str, source: Path, *, max_bytes: int) -> None:
+        path = _checked(path)
+        if source.stat().st_size > max_bytes:
+            raise TransferLimitError("file exceeds transfer limit")
+        q = shlex.quote(path)
+        check = self.exec(
+            sandbox_id,
+            f'p={q}; parent=$(dirname "$p"); rp=$(realpath -m "$parent") || exit 1; '
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; [ ! -L "$p" ]',
+            timeout=15,
+        )
+        if check.exit_code != 0:
+            raise SandboxError("refusing to write through a symlink")
+        temporary = str(Path(path).with_name(f".ailab-upload-{uuid.uuid4().hex}"))
+        try:
+            # SDK 1.1.1 streams binary IOBase in both direct chunked multipart
+            # and Content-Length server-proxy mode. Passing bytes defeats this.
+            with TransferReader(io.FileIO(source, "rb"), max_bytes) as stream:
+                self._sandbox(sandbox_id).files.write_file(temporary, stream, mode=644)
+            moved = self.exec(sandbox_id, f"mv -f -- {shlex.quote(temporary)} {q}", timeout=15)
+            if moved.exit_code != 0:
+                raise SandboxError("OpenSandbox streaming upload could not publish file")
+        except SandboxError:
+            raise
+        except Exception as exc:
+            raise SandboxError("OpenSandbox streaming upload failed") from exc
+        finally:
+            # A failed multipart request may leave a partial sandbox file.
+            try:
+                self.exec(sandbox_id, f"rm -f -- {shlex.quote(temporary)}", timeout=15)
+            except SandboxError:
+                # Preserve the transfer error if the resource itself vanished;
+                # lease reconciliation owns resource cleanup in this case.
+                pass
+
+    def get_file_to_path(self, sandbox_id: str, path: str, target: Path, *, max_bytes: int) -> None:
+        path = _checked(path)
+        if self.file_size(sandbox_id, path) > max_bytes:
+            raise TransferLimitError("file exceeds transfer limit")
+        try:
+            chunks = self._sandbox(sandbox_id).files.read_bytes_stream(path, chunk_size=CHUNK_SIZE)
+            with closing(chunks), target.open("wb") as stream:
+                copy_chunks(chunks, stream, max_bytes=max_bytes)
+        except SandboxError:
+            raise
+        except Exception as exc:
+            raise SandboxError("OpenSandbox streaming download failed") from exc
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
         path = _checked(path)
