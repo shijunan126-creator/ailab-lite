@@ -39,6 +39,7 @@ export type Run = {
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   result?: { previews?: Preview[]; [key: string]: any };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
+  resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */

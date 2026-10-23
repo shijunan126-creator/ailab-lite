@@ -1,6 +1,9 @@
 export const STATUS_LABEL: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
+  waiting_sandbox: "等待沙箱",
+  waiting_user: "等待回答",
+  interrupted: "已中断",
   succeeded: "已完成",
   failed: "失败",
   canceled: "已取消",
@@ -10,8 +13,9 @@ export function statusLabel(status: string): string {
   return STATUS_LABEL[status] || status;
 }
 
+/** Nothing more will happen to the run by itself. An interrupted run rests until someone continues it. */
 export function isTerminal(status: string): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled";
+  return status === "succeeded" || status === "failed" || status === "canceled" || status === "interrupted";
 }
 
 export function formatDate(value: string): string {

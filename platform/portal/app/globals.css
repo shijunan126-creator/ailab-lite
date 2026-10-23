@@ -880,3 +880,18 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
   .audit-detail { margin-left: 10px; }
   .usage-bar { grid-template-columns: 96px 1fr 60px; }
 }
+
+/* plan, questions and resuming inside a turn */
+.plan { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; }
+.plan-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; font-weight: 600; }
+.plan .step.ok .step-label, .plan .step.note .step-label { color: var(--muted); }
+.plan .step.ok .step-label { text-decoration: line-through; text-decoration-color: var(--faint); }
+.ask { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border)); background: var(--accent-soft); }
+.ask.answered { border-color: var(--border); background: var(--surface-2); }
+.ask-q { font-weight: 600; white-space: pre-wrap; }
+.ask-a { color: var(--muted); white-space: pre-wrap; }
+.ask-a::before { content: "↳ "; color: var(--faint); }
+.ask-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.ask-form { display: flex; gap: 8px; }
+.ask-form input { flex: 1; min-width: 0; }
+.resume { display: flex; align-items: center; gap: 10px; }
