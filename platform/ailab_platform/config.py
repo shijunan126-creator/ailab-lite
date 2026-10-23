@@ -134,6 +134,9 @@ class Settings(BaseSettings):
     # (models.toml, see catalog.py). Nothing here names a model or holds a key.
     models_file: Path | None = None  # default: platform/models.toml (the image sets /etc/ailab/models.toml)
     llm_timeout_seconds: int = Field(default=120, gt=0)
+    ttft_timeout_seconds: float = Field(default=30, gt=0)
+    llm_idle_timeout_seconds: float = Field(default=60, gt=0)
+    llm_total_timeout_seconds: float | None = Field(default=None, gt=0)
     llm_max_retries: int = Field(default=2, ge=0)  # extra attempts on 429 / 5xx / network errors
     llm_retry_backoff_seconds: float = Field(default=1.0, gt=0)  # doubled each retry
     # Send the model's reasoning_content back in assistant turns. Whether that is

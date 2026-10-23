@@ -1,0 +1,112 @@
+{
+  "sqlite": {
+    "queries": {
+      "history": {
+        "rows": 101,
+        "p95_ms": 4.849292017752305,
+        "plan": [
+          [
+            5,
+            0,
+            67,
+            "SEARCH runs USING INDEX ix_runs_conversation_created_id (conversation_id=? AND (created_at,id)>(?,?) AND (created_at,id)<(?,?))"
+          ]
+        ]
+      },
+      "workspace": {
+        "rows": 1,
+        "p95_ms": 0.089749984908849,
+        "plan": [
+          [
+            5,
+            0,
+            104,
+            "SEARCH runs USING INDEX ix_runs_conversation_created_id (conversation_id=? AND (created_at,id)<(?,?))"
+          ]
+        ]
+      }
+    },
+    "wall_seconds": 2.8889206250023562,
+    "cpu_seconds": 2.293088,
+    "process_peak_rss_bytes_macos": 46858240
+  },
+  "postgresql": {
+    "queries": {
+      "history": {
+        "rows": 101,
+        "p95_ms": 3.493124997476116,
+        "plan": [
+          [
+            "Limit  (cost=0.42..193.08 rows=101 width=122) (actual time=0.126..0.753 rows=101 loops=1)"
+          ],
+          [
+            "  Buffers: shared hit=21"
+          ],
+          [
+            "  ->  Index Scan using ix_runs_conversation_created_id on runs  (cost=0.42..463.96 rows=243 width=122) (actual time=0.125..0.741 rows=101 loops=1)"
+          ],
+          [
+            "        Index Cond: (((conversation_id)::text = 'c042'::text) AND (ROW(created_at, (id)::text) < ROW('2026-01-01 11:56:40'::timestamp without time zone, 'r043000'::text)) AND (ROW(created_at, (id)::text) > ROW('2026-01-01 11:48:20'::timestamp without time zone, 'r042500'::text)))"
+          ],
+          [
+            "        Buffers: shared hit=21"
+          ],
+          [
+            "Planning:"
+          ],
+          [
+            "  Buffers: shared hit=41 read=2"
+          ],
+          [
+            "Planning Time: 0.368 ms"
+          ],
+          [
+            "Execution Time: 0.794 ms"
+          ]
+        ]
+      },
+      "workspace": {
+        "rows": 1,
+        "p95_ms": 2.6852500159293413,
+        "plan": [
+          [
+            "Limit  (cost=0.42..4.18 rows=1 width=1297) (actual time=0.041..0.041 rows=1 loops=1)"
+          ],
+          [
+            "  Buffers: shared hit=5"
+          ],
+          [
+            "  ->  Index Scan Backward using ix_runs_conversation_created_id on runs  (cost=0.42..798.95 rows=212 width=1297) (actual time=0.040..0.040 rows=1 loops=1)"
+          ],
+          [
+            "        Index Cond: (((conversation_id)::text = 'c042'::text) AND (ROW(created_at, (id)::text) < ROW('2026-01-01 11:56:40'::timestamp without time zone, 'r043000'::text)))"
+          ],
+          [
+            "        Filter: (((result ->> 'workspace_saved'::text))::boolean IS TRUE)"
+          ],
+          [
+            "        Rows Removed by Filter: 9"
+          ],
+          [
+            "        Buffers: shared hit=5"
+          ],
+          [
+            "Planning:"
+          ],
+          [
+            "  Buffers: shared hit=9"
+          ],
+          [
+            "Planning Time: 0.093 ms"
+          ],
+          [
+            "Execution Time: 0.052 ms"
+          ]
+        ]
+      }
+    },
+    "wall_seconds": 6.665730125008849,
+    "cpu_seconds": 3.5136670000000003,
+    "process_peak_rss_bytes_macos": 57606144
+  }
+}

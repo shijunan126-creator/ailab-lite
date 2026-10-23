@@ -251,7 +251,15 @@ class AsyncPlatformClient(_PlatformApi):
         await self.aclose()
 
     async def get_run(self, run_id: str) -> dict:
-        return (await self._send(self._get_run(run_id))).json()
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
+
+    async def get_model_context(self, run_id: str, after: str | None = None) -> dict:
+        return (
+            await self._send(self._req("GET", f"/internal/runs/{run_id}/model-context", params={"after": after} if after else {}))
+        ).json()
+
+    async def save_model_summary(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/model-summary", json=payload))).json()
 
     async def get_run_state(self, run_id: str) -> dict:
         return (await self._send(self._get_run_state(run_id))).json()

@@ -231,6 +231,8 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cnv"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary_through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     model: Mapped[str] = mapped_column(String(120), default="")  # the last model picked here
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -242,6 +244,7 @@ class Run(Base):
     __tablename__ = "runs"
     __table_args__ = (
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
+        Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
         Index("ix_runs_finished", "status", "finished_at", "id"),
     )

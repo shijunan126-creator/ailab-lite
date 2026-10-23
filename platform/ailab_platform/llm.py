@@ -6,7 +6,7 @@ The mock keeps the whole platform runnable without a DeepSeek key; switching
 
 from __future__ import annotations
 
-import asyncio
+import asyncio  # noqa: F401 - legacy callers patch the shared asyncio module
 import json
 import logging
 import time
@@ -16,8 +16,6 @@ from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
 
-import httpx
-
 from .catalog import get_catalog
 from .config import settings
 
@@ -25,7 +23,10 @@ log = logging.getLogger("ailab.llm")
 
 
 class LLMError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, retryable: bool = False):
+        super().__init__(message)
+        self.retryable = retryable
+        self.output_started = False
 
 
 @dataclass
@@ -54,6 +55,8 @@ class ModelCall:
     actual_backend: str = ""
     usage: dict[str, int] = field(default_factory=dict)
     output_bytes: int = 0
+    emitted: bool = False
+    ttft_seconds: float | None = None
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
@@ -153,7 +156,7 @@ class _StreamState:
     def feed(self, chunk: dict) -> tuple[str, str]:
         """Take one chunk; return the (answer text, thinking) it adds."""
         if chunk.get("error"):  # vLLM reports a failure mid-stream as an error chunk with HTTP 200
-            raise LLMError(f"model stream failed: {str(chunk['error'])[:300]}")
+            raise LLMError(f"model stream failed: {str(chunk['error'])[:300]}", retryable=True)
         call = model_call.get()
         if chunk.get("usage"):
             self.usage = chunk["usage"]
@@ -195,192 +198,6 @@ class _StreamState:
             usage=_usage(self.usage),
             finish_reason=self.finish,
             reasoning_content="".join(self.reasoning),
-        )
-
-
-class OpenAICompatibleClient(LLMClient):
-    def __init__(
-        self,
-        base_url: str,
-        api_key: str = "",
-        upstream_model: str | None = None,
-        transport: httpx.AsyncBaseTransport | None = None,
-        echo_reasoning: bool = False,
-    ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-        self.upstream_model = upstream_model  # what the upstream calls the model; None = send the id as is
-        self._transport = transport
-        # Thinking models (DeepSeek V4.x) reject a tool conversation unless each assistant turn carries its
-        # reasoning_content back; other upstreams may reject the extra field. Off by default, and switched on
-        # for good the first time the upstream asks for it (see _asks_for_reasoning).
-        self.echo_reasoning = echo_reasoning
-
-    def _outgoing(self, messages: list[dict]) -> list[dict]:
-        if self.echo_reasoning:
-            return messages
-        return [{k: v for k, v in m.items() if k != "reasoning_content"} if "reasoning_content" in m else m for m in messages]
-
-    def _asks_for_reasoning(self, exc: LLMError) -> bool:
-        text = str(exc)
-        if self.echo_reasoning or "reasoning_content" not in text or " 400" not in text:
-            return False
-        log.warning("upstream %s wants reasoning_content passed back; echoing it from now on", self.base_url)
-        self.echo_reasoning = True
-        return True
-
-    async def _post(self, payload: dict, headers: dict) -> dict:
-        """POST with bounded retries on transient failures (429 / 5xx / network)."""
-        # An ambiguous retry can be a second billable inference. The Agent accounts
-        # each dispatched call separately; unmetered callers retain transport retries.
-        call = model_call.get()
-        attempts = 1 if call is not None else settings.llm_max_retries + 1
-        for attempt in range(attempts):
-            last = attempt == attempts - 1
-            try:
-                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds, transport=self._transport) as client:
-                    if call is not None:
-                        call.reached_model = True
-                    resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-            except httpx.TransportError as exc:  # timeouts, connection resets, DNS
-                if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
-                    call.reached_model = False
-                if last:
-                    raise LLMError(f"model gateway unreachable after {attempts} attempts: {exc!r}") from exc
-                reason = repr(exc)
-            else:
-                if resp.status_code < 400:
-                    return resp.json()
-                if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
-                    call.reached_model = False
-                body = resp.text[:300]
-                if resp.status_code not in RETRYABLE_STATUS or last:
-                    raise LLMError(f"model gateway returned {resp.status_code}: {body}")
-                reason = f"{resp.status_code} {body}"
-            delay = settings.llm_retry_backoff_seconds * (2**attempt)
-            log.warning("model call failed (%s); retry %d/%d in %.1fs", reason, attempt + 1, attempts - 1, delay)
-            await asyncio.sleep(delay)
-        raise AssertionError("unreachable")  # pragma: no cover
-
-    def _request(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None, stream: bool) -> tuple[dict, dict]:
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        if user_id:
-            # The gateway's per-user token rate limit keys on this header; without
-            # it requests are not limited at all.
-            headers["x-user-id"] = user_id
-        payload: dict[str, Any] = {
-            "model": self.upstream_model or model,
-            "messages": self._outgoing(messages),
-            "temperature": 0.2,
-            "stream": stream,
-        }
-        call = model_call.get()
-        if call is not None:
-            payload["max_tokens"] = call.max_output_tokens
-            headers["x-run-id"] = call.run_id
-            headers["x-call-id"] = call.call_id
-            call.actual_backend = self.upstream_model or model
-        if stream:
-            payload["stream_options"] = {"include_usage": True}
-        if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
-        return payload, headers
-
-    async def chat_stream(
-        self,
-        messages: list[dict],
-        tools: list[dict],
-        model: str,
-        user_id: str | None = None,
-        on_text: TextSink | None = None,
-        on_reasoning: TextSink | None = None,
-    ) -> LLMResponse:
-        try:
-            return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
-        except LLMError as exc:
-            if self._asks_for_reasoning(exc):
-                return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
-            raise
-
-    async def _stream_once(self, messages, tools, model, user_id, on_text, on_reasoning) -> LLMResponse:
-        """Server-sent events. Retried like chat() on transient failures, but only until the first text was passed on:
-        after that a retry would show the user the start of the answer twice."""
-        payload, headers = self._request(messages, tools, model, user_id, stream=True)
-        # An ambiguous retry can be a second billable inference. The Agent accounts
-        # each dispatched call separately; unmetered callers retain transport retries.
-        call = model_call.get()
-        attempts = 1 if call is not None else settings.llm_max_retries + 1
-        for attempt in range(attempts):
-            last = attempt == attempts - 1
-            state = _StreamState()
-            try:
-                async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds, transport=self._transport) as client:
-                    if call is not None:
-                        call.reached_model = True
-                    async with client.stream("POST", f"{self.base_url}/chat/completions", json=payload, headers=headers) as resp:
-                        if resp.status_code < 400:
-                            async for line in resp.aiter_lines():
-                                if not line.startswith("data:") or line[5:].strip() == "":
-                                    continue
-                                if line[5:].strip() == "[DONE]":
-                                    state.completed = True
-                                    break
-                                text, thinking = state.feed(json.loads(line[5:]))
-                                if thinking and on_reasoning:
-                                    state.emitted = True
-                                    await on_reasoning(thinking)
-                                if text and on_text:
-                                    state.emitted = True
-                                    await on_text(text)
-                            if state.completed:
-                                return state.response()
-                            if last or state.emitted:  # some of the answer was shown: a retry would repeat it
-                                raise LLMError("model stream is incomplete: ended without a completion marker")
-                            reason = "stream ended before the completion marker"
-                        else:
-                            if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
-                                call.reached_model = False
-                            body = (await resp.aread()).decode("utf-8", "replace")[:300]
-                            if resp.status_code not in RETRYABLE_STATUS or last:
-                                raise LLMError(f"model gateway returned {resp.status_code}: {body}")
-                            reason = f"{resp.status_code} {body}"
-            except (httpx.TransportError, json.JSONDecodeError) as exc:
-                if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
-                    call.reached_model = False
-                if last or state.emitted:
-                    raise LLMError(f"model stream broke: {exc!r}") from exc
-                reason = repr(exc)
-            delay = settings.llm_retry_backoff_seconds * (2**attempt)
-            log.warning("model stream failed (%s); retry %d/%d in %.1fs", reason, attempt + 1, attempts - 1, delay)
-            await asyncio.sleep(delay)
-        raise AssertionError("unreachable")  # pragma: no cover
-
-    async def chat(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None) -> LLMResponse:
-        try:
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False))
-        except LLMError as exc:
-            if not self._asks_for_reasoning(exc):
-                raise
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False))
-
-        call = model_call.get()
-        if call is not None:
-            call.usage = _usage(data.get("usage") or {})
-            call.actual_backend = str(data.get("model") or call.actual_backend)[:120]
-        choice = (data.get("choices") or [{}])[0]
-        message = choice.get("message") or {}
-        finish_reason = choice.get("finish_reason") or "stop"
-        if finish_reason == "length":
-            raise LLMError("model output was truncated (finish_reason=length); raise max tokens or shorten the task")
-        return LLMResponse(
-            content=message.get("content") or "",
-            tool_calls=_parse_tool_calls(message.get("tool_calls") or []),
-            usage=_usage(data.get("usage") or {}),
-            finish_reason=finish_reason,
-            reasoning_content=message.get("reasoning_content") or "",
         )
 
 
@@ -489,10 +306,21 @@ def llm_for(model_id: str) -> LLMClient:
         raise LLMError(f"model {model_id!r} is not available")
     if spec.provider == "mock":
         return MockLLM()
-    return OpenAICompatibleClient(
+    from .model_transport import ModelTransport
+
+    return ModelTransport(
         spec.base_url, spec.api_key(), spec.upstream_model or spec.id, echo_reasoning=spec.echo_reasoning or settings.llm_echo_reasoning
     )
 
 
 def reset_llm_cache() -> None:
     llm_for.cache_clear()
+
+
+def __getattr__(name):
+    # Keep legacy imports without a cycle when transport is imported directly.
+    if name in {"ModelTransport", "OpenAICompatibleClient"}:
+        from .model_transport import ModelTransport
+
+        return ModelTransport
+    raise AttributeError(name)
