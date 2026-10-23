@@ -214,22 +214,64 @@ export async function uploadFile(file: File, projectId?: string | null): Promise
   return (await resp.json()) as FileItem;
 }
 
+const RETRY_MS = [500, 1000, 2000, 4000, 8000];
+const MAX_FAILURES = 8; // consecutive attempts that delivered nothing
+
+function sleep(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+  });
+}
+
+/** Follow a run's events until it ends. A dropped connection (network, proxy, server restart) resumes after the
+ *  last event received, so nothing is missed or shown twice; only repeated failures give up. */
 export async function streamRun(
   runId: string,
   onEvent: (event: EventItem) => void,
   signal: AbortSignal,
   onEnd?: () => void
 ): Promise<void> {
-  const resp = await fetch(`${API_BASE}/v1/runs/${runId}/events`, { signal });
-  redirectIfUnauthorized(resp);
-  if (!resp.ok || !resp.body) throw new Error(`event stream ${resp.status}`);
-  const reader = resp.body.getReader();
+  let after = 0;
+  let failures = 0;
+  while (!signal.aborted) {
+    let ended = false;
+    let delivered = false;
+    try {
+      const resp = await fetch(`${API_BASE}/v1/runs/${runId}/events?after=${after}`, { signal });
+      redirectIfUnauthorized(resp);
+      if (resp.status === 401 || resp.status === 404) throw Object.assign(new Error(`event stream ${resp.status}`), { fatal: true });
+      if (!resp.ok || !resp.body) throw new Error(`event stream ${resp.status}`);
+      ended = await readEvents(resp.body, (event) => {
+        if (event.seq && event.seq <= after) return; // already shown before the reconnect
+        if (event.seq) after = event.seq;
+        delivered = true;
+        onEvent(event);
+      });
+    } catch (err: any) {
+      if (signal.aborted) return;
+      if (err?.fatal || failures + 1 >= MAX_FAILURES) throw err;
+    }
+    if (ended) {
+      onEnd?.();
+      return;
+    }
+    if (signal.aborted) return;
+    failures = delivered ? 0 : failures + 1;
+    const base = RETRY_MS[Math.min(failures, RETRY_MS.length - 1)];
+    await sleep(base + Math.random() * base * 0.3, signal);
+  }
+}
+
+/** Reads one SSE response. True when the server said the run is over (stream.end). */
+async function readEvents(body: ReadableStream<Uint8Array>, onEvent: (event: EventItem) => void): Promise<boolean> {
+  const reader = body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
   try {
     while (true) {
       const { done, value } = await reader.read();
-      if (done) break;
+      if (done) return false;
       buffer += decoder.decode(value, { stream: true });
       let idx = buffer.indexOf("\n\n");
       while (idx >= 0) {
@@ -237,16 +279,12 @@ export async function streamRun(
         buffer = buffer.slice(idx + 2);
         const event = parseChunk(chunk);
         if (event) {
-          if (event.type === "stream.end") {
-            onEnd?.();
-            return;
-          }
+          if (event.type === "stream.end") return true;
           onEvent(event);
         }
         idx = buffer.indexOf("\n\n");
       }
     }
-    onEnd?.();
   } finally {
     await reader.cancel().catch(() => undefined);
     reader.releaseLock();

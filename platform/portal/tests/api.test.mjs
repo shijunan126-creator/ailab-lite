@@ -43,3 +43,54 @@ test("filesByIds asks for all ids in one request, and none for an empty list", a
 test("archiveUrl repeats and encodes ids", () => {
   assert.equal(archiveUrl(["a", "b&c"]), "/api/v1/files/archive?ids=a&ids=b%26c");
 });
+
+function sse(text) {
+  return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }));
+}
+
+test("a dropped event stream resumes after the last event, without repeats", async (t) => {
+  const urls = [];
+  const replies = [
+    () => sse("id: 1\nevent: a\ndata: {}\n\nid: 2\nevent: a\ndata: {}\n\n"), // connection drops, no stream.end
+    () => sse("id: 2\nevent: a\ndata: {}\n\nid: 3\nevent: a\ndata: {}\n\nevent: stream.end\ndata: {}\n\n"),
+  ];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    urls.push(String(url));
+    return replies.shift()();
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const seen = [];
+  let ended = 0;
+  const done = streamRun("r", (e) => seen.push(e.seq), new AbortController().signal, () => ended++);
+  for (let i = 0; i < 20 && !ended; i++) {
+    await new Promise((r) => setImmediate(r));
+    t.mock.timers.tick(10_000);
+  }
+  await done;
+  assert.deepEqual(seen, [1, 2, 3]);
+  assert.equal(ended, 1);
+  assert.match(urls[0], /after=0$/);
+  assert.match(urls[1], /after=2$/);
+});
+
+test("the stream gives up after repeated failures, and stops at once when aborted", async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    throw new TypeError("network down");
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  const done = streamRun("r", () => {}, new AbortController().signal);
+  const failed = done.then(() => false, () => true);
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setImmediate(r));
+    t.mock.timers.tick(10_000);
+  }
+  assert.equal(await failed, true);
+  assert.equal(calls, 8);
+
+  const controller = new AbortController();
+  const stopped = streamRun("r", () => {}, controller.signal);
+  controller.abort();
+  await stopped; // resolves quietly
+});
