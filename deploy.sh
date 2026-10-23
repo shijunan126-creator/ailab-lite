@@ -300,7 +300,7 @@ deploy_platform() {
 
   step "deploying to k3s"
   local was_deployed=0; k get deploy platform-api >/dev/null 2>&1 && was_deployed=1
-  local applied; applied=$(run $KUBECTL apply -f "$PLATFORM/deploy/k8s/platform.yaml") || die "could not apply the platform manifest"
+  local applied; applied=$(run $KUBECTL apply -k "$PLATFORM/deploy/overlays/lite") || die "could not apply the platform manifest"
   printf '%s\n' "$applied" | grep -v unchanged | sed 's/^/    /' || true
   if [ "$was_deployed" = 1 ]; then
     # Same image tag: restart to pick up new code/config - but only what apply left unchanged. Restarting a
@@ -311,8 +311,8 @@ deploy_platform() {
     done
   fi
   if [ "$DRY" != 1 ]; then
-    for d in redis api broker agent worker; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
-    ok "5 deployments ready"
+    for d in redis api broker agent worker public; do k rollout status "deploy/platform-$d" --timeout=300s >/dev/null || die "deployment platform-$d did not become ready: $(k get pods | head -8)"; done
+    ok "6 deployments ready"
     # Pods of the previous generation may still be shutting down; one of them must not take the smoke test's run.
     local i
     for i in $(seq 1 90); do
@@ -367,6 +367,7 @@ smoke_test() {
     curl -fsS -b "$JAR" "$p/api/v1/models" | grep -q '"models"' && ok "models are listed through the Portal proxy" || die "models not reachable through the Portal"
   fi
 
+  [ "$(curl -s -o /dev/null -w '%{http_code}' "$base/internal/runs/not-public")" = 404 ] || die "internal API is exposed on the public gateway"
   local models; models=$(curl -fsS -H "Authorization: Bearer $tok" "$base/v1/models" | python3 -c 'import sys,json; print(" ".join(m["id"] for m in json.load(sys.stdin)["models"]))')
   ok "selectable models: $models"
   smoke_run() {  # model_id prompt seconds
@@ -393,7 +394,7 @@ summary() {
   echo
   echo "${G}${B}AILab lite is up.${N}"
   [ "$WITH_PORTAL" = 1 ] && echo "  Portal        http://$([ "$LISTEN" = 0.0.0.0 ] && hostname -I | awk '{print $1}' || echo "$LISTEN"):$PORTAL_PORT   (log in with the account below)"
-  echo "  API / docs    $API_URL/docs"
+  echo "  API           $API_URL/v1/info"
   echo "  login         user  admin"
   echo "                pass  $pw"
   echo "                (again later:  $KUBECTL -n $NS get secret platform-secrets -o jsonpath='{.data.AILAB_ADMIN_PASSWORD}' | base64 -d)"
@@ -411,6 +412,16 @@ case "$CMD" in
   down) cmd_down ;;
   up)
     [ "$DRY" = 1 ] && echo "${Y}dry-run: nothing will be changed${N}"
+    if [ "$DRY" = 1 ]; then
+      resolve_models
+      echo "    (dry-run) build/import sandbox and platform images"
+      echo "    (dry-run) create secrets, models and optional registration ConfigMap"
+      echo "    (dry-run) kubectl apply -k $PLATFORM/deploy/overlays/lite"
+      echo "    (dry-run) wait for redis/api/broker/agent/worker/public readiness"
+      [ "$WITH_PORTAL" != 1 ] || echo "    (dry-run) build/start Portal on $LISTEN:$PORTAL_PORT"
+      echo "    (dry-run) smoke login, public API and offline model; /internal must return 404"
+      exit 0
+    fi
     preflight
     build_images
     deploy_platform

@@ -1,0 +1,163 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-default-deny
+  namespace: platform
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-api
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-api
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-public
+    - podSelector:
+        matchLabels:
+          app: platform-agent
+    - podSelector:
+        matchLabels:
+          app: platform-broker
+    - podSelector:
+        matchLabels:
+          app: platform-worker
+    ports:
+    - protocol: TCP
+      port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-broker
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-broker
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-agent
+    ports:
+    - protocol: TCP
+      port: 8081
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-agent
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-agent
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-api
+    ports:
+    - protocol: TCP
+      port: 8082
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-worker
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-worker
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-api
+    ports:
+    - protocol: TCP
+      port: 8083
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-redis
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-redis
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-api
+    - podSelector:
+        matchLabels:
+          app: platform-agent
+    - podSelector:
+        matchLabels:
+          app: platform-broker
+    - podSelector:
+        matchLabels:
+          app: platform-worker
+    ports:
+    - protocol: TCP
+      port: 6379
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-postgres
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-postgres
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: platform-api
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-public
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels:
+      app: platform-public
+  policyTypes:
+  - Ingress
+  ingress:
+  - ports:
+    - protocol: TCP
+      port: 8080

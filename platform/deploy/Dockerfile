@@ -16,7 +16,7 @@ COPY platform/ailab_platform ./ailab_platform
 COPY images/sbx-office/skills /opt/ailab/skills
 COPY platform/models.toml /etc/ailab/models.toml
 RUN pip install --upgrade pip \
- && pip install -c constraints.txt . \
+ && pip install -c constraints.txt ".[postgres]" \
  && pip install -c constraints.txt "opensandbox==1.1.1"
 
 RUN useradd -u 10001 -m appuser \

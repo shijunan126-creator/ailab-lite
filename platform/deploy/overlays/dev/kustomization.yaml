@@ -1,0 +1,19 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+patches:
+- target:
+    kind: PersistentVolumeClaim
+    name: platform-data
+  patch: "- op: replace\n  path: /spec/resources/requests/storage\n  value: 20Gi"
+- target:
+    kind: ConfigMap
+    name: platform-config
+  patch: "- op: replace\n  path: /data/AILAB_PROVISIONED_STORAGE_BYTES\n  value: \"\
+    21474836480\""
+- target:
+    kind: StatefulSet
+    name: platform-postgres
+  patch: "- op: replace\n  path: /spec/volumeClaimTemplates/0/spec/resources/requests/storage\n\
+    \  value: 4Gi"

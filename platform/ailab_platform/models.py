@@ -101,6 +101,7 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("ix_conversations_user_updated", "user_id", "updated_at"),
+        Index("ix_conversations_deleted", "deleted_at", "id"),
         Index(
             "ix_conversations_user_project_live",
             "user_id",
@@ -122,7 +123,11 @@ class Conversation(Base):
 
 class Run(Base):
     __tablename__ = "runs"
-    __table_args__ = (Index("ix_runs_user_created", "user_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_runs_conversation_id_id", "conversation_id", "id"),
+        Index("ix_runs_user_created", "user_id", "created_at"),
+        Index("ix_runs_finished", "status", "finished_at", "id"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
@@ -148,7 +153,10 @@ class Run(Base):
 
 class RunEvent(Base):
     __tablename__ = "run_events"
-    __table_args__ = (UniqueConstraint("run_id", "seq", name="uq_run_event_seq"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "seq", name="uq_run_event_seq"),
+        Index("ix_run_events_created", "created_at", "id"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
@@ -164,6 +172,7 @@ class FileObject(Base):
     __tablename__ = "files"
     __table_args__ = (
         Index("ix_files_user_created", "user_id", "created_at"),
+        Index("ix_files_status_created", "status", "created_at", "id"),
         Index(
             "ix_files_user_starred",
             "user_id",
@@ -224,4 +233,15 @@ class ModelUsage(Base):
     # The model's quota weight *when the call was recorded*. Changing a weight in models.toml later
     # must not rewrite what past calls cost.
     weight: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class LifecycleDeletion(Base):
+    """Durable object cleanup intent, committed with deletion of the business owner."""
+
+    __tablename__ = "lifecycle_deletions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    key: Mapped[str] = mapped_column(String(500), unique=True)
+    kind: Mapped[str] = mapped_column(String(30))
+    is_prefix: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

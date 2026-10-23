@@ -19,7 +19,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
-from .reaper import reap_forever, workspace_cleanup_forever
+from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_auth import router as auth_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
@@ -32,6 +32,23 @@ setup_logging("api")
 log = logging.getLogger("ailab.api")
 
 
+def warn_storage_capacity() -> None:
+    from sqlalchemy import func, select
+
+    if settings.provisioned_storage_bytes:
+        with SessionLocal() as db:
+            users = db.scalar(select(func.count()).select_from(User))
+        budget = users * settings.library_quota_bytes
+        if budget > settings.provisioned_storage_bytes:
+            log.warning(
+                "storage overcommitted users=%d quota_bytes=%d logical_bytes=%d provisioned_bytes=%d",
+                users,
+                settings.library_quota_bytes,
+                budget,
+                settings.provisioned_storage_bytes,
+            )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     settings.validate_secrets()
@@ -39,10 +56,13 @@ async def lifespan(_: FastAPI):
     get_catalog()  # fail at startup, not on the first request, if models.toml is broken
     register_once("api-state", ApiStateCollector())
     init_db()
-    log.info("platform api ready db=%s storage=%s", settings.database_url, settings.storage_backend)
+    warn_storage_capacity()
+    log.info("platform api ready db_backend=%s storage=%s", settings.database_url.split(":", 1)[0], settings.storage_backend)
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
+    lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
     yield
+    lifecycle_cleanup.cancel()
     reaper.cancel()
     workspace_cleanup.cancel()
 
