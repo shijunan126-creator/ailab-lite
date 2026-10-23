@@ -200,7 +200,7 @@ def test_token_limit_stops_the_run_but_keeps_the_work(monkeypatch) -> None:
     llm = ScriptedLLM(
         [
             LLMResponse(tool_calls=[step], usage={"prompt_tokens": 50, "completion_tokens": 20}),
-            LLMResponse(content="over budget", usage={"prompt_tokens": 30, "completion_tokens": 20}),
+            LLMResponse(content="over budget", tool_calls=[step], usage={"prompt_tokens": 30, "completion_tokens": 20}),
             LLMResponse(content="never reached"),
         ]
     )

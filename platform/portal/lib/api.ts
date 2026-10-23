@@ -149,11 +149,18 @@ export function downloadUrl(path: string): string {
 }
 
 /** Several files by id in one request (unknown or foreign ids are left out). */
-export function filesByIds(ids: string[]): Promise<FileItem[]> {
-  if (!ids.length) return Promise.resolve([]);
-  const query = ids.map((id) => `ids=${encodeURIComponent(id)}`).join("&");
-  return api<FileItem[]>(`/v1/files?limit=200&${query}`);
+export async function filesByIds(ids: string[]): Promise<FileItem[]> {
+  const out: FileItem[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    // the API takes at most 200 ids per request
+    const query = ids.slice(i, i + 200).map((id) => `ids=${encodeURIComponent(id)}`).join("&");
+    out.push(...(await api<FileItem[]>(`/v1/files?limit=200&${query}`)));
+  }
+  return out;
 }
+
+/** How many files one message may carry (the API enforces the same number). */
+export const MAX_ATTACHMENTS = 50;
 
 /** One zip of several library files, streamed by the platform. */
 export function archiveUrl(ids: string[]): string {

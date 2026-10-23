@@ -22,7 +22,8 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
   const [loaded, setLoaded] = useState(false);
   const [more, setMore] = useState(false);
   const [error, setError] = useState("");
-  const seq = useRef(0);
+  const seq = useRef(0); // every request: drops a response overtaken by a newer one
+  const view = useRef(0); // the filter: drops scan polls started for a view that is no longer shown
   const count = useRef(0);
   const key = `${filter.category}|${filter.projectId || ""}|${filter.q?.trim() || ""}`;
 
@@ -69,6 +70,7 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
     reload();
     return () => {
       seq.current++;
+      view.current++;
     };
   }, [reload, enabled]);
 
@@ -79,10 +81,12 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
     .join(",");
   useEffect(() => {
     if (!enabled || !pending) return;
-    const view = seq.current;
+    const mine = view.current;
     const timer = setInterval(async () => {
       const fresh: FileItem[] | null = await filesByIds(pending.split(",")).catch(() => null);
-      if (!fresh || view !== seq.current) return; // the view changed meanwhile
+      // only a change of filter makes this stale: a reload or "load more" meanwhile (star, move...) must not
+      // throw the scan result away, or the file would show 扫描中 until the page is refreshed
+      if (!fresh || mine !== view.current) return;
       const byId = new Map(fresh.map((f) => [f.id, f] as const));
       setFiles((prev) => prev.filter((f) => f.status !== "pending" || byId.has(f.id)).map((f) => byId.get(f.id) || f)); // gone: deleted elsewhere
     }, 2000);

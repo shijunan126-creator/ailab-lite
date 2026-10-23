@@ -271,13 +271,16 @@ class OpenAICompatibleClient(LLMClient):
                                 if text and on_text:
                                     state.emitted = True
                                     await on_text(text)
-                            if not state.completed:
+                            if state.completed:
+                                return state.response()
+                            if last or state.emitted:  # some of the answer was shown: a retry would repeat it
                                 raise LLMError("model stream is incomplete: ended without a completion marker")
-                            return state.response()
-                        body = (await resp.aread()).decode("utf-8", "replace")[:300]
-                        if resp.status_code not in RETRYABLE_STATUS or last:
-                            raise LLMError(f"model gateway returned {resp.status_code}: {body}")
-                        reason = f"{resp.status_code} {body}"
+                            reason = "stream ended before the completion marker"
+                        else:
+                            body = (await resp.aread()).decode("utf-8", "replace")[:300]
+                            if resp.status_code not in RETRYABLE_STATUS or last:
+                                raise LLMError(f"model gateway returned {resp.status_code}: {body}")
+                            reason = f"{resp.status_code} {body}"
             except (httpx.TransportError, json.JSONDecodeError) as exc:
                 if last or state.emitted:
                     raise LLMError(f"model stream broke: {exc!r}") from exc

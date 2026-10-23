@@ -105,9 +105,12 @@ def readyz() -> dict:
     except Exception as exc:  # pragma: no cover
         checks["queue_error"] = str(exc)
     checks["storage"] = settings.storage_path.exists() if settings.storage_backend == "local" else True
-    if not checks["queue"] or not checks["storage"]:
+    if not checks["storage"]:
         code = 503
-    return JSONResponse(status_code=code, content={"ok": code == 200, "checks": checks})
+    # Not ready only when this API is useless without the dependency (database, storage mount). With one replica,
+    # a Redis blip must not take login, conversations and downloads offline too: only queueing degrades.
+    degraded = not checks["queue"]
+    return JSONResponse(status_code=code, content={"ok": code == 200, "degraded": degraded, "checks": checks})
 
 
 @app.get("/v1/info")
