@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs></defs>
+<rect width="1500" height="960" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">通算容量与 CPU 超分</text>
+<text x="290.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">调度看 request · 运行看 limit · 内存不超分</text>
+<rect x="1235.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5"/>
+<text x="1257.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">系统</text>
+<rect x="1288.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1310.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">平台服务</text>
+<rect x="1364.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1386.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">沙箱</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">空闲</text>
+<rect x="20" y="62" width="700" height="400" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① 超分原理（以 4 个标准沙箱为例）</text>
+<rect x="60" y="110" width="120" height="200" rx="6" ry="6" fill="#ffffff" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="120.0" y="130.0" font-size="11.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">limit 2 vCPU</text>
+<rect x="60" y="285" width="120" height="25" rx="0" ry="0" fill="#0891b2" stroke="#0891b2" stroke-width="1"/>
+<rect x="60" y="260" width="120" height="25" rx="0" ry="0" fill="#94a3b8" stroke="#94a3b8" stroke-width="1"/>
+<text x="120.0" y="302.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">request 0.25</text>
+<text x="120.0" y="277.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">Kata 开销 0.25</text>
+<text x="120.0" y="335.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">沙箱 1</text>
+<rect x="220" y="110" width="120" height="200" rx="6" ry="6" fill="#ffffff" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="280.0" y="130.0" font-size="11.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">limit 2 vCPU</text>
+<rect x="220" y="285" width="120" height="25" rx="0" ry="0" fill="#0891b2" stroke="#0891b2" stroke-width="1"/>
+<rect x="220" y="260" width="120" height="25" rx="0" ry="0" fill="#94a3b8" stroke="#94a3b8" stroke-width="1"/>
+<text x="280.0" y="302.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">request 0.25</text>
+<text x="280.0" y="277.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">Kata 开销 0.25</text>
+<text x="280.0" y="335.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">沙箱 2</text>
+<rect x="380" y="110" width="120" height="200" rx="6" ry="6" fill="#ffffff" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="440.0" y="130.0" font-size="11.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">limit 2 vCPU</text>
+<rect x="380" y="285" width="120" height="25" rx="0" ry="0" fill="#0891b2" stroke="#0891b2" stroke-width="1"/>
+<rect x="380" y="260" width="120" height="25" rx="0" ry="0" fill="#94a3b8" stroke="#94a3b8" stroke-width="1"/>
+<text x="440.0" y="302.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">request 0.25</text>
+<text x="440.0" y="277.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">Kata 开销 0.25</text>
+<text x="440.0" y="335.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">沙箱 3</text>
+<rect x="540" y="110" width="120" height="200" rx="6" ry="6" fill="#ffffff" stroke="#0891b2" stroke-width="1.5" stroke-dasharray="5 4"/>
+<text x="600.0" y="130.0" font-size="11.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">limit 2 vCPU</text>
+<rect x="540" y="285" width="120" height="25" rx="0" ry="0" fill="#0891b2" stroke="#0891b2" stroke-width="1"/>
+<rect x="540" y="260" width="120" height="25" rx="0" ry="0" fill="#94a3b8" stroke="#94a3b8" stroke-width="1"/>
+<text x="600.0" y="302.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">request 0.25</text>
+<text x="600.0" y="277.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">Kata 开销 0.25</text>
+<text x="600.0" y="335.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">沙箱 4</text>
+<text x="60.0" y="372.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">调度器看到：4 × 0.5 = 2 核（用来判断“放不放得下”）</text>
+<text x="60.0" y="398.0" font-size="13" font-weight="700" fill="#0e7490" text-anchor="start" style="white-space:pre">实际可抢占：4 × 2 = 8 vCPU（空闲时可以 burst 到上限）</text>
+<text x="60.0" y="424.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ 超分比 = limit ÷（request + Kata 开销）= 2 ÷ 0.5 = 1:4。忙时变慢，但不会被杀。</text>
+<text x="60.0" y="448.0" font-size="13" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">→ 内存 request = limit，不超分（内存不可压缩，超了就 OOM）。</text>
+<rect x="740" y="62" width="740" height="400" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="754.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② 单台 TaiShan（128 核）预算 · 正常情况</text>
+<rect x="760" y="120" width="43.75" height="44" rx="0" ry="0" fill="#cbd5e1" stroke="#ffffff" stroke-width="1.5"/>
+<rect x="803.75" y="120" width="87.5" height="44" rx="0" ry="0" fill="#c7d2fe" stroke="#ffffff" stroke-width="1.5"/>
+<text x="847.5" y="139.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">平台服务</text>
+<text x="847.5" y="156.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">16 核</text>
+<rect x="891.25" y="120" width="568.75" height="44" rx="0" ry="0" fill="#a5f3fc" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1175.6" y="139.0" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">沙箱可调度</text>
+<text x="1175.6" y="156.0" font-size="11" font-weight="400" fill="#0f172a" text-anchor="middle" style="white-space:pre">104 核</text>
+<text x="760.0" y="112.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">CPU</text>
+<text x="760.0" y="196.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">104 核 ÷ 0.5 核/个 = 208 个 / 台  →  三台按 CPU 可排 ≈ 620 个（平台服务 ≈48 核分摊到三台）</text>
+<text x="760.0" y="238.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">内存（假设 512 GB/台）</text>
+<rect x="760" y="246" width="43.75" height="44" rx="0" ry="0" fill="#cbd5e1" stroke="#ffffff" stroke-width="1.5"/>
+<rect x="803.75" y="246" width="91.6015625" height="44" rx="0" ry="0" fill="#c7d2fe" stroke="#ffffff" stroke-width="1.5"/>
+<text x="849.6" y="265.0" font-size="12" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">平台服务</text>
+<text x="849.6" y="282.0" font-size="11" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">67 GB</text>
+<rect x="895.3515625" y="246" width="564.6484375" height="44" rx="0" ry="0" fill="#a5f3fc" stroke="#ffffff" stroke-width="1.5"/>
+<text x="1177.7" y="265.0" font-size="12" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">沙箱可用</text>
+<text x="1177.7" y="282.0" font-size="11" font-weight="400" fill="#0f172a" text-anchor="middle" style="white-space:pre">413 GB</text>
+<text x="760.0" y="322.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">413 GB ÷ 2.31 GiB/个（2 GiB + Kata 320 MiB）≈ 179 个 / 台 → 内存先到上限</text>
+<text x="760.0" y="360.0" font-size="13" font-weight="700" fill="#dc2626" text-anchor="start" style="white-space:pre">结论：每台 128 核时，瓶颈是内存，不是 CPU。</text>
+<text x="760.0" y="386.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">512 GB/台 → 三台约 535 个；要“吃满” CPU（≈620 个）约需 600 GB/台。</text>
+<text x="760.0" y="412.0" font-size="12.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">CPU 富余：request 提到 333m（1:3.4）不减少沙箱数；提到 500m（1:2.7）则 CPU 变瓶颈（≈415 个）。</text>
+<rect x="20" y="478" width="1460" height="250" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="502.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">③ 不同内存配置下的沙箱容量（三台合计 384 核）</text>
+<text x="44.0" y="520.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">每台内存</text>
+<text x="230.0" y="520.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">正常容量</text>
+<text x="400.0" y="520.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">瓶颈</text>
+<text x="560.0" y="520.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">单台故障时</text>
+<text x="740.0" y="520.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">说明</text>
+<rect x="40" y="532" width="1420" height="34" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="44.0" y="555.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">256 GB</text>
+<text x="230.0" y="555.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">≈205</text>
+<text x="400.0" y="555.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">内存</text>
+<text x="560.0" y="555.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">≈105</text>
+<text x="740.0" y="555.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">够用但余量小；建议扩内存，或把标准规格降到 1.5 GiB（需实测 Chromium 场景）</text>
+<rect x="40" y="572" width="1420" height="34" rx="4" ry="4" fill="#ecfeff" stroke="#e2e8f0" stroke-width="1"/>
+<text x="44.0" y="595.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">512 GB（假设）</text>
+<text x="230.0" y="595.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">≈535</text>
+<text x="400.0" y="595.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">内存</text>
+<text x="560.0" y="595.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">≈330</text>
+<text x="740.0" y="595.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">满足需求；软上限 ≈430（80%）/ 硬上限 ≈510（95%），留余量给预热池</text>
+<rect x="40" y="612" width="1420" height="34" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="44.0" y="635.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">768 GB</text>
+<text x="230.0" y="635.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">≈620</text>
+<text x="400.0" y="635.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">CPU request</text>
+<text x="560.0" y="635.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">≈380</text>
+<text x="740.0" y="635.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">CPU 已成瓶颈；三台时约 600 GB/台就能让 CPU 和内存平衡</text>
+<rect x="40" y="652" width="1420" height="34" rx="4" ry="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+<text x="44.0" y="675.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">1 TB</text>
+<text x="230.0" y="675.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">≈620</text>
+<text x="400.0" y="675.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">CPU request</text>
+<text x="560.0" y="675.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">≈380</text>
+<text x="740.0" y="675.0" font-size="12.8" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">内存富余：可提供更多 heavy 规格（4 vCPU / 6 GiB），或标准规格提到 3 GiB</text>
+<text x="44.0" y="714.0" font-size="13" font-weight="700" fill="#0e7490" text-anchor="start" style="white-space:pre">需求测算：1000 名用户 × 同时使用 Work 的比例 5%～10% = 50～100 个沙箱 → 余量很大，单台故障也够用（512 GB 时约 330 个）。</text>
+<rect x="20" y="744" width="1460" height="200" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="768.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">④ 超分安全阀</text>
+<rect x="40" y="788" width="268" height="136" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="174.0" y="829.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">优先级</text>
+<text x="174.0" y="852.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">平台服务：高 PriorityClass</text>
+<text x="174.0" y="870.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">沙箱：最低优先级</text>
+<text x="174.0" y="889.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">节点有压力先驱逐沙箱</text>
+<rect x="328" y="788" width="268" height="136" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="462.0" y="829.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">准入自适应</text>
+<text x="462.0" y="852.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">容量按 allocatable 动态算</text>
+<text x="462.0" y="870.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">内存 / CPU 水位过高</text>
+<text x="462.0" y="889.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">→ 上限临时下调 20%</text>
+<rect x="616" y="788" width="268" height="136" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="750.0" y="829.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">监控指标</text>
+<text x="750.0" y="852.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">节点内存水位 · OOM 次数</text>
+<text x="750.0" y="870.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">CPU 被限流时长</text>
+<text x="750.0" y="889.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">任务 P95 耗时</text>
+<rect x="904" y="788" width="268" height="136" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1038.0" y="829.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">回调规则</text>
+<text x="1038.0" y="852.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">P95 劣化 &gt; 30%</text>
+<text x="1038.0" y="870.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">→ request 改 333m（1:3.4）</text>
+<text x="1038.0" y="889.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">→ 必要时 500m（1:2.7）</text>
+<rect x="1192" y="788" width="268" height="136" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="1326.0" y="829.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">压测分档（P0）</text>
+<text x="1326.0" y="852.1" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">1:2.7 → 1:3.4 → 1:4 → 1:5.3</text>
+<text x="1326.0" y="870.9" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">同时测内存峰值</text>
+<text x="1326.0" y="889.7" font-size="12.3" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">取“P95 劣化 ≤ 20%”的最大并发</text>
+</svg>

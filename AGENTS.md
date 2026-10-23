@@ -1,0 +1,107 @@
+# AGENTS.md
+
+Rules for anyone (human or agent) changing this repository. Read this file and [HANDOFF.MD](HANDOFF.MD) before starting; HANDOFF records the traps already hit.
+
+## 1. What we are building
+
+AILab lite is the single-machine base of the AILab platform. Target architecture: `docs/architecture/` (frozen copy, see its README for the source version). Current state versus target: `docs/architecture/status-matrix.md`.
+
+Success means: on one machine, Chat, Work, file upload/parse, artifact delivery, multi-turn edits and the project library are reliable; restart, redelivery, over-quota and dependency failure each have a defined contract; and moving to many machines later changes only adapters and deployment, never business authorization, the usage ledger, file delivery or the Portal event protocol.
+
+Think from first principles: confirm the real goal, the constraints and the acceptance test before writing code. Fix bugs at their cause. Do not add a switch, abstraction or dependency without a concrete behaviour that needs it.
+
+## 2. Service boundaries (do not blur them)
+
+| Service | Owns | Must not |
+|---|---|---|
+| Portal (Next.js, `platform/portal`) | UI, httpOnly session cookie, same-origin proxy `/api/v1 → /v1` | hold model keys, sandbox tokens or call internal endpoints |
+| Platform API (`api/`) | the business database (only writer), authorization, quota, ledger, file records | execute user code, parse untrusted files |
+| Agent (`agent/`) | the agent loop, model calls | write the business DB directly, hold a container runtime socket, choose a `sandbox_id` from model output |
+| Broker (`broker/`) | sandbox leases, exec proxy, file injection/delivery | trust paths or sizes from the agent without enforcing limits |
+| Worker (`worker/`) | scanning, parsing, thumbnails, previews | parse in-process without time/memory/output limits |
+
+Services talk over HTTP through `ailab_platform/clients.py` with per-service credentials and scopes (`ailab_platform/service_auth.py`). Internal routes live under `/internal` and are never reachable from the Portal proxy.
+
+## 3. Code layout
+
+```
+platform/ailab_platform/
+  api/ agent/ broker/ worker/   service entry points (keep five services)
+  contracts/                    versioned enums, DTOs and events shared across services; no ORM, no HTTP
+  domain/                       pure state machines and policies (run state, quota, versions)
+  ports/                        Protocol interfaces where a second implementation is real or planned
+  adapters/                     local/redis/s3/opensandbox implementations of ports
+```
+
+- Move code into `domain/ports/adapters` only when you are already changing it. No repo-wide reshuffles.
+- `contracts` must not import `models.py`. Services other than the API must not import `models.py` either.
+- One port per real coupling point. Do not wrap every function in a repository class.
+- Factories reject unknown backends. Nothing silently falls back to a mock or local directory.
+
+## 4. Reliability contracts
+
+- **Idempotency** is keyed by the real unit of work: a model call (`call_id`), a delivery (`delivery_id`), an upload (`upload_id`). Never deduplicate a retry of a whole Run as one call.
+- A business change and the side effects it triggers (queue message, event) are written in one transaction through the outbox (`outbox` table); a dispatcher delivers them. Do not enqueue after commit "and hope".
+- Run state changes go through `run_state.transition_run` (compare-and-set). Terminal states are final.
+- Resuming a Run never repeats a confirmed delivery or a tool marked not replayable.
+- Usage records freeze every pricing input (weights, cached-token discount, policy version) at write time. History is never recomputed from current config.
+- Every external call has connect/read/total timeouts. Every loop that waits has a deadline.
+- Streams (S3 bodies, HTTP responses, browser readers) are closed in `finally`.
+
+## 5. Security rules
+
+- Ownership is decided in the API from the authenticated principal; never accept a `user_id` from the agent or the model.
+- Internal endpoints check the caller's service scope and, where relevant, bind the request to a `run_id`/`job_id`.
+- `AILAB_PROFILE=secure` refuses mock sandboxes, local storage outside dev, default credentials and stub scanners. Add a check there for any new unsafe default.
+- Never log secrets, tokens, presigned URLs or database passwords. Never put sandbox credentials into messages or events.
+- Untrusted files are parsed only in the Worker's limited subprocess or inside a sandbox.
+
+## 6. Performance budget
+
+Target machine: 2 vCPU / ~8 GB for the whole stack, with pod limits in `platform/deploy/k8s/platform.yaml` (API/Broker/Worker 256–384 MiB). Performance is part of acceptance:
+
+- Stream large files; never hold more than one full copy of a file in memory. Respect `max_upload_bytes` / `max_parse_bytes`.
+- Every list endpoint is paginated or bounded. Every new query on a large table has an index and an `EXPLAIN` check on SQLite and PostgreSQL.
+- Prometheus labels stay low-cardinality: never label by user, run, file or conversation id.
+- Expensive derived data (previews, thumbnails, OCR) is produced once, cached under `derived/{file_id}/`, and served with immutable caching and ETags.
+- State the cost (CPU, RSS, disk, latency) of any background job or new dependency in the PR description.
+
+## 7. Python conventions
+
+- Python 3.12, line length 140, `ruff check` and `ruff format` clean. Match the surrounding comment density: comments explain *why*, not *what*.
+- Settings are `AILAB_*` via `config.py`; validate enums and ranges there.
+- Database changes: one Alembic revision per change under `ailab_platform/migrations/versions`, numbered `NNNN_name.py`, upgrade **and** downgrade, works on SQLite and PostgreSQL. On SQLite add columns with plain `ALTER TABLE` (no batch rebuild of tables other tables reference). `tests/test_migrations.py` checks model/migration drift.
+- Time is UTC; API output uses the `UTCModel` schemas.
+- New behaviour needs a test that fails without the change. Fault tests (killed process, duplicate delivery, dependency down) go in `platform/tests/faults/`; real-backend contract tests in `platform/tests/contracts/` and skip cleanly when the backend URL is not set.
+
+## 8. Portal conventions
+
+- Read `platform/portal/AGENTS.md` (Next.js version notes) before touching the Portal.
+- UI text is Chinese. Let the layout explain; avoid secondary labels and helper descriptions.
+- Reuse the tokens and classes in `app/globals.css`; no UI library. Icons come from `components/icons.tsx`.
+- Modals and menus opened from the sticky sidebar must `createPortal` to `document.body`.
+- Every fetch that can be superseded (detail loads, streams, polling) must be cancelled or ignored when stale.
+- Types shared with the API live in `lib/api.ts` and mirror `ailab_platform/contracts`.
+
+## 9. Testing
+
+```bash
+cd platform
+export PATH="$(brew --prefix coreutils)/libexec/gnubin:$(brew --prefix findutils)/libexec/gnubin:$PATH"  # macOS
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/pytest tests -q
+AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/15 \
+AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_test \
+AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_migrations .venv/bin/pytest tests -q
+AILAB_E2E=1 .venv/bin/pytest e2e -q
+cd portal && npm test && npm run build
+```
+
+Tests build their own isolated settings (`tests/conftest.py`). Never point a test at a developer database; the Postgres test URLs are wiped. Start throwaway Redis/PostgreSQL on non-default ports and stop them afterwards.
+
+## 10. Workflow
+
+- Work on a branch; keep unrelated user changes (e.g. `.DS_Store`) untouched.
+- Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`).
+- Update `HANDOFF.MD` with any trap you hit and `docs/architecture/status-matrix.md` when a capability changes state. Record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`.
+- Before saying "done": lint, full Python suite, Portal build, and for UI changes a real browser check (see HANDOFF for the Playwright route).

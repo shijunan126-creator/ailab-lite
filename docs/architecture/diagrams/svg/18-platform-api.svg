@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="990" viewBox="0 0 1500 990" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="m7c3aed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#7c3aed"/></marker></defs>
+<rect width="1500" height="990" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Platform API · 职责、边界与调用关系</text>
+<text x="506.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">业务中枢：谁是谁、谁能做什么、谁用了多少、谁拥有哪些文件，只在这里判定</text>
+<rect x="1212.0" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1234.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">自建服务</text>
+<rect x="1288.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1310.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">数据</text>
+<rect x="1341.0" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1363.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">开源组件</text>
+<rect x="1417.0" y="24" width="16" height="12" rx="2" ry="2" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1439.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">存储</text>
+<rect x="30" y="84" width="320" height="150" rx="8" ry="8" fill="#ffffff" stroke="#334155" stroke-width="1.5"/>
+<text x="42.0" y="124.1" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Web Portal（浏览器）</text>
+<text x="42.0" y="146.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">/api/v1/*　Cookie 会话 + CSRF</text>
+<text x="42.0" y="164.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">会话 · 消息 · Run · SSE</text>
+<text x="42.0" y="183.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">资料库：上传/下载地址 · 版本</text>
+<text x="42.0" y="201.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">用量 · 管理台 · 审计查询</text>
+<rect x="30" y="262" width="320" height="176" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="42.0" y="308.3" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Agent Service</text>
+<text x="42.0" y="329.5" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">PATCH /internal/runs/{id} · …/messages</text>
+<text x="42.0" y="347.0" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">POST  /internal/usage · /quota/check</text>
+<text x="42.0" y="364.5" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">GET   /internal/files/search</text>
+<text x="42.0" y="382.0" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">GET   /internal/files/{id}/parsed</text>
+<text x="42.0" y="399.5" font-size="11" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">Run 由 Platform API 经 Valkey 下发</text>
+<rect x="30" y="458" width="320" height="176" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="42.0" y="504.3" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">Sandbox Broker</text>
+<text x="42.0" y="525.5" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">GET  /internal/runs/{id}</text>
+<text x="42.0" y="543.0" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">GET  /internal/conversations/{id}/materials</text>
+<text x="42.0" y="560.5" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">POST /internal/files/resolve</text>
+<text x="42.0" y="578.0" font-size="11" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">POST /internal/files/prepare · commit</text>
+<text x="42.0" y="595.5" font-size="11" font-weight="400" fill="#dc2626" text-anchor="start" style="white-space:pre">只搬字节，不查用户表、不判归属</text>
+<path d="M350.0,159.0 L428.0,159.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="363.0" y="140" width="52.0" height="16" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="389.0" y="150.0" font-size="11" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">外部接口</text>
+<path d="M350.0,350.0 L428.0,350.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="355.3" y="331" width="67.4" height="16" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="389.0" y="341.0" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">/internal</text>
+<path d="M350.0,546.0 L428.0,546.0" fill="none" stroke="#7c3aed" stroke-width="1.6" marker-end="url(#m7c3aed)"/>
+<rect x="355.3" y="527" width="67.4" height="16" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="389.0" y="537.0" font-size="11" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">/internal</text>
+<text x="190.0" y="656.0" font-size="11.5" font-weight="400" fill="#7c3aed" text-anchor="middle" style="white-space:pre">内部接口：SA Token + TLS · 只认 run_id · 不经 Higress</text>
+<rect x="430" y="70" width="620" height="600" rx="10" ry="10" fill="#eef2ff" stroke="#4f46e5" stroke-width="1"/>
+<text x="444.0" y="94.0" font-size="17" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Platform API</text>
+<text x="578.4" y="94.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">FastAPI · ≥2 副本 · 无状态</text>
+<rect x="450" y="112" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="592.5" y="148.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">身份与会话</text>
+<text x="592.5" y="170.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Keycloak OIDC（BFF 模式）</text>
+<text x="592.5" y="188.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">服务端保管 Token，浏览器只有 Cookie</text>
+<text x="592.5" y="207.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">首次登录建用户、映射部门/角色</text>
+<rect x="750" y="112" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="892.5" y="148.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">权限判定</text>
+<text x="892.5" y="170.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">RBAC（角色能力）</text>
+<text x="892.5" y="188.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">+ 数据归属（user_id / dept_id）</text>
+<text x="892.5" y="207.2" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">所有调用方都经这里校验</text>
+<rect x="450" y="250" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="592.5" y="286.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">会话 · 消息 · Run</text>
+<text x="592.5" y="308.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">增删改查 · 消息持久化</text>
+<text x="592.5" y="326.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Run 创建、状态流转、取消</text>
+<text x="592.5" y="345.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">SSE 推送（读 Valkey 事件流）</text>
+<rect x="750" y="250" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="892.5" y="286.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">配额与准入</text>
+<text x="892.5" y="308.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">发起前：日/月加权 Token、并发</text>
+<text x="892.5" y="326.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">运行中：Agent 按步回查</text>
+<text x="892.5" y="345.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">超额 → Chat 降级 / Work 暂停</text>
+<rect x="450" y="388" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="592.5" y="424.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Token 账本</text>
+<text x="592.5" y="446.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">每次 LLM 调用一条记录</text>
+<text x="592.5" y="464.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">用户·部门·会话·Run·模型·模式</text>
+<text x="592.5" y="483.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">聚合报表 · 每日与网关对账</text>
+<rect x="750" y="388" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="892.5" y="424.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">资料库权威</text>
+<text x="892.5" y="446.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">文件元数据 · 版本 · 哈希 · 配额</text>
+<text x="892.5" y="464.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">签发预签名 URL（5 min · 单对象）</text>
+<text x="892.5" y="483.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">回答“该注入哪些 / file_id 属于谁”</text>
+<rect x="450" y="526" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="592.5" y="571.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">模型目录</text>
+<text x="592.5" y="593.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">别名 → 用途 → 可见角色</text>
+<text x="592.5" y="612.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">具体路由、限流在 Higress</text>
+<rect x="750" y="526" width="285" height="124" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="892.5" y="571.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">审计</text>
+<text x="892.5" y="593.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">写操作 · 文件访问 · 管理操作</text>
+<text x="892.5" y="612.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">审计员只读，与平台管理员分离</text>
+<rect x="1110" y="84" width="360" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1290.0" y="122.7" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Keycloak</text>
+<text x="1290.0" y="144.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">OIDC 登录 · 用户与组同步</text>
+<path d="M1050.0,130.0 L1108.0,130.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1110" y="196" width="360" height="110" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1290.0" y="225.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">PostgreSQL（CNPG）</text>
+<text x="1290.0" y="247.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">users · conversations · runs</text>
+<text x="1290.0" y="265.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">files · file_versions</text>
+<text x="1290.0" y="284.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">usage_ledger · audit_log</text>
+<path d="M1050.0,251.0 L1108.0,251.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1110" y="326" width="360" height="84" rx="8" ry="8" fill="#f5f3ff" stroke="#7c3aed" stroke-width="1.5"/>
+<text x="1290.0" y="360.6" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Valkey</text>
+<text x="1290.0" y="382.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Run 队列 · 事件流 · 取消标记</text>
+<path d="M1050.0,368.0 L1108.0,368.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1110" y="430" width="360" height="104" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="1290.0" y="465.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Pacific S3（资料库）</text>
+<text x="1290.0" y="487.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">只签发预签名 URL</text>
+<text x="1290.0" y="506.0" font-size="12" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">不中转大文件字节</text>
+<path d="M1050.0,482.0 L1108.0,482.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1110" y="554" width="360" height="104" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1290.0" y="589.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Higress（二期）</text>
+<text x="1290.0" y="611.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">开发者 Key → 创建 consumer</text>
+<text x="1290.0" y="630.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">+ 限流 / 额度</text>
+<path d="M1050.0,606.0 L1108.0,606.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="30" y="696" width="640" height="280" rx="10" ry="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1"/>
+<text x="44.0" y="720.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">它不做什么（边界）</text>
+<text x="54.0" y="750.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">不做</text>
+<text x="420.0" y="750.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">由谁做</text>
+<line x1="50" y1="762" x2="650" y2="762" stroke="#fecaca" stroke-width="1"/>
+<text x="54.0" y="784.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">Agent 循环、工具调用、上下文管理</text>
+<text x="420.0" y="784.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="start" style="white-space:pre">Agent Service</text>
+<line x1="50" y1="800" x2="650" y2="800" stroke="#fecaca" stroke-width="1"/>
+<text x="54.0" y="822.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">沙箱创建、租约、回收、文件搬运</text>
+<text x="420.0" y="822.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="start" style="white-space:pre">Sandbox Broker</text>
+<line x1="50" y1="838" x2="650" y2="838" stroke="#fecaca" stroke-width="1"/>
+<text x="54.0" y="860.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">模型路由、限流、Token 指标采集</text>
+<text x="420.0" y="860.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="start" style="white-space:pre">Higress</text>
+<line x1="50" y1="876" x2="650" y2="876" stroke="#fecaca" stroke-width="1"/>
+<text x="54.0" y="898.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">大文件字节流中转</text>
+<text x="420.0" y="898.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="start" style="white-space:pre">浏览器经 Higress 直达 S3 / Broker</text>
+<line x1="50" y1="914" x2="650" y2="914" stroke="#fecaca" stroke-width="1"/>
+<text x="54.0" y="936.0" font-size="13" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">文档解析、格式转换、缩略图</text>
+<text x="420.0" y="936.0" font-size="13" font-weight="700" fill="#4f46e5" text-anchor="start" style="white-space:pre">文件处理 Worker</text>
+<rect x="700" y="696" width="770" height="280" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="714.0" y="720.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">文件进出：谁判权限 · 谁搬字节</text>
+<text x="720.0" y="750.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">路径</text>
+<text x="880.0" y="750.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">权限判定（Platform API）</text>
+<text x="1210.0" y="750.0" font-size="12.5" font-weight="700" fill="#64748b" text-anchor="start" style="white-space:pre">字节由谁搬</text>
+<line x1="716" y1="762" x2="1454" y2="762" stroke="#fde68a" stroke-width="1"/>
+<text x="720.0" y="784.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">浏览器上传</text>
+<text x="880.0" y="784.0" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">签发预签名 PUT → commit 登记</text>
+<text x="1210.0" y="784.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">浏览器 → Higress → S3</text>
+<line x1="716" y1="800" x2="1454" y2="800" stroke="#fde68a" stroke-width="1"/>
+<text x="720.0" y="822.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">浏览器下载</text>
+<text x="880.0" y="822.0" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">校验归属 → 签发预签名 GET</text>
+<text x="1210.0" y="822.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">S3 → Higress → 浏览器</text>
+<line x1="716" y1="838" x2="1454" y2="838" stroke="#fde68a" stroke-width="1"/>
+<text x="720.0" y="860.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">领取沙箱时注入</text>
+<text x="880.0" y="860.0" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">/internal/…/materials</text>
+<text x="1210.0" y="860.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">Broker：S3 → execd</text>
+<line x1="716" y1="876" x2="1454" y2="876" stroke="#fde68a" stroke-width="1"/>
+<text x="720.0" y="898.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">运行中按需拉取</text>
+<text x="880.0" y="898.0" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">/internal/files/resolve</text>
+<text x="1210.0" y="898.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">Broker：S3 → execd</text>
+<line x1="716" y1="914" x2="1454" y2="914" stroke="#fde68a" stroke-width="1"/>
+<text x="720.0" y="936.0" font-size="13" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">产出归档</text>
+<text x="880.0" y="936.0" font-size="12.5" font-weight="400" fill="#7c3aed" text-anchor="start" style="white-space:pre">/internal/files/prepare → commit</text>
+<text x="1210.0" y="936.0" font-size="12.5" font-weight="400" fill="#15803d" text-anchor="start" style="white-space:pre">Broker：execd → S3</text>
+</svg>

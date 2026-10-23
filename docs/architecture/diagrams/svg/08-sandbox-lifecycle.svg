@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="900" viewBox="0 0 1500 900" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="mc2410c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker><marker id="mdc2626" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#dc2626"/></marker></defs>
+<rect width="1500" height="900" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">沙箱生命周期</text>
+<text x="194.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">懒创建 · 用完即弃 · 双保险回收</text>
+<rect x="1145.3" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1167.3" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">Broker 控制</text>
+<rect x="1246.6" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1268.6" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">OpenSandbox</text>
+<rect x="1352.5" y="24" width="16" height="12" rx="2" ry="2" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="1374.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">终止</text>
+<rect x="1405.5" y="24" width="16" height="12" rx="2" ry="2" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1427.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">计时器</text>
+<rect x="20" y="62" width="1460" height="400" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① 状态机（Sandbox Broker 视角）</text>
+<rect x="40" y="150" width="160" height="78" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="120.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">会话（无沙箱）</text>
+<text x="120.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Work 模式已开启</text>
+<text x="120.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">但还没执行过工具</text>
+<rect x="250" y="150" width="150" height="78" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="325.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">准入</text>
+<text x="325.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">全局 / 部门 / 用户</text>
+<text x="325.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">三级配额检查</text>
+<rect x="450" y="150" width="170" height="78" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="535.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">领取沙箱</text>
+<text x="535.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">预热池 ≤1s</text>
+<text x="535.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（池空时冷启动 5～15s）</text>
+<rect x="670" y="150" width="160" height="78" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="750.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">注入文件</text>
+<text x="750.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">会话关联的输入</text>
+<text x="750.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">+ 最新版本产出</text>
+<rect x="880" y="150" width="170" height="78" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="965.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">活跃 active</text>
+<text x="965.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">工具调用续租</text>
+<text x="965.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Run 运行中每 60s 心跳续租</text>
+<rect x="1110" y="150" width="160" height="78" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1190.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">释放</text>
+<text x="1190.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">兜底归档 outputs/</text>
+<text x="1190.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">调用删除接口</text>
+<rect x="1320" y="150" width="140" height="78" rx="8" ry="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
+<text x="1390.0" y="172.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">已销毁</text>
+<text x="1390.0" y="194.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">脚本、临时文件、</text>
+<text x="1390.0" y="213.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">缓存全部消失</text>
+<rect x="450" y="330" width="170" height="70" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="535.0" y="348.4" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">排队 queued</text>
+<text x="535.0" y="370.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">显示排队位置</text>
+<text x="535.0" y="389.0" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">超时 5 min → 失败</text>
+<rect x="880" y="330" width="170" height="78" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="965.0" y="352.6" font-size="14.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">闲置 idle</text>
+<text x="965.0" y="374.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Run 结束，等用户</text>
+<text x="965.0" y="393.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">15 min 计时开始</text>
+<path d="M200.0,189.0 L248.0,189.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="185.5" y="130.5" width="77.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="224.0" y="141.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">首次工具调用</text>
+<text x="224.0" y="155.0" font-size="11" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">（懒创建）</text>
+<path d="M400.0,189.0 L448.0,189.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="408.5" y="170.5" width="31.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="424.0" y="181.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">通过</text>
+<path d="M325.0,228.0 L325.0,365.0 L448.0,365.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="343.0" y="347.5" width="54.0" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="370.0" y="358.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">超过上限</text>
+<path d="M535.0,330.0 L535.0,230.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="548.75" y="289.5" width="42.5" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="570.0" y="300.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">有空位</text>
+<path d="M620.0,189.0 L668.0,189.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M830.0,189.0 L878.0,189.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M1050.0,189.0 L1108.0,189.0" fill="none" stroke="#dc2626" stroke-width="1.6" marker-end="url(#mdc2626)"/>
+<rect x="1032.3" y="116.5" width="95.39999999999999" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1080.0" y="127.0" font-size="11.5" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">超 4h / 被挤出</text>
+<text x="1080.0" y="142.0" font-size="11" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">/ 管理员回收</text>
+<path d="M1270.0,189.0 L1318.0,189.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M935.0,228.0 L935.0,328.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="845.4" y="289.5" width="58.599999999999994" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="900.0" y="300.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="end" style="white-space:pre">Run 结束</text>
+<path d="M995.0,328.0 L995.0,230.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="999" y="289.5" width="81.60000000000001" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1003.0" y="300.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">同会话新 Run</text>
+<path d="M1050.0,370.0 L1190.0,370.0 L1190.0,230.0" fill="none" stroke="#c2410c" stroke-width="1.6" marker-end="url(#mc2410c)"/>
+<rect x="1080.35" y="351.5" width="79.3" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1120.0" y="362.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="middle" style="white-space:pre">闲置 15 min</text>
+<path d="M535.0,400.0 L535.0,440.0 L1390.0,440.0 L1390.0,230.0" fill="none" stroke="#dc2626" stroke-width="1.6" stroke-dasharray="6 4" marker-end="url(#mdc2626)"/>
+<rect x="857.1" y="423.5" width="205.8" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="960.0" y="434.0" font-size="11.5" font-weight="400" fill="#dc2626" text-anchor="middle" style="white-space:pre">排队超时 → Run 失败（不创建沙箱）</text>
+<rect x="20" y="478" width="1460" height="210" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="502.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② 一个典型会话的时间线</text>
+<line x1="70" y1="590" x2="1440" y2="590" stroke="#334155" stroke-width="2"/>
+<circle cx="70" cy="590" r="7" fill="#64748b" stroke="#64748b" stroke-width="1.5"/>
+<text x="70.0" y="546.0" font-size="12" font-weight="700" fill="#64748b" text-anchor="middle" style="white-space:pre">10:00</text>
+<text x="70.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">进入 Work 模式</text>
+<text x="70.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">不创建沙箱</text>
+<circle cx="210" cy="590" r="7" fill="#0891b2" stroke="#0891b2" stroke-width="1.5"/>
+<text x="210.0" y="546.0" font-size="12" font-weight="700" fill="#0891b2" text-anchor="middle" style="white-space:pre">10:02</text>
+<text x="210.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">Agent 第一次调用 bash</text>
+<text x="210.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">领取沙箱 + 注入文件</text>
+<circle cx="470" cy="590" r="7" fill="#15803d" stroke="#15803d" stroke-width="1.5"/>
+<text x="470.0" y="546.0" font-size="12" font-weight="700" fill="#15803d" text-anchor="middle" style="white-space:pre">10:02～10:20</text>
+<text x="470.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">多次工具调用</text>
+<text x="470.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">每次续租 +20 min</text>
+<circle cx="720" cy="590" r="7" fill="#4f46e5" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="720.0" y="546.0" font-size="12" font-weight="700" fill="#4f46e5" text-anchor="middle" style="white-space:pre">10:20</text>
+<text x="720.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">产出 report.pptx</text>
+<text x="720.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">deliver → 资料库 v1</text>
+<circle cx="900" cy="590" r="7" fill="#dc2626" stroke="#dc2626" stroke-width="1.5"/>
+<text x="900.0" y="546.0" font-size="12" font-weight="700" fill="#dc2626" text-anchor="middle" style="white-space:pre">10:35</text>
+<text x="900.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">15 min 无活动</text>
+<text x="900.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">沙箱销毁</text>
+<circle cx="1130" cy="590" r="7" fill="#0891b2" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1130.0" y="546.0" font-size="12" font-weight="700" fill="#0891b2" text-anchor="middle" style="white-space:pre">次日 09:10</text>
+<text x="1130.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">回到同一会话：“改第 3 页”</text>
+<text x="1130.0" y="616.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="middle" style="white-space:pre">领取新沙箱 + 注入 v1</text>
+<circle cx="1380" cy="590" r="7" fill="#4f46e5" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1380.0" y="546.0" font-size="12" font-weight="700" fill="#4f46e5" text-anchor="middle" style="white-space:pre">09:15</text>
+<text x="1380.0" y="566.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="middle" style="white-space:pre">产出 v2</text>
+<rect x="210" y="630" width="690" height="14" rx="4" ry="4" fill="#cffafe" stroke="#0891b2" stroke-width="1"/>
+<text x="555.0" y="641.0" font-size="10.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">沙箱 #1 存活期（占用 CPU/内存）</text>
+<rect x="1130" y="630" width="300" height="14" rx="4" ry="4" fill="#cffafe" stroke="#0891b2" stroke-width="1"/>
+<text x="1280.0" y="641.0" font-size="10.5" font-weight="400" fill="#0e7490" text-anchor="middle" style="white-space:pre">沙箱 #2</text>
+<text x="1015.0" y="641.0" font-size="10.5" font-weight="400" fill="#64748b" text-anchor="middle" style="white-space:pre">会话一直存在，不占计算资源</text>
+<rect x="20" y="704" width="720" height="180" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="728.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">③ 回收触发条件</text>
+<text x="40.0" y="752.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 闲置超时：Run 结束后 15 min 没有新 Run（可配置）</text>
+<text x="40.0" y="776.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 最长时限：单个沙箱 4 h（到点前 10 min 提醒 Agent 交付）</text>
+<text x="40.0" y="800.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 用户超限：普通用户只允许 1 个活跃沙箱 → 回收其闲置沙箱（LRU）</text>
+<text x="40.0" y="824.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 异常：OOM / 节点故障 / execd 失联 → 标记失效，下一次调用时自动重建</text>
+<text x="40.0" y="848.0" font-size="12.5" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 管理员：容量告急时手动或按策略回收闲置沙箱</text>
+<rect x="760" y="704" width="720" height="180" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="774.0" y="728.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">④ 双保险，防止沙箱泄漏</text>
+<rect x="780" y="744" width="320" height="120" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="940.0" y="778.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Broker Reaper（主动）</text>
+<text x="940.0" y="800.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">选主后单实例运行，每 30s 扫描</text>
+<text x="940.0" y="818.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">租约到期 → 归档 → 删除</text>
+<text x="940.0" y="837.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">数据库记录销毁原因</text>
+<rect x="1140" y="744" width="320" height="120" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1300.0" y="778.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">OpenSandbox expireAt（被动）</text>
+<text x="1300.0" y="800.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">每次续租同时设置 expireAt</text>
+<text x="1300.0" y="818.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">= 租约 + 5 min</text>
+<text x="1300.0" y="837.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Broker 全挂也会被控制器回收</text>
+</svg>

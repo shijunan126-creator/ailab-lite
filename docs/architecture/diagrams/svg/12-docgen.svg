@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="960" viewBox="0 0 1500 960" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs><marker id="m15803d" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#15803d"/></marker><marker id="m475569" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#475569"/></marker><marker id="mc2410c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/></marker></defs>
+<rect width="1500" height="960" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">办公文档生成流水线</text>
+<text x="266.0" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">可编辑 · 符合公司规范 · 生成后必须自检</text>
+<rect x="1212.1" y="24" width="16" height="12" rx="2" ry="2" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="1234.1" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">Agent 步骤</text>
+<rect x="1306.5" y="24" width="16" height="12" rx="2" ry="2" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1328.5" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">沙箱内执行</text>
+<rect x="1394.0" y="24" width="16" height="12" rx="2" ry="2" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1416.0" y="35.0" font-size="11.5" font-weight="400" fill="#475569" text-anchor="start" style="white-space:pre">质量闸门</text>
+<rect x="20" y="62" width="1460" height="510" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="86.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">① PPT：三条路线 + 视觉自检闭环</text>
+<rect x="40" y="110" width="200" height="110" rx="8" ry="8" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+<text x="140.0" y="139.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">输入</text>
+<text x="140.0" y="161.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">用户需求</text>
+<text x="140.0" y="179.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">参考文档 / 数据</text>
+<text x="140.0" y="198.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（资料库注入）</text>
+<path d="M240.0,165.0 L278.0,165.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="280" y="110" width="220" height="110" rx="8" ry="8" fill="#eef2ff" stroke="#4f46e5" stroke-width="1.5"/>
+<text x="390.0" y="139.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">规划大纲</text>
+<text x="390.0" y="161.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">outline.json：每页标题、</text>
+<text x="390.0" y="179.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">要点、版式类型、图表需求</text>
+<text x="390.0" y="198.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（先给用户确认，可选）</text>
+<path d="M500.0,165.0 L540.0,165.0 L540.0,128.0 L578.0,128.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M540.0,165.0 L578.0,245.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M540.0,165.0 L540.0,362.0 L578.0,362.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="580" y="106" width="400" height="96" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="592.0" y="128.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">A · 模板驱动（默认）</text>
+<text x="592.0" y="150.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">python-pptx 打开公司母版 .potx</text>
+<text x="592.0" y="168.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">按版式填充占位符、原生图表、表格</text>
+<text x="592.0" y="187.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">品牌由母版保证 · 适合正式汇报</text>
+<rect x="940.0" y="97" width="34.0" height="18" rx="9" ry="9" fill="#16a34a" stroke="#16a34a" stroke-width="1.5"/>
+<text x="957.0" y="110.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">推荐</text>
+<rect x="580" y="216" width="400" height="96" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="592.0" y="238.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">B · HTML 设计驱动</text>
+<text x="592.0" y="260.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">LLM 写受约束 HTML（1280×720 + 品牌 CSS 变量）</text>
+<text x="592.0" y="278.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">dom-to-pptx（Playwright Chromium）</text>
+<text x="592.0" y="297.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">→ 原生文本框/形状 · 适合宣传、创意页</text>
+<rect x="580" y="326" width="400" height="96" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="592.0" y="348.1" font-size="14" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">C · 代码直绘</text>
+<text x="592.0" y="370.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">PptxGenJS 直接画形状、图表</text>
+<text x="592.0" y="388.8" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">适合数据密集、批量生成的页面</text>
+<text x="592.0" y="407.2" font-size="12" font-weight="400" fill="#334155" text-anchor="start" style="white-space:pre">与 A/B 可混用（同一份 PPT 不同页）</text>
+<path d="M980.0,157.0 L1018.0,157.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M980.0,262.0 L1018.0,262.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<path d="M980.0,367.0 L1018.0,367.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1020" y="110" width="200" height="310" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1120.0" y="202.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">合成 .pptx</text>
+<text x="1120.0" y="224.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">写真实字体名：</text>
+<text x="1120.0" y="242.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">微软雅黑 / 等线</text>
+<text x="1120.0" y="261.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre"></text>
+<text x="1120.0" y="279.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">页码 · 备注</text>
+<text x="1120.0" y="298.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">来源标注</text>
+<text x="1120.0" y="316.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre"></text>
+<text x="1120.0" y="335.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">outputs/draft.pptx</text>
+<path d="M1220.0,265.0 L1258.0,265.0" fill="none" stroke="#475569" stroke-width="1.6" marker-end="url(#m475569)"/>
+<rect x="1260" y="110" width="200" height="310" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1360.0" y="202.2" font-size="14" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">视觉自检</text>
+<text x="1360.0" y="224.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">soffice → PDF</text>
+<text x="1360.0" y="242.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">pdftoppm → PNG</text>
+<text x="1360.0" y="261.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre"></text>
+<text x="1360.0" y="279.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">inspect_visual</text>
+<text x="1360.0" y="298.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（多模态模型）</text>
+<text x="1360.0" y="316.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">溢出 · 重叠 · 空白</text>
+<text x="1360.0" y="335.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">字号 · 对比度 · 错别字</text>
+<path d="M1360.0,420.0 L1360.0,470.0 L1120.0,470.0 L1120.0,422.0" fill="none" stroke="#c2410c" stroke-width="1.6" marker-end="url(#mc2410c)"/>
+<rect x="1169.3" y="451.5" width="141.4" height="16.5" rx="3" ry="3" fill="#ffffff" stroke="none" stroke-width="0" fill-opacity="0.9"/>
+<text x="1240.0" y="462.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="middle" style="white-space:pre">有问题 → 修正（≤3 轮）</text>
+<path d="M1360.0,470.0 L1360.0,520.0 L1458.0,520.0" fill="none" stroke="#15803d" stroke-width="1.6" marker-end="url(#m15803d)"/>
+<text x="1250.0" y="545.0" font-size="12.5" font-weight="700" fill="#15803d" text-anchor="start" style="white-space:pre">通过 → deliver_file → 资料库</text>
+<text x="40.0" y="262.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">选路线的规则：</text>
+<text x="40.0" y="286.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 有公司母版的正式材料 → A</text>
+<text x="40.0" y="308.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 要求设计感、非标准版式 → B</text>
+<text x="40.0" y="330.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 大量数据 / 图表 / 批量 → C</text>
+<text x="40.0" y="352.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 用户上传旧 PPT 要求修改 →</text>
+<text x="40.0" y="374.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">•   python-pptx 直接改原文件</text>
+<text x="40.0" y="420.0" font-size="12.5" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">共同约束：</text>
+<text x="40.0" y="444.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 每页字数上限 · 最小字号 18pt</text>
+<text x="40.0" y="466.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 配色只能用品牌色板</text>
+<text x="40.0" y="488.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 图片只用素材或图表生成</text>
+<text x="40.0" y="510.0" font-size="12" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">• 不调用外网图片 / 字体</text>
+<rect x="20" y="588" width="720" height="356" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="34.0" y="612.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">② Word</text>
+<rect x="40" y="630" width="330" height="92" rx="8" ry="8" fill="#f0fdf4" stroke="#16a34a" stroke-width="1.5"/>
+<text x="205.0" y="659.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">长文 / 报告（默认）</text>
+<text x="205.0" y="681.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">Agent 写 Markdown</text>
+<text x="205.0" y="699.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">pandoc --reference-doc=公司模板.docx</text>
+<rect x="330.0" y="621" width="34.0" height="18" rx="9" ry="9" fill="#16a34a" stroke="#16a34a" stroke-width="1.5"/>
+<text x="347.0" y="634.0" font-size="11" font-weight="700" fill="#ffffff" text-anchor="middle" style="white-space:pre">推荐</text>
+<rect x="390" y="630" width="330" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="555.0" y="659.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">固定格式公文 / 表单</text>
+<text x="555.0" y="681.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">docxtpl：Jinja2 模板填充</text>
+<text x="555.0" y="699.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">（红头、落款、表格位置固定）</text>
+<rect x="40" y="738" width="330" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="205.0" y="767.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">复杂排版</text>
+<text x="205.0" y="789.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">docx（docx-js）：目录、编号、</text>
+<text x="205.0" y="807.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">页眉页脚、分节</text>
+<rect x="390" y="738" width="330" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="555.0" y="767.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">修改用户文档</text>
+<text x="555.0" y="789.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">python-docx 改原文件</text>
+<text x="555.0" y="807.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">保留原样式；修订模式（P2）</text>
+<rect x="40" y="846" width="680" height="80" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="380.0" y="878.5" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">质量闸门</text>
+<text x="380.0" y="900.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">转 PDF 截图自检 · 校验目录/编号/页眉 · OOXML 合法性检查（docx_check）</text>
+<rect x="760" y="588" width="720" height="356" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="774.0" y="612.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">③ Excel</text>
+<rect x="780" y="630" width="330" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="945.0" y="659.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">分析与计算</text>
+<text x="945.0" y="681.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">pandas / duckdb 处理数据</text>
+<text x="945.0" y="699.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">python-calamine 快速读取</text>
+<rect x="1130" y="630" width="330" height="92" rx="8" ry="8" fill="#ecfeff" stroke="#0891b2" stroke-width="1.5"/>
+<text x="1295.0" y="659.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">写出与格式</text>
+<text x="1295.0" y="681.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">XlsxWriter：格式、条件格式、图表</text>
+<text x="1295.0" y="699.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">openpyxl：在原文件上修改</text>
+<rect x="780" y="738" width="680" height="92" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1120.0" y="767.2" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">公式重算（关键）</text>
+<text x="1120.0" y="789.2" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">openpyxl 写入的公式没有缓存值 → LibreOffice headless 重算并保存</text>
+<text x="1120.0" y="807.8" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">→ 扫描 #REF! / #NAME? / #DIV/0! 等错误，有错就修</text>
+<rect x="780" y="846" width="680" height="80" rx="8" ry="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
+<text x="1120.0" y="878.5" font-size="13.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">质量闸门</text>
+<text x="1120.0" y="900.5" font-size="12" font-weight="400" fill="#334155" text-anchor="middle" style="white-space:pre">公式零错误 · 数字格式/列宽/冻结窗格 · 图表截图自检 · 原始数据与结论分 Sheet</text>
+</svg>

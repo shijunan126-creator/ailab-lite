@@ -1,0 +1,352 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="990" viewBox="0 0 1500 990" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+<defs></defs>
+<rect width="1500" height="990" fill="#ffffff"/>
+<text x="30.0" y="42.0" font-size="24" font-weight="700" fill="#0f172a" text-anchor="start" style="white-space:pre">NPU 分配 · 64 × 昇腾 910B（8 台 Atlas 800T A2）</text>
+<text x="693.2" y="42.0" font-size="13.5" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">左：业务方草案　右：调整建议（基于 2026-10 vllm-ascend 支持情况）</text>
+<rect x="20" y="62" width="710" height="540" rx="10" ry="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+<text x="44.0" y="98.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">草案（业务方规划）</text>
+<text x="44.0" y="137.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-01</text>
+<rect x="124" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="149.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="180" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="205.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="236" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="261.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="292" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="317.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="348" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="373.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="404" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="429.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="460" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="485.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="516" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="541.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<text x="44.0" y="191.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-02</text>
+<rect x="124" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="149.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="180" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="205.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="236" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="261.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="292" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="317.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="348" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="373.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="404" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="429.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="460" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="485.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="516" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="541.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<text x="44.0" y="245.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-03</text>
+<rect x="124" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="149.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="180" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="205.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="236" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="261.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="292" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="317.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="348" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="373.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="404" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="429.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="460" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="485.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="516" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="541.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<text x="44.0" y="299.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-04</text>
+<rect x="124" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="149.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="180" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="205.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="236" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="261.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="292" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="317.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="348" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="373.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="404" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="429.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="460" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="485.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="516" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="541.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<text x="44.0" y="353.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-05</text>
+<rect x="124" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="149.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="180" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="205.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="236" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="261.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="292" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="317.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="348" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="373.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="404" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="429.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="460" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="485.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="516" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="541.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<text x="44.0" y="407.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-06</text>
+<rect x="124" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="149.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="180" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="205.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="236" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="261.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="292" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="317.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="348" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="373.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="404" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="429.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="460" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="485.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="516" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="541.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<text x="44.0" y="461.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-07</text>
+<rect x="124" y="436" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="149.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="180" y="436" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="205.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="236" y="436" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="261.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="292" y="436" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="317.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="348" y="436" width="50" height="40" rx="5" ry="5" fill="#c4b5fd" stroke="#6d28d9" stroke-width="1"/>
+<text x="373.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">VL</text>
+<rect x="404" y="436" width="50" height="40" rx="5" ry="5" fill="#c4b5fd" stroke="#6d28d9" stroke-width="1"/>
+<text x="429.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">VL</text>
+<rect x="460" y="436" width="50" height="40" rx="5" ry="5" fill="#c4b5fd" stroke="#6d28d9" stroke-width="1"/>
+<text x="485.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">VL</text>
+<rect x="516" y="436" width="50" height="40" rx="5" ry="5" fill="#c4b5fd" stroke="#6d28d9" stroke-width="1"/>
+<text x="541.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">VL</text>
+<text x="44.0" y="515.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-08</text>
+<rect x="124" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="149.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="180" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="205.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="236" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="261.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="292" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="317.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="348" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="373.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="404" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="429.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="460" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="485.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="516" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="541.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="121" y="109" width="448" height="100" rx="7" ry="7" fill="none" stroke="#c2410c" stroke-width="2.2"/>
+<text x="575.0" y="163.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">P</text>
+<rect x="121" y="217" width="448" height="100" rx="7" ry="7" fill="none" stroke="#c2410c" stroke-width="2.2"/>
+<text x="575.0" y="271.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">D</text>
+<rect x="121" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="233" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="345" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="457" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="121" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="233" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="345" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="457" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="121" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="233" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="345" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#6d28d9" stroke-width="2.2"/>
+<rect x="457" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#6d28d9" stroke-width="2.2"/>
+<rect x="121" y="487" width="224" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<rect x="345" y="487" width="224" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<text x="44.0" y="576.0" font-size="12" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">实线框 = 一个实例；P = Prefill（预填充），D = Decode（解码）</text>
+<rect x="770" y="62" width="710" height="540" rx="10" ry="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="1"/>
+<text x="794.0" y="98.0" font-size="15" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">调整建议（本设计采用）</text>
+<text x="794.0" y="137.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-01</text>
+<rect x="874" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="899.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="930" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="955.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="986" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1011.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1042" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1067.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1098" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1123.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1154" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1179.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1210" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1235.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1266" y="112" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1291.0" y="137.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<text x="794.0" y="191.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-02</text>
+<rect x="874" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="899.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="930" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="955.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="986" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1011.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1042" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1067.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1098" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1123.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1154" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1179.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1210" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1235.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<rect x="1266" y="166" width="50" height="40" rx="5" ry="5" fill="#fdba74" stroke="#c2410c" stroke-width="1"/>
+<text x="1291.0" y="191.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">P</text>
+<text x="794.0" y="245.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-03</text>
+<rect x="874" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="899.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="930" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="955.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="986" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1011.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1042" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1067.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1098" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1123.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1154" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1179.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1210" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1235.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1266" y="220" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1291.0" y="245.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<text x="794.0" y="299.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-04</text>
+<rect x="874" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="899.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="930" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="955.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="986" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1011.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1042" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1067.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1098" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1123.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1154" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1179.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1210" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1235.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<rect x="1266" y="274" width="50" height="40" rx="5" ry="5" fill="#fed7aa" stroke="#c2410c" stroke-width="1"/>
+<text x="1291.0" y="299.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">D</text>
+<text x="794.0" y="353.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-05</text>
+<rect x="874" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="899.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="930" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="955.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="986" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1011.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1042" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1067.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1098" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1123.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1154" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1179.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1210" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1235.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1266" y="328" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1291.0" y="353.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<text x="794.0" y="407.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-06</text>
+<rect x="874" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="899.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="930" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="955.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="986" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1011.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1042" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1067.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1098" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1123.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1154" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1179.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1210" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1235.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1266" y="382" width="50" height="40" rx="5" ry="5" fill="#93c5fd" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1291.0" y="407.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<text x="794.0" y="461.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-07</text>
+<rect x="874" y="436" width="50" height="40" rx="5" ry="5" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="899.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="930" y="436" width="50" height="40" rx="5" ry="5" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="955.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="986" y="436" width="50" height="40" rx="5" ry="5" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1011.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1042" y="436" width="50" height="40" rx="5" ry="5" fill="#bfdbfe" stroke="#1d4ed8" stroke-width="1"/>
+<text x="1067.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">35B</text>
+<rect x="1098" y="436" width="50" height="40" rx="5" ry="5" fill="#ddd6fe" stroke="#6d28d9" stroke-width="1"/>
+<text x="1123.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">OCR</text>
+<rect x="1154" y="436" width="50" height="40" rx="5" ry="5" fill="#ddd6fe" stroke="#6d28d9" stroke-width="1"/>
+<text x="1179.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">OCR</text>
+<rect x="1210" y="436" width="50" height="40" rx="5" ry="5" fill="#fde68a" stroke="#a16207" stroke-width="1"/>
+<text x="1235.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Emb</text>
+<rect x="1266" y="436" width="50" height="40" rx="5" ry="5" fill="#fef08a" stroke="#a16207" stroke-width="1"/>
+<text x="1291.0" y="461.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">Rr</text>
+<text x="794.0" y="515.0" font-size="12.5" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">Atlas-08</text>
+<rect x="874" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="899.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="930" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="955.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="986" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1011.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="1042" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1067.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="1098" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1123.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="1154" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1179.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="1210" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1235.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="1266" y="490" width="50" height="40" rx="5" ry="5" fill="#86efac" stroke="#15803d" stroke-width="1"/>
+<text x="1291.0" y="515.0" font-size="11.5" font-weight="700" fill="#0f172a" text-anchor="middle" style="white-space:pre">27B</text>
+<rect x="871" y="109" width="448" height="100" rx="7" ry="7" fill="none" stroke="#c2410c" stroke-width="2.2"/>
+<text x="1325.0" y="163.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">P</text>
+<rect x="871" y="217" width="448" height="100" rx="7" ry="7" fill="none" stroke="#c2410c" stroke-width="2.2"/>
+<text x="1325.0" y="271.0" font-size="11.5" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">D</text>
+<rect x="871" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="983" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="1095" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="1207" y="325" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="871" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="983" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="1095" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="1207" y="379" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="871" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="983" y="433" width="112" height="46" rx="7" ry="7" fill="none" stroke="#1d4ed8" stroke-width="2.2"/>
+<rect x="1095" y="433" width="56" height="46" rx="7" ry="7" fill="none" stroke="#6d28d9" stroke-width="2.2"/>
+<rect x="1151" y="433" width="56" height="46" rx="7" ry="7" fill="none" stroke="#6d28d9" stroke-width="2.2"/>
+<rect x="1207" y="433" width="56" height="46" rx="7" ry="7" fill="none" stroke="#a16207" stroke-width="2.2"/>
+<rect x="1263" y="433" width="56" height="46" rx="7" ry="7" fill="none" stroke="#a16207" stroke-width="2.2"/>
+<rect x="871" y="487" width="112" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<rect x="983" y="487" width="112" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<rect x="1095" y="487" width="112" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<rect x="1207" y="487" width="112" height="46" rx="7" ry="7" fill="none" stroke="#15803d" stroke-width="2.2"/>
+<text x="794.0" y="562.0" font-size="12" font-weight="400" fill="#c2410c" text-anchor="start" style="white-space:pre">DS 为 1P1D 一组跨 4 机：任一台故障整组不可用 → Agent Service 自动降级到 27B</text>
+<text x="794.0" y="584.0" font-size="12" font-weight="400" fill="#1d4ed8" text-anchor="start" style="white-space:pre">浅蓝 35B × 2：平时服务对话，评测/灰度时临时让出（相当于预发槽位）</text>
+<rect x="20" y="620" width="1460" height="352" rx="10" ry="10" fill="#fefce8" stroke="#ca8a04" stroke-width="1"/>
+<text x="34.0" y="644.0" font-size="15" font-weight="700" fill="#334155" text-anchor="start" style="white-space:pre">差异与理由</text>
+<rect x="40" y="662" width="46" height="26" rx="5" ry="5" fill="#fdba74" stroke="#94a3b8" stroke-width="1"/>
+<text x="63.0" y="680.0" font-size="11.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">DS</text>
+<text x="100.0" y="674.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">(a) DeepSeek-V4.1-Flash · Atlas-01～04 · 32 卡 · 采纳草案：1P1D PD 分离</text>
+<text x="100.0" y="694.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ P = Atlas-01/02（16 卡）· D = Atlas-03/04（16 卡）· KV 经 Mooncake 走 NPU 参数面 RoCE · PD Router 统一入口</text>
+<text x="100.0" y="712.0" font-size="11.8" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">理由：长上下文 prefill 不再打断 decode，Agent 多轮场景输出更稳；P/D 各自调参。单组无冗余，故障降级到 27B。</text>
+<rect x="40" y="722" width="46" height="26" rx="5" ry="5" fill="#93c5fd" stroke="#94a3b8" stroke-width="1"/>
+<text x="63.0" y="740.0" font-size="11.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">35B</text>
+<text x="100.0" y="734.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">(b) Qwen3.6-35B-A3B · 日常办公对话 · TP2 × 10 实例 = 20 卡</text>
+<text x="100.0" y="754.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ 保持 10 个实例：Atlas-05/06 共 8 个 + Atlas-07 上 2 个（浅色：可临时让给预发/评测）</text>
+<text x="100.0" y="772.0" font-size="11.8" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">理由：激活仅 3B，20 卡大概率富余；压测后可缩到 6～8 个，把卡让给 27B 或预发。</text>
+<rect x="40" y="782" width="46" height="26" rx="5" ry="5" fill="#ddd6fe" stroke="#94a3b8" stroke-width="1"/>
+<text x="63.0" y="800.0" font-size="11.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">OCR</text>
+<text x="100.0" y="794.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">(c) 识图 OCR · 草案用 35B VL × 2（4 卡）→ 建议专用 OCR 模型 2 卡</text>
+<text x="100.0" y="814.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ DeepSeek-OCR-2（3.4B，TP1）+ PaddleOCR-VL（0.9B，TP1），各 1 卡</text>
+<text x="100.0" y="832.0" font-size="11.8" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">理由：纯文字/表格识别专用模型更准更省；“看图理解”（截图、图表）直接走 (b)，35B 本身就是多模态。</text>
+<rect x="40" y="842" width="46" height="26" rx="5" ry="5" fill="#86efac" stroke="#94a3b8" stroke-width="1"/>
+<text x="63.0" y="860.0" font-size="11.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">27B</text>
+<text x="100.0" y="854.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">(d) Qwen3.8-27B · 简单 Agent · 草案 TP4 × 2 → 建议 TP2 × 4（同样 8 卡）</text>
+<text x="100.0" y="874.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ 官方 A2 教程就是 TP2；4 个实例吞吐更高、坏一个影响更小</text>
+<text x="100.0" y="892.0" font-size="11.8" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">理由：推理强度默认 low/medium（默认 high 会“想太多”变慢）；同时作为 (a) 故障时的降级目标。</text>
+<rect x="40" y="902" width="46" height="26" rx="5" ry="5" fill="#fde68a" stroke="#94a3b8" stroke-width="1"/>
+<text x="63.0" y="920.0" font-size="11.5" font-weight="700" fill="#1e293b" text-anchor="middle" style="white-space:pre">Emb</text>
+<text x="100.0" y="914.0" font-size="12.8" font-weight="700" fill="#1e293b" text-anchor="start" style="white-space:pre">新增：Embedding + Reranker · 各 1 卡（Atlas-07）</text>
+<text x="100.0" y="934.0" font-size="12.2" font-weight="400" fill="#1e293b" text-anchor="start" style="white-space:pre">→ 资料库语义检索、二期知识库 RAG 必需</text>
+<text x="100.0" y="952.0" font-size="11.8" font-weight="400" fill="#64748b" text-anchor="start" style="white-space:pre">理由：不与其他模型共卡（同卡多实例在 910B 上有图捕获资源冲突问题）。</text>
+</svg>

@@ -1,0 +1,303 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1130" viewBox="0 0 1600 1130" font-family="'PingFang SC','Microsoft YaHei','Noto Sans CJK SC','Source Han Sans SC',sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="arrB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <marker id="arrO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#c2410c"/>
+    </marker>
+    <style>
+      .band{fill:#f8fafc;stroke:#cbd5e1;stroke-width:1}
+      .bandlbl{font-size:15px;font-weight:700;fill:#334155}
+      .box{rx:8;ry:8;stroke-width:1.5}
+      .t{font-size:16px;font-weight:700;fill:#0f172a}
+      .s{font-size:12.5px;fill:#334155}
+      .xs{font-size:11.5px;fill:#475569}
+      .own{fill:#eef2ff;stroke:#4f46e5}
+      .oss{fill:#ecfeff;stroke:#0891b2}
+      .npu{fill:#fff7ed;stroke:#ea580c}
+      .sto{fill:#f0fdf4;stroke:#16a34a}
+      .data{fill:#f5f3ff;stroke:#7c3aed}
+      .ops{fill:#f1f5f9;stroke:#64748b}
+      .usr{fill:#ffffff;stroke:#334155}
+      .ln{stroke:#475569;stroke-width:1.6;fill:none}
+      .lnB{stroke:#2563eb;stroke-width:2;fill:none;stroke-dasharray:6 4}
+      .lnO{stroke:#c2410c;stroke-width:1.6;fill:none;stroke-dasharray:4 3}
+      .lbl{font-size:11.5px;fill:#1e293b}
+      .lblB{font-size:12px;fill:#1d4ed8;font-weight:700}
+    </style>
+  </defs>
+
+  <rect width="1600" height="1130" fill="#ffffff"/>
+  <text x="30" y="42" font-size="26" font-weight="700" fill="#0f172a">AILab 智算平台 · 总体架构</text>
+  <text x="430" y="42" font-size="14" fill="#64748b">8 × Atlas 800T A2（64 × 昇腾 910B）· 3 × TaiShan 2280（鲲鹏）· OceanStor Pacific 9950</text>
+  <!-- legend -->
+  <rect x="1100" y="24" width="16" height="12" class="own" stroke-width="1.5"/><text x="1122" y="35" class="xs">自建</text>
+  <rect x="1165" y="24" width="16" height="12" class="oss" stroke-width="1.5"/><text x="1187" y="35" class="xs">开源组件</text>
+  <rect x="1250" y="24" width="16" height="12" class="npu" stroke-width="1.5"/><text x="1272" y="35" class="xs">智算(NPU)</text>
+  <rect x="1345" y="24" width="16" height="12" class="data" stroke-width="1.5"/><text x="1367" y="35" class="xs">数据</text>
+  <rect x="1410" y="24" width="16" height="12" class="sto" stroke-width="1.5"/><text x="1432" y="35" class="xs">存储</text>
+
+  <!-- ============ Layer 1: Users ============ -->
+  <rect x="20" y="62" width="1340" height="88" class="band" rx="10"/>
+  <text x="34" y="112" class="bandlbl">用户层</text>
+  <rect x="220" y="76" width="520" height="62" class="box usr"/>
+  <text x="480" y="102" text-anchor="middle" class="t">浏览器 · Web Portal</text>
+  <text x="480" y="124" text-anchor="middle" class="s">💬 对话模式（无沙箱）　🛠 工作模式（Agent Computer）　📁 资料库　📊 用量　⚙ 管理台</text>
+  <rect x="800" y="76" width="400" height="62" class="box usr"/>
+  <text x="1000" y="102" text-anchor="middle" class="t">开发者 / 业务系统（二期）</text>
+  <text x="1000" y="124" text-anchor="middle" class="s">OpenAI 兼容 API · 个人 API Key · 配额</text>
+
+  <!-- ============ Layer 2: Edge & Identity ============ -->
+  <rect x="20" y="164" width="1340" height="92" class="band" rx="10"/>
+  <text x="34" y="208" class="bandlbl">接入与身份</text>
+  <rect x="140" y="176" width="800" height="68" class="box oss"/>
+  <text x="540" y="202" text-anchor="middle" class="t">Higress 网关（2 副本 · VIP）</text>
+  <text x="540" y="225" text-anchor="middle" class="s">HTTPS 入口（TLS · 转发，不鉴权用户）｜ 模型网关：GPUStack 写入模型路由 · Key 鉴权 · 统计；我们加按人 Token 限流</text>
+  <rect x="980" y="176" width="360" height="68" class="box oss"/>
+  <text x="1160" y="202" text-anchor="middle" class="t">Keycloak（2 副本）</text>
+  <text x="1160" y="222" text-anchor="middle" class="s">OIDC SSO · 对接 AD/LDAP · MFA</text>
+  <text x="1160" y="239" text-anchor="middle" class="xs">Portal（BFF 会话）与运维系统统一登录</text>
+
+  <!-- ============ Layer 3: Application ============ -->
+  <rect x="20" y="270" width="1340" height="150" class="band" rx="10"/>
+  <text x="34" y="350" class="bandlbl">应用层</text>
+  <text x="34" y="370" class="xs">（自建）</text>
+
+  <rect x="120" y="284" width="230" height="122" class="box own"/>
+  <text x="235" y="310" text-anchor="middle" class="t">Web Portal</text>
+  <text x="235" y="334" text-anchor="middle" class="s">Next.js + React</text>
+  <text x="235" y="354" text-anchor="middle" class="s">assistant-ui · shadcn/ui</text>
+  <text x="235" y="374" text-anchor="middle" class="s">SSE 流式 · 产出预览</text>
+
+  <rect x="364" y="284" width="230" height="122" class="box own"/>
+  <text x="479" y="310" text-anchor="middle" class="t">Platform API</text>
+  <text x="479" y="334" text-anchor="middle" class="s">用户/部门/RBAC · 会话</text>
+  <text x="479" y="354" text-anchor="middle" class="s">资料库 · 配额 · 审计</text>
+  <text x="479" y="374" text-anchor="middle" class="s">Token 账本（业务计量）</text>
+  <text x="479" y="394" text-anchor="middle" class="xs" style="font-weight:700;fill:#4f46e5">权限唯一判定点 · 对内 /internal/*</text>
+
+  <rect x="608" y="284" width="250" height="122" class="box own"/>
+  <text x="733" y="310" text-anchor="middle" class="t">Agent Service</text>
+  <text x="733" y="334" text-anchor="middle" class="s">LangGraph + deepagents</text>
+  <text x="733" y="354" text-anchor="middle" class="s">Chat / Work Agent · Skills</text>
+  <text x="733" y="374" text-anchor="middle" class="s">上下文压缩 · 断点恢复</text>
+  <text x="733" y="394" text-anchor="middle" class="xs">Agent 循环在沙箱外</text>
+
+  <rect x="872" y="284" width="230" height="122" class="box own"/>
+  <text x="987" y="310" text-anchor="middle" class="t">Sandbox Broker</text>
+  <text x="987" y="334" text-anchor="middle" class="s">准入：全局/部门/用户</text>
+  <text x="987" y="354" text-anchor="middle" class="s">租约 · 闲置 15 min 回收</text>
+  <text x="987" y="374" text-anchor="middle" class="s">文件进出（资料库⇄沙箱）</text>
+  <text x="987" y="394" text-anchor="middle" class="xs">只搬运字节 · 归属由 Platform API 校验</text>
+
+  <rect x="1116" y="284" width="224" height="122" class="box own"/>
+  <text x="1228" y="310" text-anchor="middle" class="t">文件处理 Worker</text>
+  <text x="1228" y="334" text-anchor="middle" class="s">上传解析（Chat）</text>
+  <text x="1228" y="354" text-anchor="middle" class="s">Office→PDF 预览</text>
+  <text x="1228" y="374" text-anchor="middle" class="s">缩略图</text>
+
+  <!-- ============ Layer 4: Resource pools ============ -->
+  <!-- General compute -->
+  <rect x="20" y="436" width="660" height="370" class="band" rx="10" style="fill:#f0f9ff;stroke:#0891b2"/>
+  <text x="36" y="462" class="bandlbl">通算资源池 · 3×TaiShan</text>
+  <text x="330" y="462" class="xs">Kubernetes 1.34 · 鲲鹏 ARM64 · 3 × 128 核</text>
+
+  <rect x="40" y="478" width="300" height="80" class="box oss"/>
+  <text x="190" y="503" text-anchor="middle" class="t">OpenSandbox</text>
+  <text x="190" y="525" text-anchor="middle" class="s">Server · BatchSandbox/Pool 控制器</text>
+  <text x="190" y="545" text-anchor="middle" class="s">预热池 · 过期回收 · execd · 出网控制</text>
+
+  <rect x="360" y="478" width="300" height="80" class="box data"/>
+  <text x="510" y="503" text-anchor="middle" class="t">平台数据</text>
+  <text x="510" y="525" text-anchor="middle" class="s">PostgreSQL（CNPG 主备，本地 NVMe）</text>
+  <text x="510" y="545" text-anchor="middle" class="s">Valkey（事件流 · 限流计数 · 锁）</text>
+
+  <rect x="40" y="574" width="620" height="170" rx="10" fill="#ffffff" stroke="#0891b2" stroke-dasharray="5 4" stroke-width="1.5"/>
+  <text x="56" y="598" class="t">Kata Containers microVM 沙箱池</text>
+  <text x="330" y="598" class="xs">namespace: sandbox · 默认禁止出网 · 零密钥 · 非 root</text>
+  <!-- sandboxes -->
+  <g>
+    <rect x="58" y="612" width="132" height="78" rx="6" fill="#ecfeff" stroke="#0891b2"/>
+    <text x="124" y="634" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">沙箱（会话 A）</text>
+    <text x="124" y="654" text-anchor="middle" class="xs">execd · Python · Node</text>
+    <text x="124" y="672" text-anchor="middle" class="xs">LibreOffice · Skills</text>
+    <rect x="202" y="612" width="132" height="78" rx="6" fill="#ecfeff" stroke="#0891b2"/>
+    <text x="268" y="634" text-anchor="middle" font-size="13" font-weight="700" fill="#0f172a">沙箱（会话 B）</text>
+    <text x="268" y="654" text-anchor="middle" class="xs">2 vCPU · 2 GiB</text>
+    <text x="268" y="672" text-anchor="middle" class="xs">/workspace 临时</text>
+    <rect x="346" y="612" width="132" height="78" rx="6" fill="#ecfeff" stroke="#0891b2"/>
+    <text x="412" y="654" text-anchor="middle" font-size="20" fill="#0891b2">· · ·</text>
+    <rect x="490" y="612" width="152" height="78" rx="6" fill="#f8fafc" stroke="#94a3b8" stroke-dasharray="4 3"/>
+    <text x="566" y="640" text-anchor="middle" font-size="13" font-weight="700" fill="#334155">预热池</text>
+    <text x="566" y="660" text-anchor="middle" class="xs">5～15 个就绪沙箱</text>
+    <text x="566" y="678" text-anchor="middle" class="xs">领取 ≤1s</text>
+  </g>
+  <text x="58" y="716" class="s">CPU 超分约 1:3～1:4（request 0.25 / limit 2）· 内存不超分 · Kata 开销 250m + 320Mi/个</text>
+  <text x="58" y="736" class="s">约 535 个并发沙箱（512 GB/台）· 懒创建 · 闲置 15 min 销毁 · 最长 4 h</text>
+
+  <text x="40" y="772" class="xs">另有：平台服务（Portal/API/Agent/Broker/Keycloak/Higress）≥2 副本跨节点，高优先级；</text>
+  <text x="40" y="790" class="xs">etcd 3 成员 = TaiShan-01/02/03 各一个（控制面三台同时是工作节点）</text>
+
+  <!-- AI compute -->
+  <rect x="700" y="436" width="660" height="370" class="band" rx="10" style="fill:#fffbeb;stroke:#ea580c"/>
+  <text x="716" y="462" class="bandlbl">智算资源池 · GPUStack 2.x · 8 × Atlas 800T A2（64 × 910B 64GB）</text>
+
+  <rect x="720" y="478" width="620" height="62" class="box oss"/>
+  <text x="1030" y="502" text-anchor="middle" class="t">GPUStack Server（单副本，K8s 自动重调度）</text>
+  <text x="1030" y="524" text-anchor="middle" class="s">模型目录 · 部署/副本/调度 · 往 Higress 写模型路由（incluster）· 外部 PG</text>
+
+  <text x="720" y="562" class="s" font-weight="700">推理引擎：vLLM + vllm-ascend 插件（W8A8 · 前缀缓存 · 投机解码 · tool-call parser）</text>
+
+  <!-- slots -->
+  <rect x="720" y="574" width="300" height="80" class="box npu"/>
+  <text x="732" y="597" class="t">复杂 Agent / Coding</text>
+  <text x="732" y="618" class="s">DeepSeek-V4.1-Flash · 32 NPU</text>
+  <text x="732" y="638" class="xs">1P1D：P 01-02 · D 03-04 · ailab-agent-pro</text>
+
+  <rect x="1040" y="574" width="300" height="80" class="box npu"/>
+  <text x="1052" y="597" class="t">日常办公对话 + 看图</text>
+  <text x="1052" y="618" class="s">Qwen3.6-35B-A3B · TP2 × 10 · 20 NPU</text>
+  <text x="1052" y="638" class="xs">Atlas-05/06/07 · ailab-chat</text>
+
+  <rect x="720" y="664" width="196" height="80" class="box npu"/>
+  <text x="732" y="687" class="t">简单 Agent</text>
+  <text x="732" y="708" class="s">Qwen3.8-27B · TP2×4</text>
+  <text x="732" y="728" class="xs">Atlas-08 · ailab-agent</text>
+
+  <rect x="928" y="664" width="200" height="80" class="box npu"/>
+  <text x="940" y="687" class="t">OCR</text>
+  <text x="940" y="708" class="s" style="font-size:12px">DS-OCR-2 / PaddleOCR-VL</text>
+  <text x="940" y="728" class="xs">Atlas-07 · 2 NPU · ailab-ocr</text>
+
+  <rect x="1140" y="664" width="200" height="80" class="box npu"/>
+  <text x="1152" y="687" class="t">向量 / 重排</text>
+  <text x="1152" y="708" class="s">Qwen3-Embedding / Reranker</text>
+  <text x="1152" y="728" class="xs">Atlas-07 · 2 NPU</text>
+
+  <text x="720" y="772" class="xs">原则：整卡分配 · 别名解耦 · 降级链 agent-pro→agent→chat（Agent Service） · 浅色 35B×2 兼作预发槽位</text>
+  <text x="720" y="790" class="xs">硬件监控：npu-exporter（ECC · HCCS/RoCE 链路 · 温度 · 功耗）</text>
+
+  <!-- ============ Layer 5: Storage ============ -->
+  <rect x="20" y="822" width="1340" height="132" class="band" rx="10" style="fill:#f0fdf4;stroke:#16a34a"/>
+  <text x="36" y="848" class="bandlbl">存储层 · Pacific 9950（≈99 TB）</text>
+  <rect x="40" y="862" width="300" height="78" class="box sto"/>
+  <text x="190" y="886" text-anchor="middle" class="t">NFS · /models（15 TB）</text>
+  <text x="190" y="907" text-anchor="middle" class="s">模型权重 repo/staging/archive</text>
+  <text x="190" y="926" text-anchor="middle" class="xs">Atlas 只读挂载 · 各节点路径一致</text>
+
+  <rect x="360" y="862" width="320" height="78" class="box sto"/>
+  <text x="520" y="886" text-anchor="middle" class="t">S3 · 用户资料库（25 TB）</text>
+  <text x="520" y="907" text-anchor="middle" class="s">每用户 20 GB · 版本管理 · 回收站</text>
+  <text x="520" y="926" text-anchor="middle" class="xs">输入 + 最终产出永久；中间文件不入库</text>
+
+  <rect x="700" y="862" width="320" height="78" class="box sto"/>
+  <text x="860" y="886" text-anchor="middle" class="t">S3 · 平台对象（≈11 TB）</text>
+  <text x="860" y="907" text-anchor="middle" class="s">Harbor 镜像 · Loki 日志 · 审计归档</text>
+  <text x="860" y="926" text-anchor="middle" class="xs">PG 备份（WAL + 全量）</text>
+
+  <rect x="1040" y="862" width="300" height="78" class="box" fill="#ffffff" stroke="#94a3b8" stroke-dasharray="5 3" stroke-width="1.5"/>
+  <text x="1190" y="886" text-anchor="middle" class="t">余量 ≥ 25%</text>
+  <text x="1190" y="907" text-anchor="middle" class="s">RAG 预留 · 扩容</text>
+  <text x="1190" y="926" text-anchor="middle" class="xs">⚠ 需另配异地/异介质备份</text>
+
+  <!-- ============ Right sidebar: Ops & Security ============ -->
+  <rect x="1380" y="62" width="200" height="892" rx="10" class="ops" stroke-width="1"/>
+  <text x="1480" y="90" text-anchor="middle" class="bandlbl">运维与安全</text>
+  <g font-size="12.5" fill="#1e293b">
+    <rect x="1394" y="104" width="172" height="108" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="126" font-weight="700">可观测性</text>
+    <text x="1406" y="148">VictoriaMetrics/Prometheus</text>
+    <text x="1406" y="166">Grafana · Alertmanager</text>
+    <text x="1406" y="184">Loki · OpenTelemetry</text>
+    <text x="1406" y="202">npu-exporter</text>
+
+    <rect x="1394" y="224" width="172" height="90" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="246" font-weight="700">交付与供应链</text>
+    <text x="1406" y="268">GitOps（Argo CD）</text>
+    <text x="1406" y="286">Harbor · cosign · Trivy</text>
+    <text x="1406" y="304">内网 PyPI/npm 镜像</text>
+
+    <rect x="1394" y="326" width="172" height="146" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="348" font-weight="700">安全</text>
+    <text x="1406" y="370">Kata 内核级隔离</text>
+    <text x="1406" y="388">沙箱零密钥 · 默认禁出网</text>
+    <text x="1406" y="406">NetworkPolicy 分区</text>
+    <text x="1406" y="424">RBAC + 数据归属校验</text>
+    <text x="1406" y="442">模型全部本地 · 数据不出域</text>
+    <text x="1406" y="460">全链路审计</text>
+
+    <rect x="1394" y="484" width="172" height="128" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="506" font-weight="700">高可用</text>
+    <text x="1406" y="528">etcd 3 成员（3 台通算）</text>
+    <text x="1406" y="546">平台服务 ≥2 副本</text>
+    <text x="1406" y="564">PG 主备自动切换</text>
+    <text x="1406" y="582">模型降级（Agent 侧）</text>
+    <text x="1406" y="600">目标可用性 99.5%</text>
+
+    <rect x="1394" y="624" width="172" height="146" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="646" font-weight="700">计量与配额</text>
+    <text x="1406" y="668">业务账本：平台（用户/</text>
+    <text x="1406" y="686">部门/会话/Run/模型）</text>
+    <text x="1406" y="704">流量保护：网关按人 TPM</text>
+    <text x="1406" y="722">额度：日/月加权 Token</text>
+    <text x="1406" y="740">并发：Run 2 · 沙箱 1</text>
+    <text x="1406" y="758">资料库 20 GB</text>
+
+    <rect x="1394" y="782" width="172" height="160" rx="6" fill="#fff" stroke="#94a3b8"/>
+    <text x="1406" y="804" font-weight="700">备份</text>
+    <text x="1406" y="826">PG：WAL 持续归档</text>
+    <text x="1406" y="844">RPO ≤ 5 min</text>
+    <text x="1406" y="862">资料库：S3 多版本</text>
+    <text x="1406" y="880">配置：Git</text>
+    <text x="1406" y="898">etcd：每日快照</text>
+    <text x="1406" y="916" fill="#c2410c">异地备份：待落实</text>
+  </g>
+
+  <!-- ============ Arrows ============ -->
+  <!-- users -> higress -->
+  <path d="M480,138 L480,174" class="ln" marker-end="url(#arr)"/>
+  <path d="M900,138 L900,174" class="ln" marker-end="url(#arr)"/>
+  <!-- higress -> portal / api -->
+  <path d="M235,244 L235,282" class="ln" marker-end="url(#arr)"/>
+  <path d="M479,244 L479,282" class="ln" marker-end="url(#arr)"/>
+  <!-- portal OIDC -> keycloak -->
+  <!-- api -> agent -> broker -->
+  <path d="M594,345 L606,345" class="ln" marker-end="url(#arr)"/>
+  <path d="M858,345 L870,345" class="ln" marker-end="url(#arr)"/>
+  <!-- broker -> opensandbox -->
+  <path d="M987,406 L987,424 L300,424 L300,476" class="ln" marker-end="url(#arr)"/>
+  <text x="740" y="419" class="lbl">acquire / renew / release</text>
+  <!-- agent -> sandbox exec -->
+  <path d="M668,406 L668,620 L662,620" class="ln" marker-end="url(#arr)" />
+  <text x="664" y="569" text-anchor="end" class="lbl">exec / 文件</text>
+  <!-- agent -> higress (LLM) -->
+  <path d="M790,284 L790,246" class="lnB" marker-end="url(#arrB)"/>
+  <text x="798" y="270" class="lblB">LLM 调用</text>
+  <!-- higress -> gpustack (inference) -->
+  <path d="M920,244 L920,262 L1368,262 L1368,614 L1342,614" class="lnB" marker-end="url(#arrB)"/>
+  <text x="1150" y="256" class="lblB">推理：Higress → Worker → vLLM</text>
+  <!-- api -> pg -->
+  <path d="M440,406 L440,432 L640,432 L640,476" class="ln" marker-end="url(#arr)"/>
+  <!-- api/broker -> S3 library -->
+  <path d="M370,406 L370,416 L30,416 L30,960 L520,960 L520,942" class="ln" marker-end="url(#arr)"/>
+  <text x="36" y="976" class="lbl">资料库读写（Platform API / Broker，预签名直传）</text>
+  <!-- atlas -> nfs -->
+  <path d="M1030,806 L1030,814 L300,814 L300,860" class="lnO" marker-end="url(#arrO)"/>
+  <text x="310" y="842" class="lbl" fill="#c2410c">NFS 只读加载权重</text>
+
+  <!-- ============ Principles footer ============ -->
+  <rect x="20" y="990" width="1560" height="120" rx="10" fill="#fefce8" stroke="#ca8a04"/>
+  <text x="36" y="1018" font-size="15" font-weight="700" fill="#713f12">设计原则</text>
+  <g font-size="13.5" fill="#422006">
+    <text x="36" y="1044">① 两个资源池解耦：沙箱跑在鲲鹏、不占 NPU，经网关调用模型</text>
+    <text x="36" y="1068">② Agent 循环在沙箱外：沙箱只是“手”，零密钥、默认禁止出网</text>
+    <text x="36" y="1092">③ 会话永久、沙箱即用即弃：最终产出每轮归档到资料库，中间文件随沙箱销毁</text>
+    <text x="800" y="1044">④ 核心业务自建（用户/配额/资料库/Agent），基础设施全开源（Apache/MIT）</text>
+    <text x="800" y="1068">⑤ 生产优先：版本锁定、灰度升级，实验特性（如沙箱暂停/恢复）不进关键路径</text>
+    <text x="800" y="1092">⑥ 业务计量在平台（精确到会话），流量保护在网关（限流/指标）</text>
+  </g>
+</svg>
