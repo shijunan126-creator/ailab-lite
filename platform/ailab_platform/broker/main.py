@@ -10,11 +10,12 @@ from fastapi import APIRouter, Body, Depends, FastAPI, HTTPException, Query, Res
 from fastapi.responses import JSONResponse
 
 from ..config import settings
-from ..deps import metrics_auth, service_auth
+from ..deps import metrics_auth
 from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
+from ..service_auth import require_scope
 from .service import ArtifactRejected, CapacityError, LeaseError, LeaseManager
 
 setup_logging("broker")
@@ -32,7 +33,7 @@ def get_manager() -> LeaseManager:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    settings.validate_secrets()
+    settings.validate_secrets("broker")
     settings.ensure_dirs()
     manager = get_manager()
     register_once("broker-state", BrokerStateCollector(get_manager))
@@ -47,10 +48,10 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware, service="broker")
-router = APIRouter(prefix="/internal", tags=["leases"], dependencies=[Depends(service_auth)])
+router = APIRouter(prefix="/internal", tags=["leases"])
 
 
-@router.post("/leases", response_model=LeaseOut, status_code=status.HTTP_201_CREATED)
+@router.post("/leases", response_model=LeaseOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_scope("sandbox:use"))])
 def create_lease(body: LeaseCreate) -> dict:
     manager = get_manager()
     try:
@@ -74,12 +75,12 @@ def create_lease(body: LeaseCreate) -> dict:
     }
 
 
-@router.get("/leases")
+@router.get("/leases", dependencies=[Depends(require_scope("sandbox:inspect"))])
 def list_leases() -> dict:
     return {"leases": get_manager().active_leases()}
 
 
-@router.get("/leases/{lease_id}")
+@router.get("/leases/{lease_id}", dependencies=[Depends(require_scope("sandbox:use"))])
 def get_lease(lease_id: str) -> dict:
     try:
         return get_manager().get(lease_id)
@@ -87,7 +88,7 @@ def get_lease(lease_id: str) -> dict:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
-@router.post("/leases/{lease_id}/exec", response_model=ExecOut)
+@router.post("/leases/{lease_id}/exec", response_model=ExecOut, dependencies=[Depends(require_scope("sandbox:use"))])
 def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     try:
         result = get_manager().exec(lease_id, body.cmd, body.timeout_seconds)
@@ -98,7 +99,7 @@ def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     return asdict(result)
 
 
-@router.put("/leases/{lease_id}/files")
+@router.put("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
 def put_file(
     lease_id: str,
     path: str = Query(..., min_length=1),
@@ -113,7 +114,7 @@ def put_file(
     return {"ok": True, "path": path, "bytes": len(payload)}
 
 
-@router.get("/leases/{lease_id}/files/list")
+@router.get("/leases/{lease_id}/files/list", dependencies=[Depends(require_scope("sandbox:use"))])
 def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
     try:
         return {"files": get_manager().list_files(lease_id, path)}
@@ -123,7 +124,7 @@ def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.get("/leases/{lease_id}/files")
+@router.get("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
 def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     try:
         data = get_manager().get_file(lease_id, path)
@@ -134,7 +135,7 @@ def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     return Response(content=data, media_type="application/octet-stream")
 
 
-@router.post("/leases/{lease_id}/commit", response_model=CommitOut)
+@router.post("/leases/{lease_id}/commit", response_model=CommitOut, dependencies=[Depends(require_scope("sandbox:use"))])
 def commit_artifact(lease_id: str, body: CommitIn) -> dict:
     try:
         return get_manager().commit(lease_id, body.path, body.filename, body.role)
@@ -148,7 +149,7 @@ def commit_artifact(lease_id: str, body: CommitIn) -> dict:
         raise HTTPException(status_code=502, detail=f"artifact commit failed: {exc}") from exc
 
 
-@router.post("/leases/{lease_id}/previews")
+@router.post("/leases/{lease_id}/previews", dependencies=[Depends(require_scope("sandbox:use"))])
 def refresh_previews(lease_id: str) -> dict:
     try:
         return {"previews": get_manager().refresh_previews(lease_id)}
@@ -158,7 +159,7 @@ def refresh_previews(lease_id: str) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.post("/leases/{lease_id}/snapshot")
+@router.post("/leases/{lease_id}/snapshot", dependencies=[Depends(require_scope("sandbox:use"))])
 def snapshot_workspace(lease_id: str) -> dict:
     try:
         return get_manager().snapshot(lease_id)
@@ -170,7 +171,7 @@ def snapshot_workspace(lease_id: str) -> dict:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
-@router.delete("/leases/{lease_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/leases/{lease_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("sandbox:use"))])
 def release_lease(lease_id: str) -> Response:
     get_manager().release(lease_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

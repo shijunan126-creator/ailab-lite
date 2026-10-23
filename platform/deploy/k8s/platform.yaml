@@ -19,6 +19,11 @@ metadata:
   namespace: platform
 data:
   AILAB_ENV: k3s
+  AILAB_PROFILE: dev  # compatibility overlay; shared deployments must select secure + real scanner
+  AILAB_SERVICE_TOKEN: ""
+  AILAB_DEV_TOKEN: ""
+  AILAB_OSB_API_KEY: ""
+  AILAB_TRUSTED_PROXIES: '[]'  # configure the actual Portal/reverse-proxy CIDRs
   AILAB_ADMIN_USERNAME: admin  # the first Portal account; its password is AILAB_ADMIN_PASSWORD in platform-secrets
   AILAB_REDIS_URL: redis://platform-redis:6379/0
   AILAB_DATABASE_URL: sqlite:////data/platform.db
@@ -102,11 +107,24 @@ spec:
         - name: api
           image: ailab-platform:lite
           imagePullPolicy: Never
-          command: ["uvicorn", "ailab_platform.api.main:app", "--host", "0.0.0.0", "--port", "8080"]
+          command: ["uvicorn", "ailab_platform.api.main:app", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8080"]
           envFrom:
             - configMapRef: {name: platform-config}
             - configMapRef: {name: platform-auth, optional: true}  # AILAB_REGISTRATION, set by deploy.sh --registration
-            - secretRef: {name: platform-secrets}
+            - secretRef: {name: platform-api-identity}
+            - secretRef: {name: platform-service-verifiers}
+            - secretRef: {name: platform-model-secrets}
+          env:
+            - name: AILAB_INVITE_CODE
+              valueFrom:
+                secretKeyRef: {name: platform-secrets, key: AILAB_INVITE_CODE, optional: true}
+            - name: AILAB_DEV_TOKEN
+              valueFrom:
+                secretKeyRef: {name: platform-secrets, key: AILAB_DEV_TOKEN, optional: true}
+            - name: AILAB_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: platform-secrets, key: AILAB_ADMIN_PASSWORD, optional: true}
+            - {name: AILAB_SERVICE_NAME, value: api}
           ports: [{containerPort: 8080}]
           volumeMounts:
             - {name: data, mountPath: /data}
@@ -171,15 +189,22 @@ spec:
         - name: broker
           image: ailab-platform:lite
           imagePullPolicy: Never
-          command: ["uvicorn", "ailab_platform.broker.main:app", "--host", "0.0.0.0", "--port", "8081"]
+          command: ["uvicorn", "ailab_platform.broker.main:app", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8081"]
           envFrom:
             - configMapRef: {name: platform-config}
             - configMapRef: {name: platform-auth, optional: true}  # AILAB_REGISTRATION, set by deploy.sh --registration
-            - secretRef: {name: platform-secrets}
+            - secretRef: {name: platform-broker-identity}
+            - secretRef: {name: platform-service-verifiers}
           env:
+            - name: AILAB_OSB_API_KEY
+              valueFrom:
+                secretKeyRef: {name: platform-secrets, key: AILAB_OSB_API_KEY, optional: true}
+            - {name: AILAB_SERVICE_NAME, value: broker}
             - name: AILAB_API_BASE_URL
               value: http://127.0.0.1:30080
-          volumeMounts: [{name: data, mountPath: /data}]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: models, mountPath: /etc/ailab, readOnly: true}
           resources:
             requests: {cpu: 100m, memory: 128Mi}
             limits: {cpu: 500m, memory: 384Mi}
@@ -189,6 +214,8 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 10
       volumes:
+        - name: models
+          configMap: {name: platform-models}
         - name: data
           persistentVolumeClaim: {claimName: platform-data}
 ---
@@ -209,12 +236,15 @@ spec:
         - name: agent
           image: ailab-platform:lite
           imagePullPolicy: Never
-          command: ["uvicorn", "ailab_platform.agent.main:app", "--host", "0.0.0.0", "--port", "8082"]
+          command: ["uvicorn", "ailab_platform.agent.main:app", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8082"]
           envFrom:
             - configMapRef: {name: platform-config}
             - configMapRef: {name: platform-auth, optional: true}  # AILAB_REGISTRATION, set by deploy.sh --registration
-            - secretRef: {name: platform-secrets}
+            - secretRef: {name: platform-agent-identity}
+            - secretRef: {name: platform-service-verifiers}
+            - secretRef: {name: platform-model-secrets}
           env:
+            - {name: AILAB_SERVICE_NAME, value: agent}
             - name: HOST_IP
               valueFrom:
                 fieldRef: {fieldPath: status.hostIP}
@@ -262,16 +292,20 @@ spec:
         - name: worker
           image: ailab-platform:lite
           imagePullPolicy: Never
-          command: ["uvicorn", "ailab_platform.worker.main:app", "--host", "0.0.0.0", "--port", "8083"]
+          command: ["uvicorn", "ailab_platform.worker.main:app", "--no-proxy-headers", "--host", "0.0.0.0", "--port", "8083"]
           envFrom:
             - configMapRef: {name: platform-config}
             - configMapRef: {name: platform-auth, optional: true}  # AILAB_REGISTRATION, set by deploy.sh --registration
-            - secretRef: {name: platform-secrets}
+            - secretRef: {name: platform-worker-identity}
+            - secretRef: {name: platform-service-verifiers}
           env:
+            - {name: AILAB_SERVICE_NAME, value: worker}
             - name: AILAB_API_BASE_URL
               value: http://platform-api:8080
           ports: [{containerPort: 8083}]
-          volumeMounts: [{name: data, mountPath: /data}]
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: models, mountPath: /etc/ailab, readOnly: true}
           resources:
             requests: {cpu: 50m, memory: 96Mi}
             limits: {cpu: 300m, memory: 256Mi}
@@ -281,6 +315,8 @@ spec:
             periodSeconds: 10
             timeoutSeconds: 10
       volumes:
+        - name: models
+          configMap: {name: platform-models}
         - name: data
           persistentVolumeClaim: {claimName: platform-data}
 ---

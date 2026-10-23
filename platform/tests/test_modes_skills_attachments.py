@@ -63,13 +63,13 @@ class _ApiClient:
     def __init__(self, c: TestClient) -> None:
         self.c = c
 
-    def get_file(self, file_id):
+    def get_file(self, file_id, **context):
         return self.c.get(f"/internal/files/{file_id}", headers=SERVICE).json()
 
-    def get_file_bytes(self, file_id):
+    def get_file_bytes(self, file_id, **context):
         return self.c.get(f"/internal/files/{file_id}/content", headers=SERVICE).content
 
-    def patch_file(self, file_id, meta=None, status=None):
+    def patch_file(self, file_id, meta=None, status=None, **context):
         return self.c.patch(f"/internal/files/{file_id}", headers=SERVICE, json={"meta": meta, "status": status}).json()
 
 

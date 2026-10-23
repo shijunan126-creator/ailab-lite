@@ -87,3 +87,15 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 T03/T05 严格配置与服务身份
+
+- `AILAB_PROFILE` 优先；旧 env：test→test，dev/smoke/k3s→dev，其余→secure。k3s 清单保留显式 dev 兼容，不能据此宣称已安全上线。secure 同一启动门禁检查 mock、stub、默认秘密、共享令牌、身份、注册和外部模型；ClamAV 仅定义 scanner_backend，实现在 C 分支。
+- 不给被调方分发调用方原始令牌：每进程只挂 `platform-{service}-identity`，共同的 `AILAB_SERVICE_CREDENTIALS` 仅含 sha256 verifier。Secret 脚本重跑保留令牌；读取身份失败不能当作不存在后重建。旧共享令牌仅 dev/test 警告兼容，真实 E2E 已禁用它。模型 Secret 仅 API/Agent，OSB key 仅 Broker。
+- Uvicorn 默认会先解释 XFF 并改写 peer；只改登录 handler 不够。所有仓库启动入口 `--no-proxy-headers`，应用按 `trusted_proxies` 从右向左验证。默认不信代理；部署应填实际 Portal/反代 CIDR。
+- 内部 httpx 必须 `trust_env=False`：本机环境代理曾截走内部请求，导致 E2E 个人技能 Run `httpx.ReadError`。关闭后完整 E2E 通过；模型等外部请求不在此修改范围。
+- FastAPI 0.156 的 `include_router` 是延迟挂载，顶层 app.routes 只遍历 APIRoute 会漏掉全部业务路由。scope 巡检须读 effective_route_contexts；新增/撤掉 scope 的测试覆盖 included prefix。
+- Agent/Broker 文件请求必带 run_id；仅同用户、活跃 Run、附件/同会话材料/产物，个人技能为 API 明确列出的系统附件。Broker service.py 与 Agent loop.py 只改凭据和上下文传递。Worker 的 READY 派生任务带 job=thumbnail/preview，不能写 scan/status；已处理/删除文件的普通重投须 ACK，认证失败须重试，包括 poison 分支。
+- 并行合并：A 的 reserve 用 `Depends(require_scope("usage:reserve"))`，settle 用 usage:write；C 的 READY 派生回写用 files:preview_write 并保留 job/状态/字段限制，Worker→Broker render 仅 sandbox:render，不能开放 sandbox:use；通用调用可用 `PlatformClient(service="worker")` / `AsyncBrokerClient(service="worker")`，不要加载其他服务令牌。scope 表和完整设置见 ADR 0002。
+- 无迁移。超出文件 ownership 的最小改动：api/main.py（启动门禁身份、日志脱敏）、agent/loop.py、broker/service.py、worker/pipeline.py（调用凭据/上下文）、queue.py（拒绝未知工厂值）、dev_up.sh（禁止 Uvicorn 预处理 XFF）、tests/E2E（新契约）及本文/ADR/status-matrix。
+- 最终验证（GNU PATH；仅 Redis 16420、PG16 15420 的一次性库）：SQLite+Redis 424 passed / 8 PG 项 skipped（49.43s）；PG+Redis 432 passed（55.05s）；四服务独立身份、共享令牌禁用的 E2E 34 passed（81.37s，含 Portal tests/build）。Ruff check/format、ShellCheck warning、bash syntax、lock_deps、diff check 通过。基线配置替换回归 18 failed，移除 XFF/Run 文件绑定 2 failed，恢复后绿；路由无 scope 的 direct/included 测试均被 guard 拒绝。固定 5 verifier 的认证微基准 100,000 次约 3.04 µs/次；双库新文件绑定查询 EXPLAIN 使用既有 Run 索引，无新增迁移/后台任务。临时服务验收后关闭；未推送。真实 k3s、TokenReview/TLS、ClamAV、Docker/OpenSandbox、S3 不在本分支验收范围。

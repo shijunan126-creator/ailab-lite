@@ -29,7 +29,9 @@ def get_provider() -> SandboxProvider:
         return DockerSandbox()
     if kind == "opensandbox":
         return OpenSandboxProvider()
-    return MockSandbox()
+    if kind == "mock":
+        return MockSandbox()
+    raise ValueError(f"unknown sandbox provider: {kind}")
 
 
 def reset_provider() -> None:

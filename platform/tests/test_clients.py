@@ -95,13 +95,16 @@ def test_short_lived_clients_are_closed(monkeypatch) -> None:
     closed: list[str] = []
 
     class Sync:
+        def __init__(self, **kwargs):
+            pass
+
         def __enter__(self):
             return self
 
         def __exit__(self, *exc):
             closed.append("worker")
 
-        def get_file(self, file_id):
+        def get_file(self, file_id, **context):
             return {"status": "ready"}  # already processed: returns at once
 
     monkeypatch.setattr(pipeline, "PlatformClient", Sync)
@@ -118,3 +121,13 @@ def test_short_lived_clients_are_closed(monkeypatch) -> None:
     q.enqueue(settings.run_queue, {})  # malformed: dropped right away
     asyncio.run(agent_main.handle_message(None, q, q.dequeue(settings.run_queue, "c", timeout=1)))
     assert closed == ["worker", "agent"]
+
+
+def test_internal_clients_ignore_host_proxy_configuration(monkeypatch):
+    options = []
+    monkeypatch.setattr(httpx, "Client", lambda **kwargs: options.append(kwargs) or _SyncClient())
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kwargs: options.append(kwargs) or _AsyncClient())
+    with PlatformClient(token="t"):
+        pass
+    asyncio.run(AsyncPlatformClient(token="t").aclose())
+    assert len(options) == 2 and all(option["trust_env"] is False for option in options)

@@ -42,10 +42,12 @@ class _Service:
     """Describes each call once; the sync and async clients only differ in how they send it."""
 
     default_base_url: str = ""
+    default_service: str = "api"
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
         self.base_url = (base_url or self.default_base_url).rstrip("/")
-        self.token = token or settings.service_token
+        self.service = service or self.default_service
+        self.token = token if token is not None else settings.caller_token(self.service)
 
     @property
     def headers(self) -> dict[str, str]:
@@ -89,22 +91,28 @@ class _PlatformApi(_Service):
     def _commit_artifact(self, payload) -> Request:
         return self._req("POST", "/internal/artifacts", timeout=60, json=payload)
 
-    def _get_file(self, file_id) -> Request:
-        return self._req("GET", f"/internal/files/{file_id}")
+    def _get_file(self, file_id, run_id=None, job="processing") -> Request:
+        return self._req("GET", f"/internal/files/{file_id}", params={"job": job, **({"run_id": run_id} if run_id else {})})
 
-    def _get_file_bytes(self, file_id) -> Request:
-        return self._req("GET", f"/internal/files/{file_id}/content", timeout=120)
+    def _get_file_bytes(self, file_id, run_id=None, job="processing") -> Request:
+        return self._req(
+            "GET", f"/internal/files/{file_id}/content", timeout=120, params={"job": job, **({"run_id": run_id} if run_id else {})}
+        )
 
-    def _patch_file(self, file_id, meta, status) -> Request:
-        return self._req("PATCH", f"/internal/files/{file_id}", json={"meta": meta, "status": status})
+    def _patch_file(self, file_id, meta, status, job="processing") -> Request:
+        return self._req("PATCH", f"/internal/files/{file_id}", json={"meta": meta, "status": status}, params={"job": job})
 
 
 class PlatformClient(_PlatformApi):
     """Synchronous internal-API client (Broker / Worker)."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.Client(timeout=30, limits=_LIMITS)
+    @property
+    def default_service(self) -> str:
+        return settings.service_name
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.Client(timeout=30, limits=_LIMITS, trust_env=False)
 
     def _send(self, req: Request) -> httpx.Response:
         r = self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
@@ -135,13 +143,13 @@ class PlatformClient(_PlatformApi):
     def commit_artifact(self, payload: dict) -> dict:
         return self._send(self._commit_artifact(payload)).json()
 
-    def get_file(self, file_id: str) -> dict:
-        return self._send(self._get_file(file_id)).json()
+    def get_file(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> dict:
+        return self._send(self._get_file(file_id, run_id, job)).json()
 
-    def get_file_bytes(self, file_id: str, *, max_bytes: int | None = None) -> bytes:
+    def get_file_bytes(self, file_id: str, *, max_bytes: int | None = None, run_id: str | None = None, job: str = "processing") -> bytes:
         if max_bytes is None:
-            return self._send(self._get_file_bytes(file_id)).content
-        req = self._get_file_bytes(file_id)
+            return self._send(self._get_file_bytes(file_id, run_id, job)).content
+        req = self._get_file_bytes(file_id, run_id, job)
         with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
             if response.status_code >= 400:
                 response.read()
@@ -153,16 +161,18 @@ class PlatformClient(_PlatformApi):
                 data.extend(chunk)
             return bytes(data)
 
-    def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None) -> dict:
-        return self._send(self._patch_file(file_id, meta, status)).json()
+    def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None, *, job: str = "processing") -> dict:
+        return self._send(self._patch_file(file_id, meta, status, job)).json()
 
 
 class AsyncPlatformClient(_PlatformApi):
     """Asynchronous internal-API client (Agent)."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS)
+    default_service = "agent"
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     async def _send(self, req: Request) -> httpx.Response:
         r = await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
@@ -193,17 +203,19 @@ class AsyncPlatformClient(_PlatformApi):
     async def record_usage(self, run_id: str, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> None:
         await self._send(self._record_usage(run_id, model, prompt_tokens, completion_tokens, cached_tokens))
 
-    async def get_file_bytes(self, file_id: str) -> bytes:
+    async def get_file_bytes(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> bytes:
         """A personal skill's file. The agent only asks for ids the API listed in the run's personal_skills."""
-        return (await self._send(self._get_file_bytes(file_id))).content
+        return (await self._send(self._get_file_bytes(file_id, run_id, job))).content
 
 
 class AsyncBrokerClient(_Service):
     """Agent -> Broker: acquire a lease, run commands, move bytes, commit."""
 
-    def __init__(self, base_url: str | None = None, token: str | None = None):
-        super().__init__(base_url, token)
-        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS)
+    default_service = "agent"
+
+    def __init__(self, base_url: str | None = None, token: str | None = None, *, service: str | None = None):
+        super().__init__(base_url, token, service=service)
+        self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     @property
     def default_base_url(self) -> str:  # type: ignore[override]

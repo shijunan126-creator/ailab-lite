@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import socket
@@ -13,7 +14,7 @@ from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
 
 from .. import metrics
-from ..clients import PlatformClient
+from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..deps import metrics_auth
 from ..metrics import metrics_response
@@ -41,11 +42,20 @@ def handle_message(queue, msg) -> None:
 
 
 def _patch(file_id: str, **kw) -> None:
-    client = PlatformClient()
+    client = PlatformClient(service="worker")
     try:
         client.patch_file(file_id, **kw)
     finally:
         client.close()
+
+
+def _obsolete_job(exc: Exception) -> bool:
+    if not isinstance(exc, ClientError) or exc.status not in {403, 404}:
+        return False
+    try:
+        return json.loads(exc.body).get("detail") in {"file not found", "file is not eligible for this processing job"}
+    except (ValueError, AttributeError):
+        return False
 
 
 def _handle(queue, msg, file_id) -> None:
@@ -62,7 +72,10 @@ def _handle(queue, msg, file_id) -> None:
                 meta={"processing": "error", "scan": {"ok": False, "reason": "scan failed repeatedly"}},
                 status="rejected",
             )
-        except Exception:
+        except Exception as exc:
+            if _obsolete_job(exc):
+                queue.ack(settings.file_queue, msg)
+                return
             log.warning("could not reject file %s", file_id, exc_info=True)
             return  # leave the message unacked and try again later
         metrics.FILES.labels("rejected").inc()
@@ -76,7 +89,11 @@ def _handle(queue, msg, file_id) -> None:
             outcome = "rejected" if "rejected" in result else "skipped" if "skipped" in result else "ready"
             metrics.FILES.labels(outcome).inc()
             metrics.FILE_SECONDS.observe(time.perf_counter() - started)
-        except Exception:
+        except Exception as exc:
+            if _obsolete_job(exc):
+                log.info("dropping obsolete file job %s", file_id)
+                queue.ack(settings.file_queue, msg)
+                return
             # Stay quarantined (pending) and un-acked: redelivered after the visibility timeout.
             log.exception("file %s processing failed", file_id)
             metrics.FILES.labels("error").inc()
@@ -110,7 +127,7 @@ def _consume() -> None:
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _thread
-    settings.validate_secrets()
+    settings.validate_secrets("worker")
     settings.ensure_dirs()
     _stop.clear()
     _thread = threading.Thread(target=_consume, name="file-worker", daemon=True)

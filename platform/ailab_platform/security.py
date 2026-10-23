@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hmac
+import ipaddress
 
 from fastapi import Request
 from sqlalchemy import or_, select
@@ -42,6 +42,35 @@ def authenticate(db: Session, token: str | None) -> User | None:
 
 
 def service_token_ok(token: str | None) -> bool:
-    if not token:
-        return False
-    return hmac.compare_digest(token, settings.service_token)
+    from .service_auth import authenticator
+
+    principal = authenticator.authenticate(token)
+    return principal is not None and "metrics:read" in principal.scopes
+
+
+def client_address(request: Request) -> str:
+    """Walk trusted hops from the socket peer; a client cannot prepend its own identity."""
+    peer = request.client.host if request.client else "unknown"
+    networks = [ipaddress.ip_network(value) for value in settings.trusted_proxies]
+
+    def trusted(value: str) -> bool:
+        try:
+            return any(ipaddress.ip_address(value) in network for network in networks)
+        except ValueError:
+            return False
+
+    if not trusted(peer):
+        return peer
+    chain = request.headers.get("x-forwarded-for", "").split(",")
+    # Malformed or unreasonably long headers must not create arbitrary throttle buckets.
+    if len(chain) > 32:
+        return peer
+    try:
+        hops = [str(ipaddress.ip_address(value.strip())) for value in chain]
+    except ValueError:
+        return peer
+    for hop in reversed(hops):
+        if not trusted(peer):
+            break
+        peer = hop
+    return peer
