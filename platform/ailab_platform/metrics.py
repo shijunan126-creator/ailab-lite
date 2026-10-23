@@ -14,6 +14,7 @@ are mapped onto a fixed set: an unbounded label would grow Prometheus without li
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime
 
 from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
 from prometheus_client.core import GaugeMetricFamily
@@ -50,11 +51,16 @@ AGENT_RUN_SECONDS = Histogram("ailab_agent_run_seconds", "Time the Agent spent o
 AGENT_RECOVERED = Counter("ailab_agent_recovered_total", "Runs restarted because an earlier attempt did not finish")
 LLM_CALLS = Counter("ailab_llm_calls_total", "Model calls", ["model", "outcome"])
 LLM_SECONDS = Histogram("ailab_llm_call_seconds", "Model call latency", ["model"], buckets=_SLOW)
+MODEL_TTFT_SECONDS = Histogram("ailab_model_ttft_seconds", "Time to first effective model output", ["model"], buckets=_SLOW)
+QUEUE_WAIT_SECONDS = Histogram("ailab_queue_wait_seconds", "Run creation to consumer start", ["mode"], buckets=_SLOW)
+RUN_RESUMES = Counter("ailab_run_resumes_total", "Run resume requests", ["outcome"])
+LEASE_HEARTBEAT_FAILURES = Counter("ailab_lease_heartbeat_failures_total", "Agent lease renew failures")
 TOOL_CALLS = Counter("ailab_tool_calls_total", "Agent tool calls", ["tool", "ok"])
 TOOL_SECONDS = Histogram("ailab_tool_seconds", "Agent tool latency", ["tool"], buckets=_SLOW)
 
 FILES = Counter("ailab_files_processed_total", "Uploaded files the Worker finished with", ["outcome"])
 FILE_SECONDS = Histogram("ailab_file_processing_seconds", "Worker time per uploaded file", buckets=_SLOW)
+SCAN_EXHAUSTED = Counter("ailab_scan_exhausted_total", "Files that exhausted scan retries")
 
 KNOWN_TOOLS = frozenset({"list_files", "read_file", "write_file", "exec", "deliver_file", "finish", "web_search", "read_url"})
 
@@ -88,7 +94,7 @@ class ApiStateCollector(Collector):
 
         from .config import settings
         from .db import SessionLocal
-        from .models import Run, RunStatus
+        from .models import OutboxMessage, Run, RunStatus, UsageReservation
         from .queue import get_queue
 
         runs = GaugeMetricFamily("ailab_runs_in_state", "Runs per status right now", labels=["status"])
@@ -109,6 +115,27 @@ class ApiStateCollector(Collector):
         except Exception:
             log.warning("could not read queue depth for /metrics", exc_info=True)
         yield depth
+
+        backlog = GaugeMetricFamily("ailab_outbox_backlog", "Durable jobs awaiting consumer ACK")
+        oldest = GaugeMetricFamily("ailab_outbox_oldest_seconds", "Age of the oldest unacknowledged durable job")
+        unreconciled = GaugeMetricFamily("ailab_usage_unreconciled", "Usage reservations requiring reconciliation")
+        try:
+            with SessionLocal() as db:
+                count = db.scalar(select(func.count()).select_from(OutboxMessage)) or 0
+                first = db.scalar(select(OutboxMessage.created_at).order_by(OutboxMessage.created_at, OutboxMessage.id).limit(1))
+                pending = (
+                    db.scalar(select(func.count()).select_from(UsageReservation).where(UsageReservation.status == "unreconciled")) or 0
+                )
+            backlog.add_metric([], count)
+            if first is not None and first.tzinfo is None:
+                first = first.replace(tzinfo=UTC)
+            oldest.add_metric([], max(0, (datetime.now(UTC) - first).total_seconds()) if first else 0)
+            unreconciled.add_metric([], pending)
+        except Exception:
+            log.warning("could not collect durable-work health", exc_info=True)
+        yield backlog
+        yield oldest
+        yield unreconciled
 
 
 class BrokerStateCollector(Collector):

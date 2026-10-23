@@ -78,6 +78,37 @@ def test_internal_calls_forward_the_current_id() -> None:
         obs.request_id_var.reset(token)
 
 
+@pytest.mark.parametrize(
+    "value",
+    [None, "", "00-" + "0" * 32 + "-" + "1" * 16 + "-01", "00-" + "1" * 32 + "-" + "0" * 16 + "-01", "bad\nheader"],
+)
+def test_invalid_traceparents_are_not_forwarded(value):
+    assert obs.clean_traceparent(value) is None
+
+
+def test_traceparent_crosses_http_boundary_without_leaking_between_requests():
+    import httpx
+
+    traceparent = "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+    seen = []
+
+    async def downstream(scope, receive, send):
+        with PlatformClient(base_url="http://internal", token="fixture") as client:
+            seen.append(client._get_run("run").kwargs["headers"].get("traceparent"))
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def scenario():
+        transport = httpx.ASGITransport(app=obs.RequestContextMiddleware(downstream, "api"))
+        async with httpx.AsyncClient(transport=transport, base_url="http://fixture") as client:
+            assert (await client.get("/", headers={"traceparent": traceparent})).status_code == 204
+            assert (await client.get("/")).status_code == 204
+        assert obs.traceparent_var.get() is None
+
+    asyncio.run(scenario())
+    assert seen == [traceparent, None]
+
+
 # --------------------------------------------------------------------------------------------- logs
 
 
@@ -164,6 +195,13 @@ def test_metrics_expose_queue_depth_run_states_and_process_memory(api) -> None:
     if sys.platform.startswith("linux"):  # prometheus_client's default process collector reads /proc
         assert "process_resident_memory_bytes" in text
     assert api.get("/metrics", headers=SERVICE).headers["content-type"].startswith("text/plain")
+
+
+def test_metrics_expose_unacknowledged_work_health_without_identifiers(api):
+    body = api.get("/metrics", headers=SERVICE).text
+    for name in ["ailab_outbox_backlog", "ailab_outbox_oldest_seconds", "ailab_usage_unreconciled"]:
+        assert f"{name} " in body
+    assert "user_id=" not in body and "run_id=" not in body and "file_id=" not in body
 
 
 def test_run_lifecycle_is_counted_and_timed(api) -> None:

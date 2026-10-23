@@ -14,7 +14,8 @@ from typing import Any, NamedTuple
 import httpx
 
 from .config import settings
-from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var
+from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var, traceparent_var
+from .telemetry import span
 
 # One client per process, not one per call: a Run makes 15-25 internal calls and
 # 200 concurrent runs would otherwise build thousands of connection pools.
@@ -42,6 +43,12 @@ class Request(NamedTuple):
     kwargs: dict
 
 
+def _traced_kwargs(req: Request) -> dict:
+    if traceparent := traceparent_var.get():
+        return {**req.kwargs, "headers": {**req.kwargs["headers"], "traceparent": traceparent}}
+    return req.kwargs
+
+
 class _Service:
     """Describes each call once; the sync and async clients only differ in how they send it."""
 
@@ -62,6 +69,8 @@ class _Service:
         rid = request_id_var.get()
         if rid != NO_REQUEST:  # carry the correlation id into the next service's logs
             headers[REQUEST_ID_HEADER] = rid
+        if traceparent := traceparent_var.get():
+            headers["traceparent"] = traceparent
         return Request(method, f"{self.base_url}{path}", timeout, {"headers": headers, **kwargs})
 
 
@@ -122,9 +131,10 @@ class PlatformClient(_PlatformApi):
         self._http = httpx.Client(timeout=30, limits=_LIMITS, trust_env=False)
 
     def _send(self, req: Request) -> httpx.Response:
-        r = self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
-        _raise(req.method, req.url, r)
-        return r
+        with span("internal.http", method=req.method):
+            r = self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
+            _raise(req.method, req.url, r)
+            return r
 
     def close(self) -> None:
         self._http.close()
@@ -171,7 +181,7 @@ class PlatformClient(_PlatformApi):
         req = self._get_file_bytes(file_id, run_id, job, preview_job)
         if max_bytes is None:
             return self._send(req).content
-        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+        with span("internal.download"), self._http.stream(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req)) as response:
             if response.status_code >= 400:
                 response.read()
                 _raise(req.method, req.url, response)
@@ -187,7 +197,7 @@ class PlatformClient(_PlatformApi):
     ) -> None:
         deadline = time.monotonic() + 120
         req = self._get_file_bytes(file_id, run_id, job, preview_job)
-        with self._http.stream(req.method, req.url, timeout=req.timeout, **req.kwargs) as response:
+        with span("internal.download"), self._http.stream(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req)) as response:
             if response.status_code >= 400:
                 # Error bodies are untrusted too; do not buffer an arbitrarily
                 # large HTML/proxy error while handling a bounded download.
@@ -226,9 +236,10 @@ class AsyncPlatformClient(_PlatformApi):
         self._http = httpx.AsyncClient(timeout=30, limits=_LIMITS, trust_env=False)
 
     async def _send(self, req: Request) -> httpx.Response:
-        r = await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
-        _raise(req.method, req.url, r)
-        return r
+        with span("internal.http", method=req.method):
+            r = await self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
+            _raise(req.method, req.url, r)
+            return r
 
     async def aclose(self) -> None:
         await self._http.aclose()

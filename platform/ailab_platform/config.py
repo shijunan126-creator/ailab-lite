@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     allow_external_models: bool = False
     trusted_proxies: list[str] = Field(default_factory=list)
     log_format: Literal["text", "json"] = "text"  # text | json (one object per line, with the request id)
+    otel_endpoint: str = ""  # Full OTLP/HTTP traces URL; empty means no SDK/exporter is loaded.
+    otel_sample_ratio: float = Field(default=0.05, ge=0, le=1)
     api_base_url: str = "http://127.0.0.1:8080"
     broker_base_url: str = "http://127.0.0.1:8081"
     agent_base_url: str = "http://127.0.0.1:8082"
@@ -254,6 +256,22 @@ class Settings(BaseSettings):
             ZoneInfo(value)
         except (ZoneInfoNotFoundError, ValueError) as exc:
             raise ValueError("quota_timezone must be an IANA timezone") from exc
+        return value
+
+    @field_validator("otel_endpoint")
+    @classmethod
+    def valid_otel_endpoint(cls, value: str) -> str:
+        if value:
+            parsed = urlsplit(value)
+            if (
+                parsed.scheme not in {"http", "https"}
+                or not parsed.hostname
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise ValueError("otel_endpoint must be an HTTP(S) URL without credentials, query or fragment")
         return value
 
     @model_validator(mode="after")

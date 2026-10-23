@@ -14,6 +14,7 @@ import logging
 import re
 import time
 import uuid
+from contextlib import nullcontext
 from contextvars import ContextVar
 
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -22,6 +23,17 @@ from .config import settings
 
 NO_REQUEST = "-"
 request_id_var: ContextVar[str] = ContextVar("request_id", default=NO_REQUEST)
+traceparent_var: ContextVar[str | None] = ContextVar("traceparent", default=None)
+
+_TRACEPARENT = re.compile(r"00-([0-9a-f]{32})-([0-9a-f]{16})-([0-9a-f]{2})\Z")
+
+
+def clean_traceparent(value: str | None) -> str | None:
+    match = _TRACEPARENT.fullmatch(value or "")
+    if not match or int(match[1], 16) == 0 or int(match[2], 16) == 0:
+        return None
+    return value
+
 
 _SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 REQUEST_ID_HEADER = "X-Request-ID"
@@ -93,6 +105,7 @@ class RequestContextMiddleware:
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
         rid = clean_request_id(headers.get(REQUEST_ID_HEADER.lower()))
         token = request_id_var.set(rid)
+        trace_token = traceparent_var.set(clean_traceparent(headers.get("traceparent")))
         started = time.perf_counter()
         status = 500
 
@@ -100,6 +113,13 @@ class RequestContextMiddleware:
             nonlocal status
             if message["type"] == "http.response.start":
                 status = message["status"]
+                if current_span is not None:
+                    current_span.set_attribute("http.response.status_code", status)
+                    current_span.set_attribute("http.route", getattr(scope.get("route"), "path", "unmatched"))
+                    if status >= 500:
+                        from opentelemetry.trace import Status, StatusCode
+
+                        current_span.set_status(Status(StatusCode.ERROR))
                 message.setdefault("headers", [])
                 message["headers"] = [*message["headers"], (REQUEST_ID_HEADER.lower().encode(), rid.encode())]
                 # Time to first byte: a response that streams for minutes (SSE) must not look like a slow request.
@@ -114,6 +134,10 @@ class RequestContextMiddleware:
             await send(message)
 
         try:
-            await self.app(scope, receive, send_with_id)
+            from .telemetry import span
+
+            with nullcontext(None) if scope["path"] in QUIET_PATHS else span("http.request", method=scope["method"]) as current_span:
+                await self.app(scope, receive, send_with_id)
         finally:
+            traceparent_var.reset(trace_token)
             request_id_var.reset(token)

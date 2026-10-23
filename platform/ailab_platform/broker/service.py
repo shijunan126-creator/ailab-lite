@@ -34,6 +34,7 @@ from ..sandbox.base import LeaseHandle, SandboxResource, SandboxSpec
 from ..sandbox.transfer import CHUNK_SIZE, TransferLimitError, copy_chunks
 from ..sandbox_tools import RENDER_PREVIEW
 from ..storage import get_storage
+from ..telemetry import span
 
 log = logging.getLogger("ailab.broker")
 
@@ -188,7 +189,8 @@ class LeaseManager:
     def _provider_call(self, operation: str, *args, **kwargs):
         self._assert_owner()
         try:
-            return getattr(self.provider, operation)(*args, **kwargs)
+            with span("sandbox.provider", provider=self.provider.name, operation=operation):
+                return getattr(self.provider, operation)(*args, **kwargs)
         except Exception:
             metrics.SANDBOX_PROVIDER_ERRORS.labels(self.provider.name, operation).inc()
             raise
