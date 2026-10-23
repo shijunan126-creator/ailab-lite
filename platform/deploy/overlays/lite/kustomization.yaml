@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../../base
+patches:
+- target:
+    kind: PersistentVolumeClaim
+    name: platform-data
+  patch: "- op: replace\n  path: /spec/resources/requests/storage\n  value: 40Gi"
+- target:
+    kind: ConfigMap
+    name: platform-config
+  patch: "- op: replace\n  path: /data/AILAB_PROVISIONED_STORAGE_BYTES\n  value: \"\
+    42949672960\""
+- path: compatibility.yaml
+- target:
+    kind: Service
+    name: platform-public
+  patch: "- op: add\n  path: /spec/type\n  value: NodePort\n- op: add\n  path: /spec/ports/0/nodePort\n\
+    \  value: 30080"
