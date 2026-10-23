@@ -18,6 +18,7 @@ const MENU_H = 92;
 export default function ConversationMenu({ conv, onDeleted, className = "" }: { conv: Conversation; onDeleted?: () => void; className?: string }) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const [moving, setMoving] = useState(false);
+  const [error, setError] = useState("");
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
   const title = conv.title || "新对话";
@@ -41,6 +42,7 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
   // Fixed, not absolute: the sidebar list scrolls and would clip a menu that hangs out of it.
   function open() {
     if (at) return setAt(null);
+    setError("");
     const r = button.current!.getBoundingClientRect();
     const below = r.bottom + 4 + MENU_H < window.innerHeight;
     setAt({ top: below ? r.bottom + 4 : r.top - 4 - MENU_H, left: Math.max(8, r.right - MENU_W) });
@@ -61,10 +63,15 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
   async function remove() {
     setAt(null);
     if (!confirm(`删除对话「${title}」？（产出的文件仍保留在资料库）`)) return;
-    await api(`/v1/conversations/${conv.id}`, { method: "DELETE" }).catch(() => undefined);
+    try {
+      await api(`/v1/conversations/${conv.id}`, { method: "DELETE" });
+    } catch {
+      setError("删除失败，请重试");
+      return;
+    }
+    onDeleted?.();
     conversationsChanged();
     if (conv.project_id) projectsChanged();
-    onDeleted?.();
   }
 
   return (
@@ -82,6 +89,7 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
       >
         <IconMore size={16} />
       </button>
+      {error ? <span role="alert" className="alert error">{error}</span> : null}
       {at
         ? createPortal(
         <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>

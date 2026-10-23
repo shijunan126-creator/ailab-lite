@@ -185,3 +185,32 @@ def test_plain_text_answer_gets_model_title_without_overwriting_manual_name(page
     expected = "我的手动名称" if mode == "manual" else "城市更新投资分析" if mode == "auto" else "新对话"
     page.locator(f'a[href="/c/{conv["id"]}"]').filter(has_text=expected).wait_for()
     assert page.locator(".alert.error").count() == 0
+
+
+def test_confirmed_delete_removes_sidebar_even_when_list_refresh_fails(page, stack):
+    conv = seed(stack, active=False)
+    login(page, stack, path="/c/" + conv["id"])
+    row = page.locator(f".conv-item:has(a[href='/c/{conv['id']}'])")
+    row.wait_for()
+    page.route("**/api/v1/conversations", lambda route: route.abort())
+    page.on("dialog", lambda dialog: dialog.accept())
+    row.hover()
+    row.get_by_role("button", name="更多操作 预览与历史验收").click()
+    page.get_by_role("menuitem", name="删除", exact=True).click()
+    page.wait_for_url(stack.portal + "/")
+    row.wait_for(state="detached")
+
+
+def test_failed_delete_keeps_conversation_and_reports_failure(page, stack):
+    conv = seed(stack, active=False)
+    login(page, stack, path="/c/" + conv["id"])
+    row = page.locator(f".conv-item:has(a[href='/c/{conv['id']}'])")
+    row.wait_for()
+    page.route(f"**/api/v1/conversations/{conv['id']}", lambda route: route.fulfill(status=503, json={"detail": "unavailable"}))
+    page.on("dialog", lambda dialog: dialog.accept())
+    row.hover()
+    row.get_by_role("button", name="更多操作 预览与历史验收").click()
+    page.get_by_role("menuitem", name="删除", exact=True).click()
+    page.get_by_role("alert").filter(has_text="删除失败，请重试").wait_for()
+    assert page.url.endswith("/c/" + conv["id"])
+    assert row.count() == 1
