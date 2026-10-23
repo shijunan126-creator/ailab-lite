@@ -51,13 +51,13 @@ def warn_storage_capacity() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    settings.validate_secrets()
+    settings.validate_secrets("api")
     settings.ensure_dirs()
     get_catalog()  # fail at startup, not on the first request, if models.toml is broken
     register_once("api-state", ApiStateCollector())
     init_db()
     warn_storage_capacity()
-    log.info("platform api ready db_backend=%s storage=%s", settings.database_url.split(":", 1)[0], settings.storage_backend)
+    log.info("platform api ready db=%s storage=%s", settings.redacted()["database_url"], settings.storage_backend)
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")

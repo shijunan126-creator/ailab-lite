@@ -139,7 +139,7 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
     assert msg.payload == {"file_id": fid, "thumbnail_only": True}
 
     class Platform:
-        def get_file(self, file_id):
+        def get_file(self, file_id, **context):
             return api.get(f"/internal/files/{file_id}", headers=SERVICE).json()
 
         def get_file_bytes(self, file_id, **kwargs):

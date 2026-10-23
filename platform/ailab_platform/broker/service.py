@@ -71,7 +71,7 @@ def _unique_name(name: str, used: set[str]) -> str:
 class LeaseManager:
     def __init__(self, provider=None, platform=None, storage=None, redis_client=None) -> None:
         self.provider = provider or get_provider()
-        self.platform = platform or PlatformClient()
+        self.platform = platform or PlatformClient(service="broker")
         self.storage = storage or get_storage()
         self.redis = redis_client or redis.Redis.from_url(settings.redis_url, decode_responses=True, socket_timeout=5)
         self.prefix = "ailab:lease:"
@@ -163,10 +163,10 @@ class LeaseManager:
             used: set[str] = set()
             injected: list[dict] = []
             for file_id in run.get("input_file_ids") or []:
-                meta = self.platform.get_file(file_id)
+                meta = self.platform.get_file(file_id, run_id=run_id)
                 if meta.get("status") != "ready":
                     raise LeaseError(f"input file {file_id} is {meta.get('status')}")
-                data = self.platform.get_file_bytes(file_id)
+                data = self.platform.get_file_bytes(file_id, run_id=run_id)
                 name = _unique_name(_safe_name(meta.get("filename") or file_id), used)
                 path = f"/workspace/inputs/{name}"
                 self.provider.put_file(sandbox_id, path, data)

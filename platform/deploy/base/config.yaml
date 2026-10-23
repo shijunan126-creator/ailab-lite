@@ -5,6 +5,11 @@ metadata:
   namespace: platform
 data:
   AILAB_ENV: k3s
+  AILAB_PROFILE: dev
+  AILAB_SERVICE_TOKEN: ''
+  AILAB_DEV_TOKEN: ''
+  AILAB_OSB_API_KEY: ''
+  AILAB_TRUSTED_PROXIES: '[]'
   AILAB_ADMIN_USERNAME: admin
   AILAB_REDIS_URL: redis://platform-redis:6379/0
   AILAB_DATABASE_URL: postgresql+psycopg://ailab@platform-postgres:5432/ailab

@@ -15,6 +15,8 @@ Environment:
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import shutil
 import subprocess
@@ -32,7 +34,8 @@ PORTAL_SRC = Path(os.environ.get("AILAB_E2E_PORTAL_DIR") or PLATFORM / "portal")
 TOKEN = "e2e-api-token-0123456789abcdef"  # the static API token (scripts); people sign in with a password
 USERNAME = "e2e-user"
 PASSWORD = "e2e-password-1234"
-SERVICE_TOKEN = "e2e-service-token-0123456789abcdef0123"
+SERVICE_TOKENS = {name: f"e2e-{name}-credential-0123456789abcdef0123" for name in ("api", "agent", "broker", "worker", "ops")}
+SERVICE_TOKEN = SERVICE_TOKENS["ops"]
 BASE_PORT = int(os.environ.get("AILAB_E2E_BASE_PORT", "18080"))
 PORTAL_PORT = int(os.environ.get("AILAB_E2E_PORTAL_PORT", "13000"))
 REDIS_URL = os.environ.get("AILAB_TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
@@ -126,7 +129,11 @@ def stack(tmp_path_factory):
         AILAB_DEV_TOKEN=TOKEN,
         AILAB_ADMIN_USERNAME=USERNAME,
         AILAB_ADMIN_PASSWORD=PASSWORD,
-        AILAB_SERVICE_TOKEN=SERVICE_TOKEN,
+        AILAB_SERVICE_TOKEN="",
+        AILAB_TRUSTED_PROXIES='["127.0.0.1/32"]',
+        AILAB_SERVICE_CREDENTIALS=json.dumps(
+            {name: "sha256:" + hashlib.sha256(token.encode()).hexdigest() for name, token in SERVICE_TOKENS.items()}
+        ),
         AILAB_RUN_TIMEOUT_SECONDS="120",
         AILAB_REAPER_INTERVAL_SECONDS="3600",
     )
@@ -144,8 +151,19 @@ def stack(tmp_path_factory):
         for name, port in ports.items():
             start(
                 name,
-                [sys.executable, "-m", "uvicorn", f"ailab_platform.{name}.main:app", "--host", "127.0.0.1", "--port", str(port)],
+                [
+                    sys.executable,
+                    "-m",
+                    "uvicorn",
+                    f"ailab_platform.{name}.main:app",
+                    "--no-proxy-headers",
+                    "--host",
+                    "127.0.0.1",
+                    "--port",
+                    str(port),
+                ],
                 PLATFORM,
+                {"AILAB_SERVICE_NAME": name, "AILAB_SERVICE_CREDENTIAL": SERVICE_TOKENS[name]},
             )
         for name, port in ports.items():
             _wait(f"http://127.0.0.1:{port}/healthz", name)

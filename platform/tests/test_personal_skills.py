@@ -134,7 +134,7 @@ class _Platform(FakePlatform):
     async def get_run(self, run_id):
         return {**(await super().get_run(run_id)), **self.extra}
 
-    async def get_file_bytes(self, file_id):
+    async def get_file_bytes(self, file_id, **context):
         return self.files[file_id]
 
 

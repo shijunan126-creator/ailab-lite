@@ -287,6 +287,9 @@ deploy_platform() {
     ok "invite code set"
   fi
 
+  # Also upgrades existing shared-token installations and synchronizes model-only secrets.
+  run bash "$PLATFORM/scripts/k8s_secrets.sh" >/dev/null
+
   step "model catalog ($(basename "$CATALOG"))"
   run env NO_RESTART=1 MODELS_FILE="$CATALOG" bash "$PLATFORM/scripts/k8s_models.sh" | tail -2
 

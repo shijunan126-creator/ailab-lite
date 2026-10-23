@@ -294,7 +294,9 @@ class S3Storage(_StorageMethods):
 def get_storage() -> Storage:
     if settings.storage_backend == "s3":
         return S3Storage()
-    return LocalStorage(settings.storage_path)
+    if settings.storage_backend == "local":
+        return LocalStorage(settings.storage_path)
+    raise ValueError(f"unknown storage backend: {settings.storage_backend}")
 
 
 def reset_storage() -> None:

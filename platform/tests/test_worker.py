@@ -20,14 +20,14 @@ class ImagePlatform:
         self.file = {"status": status, "filename": filename, "content_type": content_type, "size": len(data), "meta": {}}
         self.reads = 0
 
-    def get_file(self, file_id):
+    def get_file(self, file_id, **context):
         return self.file
 
     def get_file_bytes(self, file_id, **kwargs):
         self.reads += 1
         return self.data
 
-    def patch_file(self, file_id, meta=None, status=None):
+    def patch_file(self, file_id, meta=None, status=None, **context):
         self.file["meta"].update(meta or {})
         if status is not None:
             self.file["status"] = status
@@ -177,7 +177,10 @@ def test_worker_message_handling(monkeypatch) -> None:
     patched: list[tuple] = []
 
     class FakePlatform:
-        def patch_file(self, file_id, meta=None, status=None):
+        def __init__(self, **kwargs):
+            pass
+
+        def patch_file(self, file_id, meta=None, status=None, **context):
             patched.append((file_id, meta, status))
 
         def close(self):
@@ -219,13 +222,13 @@ def test_the_full_text_is_kept_for_the_agent() -> None:
         def __init__(self):
             self.meta = None
 
-        def get_file(self, file_id):
+        def get_file(self, file_id, **context):
             return {"status": "pending", "filename": "a.txt", "content_type": "text/plain"}
 
-        def get_file_bytes(self, file_id):
+        def get_file_bytes(self, file_id, **context):
             return ("长文本" * 1000).encode()
 
-        def patch_file(self, file_id, meta=None, status=None):
+        def patch_file(self, file_id, meta=None, status=None, **context):
             self.meta = meta
 
     p = Platform()
@@ -247,13 +250,13 @@ def test_large_file_is_not_parsed(monkeypatch) -> None:
             self.meta = None
             self.status = None
 
-        def get_file(self, file_id):
+        def get_file(self, file_id, **context):
             return {"status": "pending", "filename": "big.pdf", "content_type": "application/pdf"}
 
-        def get_file_bytes(self, file_id):
+        def get_file_bytes(self, file_id, **context):
             return b"%PDF-1.7" + b"x" * 100
 
-        def patch_file(self, file_id, meta=None, status=None):
+        def patch_file(self, file_id, meta=None, status=None, **context):
             self.meta = meta
             self.status = status
 
@@ -306,3 +309,30 @@ def test_thumbnail_uses_first_animation_frame_and_keeps_alpha():
     process_file("fil_alpha", platform=p)
     with Image.open(io.BytesIO(get_storage().get_bytes(p.file["meta"]["thumb_key"]))) as thumb:
         assert thumb.mode == "RGBA" and thumb.getextrema()[3] == (0, 0)
+
+
+@pytest.mark.parametrize("detail,acked", [("file is not eligible for this processing job", True), ("service scope required", False)])
+@pytest.mark.parametrize("poison", [False, True])
+def test_worker_drops_obsolete_jobs_but_retries_auth_failure(monkeypatch, detail, acked, poison):
+    import json
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.config import settings
+    from ailab_platform.queue import InMemoryQueue
+    from ailab_platform.worker import main
+
+    queue = InMemoryQueue()
+    queue.enqueue(settings.file_queue, {"file_id": "obsolete"})
+
+    def process(*args, **kwargs):
+        raise ClientError("GET", "/internal/files/obsolete", 403, json.dumps({"detail": detail}))
+
+    monkeypatch.setattr(main, "process_file", process)
+    monkeypatch.setattr(main, "_patch", process)
+    message = queue.dequeue(settings.file_queue, "worker", timeout=1)
+    if poison:
+        from dataclasses import replace
+
+        message = replace(message, deliveries=settings.file_max_attempts + 1)
+    main.handle_message(queue, message)
+    assert (queue.outstanding(settings.file_queue) == []) == acked

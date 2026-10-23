@@ -58,7 +58,7 @@ platform/ailab_platform/
 
 ## 6. Performance budget
 
-Target machine: 2 vCPU / ~8 GB for the whole stack, with pod limits in `platform/deploy/k8s/platform.yaml` (API/Broker/Worker 256–384 MiB). Performance is part of acceptance:
+Target machine: 2 vCPU / ~8 GB for the whole stack, with pod limits in `platform/deploy/base/apps/services.yaml` (API/Broker/Worker 256–384 MiB). Performance is part of acceptance:
 
 - Stream large files; never hold more than one full copy of a file in memory. Respect `max_upload_bytes` / `max_parse_bytes`.
 - Every list endpoint is paginated or bounded. Every new query on a large table has an index and an `EXPLAIN` check on SQLite and PostgreSQL.

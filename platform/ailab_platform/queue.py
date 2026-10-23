@@ -249,7 +249,9 @@ class InMemoryQueue(JobQueue):
 def get_queue() -> JobQueue:
     if settings.queue_backend == "memory":
         return InMemoryQueue()
-    return RedisQueue(settings.redis_url)
+    if settings.queue_backend == "redis":
+        return RedisQueue(settings.redis_url)
+    raise ValueError(f"unknown queue backend: {settings.queue_backend}")
 
 
 def reset_queue() -> None:

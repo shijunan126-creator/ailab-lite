@@ -52,10 +52,10 @@ start() {
   echo "[dev_up] $name pid=$(cat "var/run/$name.pid")"
 }
 
-start api .venv/bin/uvicorn ailab_platform.api.main:app --host 127.0.0.1 --port 8080 --workers 1
-start broker .venv/bin/uvicorn ailab_platform.broker.main:app --host 127.0.0.1 --port 8081 --workers 1
-start agent .venv/bin/uvicorn ailab_platform.agent.main:app --host 127.0.0.1 --port 8082 --workers 1
-start worker .venv/bin/uvicorn ailab_platform.worker.main:app --host 127.0.0.1 --port 8083 --workers 1
+start api .venv/bin/uvicorn ailab_platform.api.main:app --no-proxy-headers --host 127.0.0.1 --port 8080 --workers 1
+start broker .venv/bin/uvicorn ailab_platform.broker.main:app --no-proxy-headers --host 127.0.0.1 --port 8081 --workers 1
+start agent .venv/bin/uvicorn ailab_platform.agent.main:app --no-proxy-headers --host 127.0.0.1 --port 8082 --workers 1
+start worker .venv/bin/uvicorn ailab_platform.worker.main:app --no-proxy-headers --host 127.0.0.1 --port 8083 --workers 1
 
 for port in 8080 8081 8082 8083; do
   ok=0

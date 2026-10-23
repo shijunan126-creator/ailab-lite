@@ -222,7 +222,7 @@ class AgentLoop:
     # ---- personal skills: read from the user's library, their files copied into the sandbox
     async def _read_personal(self, turn: _Turn, run_id: str, name: str) -> str:
         skill = turn.personal[name]
-        data = await self.platform.get_file_bytes(skill["file_id"])
+        data = await self.platform.get_file_bytes(skill["file_id"], run_id=run_id)
         try:
             text, files = skillfiles.unpack(data, skill["filename"])
         except (skillfiles.SkillFileError, KeyError, ValueError) as exc:

@@ -26,7 +26,7 @@ from ..deps import current_user, get_db
 from ..models import ApiToken, User, utcnow
 from ..passwords import MAX_PASSWORD_LENGTH
 from ..schemas import LoginRequest, PasswordChange, RegisterRequest
-from ..security import bearer_token
+from ..security import bearer_token, client_address
 
 router = APIRouter(prefix="/v1/auth", tags=["auth"])
 log = logging.getLogger("ailab.api.auth")
@@ -37,9 +37,7 @@ def _user_out(user: User) -> dict:
 
 
 def _client_address(request: Request) -> str:
-    # The Portal is the only caller of this endpoint and passes the visitor's address along.
-    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
-    return forwarded or (request.client.host if request.client else "unknown")
+    return client_address(request)
 
 
 # Sign-ups per client address and hour (counted whether they succeed or not: a bot gets nowhere either way).
@@ -48,6 +46,8 @@ signup_throttle = LoginThrottle(settings.registrations_per_hour, 3600)
 
 def registration_mode() -> str:
     mode = settings.registration if settings.registration in ("open", "invite", "closed") else "closed"
+    if settings.profile == "secure" and mode == "open":
+        mode = "invite"
     if mode == "invite" and not settings.invite_code:
         return "closed"  # an invite mode nobody can satisfy
     return mode

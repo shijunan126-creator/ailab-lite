@@ -106,20 +106,9 @@ def test_production_refuses_defaults() -> None:
         _settings(env="prod", dev_token="dev-demo-token", service_token="dev-service-token").validate_secrets()
 
 
-def test_production_refuses_short_service_token() -> None:
-    with pytest.raises(RuntimeError, match="shorter"):
-        _settings(env="prod", **{**GOOD, "service_token": "short"}).validate_secrets()
-
-
-def test_production_osb_key_only_matters_with_opensandbox() -> None:
-    base = {**GOOD, "osb_api_key": "dev-osb-key"}
-    _settings(env="prod", sandbox_provider="docker", **base).validate_secrets()
-    with pytest.raises(RuntimeError, match="OSB_API_KEY"):
-        _settings(env="prod", sandbox_provider="opensandbox", **base).validate_secrets()
-
-
-def test_production_with_real_secrets_starts() -> None:
-    _settings(env="prod", **GOOD).validate_secrets()
+def test_production_refuses_custom_shared_service_token() -> None:
+    with pytest.raises(RuntimeError, match="legacy"):
+        _settings(env="prod", **GOOD).validate_secrets()
 
 
 # ---- deleting files / refusing oversized uploads early ----------------------------------------------

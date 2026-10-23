@@ -147,7 +147,7 @@ def process_file(
 ) -> dict:
     if platform is not None:
         return _process_file(file_id, platform, storage, thumbnail_only=thumbnail_only)
-    with PlatformClient() as owned:  # holds a connection pool: close it with the file
+    with PlatformClient(service="worker") as owned:  # holds a connection pool: close it with the file
         return _process_file(file_id, owned, storage, thumbnail_only=thumbnail_only)
 
 
@@ -155,16 +155,16 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
     from ..storage import get_storage
 
     storage = storage or get_storage()
-    meta = platform.get_file(file_id)
+    meta = platform.get_file(file_id, job="thumbnail") if thumbnail_only else platform.get_file(file_id)
     if thumbnail_only:
         if meta.get("status") != "ready" or (meta.get("meta") or {}).get("thumb_key"):
             return {"file_id": file_id, "skipped": meta.get("status")}
         if meta.get("size", 0) > MAX_THUMBNAIL_BYTES:
             return {"file_id": file_id, "skipped": "too_large"}
-        data = platform.get_file_bytes(file_id, max_bytes=MAX_THUMBNAIL_BYTES)
+        data = platform.get_file_bytes(file_id, max_bytes=MAX_THUMBNAIL_BYTES, job="thumbnail")
         thumb = _thumbnail(file_id, data, meta, storage)
         if thumb:
-            platform.patch_file(file_id, meta=thumb)
+            platform.patch_file(file_id, meta=thumb, job="thumbnail")
         return {"file_id": file_id, **thumb}
     if meta.get("status") != "pending":
         return {"file_id": file_id, "skipped": meta.get("status")}

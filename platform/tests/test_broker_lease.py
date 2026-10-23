@@ -91,10 +91,10 @@ class _ApiStub(_Platform):
     def get_run(self, run_id):
         return {"id": run_id, "input_file_ids": self.run_inputs}
 
-    def get_file(self, file_id):
+    def get_file(self, file_id, **context):
         return self.files[file_id]
 
-    def get_file_bytes(self, file_id):
+    def get_file_bytes(self, file_id, **context):
         return self.files[file_id]["bytes"]
 
     def commit_artifact(self, payload):
