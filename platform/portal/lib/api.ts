@@ -115,7 +115,27 @@ export type FileItem = {
   project_id?: string | null;
   starred?: boolean;
   thumbnail_url?: string | null; // a small WebP the Worker made; absent for non-images and before processing
+  preview?: FilePreview | null; // null until someone first opens it
 };
+
+/** How a library file can be shown in place (GET /v1/files/{id}/preview). Rendered once, on first open, then cached. */
+export type FilePreview = {
+  status: "ready" | "pending" | "failed" | "unsupported";
+  kind?: "pages" | "sheets" | "image" | "text" | null;
+  pages?: string[];
+  page_count?: number | null; // the whole document; pages may stop earlier
+  data?: string; // sheets.json, same format as a run's sheet previews
+  image?: string;
+  text?: string;
+  format?: "markdown" | "code" | "plain";
+  language?: string | null;
+  truncated?: boolean;
+  reason?: string;
+};
+
+export function filePreviewUrl(fileId: string, name: string): string {
+  return `${API_BASE}/v1/files/${fileId}/preview/${encodeURIComponent(name)}`;
+}
 
 /** A project groups conversations and files; deleting it deletes both. */
 export type Project = {

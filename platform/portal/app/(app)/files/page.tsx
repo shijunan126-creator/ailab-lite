@@ -17,9 +17,9 @@ import {
   IconX,
   IconCheck,
 } from "../../../components/icons";
-import FileTile, { isImage, thumbUrl } from "../../../components/library/file-tile";
-import Modal from "../../../components/library/modal";
+import FileTile, { thumbUrl } from "../../../components/library/file-tile";
 import { MoveDialog, NewProjectInput } from "../../../components/library/projects";
+import FileViewer from "../../../components/preview/file-viewer";
 import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
 import { formatBytes, timeAgo } from "../../../lib/format";
@@ -372,7 +372,7 @@ function Library() {
         <div className={`image-grid ${selected.size ? "selecting" : ""}`}>
           {files.map((f) => (
             <div key={f.id} className={`image-card ${selected.has(f.id) ? "on" : ""} ${menuFor === f.id ? "menu-open" : ""}`}>
-              <button className="image-thumb" onClick={() => (selected.size ? toggle(f.id) : isImage(f) && f.status === "ready" && setViewing(f))} aria-label={f.filename}>
+              <button className="image-thumb" onClick={() => (selected.size ? toggle(f.id) : setViewing(f))} aria-label={f.filename}>
                 {thumbUrl(f) ? <img src={thumbUrl(f)!} alt="" loading="lazy" decoding="async" /> : <FileTile file={f} size={44} />}
                 {statusText(f) ? <span className="status queued">{statusText(f)}</span> : null}
               </button>
@@ -407,11 +407,13 @@ function Library() {
             return (
               <div key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>
                 {checkbox(f)}
-                <FileTile file={f} size={36} />
+                <button className="lib-open" onClick={() => (selected.size ? toggle(f.id) : setViewing(f))} aria-label={`预览 ${f.filename}`}>
+                  <FileTile file={f} size={36} />
+                </button>
                 <div className="grow">
-                  <div className="name" title={f.filename}>
+                  <button className="name" title={f.filename} onClick={() => (selected.size ? toggle(f.id) : setViewing(f))}>
                     {f.filename}
-                  </div>
+                  </button>
                   <div className="meta">
                     {formatBytes(f.size)} · {timeAgo(f.created_at)}
                     {f.version > 1 ? ` · v${f.version}` : ""}
@@ -484,11 +486,7 @@ function Library() {
         />
       ) : null}
 
-      {viewing ? (
-        <Modal title={viewing.filename} onClose={() => setViewing(null)} className="modal-image">
-          <img src={downloadUrl(viewing.download_url)} alt={viewing.filename} />
-        </Modal>
-      ) : null}
+      {viewing ? <FileViewer files={files} file={viewing} onOpen={setViewing} onClose={() => setViewing(null)} chatHref={(f) => chatHref([f])} /> : null}
 
       {over ? (
         <div className="drop-overlay" onDragLeave={() => setOver(false)}>

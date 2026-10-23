@@ -5,6 +5,7 @@ import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { IconDownload, IconFile } from "../icons";
 import Markdown from "../markdown";
+import { useFileViewer } from "../preview/file-viewer";
 
 export type Step = { name: string; label: string; detail?: string; status: "running" | "ok" | "failed" | "note"; output?: string };
 export type Item =
@@ -207,6 +208,7 @@ export default function Turn({
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const files = useFileViewer();
   const shown = items ?? history;
   const terminal = isTerminal(run.status);
   const textShown = shown?.some((it) => it.kind === "text" && it.text.trim());
@@ -232,10 +234,10 @@ export default function Turn({
         ) : null}
         {run.input_files?.length ? (
           <div className="attach-row">
-            {run.input_files.map((f) => (
-              <span key={f.file_id} className="attach-chip">
+            {run.input_files.map((f, _, all) => (
+              <button key={f.file_id} className="attach-chip open" onClick={() => files.open(all.map((x) => x.file_id), f.file_id)}>
                 <IconFile size={13} /> {f.filename}
-              </span>
+              </button>
             ))}
           </div>
         ) : null}
@@ -281,11 +283,17 @@ export default function Turn({
                     </div>
                     <div className="meta">{formatBytes(a.size)}</div>
                   </div>
-                  {PREVIEWABLE.test(a.filename) && previewKey(run, a.filename) ? (
-                    <button className="secondary sm" onClick={() => onPreview(previewKey(run, a.filename)!)}>
-                      预览
-                    </button>
-                  ) : null}
+                  <button
+                    className="secondary sm"
+                    onClick={() => {
+                      // the live pane follows a file through later turns; anything else opens on its own
+                      const key = PREVIEWABLE.test(a.filename) ? previewKey(run, a.filename) : null;
+                      if (key) onPreview(key);
+                      else files.open(run.artifacts!.map((x) => x.file_id), a.file_id);
+                    }}
+                  >
+                    预览
+                  </button>
                   <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
                     <IconDownload size={15} /> 下载
                   </a>
@@ -308,6 +316,7 @@ export default function Turn({
           ) : null}
         </div>
       </div>
+      {files.viewer}
     </div>
   );
 }
