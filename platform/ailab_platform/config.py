@@ -178,7 +178,6 @@ class Settings(BaseSettings):
     orphan_objects_grace_seconds: int = Field(default=86400, ge=0)
     run_events_retention_days: int = Field(default=30, ge=0)
     conversation_purge_days: int = Field(default=30, ge=0)
-    file_trash_days: int = Field(default=30, ge=0)  # machinery only; trash UI/model is a later task
 
     # OpenSandbox server (T2 dev stand-in). Set AILAB_SANDBOX_PROVIDER=opensandbox.
     osb_domain: str = "127.0.0.1:8090"
@@ -212,7 +211,7 @@ class Settings(BaseSettings):
     model_max_output_tokens: int = Field(default=8192, ge=1, le=10_000_000)
     daily_token_limit: int = Field(default=2_000_000, ge=0)  # per user, weighted tokens in quota_timezone
     monthly_token_limit: int = Field(default=30_000_000, ge=0)
-    library_quota_bytes: int = Field(default=20 * 1024**3, ge=0)  # per user, rejected files excluded
+    library_quota_bytes: int = Field(default=20 * 1024**3, ge=0)  # per user; active rejected files excluded, trash included
 
     # Worker: scanning and the limited parser process (the scanner is selected above, with the secure checks)
     clamd_address: str = "tcp://platform-clamav:3310"
@@ -221,6 +220,9 @@ class Settings(BaseSettings):
     parse_cpu_seconds: int = Field(default=45, ge=1, le=90)
     parse_timeout_seconds: float = Field(default=60, gt=0, le=120)
     scan_retry_backoff_seconds: float = Field(default=5, gt=0, le=60)
+
+    max_file_versions: int = Field(default=10, ge=1, le=100)
+    trash_days: int = Field(default=30, ge=1, le=3650)
 
     # Queues
     queue_backend: Literal["redis", "memory"] = "redis"  # redis | memory

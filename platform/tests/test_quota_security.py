@@ -114,7 +114,7 @@ def test_production_refuses_custom_shared_service_token() -> None:
 # ---- deleting files / refusing oversized uploads early ----------------------------------------------
 
 
-def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) -> None:
+def test_purge_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) -> None:
     from ailab_platform.quota import library_bytes
     from ailab_platform.storage import get_storage
 
@@ -128,6 +128,11 @@ def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) 
     assert get_storage().exists(key)
 
     assert api.delete(f"/v1/files/{f['id']}", headers=AUTH).status_code == 204
+    assert api.get(f"/v1/files/{f['id']}", headers=AUTH).json()["deleted_at"]
+    assert get_storage().exists(key)
+    with SessionLocal() as db:
+        assert library_bytes(db, user.id) == before + 5
+    assert api.post("/v1/files/batch", headers=AUTH, json={"ids": [f["id"]], "action": "purge"}).status_code == 200
     assert api.get(f"/v1/files/{f['id']}", headers=AUTH).status_code == 404
     assert not get_storage().exists(key)
     with SessionLocal() as db:
@@ -137,10 +142,11 @@ def test_delete_frees_library_space_and_unblocks_a_stuck_file(api, monkeypatch) 
 def test_delete_is_owner_only_and_keeps_version_chains(api) -> None:
     v1 = api.post("/v1/files", headers=AUTH, files={"upload": ("d.txt", b"v1", "text/plain")}).json()
     v2 = api.post(f"/v1/files?parent_id={v1['id']}", headers=AUTH, files={"upload": ("d.txt", b"v2", "text/plain")}).json()
-    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 409  # v2 builds on it
+    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 204
+    assert api.get(f"/v1/files/{v2['id']}", headers=AUTH).json()["deleted_at"]
     assert api.delete(f"/v1/files/{v2['id']}", headers=AUTH).status_code == 204
     assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 204
-    assert api.delete(f"/v1/files/{v1['id']}", headers=AUTH).status_code == 404
+    assert api.get(f"/v1/files/{v1['id']}", headers=AUTH).json()["deleted_at"]
     assert api.delete("/v1/files/fil_x", headers={"Authorization": "Bearer nope"}).status_code == 401
 
 

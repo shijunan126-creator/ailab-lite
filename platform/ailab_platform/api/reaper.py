@@ -22,6 +22,9 @@ from .. import metrics
 from ..config import settings
 from ..db import SessionLocal
 from ..events import append_event
+from ..library import delete_storage_objects, purge_lineages
+from ..library import schedule_object_deletion as _schedule_delete
+from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, Run, RunStatus
 from ..queue import JobQueue, get_queue, run_lock_key
 from ..quota import expire_reservations
@@ -173,14 +176,6 @@ def _page(storage, prefix: str):
     page = storage.list_prefix(prefix, cursor=_gc_cursors.get(prefix), limit=settings.gc_batch_size)
     _gc_cursors[prefix] = page.cursor
     return page
-
-
-def _schedule_delete(db, key: str, kind: str, *, prefix=False):
-    from ..models import LifecycleDeletion
-
-    if db.scalar(select(LifecycleDeletion.id).where(LifecycleDeletion.key == key)) is None:
-        db.add(LifecycleDeletion(key=key, kind=kind, is_prefix=int(prefix)))
-        db.flush()
 
 
 def drain_object_deletions(db: Session, storage) -> int:
@@ -372,6 +367,7 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
         ("orphan", lambda: purge_orphan_objects(db, storage, now)),
         ("events", lambda: purge_run_events(db, now)),
         ("conversation", lambda: purge_deleted_conversations(db, now)),
+        ("trash", lambda: purge_expired_trash(db, now)),
         ("cleanup", lambda: drain_object_deletions(db, storage)),
     ):
         try:
@@ -399,3 +395,33 @@ async def lifecycle_cleanup_forever() -> None:
             await asyncio.to_thread(tick)
         except Exception:
             log.exception("lifecycle tick failed; next interval retries")
+
+
+def purge_expired_trash(db: Session, now: datetime | None = None, *, batch_size: int = 200) -> int:
+    """One bounded pass; recheck expiry under the same user lock as restore/delete."""
+    now = now or datetime.now(UTC)
+    candidates = list(
+        db.execute(
+            select(FileObject.user_id, FileObject.lineage_id)
+            .where(FileObject.is_head == 1, FileObject.deleted_at.is_not(None), FileObject.purge_at <= now)
+            .order_by(FileObject.purge_at)
+            .limit(batch_size)
+        )
+    )
+    count = 0
+    for user_id, lineage_id in candidates:
+        with user_critical_section(db, user_id):
+            due = db.scalar(
+                select(FileObject.id).where(
+                    FileObject.user_id == user_id,
+                    FileObject.lineage_id == lineage_id,
+                    FileObject.is_head == 1,
+                    FileObject.deleted_at.is_not(None),
+                    FileObject.purge_at <= now,
+                )
+            )
+            keys = purge_lineages(db, user_id, [lineage_id]) if due else []
+            db.commit()
+        delete_storage_objects(keys)
+        count += int(due is not None)
+    return count

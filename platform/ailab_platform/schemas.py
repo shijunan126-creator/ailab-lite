@@ -183,6 +183,13 @@ class FileOut(ORMModel):
     sha256: str
     status: str
     version: int
+    lineage_id: str
+    versions: int
+    is_head: bool
+    deleted_at: datetime | None
+    purge_at: datetime | None
+    purged: bool
+    trashed_from_project_id: str | None = None
     meta: dict
     created_at: datetime
     download_url: str = ""
@@ -203,7 +210,7 @@ class LibraryFilePatch(BaseModel):
 
 class FileBatch(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=200)
-    action: Literal["star", "unstar", "move", "delete"]
+    action: Literal["star", "unstar", "move", "delete", "trash", "restore", "purge"]
     project_id: str | None = None
 
     @field_validator("ids")

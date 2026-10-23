@@ -165,3 +165,33 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 本基线 ModelUsage 无 dept_id。合并 A 后补 usage 写入快照、冻结 weighted_amount、全局报表索引，并把 limits_for 接入 storage/concurrency/summary；本分支仅改 token 准入一个点。详见 `docs/reviews/2026-10-23-identity-implementation.md`。
 - OIDC 上游令牌不出 API；只按 iss/sub 建联，不按 email 自动合并。真实 Keycloak 测试由 AILAB_TEST_OIDC_ISSUER gate，未配置即跳过，不把 fake issuer 验收称作企业 SSO 验收。
 - 本轮最终验证：SQLite+Redis 463 passed / 10 skipped；PG16+Redis 472 passed / 1 skipped；浏览器 E2E 34 passed；Portal Node 9 passed、build、Ruff、依赖锁一致性通过。真实 Keycloak gate 未配置。临时服务仅用 16470/15470，结束后关闭；无开发库操作。
+
+## 2026-10-23 T18 文件版本与回收站（arch/w2-file-versions）
+
+- 基线 `609c1d3` 实际未对同名产物设置 parent/version；本轮在 `user_critical_section` 内按同会话同名产物找链、按整链 max(version)+1 分配。上传从旧版分支也必须取整链最大号，不能 parent.version+1；unique(lineage_id,version) 与单 head 部分唯一索引兜底。
+- `0014` 暂接 `0008`，合并时由 lead 重接。SQLite 只 ADD/DROP COLUMN，不重建 files；旧 parent 链回填根 id，保留全部 file id/FK。历史重复版本号按 (version,created_at,id) 稳定重编号；断链/跨用户/环拒绝迁移。迁移仅改元数据，不连接对象存储；既有超限链在下次写版本时收敛。降级不恢复旧重复编号。
+- 默认 `max_file_versions=10`、`trash_days=30`（配置范围校验）。超限只 tombstone 旧行、提交后清对象，旧 Run/Artifact 引用仍在、content=410。恢复旧版独立 copy 原对象及 derived 前缀，递归改写派生 key；保留扫描状态，不能把 pending/rejected 复制成 READY。回收站里的版本回退保留回收站状态，显式 `/restore` 再解除。
+- 普通/批量 delete（兼容 alias）/项目删除均整链入站；trash 继续计配额，连回收站的 rejected 文件也计；purge 才释放。移动/收藏作用整链，项目计数只算 live head。项目删除分批 200 个 lineage，清 FK 并记 trashed_from_project_id；已经入站的链也要解除 FK，不能让首批更新误清其他批次的 project_id。
+- `DELETE /v1/trash` 按 200 批次清理，请求开始时间作截止，避免追逐不断新增的删除；count 是 lineage 数。batch count 保持输入去重后 id 数。cursor 是上一页末项 file id；保留原 offset。`purge_expired_trash` 每轮最多 200 head，锁内再次确认过期，集成到既有 reaper；函数独立，方便与 E/A 合并。
+- 物理清理唯一入口仍是 `delete_file_rows`，包含登记的 key 和 `derived/{id}/` 全前缀。保留原提交后 best-effort 删除；对象存储故障/提交后 kill 的孤儿收敛待 E/T09 GC/outbox 集成，未声称生产级故障验收。真实 S3 拷贝的 RSS/磁盘/时延未测。
+- SQLite 要在 head 部分索引键里覆盖 is_head/deleted_at/purged_at（图片还含 content_type）才显示 COVERING INDEX；PG 为 Index Only Scan/Heap Fetches=0。列表先索引取 id，再批量取详情和版本数，禁止 N+1；substring q 仍需读候选行。10 万行原始计划和成本追加在 library-query-plans 文档；新索引约 12 MiB（PG），无新依赖。
+- 保留 files_router 的 `/v1/files` 前缀，另注册 trash_router；不要改前缀让 C 后续新增预览装饰器误挂到 `/v1/{id}/preview`。本轮只在已有 thumbnail 路由补 purged guard，未实现或覆盖 C 的新 preview 路由。`routes_runs` 附件与 `routes_skills` 个人技能需同步过滤 trashed/purged；否则删除文件还能被新消息/技能引用。
+- 分页取 id 与详情是两个查询，期间可能移入站、换 head 或 purge；第二次读取必须重新过滤可见性并忽略已消失 id，否则会 KeyError/500。用 SQLAlchemy after_cursor_execute 注入真实的交错删除回归覆盖。
+- 并发回归不要在每个线程启动 `with TestClient(app)` lifespan：Alembic 全局代理会互相覆盖而报 KeyError/config；共享测试外层 lifespan，线程只创建无 context 的客户端发请求。reaper 测试必须只让自己的两份文件到期，避免误算同进程其他用例留下的用户回收站。
+- 行为红绿：隔离的 `609c1d3` 副本 3 项（删除留对象、只列 head、恢复旧版）均红，当前实现同样 3 项均绿。完整验证与最终计数见下方本轮验收记录。未 push；临时 PostgreSQL 15490 / Redis 16490 仅本轮使用，结束后关闭。
+
+### 本轮验收记录
+
+- Python 3.12 / GNU coreutils+findutils：SQLite + Redis `414 passed, 11 skipped`（10 项 PG 迁移及 1 项 PG 并发条件跳过）；临时 PG16 + Redis `425 passed`，包含现存 parent 链/FK 的 upgrade → downgrade → upgrade、模型漂移、历史重复号及跨用户链检查。
+- 浏览器 E2E `34 passed`；最后分页竞态修复另复验上传 → 回收站下载 → 恢复 → 最终 purge：`1 passed, 28 deselected`。E2E 临时副本 production build 通过；Portal Node tests `4 passed`。
+- Ruff check / format check、依赖锁一致性、git diff --check 均通过。测试与计划只用独立临时目录、PG 15490 和 Redis 16490，未读取开发者 .env/var 数据。
+- 临时 PostgreSQL/Redis 已关闭，15490/16490 已确认无监听；无 push。
+
+## 2026-10-23 合并 C / G / I 的集成点
+
+- 迁移链已整理为单调编号：0008 → 0009 ledger → 0010 lifecycle → 0011 preview outbox → 0012 identity → 0013 file versions。模型漂移检查必须在 head 上做（`run_migrations`），升到中间版本再比对全量 models 必然失败。
+- 资料库渲染：Broker `LibraryRenderer` 用 `acquire(SandboxSpec(profile="render"), LeasePrincipal(system=True))` 走准入的 render 保留槽，不得再替换 `manager.platform` 或伪造 Run。Broker 读文件以 `job=preview&preview_job=<id>` 绑定到 API 记录的当前 pending 预览任务（scope `files:read_for_preview`）；Worker 的缩略图/预览任务同样要带 `job`，否则 B 的绑定会 403。
+- 额度：统一走 `quota.user_limits`（用户策略 → 部门策略 → 默认策略 → settings），覆盖 token 预留、资料库空间、并发 Run 和用量摘要；不要再直接读 `settings.*_limit`。
+- 用量报表只读账本：`weighted_amount` 是 milli 单位（÷1000 才是加权 Token），部门取调用时快照 `model_usage.dept_id`，不 join runs（对话被清除后用量仍在）。
+- 删除：`DELETE /v1/files/{id}` 现在进回收站，派生对象保留到 purge。`library.delete_file_rows` 在同一事务写 `lifecycle_deletions` 持久意图，提交后仍立即尝试删除；失败由 lifecycle 的 `drain_object_deletions` 重试。回收站过期清理在 `lifecycle_once` 中（每小时），不在每分钟的 reaper 里。
+- 内部读文件统一经 `_bound_file`：回收站中的文件 404，已清理版本 410。

@@ -56,7 +56,8 @@ def _redacted_config(config) -> dict:
         "orphan_objects_grace_seconds",
         "run_events_retention_days",
         "conversation_purge_days",
-        "file_trash_days",
+        "trash_days",
+        "max_file_versions",
         "gc_batch_size",
     )
     return {name: getattr(config, name) for name in names}

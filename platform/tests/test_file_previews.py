@@ -211,7 +211,9 @@ def test_failed_never_auto_retries_and_delete_cleans_every_derivative(api):
     storage = get_storage()
     for name in ["preview/p-01.jpg", "display.webp", "other/future.dat"]:
         storage.put_bytes(f"derived/{fid}/{name}", b"x")
-    assert api.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
+    assert api.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204  # to the trash: derivatives stay
+    assert storage.list_prefix(f"derived/{fid}/").items
+    assert api.delete("/v1/trash", headers=AUTH).status_code == 200  # purged for good
     assert storage.list_prefix(f"derived/{fid}/").items == []
 
 

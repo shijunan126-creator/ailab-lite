@@ -290,6 +290,72 @@ class FileObject(Base):
     __table_args__ = (
         Index("ix_files_user_created", "user_id", "created_at"),
         Index("ix_files_status_created", "status", "created_at", "id"),
+        Index("ix_files_parent_id", "parent_id"),
+        Index("uq_files_lineage_version", "lineage_id", "version", unique=True),
+        Index("uq_files_lineage_head", "lineage_id", sqlite_where=text("is_head = 1"), postgresql_where=text("is_head = 1"), unique=True),
+        Index("ix_files_lineage_retained", "lineage_id", "purged_at", "version"),
+        Index(
+            "ix_files_live_created",
+            "user_id",
+            "created_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+        ),
+        Index(
+            "ix_files_live_project",
+            "user_id",
+            "project_id",
+            "created_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+        ),
+        Index(
+            "ix_files_live_starred",
+            "user_id",
+            "starred_at",
+            "id",
+            "is_head",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND starred_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND starred_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_files_live_images",
+            "user_id",
+            "created_at",
+            "id",
+            "is_head",
+            "content_type",
+            "deleted_at",
+            "purged_at",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND content_type LIKE 'image/%'"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND content_type LIKE 'image/%'"),
+        ),
+        Index(
+            "ix_files_trash",
+            "user_id",
+            "deleted_at",
+            "id",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+        ),
+        Index(
+            "ix_files_purge_due",
+            "purge_at",
+            "user_id",
+            "lineage_id",
+            sqlite_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+            postgresql_where=text("is_head = 1 AND deleted_at IS NOT NULL"),
+        ),
         Index(
             "ix_files_user_starred",
             "user_id",
@@ -319,6 +385,13 @@ class FileObject(Base):
     status: Mapped[str] = mapped_column(String(20), default=FileStatus.PENDING)
     version: Mapped[int] = mapped_column(Integer, default=1)
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("files.id"), nullable=True)
+    # No FK to the root: a lineage survives retention of its oldest object.
+    lineage_id: Mapped[str] = mapped_column(String(40), default=lambda context: context.get_current_parameters()["id"], server_default="")
+    is_head: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purge_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    trashed_from_project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     meta: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

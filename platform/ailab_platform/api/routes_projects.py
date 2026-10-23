@@ -7,7 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..deps import current_user, get_db
-from ..library import delete_file_rows, delete_storage_objects, owned_project
+from ..library import live_file_predicates, owned_project, trash_lineages
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, Project, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
@@ -26,7 +26,7 @@ def _project_rows(db: Session, user_id: str, project_id: str | None = None) -> l
     )
     files = (
         select(FileObject.project_id, func.count().label("count"))
-        .where(FileObject.user_id == user_id)
+        .where(FileObject.user_id == user_id, *live_file_predicates())
         .where(FileObject.project_id == project_id if project_id is not None else FileObject.project_id.is_not(None))
         .group_by(FileObject.project_id)
         .subquery()
@@ -92,9 +92,15 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
             transition_run(db, run.id, RunStatus.CANCELED, reason="project_deleted", commit=False)
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
-        files = list(db.scalars(select(FileObject).where(FileObject.project_id == project.id)))
-        keys = delete_file_rows(db, files, detach_children=True)
+        while lineages := list(
+            db.scalars(
+                select(FileObject.lineage_id)
+                .where(FileObject.user_id == user.id, FileObject.project_id == project.id)
+                .distinct()
+                .limit(200)
+            )
+        ):
+            trash_lineages(db, user.id, lineages, project_id=project.id)
         db.delete(project)
         db.commit()
-    delete_storage_objects(keys)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

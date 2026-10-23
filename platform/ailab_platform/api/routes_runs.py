@@ -115,8 +115,8 @@ def start_run(
 
         inputs: list[str] = []
         for file_id in file_ids:
-            file = db.get(FileObject, file_id)
-            if file is None or file.user_id != user.id:
+            file = db.get(FileObject, file_id, populate_existing=True)
+            if file is None or file.user_id != user.id or file.deleted_at is not None or file.purged_at is not None:
                 raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
             if file.status != FileStatus.READY:
                 raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")

@@ -121,6 +121,8 @@ def test_deleting_a_file_cleans_up_extracted_text(api):
     storage.put_bytes(text_key, b"private extracted text")
     api.patch(f"/internal/files/{file_id}", headers=SERVICE, json={"meta": {"text_key": text_key}})
     assert api.delete(f"/v1/files/{file_id}", headers=AUTH).status_code == 204
+    assert storage.exists(text_key)
+    assert api.post("/v1/files/batch", headers=AUTH, json={"ids": [file_id], "action": "purge"}).status_code == 200
     assert not storage.exists(text_key)
 
 

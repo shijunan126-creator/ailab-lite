@@ -29,5 +29,6 @@
 | 额度策略接入 | 用户策略 → 部门策略 → 默认策略 → settings，统一经 `quota.user_limits` 用于 token 预留、资料库空间、并发 Run 与用量摘要 | — |
 | 部门用量报表 | 按账本冻结金额与调用时的部门快照汇总，不经 runs（被清除的对话仍计入）；`(created_at, dept_id)` 索引 | 报表大范围扫描性能未压测 |
 | OIDC（T17） | 授权码 + PKCE/state/nonce、JWKS 缓存与未知 kid 刷新、组映射、停用拒绝；浏览器不接触上游 Token | 真实 Keycloak 需 `AILAB_TEST_OIDC_ISSUER`，未验收 |
+| 文件版本与回收站（T18） | 版本为不可变行（lineage_id + version 唯一、is_head）；旧版恢复 = 新建 head；每链最多 10 版，超出的旧版留 tombstone（内容 410）；删除整链进回收站 30 天，计入空间额度；项目删除把文件移入回收站；对象删除写入持久删除意图，由 lifecycle 重试 | 列表 SQLite covering index / PG Index Only Scan；真实 S3 性能未验收 |
 
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)。

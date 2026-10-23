@@ -19,22 +19,33 @@ import anyio
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import literal_column, select
+from sqlalchemy import literal_column, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..contracts.file_preview import PREVIEW_VERSION, FilePreview, preview_kind, text_manifest
 from ..deps import current_user, get_db
-from ..library import THUMBNAIL_VERSION, delete_file_rows, delete_storage_objects, owned_project
+from ..library import (
+    THUMBNAIL_VERSION,
+    assign_file_version,
+    delete_storage_objects,
+    live_file_predicates,
+    owned_project,
+    purge_lineages,
+    restore_lineages,
+    trash_lineages,
+    trim_file_versions,
+)
 from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, OutboxMessage, User, new_id, utcnow
 from ..queue import get_queue
 from ..quota import enforce_library_quota
 from ..schemas import FileBatch, FileOut, LibraryFilePatch
 from ..storage import get_storage
-from .serializers import file_dict
+from .serializers import file_dict, file_dicts
 
 router = APIRouter(prefix="/v1/files", tags=["files"])
+trash_router = APIRouter(prefix="/v1/trash", tags=["files"])
 log = logging.getLogger("ailab.api.files")
 
 
@@ -101,10 +112,9 @@ async def upload_file(
                     if project_id is not None:
                         owned_project(db, project_id, user)
                     enforce_library_quota(db, user.id, size)
-                    version = 1
-                    if parent_id:
-                        parent = _owned_file(db, parent_id, user)
-                        version = parent.version + 1
+                    parent = _owned_file(db, parent_id, user) if parent_id else None
+                    if parent is not None and parent.deleted_at is not None:
+                        raise HTTPException(status_code=409, detail="file is trashed")
                     row = FileObject(
                         id=file_id,
                         user_id=user.id,
@@ -114,13 +124,15 @@ async def upload_file(
                         sha256=digest.hexdigest(),
                         storage_key=key,
                         status=FileStatus.PENDING,
-                        version=version,
                         parent_id=parent_id,
                         project_id=project_id,
                         meta={"processing": "queued"},
                     )
+                    assign_file_version(db, row, parent)
                     db.add(row)
+                    keys = trim_file_versions(db, row)
                     db.commit()
+                    delete_storage_objects(keys)
                     db.refresh(row)
                     return row
 
@@ -144,13 +156,16 @@ def list_files(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     category: Literal["all", "starred", "images"] = "all",
+    trashed: bool = False,
+    cursor: str | None = None,
     project_id: str | None = None,
     q: str | None = None,
     ids: list[str] | None = Query(default=None, max_length=200),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    stmt = select(FileObject).where(FileObject.user_id == user.id)
+    stmt = select(FileObject.id).where(FileObject.user_id == user.id, FileObject.is_head == literal_column("1"))
+    stmt = stmt.where(FileObject.deleted_at.is_not(None)) if trashed else stmt.where(*live_file_predicates())
     if ids is not None:
         stmt = stmt.where(FileObject.id.in_(ids))
     if project_id is not None:
@@ -164,14 +179,34 @@ def list_files(
     if q is not None:
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         stmt = stmt.where(FileObject.filename.ilike(f"%{escaped}%", escape="\\"))
-    order = FileObject.starred_at if category == "starred" else FileObject.created_at
-    files = db.scalars(stmt.order_by(order.desc()).limit(limit).offset(offset)).all()
-    return [file_dict(f) for f in files]
+    order = FileObject.deleted_at if trashed else (FileObject.starred_at if category == "starred" else FileObject.created_at)
+    if cursor is not None:
+        previous = _owned_file(db, cursor, user)
+        position = previous.deleted_at if trashed else (previous.starred_at if category == "starred" else previous.created_at)
+        if position is None:
+            raise HTTPException(status_code=400, detail="invalid file cursor")
+        stmt = stmt.where(tuple_(order, FileObject.id) < tuple_(position, previous.id))
+    page_ids = list(db.scalars(stmt.order_by(order.desc(), FileObject.id.desc()).limit(limit).offset(offset)))
+    visible = (FileObject.deleted_at.is_not(None),) if trashed else live_file_predicates()
+    by_id = {
+        f.id: f
+        for f in db.scalars(
+            select(FileObject).where(
+                FileObject.id.in_(page_ids),
+                FileObject.user_id == user.id,
+                FileObject.is_head == literal_column("1"),
+                *visible,
+            )
+        )
+    }
+    return file_dicts(db, [by_id[fid] for fid in page_ids if fid in by_id])
 
 
 def _owned_files(db: Session, ids: list[str], user: User) -> list[FileObject]:
     unique = list(dict.fromkeys(ids))
-    files = db.scalars(select(FileObject).where(FileObject.id.in_(unique), FileObject.user_id == user.id)).all()
+    files = db.scalars(
+        select(FileObject).where(FileObject.id.in_(unique), FileObject.user_id == user.id).execution_options(populate_existing=True)
+    ).all()
     by_id = {file.id: file for file in files}
     if len(by_id) != len(unique):
         raise HTTPException(status_code=404, detail="file not found")
@@ -186,10 +221,19 @@ def batch_files(body: FileBatch, user: User = Depends(current_user), db: Session
         if body.action == "move" and body.project_id is not None:
             owned_project(db, body.project_id, user)
         now = utcnow()
-        if body.action == "delete":
-            keys = delete_file_rows(db, files)
+        lineages = list({f.lineage_id for f in files})
+        if body.action in {"delete", "trash"}:
+            trash_lineages(db, user.id, lineages)
+        elif body.action == "restore":
+            restore_lineages(db, user.id, lineages)
+        elif body.action == "purge":
+            if any(f.deleted_at is None for f in files):
+                raise HTTPException(status_code=409, detail="file is not trashed")
+            keys = purge_lineages(db, user.id, lineages)
         else:
-            for file in files:
+            if any(f.deleted_at is not None or f.purged_at is not None for f in files):
+                raise HTTPException(status_code=404, detail="file not found")
+            for file in db.scalars(select(FileObject).where(FileObject.user_id == user.id, FileObject.lineage_id.in_(lineages))):
                 if body.action == "star":
                     file.starred_at = file.starred_at or now
                 elif body.action == "unstar":
@@ -269,6 +313,10 @@ def download_archive(
 ) -> Response:
     files = _owned_files(db, ids, user)
     for file in files:
+        if file.deleted_at is not None:
+            raise HTTPException(status_code=404, detail="file not found")
+        if file.purged_at is not None:
+            raise HTTPException(status_code=410, detail="version purged")
         if file.status != FileStatus.READY:
             raise HTTPException(status_code=409, detail=f"file {file.filename} is {file.status}, not downloadable")
     if sum(file.size for file in files) > settings.max_archive_bytes:
@@ -292,7 +340,7 @@ def download_thumbnail(
 ) -> Response:
     file = _owned_file(db, file_id, user)
     key = (file.meta or {}).get("thumb_key")
-    if file.status != FileStatus.READY or not key:
+    if file.status != FileStatus.READY or file.purged_at is not None or not key:
         raise HTTPException(status_code=404, detail="thumbnail not found")
     etag = '"' + hashlib.sha256(f"{file.sha256}:{THUMBNAIL_VERSION}".encode()).hexdigest() + '"'
     headers = {"Cache-Control": "private, max-age=31536000, immutable", "ETag": etag}
@@ -400,12 +448,17 @@ def preview_asset(
 def patch_file(file_id: str, body: LibraryFilePatch, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     with user_critical_section(db, user.id):
         file = _owned_file(db, file_id, user)
+        if file.deleted_at is not None or file.purged_at is not None:
+            raise HTTPException(status_code=404, detail="file not found")
+        lineage = list(db.scalars(select(FileObject).where(FileObject.lineage_id == file.lineage_id)))
         if "project_id" in body.model_fields_set:
             if body.project_id is not None:
                 owned_project(db, body.project_id, user)
-            file.project_id = body.project_id
+            for version in lineage:
+                version.project_id = body.project_id
         if "starred" in body.model_fields_set:
-            file.starred_at = (file.starred_at or utcnow()) if body.starred else None
+            for version in lineage:
+                version.starred_at = (version.starred_at or utcnow()) if body.starred else None
         db.commit()
         return file_dict(file)
 
@@ -418,13 +471,15 @@ def get_file(file_id: str, user: User = Depends(current_user), db: Session = Dep
 @router.get("/{file_id}/content")
 def download_file(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
     file = _owned_file(db, file_id, user)
+    if file.purged_at is not None:
+        raise HTTPException(status_code=410, detail="version purged")
     if file.status != FileStatus.READY:
         raise HTTPException(status_code=409, detail=f"file is {file.status}, not downloadable")
     # Do not pin the request's DB connection for the duration of the download:
     # the stream reads object storage only. Closing here is safe (the dependency
     # close is idempotent).
     db.close()
-    return StreamingResponse(
+    return _ClosingStreamingResponse(
         get_storage().stream(file.storage_key),
         media_type=file.content_type,
         headers={
@@ -436,12 +491,11 @@ def download_file(file_id: str, user: User = Depends(current_user), db: Session 
 
 @router.delete("/{file_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_file(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
-    """Remove a file (including rejected / unscannable ones) and free its library space."""
+    """Trash the whole lineage, retaining bytes, quota and historical references."""
     with user_critical_section(db, user.id):
         file = _owned_file(db, file_id, user)
-        keys = delete_file_rows(db, [file])
+        trash_lineages(db, user.id, [file.lineage_id])
         db.commit()
-    delete_storage_objects(keys)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -481,6 +535,8 @@ def complete_upload(file_id: str, user: User = Depends(current_user), db: Sessio
     with user_critical_section(db, user.id):
         file = _owned_file(db, file_id, user)
         db.refresh(file)  # a simultaneous completion may have finished while we waited for the lock
+        if file.deleted_at is not None or file.purged_at is not None:
+            raise HTTPException(status_code=404, detail="file not found")
         if (file.meta or {}).get("processing") != "awaiting_upload":
             raise HTTPException(status_code=409, detail=f"file already {file.status}")
         signed_key = file.storage_key
@@ -525,3 +581,125 @@ def complete_upload(file_id: str, user: User = Depends(current_user), db: Sessio
     except Exception:
         log.warning("file worker queue unavailable for %s", file.id, exc_info=True)
     return file_dict(file)
+
+
+@router.get("/{file_id}/versions", response_model=list[FileOut])
+def file_versions(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
+    file = _owned_file(db, file_id, user)
+    files = list(
+        db.scalars(
+            select(FileObject)
+            .where(FileObject.user_id == user.id, FileObject.lineage_id == file.lineage_id)
+            .order_by(FileObject.version.desc())
+        )
+    )
+    return file_dicts(db, files)
+
+
+@router.post("/{file_id}/restore", response_model=FileOut)
+def restore_file(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    with user_critical_section(db, user.id):
+        file = _owned_file(db, file_id, user)
+        restore_lineages(db, user.id, [file.lineage_id])
+        db.commit()
+        head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == literal_column("1")))
+        return file_dict(head)
+
+
+@router.post("/{file_id}/restore-version", response_model=FileOut, status_code=201)
+def restore_version(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    storage = get_storage()
+    copied = []
+    with user_critical_section(db, user.id):
+        old = _owned_file(db, file_id, user)
+        if old.purged_at is not None:
+            raise HTTPException(status_code=410, detail="version purged")
+        if old.is_head:
+            raise HTTPException(status_code=409, detail="only an older version can be restored")
+        if not storage.exists(old.storage_key):
+            raise HTTPException(status_code=409, detail="version object is not available")
+        enforce_library_quota(db, user.id, old.size)
+        fid = new_id("fil")
+        key = f"versions/{user.id}/{fid}/{old.filename}"
+        meta = dict(old.meta or {})
+        head = db.scalar(select(FileObject).where(FileObject.lineage_id == old.lineage_id, FileObject.is_head == literal_column("1")))
+        file = FileObject(
+            id=fid,
+            user_id=user.id,
+            project_id=head.project_id,
+            starred_at=head.starred_at,
+            filename=old.filename,
+            content_type=old.content_type,
+            size=old.size,
+            sha256=old.sha256,
+            storage_key=key,
+            status=old.status,
+            deleted_at=head.deleted_at,
+            purge_at=head.purge_at,
+            trashed_from_project_id=head.trashed_from_project_id,
+        )
+        try:
+            copied.append(key)
+            storage.copy(old.storage_key, key)
+            remapped = {}
+            for item in storage.list_prefix(f"derived/{old.id}/"):
+                target = item.key.replace(f"derived/{old.id}/", f"derived/{fid}/", 1)
+                copied.append(target)
+                storage.copy(item.key, target)
+                remapped[item.key] = target
+            for field in ("derived_key", "text_key", "thumb_key", "preview_key"):
+                source = meta.get(field)
+                if source and source not in remapped:
+                    target = f"derived/{fid}/{field}/{Path(source).name}"
+                    copied.append(target)
+                    storage.copy(source, target)
+                    remapped[source] = target
+
+            def remap(value):
+                if isinstance(value, dict):
+                    return {k: remap(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [remap(v) for v in value]
+                return remapped.get(value, value) if isinstance(value, str) else value
+
+            meta = remap(meta)
+            file.meta = {**meta, "restored_from_id": old.id}
+            assign_file_version(db, file, old)
+            db.add(file)
+            keys = trim_file_versions(db, file)
+            db.commit()
+        except Exception:
+            db.rollback()
+            delete_storage_objects(copied)
+            raise
+    delete_storage_objects(keys)
+    return file_dict(file)
+
+
+@trash_router.delete("")
+def empty_trash(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    count = 0
+    cutoff = utcnow()
+    while True:
+        with user_critical_section(db, user.id):
+            lineages = list(
+                db.scalars(
+                    select(FileObject.lineage_id)
+                    .where(
+                        FileObject.user_id == user.id,
+                        FileObject.is_head == literal_column("1"),
+                        FileObject.deleted_at.is_not(None),
+                        FileObject.deleted_at <= cutoff,
+                    )
+                    .order_by(FileObject.deleted_at, FileObject.id)
+                    .limit(200)
+                )
+            )
+            if not lineages:
+                db.commit()
+                break
+            keys = purge_lineages(db, user.id, lineages)
+            db.commit()
+        delete_storage_objects(keys)
+        count += len(lineages)
+    return {"count": count}
