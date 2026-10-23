@@ -2,6 +2,8 @@
 
 更新于 2026-10-23，分支 `feat/arch-hardening`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
 
+未开始与部分完成的任务（T07/T08/T09/T14/T15/T16/T19/T20 及 Broker 流式注入）的方案见 [剩余工作设计](design/2026-10-23-remaining-work.md)，暂不实施。
+
 “完成”表示代码、迁移与回归测试都已合入，并在本机 SQLite 和 PostgreSQL 16 + Redis 两套测试中通过；“未验收”列出仍需真实外部组件或目标机器才能确认的部分。
 
 ## 总览
