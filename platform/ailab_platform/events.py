@@ -50,5 +50,8 @@ def append_event(db: Session, run_id: str, type_: str, payload: dict | None = No
     raise RuntimeError(f"could not append event for {run_id}: {last_error}")
 
 
-def list_events(db: Session, run_id: str, after: int = 0) -> list[RunEvent]:
-    return list(db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq)))
+def list_events(db: Session, run_id: str, after: int = 0, limit: int | None = None) -> list[RunEvent]:
+    query = select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq)
+    if limit is not None:
+        query = query.limit(limit)
+    return list(db.scalars(query))

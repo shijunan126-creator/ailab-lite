@@ -557,3 +557,18 @@ def test_library_namespaces_preserve_legacy_objects_and_disambiguate_names(engin
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM files")).scalar() == 3
+
+
+def test_work_time_upgrade_downgrade_preserves_legacy_history(engine):
+    _upgrade_to(engine, "0020")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(text("UPDATE runs SET status='succeeded', summary='preserved' WHERE id='r1'"))
+    _upgrade_to(engine, "0021")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT summary, work_ms, work_started_at FROM runs WHERE id='r1'")).one()
+        assert row == ("preserved", None, None)
+    _downgrade_to(engine, "0020")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT summary FROM runs WHERE id='r1'")).scalar() == "preserved"
+    _upgrade_to(engine, "0021")

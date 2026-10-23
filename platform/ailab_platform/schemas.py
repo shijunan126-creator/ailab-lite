@@ -92,6 +92,7 @@ class RunOut(ORMModel):
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
+    work_ms: int | None = None
 
 
 class RunDetail(RunOut):

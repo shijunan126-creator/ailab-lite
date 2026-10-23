@@ -51,6 +51,13 @@ def transition_run(
 
     now = datetime.now(UTC)
     values: dict = {"status": new_status, "updated_at": now}
+    elapsed = run.work_ms
+    if run.status == RunStatus.RUNNING and run.work_started_at is not None and elapsed is not None:
+        since = run.work_started_at
+        if since.tzinfo is None:
+            since = since.replace(tzinfo=UTC)
+        elapsed += max(0, int((now - since).total_seconds() * 1000))
+    values.update(work_ms=elapsed, work_started_at=now if new_status == RunStatus.RUNNING else None)
     if new_status == RunStatus.RUNNING and run.started_at is None:
         values["started_at"] = now
     if new_status in RunStatus.TERMINAL:

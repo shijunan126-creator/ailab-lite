@@ -188,11 +188,12 @@ def cancel_run(run_id: str, user: User = Depends(current_user), db: Session = De
 def event_history(
     run_id: str,
     after: int = Query(default=0, ge=0),
+    limit: int = Query(default=200, ge=1, le=500),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[RunEvent]:
     _get_owned_run(db, run_id, user)
-    return list_events(db, run_id, after)
+    return list_events(db, run_id, after, limit)
 
 
 PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json)$")

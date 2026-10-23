@@ -268,6 +268,8 @@ class Run(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    work_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True, default=0)
+    work_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
     events: Mapped[list[RunEvent]] = relationship(back_populates="run", cascade="all, delete-orphan", order_by="RunEvent.seq")

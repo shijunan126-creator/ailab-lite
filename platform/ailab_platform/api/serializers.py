@@ -77,6 +77,7 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "created_at": run.created_at,
         "started_at": run.started_at,
         "finished_at": run.finished_at,
+        "work_ms": run.work_ms,
     }
     if detail:
         rows = db.execute(
