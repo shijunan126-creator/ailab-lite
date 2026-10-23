@@ -109,3 +109,8 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 运行预算仍为原始 input + output 的软上限，reasoning 已包含在 output；Agent 从账本恢复总数，记账后、工具前拦截下一步，已完成最终回答跨预算仍成功。计量请求有 call/run 头和 max_tokens；模糊失败不得在同一个预留下偷偷再发一次推理。模型专用 tokenizer、真实上游 max_tokens 强制执行未验收。
 - 成本：每模型调用 2 次事务、4 个业务写（比旧路径多 3 写/1 commit），不新增依赖/后台服务。300 调用本机测量，SQLite/PostgreSQL 预留锁 p95 1.10/1.87 ms，结算锁 p95 1.23/2.26 ms；200 条过期回收 247/377 ms。8,000 行双库 EXPLAIN 检查窗口、open、过期和对账索引；按用户周期 SUM 仍随历史行数增长。
 - 最终验证：Ruff check/format 通过；SQLite + Redis 全套 405 passed / 11 PostgreSQL 项 skipped；PostgreSQL 16 + Redis 全套 416 passed / 0 skipped；Portal 4 tests + production build、Chromium E2E 34 项通过。临时服务只用 16410/15410，结束后关闭；未改 .env/开发数据库，未推送或创建 PR。
+
+## 2026-10-23 合并 ledger 与 lifecycle
+
+- 账本不引用 runs：`model_usage.run_id`、`usage_reservations.run_id` 是普通字符串，不是外键（0012 删除旧 FK）。软删对话 30 天后清除 runs/events/artifacts，但它们的用量仍计入额度窗口、管理报表与对账；不要再在 purge 里删 `ModelUsage`。SQLite 上 FK 无名，迁移用 batch 的 `naming_convention` 命名后再删；model_usage 无表引用，batch 重建安全。
+- 迁移链：0008 → 0009（ledger）→ 0012（lifecycle）。后续分支均以 down_revision="0008" 起草，合并时按顺序重挂。

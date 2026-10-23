@@ -232,7 +232,8 @@ class ModelUsage(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    # Not a foreign key: the ledger outlives the runs it records (a purged conversation's usage still counts).
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
     call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -276,7 +277,7 @@ class UsageReservation(Base):
     )
 
     call_id: Mapped[str] = mapped_column(String(80), primary_key=True)
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"))
+    run_id: Mapped[str] = mapped_column(String(40))  # like ModelUsage.run_id, kept after the run is purged
     user_id: Mapped[str] = mapped_column(String(40))
     attempt_id: Mapped[str] = mapped_column(String(80))
     mode: Mapped[str] = mapped_column(String(20))

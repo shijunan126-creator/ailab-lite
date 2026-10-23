@@ -1,4 +1,8 @@
-"""Bounded lifecycle queries and durable object cleanup intents."""
+"""Bounded lifecycle queries and durable object cleanup intents.
+
+The usage ledger stops referencing runs: purging a deleted conversation removes its runs, but what those runs
+cost stays on the books (quota windows, admin reports, reconciliation).
+"""
 
 import sqlalchemy as sa
 from alembic import op
@@ -9,7 +13,24 @@ branch_labels = None
 depends_on = None
 
 
+# SQLite reflects the FK without a name; give it one so batch mode can drop or recreate it.
+NAMING = {"fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s"}
+
+
+def _usage_run_fk(bind) -> str | None:
+    for fk in sa.inspect(bind).get_foreign_keys("model_usage"):
+        if fk["constrained_columns"] == ["run_id"]:
+            return fk["name"] or "fk_model_usage_run_id_runs"
+    return None
+
+
 def upgrade():
+    bind = op.get_bind()
+    name = _usage_run_fk(bind)
+    if name:
+        # model_usage is referenced by no other table, so a batch rebuild on SQLite is safe here
+        with op.batch_alter_table("model_usage", naming_convention=NAMING) as batch:
+            batch.drop_constraint(name, type_="foreignkey")
     op.create_table(
         "lifecycle_deletions",
         sa.Column("id", sa.Integer(), primary_key=True),
@@ -32,3 +53,8 @@ def downgrade():
     op.drop_index("ix_runs_conversation_id_id", "runs")
     op.drop_index("ix_files_status_created", "files")
     op.drop_table("lifecycle_deletions")
+    # Usage of runs purged meanwhile has no run to point at; it cannot regain the constraint.
+    if op.get_bind().execute(sa.text("SELECT 1 FROM model_usage u LEFT JOIN runs r ON r.id = u.run_id WHERE r.id IS NULL LIMIT 1")).first():
+        return
+    with op.batch_alter_table("model_usage", naming_convention=NAMING) as batch:
+        batch.create_foreign_key("fk_model_usage_run_id_runs", "runs", ["run_id"], ["id"])

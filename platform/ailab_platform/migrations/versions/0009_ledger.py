@@ -92,7 +92,7 @@ def upgrade() -> None:
     op.create_table(
         "usage_reservations",
         sa.Column("call_id", sa.String(80), primary_key=True),
-        sa.Column("run_id", sa.String(40), sa.ForeignKey("runs.id"), nullable=False),
+        sa.Column("run_id", sa.String(40), nullable=False),  # a value, not a reference: see 0012
         sa.Column("user_id", sa.String(40), nullable=False),
         sa.Column("attempt_id", sa.String(80), nullable=False),
         sa.Column("mode", sa.String(20), nullable=False),

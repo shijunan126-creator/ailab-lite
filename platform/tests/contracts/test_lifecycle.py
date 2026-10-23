@@ -134,6 +134,27 @@ def test_conversation_purge_batches_and_retries_objects(env, monkeypatch):
         assert purge_deleted_conversations(db, NOW) == 0
 
 
+def test_conversation_purge_keeps_the_usage_ledger(env):
+    """What a purged conversation's runs cost still counts toward quota and reports."""
+    from ailab_platform.models import ModelUsage
+    from ailab_platform.quota import tokens_used_since
+
+    factory, _ = env
+    with factory() as db:
+        db.add(Conversation(id="gone", user_id="u", deleted_at=OLD))
+        db.flush()
+        db.add(Run(id="paid", user_id="u", conversation_id="gone", prompt="p", status="succeeded", finished_at=OLD))
+        db.flush()
+        db.add(ModelUsage(run_id="paid", call_id="call-1", user_id="u", weighted_amount=12_000, status="settled", created_at=OLD))
+        db.commit()
+        before = tokens_used_since(db, "u", OLD - timedelta(days=1))
+        for _ in range(3):
+            purge_deleted_conversations(db, NOW)
+        assert db.get(Run, "paid") is None
+        assert db.scalars(select(ModelUsage).where(ModelUsage.call_id == "call-1")).one().run_id == "paid"
+        assert tokens_used_since(db, "u", OLD - timedelta(days=1)) == before > 0
+
+
 def test_gc_waiting_for_upload_observes_frozen_object(env, monkeypatch):
     factory, storage = env
     key, frozen = "uploads/u/file/x", "uploads/u/file/obj/x"

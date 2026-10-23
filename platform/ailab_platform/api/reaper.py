@@ -310,7 +310,7 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
     from sqlalchemy import delete
 
     from ..locks import user_critical_section
-    from ..models import Artifact, Conversation, ModelUsage, RunEvent
+    from ..models import Artifact, Conversation, RunEvent
 
     if not settings.conversation_purge_days:
         return 0
@@ -348,7 +348,8 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 _schedule_delete(db, f"workspaces/{run_id}.tgz", "conversation")
                 _schedule_delete(db, f"previews/{run_id}/", "conversation", prefix=True)
             if ids:
-                for model in (RunEvent, Artifact, ModelUsage):
+                # the usage ledger stays: what these runs cost still counts
+                for model in (RunEvent, Artifact):
                     db.execute(delete(model).where(model.run_id.in_(ids)))
                 db.execute(delete(Run).where(Run.id.in_(ids)))
                 remaining -= len(ids)
