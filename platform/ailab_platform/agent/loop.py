@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable
+from datetime import UTC, datetime
 from typing import TypeVar
 from uuid import uuid4
 
@@ -20,10 +21,10 @@ from .. import metrics, skillfiles
 from ..catalog import Catalog, ModelSpec, get_catalog
 from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
+from ..contracts.jobs import RunStatus
 from ..contracts.usage import UsageStatus
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, llm_for, model_call
 from ..model_policy import ModelPolicy, estimator
-from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
 from ..telemetry import span
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
@@ -731,7 +732,7 @@ class AgentLoop:
                 saved_bytes = await self._save_workspace(turn, run_id)
                 result["workspace_saved"] = saved_bytes is not None
                 if saved_bytes is not None:
-                    result["workspace_saved_at"] = utcnow().isoformat()
+                    result["workspace_saved_at"] = datetime.now(UTC).isoformat()
                     result["workspace_bytes"] = saved_bytes
             result.update(artifacts=turn.artifacts, previews=list(turn.previews.values()))
             if turn.thinking:

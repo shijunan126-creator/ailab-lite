@@ -235,6 +235,12 @@ def internal_transition(run_id: str, body: RunTransitionIn, db: Session = Depend
             if changed:
                 for event in body.events:
                     append_event(db, run_id, event.type, event.payload, commit=False)
+                if run.status == RunStatus.SUCCEEDED:
+                    try:
+                        with db.begin_nested():
+                            apply_result_title(db, run)
+                    except SQLAlchemyError:
+                        logging.getLogger("ailab.api.titles").warning("automatic title update failed")
             db.commit()
         except InvalidTransition as exc:
             raise HTTPException(409, f"invalid transition: {exc}") from exc

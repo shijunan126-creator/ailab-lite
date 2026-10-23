@@ -170,3 +170,24 @@ def test_applying_title_does_not_commit_the_callers_transaction():
         with SessionLocal() as db:
             assert db.get(Conversation, conv["id"]).title == ""
             assert not db.get(Run, run["id"]).result.get("conversation_title")
+
+
+def test_agent_transition_applies_optional_title_in_same_commit():
+    from tests.test_conversations import SERVICE
+
+    with TestClient(app) as client:
+        conversation = client.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = client.post(f"/v1/conversations/{conversation['id']}/messages", headers=AUTH, json={"prompt": "普通文本回答也要标题"}).json()
+        path = f"/internal/runs/{run['id']}/transition"
+        assert client.post(path, headers=SERVICE, json={"status": "running"}).status_code == 200
+        response = client.post(
+            path,
+            headers=SERVICE,
+            json={
+                "status": "succeeded",
+                "summary": "这里是一段没有 Markdown 标题的普通回答。",
+                "result": {"conversation_title": "普通聊天的自动标题"},
+            },
+        )
+        assert response.status_code == 200, response.text
+        assert client.get(f"/v1/conversations/{conversation['id']}", headers=AUTH).json()["title"] == "普通聊天的自动标题"

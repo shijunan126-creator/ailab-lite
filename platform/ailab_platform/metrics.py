@@ -110,7 +110,11 @@ class ApiStateCollector(Collector):
         depth = GaugeMetricFamily("ailab_queue_depth", "Messages not yet acknowledged (waiting or in flight)", labels=["queue"])
         try:
             queue = get_queue()
-            depth.add_metric(["runs"], queue.length(settings.run_queue))
+            chat_depth = queue.length(f"{settings.run_queue}:chat")
+            work_depth = queue.length(f"{settings.run_queue}:work")
+            depth.add_metric(["runs"], chat_depth + work_depth)
+            depth.add_metric(["chat"], chat_depth)
+            depth.add_metric(["work"], work_depth)
             depth.add_metric(["files"], queue.length(settings.file_queue))
         except Exception:
             log.warning("could not read queue depth for /metrics", exc_info=True)

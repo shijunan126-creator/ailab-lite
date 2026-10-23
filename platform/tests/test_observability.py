@@ -204,6 +204,19 @@ def test_metrics_expose_unacknowledged_work_health_without_identifiers(api):
     assert "user_id=" not in body and "run_id=" not in body and "file_id=" not in body
 
 
+def test_queue_depth_includes_both_run_lanes(monkeypatch):
+    from ailab_platform import queue as queue_module
+    from ailab_platform.queue import InMemoryQueue
+
+    queue = InMemoryQueue()
+    monkeypatch.setattr(queue_module, "get_queue", lambda: queue)
+    queue.enqueue(f"{settings.run_queue}:chat", {"run_id": "chat"})
+    queue.enqueue(f"{settings.run_queue}:work", {"run_id": "work"})
+    collected = {metric.name: metric for metric in metrics.ApiStateCollector().collect()}
+    samples = collected["ailab_queue_depth"].samples
+    assert {s.labels["queue"]: s.value for s in samples} == {"runs": 2, "chat": 1, "work": 1, "files": 0}
+
+
 def test_run_lifecycle_is_counted_and_timed(api) -> None:
     ok = sample("ailab_runs_total", status="succeeded")
     secs = sample("ailab_run_seconds_count", status="succeeded")
