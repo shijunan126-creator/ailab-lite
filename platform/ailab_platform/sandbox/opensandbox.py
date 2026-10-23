@@ -8,6 +8,8 @@ path, and the per-sandbox token replaces this server-side API key.
 
 from __future__ import annotations
 
+import base64
+import re
 import shlex
 import threading
 import time
@@ -29,6 +31,43 @@ def _checked(path: str) -> str:
 
 def _join(messages) -> str:
     return "\n".join((m.text or "") for m in messages).strip("\n")
+
+
+_LABEL = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?\Z")
+_ENCODED = re.compile(r"b32\.(\d+)\Z")
+_CHUNK = re.compile(r"\.b32-\d+\Z")
+
+
+def _encode_metadata(labels: dict[str, str]) -> dict[str, str]:
+    # OSB validates metadata as Kubernetes labels, including timestamps and JSON.
+    # Keep ordinary identity labels readable/filterable; encode other values per
+    # field so a metadata PATCH cannot overwrite unrelated concurrent changes.
+    result = {}
+    for key, value in labels.items():
+        if _LABEL.fullmatch(value) and not _ENCODED.fullmatch(value):
+            result[key] = value
+            continue
+        encoded = base64.b32encode(value.encode()).decode().rstrip("=")
+        chunks = [encoded[i : i + 63] for i in range(0, len(encoded), 63)]
+        result[key] = f"b32.{len(chunks)}"
+        result.update({f"{key}.b32-{i}": chunk for i, chunk in enumerate(chunks)})
+    return result
+
+
+def _decode_metadata(labels: dict[str, str]) -> dict[str, str]:
+    result = {}
+    for key, value in labels.items():
+        if _CHUNK.search(key):
+            continue
+        marker = _ENCODED.fullmatch(value)
+        if marker:
+            try:
+                encoded = "".join(labels[f"{key}.b32-{i}"] for i in range(int(marker[1])))
+                value = base64.b32decode(encoded + "=" * (-len(encoded) % 8)).decode()
+            except (KeyError, ValueError, UnicodeError) as exc:
+                raise SandboxError("invalid OpenSandbox lease metadata") from exc
+        result[key] = value
+    return result
 
 
 class OpenSandboxProvider(SandboxProvider):
@@ -97,7 +136,7 @@ class OpenSandboxProvider(SandboxProvider):
                 ready_timeout=timedelta(seconds=90),
                 network_policy=NetworkPolicy(default_action="deny"),
                 resource={"cpu": str(spec.cpu), "memory": str(spec.memory)},
-                metadata=labels or {},
+                metadata=_encode_metadata(labels or {}),
             )
         except Exception as exc:
             raise SandboxError(f"OpenSandbox create failed: {exc}") from exc
@@ -220,7 +259,7 @@ class OpenSandboxProvider(SandboxProvider):
                 self._forget(provider_ref)
                 return None
             raise SandboxError("OpenSandbox inspect failed") from exc
-        return SandboxResource(info.id, info.metadata or {}, info.status.state.lower() == "running")
+        return SandboxResource(info.id, _decode_metadata(info.metadata or {}), info.status.state.lower() == "running")
 
     def list_owned(self, owner: str) -> list[SandboxResource]:
         from opensandbox.models import SandboxFilter
@@ -230,10 +269,14 @@ class OpenSandboxProvider(SandboxProvider):
         deadline, page = time.monotonic() + settings.osb_request_timeout_seconds, 1
         while time.monotonic() < deadline:
             try:
-                result = self._manager.list_sandbox_infos(SandboxFilter(metadata={"ailab.owner": owner}, page_size=100, page=page))
+                result = self._manager.list_sandbox_infos(
+                    SandboxFilter(metadata=_encode_metadata({"ailab.owner": owner}), page_size=100, page=page)
+                )
             except Exception as exc:
                 raise SandboxError("OpenSandbox list failed") from exc
-            resources.extend(SandboxResource(i.id, i.metadata or {}, i.status.state.lower() == "running") for i in result.sandbox_infos)
+            resources.extend(
+                SandboxResource(i.id, _decode_metadata(i.metadata or {}), i.status.state.lower() == "running") for i in result.sandbox_infos
+            )
             if not result.pagination.has_next_page:
                 return resources
             page += 1
@@ -241,7 +284,7 @@ class OpenSandboxProvider(SandboxProvider):
 
     def update_metadata(self, provider_ref: str, labels: dict[str, str]) -> None:
         try:
-            self._manager.patch_sandbox_metadata(provider_ref, labels)
+            self._manager.patch_sandbox_metadata(provider_ref, _encode_metadata(labels))
         except Exception as exc:
             raise SandboxError("OpenSandbox metadata update failed") from exc
 

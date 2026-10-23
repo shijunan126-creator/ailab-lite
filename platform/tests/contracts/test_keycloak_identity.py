@@ -7,6 +7,9 @@ Only use a disposable test realm. The test disables its JIT account in the isola
 from __future__ import annotations
 
 import os
+import threading
+from contextlib import contextmanager
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -19,6 +22,37 @@ from ailab_platform.api.main import app
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import User, utcnow
+
+
+@contextmanager
+def callback_server(redirect):
+    parsed = urlsplit(redirect)
+    if parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1"}:
+        pytest.skip("Keycloak browser contract needs a free local HTTP callback listener")
+    callbacks = []
+
+    class Callback(BaseHTTPRequestHandler):
+        def do_GET(self):
+            if urlsplit(self.path).path != parsed.path:
+                self.send_error(404)
+                return
+            callbacks.append(self.path)
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"Callback received")
+
+        def log_message(self, *_args):
+            pass  # Authorization codes must not enter HTTP access logs.
+
+    server = ThreadingHTTPServer((parsed.hostname, parsed.port or 80), Callback)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield callbacks
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 @pytest.mark.skipif(not os.getenv("AILAB_TEST_OIDC_ISSUER"), reason="AILAB_TEST_OIDC_ISSUER not set (disposable Keycloak realm)")
@@ -38,18 +72,13 @@ def test_keycloak_code_login_logout_and_disabled(monkeypatch):
     monkeypatch.setattr(routes_auth, "oidc_provider", OIDCIdentityProvider(settings))
     username = os.environ["AILAB_TEST_OIDC_USERNAME"]
     password = os.environ["AILAB_TEST_OIDC_PASSWORD"]
-    with TestClient(app) as c, sync_playwright() as pw:
+    with TestClient(app) as c, sync_playwright() as pw, callback_server(redirect) as callback_urls:
         browser = pw.chromium.launch(headless=True)
         try:
             page = browser.new_page()
             start = c.post("/v1/auth/oidc/start").json()
-            callback_urls = []
-
-            def capture(route):
-                callback_urls.append(route.request.url)
-                route.fulfill(status=200, body="Callback received")
-
-            page.route(redirect + "*", capture)
+            # Chromium may follow an IdP redirect without routing its target through
+            # Playwright. Receive the actual callback rather than intercepting it.
             page.goto(start["authorization_url"])
             page.locator("#username").fill(username)
             page.locator("#password").fill(password)

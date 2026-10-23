@@ -1,0 +1,6 @@
+api 200 {"ok": true, "degraded": true, "checks": {"db": true, "queue": false, "storage": true}} 1.098
+agent 503 {"ok": false, "queue": false, "consumer_running": true} 1.007
+worker 503 {"ok": false, "queue": false, "worker_running": true} 1.01
+RECOVERED api 200
+RECOVERED agent 200
+RECOVERED worker 200
