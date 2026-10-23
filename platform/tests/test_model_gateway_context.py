@@ -311,7 +311,7 @@ def test_context_api_keyset_and_summary_compare_and_set():
             db.commit()
         bootstrap = c.get(f"/internal/runs/{current['id']}/model-input", headers=SERVICE).json()
         assert bootstrap["prompt"] == "latest" and bootstrap["history"] == []
-        assert bootstrap["needs_conversation_title"] is False
+        assert bootstrap["needs_conversation_title"] is True
         assert bootstrap["workspace_restore_key"] is None
         url = f"/internal/runs/{current['id']}/model-context"
         first = c.get(url, headers=SERVICE).json()

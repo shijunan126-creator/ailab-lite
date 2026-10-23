@@ -27,7 +27,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     run = _run_or_404(db, run_id)
     out = run_dict(db, run, detail=True)
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
-    out["needs_conversation_title"] = conversation is not None and not conversation.title
+    out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
     out["history"] = []
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
