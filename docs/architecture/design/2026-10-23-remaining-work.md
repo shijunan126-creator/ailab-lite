@@ -27,7 +27,8 @@ T19（OCR/多模态）和 T20（Skills 治理）是能力扩展。T20 的业务�
         T08 Agent 并发     ─┤（共用新的队列信封）
 阶段 2  T07 运行时 checkpoint / ask_user / 续跑 / 租约心跳   ← 依赖 T09 的 attempt 与信封
 阶段 3  T14 模型网关与上下文      T15 会话分页（可并行）
-阶段 4  T16 可观测性与负载基线    F8 余项：Broker 流式注入（可并行）
+阶段 1+ F8 余项：Broker 流式注入（实测接近内存上限，提前）
+阶段 4  T16 可观测性与负载基线
 阶段 5  T19 OCR / 多模态（依赖 T14 能力声明）   T20 Skills 治理（依赖外部模板与样本）
 ```
 
@@ -229,6 +230,8 @@ AgentRuntime.start(run) / resume(run, checkpoint) / cancel(run) / snapshot(run)
 - **成本**：未启用 OTel 时为零。启用时按采样比例实测 CPU 后再定。
 
 ## 8. F8 余项 · Broker 流式注入
+
+**实测（2026-10-23，2 vCPU / 8 GiB k3s，见 [验收报告](../../reviews/2026-10-23-real-components.md)）**：50 MiB 注入时 Broker 峰值 RSS 约 265 MiB，100 MiB 交付时约 284 MiB，Pod 上限 384 MiB。单次能通过，两个并发大文件就会触发 OOMKill。因此本项提前到阶段 1，与 T09 并行。
 
 Broker 目前从 API 取整份 bytes，再 put 到沙箱（最多 50 MB，Pod 上限 384 MiB）。
 
