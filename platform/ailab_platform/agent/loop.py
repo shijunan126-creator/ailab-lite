@@ -20,7 +20,7 @@ from ..catalog import get_catalog
 from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, llm_for
-from ..models import RunStatus
+from ..models import RunStatus, utcnow
 from ..paths import OUTPUTS
 from .prompts import history_messages, personal_header, skills, system_prompt_for, user_prompt
 from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_turn
@@ -263,16 +263,17 @@ class AgentLoop:
         if turn.lease_id:
             await self._render_previews(turn, run_id)  # the last change may have come after the last render
 
-    async def _save_workspace(self, turn: _Turn, run_id: str) -> bool:
+    async def _save_workspace(self, turn: _Turn, run_id: str) -> int | None:
+        """Save the workspace for the next turn; returns compressed bytes, or None when not saved."""
         if not (turn.lease_id and turn.run.get("conversation_id")):
-            return False
+            return None
         try:
-            await self.broker.snapshot(turn.lease_id)
-            return True
+            snapshot = await self.broker.snapshot(turn.lease_id)
+            return int(snapshot.get("size") or 0)
         except Exception as exc:
             log.warning("workspace snapshot failed for %s", run_id, exc_info=True)
             await self._event(run_id, "agent.warning", {"message": f"工作区没能保存，下一轮需要重新生成文件：{exc}"[:300]})
-            return False
+            return None
 
     async def _call_model(self, llm: LLMClient, run_id: str, run: dict, model: str, messages: list[dict], step: int, tools=None):
         model_label = metrics.model_label(model)
@@ -501,7 +502,11 @@ class AgentLoop:
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
                 await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
-                result["workspace_saved"] = await self._save_workspace(turn, run_id)
+                saved_bytes = await self._save_workspace(turn, run_id)
+                result["workspace_saved"] = saved_bytes is not None
+                if saved_bytes is not None:
+                    result["workspace_saved_at"] = utcnow().isoformat()
+                    result["workspace_bytes"] = saved_bytes
             result.update(artifacts=turn.artifacts, previews=list(turn.previews.values()))
             if turn.thinking:
                 text = "\n\n".join(turn.thinking)

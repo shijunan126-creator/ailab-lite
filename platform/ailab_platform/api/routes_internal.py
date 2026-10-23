@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from urllib.parse import quote
 
@@ -101,6 +102,30 @@ def workspace_key(run_id: str) -> str:
     return f"workspaces/{run_id}.tgz"
 
 
+def workspace_alive(run: Run, now: datetime) -> bool:
+    """Whether this turn's workspace is still inside the retention window.
+
+    New snapshots carry workspace_saved_at; older rows fall back to finished_at
+    so deploying the TTL does not resurrect or lose their existing snapshots.
+    """
+    result = run.result or {}
+    if not result.get("workspace_saved"):
+        return False
+    saved_at = result.get("workspace_saved_at")
+    when: datetime | None = None
+    if isinstance(saved_at, str):
+        try:
+            when = datetime.fromisoformat(saved_at)
+        except ValueError:
+            when = None
+    when = when or run.finished_at or run.created_at
+    if when is None:
+        return False
+    if when.tzinfo is None:  # SQLite drops tzinfo
+        when = when.replace(tzinfo=UTC)
+    return when + timedelta(days=max(0, settings.workspace_ttl_days)) > now
+
+
 def _earlier_turns(db: Session, run: Run) -> list[Run]:
     if not run.conversation_id:
         return []
@@ -138,10 +163,8 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         if owner
         else []
     )
-    out["workspace_restore_key"] = next(
-        (workspace_key(t.id) for t in reversed(earlier) if (t.result or {}).get("workspace_saved")),
-        None,
-    )
+    now = datetime.now(UTC)
+    out["workspace_restore_key"] = next((workspace_key(t.id) for t in reversed(earlier) if workspace_alive(t, now)), None)
     return out
 
 

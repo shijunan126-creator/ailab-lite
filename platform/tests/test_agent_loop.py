@@ -406,6 +406,9 @@ def test_a_conversation_turn_saves_its_workspace_only_if_it_used_a_sandbox() -> 
         ScriptedLLM([LLMResponse(tool_calls=[work]), LLMResponse(content="ok")]), platform=ConversationPlatform(), broker=broker
     )
     assert broker.snapshots == 1 and platform.statuses[-1][1]["result"]["workspace_saved"] is True
+    saved = platform.statuses[-1][1]["result"]
+    assert saved["workspace_bytes"] == 10
+    assert saved["workspace_saved_at"]
 
 
 def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:

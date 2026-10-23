@@ -92,6 +92,8 @@ class Settings(BaseSettings):
     max_sandbox_write_bytes: int = 20 * 1024 * 1024  # write_file tool
     max_auto_deliver_files: int = 20
     max_workspace_bytes: int = 60 * 1024 * 1024  # compressed workspace carried between turns of a conversation
+    workspace_ttl_days: int = 3  # keep the last workspace of a conversation at most this long
+    workspace_cleanup_interval_seconds: int = 3600  # scan the object store for expired snapshots hourly
 
     # OpenSandbox server (T2 dev stand-in). Set AILAB_SANDBOX_PROVIDER=opensandbox.
     osb_domain: str = "127.0.0.1:8090"

@@ -19,7 +19,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
-from .reaper import reap_forever
+from .reaper import reap_forever, workspace_cleanup_forever
 from .routes_auth import router as auth_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
@@ -41,8 +41,10 @@ async def lifespan(_: FastAPI):
     init_db()
     log.info("platform api ready db=%s storage=%s", settings.database_url, settings.storage_backend)
     reaper = asyncio.create_task(reap_forever(), name="reaper")
+    workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     yield
     reaper.cancel()
+    workspace_cleanup.cancel()
 
 
 app = FastAPI(

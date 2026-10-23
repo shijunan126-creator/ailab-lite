@@ -11,10 +11,19 @@ import shutil
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 
 from .config import settings
+
+
+@dataclass(frozen=True)
+class StoredObject:
+    key: str
+    size: int
+    modified_at: datetime
 
 
 class Storage(ABC):
@@ -23,6 +32,14 @@ class Storage(ABC):
 
     @abstractmethod
     def get_bytes(self, key: str) -> bytes: ...
+
+    def list_prefix(self, prefix: str) -> list[StoredObject]:
+        """Objects under a prefix, with their size and last-modified time.
+
+        Only the workspace TTL janitor needs this; a custom storage can keep
+        the default and opt out of object-level expiry.
+        """
+        return []
 
     def put_file(self, key: str, path: str | Path, content_type: str = "application/octet-stream") -> None:
         """Upload a file without materializing it as one bytes object (default fallback)."""
@@ -104,6 +121,24 @@ class LocalStorage(Storage):
     def size(self, key: str) -> int:
         return self._path(key).stat().st_size
 
+    def list_prefix(self, prefix: str) -> list[StoredObject]:
+        base = self._path(prefix.rstrip("/"))
+        if not base.is_dir():
+            return []
+        out: list[StoredObject] = []
+        for path in base.rglob("*"):
+            if not path.is_file():
+                continue
+            stat = path.stat()
+            out.append(
+                StoredObject(
+                    key=path.relative_to(self.root).as_posix(),
+                    size=stat.st_size,
+                    modified_at=datetime.fromtimestamp(stat.st_mtime, UTC),
+                )
+            )
+        return out
+
     def stream(self, key: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
         with open(self._path(key), "rb") as fh:
             while chunk := fh.read(chunk_size):
@@ -158,6 +193,20 @@ class S3Storage(Storage):
 
     def size(self, key: str) -> int:
         return int(self.client.head_object(Bucket=self.bucket, Key=_safe_key(key))["ContentLength"])
+
+    def list_prefix(self, prefix: str) -> list[StoredObject]:
+        out: list[StoredObject] = []
+        paginator = self.client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=_safe_key(prefix)):
+            for item in page.get("Contents", []):
+                out.append(
+                    StoredObject(
+                        key=item["Key"],
+                        size=int(item["Size"]),
+                        modified_at=item["LastModified"],
+                    )
+                )
+        return out
 
     def stream(self, key: str, chunk_size: int = 64 * 1024) -> Iterator[bytes]:
         body = self.client.get_object(Bucket=self.bucket, Key=_safe_key(key))["Body"]
