@@ -1,0 +1,6 @@
+FROM ailab-platform:lite
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client procps && rm -rf /var/lib/apt/lists/*
+COPY platform/tests /app/tests
+COPY platform/scripts /app/scripts
+RUN pip install -c constraints.txt '.[dev,postgres,e2e]'

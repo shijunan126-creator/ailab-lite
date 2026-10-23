@@ -197,3 +197,18 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 内部读文件统一经 `_bound_file`：回收站中的文件 404，已清理版本 410。
 - 资料库界面 E2E 在 `platform/e2e/test_library_ui.py`；设 `AILAB_E2E_SHOTS=/tmp/x` 会保存各状态截图供人工检查。macOS 上 mock 沙箱用宿主 LibreOffice 渲染，宿主未配置 CJK 回退字体时中文字形会被丢掉（只剩英文与线条），这不是渲染器问题；生产沙箱镜像装有 Noto CJK 与微软雅黑/宋体别名。
 - 全局 `button` 样式带 `align-items/justify-content: center`。把整张卡片或整行做成 button 时要显式覆盖（`align-items: stretch; justify-content: flex-start`），否则内容居中。
+
+## 2026-10-23 真实组件与原生 ARM64 验收
+
+- 工作树 `t3-4a3b78af`，分支 `verify/real-components`，基线 `feat/arch-hardening@9c0c808`；仅本地提交。完整命令、数据与未覆盖边界：`docs/reviews/2026-10-23-real-components.md` 和同目录 `real-components-20261023/`。
+- Colima 只用专用 profile `ailab-verify`（2CPU/8GiB/60GiB/k3s），必须 `--activate=false`，Docker 显式 `--context colima-ailab-verify`，kubectl 通过该 VM 的 `sudo k3s kubectl`。宿主缺 kubectl 时 start 在建 VM 前失败；Colima 的 Mac `/tmp` 不共享，bind 会成为空目录，必须用共享用户目录。中断后 profile 曾停止，原采样未落盘，不能把不完整数字当结论；重启后所有 PID/映射和 OSB 进程要重新建立。
+- `clamav/clamav:1.4` 缺 arm64，不能据此说 ClamAV 没有 ARM64。用户指出 `clamav/clamav-debian:latest`，实测 1.5.4 原生支持，最终清单固定 multiarch digest。冷启动先等签名与 PING；曾用的 amd64 模拟数字不用于最终性能验收。原生契约通过，pause→pending/scan_unavailable 30.027s，unpause→ready 36.858s；这是进程停滞恢复，未测重新下载/加载签名。
+- MinIO Docker Hub 指定镜像不可拉，Quay 401、官方二进制410；本轮固定官方源码 tag 构建真实 MinIO。CI仍引用旧DockerHub tag，待维护镜像源，不把本地源码构建通过当CI通过。PostgreSQL16 restore 用PG16客户端；PG17 pg_dump 会写 transaction_timeout 导致向PG16导入失败。
+- OSB metadata 被按Kubernetes label校验：时间戳、JSON、preview:job_id 都不能原样传。adapter逐字段base32分块/读回解码，owner普通值保留可筛选，PATCH缩短须忽略旧尾块。真实OSB/Docker生命周期、Broker重启/移除该owner Redis记录/外部删除资源均通过。
+- Linux RLIMIT_AS下libxml C层分配失败是XMLSyntaxError/ERR_NO_MEMORY，不是Python MemoryError；按结构化错误码归为memory_limit。原真实OOM测试红→绿，不能把corrupt当作OOM验收。
+- 当前Chromium的IdP302回调不经过Playwright route拦截，Keycloak gate需真实本地callback listener，不能打印授权码。Keycloak realm导入文件必须匹配 `<realm>-realm.json`。Portal实际登录、组→角色/部门、Strict/httpOnly、停用/注销均已验。
+- Redis健康检测不能复用业务队列15s超时和自动重试：本轮真实暂停Redis超过10s探针预算，独立1s connect/read无重试pool修复；API按既定合同返回200/degraded，Agent/Worker返回503，恢复均200。每个RedisQueue最多多1连接，无新增依赖。
+- 原生负载：50MiB上传3.600s；20MiB PPTX扫描+解析27.906s；DOCX上传到预览9.057s；Broker注入50MiB 3.570s/peak RSS265.4MiB，交付100MiB 3.020s/284.4MiB，limit384MiB。Worker peak173.2MiB、clamd容器1084.7MiB，无OOM但有CPU节流。Broker整文件缓冲仍是设计债务，单次通过不证明并发安全。采样0.1s、886样本、采样器CPU1.884s；健康探测修复后另采5s空闲RSS，未重复全部负载。
+- k3s备份本轮57对象/252762640B，暂停四个写服务后create/verify/restore/verify共4.14s、RSS60.1MiB；空目录恢复API的100MiB下载哈希、JPEG预览、Run均通过。不是生产RPO/RTO或异机介质验收。
+- 最终Linux PG16+Redis+全局S3+原生clamd全套753 passed/9 skipped/101.26s；真实provider/Keycloak gate另跑通过；Portal11测试与production build通过，Ruff通过。未验真实OSB Office+S3联合部署、完整mock故障矩阵的真实版本、并发/长期负载、hostNetwork公网防火墙、gVisor/付费模型。清理状态见验收证据cleanup.log；只停止不删除专用profile。
+- 清理最终状态（15:26 +08）：专用platform namespace/PVC、临时容器/卷、自建镜像/悬空构建层均删除，OSB/Portal/API/转发均停止；Colima ailab-verify=Stopped，profile与上游基础镜像保留；私密token/kubeconfig副本已删除。本地cache保留有限数据备份与证据，没有任务服务运行。

@@ -1,0 +1,8 @@
+FROM golang:1.24.2 AS build
+WORKDIR /src
+COPY . .
+RUN CGO_ENABLED=0 go build -p 2 -trimpath -o /minio .
+FROM debian:bookworm-slim
+COPY --from=build /minio /usr/local/bin/minio
+ENTRYPOINT ["minio"]
+CMD ["server", "/data"]
