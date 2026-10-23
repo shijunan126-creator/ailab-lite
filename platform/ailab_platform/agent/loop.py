@@ -29,9 +29,10 @@ from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
 from ..runtime_context import attempt_id_var, delivery_id_var
 from ..telemetry import span
+from . import net_tools
 from .multimodal import attachment_content, input_content
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
-from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
+from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
 
@@ -45,7 +46,7 @@ THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
-FILE_TOOLS = frozenset({"write_file", "exec", "deliver_file"})  # tools that change /workspace or its outputs
+FILE_TOOLS = frozenset({"write_file", "exec", "deliver_file", *net_tools.NAMES})  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
@@ -79,6 +80,9 @@ class _Turn:
         self.skill_files: dict[str, dict[str, bytes]] = {}  # personal skills read this turn: name -> their files
         self.thinking: list[str] = []  # the model's reasoning across the turn's steps, kept for the conversation view
         self.thinking_seconds = 0.0
+        self.messages: list[dict] = []  # the conversation as the model sees it: where fetchable URLs come from
+        self.net_budget = net_tools.Budget()
+        self.allowed_tools: set[str] | None = None  # None until the turn's tools are known
 
 
 class _DeltaWriter:
@@ -646,6 +650,8 @@ class AgentLoop:
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         try:
+            if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
+                raise ToolError(f"tool {call.name} is not available in this turn")
             wanted = call.arguments.get("name") if call.name == "load_skill" else None
             if wanted in turn.disabled_skills:
                 raise ToolError(f"技能 {wanted} 已被用户关闭，不能使用；用沙箱里的 Python 库自己完成")
@@ -653,9 +659,11 @@ class AgentLoop:
                 with span("agent.tool", tool=tool):
                     result = {"ok": True, "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))}
             else:
-                lease_id = await self._ensure_lease(turn, run_id) if call.name in SANDBOX_TOOLS else (turn.lease_id or "")
+                needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
+                lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
+                ctx = ToolContext(run_id, self.platform, turn.messages, turn.net_budget)
                 with span("agent.tool", tool=tool):
-                    result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker))
+                    result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
         except (RunCanceled, LeaseInterrupted):
             raise
         except ClientError as exc:
@@ -913,9 +921,13 @@ class AgentLoop:
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 await self._checkpoint(run_id, turn)
             messages = state["messages"]
+            turn.messages = messages
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
             offered = [] if spec is not None and not spec.supports({"tools"}) else tools_for_chat() if mode == "chat" else None
+            # A call to a tool not offered this turn is answered, never run: chat offers save_skill, and a write_file the
+            # model sends anyway must not start a sandbox. "finish" is the legacy end marker some prompts still use.
+            turn.allowed_tools = {t["function"]["name"] for t in (tools_for_turn() if offered is None else offered)} | {"finish"}
             error = None
             while state["next_step"] < settings.max_agent_steps and not state["finished"]:
                 step = state["next_step"]

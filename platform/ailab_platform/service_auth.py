@@ -15,7 +15,17 @@ from .ports.service_auth import ServiceAuthenticator, ServicePrincipal
 SERVICE_SCOPES: dict[str, frozenset[str]] = {
     "api": frozenset({"agent:dispatch", "worker:dispatch"}),
     "agent": frozenset(
-        {"jobs:run", "runs:read", "runs:status", "runs:events", "usage:reserve", "usage:write", "files:read_for_run", "sandbox:use"}
+        {
+            "jobs:run",
+            "runs:read",
+            "runs:status",
+            "runs:events",
+            "usage:reserve",
+            "usage:write",
+            "files:read_for_run",
+            "sandbox:use",
+            "skills:save_for_run",
+        }
     ),
     "broker": frozenset({"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "artifacts:commit_for_run"}),
     "worker": frozenset(

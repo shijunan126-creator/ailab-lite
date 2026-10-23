@@ -27,6 +27,18 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "查看目录", detail: args?.path };
     case "deliver_file":
       return { label: "交付文件", detail: args?.filename || String(args?.path || "").split("/").pop() };
+    case "web_search":
+      return { label: "搜索网页", detail: args?.query };
+    case "read_url":
+      return { label: "读取网页", detail: args?.url };
+    case "download_url":
+      return { label: "下载文件", detail: args?.url };
+    case "fetch_repo":
+      return { label: "获取仓库", detail: [args?.repo, args?.ref].filter(Boolean).join("@") };
+    case "fetch_packages":
+      return { label: "安装依赖", detail: (Array.isArray(args?.packages) ? args.packages : []).join(" ") };
+    case "save_skill":
+      return { label: args?.mode === "update" ? "更新个人技能" : "保存个人技能", detail: args?.name };
     default:
       return { label: name };
   }

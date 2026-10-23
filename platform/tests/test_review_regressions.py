@@ -171,9 +171,10 @@ def test_chat_mode_ignores_unsolicited_tool_calls():
             return {**await super().get_run(run_id), "options": {"mode": "chat"}}
 
     call = ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})
-    llm = ScriptedLLM([LLMResponse(content="只是文字", tool_calls=[call])])
+    llm = ScriptedLLM([LLMResponse(content="只是文字", tool_calls=[call]), LLMResponse(content="只是文字")])
     platform, broker = _run(llm, platform=ChatPlatform())
-    assert broker.leases == 0 and broker.put_calls == []  # nothing ran
+    assert broker.leases == 0 and broker.put_calls == []  # nothing ran: chat offers save_skill, not the sandbox
+    assert "not available" in llm.seen_messages[1][-1]["content"]
     assert platform.statuses[-1][0] == "succeeded" and platform.statuses[-1][1]["summary"] == "只是文字"  # the words survive
 
 

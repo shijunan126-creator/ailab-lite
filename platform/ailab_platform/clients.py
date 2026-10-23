@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from typing import Any, NamedTuple
 
 import httpx
@@ -349,6 +350,11 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run_usage(self, run_id: str) -> dict:
         return (await self._send(self._get_run_usage(run_id))).json()
 
+    async def save_skill(self, run_id: str, name: str, mode: str, filename: str, data: bytes) -> dict:
+        """A personal skill the model wrote; the API decides the owner from the run and keys retries by the delivery id."""
+        params = {"name": name, "mode": mode, "filename": filename}
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/skills", timeout=120, params=params, content=data))).json()
+
     async def get_file_bytes(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> bytes:
         """A personal skill's file. The agent only asks for ids the API listed in the run's personal_skills."""
         return (await self._send(self._get_file_bytes(file_id, run_id, job))).content
@@ -420,6 +426,17 @@ class AsyncBrokerClient(_Service):
 
     async def put_file(self, lease_id: str, path: str, data: bytes) -> None:
         await self._send(self._req("PUT", f"/internal/leases/{lease_id}/files", timeout=120, params={"path": path}, content=data))
+
+    async def put_fetched(self, lease_id: str, path: str, local: Path) -> None:
+        """Streams a downloaded file from disk; neither side buffers it whole."""
+
+        async def body():
+            with local.open("rb") as f:
+                while chunk := await asyncio.to_thread(f.read, 1024 * 1024):
+                    yield chunk
+
+        req = self._req("PUT", f"/internal/leases/{lease_id}/fetched", timeout=300, params={"path": path}, content=body())
+        await self._send(req)
 
     async def get_file(self, lease_id: str, path: str) -> bytes:
         return (await self._send(self._req("GET", f"/internal/leases/{lease_id}/files", timeout=120, params={"path": path}))).content

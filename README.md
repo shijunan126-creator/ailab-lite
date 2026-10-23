@@ -1,99 +1,101 @@
-# AILab 简易版：分组件测试 + 协同测试
+# AILab 简易版（ailab-lite）
 
 [![CI](https://github.com/shijunan126-creator/ailab-lite/actions/workflows/ci.yml/badge.svg)](https://github.com/shijunan126-creator/ailab-lite/actions/workflows/ci.yml)
 
-目标：在本机（2 vCPU / 7.7 GB，x86_64，无 KVM）上按组验证 AILab 的关键组件，**组件与大集群一致**，
-只在 `deploy/overlays/lite` 里改数值。不跑完整平台，一次只起一组，测完拆掉。
+AILab 平台的单机底座：在一台机器（目标 2 vCPU / 约 8 GB）上提供可靠的 Chat、Work、文件上传与解析、产物交付、多轮修改、
+项目资料库、技能和受控联网。以后扩到多机只换适配器和部署，不改业务授权、用量账本、文件交付和 Portal 事件协议。
 
-开发接续从 [项目进度](docs/progress/README.md) 进入：先读 [当前工作](docs/progress/current.md)，再按任务查路线图、能力状态和验收证据。开发规则见 [AGENTS.md](AGENTS.md)。
+开发接续从 [项目进度](docs/progress/README.md) 进入：先读 [当前工作](docs/progress/current.md) 和 [HANDOFF](HANDOFF.MD)，
+规则见 [AGENTS.md](AGENTS.md)，各能力的实现与验收状态见 [能力状态矩阵](docs/architecture/status-matrix.md)。
 
-## 快速开始：一键部署
+## 能做什么
 
-在一台**已装好 Docker 和 k3s** 的 Linux 机器上（建议 ≥ 2 vCPU / 7 GB 内存，x86_64 或 arm64）：
+- **对话 / 工作两种模式**：对话只用文字回答，从不启动沙箱；工作模式由模型在 gVisor 沙箱里运行代码、生成 PPT、Excel 等文件，
+  右侧实时预览，可以接着对话修改同名文件。工作过程按时间顺序统一展示，耗时只计实际运行时间。
+- **资料库**：项目、文件夹、收藏、图片、回收站、版本历史；上传后在 Worker 的受限子进程里扫描和解析，缩略图和预览只生成一次并缓存。
+- **技能**：通用技能随沙箱镜像发布；个人技能是用户自己的 `SKILL.md` 或 `.zip`，可上传，也可在对话或工作中让模型新建、更新（保留旧版本）。
+  保存的技能要经过扫描与审核策略才能使用。
+- **受控联网**：搜索网页、读取指定网页和 GitHub issue（含评论）并保留来源、下载图片和文档、获取公开仓库源码、安装 PyPI 依赖后在沙箱里做实验、
+  临时使用外部仓库里的技能。沙箱本身始终没有网络，见下文“安全边界”。
 
-```bash
-git clone https://github.com/shijunan126-creator/ailab-lite && cd ailab-lite
-sudo ./deploy.sh --model-key sk-xxxxxxxx     # 默认接 DeepSeek V4.1 Flash；不带 --model-key 也行：先用"离线演示"模型体验完整链路
-
-# 换成任何 OpenAI 兼容接口（OpenAI、通义、Kimi、vLLM、Ollama、自建网关……）：
-sudo ./deploy.sh --model-base-url https://dashscope.aliyuncs.com/compatible-mode/v1 --model-name qwen-plus \
-                 --model-key sk-xxxxxxxx --model-label "通义千问 Plus"
-sudo ./deploy.sh --model-base-url http://10.0.0.5:8000/v1 --model-name Qwen/Qwen3-32B   # 本地 vLLM，无需 Key
-# 多个模型：--models-file my-models.toml（格式见 platform/models.toml）
-
-# 注册：默认开放，任何能打开 Portal 的人都能注册；也可以要邀请码或关闭
-sudo ./deploy.sh --skip-build --registration invite --invite-code 你的邀请码
-```
-
-部署时会先用给定的地址、模型名和 Key 试调一次模型，地址写错或 Key 不对当场就能发现。
-
-脚本会依次：检查前置条件 → 构建沙箱镜像（缺则构建，首次要几分钟）和平台镜像并导入 k3s →
-启动 OpenSandbox → 生成随机令牌和 Secret → 发布模型目录 → 部署 5 个服务 → 构建并启动 Portal → 冒烟测试
-（含经 Portal 登录代理的完整路径），最后打印 Portal 地址和登录令牌。可重复执行；`--dry-run` 只看不做。
-
-```bash
-./deploy.sh status          # 哪些在跑、模型列表
-./deploy.sh --skip-build    # 只改配置/换 Key，不重新构建
-./deploy.sh down            # 从 k3s 删除平台（会删数据，会先确认）
-./deploy.sh --help
-```
-
-打开 http://127.0.0.1:3000，用打印出来的账号（用户名 `admin` + 随机密码）登录，直接对话：可以普通问答，也可以让它做 PPT / Excel（右侧实时预览，可以接着对话修改）。
-Portal 默认只监听本机，从自己电脑看用 `ssh -L 3000:127.0.0.1:3000 <机器>`；`--listen 0.0.0.0` 会在网络上暴露
-一个 HTTP 登录页，仅限可信网络。k3s 本身的安装见 `tests/t0_base.sh`，平台的详细说明见 [platform/README.md](platform/README.md)。
-
-> 模型怎么接、Key 放哪、以后怎么换成本地模型：见 platform/README.md 的"模型目录"。用户在界面上选模型，不接触 Key。
-
-## 架构图
+## 架构
 
 ![AILab 简易版架构](diagrams/svg/lite-01-architecture.svg)
 
-源码 `diagrams/src/d_lite_arch.py`（沿用 AILab 文档的绘图库），重新生成：`cd diagrams/src && python3 -I d_lite_arch.py && python3 -I render.py`。
+五个服务，边界见 [AGENTS.md §2](AGENTS.md)：
 
-## 测试分组
-
-| 组 | 组件 | 关键验收 | 依赖 | 状态 |
-|---|---|---|---|---|
-| T0 基座 | k3s v1.34.12 + gVisor RuntimeClass + sandbox 命名空间 | gVisor Pod 可运行；**装前装后宿主机探针正常** | — | ✅ 10-20 通过 |
-| T1 沙箱镜像 | `sbx-office:lite` | runc / gVisor 下冒烟通过；网络全不通；配额只许 1 个；记录内存峰值 | T0 | ✅ runc + gVisor 通过（峰值 177 / 182 MiB） |
-| T1b 双架构 | buildx amd64+arm64 | arm64 镜像能在 QEMU 下跑通冒烟 | T1 | 待准备 |
-| T2 沙箱面 | OpenSandbox server + controller + ingress-gateway（gvisor） | 预热池领取、exec、文件进出、Secure Access 拦截无令牌请求、到期回收 | T0、T1 | dev server 跑通（Docker runtime）；k8s 控制面待准备 |
-| T3 模型面 | GPUStack Server（无 Worker）+ Higress 2.1.9 + Valkey + DeepSeek 提供方 | 别名路由、服务 Key 鉴权、流式 usage、**限流真的拒绝**、x-user-id 透传 | T0、**DeepSeek 密钥** | 待准备 |
-| T4 数据面 | CNPG + SeaweedFS | 预签名上传下载、版本管理、PG 备份到 S3 | T0 | 待准备 |
-
-| 协同 | 组合 | 验证什么 |
+| 服务 | 负责 | 不做 |
 |---|---|---|
-| I1 | T2 + T3 + 最小 Agent（deepagents + OpenSandbox 后端） | "帮我做一个 ppt"：Agent 在沙箱外经 Higress 调 DeepSeek，在 gVisor 沙箱里生成 pptx |
-| I2 | I1 + T4 + 最小 Broker | 文件从 S3 注入 `/workspace/inputs`，产出两阶段提交回 S3 |
+| Portal（Next.js，`platform/portal`） | 界面、httpOnly 会话、同源代理 `/api/v1 → /v1` | 不持有模型密钥或沙箱凭据 |
+| Platform API（`platform/ailab_platform/api`） | 业务数据库的唯一写入方：授权、配额、账本、文件记录、技能 | 不执行用户代码、不解析不可信文件 |
+| Agent（`…/agent`） | Agent 循环、模型调用、沙箱外的公开资源获取 | 不写业务库、不持有容器运行时 |
+| Broker（`…/broker`） | 沙箱租约、exec 代理、文件注入与两阶段交付 | 不信任 Agent 给的路径和大小 |
+| Worker（`…/worker`） | 扫描、解析、缩略图、预览 | 不在进程内无限制解析 |
 
-## 平台服务（自研）
+服务间走 HTTP，各自独立凭据和 scope；内部路由在 `/internal` 下，Portal 代理不可达。图源 `diagrams/src/d_lite_arch.py`。
 
-`platform/` 已实现架构图里的 Portal、Platform API、Agent Service、Sandbox Broker、文件处理 Worker，
-并用 dev 适配器跑通“帮我做 PPT”端到端：SQLite 代替 CNPG、本机 Redis 代替 Valkey、本地目录代替
-SeaweedFS、OpenSandbox dev server（Docker runtime）或 Docker CLI 代替 k8s/gVisor 沙箱、
-模型目录（DeepSeek 官方 API / mock）暂代 Higress/GPUStack，用户在界面选模型。平台服务已通过 `platform/deploy/overlays/lite`（kustomize）跑在现有 k3s
-（`platform` 命名空间，API NodePort 30080）。T3/T4 就绪后只改 `.env` 和对应 adapter。详见
-[platform/README.md](platform/README.md)。
+## 安全边界（联网部分）
 
-## 本机约束
+方案与取舍见 [ADR 0007](docs/architecture/adr/0007-controlled-public-fetch.md)。要点：
 
-- **宿主机保护**：测试脚本会装 k3s、改容器运行时，在还跑着别的重要服务的机器上要小心。`tests/lib.sh` 提供两个钩子
-  `guard_busy_window`（忙时拒绝动宿主机，`FORCE=1` 可强制）和 `host_probe`（改动前后各探测一次本机关键服务），
-  默认都不拦截；机器特有的规则写在不入库的 `tests/local.sh`（样例 `tests/local.sh.example`）。
-- **不碰 docker 配置**：gVisor 只注册到 k3s 自己的 containerd；runsc 的 deb 安装脚本在 `/etc/docker/daemon.json` 存在时会改它并 reload docker，安装前检查。
-- 内存：一次只起一组；T3 / T4 不同时运行。
+- 沙箱 `--network none` + gVisor，没有宿主目录、容器运行时套接字或平台凭据；公开资源由 Agent 在沙箱外获取，Broker 流式写入沙箱，只在沙箱里打开和执行。
+- 只访问公网 http(s)（80/443）：每个 DNS 结果都必须是公网地址（含 IPv4 映射、NAT64、6to4、Teredo 等变体），连接直接用检查过的地址，重定向逐跳复查，不用环境代理、不带 cookie 或凭据。
+- 模型只能获取用户消息或搜索/网页结果里出现过的 URL（GitHub、PyPI 可直接构造），不能把对话内容拼进任意域名的 URL；每次运行有请求数和下载量上限。
+- 只读：没有推送、评论或提交表单的能力，也不注入私有仓库凭据或浏览器登录态。
+- 外部网页、issue、仓库文件和技能都按不可信数据处理；外部技能只能临时使用，保存为个人技能要走 `save_skill`，且不能覆盖通用技能或他人技能。
 
-## 回滚
+没有声称“绝对防泄露”：搜索词、在页面已有链接间的选择、请求哪些公开包等低带宽信号仍然存在，残余风险写在 ADR 和验收记录里。
+
+## 快速开始（k3s 部署）
+
+在一台已装好 Docker 和 k3s 的 Linux 机器上（≥ 2 vCPU / 7 GB，x86_64 或 arm64）：
 
 ```bash
-/usr/local/bin/k3s-uninstall.sh   # 删除 k3s 及其 iptables 规则
-dpkg -r runsc
+git clone https://github.com/shijunan126-creator/ailab-lite && cd ailab-lite
+sudo ./deploy.sh --model-key sk-xxxxxxxx     # 默认接 DeepSeek；不带 key 时用离线演示模型走通完整链路
+
+# 任何 OpenAI 兼容接口（OpenAI、通义、Kimi、vLLM、Ollama、自建网关……）：
+sudo ./deploy.sh --model-base-url https://dashscope.aliyuncs.com/compatible-mode/v1 --model-name qwen-plus \
+                 --model-key sk-xxxxxxxx --model-label "通义千问 Plus"
+sudo ./deploy.sh --model-base-url http://10.0.0.5:8000/v1 --model-name Qwen/Qwen3-32B   # 本地 vLLM，无需 key
+# 多个模型：--models-file my-models.toml（格式见 platform/models.toml）
+
+# 注册：默认开放；也可以要邀请码或关闭
+sudo ./deploy.sh --skip-build --registration invite --invite-code 你的邀请码
 ```
+
+脚本会检查前置条件、构建沙箱和平台镜像、生成随机凭据、发布模型目录、部署五个服务和 Portal，并做冒烟测试（含经 Portal 登录的完整路径）。
+可重复执行，`--dry-run` 只看不做：
+
+```bash
+./deploy.sh status          # 运行与健康状态、模型列表
+./deploy.sh --skip-build    # 只改配置或换 key
+./deploy.sh down            # 删除平台（会删数据，先确认）
+./deploy.sh --help
+```
+
+Portal 默认只监听本机（http://127.0.0.1:3000），远程查看用 `ssh -L 3000:127.0.0.1:3000 <机器>`；`--listen 0.0.0.0` 会在网络上暴露 HTTP 登录页，仅限可信网络。
+模型目录、密钥存放和适配器说明见 [platform/README.md](platform/README.md)，备份与恢复见 [runbook](docs/architecture/runbooks/backup-restore.md)。
+
+## 开发与测试
+
+```bash
+cd platform
+.venv/bin/ruff check . && .venv/bin/ruff format --check .
+.venv/bin/pytest tests -q                       # SQLite + 内存队列
+AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/15 \
+AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_test \
+AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_migrations .venv/bin/pytest tests -q
+AILAB_E2E=1 .venv/bin/pytest e2e -q             # 浏览器端到端
+cd portal && npm test && npm run build
+```
+
+测试使用各自隔离的配置；PostgreSQL 测试库会被清空，只用一次性的实例。macOS 上需要 GNU coreutils/findutils（见 AGENTS.md §9）。
+CI 分层与执行范围见 [.github/CI.md](.github/CI.md)。
 
 ## 目录
 
-- `k3s/`：k3s 配置、runsc 的 containerd 片段
-- `images/sbx-office/`：沙箱镜像、办公技能（pptx / xlsx）、冒烟脚本
-- `deploy/base`、`deploy/overlays/lite`：部署文件（大集群对应 `overlays/prod`）
-- `platform/`：自研平台服务（Portal / Platform API / Agent / Broker / Worker）与 dev 启动脚本
-- `tests/`：各组测试脚本；`logs/`：本机测试输出与 iptables 快照（只在本机，不入库）
+- `platform/`：五个服务（`ailab_platform/{api,agent,broker,worker}`）、共享 `contracts/ domain/ ports/ adapters/`、Portal、部署清单 `deploy/`、测试
+- `images/sbx-office/`：沙箱镜像与通用技能（pptx / xlsx）
+- `deploy.sh`：k3s 一键部署；`k3s/`：k3s 与 gVisor 运行时配置；`tests/`：基座与组件测试脚本
+- `docs/architecture/`：目标架构冻结副本、ADR、设计与能力矩阵；`docs/progress/`：当前工作、路线图与每轮记录；`docs/reviews/`：验收证据
