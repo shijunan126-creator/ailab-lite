@@ -13,10 +13,12 @@
 
 ## 代码与证据
 
-- 工作树 `/Users/michael/Developer/ailab-lite`，`feat/remaining-work@6719eee17ffa5c3cbe82c26f0b49ed56beed91f6`，跟踪 `origin/main@6410fe9`；本轮仍是未提交改动，原有修改和三个`.DS_Store`保留。
+- 工作树 `/Users/michael/Developer/ailab-lite`，`feat/remaining-work`（后端基线`fefca5e`），基于 `origin/main@6410fe9`；前序修复已提交`1978676`，本轮UI与验收记录随当前提交交付，三个未跟踪`.DS_Store`保留。
 - 交付使用可核验内容哈希的源码快照，运行镜像的134个Python源码哈希已核对；个人部署明细只在本机独立HANDOFF，不进入仓库。
 - 结果与残余适用范围：[最终更新](updates/2026-10-24-library-runtime.md)、[详细验收](../reviews/2026-10-23-library-runtime-acceptance.md)、[能力矩阵](../architecture/status-matrix.md)。旧“尚未修复/未验收”记录以这些最终结果为准，不覆盖原始失败证据。
 
 ## 当前实施与下一步
 
-实现复用的连续页面预览；工作过程按事件顺序呈现公开叙述、计划与工具活动，不展示原始内部思考。计时采用累计running状态时间，排队/等待用户/暂停不计入，由API状态机持久化；旧数据无可靠计时则明确不估算。完成回归和浏览器验收后创建覆盖全部前序工作的PR，等待CI全绿，合并并将本地main快进到远端。公司模板/业务golden按指示跳过；不自动续跑用户原失败任务，本轮已授权PR与CI通过后的合并；不启动无关路线图事项。短时负载的成本与冷启动退化有明确记录，不推导为任意规模、企业IdP或24小时稳定性承诺。
+已实现复用的连续页面预览和按时间顺序的统一工作过程；API持久化累计running时间，排队/等待用户/暂停不计入，历史未知时长不估算。双库完整回归、Portal测试/构建和真实浏览器已完成，见[本轮更新](updates/2026-10-24-preview-work-process.md)和[专项验收](../reviews/2026-10-24-preview-work-process.md)。下一步：创建覆盖全部前序工作的PR，核对该PR最新head的完整CI；全绿后按用户授权合并main，再将本地main快进到远端。PR链接和最终合并状态在后续交接更新。
+
+公司模板/业务golden按指示跳过；不自动续跑用户原失败任务，不启动无关路线图事项。前轮运行环境已部署，本轮连续预览/过程区与0021尚未部署，不能混称已上线。短时负载不推导为任意规模、企业IdP或24小时稳定性承诺。

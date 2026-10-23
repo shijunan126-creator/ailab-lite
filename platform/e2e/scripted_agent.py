@@ -12,7 +12,7 @@ import json
 
 from ailab_platform.agent import loop
 from ailab_platform.agent.main import app
-from ailab_platform.llm import LLMClient, LLMResponse, MockLLM, ToolCall
+from ailab_platform.llm import LLMClient, LLMError, LLMResponse, MockLLM, ToolCall
 
 TRIGGER = "需要提问"
 BEFORE_ID, ASK_ID = "exec_before", "ask_version"
@@ -48,6 +48,8 @@ class QuestionThenAnswer(LLMClient):
         return LLMResponse(content=STREAM_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 50})
 
     async def chat(self, messages, tools, model, user_id=None):
+        if _last_user_text(messages) == "验证失败状态":
+            raise LLMError("故障验收")
         if TRIGGER not in _last_user_text(messages):
             return await self.mock.chat(messages, tools, model, user_id)
         answered = {m["tool_call_id"]: m for m in messages if m.get("role") == "tool"}

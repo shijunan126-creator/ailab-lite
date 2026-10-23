@@ -34,6 +34,7 @@ export type Run = {
   created_at: string;
   started_at?: string | null;
   finished_at?: string | null;
+  work_ms?: number | null;
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string }[];
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };

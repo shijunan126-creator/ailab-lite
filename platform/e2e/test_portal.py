@@ -207,7 +207,7 @@ def test_a_plain_question_is_answered_without_a_sandbox(logged_in, stack) -> Non
     answer = page.inner_text(".msg.assistant .md")
     assert "离线演示模型" in answer and "本对话第 1 轮" in answer
     assert page.locator(".msg.assistant strong").count() >= 1  # markdown rendered, not shown as **raw**
-    assert page.locator(".steps").count() == 0  # no tools, no sandbox
+    assert page.locator(".work-entry.process-steps .step").count() == 0  # no tools, no sandbox
     page.wait_for_selector(f".conv-item.on a[href='/c/{conv}']")
 
 
@@ -409,18 +409,27 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_the_models_thinking_is_shown_and_folds_away(logged_in) -> None:
+def test_work_process_replaces_raw_thinking_and_survives_reload(logged_in):
+    from playwright.sync_api import expect
+
     page = logged_in
     _start_conversation(page, "你好呀")
     _wait_for_turns(page, 1)
-    head = page.locator(".thinking-head")
-    head.wait_for(timeout=15000)
-    assert "已深度思考" in head.inner_text()
-    assert page.locator(".thinking-body").count() == 0  # folded once the answer is there
+    process = page.get_by_role("region", name="工作过程")
+    expect(process).to_have_count(1)
+    head = process.locator(".steps-head")
+    expect(head).to_contain_text("工作总时长：")
+    assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    assert "离线演示模型" in page.inner_text(".thinking-body")
-    page.reload()  # kept with the run, not only in the live stream
-    page.wait_for_selector(".thinking-head")
+    expect(process).to_contain_text("梳理任务")
+    assert "用户说：" not in process.inner_text()
+    assert page.locator(".thinking-head, .thinking-body").count() == 0
+    duration = head.locator("span").nth(1).inner_text()
+    page.reload()
+    page.locator(".turn-meta").wait_for()
+    expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
+    page.locator(".steps-head").click()
+    expect(page.get_by_role("region", name="工作过程")).to_contain_text("梳理任务")
 
 
 def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
@@ -450,7 +459,7 @@ def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     _start_conversation(page, "在沙箱里执行一条命令")  # would use the sandbox in work mode
     _wait_for_turns(page, 1)
     assert "离线演示模型" in page.inner_text(".msg.assistant .md")
-    assert page.locator(".steps").count() == 0
+    assert page.locator(".work-entry.process-steps .step").count() == 0
     assert page.inner_text(".msg.user .attach-chip") == "对话模式"
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered

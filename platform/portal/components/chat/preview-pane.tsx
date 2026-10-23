@@ -1,54 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { Preview, previewUrl } from "../../lib/api";
 import { IconDownload } from "../icons";
 import Sheets from "../preview/sheets";
+import DocumentPages from "../preview/pages";
 
 function Pages({ preview }: { preview: Preview }) {
   const pages = preview.pages || [];
-  const [index, setIndex] = useState(0);
-  useEffect(() => setIndex((i) => Math.min(i, Math.max(0, pages.length - 1))), [pages.length]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.target as HTMLElement)?.closest(".preview-pane")) return;
-      if ((e.target as HTMLElement)?.closest("textarea, input")) return;
-      if (e.key === "ArrowRight") setIndex((i) => Math.min(pages.length - 1, i + 1));
-      if (e.key === "ArrowLeft") setIndex((i) => Math.max(0, i - 1));
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pages.length]);
   if (!pages.length || !preview.run_id) return <div className="hint">没有可显示的页面</div>;
-  const runId = preview.run_id;
-  return (
-    <div className="pages">
-      <div className="page-stage">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={previewUrl(runId, pages[index])} alt={`第 ${index + 1} 页`} />
-        <div className="page-nav">
-          <button className="secondary sm" disabled={index === 0} onClick={() => setIndex(index - 1)} aria-label="上一页">
-            ‹
-          </button>
-          <span className="hint">
-            {index + 1} / {pages.length}
-          </span>
-          <button className="secondary sm" disabled={index >= pages.length - 1} onClick={() => setIndex(index + 1)} aria-label="下一页">
-            ›
-          </button>
-        </div>
-      </div>
-      <div className="thumbs">
-        {pages.map((p, i) => (
-          <button key={p} className={`thumb ${i === index ? "on" : ""}`} onClick={() => setIndex(i)} aria-label={`第 ${i + 1} 页`}>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={previewUrl(runId, p)} alt="" loading="lazy" />
-            <span>{i + 1}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
+  return <DocumentPages pages={pages} src={(name) => previewUrl(preview.run_id!, name)} documentKey={`${preview.run_id}:${preview.filename}`} thumbnails />;
 }
 
 export default function PreviewPane({

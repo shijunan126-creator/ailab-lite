@@ -18,7 +18,7 @@
 | T04 真实扫描与隔离解析 | 完成（原生 ARM64 ClamAV 已验收） | 见“文件” |
 | T05 服务认证与授权 | 完成（静态凭据适配器） | 见“安全” |
 | T06 Broker 持久租约与对账 | 完成（Agent续租已接入） | 见“沙箱” |
-| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | 4f9f3cb：checkpoint/CAS、ask_user、续跑、心跳、attempt栅栏与稳定交付；双库及浏览器通过，真实OSB故障组合未验，见[集成验收](../reviews/2026-10-23-t07-runtime.md) |
+| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、心跳、attempt栅栏与稳定交付；后续真实OSB/Docker恢复与进程SIGKILL已验，见[最终修复验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
 | T08 单机调度隔离 | 已实现，本地验收 | Chat/Work固定有界分槽，暂停释放槽，回答/恢复重查准入，同会话串行；真实模型容量未验 |
 | T09 事务副作用与重试 | 已实现，本地验收 | Run/文件/预览/缩略图/OCR/续跑经持久任务信封与claim/ACK；全业务attempt栅栏在T07接通，SIGTERM/Redis丢失与双库回归通过 |
 | T10 单实例契约测试 | 完成（真实 MinIO 已验收） | 见“运维” |
@@ -27,7 +27,7 @@
 | T13 身份 / RBAC / 部门 / 审计 | 完成 | 见“身份” |
 | T14 模型策略与上下文 | 已实现，本地集成 | `96654e6`能力约束/输出前降级、每次独立账本、分层deadline、预算历史与摘要；独立计费标题已补bootstrap接线；0014已集成，0016依赖缺口已解除；真实付费模型未验，见[T14报告](../reviews/2026-10-23-t14-model-context.md) |
 | T15 Portal 恢复与长会话性能 | 已实现，本地验证 | keyset分页/上翻锚定/旧响应取消；预览由用户显式打开，生成更新不抢全屏/不换选中项；500轮SQLite/PG p95 19.64/47.13ms，主分支浏览器7项通过，见[UI报告](../reviews/2026-10-23-preview-session-pagination-titles.md) |
-| T16 可观测性与负载基线 | 基础实现与本地基线完成，真实联合容量未验 | 指标/有界OTLP/传播/队列hook已集成；五服务20Chat+2Work+20MiB Office+双路下载无OOM，mock模型/沙箱/stub扫描，见[验收](../reviews/2026-10-23-t07-runtime.md)；不含生产监控部署及真实联合负载 |
+| T16 可观测性与负载基线 | 短时真实组件组合已验 | 指标/有界OTLP/传播/队列hook；真实Office/PG/Redis/S3/ClamAV/搜索组合负载、抓取与告警恢复已验，见[最终验收](../reviews/2026-10-23-library-runtime-acceptance.md)；不推导24小时或任意生产规模 |
 | T17 OIDC | 完成（真实 Keycloak 已验收） | 见“身份” |
 | T18 文件版本与回收站 | 完成 | 见“文件” |
 | T19 OCR / 多模态 / Office 预览 | 已实现，本地验收 | OCR持久任务/文件归属计费、归一化vision输入、文本回退与图片预算/引用checkpoint已接通；受控TCP上游与双库回归通过，付费vision质量未验 |
@@ -107,3 +107,7 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 - 付费OCR/vision/摘要已用可核对中文样本验证并核对账本；模型目录声明与真实能力一致。公司模板/业务golden由用户明确跳过，未使用合成样本冒充业务验收。
 - 2CPU/8GiB独立混合验收首字p95=2.91s；额外冷启动或超载会显著恶化时延，保留实测，不承诺任意并发。个人部署明细只保留在本机独立HANDOFF。
 - OpenSandbox网络隔离侧车与gVisor组合不支持，保留隔离策略分别验收，不宣称该组合已通过；企业IdP、生产规模RPO/RTO和24小时稳定性不由本轮短时验收推导。
+
+## 2026-10-24 预览与工作过程
+
+全屏/聊天复用原生连续页面滚动；单一工作过程区域按事件顺序显示公开叙述、计划变化和工具活动，保留提问与恢复。0021为Run新增持久running区间计时，浏览器不自行累计。行为、旧数据处理、成本和验收见[专项记录](../reviews/2026-10-24-preview-work-process.md)。

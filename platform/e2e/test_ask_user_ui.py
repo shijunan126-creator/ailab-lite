@@ -42,6 +42,10 @@ def test_a_question_is_answered_in_the_browser_and_the_turn_finishes(page, stack
     waiting = _turn(stack, headers, conversation_id)
     assert waiting["status"] == "waiting_user"
     question_id = waiting["result"]["question"]["question_id"]
+    from playwright.sync_api import expect
+
+    expect(page.locator(".steps-head")).to_contain_text("等待你回答")
+    assert waiting["work_ms"] is not None
 
     if reopen == "expired":
         program = """
@@ -60,6 +64,7 @@ with SessionLocal() as db:
     if reopen != "live":
         page.reload()
         ask.get_by_role("button", name="精简版", exact=True).wait_for(timeout=15000)
+    expect(page.locator(".steps-head")).to_contain_text("已暂停" if reopen == "expired" else "等待你回答")
     page.screenshot(path=str(stack.log_dir / f"ask-{reopen}.png"), full_page=True)
 
     page.get_by_role("button", name="精简版", exact=True).click()
@@ -71,6 +76,8 @@ with SessionLocal() as db:
 
     done = _turn(stack, headers, conversation_id)
     assert done["status"] == "succeeded" and done["id"] == waiting["id"]
+    assert done["work_ms"] >= waiting["work_ms"]
+    expect(page.locator(".steps-head")).to_contain_text("工作总时长：")
     # The same question cannot be answered again, and the answer is recorded with the question it answers.
     again = httpx.post(
         stack.api + f"/v1/runs/{waiting['id']}/answer", headers=headers, json={"question_id": question_id, "answer": "标准版"}

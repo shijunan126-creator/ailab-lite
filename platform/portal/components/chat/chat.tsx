@@ -115,7 +115,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             const p: Preview = { ...event.payload, run_id: run.id };
             setLivePreviews((prev) => [...prev.filter((x) => x.filename !== p.filename), p]);
           }
-          if (["artifact.created", "run.completed", "run.failed", "run.canceled"].includes(event.type)) loadDetail();
+          if (["run.status", "artifact.created", "run.completed", "run.failed", "run.canceled"].includes(event.type)) loadDetail();
         },
         controller.signal,
         () => {

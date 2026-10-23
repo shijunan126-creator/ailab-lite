@@ -84,7 +84,7 @@ def test_a_document_previews_as_pages_rendered_in_a_sandbox(logged_in, stack, tm
     name = f"weekly-{uuid.uuid4().hex[:6]}.docx"
     _upload(page, stack, tmp_path, name, data.getvalue())
     viewer = _open(page, name)
-    image = viewer.locator(".viewer-pages img").first
+    image = viewer.locator(".document-scroll img").first
     image.wait_for(timeout=90000)
     page.wait_for_function("(img) => img.complete && img.naturalWidth > 0", arg=image.element_handle(), timeout=30000)
     _shot(page, "viewer-pages")
