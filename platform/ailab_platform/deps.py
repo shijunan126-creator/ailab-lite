@@ -28,6 +28,7 @@ def current_user(request: Request, db: Session = Depends(get_db)) -> User:
             detail="invalid or missing token",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    request.state.principal = user.principal
     return user
 
 

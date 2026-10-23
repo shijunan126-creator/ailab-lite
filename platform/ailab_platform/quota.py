@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 
 from . import metrics
 from .config import settings
-from .models import FileObject, FileStatus, ModelUsage, Run
+from .domain.quota_policy import limits_for
+from .models import FileObject, FileStatus, ModelUsage, Run, User
 
 
 def tokens_used_since(db: Session, user_id: str, since: datetime) -> int:
@@ -48,13 +49,14 @@ def usage_summary(db: Session, user_id: str) -> dict:
 
 
 def enforce_token_quota(db: Session, user_id: str) -> None:
+    limits = limits_for(db.get(User, user_id))
     now = datetime.now(UTC)
     day = now.replace(hour=0, minute=0, second=0, microsecond=0)
     month = day.replace(day=1)
-    if tokens_used_since(db, user_id, day) >= settings.daily_token_limit:
+    if tokens_used_since(db, user_id, day) >= limits.daily_tokens:
         metrics.QUOTA_REJECTIONS.labels("daily_tokens").inc()
         raise HTTPException(status_code=429, detail="daily token quota used up; it resets at 00:00 UTC")
-    if tokens_used_since(db, user_id, month) >= settings.monthly_token_limit:
+    if tokens_used_since(db, user_id, month) >= limits.monthly_tokens:
         metrics.QUOTA_REJECTIONS.labels("monthly_tokens").inc()
         raise HTTPException(status_code=429, detail="monthly token quota used up")
 

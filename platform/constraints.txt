@@ -175,3 +175,12 @@ websockets==17.3
     # via uvicorn
 xlsxwriter==3.2.9
     # via python-pptx
+
+cffi==2.1.1
+    # via OIDC (PyJWT[crypto])
+cryptography==50.0.2
+    # via OIDC (PyJWT[crypto])
+pycparser==3.12
+    # via OIDC (PyJWT[crypto])
+pyjwt==2.15.1
+    # via OIDC (PyJWT[crypto])
