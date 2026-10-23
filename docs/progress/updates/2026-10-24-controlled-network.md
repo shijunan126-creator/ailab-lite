@@ -20,3 +20,7 @@
 ## 未验证与残余
 
 低带宽泄露信号、npm/私有仓库、k3s/OpenSandbox 路径、并发联网负载、IPv6 实网未验或未消除，详见专项记录。个人部署配置、凭据、脚本与运行明细只在本机独立 HANDOFF。
+
+## PR
+
+[PR #33](https://github.com/shijunan126-creator/ailab-lite/pull/33)：head `944d977` CI 全绿（changes、quality、shell、python sqlite/postgres、storage-contracts、e2e），2026-10-24 合并为 main `ab85a9b`。
