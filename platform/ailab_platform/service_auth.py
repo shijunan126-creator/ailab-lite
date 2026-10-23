@@ -18,7 +18,9 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
         {"jobs:run", "runs:read", "runs:status", "runs:events", "usage:reserve", "usage:write", "files:read_for_run", "sandbox:use"}
     ),
     "broker": frozenset({"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "artifacts:commit_for_run"}),
-    "worker": frozenset({"jobs:file", "files:read_pending", "files:patch_processing", "files:preview_write", "sandbox:render"}),
+    "worker": frozenset(
+        {"jobs:file", "files:read_pending", "files:patch_processing", "files:preview_write", "files:ocr", "sandbox:render"}
+    ),
     "ops": frozenset({"metrics:read", "sandbox:inspect"}),
 }
 ALL_SCOPES = frozenset().union(*SERVICE_SCOPES.values())

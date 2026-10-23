@@ -126,6 +126,7 @@ def _claim_locked(db, job, body):
                     envelope.kind == "preview"
                     and (meta.get("preview_job_id") != job_id or (meta.get("preview") or {}).get("status") != "pending")
                 )
+                or (envelope.kind == "ocr" and meta.get("ocr") not in {"pending", "running"})
             )
         number = job.deliveries
     expired = envelope.deadline <= now
@@ -143,6 +144,8 @@ def _claim_locked(db, job, body):
             file.meta = {**(file.meta or {}), "processing": "job_expired", "scan_exhausted": True}
         elif expired and envelope.kind == "preview" and not done:
             file.meta = {**(file.meta or {}), "preview": {"status": "failed", "reason": "job_expired"}}
+        elif expired and envelope.kind == "ocr" and not done:
+            file.meta = {**(file.meta or {}), "ocr": "failed", "ocr_reason": "job_expired"}
         db.delete(job)
         db.commit()
         return {"state": "done"}

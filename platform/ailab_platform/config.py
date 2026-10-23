@@ -133,6 +133,14 @@ class Settings(BaseSettings):
     # Models: which ones exist, how each is reached and which key it uses is the catalog's business
     # (models.toml, see catalog.py). Nothing here names a model or holds a key.
     models_file: Path | None = None  # default: platform/models.toml (the image sets /etc/ailab/models.toml)
+    vision_input_tokens: int = Field(default=4096, ge=85, le=100_000)
+    ocr_alias: str = ""
+    ocr_max_pages: int = Field(default=20, ge=1, le=40)
+    ocr_max_bytes: int = Field(default=20 * 1024 * 1024, ge=1024, le=32 * 1024 * 1024)
+    ocr_page_max_bytes: int = Field(default=2 * 1024 * 1024, ge=1024, le=4 * 1024 * 1024)
+    ocr_min_page_chars: int = Field(default=40, ge=1, le=1000)
+    ocr_max_output_tokens: int = Field(default=4096, ge=128, le=8192)
+    ocr_deadline_seconds: int = Field(default=1800, gt=0, le=86400)  # a job still pending after this fails explicitly
     llm_timeout_seconds: int = Field(default=120, gt=0)
     ttft_timeout_seconds: float = Field(default=30, gt=0)
     llm_idle_timeout_seconds: float = Field(default=60, gt=0)

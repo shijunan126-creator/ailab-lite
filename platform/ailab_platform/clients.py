@@ -148,6 +148,12 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def ocr(self, file_id: str, *, prepare: bool = False) -> dict:
+        suffix = "/prepare" if prepare else ""
+        # The API bounds one OCR run by its total model timeout; the read timeout must outlast it.
+        timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
+        return self._send(self._req("POST", f"/internal/files/{file_id}/ocr{suffix}", timeout=timeout, json={})).json()
+
     def get_run(self, run_id: str) -> dict:
         return self._send(self._get_run(run_id)).json()
 
@@ -268,6 +274,12 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def __aexit__(self, *exc) -> None:
         await self.aclose()
+
+    async def get_file_image(self, file_id: str, run_id: str) -> bytes:
+        response = await self._send(self._req("GET", f"/internal/files/{file_id}/vision", params={"run_id": run_id}))
+        if len(response.content) > settings.ocr_page_max_bytes:
+            raise ValueError("image_size_limit")
+        return response.content
 
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()

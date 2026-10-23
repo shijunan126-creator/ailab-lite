@@ -7,9 +7,9 @@
 | 调用身份 | scopes |
 |---|---|
 | api | `agent:dispatch`, `worker:dispatch` |
-| agent | `runs:read`, `runs:status`, `runs:events`, `usage:reserve`, `usage:write`, `files:read_for_run`, `sandbox:use` |
+| agent | `jobs:run`, `runs:read`, `runs:status`, `runs:events`, `usage:reserve`, `usage:write`, `files:read_for_run`, `sandbox:use` |
 | broker | `runs:read`, `runs:events`, `files:read_for_run`, `artifacts:commit_for_run` |
-| worker | `files:read_pending`, `files:patch_processing`, `files:preview_write`, `sandbox:render` |
+| worker | `jobs:file`, `files:ocr`, `files:read_pending`, `files:patch_processing`, `files:preview_write`, `sandbox:render` |
 | ops | `metrics:read`, `sandbox:inspect` |
 
 `api` 的 dispatch 和 Worker render/preview、Agent reserve scope 已定义，端点由相应工程师实现。Agent/Worker 当前只有健康、就绪与 metrics 入站接口，无 `/internal` 业务路由；新增内部路由必须显式依赖 `Depends(require_scope("…"))`。`require_scope(a, b)` 表示任一 scope 允许，资源限制仍需 handler 校验。API 的文件读取接受 agent/broker 的 `files:read_for_run` 或 Worker 的 `files:read_pending`，按返回的 `ServicePrincipal` 执行不同绑定，不能仅用 scope 代替文件归属检查。
