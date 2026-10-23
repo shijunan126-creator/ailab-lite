@@ -195,3 +195,5 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 用量报表只读账本：`weighted_amount` 是 milli 单位（÷1000 才是加权 Token），部门取调用时快照 `model_usage.dept_id`，不 join runs（对话被清除后用量仍在）。
 - 删除：`DELETE /v1/files/{id}` 现在进回收站，派生对象保留到 purge。`library.delete_file_rows` 在同一事务写 `lifecycle_deletions` 持久意图，提交后仍立即尝试删除；失败由 lifecycle 的 `drain_object_deletions` 重试。回收站过期清理在 `lifecycle_once` 中（每小时），不在每分钟的 reaper 里。
 - 内部读文件统一经 `_bound_file`：回收站中的文件 404，已清理版本 410。
+- 资料库界面 E2E 在 `platform/e2e/test_library_ui.py`；设 `AILAB_E2E_SHOTS=/tmp/x` 会保存各状态截图供人工检查。macOS 上 mock 沙箱用宿主 LibreOffice 渲染，宿主未配置 CJK 回退字体时中文字形会被丢掉（只剩英文与线条），这不是渲染器问题；生产沙箱镜像装有 Noto CJK 与微软雅黑/宋体别名。
+- 全局 `button` 样式带 `align-items/justify-content: center`。把整张卡片或整行做成 button 时要显式覆盖（`align-items: stretch; justify-content: flex-start`），否则内容居中。

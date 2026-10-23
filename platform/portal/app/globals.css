@@ -847,7 +847,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 
 .policy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
 .policy-card { display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); overflow: hidden; }
-.policy-open { display: flex; flex-direction: column; gap: 14px; padding: 16px; border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; font-weight: 400; text-align: left; }
+.policy-open { display: flex; flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 14px; padding: 16px; border: 0; border-radius: 0; background: none; color: var(--text); font: inherit; font-weight: 400; text-align: left; }
 .policy-open:hover { background: var(--surface-2); color: var(--text); }
 .policy-name { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
 .policy-limits { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13px; }
