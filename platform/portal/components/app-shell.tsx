@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, Conversation, Me, Usage } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
 import { useProjects } from "../lib/projects";
-import { IconFolder, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconSparkles } from "./icons";
+import { IconFolder, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
 import ConversationMenu from "./conversation-menu";
 import { NewProjectInput } from "./library/projects";
 
@@ -59,6 +59,11 @@ function UserMenu({ me }: { me: Me | null }) {
           <a className="menu-item" href="/account" role="menuitem">
             <IconSettings size={16} /> 账号设置
           </a>
+          {me?.can_admin ? (
+            <a className="menu-item" href="/admin" role="menuitem">
+              <IconShield size={16} /> 管理
+            </a>
+          ) : null}
           <button className="menu-item" onClick={logout} role="menuitem">
             <IconLogOut size={16} /> 退出登录
           </button>

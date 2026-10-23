@@ -10,7 +10,17 @@ export function redirectIfUnauthorized(resp: Response): void {
   }
 }
 
-export type Me = { id: string; username: string | null; display_name: string; email: string };
+export type Role = "user" | "dept_admin" | "platform_admin" | "auditor";
+export type Ref = { id: string; name: string };
+export type Me = {
+  id: string;
+  username: string | null;
+  display_name: string;
+  email: string;
+  roles?: Role[];
+  dept?: Ref | null;
+  can_admin?: boolean;
+};
 
 export type Run = {
   id: string;
