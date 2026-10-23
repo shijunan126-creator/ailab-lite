@@ -35,9 +35,33 @@ def test_library_pages_scroll_both_ways_and_contain_overscroll(logged_in, stack)
         },
     )
     assert response.ok
+    fid = response.json()["id"]
     page.goto(stack.portal + "/files")
     row = page.locator(".lib-row", has_text=name)
     row.get_by_role("link", name=f"下载 {name}", exact=True).wait_for(timeout=30000)
+    # Deterministic rendered pages isolate native scrolling from host Office/font availability.
+    script = """
+import hashlib,io,sys
+from PIL import Image,ImageDraw
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import FileObject
+from ailab_platform.storage import get_storage
+fid=sys.argv[1];storage=get_storage();names=[];assets={}
+for i in range(1,5):
+ image=Image.new('RGB',(800,1100),'white');ImageDraw.Draw(image).text((50,50),f'Page {i}',fill='black')
+ body=io.BytesIO();image.save(body,format='JPEG');name=f'p-{i:02d}.jpg';names.append(name)
+ data=body.getvalue();key=f'derived/{fid}/preview/{name}'
+ storage.put_bytes(key,data,'image/jpeg')
+ assets[name]={'key':key,'sha256':hashlib.sha256(data).hexdigest(),'content_type':'image/jpeg'}
+with SessionLocal() as db:
+ row=db.get(FileObject,fid)
+ meta=dict(row.meta or {})
+ meta['preview']={'status':'ready','kind':'pages','pages':names,'page_count':4}
+ meta['preview_assets']=assets
+ row.meta=meta
+ db.commit()
+"""
+    subprocess.run([sys.executable, "-c", script, fid], env=stack.env, check=True, timeout=15)
     row.get_by_role("button", name=name, exact=True).click()
     viewer = page.get_by_role("dialog", name=name)
     scroll = viewer.locator(".document-scroll")
