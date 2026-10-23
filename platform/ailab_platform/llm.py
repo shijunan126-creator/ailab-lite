@@ -218,8 +218,14 @@ def _assistant_steps(messages: list[dict]) -> int:
     return sum(1 for m in messages[last_user:] if m.get("role") == "assistant" and m.get("tool_calls"))
 
 
+def _content_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    return "\n".join(part.get("text", "") for part in content if part.get("type") == "text") if isinstance(content, list) else ""
+
+
 def _user_prompt(messages: list[dict]) -> str:
-    return next((m.get("content") or "" for m in reversed(messages) if m.get("role") == "user"), "")
+    return next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
 
 
 def _wants_ppt(prompt: str) -> bool:
@@ -280,7 +286,7 @@ class MockLLM(LLMClient):
             closing = "沙箱命令已执行完成。"
 
         if script is None:  # plain chat: answer directly, no tools
-            turns = sum(1 for m in messages if m.get("role") == "user" and not m.get("content", "").startswith("（平台提示"))
+            turns = sum(1 for m in messages if m.get("role") == "user" and not _content_text(m.get("content")).startswith("（平台提示"))
             attached = prompt.count("（附件《")
             text = (
                 f"你好！这是**离线演示模型**的回答（本对话第 {turns} 轮）。\n\n"

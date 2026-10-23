@@ -13,6 +13,7 @@ from ..config import settings
 from ..deps import metrics_auth
 from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
+from ..runtime_context import RuntimeContextMiddleware
 from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
@@ -53,6 +54,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)
 app.add_middleware(RequestContextMiddleware, service="broker")
+app.add_middleware(RuntimeContextMiddleware)
 router = APIRouter(prefix="/internal", tags=["leases"])
 
 

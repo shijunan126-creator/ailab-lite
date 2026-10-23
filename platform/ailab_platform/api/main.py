@@ -34,6 +34,7 @@ from .routes_ocr import router as ocr_router
 from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
 from .routes_runs import router as runs_router
+from .routes_runtime import router as runtime_router
 from .routes_skills import router as skills_router
 
 setup_logging("api")
@@ -119,6 +120,7 @@ app.include_router(ocr_router)
 app.include_router(vision_router)
 app.include_router(model_context_router)
 app.include_router(jobs_router)
+app.include_router(runtime_router)
 
 
 @app.get("/healthz")

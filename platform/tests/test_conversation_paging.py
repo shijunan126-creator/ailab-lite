@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import Conversation, Run
+from tests.run_claims import SERVICE
 from tests.test_conversations import AUTH, _finish
 
 
@@ -137,7 +138,6 @@ def test_title_database_failure_does_not_fail_the_confirmed_answer(monkeypatch):
 
 
 def test_title_request_flag_is_internal_and_rechecked_after_manual_rename():
-    from tests.test_conversations import SERVICE
 
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
@@ -173,16 +173,17 @@ def test_applying_title_does_not_commit_the_callers_transaction():
 
 
 def test_agent_transition_applies_optional_title_in_same_commit():
-    from tests.test_conversations import SERVICE
+    from tests.run_claims import attempt_headers
 
     with TestClient(app) as client:
         conversation = client.post("/v1/conversations", headers=AUTH, json={}).json()
         run = client.post(f"/v1/conversations/{conversation['id']}/messages", headers=AUTH, json={"prompt": "普通文本回答也要标题"}).json()
         path = f"/internal/runs/{run['id']}/transition"
-        assert client.post(path, headers=SERVICE, json={"status": "running"}).status_code == 200
+        owner = attempt_headers(client, run["id"])
+        assert client.post(path, headers=owner, json={"status": "running"}).status_code == 200
         response = client.post(
             path,
-            headers=SERVICE,
+            headers=owner,
             json={
                 "status": "succeeded",
                 "summary": "这里是一段没有 Markdown 标题的普通回答。",

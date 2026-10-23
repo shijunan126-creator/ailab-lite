@@ -15,18 +15,21 @@ import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TypeVar
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from .. import metrics, skillfiles
+from ..adapters.runtime import NON_REPLAYABLE, UNCERTAIN_EXEC, checkpoint_state, fresh_state, restored_state
 from ..catalog import Catalog, ModelSpec, get_catalog
 from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
 from ..contracts.jobs import RunStatus
 from ..contracts.usage import UsageStatus
-from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, llm_for, model_call
+from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, ToolCall, llm_for, model_call
 from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
+from ..runtime_context import attempt_id_var, delivery_id_var
 from ..telemetry import span
+from .multimodal import attachment_content, input_content
 from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
 from .tools import SANDBOX_TOOLS, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
@@ -42,6 +45,18 @@ THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
+FILE_TOOLS = frozenset({"write_file", "exec", "deliver_file"})  # tools that change /workspace or its outputs
+WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
+WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
+WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+
+
+class RunPaused(Exception):
+    pass
+
+
+class LeaseInterrupted(Exception):
+    pass
 
 
 class RunCanceled(Exception):
@@ -101,6 +116,10 @@ def _arguments_json(arguments: dict) -> str:
     return json.dumps(arguments, ensure_ascii=False)
 
 
+def _token_limit_error(run: dict) -> str:
+    return f"token limit reached ({run['_ledger_tokens']} >= {settings.run_max_tokens})"
+
+
 def _clip_arguments(arguments: dict, limit: int = 500) -> dict:
     """Keep run_events small: write_file content can be tens of KB."""
     return {k: (v[:limit] + f"...[+{len(v) - limit} chars]" if isinstance(v, str) and len(v) > limit else v) for k, v in arguments.items()}
@@ -115,11 +134,18 @@ class AgentLoop:
     ):
         self.platform = platform or AsyncPlatformClient()
         self.broker = broker or AsyncBrokerClient()
+        self._states: dict[str, dict] = {}
+        self._steps: dict[str, int] = {}
+        self._lease_errors: dict[str, Exception] = {}
         self.llm = llm  # tests inject one; otherwise each run uses its catalog model's client
 
     async def _event(self, run_id: str, type_: str, payload: dict) -> None:
         try:
             await self.platform.append_event(run_id, type_, payload)
+        except ClientError as exc:
+            if exc.status == 409:
+                raise
+            log.warning("event append failed run=%s type=%s", run_id, type_, exc_info=True)
         except Exception:
             log.warning("event append failed run=%s type=%s", run_id, type_, exc_info=True)
 
@@ -142,6 +168,8 @@ class AgentLoop:
         task = asyncio.ensure_future(awaitable)
         try:
             while True:
+                if run_id in self._lease_errors:
+                    raise LeaseInterrupted() from self._lease_errors[run_id]
                 done, _ = await asyncio.wait({task}, timeout=CANCEL_POLL_SECONDS)
                 if done:
                     return task.result()
@@ -190,7 +218,11 @@ class AgentLoop:
         pending = [f for f in files if f["path"].startswith(OUTPUTS + "/") and delivered.get(f["path"]) != f.get("size")]
         for item in pending[: settings.max_auto_deliver_files]:
             try:
-                result = await self.broker.commit(lease_id, item["path"])
+                identity = delivery_id_var.set(f"{run_id}:auto:{uuid5(NAMESPACE_URL, item['path']).hex}")
+                try:
+                    result = await self.broker.commit(lease_id, item["path"])
+                finally:
+                    delivery_id_var.reset(identity)
             except Exception as exc:
                 await self._event(run_id, "agent.warning", {"message": f"auto-deliver failed for {item['path']}: {exc}"})
                 continue
@@ -204,13 +236,15 @@ class AgentLoop:
                 {"message": f"{len(pending) - settings.max_auto_deliver_files} more files in outputs were not delivered"},
             )
 
-    async def _ensure_lease(self, turn: _Turn, run_id: str) -> str:
+    async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False) -> str:
         if turn.lease_id:
             return turn.lease_id
         lease = await self._acquire_lease(run_id)
         turn.lease_id = lease["lease_id"]
         await self._event(run_id, "agent.sandbox", {"lease_id": turn.lease_id, "provider": lease.get("provider")})
         if lease.get("restored") is False and lease.get("restore_error"):
+            if required:  # a checkpoint that counts on these files must not continue without them
+                raise LeaseInterrupted(f"工作区恢复失败：{lease['restore_error']}")
             await self._event(run_id, "agent.warning", {"message": f"上一轮的工作区没能恢复：{lease['restore_error']}"})
         for name in turn.skill_files:  # personal skills read before the sandbox existed
             await self._install_skill(turn, name)
@@ -272,13 +306,11 @@ class AgentLoop:
         if turn.lease_id:
             await self._render_previews(turn, run_id)  # the last change may have come after the last render
 
-    async def _save_workspace(self, turn: _Turn, run_id: str) -> int | None:
-        """Save the workspace for the next turn; returns compressed bytes, or None when not saved."""
-        if not (turn.lease_id and turn.run.get("conversation_id")):
-            return None
+    async def _snapshot(self, turn: _Turn, run_id: str) -> dict | None:
+        """The sandbox's workspace archive, or None when it could not be taken. A failure is visible as a warning
+        and is never reported as saved; the next resume is told the snapshot lags the checkpoint."""
         try:
-            snapshot = await self.broker.snapshot(turn.lease_id)
-            return int(snapshot.get("size") or 0)
+            return await self.broker.snapshot(turn.lease_id)
         except Exception as exc:
             log.warning("workspace snapshot failed for %s", run_id, exc_info=True)
             await self._event(run_id, "agent.warning", {"message": f"工作区没能保存，下一轮需要重新生成文件：{exc}"[:300]})
@@ -350,9 +382,7 @@ class AgentLoop:
         writer = _DeltaWriter(self, run_id, step)
         thinker = _DeltaWriter(self, run_id, step, "agent.thinking")
         offered = tools_for_turn() if tools is None else tools
-        # UTF-8 bytes plus framing is a conservative input bound without a model-specific
-        # tokenizer dependency. Settlement estimates are explicitly marked estimated.
-        estimated_input = len(json.dumps({"messages": messages, "tools": offered}, ensure_ascii=False).encode()) + 256
+        estimated_input = estimator.estimate(model, {"messages": messages, "tools": offered})
         spec = get_catalog().get(model)
         output_limit = min(settings.model_max_output_tokens, spec.max_output_tokens) if spec else settings.model_max_output_tokens
         if quiet:
@@ -391,6 +421,7 @@ class AgentLoop:
             output = max(0, (call.output_bytes + 3) // 4)
             payload = {
                 "call_id": call.call_id,
+                "attempt_id": run["_attempt_id"],
                 "actual_backend": call.actual_backend,
                 "input_tokens": usage.get("prompt_tokens", estimated_input if call.reached_model else 0),
                 "cached_tokens": usage.get("cached_tokens", 0),
@@ -542,6 +573,42 @@ class AgentLoop:
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
         raise LLMError("context pagination limit reached")
 
+    async def _user_content(self, run_id, run, model):
+        files = run.get("input_files") or []
+        images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
+        if not images:
+            return user_prompt(run["prompt"], files)
+        parts = [{"type": "text", "text": user_prompt(run["prompt"], [file for file in files if file not in images])}]
+        spec = get_catalog().get(model)
+        for file in images:
+            parts.extend(await self._image_content(run_id, run, file, spec))
+        return parts
+
+    async def _image_content(self, run_id, run, file, spec):
+        parts = (
+            await input_content(self.platform, run_id, file, spec, text=file.get("text", ""))
+            if spec is not None
+            else attachment_content(file, vision=False, text=file.get("text", ""))
+        )
+        for part in parts:
+            if part.get("type") == "image_url":
+                run.setdefault("_image_files", {})[part["image_url"]["url"]] = file
+        return parts
+
+    async def _restore_images(self, run_id, run, state):
+        spec = get_catalog().get(run.get("model"))
+        for message in state["messages"]:
+            if not isinstance(message.get("content"), list):
+                continue
+            parts = []
+            for part in message["content"]:
+                if part.get("type") == "ailab_image":
+                    restored = await self._image_content(run_id, run, part["file"], spec)
+                    parts.extend([item for item in restored if item.get("type") == "image_url"] or restored)
+                else:
+                    parts.append(part)
+            message["content"] = parts
+
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
@@ -557,8 +624,14 @@ class AgentLoop:
                 lease_id = await self._ensure_lease(turn, run_id) if call.name in SANDBOX_TOOLS else (turn.lease_id or "")
                 with span("agent.tool", tool=tool):
                     result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker))
-        except RunCanceled:
+        except (RunCanceled, LeaseInterrupted):
             raise
+        except ClientError as exc:
+            if exc.status == 410:
+                raise LeaseInterrupted() from exc
+            if exc.status == 409:
+                raise
+            result = {"ok": False, "error": str(exc)}
         except ToolError as exc:
             result = {"ok": False, "error": str(exc)}
         except Exception as exc:  # broker / sandbox failures stay in the loop
@@ -590,184 +663,355 @@ class AgentLoop:
                 turn.delivered[path] = result.get("size", 0)
         return result
 
-    async def process(self, run_id: str, attempt: int = 1) -> None:
-        run = await self.platform.get_run(run_id)
-        if run["status"] in RunStatus.TERMINAL:
+    async def _checkpoint(self, run_id: str, turn: _Turn) -> None:
+        state = self._states[run_id]
+        state.update(artifacts=turn.artifacts, delivered=turn.delivered)
+        saved = await self.platform.put_checkpoint(
+            run_id, {"expected_step": self._steps[run_id], "state": checkpoint_state(state, turn.run.get("_image_files", {}))}
+        )
+        self._steps[run_id] = saved["step"]
+
+    async def _workspace_checkpoint(self, run_id: str, turn: _Turn, *, force=False) -> None:
+        if not turn.lease_id:
             return
+        state = self._states[run_id]
+        when = (state.get("workspace") or {}).get("saved_at", 0)
+        if not force and time.time() - when < WORKSPACE_DEBOUNCE_SECONDS:
+            return
+        snapshot = await self._snapshot(turn, run_id)
+        if snapshot is not None:
+            await self._record_workspace(run_id, turn, snapshot)
 
-        await self.platform.set_run_status(run_id, RunStatus.RUNNING)
-        await self._event(run_id, "agent.started", {"model": run.get("model"), "steps": 0})
-        if attempt > 1:
-            metrics.AGENT_RECOVERED.inc()
-            await self._event(
-                run_id,
-                "agent.recovered",
-                {"attempt": attempt, "note": "previous agent attempt did not finish; restarting the task"},
-            )
+    async def _record_workspace(self, run_id: str, turn: _Turn, snapshot: dict) -> dict:
+        state = self._states[run_id]
+        state["workspace"] = {**snapshot, "step": self._steps[run_id], "saved_at": time.time()}
+        state["workspace_dirty"] = False
+        await self._checkpoint(run_id, turn)
+        return state["workspace"]
 
-        run_started = time.perf_counter()
-        outcome = "error"  # replaced below once we know how the run ended
-        run["_attempt_id"] = f"{attempt}-{uuid4().hex}"
-        turn = _Turn(run)
-        final_summary = ""
-        finished = False
-        error: str | None = None
+    async def _heartbeat(self, run_id: str, turn: _Turn) -> None:
+        """Renew the sandbox lease on its own clock, so a long model call or command cannot starve it.
+
+        Only the Broker's 410 means the lease is gone. Anything else is retried on the next tick; the Broker's
+        own expiry bounds how long a missed renewal can last, and then it answers 410.
+        """
+        while True:
+            await asyncio.sleep(settings.runtime_heartbeat_seconds)
+            if not turn.lease_id:
+                continue
+            try:
+                async with asyncio.timeout(30):
+                    await self.broker.renew(turn.lease_id)
+            except Exception as exc:
+                metrics.LEASE_HEARTBEAT_FAILURES.inc()
+                if isinstance(exc, ClientError) and exc.status == 410:
+                    self._lease_errors[run_id] = exc
+                    return
+                log.warning("lease renewal failed run=%s; retrying", run_id, exc_info=True)
+
+    async def _release_turn(self, turn: _Turn) -> None:
+        if turn.preview_task:
+            turn.preview_task.cancel()
+            await asyncio.gather(turn.preview_task, return_exceptions=True)
+            turn.preview_task = None
+        if turn.lease_id:
+            lease_id, turn.lease_id = turn.lease_id, None
+            async with asyncio.timeout(65):
+                await self.broker.release(lease_id)
+
+    async def _durable_tool(self, turn: _Turn, run_id: str, call: ToolCall, step: int, invocation: str) -> dict:
+        state = self._states[run_id]
+        record = state["tool_log"].get(invocation)
+        if record and "result" in record:
+            return record["result"]
+        if record and call.name in NON_REPLAYABLE:
+            return {"ok": False, "error": UNCERTAIN_EXEC, "interrupted": True}
+        if not record:
+            state["tool_log"][invocation] = {"name": call.name, "started": True}
+            if call.name in FILE_TOOLS:
+                state["workspace_dirty"] = True
+            await self._checkpoint(run_id, turn)
+        if call.name == "ask_user":
+            # An answer only ever satisfies the question it was given for; a stale one cannot leak into a later question.
+            answered = state.get("answer") or {}
+            if answered.get("question_id") == f"{run_id}:{invocation}":
+                state.pop("answer")
+                result = {"ok": True, "answer": answered["answer"]}
+            else:
+                args = call.arguments
+                question = args.get("question")
+                options = args.get("options", [])
+                if (
+                    not isinstance(question, str)
+                    or not question.strip()
+                    or len(question) > 16000
+                    or not isinstance(options, list)
+                    or len(options) > 30
+                    or not all(isinstance(o, str) and len(o) <= 1000 for o in options)
+                ):
+                    return {"ok": False, "error": "question/options invalid"}
+                q = {
+                    "question_id": f"{run_id}:{invocation}",
+                    "question": question,
+                    "options": options,
+                    "allow_text": args.get("allow_text", True) is not False,
+                }
+                # The sandbox is released next: its unsnapshotted files would be gone, so the snapshot is not debounced.
+                await self._workspace_checkpoint(run_id, turn, force=True)
+                await self._checkpoint(run_id, turn)
+                await self._release_turn(turn)
+                await self.platform.pause_run(run_id, {"status": RunStatus.WAITING_USER, "question": q})
+                raise RunPaused()
+        elif call.name == "update_plan":
+            steps = call.arguments.get("steps")
+            if (
+                not isinstance(steps, list)
+                or len(steps) > 100
+                or not all(
+                    isinstance(s, dict)
+                    and isinstance(s.get("id"), str)
+                    and isinstance(s.get("title"), str)
+                    and len(s["title"]) <= 500
+                    and s.get("status") in {"pending", "running", "done", "skipped", "failed"}
+                    for s in steps
+                )
+            ):
+                return {"ok": False, "error": "invalid plan"}
+            state["plan"] = steps
+            await self._checkpoint(run_id, turn)
+            await self._event(run_id, "plan.updated", {"steps": steps})
+            result = {"ok": True}
+        else:
+            identity = delivery_id_var.set(f"{run_id}:{invocation}")
+            try:
+                result = await self._run_tool(turn, run_id, call, step)
+            finally:
+                delivery_id_var.reset(identity)
+        return result
+
+    async def start(self, run_id: str, *, attempt_id: str, attempt: int = 1) -> None:
+        await self.process(run_id, attempt=attempt, attempt_id=attempt_id)
+
+    async def resume(self, run_id: str, checkpoint: dict, *, attempt_id: str, attempt: int = 1) -> None:
+        await self.process(run_id, attempt=attempt, attempt_id=attempt_id, checkpoint=checkpoint)
+
+    async def cancel(self, run_id: str) -> None:
+        await self.platform.set_run_status(run_id, RunStatus.CANCELED)
+
+    async def snapshot(self, run_id: str) -> dict:
+        return await self.platform.get_checkpoint(run_id)
+
+    async def process(self, run_id: str, attempt: int = 1, *, attempt_id: str | None = None, checkpoint: dict | None = None) -> None:
+        if not attempt_id:
+            raise ValueError("a claimed attempt_id is required")
+        identity = attempt_id_var.set(attempt_id)
         try:
-            # The API ledger is the source of the resumed Run's soft budget.
+            await self._process(run_id, attempt, attempt_id, checkpoint)
+        finally:
+            attempt_id_var.reset(identity)
+            self._states.pop(run_id, None)
+            self._steps.pop(run_id, None)
+            self._lease_errors.pop(run_id, None)
+
+    async def _process(self, run_id, attempt, attempt_id, checkpoint):
+        run = await self.platform.get_run(run_id)
+        if run["status"] in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED}:
+            return
+        checkpoint = checkpoint or await self.platform.get_checkpoint(run_id)
+        state = restored_state(checkpoint) if checkpoint else fresh_state()
+        self._states[run_id] = state
+        self._steps[run_id] = checkpoint["step"] if checkpoint else 0
+        if checkpoint and checkpoint.get("answer") is not None:
+            state["answer"] = checkpoint["answer"]
+        run["_attempt_id"] = attempt_id
+        turn = _Turn(run)
+        turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
+        heartbeat = asyncio.create_task(self._heartbeat(run_id, turn))
+        run_started, outcome = time.perf_counter(), "error"
+        try:
+            await self.platform.transition_run(
+                run_id,
+                RunStatus.RUNNING,
+                events=[{"type": "agent.started", "payload": {"model": run.get("model"), "steps": 0}}],
+            )
+            if attempt > 1:
+                # The job was claimed again after an earlier attempt died. Its checkpoint, if any, decides what it resumes from.
+                metrics.AGENT_RECOVERED.inc()
+                note = "previous agent attempt did not finish; " + (
+                    "continuing from its last checkpoint" if checkpoint else "restarting the task"
+                )
+                await self._event(run_id, "agent.recovered", {"attempt": attempt, "note": note})
+            if checkpoint:
+                await self._restore_images(run_id, run, state)
+                metrics.RUN_RESUMES.labels("checkpoint").inc()
+                workspace = state.get("workspace")
+                if workspace and state["workspace_dirty"]:
+                    state["messages"].append({"role": "system", "content": WORKSPACE_LAG_NOTE})
+                elif not workspace and any(r.get("name") in FILE_TOOLS and "result" in r for r in state["tool_log"].values()):
+                    # Earlier sandbox work was never snapshotted; say so rather than let the model assume it survived.
+                    state["messages"].append({"role": "system", "content": WORKSPACE_MISSING_NOTE})
+                if workspace:
+                    await self._ensure_lease(turn, run_id, required=True)  # fail explicitly before reusing completed file operations
             prior = await self.platform.get_run_usage(run_id)
-            total_tokens = prior["prompt_tokens"] + prior["completion_tokens"]
-            run["_ledger_tokens"] = total_tokens
+            run["_ledger_tokens"] = prior["prompt_tokens"] + prior["completion_tokens"]
             model = run.get("model") or ""
             llm = self.llm or llm_for(model)  # fails the run early if the model is gone from the catalog
             options = run.get("options") or {}
             mode, skill = options.get("mode", "work"), options.get("skill")
             turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
             turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
-            picked_text = None
-            if skill in turn.personal:
-                picked_text = await self._read_personal(turn, run_id, skill)
-            if skill:
-                title = (turn.personal.get(skill) or skills().get(skill) or {}).get("title") or skill
-                await self._event(run_id, "agent.skill", {"name": skill, "title": title})
-            attached = [f for f in run.get("input_files") or [] if f.get("text")]
-            if attached:
-                files = [{"filename": f["filename"], "chars": f.get("chars"), "truncated": f.get("truncated")} for f in attached]
-                await self._event(run_id, "agent.attachments", {"files": files})
-            messages: list[dict] = [
-                {
-                    "role": "system",
-                    "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
-                    + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
-                },
-                *history_messages(run.get("history")),
-                {"role": "user", "content": user_prompt(run["prompt"], run.get("input_files"))},
-            ]
-
-            messages = await self._assemble_context(run_id, run, model, messages)
-
-            out_of_steps = False
+            if not state["messages"]:  # the first pass only: the prompt becomes part of the checkpoint from here on
+                picked_text = await self._read_personal(turn, run_id, skill) if skill in turn.personal else None
+                if skill:
+                    title = (turn.personal.get(skill) or skills().get(skill) or {}).get("title") or skill
+                    await self._event(run_id, "agent.skill", {"name": skill, "title": title})
+                attached = [f for f in run.get("input_files") or [] if f.get("text")]
+                if attached:
+                    files = [{"filename": f["filename"], "chars": f.get("chars"), "truncated": f.get("truncated")} for f in attached]
+                    await self._event(run_id, "agent.attachments", {"files": files})
+                messages: list[dict] = [
+                    {
+                        "role": "system",
+                        "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                        + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
+                    },
+                    *history_messages(run.get("history")),
+                    {"role": "user", "content": await self._user_content(run_id, run, model)},
+                ]
+                state["messages"] = await self._assemble_context(run_id, run, model, messages)
+                await self._checkpoint(run_id, turn)
+            messages = state["messages"]
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
-            if spec is not None and not spec.supports({"tools"}):
-                offered = []
-            elif mode == "chat":
-                offered = tools_for_chat()
-            else:
-                offered = None
-            for step in range(settings.max_agent_steps):
+            offered = [] if spec is not None and not spec.supports({"tools"}) else tools_for_chat() if mode == "chat" else None
+            error = None
+            while state["next_step"] < settings.max_agent_steps and not state["finished"]:
+                step = state["next_step"]
+                if run_id in self._lease_errors:
+                    raise LeaseInterrupted()
                 if await self._is_canceled(run_id):
                     raise RunCanceled()
-                if total_tokens >= settings.run_max_tokens:
-                    error = f"token limit reached ({total_tokens} >= {settings.run_max_tokens})"
-                    break
-                left = settings.max_agent_steps - step
-                if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
-                    messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
-
-                response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
-                total_tokens = run["_ledger_tokens"]
-                if response.reasoning_content:
-                    turn.thinking.append(response.reasoning_content)
-                    turn.thinking_seconds += response.thinking_seconds
-
-                if response.content:
-                    final_summary = response.content
-                    await self._event(run_id, "agent.message", {"step": step, "content": response.content})
-
-                if offered == [] and response.tool_calls:
-                    # no tools were offered (chat mode): keep the words, ignore the calls
-                    log.warning("run %s: model asked for tools in a words-only turn; ignoring", run_id)
-                    response.tool_calls = []
-                if not response.tool_calls:
-                    finished = True  # an answer that is already complete counts even if it crossed the budget
-                    break
-                if total_tokens >= settings.run_max_tokens:
-                    error = f"token limit reached ({total_tokens} >= {settings.run_max_tokens})"
-                    break
-
-                assistant: dict = {
-                    "role": "assistant",
-                    "content": response.content or "",
-                    "tool_calls": [
-                        {
-                            "id": call.id,
-                            "type": "function",
-                            "function": {"name": call.name, "arguments": _arguments_json(call.arguments)},
-                        }
-                        for call in response.tool_calls
-                    ],
-                }
-                if response.reasoning_content:  # the client decides whether the upstream gets it back
-                    assistant["reasoning_content"] = response.reasoning_content
-                messages.append(assistant)
-
-                for call in response.tool_calls:
-                    result = await self._run_tool(turn, run_id, call, step)
+                if not state["pending"]:
+                    if run["_ledger_tokens"] >= settings.run_max_tokens:
+                        error = _token_limit_error(run)
+                        break
+                    left = settings.max_agent_steps - step
+                    if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
+                        messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
+                    response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
+                    if offered == [] and response.tool_calls:
+                        log.warning("run %s: model asked for tools in a words-only turn; ignoring", run_id)
+                    calls = response.tool_calls if offered != [] else []
+                    assistant = {"role": "assistant", "content": response.content or ""}
+                    if calls:
+                        assistant["tool_calls"] = [
+                            {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": _arguments_json(c.arguments)}}
+                            for c in calls
+                        ]
+                    if response.reasoning_content:
+                        assistant["reasoning_content"] = response.reasoning_content
+                        turn.thinking.append(response.reasoning_content)
+                        turn.thinking_seconds += response.thinking_seconds
+                    messages.append(assistant)
+                    if response.content:
+                        state["final_summary"] = response.content
+                    state["pending"] = [{"id": c.id, "name": c.name, "arguments": c.arguments, "ordinal": i} for i, c in enumerate(calls)]
+                    state["finished"] = not calls  # an answer that is already complete counts even if it crossed the budget
+                    await self._checkpoint(run_id, turn)
+                    if response.content:
+                        await self._event(run_id, "agent.message", {"step": step, "content": response.content})
+                    if calls and run["_ledger_tokens"] >= settings.run_max_tokens:
+                        error = _token_limit_error(run)  # the calls are not run; the work so far is still kept
+                        break
+                while state["pending"]:
+                    data = state["pending"][0]
+                    call = ToolCall(data["id"], data["name"], data["arguments"])
+                    invocation = f"{step}:{data['ordinal']}"
+                    result = await self._durable_tool(turn, run_id, call, step, invocation)
+                    state["tool_log"][invocation] = {"name": call.name, "result": result}
                     messages.append(tool_result_message(call.id, call.name, result))
+                    state["pending"].pop(0)
                     if call.name == "finish" and result.get("ok"):
-                        final_summary = result.get("summary") or final_summary
-                        finished = True
-
-                if finished:
-                    break
-
-            if not finished and error is None:
-                # Out of steps: rather than ending on a bare error, let the model tell the user where things stand.
-                out_of_steps = True
-                if total_tokens >= settings.run_max_tokens:
-                    raise RuntimeError(f"token limit reached ({total_tokens} >= {settings.run_max_tokens})")
-                messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
-                response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
-                total_tokens = run["_ledger_tokens"]
-                if response.content:
-                    final_summary = response.content
+                        state.update(finished=True, final_summary=result.get("summary") or state["final_summary"])
+                    await self._checkpoint(run_id, turn)
+                    if call.name in FILE_TOOLS:
+                        await self._workspace_checkpoint(run_id, turn)
+                state["next_step"] += 1
+                await self._checkpoint(run_id, turn)
+            if error is None and not state["finished"]:
+                if run["_ledger_tokens"] >= settings.run_max_tokens:
+                    error = _token_limit_error(run)
+                else:
+                    # Out of steps: rather than ending on a bare error, let the model tell the user where things stand.
+                    messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
+                    response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
+                    messages.append({"role": "assistant", "content": response.content})
+                    state["final_summary"] = response.content
+                    state["finished"] = True
+                    await self._checkpoint(run_id, turn)
                     await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})
-                await self._event(run_id, "agent.warning", {"message": f"本轮用完了 {settings.max_agent_steps} 步"})
-
-            result: dict = {}
+                    await self._event(run_id, "agent.warning", {"message": f"本轮用完了 {settings.max_agent_steps} 步"})
+                    if not turn.artifacts:
+                        error = f"agent exceeded {settings.max_agent_steps} steps"  # nothing to show for it: a failure
+            result: dict = {"artifacts": turn.artifacts, "plan": state["plan"], "previews": list(turn.previews.values())}
             if turn.lease_id:
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
                 await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
-                saved_bytes = await self._save_workspace(turn, run_id)
-                result["workspace_saved"] = saved_bytes is not None
-                if saved_bytes is not None:
-                    result["workspace_saved_at"] = datetime.now(UTC).isoformat()
-                    result["workspace_bytes"] = saved_bytes
-            result.update(artifacts=turn.artifacts, previews=list(turn.previews.values()))
+                # Nothing changed since the last snapshot: that archive still describes the sandbox exactly.
+                saved = state.get("workspace")
+                if state["workspace_dirty"] or saved is None:
+                    snapshot = await self._snapshot(turn, run_id)
+                    saved = None if snapshot is None else await self._record_workspace(run_id, turn, snapshot)
+                result["workspace_saved"] = saved is not None
+                if saved is not None:
+                    result.update(
+                        workspace_saved_at=datetime.now(UTC).isoformat(),
+                        workspace_bytes=int(saved.get("size") or 0),
+                        workspace_key=saved["key"],
+                    )
             if turn.thinking:
                 text = "\n\n".join(turn.thinking)
                 result["thinking"] = {"text": text[-THINKING_KEEP_CHARS:], "seconds": round(turn.thinking_seconds, 1)}
-            if out_of_steps and not turn.artifacts and error is None:
-                error = f"agent exceeded {settings.max_agent_steps} steps"  # nothing to show for it: a failure
-
             if error is None:
-                title = await self._conversation_title(run_id, run, final_summary or "已完成请求")
+                title = await self._conversation_title(run_id, run, state["final_summary"] or "已完成请求")
                 if title:
                     result["conversation_title"] = title
-                await self.platform.set_run_status(run_id, RunStatus.SUCCEEDED, summary=final_summary or "完成", result=result)
+                await self.platform.set_run_status(run_id, RunStatus.SUCCEEDED, summary=state["final_summary"] or "完成", result=result)
                 outcome = "succeeded"
             else:
-                await self.platform.set_run_status(run_id, RunStatus.FAILED, error=error, summary=final_summary, result=result)
+                await self.platform.set_run_status(run_id, RunStatus.FAILED, error=error, summary=state["final_summary"], result=result)
                 outcome = "failed"
+        except RunPaused:
+            outcome = "waiting_user"
+        except LeaseInterrupted as exc:
+            # The most recent durable checkpoint remains authoritative. Do not
+            # snapshot a lost lease or pretend an empty replacement restored it.
+            try:
+                await self._release_turn(turn)
+            except Exception:
+                log.warning("lost lease release will be reconciled run=%s", run_id)
+            await self.platform.pause_run(run_id, {"status": RunStatus.INTERRUPTED, "error": f"工作区租约中断：{exc}", "auto_resume": True})
+            outcome = "interrupted"
         except RunCanceled:
             outcome = "canceled"
             await self._event(run_id, "agent.canceled", {})
         except asyncio.CancelledError:
             raise
+        except ClientError as exc:
+            if exc.status == 409:
+                # Ownership was lost. No more business writes from this attempt.
+                raise
+            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=str(exc)[:2000])
         except Exception as exc:
             log.exception("agent run %s failed", run_id)
             await self._event(run_id, "agent.error", {"error": f"{type(exc).__name__}: {exc}"})
-            try:
-                await self.platform.set_run_status(run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000])
-            except Exception:
-                log.exception("could not mark run %s failed", run_id)
+            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000])
         finally:
+            heartbeat.cancel()
+            await asyncio.gather(heartbeat, return_exceptions=True)
+            try:
+                await self._release_turn(turn)
+            except Exception:
+                log.warning("lease release failed run=%s", run_id, exc_info=True)
             metrics.AGENT_RUN_SECONDS.labels(outcome).observe(time.perf_counter() - run_started)
-            if turn.preview_task and not turn.preview_task.done():
-                turn.preview_task.cancel()
-            if turn.lease_id:
-                try:
-                    await self.broker.release(turn.lease_id)
-                except Exception:
-                    log.warning("lease release failed %s", turn.lease_id, exc_info=True)

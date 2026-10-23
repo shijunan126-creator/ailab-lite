@@ -13,6 +13,7 @@ from .conftest import PASSWORD, PLATFORM, SERVICE_TOKENS, USERNAME, login
 
 pytestmark = pytest.mark.e2e
 _seeded = []
+_attempts = {}
 
 
 @pytest.fixture(autouse=True)
@@ -23,6 +24,7 @@ def cleanup_seeded(stack):
         response = httpx.post(stack.api + f"/v1/runs/{run_id}/cancel", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code in (200, 409), response.text
     _seeded.clear()
+    _attempts.clear()
 
 
 def seed(stack, count=1, active=True, title="预览与历史验收"):
@@ -30,8 +32,10 @@ def seed(stack, count=1, active=True, title="预览与历史验收"):
         """
 import json
 from datetime import timedelta
+from uuid import uuid4
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import Conversation, Run, User, utcnow
+from ailab_platform.models import Conversation, Run, RunAttempt, User, utcnow
+from ailab_platform.api.jobs import stage_job
 from ailab_platform.storage import get_storage
 with SessionLocal() as db:
     user = db.query(User).filter_by(username="e2e-user").one()
@@ -42,12 +46,19 @@ with SessionLocal() as db:
         run=Run(user_id=user.id, conversation_id=conv.id, prompt=f"历史消息 {i:03}", model="test-fast", status="succeeded",
             summary=(f"第 {i} 轮分析。"+"这是一段用于保持阅读位置的内容。"*30), created_at=utcnow()-timedelta(days=30)+timedelta(seconds=i))
         db.add(run); db.flush(); runs.append(run.id)
-    if ACTIVE: run.status="running"
+    attempt = None
+    if ACTIVE:
+        run.status="running"
+        attempt = uuid4().hex
+        job = stage_job(db, "run", run_id=run.id)
+        job.claim_token = attempt
+        job.claimed_until = job.next_attempt_at = utcnow()+timedelta(hours=1)
+        db.add(RunAttempt(id=attempt, run_id=run.id, number=1, agent_instance="browser-fixture"))
     db.commit()
     sheet={"sheets":[{"name":"销售", "rows":[[{"v":"地区"},{"v":"金额"}],[{"v":"华东"},{"v":"120"}]],
         "widths":[12,12], "size":[2,2],"charts":0,"truncated":False}]}
     get_storage().put_bytes(f"previews/{run.id}/1/sheets.json", json.dumps(sheet).encode())
-    print(json.dumps({"id":conv.id,"run":run.id}))
+    print(json.dumps({"id":conv.id,"run":run.id,"attempt":attempt}))
 """.replace("COUNT", str(count))
         .replace("ACTIVE", repr(active))
         .replace("TITLE", repr(title))
@@ -55,13 +66,14 @@ with SessionLocal() as db:
     result = subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, capture_output=True, text=True, check=True)
     seeded = json.loads(result.stdout)
     _seeded.append(seeded["run"])
+    _attempts[seeded["run"]] = seeded["attempt"]
     return seeded
 
 
 def emit(stack, run, filename, version):
     r = httpx.post(
         stack.api + f"/internal/runs/{run}/events",
-        headers={"X-Service-Token": SERVICE_TOKENS["agent"]},
+        headers={"X-Service-Token": SERVICE_TOKENS["agent"], "X-Run-Attempt": _attempts[run]},
         json={"type": "preview.updated", "payload": {"filename": filename, "kind": "sheets", "data": "1/sheets.json", "version": version}},
     )
     assert r.status_code == 200, r.text
@@ -165,7 +177,7 @@ def test_plain_text_answer_gets_model_title_without_overwriting_manual_name(page
     conv = seed(stack, title="")
     login(page, stack, path="/c/" + conv["id"])
     page.wait_for_selector(".turn")
-    service = {"X-Service-Token": SERVICE_TOKENS["agent"]}
+    service = {"X-Service-Token": SERVICE_TOKENS["agent"], "X-Run-Attempt": conv["attempt"]}
     internal = stack.api + f"/internal/runs/{conv['run']}"
     assert httpx.get(internal, headers=service).json()["needs_conversation_title"] is True
     if mode == "manual":

@@ -116,6 +116,10 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
         raise HTTPException(404, "usage subject not found")
     try:
         with user_critical_section(db, owner.user_id):
+            if body.subject == "run":
+                from .api.runtime_fence import fence_attempt
+
+                fence_attempt(db, owner.id, body.attempt_id)
             old = db.get(UsageReservation, body.call_id, populate_existing=True)
             if old:
                 if any(getattr(old, key) != value for key, value in body.model_dump().items()):

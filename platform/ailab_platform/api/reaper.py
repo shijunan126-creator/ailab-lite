@@ -39,13 +39,15 @@ def reap_once(db: Session, queue: JobQueue, now: datetime | None = None) -> dict
     cutoff = now - timedelta(seconds=settings.reaper_grace_seconds)
     stats = {"runs_requeued": 0, "runs_failed": 0, "files_requeued": 0}
     expire_reservations(db, now)
+    expire_runtime_questions(db, now)
+    expire_interrupted_runs(db, now)
 
     # Durable outbox owns recovery. Reaper only detects legacy running orphans;
     # absence from Redis is never evidence that an owned durable job is lost.
     from ..models import OutboxMessage
 
     for run in db.scalars(select(Run).where(Run.status == RunStatus.RUNNING)):
-        job = db.scalar(select(OutboxMessage.id).where(OutboxMessage.id == run.id).limit(1))
+        job = db.scalar(select(OutboxMessage.id).where(OutboxMessage.id == (run.runtime_meta or {}).get("job_id", run.id)).limit(1))
         if job or queue.is_locked(run_lock_key(run.id)):
             continue
         started = _aware(run.started_at) or _aware(run.created_at)
@@ -311,6 +313,8 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
             ids = ids[:remaining]
             for run_id in ids:
                 _schedule_delete(db, f"workspaces/{run_id}.tgz", "conversation")
+                _schedule_delete(db, f"workspaces/{run_id}/", "conversation", prefix=True)
+                _schedule_delete(db, f"checkpoints/{run_id}/", "conversation", prefix=True)
                 _schedule_delete(db, f"previews/{run_id}/", "conversation", prefix=True)
             if ids:
                 # the usage ledger stays: what these runs cost still counts
@@ -335,6 +339,7 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
     for kind, job in (
         ("presign", lambda: purge_expired_presigns(db, storage, now)),
         ("orphan", lambda: purge_orphan_objects(db, storage, now)),
+        ("checkpoint", lambda: purge_checkpoints(db, storage, now)),
         ("events", lambda: purge_run_events(db, now)),
         ("conversation", lambda: purge_deleted_conversations(db, now)),
         ("trash", lambda: purge_expired_trash(db, now)),
@@ -395,3 +400,69 @@ def purge_expired_trash(db: Session, now: datetime | None = None, *, batch_size:
         delete_storage_objects(keys)
         count += int(due is not None)
     return count
+
+
+def expire_runtime_questions(db: Session, now: datetime) -> int:
+    """A question nobody answered in time becomes interrupted. It stays answerable, so it keeps no timer."""
+    cutoff = now - timedelta(hours=settings.ask_user_timeout_hours)
+    candidates = db.scalars(
+        select(Run)
+        .where(Run.status == RunStatus.WAITING_USER, Run.waiting_since < cutoff)
+        .order_by(Run.waiting_since, Run.id)
+        .limit(settings.gc_batch_size)
+    ).all()
+    count = 0
+    for run in candidates:
+        with user_critical_section(db, run.user_id):
+            db.refresh(run)
+            if run.status == RunStatus.WAITING_USER and _aware(run.waiting_since) < cutoff:
+                run.waiting_since = None
+                transition_run(db, run.id, RunStatus.INTERRUPTED, error="等待回答超时；仍可回答并继续", commit=False)
+                db.commit()
+                count += 1
+    return count
+
+
+def expire_interrupted_runs(db: Session, now: datetime) -> int:
+    """An interrupted run nobody continued within the window is canceled. A pending question never expires this way:
+    it has no timer (see expire_runtime_questions), so only runs without a question qualify."""
+    cutoff = now - timedelta(hours=settings.ask_user_timeout_hours)
+    candidates = db.scalars(
+        select(Run)
+        .where(Run.status == RunStatus.INTERRUPTED, Run.waiting_since < cutoff)
+        .order_by(Run.waiting_since, Run.id)
+        .limit(settings.gc_batch_size)
+    ).all()
+    count = 0
+    for run in candidates:
+        with user_critical_section(db, run.user_id):
+            db.refresh(run)
+            meta = run.runtime_meta or {}
+            pending_question = bool(meta.get("question")) and not meta.get("answer")
+            if run.status == RunStatus.INTERRUPTED and not pending_question and run.waiting_since and _aware(run.waiting_since) < cutoff:
+                transition_run(db, run.id, RunStatus.CANCELED, error="中断后超时未继续，已取消", commit=False)
+                db.commit()
+                count += 1
+    return count
+
+
+def purge_checkpoints(db: Session, storage, now: datetime) -> int:
+    from ..models import RunCheckpoint
+
+    candidates = db.scalars(
+        select(RunCheckpoint)
+        .where(RunCheckpoint.expires_at < now)
+        .order_by(RunCheckpoint.expires_at, RunCheckpoint.run_id, RunCheckpoint.step)
+        .limit(settings.gc_batch_size)
+    ).all()
+    for row in candidates:
+        _schedule_delete(db, row.state_key, "checkpoint")
+        db.delete(row)
+    db.commit()
+    # Immutable objects uploaded before a failed DB transaction are not referenced.
+    for item in _page(storage, "checkpoints/"):
+        if _aware(item.modified_at) < now - timedelta(seconds=max(settings.orphan_objects_grace_seconds, 3600)):
+            if db.scalar(select(RunCheckpoint.run_id).where(RunCheckpoint.state_key == item.key).limit(1)) is None:
+                _schedule_delete(db, item.key, "checkpoint")
+    db.commit()
+    return len(candidates)

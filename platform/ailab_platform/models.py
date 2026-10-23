@@ -237,6 +237,7 @@ class Run(Base):
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
         Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
+        Index("ix_runs_waiting", "status", "waiting_since", "id"),
         Index("ix_runs_finished", "status", "finished_at", "id"),
     )
 
@@ -250,6 +251,9 @@ class Run(Base):
     input_file_ids: Mapped[list] = mapped_column(JSON, default=list)
     # how the user asked: {"mode": "chat" | "work", "skill": "pptx" | ...} (empty for runs from before)
     options: Mapped[dict | None] = mapped_column(JSON, default=dict, nullable=True)
+    waiting_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    checkpoint_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    runtime_meta: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     result: Mapped[dict] = mapped_column(JSON, default=dict)
     summary: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
@@ -497,7 +501,11 @@ class OutboxMessage(Base):
     deliveries: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     needs_attention: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
 
-    __table_args__ = (Index("ix_outbox_due", "needs_attention", "next_attempt_at", "id"), Index("ix_outbox_created_at", "created_at", "id"))
+    __table_args__ = (
+        Index("ix_outbox_claim_token", "claim_token"),
+        Index("ix_outbox_due", "needs_attention", "next_attempt_at", "id"),
+        Index("ix_outbox_created_at", "created_at", "id"),
+    )
 
 
 class RunAttempt(Base):
@@ -542,3 +550,25 @@ Index(
     sqlite_where=text(REVIEW_PREDICATES["sqlite"]),
     postgresql_where=text(REVIEW_PREDICATES["postgresql"]),
 )
+
+
+class RunCheckpoint(Base):
+    __tablename__ = "run_checkpoints"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    step: Mapped[int] = mapped_column(Integer, primary_key=True)
+    attempt_id: Mapped[str] = mapped_column(String(40))
+    state_key: Mapped[str] = mapped_column(String(500), index=True)
+    plan: Mapped[list] = mapped_column(JSON, default=list)
+    tool_log: Mapped[dict] = mapped_column(JSON, default=dict)
+    deliveries: Mapped[dict] = mapped_column(JSON, default=dict)
+    runtime_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (Index("ix_run_checkpoints_expiry", "expires_at", "run_id", "step"),)
+
+
+class RunDelivery(Base):
+    __tablename__ = "run_deliveries"
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    delivery_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    result: Mapped[dict] = mapped_column(JSON)

@@ -15,6 +15,7 @@ from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject
 from ailab_platform.storage import get_storage
+from tests.run_claims import attempt_headers, delivery_headers
 from tests.test_conversations import _other_user
 from tests.test_projects import AUTH, SERVICE, project, upload
 
@@ -123,7 +124,10 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
 
     monkeypatch.setattr(preview_dispatch, "get_queue", lambda: q)
     run = api.post("/v1/runs", json={"prompt": "image"}).json()
-    assert api.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"}).status_code == 200
+    assert (
+        api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"}).status_code
+        == 200
+    )
     data = image_bytes()
     key = f"staging/{run['id']}/image.png"
     body = {
@@ -135,7 +139,7 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
         "sha256": hashlib.sha256(data).hexdigest(),
     }
     get_storage().put_bytes(key, data)
-    response = api.post("/internal/artifacts", headers=SERVICE, json=body)
+    response = api.post("/internal/artifacts", headers=delivery_headers(attempt_headers(api, run["id"]), run["id"], key), json=body)
     assert response.status_code == 200, response.text
     fid = response.json()["file_id"]
     preview_dispatch.dispatch_preview_jobs(f"thumb_{fid}")
@@ -158,7 +162,8 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
     assert api.get(file["thumbnail_url"]).status_code == 200
     q.ack(settings.file_queue, msg)
     get_storage().put_bytes(key, data)
-    assert api.post("/internal/artifacts", headers=SERVICE, json=body).json()["file_id"] == fid
+    headers = delivery_headers(attempt_headers(api, run["id"]), run["id"], key)
+    assert api.post("/internal/artifacts", headers=headers, json=body).json()["file_id"] == fid
     assert q.outstanding(settings.file_queue) == []
     assert api.delete(f"/v1/files/{fid}").status_code == 204
 
@@ -167,7 +172,7 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
 
     monkeypatch.setattr(preview_dispatch, "get_queue", fail_queue)
     get_storage().put_bytes(key, data)
-    response = api.post("/internal/artifacts", headers=SERVICE, json=body)
+    response = api.post("/internal/artifacts", headers=delivery_headers(attempt_headers(api, run["id"]), run["id"], key), json=body)
     assert response.status_code == 200  # queue outage must not fail an artifact commit
 
 

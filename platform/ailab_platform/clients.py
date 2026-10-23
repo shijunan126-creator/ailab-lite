@@ -15,6 +15,7 @@ import httpx
 
 from .config import settings
 from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var, traceparent_var
+from .runtime_context import attempt_id_var, delivery_id_var
 from .telemetry import span
 
 # One client per process, not one per call: a Run makes 15-25 internal calls and
@@ -66,6 +67,10 @@ class _Service:
 
     def _req(self, method: str, path: str, timeout: float = 30, **kwargs) -> Request:
         headers = dict(self.headers)
+        if attempt := attempt_id_var.get():
+            headers["X-Run-Attempt"] = attempt
+        if delivery := delivery_id_var.get():
+            headers["X-Delivery-Id"] = delivery
         rid = request_id_var.get()
         if rid != NO_REQUEST:  # carry the correlation id into the next service's logs
             headers[REQUEST_ID_HEADER] = rid
@@ -262,7 +267,8 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def _send(self, req: Request) -> httpx.Response:
         with span("internal.http", method=req.method):
-            r = await self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
+            async with asyncio.timeout(req.timeout):
+                r = await self._http.request(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req))
             _raise(req.method, req.url, r)
             return r
 
@@ -283,6 +289,15 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
+
+    async def get_checkpoint(self, run_id: str) -> dict | None:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
+
+    async def put_checkpoint(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/checkpoint", json=payload))).json()
+
+    async def pause_run(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/pause", json=payload))).json()
 
     async def get_model_context(self, run_id: str, after: str | None = None) -> dict:
         return (
@@ -350,7 +365,8 @@ class AsyncBrokerClient(_Service):
         return settings.broker_base_url
 
     async def _raw(self, req: Request) -> httpx.Response:
-        return await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
+        async with asyncio.timeout(req.timeout):
+            return await self._http.request(req.method, req.url, timeout=req.timeout, **req.kwargs)
 
     async def _send(self, req: Request) -> httpx.Response:
         r = await self._raw(req)

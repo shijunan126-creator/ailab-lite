@@ -536,7 +536,7 @@ class LeaseManager:
         if res.exit_code != 0 or not size_line.isdigit():
             raise SandboxError(f"workspace snapshot failed: {res.stderr[-300:]}")
         size = int(size_line)
-        key = f"workspaces/{lease['run_id']}.tgz"
+        key = f"workspaces/{lease['run_id']}/{uuid.uuid4().hex}.tgz"
         try:
             size, _ = self.store_file(lease, SNAPSHOT_PATH, key, "application/gzip", settings.max_workspace_bytes)
         except TransferLimitError as exc:

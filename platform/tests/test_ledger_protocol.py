@@ -18,6 +18,7 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.models import ModelUsage, Run, UsageReservation
 from ailab_platform.ops.reconcile_usage import reconcile
 from ailab_platform.quota import expire_reservations, quota_windows
+from tests.usage_helpers import owned_headers
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -38,10 +39,11 @@ def api():
 def reservation(api, **overrides):
     run = api.post("/v1/runs", headers=AUTH, json={"prompt": "ledger", "model": "test-fast"})
     assert run.status_code == 201, run.text
+    run_id = run.json()["id"]
     body = {
         "call_id": uuid4().hex,
-        "run_id": run.json()["id"],
-        "attempt_id": "attempt-1",
+        "run_id": run_id,
+        "attempt_id": owned_headers(api, run_id)["X-Run-Attempt"],
         "alias": "test-fast",
         "mode": "work",
         "max_output_tokens": 10,
@@ -58,8 +60,12 @@ def reserve(api, body):
 
 
 def settle(api, call_id, **overrides):
+    # A late settlement authenticates the attempt that reserved the call, whether or not it still owns the job.
+    with SessionLocal() as db:
+        frozen = db.get(UsageReservation, call_id)
     body = {
         "call_id": call_id,
+        "attempt_id": frozen.attempt_id if frozen else "unknown",
         "actual_backend": "backend-revision-1",
         "input_tokens": 10,
         "cached_tokens": 5,
@@ -86,8 +92,10 @@ def test_duplicate_reserve_and_concurrent_settle_are_idempotent(api):
         ledger = db.scalar(select(ModelUsage).where(ModelUsage.call_id == body["call_id"]))
         assert ledger.attempt_id == body["attempt_id"] and ledger.mode == "work" and ledger.alias == "test-fast"
         assert ledger.actual_backend == "backend-revision-1" and ledger.dept_id is None
-    conflicting = api.post("/internal/usage/reserve", headers=SERVICE, json={**body, "attempt_id": "different"})
+    conflicting = api.post("/internal/usage/reserve", headers=SERVICE, json={**body, "max_output_tokens": 11})
     assert conflicting.status_code == 409 and conflicting.json()["detail"]["code"] == "call_conflict"
+    foreign = api.post("/internal/usage/reserve", headers=SERVICE, json={**body, "attempt_id": "different"})
+    assert foreign.status_code == 409 and foreign.json()["detail"] == "stale_attempt"
     assert settle(api, body["call_id"], input_tokens=100)["weighted_amount"] == 9500
 
 
@@ -214,7 +222,12 @@ def test_protocol_rejects_unbound_and_unreserved_usage(api):
     body = reservation(api)
     assert api.post("/internal/usage/reserve", headers=SERVICE, json={**body, "user_id": "foreign"}).status_code == 422
     assert api.post("/internal/usage/reserve", json=body).status_code == 403
-    assert api.post("/internal/usage/settle", headers=SERVICE, json={"call_id": "missing", "status": "released"}).status_code == 404
+    assert (
+        api.post(
+            "/internal/usage/settle", headers=SERVICE, json={"call_id": "missing", "attempt_id": "x", "status": "released"}
+        ).status_code
+        == 404
+    )
     api.post(f"/v1/runs/{body['run_id']}/cancel", headers=AUTH)
     result = api.post("/internal/usage/reserve", headers=SERVICE, json=body)
     assert result.status_code == 409 and result.json()["detail"]["code"] == "run_not_active"

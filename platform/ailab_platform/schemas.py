@@ -88,6 +88,7 @@ class RunOut(ORMModel):
     summary: str
     error: str
     result: dict
+    resumable: bool = False
     created_at: datetime
     started_at: datetime | None
     finished_at: datetime | None
@@ -281,6 +282,7 @@ class CommitOut(BaseModel):
 
 
 class RunStateOut(BaseModel):
+    job_id: str | None = None
     status: str
     finished_at: datetime | None = None
 

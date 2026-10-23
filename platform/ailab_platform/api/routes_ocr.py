@@ -202,6 +202,7 @@ async def recognize(db, file, spec):
                 db,
                 SettleUsageIn(
                     call_id=call_id,
+                    attempt_id=call_id,
                     status=status,
                     actual_backend=call.actual_backend,
                     input_tokens=usage.get("prompt_tokens", estimate if status == "estimated" else 0),

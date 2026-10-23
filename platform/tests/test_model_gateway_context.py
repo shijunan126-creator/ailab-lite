@@ -13,6 +13,7 @@ from ailab_platform.api.main import app
 from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMError, LLMResponse, OpenAICompatibleClient, reset_llm_cache
+from tests.run_claims import attempt_headers
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -127,13 +128,14 @@ def test_pre_output_fallback_has_distinct_calls_and_real_ledger(monkeypatch, kin
             install_catalog(monkeypatch, first, second)
             run = c.post("/v1/runs", headers=AUTH, json={"prompt": "hi", "model": "primary", "mode": "chat"}).json()
             assert "id" in run, run
-            assert c.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"}).status_code == 200
+            owner = attempt_headers(c, run["id"])
+            assert c.post(f"/internal/runs/{run['id']}/status", headers=owner, json={"status": "running"}).status_code == 200
             bridge = LedgerBridge(c)
             loop = AgentLoop(platform=bridge)
             result = await loop._call_model(
                 OpenAICompatibleClient(first),
                 run["id"],
-                {**run, "_attempt_id": "test-attempt"},
+                {**run, "_attempt_id": owner["X-Run-Attempt"]},
                 "primary",
                 [{"role": "user", "content": "hi"}],
                 0,
@@ -320,14 +322,15 @@ def test_context_api_keyset_and_summary_compare_and_set():
         assert len(second["history"]) == 100 and not second["has_more"]
         assert first["history"][0]["prompt"] == "history-0"
         summary_url = f"/internal/runs/{current['id']}/model-summary"
+        owner = attempt_headers(c, current["id"])
         body = {"expected_through_run_id": None, "through_run_id": first["history"][-1]["id"], "summary": "important decisions"}
-        assert c.put(summary_url, headers=SERVICE, json=body).status_code == 200
-        assert c.put(summary_url, headers=SERVICE, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 200
+        assert c.put(summary_url, headers=owner, json=body).status_code == 409
         next_page = c.get(url, headers=SERVICE).json()
         assert next_page["summary"] == "important decisions"
         assert next_page["history"] == second["history"]
         body.update(expected_through_run_id=body["through_run_id"], through_run_id=current["id"])
-        assert c.put(summary_url, headers=SERVICE, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 409
         assert c.get(url, headers=AUTH).status_code == 403
 
 
@@ -363,7 +366,7 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
             return LLMResponse(content=title_result, usage={"prompt_tokens": 4, "completion_tokens": 2})
 
     platform = Platform()
-    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process("run_1", attempt_id="att_1"))
     status, result = platform.statuses[-1]
     assert status == "succeeded" and result["summary"] == "这里是确认后的回答。"
     assert result["result"].get("conversation_title") == (title_result if title_result == "城市更新汇报" else None)
@@ -384,9 +387,10 @@ def test_title_uses_real_ledger_and_bounded_model_request(monkeypatch):
         async with upstream("title", seen) as address:
             install_catalog(monkeypatch, address, address)
             run = c.post("/v1/runs", headers=AUTH, json={"prompt": "城市更新的汇报怎么组织", "model": "primary", "mode": "chat"}).json()
-            assert c.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"}).status_code == 200
+            owner = attempt_headers(c, run["id"])
+            assert c.post(f"/internal/runs/{run['id']}/status", headers=owner, json={"status": "running"}).status_code == 200
             loop = AgentLoop(platform=LedgerBridge(c))
-            run.update(_attempt_id="title-attempt", needs_conversation_title=True)
+            run.update(_attempt_id=owner["X-Run-Attempt"], needs_conversation_title=True)
             response = await loop._call_model(
                 OpenAICompatibleClient(address), run["id"], run, "primary", [{"role": "user", "content": run["prompt"]}], 0, tools=[]
             )

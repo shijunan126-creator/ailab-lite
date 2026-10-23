@@ -148,7 +148,7 @@ def test_the_model_sees_personal_skills_and_reads_one_whose_files_reach_the_sand
     run = ToolCall(id="c2", name="exec", arguments={"cmd": "python /workspace/.ailab/skills/weekly/scripts/fill.py"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(tool_calls=[run]), LLMResponse(content="done")])
     broker = FakeBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))
     system = llm.seen_messages[0][0]["content"]
     assert "# 个人技能" in system and "- weekly：周报助手" in system
     tool_msg = llm.seen_messages[1][-1]["content"]
@@ -163,7 +163,7 @@ def test_the_model_sees_personal_skills_and_reads_one_whose_files_reach_the_sand
 def test_a_picked_personal_skill_comes_preloaded() -> None:
     platform = _Platform({"f1": ZIP}, personal_skills=[SKILL], options={"mode": "work", "skill": "weekly"})
     llm = ScriptedLLM([LLMResponse(content="ok")])
-    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     system = llm.seen_messages[0][0]["content"]
     assert "本轮已选技能：weekly" in system and "运行 scripts/fill.py" in system
     assert ("agent.skill", {"name": "weekly", "title": "周报助手"}) in platform.events

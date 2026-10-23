@@ -8,18 +8,20 @@ compare-and-swap on the status we read, so two writers racing resolve to one win
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
 from . import metrics
 from .events import append_event
-from .models import Run, RunStatus
+from .models import Run, RunCheckpoint, RunStatus
 
 ALLOWED: dict[str, set[str]] = {
     RunStatus.QUEUED: {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELED},
-    RunStatus.RUNNING: {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED},
+    RunStatus.RUNNING: {RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED, RunStatus.WAITING_USER, RunStatus.INTERRUPTED},
+    RunStatus.WAITING_USER: {RunStatus.QUEUED, RunStatus.INTERRUPTED, RunStatus.CANCELED},
+    RunStatus.INTERRUPTED: {RunStatus.QUEUED, RunStatus.CANCELED},
 }
 
 
@@ -65,6 +67,10 @@ def transition_run(
     if not won:
         return run, False  # someone else moved it first; theirs stands
 
+    if new_status in RunStatus.TERMINAL:
+        # At most two rows per run. A frozen deadline makes lifecycle an indexed
+        # range scan instead of joining/sorting every historical checkpoint.
+        db.execute(update(RunCheckpoint).where(RunCheckpoint.run_id == run_id).values(expires_at=now + timedelta(days=7)))
     metrics.RUNS.labels(new_status).inc()
     if new_status in RunStatus.TERMINAL:
         started = run.started_at or run.created_at

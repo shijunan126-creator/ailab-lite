@@ -10,13 +10,13 @@ from ailab_platform import accounts
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal, init_db
 from ailab_platform.storage import get_storage
+from tests.run_claims import SERVICE, attempt_headers
 
 AUTH = {"Authorization": "Bearer test-token"}
-SERVICE = {"X-Service-Token": "test-service"}
 
 
 def _status(c, run_id, status, **body):
-    r = c.post(f"/internal/runs/{run_id}/status", headers=SERVICE, json={"status": status, **body})
+    r = c.post(f"/internal/runs/{run_id}/status", headers=attempt_headers(c, run_id), json={"status": status, **body})
     assert r.status_code == 200, r.text
     return r.json()
 

@@ -326,10 +326,8 @@ def test_secure_profile_rejects_wrong_service_identity():
         secure_settings().validate_secrets("broker")
 
 
-def test_a_sandbox_lease_must_outlive_the_run_that_holds_it():
-    from pydantic import ValidationError
-
+def test_a_sandbox_lease_may_be_shorter_than_a_run_because_the_agent_renews_it():
     from ailab_platform.config import Settings
 
-    with pytest.raises(ValidationError, match="run_timeout_seconds"):
-        Settings(_env_file=None, sandbox_ttl_seconds=600, run_timeout_seconds=900)
+    # The Agent heartbeats its lease (runtime_heartbeat_seconds), so the TTL no longer has to outlive the run.
+    Settings(_env_file=None, sandbox_ttl_seconds=600, run_timeout_seconds=900)

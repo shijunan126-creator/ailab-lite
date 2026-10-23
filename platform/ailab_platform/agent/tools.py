@@ -90,6 +90,48 @@ TOOLS: list[dict] = [
     },
 ]
 
+ASK_USER = {
+    "type": "function",
+    "function": {
+        "name": "ask_user",
+        "description": "暂停任务并向用户提问。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "question": {"type": "string"},
+                "options": {"type": "array", "items": {"type": "string"}},
+                "allow_text": {"type": "boolean"},
+            },
+            "required": ["question"],
+        },
+    },
+}
+UPDATE_PLAN = {
+    "type": "function",
+    "function": {
+        "name": "update_plan",
+        "description": "更新任务计划。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "steps": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "title": {"type": "string"},
+                            "status": {"type": "string", "enum": ["pending", "running", "done", "skipped", "failed"]},
+                        },
+                        "required": ["id", "title", "status"],
+                    },
+                }
+            },
+            "required": ["steps"],
+        },
+    },
+}
+
 # Run by the Agent itself, no sandbox needed.
 LOAD_SKILL = {
     "type": "function",
@@ -158,6 +200,8 @@ WEB_TOOLS = [WEB_SEARCH, READ_URL]
 
 def tools_for_turn() -> list[dict]:
     return [
+        ASK_USER,
+        UPDATE_PLAN,
         *TOOLS,
         LOAD_SKILL,
         *([SEARCH_IMAGES] if images.enabled() else []),

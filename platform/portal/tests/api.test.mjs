@@ -27,6 +27,16 @@ test("SSE reader releases its lock on stream.end", async (t) => {
   assert.equal(body.locked, false);
 });
 
+test("continuing a paused run starts after the events already displayed", async (t) => {
+  const seen = [];
+  t.mock.method(globalThis, "fetch", async (url) => {
+    assert.match(String(url), /after=12$/);
+    return sse("id: 12\nevent: a\ndata: {}\n\nid: 13\nevent: a\ndata: {}\n\nevent: stream.end\ndata: {}\n\n");
+  });
+  await streamRun("r", (e) => seen.push(e.seq), new AbortController().signal, undefined, 12);
+  assert.deepEqual(seen, [13]);
+});
+
 test("filesByIds asks for all ids in one request, and none for an empty list", async (t) => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url) => {

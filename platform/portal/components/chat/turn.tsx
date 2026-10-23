@@ -204,7 +204,7 @@ function Plan({ steps }: { steps: PlanStep[] }) {
 }
 
 /** The agent stopped to ask. Answered here or from the composer; the run continues on its own afterwards. */
-function Ask({ runId, item, live }: { runId: string; item: Extract<Item, { kind: "ask" }>; live: boolean }) {
+function Ask({ item, live, onAnswer }: { item: Extract<Item, { kind: "ask" }>; live: boolean; onAnswer: (value: string) => Promise<void> }) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -214,7 +214,7 @@ function Ask({ runId, item, live }: { runId: string; item: Extract<Item, { kind:
     setBusy(true);
     setError("");
     try {
-      await api(`/v1/runs/${runId}/answer`, { method: "POST", body: JSON.stringify({ question_id: item.id, answer: value.trim() }) });
+      await onAnswer(value.trim());
     } catch (err: any) {
       setError(String(err?.message || err));
       setBusy(false);
@@ -305,6 +305,7 @@ export default function Turn({
   previewKey,
   onPreview,
   onResume,
+  onAnswer,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -313,6 +314,7 @@ export default function Turn({
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
   onResume?: (run: Run) => void;
+  onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -362,7 +364,8 @@ export default function Turn({
             ) : it.kind === "plan" ? (
               <Plan key={i} steps={it.steps} />
             ) : it.kind === "ask" ? (
-              <Ask key={i} runId={run.id} item={it} live={!terminal} />
+              <Ask key={i} item={it} live={(!terminal || run.status === "interrupted") && !!onAnswer}
+                onAnswer={(value) => onAnswer!(run, it.id, value)} />
             ) : (
               <Steps key={i} steps={it.steps} open={live && i === shown.length - 1} />
             )
@@ -381,7 +384,7 @@ export default function Turn({
           ) : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{run.error}</div> : null}
           {run.status === "canceled" ? <div className="hint">已停止</div> : null}
-          {(run.status === "interrupted" || (run.status === "failed" && run.resumable)) && onResume ? (
+          {run.resumable && onResume ? (
             <div className="resume">
               {run.status === "interrupted" ? <span className="hint">已中断</span> : null}
               <button className="secondary sm" onClick={() => onResume(run)}>

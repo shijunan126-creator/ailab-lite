@@ -85,6 +85,30 @@ def test_running_twice_is_harmless(engine) -> None:
     assert _version(engine) == _head()
 
 
+def test_runtime_upgrade_downgrade_preserves_existing_run_and_file_usage(engine):
+    _upgrade_to(engine, "0018")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0019")
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE runs SET checkpoint_step = 1, status = 'running' WHERE id = 'r1'"))
+        conn.execute(
+            text(
+                "INSERT INTO run_checkpoints (run_id,step,attempt_id,state_key,plan,tool_log,deliveries,runtime_version,created_at) "
+                "VALUES ('r1',1,'attempt','checkpoints/r1/state.gz','[]','{}','{}',1,'2026-01-01 00:00:00')"
+            )
+        )
+        conn.execute(text("INSERT INTO run_deliveries (run_id,delivery_id,result) VALUES ('r1','r1:tool','{}')"))
+    _downgrade_to(engine, "0018")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT status FROM runs WHERE id = 'r1'")) == "running"
+    _upgrade_to(engine, "0019")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT checkpoint_step FROM runs WHERE id = 'r1'")) == 0
+        assert conn.scalar(text("SELECT count(*) FROM run_checkpoints")) == 0
+    assert {column["name"] for column in inspect(engine).get_columns("model_usage")} >= {"subject", "file_id"}
+
+
 def test_database_created_before_migrations_is_stamped_and_upgraded_keeping_its_data(engine) -> None:
     """The deployment that already exists: tables from create_all (revision 0001), no alembic_version."""
     _upgrade_to(engine, "0001")

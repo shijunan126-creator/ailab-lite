@@ -87,7 +87,7 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
     with user_critical_section(db, user.id):
         project = owned_project(db, project_id, user)
         conversation_ids = select(Conversation.id).where(Conversation.project_id == project.id)
-        runs = db.scalars(select(Run).where(Run.conversation_id.in_(conversation_ids), Run.status.in_(RunStatus.ACTIVE))).all()
+        runs = db.scalars(select(Run).where(Run.conversation_id.in_(conversation_ids), Run.status.not_in(RunStatus.TERMINAL))).all()
         for run in runs:
             transition_run(db, run.id, RunStatus.CANCELED, reason="project_deleted", commit=False)
         # Retain the soft-deleted threads and their run history without a dangling project FK.

@@ -97,7 +97,7 @@ class _Recording(ScriptedLLM):
 
 def _run(llm, platform, broker=None):
     broker = broker or FakeBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))
     return broker
 
 

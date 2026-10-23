@@ -74,6 +74,6 @@ def test_load_skill_is_refused_for_a_switched_off_skill() -> None:
     platform = Platform()
     read = ToolCall(id="c1", name="load_skill", arguments={"name": "pptx"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(content="ok")])
-    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     result = next(p for t, p in platform.events if t == "agent.tool_result")
     assert result["ok"] is False and "已被用户关闭" in result["error"]

@@ -49,6 +49,9 @@ class ReserveUsageIn(BaseModel):
 class SettleUsageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     call_id: str = Field(min_length=1, max_length=80)
+    # The attempt that reserved the call. Settlement is authenticated by this frozen identity, not by live ownership,
+    # so a late settlement from an attempt that has since lost the job still reconciles its own call.
+    attempt_id: str = Field(min_length=1, max_length=40)
     actual_backend: str = Field(default="", max_length=120)
     input_tokens: int = Field(default=0, ge=0, le=100_000_000)
     cached_tokens: int = Field(default=0, ge=0, le=100_000_000)

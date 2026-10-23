@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from sqlalchemy import func, select, tuple_, update
 from sqlalchemy.orm import Session
 
@@ -47,7 +47,10 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
         else None
     )
     alive = newest is not None and workspace_alive(newest, datetime.now(UTC))
-    out["workspace_restore_key"] = workspace_key(newest.id) if alive else None
+    own = (run.runtime_meta or {}).get("workspace")
+    out["workspace_restore_key"] = (
+        own["key"] if own else ((newest.result or {}).get("workspace_key") or workspace_key(newest.id)) if alive else None
+    )
     out["workspace_expired"] = newest is not None and not alive
     return out
 
@@ -83,8 +86,13 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
 
 
 @router.put("/{run_id}/model-summary", dependencies=[Depends(require_scope("runs:status"))])
-def save_model_summary(run_id: str, body: SummaryUpdate, db: Session = Depends(get_db)) -> dict:
+def save_model_summary(
+    run_id: str, body: SummaryUpdate, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
     run = _run_or_404(db, run_id)
+    from .runtime_fence import fence_attempt
+
+    fence_attempt(db, run_id, x_run_attempt)
     through = _run_or_404(db, body.through_run_id)
     if (
         not run.conversation_id

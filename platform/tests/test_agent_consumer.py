@@ -1,21 +1,42 @@
-"""Run-message handling: ack only after the work, poison messages, duplicates."""
+"""Run-message handling on the durable path: claim, ACK only after the work, hand-back, busy and duplicate jobs."""
 
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
 from ailab_platform.agent import main as agent_main
 from ailab_platform.config import settings
-from ailab_platform.queue import InMemoryQueue, run_lock_key
+from ailab_platform.contracts.jobs import JobEnvelope
+from ailab_platform.queue import InMemoryQueue
+
+
+def _envelope(run_id="run_1", mode="work") -> dict:
+    now = datetime.now(UTC)
+    return JobEnvelope(job_id=run_id, kind="run", run_id=run_id, mode=mode, deadline=now + timedelta(hours=1), enqueued_at=now).model_dump(
+        mode="json"
+    )
 
 
 class FakePlatform:
-    statuses: list[tuple[str, str, dict]] = []
+    """The API's job and run endpoints as the Agent sees them: one claim, the run's state, and every job action."""
+
+    claim: dict = {}
+    run_state: dict = {}
+    statuses: list = []
+    actions: list = []
 
     async def aclose(self):
         pass
+
+    async def job_action(self, job_id, action, **body):
+        FakePlatform.actions.append((job_id, action, body))
+        return dict(FakePlatform.claim) if action == "claim" else {"ok": True}
+
+    async def get_run_state(self, run_id):
+        return dict(FakePlatform.run_state)
 
     async def set_run_status(self, run_id, status, **kw):
         FakePlatform.statuses.append((run_id, status, kw))
@@ -25,25 +46,29 @@ class FakePlatform:
 class FakeLoop:
     def __init__(self, behaviour="ok") -> None:
         self.behaviour = behaviour
-        self.calls: list[tuple[str, int]] = []
+        self.calls: list[tuple] = []
 
-    async def process(self, run_id, attempt=1):
-        self.calls.append((run_id, attempt))
+    async def process(self, run_id, attempt=1, attempt_id=None):
+        self.calls.append((run_id, attempt, attempt_id))
         if self.behaviour == "hang":
             await asyncio.sleep(60)
         elif self.behaviour == "boom":
             raise RuntimeError("boom")
         elif self.behaviour == "cancel":
             raise asyncio.CancelledError()
+        elif self.behaviour == "waiting":
+            FakePlatform.run_state = {"status": "waiting_user", "job_id": "run_1"}
 
 
 @pytest.fixture()
 def env(monkeypatch):
-    FakePlatform.statuses = []
+    FakePlatform.statuses, FakePlatform.actions = [], []
+    FakePlatform.claim = {"state": "claimed", "token": "tok_1", "attempt": 1, "attempt_id": "tok_1"}
+    FakePlatform.run_state = {"status": "succeeded", "job_id": "run_1"}
     monkeypatch.setattr(agent_main, "AsyncPlatformClient", FakePlatform)
     monkeypatch.setattr(settings, "run_timeout_seconds", 1)
     q = InMemoryQueue()
-    q.enqueue(settings.run_queue, {"run_id": "run_1"})
+    q.enqueue(settings.run_queue, _envelope())
     return q, q.dequeue(settings.run_queue, "c", timeout=1)
 
 
@@ -51,34 +76,34 @@ def _handle(loop, q, msg):
     asyncio.run(agent_main.handle_message(loop, q, msg))
 
 
-def test_success_acks_and_releases_the_lock(env) -> None:
+def _actions(name):
+    return [(job, body) for job, action, body in FakePlatform.actions if action == name]
+
+
+def test_success_acks_the_job_with_its_claim_and_the_queue_message(env) -> None:
     q, msg = env
     loop = FakeLoop()
     _handle(loop, q, msg)
-    assert loop.calls == [("run_1", 1)]
+    assert loop.calls == [("run_1", 1, "tok_1")]  # the attempt the claim returned, not one the consumer made up
+    assert _actions("ack") == [("run_1", {"token": "tok_1"})]
     assert q.outstanding(settings.run_queue) == []
-    assert not q.is_locked(run_lock_key("run_1"))
 
 
-def test_shutdown_hands_the_run_straight_back(env) -> None:
+def test_shutdown_releases_the_claim_and_hands_the_message_back(env) -> None:
     q, msg = env
     with pytest.raises(asyncio.CancelledError):
         _handle(FakeLoop("cancel"), q, msg)
-    # one message, immediately available to another agent, with the attempt carried over
-    assert q.outstanding(settings.run_queue) == [{"run_id": "run_1", "attempt": 2}]
-    again = q.dequeue(settings.run_queue, "other-agent", timeout=1)
-    assert again.payload["run_id"] == "run_1"
-    assert not q.is_locked(run_lock_key("run_1"))
+    assert _actions("release") == [("run_1", {"token": "tok_1"})]
+    assert _actions("ack") == []
+    assert q.outstanding(settings.run_queue) == []
 
 
-def test_attempt_count_survives_handbacks(env) -> None:
+def test_redelivered_job_reports_the_attempt_the_claim_counted(env) -> None:
     q, msg = env
-    q.ack(settings.run_queue, msg)
-    q.enqueue(settings.run_queue, {"run_id": "run_1", "attempt": settings.run_max_attempts + 1})
+    FakePlatform.claim = {"state": "claimed", "token": "tok_2", "attempt": 2, "attempt_id": "tok_2"}
     loop = FakeLoop()
-    _handle(loop, q, q.dequeue(settings.run_queue, "c", timeout=1))
-    assert loop.calls == []  # bounced between agents too many times: give up
-    assert FakePlatform.statuses[-1][:2] == ("run_1", "failed")
+    _handle(loop, q, msg)
+    assert loop.calls == [("run_1", 2, "tok_2")]
 
 
 def test_timeout_fails_the_run_and_acks(env) -> None:
@@ -86,6 +111,7 @@ def test_timeout_fails_the_run_and_acks(env) -> None:
     _handle(FakeLoop("hang"), q, msg)
     assert FakePlatform.statuses[-1][:2] == ("run_1", "failed")
     assert "timeout" in FakePlatform.statuses[-1][2]["error"]
+    assert _actions("ack") == [("run_1", {"token": "tok_1"})]
     assert q.outstanding(settings.run_queue) == []
 
 
@@ -93,35 +119,44 @@ def test_unexpected_crash_fails_the_run_and_acks(env) -> None:
     q, msg = env
     _handle(FakeLoop("boom"), q, msg)
     assert FakePlatform.statuses[-1][:2] == ("run_1", "failed")
+    assert _actions("ack") == [("run_1", {"token": "tok_1"})]
     assert q.outstanding(settings.run_queue) == []
 
 
-def test_poison_message_is_failed_without_running(env) -> None:
+def test_a_run_waiting_for_an_answer_is_acked_without_failing(env) -> None:
+    # waiting_user and interrupted are resting states: the job is done, the answer or resume creates the next one
     q, msg = env
-    msg.deliveries = settings.run_max_attempts + 1
+    _handle(FakeLoop("waiting"), q, msg)
+    assert FakePlatform.statuses == []
+    assert _actions("ack") == [("run_1", {"token": "tok_1"})]
+
+
+def test_a_run_still_in_progress_keeps_its_durable_job(env) -> None:
+    q, msg = env
+    FakePlatform.run_state = {"status": "running", "job_id": "run_1"}
+    with pytest.raises(RuntimeError, match="retain durable job"):
+        _handle(FakeLoop(), q, msg)
+    assert _actions("ack") == []
+
+
+def test_a_claim_held_elsewhere_is_dropped_without_running(env) -> None:
+    q, msg = env
+    FakePlatform.claim = {"state": "busy"}
     loop = FakeLoop()
     _handle(loop, q, msg)
     assert loop.calls == []
-    assert FakePlatform.statuses[-1][:2] == ("run_1", "failed")
+    assert _actions("ack") == []
     assert q.outstanding(settings.run_queue) == []
 
 
-def test_redelivery_reports_the_attempt_number(env) -> None:
-    q, msg = env
-    msg.deliveries = 2
+def test_a_message_without_a_durable_job_is_dropped(env) -> None:
+    q, first = env
+    q.ack(settings.run_queue, first)
+    q.enqueue(settings.run_queue, {"run_id": "run_9"})
     loop = FakeLoop()
-    _handle(loop, q, msg)
-    assert loop.calls == [("run_1", 2)]
-
-
-def test_duplicate_message_for_a_run_in_progress_is_dropped(env) -> None:
-    q, msg = env
-    assert q.acquire_lock(run_lock_key("run_1"), 60)  # another agent is on it
-    loop = FakeLoop()
-    _handle(loop, q, msg)
+    _handle(loop, q, q.dequeue(settings.run_queue, "c", timeout=1))
     assert loop.calls == []
     assert q.outstanding(settings.run_queue) == []
-    assert q.is_locked(run_lock_key("run_1"))  # and we did not steal its lock
 
 
 def test_sigterm_cancels_the_consumer_at_once_and_keeps_uvicorns_handler(monkeypatch) -> None:

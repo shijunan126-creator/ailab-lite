@@ -112,7 +112,9 @@ def get_conversation(
     display_turns = []
     for run in turns:
         out = run_dict(db, run, detail=True)
-        out["result"] = {key: value for key, value in out["result"].items() if key in {"previews", "thinking"}}
+        out["result"] = {
+            key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
+        }
         display_turns.append(out)
     return {
         **conversation_out(conv, last_status),
@@ -142,12 +144,13 @@ def rename_conversation(
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_conversation(conversation_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
     """Hidden from the list (the runs and the files they produced stay in the library). A running turn is canceled."""
-    conv = _owned(db, conversation_id, user)
-    for run in _turns(db, conv):
-        if run.status in RunStatus.ACTIVE:
-            transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted")
-    conv.deleted_at = utcnow()
-    db.commit()
+    with user_critical_section(db, user.id):
+        conv = _owned(db, conversation_id, user)
+        pending = db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.status.not_in(RunStatus.TERMINAL)))
+        for run in pending:
+            transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted", commit=False)
+        conv.deleted_at = utcnow()
+        db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

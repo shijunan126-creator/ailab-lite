@@ -239,9 +239,9 @@ export async function streamRun(
   runId: string,
   onEvent: (event: EventItem) => void,
   signal: AbortSignal,
-  onEnd?: () => void
+  onEnd?: () => void,
+  after = 0
 ): Promise<void> {
-  let after = 0;
   let failures = 0;
   while (!signal.aborted) {
     let ended = false;

@@ -33,7 +33,8 @@ async def scenario():
         queue.enqueue(f"{settings.run_queue}:{payload['mode']}", payload)
     started = []
 
-    async def process(self, run_id, attempt):
+    async def process(self, run_id, attempt, *, attempt_id):
+        assert attempt_id
         started.append(run_id)
         if len(started) == len(payloads):
             print("started", flush=True)

@@ -7,9 +7,10 @@ import asyncio
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
+from tests.runtime_fakes import CheckpointFake
 
 
-class FakePlatform:
+class FakePlatform(CheckpointFake):
     def __init__(self) -> None:
         self.statuses: list[tuple[str, dict]] = []
         self.events: list[tuple[str, dict]] = []
@@ -21,6 +22,11 @@ class FakePlatform:
 
     async def set_run_status(self, run_id, status, **kw):
         self.statuses.append((status, kw))
+        return {}
+
+    async def transition_run(self, run_id, status, *, events=(), **values):
+        await self.set_run_status(run_id, status, **values)
+        self.events.extend((event["type"], event["payload"]) for event in events)
         return {}
 
     async def get_run_state(self, run_id):
@@ -90,9 +96,9 @@ class ScriptedLLM(LLMClient):
         return self.responses.pop(0)
 
 
-def _run(llm, platform=None, broker=None):
+def _run(llm, platform=None, broker=None, attempt_id="att_1"):
     platform, broker = platform or FakePlatform(), broker or FakeBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id=attempt_id))
     return platform, broker
 
 
@@ -331,7 +337,9 @@ def test_run_resolves_its_model_from_the_catalog() -> None:
             return {**await super().get_run(run_id), "model": "test-fast", "prompt": "你好"}
 
     platform = P()
-    asyncio.run(AgentLoop(platform=platform, broker=RichBroker()).process("run_1"))  # no llm injected: catalog -> MockLLM
+    asyncio.run(
+        AgentLoop(platform=platform, broker=RichBroker()).process("run_1", attempt_id="att_1")
+    )  # no llm injected: catalog -> MockLLM
     assert platform.statuses[-1][0] == "succeeded"
 
 
@@ -341,7 +349,7 @@ def test_run_for_a_model_that_left_the_catalog_fails_cleanly() -> None:
             return {**await super().get_run(run_id), "model": "retired-model"}
 
     platform, broker = P(), RichBroker()
-    asyncio.run(AgentLoop(platform=platform, broker=broker).process("run_1"))
+    asyncio.run(AgentLoop(platform=platform, broker=broker).process("run_1", attempt_id="att_1"))
     status, kw = platform.statuses[-1][0], platform.statuses[-1][1]
     assert status == "failed" and "not available" in kw["error"]
     assert broker.released == 0  # failed before a sandbox was leased

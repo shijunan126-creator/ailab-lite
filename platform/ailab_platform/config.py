@@ -154,6 +154,9 @@ class Settings(BaseSettings):
     # Sandbox control plane. mock | docker | opensandbox
     sandbox_provider: Literal["mock", "docker", "opensandbox"] = "mock"
     sandbox_image: str = "harbor.ailab.local/sandbox/sbx-office:lite"
+    runtime_heartbeat_seconds: float = Field(default=60, gt=0, le=60)
+    checkpoint_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
+    ask_user_timeout_hours: int = Field(default=72, ge=1, le=720)
     sandbox_ttl_seconds: int = Field(default=1200, ge=1)
     max_sandboxes: int = Field(default=2, ge=1)
     # Broker lease ownership and single-machine admission; no idle sandbox reuse.
@@ -304,9 +307,6 @@ class Settings(BaseSettings):
             raise ValueError("render reservation must leave at least one general slot")
         if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
             raise ValueError("render memory reservation must leave general memory")
-        # The Agent does not renew leases yet, so a run's sandbox must outlive the run itself.
-        if self.sandbox_ttl_seconds <= self.run_timeout_seconds:
-            raise ValueError("sandbox_ttl_seconds must exceed run_timeout_seconds until the Agent renews its lease")
         return self
 
     @property

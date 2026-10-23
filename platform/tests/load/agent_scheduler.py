@@ -11,12 +11,14 @@ import resource
 import statistics
 import sys
 import time
+from datetime import UTC, datetime, timedelta
 
 from tests import conftest  # noqa: F401 -- isolate settings before service imports
 
 # isort: split
 from ailab_platform.agent import main
 from ailab_platform.config import settings
+from ailab_platform.contracts.jobs import JobEnvelope
 from ailab_platform.queue import InMemoryQueue
 
 
@@ -28,6 +30,30 @@ def rss_mib():
 async def measure(work_seconds):
     queue = InMemoryQueue()
     main.get_queue = lambda: queue
+
+    class Claims:
+        async def job_action(self, job_id, action, **body):
+            return {"state": "claimed", "token": job_id, "attempt": 1, "attempt_id": job_id} if action == "claim" else {"ok": True}
+
+        async def get_run_state(self, run_id):
+            return {"status": "succeeded"}
+
+        async def aclose(self):
+            pass
+
+    main.AsyncPlatformClient = Claims
+
+    def enqueue(run_id, mode):
+        payload = JobEnvelope(
+            job_id=run_id,
+            run_id=run_id,
+            kind="run",
+            mode=mode,
+            enqueued_at=datetime.now(UTC),
+            deadline=datetime.now(UTC) + timedelta(seconds=work_seconds + 60),
+        )
+        queue.enqueue(f"{settings.run_queue}:{mode}", payload.model_dump(mode="json"))
+
     waits, sent = [], {}
     running, peak = 0, 0
     work_ready, work_done = asyncio.Event(), asyncio.Event()
@@ -36,7 +62,7 @@ async def measure(work_seconds):
     started = time.monotonic()
     chats_done = asyncio.Event()
 
-    async def process(self, run_id, attempt=1):
+    async def process(self, run_id, attempt=1, *, attempt_id):
         nonlocal running, peak
         running += 1
         peak = max(peak, running)
@@ -57,13 +83,13 @@ async def measure(work_seconds):
     main.AgentLoop.process = process
     consumer = asyncio.create_task(main.consume_forever())
     for index in range(2):
-        queue.enqueue(f"{settings.run_queue}:work", {"run_id": f"work-{index}"})
+        enqueue(f"work-{index}", "work")
     await asyncio.wait_for(work_ready.wait(), 3)
     try:
         for index in range(100):
             rid = f"chat-{index}"
             sent[rid] = time.monotonic()
-            queue.enqueue(f"{settings.run_queue}:chat", {"run_id": rid})
+            enqueue(rid, "chat")
             await asyncio.sleep(work_seconds / 110)
         await asyncio.wait_for(chats_done.wait(), 3)
         await asyncio.wait_for(work_done.wait(), work_seconds + 3)

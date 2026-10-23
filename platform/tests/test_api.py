@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from ailab_platform.api.main import app
+from tests.run_claims import attempt_headers
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -56,7 +57,7 @@ def test_run_lifecycle_and_events() -> None:
 def test_internal_status_and_artifact_flow() -> None:
     with client() as c:
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "生成一个文件"}).json()
-        r = c.post(f"/internal/runs/{run['id']}/status", headers=SERVICE, json={"status": "running"})
+        r = c.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(c, run["id"]), json={"status": "running"})
         assert r.status_code == 200
         assert r.json()["status"] == "running"
 

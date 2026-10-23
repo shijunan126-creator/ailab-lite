@@ -186,7 +186,9 @@ def test_image_ocr_bills_file_owner_and_is_not_replayed(api, upstream):
         assert (usage.user_id, usage.run_id, usage.mode, usage.subject) == (file.user_id, None, "ocr", "file_job")
         assert usage.weighted_amount == 120000
         assert headers["x-user-id"] == file.user_id
-    denied = api.post("/internal/usage/settle", headers=SERVICE, json={"call_id": f"ocr:{fid}:0", "status": "released"})
+    denied = api.post(
+        "/internal/usage/settle", headers=SERVICE, json={"call_id": f"ocr:{fid}:0", "attempt_id": f"ocr:{fid}:0", "status": "released"}
+    )
     assert denied.status_code == 403
     run_ocr_job(api, fid)
     assert len(seen) == 1
@@ -552,3 +554,65 @@ def test_multimodal_fallbacks_are_explicit_and_images_count_as_budgeted_tokens()
     assert settings.vision_input_tokens <= estimator.raw([{"role": "user", "content": parts}]) < settings.vision_input_tokens + 200
     with pytest.raises(ValueError, match="unsupported_image"):
         image_part(b"x", "image/svg+xml")
+
+
+@pytest.mark.parametrize("vision,available", [(True, True), (True, False), (False, False)])
+def test_agent_assembles_image_input_with_budgeted_usage_and_explicit_fallback(monkeypatch, vision, available):
+    import asyncio
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import Catalog
+    from ailab_platform.llm import LLMResponse
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    class Platform(FakePlatform):
+        reads = 0
+
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "model": "image-test",
+                "options": {"mode": "chat"},
+                "input_files": [{"id": "image", "filename": "photo.png", "content_type": "image/png", "meta": {"ocr": "unavailable"}}],
+            }
+
+        async def get_file_image(self, file_id, run_id):
+            self.reads += 1
+            assert (file_id, run_id) == ("image", "run_1")
+            if not available:
+                raise ValueError("image_size_limit")
+            return b"x" * 100_000
+
+    catalog = Catalog([ModelSpec("image-test", "Image", provider="mock", capabilities=["vision"] if vision else [])])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
+    platform, broker = Platform(), FakeBroker()
+    llm = ScriptedLLM([LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    parts = llm.seen_messages[0][-1]["content"]
+    assert any(part["type"] == "image_url" for part in parts) == (vision and available)
+    if not (vision and available):
+        assert any("图片未能读取" in part.get("text", "") for part in parts)
+    assert platform.reads == int(vision)
+    assert broker.leases == 0
+    reservation = next(iter(platform.reservations.values()))
+    assert reservation["estimated_input_tokens"] < settings.vision_input_tokens + 10_000
+    if vision and available:
+        saved = platform.checkpoint["state"]
+        assert any(part["type"] == "ailab_image" for part in saved["messages"][1]["content"])
+        assert len(json.dumps(saved)) < 10_000
+        saved["finished"] = False
+        resumed = ScriptedLLM([LLMResponse(content="resumed")])
+        asyncio.run(AgentLoop(platform=platform, broker=broker, llm=resumed).process("run_1", attempt=2, attempt_id="next"))
+        assert platform.reads == 2
+        assert any(part["type"] == "image_url" for part in resumed.seen_messages[0][1]["content"])
+
+
+def test_offline_model_accepts_multimodal_text_fallback():
+    import asyncio
+
+    from ailab_platform.llm import MockLLM
+
+    messages = [{"role": "user", "content": [{"type": "text", "text": "hello"}, {"type": "text", "text": "图片未能读取"}]}]
+    response = asyncio.run(MockLLM().chat(messages, [], "test-fast"))
+    assert "hello" in response.content

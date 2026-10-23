@@ -103,17 +103,28 @@ def _claim_locked(db, job, body):
     envelope = JobEnvelope.model_validate(job.payload)
     if envelope.kind == "run":
         run = db.get(Run, envelope.run_id)
-        done = run is None or run.status in RunStatus.TERMINAL
+        done = (
+            run is None
+            or run.status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED}
+            or (run.runtime_meta or {}).get("job_id", job_id) != job_id
+        )
         if not done:
             previous = db.scalars(select(RunAttempt).where(RunAttempt.run_id == run.id, RunAttempt.ended_at.is_(None))).all()
             for attempt in previous:
                 attempt.ended_at, attempt.outcome = now, "abandoned"
+            # Deliveries count within one job, so a continuation after an answer starts with a fresh budget.
+            if job.deliveries > settings.run_max_attempts:
+                from ..run_state import transition_run
+
+                transition_run(
+                    db, run.id, RunStatus.FAILED, error=f"agent crashed or hung {settings.run_max_attempts} times; giving up", commit=False
+                )
+                done = True
+        if not done:
             number = (
                 db.scalar(select(RunAttempt.number).where(RunAttempt.run_id == run.id).order_by(RunAttempt.number.desc()).limit(1)) or 0
             ) + 1
             db.add(RunAttempt(id=token, run_id=run.id, number=number, agent_instance=body.consumer))
-        else:
-            number = job.deliveries
     else:
         file = db.get(FileObject, envelope.file_id)
         done = file is None or file.deleted_at is not None or file.purged_at is not None
@@ -128,7 +139,6 @@ def _claim_locked(db, job, body):
                 )
                 or (envelope.kind == "ocr" and meta.get("ocr") not in {"pending", "running"})
             )
-        number = job.deliveries
     expired = envelope.deadline <= now
     if expired and envelope.kind == "run" and not done:
         from ..run_state import transition_run
@@ -150,7 +160,8 @@ def _claim_locked(db, job, body):
         db.commit()
         return {"state": "done"}
     db.commit()
-    return {"state": "claimed", "token": token, "attempt": number, "attempt_id": token if envelope.kind == "run" else None}
+    # attempt counts deliveries of this job, so a continuation after an answer starts at 1 and only a re-claim after a death is > 1
+    return {"state": "claimed", "token": token, "attempt": job.deliveries, "attempt_id": token if envelope.kind == "run" else None}
 
 
 @router.post("/{job_id}/ack")

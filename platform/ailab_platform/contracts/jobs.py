@@ -37,6 +37,8 @@ class JobEnvelope(BaseModel):
 class RunStatus:
     QUEUED = "queued"
     RUNNING = "running"
+    WAITING_USER = "waiting_user"
+    INTERRUPTED = "interrupted"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
     CANCELED = "canceled"

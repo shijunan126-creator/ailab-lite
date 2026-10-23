@@ -78,6 +78,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     return () => { actionController.current.abort(); streamController.current?.abort(); };
   }, []);
   const streamController = useRef<AbortController | null>(null);
+  const eventCursors = useRef<Record<string, number>>({});
 
   const loadDetail = useCallback(async () => {
     if (!id) return null;
@@ -108,6 +109,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         run.id,
         (event) => {
           if (controller.signal.aborted) return;
+          if (event.seq) eventCursors.current[run.id] = event.seq;
           setItems((prev) => ({ ...prev, [run.id]: reduceEvent(prev[run.id] || [], event) }));
           if (event.type === "preview.updated") {
             const p: Preview = { ...event.payload, run_id: run.id };
@@ -121,7 +123,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           setStreaming(null);
           loadDetail();
           conversationsChanged();
-        }
+        },
+        eventCursors.current[run.id] || 0
       ).catch((err) => {
         if (!controller.signal.aborted) {
           setStreaming(null);
@@ -142,7 +145,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail().then((d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
-      if (last && !isTerminal(last.status)) controller = follow(last);
+      if (last && (!isTerminal(last.status) || last.status === "interrupted")) controller = follow(last);
     });
     return () => {
       disposed = true;
@@ -222,7 +225,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
   const running = turns.some((t) => !isTerminal(t.status));
   // a question the agent is waiting on: the composer answers it instead of starting a new turn
-  const waiting = turns.find((t) => t.status === "waiting_user");
+  const waiting = turns.find((t) => t.status === "waiting_user" || t.status === "interrupted");
   const question = waiting
     ? ([...(items[waiting.id] || [])].reverse().find((it) => it.kind === "ask" && it.answer === undefined) as Extract<Item, { kind: "ask" }> | undefined)
     : undefined;
@@ -233,7 +236,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       const signal = actionController.current.signal;
       if (waiting && question) {
-        await api(`/v1/runs/${waiting.id}/answer`, { method: "POST", signal, body: JSON.stringify({ question_id: question.id, answer: prompt }) });
+        await answer(waiting, question.id, prompt);
         return true;
       }
       let convId = id;
@@ -260,6 +263,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     } finally {
       setBusy(false);
     }
+  }
+
+  async function answer(run: Run, questionId: string, value: string) {
+    const resumed = await api<Run>(`/v1/runs/${run.id}/answer`, {
+      method: "POST", signal: actionController.current.signal,
+      body: JSON.stringify({ question_id: questionId, answer: value }),
+    });
+    setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
+    follow(resumed);
   }
 
   async function resume(run: Run) {
@@ -351,6 +363,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                       setPaneOpen(true);
                     }}
                     onResume={resume}
+                    onAnswer={answer}
                   />
                 ))}
               </div>

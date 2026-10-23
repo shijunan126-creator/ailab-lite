@@ -13,7 +13,7 @@ from pathlib import PurePosixPath
 from typing import Literal
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from sqlalchemy import exists, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -47,10 +47,13 @@ from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
+from .runtime_fence import fence_attempt
 from .serializers import file_dict, run_dict
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 log = logging.getLogger("ailab.api.internal")
+# Statuses an Agent may write through /transition. Others are reached through their own, checked, endpoints.
+AGENT_STATUSES = frozenset({RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED})
 
 
 def _run_or_404(db: Session, run_id: str) -> Run:
@@ -173,7 +176,10 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if (t.result or {}).get("workspace_saved")), None)
     alive = newest is not None and workspace_alive(newest, now)
-    out["workspace_restore_key"] = workspace_key(newest.id) if alive else None
+    own = (run.runtime_meta or {}).get("workspace")
+    out["workspace_restore_key"] = (
+        own["key"] if own else ((newest.result or {}).get("workspace_key") or workspace_key(newest.id)) if alive else None
+    )
     # the last turn left files, but they are past the retention window: tell the model instead of letting it hunt
     out["workspace_expired"] = newest is not None and not alive
     return out
@@ -183,50 +189,28 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The cheap status poll the Agent uses while a command/model call is running."""
     run = _run_or_404(db, run_id)
-    return {"status": run.status, "finished_at": run.finished_at}
+    return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
 
 
 @router.post("/runs/{run_id}/status", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
-def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(get_db)) -> dict:
-    run = _run_or_404(db, run_id)
-    if body.status not in {RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED}:
-        raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
-    try:
-        with user_critical_section(db, run.user_id):
-            db.refresh(run)
-            result = body.result
-            if result is not None:
-                result = {**result, "usage_totals": run_usage_totals(db, run_id)}
-            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
-            if changed and run.status == RunStatus.SUCCEEDED:
-                try:
-                    with db.begin_nested():
-                        apply_result_title(db, run)
-                except SQLAlchemyError:
-                    logging.getLogger("ailab.api.titles").warning("automatic title update failed")
-            db.commit()
-    except InvalidTransition as exc:
-        raise HTTPException(status_code=409, detail=f"invalid transition: {exc}") from exc
-    if changed and (run.result or {}).get("workspace_saved"):
-        _drop_older_workspaces(db, run)
-    return run_dict(db, run, detail=True)
+def internal_set_status(
+    run_id: str, body: RunStatusIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    # Legacy spelling shares exactly the same fence and transaction.
+    return internal_transition(run_id, RunTransitionIn(**body.model_dump()), x_run_attempt, db)
 
 
 @router.post("/runs/{run_id}/transition", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
-def internal_transition(run_id: str, body: RunTransitionIn, db: Session = Depends(get_db)) -> dict:
-    from ..models import OutboxMessage
-
+def internal_transition(
+    run_id: str, body: RunTransitionIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    # waiting_user and interrupted need a question or a safe checkpoint, so only /pause may set them; queued only via the API.
+    if body.status not in AGENT_STATUSES:
+        raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
     run = _run_or_404(db, run_id)
     with user_critical_section(db, run.user_id):
         db.refresh(run)
-        if body.attempt_id is not None:
-            job = db.scalar(select(OutboxMessage).where(OutboxMessage.id == run_id).with_for_update())
-            now = datetime.now(UTC)
-            until = job.claimed_until if job else None
-            if until is not None and until.tzinfo is None:
-                until = until.replace(tzinfo=UTC)
-            if job is None or job.claim_token != body.attempt_id or until is None or until <= now:
-                raise HTTPException(409, "stale_attempt")
+        fence_attempt(db, run_id, x_run_attempt or body.attempt_id)
         try:
             result = body.result
             if result is not None:
@@ -257,7 +241,7 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
         if not result.get("workspace_saved"):
             continue
         try:
-            storage.delete(workspace_key(turn.id))
+            storage.delete((turn.result or {}).get("workspace_key") or workspace_key(turn.id))
         except Exception:
             log.warning("could not delete workspace of %s", turn.id, exc_info=True)
             continue
@@ -269,9 +253,13 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
 
 
 @router.post("/runs/{run_id}/events", response_model=EventOut, dependencies=[Depends(require_scope("runs:events"))])
-def internal_append_event(run_id: str, body: EventIn, db: Session = Depends(get_db)) -> dict:
-    _run_or_404(db, run_id)
-    event = append_event(db, run_id, body.type, body.payload)
+def internal_append_event(
+    run_id: str, body: EventIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+) -> dict:
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        fence_attempt(db, run_id, x_run_attempt)
+        event = append_event(db, run_id, body.type, body.payload)
     return {
         "seq": event.seq,
         "type": event.type,
@@ -308,8 +296,11 @@ def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) 
 @router.post("/usage/settle", response_model=UsageOut, dependencies=[Depends(require_scope("usage:write"))])
 def internal_settle_usage(body: SettleUsageIn, db: Session = Depends(get_db)) -> dict:
     reservation = db.get(UsageReservation, body.call_id)
-    if reservation is not None and reservation.subject != "run":
-        raise HTTPException(403, "file usage is settled by the OCR service")
+    if reservation is not None:
+        if reservation.subject != "run":
+            raise HTTPException(403, "file usage is settled by the OCR service")
+        if reservation.attempt_id != body.attempt_id:
+            raise HTTPException(409, "call_identity_mismatch")
     row = settle_usage(db, body)
     totals = run_usage_totals(db, row.run_id)
     return {
@@ -356,7 +347,12 @@ def _artifact_filename(name: str) -> str:
 
 
 @router.post("/artifacts", response_model=CommitOut, dependencies=[Depends(require_scope("artifacts:commit_for_run"))])
-def internal_commit_artifact(body: ArtifactIn, db: Session = Depends(get_db)) -> dict:
+def internal_commit_artifact(
+    body: ArtifactIn,
+    x_run_attempt: str | None = Header(default=None),
+    x_delivery_id: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+) -> dict:
     """Second half of the two-phase delivery. Safe to retry.
 
     Same (run, filename, sha256) returns the artifact that already exists instead
@@ -366,12 +362,24 @@ def internal_commit_artifact(body: ArtifactIn, db: Session = Depends(get_db)) ->
     run = _run_or_404(db, body.run_id)
     with user_critical_section(db, run.user_id):
         db.refresh(run)
-        return _commit_artifact(body, db, run)
+        fence_attempt(db, run.id, x_run_attempt)
+        from ..models import RunDelivery
+
+        if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
+            raise HTTPException(422, "stable delivery identity required")
+        prior = db.get(RunDelivery, (run.id, x_delivery_id))
+        if prior:
+            get_storage().delete(body.staging_key)
+            db.commit()
+            return prior.result
+        return _commit_artifact(body, db, run, x_delivery_id)
 
 
-def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
+def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) -> dict:
     if not body.staging_key.startswith("staging/"):
         raise HTTPException(status_code=400, detail="staging_key must be under staging/")
+    from ..models import RunDelivery
+
     storage = get_storage()
 
     def reject(code: int, detail: str) -> HTTPException:
@@ -393,6 +401,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
     if existing is not None:
         storage.delete(body.staging_key)
         _enqueue_thumbnail(db, existing[1])
+        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(*existing)))
         db.commit()
         return _artifact_out(*existing)
 
@@ -473,6 +482,8 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run) -> dict:
             commit=False,
         )
         _enqueue_thumbnail(db, file)
+        db.flush()
+        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(artifact, file)))
         db.commit()
     except Exception:
         db.rollback()

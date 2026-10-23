@@ -22,6 +22,7 @@ from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import Message, get_queue, run_lock_key
+from ..runtime_context import attempt_id_var
 from .loop import AgentLoop
 from .prompts import system_prompt
 
@@ -51,6 +52,7 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
     owned_runtime = None
     trace_context = getattr(obs, "traceparent_var", None)
     trace_token = None
+    execution_token = None
     try:
         if "schema_version" in msg.payload:
             envelope = JobEnvelope.model_validate(msg.payload)
@@ -64,15 +66,25 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
                 return
             token = claim["token"]
             msg.payload["attempt"] = claim["attempt"]
+            msg.payload["attempt_id"] = claim["attempt_id"]
+            execution_token = attempt_id_var.set(claim["attempt_id"])
             queue_wait = getattr(metrics, "QUEUE_WAIT_SECONDS", None)
             if queue_wait is not None and envelope.enqueued_at is not None:
                 queue_wait.labels(envelope.mode).observe(max(0, (datetime.now(UTC) - envelope.enqueued_at).total_seconds()))
+        else:
+            # Every Run has a durable job staged in its creating transaction; a bare message has no attempt to fence.
+            log.warning("dropping run message without a durable job run=%s", msg.payload.get("run_id"))
+            await asyncio.to_thread(queue.ack, topic, msg)
+            return
         if loop is None:
             owned_runtime = loop = AgentLoop(platform=platform)
         await _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token))
         if token:
             state = await platform.get_run_state(msg.payload["run_id"])
-            if state["status"] not in RunStatus.TERMINAL:
+            if (
+                state["status"] not in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED}
+                and state.get("job_id", job_id) == job_id
+            ):
                 raise RuntimeError("run is not terminal; retain durable job")
             await platform.job_action(job_id, "ack", token=token)
             await asyncio.to_thread(queue.ack, topic, msg)
@@ -86,6 +98,8 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
                 log.exception("durable handback failed; lease expiry will recover the job")
         raise
     finally:
+        if execution_token is not None:
+            attempt_id_var.reset(execution_token)
         if owned_runtime is not None:
             await owned_runtime.broker.aclose()
         await platform.aclose()
@@ -108,14 +122,6 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
 
     # A message re-queued at shutdown starts a fresh delivery count, so it carries its own.
     attempt = int(msg.payload["attempt"]) if durable else max(msg.deliveries, int(msg.payload.get("attempt", 1)))
-    if attempt > settings.run_max_attempts:
-        log.error("run %s attempted %d times; giving up", run_id, attempt)
-        try:
-            await platform.set_run_status(run_id, RunStatus.FAILED, error=f"agent crashed or hung {attempt - 1} times; giving up")
-        except Exception:
-            log.exception("could not mark run %s failed", run_id)
-        await ack_transport()
-        return
 
     lock = run_lock_key(run_id)
     token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.run_timeout_seconds + 30)
@@ -127,7 +133,9 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
     log.info("picked run %s (attempt %d)", run_id, attempt)
     try:
         try:
-            await asyncio.wait_for(loop.process(run_id, attempt=attempt), timeout=settings.run_timeout_seconds)
+            await asyncio.wait_for(
+                loop.process(run_id, attempt=attempt, attempt_id=msg.payload.get("attempt_id")), timeout=settings.run_timeout_seconds
+            )
         except TimeoutError:
             log.error("run %s hit the %ss timeout", run_id, settings.run_timeout_seconds)
             try:

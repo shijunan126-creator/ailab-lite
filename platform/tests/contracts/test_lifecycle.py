@@ -113,6 +113,8 @@ def test_conversation_purge_batches_and_retries_objects(env, monkeypatch):
             db.flush()
             db.add(RunEvent(run_id=f"r{i}", seq=1, type="x"))
             put_old(storage, f"workspaces/r{i}.tgz")
+            put_old(storage, f"workspaces/r{i}/snap.tgz")
+            put_old(storage, f"checkpoints/r{i}/1.json.gz")
             put_old(storage, f"previews/r{i}/1/x")
         db.commit()
         assert purge_deleted_conversations(db, NOW) == 0

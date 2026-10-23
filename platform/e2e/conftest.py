@@ -155,7 +155,8 @@ def stack(tmp_path_factory):
                     sys.executable,
                     "-m",
                     "uvicorn",
-                    f"ailab_platform.{name}.main:app",
+                    # the Agent serves a wrapper that adds one scripted model behaviour (see e2e/scripted_agent.py)
+                    "e2e.scripted_agent:app" if name == "agent" else f"ailab_platform.{name}.main:app",
                     "--no-proxy-headers",
                     "--host",
                     "127.0.0.1",

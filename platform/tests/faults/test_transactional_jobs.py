@@ -38,8 +38,12 @@ def test_run_commit_survives_publication_failure(api, monkeypatch):
         assert job.payload["schema_version"] == 1
 
 
-def test_sent_job_retained_until_ack_and_replayed(api):
+def test_sent_job_retained_until_ack_and_replayed(api, monkeypatch):
     from ailab_platform.api.jobs import stage_job
+    from ailab_platform.queue import InMemoryQueue
+
+    queue = InMemoryQueue()
+    monkeypatch.setattr("ailab_platform.api.preview_dispatch.get_queue", lambda: queue)
 
     with SessionLocal() as db:
         job = stage_job(db, "file", file_id="missing")
@@ -49,7 +53,6 @@ def test_sent_job_retained_until_ack_and_replayed(api):
     assert dispatch_preview_jobs(job_id, now=now) == 1
     with SessionLocal() as db:
         assert db.get(OutboxMessage, job_id) is not None
-    queue = get_queue()
     queue.ack(settings.file_queue, queue.dequeue(settings.file_queue, timeout=0))
     assert dispatch_preview_jobs(job_id, now=now + timedelta(seconds=61)) == 1
     assert queue.dequeue(settings.file_queue, timeout=0).payload["job_id"] == job_id

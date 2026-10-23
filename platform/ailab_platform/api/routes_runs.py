@@ -105,7 +105,7 @@ def start_run(
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
             busy = db.scalar(
-                select(func.count()).select_from(Run).where(Run.conversation_id == conversation.id, Run.status.in_(RunStatus.ACTIVE))
+                select(func.count()).select_from(Run).where(Run.conversation_id == conversation.id, Run.status.not_in(RunStatus.TERMINAL))
             )
             if busy:
                 raise HTTPException(status_code=409, detail="this conversation is still answering the previous message")
@@ -169,9 +169,12 @@ def get_run(run_id: str, user: User = Depends(current_user), db: Session = Depen
 @router.post("/runs/{run_id}/cancel", response_model=RunDetail)
 def cancel_run(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     run = _get_owned_run(db, run_id, user)
-    if run.status in RunStatus.TERMINAL:
-        raise HTTPException(status_code=409, detail=f"run already {run.status}")
-    run, _ = transition_run(db, run.id, RunStatus.CANCELED, reason="user_requested")
+    with user_critical_section(db, user.id):
+        db.refresh(run)
+        if run.status in RunStatus.TERMINAL:
+            raise HTTPException(status_code=409, detail=f"run already {run.status}")
+        run, _ = transition_run(db, run.id, RunStatus.CANCELED, reason="user_requested", commit=False)
+        db.commit()
     return run_dict(db, run, detail=True)
 
 
@@ -256,7 +259,7 @@ async def stream_events(
                 last_id = seq
                 data = json.dumps(payload, ensure_ascii=False)
                 yield f"id: {seq}\nevent: {type_}\ndata: {data}\n\n"
-            if current_status in RunStatus.TERMINAL and not events:
+            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events:
                 yield "event: stream.end\ndata: {}\n\n"
                 return
             if events:
