@@ -256,8 +256,11 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "读取技能 pptx" in steps and "交付文件" in steps
-    # the browser tests run the mock sandbox on the host, which has no LibreOffice to render slides
-    assert "预览生成失败" in steps or page.locator(".preview-pane img").count() > 0
+    # The host may have Office installed. A successful render is now opened explicitly.
+    if "预览生成失败" not in steps:
+        assert page.locator(".preview-pane").count() == 0
+        page.click(".composer-dock button:has-text('打开预览')")
+        page.wait_for_selector(".preview-pane img", timeout=15000)
     assert "ailab-demo.pptx" in page.inner_text(".file-card")
 
 

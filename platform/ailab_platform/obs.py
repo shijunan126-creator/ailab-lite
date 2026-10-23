@@ -3,7 +3,8 @@
 * Every request carries an id: taken from an incoming ``X-Request-ID`` (if it is sane) or generated,
   returned in the response header, stamped on every log line, and forwarded on internal calls, so one
   user action can be followed from the Portal through the API, Broker and back.
-* The Agent uses the run id as the id while it works on a run, so everything about one run is one search.
+* Durable jobs preserve the initiating request id across the queue and service calls;
+  legacy jobs without one fall back to the run id.
 * ``AILAB_LOG_FORMAT=json`` switches the logs to one JSON object per line.
 """
 
