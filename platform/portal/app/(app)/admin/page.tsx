@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import SkillsSection from "../../../components/admin/skills";
 import AuditSection from "../../../components/admin/audit";
 import DepartmentsSection from "../../../components/admin/departments";
 import PoliciesSection from "../../../components/admin/policies";
@@ -9,13 +10,14 @@ import UsageSection from "../../../components/admin/usage";
 import UsersSection from "../../../components/admin/users";
 import { api, Me } from "../../../lib/api";
 
-type Tab = "users" | "departments" | "policies" | "usage" | "audit";
+type Tab = "users" | "departments" | "policies" | "usage" | "audit" | "skills";
 const TABS: [Tab, string][] = [
   ["users", "用户"],
   ["departments", "部门"],
   ["policies", "额度"],
   ["usage", "用量"],
   ["audit", "审计"],
+  ["skills", "技能"],
 ];
 
 /** Which tabs a role sees; the API enforces the same, this only avoids offering what would be refused. */
@@ -63,6 +65,7 @@ function Admin() {
       {tab === "policies" ? <PoliciesSection /> : null}
       {tab === "usage" ? <UsageSection /> : null}
       {tab === "audit" ? <AuditSection /> : null}
+      {tab === "skills" ? <SkillsSection /> : null}
     </main>
   );
 }

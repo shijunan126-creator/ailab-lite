@@ -506,3 +506,35 @@ class RunAttempt(Base):
     ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     outcome: Mapped[str | None] = mapped_column(String(40))
     __table_args__ = (UniqueConstraint("run_id", "number"),)
+
+
+class SkillPolicy(Base):
+    """Global (scope='global') or department policy for a built-in skill, or '*personal*' for personal skills."""
+
+    __tablename__ = "skill_policies"
+    scope: Mapped[str] = mapped_column(String(40), primary_key=True)
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+
+
+class SkillApproval(Base):
+    """A platform admin's decision on one personal skill file while its owner's policy is 'review'."""
+
+    __tablename__ = "skill_approvals"
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
+    state: Mapped[str] = mapped_column(String(16))
+
+
+# The review queue must spell the predicate exactly like the sparse index so both planners can use it.
+REVIEW_PREDICATES = {
+    "sqlite": "json_extract(meta, '$.skill.name') IS NOT NULL AND status = 'ready' "
+    "AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL",
+    "postgresql": "(meta -> 'skill' ->> 'name') IS NOT NULL AND status = 'ready' "
+    "AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL",
+}
+Index(
+    "ix_files_skill_review",
+    FileObject.id,
+    sqlite_where=text(REVIEW_PREDICATES["sqlite"]),
+    postgresql_where=text(REVIEW_PREDICATES["postgresql"]),
+)

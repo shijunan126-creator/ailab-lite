@@ -225,6 +225,9 @@ def release_lease(lease_id: str) -> Response:
 
 
 app.include_router(router)
+from .routes_skills import router as skills_router  # noqa: E402
+
+app.include_router(skills_router)
 
 
 @app.get("/healthz")

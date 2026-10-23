@@ -15,6 +15,7 @@ from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from .prompts import load_skill
+from .skill_verification import SkillRefused, verify_sandbox_skills
 
 
 class ToolError(RuntimeError):
@@ -150,7 +151,7 @@ READ_URL = {
 
 
 # Tools that need a sandbox: the first call to one of them starts it.
-SANDBOX_TOOLS = {"list_files", "read_file", "write_file", "exec", "deliver_file", "search_images"}
+SANDBOX_TOOLS = {"list_files", "read_file", "write_file", "exec", "deliver_file", "search_images", "load_skill"}
 
 WEB_TOOLS = [WEB_SEARCH, READ_URL]
 
@@ -242,9 +243,12 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
 
     if name == "load_skill":
         try:
+            await verify_sandbox_skills(broker, lease_id)
             return {"ok": True, "skill": load_skill(str(args.get("name") or ""))}
         except KeyError as exc:
             raise ToolError(str(exc.args[0])) from exc
+        except SkillRefused as exc:
+            raise ToolError(str(exc)) from exc
 
     if name == "web_search":
         query = str(args.get("query") or "").strip()

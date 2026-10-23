@@ -370,12 +370,34 @@ def test_a_chat_answer_needs_no_sandbox_and_streams() -> None:
     assert platform.statuses[-1][0] == "succeeded" and platform.statuses[-1][1]["summary"] == "一段" * 100
 
 
-def test_load_skill_needs_no_sandbox() -> None:
-    broker = FakeBroker()
+def test_load_skill_requires_attested_sandbox() -> None:
+    import httpx
+
+    from ailab_platform.config import settings
+    from ailab_platform.skill_index import checked_index
+
+    class AttestedBroker(FakeBroker):
+        def _req(self, method, path, **kwargs):
+            assert path == "/internal/skills/index"
+            return kwargs
+
+        async def _send(self, req):
+            return httpx.Response(
+                200,
+                json={
+                    "verified": True,
+                    "lease_id": req["params"]["lease_id"],
+                    "provider_ref": "container",
+                    "image_ref": "office@sha256:fixture",
+                    "index": checked_index(settings.skills_path),
+                },
+            )
+
+    broker = AttestedBroker()
     read = ToolCall(id="c1", name="load_skill", arguments={"name": "pptx"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(content="ok")])
     _run(llm, broker=broker)
-    assert broker.leases == 0
+    assert broker.leases == 1
     tool_msg = llm.seen_messages[1][-1]
     assert tool_msg["role"] == "tool" and "build.py" in tool_msg["content"]
 

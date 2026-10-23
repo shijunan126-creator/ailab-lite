@@ -316,3 +316,6 @@ function parseChunk(chunk: string): EventItem | null {
     return { seq: id, type, payload: { raw: data.join("\n") } };
   }
 }
+
+export type SkillPolicy = { scope: string; name: string; state: "allowed" | "review" | "disabled" };
+export type SkillReview = { file_id: string; name: string; owner_id: string };

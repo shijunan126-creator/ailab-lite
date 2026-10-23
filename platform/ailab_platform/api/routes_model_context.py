@@ -11,7 +11,7 @@ from ..deps import get_db
 from ..models import Conversation, Run, User
 from ..service_auth import require_scope
 from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_key
-from .routes_skills import usable_personal
+from .routes_skills import skill_input_for
 from .serializers import run_dict
 
 router = APIRouter(prefix="/internal/runs", tags=["internal"])
@@ -31,15 +31,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     out["history"] = []
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
-    out["disabled_skills"] = list(((owner.settings if owner else None) or {}).get("disabled_skills") or [])
-    out["personal_skills"] = (
-        [
-            {k: skill[k] for k in ("name", "title", "description", "file_id", "filename", "kind")}
-            for skill in usable_personal(db, owner).values()
-        ]
-        if owner
-        else []
-    )
+    out.update(skill_input_for(db, owner))  # the same effective policy as the legacy internal GET
     newest = (
         db.scalar(
             select(Run)

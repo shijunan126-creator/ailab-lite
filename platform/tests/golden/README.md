@@ -1,0 +1,5 @@
+# T20 golden entry
+
+Run from `platform`: `python tests/golden/run.py --self-test`. CI runs repository-owned deterministic builders with no network/model key. To check real model outputs, place `deck-basic.pptx` and `workbook-basic.xlsx` in an isolated directory and run `python tests/golden/run.py --outputs /path/to/outputs --report /path/to/report.json`. Each case includes a prompt and input; the caller supplies the normal authenticated Work workflow and budget. A failed assertion exits nonzero and blocks CI.
+
+These are original repository fixtures, not company templates. Checks cover slide count, explicit font names, shape/page geometry, expected workbook data and persisted/cached Excel errors. They do not prove glyph fitting, rendered overflow, recalculated formulas or business correctness. No company samples, real-model nightly run, model quality or cost acceptance is claimed. Add those after approved templates, expected artifacts, model credentials and spend cap are supplied. Never put keys or private input/output into this directory or CI logs.
