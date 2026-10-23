@@ -22,6 +22,26 @@ from .transfer import TRANSFER_SECONDS, TransferLimitError
 
 _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 
+# PID 1 is a trusted, isolated supervisor. Exiting stops every process in the PID
+# namespace; Docker --rm then removes the writable layer even if the Broker died.
+EXPIRY_SUPERVISOR = """
+import json, os, sys, time
+from datetime import datetime
+deadline, maximum, grace = map(float, sys.argv[1:])
+while time.time() < deadline:
+    try:
+        with open('/run/ailab-lease.json') as f:
+            meta = json.loads(f.read(65536))
+        if meta.get('ailab.state') == 'releasing':
+            break
+        expires = datetime.fromisoformat(meta['ailab.expires_at']).timestamp()
+        deadline = min(expires + grace, maximum)
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    time.sleep(min(1, max(0, deadline - time.time())))
+os._exit(0)
+"""
+
 
 def _run(args: list[str], timeout: int | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
     try:
@@ -57,6 +77,9 @@ class DockerSandbox(SandboxProvider):
             "docker",
             "run",
             "-d",
+            "--rm",
+            "--runtime",
+            settings.sandbox_runtime,
             "--name",
             name,
             "--label",
@@ -78,15 +101,29 @@ class DockerSandbox(SandboxProvider):
             "--security-opt",
             "no-new-privileges",
             "--user",
-            "10001",
+            "0",
             "--tmpfs",
             "/tmp:rw,size=256m",
+            "--entrypoint",
+            "python",
             image or self.image,
         ]
         # Labels survive Broker/Redis restarts. Docker labels are immutable; mutable
         # state/expiry uses a root-only file under /run, never the user workspace.
         for key, value in (labels or {}).items():
             args[-1:-1] = ["--label", f"{key}={value}"]
+        args.extend(
+            [
+                "-I",
+                "-S",
+                "-u",
+                "-c",
+                EXPIRY_SUPERVISOR,
+                str(expires),
+                str(time.time() + spec.max_lifetime + SANDBOX_EXPIRY_GRACE_SECONDS),
+                str(SANDBOX_EXPIRY_GRACE_SECONDS),
+            ]
+        )
         proc = _run(args, timeout=120)
         if proc.returncode != 0:
             raise SandboxError(f"docker run failed: {proc.stderr.decode('utf-8', 'replace')[-800:]}")
@@ -272,7 +309,7 @@ class DockerSandbox(SandboxProvider):
             raise SandboxError("docker metadata update failed")
 
     def renew(self, provider_ref: str, until: datetime) -> None:
-        # Docker has no native expiration. Broker reconciliation enforces this deadline.
+        # PID 1 reads this protected file independently of Broker reconciliation.
         self.update_metadata(provider_ref, {"ailab.expires_at": until.isoformat()})
 
     def release(self, sandbox_id: str) -> None:

@@ -23,7 +23,7 @@ import redis
 
 from .. import metrics
 from ..adapters.lease_store_redis import RedisLeaseStore
-from ..clients import PlatformClient
+from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..domain.admission import AdmissionDecision, AdmissionPolicy, LeasePrincipal
 from ..paths import OUTPUTS, PathError, normalize_path
@@ -64,6 +64,11 @@ class LeaseExpiredError(LeaseLostError):
 
 class LeaseConflictError(LeaseError):
     code = "lease_conflict"
+
+
+class LeaseCanceledError(LeaseError):
+    code = "run_canceled"
+    recoverable = False
 
 
 class BrokerOwnershipError(LeaseError):
@@ -323,6 +328,7 @@ class LeaseManager:
         wait_seconds: float | None = None,
         on_queued: Callable[[AdmissionDecision], None] | None = None,
         prepare: Callable[[dict], None] | None = None,
+        ensure_active: Callable[[], None] | None = None,
     ) -> LeaseHandle:
         """Trusted service API. prepare runs before activation; C can omit it for render jobs.
 
@@ -343,6 +349,8 @@ class LeaseManager:
             self._pending_runs.add(principal.run_id)
         try:
             while True:
+                if ensure_active:
+                    ensure_active()
                 with self._condition:
                     self._assert_owner()
                     if self._recovering:
@@ -394,7 +402,7 @@ class LeaseManager:
                     # Do not miss a release while the progress callback runs.
                     remaining = deadline - time.monotonic()
                     if remaining > 0 and generation == self._generation:
-                        self._condition.wait(remaining)
+                        self._condition.wait(min(remaining, 1.0) if ensure_active else remaining)
         finally:
             with self._condition:
                 self._pending_runs.discard(principal.run_id)
@@ -402,14 +410,20 @@ class LeaseManager:
                 self._notify()
             metrics.SANDBOX_ADMISSION_WAIT_SECONDS.observe(time.perf_counter() - started)
 
+        create_started = False
         try:
             with self._stripe(lease_id):
+                if ensure_active:
+                    ensure_active()
+                create_started = True
                 ref = self._provider_call("acquire", lease_id, spec.image, ttl_seconds=spec.ttl, spec=spec, labels=self._metadata(lease))
                 self._assert_owner()
                 lease.update(provider_ref=ref, sandbox_id=ref)
                 self._save(lease)
                 if prepare:
                     prepare(lease)
+                if ensure_active:
+                    ensure_active()
                 self._provider_call("renew", ref, datetime.fromisoformat(lease["expires_at"]))
                 if _expired(lease):
                     raise LeaseExpiredError("lease expired during sandbox preparation")
@@ -420,7 +434,10 @@ class LeaseManager:
                 self._save(lease)
         except BaseException as exc:
             if not isinstance(exc, BrokerOwnershipError):
-                self.release(lease_id, reason="creation_failed")
+                if create_started:
+                    self.release(lease_id, reason="creation_failed")
+                else:
+                    self._finish(lease, "failed", "canceled_before_creation")
             if isinstance(exc, LeaseError) or not isinstance(exc, Exception):
                 raise
             raise LeaseError("could not acquire or prepare sandbox") from exc
@@ -445,6 +462,11 @@ class LeaseManager:
         user_id = run.get("user_id")
         if not user_id:
             raise LeaseError("API run has no authenticated owner")
+
+        def ensure_active() -> None:
+            current = (getattr(self.platform, "get_run_state", None) or self.platform.get_run)(run_id)
+            if current.get("status") not in {None, "queued", "running"}:
+                raise LeaseCanceledError("任务已结束或已取消")
 
         def prepare(lease: dict) -> None:
             injected, used = [], set()
@@ -474,6 +496,7 @@ class LeaseManager:
             wait_seconds=wait_seconds,
             on_queued=queued,
             prepare=prepare,
+            ensure_active=ensure_active,
         )
         lease = self.get(handle)
         try:
@@ -906,6 +929,24 @@ class LeaseManager:
                     if lease["state"] == "creating" and lease_id in self._inflight:
                         continue
                     if lease["state"] == "active":
+                        if lease["spec"].get("profile") != "render" and hasattr(self.platform, "get_run"):
+                            try:
+                                run = (getattr(self.platform, "get_run_state", None) or self.platform.get_run)(lease["run_id"])
+                            except ClientError as exc:
+                                if exc.status == 404:
+                                    self.release(lease_id, reason="run_deleted")
+                                    continue
+                            except Exception:
+                                log.warning("run state unavailable during reconciliation; retaining lease")
+                            else:
+                                if run.get("status") not in {None, "queued", "running"}:
+                                    self.release(lease_id, reason="run_finished")
+                                    continue
+                        # A listing can observe startup before activation wins the
+                        # stripe. Confirm stopped state against the current resource
+                        # before deleting a lease that has since become active.
+                        if resource is not None and not resource.running:
+                            resource = self._provider_call("inspect", lease["provider_ref"])
                         if resource is None or not resource.running:
                             if resource is None:
                                 self._finish(lease, "failed", "lease_lost")

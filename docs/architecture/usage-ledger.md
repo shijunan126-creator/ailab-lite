@@ -149,7 +149,7 @@ FastAPI errors retain the `detail` envelope. Quota denial example:
 
 `0009_ledger.py` directly adds columns and indexes without rebuilding referenced tables. Legacy rows get `call_id=legacy-{id}`, run-derived user/mode, alias from old model, cached discount from migration-time configuration, integer amount and `policy_version=legacy`. Actual backend, reasoning and department are historically unknown. Backfill is keyset-batched at 500 rows; it runs once. Downgrade removes reservations/new dimensions but preserves old usage/run/event rows. In-flight accounting is lost on downgrade; stop Agents first. Upgrade API/Agent and the service-auth route allowlist as one deployment.
 
-Settings added in `config.py` (small additive change owned by B): `AILAB_QUOTA_TIMEZONE=UTC` (IANA validated), `AILAB_USAGE_RESERVATION_TTL_SECONDS=3600` (60–86400), `AILAB_MODEL_MAX_OUTPUT_TOKENS=8192` (1–10,000,000). Cached weight now validates finite 0–100. Keep reservation TTL beyond the configured complete Run deadline; an earlier expiry is conservative and late settlement still corrects it.
+Settings added in `config.py` (small additive change owned by B): `AILAB_QUOTA_TIMEZONE=UTC` (IANA validated), `AILAB_USAGE_RESERVATION_TTL_SECONDS=3600` (60–86400), `AILAB_MODEL_MAX_OUTPUT_TOKENS` (optional operator ceiling, unset by default; 1–10,000,000 when supplied). Each model declares `max_output_tokens` in the catalog; that effective per-call ceiling is used for both reservation and the upstream request. Cached weight now validates finite 0–100. Keep reservation TTL beyond the configured complete Run deadline; an earlier expiry is conservative and late settlement still corrects it.
 
 From the API environment:
 

@@ -77,7 +77,9 @@ def test_broken_stream_is_estimated_and_ambiguous_inference_is_never_retried():
     platform, _ = _run(llm)
     assert len(seen) == 1
     body = json.loads(seen[0].content)
-    assert body["max_tokens"] == settings.model_max_output_tokens
+    from ailab_platform.catalog import ModelSpec
+
+    assert body["max_tokens"] == (settings.model_max_output_tokens or ModelSpec("m", "M").max_output_tokens)
     settled = next(iter(platform.settlements.values()))
     assert settled["status"] == "estimated" and settled["output_tokens"] > 0
     assert settled["actual_backend"] == "real-backend-42"

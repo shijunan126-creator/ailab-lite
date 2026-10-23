@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select, text, tuple_
+from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
 
 from ..agent.prompts import skills
@@ -38,7 +38,7 @@ def personal_skills(db: Session, user: User) -> list[dict]:
         select(FileObject)
         .where(
             FileObject.user_id == user.id,
-            FileObject.status == FileStatus.READY,
+            FileObject.purpose == "skill",
             FileObject.is_head == 1,
             FileObject.deleted_at.is_(None),
             FileObject.purged_at.is_(None),
@@ -48,10 +48,14 @@ def personal_skills(db: Session, user: User) -> list[dict]:
     out, seen = [], set()
     for f in files:
         meta = f.meta or {}
-        if not (meta.get("skill") or meta.get("skill_error")):
-            continue
-        item = {"file_id": f.id, "filename": f.filename, "created_at": f.created_at, **(meta.get("skill") or {})}
-        if meta.get("skill_error"):
+        item = {"file_id": f.id, "filename": f.filename, "name": f"file-{f.id}", "created_at": f.created_at, **(meta.get("skill") or {})}
+        if f.status == FileStatus.PENDING:
+            item["error"] = "安全扫描中"
+        elif f.status == FileStatus.REJECTED:
+            item["error"] = "未通过安全扫描"
+        elif not meta.get("skill") and not meta.get("skill_error"):
+            item["error"] = "不是有效的技能文件，可删除后重新上传"
+        elif meta.get("skill_error"):
             item["error"] = meta["skill_error"]
         elif item["name"] in builtin:
             item["error"] = f"与通用技能 {item['name']} 重名，请在 SKILL.md 里换个 name"
@@ -81,6 +85,32 @@ def usable_personal(db: Session, user: User) -> dict[str, dict]:
         for s in candidates
         if approvals.get(s["file_id"]) != "disabled" and (policy == "allowed" or approvals.get(s["file_id"]) == "allowed")
     }
+
+
+@router.get("/storage")
+def skill_storage(user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    from ..quota import library_bytes, user_limits
+
+    used = db.scalar(
+        select(func.coalesce(func.sum(FileObject.size), 0)).where(
+            FileObject.user_id == user.id, FileObject.purpose == "skill", FileObject.purged_at.is_(None)
+        )
+    )
+    limit = user_limits(db, user.id).library_bytes
+    return {"used_bytes": used, "limit_bytes": limit, "available_bytes": max(0, limit - library_bytes(db, user.id))}
+
+
+@router.delete("/files/{file_id}", status_code=204)
+def remove_skill(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..library import delete_storage_objects, purge_lineages
+
+    with user_critical_section(db, user.id):
+        file = db.get(FileObject, file_id)
+        if not file or file.user_id != user.id or file.purpose != "skill":
+            raise HTTPException(404, "skill not found")
+        keys = purge_lineages(db, user.id, [file.lineage_id])
+        db.commit()
+    delete_storage_objects(keys)
 
 
 @router.get("")

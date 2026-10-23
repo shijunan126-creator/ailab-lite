@@ -19,7 +19,7 @@ import anyio
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Response, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import literal_column, select, tuple_
+from sqlalchemy import func, literal_column, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -30,6 +30,7 @@ from ..library import (
     assign_file_version,
     delete_storage_objects,
     live_file_predicates,
+    move_lineage,
     owned_project,
     purge_lineages,
     restore_lineages,
@@ -78,6 +79,7 @@ async def upload_file(
     upload: UploadFile = File(...),
     parent_id: str | None = Query(default=None),
     project_id: str | None = Query(default=None),
+    purpose: Literal["library", "skill"] = Query(default="library"),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -101,7 +103,7 @@ async def upload_file(
         filename = safe_filename(upload.filename or "file")
         content_type = upload.content_type or "application/octet-stream"
         file_id = new_id("fil")
-        key = f"uploads/{user.id}/{file_id}/{filename}"
+        key = f"{'skills' if purpose == 'skill' else 'uploads'}/{user.id}/{file_id}/{filename}"
         try:
             await asyncio.to_thread(storage.put_file, key, tmp.name, content_type)
 
@@ -125,7 +127,8 @@ async def upload_file(
                         storage_key=key,
                         status=FileStatus.PENDING,
                         parent_id=parent_id,
-                        project_id=project_id,
+                        project_id=project_id if purpose == "library" else None,
+                        purpose=purpose,
                         meta={"processing": "queued"},
                     )
                     assign_file_version(db, row, parent)
@@ -157,18 +160,30 @@ def list_files(
     trashed: bool = False,
     cursor: str | None = None,
     project_id: str | None = None,
+    scope: Literal["all", "root"] = "all",
     q: str | None = None,
     ids: list[str] | None = Query(default=None, max_length=200),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    stmt = select(FileObject.id).where(FileObject.user_id == user.id, FileObject.is_head == literal_column("1"))
+    stmt = select(FileObject.id).where(
+        FileObject.user_id == user.id, FileObject.purpose == "library", FileObject.is_head == literal_column("1")
+    )
     stmt = stmt.where(FileObject.deleted_at.is_not(None)) if trashed else stmt.where(*live_file_predicates())
     if ids is not None:
         stmt = stmt.where(FileObject.id.in_(ids))
     if project_id is not None:
-        owned_project(db, project_id, user)
-        stmt = stmt.where(FileObject.project_id == project_id)
+        if not trashed:
+            owned_project(db, project_id, user)
+        stmt = stmt.where(
+            or_(FileObject.project_id == project_id, FileObject.trashed_from_project_id == project_id)
+            if trashed
+            else FileObject.project_id == project_id
+        )
+    elif scope == "root":
+        stmt = stmt.where(FileObject.project_id.is_(None))
+        if trashed:
+            stmt = stmt.where(FileObject.trashed_from_project_id.is_(None))
     if category == "starred":
         stmt = stmt.where(FileObject.starred_at.is_not(None))
     elif category == "images":
@@ -198,6 +213,60 @@ def list_files(
         )
     }
     return file_dicts(db, [by_id[fid] for fid in page_ids if fid in by_id])
+
+
+@router.get("/folders")
+def list_file_folders(
+    category: Literal["all", "starred", "images"] = "all",
+    trashed: bool = False,
+    q: str = "",
+    after: str = "",
+    limit: int = Query(100, ge=1, le=200),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    from ..models import Project
+
+    folder = func.coalesce(FileObject.project_id, FileObject.trashed_from_project_id) if trashed else FileObject.project_id
+    predicates = [
+        FileObject.user_id == user.id,
+        FileObject.purpose == "library",
+        FileObject.is_head == literal_column("1"),
+        FileObject.purged_at.is_(None),
+        folder > after,
+    ]
+    predicates.append(FileObject.deleted_at.is_not(None) if trashed else FileObject.deleted_at.is_(None))
+    if category == "starred":
+        predicates.append(FileObject.starred_at.is_not(None))
+    if category == "images":
+        predicates.append(FileObject.content_type.like(literal_column("'image/%'")))
+    if q:
+        escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        predicates.append(FileObject.filename.ilike(f"%{escaped}%", escape="\\"))
+    folder_name = (
+        func.coalesce(Project.name, func.max(FileObject.meta["trashed_project_name"].as_string()), "已删除项目")
+        if trashed
+        else Project.name
+    )
+    stmt = (
+        select(folder.label("id"), folder_name.label("name"), func.count().label("files"))
+        .outerjoin(Project, Project.id == folder)
+        .where(*predicates)
+        .group_by(folder, Project.name)
+        .order_by(folder)
+        .limit(limit)
+    )
+    if category == "all" and not trashed and not q:
+        nonempty = (
+            select(FileObject.id)
+            .where(
+                FileObject.user_id == user.id, FileObject.project_id == Project.id, FileObject.purpose == "library", *live_file_predicates()
+            )
+            .exists()
+        )
+        empty = select(Project.id, Project.name, literal_column("0")).where(Project.user_id == user.id, Project.id > after, ~nonempty)
+        stmt = stmt.order_by(None).limit(None).union_all(empty).order_by("id").limit(limit)
+    return [{"id": key, "name": name, "files": count} for key, name, count in db.execute(stmt)]
 
 
 def _owned_files(db: Session, ids: list[str], user: User) -> list[FileObject]:
@@ -231,13 +300,15 @@ def batch_files(body: FileBatch, user: User = Depends(current_user), db: Session
         else:
             if any(f.deleted_at is not None or f.purged_at is not None for f in files):
                 raise HTTPException(status_code=404, detail="file not found")
+            if body.action == "move":
+                for file in files:
+                    move_lineage(db, file, body.project_id)
             for file in db.scalars(select(FileObject).where(FileObject.user_id == user.id, FileObject.lineage_id.in_(lineages))):
                 if body.action == "star":
                     file.starred_at = file.starred_at or now
                 elif body.action == "unstar":
                     file.starred_at = None
-                else:
-                    file.project_id = body.project_id
+
         db.commit()
     delete_storage_objects(keys)
     return {"count": len(files)}
@@ -360,6 +431,8 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
     file = _ready_file(db, file_id, user)
     cached = (file.meta or {}).get("preview")
     now = datetime.now(UTC).timestamp()
+    if cached and cached.get("reason") == "text_unavailable":
+        cached = None
     if cached and (cached["status"] != "pending" or now - (file.meta or {}).get("preview_requested_at", 0) <= 300):
         return cached
     # Same user lock as deletion: concurrent opens use the committed manifest, without storage reads.
@@ -367,6 +440,8 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
         file = _ready_file(db, file_id, user)
         meta = dict(file.meta or {})
         cached = meta.get("preview")
+        if cached and cached.get("reason") == "text_unavailable":
+            cached = None
         if cached and (cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300):
             return cached
         job_id = None
@@ -375,17 +450,17 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
         if kind is None:
             manifest = {"status": "unsupported", "kind": None}
         elif kind == "text":
-            manifest = (
-                text_manifest(file.filename, meta)
-                if meta.get("text_key")
-                else {"status": "failed", "kind": "text", "reason": "text_unavailable"}
-            )
+            manifest = text_manifest(file.filename, meta) if meta.get("text_key") else {"status": "pending", "kind": "text"}
         elif kind == "image" and (suffix == ".svg" or file.content_type.split(";")[0] == "image/svg+xml"):
             manifest = {"status": "ready", "kind": "image", "image": "original"}
         elif kind == "image" and meta.get("display_key"):
             manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
         else:
             manifest = {"status": "pending", "kind": kind}
+            job_id = uuid.uuid4().hex
+            meta.update(preview_requested_at=now, preview_job_id=job_id)
+            stage_job(db, "preview", file_id=file_id, job_id=job_id)
+        if manifest["status"] == "pending" and job_id is None:
             job_id = uuid.uuid4().hex
             meta.update(preview_requested_at=now, preview_job_id=job_id)
             stage_job(db, "preview", file_id=file_id, job_id=job_id)
@@ -422,7 +497,7 @@ def preview_asset(
     elif name == "display.webp":
         key, mime, digest = meta.get("display_key"), "image/webp", asset.get("sha256") or file.sha256
     elif name == "text.txt":
-        key, mime, digest = meta.get("text_key"), "text/plain; charset=utf-8", file.sha256
+        key, mime, digest = meta.get("text_key") or asset.get("key"), "text/plain; charset=utf-8", asset.get("sha256") or file.sha256
     else:
         key, mime, digest = asset.get("key"), asset.get("content_type"), asset.get("sha256")
     if not key or not digest:
@@ -450,8 +525,7 @@ def patch_file(file_id: str, body: LibraryFilePatch, user: User = Depends(curren
         if "project_id" in body.model_fields_set:
             if body.project_id is not None:
                 owned_project(db, body.project_id, user)
-            for version in lineage:
-                version.project_id = body.project_id
+            move_lineage(db, file, body.project_id)
         if "starred" in body.model_fields_set:
             for version in lineage:
                 version.starred_at = (version.starred_at or utcnow()) if body.starred else None
@@ -520,6 +594,7 @@ def presign_upload(body: PresignIn, user: User = Depends(current_user), db: Sess
             status=FileStatus.PENDING,
             meta={"processing": "awaiting_upload"},
         )
+        assign_file_version(db, file)
         db.add(file)
         db.commit()
         return {"file_id": file_id, "upload_url": url, "method": "PUT", "expires_in": 900}

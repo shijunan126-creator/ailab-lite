@@ -87,7 +87,7 @@
 
 ## 迁移链
 
-0008 → 0009 ledger → 0010 lifecycle → 0011 preview outbox → 0012 identity → 0013 file versions → 0014 transactional jobs → 0016 conversation summary → 0017 skill policies → 0018 file usage → 0019 runtime。已在4f9f3cb统一基线双库验证升/降/再升与模型漂移；0015未占用，不补空stub。
+0008 → 0009 ledger → 0010 lifecycle → 0011 preview outbox → 0012 identity → 0013 file versions → 0014 transactional jobs → 0016 conversation summary → 0017 skill policies → 0018 file usage → 0019 runtime → 0020 library namespaces。已在4f9f3cb统一基线双库验证升/降/再升与模型漂移；0015未占用，不补空stub。
 
 操作见 [部署说明](../../platform/deploy/README.md)、[备份恢复 runbook](runbooks/backup-restore.md)、[契约测试分组](../../platform/tests/contracts/README.md)、[账本契约](usage-ledger.md)。
 
@@ -96,3 +96,14 @@
 ## main 集成补充（2026-10-23）
 
 main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/search`，显式配置 Agent 到 Service 的地址，NetworkPolicy 仅放行 Agent。新回归与 dev/lite 渲染已通过，完整集成验收见 [本轮记录](../progress/updates/2026-10-23-main-integration.md)。尚未重跑真实 SearXNG 外部引擎或包含它的 2 vCPU / 8 GiB 容量验收；此前真实组件数据不覆盖该新增服务。
+
+## 2026-10-23 资料库与运行修复补充
+
+本轮结果优先于上方历史“未验收”措辞，完整证据：[资料库与生命周期验收](../reviews/2026-10-23-library-runtime-acceptance.md)。
+
+- 资料库支持连续表格、分类内项目文件夹、游标分页、独立技能用途和同目录重名分配；生成TXT的受限预览已补齐。迁移0020双库升级/降级与历史数据整理通过。
+- 取消贯通Agent等待、Broker排队和创建，终态业务定期核对；Docker有可信PID1独立过期移除。实际负载发现的provider旧启动快照误回收已红绿修复，真实Docker/gVisor和OSB/runc分别通过。
+- 真实OSB Office+S3+PG+Redis+ClamAV联合负载、SearXNG外部检索、Prometheus抓取与告警恢复、实际Agent/Broker SIGKILL接管均已验；硬退出测试加速了该任务的持久租约与传输可见性期限。
+- 付费OCR/vision/摘要已用可核对中文样本验证并核对账本；模型目录声明与真实能力一致。公司模板/业务golden由用户明确跳过，未使用合成样本冒充业务验收。
+- 2CPU/8GiB独立混合验收首字p95=2.91s；额外冷启动或超载会显著恶化时延，保留实测，不承诺任意并发。个人部署明细只保留在本机独立HANDOFF。
+- OpenSandbox网络隔离侧车与gVisor组合不支持，保留隔离策略分别验收，不宣称该组合已通过；企业IdP、生产规模RPO/RTO和24小时稳定性不由本轮短时验收推导。

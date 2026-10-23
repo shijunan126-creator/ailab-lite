@@ -21,7 +21,7 @@ SHOTS = Path(os.environ["AILAB_E2E_SHOTS"]) if os.environ.get("AILAB_E2E_SHOTS")
 def _shot(page, name: str) -> None:
     if SHOTS:
         SHOTS.mkdir(parents=True, exist_ok=True)
-        page.screenshot(path=str(SHOTS / f"{name}.png"))
+        page.screenshot(path=str(SHOTS / f"{name}.png"), animations="disabled")
 
 
 def _upload(page, stack, tmp_path, name: str, data: bytes) -> None:
@@ -192,3 +192,102 @@ def test_the_admin_console_manages_departments_and_shows_the_audit(logged_in, st
     page.get_by_role("tab", name="用量").click()
     page.get_by_role("radio", name="本月").wait_for()
     _shot(page, "admin-usage")
+
+
+def test_library_table_keeps_columns_and_row_boundaries(logged_in, stack, tmp_path) -> None:
+    from playwright.sync_api import expect
+
+    page = logged_in
+    names = [f"连续表格-{uuid.uuid4().hex[:6]}.txt", f"很长的文件名-{'季度计划' * 12}.txt"]
+    for name in names:
+        _upload(page, stack, tmp_path, name, b"table layout")
+
+    table = page.get_by_role("table", name="资料库文件")
+    expect(table).to_be_visible()
+    expect(table.get_by_role("columnheader", name="名称", exact=True)).to_be_visible()
+    expect(table.get_by_role("columnheader", name="大小", exact=True)).to_be_visible()
+    expect(table.get_by_role("columnheader", name="创建时间", exact=True)).to_be_visible()
+    rows = [page.locator(".lib-row", has_text=name) for name in names]
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        geometry = table.evaluate("""table => {
+            const head = table.tHead.rows[0];
+            const rows = [...table.tBodies[0].rows];
+            return rows.map((row, i) => ({
+                aligned: [...row.cells].every((cell, col) =>
+                    Math.abs(cell.getBoundingClientRect().x - head.cells[col].getBoundingClientRect().x) < 1),
+                border: getComputedStyle(row.cells[0]).borderBottomWidth,
+                adjoining: !i || Math.abs(row.getBoundingClientRect().top - rows[i - 1].getBoundingClientRect().bottom) < 1,
+            }));
+        }""")
+        assert all(r["aligned"] and r["adjoining"] and r["border"] == "1px" for r in geometry)
+        _shot(page, f"library-table-{scheme}")
+
+    # Keyboard focus must reveal actions, even when the pointer is elsewhere.
+    page.mouse.move(0, 0)
+    more = rows[0].get_by_role("button", name=f"更多操作 {names[0]}", exact=True)
+    more.focus()
+    expect(more.locator("..").locator("..")).to_have_css("opacity", "1")
+    more.click()
+    expect(rows[0].get_by_role("menuitem", name="移动到项目")).to_be_visible()
+    page.get_by_role("heading", name="资料库", exact=True).click()
+    rows[0].get_by_role("checkbox").click()
+    expect(rows[0]).to_have_class("lib-row on")
+    page.get_by_role("checkbox", name="全选", exact=True).click()
+    page.get_by_role("checkbox", name="全选", exact=True).click()
+    _open(page, names[0])
+    page.keyboard.press("Escape")
+
+    page.set_viewport_size({"width": 1024, "height": 900})
+    _shot(page, "library-table-tablet")
+
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.get_by_role("button", name="收起侧栏", exact=True).click()
+    expect(rows[0].get_by_role("button", name=names[0], exact=True)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert table.evaluate("t => t.getBoundingClientRect().right <= innerWidth")
+    for row in rows:
+        assert "12 B" in row.inner_text()
+    page.mouse.move(0, 0)
+    page.get_by_role("heading", name="资料库", exact=True).click()
+    _shot(page, "library-table-mobile")
+
+    expect(page.get_by_role("table", name="资料库文件")).to_be_visible()
+    expect(page.get_by_role("columnheader", name="所属项目", exact=True)).to_have_count(0)
+    _open(page, names[0])
+    page.keyboard.press("Escape")
+
+
+def test_project_folders_keep_files_inside_each_category_and_text_previews(logged_in, stack, tmp_path):
+    from playwright.sync_api import expect
+
+    page = logged_in
+    name = f"项目-{'季度计划' * 8}-{uuid.uuid4().hex[:4]}"
+    project = page.request.post(stack.portal + "/api/v1/projects", data={"name": name}).json()
+    filename = f"项目内文本-{uuid.uuid4().hex[:6]}.txt"
+    payload = {"upload": {"name": filename, "mimeType": "text/plain", "buffer": "中文第一行\n第二行".encode("utf-16")}}
+    response = page.request.post(stack.portal + f"/api/v1/files?project_id={project['id']}", multipart=payload)
+    assert response.ok
+    file = response.json()
+    page.goto(stack.portal + "/files")
+    folder = page.locator(".library-folders a", has_text=name)
+    expect(folder).to_be_visible()
+    expect(page.locator(".lib-row", has_text=filename)).to_have_count(0)
+    _shot(page, "library-folders")
+    folder.click()
+    row = page.locator(".lib-row", has_text=filename)
+    row.get_by_role("link", name=f"下载 {filename}", exact=True).wait_for(timeout=30000)
+    viewer = _open(page, filename)
+    expect(viewer.locator(".viewer-plain")).to_have_text("中文第一行\n第二行")
+    _shot(page, "viewer-text")
+    page.keyboard.press("Escape")
+    page.request.patch(stack.portal + f"/api/v1/files/{file['id']}", data={"starred": True})
+    page.goto(stack.portal + "/files?c=starred")
+    expect(page.locator(".library-folders a", has_text=name)).to_be_visible()
+    expect(page.locator(".lib-row", has_text=filename)).to_have_count(0)
+    page.locator(".library-folders a", has_text=name).click()
+    expect(page.locator(".lib-row", has_text=filename)).to_be_visible()
+    page.request.delete(stack.portal + f"/api/v1/files/{file['id']}")
+    page.goto(stack.portal + "/files?c=trash")
+    page.locator(".library-folders a", has_text=name).click()
+    expect(page.locator(".lib-row", has_text=filename)).to_be_visible()

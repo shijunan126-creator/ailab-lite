@@ -648,9 +648,25 @@ label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 .library-crumb > span:not(.spacer) { color: var(--text); font-weight: 600; }
 .library-alert { margin: 10px 0; }
 
-.file-list { margin-top: 4px; }
-.file-list-head { display: flex; align-items: center; gap: 14px; padding: 8px 10px; font-size: 12px; color: var(--faint); border-bottom: 1px solid var(--border); }
-.lib-row { display: flex; align-items: center; gap: 14px; padding: 10px; border-radius: 10px; }
+.file-list { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; text-align: left; }
+.file-list th, .file-list td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.file-list-head { background: var(--surface-2); }
+.file-list-head th { padding-top: 9px; padding-bottom: 9px; color: var(--muted); font-size: 12px; font-weight: 500; }
+.file-list .lib-col-check { width: 38px; padding-right: 8px; }
+.file-list .lib-col-size { width: 88px; }
+.file-list .lib-col-date { width: 120px; }
+.file-list .lib-col-project { width: 140px; }
+.file-list .lib-col-actions { width: 148px; }
+.lib-col-size, .lib-col-date, .lib-col-project { color: var(--muted); font-size: 12px; }
+.lib-col-size { font-variant-numeric: tabular-nums; text-align: right; }
+.lib-col-date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lib-file { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 32px; }
+.lib-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+.lib-mobile-meta { display: none; }
+.lib-no-project { color: var(--faint); }
+.lib-col-project .meta-project { max-width: 100%; }
+.lib-col-project .meta-project svg { flex: none; }
+.lib-col-project .meta-project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-row:hover { background: var(--surface-2); }
 .lib-row.on { background: var(--accent-soft); }
 .lib-row .grow { flex: 1; min-width: 0; }
@@ -661,10 +677,16 @@ label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 .lib-row .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 0 10px; color: var(--muted); font-size: 12px; margin-top: 1px; }
 .meta-project { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .meta-project:hover { color: var(--accent); }
+.lib-row .lib-compact-project { display: none; max-width: 100%; }
+.lib-compact-project svg { flex: none; }
+.lib-compact-project span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 1100px) { .lib-row .lib-compact-project { display: inline-flex; } }
 
 /* the checkbox, star and actions appear on hover; they stay once a selection is under way or a file is starred */
 .file-list .check, .image-card .check, .row-actions, .star-btn { opacity: 0; transition: opacity .12s; }
 .lib-row:hover .check, .lib-row:hover .row-actions, .lib-row:hover .star-btn,
+.lib-row:focus-within .check, .lib-row:focus-within .row-actions, .lib-row:focus-within .star-btn,
+.lib-row:has([aria-expanded="true"]) .row-actions,
 .image-card:hover .check, .image-card:hover .row-actions, .image-card:hover .star-btn,
 .file-list.selecting .check, .image-grid.selecting .check, .file-list-head .check,
 .check.on, .star-btn.on, .row-actions:focus-within, .star-btn:focus-visible, .check:focus-visible { opacity: 1; }
@@ -746,7 +768,19 @@ a.project-row:hover, .project-row:hover { background: var(--surface-2); color: v
 @media (hover: none) { .conv-row .conv-more { opacity: 1; } }
 .project-empty { padding: 28px 0; text-align: center; color: var(--faint); font-size: 13px; }
 
+@media (min-width: 761px) and (max-width: 1100px) {
+  .file-list .lib-col-project { display: none; }
+}
+
 @media (max-width: 760px) {
+  .file-list .lib-col-size, .file-list .lib-col-date, .file-list .lib-col-project { display: none; }
+  .file-list th, .file-list td { padding: 10px 6px; }
+  .file-list .lib-col-check { width: 30px; padding-right: 4px; }
+  .file-list .lib-col-actions { width: 132px; }
+  .lib-file { gap: 8px; }
+  .lib-file .lib-open { display: none; }
+  .lib-mobile-meta { display: inline; }
+  .lib-row .name { font-size: 13px; }
   .library-bar { flex-direction: column; align-items: stretch; gap: 8px; }
   .library-bar .search { width: 100%; margin-bottom: 8px; }
   .image-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
@@ -902,3 +936,5 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .auth-form .sso { display: flex; justify-content: center; width: 100%; }
 .auth-or { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--faint); font-size: 12px; }
 .auth-or::before, .auth-or::after { content: ""; flex: 1; height: 1px; background: var(--border); }
+
+.library-folders { margin-bottom: 24px; }

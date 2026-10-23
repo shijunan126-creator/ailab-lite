@@ -88,6 +88,8 @@ class _DeltaWriter:
     def __init__(self, loop: AgentLoop, run_id: str, step: int, kind: str = "agent.delta") -> None:
         self.loop, self.run_id, self.step, self.kind = loop, run_id, step, kind
         self.buffer: list[str] = []
+        self.buffer_chars = 0
+        self.lock = asyncio.Lock()
         self.last = time.monotonic()
         self.started: float | None = None
         self.seconds = 0.0
@@ -96,17 +98,46 @@ class _DeltaWriter:
         if self.started is None:
             self.started = time.monotonic()
         self.buffer.append(text)
-        if time.monotonic() - self.last >= DELTA_FLUSH_SECONDS or sum(map(len, self.buffer)) >= DELTA_FLUSH_CHARS:
+        self.buffer_chars += len(text)
+        if time.monotonic() - self.last >= DELTA_FLUSH_SECONDS or self.buffer_chars >= DELTA_FLUSH_CHARS:
             await self.flush()
 
     async def flush(self) -> None:
-        if self.buffer:
+        async with self.lock:
+            if not self.buffer:
+                return
             text, self.buffer = "".join(self.buffer), []
+            self.buffer_chars = 0
+            self.last = time.monotonic()
             payload = {"step": self.step, "text": text}
             if self.kind == "agent.thinking":
                 payload["seconds"] = self.seconds = round(time.monotonic() - (self.started or time.monotonic()), 1)
             await self.loop._event(self.run_id, self.kind, payload)
-        self.last = time.monotonic()
+
+
+async def _stream_with_deltas[T](awaitable: Awaitable[T], *writers: _DeltaWriter) -> T:
+    """Flush independently of model tokens: tool arguments can take seconds after the last visible text."""
+
+    async def tick() -> None:
+        while True:
+            await asyncio.sleep(DELTA_FLUSH_SECONDS)
+            for writer in writers:
+                await writer.flush()
+
+    producer = asyncio.ensure_future(awaitable)
+    flusher = asyncio.create_task(tick())
+    try:
+        done, _ = await asyncio.wait({producer, flusher}, return_when=asyncio.FIRST_COMPLETED)
+        if flusher in done:
+            flusher.result()  # propagate a stale-attempt rejection and stop the upstream
+        return await producer
+    finally:
+        for task in (producer, flusher):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(producer, flusher, return_exceptions=True)
+        for writer in writers:
+            await writer.flush()
 
 
 def _arguments_json(arguments: dict) -> str:
@@ -189,7 +220,9 @@ class AgentLoop:
         announced = False
         while True:
             try:
-                return await self.broker.create_lease(run_id)
+                if await self._is_canceled(run_id):
+                    raise RunCanceled()
+                return await self._interruptible(run_id, self.broker.create_lease(run_id))
             except ClientError as exc:
                 if exc.status != 429:
                     raise
@@ -384,7 +417,9 @@ class AgentLoop:
         offered = tools_for_turn() if tools is None else tools
         estimated_input = estimator.estimate(model, {"messages": messages, "tools": offered})
         spec = get_catalog().get(model)
-        output_limit = min(settings.model_max_output_tokens, spec.max_output_tokens) if spec else settings.model_max_output_tokens
+        output_limit = (spec or ModelSpec(model, model)).max_output_tokens
+        if settings.model_max_output_tokens is not None:
+            output_limit = min(output_limit, settings.model_max_output_tokens)
         if quiet:
             output_limit = min(output_limit, 2048)
         if max_output_tokens is not None:
@@ -435,16 +470,17 @@ class AgentLoop:
             if await self._is_canceled(run_id):
                 raise RunCanceled()
             with span("model.call", model=model_label):
+                stream = llm.chat_stream(
+                    messages,
+                    offered,
+                    model,
+                    user_id=run.get("user_id"),
+                    on_text=on_text,
+                    on_reasoning=on_reasoning,
+                )
                 response = await self._interruptible(
                     run_id,
-                    llm.chat_stream(
-                        messages,
-                        offered,
-                        model,
-                        user_id=run.get("user_id"),
-                        on_text=on_text,
-                        on_reasoning=on_reasoning,
-                    ),
+                    stream if quiet else _stream_with_deltas(stream, thinker, writer),
                 )
         except BaseException as exc:
             if isinstance(exc, LLMError):
@@ -465,8 +501,6 @@ class AgentLoop:
             settled = await submit()
             run["_ledger_tokens"] = settled["run_tokens"]
             estimator.calibrate(model, {"messages": messages, "tools": offered}, call.usage.get("prompt_tokens", 0))
-            await thinker.flush()
-            await writer.flush()
             response.thinking_seconds = thinker.seconds
             if not quiet:
                 run["_last_model"] = model
@@ -492,9 +526,7 @@ class AgentLoop:
         ]
         try:
             async with asyncio.timeout(10):
-                response = await self._call_model(
-                    self.llm or llm_for(model), run_id, run, model, prompt, -2, tools=[], quiet=True, max_output_tokens=64
-                )
+                response = await self._call_model(self.llm or llm_for(model), run_id, run, model, prompt, -2, tools=[], quiet=True)
             title = response.content.strip().splitlines()
             return title[0].strip(" #*\"'“”")[:40] or None if title else None
         except (RunCanceled, asyncio.CancelledError):

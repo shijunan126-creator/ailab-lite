@@ -33,7 +33,7 @@ cd "$OSB_HOME"
 setsid nohup "$OSB_VENV/bin/opensandbox-server" --config "$OSB_CONFIG" > "$OSB_HOME/server.log" 2>&1 < /dev/null &
 for _ in $(seq 1 40); do
   if curl -fsS "http://127.0.0.1:$OSB_PORT/health" >/dev/null 2>&1; then
-    echo "[osb_up] ready on http://127.0.0.1:$OSB_PORT (api key: $OSB_API_KEY)"
+    echo "[osb_up] ready on http://127.0.0.1:$OSB_PORT"
     exit 0
   fi
   sleep 0.5

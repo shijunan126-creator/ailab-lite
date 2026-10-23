@@ -300,7 +300,11 @@ def test_project_delete_covers_more_than_one_batch_and_already_trashed(api):
         db.add_all(
             [
                 FileObject(
-                    id=f"test-many-{i}-{p['id']}", user_id=owner, project_id=p["id"], filename="many.txt", storage_key=f"many/{p['id']}/{i}"
+                    id=f"test-many-{i}-{p['id']}",
+                    user_id=owner,
+                    project_id=p["id"],
+                    filename=f"many-{i}.txt",
+                    storage_key=f"many/{p['id']}/{i}",
                 )
                 for i in range(205)
             ]

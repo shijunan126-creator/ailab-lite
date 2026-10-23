@@ -159,6 +159,9 @@ class PlatformClient(_PlatformApi):
         timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
         return self._send(self._req("POST", f"/internal/files/{file_id}/ocr{suffix}", timeout=timeout, json={})).json()
 
+    def get_run_state(self, run_id: str) -> dict:
+        return self._send(self._get_run_state(run_id)).json()
+
     def get_run(self, run_id: str) -> dict:
         return self._send(self._get_run(run_id)).json()
 

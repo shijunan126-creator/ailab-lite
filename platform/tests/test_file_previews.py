@@ -379,3 +379,21 @@ def test_preview_completion_rejects_untrusted_manifest(api, tamper):
     response = api.post(f"/internal/files/{fid}/preview", headers=SERVICE, json=body)
     assert response.status_code in {400, 409, 422}
     assert preview(api, fid)["status"] == "pending"
+
+
+@pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "gb18030"])
+def test_text_artifact_without_extracted_text_gets_a_preview(api, encoding):
+    api.headers.update(AUTH)
+    from tests.run_claims import attempt_headers
+    from tests.test_projects import artifact
+
+    run = api.post("/v1/runs", json={"prompt": "文字产物"}).json()
+    api.post(f"/internal/runs/{run['id']}/status", headers=attempt_headers(api, run["id"]), json={"status": "running"})
+    file = artifact(api, run["id"], "中文第一行\n第二行".encode(encoding))
+    result = api.get(f"/v1/files/{file['file_id']}/preview")
+    assert result.status_code == 200 and result.json()["status"] == "pending"
+    current = api.get(f"/v1/files/{file['file_id']}").json()
+    process_preview(file["file_id"], current["meta"]["preview_job_id"], ApiClient(api))
+    assert api.get(f"/v1/files/{file['file_id']}/preview").json()["status"] == "ready"
+    text = api.get(f"/v1/files/{file['file_id']}/preview/text.txt")
+    assert text.text == "中文第一行\n第二行"

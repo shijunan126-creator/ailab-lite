@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ..clients import ClientError, PlatformClient
 from ..config import settings
-from ..contracts.file_preview import LOCAL_SHEETS
+from ..contracts.file_preview import LOCAL_SHEETS, text_manifest
 from ..queue import get_queue
 from ..storage import get_storage
 from .isolate import IsolationError, execute
@@ -43,11 +43,28 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             storage = get_storage()
             assets = {}
             try:
-                if Path(file["filename"]).suffix.lower() in LOCAL_SHEETS or manifest.get("kind") == "image":
+                if Path(file["filename"]).suffix.lower() in LOCAL_SHEETS or manifest.get("kind") in {"image", "text"}:
                     with tempfile.TemporaryDirectory(prefix="ailab-preview-") as tmp:
                         source = Path(tmp) / ("input" + Path(file["filename"]).suffix.lower())
                         download(platform, file_id, source, settings.max_upload_bytes, job="preview")
-                        if manifest["kind"] == "image":
+                        if manifest["kind"] == "text":
+                            info = execute(
+                                "extract",
+                                source,
+                                Path(tmp) / "text",
+                                filename=file["filename"],
+                                content_type=file.get("content_type") or "",
+                            )
+                            data = info.get("text", "").encode("utf-8")
+                            key = f"derived/{file_id}/preview/text.txt"
+                            storage.put_bytes(key, data, "text/plain; charset=utf-8")
+                            assets["text.txt"] = {
+                                "key": key,
+                                "content_type": "text/plain; charset=utf-8",
+                                "sha256": hashlib.sha256(data).hexdigest(),
+                            }
+                            manifest = text_manifest(file["filename"], {"extract": info})
+                        elif manifest["kind"] == "image":
                             derivatives = _images(file_id, source, file, storage, Path(tmp) / "images")
                             if not derivatives.get("display_key"):
                                 raise ValueError("image_unavailable")

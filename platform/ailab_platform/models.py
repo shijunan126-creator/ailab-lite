@@ -23,10 +23,12 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    func,
     text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from . import naming
 from .contracts.jobs import RunStatus as RunStatus
 
 
@@ -194,11 +196,17 @@ class ApiToken(Base):
 
 class Project(Base):
     __tablename__ = "projects"
-    __table_args__ = (Index("ix_projects_user_updated", "user_id", "updated_at"),)
+    __table_args__ = (
+        Index("ix_projects_user_updated", "user_id", "updated_at"),
+        Index("uq_projects_user_name", "user_id", "name_key", unique=True),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("prj"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    name_key: Mapped[str] = mapped_column(
+        String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["name"])
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
@@ -376,6 +384,10 @@ class FileObject(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
     starred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     filename: Mapped[str] = mapped_column(String(255))
+    name_key: Mapped[str] = mapped_column(
+        String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["filename"])
+    )
+    purpose: Mapped[str] = mapped_column(String(16), default="library", server_default="library")
     content_type: Mapped[str] = mapped_column(String(120), default="application/octet-stream")
     size: Mapped[int] = mapped_column(Integer, default=0)
     sha256: Mapped[str] = mapped_column(String(64), default="")
@@ -572,3 +584,26 @@ class RunDelivery(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
     delivery_id: Mapped[str] = mapped_column(String(160), primary_key=True)
     result: Mapped[dict] = mapped_column(JSON)
+
+
+Index(
+    "ix_files_folder_listing",
+    FileObject.user_id,
+    FileObject.purpose,
+    FileObject.is_head,
+    FileObject.deleted_at,
+    FileObject.purged_at,
+    FileObject.project_id,
+    FileObject.created_at,
+    FileObject.id,
+)
+Index(
+    "uq_files_folder_name",
+    FileObject.user_id,
+    FileObject.purpose,
+    func.coalesce(FileObject.project_id, ""),
+    FileObject.name_key,
+    unique=True,
+    sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+    postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
+)

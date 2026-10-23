@@ -14,7 +14,7 @@ from typing import Literal
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
-from sqlalchemy import exists, func, select
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -24,7 +24,7 @@ from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, Usa
 from ..conversation_titles import apply_result_title
 from ..deps import get_db
 from ..events import append_event
-from ..library import assign_file_version, delete_storage_objects, thumbnail_candidate, trim_file_versions
+from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
 from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
 from ..ports.service_auth import RunContext
@@ -644,6 +644,15 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         merged = dict(file.meta or {})
         merged.update(body.meta)
         file.meta = merged
+        if merged.get("skill") or merged.get("skill_error"):
+            head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file
+            head.purpose, head.project_id = "skill", None
+            reserve_filename(db, head)
+            db.execute(
+                update(FileObject)
+                .where(FileObject.lineage_id == file.lineage_id)
+                .values(purpose="skill", project_id=None, filename=head.filename, name_key=head.name_key)
+            )
     if body.status is not None:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
@@ -673,14 +682,24 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         for name, asset in assets.items():
             if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
                 raise HTTPException(status_code=400, detail="invalid asset")
-        expected = set(preview.pages or []) if preview.kind == "pages" else {preview.data} if preview.kind == "sheets" else set()
-        if preview.status == "ready" and preview.kind in {"pages", "sheets"} and (not expected or set(assets) != expected):
+        expected = (
+            set(preview.pages or [])
+            if preview.kind == "pages"
+            else {preview.data}
+            if preview.kind == "sheets"
+            else {preview.text}
+            if preview.kind == "text"
+            else set()
+        )
+        if preview.status == "ready" and preview.kind in {"pages", "sheets", "text"} and (not expected or set(assets) != expected):
             raise HTTPException(status_code=400, detail="manifest assets do not match")
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
         meta["preview"] = preview.model_dump(exclude_unset=True)
         for asset in assets.values():
-            if asset["content_type"] != ("image/jpeg" if preview.kind == "pages" else "application/json"):
+            if asset["content_type"] != {"pages": "image/jpeg", "sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(
+                preview.kind
+            ):
                 raise HTTPException(status_code=400, detail="invalid asset content type")
         meta["preview_assets"] = assets
         if preview.image == "display.webp":

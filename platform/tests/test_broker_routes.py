@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ailab_platform.broker import main
-from ailab_platform.broker.service import BrokerOwnershipError
+from ailab_platform.broker.service import BrokerOwnershipError, LeaseCanceledError
 from ailab_platform.config import settings
 
 from .test_broker_lease import _manager
@@ -64,3 +64,15 @@ def test_startup_recovery_failure_is_fatal(monkeypatch):
     monkeypatch.setattr(main, "get_manager", lambda: Unavailable())
     with pytest.raises(BrokerOwnershipError, match="second broker"), TestClient(main.app):
         pass
+
+
+def test_canceled_lease_is_a_conflict(broker, monkeypatch):
+    client, manager, _ = broker
+
+    def canceled(**kwargs):
+        raise LeaseCanceledError("任务已结束或已取消")
+
+    monkeypatch.setattr(manager, "create", canceled)
+    response = client.post("/internal/leases", headers={"X-Service-Token": settings.service_token}, json={"run_id": "canceled"})
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "run_canceled"

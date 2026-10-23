@@ -30,6 +30,21 @@ def _send(page, prompt: str, model: str | None = None) -> None:
     page.keyboard.press("Enter")
 
 
+def test_narrative_arrives_before_the_model_finishes(logged_in, stack):
+    from playwright.sync_api import expect
+
+    page = logged_in
+    text = "环境已就绪：python-docx 和中文字体可用。下面开始编写文档生成脚本。"
+    _send(page, "验证流式衔接", "test-fast")
+    try:
+        expect(page.get_by_text(text, exact=True)).to_be_visible(timeout=10000)
+        assert page.locator(".turn-meta").count() == 0
+    finally:
+        assert httpx.post(stack.agent + "/e2e/release-stream", timeout=5).is_success
+    page.locator(".turn-meta").wait_for(timeout=10000)
+    expect(page.get_by_text(text, exact=True)).to_have_count(1)
+
+
 def _start_conversation(page, prompt: str, model: str = "test-fast") -> str:
     _send(page, prompt, model)
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
@@ -261,7 +276,8 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
         assert page.locator(".preview-pane").count() == 0
         page.click(".composer-dock button:has-text('打开预览')")
         page.wait_for_selector(".preview-pane img", timeout=15000)
-    assert "ailab-demo.pptx" in page.inner_text(".file-card")
+    filename = page.locator(".file-card .name").inner_text()
+    assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 
 
 def test_the_chosen_model_is_remembered(logged_in, stack) -> None:
@@ -450,7 +466,8 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "已加载技能" in steps and "交付文件" in steps
-    assert "ailab-demo.pptx" in page.inner_text(".file-card")
+    filename = page.locator(".file-card .name").inner_text()
+    assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
     assert page.inner_text(".msg.user .attach-chip") == "PPT 生成"
     assert page.locator(".skill-tag").count() == 0  # one message only
 
@@ -523,7 +540,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             page.wait_for_selector(".skill-row:not(.off):has-text('演示文稿（PPT）')")
 
 
-def test_a_personal_skill_uploaded_to_the_library_can_be_picked(logged_in, stack, tmp_path) -> None:
+def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, stack, tmp_path) -> None:
     page = logged_in
     name = f"weekly-{uuid.uuid4().hex[:6]}"
     skill = tmp_path / "SKILL.md"
@@ -536,8 +553,10 @@ def test_a_personal_skill_uploaded_to_the_library_can_be_picked(logged_in, stack
     assert row.locator("button[role=switch]").get_attribute("aria-checked") == "true"
     assert name in row.inner_text()
 
-    page.goto(stack.portal + "/files")  # it is a file in the library
-    page.get_by_role("link", name="个人技能 · 周报助手", exact=True).wait_for()
+    page.goto(stack.portal + "/files")
+    page.get_by_role("button", name="上传", exact=True).wait_for()
+    assert page.get_by_role("link", name="个人技能 · 周报助手", exact=True).count() == 0
+    assert not any(f["filename"] == "SKILL.md" for f in page.request.get(stack.portal + "/api/v1/files").json())
 
     page.goto(stack.portal + "/")
     page.click(".skill-chip:has-text('周报助手')")

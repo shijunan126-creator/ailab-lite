@@ -228,7 +228,8 @@ def test_bound_conversation_and_artifact_reads(identities):
         db.add(conv)
         db.flush()
         files = [
-            FileObject(user_id=owner.id, filename="a.txt", storage_key=f"uploads/{new_id('fil')}", status="ready", size=1) for _ in range(3)
+            FileObject(user_id=owner.id, filename=f"a-{new_id('fil')}.txt", storage_key=f"uploads/{new_id('fil')}", status="ready", size=1)
+            for _ in range(3)
         ]
         db.add_all(files)
         db.flush()

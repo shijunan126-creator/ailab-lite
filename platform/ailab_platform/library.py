@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 
 from .config import settings
 from .models import Artifact, FileObject, Project, User, utcnow
+from .naming import name_key, numbered_name
 from .storage import get_storage
 
 log = logging.getLogger("ailab.library")
@@ -87,13 +88,39 @@ def live_file_predicates():
     return (FileObject.is_head == literal_column("1"), FileObject.deleted_at.is_(None), FileObject.purged_at.is_(None))
 
 
+def reserve_filename(db: Session, file: FileObject) -> None:
+    original = file.filename
+    for number in range(1, 10002):
+        candidate = original if number == 1 else numbered_name(original, number)
+        key = name_key(candidate)
+        with db.no_autoflush:
+            exists = db.scalar(
+                select(FileObject.id)
+                .where(
+                    FileObject.user_id == file.user_id,
+                    FileObject.purpose == (file.purpose or "library"),
+                    func.coalesce(FileObject.project_id, literal_column("''")) == (file.project_id or ""),
+                    FileObject.name_key == key,
+                    FileObject.lineage_id != (file.lineage_id or file.id),
+                    *live_file_predicates(),
+                )
+                .limit(1)
+            )
+        if not exists:
+            file.filename, file.name_key = candidate, key
+            return
+    raise HTTPException(409, "同名文件过多，请换一个文件名")
+
+
 def assign_file_version(db: Session, file: FileObject, parent: FileObject | None = None) -> None:
     """Allocate under user_critical_section, including branching from an older version."""
     if parent is None:
         file.lineage_id, file.version, file.is_head = file.id, 1, 1
+        reserve_filename(db, file)
         return
     if parent.purged_at is not None:
         raise HTTPException(status_code=410, detail="version purged")
+    file.purpose = parent.purpose
     file.lineage_id = parent.lineage_id
     file.version = db.scalar(select(func.max(FileObject.version)).where(FileObject.lineage_id == parent.lineage_id)) + 1
     file.parent_id = parent.id
@@ -103,6 +130,22 @@ def assign_file_version(db: Session, file: FileObject, parent: FileObject | None
     db.execute(
         update(FileObject).where(FileObject.lineage_id == parent.lineage_id, FileObject.is_head == literal_column("1")).values(is_head=0)
     )
+
+    reserve_filename(db, file)
+
+
+def move_lineage(db: Session, file: FileObject, project_id: str | None) -> None:
+    head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1))
+    if head.purpose != "library":
+        raise HTTPException(409, "技能只能在技能页管理")
+    head.project_id = project_id
+    reserve_filename(db, head)
+    db.execute(
+        update(FileObject)
+        .where(FileObject.lineage_id == head.lineage_id)
+        .values(project_id=project_id, filename=head.filename, name_key=head.name_key)
+    )
+    db.flush()
 
 
 def trim_file_versions(db: Session, file: FileObject) -> list[str]:
@@ -139,12 +182,17 @@ def trash_lineages(db: Session, user_id: str, lineage_ids: list[str], *, project
 
 
 def restore_lineages(db: Session, user_id: str, lineage_ids: list[str]) -> None:
-    # Normal trash retains its project FK; project deletion cleared it transactionally.
-    db.execute(
-        update(FileObject)
-        .where(FileObject.user_id == user_id, FileObject.lineage_id.in_(lineage_ids))
-        .values(deleted_at=None, purge_at=None, trashed_from_project_id=None)
-    )
+    for lineage in lineage_ids:
+        head = db.scalar(select(FileObject).where(FileObject.user_id == user_id, FileObject.lineage_id == lineage, FileObject.is_head == 1))
+        if not head:
+            continue
+        reserve_filename(db, head)
+        db.execute(
+            update(FileObject)
+            .where(FileObject.user_id == user_id, FileObject.lineage_id == lineage)
+            .values(filename=head.filename, name_key=head.name_key, deleted_at=None, purge_at=None, trashed_from_project_id=None)
+        )
+        db.flush()
 
 
 def purge_lineages(db: Session, user_id: str, lineage_ids: list[str]) -> list[str]:

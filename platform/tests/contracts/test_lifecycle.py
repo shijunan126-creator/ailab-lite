@@ -56,7 +56,7 @@ def test_presign_targets_and_idempotency(env):
             ("new", "uploads/u/new/x", {"processing": "awaiting_upload"}),
             ("done", "uploads/u/done/obj/x", {"processing": "queued"}),
         ]:
-            db.add(FileObject(id=id, user_id="u", filename="x", storage_key=key, meta=meta, created_at=NOW if id == "new" else OLD))
+            db.add(FileObject(id=id, user_id="u", filename=f"x-{id}", storage_key=key, meta=meta, created_at=NOW if id == "new" else OLD))
             put_old(storage, key)
         db.commit()
         for _ in range(3):

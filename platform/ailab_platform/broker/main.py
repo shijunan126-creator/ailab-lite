@@ -18,7 +18,7 @@ from ..sandbox import SandboxError
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
 from .render import LibraryRenderer
-from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseError, LeaseLostError, LeaseManager
+from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseCanceledError, LeaseError, LeaseLostError, LeaseManager
 
 setup_logging("broker")
 log = logging.getLogger("ailab.broker")
@@ -83,7 +83,15 @@ def create_lease(body: LeaseCreate) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except LeaseError as exc:
         raise HTTPException(
-            status_code=429 if isinstance(exc, CapacityError) else 503 if isinstance(exc, BrokerOwnershipError) else 502,
+            status_code=(
+                409
+                if isinstance(exc, LeaseCanceledError)
+                else 429
+                if isinstance(exc, CapacityError)
+                else 503
+                if isinstance(exc, BrokerOwnershipError)
+                else 502
+            ),
             detail=exc.detail(),
         ) from exc
     return {

@@ -7,6 +7,11 @@ spec:
   groups:
   - name: ailab
     rules:
+    - alert: AILabServiceUnavailable
+      expr: up{job=~"ailab-.*"} == 0
+      for: 1m
+      labels: {severity: critical}
+      annotations: {summary: "AILab 服务连续一分钟无法采集"}
     - alert: AILabOutboxStalled
       expr: ailab_outbox_oldest_seconds > 300
       for: 2m

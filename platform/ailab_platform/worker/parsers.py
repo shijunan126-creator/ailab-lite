@@ -128,8 +128,22 @@ def extract_path(data: Path, filename: str, content_type: str) -> dict:
         return _xlsx(data)
 
     if suffix in TEXT_SUFFIXES or content_type.startswith("text/"):
-        with data.open(encoding="utf-8", errors="replace") as stream:
-            text = stream.read(MAX_TEXT + 1)
+        with data.open("rb") as stream:
+            prefix = stream.read(4)
+        encodings = (
+            ["utf-32"]
+            if prefix.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff"))
+            else ["utf-16"]
+            if prefix.startswith((b"\xff\xfe", b"\xfe\xff"))
+            else ["utf-8-sig", "gb18030"]
+        )
+        for encoding in [*encodings, "utf-8"]:
+            try:
+                with data.open(encoding=encoding, errors="replace" if encoding == "utf-8" else "strict") as stream:
+                    text = stream.read(MAX_TEXT + 1)
+                break
+            except UnicodeDecodeError:
+                continue
         return {"kind": "text", "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
 
     return {"kind": "binary", "chars": 0, "text": "", "bytes": data.stat().st_size}

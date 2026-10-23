@@ -511,6 +511,8 @@ def test_skill_policies_round_trip_and_review_queue_uses_its_sparse_index(engine
             text(files + f" VALUES (:id, :id, 'u1', 'a.txt', 'text/plain', 1, '', 'a.txt', 'ready', 1, {meta}, '2026-01-01', 1)"),
             rows,
         )
+    _upgrade_to(engine, "head")  # production ORM also includes later additive columns
+    with engine.begin() as conn:
         conn.execute(text("ANALYZE files"))
         prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
         # The production query itself, not a simplified copy of its predicate.
@@ -525,3 +527,33 @@ def test_skill_policies_round_trip_and_review_queue_uses_its_sparse_index(engine
     _upgrade_to(engine, "0017")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM skill_policies")).scalar() == 0
+
+
+def test_library_namespaces_preserve_legacy_objects_and_disambiguate_names(engine):
+    _upgrade_to(engine, "0019")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for pid in ("p1", "p2"):
+            conn.execute(
+                text("INSERT INTO projects (id,user_id,name,created_at,updated_at) VALUES (:id,'u1','重复项目','2026-01-01','2026-01-01')"),
+                {"id": pid},
+            )
+        for fid in ("f1", "f2", "f3"):
+            conn.execute(
+                text(
+                    "INSERT INTO files (id,user_id,filename,storage_key,status,created_at,lineage_id,"
+                    "is_head,meta,content_type,size,sha256,version) "
+                    "VALUES (:id,'u1','重复.txt',:key,'ready','2026-01-01',:id,1,'{}','text/plain',1,'x',1)"
+                ),
+                {"id": fid, "key": f"uploads/{fid}/original"},
+            )
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert len(set(conn.execute(text("SELECT name FROM projects")).scalars())) == 2
+        rows = conn.execute(text("SELECT id,filename,storage_key FROM files ORDER BY id")).all()
+        assert len(set(row.filename for row in rows)) == 3
+        assert all(row.storage_key == f"uploads/{row.id}/original" for row in rows)
+    _downgrade_to(engine, "0019")
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM files")).scalar() == 3

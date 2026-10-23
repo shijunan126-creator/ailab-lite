@@ -153,6 +153,7 @@ class Settings(BaseSettings):
 
     # Sandbox control plane. mock | docker | opensandbox
     sandbox_provider: Literal["mock", "docker", "opensandbox"] = "mock"
+    sandbox_runtime: Literal["runc", "runsc"] = "runc"
     sandbox_image: str = "harbor.ailab.local/sandbox/sbx-office:lite"
     runtime_heartbeat_seconds: float = Field(default=60, gt=0, le=60)
     checkpoint_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
@@ -233,7 +234,8 @@ class Settings(BaseSettings):
     cached_token_weight: float = Field(default=0.1, ge=0, le=1, allow_inf_nan=False)
     quota_timezone: str = "UTC"
     usage_reservation_ttl_seconds: int = Field(default=3600, ge=60, le=86400)
-    model_max_output_tokens: int = Field(default=8192, ge=1, le=10_000_000)
+    # Optional operator ceiling; the model catalog owns each model's actual output capacity.
+    model_max_output_tokens: int | None = Field(default=None, ge=1, le=10_000_000)
     daily_token_limit: int = Field(default=2_000_000, ge=0)  # per user, weighted tokens in quota_timezone
     monthly_token_limit: int = Field(default=30_000_000, ge=0)
     library_quota_bytes: int = Field(default=20 * 1024**3, ge=0)  # per user; active rejected files excluded, trash included

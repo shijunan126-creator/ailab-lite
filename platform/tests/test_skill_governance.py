@@ -7,6 +7,7 @@ import json
 import shutil
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -234,7 +235,8 @@ def test_global_deny_department_and_role_security(env):
 def _personal_skill(db, owner_id: str, name: str) -> str:
     file = FileObject(
         user_id=owner_id,
-        filename="SKILL.md",
+        filename=f"{name}-{uuid.uuid4().hex[:8]}.md",
+        purpose="skill",
         content_type="text/markdown",
         size=1,
         storage_key=f"test/{name}",

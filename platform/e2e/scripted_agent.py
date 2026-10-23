@@ -7,15 +7,25 @@ replaced, and only in this process. Queue, claims, leases, the Broker and the sa
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from ailab_platform.agent import loop
-from ailab_platform.agent.main import app  # noqa: F401  (served by uvicorn)
+from ailab_platform.agent.main import app
 from ailab_platform.llm import LLMClient, LLMResponse, MockLLM, ToolCall
 
 TRIGGER = "需要提问"
 BEFORE_ID, ASK_ID = "exec_before", "ask_version"
 OPTIONS = ["标准版", "精简版"]
+STREAM_TRIGGER = "验证流式衔接"
+STREAM_TEXT = "环境已就绪：python-docx 和中文字体可用。下面开始编写文档生成脚本。"
+stream_release = asyncio.Event()
+
+
+@app.post("/e2e/release-stream")
+async def release_stream():
+    stream_release.set()
+    return {"ok": True}
 
 
 def _last_user_text(messages: list[dict]) -> str:
@@ -25,6 +35,17 @@ def _last_user_text(messages: list[dict]) -> str:
 class QuestionThenAnswer(LLMClient):
     def __init__(self) -> None:
         self.mock = MockLLM()
+
+    async def chat_stream(self, messages, tools, model, user_id=None, on_text=None, on_reasoning=None):
+        if STREAM_TRIGGER != _last_user_text(messages):
+            return await super().chat_stream(messages, tools, model, user_id, on_text, on_reasoning)
+        stream_release.clear()
+        if on_text:
+            await on_text("环境")
+            await on_text(STREAM_TEXT[2:])
+        # The browser releases the model after it sees the narrative through the real SSE proxy.
+        await asyncio.wait_for(stream_release.wait(), timeout=30)
+        return LLMResponse(content=STREAM_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 50})
 
     async def chat(self, messages, tools, model, user_id=None):
         if TRIGGER not in _last_user_text(messages):

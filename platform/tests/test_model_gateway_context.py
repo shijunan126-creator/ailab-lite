@@ -35,6 +35,14 @@ async def upstream(kind, seen):
                 return
             writer.write(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n")
             await writer.drain()
+            if kind == "title" and seen[-1][1]["max_tokens"] < 128:
+                writer.write(
+                    b'data: {"choices":[{"delta":{"reasoning_content":"Thinking before the title"}}]}\n\n'
+                    b'data: {"choices":[{"delta":{},"finish_reason":"length"}],'
+                    b'"usage":{"prompt_tokens":10,"completion_tokens":64}}\n\ndata: [DONE]\n\n'
+                )
+                await writer.drain()
+                return
             if kind == "slow":
                 await reader.read()
                 return
@@ -372,7 +380,7 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
     assert result["result"].get("conversation_title") == (title_result if title_result == "城市更新汇报" else None)
     assert len(platform.reservations) == (1 if title_result == "quota" else 2)
     assert len(platform.reservations) == len(platform.settlements)
-    assert any(p["max_output_tokens"] == 64 for p in platform.reservations.values()) if title_result != "quota" else True
+    assert any(p["max_output_tokens"] == 2048 for p in platform.reservations.values()) if title_result != "quota" else True
     assert all(payload["step"] != -2 for name, payload in platform.events if name in {"agent.delta", "agent.thinking"})
 
 
@@ -397,7 +405,7 @@ def test_title_uses_real_ledger_and_bounded_model_request(monkeypatch):
             run["prompt"] *= 500
             title = await loop._conversation_title(run["id"], run, response.content * 500)
             assert title == "城市更新汇报"
-            assert len(seen) == 2 and seen[1][1]["max_tokens"] == 64
+            assert len(seen) == 2 and seen[1][1]["max_tokens"] == 2048
             title_input = json.loads(seen[1][1]["messages"][1]["content"])
             assert len(title_input["question"]) == len(title_input["answer"]) == 1000
             with SessionLocal() as db:
