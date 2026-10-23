@@ -19,6 +19,6 @@
 
 ## 当前实施与下一步
 
-已实现复用的连续页面预览和按时间顺序的统一工作过程；API持久化累计running时间，排队/等待用户/暂停不计入，历史未知时长不估算。双库完整回归、Portal测试/构建和真实浏览器已完成，见[本轮更新](updates/2026-10-24-preview-work-process.md)和[专项验收](../reviews/2026-10-24-preview-work-process.md)。下一步：创建覆盖全部前序工作的PR，核对该PR最新head的完整CI；全绿后按用户授权合并main，再将本地main快进到远端。PR链接和最终合并状态在后续交接更新。
+已实现复用的连续页面预览和按时间顺序的统一工作过程；API持久化累计running时间，排队/等待用户/暂停不计入，历史未知时长不估算。双库完整回归、Portal测试/构建和真实浏览器已完成，见[本轮更新](updates/2026-10-24-preview-work-process.md)和[专项验收](../reviews/2026-10-24-preview-work-process.md)。已创建覆盖全部前序工作的[PR #32](https://github.com/shijunan126-creator/ailab-lite/pull/32)，产品/测试提交`c07543e`。下一步：等待PR最新head完整CI；全绿后按用户授权合并main，再将本地main快进到远端并核对SHA。当前尚未合并；不以旧main绿灯替代本PR检查。
 
 公司模板/业务golden按指示跳过；不自动续跑用户原失败任务，不启动无关路线图事项。前轮运行环境已部署，本轮连续预览/过程区与0021尚未部署，不能混称已上线。短时负载不推导为任意规模、企业IdP或24小时稳定性承诺。
