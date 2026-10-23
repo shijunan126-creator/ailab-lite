@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -94,6 +95,18 @@ class Settings(BaseSettings):
     max_workspace_bytes: int = 60 * 1024 * 1024  # compressed workspace carried between turns of a conversation
     workspace_ttl_days: int = 3  # keep the last workspace of a conversation at most this long; 0 = keep it
     workspace_cleanup_interval_seconds: int = 3600  # scan the object store for expired snapshots hourly
+
+    backup_timeout_seconds: int = Field(default=3600, ge=1)
+
+    # Lifecycle: zero retention disables that collector; each tick has bounded work.
+    provisioned_storage_bytes: int = Field(default=0, ge=0)  # 0 = capacity unknown
+    gc_batch_size: int = Field(default=100, ge=1, le=1000)
+    gc_interval_seconds: int = Field(default=3600, ge=60)
+    presign_staging_ttl_seconds: int = Field(default=86400, ge=0)
+    orphan_objects_grace_seconds: int = Field(default=86400, ge=0)
+    run_events_retention_days: int = Field(default=30, ge=0)
+    conversation_purge_days: int = Field(default=30, ge=0)
+    file_trash_days: int = Field(default=30, ge=0)  # machinery only; trash UI/model is a later task
 
     # OpenSandbox server (T2 dev stand-in). Set AILAB_SANDBOX_PROVIDER=opensandbox.
     osb_domain: str = "127.0.0.1:8090"
