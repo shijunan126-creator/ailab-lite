@@ -263,3 +263,17 @@ def test_failed_artifact_commit_does_not_leak_the_staging_object() -> None:
     with pytest.raises(RuntimeError):
         manager.commit(lease["lease_id"], "/workspace/outputs/a.md")
     assert storage.objects == {}
+
+
+def test_infected_artifact_is_rejected_before_staging(monkeypatch) -> None:
+    class _Scanner:
+        def scan(self, _stream):
+            from ailab_platform.ports.scanner import ScanResult
+
+            return ScanResult("infected", "test", "Eicar-Test-Signature")
+
+    manager, lease, api, storage = _lease_with_files({"/workspace/outputs/evil.txt": b"EICAR"})
+    monkeypatch.setattr("ailab_platform.broker.service.get_scanner", lambda: _Scanner())
+    with pytest.raises(ArtifactRejected):
+        manager.commit(lease["lease_id"], "/workspace/outputs/evil.txt")
+    assert storage.objects == {} and api.committed == []

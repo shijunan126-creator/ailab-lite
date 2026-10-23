@@ -274,6 +274,17 @@ bash scripts/dev_up.sh
 （端口 8090、API key `dev-osb-key`），并等待 `/health`。`scripts/osb_down.sh` 只停 server，不动平台服务。
 SDK 是可选依赖：`pip install -e '.[opensandbox]'`。
 
+## 外部信息（SearXNG + web_acquire）
+
+沙箱默认 `egress: deny`。外部信息由 Agent 在沙箱外获取：
+
+- `web_search`：查询私有 SearXNG；
+- `read_url`：读取网页正文；
+- `web_acquire`：下载公开 PDF/Office 文档并抽取文本，或拉取公开 GitHub 仓库归档并在沙箱内安全解压；
+- 下载内容先经 ClamAV 扫描，再通过 Broker 注入 `/workspace/inputs/`。
+
+`web_acquire` 不支持私有 GitHub 仓库、submodule 和 `.git` 历史；仓库归档会拒绝 symlink、硬链接、路径穿越和特殊文件。
+
 ## 外部信息（SearXNG）
 
 沙箱默认 `egress: deny`。需要最新外部信息时，Agent 在**沙箱外**调用两个工具：

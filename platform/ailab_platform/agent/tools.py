@@ -6,14 +6,17 @@ handle or a container runtime socket.
 
 from __future__ import annotations
 
+import asyncio
+import io
 import json
 from typing import Any
 
-from .. import images, web
+from .. import images, repo, web
 from ..clients import AsyncBrokerClient
 from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
+from ..ports.scanner import get_scanner
 from .prompts import load_skill
 
 
@@ -149,10 +152,31 @@ READ_URL = {
 }
 
 
-# Tools that need a sandbox: the first call to one of them starts it.
-SANDBOX_TOOLS = {"list_files", "read_file", "write_file", "exec", "deliver_file", "search_images"}
+WEB_ACQUIRE = {
+    "type": "function",
+    "function": {
+        "name": "web_acquire",
+        "description": (
+            "下载公开文档或 GitHub 仓库到工作区。文档会抽取文本；仓库会安全解压。需要工作模式（会启动沙箱）。网页正文仍用 read_url。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "url": {"type": "string", "description": "公开 http(s) URL，或 https://github.com/owner/repo"},
+                "mode": {"type": "string", "enum": ["auto", "download", "repo"], "default": "auto"},
+                "ref": {"type": "string", "description": "GitHub 分支、tag 或 commit；默认 HEAD"},
+                "filename": {"type": "string", "description": "可选，保存文件名"},
+                "max_chars": {"type": "integer", "minimum": 1000, "maximum": 20000, "default": 12000},
+            },
+            "required": ["url"],
+        },
+    },
+}
 
-WEB_TOOLS = [WEB_SEARCH, READ_URL]
+# Tools that need a sandbox: the first call to one of them starts it.
+SANDBOX_TOOLS = {"list_files", "read_file", "write_file", "exec", "deliver_file", "search_images", "web_acquire"}
+
+WEB_TOOLS = [WEB_SEARCH, READ_URL, WEB_ACQUIRE]
 
 
 def tools_for_turn() -> list[dict]:
@@ -166,7 +190,7 @@ def tools_for_turn() -> list[dict]:
 
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox, but may use the read-only web tools."""
-    return list(WEB_TOOLS) if web.enabled() else []
+    return [WEB_SEARCH, READ_URL] if web.enabled() else []
 
 
 def _workspace_path(path: str, under: str = WORKSPACE) -> str:
@@ -193,6 +217,18 @@ def _looks_binary(data: bytes) -> bool:
 
 def _truncate(text: str, limit: int = 4000) -> str:
     return text if len(text) <= limit else text[:limit] + f"\n...[truncated {len(text) - limit} chars]"
+
+
+def _scan_upload(data: bytes) -> dict:
+    try:
+        result = get_scanner().scan(io.BytesIO(data))
+    except Exception as exc:
+        raise ToolError(f"scanner unavailable; refusing the file: {type(exc).__name__}") from exc
+    if result.verdict == "infected":
+        raise ToolError(f"downloaded file rejected by scanner: {result.signature or 'malware'}")
+    if result.verdict != "clean":
+        raise ToolError("scanner unavailable; refusing the file")
+    return {"verdict": result.verdict, "scanner": result.engine}
 
 
 async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: AsyncBrokerClient) -> dict:
@@ -265,6 +301,69 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         except web.WebError as exc:
             raise ToolError(str(exc)) from exc
         return {"ok": True, **page}
+
+    if name == "web_acquire":
+        if not lease_id:
+            raise ToolError("web_acquire needs a sandbox; switch to Work mode and try again")
+        url = str(args.get("url") or "").strip()
+        if not url:
+            raise ToolError("web_acquire requires url")
+        mode = str(args.get("mode") or "auto")
+        max_chars = int(args.get("max_chars") or 12000)
+        if mode == "auto":
+            mode = "repo" if "github.com/" in url or url.count("/") == 1 else "download"
+        if mode == "repo":
+            try:
+                info = await repo.fetch(url, str(args.get("ref") or ""))
+            except web.WebError as exc:
+                raise ToolError(str(exc)) from exc
+            scan = _scan_upload(info["archive"])
+            archive_path = f"/workspace/inputs/repos/.incoming/{info['sha256'][:16]}.tar.gz"
+            await broker.put_file(lease_id, archive_path, info["archive"])
+            command = repo.extract_command(archive_path, info["path"])
+            result = await broker.exec(lease_id, command, 180)
+            if result.get("exit_code") != 0:
+                raise ToolError(f"repository extraction failed: {str(result.get('stderr') or '')[-500:]}")
+            return {
+                "ok": True,
+                "kind": "repo",
+                "url": url,
+                "ref": info["ref"],
+                "path": info["path"],
+                "files": info["files"],
+                "bytes": info["uncompressed_bytes"],
+                "archive_bytes": info["archive_bytes"],
+                "sha256": info["sha256"],
+                "scan": scan,
+                "note": "仓库已解压到沙箱；没有 .git 历史和 submodule",
+            }
+        try:
+            downloaded = await web.download(url, settings.web_download_max_bytes)
+        except web.WebError as exc:
+            raise ToolError(str(exc)) from exc
+        scan = _scan_upload(downloaded["data"])
+        filename = str(args.get("filename") or downloaded["filename"])
+        filename = web._safe_filename(downloaded["url"], downloaded["content_type"], f'filename="{filename}"')
+        path = f"/workspace/inputs/web/{downloaded['sha256'][:8]}-{filename}"
+        await broker.put_file(lease_id, path, downloaded["data"])
+        text, text_truncated = await asyncio.to_thread(web.extract_document, downloaded["data"], filename, downloaded["content_type"])
+        if len(text) > max_chars:
+            text = text[:max_chars].rstrip() + "\n...[truncated]"
+            text_truncated = True
+        return {
+            "ok": True,
+            "kind": "file",
+            "url": downloaded["url"],
+            "path": path,
+            "filename": filename,
+            "content_type": downloaded["content_type"],
+            "size": downloaded["size"],
+            "sha256": downloaded["sha256"],
+            "text": text,
+            "truncated": text_truncated,
+            "scan": scan,
+            "note": "文件已保存到沙箱；text 是抽取出的正文（图片/压缩包可能为空）",
+        }
 
     if name == "search_images":
         query = str(args.get("query") or "").strip()

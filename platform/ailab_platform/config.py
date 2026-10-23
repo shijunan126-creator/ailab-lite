@@ -198,6 +198,10 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2 * 1024 * 1024
     web_max_chars: int = 20_000
     web_max_results: int = 5
+    web_download_max_bytes: int = 50 * 1024 * 1024
+    web_repo_max_bytes: int = 100 * 1024 * 1024
+    web_repo_max_files: int = 5000
+    web_repo_max_uncompressed_bytes: int = 200 * 1024 * 1024
 
     # Directory holding <skill>/SKILL.md. Unset = the repo checkout (dev); the
     # image sets it to /opt/ailab/skills.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import logging
 import mimetypes
@@ -25,6 +26,7 @@ from ..domain.admission import AdmissionDecision, AdmissionPolicy, LeasePrincipa
 from ..paths import OUTPUTS, PathError, normalize_path
 from ..ports.capacity import CapacityProvider, StaticCapacityProvider
 from ..ports.lease_store import LIVE_STATES, LeaseStore
+from ..ports.scanner import get_scanner
 from ..sandbox import ExecResult, SandboxError, get_provider
 from ..sandbox.base import LeaseHandle, SandboxResource, SandboxSpec
 from ..sandbox_tools import RENDER_PREVIEW
@@ -686,6 +688,14 @@ class LeaseManager:
         if size > settings.max_artifact_bytes:
             raise ArtifactRejected(f"{path} is {size} bytes; the limit is {settings.max_artifact_bytes}")
         data = self._provider_call("get_file", lease["sandbox_id"], path)
+        try:
+            scan = get_scanner().scan(io.BytesIO(data))
+        except Exception as exc:
+            raise ArtifactRejected(f"scanner unavailable; refusing to commit {path}: {type(exc).__name__}") from exc
+        if scan.verdict == "infected":
+            raise ArtifactRejected(f"{path} rejected by scanner: {scan.signature or 'malware'}")
+        if scan.verdict != "clean":
+            raise ArtifactRejected(f"scanner unavailable; refusing to commit {path}")
         name = _safe_name(filename or Path(path).name)
         staging_key = f"staging/{lease_id}/{uuid.uuid4().hex}/{name}"
         self.storage.put_bytes(staging_key, data, mimetypes.guess_type(name)[0] or "application/octet-stream")

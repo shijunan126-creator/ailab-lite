@@ -56,7 +56,9 @@ TOOL_SECONDS = Histogram("ailab_tool_seconds", "Agent tool latency", ["tool"], b
 FILES = Counter("ailab_files_processed_total", "Uploaded files the Worker finished with", ["outcome"])
 FILE_SECONDS = Histogram("ailab_file_processing_seconds", "Worker time per uploaded file", buckets=_SLOW)
 
-KNOWN_TOOLS = frozenset({"list_files", "read_file", "write_file", "exec", "deliver_file", "finish", "web_search", "read_url"})
+KNOWN_TOOLS = frozenset(
+    {"list_files", "read_file", "write_file", "exec", "deliver_file", "finish", "web_search", "read_url", "web_acquire"}
+)
 
 
 def tool_label(name: str) -> str:
