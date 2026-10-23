@@ -367,6 +367,8 @@ def internal_commit_artifact(
 
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")
+        if not body.staging_key.startswith("staging/") or ".." in body.staging_key.split("/"):
+            raise HTTPException(400, "staging_key must be under staging/")
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
         if prior:
             get_storage().delete(body.staging_key)

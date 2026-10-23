@@ -76,6 +76,18 @@ def test_retry_after_staging_was_already_consumed_is_idempotent(api) -> None:
     assert retry.status_code == 200 and retry.json()["file_id"] == first.json()["file_id"]
 
 
+def test_duplicate_delivery_cannot_delete_an_object_outside_staging(api) -> None:
+    run_id = _running_run(api)
+    body = _stage(b"payload")
+    assert _commit(api, run_id, body).status_code == 200
+    key = "uploads/other-owner/keep.txt"
+    get_storage().put_bytes(key, b"keep")
+    headers = {**attempt_headers(api, run_id), "X-Delivery-Id": f"{run_id}:{body['staging_key']}"}
+    response = api.post("/internal/artifacts", headers=headers, json={"run_id": run_id, **body, "staging_key": key})
+    assert response.status_code == 400
+    assert get_storage().get_bytes(key) == b"keep"
+
+
 def test_changed_content_is_a_new_artifact(api) -> None:
     run_id = _running_run(api)
     _commit(api, run_id, _stage(b"v1"))
