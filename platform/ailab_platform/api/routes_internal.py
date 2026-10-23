@@ -17,16 +17,15 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from .. import metrics
-from ..catalog import get_catalog
 from ..config import settings
+from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..deps import get_db, service_auth
 from ..events import append_event
 from ..library import thumbnail_candidate
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, ModelUsage, Project, Run, RunStatus, User, new_id
+from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, User, new_id
 from ..queue import get_queue
-from ..quota import enforce_library_quota
+from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
 from ..run_state import InvalidTransition, transition_run
 from ..schemas import (
     ArtifactIn,
@@ -39,7 +38,6 @@ from ..schemas import (
     RunDetail,
     RunStateOut,
     RunStatusIn,
-    UsageIn,
 )
 from ..storage import get_storage
 from .routes_skills import usable_personal
@@ -183,11 +181,16 @@ def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
 
 @router.post("/runs/{run_id}/status", response_model=RunDetail)
 def internal_set_status(run_id: str, body: RunStatusIn, db: Session = Depends(get_db)) -> dict:
-    _run_or_404(db, run_id)
+    run = _run_or_404(db, run_id)
     if body.status not in {RunStatus.RUNNING, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.CANCELED}:
         raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
     try:
-        run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=body.result)
+        with user_critical_section(db, run.user_id):
+            db.refresh(run)
+            result = body.result
+            if result is not None:
+                result = {**result, "usage_totals": run_usage_totals(db, run_id)}
+            run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result)
     except InvalidTransition as exc:
         raise HTTPException(status_code=409, detail=f"invalid transition: {exc}") from exc
     if changed and (run.result or {}).get("workspace_saved"):
@@ -207,9 +210,11 @@ def _drop_older_workspaces(db: Session, run: Run) -> None:
         except Exception:
             log.warning("could not delete workspace of %s", turn.id, exc_info=True)
             continue
-        result["workspace_saved"] = False
-        turn.result = result
-    db.commit()
+        with user_critical_section(db, run.user_id):
+            # Storage I/O may overlap a late usage settlement; merge the current JSON.
+            db.refresh(turn)
+            turn.result = {**(turn.result or {}), "workspace_saved": False}
+            db.commit()
 
 
 @router.post("/runs/{run_id}/events", response_model=EventOut)
@@ -225,25 +230,52 @@ def internal_append_event(run_id: str, body: EventIn, db: Session = Depends(get_
 
 
 @router.post("/runs/{run_id}/usage")
-def internal_usage(run_id: str, body: UsageIn, db: Session = Depends(get_db)) -> dict:
+def internal_usage_retired(run_id: str) -> None:
+    raise HTTPException(410, {"code": UsageErrorCode.RESERVATION_REQUIRED})
+
+
+@router.post("/usage/reserve", response_model=ReservationOut)
+def internal_reserve_usage(body: ReserveUsageIn, db: Session = Depends(get_db)) -> dict:
+    row = reserve_usage(db, body)
+    return {
+        "call_id": row.call_id,
+        "run_id": row.run_id,
+        "attempt_id": row.attempt_id,
+        "status": row.status,
+        "reserved_amount": row.reserved_amount,
+        "weight": str(row.weight),
+        "cached_token_weight": str(row.cached_token_weight),
+        "policy_version": row.policy_version,
+        "expires_at": row.expires_at.replace(tzinfo=UTC) if row.expires_at.tzinfo is None else row.expires_at.astimezone(UTC),
+    }
+
+
+@router.post("/usage/settle", response_model=UsageOut)
+def internal_settle_usage(body: SettleUsageIn, db: Session = Depends(get_db)) -> dict:
+    row = settle_usage(db, body)
+    totals = run_usage_totals(db, row.run_id)
+    return {
+        "call_id": row.call_id,
+        "run_id": row.run_id,
+        "attempt_id": row.attempt_id,
+        "mode": row.mode,
+        "alias": row.alias,
+        "actual_backend": row.actual_backend,
+        "input_tokens": row.prompt_tokens,
+        "cached_tokens": row.cached_tokens,
+        "output_tokens": row.completion_tokens,
+        "reasoning_tokens": row.reasoning_tokens,
+        "weighted_amount": row.weighted_amount,
+        "policy_version": row.policy_version,
+        "status": row.status,
+        "run_tokens": totals["prompt_tokens"] + totals["completion_tokens"],
+    }
+
+
+@router.get("/runs/{run_id}/usage")
+def internal_run_usage(run_id: str, db: Session = Depends(get_db)) -> dict:
     _run_or_404(db, run_id)
-    model = metrics.model_label(body.model)
-    metrics.MODEL_TOKENS.labels(model, "prompt").inc(body.prompt_tokens)
-    metrics.MODEL_TOKENS.labels(model, "completion").inc(body.completion_tokens)
-    metrics.MODEL_TOKENS.labels(model, "cached").inc(min(body.cached_tokens, body.prompt_tokens))
-    db.add(
-        ModelUsage(
-            run_id=run_id,
-            model=body.model,
-            prompt_tokens=body.prompt_tokens,
-            completion_tokens=body.completion_tokens,
-            cached_tokens=min(body.cached_tokens, body.prompt_tokens),
-            # Frozen now: a later edit of models.toml must not change what this call cost.
-            weight=get_catalog().weight_of(body.model),
-        )
-    )
-    db.commit()
-    return {"ok": True}
+    return run_usage_totals(db, run_id)
 
 
 def _artifact_out(artifact: Artifact, file: FileObject) -> dict:

@@ -11,6 +11,7 @@ from ailab_platform.config import Settings, settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, User
 from ailab_platform.quota import tokens_used_since
+from tests.usage_helpers import record_usage
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -37,9 +38,9 @@ def test_daily_token_quota_blocks_new_runs(api, monkeypatch) -> None:
     monkeypatch.setattr(settings, "daily_token_limit", used + 10)
     assert api.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).status_code == 201
 
-    api.post(f"/internal/runs/{first}/usage", headers=SERVICE, json={"model": "m", "prompt_tokens": 8, "completion_tokens": 2})
+    record_usage(api, first, "test-fast", 8, 2)
     blocked = api.post("/v1/runs", headers=AUTH, json={"prompt": "x"})
-    assert blocked.status_code == 429 and "daily" in blocked.json()["detail"]
+    assert blocked.status_code == 429 and blocked.json()["detail"]["window"] == "daily_tokens"
 
 
 def test_library_quota_blocks_uploads_and_ignores_rejected_files(api, monkeypatch) -> None:

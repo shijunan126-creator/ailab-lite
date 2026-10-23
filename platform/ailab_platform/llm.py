@@ -11,6 +11,7 @@ import json
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
@@ -44,6 +45,29 @@ class LLMResponse:
     thinking_seconds: float = 0.0  # filled in by the agent loop from when the reasoning streamed
 
 
+@dataclass
+class ModelCall:
+    call_id: str
+    run_id: str
+    max_output_tokens: int
+    reached_model: bool = False
+    actual_backend: str = ""
+    usage: dict[str, int] = field(default_factory=dict)
+    output_bytes: int = 0
+
+
+model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
+
+
+def _capture_response(response: LLMResponse) -> None:
+    call = model_call.get()
+    if call is not None:
+        call.usage = response.usage
+        call.output_bytes = len((response.content + response.reasoning_content).encode()) + sum(
+            len(json.dumps(c.arguments, ensure_ascii=False).encode()) + len(c.name.encode()) for c in response.tool_calls
+        )
+
+
 TextSink = Callable[[str], Awaitable[None]]
 
 
@@ -62,7 +86,11 @@ class LLMClient:
     ) -> LLMResponse:
         """Like chat(), but hands the model's thinking (on_reasoning) and then the answer text (on_text) over as they
         are produced. Default: in pieces once the whole response is there."""
+        call = model_call.get()
+        if call is not None:
+            call.reached_model = True
         response = await self.chat(messages, tools, model, user_id=user_id)
+        _capture_response(response)
         if on_reasoning and response.reasoning_content:
             for i in range(0, len(response.reasoning_content), 24):
                 await on_reasoning(response.reasoning_content[i : i + 24])
@@ -97,11 +125,17 @@ def _parse_tool_calls(raw_calls: list[dict]) -> list[ToolCall]:
 
 
 def _usage(usage: dict) -> dict[str, int]:
-    return {
+    if not usage:
+        return {}
+    result = {
         "prompt_tokens": int(usage.get("prompt_tokens") or 0),
         "completion_tokens": int(usage.get("completion_tokens") or 0),
         "cached_tokens": _cached_tokens(usage),
     }
+    reasoning = (usage.get("completion_tokens_details") or {}).get("reasoning_tokens")
+    if reasoning is not None:
+        result["reasoning_tokens"] = int(reasoning)
+    return result
 
 
 class _StreamState:
@@ -120,11 +154,21 @@ class _StreamState:
         """Take one chunk; return the (answer text, thinking) it adds."""
         if chunk.get("error"):  # vLLM reports a failure mid-stream as an error chunk with HTTP 200
             raise LLMError(f"model stream failed: {str(chunk['error'])[:300]}")
+        call = model_call.get()
         if chunk.get("usage"):
             self.usage = chunk["usage"]
+            if call is not None:
+                call.usage = _usage(self.usage)
+        if call is not None and chunk.get("model"):
+            call.actual_backend = str(chunk["model"])[:120]
         text = thinking = ""
         for choice in chunk.get("choices") or []:
             delta = choice.get("delta") or {}
+            if call is not None:
+                call.output_bytes += len((delta.get("content", "") or "").encode())
+                call.output_bytes += len((delta.get("reasoning_content", "") or "").encode())
+                for tool in delta.get("tool_calls") or []:
+                    call.output_bytes += sum(len(str(v).encode()) for v in (tool.get("function") or {}).values())
             if delta.get("reasoning_content"):
                 self.reasoning.append(delta["reasoning_content"])
                 thinking += delta["reasoning_content"]
@@ -187,19 +231,28 @@ class OpenAICompatibleClient(LLMClient):
 
     async def _post(self, payload: dict, headers: dict) -> dict:
         """POST with bounded retries on transient failures (429 / 5xx / network)."""
-        attempts = settings.llm_max_retries + 1
+        # An ambiguous retry can be a second billable inference. The Agent accounts
+        # each dispatched call separately; unmetered callers retain transport retries.
+        call = model_call.get()
+        attempts = 1 if call is not None else settings.llm_max_retries + 1
         for attempt in range(attempts):
             last = attempt == attempts - 1
             try:
                 async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds, transport=self._transport) as client:
+                    if call is not None:
+                        call.reached_model = True
                     resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
             except httpx.TransportError as exc:  # timeouts, connection resets, DNS
+                if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+                    call.reached_model = False
                 if last:
                     raise LLMError(f"model gateway unreachable after {attempts} attempts: {exc!r}") from exc
                 reason = repr(exc)
             else:
                 if resp.status_code < 400:
                     return resp.json()
+                if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
+                    call.reached_model = False
                 body = resp.text[:300]
                 if resp.status_code not in RETRYABLE_STATUS or last:
                     raise LLMError(f"model gateway returned {resp.status_code}: {body}")
@@ -223,6 +276,12 @@ class OpenAICompatibleClient(LLMClient):
             "temperature": 0.2,
             "stream": stream,
         }
+        call = model_call.get()
+        if call is not None:
+            payload["max_tokens"] = call.max_output_tokens
+            headers["x-run-id"] = call.run_id
+            headers["x-call-id"] = call.call_id
+            call.actual_backend = self.upstream_model or model
         if stream:
             payload["stream_options"] = {"include_usage": True}
         if tools:
@@ -250,12 +309,17 @@ class OpenAICompatibleClient(LLMClient):
         """Server-sent events. Retried like chat() on transient failures, but only until the first text was passed on:
         after that a retry would show the user the start of the answer twice."""
         payload, headers = self._request(messages, tools, model, user_id, stream=True)
-        attempts = settings.llm_max_retries + 1
+        # An ambiguous retry can be a second billable inference. The Agent accounts
+        # each dispatched call separately; unmetered callers retain transport retries.
+        call = model_call.get()
+        attempts = 1 if call is not None else settings.llm_max_retries + 1
         for attempt in range(attempts):
             last = attempt == attempts - 1
             state = _StreamState()
             try:
                 async with httpx.AsyncClient(timeout=settings.llm_timeout_seconds, transport=self._transport) as client:
+                    if call is not None:
+                        call.reached_model = True
                     async with client.stream("POST", f"{self.base_url}/chat/completions", json=payload, headers=headers) as resp:
                         if resp.status_code < 400:
                             async for line in resp.aiter_lines():
@@ -277,11 +341,15 @@ class OpenAICompatibleClient(LLMClient):
                                 raise LLMError("model stream is incomplete: ended without a completion marker")
                             reason = "stream ended before the completion marker"
                         else:
+                            if call is not None and 400 <= resp.status_code < 500 and resp.status_code != 408:
+                                call.reached_model = False
                             body = (await resp.aread()).decode("utf-8", "replace")[:300]
                             if resp.status_code not in RETRYABLE_STATUS or last:
                                 raise LLMError(f"model gateway returned {resp.status_code}: {body}")
                             reason = f"{resp.status_code} {body}"
             except (httpx.TransportError, json.JSONDecodeError) as exc:
+                if call is not None and isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout)):
+                    call.reached_model = False
                 if last or state.emitted:
                     raise LLMError(f"model stream broke: {exc!r}") from exc
                 reason = repr(exc)
@@ -298,6 +366,10 @@ class OpenAICompatibleClient(LLMClient):
                 raise
             data = await self._post(*self._request(messages, tools, model, user_id, stream=False))
 
+        call = model_call.get()
+        if call is not None:
+            call.usage = _usage(data.get("usage") or {})
+            call.actual_backend = str(data.get("model") or call.actual_backend)[:120]
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         finish_reason = choice.get("finish_reason") or "stop"

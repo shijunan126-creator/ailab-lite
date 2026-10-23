@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from sqlalchemy import (
     JSON,
+    BigInteger,
     DateTime,
     Float,
     ForeignKey,
     Index,
     Integer,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
@@ -212,10 +215,27 @@ class Artifact(Base):
 
 class ModelUsage(Base):
     __tablename__ = "model_usage"
-    __table_args__ = (Index("ix_model_usage_run_created", "run_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_model_usage_run_created", "run_id", "created_at"),
+        Index("ix_model_usage_user_created", "user_id", "created_at"),
+        Index("ix_model_usage_status_id", "status", "id"),
+        Index("ix_model_usage_call_id", "call_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
+    call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempt_id: Mapped[str] = mapped_column(String(80), default="", server_default="")
+    mode: Mapped[str] = mapped_column(String(20), default="work", server_default="work")
+    alias: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    actual_backend: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    cached_token_weight: Mapped[Decimal] = mapped_column(Numeric(20, 9), default=Decimal("0.1"), server_default="0.1")
+    weighted_amount: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    policy_version: Mapped[str] = mapped_column(String(40), default="legacy", server_default="legacy")
+    status: Mapped[str] = mapped_column(String(20), default="settled", server_default="settled")
     model: Mapped[str] = mapped_column(String(120), default="")
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
@@ -225,3 +245,28 @@ class ModelUsage(Base):
     # must not rewrite what past calls cost.
     weight: Mapped[float] = mapped_column(Float, default=1.0, server_default="1.0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class UsageReservation(Base):
+    __tablename__ = "usage_reservations"
+    __table_args__ = (
+        Index("ix_usage_reservations_user_status", "user_id", "status"),
+        Index("ix_usage_reservations_status_expires", "status", "expires_at", "call_id"),
+        Index("ix_usage_reservations_run", "run_id"),
+    )
+
+    call_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"))
+    user_id: Mapped[str] = mapped_column(String(40))
+    attempt_id: Mapped[str] = mapped_column(String(80))
+    mode: Mapped[str] = mapped_column(String(20))
+    alias: Mapped[str] = mapped_column(String(120))
+    max_output_tokens: Mapped[int] = mapped_column(Integer)
+    estimated_input_tokens: Mapped[int] = mapped_column(Integer)
+    weight: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    cached_token_weight: Mapped[Decimal] = mapped_column(Numeric(20, 9))
+    policy_version: Mapped[str] = mapped_column(String(40))
+    reserved_amount: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(20), default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

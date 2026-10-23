@@ -7,6 +7,7 @@ that boundary explicit.
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any, NamedTuple
 
 import httpx
@@ -16,6 +17,8 @@ from .obs import NO_REQUEST, REQUEST_ID_HEADER, request_id_var
 
 # One client per process, not one per call: a Run makes 15-25 internal calls and
 # 200 concurrent runs would otherwise build thousands of connection pools.
+USAGE_RETRY_BACKOFF_SECONDS = 0.2
+
 _LIMITS = httpx.Limits(max_connections=64, max_keepalive_connections=32, keepalive_expiry=30.0)
 
 
@@ -77,14 +80,14 @@ class _PlatformApi(_Service):
     def _append_event(self, run_id, type_, payload=None) -> Request:
         return self._req("POST", f"/internal/runs/{run_id}/events", json={"type": type_, "payload": payload or {}})
 
-    def _record_usage(self, run_id, model, prompt_tokens, completion_tokens, cached_tokens=0) -> Request:
-        body = {
-            "model": model,
-            "prompt_tokens": prompt_tokens,
-            "completion_tokens": completion_tokens,
-            "cached_tokens": cached_tokens,
-        }
-        return self._req("POST", f"/internal/runs/{run_id}/usage", json=body)
+    def _reserve_usage(self, payload: dict) -> Request:
+        return self._req("POST", "/internal/usage/reserve", timeout=5, json=payload)
+
+    def _settle_usage(self, payload: dict) -> Request:
+        return self._req("POST", "/internal/usage/settle", timeout=5, json=payload)
+
+    def _get_run_usage(self, run_id: str) -> Request:
+        return self._req("GET", f"/internal/runs/{run_id}/usage", timeout=5)
 
     def _commit_artifact(self, payload) -> Request:
         return self._req("POST", "/internal/artifacts", timeout=60, json=payload)
@@ -129,8 +132,14 @@ class PlatformClient(_PlatformApi):
     def append_event(self, run_id: str, type_: str, payload: dict | None = None) -> dict:
         return self._send(self._append_event(run_id, type_, payload)).json()
 
-    def record_usage(self, run_id: str, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> None:
-        self._send(self._record_usage(run_id, model, prompt_tokens, completion_tokens, cached_tokens))
+    def reserve_usage(self, payload: dict) -> dict:
+        return self._send(self._reserve_usage(payload)).json()
+
+    def settle_usage(self, payload: dict) -> dict:
+        return self._send(self._settle_usage(payload)).json()
+
+    def get_run_usage(self, run_id: str) -> dict:
+        return self._send(self._get_run_usage(run_id)).json()
 
     def commit_artifact(self, payload: dict) -> dict:
         return self._send(self._commit_artifact(payload)).json()
@@ -190,8 +199,28 @@ class AsyncPlatformClient(_PlatformApi):
     async def append_event(self, run_id: str, type_: str, payload: dict | None = None) -> dict:
         return (await self._send(self._append_event(run_id, type_, payload))).json()
 
-    async def record_usage(self, run_id: str, model: str, prompt_tokens: int, completion_tokens: int, cached_tokens: int = 0) -> None:
-        await self._send(self._record_usage(run_id, model, prompt_tokens, completion_tokens, cached_tokens))
+    async def _usage_retry(self, request: Request) -> dict:
+        for attempt in range(4):
+            try:
+                async with asyncio.timeout(5):
+                    return (await self._send(request)).json()
+            except ClientError as exc:
+                if exc.status not in {408, 429, 500, 502, 503, 504} or attempt == 3:
+                    raise
+            except (httpx.TransportError, TimeoutError):
+                if attempt == 3:
+                    raise
+            await asyncio.sleep(USAGE_RETRY_BACKOFF_SECONDS * 2**attempt)
+        raise AssertionError("unreachable")
+
+    async def reserve_usage(self, payload: dict) -> dict:
+        return await self._usage_retry(self._reserve_usage(payload))
+
+    async def settle_usage(self, payload: dict) -> dict:
+        return await self._usage_retry(self._settle_usage(payload))
+
+    async def get_run_usage(self, run_id: str) -> dict:
+        return (await self._send(self._get_run_usage(run_id))).json()
 
     async def get_file_bytes(self, file_id: str) -> bytes:
         """A personal skill's file. The agent only asks for ids the API listed in the run's personal_skills."""

@@ -87,3 +87,13 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 资料库改版后要同步 E2E：上传 input 是隐藏的，以可见「上传」按钮确认登录；文件行是 `.lib-row`，可用后才出现带文件名的下载链接；文件/会话删除经「更多操作」菜单；个人技能显示在资料元数据链接中。扫描 mock 必须匹配带 ids 的批量 GET 并返回数组，继续断言上传/扫描期间不能发送、移除附件后旧响应不能复活附件。
 - #26 原 CI 的 6 项 E2E 失败来自上述旧定位器/旧 mock。更新后本地生产构建 + 真实服务/独立 Redis 完整 E2E：34 passed；Ruff check/format、diff check 通过。未改产品代码。
 - 技能开关是乐观更新，Composer 默认按钮也先于技能 GET 完成显示。E2E 不能用开关变色或 Excel 按钮出现判断保存/加载已完成：关闭和恢复都要等待 PUT 成功，并等待被禁用的 PPT 按钮实际从 DOM 消失。临时延迟 Chat 技能响应 750ms，旧断言稳定失败（1 failed），修复后同样延迟下完整 E2E 34 passed；不要用固定 sleep 或重跑 CI 掩盖这类竞态。
+
+## 2026-10-23 调用级账本与硬用户配额
+
+- `0009`：先 reserve、再调用、最后 settle；`call_id` 是幂等单位，真实重跑必须新 ID。旧 blind usage POST 返回 410，API/Agent 与服务鉴权 allowlist 要一起切换。新内部路由为 `POST /internal/usage/reserve`、`POST /internal/usage/settle`、`GET /internal/runs/{id}/usage`；完整 Portal/服务契约见 `docs/architecture/usage-ledger.md`。
+- 用户锁内只做检查与数据库提交；日/月用已结算整数 milli + 全部 open 预留。过期不等于释放，reaper 每轮最多 200 条转 unreconciled；晚到 settle 原行修正，终态 Run 仍能补账。取消只有确认未发出模型请求才零费用释放，已发出的中断计 estimated/settled；408/5xx 不能当作确定未消费。
+- SQLite 迁移绑定 Decimal 必须给 `sa.column` 声明 Numeric，否则报不支持 decimal.Decimal。迁移按 500 条 keyset 冻结旧缓存折扣与金额，legacy 不随配置重算。SQLite 无时区、PostgreSQL 会返回服务器时区；幂等响应时间都要显式转 UTC。
+- `Run.result.usage_totals` 是账本聚合快照。状态提交与旧工作区清理写整份 result 时也必须持同一用户锁、刷新并合并，否则晚到结算总数会丢；已补红绿回归。用量页面必须同一 SQL snapshot 读取 settled + reserved，分开 SELECT 会在结算切换期间双计；CLI 对账总数同样用单条投影/聚合查询。
+- 运行预算仍为原始 input + output 的软上限，reasoning 已包含在 output；Agent 从账本恢复总数，记账后、工具前拦截下一步，已完成最终回答跨预算仍成功。计量请求有 call/run 头和 max_tokens；模糊失败不得在同一个预留下偷偷再发一次推理。模型专用 tokenizer、真实上游 max_tokens 强制执行未验收。
+- 成本：每模型调用 2 次事务、4 个业务写（比旧路径多 3 写/1 commit），不新增依赖/后台服务。300 调用本机测量，SQLite/PostgreSQL 预留锁 p95 1.10/1.87 ms，结算锁 p95 1.23/2.26 ms；200 条过期回收 247/377 ms。8,000 行双库 EXPLAIN 检查窗口、open、过期和对账索引；按用户周期 SUM 仍随历史行数增长。
+- 最终验证：Ruff check/format 通过；SQLite + Redis 全套 405 passed / 11 PostgreSQL 项 skipped；PostgreSQL 16 + Redis 全套 416 passed / 0 skipped；Portal 4 tests + production build、Chromium E2E 34 项通过。临时服务只用 16410/15410，结束后关闭；未改 .env/开发数据库，未推送或创建 PR。
