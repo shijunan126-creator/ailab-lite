@@ -3,14 +3,14 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import func, select, tuple_, update
+from sqlalchemy import func, or_, select, tuple_, update
 from sqlalchemy.orm import Session
 
 from ..contracts.model_context import SummaryUpdate
 from ..deps import get_db
 from ..models import Conversation, Run, User
 from ..service_auth import require_scope
-from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_key
+from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_data, workspace_key
 from .routes_skills import skill_input_for
 from .serializers import run_dict
 
@@ -28,6 +28,9 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     out = run_dict(db, run, detail=True)
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
+    from ..context_settings import context_settings
+
+    out["context_settings"] = context_settings(db)
     out["history"] = []
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
@@ -41,7 +44,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
             .where(
                 Run.conversation_id == run.conversation_id,
                 preceding(run),
-                Run.result["workspace_saved"].as_boolean().is_(True),
+                Run.superseded_by_run_id.is_(None),
+                or_(Run.result["workspace_saved"].as_boolean().is_(True), Run.runtime_meta["workspace"]["key"].as_string().is_not(None)),
             )
             .order_by(Run.created_at.desc(), Run.id.desc())
             .limit(1)
@@ -51,9 +55,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     )
     alive = newest is not None and workspace_alive(newest, datetime.now(UTC))
     own = (run.runtime_meta or {}).get("workspace")
-    out["workspace_restore_key"] = (
-        own["key"] if own else ((newest.result or {}).get("workspace_key") or workspace_key(newest.id)) if alive else None
-    )
+    out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
     out["workspace_expired"] = newest is not None and not alive
     return out
 
@@ -70,12 +72,12 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         func.substr(Run.summary, 1, 16000).label("summary"),
         Run.status,
         func.substr(Run.error, 1, 16000).label("error"),
-    ).where(Run.conversation_id == conversation.id, preceding(run))
+    ).where(Run.conversation_id == conversation.id, Run.superseded_by_run_id.is_(None), preceding(run))
     cursor_id = after or conversation.summary_through_run_id
     if cursor_id:
         cursor = _run_or_404(db, cursor_id)
         if cursor.conversation_id != conversation.id or (cursor.created_at, cursor.id) >= (run.created_at, run.id):
-            raise HTTPException(409, "invalid context cursor")
+            raise HTTPException(422, "invalid context cursor")
         query = query.where(tuple_(Run.created_at, Run.id) > (cursor.created_at, cursor.id))
     rows = list(db.execute(query.order_by(Run.created_at, Run.id).limit(101)))
     return {
@@ -102,12 +104,12 @@ def save_model_summary(
         or through.conversation_id != run.conversation_id
         or (through.created_at, through.id) >= (run.created_at, run.id)
     ):
-        raise HTTPException(409, "invalid summary boundary")
+        raise HTTPException(422, "invalid summary boundary")
     previous = _run_or_404(db, body.expected_through_run_id) if body.expected_through_run_id else None
     if previous and (
         previous.conversation_id != run.conversation_id or (previous.created_at, previous.id) >= (through.created_at, through.id)
     ):
-        raise HTTPException(409, "summary boundary must advance")
+        raise HTTPException(422, "summary boundary must advance")
     changed = db.execute(
         update(Conversation)
         .where(
@@ -117,6 +119,6 @@ def save_model_summary(
         .values(summary=body.summary, summary_through_run_id=through.id)
     ).rowcount
     if not changed:
-        raise HTTPException(409, "summary changed concurrently")
+        raise HTTPException(422, "summary changed concurrently")
     db.commit()
     return {"ok": True}

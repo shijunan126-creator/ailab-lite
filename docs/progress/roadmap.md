@@ -37,3 +37,7 @@
 ## 2026-10-24 新增授权：用户记忆与技能编辑
 
 按用户账号持久记忆、可编辑前端与 Chat/Work 工具；参考 Hermes 有界记忆/技能维护逻辑。验收以隔离双库、权限/重投/CAS、真实 Portal/API/Agent/Worker 浏览器链路和成本为准，见[审查](../reviews/2026-10-24-memory-skills.md)。前端最多两个 Claude Opus 5.5 Medium 并发。仅本地实现，不沿用旧任务的发布授权。
+
+## 2026-10-24 当前授权：Chat fork / retry 后端
+
+本工作树只负责后端契约、0022迁移、并发/权限/存储与双库验收，Portal由父Agent处理。本轮不沿用旧发布授权；本地提交后交父Agent集成，不推送、不建PR、不部署。具体契约、边界和成本见[后端记录](updates/2026-10-24-chat-fork-retry-backend.md)。

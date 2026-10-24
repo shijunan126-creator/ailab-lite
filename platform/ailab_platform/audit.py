@@ -11,7 +11,19 @@ from .models import AuditLog
 from .obs import clean_request_id, request_id_var
 
 # A positive allowlist prevents future request DTO fields from silently becoming audit secrets.
-DETAIL_FIELDS = {"fields", "roles", "dept_id", "quota_policy_id", "disabled", "auth", "reason", "username", "group_by"}
+DETAIL_FIELDS = {
+    "auto_compact",
+    "threshold_ratio",
+    "fields",
+    "roles",
+    "dept_id",
+    "quota_policy_id",
+    "disabled",
+    "auth",
+    "reason",
+    "username",
+    "group_by",
+}
 
 
 def record_audit(
@@ -68,7 +80,7 @@ class AuditedRoute(APIRoute):
                 parts = request.url.path.strip("/").split("/")
                 if parts[:2] == ["v1", "admin"]:
                     resource = parts[2]
-                    operation = {"GET": "list", "POST": "create", "PATCH": "update", "DELETE": "delete"}[request.method]
+                    operation = {"GET": "list", "POST": "create", "PATCH": "update", "PUT": "update", "DELETE": "delete"}[request.method]
                     action = resource + "." + ("password" if parts[-1] == "password" else operation)
                 elif parts[-1] in {"login", "callback", "register", "logout", "password"}:
                     action = "users.password" if parts[-1] == "password" else "auth." + ("login" if parts[-1] == "callback" else parts[-1])

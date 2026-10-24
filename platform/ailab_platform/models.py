@@ -230,6 +230,7 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cnv"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
+    forked_from: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
@@ -252,6 +253,8 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), index=True, nullable=True)
+    superseded_by_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    retry_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     prompt: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default=RunStatus.QUEUED, index=True)
@@ -609,3 +612,9 @@ Index(
     sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
     postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
 )
+
+
+class PlatformSetting(Base):
+    __tablename__ = "platform_settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)

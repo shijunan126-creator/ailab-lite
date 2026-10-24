@@ -241,8 +241,7 @@ def test_fractional_weights_round_up_once_to_integer_milli():
     assert weighted_amount(1, 1, 0, Decimal("0.123456789"), Decimal("0.1")) == 13
 
 
-def test_workspace_cleanup_cannot_overwrite_a_concurrent_late_settlement(api, monkeypatch):
-    from ailab_platform.api import routes_internal
+def test_retaining_older_workspace_cannot_overwrite_a_late_settlement(api):
     from ailab_platform.models import Conversation
 
     old = reservation(api)
@@ -258,16 +257,18 @@ def test_workspace_cleanup_cannot_overwrite_a_concurrent_late_settlement(api, mo
         earlier.result = {"workspace_saved": True}
         db.commit()
 
-    class Storage:
-        def delete(self, key):
-            settle(api, old["call_id"])
-
-    monkeypatch.setattr(routes_internal, "get_storage", Storage)
+    headers = {**SERVICE, "X-Run-Attempt": newer["attempt_id"]}
+    assert api.post(f"/internal/runs/{newer['run_id']}/status", headers=headers, json={"status": "running"}).status_code == 200
+    assert (
+        api.post(
+            f"/internal/runs/{newer['run_id']}/status", headers=headers, json={"status": "succeeded", "result": {"workspace_saved": True}}
+        ).status_code
+        == 200
+    )
+    settle(api, old["call_id"])
     with SessionLocal() as db:
-        routes_internal._drop_older_workspaces(db, db.get(Run, newer["run_id"]))
-        db.expire_all()
         result = db.get(Run, old["run_id"]).result
-        assert result["workspace_saved"] is False
+        assert result["workspace_saved"] is True
         assert result["usage_totals"]["weighted_amount"] == 9500
 
 

@@ -1,7 +1,7 @@
-"""Reuse an explicit title from the confirmed model result, never the user's first sentence.
+"""Summarize the user's question into a title; do not copy its first sentence verbatim.
 
-The Agent may supply result.conversation_title from its already-accounted model call.
-Without that integration, only an explicit Markdown heading is a semantic title candidate.
+The Agent persists its independently metered prompt title via an internal compare-and-set.
+A completed result may still provide a title or explicit Markdown heading as an empty-title fallback.
 """
 
 from __future__ import annotations
