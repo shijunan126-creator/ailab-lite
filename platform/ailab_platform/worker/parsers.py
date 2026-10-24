@@ -157,6 +157,10 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     check_archive(source)
     if operation == "template":
         return analyze_template(source, output)
+    if operation in {"template_thumbnail", "template_sketch"}:
+        from .template_preview import render, sketch
+
+        return render(source, output) if operation == "template_thumbnail" else sketch(source, output)
     if operation == "brand":
         return analyze_brand(source, output, options["kind"])
     if operation == "ocr_pdf":
@@ -249,8 +253,6 @@ def analyze_brand(source: Path, output: Path, kind: str, presentation=None) -> d
 def analyze_template(source: Path, output: Path) -> dict:
     import zipfile
 
-    from .template_preview import thumbnail
-
     with zipfile.ZipFile(source) as archive:
         types = archive.read("[Content_Types].xml")
         if b"macroenabled" in types.lower() or any("vbaproject" in n.lower() for n in archive.namelist()):
@@ -268,5 +270,4 @@ def analyze_template(source: Path, output: Path) -> dict:
         raise ValueError("unsupported_template")
     prs = part.presentation
     result = analyze_brand(source, output, "pptx", presentation=prs)
-    thumbnail(prs, output)
     return result

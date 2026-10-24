@@ -1,12 +1,11 @@
 # 当前工作
 
-## PPT 模板后端（2026-10-24，独立分支已实现，未合并/部署）
+## PPT 模板真实首屏缩略图跟进（2026-10-24，本分支实现中）
 
-- 用户授权的后端子任务已实现：`feat/ppt-templates-backend`，base `main@6b6825d`，最终运行/回归基线 `d09043a`。Portal归另一Agent，本分支零Portal改动；未push/PR/merge/deploy。
-- 已接通0028模板注册/旧品牌迁移、受限Worker扫描分析/首屏图、Run/queue冻结、Broker重置注入、生成器原生版式参考及资料库`category=slides`（含folders）。
-- 最终Ruff通过；SQLite **1113通过/118跳过**，PG+Redis **1198通过/33跳过**，相关五服务E2E **1通过/0跳过**；双库升降再升/自定义topic/EXPLAIN已覆盖。PG/Redis及E2E子服务均已停止。
-- 缩略图为轻量首屏联系图，非Office像素级渲染；注册模板软删保留字节、个人继续计配额。定时非空template拒绝422，template队列不允许steer400。真实镜像/ClamAV联合验收未做。
-- 下一步：父任务集成Portal分支并确认缩略图视觉边界；另行授权部署时迁移0028、重建sbx-office、等待迁移模板ready。契约见[设计](../reviews/2026-10-24-ppt-templates-design.md)，精确命令/结果/成本与风险见[交付记录](updates/2026-10-24-ppt-templates-backend.md)。
+- 父任务报告已将初版后端合入 `feat/ppt-templates-portal@1c53b46` 并完成公司/个人/one-off、冻结与turn chip的Portal验收；该信息来自父任务，不代表合入main或部署。本分支仍为 `feat/ppt-templates-backend`，本轮起点 `833f64b`，不改Portal、不push/PR/merge/deploy。
+- 本轮改为共享LO/Poppler首屏JPEG，渲染失败/超时/OOM回退草图，保留ready；原有默认内存/wall预算不提高。Worker镜像补依赖并监测整进程组RSS，profile/PDF随临时目录清理。
+- 目前专项51通过/1跳过；全量SQLite运行中。未改DB/队列，因此不按父任务条件重跑PG+Redis全套；初版双库历史结果见[原交付](updates/2026-10-24-ppt-templates-backend.md)，不能冒充本轮结果。
+- 下一步：完成Ruff/SQLite及真实渲染成本测量，提交本分支后交父任务再集成。设计见[契约](../reviews/2026-10-24-ppt-templates-design.md)，本轮结果见[跟进记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
 
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 

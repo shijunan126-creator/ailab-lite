@@ -17,6 +17,8 @@
 - `category=slides` 同时支持 `/v1/files` 与 `/v1/files/folders`；按大小写不敏感的 `.pptx/.potx` 后缀过滤，保留原分页/项目/回收站权限。0028 增加两项稀疏 slides 索引；SQLite 小样本可能选择已有 folder covering index，允许这一有索引的等价计划。
 - POTX 由受限 Worker 注册其 main content type 后直接读包，不重打包，避免30MiB输入挤占16MiB子进程输出限制。Broker保留原字节，生成器在沙箱中将POTX main type规范化为PPTX。
 - 旧品牌有效PPT文件转为 `purpose=template` 并由迁移 outbox 重新扫描/分析、补缩略图；迁移不解析文件。旧品牌指针仅用于降级与历史冻结Run兼容，不再是新品牌资产种类。
-- **缩略图视觉边界**：受限子进程以 Pillow 轻量绘制首张 slide（无 slide 时首个 layout）的图片、文本和形状，不引入 Worker LibreOffice；主题背景、复杂效果/图表/母版对象不保证像素级还原。它是模板选择联系图，非产物预览/视觉验收。生成文件的完整预览仍走原 Broker Office 渲染。此项属于本契约的保真度边界，需要产品/父任务确认是否接受。
+- **缩略图（父任务后续要求，替代初版草图策略）**：复用资料库预览的 LibreOffice→PDF→Poppler renderer，仅导出/光栅化第一页，宽480px JPEG，缓存 `derived/{file_id}/template-v2.jpg`。渲染单独受限，失败/超时/OOM在另一受限进程生成首张slide/首layout草图；两者都失败仍保留成功分析并置ready（缩略图为空）。正常重投复用已有v2对象，ready文件不再处理。旧v1 WebP仍可读，未批量重建历史缓存。
+- 渲染与草图共用原 `parse_timeout_seconds` 总wall预算（85%/15%，默认51s/9s）；不提高默认192MiB或现有256MiB配置上限。渲染按整进程组RSS而非Linux虚拟地址空间限制内存；普通解析仍保留RLIMIT_AS。45s CPU限制和16MiB文件/递归输出限制保留，超限杀整个进程组，包括已退出父进程的遗留子进程。LO profile/PDF位于父任务临时目录，硬杀后由Worker清理。
+- Python/Worker共享镜像需重建，新增LibreOffice Impress、Poppler、中文字体、fontconfig及procps；服务不调用渲染时没有常驻LO进程。资料库PPT完整预览原本经Broker，复用的是相同renderer源码，本次不改数据库或队列。macOS默认192MiB实测会触发fallback；256MiB下可真实渲染，实测成本与Linux镜像未验边界见[跟进记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
 - 注册模板软删除不回收原文件/派生文件；它仍可能被已冻结Run使用。个人模板的保留字节继续计入配额。单轮资料库模板沿用资料库文件现有回收/版本过期语义。
 - 定时任务创建/更新显式拒绝非空 template（422）；null/缺省忽略。模板队列不允许 steer，防止将下一轮模板错误应用到当前轮。

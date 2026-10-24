@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-24 PPT模板后端：`feat/ppt-templates-backend` / base `main@6b6825d` 已实现并本地验证，运行代码 `d09043a`，未合并/部署。公司/个人/单轮文件、0028品牌迁移、Run/queue冻结、Broker重置注入、PPT原生版式参考及slides筛选已接通。SQLite1113通过/118跳过、PG+Redis1198通过/33跳过，相关五服务E2E1通过；临时服务已停。缩略图为轻量联系图，真实Office/ClamAV与Portal集成仍待父任务验收。见[设计](../reviews/2026-10-24-ppt-templates-design.md)和[交付记录](../progress/updates/2026-10-24-ppt-templates-backend.md)。
+2026-10-24 PPT模板缩略图跟进：`feat/ppt-templates-backend` 起点 `833f64b`，共享LO/Poppler真实首屏JPEG、独立受限渲染及草图fallback已实现，SQLite全量待验。父任务报告初版已集成到Portal分支 `1c53b46` 并验证三种来源/冻结/chip；本分支不改Portal，未合入main/部署。本轮成本、默认192MiB下macOS回退和Linux镜像未验边界见[跟进记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)；初版验收见[原记录](../progress/updates/2026-10-24-ppt-templates-backend.md)。
 
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 

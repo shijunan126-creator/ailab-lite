@@ -97,7 +97,7 @@ def test_registry_visibility_permissions_quota_and_library_exclusion(api):
     assert own["status"] == "ready" and own["slides"] == 1 and own["layouts"] == 11
     assert own["thumbnail_url"] == f"/v1/templates/{own['id']}/thumbnail"
     thumb = api.get(own["thumbnail_url"])
-    assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/webp"
+    assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/jpeg"
     assert "immutable" in thumb.headers["cache-control"]
     assert api.get(own["thumbnail_url"], headers={"If-None-Match": thumb.headers["etag"]}).status_code == 304
     assert api.get(own["thumbnail_url"], headers=outsider).status_code == 404

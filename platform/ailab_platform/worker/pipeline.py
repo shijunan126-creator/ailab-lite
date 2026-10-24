@@ -72,6 +72,29 @@ def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Pa
         return {}
 
 
+def _template_thumbnail(file_id, source, storage, output):
+    # Reserve a small part of the existing wall budget for an independent fallback:
+    # a killed/OOM renderer must never destroy successful template analysis.
+    key = f"derived/{file_id}/template-v2.jpg"
+    try:
+        if storage.exists(key):
+            return {"thumb_key": key, "template_thumbnail": "cached"}
+    except Exception:
+        pass
+    budgets = [("template_thumbnail", 0.85), ("template_sketch", 0.15)]
+    for operation, fraction in budgets:
+        folder = output / operation
+        try:
+            info = execute(operation, source, folder, timeout=settings.parse_timeout_seconds * fraction, watch_process_tree=True)
+            storage.put_file(key, folder / "thumb.jpg", "image/jpeg")
+            return {"thumb_key": key, "template_thumbnail": info["thumbnail"]}
+        except Exception:
+            # A missing renderer, timeout, OOM or derivative upload failure is not
+            # a template parsing failure. Preserve the successful analysis.
+            continue
+    return {"template_thumbnail": "unavailable"}
+
+
 def extract(data: bytes, filename: str, content_type: str) -> dict:
     with tempfile.TemporaryDirectory(prefix="ailab-extract-") as tmp:
         source = Path(tmp) / ("input" + PurePath(filename).suffix.lower())
@@ -145,9 +168,8 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     file_id, meta={"scan": scan, "template_error": "模板无法解析", "processing": "failed"}, status="rejected"
                 )
                 return {"file_id": file_id, "failed": True}
-            key = f"derived/{file_id}/template-v1.webp"
-            storage.put_file(key, Path(tmp) / "template" / "thumb.webp", "image/webp")
-            platform.patch_file(file_id, meta={"scan": scan, "template": analysis, "thumb_key": key, "processing": "done"}, status="ready")
+            thumb = _template_thumbnail(file_id, source, storage, Path(tmp) / "thumbnail")
+            platform.patch_file(file_id, meta={"scan": scan, "template": analysis, "processing": "done", **thumb}, status="ready")
             return {"file_id": file_id, "template": analysis}
         if (meta.get("meta") or {}).get("brand_kind"):
             kind = (meta.get("meta") or {}).get("brand_kind")

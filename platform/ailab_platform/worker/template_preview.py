@@ -1,13 +1,9 @@
-"""Bounded first-slide/layout contact thumbnail, not a full office renderer.
-
-Runs only in the limited parser process. Unsupported effects are intentionally
-omitted; this preview is for choosing a template, not artifact acceptance.
-"""
+"""First-page Office thumbnail and a best-effort sketch, only in limited children."""
 
 import io
 
 
-def thumbnail(prs, output):
+def _sketch(prs, output):
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = 480, max(1, round(480 * prs.slide_height / prs.slide_width))
@@ -43,4 +39,31 @@ def thumbnail(prs, output):
                     draw.rectangle((x, y, x + w, y + h), fill="#" + str(color))
             except (AttributeError, TypeError):
                 pass
-    canvas.save(output / "thumb.webp", "WEBP", quality=75, method=4)
+    canvas.save(output / "thumb.jpg", "JPEG", quality=82, optimize=True)
+
+
+def render(source, output):
+    from PIL import Image
+
+    from ..sandbox_tools.render_preview import pages
+
+    result = pages(source, output, max_pages=1, scale_to=480, width_only=True)
+    Image.MAX_IMAGE_PIXELS = 16_000_000
+    if not result["pages"]:
+        raise ValueError("no_rendered_page")
+    with Image.open(output / result["pages"][0]) as image:
+        image.thumbnail((480, 960))
+        image.convert("RGB").save(output / "thumb.jpg", "JPEG", quality=82, optimize=True)
+    return {"thumbnail": "rendered"}
+
+
+def sketch(source, output):
+    from pptx.opc.constants import CONTENT_TYPE as CT
+    from pptx.opc.package import PartFactory
+    from pptx.package import Package
+    from pptx.parts.presentation import PresentationPart
+
+    PartFactory.part_type_for[CT.PML_TEMPLATE_MAIN] = PresentationPart
+    prs = Package.open(source).main_document_part.presentation
+    _sketch(prs, output)
+    return {"thumbnail": "sketch"}

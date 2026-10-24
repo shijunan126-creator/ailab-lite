@@ -452,3 +452,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。
 - 数据迁移若需补outbox，topic/deadline须取有效Settings，不能只读os.environ：生产自定义队列可能来自env_file，否则迁移任务会发到无人消费的默认队列。0028双库回归锁定自定义topic。
 - 测试服务必须核对进程归属，不能只看daemonize退出码或端口可连。macOS可能同时存在wildcard与127.0.0.1特定绑定的Redis监听；启动前检查端口独占，启动后核对pidfile与Redis INFO的process_id、验证空DB，清理时只关闭自己持有的进程。本轮最终重验改用独占26379，原16379非本任务进程保持不动。
+
+## 2026-10-24 PPT 真实首屏图跟进
+
+- LO/Poppler是渲染子进程，不能只测Python父进程RSS；按整个PGID求和，超限/超时清理整个组，即使父进程已经退出。普通解析的RLIMIT_AS不适合LO的大共享库映射；渲染保留相同MiB预算，以RSS watchdog强制执行，不暗中提高内存。
+- 硬杀不会执行子进程finally。LO profile和临时PDF必须放在Worker持有的任务临时目录内，由父目录清理；输出预算要递归计算，兼容LO同时删除临时文件的竞态。
+- macOS LO在默认192MiB下可能必然fallback；真实图的256MiB测试不是默认192MiB成功证据。缩略图失败不能把已成功分析的模板标为failed。

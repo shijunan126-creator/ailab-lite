@@ -217,8 +217,10 @@ def thumbnail(template_id: str, request: Request, user: User = Depends(current_u
     key = (file.meta or {}).get("thumb_key")
     if template_status(file)[0] != "ready" or not key or not key.startswith(f"derived/{file.id}/"):
         raise HTTPException(404, "缩略图尚未就绪")
-    headers = {"ETag": f'"{file.sha256}-template-v1"', "Cache-Control": "private, max-age=31536000, immutable"}
+    version = "v2" if key.endswith("template-v2.jpg") else "v1"
+    media_type = "image/jpeg" if version == "v2" else "image/webp"
+    headers = {"ETag": f'"{file.sha256}-template-{version}"', "Cache-Control": "private, max-age=31536000, immutable"}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)
     db.close()
-    return _ClosingStreamingResponse(get_storage().stream(key), media_type="image/webp", headers=headers)
+    return _ClosingStreamingResponse(get_storage().stream(key), media_type=media_type, headers=headers)
