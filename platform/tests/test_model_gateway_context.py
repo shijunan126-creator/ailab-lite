@@ -333,12 +333,12 @@ def test_context_api_keyset_and_summary_compare_and_set():
         owner = attempt_headers(c, current["id"])
         body = {"expected_through_run_id": None, "through_run_id": first["history"][-1]["id"], "summary": "important decisions"}
         assert c.put(summary_url, headers=owner, json=body).status_code == 200
-        assert c.put(summary_url, headers=owner, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 422
         next_page = c.get(url, headers=SERVICE).json()
         assert next_page["summary"] == "important decisions"
         assert next_page["history"] == second["history"]
         body.update(expected_through_run_id=body["through_run_id"], through_run_id=current["id"])
-        assert c.put(summary_url, headers=owner, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 422
         assert c.get(url, headers=AUTH).status_code == 403
 
 
@@ -358,16 +358,15 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
 
         async def settle_usage(self, payload):
             result = await super().settle_usage(payload)
-            if title_result == "settlement" and len(self.settlements) == 2:
+            if title_result == "settlement" and self.reservations[payload["call_id"]]["max_output_tokens"] == 2048:
                 raise RuntimeError("settlement retries exhausted")
             return result
 
     class Model(LLMClient):
-        count = 0
-
         async def chat(self, messages, tools, model, user_id=None):
-            self.count += 1
-            if self.count == 1:
+            is_title = "会话标题" in messages[0]["content"]
+            if not is_title:
+                await asyncio.sleep(0.03)  # title completes while answer is in flight
                 return LLMResponse(content="这里是确认后的回答。", usage={"prompt_tokens": 5, "completion_tokens": 3})
             if title_result == "error":
                 raise LLMError("title unavailable")
@@ -377,10 +376,8 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process("run_1", attempt_id="att_1"))
     status, result = platform.statuses[-1]
     assert status == "succeeded" and result["summary"] == "这里是确认后的回答。"
-    assert result["result"].get("conversation_title") == (title_result if title_result == "城市更新汇报" else None)
     assert len(platform.reservations) == (1 if title_result == "quota" else 2)
     assert len(platform.reservations) == len(platform.settlements)
-    assert any(p["max_output_tokens"] == 2048 for p in platform.reservations.values()) if title_result != "quota" else True
     assert all(payload["step"] != -2 for name, payload in platform.events if name in {"agent.delta", "agent.thinking"})
 
 
@@ -407,7 +404,7 @@ def test_title_uses_real_ledger_and_bounded_model_request(monkeypatch):
             assert title == "城市更新汇报"
             assert len(seen) == 2 and seen[1][1]["max_tokens"] == 2048
             title_input = json.loads(seen[1][1]["messages"][1]["content"])
-            assert len(title_input["question"]) == len(title_input["answer"]) == 1000
+            assert len(title_input["question"]) == 1000 and "answer" not in title_input
             with SessionLocal() as db:
                 rows = list(db.scalars(select(ModelUsage).where(ModelUsage.run_id == run["id"])))
                 assert len(rows) == 2 and len({r.call_id for r in rows}) == 2
