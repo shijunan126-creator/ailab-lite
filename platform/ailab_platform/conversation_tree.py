@@ -14,10 +14,15 @@ def ancestor_query(conversation_id, leaf_id):
         .where(Run.conversation_id == conversation_id, Run.id == leaf_id)
         .cte("ancestor_path", recursive=True)
     )
+    parent = select(Run.parent_run_id).where(Run.id == path.c.parent_run_id).scalar_subquery()
+    parent_conversation = select(Run.conversation_id).where(Run.id == path.c.parent_run_id).scalar_subquery()
+    # Correlated primary-key probes avoid a planner choosing to scan all conversation branches at every depth.
     return path.union_all(
-        select(Run.id, Run.parent_run_id, path.c.depth + 1)
-        .join(path, Run.id == path.c.parent_run_id)
-        .where(Run.conversation_id == conversation_id, path.c.depth <= MAX_DEPTH)
+        select(path.c.parent_run_id, parent, path.c.depth + 1).where(
+            path.c.parent_run_id.is_not(None),
+            path.c.depth <= MAX_DEPTH,
+            parent_conversation == conversation_id,
+        )
     )
 
 
