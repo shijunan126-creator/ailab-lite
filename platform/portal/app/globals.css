@@ -179,6 +179,7 @@ button.lg { padding: 12px 20px; font-size: 15px; }
 .status.failed { color: var(--danger); background: var(--danger-soft); }
 .status.canceled { color: var(--muted); background: var(--surface-2); }
 @keyframes pulse { 50% { opacity: .25; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ---------- workbench ---------- */
 
@@ -1173,6 +1174,8 @@ button.pr-row:active { transform: none; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; scroll-behavior: auto !important; }
   .shimmer { animation: none; color: var(--muted); background: none; }
+  /* a spinner that stops looks like a hang: progress keeps turning, slowly */
+  .viewer-spinner, .chip-spin, .pr-spin, .work-process .dot.spin, .icon-btn.act.busy svg { animation-duration: 1.6s !important; animation-iteration-count: infinite !important; }
 }
 
 /* admin: context compaction */
