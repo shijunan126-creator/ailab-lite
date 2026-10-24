@@ -218,6 +218,14 @@ class Conversation(Base):
     __table_args__ = (
         Index("ix_conversations_user_updated", "user_id", "updated_at"),
         Index("ix_conversations_user_pinned", "user_id", "pinned_at", "updated_at"),
+        Index(
+            "ix_conversations_user_search",
+            "user_id",
+            "updated_at",
+            "id",
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index("ix_conversations_deleted", "deleted_at", "id"),
         Index(
             "ix_conversations_user_project_live",

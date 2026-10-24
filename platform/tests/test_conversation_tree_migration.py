@@ -82,6 +82,8 @@ def test_tree_search_pin_context_production_query_plans(engine):
             plan = " ".join(str(tuple(r)) for r in conn.execute(text(prefix + sql)))
             print("TREE PLAN", engine.dialect.name, name, plan)
             assert "INDEX" in plan.upper() or "_pkey" in plan
+            if name == "search_conversations":
+                assert "ix_conversations_user_search" in plan, plan
             if name == "ancestors" and engine.dialect.name == "sqlite":
                 assert plan.count("sqlite_autoindex_runs_1 (id=?)") >= 3, plan
             if name == "ancestors" and engine.dialect.name == "postgresql":

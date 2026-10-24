@@ -19,6 +19,13 @@ def upgrade():
         op.add_column(table, sa.Column("quiet", sa.Boolean(), nullable=True))
     op.create_index("ix_runs_conversation_parent", "runs", ["conversation_id", "parent_run_id", "created_at", "id"])
     op.create_index("ix_conversations_user_pinned", "conversations", ["user_id", "pinned_at", "updated_at"])
+    op.create_index(
+        "ix_conversations_user_search",
+        "conversations",
+        ["user_id", "updated_at", "id"],
+        sqlite_where=sa.text("deleted_at IS NULL"),
+        postgresql_where=sa.text("deleted_at IS NULL"),
+    )
     op.create_index("ix_model_usage_context", "model_usage", ["run_id", "quiet", "status", "created_at", "id"])
     conn = op.get_bind()
     after = ""
@@ -48,6 +55,7 @@ def upgrade():
 
 def downgrade():
     op.drop_index("ix_model_usage_context", table_name="model_usage")
+    op.drop_index("ix_conversations_user_search", table_name="conversations")
     op.drop_index("ix_conversations_user_pinned", table_name="conversations")
     op.drop_index("ix_runs_conversation_parent", table_name="runs")
     for table in ("model_usage", "usage_reservations"):
