@@ -1,5 +1,9 @@
 # 单机能力状态
 
+2026-10-24 Round2：`d865356`修复标题gate预算/quiet非思考/失败兜底，真实Gate1逐项通过；SQLite1033、PG+Redis1112、E2E78通过。PG C locale Unicode搜索已修复。16K临时窗口压缩、非真机手机等边界见[发布记录](../progress/updates/2026-10-24-release-ui-features.md#round-2-最终本地结果代码提交-d865356)。Gate2待远端CI，尚未merged/deployed。下方Round1失败保留为历史证据。
+
+2026-10-24 发布门禁：`ec59932` 的真实模型 Chat 已观察思考大纲、框外正文流式与网页来源，但首轮早标题10秒超时、复测成功，Gate 1 未通过；其余真实模型场景未执行，未PR/merge/deploy。历史 mock 集成证据不等于外部验收，详见[发布门禁记录](../progress/updates/2026-10-24-release-ui-features.md)。
+
 更新于 2026-10-23，分支 `feat/remaining-work`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
 
 项目接续、计划和验收记录入口见 [项目进度](../progress/README.md)，最新授权范围见 [当前工作](../progress/current.md)。本页只维护能力状态；“合入”指当前集成分支，不代表已合入远端 main。

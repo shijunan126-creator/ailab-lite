@@ -1,5 +1,17 @@
 # 当前工作
 
+## 最新：Round 2 Gate 1通过，Gate 2待远端CI
+
+最新指令授权：测量并修复后端首次标题，完整双库/mock E2E与真实Gate 1通过后，才push/PR/CI/squash merge，再备份部署。Portal禁止修改。当前分支`t3/fix-agent-first-turn-titles`，基线`ca08623`（集成分支feat/ui-polish-fork-retry，base main@94d3e22）；上一轮记录已保留如下。
+
+标题已拆开gate与推理预算、catalog声明quiet关闭thinking、加规范化兜底及低基数指标；五次真实浏览器早标题通过（1.250–2.130秒）。PG C locale暴露Unicode搜索漏匹配，已后端修复并保留red/green证据。实现提交bc5eddc/d865356。完整SQLite1033/112跳过、PG+Redis1112/33跳过、mock E2E78通过；真实Gate 1逐项通过，16K窗口压缩边界已记录。下一步push/PR/远端CI，未merge/deploy；具体结果及下一步入口见[发布记录](updates/2026-10-24-release-ui-features.md#round-2首次标题修复进行中)。
+
+## 最新：真实模型发布门禁（2026-10-24，已停止）
+
+本次用户明确授权顺序为真实模型验收 → PR/CI/squash merge → 备份后部署，覆盖下方旧授权；任一门禁失败或歧义停止。实际隔离分支 `t3/real-model-release-gates`，测试 HEAD `ec59932`，集成分支 `feat/ui-polish-fork-retry` / main base `94d3e22`。
+
+Gate 1 未通过：真实模型 Chat 首轮标题超过后端10秒预算，正文成功但标题为空；相同请求复测早标题成功，不能覆盖首轮失败。Chat 思考大纲、框外流式和网页来源有限场景通过，其他真实模型验收项未执行。没有确认 Portal 缺陷或修改产品代码；未 push/PR/merge/deploy。临时服务/端口与浏览器已清理。下一步父 Agent 定位标题预算与提供商时延问题，再重启 Gate 1 全部剩余验收；证据、脚本错误分界与状态见[发布门禁记录](updates/2026-10-24-release-ui-features.md)。
+
 ## 当前：UI 打磨与对话新功能（2026-10-24，集成中）
 
 授权（用户最新两条指令）：

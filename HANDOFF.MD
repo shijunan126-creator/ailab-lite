@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-24 真实模型早标题验收
+
+- 旧实现标题10秒包含主额度gate；真实提供商曾正文成功但标题超时永久为空。Round2已将10秒改为gate通过后的模型预算，gate仍由run截止/取消约束；catalog显式声明quiet关闭thinking，timeout/error/empty采用规范化prompt兜底。同请求复测成功不能抹去首轮失败，先测gate/TTFT/reasoning/content。见[发布记录](docs/progress/updates/2026-10-24-release-ui-features.md)。
+- 人工持有五服务stack的临时启动器应保持父进程直到清理，不能假设启动器退出后子进程仍存活；复用隔离Portal目录须先核对源码并检查生产build，目录存在不代表 `.next` build可用。当前会话详情集合字段为 `turns`，不是 `runs`；聊天布局没有 `main` 标签。临时探针错误与产品失败分开记录。
+
 ## 开始新任务
 
 - 先读 `AGENTS.md`、[当前工作](docs/progress/current.md) 和本文，再检查真实 worktree、branch、HEAD 与 `git status --short --branch`；保留已有修改。目标/计划/验收入口见 [项目进度](docs/progress/README.md)，不要把下方历史分支记录当作当前状态。
@@ -362,7 +367,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
 - 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
 
-- Round 2 标题生命周期：不能在正文终态的finally无条件cancel标题。先提交正文终态，再用原任务剩余预算收尾；保留durable attempt及HTTP client直到收尾/取消，再ACK。shutdown/attempt丢失必须取消子模型并await、结算、清理heartbeat；只去掉cancel会留下无主任务。标题10秒从任务启动计时，含主额度gate，不从正文结束重置；gate慢时主动放弃标题，避免标题抢主额度。账本取消清理仍受既有HTTP重试边界，不冒称严格10秒job释放SLA。
+- Round 2 标题生命周期：不能在正文终态的finally无条件cancel标题。先提交正文终态，再用原任务剩余预算收尾；保留durable attempt及HTTP client直到收尾/取消，再ACK。shutdown/attempt丢失必须取消子模型并await、结算、清理heartbeat；只去掉cancel会留下无主任务。Round2起标题10秒从主额度gate通过后计时，不从正文结束重置；gate不抢主额度，受run截止/取消约束；正文未预留即失败时取消gate任务。账本取消清理仍受既有HTTP重试边界，不冒称严格10秒job释放SLA。
 - `run.completed`不是`stream.end`：终态后空轮询会关SSE，关闭时列表刷新也可能早于晚到标题。空标题且有效attempt时保留最多终态后10秒的SSE窗口；先检查pending再读取事件，避免CAS刚提交时看见非空标题却漏读同事务事件。cancel/delete不留窗口；ACK/过期立即收敛。API标题写入仍走原fence与空标题CAS，取消Run不能补标题。
 - 自动标题的Markdown清洗必须在一个无ORM依赖的纯文本helper统一，Agent/内部endpoint/result fallback复用；先去链接/强调/代码/heading、折叠空白，再截40字。原始请求上限和最终存储上限不同；保留40字请求上限会在清洗前422，不能验证/解决长Markdown输入。
 
@@ -387,3 +392,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 独立迁移分支合并后，中间revision的结构测试可保持原目标，但 `compare_metadata(..., Base.metadata)` 必须先升级集成head；最新ORM包含后续表时，在0023直接比较会把合法0024误判为漂移。完整线性链另用0021→0022→0023→0024逐步升/降/再升锁定，不能删掉漂移断言。
 - 不要把人工持有stack的辅助（如曾误提交的 `e2e/test_zz_hold.py`，默认持有5400秒）放进 `e2e/`：全套会被它卡住，已删除；人工浏览器检查用HANDOFF里的Playwright路线临时起stack。旧测试种子也必须遵循会话树关系，不能只按创建时间写Run（见前面会话树章节）。
 - 分支契约已统一为“截至所选轮次的祖先前缀”：前缀里有Work轮次只能分支为Work，前缀全是Chat可分支为Chat或Work（用户需求“工作只能分支为工作”指工作轮次；更早的纯对话轮次分出的新会话不含任何工作内容）。API、Portal与E2E同此语义；E2E同时断言工作轮次只给Work、之前的对话轮次两者都给。首轮及最终证据入口见[集成测试记录](docs/progress/updates/2026-10-24-integration-tests.md)。
+
+
+## 2026-10-24 Round2 发布验收陷阱
+
+- PostgreSQL UTF8不等于Unicode大小写转换：initdb C locale的lower('ÉCOLE')仍为'École'。搜索窗口已显式使用ICU root `und-x-icu`，PG16部署须包含此collation；双库EXPLAIN与C locale回归均应保留。不能通过切换测试locale或skip掩盖契约失败。
+- 新路由的composer可先出现、model选项稍后加载；浏览器探针应等发送按钮enabled并确认POST被接收，不能只按Enter后把未创建Run误当模型卡住。文件页码引用渲染为`.md-file`按钮，非a；用原始Markdown校验ailab-file与page，再点按钮测查看器几何。
+- 真实低阈值压缩可用临时catalog收紧合法context预算，管理员threshold_ratio=0.2；必须记录此缩小窗口与真实provider调用边界，不能写成默认百万窗口长期容量证明。个人catalog与开发.env不变。
