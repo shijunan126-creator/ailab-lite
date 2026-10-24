@@ -4,7 +4,7 @@
 
 ## 本轮
 
-- 工作区 `/Users/michael/Developer/ailab-lite`，分支 `feat/user-memory-skill-edit`，基线 `main` / `origin/main@17d4cd49accda1165f7b34b7a069b5afcf761984`。开始时只有三处无关 `.DS_Store`，保持未动。应用实现已固定为 `bcca29829fdb1f7579a6c340876d735e2a1f4efe` 并按授权先发布；当前追加文档记录，远端PR/合并尚待完成。
+- 工作区 `/Users/michael/Developer/ailab-lite`，分支 `feat/user-memory-skill-edit`，基线 `main` / `origin/main@17d4cd49accda1165f7b34b7a069b5afcf761984`。开始时只有三处无关 `.DS_Store`，保持未动。应用实现已固定为 `bcca29829fdb1f7579a6c340876d735e2a1f4efe` 并按授权先发布；当前追加文档记录，集成由 [PR #39](https://github.com/shijunan126-creator/ailab-lite/pull/39) 承载；其实际检查与合并状态以该PR为准。
 - 已实现用户记忆的 API、CAS/用户锁、Run 绑定与 attempt fencing、持久去重、自动/显式记忆开关和按轮 prompt 快照；Chat/Work 提供 memory，Chat 增加读取技能，个人技能更新要求读到的 file_id。
 - 两个前端任务已完成：技能页的只读查看/个人 Markdown 新建编辑/ZIP完整替换，记忆页的导航/开关/分组编辑/冲突保留草稿。ZIP 替换接口已补服务端 head/pending 校验，不只靠前端锁定。
 - 设计、Hermes 固定源码、成本预算和当前/历史证据分界见 [审查记录](../reviews/2026-10-24-memory-skills.md)；结果入口见 [本轮更新](updates/2026-10-24-memory-skills.md)。
@@ -18,7 +18,7 @@
 
 - 已完成本地实现与验收：SQLite全套986通过/67跳过、PG全套1020通过/33跳过；最后增量双库各68项通过；完整真实五服务E2E65项通过，手机截图补验1项通过。Portal Node26项、build/tsc、Ruff与依赖锁一致性通过。数字和被跳过组件的范围、首轮失败与修复过程均见审查记录。
 - 最后补齐：关闭记忆时Agent bootstrap不传正文；Chat的save_skill.path不能隐式启动sandbox；编辑正文限制和Worker共用100KiB。部署后另已通过真实模型搜索/脚本/记忆写入与跨对话召回/技能创建与CAS更新；这是有限场景，不代表自主沉淀质量普遍保证。
-- 发布已授权且已完成固定应用提交的部署与外部验收；下一步提交PR、通过该PR检查后合并；不自动开始向量召回、背景反思或路线图其他任务。
+- 发布已授权且已完成固定应用提交的部署与外部验收；[PR #39](https://github.com/shijunan126-creator/ailab-lite/pull/39) 已提交并关联，按该PR实际检查结果集成；不自动开始向量召回、背景反思或路线图其他任务。
 - 有界记忆本机100次满载读取p95约4.94ms，无新增依赖/后台进程；不代表2vCPU/8GiB长期联合容量。临时测试服务已按本轮路径/端口关闭，不触碰开发环境。
 
 ## 保留的先前事项
@@ -28,4 +28,4 @@
 
 ## 授权发布结果
 
-应用提交 `bcca298` 已先发布，真实模型七轮、真实Worker扫描和部署浏览器验收通过；既有数据完整性与文件哈希通过。个人部署配置、地址、账号、数据、原始日志与详细运行状态只记仓库外本机HANDOFF，不提交到远端。下一步：创建并关联本分支PR，按其实际head检查结果决定合并。
+应用提交 `bcca298` 已先发布，真实模型七轮、真实Worker扫描和部署浏览器验收通过；既有数据完整性与文件哈希通过。个人部署配置、地址、账号、数据、原始日志与详细运行状态只记仓库外本机HANDOFF，不提交到远端。已创建并关联 [PR #39](https://github.com/shijunan126-creator/ailab-lite/pull/39)。集成按该PR实际head的检查结果执行；未通过不得合并，不自动开始其他任务。
