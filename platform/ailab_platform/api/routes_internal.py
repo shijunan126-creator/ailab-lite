@@ -177,6 +177,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
+    from .routes_memory import memory_for
+
+    out["memory"] = memory_for(owner, for_model=True) if owner else {}
     out.update(skill_input_for(db, owner))
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if (t.result or {}).get("workspace_saved")), None)
@@ -530,6 +533,7 @@ async def internal_save_skill(
     name: str = Query(...),
     mode: Literal["create", "update"] = Query(...),
     filename: str = Query(...),
+    expected_file_id: str | None = Query(default=None, max_length=40),
     x_run_attempt: str | None = Header(default=None),
     x_delivery_id: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -580,6 +584,14 @@ async def internal_save_skill(
                     raise HTTPException(422, f"已有同名个人技能 {name}；要改它请用 mode=update（会保留旧版本）")
                 if mode == "update" and not heads:
                     raise HTTPException(404, f"没有名为 {name} 的个人技能；新建请用 mode=create")
+                if mode == "update" and heads:
+                    parent = heads[0]
+                    if parent.id != expected_file_id:
+                        raise HTTPException(422, "技能已更新或缺少版本，请先 load_skill 再传 expected_file_id")
+                    if parent.status == FileStatus.PENDING:
+                        raise HTTPException(422, "技能正在扫描，请完成后再更新")
+                    if parent.filename.endswith(".zip") and not filename.endswith(".zip"):
+                        raise HTTPException(422, "压缩包技能必须完整更新，不能用 Markdown 丢弃附带脚本")
                 enforce_library_quota(db, run.user_id, size)
                 file_id = new_id("fil")
                 key = f"skills/{run.user_id}/{file_id}/{filename}"

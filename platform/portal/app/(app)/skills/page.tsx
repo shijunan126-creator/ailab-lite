@@ -3,7 +3,9 @@
 import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconChart, IconDownload, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
+import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
+import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
+import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
 
 const ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = { pptx: IconSlides, xlsx: IconSheet, data: IconChart };
@@ -38,8 +40,29 @@ function Switch({ on, label, onChange, disabled }: { on: boolean; label: string;
   );
 }
 
-function SkillRow({ s, busy, onToggle, onDelete }: { s: Skill; busy: boolean; onToggle: (on: boolean) => void; onDelete?: () => void }) {
+async function getFile(id: string, signal: AbortSignal): Promise<ScannedFile | null> {
+  const resp = await fetch(`${API_BASE}/v1/files/${id}`, { signal, cache: "no-store" });
+  redirectIfUnauthorized(resp);
+  return resp.ok ? resp.json() : null;
+}
+
+function SkillRow({
+  s,
+  busy,
+  locked,
+  onToggle,
+  onOpen,
+  onDelete,
+}: {
+  s: Skill;
+  busy: boolean;
+  locked?: boolean;
+  onToggle: (on: boolean) => void;
+  onOpen: () => void;
+  onDelete?: () => void;
+}) {
   const Icon = ICONS[s.name] || IconSparkles;
+  const action = s.scope === "personal" && s.kind === "zip" ? "更新" : s.scope === "personal" && s.kind === "md" ? "编辑" : "查看";
   return (
     <div className={`skill-row ${s.enabled ? "" : "off"} ${s.error ? "broken" : ""}`}>
       <span className="skill-icon">
@@ -59,11 +82,16 @@ function SkillRow({ s, busy, onToggle, onDelete }: { s: Skill; busy: boolean; on
           </div>
         ) : null}
       </div>
-      {onDelete ? (
-        <button className="link danger-text" onClick={onDelete} title="删除这个技能">
-          删除
+      <div className="skill-editor-actions">
+        <button className="link" onClick={onOpen} disabled={locked} aria-label={`${action} ${s.title}`}>
+          {action}
         </button>
-      ) : null}
+        {onDelete ? (
+          <button className="link danger-text" onClick={onDelete} title="删除这个技能">
+            删除
+          </button>
+        ) : null}
+      </div>
       <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
     </div>
   );
@@ -75,6 +103,9 @@ export default function SkillsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
+  const [editing, setEditing] = useState<EditorTarget | null>(null);
+  const [scanning, setScanning] = useState<ReadonlySet<string>>(new Set()); // new versions not yet scanned
+  const scans = useRef<AbortController | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
   const generation = useRef(0);
   const disposed = useRef(false);
@@ -90,9 +121,59 @@ export default function SkillsPage() {
   }, []);
   useEffect(() => {
     disposed.current = false;
+    scans.current = new AbortController();
     load();
-    return () => { disposed.current = true; generation.current++; };
+    return () => { disposed.current = true; generation.current++; scans.current?.abort(); };
   }, [load]);
+
+  /** Wait for the Worker to scan a new file, then list it. Null when still pending at the deadline, undefined once the page is gone. */
+  async function scanned(fileId: string): Promise<ScannedFile | null | undefined> {
+    const signal = scans.current!.signal;
+    setScanning((ids) => new Set(ids).add(fileId));
+    try {
+      return await waitForScan(fileId, getFile, { signal });
+    } catch {
+      return undefined;
+    } finally {
+      if (!signal.aborted) {
+        setScanning((ids) => { const next = new Set(ids); next.delete(fileId); return next; });
+        await load();
+      }
+    }
+  }
+
+  async function settle(fileId: string, label: string) {
+    load(); // the new head shows up as being scanned, which also locks it against another save
+    const file = await scanned(fileId);
+    if (file === null) setError(`${label}：仍在安全扫描，稍后刷新查看`);
+    else if (file && scanProblem(file)) setError(`${label}：${scanProblem(file)}`);
+  }
+
+  function saved(fileId: string, label: string) {
+    setEditing(null);
+    setError("");
+    settle(fileId, label);
+  }
+
+  async function replace(s: Skill, file: File) {
+    setEditing(null);
+    setError("");
+    const form = new FormData();
+    form.append("upload", file);
+    const head = s.file_id!;
+    setScanning((ids) => new Set(ids).add(head)); // no second replacement while this one uploads
+    // a new version of the same file lineage: the package is replaced whole, scripts included
+    const resp = await fetch(`${API_BASE}/v1/files?purpose=skill&parent_id=${encodeURIComponent(head)}`, { method: "POST", body: form }).finally(() =>
+      setScanning((ids) => { const next = new Set(ids); next.delete(head); return next; })
+    );
+    redirectIfUnauthorized(resp);
+    if (!resp.ok) {
+      setError(`${file.name}：上传失败（${resp.status}）`);
+      return;
+    }
+    const item: FileItem = await resp.json();
+    settle(item.id, s.title);
+  }
 
   async function toggle(s: Skill, enabled: boolean) {
     setBusy(s.name);
@@ -123,19 +204,11 @@ export default function SkillsPage() {
       const item: FileItem = await resp.json();
       setUploading((u) => [...u, file.name]);
       // the Worker scans the file and recognises the skill; wait for it
-      for (let i = 0; i < 30; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        if (disposed.current) return;
-        const f = await api<FileItem>(`/v1/files/${item.id}`).catch(() => null);
-        if (disposed.current) return;
-        if (f && f.status !== "pending") {
-          if (f.status === "rejected") setError(`${file.name}：没有通过安全扫描`);
-          else if (!f.meta?.skill && !f.meta?.skill_error) setError(`${file.name}：不是技能文件（需要带 name、description 的 SKILL.md，或包含它的 .zip）`);
-          break;
-        }
-      }
+      const f = await scanned(item.id);
+      if (f === undefined) return;
       setUploading((u) => u.filter((n) => n !== file.name));
-      await load();
+      if (f === null) setError(`${file.name}：仍在安全扫描，稍后刷新查看`);
+      else if (f.status === "rejected" || (!f.meta?.skill && !f.meta?.skill_error)) setError(`${file.name}：${scanProblem(f)}`);
     }
     if (picker.current) picker.current.value = "";
   }
@@ -169,15 +242,18 @@ export default function SkillsPage() {
       <h2 className="section-title">通用技能</h2>
       <p className="hint section-hint">平台提供，所有人都可以用。</p>
       <section className="card skill-list">
-        {skills === null ? <div className="empty">加载中…</div> : builtin.map((s) => <SkillRow key={s.name} s={s} busy={busy === s.name} onToggle={(on) => toggle(s, on)} />)}
+        {skills === null ? <div className="empty">加载中…</div> : builtin.map((s) => <SkillRow key={s.name} s={s} busy={busy === s.name} onToggle={(on) => toggle(s, on)} onOpen={() => setEditing({ mode: "open", skill: s })} />)}
       </section>
 
-      <div className="section-title" style={{ marginTop: 32 }}>
+      <div className="section-title skill-editor-head" style={{ marginTop: 32 }}>
         个人技能
         {storage ? <span className="hint">已用 {formatBytes(storage.used_bytes)} · 剩余 {formatBytes(storage.available_bytes)}</span> : null}
         <span className="spacer" />
         <button className="link" onClick={downloadTemplate}>
           <IconDownload size={15} /> 下载模板
+        </button>
+        <button className="secondary sm" onClick={() => setEditing({ mode: "create", content: TEMPLATE })}>
+          <IconPlus size={15} /> 新建
         </button>
         <button className="secondary sm" onClick={() => picker.current?.click()}>
           <IconUpload size={15} /> 上传技能
@@ -201,9 +277,26 @@ export default function SkillsPage() {
           </div>
         ) : null}
         {personal.map((s) => (
-          <SkillRow key={s.file_id} s={s} busy={busy === s.name} onToggle={(on) => toggle(s, on)} onDelete={() => remove(s)} />
+          <SkillRow
+            key={s.file_id}
+            s={s}
+            busy={busy === s.name}
+            locked={isLocked(s, scanning)}
+            onToggle={(on) => toggle(s, on)}
+            onOpen={() => setEditing({ mode: "open", skill: s })}
+            onDelete={() => remove(s)}
+          />
         ))}
       </section>
+      {editing ? (
+        <SkillEditor
+          target={editing}
+          locked={editing.mode === "open" && editing.skill.scope === "personal" && isLocked(editing.skill, scanning)}
+          onClose={() => setEditing(null)}
+          onSaved={saved}
+          onReplace={replace}
+        />
+      ) : null}
       <p className="hint" style={{ marginTop: 14 }}>开关对你的账号生效，换浏览器也一样。个人技能的脚本只在你自己的沙箱里运行，沙箱不联网。</p>
     </main>
   );

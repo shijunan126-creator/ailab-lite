@@ -105,8 +105,14 @@ def _run(llm, platform, broker=None):
 def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     llm = _Recording([LLMResponse(content="只用文字回答")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
-    assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [["save_skill"]] and broker.leases == 0
-    assert "「对话」模式" in llm.seen_messages[0][0]["content"]
+    assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
+        ["memory", "load_skill", "save_skill"]
+    ] and broker.leases == 0
+    system = llm.seen_messages[0][0]["content"]
+    assert "代码、SQL、命令和文档草稿可以直接在回复中提供" in system
+    assert "不主动介绍模式" in system
+    assert "本轮是「对话」模式" not in system
+    assert "# 沙箱约定" not in system
 
 
 def test_chat_mode_saves_a_skill_written_as_text_without_a_sandbox() -> None:
@@ -153,3 +159,48 @@ def test_work_mode_still_lets_the_model_decide() -> None:
     llm = _Recording([LLMResponse(tool_calls=[step]), LLMResponse(content="done")])
     broker = _run(llm, _Platform(options={"mode": "work"}))
     assert broker.leases == 1 and all(llm.offered)
+
+
+def test_chat_prompt_offers_enabled_personal_skills_without_workspace_instructions():
+    from ailab_platform.agent.prompts import system_prompt_for
+
+    prompt = system_prompt_for(
+        "chat",
+        disabled=frozenset({"pptx", "off"}),
+        personal=[
+            {"name": "weekly", "description": "整理周报"},
+            {"name": "off", "description": "不应出现的技能"},
+        ],
+    )
+    assert "- weekly：整理周报" in prompt
+    assert "- pptx：" not in prompt and "- off：" not in prompt
+    assert "# 沙箱约定" not in prompt
+    assert "写出代码与实际执行代码" in prompt
+
+
+def test_chat_can_search_read_sources_and_return_a_script_without_sandbox(monkeypatch):
+    from ailab_platform import web
+
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+
+    async def search(query, max_results):
+        return [{"title": "Python", "url": "https://docs.python.org/3/", "snippet": "Documentation"}]
+
+    async def read_url(url, max_chars):
+        return {"url": url, "text": "Python supports CSV processing."}
+
+    monkeypatch.setattr(web, "search", search)
+    monkeypatch.setattr(web, "read_url", read_url)
+    llm = _Recording(
+        [
+            LLMResponse(tool_calls=[ToolCall("search", "web_search", {"query": "Python CSV"})]),
+            LLMResponse(tool_calls=[ToolCall("read", "read_url", {"url": "https://docs.python.org/3/"})]),
+            LLMResponse(content="下面是脚本：\n```python\nimport csv\n```"),
+        ]
+    )
+    platform = _Platform(options={"mode": "chat"})
+    broker = _run(llm, platform)
+    results = [p for t, p in platform.events if t == "agent.tool_result"]
+    assert len(results) == 2 and all(r["ok"] for r in results)
+    assert broker.leases == 0
+    assert platform.statuses[-1][0] == "succeeded"

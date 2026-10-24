@@ -19,6 +19,7 @@ from ..deps import current_user, get_db
 from ..locks import user_critical_section
 from ..models import REVIEW_PREDICATES, Department, FileObject, FileStatus, SkillApproval, SkillPolicy, User, UserRole
 from ..skill_policy import effective_policy, run_disabled_skills
+from ..skillfiles import MAX_SKILL_MD
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
 
@@ -309,3 +310,91 @@ def skill_input_for(db: Session, owner: User | None) -> dict:
             for skill in usable_personal(db, owner).values()
         ],
     }
+
+
+class SkillContentInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,39}$")
+    content: str = Field(min_length=1, max_length=MAX_SKILL_MD)
+    expected_file_id: str | None = Field(default=None, max_length=40)
+
+
+@router.get("/content/{name}")
+def read_skill_content(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..agent.prompts import load_skill
+    from ..storage import get_storage
+
+    if name in skills():
+        return {"name": name, "content": load_skill(name), "file_id": None, "editable": False, "kind": "builtin", "revision": None}
+    personal = next((s for s in personal_skills(db, user) if s["name"] == name), None)
+    if not personal:
+        raise HTTPException(404, "skill not found")
+    file = db.get(FileObject, personal["file_id"])
+    if file.status != FileStatus.READY or personal.get("error"):
+        raise HTTPException(422, "技能尚未通过扫描，不能编辑")
+    kind = personal.get("kind")
+    content = None
+    if kind == "md":
+        if file.size > MAX_SKILL_MD:
+            raise HTTPException(413, "skill text too large")
+        content = get_storage().get_bytes(file.storage_key).decode("utf-8", "replace")
+    return {"name": name, "content": content, "file_id": file.id, "editable": kind == "md", "kind": kind, "revision": file.id}
+
+
+@router.post("/content", status_code=201)
+def save_skill_content(body: SkillContentInput, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    import hashlib
+
+    from ..library import assign_file_version, delete_storage_objects, trim_file_versions
+    from ..models import new_id
+    from ..quota import enforce_library_quota
+    from ..skillfiles import frontmatter
+    from ..storage import get_storage
+    from .jobs import stage_job
+    from .routes_internal import _skill_heads
+
+    data = body.content.encode("utf-8")
+    if len(data) > MAX_SKILL_MD:
+        raise HTTPException(413, "skill text too large")
+    meta = frontmatter(body.content)
+    if meta.get("name") != body.name or not meta.get("description", "").strip():
+        raise HTTPException(422, "SKILL.md 需要匹配的 name 和非空 description")
+    if body.name in skills():
+        raise HTTPException(422, "通用技能不能覆盖，请另取个人技能名称")
+    storage = get_storage()
+    with user_critical_section(db, user.id):
+        heads = _skill_heads(db, user.id, body.name)
+        parent = heads[0] if heads else None
+        if (parent.id if parent else None) != body.expected_file_id:
+            raise HTTPException(422, "技能已更新，请重新读取后再保存")
+        if parent and (parent.status != FileStatus.READY or (parent.meta or {}).get("skill", {}).get("kind") != "md"):
+            raise HTTPException(422, "只能编辑扫描完成的 Markdown 技能；压缩包请上传完整新版本")
+        enforce_library_quota(db, user.id, len(data))
+        fid = new_id("fil")
+        key = f"skills/{user.id}/{fid}/SKILL.md"
+        storage.put_bytes(key, data, "text/markdown")
+        try:
+            row = FileObject(
+                id=fid,
+                user_id=user.id,
+                filename="SKILL.md",
+                content_type="text/markdown",
+                size=len(data),
+                sha256=hashlib.sha256(data).hexdigest(),
+                storage_key=key,
+                status=FileStatus.PENDING,
+                purpose="skill",
+                meta={"processing": "queued", "skill_claim": body.name, "source": "user"},
+            )
+            assign_file_version(db, row, parent)
+            db.add(row)
+            keys = trim_file_versions(db, row)
+            db.flush()
+            stage_job(db, "file", file_id=row.id)
+            db.commit()
+        except Exception:
+            db.rollback()
+            storage.delete(key)
+            raise
+    delete_storage_objects(keys)
+    return {"file_id": fid, "name": body.name, "status": "pending"}

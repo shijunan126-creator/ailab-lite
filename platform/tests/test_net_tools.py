@@ -281,7 +281,7 @@ def test_the_run_budget_caps_requests_and_bytes(monkeypatch) -> None:
 def test_tools_offered_per_mode(monkeypatch) -> None:
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     chat = {t["function"]["name"] for t in tools.tools_for_chat()}
-    assert chat == {"web_search", "read_url", "save_skill"}
+    assert chat == {"web_search", "read_url", "save_skill", "load_skill", "memory"}
     work = {t["function"]["name"] for t in tools.tools_for_turn()}
     assert {"download_url", "fetch_repo", "fetch_packages", "save_skill"} <= work
     monkeypatch.setattr(web.settings, "web_search_provider", "none")
@@ -447,9 +447,11 @@ def _running(c, headers) -> str:
     return run["id"]
 
 
-def _save(c, run_id, name, mode, data, delivery=None):
+def _save(c, run_id, name, mode, data, delivery=None, expected_file_id=None):
     headers = {**attempt_headers(c, run_id), "X-Delivery-Id": f"{run_id}:{delivery or uuid.uuid4().hex}"}
     params = {"name": name, "mode": mode, "filename": f"{name}.md"}
+    if expected_file_id:
+        params["expected_file_id"] = expected_file_id
     return c.post(f"/internal/runs/{run_id}/skills", headers=headers, params=params, content=data)
 
 
@@ -469,7 +471,15 @@ def test_a_saved_skill_is_pending_until_scanned_and_create_never_overwrites() ->
         assert [(s["name"], s["error"]) for s in ready] == [(name, None)]
         assert [s for s in c.get("/v1/skills", headers=other).json() if s["scope"] == "personal"] == []
 
-        updated = _save(c, run_id, name, "update", SKILL_MD.format(name=name).replace("读 README", "读源码").encode())
+        assert _save(c, run_id, name, "update", SKILL_MD.format(name=name).encode()).status_code == 422
+        updated = _save(
+            c,
+            run_id,
+            name,
+            "update",
+            SKILL_MD.format(name=name).replace("读 README", "读源码").encode(),
+            expected_file_id=first.json()["file_id"],
+        )
         assert updated.status_code == 201 and updated.json()["version"] == first.json()["version"] + 1
         versions = c.get(f"/v1/files/{updated.json()['file_id']}/versions", headers=me)
         assert versions.status_code != 200 or len(versions.json()) >= 2  # the old version stays restorable

@@ -19,8 +19,8 @@ const SKILLS: SkillButton[] = [
 ];
 
 const MODE_HINT: Record<Mode, string> = {
-  chat: "只用文字回答，不启动沙箱，更快更省",
-  work: "需要时可以做文件、跑代码（启动沙箱）",
+  chat: "搜索、问答、写代码，不运行沙箱",
+  work: "运行代码，生成可下载文件",
 };
 
 export default function Composer({
@@ -187,7 +187,7 @@ export default function Composer({
         rows={1}
         autoFocus={autoFocus}
         aria-label="消息"
-        placeholder={picked?.placeholder || (mode === "chat" ? "直接提问（对话模式：只回答，不做文件）" : placeholder || "输入消息，Enter 发送，Shift + Enter 换行")}
+        placeholder={picked?.placeholder || placeholder || "输入消息，Enter 发送，Shift + Enter 换行"}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {

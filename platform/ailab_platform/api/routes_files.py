@@ -117,6 +117,11 @@ async def upload_file(
                     parent = _owned_file(db, parent_id, user) if parent_id else None
                     if parent is not None and parent.deleted_at is not None:
                         raise HTTPException(status_code=409, detail="file is trashed")
+                    if parent is not None and parent.purpose == "skill":
+                        if not parent.is_head or parent.status == FileStatus.PENDING:
+                            raise HTTPException(422, "技能已更新或正在扫描，请刷新后重试")
+                        if parent.filename.endswith(".zip") and not filename.endswith(".zip"):
+                            raise HTTPException(422, "请上传完整技能压缩包，保留附带脚本")
                     row = FileObject(
                         id=file_id,
                         user_id=user.id,
@@ -129,7 +134,14 @@ async def upload_file(
                         parent_id=parent_id,
                         project_id=project_id if purpose == "library" else None,
                         purpose=purpose,
-                        meta={"processing": "queued"},
+                        meta={
+                            "processing": "queued",
+                            **(
+                                {"skill_claim": (parent.meta or {}).get("skill", {}).get("name")}
+                                if parent is not None and parent.purpose == "skill"
+                                else {}
+                            ),
+                        },
                     )
                     assign_file_version(db, row, parent)
                     db.add(row)
