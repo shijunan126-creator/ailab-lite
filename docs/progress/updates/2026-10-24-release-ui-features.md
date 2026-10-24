@@ -107,3 +107,61 @@ Gate 2下一步：按授权push至`feat/ui-polish-fork-retry`并开PR到main，�
 Gate 3未进入：没有部署提交、备份路径、现存用户数据迁移验收、部署RSS或线上smoke结果。不得把本次临时数据库升级head0024与真实模型浏览器结果写成部署验收。
 
 清理：五服务、Redis、临时PG、专属网络代理、浏览器均结束；14个临时端口关闭，`cleanup.json`。临时凭据配置已删除，repo Portal/.env/.DS_Store均未改。VM恢复本轮开始的停止状态，卷保留挂载，个人环境细节与检查只写本机HANDOFF。未重建/迁移/改写部署业务数据。
+
+
+## Gate 3：部署合并后的 main（Round 3）
+
+### 当前结论与固定基线
+
+**Gate 2已合并，Gate 3已部署并通过有限外部验收。** 本节覆盖上文的历史“未合并/未部署”状态，不覆盖历史失败证据。[PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42) 的head `16a88220e8c1ee9b6363fbc6563b21e8e0234277` 全部8项检查成功，squash merge为 `b07548995ffbce3fc618f94955c5d66b54b380c7`；本轮fetch后确认 `origin/main` 为此提交，`git diff 16a8822 origin/main` 为空。Gate 3只发布此固定提交，文档分支 `docs/release-b075489-deploy` 以其为base；没有更改产品代码、Portal、开发.env或.DS_Store。
+
+部署使用已存在的个人VM/容器路线，源码取自固定Git archive；运行镜像中的147份Python源文件和65份Portal app/components/lib文件逐一SHA256匹配快照。镜像：
+
+- Platform：`sha256:899f1c80f77d1429f02b23dd01d644b17881975a4ee9e40203ce269adcfb6a64`
+- Portal：`sha256:95495dcff8ab8c39df0c800c0a4ccf5911eafe25b616814c4b5726ea0db5c176`
+
+个人模型catalog显式启用已实现的quiet关闭reasoning配置，与Gate 1一致，未改普通回答思考能力。历史本机Compose上限高于仓库预算，本次将API/Broker限制为384MiB/0.5CPU，Agent256MiB/0.3CPU，Worker384MiB/0.3CPU，Portal维持384MiB/0.75CPU。没有新增常驻服务或依赖。
+
+### 备份、迁移和完整性
+
+切换前无活动Run，先停止五个业务服务，再备份完整数据卷（60,702,720字节、1215个文件），保留旧镜像与配置。归档SHA256重复读取一致；实际解包恢复后SQLite integrity_check=ok、外键错误0、全部旧ID集合一致、24份ready文件SHA256与数据库记录一致。备份路径、manifest和原始日志只记仓库外本机HANDOFF。
+
+API启动迁移0021→0022→0023→0024成功，实际alembic head=0024。切换前后用户4、项目1、会话61、Run63、产物18、文件24，ID集合和数量完全一致；24份文件hash、SQLite quick_check及外键通过。已有会话关联的61个Run全部成为按原顺序的parent_run_id链，active_run_id均为最后Run；另2个历史Run本来未关联会话，不纳入会话链断言。迁移后scheduled_tasks=0，无意外任务。
+
+部署smoke后再次检查：全部原ID仍在，新增仅专用测试账号及测试数据；25份ready文件hash全部正确，quick_check=ok、外键0、head0024。删除会话使用公开软删除契约，保留审计Run；测试Excel产物保留在已禁用测试账号下，未改真实用户内容。最终活动Run=0、定时任务=0。
+
+### 健康、资源与监控
+
+API、Agent、Broker、Worker、Portal均healthy，且实际容器image ID与上述镜像一致。83次Docker资源采样及45次进程RSS采样覆盖浏览器smoke；以下是本次短样本，CPU百分比以单核100%计。smoke RSS上界保守包含临时采样进程，空闲RSS排除采样进程；不能推导长期峰值或2vCPU/8GiB持续容量。
+
+| 服务 | 空闲RSS MiB | smoke RSS上界 MiB | 空闲CPU最大% | smoke CPU最大% | 限制MiB / CPU |
+|---|---:|---:|---:|---:|---|
+| API | 154.34 | 191.26 | 16.21 | 32.55 | 384 / 0.5 |
+| Agent | 102.65 | 139.09 | 0.57 | 27.75 | 256 / 0.3 |
+| Broker | 95.47 | 159.21 | 17.34 | 35.99 | 384 / 0.5 |
+| Worker | 91.59 | 105.08 | 15.27 | 22.73 | 384 / 0.3 |
+| Portal | 109.34 | 149.8 | 0.04 | 16.12 | 384 / 0.75 |
+
+空闲短采样包含既有健康探针/维护轮询的CPU突发；没有活动Run不等于CPU恒为0。
+
+`ailab_conversation_titles_total{outcome="ok",reason="none"}` 在Agent /metrics暴露，Prometheus实际抓取到序列。首次探针误用旧service token被403正确拒绝，随后改用现有ops凭据验证成功，未放宽认证。调度器enabled、间隔30秒；新建真实定时任务到期后10.771秒产生新会话并执行成功，证明后台循环运行。无任务时独立100次dispatch探针累计CPU0.053934秒（wall0.100867秒），折合每轮CPU约0.539ms、按30秒间隔估算单核0.0018%；这是空队列估算，执行模型/任务成本另由正常Run承担。
+
+### 部署浏览器smoke逐项结果
+
+| 项目 | 当前结果 |
+|---|---|
+| 新Chat早标题、网页引用 | 早标题2.260秒且早于正文终态；真实web_search/read_url，正文链接在新浏览器页打开官方文档HTTP200 |
+| Work产物与预览 | 真实模型生成一份Excel、真实Worker处理，交付1份产物并显示sheet-grid预览 |
+| ⌘K搜索 | 快捷键打开搜索，按专用测试标记检出当前会话 |
+| 置顶/取消置顶 | 菜单操作后侧栏置顶区出现/消失 |
+| 编辑与版本箭头 | 编辑后2/2生成成功，切回1/2显示原引用，切回2/2显示新回答 |
+| 定时任务 | UI创建、立即执行成功，后台真实到期执行成功；随后UI删除，最终任务数0 |
+| PDF导出 | 菜单打开新print页、渲染所选版本；观察到window.print被调用。为避免自动化被原生对话框阻塞，探针拦截print调用；未另验系统保存PDF文件 |
+
+浏览器pageerror=0。内置preview两次snapshot均返回`Preview automation snapshot timed out after 15000ms.`，按HANDOFF回退Playwright Chromium。首个探针把标题命中误当成必须出现正文mark高亮，实际搜索结果已出现；其清理代码又误把list响应当items对象。纠正探针后完整smoke通过，首个账号的会话也已清理并禁用；未将探针错误归因为产品故障。无用户可见产品故障，无需回滚；已验证备份和旧镜像继续保留。
+
+### 清理、验证范围与交接
+
+测试会话均从公开列表删除，定时任务删除，两个专用账号禁用，临时凭据文件删除；Playwright、资源观察器已退出，无新建临时服务/代理或遗留临时端口。部署栈继续运行，数据卷按既有流程保持挂载，不对运行VM执行verifyVolume或卸载。个人配置、地址、账号、备份路径、状态JSON及原始日志只在本机HANDOFF。
+
+本轮实际新检查为固定镜像构建、源文件比对、备份恢复、已有数据迁移/哈希/树、五服务健康、资源与监控、上述真实模型浏览器smoke、文档diff检查。未在文档分支重跑Python/Portal测试；产品树与Gate 2测试head一致，8项远端CI和Gate 1完整本地套件属于明确历史基线。未重新做整VM重启、真机键盘、PPT、百万窗口/长期容量或USB物理掉线；打印仅到print视图和调用。此次发布无待实现项；父任务下一步审核本docs PR实际CI并合入，子任务不merge/不监控。功能想法等待用户决定，不自动开始其他路线图。
