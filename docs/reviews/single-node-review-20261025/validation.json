@@ -54,55 +54,5 @@
       "p95_ms": 16.4,
       "max_ms": 18.87
     }
-  },
-  "remote_acceptance": {
-    "pull_request": "https://github.com/shijunan126-creator/ailab-lite/pull/49",
-    "head": "0dc288433f15916dcabc21ee6d987fd5a51b8bb8",
-    "merge_commit": "d11f86ee2b40d3e9a0224358e4389f37b81fe357",
-    "merged_at": "2026-10-24T16:54:11Z",
-    "checks": [
-      {
-        "name": "changes",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928694231"
-      },
-      {
-        "name": "quality",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720371"
-      },
-      {
-        "name": "python (sqlite)",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720270"
-      },
-      {
-        "name": "python (postgres)",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720355"
-      },
-      {
-        "name": "storage-contracts",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720183"
-      },
-      {
-        "name": "shell",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720289"
-      },
-      {
-        "name": "e2e",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120928720267"
-      },
-      {
-        "name": "CI",
-        "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/shijunan126-creator/ailab-lite/actions/runs/40113085942/job/120929963298"
-      }
-    ],
-    "merge_tree_matches_head": true,
-    "deployed": false
   }
 }
