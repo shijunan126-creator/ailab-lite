@@ -26,6 +26,7 @@ from ..config import settings
 from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
+from ..conversation_tree import path_ids
 from ..deps import get_db
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
@@ -161,20 +162,9 @@ def workspace_alive(run: Run, now: datetime) -> bool:
 
 
 def _earlier_turns(db: Session, run: Run) -> list[Run]:
-    if not run.conversation_id:
-        return []
-    return list(
-        db.scalars(
-            select(Run)
-            .where(
-                Run.conversation_id == run.conversation_id,
-                Run.created_at <= run.created_at,
-                Run.id != run.id,
-                Run.superseded_by_run_id.is_(None),
-            )
-            .order_by(Run.created_at, Run.id)
-        )
-    )
+    from ..conversation_tree import path_runs
+
+    return path_runs(db, run.conversation_id, run.parent_run_id) if run.conversation_id else []
 
 
 @router.get("/runs/{run_id}", response_model=InternalRunDetail, dependencies=[Depends(require_scope("runs:read"))])
@@ -485,6 +475,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
             .join(Run, Run.id == Artifact.run_id)
             .where(
                 Run.conversation_id == run.conversation_id,
+                Run.id.in_([*path_ids(db, run.conversation_id, run.parent_run_id), run.id]),
                 FileObject.user_id == run.user_id,
                 FileObject.filename == filename,
                 FileObject.deleted_at.is_(None),
@@ -701,6 +692,7 @@ def _bound_file(
     if principal.service == "broker" and file.purpose == "library" and file.id in ((run.runtime_meta or {}).get("library_file_ids") or []):
         attached = True
     if not attached and run.conversation_id:
+        ancestors = path_ids(db, run.conversation_id, run.parent_run_id)
         elements = (
             func.json_array_elements_text(Run.input_file_ids).table_valued("value")
             if db.bind.dialect.name == "postgresql"
@@ -711,6 +703,7 @@ def _bound_file(
                 select(
                     exists().where(
                         Run.conversation_id == run.conversation_id,
+                        Run.id.in_(ancestors),
                         Run.user_id == run.user_id,
                         exists(select(1).select_from(elements).where(elements.c.value == file.id)).correlate(Run),
                     )
@@ -722,7 +715,12 @@ def _bound_file(
                 db.scalar(
                     select(Artifact.id)
                     .join(Run, Run.id == Artifact.run_id)
-                    .where(Artifact.file_id == file.id, Run.conversation_id == run.conversation_id, Run.user_id == run.user_id)
+                    .where(
+                        Artifact.file_id == file.id,
+                        Run.conversation_id == run.conversation_id,
+                        Run.id.in_(ancestors),
+                        Run.user_id == run.user_id,
+                    )
                     .limit(1)
                 )
                 is not None

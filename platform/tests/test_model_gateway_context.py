@@ -309,6 +309,7 @@ def test_context_api_keyset_and_summary_compare_and_set():
                 db.add(
                     Run(
                         id=f"ctx-{run.id}-{n:03}",
+                        parent_run_id=f"ctx-{run.id}-{n - 1:03}" if n else None,
                         conversation_id=run.conversation_id,
                         user_id=run.user_id,
                         prompt=f"history-{n}",
@@ -318,6 +319,7 @@ def test_context_api_keyset_and_summary_compare_and_set():
                         created_at=run.created_at - timedelta(seconds=201 - n),
                     )
                 )
+            run.parent_run_id = f"ctx-{run.id}-199"
             db.commit()
         bootstrap = c.get(f"/internal/runs/{current['id']}/model-input", headers=SERVICE).json()
         assert bootstrap["prompt"] == "latest" and bootstrap["history"] == []

@@ -249,6 +249,8 @@ def test_bound_conversation_and_artifact_reads(identities):
         active = Run(user_id=owner.id, conversation_id=conv.id, prompt="active", model="test-pro", status=RunStatus.RUNNING)
         db.add_all([old, active])
         db.flush()
+        active.parent_run_id = old.id
+        conv.active_run_id = active.id
         db.add(Artifact(run_id=active.id, file_id=files[2].id))
         db.commit()
         run_id, old_id = active.id, old.id

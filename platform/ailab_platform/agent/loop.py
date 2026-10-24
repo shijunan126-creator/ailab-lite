@@ -479,6 +479,7 @@ class AgentLoop:
                 "attempt_id": run["_attempt_id"],
                 "alias": model,
                 "mode": (run.get("options") or {}).get("mode", "work"),
+                "quiet": quiet,
                 "max_output_tokens": call.max_output_tokens,
                 "estimated_input_tokens": estimated_input,
             }

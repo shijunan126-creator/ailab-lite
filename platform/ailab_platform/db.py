@@ -35,6 +35,7 @@ if _is_sqlite:
 
     @event.listens_for(engine, "connect")
     def _sqlite_pragmas(dbapi_conn, _):  # pragma: no cover - driver hook
+        dbapi_conn.create_function("ailab_search_lower", 1, lambda value: value.lower() if value else "", deterministic=True)
         cur = dbapi_conn.cursor()
         cur.execute("PRAGMA journal_mode=WAL")
         # WAL + NORMAL: crash-safe against process death; a power loss can lose
