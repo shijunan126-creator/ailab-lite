@@ -1,6 +1,15 @@
 {
   "schema_version": 1,
   "skills": {
+    "auto-skill": {
+      "description": "从对话中提取或更新个人技能：判断是否值得沉淀、生成 SKILL.md 草稿、与已有技能比较，经用户确认后用 save_skill 保存",
+      "license": "NOASSERTION",
+      "name": "auto-skill",
+      "requires": [],
+      "roles": [],
+      "sha256": "f121bcba3e3b9c46e683b8372ca87b923451e9fcb6b44cdaa4fed9cf3d2ca649",
+      "version": "0.1.0"
+    },
     "pptx": {
       "description": "做演示文稿 / PPT / 汇报材料（.pptx）：多种版式、配色主题、图标、原生图表、配图；支持多轮修改",
       "license": "NOASSERTION",

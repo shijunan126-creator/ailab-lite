@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { api, Conversation, errorMessage } from "../lib/api";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconShare, IconTrash } from "./icons";
+import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconShare, IconSparkles, IconTrash } from "./icons";
 import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 import { confirmDialog } from "../lib/dialog";
@@ -14,7 +14,7 @@ import { confirmDialog } from "../lib/dialog";
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
 
 const MENU_W = 176;
-const MENU_H = 200;
+const MENU_H = 244;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
 export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
@@ -87,6 +87,27 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
     }
   }
 
+  async function extract() {
+    setAt(null);
+    setError("");
+    try {
+      await api(`/v1/conversations/${conv.id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({
+          prompt:
+            "请使用 auto-skill 分析这段对话，判断是否值得保存为个人技能。先给 SKILL.md 草稿、变更建议以及是否应更新已有技能；不要直接保存，等我确认。",
+          mode: "work",
+          skill: "auto-skill",
+        }),
+      });
+      conversationsChanged();
+      if (window.location.pathname === `/c/${conv.id}`) window.location.reload();
+      else window.location.href = `/c/${conv.id}`;
+    } catch {
+      setError("提取技能失败，请稍后重试");
+    }
+  }
+
   async function remove() {
     setAt(null);
     if (!(await confirmDialog({ title: `删除对话「${title}」？`, body: "产出的文件仍保留在资料库。", action: "删除", danger: true }))) return;
@@ -134,6 +155,9 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
             }}
           >
             <IconFolderInput size={15} /> {conv.project_id ? "移动到…" : "移到项目"}
+          </button>
+          <button className="menu-item" role="menuitem" onClick={extract}>
+            <IconSparkles size={15} /> 提取技能
           </button>
           <button
             className="menu-item"

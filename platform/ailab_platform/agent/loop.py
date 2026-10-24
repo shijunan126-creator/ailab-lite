@@ -760,6 +760,7 @@ class AgentLoop:
                         "ok": True,
                         "file_id": turn.personal[wanted]["file_id"],
                         "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted)),
+                        "name": wanted,
                     }
             elif wanted and (turn.run.get("options") or {}).get("mode") == "chat":
                 result = {"ok": True, "skill": load_skill(wanted)}

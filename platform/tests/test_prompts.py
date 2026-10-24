@@ -23,7 +23,7 @@ def test_the_system_prompt_lists_the_skills_but_does_not_inline_them() -> None:
 
 def test_load_skill_returns_the_whole_skill() -> None:
     assert "/opt/skills/pptx/scripts/build.py" in prompts.load_skill("pptx")
-    with pytest.raises(KeyError, match="available: pptx, xlsx"):
+    with pytest.raises(KeyError, match="available: auto-skill, pptx, xlsx"):
         prompts.load_skill("nope")
 
 

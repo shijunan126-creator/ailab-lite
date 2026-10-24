@@ -34,12 +34,17 @@ def test_skills_are_listed_on_by_default_and_switch_per_user() -> None:
         me, other = _user(c), _user(c)
         listed = c.get("/v1/skills", headers=me).json()
         assert [(s["name"], s["title"], s["enabled"]) for s in listed] == [
+            ("auto-skill", "自动技能", True),
             ("pptx", "演示文稿（PPT）", True),
             ("xlsx", "表格（Excel）", True),
         ]
         off = c.put("/v1/skills/pptx", headers=me, json={"enabled": False})
         assert off.status_code == 200 and off.json()["enabled"] is False
-        assert {s["name"]: s["enabled"] for s in c.get("/v1/skills", headers=me).json()} == {"pptx": False, "xlsx": True}
+        assert {s["name"]: s["enabled"] for s in c.get("/v1/skills", headers=me).json()} == {
+            "pptx": False,
+            "auto-skill": True,
+            "xlsx": True,
+        }
         assert all(s["enabled"] for s in c.get("/v1/skills", headers=other).json())  # someone else's settings are untouched
         assert c.put("/v1/skills/pptx", headers=me, json={"enabled": True}).json()["enabled"] is True
         assert c.put("/v1/skills/nope", headers=me, json={"enabled": False}).status_code == 404
@@ -58,10 +63,10 @@ def test_a_switched_off_skill_is_refused_and_reaches_the_agent_as_off() -> None:
 
 def test_the_prompt_lists_only_the_skills_that_are_on() -> None:
     both = system_prompt_for("work")
-    assert "- pptx：" in both and "- xlsx：" in both
+    assert "- pptx：" in both and "- auto-skill：" in both and "- xlsx：" in both
     no_ppt = system_prompt_for("work", disabled=frozenset({"pptx"}))
     assert "- pptx：" not in no_ppt and "- xlsx：" in no_ppt
-    none = system_prompt_for("work", disabled=frozenset({"pptx", "xlsx"}))
+    none = system_prompt_for("work", disabled=frozenset({"pptx", "auto-skill", "xlsx"}))
     assert "关闭了所有技能" in none
     assert "本轮已选技能" not in system_prompt_for("work", "pptx", frozenset({"pptx"}))  # never preloaded when off
 
