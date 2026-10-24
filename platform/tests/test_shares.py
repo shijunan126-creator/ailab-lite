@@ -153,7 +153,7 @@ def test_owner_from_principal_file_share_lifecycle_and_notification_seam(shared,
 
 
 def test_share_pagination_lookup_and_view_pages(shared):
-    c, share, recipient, _, cid, first, owner, _ = shared
+    c, share, recipient, _, cid, first, owner, fids = shared
     assert any(r["id"] == share["id"] for r in c.get("/v1/shares?scope=received", headers=recipient).json()["items"])
     assert any(r["id"] == share["id"] for r in c.get(f"/v1/shares/for?conversation_id={cid}", headers=AUTH).json())
     assert c.get("/v1/users/lookup?q=", headers=AUTH).status_code == 422
@@ -174,17 +174,14 @@ def test_share_pagination_lookup_and_view_pages(shared):
     assert len(one["turns"]) == 20 and one["next_cursor"]
     two = c.get(f"/v1/shares/{share['id']}/view", params={"cursor": one["next_cursor"]}, headers=recipient).json()
     assert len(two["turns"]) == 3 and two["next_cursor"] is None
-    for _ in range(2):
-        c.post("/v1/shares", headers=AUTH, json={"kind": "conversation", "conversation_id": cid, "audience": "everyone"}).raise_for_status()
+    for fid in fids[:2]:
+        c.post("/v1/shares", headers=AUTH, json={"kind": "file", "file_id": fid, "audience": "everyone"}).raise_for_status()
     one = c.get("/v1/shares?limit=1", headers=AUTH).json()
     two = c.get("/v1/shares", params={"limit": 1, "cursor": one["next_cursor"]}, headers=AUTH).json()
     assert one["items"][0]["id"] != two["items"][0]["id"]
     object_page = c.get("/v1/shares/for", params={"conversation_id": cid, "limit": 1}, headers=AUTH)
-    assert object_page.headers.get("x-next-cursor")
-    next_page = c.get(
-        "/v1/shares/for", params={"conversation_id": cid, "limit": 1, "cursor": object_page.headers["x-next-cursor"]}, headers=AUTH
-    )
-    assert next_page.json()[0]["id"] != object_page.json()[0]["id"]
+    assert [r["id"] for r in object_page.json()] == [share["id"]]
+    assert not object_page.headers.get("x-next-cursor")
     with SessionLocal() as db:
         db.get(User, me["id"]).disabled_at = utcnow()
         db.commit()
@@ -306,3 +303,95 @@ def test_sharing_requires_terminal_leaf_and_file_share_is_fixed_version(shared):
     sid = created.json()["id"]
     assert c.get(f"/v1/shares/{sid}/files/{fids[0]}/content", headers=recipient).content == b"public"
     assert c.get(f"/v1/shares/{sid}/files/{newer}/content", headers=recipient).status_code == 404
+
+
+def test_share_locks_are_acquired_before_writes_in_global_order(shared, monkeypatch):
+    from contextlib import contextmanager
+
+    from ailab_platform.api import routes_shares
+
+    c, _, recipient, _, cid, _, owner, _ = shared
+    target = c.get("/v1/me", headers=recipient).json()["id"]
+    taken = []
+    original = routes_shares.user_critical_section
+
+    @contextmanager
+    def tracked(db, uid):
+        taken.append(uid)
+        with original(db, uid):
+            yield
+
+    monkeypatch.setattr(routes_shares, "user_critical_section", tracked)
+    response = c.post(
+        "/v1/shares", headers=AUTH, json={"kind": "conversation", "conversation_id": cid, "audience": "people", "user_ids": [target]}
+    )
+    assert response.status_code == 201, response.text
+    assert taken == sorted([owner, target])
+    taken.clear()
+    response = c.patch("/v1/shares/" + response.json()["id"], headers=AUTH, json={"user_ids": [target]})
+    assert response.status_code == 200, response.text
+    assert taken == sorted([owner, target])
+
+
+def test_reciprocal_shares_postgres_processes(shared):
+    import json
+    import os
+    import subprocess
+    import sys
+    import time
+    from pathlib import Path
+
+    from ailab_platform.db import engine
+
+    if engine.dialect.name != "postgresql":
+        pytest.skip("requires throwaway PostgreSQL")
+    c, _, recipient, _, cid, _, owner, _ = shared
+    target = c.get("/v1/me", headers=recipient).json()["id"]
+    conv = c.post("/v1/conversations", headers=recipient, json={"title": "reciprocal"}).json()["id"]
+    run = c.post(f"/v1/conversations/{conv}/messages", headers=recipient, json={"prompt": "reverse"}).json()["id"]
+    _finish(c, run, "reverse")
+    script = """
+import json, sys, time
+from sqlalchemy import text
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import User
+from ailab_platform.api.routes_shares import create, CreateShare
+owner, target, conv, start = json.loads(sys.argv[1])
+with SessionLocal() as db:
+    db.execute(text("SET statement_timeout='5000ms'"))
+    user = db.get(User, owner)
+    time.sleep(max(0, start-time.time()))
+    for _ in range(10):
+        create(CreateShare(kind='conversation', conversation_id=conv, audience='people', user_ids=[target]), user, db)
+print('ok')
+"""
+    start = time.time() + 1
+    procs = [
+        subprocess.Popen(
+            [sys.executable, "-c", script, json.dumps([u, v, cv, start])],
+            env=os.environ.copy(),
+            cwd=Path(__file__).resolve().parents[1],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for u, v, cv in [(owner, target, cid), (target, owner, conv)]
+    ]
+    try:
+        for proc in procs:
+            out, err = proc.communicate(timeout=20)
+            assert proc.returncode == 0, err
+            assert out.strip() == "ok"
+    finally:
+        for proc in procs:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+
+
+def test_post_share_reuses_live_object_share(shared):
+    c, share, _, _, cid, _, _, _ = shared
+    repeated = c.post("/v1/shares", headers=AUTH, json={"kind": "conversation", "conversation_id": cid, "audience": "everyone"})
+    assert repeated.status_code == 201
+    assert repeated.json()["id"] == share["id"]
+    assert repeated.json()["audience"] == "everyone"

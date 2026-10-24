@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
-from ..models import Artifact, FileObject, ModelUsage, Run
+from ..models import Artifact, FileObject, ModelUsage, QueuedMessage, Run
 
 
 def file_dict(file: FileObject, versions: int | None = None) -> dict:
@@ -84,6 +84,19 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "work_ms": run.work_ms,
     }
     if detail:
+        applied = (run.runtime_meta or {}).get("steer_ids", [])[:5]
+        prompts = (
+            dict(
+                db.execute(
+                    select(QueuedMessage.id, QueuedMessage.prompt)
+                    .where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered", QueuedMessage.id.in_(applied))
+                    .limit(5)
+                ).all()
+            )
+            if applied
+            else {}
+        )
+        out["steered"] = [{"id": qid, "prompt": prompts[qid]} for qid in applied if qid in prompts]
         rows = db.execute(
             select(Artifact, FileObject).join(FileObject, Artifact.file_id == FileObject.id).where(Artifact.run_id == run.id)
         ).all()

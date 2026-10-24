@@ -1,5 +1,6 @@
 """Principal-authorized read-only snapshots. Never expose run events or owner file URLs."""
 
+from contextlib import ExitStack, contextmanager
 from datetime import datetime
 from typing import Literal
 
@@ -235,13 +236,42 @@ def lookup(q: str = Query(min_length=1, max_length=64), user: User = Depends(cur
     return [dict(r) for r in rows]
 
 
+@contextmanager
+def sharing_locks(db, owner_id, recipient_ids):
+    # Acquire every user lock before writes/FK locks, in one global order.
+    # Notification insertion can reenter these locks and prune atomically.
+    with ExitStack() as stack:
+        for uid in sorted({owner_id, *(recipient_ids or [])}):
+            stack.enter_context(user_critical_section(db, uid))
+        yield
+
+
 @router.post("/v1/shares", status_code=201, response_model=ShareOut)
 def create(body: CreateShare, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    with user_critical_section(db, user.id):
-        row = Share(owner_id=user.id, kind=body.kind, conversation_id=body.conversation_id, file_id=body.file_id, audience=body.audience)
-        snapshot(db, row)
-        db.add(row)
-        db.flush()
+    with sharing_locks(db, user.id, body.user_ids if body.audience == "people" else []):
+        row = db.scalar(
+            select(Share)
+            .where(
+                Share.owner_id == user.id,
+                Share.revoked_at.is_(None),
+                Share.kind == body.kind,
+                Share.conversation_id == body.conversation_id if body.kind == "conversation" else Share.file_id == body.file_id,
+            )
+            .order_by(Share.created_at.desc(), Share.id.desc())
+            .limit(1)
+        )
+        if row is None:
+            row = Share(
+                owner_id=user.id, kind=body.kind, conversation_id=body.conversation_id, file_id=body.file_id, audience=body.audience
+            )
+            snapshot(db, row)
+            db.add(row)
+            db.flush()
+        else:
+            # POST updates the audience but only an explicit refresh advances the snapshot.
+            probe = Share(owner_id=user.id, kind=body.kind, conversation_id=body.conversation_id, file_id=body.file_id)
+            snapshot(db, probe)
+            row.audience, row.updated_at = body.audience, utcnow()
         set_recipients(db, row, body.user_ids if body.audience == "people" else [])
         record_audit(db, "shares.create", "share", row.id, actor_id=user.id)
         db.commit()
@@ -294,7 +324,7 @@ def for_object(
 
 @router.patch("/v1/shares/{share_id}", response_model=ShareOut)
 def patch(share_id: str, body: PatchShare, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    with user_critical_section(db, user.id):
+    with sharing_locks(db, user.id, body.user_ids):
         row = authorized(db, share_id, user, True)
         if body.refresh:
             snapshot(db, row)

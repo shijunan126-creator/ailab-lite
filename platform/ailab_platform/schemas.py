@@ -108,7 +108,13 @@ class RunOut(ORMModel):
     work_ms: int | None = None
 
 
+class SteeredMessage(BaseModel):
+    id: str
+    prompt: str
+
+
 class RunDetail(RunOut):
+    steered: list[SteeredMessage] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     input_files: list[dict] = Field(default_factory=list)
     usage: dict = Field(default_factory=dict)

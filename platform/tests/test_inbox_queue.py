@@ -159,9 +159,12 @@ def test_steer_checkpoint_event_history(api):  # noqa: F811
     qid = enqueue(api, conv, steer=True, prompt="补充内容").json()["id"]
     assert api.get(f"/internal/runs/{run}/state", headers=headers).json()["steer_pending"] is True
     assert api.post(f"/internal/runs/{run}/steer/claim", headers=headers).json()["items"][0]["id"] == qid
+    assert api.get(f"/v1/runs/{run}", headers=AUTH).json()["steered"] == []
     state = fresh_state()
     state.update(messages=[{"role": "user", "content": "补充内容"}], steer_ids=[qid])
     assert save(api, run, headers, state=state).status_code == 200
+    assert api.get(f"/v1/runs/{run}", headers=AUTH).json()["steered"] == [{"id": qid, "prompt": "补充内容"}]
+    assert detail(api, conv)["turns"][0]["steered"] == [{"id": qid, "prompt": "补充内容"}]
     assert save(api, run, headers, step=1, state=state).status_code == 200
     assert api.post(f"/internal/runs/{run}/steer/claim", headers=headers).json() == {"items": []}
     assert api.get(f"/internal/runs/{run}/state", headers=headers).json()["steer_pending"] is False
