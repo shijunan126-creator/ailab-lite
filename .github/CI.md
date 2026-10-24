@@ -44,7 +44,7 @@ E2E 仍只构建一次 Portal。`portal-tests.log`、`portal-build.log` 和服�
 
 ## 重型与外部边界
 
-`Real component contracts` 每周二 04:41 UTC 或手动运行，四个隔离 runner 分别验证：
+`Real component contracts` 每周二 04:41 UTC、手动，或 PR 修改其工作流/fixture/等待脚本/Office 镜像时运行，四个隔离 runner 分别验证：
 
 | 组件 | 自动契约 | 资源与边界 |
 |---|---|---|
@@ -53,6 +53,6 @@ E2E 仍只构建一次 Portal。`portal-tests.log`、`portal-build.log` 和服�
 | ClamAV | 协议就绪、干净内容、EICAR | 与部署相同镜像 digest；容器内存上限 2 GiB，签名下载可能使任务失败 |
 | Keycloak | 浏览器授权码 + PKCE、登出、平台禁用账号 | 固定版本 26.6.4；一次性 realm/public client；容器内存上限 1 GiB |
 
-Office job 总截止 45 分钟，其余每 job 25 分钟、组件就绪最多 600 秒；JUnit 必须有成功用例且零 skip。失败仍收集服务日志/资源快照并清理容器。此工作流不在 PR 必需路径重复拉取 ClamAV 签名和启动 JVM。每周依赖审计独立，Python constraints 与 Portal 全部依赖（含 dev）均检查，每 job 截止 10 分钟。
+Office job 总截止 45 分钟，其余每 job 25 分钟、组件就绪最多 600 秒；JUnit 必须有成功用例且零 skip。失败仍收集服务日志/资源快照并清理容器。普通业务 PR 不重复拉取 ClamAV 签名和启动 JVM；工作流自身或镜像变更的 PR 会实际验证重型链路。每周依赖审计独立，Python constraints 与 Portal 全部依赖（含 dev）均检查，每 job 截止 10 分钟。
 
 OpenSandbox/gVisor、Office/skills 多架构组合、真实联合负载/2 vCPU 8 GiB 容量、付费模型/vision、企业 IdP、备份 RPO/RTO 仍按 `platform/tests/contracts/README.md` 和 `platform/tests/load/` 在专门环境验收；普通 CI 的 mock 或单组件绿不能代替这些结论。新增重型工作流必须在 Actions 对实际 head 运行后才称为远端通过。

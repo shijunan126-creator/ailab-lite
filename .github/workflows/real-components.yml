@@ -1,7 +1,13 @@
 name: Real component contracts
 
-# Heavy disposable fixtures are kept off the per-PR critical path.
+# Exercise the heavy pipeline when its own definition/fixtures or the Office image change.
 on:
+  pull_request:
+    paths:
+      - .github/workflows/real-components.yml
+      - .github/fixtures/**
+      - platform/scripts/ci_wait_component.py
+      - images/sbx-office/**
   schedule:
     - cron: "41 4 * * 2"
   workflow_dispatch:

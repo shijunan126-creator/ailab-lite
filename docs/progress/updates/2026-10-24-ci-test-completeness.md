@@ -38,3 +38,5 @@
 用户后续明确授权重建已提交的新版 Portal，并提交/合并 CI PR；此前暂缓合并已解除。不删除工作树、旧镜像或业务数据。CI 分支已集成最新 `origin/main@2093dfc`，保留 #36/#37 的代码和交接内容；首轮数字仅代表此前 `1a384558 + CI diff`，集成后的远端 head 验证另记。Portal 运行配置和验收只进入本机独立 HANDOFF。
 
 集成后的本地检查：Ruff check/format 282 文件、actionlint 1.7.12、28 项 CI unittest、全部 tracked ShellCheck 通过；PR [#38](https://github.com/shijunan126-creator/ailab-lite/pull/38) 已提交并关联当前线程，主流水线全套运行中。最新 Portal（main 2093dfc）已经独立重建并验证源文件哈希、浏览器、登录/API、文件完整性；后端运行版本不变，操作明细只记录私有 HANDOFF。下一步等待此 PR 最新 head 绿后合并；不删除分支/工作树/镜像。
+
+首轮手动触发新增 workflow 返回 GitHub 404（尚未出现在默认分支），因此为重型工作流增加 PR 路径触发：仅工作流自身、fixtures、组件等待脚本或 Office 镜像变更才运行。本 PR 会在合并前实际验证这四项；普通业务 PR 不额外启动重型组件。
