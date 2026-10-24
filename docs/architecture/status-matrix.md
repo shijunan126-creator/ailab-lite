@@ -124,3 +124,5 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 后端分支 `feat/chat-backend-fork-retry` 基于 `94d3e22`：0022迁移、首问并发标题与思考流兼容、网页来源事件、事务分叉/重试、Run归属资料库工具、平台管理员上下文阈值已实现。本地后端双库验证通过（SQLite全套985/108跳过、PG+Redis1061/33跳过，最终回归各11通过），存储成本与测试基线见[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)；Portal由父Agent独立实现，本轮不代表前后端集成、部署或main合入。
 
 前端集成：`feat/ui-polish-fork-retry` 已合入上述后端并实现 Portal 侧思考大纲、正文流式分离、来源/引用、复制/重试/分叉、首问标题实时更新、管理员上下文阈值；本地 Portal/SQLite/五服务 E2E 结果见[前端/集成记录](../progress/updates/2026-10-24-ui-polish-fork-retry.md)。未部署、未合入 main，真机键盘与真实模型未验。
+
+2026-10-24 Round 2 后端标题修复：`fix/chat-title-timing@0be9fac`基于父Agent合并基线`814c541`，正文终态后保留原预算内标题任务、终态SSE有界收尾与共享Markdown规范化；SQLite全套1000通过/108跳过、Ruff通过。PG/Portal/浏览器/五服务统一验收未运行，父Agent负责集成；见同一[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)。

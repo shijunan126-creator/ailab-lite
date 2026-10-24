@@ -64,7 +64,7 @@ def test_auto_title_candidates_are_confirmed_bounded_and_optional():
             ("```md\n# 示例标题\n```\n普通回答", {}, ""),
             ("# 总结\n答案", {}, ""),
             ("普通回答", {"conversation_title": "多区域销售预测"}, "多区域销售预测"),
-            ("普通回答", {"conversation_title": "长" * 41}, ""),
+            ("普通回答", {"conversation_title": "长" * 41}, "长" * 40),
             ("普通回答", {"conversation_title": ["坏数据"]}, ""),
         ]:
             conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
@@ -192,3 +192,11 @@ def test_agent_transition_applies_optional_title_in_same_commit():
         )
         assert response.status_code == 200, response.text
         assert client.get(f"/v1/conversations/{conversation['id']}", headers=AUTH).json()["title"] == "普通聊天的自动标题"
+
+
+def test_result_title_normalizes_inline_markdown_whitespace_and_caps_length():
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "question"}).json()
+        _finish(c, run["id"], "answer", conversation_title="# **强调** __重点__ *内容* `代码` [链接](https://example.com)\n  " + "长" * 50)
+        assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()["title"] == ("强调 重点 内容 代码 链接 " + "长" * 50)[:40]

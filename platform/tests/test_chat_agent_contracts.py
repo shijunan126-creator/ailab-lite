@@ -46,7 +46,9 @@ def test_last_reasoning_chunk_flushes_with_no_answer_chunk(mode):
 
 
 @pytest.mark.parametrize("slow_title", [False, True])
-def test_title_is_concurrent_and_slow_title_never_delays_answer(slow_title):
+def test_title_is_concurrent_and_slow_title_never_delays_answer(slow_title, monkeypatch):
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.1)
+
     async def run():
         main_started, titled = asyncio.Event(), asyncio.Event()
         title_closed = asyncio.Event()
@@ -231,3 +233,135 @@ def test_optional_title_cannot_take_quota_before_main_reservation():
         assert p.statuses[-1][0] == "succeeded" and len(p.reservations) == len(p.settlements) == 1
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize("stop", [None, "shutdown", "attempt_loss"])
+def test_title_survives_answer_completion_and_is_owned_until_finished(stop, monkeypatch):
+    from ailab_platform.clients import ClientError
+
+    monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
+
+    async def scenario():
+        completed, release_title, closed, titled = (asyncio.Event() for _ in range(4))
+
+        class Platform(FakePlatform):
+            async def get_run(self, id_):
+                return {**await super().get_run(id_), "needs_conversation_title": True, "options": {"mode": "chat"}}
+
+            async def get_run_state(self, id_):
+                if stop == "attempt_loss" and completed.is_set():
+                    raise ClientError("GET", "/state", 409, "stale_attempt")
+                return await super().get_run_state(id_)
+
+            async def set_run_status(self, *args, **kwargs):
+                await super().set_run_status(*args, **kwargs)
+                if self.statuses[-1][0] == "succeeded":
+                    completed.set()
+
+            async def set_conversation_title(self, id_, title):
+                assert completed.is_set() and title == "后到标题"
+                titled.set()
+
+        class Model(LLMClient):
+            async def chat(self, messages, *args, **kwargs):
+                if "会话标题" in messages[0]["content"]:
+                    try:
+                        await release_title.wait()
+                        return LLMResponse(content="后到标题")
+                    finally:
+                        closed.set()
+                await asyncio.sleep(0.02)
+                return LLMResponse(content="answer")
+
+        platform = Platform()
+        task = asyncio.create_task(AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process("r", attempt_id="a"))
+        await asyncio.wait_for(completed.wait(), 1)
+        assert not task.done() and not titled.is_set()
+        if stop == "shutdown":
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        elif stop == "attempt_loss":
+            await asyncio.wait_for(task, 1)
+        else:
+            release_title.set()
+            await asyncio.wait_for(task, 1)
+        assert titled.is_set() == (stop is None)
+        assert closed.is_set() and platform.statuses[-1][0] == "succeeded"
+        assert len(platform.reservations) == len(platform.settlements) == 2
+        assert len(asyncio.all_tasks()) == 1
+
+    asyncio.run(scenario())
+
+
+def test_title_budget_includes_reservation_gate_and_does_not_restart(monkeypatch):
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.05)
+
+    async def scenario():
+        platform = FakePlatform()
+        gate = asyncio.Event()
+        run = {**await platform.get_run("r"), "needs_conversation_title": True, "_main_model_reserved": gate}
+        loop = AgentLoop(platform=platform, broker=FakeBroker())
+        assert await asyncio.wait_for(loop._conversation_title("r", run), 0.5) is None
+        assert not platform.reservations
+        gate.set()  # A later main reservation cannot restart the expired title.
+        await asyncio.sleep(0)
+        assert not platform.reservations and len(asyncio.all_tasks()) == 1
+
+    asyncio.run(scenario())
+
+
+def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch):
+    import threading
+
+    import httpx
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api import routes_runs
+    from ailab_platform.api.main import app
+    from ailab_platform.clients import AsyncPlatformClient
+    from tests.run_claims import attempt_headers
+    from tests.test_conversations import AUTH
+
+    waiting = threading.Event()
+    original = routes_runs._poll_events
+
+    def poll(*args):
+        result = original(*args)
+        if not result[0] and result[2]:
+            waiting.set()
+        return result
+
+    monkeypatch.setattr(routes_runs, "_poll_events", poll)
+
+    async def scenario(c, run):
+        class Model(LLMClient):
+            async def chat(self, messages, *args, **kwargs):
+                if "会话标题" in messages[0]["content"]:
+                    assert await asyncio.to_thread(waiting.wait, 2)
+                    return LLMResponse(content="# **晚到** `标题`", usage={"prompt_tokens": 1, "completion_tokens": 1})
+                await asyncio.sleep(0.02)
+                return LLMResponse(content="answer", usage={"prompt_tokens": 1, "completion_tokens": 1})
+
+        platform = AsyncPlatformClient("http://testserver", token="test-service")
+        await platform._http.aclose()
+        platform._http = httpx.AsyncClient(transport=httpx.ASGITransport(app=app))
+        owner = attempt_headers(c, run["id"])
+        try:
+            _, response = await asyncio.wait_for(
+                asyncio.gather(
+                    AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process(run["id"], attempt_id=owner["X-Run-Attempt"]),
+                    asyncio.to_thread(c.get, f"/v1/runs/{run['id']}/events", headers=AUTH),
+                ),
+                4,
+            )
+            stream = response.text
+            assert stream.index("event: run.completed") < stream.index("event: conversation.titled") < stream.index("event: stream.end")
+            assert c.get(f"/v1/conversations/{run['conversation_id']}", headers=AUTH).json()["title"] == "晚到 标题"
+        finally:
+            await platform.aclose()
+
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "问题", "mode": "chat"}).json()
+        asyncio.run(scenario(c, run))

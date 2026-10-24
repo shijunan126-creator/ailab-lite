@@ -361,3 +361,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 依赖 localStorage 的初始布局（侧栏收起）要在首帧前应用：根布局内联脚本写 `html[data-sidebar]`，`.shell.settling` 期间禁止过渡；否则刷新后侧栏先出现再淡出，E2E `is_visible` 也会抓到中间态。
 - iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
 - 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
+
+- Round 2 标题生命周期：不能在正文终态的finally无条件cancel标题。先提交正文终态，再用原任务剩余预算收尾；保留durable attempt及HTTP client直到收尾/取消，再ACK。shutdown/attempt丢失必须取消子模型并await、结算、清理heartbeat；只去掉cancel会留下无主任务。标题10秒从任务启动计时，含主额度gate，不从正文结束重置；gate慢时主动放弃标题，避免标题抢主额度。账本取消清理仍受既有HTTP重试边界，不冒称严格10秒job释放SLA。
+- `run.completed`不是`stream.end`：终态后空轮询会关SSE，关闭时列表刷新也可能早于晚到标题。空标题且有效attempt时保留最多终态后10秒的SSE窗口；先检查pending再读取事件，避免CAS刚提交时看见非空标题却漏读同事务事件。cancel/delete不留窗口；ACK/过期立即收敛。API标题写入仍走原fence与空标题CAS，取消Run不能补标题。
+- 自动标题的Markdown清洗必须在一个无ORM依赖的纯文本helper统一，Agent/内部endpoint/result fallback复用；先去链接/强调/代码/heading、折叠空白，再截40字。原始请求上限和最终存储上限不同；保留40字请求上限会在清洗前422，不能验证/解决长Markdown输入。

@@ -60,3 +60,32 @@ Fork CPU随元数据/事件数及本地复制字节线性增长；本地storage.
 标题任务每个空标题会话额外一次模型调用（独立reserve/settle和call_id）、一次CAS与一个成功事件；没有大文件/新后台进程/存储对象。输入最多1000字问题+50×200字附件名，输出上限沿用quiet预算2048。Python CPU/RSS为有界文本与HTTP开销，真实模型CPU/RSS/计费与provider延迟未实测；不能用fake LLM测试代替。生成timeout10秒，结束时cancel+await及账本清理；主回答不await标题，正文首个额度预留先于标题，避免可选元数据抢占临界余额。失败/慢标题不阻止正文终态，但额外上游并发仍可能竞争provider资源，账本收尾可延长job清理时间。
 
 仍待父Agent：按本记录契约完成Portal集成，运行前端测试/build、真实浏览器和五服务E2E；本轮没有发布、推送、PR或main合入。
+
+## Round 2：标题完成时序修复（2026-10-24）
+
+本轮工作树 `t3-2e563082`，实际起点 `814c541b46e5b3a15ffe4985bc25432f8567193c`（父Agent已合并后的代码），新分支 `fix/chat-title-timing`；旧记录中的 `t3-ae343bbd`/`2078445` 是上一轮证据，不是本轮基线。不修改 `platform/portal/`，不推送/PR/部署。
+
+- 正文先写 succeeded/failed；job 收尾保留并 await 标题的剩余预算，任务不脱离 job/client/attempt 生命周期。worker shutdown/正文取消/attempt丢失取消并回收模型子任务、账本与heartbeat。标题预算从标题任务启动算10秒，包含主额度reservation gate、模型生成和标题写入；慢gate时有意放弃可选标题，既不抢正文额度也不重置截止。取消后的账本结算仍可能使用既有有界HTTP重试，10秒不是job清理SLA。
+- 原 `fence_attempt` 不因正文终态自动结束；同一有效claim且未ended的attempt可写晚到标题，不需削弱fence。API额外禁止 canceled Run 写标题，deleted conversation仍由CAS条件拒绝；foreign/stale/expired attempt仍409。轻量 `/state` 在携带attempt时用只读索引查询返回409，模型轮询不再吞409，失去attempt后停止上游调用（按既有轮询间隔，不是即时中断）。
+- **送达路径为SSE**：`run.completed`后，空标题且有效attempt时最多保留终态后10秒窗口，title/ACK/attempt过期后关闭。先检查pending、后读取事件，避免CAS提交竞态漏事件。真实Agent/API/SSE测试强制正文先完成且流已进入终态空轮询，再返回标题，确认 `run.completed → conversation.titled → stream.end`。Portal既有stream.end列表刷新继续可作兜底，本修复不依赖它抢在晚到标题之后；未修改Portal。
+- `title_text.normalize_title` 为无ORM依赖的共享纯函数：Agent、内部标题端点、result fallback统一去heading/emphasis/code/link语法、折叠空白并截40字符。内部原始输入有4096字符上限，最终持久化仍≤40；手动标题不受自动清洗影响，空标题CAS仍保留手动rename优先。
+- retry与复制非空标题的fork bootstrap均明确不请求标题；此行为此前已正确，本轮加回归锁定。
+
+### 本轮验证与成本
+
+修复前 `814c541` 运行新增回归：9 failed / 2 passed / 37 deselected。为允许缩短预算测试，仅暴露原有10秒常量，未改变旧控制流；失败复现晚到标题丢失、取消标题写入、Markdown/截断、gate时限及终态SSE契约缺失。首轮新测试两个失败来自测试自身：ClientError构造参数、把running误当正文完成；已修正。最终代码验收结果待下方追加。
+
+SSE仅在短暂终态且空标题时多一次有界索引查询，limit 1；`/state`携带attempt多一次只读所有权查询。不新增依赖/进程/迁移/存储对象；每个未命名会话仍最多一个并发title task和同样一次标题模型账单。代价：Agent槽位/client/claim在正文完成后最多继续占用标题剩余10秒预算及既有账本清理时间，SSE连接最多延长终态后10秒加正常poll调度开销；这不延后正文内容/终态。SQLite独立临时profile EXPLAIN两项查询均SEARCH，使用run_attempts run_id/PK、outbox claim_token与conversation既有索引，无全表扫描。100次完整 `_poll_events` 本机median 0.526ms、p95 0.780ms；不是2vCPU/8GiB长期容量、真实模型成本或PG计划证据。
+
+不运行PG/Redis、真实模型、五服务E2E、Portal npm/build或浏览器；本工作树无Portal node_modules，前端及统一验收仍由父Agent负责。没有使用开发.env/开发数据库，SQLite与查询探针均用测试引导的临时profile。父Agent下一步：集成本修复，按最终提交执行前后端统一验收；保持不自动发布。
+
+### Round 2 最终固定基线验收
+
+运行时代码及全部回归固定为 `0be9fac9e03d90c39fa081799fb2c3236add2af1`（`fix(chat): retain bounded titles after answer completion`）；后续提交只更新交接与验证记录。
+
+- **最终完整SQLite：1000 passed / 108 skipped / 10 warnings，121.99秒**，命令 `pytest tests -q -o addopts='' --tb=short`；GNU coreutils/findutils在PATH，使用Python3.12现有venv与本工作树源码。108跳过对应未启用的后端/真实组件及条件不适用项；本轮未开启PostgreSQL/Redis契约，不冒称双库验证。
+- **Ruff check与format --check全部通过，286个Python文件**；`git diff --check`通过。代码提交后重跑最终全套，包含SSE CAS竞态回归与真实晚到标题SSE链路；前一轮999 passed / 108 skipped（123.29秒）仅为加该最后竞态用例前的历史检查，不与最终数字累加。
+- 新增回归覆盖：早标题/正文先完成晚标题、标题超时、gate占用预算、shutdown与attempt-loss取消及账本/子任务回收、有效终态attempt标题写入、取消/删除拒绝、stale/foreign 409、Markdown三入口清洗与40字截断、retry/fork请求标志、终态窗口截止、CAS提交与SSE最后读取之间的竞态。真实Agent/API/SSE在本地ASGI传输执行，不是付费模型/五服务/浏览器验收。
+- 跳过的独立检查：PostgreSQL/Redis、真实上游、五服务E2E、Portal npm/build与浏览器（本工作树无Portal依赖且未修改Portal；由父Agent执行统一验收）。不新增或启动外部服务，不触碰开发.env/数据库，不推送、建PR或部署。
+
+交付状态：本分支本地实现及后端SQLite验收完成；父Agent可集成 `0be9fac`，再执行前后端统一验收。当前未合入main/未发布。Work运行若已分配sandbox，现有finally在标题收尾后释放lease，因此也可能多占用标题剩余预算；此轮未做联合容量压测，不能将上述单机查询探针当作整体容量证明。

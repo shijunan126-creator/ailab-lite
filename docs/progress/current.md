@@ -6,7 +6,7 @@
 
 - 集成分支 `feat/ui-polish-fork-retry`（基线 `main@94d3e22`），已合入后端 `feat/chat-backend-fork-retry@f897f41`（迁移 0022）。前端结果、根因与验证见 [前端/集成记录](updates/2026-10-24-ui-polish-fork-retry.md)；后端契约与双库证据见 [后端记录](updates/2026-10-24-chat-fork-retry-backend.md)。
 - 当前检查：Portal 30 项/tsc/build 通过；SQLite 全套 1026 通过/68 跳过；五服务 E2E 66/67，唯一失败（侧栏收起刷新闪烁）已修复，待复跑。
-- 进行中：Codex 第二轮修标题时序（短回答先结束会取消标题任务导致标题丢失）与标题 Markdown 清洗，分支 `fix/chat-title-timing`。
+- 已合入 Codex 第二轮 `fix/chat-title-timing@c59351f`：正文先结束时标题任务有界收尾并经 SSE 送达（`run.completed → conversation.titled → stream.end`），标题统一清洗 Markdown；SQLite 1000 通过/108 跳过（Codex 运行），证据见[后端记录 Round 2](updates/2026-10-24-chat-fork-retry-backend.md#round-2标题完成时序修复2026-10-24)。
 - 下一步：合入第二轮 → 复跑 Ruff/SQLite 全套/E2E（有条件再跑 PG）→ 更新本节与记录 → 向用户汇报并等待是否部署/提 PR 的指示。未验：真机 iOS/Android 键盘、真实模型思考格式与标题时延。
 
 更新：2026-10-24。最新授权追加：对话为正常聊天AI，仅无沙箱；移除逐条模式标签与消极输入提示。此前授权：参考 Hermes，实现 Chat/Work 技能自动维护、技能页编辑、按用户归属且可编辑的 Memory System；前端交由 Claude Opus 5.5 Medium，最多两个 Claude 同时运行，后端与统一验收由主 Agent 负责。用户最新明确授权：先部署，再提交PR，检查通过后merge；本条覆盖此前未发布边界。
