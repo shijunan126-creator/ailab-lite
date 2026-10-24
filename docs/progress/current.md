@@ -5,6 +5,7 @@
 用户授权：实现项目说明、公司品牌套件、完成通知与收件箱、回答中排队/插话、内部只读分享、资料库摘要/OCR核验/就文件提问、移入项目带文件（**不做**管理员用量看板）；测试通过后提 PR 并合并。**未授权部署。** 主 Agent（Claude）负责前端、架构与审核，后端由 Codex `gpt-6.1-sol` medium 三个并行分支实现（A `feat/projects-brand` 0025、B `feat/inbox-queue` 0026、C `feat/shares-library` 0027，集成时改链）。
 
 - 分支 `feat/workspace-features`，基线 `main@74e66c0`。契约与分工见[设计](../reviews/2026-10-24-workspace-features-design.md)。
+- 后端 A：`feat/projects-brand`（base `00c5cc9`）实现与独立双库验证见[记录](updates/2026-10-24-projects-brand-backend.md)；待父任务审核合入、迁移链/Portal/镜像集成。
 - 下一步：三个后端分支完成后由主 Agent 审核合入、改迁移链；Portal 同步实现；Codex 统一跑双库全套、E2E 与有限真实模型验收；PR → CI → merge。
 
 ## UI 功能发布完成（2026-10-24）
