@@ -319,7 +319,7 @@ export default function Composer({
           // Alt/Option+Enter while an answer runs: hand the message to that answer now
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            send(queueing && e.altKey);
+            send(queueing && e.altKey && !template); // a message with a template starts its own answer
           }
         }}
       />
