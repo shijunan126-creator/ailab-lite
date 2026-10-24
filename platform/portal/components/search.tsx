@@ -11,14 +11,16 @@ import { IconFolder, IconMessage, IconSearch } from "./icons";
 export const OPEN_SEARCH = "ailab:open-search";
 
 function Snippet({ hit }: { hit: SearchHit }) {
+  // offsets count Unicode code points, not UTF-16 units: an emoji before a hit must not shift it
+  const chars = Array.from(hit.snippet);
   const parts: React.ReactNode[] = [];
   let at = 0;
   for (const [start, end] of [...(hit.highlight || [])].sort((a, b) => a[0] - b[0])) {
     if (start < at || end <= start) continue;
-    parts.push(hit.snippet.slice(at, start), <mark key={start}>{hit.snippet.slice(start, end)}</mark>);
+    parts.push(chars.slice(at, start).join(""), <mark key={start}>{chars.slice(start, end).join("")}</mark>);
     at = end;
   }
-  parts.push(hit.snippet.slice(at));
+  parts.push(chars.slice(at).join(""));
   return <span className="search-snippet">{parts}</span>;
 }
 
@@ -52,14 +54,28 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
     }
     const controller = new AbortController();
     setLoading(true);
-    const timer = setTimeout(() => {
-      api<{ items: SearchHit[] }>(`/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=20`, { signal: controller.signal })
-        .then((res) => {
-          setHits(res.items);
-          setError("");
-        })
-        .catch((err) => !controller.signal.aborted && setError(String(err?.message || err)))
-        .finally(() => !controller.signal.aborted && setLoading(false));
+    const timer = setTimeout(async () => {
+      // the API bounds its work per request: a page can come back short with a cursor to go on from
+      const found: SearchHit[] = [];
+      let cursor: string | null = null;
+      try {
+        for (let i = 0; i < 6; i++) {
+          const res: { items: SearchHit[]; next_cursor: string | null } = await api(
+            `/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+            { signal: controller.signal }
+          );
+          found.push(...res.items.filter((h) => !found.some((x) => x.conversation_id === h.conversation_id)));
+          cursor = res.next_cursor;
+          if (!cursor || found.length >= 12) break;
+        }
+        if (controller.signal.aborted) return;
+        setHits(found);
+        setError("");
+      } catch (err: any) {
+        if (!controller.signal.aborted) setError(String(err?.message || err));
+      } finally {
+        if (!controller.signal.aborted) setLoading(false);
+      }
     }, 180);
     return () => {
       clearTimeout(timer);

@@ -347,6 +347,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     });
     stick.current = true;
     follow(fresh);
+    loadDetail(); // the run alone does not carry its versions: the conversation does
     conversationsChanged();
   }
 
