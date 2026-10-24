@@ -111,6 +111,37 @@ def test_cached_price_is_frozen_at_reservation_and_history_never_reprices(api, m
     assert api.get("/v1/usage", headers=AUTH).json()["daily_tokens"]["used"] - before == 9.5
 
 
+@pytest.mark.parametrize("late", [False, True])
+def test_department_is_frozen_before_inference_not_at_settlement(api, late):
+    from ailab_platform.models import Department, User
+
+    body = reservation(api)
+    with SessionLocal() as db:
+        run = db.get(Run, body["run_id"])
+        user = db.get(User, run.user_id)
+        first, second = Department(name="before inference"), Department(name="after inference")
+        db.add_all([first, second])
+        db.flush()
+        user.dept_id = first.id
+        db.commit()
+        user_id, first_id, second_id = user.id, first.id, second.id
+    try:
+        reserve(api, body)
+        with SessionLocal() as db:
+            db.get(User, user_id).dept_id = second_id
+            db.commit()
+            if late:
+                expire_reservations(db, datetime.now(UTC) + timedelta(seconds=settings.usage_reservation_ttl_seconds + 1))
+        settle(api, body["call_id"])
+        with SessionLocal() as db:
+            ledger = db.scalar(select(ModelUsage).where(ModelUsage.call_id == body["call_id"]))
+            assert ledger.dept_id == first_id
+    finally:
+        with SessionLocal() as db:
+            db.get(User, user_id).dept_id = None
+            db.commit()
+
+
 def test_expired_intent_charges_conservatively_and_late_settle_corrects_one_row(api):
     body = reservation(api)
     result = reserve(api, body)

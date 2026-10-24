@@ -5,7 +5,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import inspect, text
 
 from ailab_platform.models import Base
-from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to, _version
+from tests.test_migrations import _downgrade_to, _head, _seed_user_and_run, _upgrade_to, _version
 from tests.test_migrations import engine as engine
 
 
@@ -14,7 +14,7 @@ def test_shares_up_down_up(engine):
     with engine.begin() as conn:
         _seed_user_and_run(conn)
     _upgrade_to(engine, "head")
-    assert _version(engine) == "0028"
+    assert _version(engine) == _head()
     with engine.begin() as conn:
         conn.execute(
             text(

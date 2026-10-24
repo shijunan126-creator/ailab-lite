@@ -507,6 +507,7 @@ class UsageReservation(Base):
     subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
     file_id: Mapped[str | None] = mapped_column(String(40))
     user_id: Mapped[str] = mapped_column(String(40))
+    dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     attempt_id: Mapped[str] = mapped_column(String(80))
     mode: Mapped[str] = mapped_column(String(20))
     alias: Mapped[str] = mapped_column(String(120))

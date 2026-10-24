@@ -146,6 +146,7 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
             reservation = UsageReservation(
                 **body.model_dump(),
                 user_id=owner.user_id,
+                dept_id=db.get(User, owner.user_id, populate_existing=True).dept_id,
                 weight=weight,
                 cached_token_weight=cached,
                 policy_version=POLICY_VERSION,
@@ -180,14 +181,13 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
     if row is not None and row.status != UsageStatus.UNRECONCILED:
         return row
     if row is None:
-        owner = db.get(User, reservation.user_id)
         row = ModelUsage(
             call_id=reservation.call_id,
             run_id=reservation.run_id,
             subject=reservation.subject,
             file_id=reservation.file_id,
             user_id=reservation.user_id,
-            dept_id=owner.dept_id if owner else None,  # snapshot: a later move does not move this usage
+            dept_id=reservation.dept_id,
             attempt_id=reservation.attempt_id,
             mode=reservation.mode,
             quiet=reservation.quiet,
