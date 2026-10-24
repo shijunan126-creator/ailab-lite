@@ -31,7 +31,16 @@ from ..runtime_context import attempt_id_var, delivery_id_var
 from ..telemetry import span
 from . import net_tools
 from .multimodal import attachment_content, input_content
-from .prompts import WORKSPACE_EXPIRED_NOTE, history_messages, personal_header, skills, system_prompt_for, user_prompt
+from .prompts import (
+    WORKSPACE_EXPIRED_NOTE,
+    history_messages,
+    load_skill,
+    memory_prompt,
+    personal_header,
+    skills,
+    system_prompt_for,
+    user_prompt,
+)
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
@@ -652,12 +661,24 @@ class AgentLoop:
         try:
             if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
                 raise ToolError(f"tool {call.name} is not available in this turn")
+            if (turn.run.get("options") or {}).get("mode") == "chat" and call.name == "save_skill" and call.arguments.get("path"):
+                raise ToolError("对话模式保存技能请传 content；压缩包/脚本修改请切换工作模式")
             wanted = call.arguments.get("name") if call.name == "load_skill" else None
+            if wanted:
+                latest = await self.platform.get_run(run_id)
+                turn.disabled_skills = frozenset(latest.get("disabled_skills") or [])
+                turn.personal = {s["name"]: s for s in latest.get("personal_skills") or []}
             if wanted in turn.disabled_skills:
                 raise ToolError(f"技能 {wanted} 已被用户关闭，不能使用；用沙箱里的 Python 库自己完成")
             if wanted in turn.personal:
                 with span("agent.tool", tool=tool):
-                    result = {"ok": True, "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))}
+                    result = {
+                        "ok": True,
+                        "file_id": turn.personal[wanted]["file_id"],
+                        "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted)),
+                    }
+            elif wanted and (turn.run.get("options") or {}).get("mode") == "chat":
+                result = {"ok": True, "skill": load_skill(wanted)}
             else:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
@@ -913,6 +934,7 @@ class AgentLoop:
                     {
                         "role": "system",
                         "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                        + memory_prompt(run.get("memory") or {})
                         + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
                     },
                     *history_messages(run.get("history")),

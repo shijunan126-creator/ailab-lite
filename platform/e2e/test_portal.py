@@ -460,7 +460,9 @@ def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     _wait_for_turns(page, 1)
     assert "离线演示模型" in page.inner_text(".msg.assistant .md")
     assert page.locator(".work-entry.process-steps .step").count() == 0
-    assert page.inner_text(".msg.user .attach-chip") == "对话模式"
+    assert page.locator(".msg.user .attach-chip").count() == 0
+    assert "只回答" not in page.locator(".composer-box textarea").get_attribute("placeholder")
+    assert page.get_by_role("radio", name="对话", exact=True).get_attribute("title") == "搜索、问答、写代码，不运行沙箱"
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered
 

@@ -5,7 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, Conversation, Me, Usage } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
 import { useProjects } from "../lib/projects";
-import { IconFolder, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
+import { IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
 import ConversationMenu from "./conversation-menu";
 import { NewProjectInput } from "./library/projects";
 
@@ -150,6 +150,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </a>
           <a href="/skills" className={`side-link ${pathname.startsWith("/skills") ? "on" : ""}`}>
             <IconSparkles size={17} /> 技能
+          </a>
+          <a href="/memory" className={`side-link ${pathname.startsWith("/memory") ? "on" : ""}`}>
+            <IconHistory size={17} /> 记忆
           </a>
         </nav>
         <div className="side-scroll">

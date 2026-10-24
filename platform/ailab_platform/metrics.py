@@ -76,6 +76,7 @@ KNOWN_TOOLS = frozenset(
         "fetch_repo",
         "fetch_packages",
         "save_skill",
+        "memory",
     }
 )
 

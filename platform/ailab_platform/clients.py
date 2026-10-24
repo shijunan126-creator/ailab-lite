@@ -350,9 +350,16 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run_usage(self, run_id: str) -> dict:
         return (await self._send(self._get_run_usage(run_id))).json()
 
-    async def save_skill(self, run_id: str, name: str, mode: str, filename: str, data: bytes) -> dict:
+    async def memory(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/memory", json=payload))).json()
+
+    async def save_skill(
+        self, run_id: str, name: str, mode: str, filename: str, data: bytes, *, expected_file_id: str | None = None
+    ) -> dict:
         """A personal skill the model wrote; the API decides the owner from the run and keys retries by the delivery id."""
         params = {"name": name, "mode": mode, "filename": filename}
+        if expected_file_id:
+            params["expected_file_id"] = expected_file_id
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/skills", timeout=120, params=params, content=data))).json()
 
     async def get_file_bytes(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> bytes:

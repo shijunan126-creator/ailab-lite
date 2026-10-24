@@ -33,3 +33,7 @@
 ## 范围边界与决策
 
 沿用 [ADR 0001](../architecture/adr/0001-single-node-scope.md)：不做多机调度、跨节点租约、闲置沙箱复用、部门额度池和分布式事件总线。没有承诺日期或预先指派新 agent。目标/依赖变化时更新本页，具体决策写 ADR，实施与验收结果写 dated update。
+
+## 2026-10-24 新增授权：用户记忆与技能编辑
+
+按用户账号持久记忆、可编辑前端与 Chat/Work 工具；参考 Hermes 有界记忆/技能维护逻辑。验收以隔离双库、权限/重投/CAS、真实 Portal/API/Agent/Worker 浏览器链路和成本为准，见[审查](../reviews/2026-10-24-memory-skills.md)。前端最多两个 Claude Opus 5.5 Medium 并发。仅本地实现，不沿用旧任务的发布授权。

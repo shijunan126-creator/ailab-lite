@@ -125,9 +125,9 @@ export default function Turn({
     <div className="turn">
       <div className="msg user">
         <div className="bubble">{run.prompt}</div>
-        {run.options?.skill || run.options?.mode === "chat" ? (
+        {run.options?.skill ? (
           <div className="attach-row">
-            <span className="attach-chip">{run.options?.skill ? SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill : "对话模式"}</span>
+            <span className="attach-chip">{SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill}</span>
           </div>
         ) : null}
         {run.input_files?.length ? (

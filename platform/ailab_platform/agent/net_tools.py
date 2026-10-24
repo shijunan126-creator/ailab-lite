@@ -420,7 +420,8 @@ async def save_skill(args: dict, run_id: str, lease_id: str, broker, platform) -
     else:
         data, filename = str(content).encode("utf-8"), f"{name}.md"
     try:
-        saved = await platform.save_skill(run_id, name, mode, filename, data)
+        kwargs = {"expected_file_id": args.get("expected_file_id")} if mode == "update" else {}
+        saved = await platform.save_skill(run_id, name, mode, filename, data, **kwargs)
     except ClientError as exc:
         if exc.status not in (404, 413, 422):
             raise  # 409 is a lost run and must stop the attempt
@@ -485,7 +486,7 @@ SAVE_SKILL = {
     "type": "function",
     "function": {
         "name": "save_skill",
-        "description": "把技能保存到用户的个人技能。只在用户明确要求保存/安装/更新时调用。"
+        "description": "把技能保存到用户的个人技能。用户要求或验证出可复用方法时调用；修改前先读取，保留原有约定。"
         "create 新建（同名已存在会失败）；update 给用户已有的个人技能存新版本（旧版本保留）。"
         "保存后要经过安全扫描和审核才能使用。不能修改通用技能或别人的技能。",
         "parameters": {
@@ -493,6 +494,7 @@ SAVE_SKILL = {
             "properties": {
                 "name": {"type": "string", "description": "与 SKILL.md 里的 name 一致"},
                 "mode": {"type": "string", "enum": ["create", "update"]},
+                "expected_file_id": {"type": "string", "description": "update 时必填：load_skill 返回的 file_id，防止覆盖新版本"},
                 "content": {"type": "string", "description": "SKILL.md 全文（只有说明时）"},
                 "path": {"type": "string", "description": "或：/workspace 下的 .zip（含 SKILL.md 与脚本）或 .md"},
             },

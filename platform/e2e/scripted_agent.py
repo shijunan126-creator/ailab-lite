@@ -48,6 +48,27 @@ class QuestionThenAnswer(LLMClient):
         return LLMResponse(content=STREAM_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 50})
 
     async def chat(self, messages, tools, model, user_id=None):
+        if _last_user_text(messages) == "验证账号记忆工具":
+            results = [json.loads(m["content"]) for m in messages if m.get("role") == "tool" and m.get("name") == "memory"]
+            if not results:
+                return LLMResponse(tool_calls=[ToolCall("memory_list", "memory", {"action": "list"})])
+            if len(results) == 1:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(
+                            "memory_add",
+                            "memory",
+                            {
+                                "action": "add",
+                                "kind": "user",
+                                "content": "验收偏好：回答保持简洁",
+                                "explicit": True,
+                                "expected_revision": results[-1]["revision"],
+                            },
+                        )
+                    ]
+                )
+            return LLMResponse(content="已通过记忆工具保存偏好。")
         if _last_user_text(messages) == "验证失败状态":
             raise LLMError("故障验收")
         if TRIGGER not in _last_user_text(messages):
