@@ -76,7 +76,7 @@ def test_typing_a_new_search_clears_previous_clickable_results(logged_in):
     dialog = page.get_by_role("dialog", name="搜索对话")
     query = dialog.get_by_role("textbox")
     query.fill("first")
-    expect(dialog.get_by_role("option")).to_contain_text("旧查询结果")
+    expect(dialog.get_by_role("option").filter(has_text="旧查询结果")).to_have_count(1)
     query.fill("second")
     with page.expect_request("**/api/v1/search?**second**"):
         expect(dialog.get_by_role("option")).to_have_count(0)
