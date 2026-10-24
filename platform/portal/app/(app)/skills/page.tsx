@@ -297,7 +297,7 @@ export default function SkillsPage() {
           onReplace={replace}
         />
       ) : null}
-      <p className="hint" style={{ marginTop: 14 }}>开关对你的账号生效，换浏览器也一样。个人技能的脚本只在你自己的沙箱里运行，沙箱不联网。</p>
+      <p className="hint" style={{ marginTop: 14 }}>开关对你的账号生效，换设备也一样。</p>
     </main>
   );
 }

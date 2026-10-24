@@ -41,6 +41,7 @@ export type Run = {
   result?: { previews?: Preview[]; [key: string]: any };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
+  retry_of?: string | null; // the turn this one regenerated
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
@@ -77,6 +78,7 @@ export type Conversation = {
   created_at: string;
   updated_at: string;
   last_status?: string | null;
+  forked_from?: { conversation_id: string; run_id: string } | null;
 };
 
 export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[]; has_more: boolean };
@@ -188,6 +190,21 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (!resp.ok) throw new Error(`${resp.status} ${await resp.text()}`);
   if (resp.status === 204) return undefined as T;
   return (await resp.json()) as T;
+}
+
+/** What to tell the user about a failed request: the API's own detail ("409 {"detail":"…"}" → "…"), else the text. */
+export function errorMessage(err: unknown): string {
+  const text = String((err as any)?.message || err || "");
+  const m = /^(\d{3}) ([\s\S]*)$/.exec(text);
+  if (!m) return text;
+  try {
+    const detail = JSON.parse(m[2])?.detail;
+    if (typeof detail === "string" && detail) return detail;
+    if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
+  } catch {
+    // not JSON: the body as it came
+  }
+  return m[2] || text;
 }
 
 export function downloadUrl(path: string): string {

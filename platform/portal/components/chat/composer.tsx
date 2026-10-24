@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds, ModelInfo, Skill, uploadFile } from "../../lib/api";
-import { IconChart, IconFile, IconLibrary, IconPlus, IconSend, IconSheet, IconSlides, IconSparkles, IconUpload } from "../icons";
+import { IconArrowUp, IconChart, IconFile, IconLibrary, IconPlus, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 
 export type Attachment = { id: string; filename: string; status: string };
@@ -19,8 +19,8 @@ const SKILLS: SkillButton[] = [
 ];
 
 const MODE_HINT: Record<Mode, string> = {
-  chat: "搜索、问答、写代码，不运行沙箱",
-  work: "运行代码，生成可下载文件",
+  chat: "问答、搜索、写作",
+  work: "动手完成任务，交付文件",
 };
 
 export default function Composer({
@@ -55,6 +55,7 @@ export default function Composer({
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [mode, setModeState] = useState<Mode>("work");
   const [picked, setPicked] = useState<SkillButton | null>(null);
   const area = useRef<HTMLTextAreaElement | null>(null);
@@ -120,7 +121,7 @@ export default function Composer({
     };
   }, [files]);
 
-  async function upload(list: FileList) {
+  async function upload(list: FileList | File[]) {
     setError("");
     setUploading(true);
     try {
@@ -158,13 +159,29 @@ export default function Composer({
   }
 
   return (
-    <div className="composer-box">
+    <div
+      className={`composer-box ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setDragging(false);
+        upload(e.dataTransfer.files);
+      }}
+    >
       {files.length ? (
         <div className="attach-row">
           {files.map((f) => (
             <span key={f.id} className={`attach-chip ${f.status}`}>
-              <IconFile size={13} /> {f.filename}
-              {f.status === "pending" ? " · 扫描中" : f.status === "rejected" ? " · 已拒绝" : ""}
+              {f.status === "pending" ? <span className="chip-spin" aria-hidden="true" /> : <IconFile size={13} />} {f.filename}
+              {f.status === "pending" ? <span className="chip-state">检查中</span> : f.status === "rejected" ? <span className="chip-state">未通过检查</span> : null}
               <button className="link" aria-label={`移除 ${f.filename}`} onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>
                 ✕
               </button>
@@ -190,6 +207,13 @@ export default function Composer({
         placeholder={picked?.placeholder || placeholder || "输入消息，Enter 发送，Shift + Enter 换行"}
         value={text}
         onChange={(e) => setText(e.target.value)}
+        onPaste={(e) => {
+          // a screenshot or a copied file goes in as an attachment, text pastes as usual
+          const pasted = Array.from(e.clipboardData.files);
+          if (!pasted.length) return;
+          e.preventDefault();
+          upload(pasted);
+        }}
         onKeyDown={(e) => {
           // isComposing: Enter that confirms a Chinese IME candidate must not send the message
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -228,7 +252,7 @@ export default function Composer({
             </div>
           ) : null}
         </div>
-        <div className="mode-toggle" role="radiogroup" aria-label="模式">
+        <div className="mode-toggle" role="radiogroup" aria-label="模式" data-mode={mode}>
           {(["chat", "work"] as Mode[]).map((m) => (
             <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} title={MODE_HINT[m]} onClick={() => setMode(m)}>
               {m === "chat" ? "对话" : "工作"}
@@ -282,12 +306,12 @@ export default function Composer({
         </select>
         {error ? <span className="error hint">{error}</span> : null}
         {running ? (
-          <button className="secondary" onClick={onStop}>
-            ■ 停止
+          <button className="send-btn stop" onClick={onStop} aria-label="停止" title="停止">
+            <IconStop size={14} />
           </button>
         ) : (
-          <button onClick={send} disabled={!canSend} aria-label="发送">
-            <IconSend size={16} /> <span className="send-label">发送</span>
+          <button className="send-btn" onClick={send} disabled={!canSend} aria-label="发送" title="发送">
+            {uploading ? <span className="chip-spin light" aria-hidden="true" /> : <IconArrowUp size={18} />}
           </button>
         )}
         </span>

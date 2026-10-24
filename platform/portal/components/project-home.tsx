@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
@@ -125,9 +126,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
         </button>
         <span className="spacer" />
         {tab === "files" && project.files ? (
-          <a className="tab-link" href={`/files?project=${project.id}`}>
+          <Link className="tab-link" href={`/files?project=${project.id}`}>
             在资料库中管理
-          </a>
+          </Link>
         ) : null}
       </div>
 
@@ -138,9 +139,9 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
           <div className="project-list">
             {chats.map((c) => (
               <div key={c.id} className="project-row conv-row">
-                <a className="grow name" href={`/c/${c.id}`}>
+                <Link className="grow name" href={`/c/${c.id}`}>
                   {c.title || "新对话"}
-                </a>
+                </Link>
                 <span className="meta">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
                 <ConversationMenu conv={c} />
               </div>
@@ -158,7 +159,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
                 <span className="grow name">{f.filename}</span>
               </button>
               <span className="meta">
-                {f.status === "pending" ? "扫描中" : f.status === "rejected" ? "已拒绝" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
+                {f.status === "pending" ? "检查中" : f.status === "rejected" ? "未通过检查" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
               </span>
               {f.status === "ready" ? (
                 <a className="icon-btn" href={downloadUrl(f.download_url)} aria-label={`下载 ${f.filename}`} title="下载">

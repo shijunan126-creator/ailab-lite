@@ -87,7 +87,7 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
     login(page, stack, path="/c/" + conv["id"])
     page.wait_for_selector(".turn")
     emit(stack, conv["run"], "first.xlsx", 1)
-    page.wait_for_selector("button:has-text('打开预览（1）')")
+    page.get_by_role("button", name="打开预览（1）").wait_for()
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（1）").click()
     page.wait_for_selector(".sheet-grid td")
@@ -104,7 +104,7 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
     page.get_by_role("button", name="关闭预览").click()
     page.wait_for_selector(".preview-pane", state="detached")
     emit(stack, conv["run"], "third.xlsx", 1)
-    page.wait_for_selector("button:has-text('打开预览（3）')")
+    page.get_by_role("button", name="打开预览（3）").wait_for()
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（3）").click()
     assert page.locator(".preview-tab.on").inner_text() == "first.xlsx"

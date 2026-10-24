@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, Conversation, Me, Usage } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
@@ -13,6 +14,41 @@ import { NewProjectInput } from "./library/projects";
 export const CONVERSATIONS_CHANGED = "ailab:conversations";
 export function conversationsChanged(): void {
   window.dispatchEvent(new Event(CONVERSATIONS_CHANGED));
+}
+
+/** A conversation got its title while its first answer is still being written: the sidebar shows it without a reload. */
+export const CONVERSATION_TITLED = "ailab:conversation-titled";
+export function conversationTitled(id: string, title: string): void {
+  window.dispatchEvent(new CustomEvent(CONVERSATION_TITLED, { detail: { id, title } }));
+}
+
+/** The visible part of the page, kept in --app-h / --app-top. On iOS a keyboard shrinks the visual viewport but not
+ * 100vh / 100dvh and slides it down the page; on a phone the chat is pinned to it, so the composer sits right above the
+ * keyboard and everything returns when the keyboard closes. */
+function useVisibleViewport() {
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement.style;
+    let frame = 0;
+    const update = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        root.setProperty("--app-h", `${Math.round(vv.height)}px`);
+        root.setProperty("--app-top", `${Math.max(0, Math.round(vv.offsetTop))}px`);
+      });
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      cancelAnimationFrame(frame);
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      root.removeProperty("--app-h");
+      root.removeProperty("--app-top");
+    };
+  }, []);
 }
 
 function UserMenu({ me }: { me: Me | null }) {
@@ -56,13 +92,13 @@ function UserMenu({ me }: { me: Me | null }) {
               </div>
             </div>
           ) : null}
-          <a className="menu-item" href="/account" role="menuitem">
+          <Link className="menu-item" href="/account" role="menuitem" onClick={() => setOpen(false)}>
             <IconSettings size={16} /> 账号设置
-          </a>
+          </Link>
           {me?.can_admin ? (
-            <a className="menu-item" href="/admin" role="menuitem">
+            <Link className="menu-item" href="/admin" role="menuitem" onClick={() => setOpen(false)}>
               <IconShield size={16} /> 管理
-            </a>
+            </Link>
           ) : null}
           <button className="menu-item" onClick={logout} role="menuitem">
             <IconLogOut size={16} /> 退出登录
@@ -90,6 +126,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
   const listController = useRef<AbortController | null>(null);
+  useVisibleViewport();
 
   const load = useCallback(() => {
     listController.current?.abort();
@@ -105,10 +142,16 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     // remembered on wide screens; narrow screens start with the sidebar closed (it covers the page there)
     setCollapsed(window.innerWidth < 760 || localStorage.getItem("ailab.sidebar") === "closed");
     load();
+    const titled = (e: Event) => {
+      const { id, title } = (e as CustomEvent).detail || {};
+      setConversations((rows) => rows?.map((row) => (row.id === id && !row.title ? { ...row, title } : row)) || rows);
+    };
     window.addEventListener(CONVERSATIONS_CHANGED, load);
+    window.addEventListener(CONVERSATION_TITLED, titled);
     return () => {
       listController.current?.abort();
       window.removeEventListener(CONVERSATIONS_CHANGED, load);
+      window.removeEventListener(CONVERSATION_TITLED, titled);
     };
   }, [load]);
 
@@ -133,27 +176,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className={`shell ${collapsed ? "collapsed" : ""}`}>
       <aside className="sidebar" aria-label="侧栏">
         <div className="sidebar-head">
-          <a className="brand" href="/">
+          <Link className="brand" href="/">
             <span className="brand-mark">A</span>
             AILab
-          </a>
+          </Link>
           <button className="icon-btn" onClick={toggle} aria-label="收起侧栏" title="收起侧栏">
             <IconPanel size={18} />
           </button>
         </div>
         <nav className="side-nav" aria-label="主导航">
-          <a href="/" className={`side-link ${pathname === "/" ? "on" : ""}`}>
+          <Link href="/" className={`side-link ${pathname === "/" ? "on" : ""}`}>
             <IconNewChat size={17} /> 新对话
-          </a>
-          <a href="/files" className={`side-link ${pathname.startsWith("/files") ? "on" : ""}`}>
+          </Link>
+          <Link href="/files" className={`side-link ${pathname.startsWith("/files") ? "on" : ""}`}>
             <IconLibrary size={17} /> 资料库
-          </a>
-          <a href="/skills" className={`side-link ${pathname.startsWith("/skills") ? "on" : ""}`}>
+          </Link>
+          <Link href="/skills" className={`side-link ${pathname.startsWith("/skills") ? "on" : ""}`}>
             <IconSparkles size={17} /> 技能
-          </a>
-          <a href="/memory" className={`side-link ${pathname.startsWith("/memory") ? "on" : ""}`}>
+          </Link>
+          <Link href="/memory" className={`side-link ${pathname.startsWith("/memory") ? "on" : ""}`}>
             <IconHistory size={17} /> 记忆
-          </a>
+          </Link>
         </nav>
         <div className="side-scroll">
         <div className="side-section">
@@ -173,9 +216,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             />
           ) : null}
           {(projects || []).map((p) => (
-            <a key={p.id} href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
+            <Link key={p.id} href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
               <IconFolder size={16} /> <span className="conv-title">{p.name}</span>
-            </a>
+            </Link>
           ))}
         </nav>
         <div className="side-section">最近</div>
@@ -183,10 +226,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {conversations && conversations.length === 0 ? <div className="hint conv-empty">还没有对话</div> : null}
           {(conversations || []).map((c) => (
             <div key={c.id} className={`conv-item ${c.id === current ? "on" : ""}`}>
-              <a href={`/c/${c.id}`} title={c.title}>
-                <span className="conv-title">{c.title || "新对话"}</span>
+              <Link href={`/c/${c.id}`} title={c.title}>
+                <span className="conv-title" key={c.title || ""}>{c.title || "新对话"}</span>
                 <span className="conv-time">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
-              </a>
+              </Link>
               <ConversationMenu conv={c} onDeleted={() => {
                 listController.current?.abort();
                 setConversations((rows) => rows?.filter((row) => row.id !== c.id) || null);
@@ -206,9 +249,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button className="icon-btn" onClick={toggle} aria-label="展开侧栏" title="展开侧栏">
               <IconPanel size={18} />
             </button>
-            <a className="icon-btn" href="/" aria-label="新对话" title="新对话">
+            <Link className="icon-btn" href="/" aria-label="新对话" title="新对话">
               <IconNewChat size={18} />
-            </a>
+            </Link>
           </div>
         ) : null}
         {children}

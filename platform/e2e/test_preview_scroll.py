@@ -109,7 +109,7 @@ with SessionLocal() as db:
 """
     subprocess.run([sys.executable, "-c", script, rid], env=stack.env, check=True, timeout=15)
     page.reload()
-    page.locator('.composer-dock button:has-text("打开预览")').click()
+    page.locator(".composer-dock .preview-reopen").click()
     pane = page.get_by_role("complementary", name="文件预览")
     scroll = pane.locator(".document-scroll")
     expect(scroll.locator("img")).to_have_count(3)

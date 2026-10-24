@@ -2,11 +2,12 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AILab Lite",
-  description: "AILab 简易版平台：在隔离沙箱里完成任务的 AI 工作台",
+  title: "AILab",
+  description: "AILab：会思考、能动手的 AI 工作台",
 };
 
-export const viewport: Viewport = { width: "device-width", initialScale: 1 };
+// resizes-content: on Android the keyboard shrinks the layout instead of covering the composer
+export const viewport: Viewport = { width: "device-width", initialScale: 1, viewportFit: "cover", interactiveWidget: "resizes-content" };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

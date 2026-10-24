@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { IconArrowLeft, IconDownload, IconFile } from "../../../../components/icons";
@@ -39,11 +40,11 @@ function describe(event: EventItem): Described {
     case "artifact.created":
       return { label: "生成文件", detail: `${p.filename} · ${formatBytes(p.size || 0)}`, tone: "done" };
     case "agent.sandbox":
-      return { label: "沙箱信息", detail: `${p.provider || ""} ${p.lease_id || ""}`.trim() };
+      return { label: "运行环境", detail: `${p.provider || ""} ${p.lease_id || ""}`.trim() };
     case "sandbox.leased":
-      return { label: "沙箱已就绪", detail: `${p.provider} · ${p.lease_id}` };
+      return { label: "运行环境已就绪", detail: `${p.provider} · ${p.lease_id}` };
     case "sandbox.released":
-      return { label: "沙箱已释放", detail: p.reason || "released" };
+      return { label: "运行环境已释放", detail: p.reason || "released" };
     default:
       return { label: event.type, detail: JSON.stringify(p).slice(0, 300) };
   }
@@ -117,9 +118,9 @@ export default function RunPage() {
 
   return (
     <main className="page">
-      <a className="back" href="/">
+      <Link className="back" href="/">
         <IconArrowLeft size={16} /> 返回工作台
-      </a>
+      </Link>
 
       <div className="page-head page-head-row">
         <div>

@@ -204,7 +204,7 @@ def test_a_plain_question_is_answered_without_a_sandbox(logged_in, stack) -> Non
     page = logged_in
     conv = _start_conversation(page, "你好，介绍一下你自己")
     _wait_for_turns(page, 1)
-    answer = page.inner_text(".msg.assistant .md")
+    answer = page.inner_text(".assistant-body > .md")
     assert "离线演示模型" in answer and "本对话第 1 轮" in answer
     assert page.locator(".msg.assistant strong").count() >= 1  # markdown rendered, not shown as **raw**
     assert page.locator(".work-entry.process-steps .step").count() == 0  # no tools, no sandbox
@@ -217,8 +217,8 @@ def test_a_conversation_continues_with_its_history(logged_in) -> None:
     _wait_for_turns(page, 1)
     _send(page, "第二个问题")
     _wait_for_turns(page, 2)
-    page.wait_for_function("() => document.querySelectorAll('.msg.assistant .md').length >= 2", timeout=15000)
-    answers = page.locator(".msg.assistant .md").all_inner_texts()
+    page.wait_for_function("() => document.querySelectorAll('.assistant-body > .md').length >= 2", timeout=15000)
+    answers = page.locator(".assistant-body > .md").all_inner_texts()
     assert "本对话第 2 轮" in answers[-1]
     assert page.locator(".msg.user .bubble").all_inner_texts() == ["第一个问题", "第二个问题"]
     page.reload()  # history comes back from the server
@@ -242,14 +242,12 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
         assert event in body, f"{event} missing from the timeline"
 
 
-def test_a_spreadsheet_is_previewed_live_and_can_be_revised(logged_in) -> None:
+def test_a_spreadsheet_opens_in_the_preview_once_it_is_done_and_can_be_revised(logged_in) -> None:
     page = logged_in
     _start_conversation(page, "做一个 Excel 表格")
-    page.wait_for_selector(".composer-dock button:has-text('打开预览')", timeout=60000)
-    assert page.locator(".preview-pane").count() == 0
-    page.click(".composer-dock button:has-text('打开预览')")
-    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
     _wait_for_turns(page, 1)
+    # the finished file opens by itself, once, after the turn: never on the intermediate renders
+    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
     grid = page.inner_text(".preview-pane .sheet-grid")
     assert "华东" in grid and "合计" in grid
     assert page.inner_text(".preview-tab.on") == "sales.xlsx"
@@ -273,9 +271,7 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     assert "读取技能 pptx" in steps and "交付文件" in steps
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
-        assert page.locator(".preview-pane").count() == 0
-        page.click(".composer-dock button:has-text('打开预览')")
-        page.wait_for_selector(".preview-pane img", timeout=15000)
+        page.wait_for_selector(".preview-pane img", timeout=15000)  # opened once the deck was done
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 
@@ -360,7 +356,7 @@ def test_an_infected_upload_is_rejected_and_cannot_be_downloaded(logged_in, stac
     page.set_input_files("input[type=file]", str(path))
     row = _row(page, name)
     row.wait_for(timeout=15000)
-    row.locator(".status:has-text('已拒绝')").wait_for(timeout=20000)
+    row.locator(".status:has-text('未通过检查')").wait_for(timeout=20000)
     assert row.get_by_role("link", name=f"下载 {name}", exact=True).count() == 0
     file_id = page.evaluate(
         """async (n) => { const r = await fetch('/api/v1/files'); const l = await r.json(); return l.find(f => f.filename === n).id }""",
@@ -409,7 +405,7 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_work_process_replaces_raw_thinking_and_survives_reload(logged_in):
+def test_work_process_outlines_the_reasoning_and_survives_reload(logged_in):
     from playwright.sync_api import expect
 
     page = logged_in
@@ -421,15 +417,18 @@ def test_work_process_replaces_raw_thinking_and_survives_reload(logged_in):
     expect(head).to_contain_text("工作总时长：")
     assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    expect(process).to_contain_text("梳理任务")
-    assert "用户说：" not in process.inner_text()
-    assert page.locator(".thinking-head, .thinking-body").count() == 0
+    # the outline names the reasoning by its first sentence; the rest opens on request
+    thought = process.locator(".pr-thought").first
+    expect(thought.locator(".pr-label")).to_have_text("用户说：「你好呀」")
+    expect(thought.locator(".pr-thought-body")).to_be_hidden()
+    thought.locator("button").click()
+    expect(thought.locator(".pr-thought-body")).to_contain_text("这是离线演示模型")
     duration = head.locator("span").nth(1).inner_text()
     page.reload()
     page.locator(".turn-meta").wait_for()
     expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
     page.locator(".steps-head").click()
-    expect(page.get_by_role("region", name="工作过程")).to_contain_text("梳理任务")
+    expect(page.get_by_role("region", name="工作过程").locator(".pr-label").first).to_have_text("用户说：「你好呀」")
 
 
 def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
@@ -458,11 +457,11 @@ def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     page.click(".mode-toggle button:has-text('对话')")
     _start_conversation(page, "在沙箱里执行一条命令")  # would use the sandbox in work mode
     _wait_for_turns(page, 1)
-    assert "离线演示模型" in page.inner_text(".msg.assistant .md")
+    assert "离线演示模型" in page.inner_text(".assistant-body > .md")
     assert page.locator(".work-entry.process-steps .step").count() == 0
     assert page.locator(".msg.user .attach-chip").count() == 0
     assert "只回答" not in page.locator(".composer-box textarea").get_attribute("placeholder")
-    assert page.get_by_role("radio", name="对话", exact=True).get_attribute("title") == "搜索、问答、写代码，不运行沙箱"
+    assert page.get_by_role("radio", name="对话", exact=True).get_attribute("title") == "问答、搜索、写作"
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered
 
@@ -490,10 +489,10 @@ def test_an_attachment_is_read_without_a_sandbox(logged_in, tmp_path) -> None:
     note.write_text("本周完成了登录改版。下周开始做对话界面。", encoding="utf-8")
     page.set_input_files(".composer-box input[type=file]", str(note))
     page.wait_for_selector(".composer-box .attach-chip:has-text('会议纪要.txt')")
-    page.wait_for_function("() => !document.querySelector('.composer-box').innerText.includes('扫描中')", timeout=20000)
+    page.wait_for_function("() => !document.querySelector('.composer-box').innerText.includes('检查中')", timeout=20000)
     _start_conversation(page, "总结一下这份纪要")
     _wait_for_turns(page, 1)
-    assert "我读到了 1 个附件的内容" in page.inner_text(".msg.assistant .md")
+    assert "我读到了 1 个附件的内容" in page.inner_text(".assistant-body > .md")
     _open_all_steps(page)
     assert "已读取附件" in page.inner_text(".steps") and "会议纪要.txt" in page.inner_text(".steps")
 

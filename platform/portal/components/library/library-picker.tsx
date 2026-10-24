@@ -100,7 +100,7 @@ export default function LibraryPicker({
                 <span className="grow">
                   <span className="name">{f.filename}</span>
                   <span className="meta">
-                    {f.status === "pending" ? "扫描中" : f.status === "rejected" ? "已拒绝" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
+                    {f.status === "pending" ? "检查中" : f.status === "rejected" ? "未通过检查" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
                   </span>
                 </span>
               </button>

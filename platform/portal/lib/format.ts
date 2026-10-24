@@ -1,7 +1,7 @@
 export const STATUS_LABEL: Record<string, string> = {
   queued: "排队中",
   running: "运行中",
-  waiting_sandbox: "等待沙箱",
+  waiting_sandbox: "排队中",
   waiting_user: "等待回答",
   interrupted: "已中断",
   succeeded: "已完成",
