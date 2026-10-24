@@ -2,7 +2,7 @@
 
 ## 模板缩略图生命周期修复（2026-10-24，已本地验证，待PR合并）
 
-用户授权修复、提PR并在检查通过后合并；未授权再次部署。分支 `fix/template-preview-refresh`，base `origin/main@6b6825d`，起点 `23c720b`；包含此前已部署但未合main的PPT模板集成。API新增独立 `preview_status`，公司管理/个人菜单跟踪pending预览至终态；菜单关闭时仅保留所选pending模板的可用性检查。请求可取消、有15秒超时、轮询五分钟截止并退避至5秒。Ruff、SQLite1123通过/118跳过、Portal33通过/build、模板专项五服务浏览器5通过。等待PR检查后合并；未重部署。验证记录见[本轮记录](updates/2026-10-24-template-preview-refresh.md)。三份`.DS_Store`保留。
+用户授权修复、提PR并在检查通过后合并；未授权再次部署。分支 `fix/template-preview-refresh`，base `origin/main@6b6825d`，起点 `23c720b`；包含此前已部署但未合main的PPT模板集成。API新增独立 `preview_status`，公司管理/个人菜单跟踪pending预览至终态；菜单关闭时仅保留所选pending模板的可用性检查。请求可取消、有15秒超时、轮询五分钟截止并退避至5秒。Ruff、SQLite1123通过/118跳过、Portal33通过/build、模板专项五服务浏览器5通过。[PR #48](https://github.com/shijunan126-creator/ailab-lite/pull/48) 已创建并登记，修复提交 `03d11bb`；等待该PR最新head检查后合并，主Agent持续监控；未重部署。验证记录见[本轮记录](updates/2026-10-24-template-preview-refresh.md)。三份`.DS_Store`保留。
 
 ## PPT 模板集成测试与干净部署（2026-10-24，已部署；Portal自动切图待修复）
 
