@@ -470,3 +470,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - Portal 模型选择现为“模型”按钮/listbox，而非原生select；必须实际点击选项并验证选中与刷新持久化。个人技能在“更多技能”menuitemradio，不保证出现在快捷chip。行政策略/定时模式同样使用页面listbox。
 - 删除等确认改为页面alertdialog，不能再监听浏览器dialog；明确点击后验证成功/失败原契约。记忆冲突“重新加载”保留草稿并无确认，不要给无确认动作添加等待。
 - 完整集成E2E必须覆盖这些变化，不能因Portal单测/build通过就沿用旧浏览器计数；本轮最终88通过及初始失败见[记录](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。
+
+
+## 2026-10-24 模板 ready 与 preview 完成是两个时刻
+
+- ready表示模板已扫描/分析、可用于Run，不代表sandbox首屏预览已完成。UI只轮询pending会停在草图；真实图已经改变URL/ETag也无法更新旧组件状态。公司管理列表和个人模板菜单均已实测复现。不能在后端延迟ready/放宽Worker限制来掩盖问题，应跟踪独立preview生命周期，见[部署缺陷复现](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md#已确认的-portal-缺陷真实缩略图不自动替换草图)。
+- 文件系统校验成功仅证明结构可挂载，不证明运行时镜像文件内容完整。存储中断后须逐文件hash与实际执行验证；镜像标签、架构一致或pull成功都不足以证明内容未损坏。个人部署的恢复/清理命令只写仓库外交接。

@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-24 PPT模板缩略图：`feat/ppt-templates-backend`，base `0d12f75`，实现/测试基线 `ad04b19`。已撤销平台镜像/Worker Office渲染，改为ready同事务登记原preview outbox，由sandbox生成首张页面的480px缓存JPEG；URL/ETag切换，失败保留草图及模板可用性。Ruff通过，专项84通过/1跳过、SQLite1123通过/118跳过、PG+Redis1208通过/33跳过；临时服务已停。未改Portal、未集成本轮、未合main/部署，真实OpenSandbox/cgroup和长期容量未验。Worker/平台镜像零新增Office渲染成本，每模板一次资料库同预算sandbox preview。旧245MiB测量属于已否决方案，详见[本轮记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)、[设计](../reviews/2026-10-24-ppt-templates-design.md)。
+2026-10-24 PPT模板集成：`feat/ppt-templates-portal`，部署固定`b2c8394`，测试`e905790`，未合main。空库0028、三类镜像冷构建/源码核对、真实Docker/runsc sandbox首屏480px JPEG（公司/个人）、有模板/无模板真实PPT、原生母版/版式和示例页剔除、queue/steer/share/inbox及PPTX/DOCX浏览器预览通过；SQLite1123/PG1208/E2E88通过。**Portal自动缩略图切换未通过**：ready后停止轮询，新URL晚到，需刷新/重开菜单；本测试任务禁止修改Portal，交负责人修复。平台/Worker无新增Office依赖；短时RSS/空间回收与外部存储稳定性、K3S仅静态渲染等边界见[最终记录](../progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。原后端sandbox缩略图实现详见[设计与专项](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)，旧Worker245MiB方案仍已撤销。
 
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 
