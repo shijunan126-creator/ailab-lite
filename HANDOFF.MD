@@ -352,3 +352,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - PostgreSQL的is_head是Integer，不能写`IS true`；用`= 1`，同时满足SQLite/PG和已有部分索引条件。此次SQLite绿而PG红已用真实双库捕获并修复。
 - 并发标题须先等正文首个额度预留成功再做自身预留（不等正文生成）；否则可选标题可能在临界余额下抢走主回答额度。标题的生成超时与取消后账本清理是两段时间，不把10秒当整个job清理SLA。
+
+## 2026-10-24 Portal 打磨 / 思考展示 / 分叉重试
+
+- 应用内链接必须用 `next/link`；`<a href="/…">` 是整页导航，切会话会白屏重载。`/c/[id]` 用 `key={id}` 重挂载 Chat，靠 `lib/conversation-cache.ts` 即时显示；新会话发送后先写缓存再 `router.push`，问题立即可见。
+- 正文 = 模型最后一次动作之后的文本（`splitTurn`）。“动作”只算思考/计划/提问/带 `modelStep` 的工具步骤；预览/归档等平台提示不算，否则正文在答完那刻被拉回过程框。E2E 取答案用 `.assistant-body > .md`，过程里的思考也渲染 `.md`。
+- 收起内容用 `.collapse`（grid 0fr→1fr）始终在 DOM 中；关闭时子元素 `visibility: hidden` + `inert`，否则 Playwright 视其可见、键盘可聚焦。`.live` 是旧的实时指示类（inline-flex+圆点），新组件不能复用此类名。
+- 依赖 localStorage 的初始布局（侧栏收起）要在首帧前应用：根布局内联脚本写 `html[data-sidebar]`，`.shell.settling` 期间禁止过渡；否则刷新后侧栏先出现再淡出，E2E `is_visible` 也会抓到中间态。
+- iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
+- 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
