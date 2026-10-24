@@ -69,7 +69,7 @@ def content_disposition(filename: str) -> str:
 
 def _owned_file(db: Session, file_id: str, user: User) -> FileObject:
     file = db.get(FileObject, file_id, populate_existing=True)
-    if file is None or file.user_id != user.id or file.purpose == "brand":
+    if file is None or file.user_id != user.id or file.purpose in {"brand", "template"}:
         raise HTTPException(status_code=404, detail="file not found")
     return file
 
@@ -168,7 +168,7 @@ async def upload_file(
 def list_files(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
-    category: Literal["all", "starred", "images"] = "all",
+    category: Literal["all", "starred", "images", "slides"] = "all",
     trashed: bool = False,
     cursor: str | None = None,
     project_id: str | None = None,
@@ -201,6 +201,8 @@ def list_files(
     elif category == "images":
         # SQLite can match a partial index only with this constant predicate (a bind parameter won't match).
         stmt = stmt.where(FileObject.content_type.like(literal_column("'image/%'")))
+    if category == "slides":
+        stmt = stmt.where(literal_column("(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"))
     if q is not None:
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         stmt = stmt.where(FileObject.filename.ilike(f"%{escaped}%", escape="\\"))
@@ -229,7 +231,7 @@ def list_files(
 
 @router.get("/folders")
 def list_file_folders(
-    category: Literal["all", "starred", "images"] = "all",
+    category: Literal["all", "starred", "images", "slides"] = "all",
     trashed: bool = False,
     q: str = "",
     after: str = "",
@@ -252,6 +254,8 @@ def list_file_folders(
         predicates.append(FileObject.starred_at.is_not(None))
     if category == "images":
         predicates.append(FileObject.content_type.like(literal_column("'image/%'")))
+    if category == "slides":
+        predicates.append(literal_column("(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"))
     if q:
         escaped = q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         predicates.append(FileObject.filename.ilike(f"%{escaped}%", escape="\\"))
@@ -285,7 +289,7 @@ def _owned_files(db: Session, ids: list[str], user: User) -> list[FileObject]:
     unique = list(dict.fromkeys(ids))
     files = db.scalars(
         select(FileObject)
-        .where(FileObject.id.in_(unique), FileObject.user_id == user.id, FileObject.purpose != "brand")
+        .where(FileObject.id.in_(unique), FileObject.user_id == user.id, FileObject.purpose.not_in(["brand", "template"]))
         .execution_options(populate_existing=True)
     ).all()
     by_id = {file.id: file for file in files}

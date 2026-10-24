@@ -45,6 +45,7 @@ from .routes_schedules import schedules_forever
 from .routes_search import router as search_router
 from .routes_shares import router as shares_router
 from .routes_skills import router as skills_router
+from .routes_templates import router as templates_router
 
 setup_logging("api")
 log = logging.getLogger("ailab.api")
@@ -122,6 +123,8 @@ app.include_router(library_summary_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.include_router(brand_router)
+
+app.include_router(templates_router)
 app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)

@@ -196,7 +196,9 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
 @router.post("/{conversation_id}/messages", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def send_message(conversation_id: str, body: MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     conv = _owned(db, conversation_id, user)
-    run = start_run(db, user, body.prompt, body.model, body.file_ids, conversation=conv, mode=body.mode, skill=body.skill)
+    run = start_run(
+        db, user, body.prompt, body.model, body.file_ids, conversation=conv, mode=body.mode, skill=body.skill, template=body.template
+    )
     return run_dict(db, run, detail=True)
 
 

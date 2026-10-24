@@ -21,7 +21,7 @@ from .routes_admin import _context_admin
 from .routes_files import _ClosingStreamingResponse, safe_filename
 
 router = APIRouter(prefix="/v1/admin/brand", tags=["admin"], route_class=AuditedRoute)
-Kind = Literal["logo", "pptx", "docx"]
+Kind = Literal["logo", "docx"]
 
 
 class Colors(BaseModel):

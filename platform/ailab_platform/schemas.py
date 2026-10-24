@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from .contracts.inbox import QueuedMessageOut
+from .contracts.templates import TemplateSelection
 
 
 class UTCModel(BaseModel):
@@ -70,6 +71,7 @@ class PromptRequest(BaseModel):
 
 
 class RunCreate(PromptRequest):
+    template: TemplateSelection | None = None
     title: str | None = Field(default=None, max_length=200)
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
@@ -84,6 +86,7 @@ class RunVersions(BaseModel):
 
 
 class RunOut(ORMModel):
+    template: dict | None = None
     parent_run_id: str | None = None
     edited_from: str | None = None
     versions: RunVersions | None = None
@@ -192,6 +195,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
+    template: TemplateSelection | None = None
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"

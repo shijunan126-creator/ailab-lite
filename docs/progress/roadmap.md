@@ -45,3 +45,8 @@
 ## 2026-10-24 后端子任务：定时任务与页码引用
 
 范围为每用户五个任务、事务调度、Worker缓存页边界、项目索引与引用prompt；本地提交后交父Agent合入，不启动其他路线项或发布。验收、迁移0024接线和前端归属见[交付记录](updates/2026-10-24-schedules-citations.md)。
+
+
+## 2026-10-24 PPT 模板后端子任务
+
+用户授权公司/个人/单轮PPT模板后端，不包含Portal/发布。`feat/ppt-templates-backend` 已实现并本地双库/相关五服务验证，未合并/部署；父任务下一步集成Portal、确认联系图视觉边界，再另行授权0028迁移与sbx-office重建。精确验收、成本、未验边界见[交付记录](updates/2026-10-24-ppt-templates-backend.md)，接口见[设计](../reviews/2026-10-24-ppt-templates-design.md)。

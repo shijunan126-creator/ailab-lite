@@ -155,6 +155,8 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     from ..sandbox_tools.render_preview import check_archive
 
     check_archive(source)
+    if operation == "template":
+        return analyze_template(source, output)
     if operation == "brand":
         return analyze_brand(source, output, options["kind"])
     if operation == "ocr_pdf":
@@ -181,7 +183,7 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     raise ValueError("unknown operation")
 
 
-def analyze_brand(source: Path, output: Path, kind: str) -> dict:
+def analyze_brand(source: Path, output: Path, kind: str, presentation=None) -> dict:
     if kind == "logo":
         from PIL import Image, ImageOps
 
@@ -209,7 +211,7 @@ def analyze_brand(source: Path, output: Path, kind: str) -> dict:
         from lxml import etree
         from pptx import Presentation
 
-        prs = Presentation(source)
+        prs = presentation if presentation is not None else Presentation(source)
         themes = []
         with zipfile.ZipFile(source) as archive:
             for name in sorted(n for n in archive.namelist() if n.startswith("ppt/theme/theme") and n.endswith(".xml"))[:20]:
@@ -226,8 +228,45 @@ def analyze_brand(source: Path, output: Path, kind: str) -> dict:
         return {
             "slide_width": prs.slide_width,
             "slide_height": prs.slide_height,
+            "slides": len(prs.slides),
+            "layout_details": [
+                {
+                    "name": layout.name[:120],
+                    "placeholders": [
+                        {"idx": p.placeholder_format.idx, "type": int(p.placeholder_format.type)} for p in layout.placeholders
+                    ],
+                }
+                for master in prs.slide_masters
+                for layout in master.slide_layouts
+            ][:100],
             "layouts": [layout.name[:120] for master in prs.slide_masters for layout in master.slide_layouts][:100],
             "master_count": len(prs.slide_masters),
             "themes": themes,
         }
     raise ValueError("unknown brand kind")
+
+
+def analyze_template(source: Path, output: Path) -> dict:
+    import zipfile
+
+    from .template_preview import thumbnail
+
+    with zipfile.ZipFile(source) as archive:
+        types = archive.read("[Content_Types].xml")
+        if b"macroenabled" in types.lower() or any("vbaproject" in n.lower() for n in archive.namelist()):
+            raise ValueError("macro_template")
+    from pptx.opc.constants import CONTENT_TYPE as CT
+    from pptx.opc.package import PartFactory
+    from pptx.package import Package
+    from pptx.parts.presentation import PresentationPart
+
+    # POTX uses the same presentation XML with a distinct package main content type.
+    # Open it directly: rewriting a 30 MiB package would exceed the parser output cap.
+    PartFactory.part_type_for[CT.PML_TEMPLATE_MAIN] = PresentationPart
+    part = Package.open(source).main_document_part
+    if part.content_type not in {CT.PML_TEMPLATE_MAIN, CT.PML_PRESENTATION_MAIN}:
+        raise ValueError("unsupported_template")
+    prs = part.presentation
+    result = analyze_brand(source, output, "pptx", presentation=prs)
+    thumbnail(prs, output)
+    return result

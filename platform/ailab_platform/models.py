@@ -14,6 +14,7 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -734,3 +735,59 @@ class ShareRecipient(Base):
     __table_args__ = (Index("ix_share_recipients_user_share", "user_id", "share_id"),)
     share_id: Mapped[str] = mapped_column(ForeignKey("shares.id"), primary_key=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+
+
+class Template(Base):
+    __tablename__ = "templates"
+    __table_args__ = (
+        CheckConstraint("kind = 'pptx'", name="ck_templates_kind"),
+        CheckConstraint(
+            "(scope = 'company' AND owner_id IS NULL) OR (scope = 'personal' AND owner_id IS NOT NULL)", name="ck_templates_scope_owner"
+        ),
+        Index("ix_templates_file_id", "file_id"),
+        Index(
+            "ix_templates_company",
+            "kind",
+            "created_at",
+            "id",
+            sqlite_where=text("deleted_at IS NULL AND scope = 'company'"),
+            postgresql_where=text("deleted_at IS NULL AND scope = 'company'"),
+        ),
+        Index(
+            "ix_templates_personal",
+            "owner_id",
+            "kind",
+            "created_at",
+            "id",
+            sqlite_where=text("deleted_at IS NULL AND scope = 'personal'"),
+            postgresql_where=text("deleted_at IS NULL AND scope = 'personal'"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("tpl"))
+    kind: Mapped[str] = mapped_column(String(16), default="pptx")
+    scope: Mapped[str] = mapped_column(String(16))
+    owner_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    name: Mapped[str] = mapped_column(String(60))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id"))
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+for name, columns in [
+    ("ix_files_slides", [FileObject.user_id, FileObject.created_at, FileObject.id]),
+    ("ix_files_slides_folders", [FileObject.user_id, FileObject.project_id, FileObject.created_at, FileObject.id]),
+]:
+    Index(
+        name,
+        *columns,
+        sqlite_where=text(
+            "purpose = 'library' AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND "
+            "(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"
+        ),
+        postgresql_where=text(
+            "purpose = 'library' AND is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL AND "
+            "(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"
+        ),
+    )

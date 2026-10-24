@@ -97,7 +97,9 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             raise HTTPException(409, "对话空闲，请直接发送")
         if len(db.scalars(pending_query(conv.id).limit(5)).all()) >= 5:
             raise HTTPException(422, "最多排队5条消息")
-        model, options, files = validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode, body.skill)
+        if body.template is not None and body.steer:
+            raise HTTPException(400, "模板只能用于新一轮，不能插话")
+        model, options, files = validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode, body.skill, body.template)
         row = QueuedMessage(
             conversation_id=conv.id,
             user_id=user.id,
@@ -130,6 +132,8 @@ def patch_queue(conversation_id: str, qid: str, body: QueuePatch, user: User = D
         if body.prompt is not None:
             validate_run_input(db, user, body.prompt, row.model, row.file_ids, row.options.get("mode", "work"), row.options.get("skill"))
             row.prompt = body.prompt
+        if body.steer and row.options.get("template"):
+            raise HTTPException(400, "模板只能用于新一轮，不能插话")
         if body.steer is not None:
             row.steer = body.steer
         row.updated_at = utcnow()

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, PlatformSetting, Project, User, utcnow
 
-KINDS = {"logo": "logo_file_id", "pptx": "pptx_template_file_id", "docx": "docx_template_file_id"}
+KINDS = {"logo": "logo_file_id", "docx": "docx_template_file_id"}
 MAX_TEMPLATE = 10 * 1024 * 1024
 
 

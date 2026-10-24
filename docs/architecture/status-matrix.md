@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-24 PPT模板后端：`feat/ppt-templates-backend` / base `main@6b6825d` 已实现并本地验证，运行代码 `d09043a`，未合并/部署。公司/个人/单轮文件、0028品牌迁移、Run/queue冻结、Broker重置注入、PPT原生版式参考及slides筛选已接通。SQLite1113通过/118跳过、PG+Redis1198通过/33跳过，相关五服务E2E1通过；临时服务已停。缩略图为轻量联系图，真实Office/ClamAV与Portal集成仍待父任务验收。见[设计](../reviews/2026-10-24-ppt-templates-design.md)和[交付记录](../progress/updates/2026-10-24-ppt-templates-backend.md)。
+
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 
 2026-10-24 Gate 3当前状态：PR #42 head `16a8822` 八项CI成功，已squash合入main为 `b07548995ffbce3fc618f94955c5d66b54b380c7`；同一固定提交已部署并通过有限真实模型浏览器smoke。已验完整备份恢复、既有数据0021→0024/ID数量/线性会话树/文件哈希、五服务健康与预算内短时RSS/CPU、标题指标抓取和30秒调度器真实到期执行。详情及残余边界见[Gate 3记录](../progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)。本次发布无待实现项，新增功能想法待用户决定。以下Round1/Round2及各子分支状态均为历史阶段，不代表当前仍未合并/部署。

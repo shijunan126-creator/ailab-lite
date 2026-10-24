@@ -744,7 +744,21 @@ def _bound_file(
     if run.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
         raise HTTPException(status_code=403, detail="run is not active")
     context = RunContext(run.id, run.user_id, run.conversation_id)
-    if file.purpose == "brand":
+    template = (run.options or {}).get("template") or {}
+    if job == "template":
+        if (
+            principal.service == "broker"
+            and template.get("file_id") == file.id
+            and file.status == FileStatus.READY
+            and (run.options or {}).get("mode", "work") == "work"
+        ):
+            return file
+        raise HTTPException(404, "template not bound to this run")
+    if file.purpose == "template":
+        # Historical brand snapshots may still reference the promoted brand slot.
+        if not (job == "brand" and file.id in (((run.runtime_meta or {}).get("brand") or {}).get("assets") or {}).values()):
+            raise HTTPException(404, "template files require the template injection path")
+    if file.purpose in {"brand", "template"}:
         snapshot = (run.runtime_meta or {}).get("brand") or {}
         if (
             principal.service == "broker"
@@ -808,7 +822,7 @@ def _bound_file(
 
 
 FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview")
-FileJob = Literal["processing", "thumbnail", "preview", "brand"]
+FileJob = Literal["processing", "thumbnail", "preview", "brand", "template"]
 
 
 @router.get("/files/{file_id}", response_model=FileOut)
