@@ -163,3 +163,5 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 上述A/B/C独立分支状态属于历史记录，当前已集成0025–0027与Portal，通知接缝已实接。`e34e67c`修复确认插话详情、互相分享锁顺序与有效分享复用；父任务`57ddabf`/`e452ed6`修复两项真实Portal回归，`9f62667`补视觉整理。SQLite1094、PG+Redis1178、完整五服务E2E87均通过（跳过数/基线/迁移往返/新用例/有限真实模型/成本见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)）。
 
 状态仅为**已实现并本地验证**，未合入main/未部署本轮功能，远端CI与父任务人工视觉验收待完成；生产sbx-office需重建，旧品牌资产GC仍缺、SVG拒绝。不得据此升级其他目标能力或长期容量的状态。
+
+2026-10-24 工作区功能（项目说明、品牌套件、通知收件箱、排队/插话、内部只读分享、资料库摘要/OCR选页/就文件提问、移入项目带文件）经 [PR #44](https://github.com/shijunan126-creator/ailab-lite/pull/44) 合入 main `2e64da5`：本地双库/五服务E2E/有限真实模型验收见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)。**未部署**；品牌 PPT 需重建发布 `sbx-office`。
