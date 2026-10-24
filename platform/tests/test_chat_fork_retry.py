@@ -208,3 +208,14 @@ def test_fork_and_retry_queries_have_conversation_index_plans():
                 rows = db.execute(text("EXPLAIN QUERY PLAN " + sql))
             plan = " ".join(str(tuple(row)) for row in rows)
             assert "ix_runs_conversation" in plan
+
+
+def test_fork_rejects_legacy_workspace_that_was_pruned_by_later_turn():
+    with TestClient(app) as c:
+        conv, turns = create(c, ("work", "work"))
+        with SessionLocal() as db:
+            old = db.get(Run, turns[0]["id"])
+            old.result = {"workspace_saved": False}
+            db.commit()
+        response = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[0]["id"], "mode": "work"})
+        assert response.status_code == 422 and "不可用" in response.json()["detail"]

@@ -303,8 +303,10 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 conv.summary = source.summary
                 conv.summary_through_run_id = mapping[source.summary_through_run_id].id
             if body.mode == "work":
-                newest = next((r for r in reversed(turns) if workspace_data(r)), None)
+                newest = next((r for r in reversed(turns) if workspace_data(r) or "workspace_saved" in (r.result or {})), None)
                 if newest:
+                    if not workspace_data(newest):
+                        raise HTTPException(422, "分叉点工作区已过期或不可用")
                     key = workspace_data(newest).get("key") or workspace_key(newest.id)
                     if not workspace_alive(newest, datetime.now(UTC)) or not storage.exists(key):
                         raise HTTPException(422, "分叉点工作区已过期或不可用")
