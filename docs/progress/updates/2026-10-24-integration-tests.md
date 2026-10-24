@@ -65,4 +65,18 @@ API `routes_conversations.py` 的fork校验同样按所选目标的祖先路径�
 
 ## 父 Agent 决定（合入后）
 
-需求“工作只能分支为工作”按工作轮次解释：从更早的纯对话轮次分出的新会话只含该前缀，不含任何工作内容，可分支为对话或工作；前缀里一旦有工作轮次只能分支为工作。API 与 Portal 已是此语义，不改代码；`test_fork_first_turn_and_work_only_menu` 改为断言工作轮次（最后一轮）只给“分支为工作”，并断言之前的对话轮次两者都给——两个方向都被锁定，不是放宽。`e2e/test_zz_hold.py` 为误提交的人工辅助，已删除。复跑结果待补。
+需求“工作只能分支为工作”按工作轮次解释：从更早的纯对话轮次分出的新会话只含该前缀，不含任何工作内容，可分支为对话或工作；前缀里一旦有工作轮次只能分支为工作。API 与 Portal 已是此语义，不改代码；`test_fork_first_turn_and_work_only_menu` 改为断言工作轮次（最后一轮）只给“分支为工作”，并断言之前的对话轮次两者都给——两个方向都被锁定，不是放宽。`e2e/test_zz_hold.py` 为误提交的人工辅助，已删除。复跑已完成，结果见下节。
+
+## 复跑（合入后 a09d70b）
+
+测试基线为 `a09d70b6d585461b2b8de3b693c4441c7704b575`，工作树 `t3-5750f40a`，交付分支 `test/e2e-rerun-fork-contract`。本轮只更新验收记录，没有修改测试、Portal 或其他产品代码；上述首轮失败属于历史证据，分支契约差异已由父 Agent 的前缀决定解决。
+
+- 单跑 `AILAB_E2E=1 .venv/bin/pytest e2e/test_integration_features.py::test_fork_first_turn_and_work_only_menu -q`：**1 passed / 0 failed / 0 skipped**（JUnit 17.995s）。工作轮次仅 Work、此前纯 Chat 轮次同时提供 Chat/Work 两个断言均通过，无需 selector/timing 修复。
+- 完整 `AILAB_E2E=1 .venv/bin/pytest e2e -q`：**78 passed / 0 failed / 0 skipped**（JUnit 203.177s）。已删除的人工 hold 不再收集。
+- `ruff check .` 与 `ruff format --check .`：均通过，297 个 Python 文件已格式化。两次 E2E fixture 各自运行 Portal 测试与隔离生产构建，均通过；Portal 测试每次 **31 passed / 0 failed / 0 skipped**。
+
+使用现有 Python3.12 venv，`PYTHONPATH` 指向本工作树；按 AGENTS.md 设置 GNU coreutils/findutils PATH。Portal 源码复制到临时目录并在那里 `npm ci`，仓库 Portal 未改动。仅启动独占 Redis `127.0.0.1:16851/15`，无 PostgreSQL；fixture 使用临时 SQLite、明确不存在的 env 文件以及独占五服务端口 18850–18853 / 13850，不使用开发数据库或 `.env`。`npm ci --prefix` 首次在仓库工作目录执行时报 EUSAGE（Missing: portal@0.1.0 from lock file），改为在临时 Portal 目录执行 `npm ci` 后成功，未修改依赖锁。
+
+日志和 JUnit 在本机 `/tmp/ailab-rerun-5750/evidence/`（`fork.log/xml`、`full.log/xml`、`ruff-check.log`、`ruff-format.log`，子目录含 Portal 测试/构建日志），原始运行数据不提交。两次五服务进程均由 fixture 结束；Redis 已 shutdown，16851、18850–18853、13850 六端口逐一确认关闭，未留下临时服务。
+
+跳过检查：本轮按复跑范围未重跑 Python `tests/` 的 SQLite/PG 全套、独立 Portal tsc/build 或其他真实组件/付费模型/手机真机/性能验收；前轮结果仍是历史证据。套件内部无跳过项。未 push、PR、部署或合入 main；下一步交父 Agent 审核并集成此记录，不自动发布。
