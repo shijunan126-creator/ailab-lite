@@ -377,3 +377,35 @@ def test_template_and_slides_queries_use_indexes():
         for sql, expected in queries:
             plan = str(db.execute(text(prefix + sql)).all()).lower()
             assert expected in plan or (expected == "ix_files_slides_folders" and "ix_files_folder_listing" in plan), plan
+
+
+def test_resume_and_fork_retain_frozen_selection(api):
+    from ailab_platform.adapters.runtime import fresh_state
+    from tests.test_runtime_protocol import pause, save
+
+    row = ready(api)
+    conv = api.post("/v1/conversations", json={}).json()
+    response = api.post(f"/v1/conversations/{conv['id']}/messages", json={"prompt": "PPT", "template": {"id": row["id"]}})
+    assert response.status_code == 201, response.text
+    run = response.json()
+    rid, frozen = run["id"], run["options"]["template"]
+    headers = attempt_headers(api, rid)
+    assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    state = fresh_state()
+    assert save(api, rid, headers, state=state).status_code == 200
+    assert pause(api, rid, headers).status_code == 200
+    api.delete(f"/v1/templates/{row['id']}")
+    answer = api.post(f"/v1/runs/{rid}/answer", json={"question_id": rid + ":q", "answer": "A"})
+    assert answer.status_code == 202, answer.text
+    assert answer.json()["options"]["template"] == frozen
+    with SessionLocal() as db:
+        job_id = db.get(Run, rid).runtime_meta["job_id"]
+    claim = api.post(f"/internal/jobs/{job_id}/claim", headers=SERVICE, json={"consumer": "template-resume"}).json()
+    assert claim["state"] == "claimed", claim
+    headers = {**SERVICE, "X-Run-Attempt": claim["attempt_id"]}
+    api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
+    api.post(f"/internal/runs/{rid}/status", headers=headers, json={"status": "succeeded"})
+    fork = api.post(f"/v1/conversations/{conv['id']}/fork", json={"run_id": rid, "mode": "work"})
+    assert fork.status_code == 201, fork.text
+    copied = api.get(f"/v1/conversations/{fork.json()['id']}").json()["turns"][-1]
+    assert copied["options"]["template"] == frozen

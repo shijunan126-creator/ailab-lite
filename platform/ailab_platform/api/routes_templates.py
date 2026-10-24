@@ -2,6 +2,7 @@
 
 import hashlib
 import tempfile
+from contextlib import ExitStack, contextmanager
 from datetime import datetime
 from pathlib import PurePath
 from typing import Literal
@@ -11,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..audit import record_audit
 from ..config import settings
 from ..deps import current_user, get_db
 from ..library import assign_file_version
@@ -56,6 +58,16 @@ class Rename(BaseModel):
     @classmethod
     def strip(cls, value):
         return value.strip() if isinstance(value, str) else value
+
+
+@contextmanager
+def admission_lock(db, user, scope):
+    with ExitStack() as locks:
+        if scope == "company":
+            locks.enter_context(brand_lock(db))
+        # Also serializes the creator's FileObject name/version namespace across scopes.
+        locks.enter_context(user_critical_section(db, user.id))
+        yield
 
 
 def output(db, row, user, file=None):
@@ -129,7 +141,7 @@ def upload_template(
             raise HTTPException(400, "模板文件不能为空")
         tmp.flush()
         # Company admission shares the stable platform lock; personal admission shares the quota lock.
-        with brand_lock(db) if scope == "company" else user_critical_section(db, user.id):
+        with admission_lock(db, user, scope):
             query = select(func.count()).select_from(Template).where(Template.scope == scope, Template.deleted_at.is_(None))
             if scope == "personal":
                 query = query.where(Template.owner_id == user.id)
@@ -164,6 +176,8 @@ def upload_template(
                 )
                 db.add(row)
                 stage_job(db, "file", file_id=file_id)
+                db.flush()
+                record_audit(db, "templates.create", "template", row.id, actor_id=user.id)
                 db.commit()
                 return output(db, row, user, file)
             except BaseException:
@@ -181,6 +195,7 @@ def get_template(template_id: str, user: User = Depends(current_user), db: Sessi
 def rename_template(template_id: str, body: Rename, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = visible_template(db, template_id, user, edit=True)
     row.name, row.updated_at = body.name, utcnow()
+    record_audit(db, "templates.update", "template", row.id, actor_id=user.id)
     db.commit()
     return output(db, row, user)
 
@@ -191,6 +206,7 @@ def delete_template(template_id: str, user: User = Depends(current_user), db: Se
     with brand_lock(db) if row.scope == "company" else user_critical_section(db, user.id):
         row = visible_template(db, template_id, user, edit=True)
         row.deleted_at = row.updated_at = utcnow()
+        record_audit(db, "templates.delete", "template", row.id, actor_id=user.id)
         db.commit()
 
 

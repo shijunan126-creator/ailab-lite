@@ -111,7 +111,8 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
         inputs.append(file.id)
     from .templates import freeze_template
 
-    options["template"] = freeze_template(db, user, template, mode)
+    if template is not None:
+        options["template"] = freeze_template(db, user, template, mode)
     enforce_token_quota(db, user.id)
     return model_id, options, inputs
 
