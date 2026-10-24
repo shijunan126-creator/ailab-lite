@@ -52,6 +52,11 @@ function statusText(file: FileItem): string | null {
 }
 
 /** Where "talk about these" opens: their project if they share one, else a plain new chat. */
+/** A summary is shown as one plain line: emphasis and heading marks a model may add are not text. */
+function plain(text: string): string {
+  return text.replace(/\*\*|__|`/g, "").replace(/(^|\n)\s*(#{1,6}|>)\s+/g, "$1").replace(/\s+/g, " ").trim();
+}
+
 function chatHref(files: FileItem[]): string {
   const ids = files.map((f) => f.id).join(",");
   const projects = new Set(files.map((f) => f.project_id || ""));
@@ -519,7 +524,7 @@ function Library() {
                           {f.meta?.skill ? <Link className="meta-project" href="/skills">个人技能 · {f.meta.skill.title}</Link> : null}
                           {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
                           {f.meta?.summary?.status === "done" && f.meta.summary.text && !trash ? (
-                            <span className="lib-summary" title={f.meta.summary.text}>{f.meta.summary.text}</span>
+                            <span className="lib-summary" title={plain(f.meta.summary.text)}>{plain(f.meta.summary.text)}</span>
                           ) : null}
                         </div>
                       </div>
