@@ -257,6 +257,33 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 db.add(new)
                 db.flush()
                 mapping[old.id] = new
+                from ..models import QueuedMessage
+                from .inbox import steers_for_run
+
+                applied = (old.runtime_meta or {}).get("steer_ids", [])
+                copied_steers = {}
+                if applied:
+                    for row in steers_for_run(db, old):
+                        if row.id not in applied:
+                            continue
+                        copied = QueuedMessage(
+                            conversation_id=conv.id,
+                            user_id=user.id,
+                            prompt=row.prompt,
+                            file_ids=deepcopy(row.file_ids),
+                            model=row.model,
+                            options=deepcopy(row.options),
+                            steer=True,
+                            state="steered",
+                            run_id=new.id,
+                            after_run_id=new.id,
+                            created_at=row.created_at,
+                            updated_at=row.updated_at,
+                        )
+                        db.add(copied)
+                        db.flush()
+                        copied_steers[row.id] = copied.id
+                    new.runtime_meta = {"steer_ids": [copied_steers[qid] for qid in applied if qid in copied_steers]}
                 for artifact in db.scalars(select(Artifact).where(Artifact.run_id == old.id)):
                     db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role))
                 # Copy events in pages to bound memory; the source can subsequently be purged independently.
@@ -274,11 +301,10 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     if total_events > 100000:
                         raise HTTPException(422, "分叉过程记录超过100000条上限")
                     for event in events:
-                        db.add(
-                            RunEvent(
-                                run_id=new.id, seq=event.seq, type=event.type, payload=deepcopy(event.payload), created_at=event.created_at
-                            )
-                        )
+                        payload = deepcopy(event.payload)
+                        if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
+                            payload["queued_id"] = copied_steers[payload["queued_id"]]
+                        db.add(RunEvent(run_id=new.id, seq=event.seq, type=event.type, payload=payload, created_at=event.created_at))
                     after = events[-1].seq
                     db.flush()
                 cursor = None

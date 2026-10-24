@@ -277,7 +277,7 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
     from sqlalchemy import delete
 
     from ..locks import user_critical_section
-    from ..models import Artifact, Conversation, RunEvent
+    from ..models import Artifact, Conversation, QueuedMessage, RunEvent
 
     if not settings.conversation_purge_days:
         return 0
@@ -323,8 +323,13 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 db.execute(delete(Run).where(Run.id.in_(ids)))
                 remaining -= len(ids)
             if db.scalar(select(Run.id).where(Run.conversation_id == candidate.id).limit(1)) is None:
-                db.delete(candidate)
-                removed += 1
+                queue_ids = list(db.scalars(select(QueuedMessage.id).where(QueuedMessage.conversation_id == candidate.id).limit(remaining)))
+                if queue_ids:
+                    db.execute(delete(QueuedMessage).where(QueuedMessage.id.in_(queue_ids)))
+                    remaining -= len(queue_ids)
+                if db.scalar(select(QueuedMessage.id).where(QueuedMessage.conversation_id == candidate.id).limit(1)) is None:
+                    db.delete(candidate)
+                    removed += 1
             db.commit()
         if remaining <= 0:
             break

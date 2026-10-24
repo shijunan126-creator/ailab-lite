@@ -97,7 +97,7 @@ def test_wait_queue_and_notification(api):  # noqa: F811
         )
 
 
-def test_queue_limits_edit_cancel_delete(api):  # noqa: F811
+def test_queue_limits_edit_cancel_delete(api, monkeypatch):  # noqa: F811
     conv, _, _ = conversation(api)
     for values in [{"model": "missing"}, {"file_ids": ["other"]}, {"skill": "missing"}]:
         assert enqueue(api, conv, **values).status_code == 400
@@ -113,6 +113,21 @@ def test_queue_limits_edit_cancel_delete(api):  # noqa: F811
     assert api.delete(f"/v1/conversations/{conv}", headers=AUTH).status_code == 204
     with SessionLocal() as db:
         assert all(r.state == "canceled" for r in db.scalars(select(QueuedMessage).where(QueuedMessage.conversation_id == conv)))
+    from ailab_platform.api.reaper import purge_deleted_conversations
+    from ailab_platform.config import settings
+    from ailab_platform.models import Conversation
+
+    monkeypatch.setattr(settings, "conversation_purge_days", 1)
+    monkeypatch.setattr(settings, "gc_batch_size", 3)
+    with SessionLocal() as db:
+        db.get(Conversation, conv).deleted_at = utcnow() - timedelta(days=2)
+        db.commit()
+        for _ in range(20):
+            purge_deleted_conversations(db, utcnow())
+            if db.get(Conversation, conv, populate_existing=True) is None:
+                break
+        assert db.get(Conversation, conv, populate_existing=True) is None
+        assert db.scalar(select(func.count()).select_from(QueuedMessage).where(QueuedMessage.conversation_id == conv)) == 0
 
 
 @pytest.mark.parametrize("status", ["failed", "canceled"])
@@ -161,6 +176,13 @@ def test_steer_checkpoint_event_history(api):  # noqa: F811
     page = api.get(f"/internal/runs/{new}/model-context", headers=SERVICE).json()
     assert page["history"][-1]["steers"] == ["补充内容"]
     assert history_messages(page["history"])[1] == {"role": "user", "content": "补充内容"}
+    fork = api.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": run, "mode": "chat"})
+    assert fork.status_code == 201, fork.text
+    fork_id = fork.json()["id"]
+    next_fork = api.post(f"/v1/conversations/{fork_id}/messages", headers=AUTH, json={"prompt": "fork later", "mode": "chat"}).json()["id"]
+    fork_history = api.get(f"/internal/runs/{next_fork}/model-context", headers=SERVICE).json()["history"]
+    assert fork_history[-1]["steers"] == ["补充内容"]
+    assert api.get(f"/v1/conversations/{fork_id}", headers=AUTH).json()["queue"] == []
 
 
 def test_notification_and_dispatch_rollback_with_terminal_transaction(api, monkeypatch):  # noqa: F811
