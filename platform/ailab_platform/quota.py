@@ -190,6 +190,7 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
             dept_id=owner.dept_id if owner else None,  # snapshot: a later move does not move this usage
             attempt_id=reservation.attempt_id,
             mode=reservation.mode,
+            quiet=reservation.quiet,
             alias=reservation.alias,
             model=reservation.alias,
             weight=float(reservation.weight),
