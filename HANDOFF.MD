@@ -381,3 +381,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - zoneinfo 给不存在的墙钟时间也会构造 datetime；须 UTC roundtrip 检查，秋季重复时间固定 fold=0。每周恰逢缺失时间可能要等14天，不能只扫描未来7天。PG可能返回宿主时区 aware datetime，不能用 replace(tzinfo=UTC) 做转换；只给SQLite naive补UTC，aware用 astimezone。
 - Worker显式页标记必须包含第一页，旧无标记缓存不能默认为第一页；DOCX段落/Excel sheet不能冒充渲染页。内部 bootstrap 返回的新字段还必须加入 InternalRunDetail，否则 FastAPI 会静默过滤，handler单测无法发现。
 - 此子任务0024临时接0022（没有0023 stub）；父Agent合入会话树0023后必须reparent为0023并做双库迁移回归。接口、测试、成本和未验边界见 [后端记录](docs/progress/updates/2026-10-24-schedules-citations.md)。
+
+## 2026-10-24 合并功能测试
+
+- 独立迁移分支合并后，中间revision的结构测试可保持原目标，但 `compare_metadata(..., Base.metadata)` 必须先升级集成head；最新ORM包含后续表时，在0023直接比较会把合法0024误判为漂移。完整线性链另用0021→0022→0023→0024逐步升/降/再升锁定，不能删掉漂移断言。
+- 不要把人工持有stack的辅助（如曾误提交的 `e2e/test_zz_hold.py`，默认持有5400秒）放进 `e2e/`：全套会被它卡住，已删除；人工浏览器检查用HANDOFF里的Playwright路线临时起stack。旧测试种子也必须遵循会话树关系，不能只按创建时间写Run（见前面会话树章节）。
+- 分支契约已统一为“截至所选轮次的祖先前缀”：前缀里有Work轮次只能分支为Work，前缀全是Chat可分支为Chat或Work（用户需求“工作只能分支为工作”指工作轮次；更早的纯对话轮次分出的新会话不含任何工作内容）。API、Portal与E2E同此语义；E2E同时断言工作轮次只给Work、之前的对话轮次两者都给。首轮及最终证据入口见[集成测试记录](docs/progress/updates/2026-10-24-integration-tests.md)。

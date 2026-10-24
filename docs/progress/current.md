@@ -11,7 +11,9 @@
 - 集成分支 `feat/ui-polish-fork-retry`（基线 `main@94d3e22`）。已合入后端分支：`feat/chat-backend-fork-retry@f897f41`（0022）、`fix/chat-title-timing@c59351f`、`feat/chat-tree-pin-search@35193b2`（0023）、`feat/schedules-citations@2245bb8`（0024，合入时 down_revision 改为 0023）。迁移链 0021→0022→0023→0024。
 - 记录：[前端/集成](updates/2026-10-24-ui-polish-fork-retry.md)、[后端 fork/retry/标题](updates/2026-10-24-chat-fork-retry-backend.md)、[会话树/置顶/搜索](updates/2026-10-24-chat-tree-pin-search.md)、[定时任务/页码引用](updates/2026-10-24-schedules-citations.md)。
 - 当前检查（主 Agent 合并后）：Portal 31 项 / tsc / build 通过；Ruff 通过；迁移与 fork/retry/定时任务相关测试冒烟通过；无头浏览器人工审核新功能（编辑→2/2、切回 1/2、“/”模板、⌘K 搜索高亮、置顶、定时任务、上下文环）无报错。各子分支自身的双库全套结果见各自记录，**不等于合并后结果**。
-- 进行中：Codex 集成测试任务（分支 `test/integration-ui-features`）——合并后 SQLite/PG 全套、迁移链双库、Portal、五服务 E2E，并为新功能补浏览器 E2E。
+- 集成测试（Codex，分支 `test/integration-ui-features@debb64c` 已合入）：SQLite 1030 通过/112 跳过，PG+Redis 1109/33，Portal 31，五服务 E2E 77 通过/1 失败/1 跳过（跳过为已删除的人工持有辅助）。见[集成测试记录](updates/2026-10-24-integration-tests.md)。
+- 唯一失败的决定：分支按“截至所选轮次的前缀”判断（前缀含工作轮次只能分支为工作，否则两者皆可），API/Portal 已一致；修正 E2E 断言为工作轮次只给“分支为工作”、之前的对话轮次两者都给。删除误提交的 `e2e/test_zz_hold.py`。
+- 下一步：由 Codex 复跑该用例与完整 E2E，结果补入集成测试记录；之后等待用户关于推送/PR/部署的明确指示（当前均未授权）。
 - 下一步：审核其结果并修复其报告的 Portal 问题 → 更新本节与记录 → 向用户汇报，等待是否部署/提 PR。未验：真机 iOS/Android 键盘、真实模型的思考格式/标题时延/页码引用质量。
 
 更新：2026-10-24。最新授权追加：对话为正常聊天AI，仅无沙箱；移除逐条模式标签与消极输入提示。此前授权：参考 Hermes，实现 Chat/Work 技能自动维护、技能页编辑、按用户归属且可编辑的 Memory System；前端交由 Claude Opus 5.5 Medium，最多两个 Claude 同时运行，后端与统一验收由主 Agent 负责。用户最新明确授权：先部署，再提交PR，检查通过后merge；本条覆盖此前未发布边界。

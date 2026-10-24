@@ -20,6 +20,17 @@ OPTIONS = ["标准版", "精简版"]
 STREAM_TRIGGER = "验证流式衔接"
 STREAM_TEXT = "环境已就绪：python-docx 和中文字体可用。下面开始编写文档生成脚本。"
 stream_release = asyncio.Event()
+FEATURE_STREAM = "集成思考与早标题"
+FEATURE_ANSWER = "这是过程框外的流式最终回答。"
+FEATURE_TITLE = "集成测试生成标题"
+feature_versions: dict[str, int] = {}
+title_release = asyncio.Event()
+
+
+@app.post("/e2e/release-title")
+async def release_title():
+    title_release.set()
+    return {"ok": True}
 
 
 @app.post("/e2e/release-stream")
@@ -37,6 +48,14 @@ class QuestionThenAnswer(LLMClient):
         self.mock = MockLLM()
 
     async def chat_stream(self, messages, tools, model, user_id=None, on_text=None, on_reasoning=None):
+        if _last_user_text(messages) == FEATURE_STREAM:
+            stream_release.clear()
+            if on_reasoning:
+                await on_reasoning("**分析问题**\n先确认目标和约束。\n\n**组织回答**\n逐项核对证据。")
+            if on_text:
+                await on_text(FEATURE_ANSWER)
+            await asyncio.wait_for(stream_release.wait(), timeout=30)
+            return LLMResponse(content=FEATURE_ANSWER, usage={"prompt_tokens": 20, "completion_tokens": 30})
         if STREAM_TRIGGER != _last_user_text(messages):
             return await super().chat_stream(messages, tools, model, user_id, on_text, on_reasoning)
         stream_release.clear()
@@ -48,6 +67,19 @@ class QuestionThenAnswer(LLMClient):
         return LLMResponse(content=STREAM_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 50})
 
     async def chat(self, messages, tools, model, user_id=None):
+        prompt = _last_user_text(messages)
+        if messages and "概括用户问题生成" in str(messages[0].get("content")):
+            if json.loads(prompt).get("question") == FEATURE_STREAM:
+                await asyncio.wait_for(title_release.wait(), timeout=8)
+                return LLMResponse(content=f"**{FEATURE_TITLE}**", usage={"prompt_tokens": 10, "completion_tokens": 10})
+        if prompt.startswith("集成版本"):
+            feature_versions[prompt] = feature_versions.get(prompt, 0) + 1
+            return LLMResponse(
+                content=f"{prompt}：第 {feature_versions[prompt]} 次生成。", usage={"prompt_tokens": 40, "completion_tokens": 20}
+            )
+        if prompt.startswith("集成页码引用 "):
+            file_id = prompt.split()[1]
+            return LLMResponse(content=f"参见[《a.pdf》第2页](ailab-file://{file_id}?page=2)。")
         if _last_user_text(messages) == "验证账号记忆工具":
             results = [json.loads(m["content"]) for m in messages if m.get("role") == "tool" and m.get("name") == "memory"]
             if not results:

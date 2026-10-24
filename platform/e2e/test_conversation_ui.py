@@ -43,9 +43,11 @@ with SessionLocal() as db:
     db.add(conv); db.flush()
     runs=[]
     for i in range(COUNT):
-        run=Run(user_id=user.id, conversation_id=conv.id, prompt=f"历史消息 {i:03}", model="test-fast", status="succeeded",
+        run=Run(user_id=user.id, conversation_id=conv.id, parent_run_id=runs[-1] if runs else None,
+            prompt=f"历史消息 {i:03}", model="test-fast", status="succeeded",
             summary=(f"第 {i} 轮分析。"+"这是一段用于保持阅读位置的内容。"*30), created_at=utcnow()-timedelta(days=30)+timedelta(seconds=i))
         db.add(run); db.flush(); runs.append(run.id)
+    conv.active_run_id = run.id
     attempt = None
     if ACTIVE:
         run.status="running"
