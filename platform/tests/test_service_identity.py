@@ -177,11 +177,16 @@ def test_legacy_profile_mapping(env, profile, monkeypatch):
 
 def test_redacted_settings_hides_url_and_secrets():
     value = Settings(
-        _env_file=None, database_url="postgresql://user:p%40ss@db/name?password=secret", admin_password="private", s3_secret_key="key"
+        _env_file=None,
+        database_url="postgresql://user:p%40ss@db/name?password=secret",
+        admin_password="private",
+        s3_secret_key="key",
+        log_dir="/private/ailab-test-logs",
     )
-    output = str(value.redacted())
-    assert all(secret not in output for secret in ("p%40ss", "password=secret", "private", "'key'"))
-    assert "db/name" in output
+    output = value.redacted()
+    assert output["admin_password"] == output["s3_secret_key"] == "<redacted>"
+    assert output["database_url"] == "postgresql://<redacted>@db/name"
+    assert output["log_dir"] == "/private/ailab-test-logs"
 
 
 def test_secure_disables_legacy_and_credentials_are_not_interchangeable(identities, monkeypatch):

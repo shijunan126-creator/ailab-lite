@@ -39,7 +39,7 @@ include = ["ailab_platform*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --strict-config --strict-markers"
 markers = ["e2e: browser tests against a real stack (need AILAB_E2E=1, Redis, Chromium); see e2e/"]
 
 [tool.ruff]
@@ -60,4 +60,4 @@ source = ["ailab_platform"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under = 70
+fail_under = 80

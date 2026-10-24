@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   python:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -22,7 +23,8 @@ jobs:
       - run: pip-audit -r platform/constraints.txt --no-deps --disable-pip
 
   portal:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     defaults:
       run:
         working-directory: platform/portal
@@ -32,4 +34,4 @@ jobs:
         with:
           node-version: "22"
       - run: npm ci --no-fund
-      - run: npm audit --omit=dev --audit-level=high
+      - run: npm audit --audit-level=high

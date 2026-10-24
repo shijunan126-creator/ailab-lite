@@ -319,3 +319,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 新版gVisor必须安装整个发行包（runsc、shim、同目录gvisor-bin/），只复制两个二进制会在创建时缺gvisor_sentry失败。下载发行包并校验官方SHA512，见gVisor安装文档。
 - Colima自定义COLIMA_HOME必须先mkdir；目录不存在会悄悄回退默认目录。`--runtime docker --kubernetes`默认让k3s使用`--docker`，这不能验证containerd配置。独立临时VM里移除k3s unit的`--docker`再daemon-reload/restart，或从一开始选containerd。绝不能在共用部署VM上照搬。
 - 复验入口见 `platform/tests/contracts/README.md` 和部署README：真实传输/生命周期、公开下载与离线安装、恶意归档清理、TCP/UDP/ICMP边界。TCP/UDP要先从节点验证目标正在监听；“目标本来不可达”不算隔离证据。save_skill契约只验证真实沙箱取回文件和API调用载荷，API持久化/扫描由独立测试覆盖，不能混称五服务端到端。
+
+## 2026-10-24 CI / 测试完整性
+
+- `docs/` 不等于文档：历史验收目录有 Python/Shell/Dockerfile。CI 只对白名单 Markdown 省测，未知文件保守全套；重命名关闭检测以保留双端路径，始终比较完整 PR base...head。
+- GitHub job success 不证明真实契约执行：专门验证 JUnit 中匹配的 Redis/PG/S3/重型组件用例，拒绝无报告、无匹配或跳过；S3 的 local inode 不适用项单独白名单。新增 job 必须同步 `ci_gate.py`，门禁严格校验完整集合。
+- 脱敏回归不要把 `private` 等普通单词在整个配置中全文禁用，macOS 正常 `/private/` 路径会误报。应逐项断言敏感字段和 URL 的预期脱敏值，同时保留合法路径。
+- E2E 的 npm test/build 输出须流式留在 `e2e-logs/`，失败 trace/截图要用一次真实故障探针验保存；不能只凭 hook 代码声称诊断生效。就绪必须是 200，404 不是服务可用；kill 后还要 wait 回收。
+- 独立生产依赖 venv 里的服务导入才证明 dev extras 没有掩盖启动缺包。重型 Docker/Office/ClamAV/Keycloak 每周/手动验收与每 PR 流水线分开；工作流静态通过不等于真实组件或远端 Actions 已通过。

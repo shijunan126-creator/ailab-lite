@@ -1,0 +1,22 @@
+{
+  "realm": "ci",
+  "enabled": true,
+  "sslRequired": "none",
+  "clients": [{
+    "clientId": "ailab-test",
+    "enabled": true,
+    "publicClient": true,
+    "standardFlowEnabled": true,
+    "redirectUris": ["http://127.0.0.1:14770/api/auth/oidc/callback"],
+    "attributes": {"pkce.code.challenge.method": "S256"}
+  }],
+  "users": [{
+    "username": "ci-user",
+    "enabled": true,
+    "email": "ci@example.invalid",
+    "emailVerified": true,
+    "firstName": "CI",
+    "lastName": "Fixture",
+    "credentials": [{"type": "password", "value": "disposable-ci-password", "temporary": false}]
+  }]
+}

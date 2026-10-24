@@ -65,10 +65,10 @@ class Stack:
 
 
 def _wait(url: str, what: str, seconds: int = 90) -> None:
-    deadline = time.time() + seconds
-    while time.time() < deadline:
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
         try:
-            if httpx.get(url, timeout=2).status_code < 500:
+            if httpx.get(url, timeout=2).status_code == 200:
                 return
         except httpx.HTTPError:
             pass
@@ -76,11 +76,18 @@ def _wait(url: str, what: str, seconds: int = 90) -> None:
     raise RuntimeError(f"{what} did not come up at {url}")
 
 
+def _run_logged(command: list[str], cwd: Path, log: Path, timeout: int) -> None:
+    log.parent.mkdir(parents=True, exist_ok=True)
+    # Stream to disk: a failed build must retain its output without buffering it all in RAM.
+    with log.open("wb") as output:
+        subprocess.run(command, cwd=cwd, check=True, stdout=output, stderr=subprocess.STDOUT, timeout=timeout)
+
+
 def _build_portal(workdir: Path) -> Path:
     """Build the Portal in a copy: the repo's tsconfig.json and any running Portal's .next stay untouched."""
     if not (PORTAL_SRC / "node_modules").is_dir():
         raise RuntimeError("platform/portal/node_modules is missing: run `npm ci` there first")
-    subprocess.run(["npm", "test"], cwd=PORTAL_SRC, check=True, capture_output=True, text=True, timeout=60)
+    _run_logged(["npm", "test"], PORTAL_SRC, LOG_DIR / "portal-tests.log", 60)
     dst = workdir / "portal"
     dst.mkdir()
     # "middleware.ts" was renamed "proxy.ts" in Next 16; copy whichever exists
@@ -99,7 +106,7 @@ def _build_portal(workdir: Path) -> Path:
     if linked.returncode != 0:
         shutil.rmtree(dst / "node_modules", ignore_errors=True)
         shutil.copytree(PORTAL_SRC / "node_modules", dst / "node_modules", symlinks=True)
-    subprocess.run(["npm", "run", "build"], cwd=dst, check=True, capture_output=True, text=True, timeout=600)
+    _run_logged(["npm", "run", "build"], dst, LOG_DIR / "portal-build.log", 600)
     return dst
 
 
@@ -191,6 +198,7 @@ def stack(tmp_path_factory):
                 proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait(timeout=10)
         for log in logs:
             log.close()
         client = redis.Redis.from_url(REDIS_URL)
@@ -210,11 +218,39 @@ def browser():
         b.close()
 
 
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(item, call):
+    outcome = yield
+    report = outcome.get_result()
+    setattr(item, "report_" + report.when, report)
+
+
 @pytest.fixture()
-def context(browser):
+def context(browser, request):
     ctx = browser.new_context(accept_downloads=True, viewport={"width": 1280, "height": 900})
-    yield ctx
-    ctx.close()
+    ctx.tracing.start(screenshots=True, snapshots=True, sources=False)
+    try:
+        yield ctx
+    finally:
+        failed = any(
+            getattr(request.node, "report_" + phase, None) and getattr(request.node, "report_" + phase).failed
+            for phase in ("setup", "call")
+        )
+        try:
+            if failed:
+                # Node ids can contain slashes/parameter values; use a stable bounded filename.
+                name = hashlib.sha256(request.node.nodeid.encode()).hexdigest()[:16]
+                LOG_DIR.mkdir(parents=True, exist_ok=True)
+                ctx.tracing.stop(path=LOG_DIR / f"failure-{name}.zip")
+                for index, page in enumerate(ctx.pages):
+                    try:
+                        page.screenshot(path=str(LOG_DIR / f"failure-{name}-{index}.png"), timeout=5000)
+                    except Exception:
+                        pass  # A crashed page must not hide the original test failure or prevent cleanup.
+            else:
+                ctx.tracing.stop()
+        finally:
+            ctx.close()
 
 
 @pytest.fixture()
