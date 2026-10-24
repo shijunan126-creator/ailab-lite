@@ -88,7 +88,7 @@ export default function MarketPanel({
                 </div>
               </div>
               <button
-                className={item.builtin || item.installed ? "secondary sm" : "primary sm"}
+                className={`market-action ${item.builtin || item.installed ? "secondary sm" : "primary sm"}`}
                 disabled={item.builtin || item.installed || busy === item.slug}
                 onClick={() => install(item)}
               >
