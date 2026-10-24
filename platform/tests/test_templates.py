@@ -152,7 +152,7 @@ def test_limits_names_size_and_bounded_lists(api, monkeypatch):
     assert api.get("/v1/templates?kind=docx").status_code == 422
 
 
-@pytest.mark.parametrize("slides,potx", [(0, False), (1, True)])
+@pytest.mark.parametrize("slides,potx", [(0, False), (0, True), (1, True)])
 def test_analysis_potx_and_empty_deck_thumbnail(api, slides, potx):
     row = ready(api, name="layout.potx" if potx else "empty.pptx", data=pptx(slides, potx=potx))
     assert row["status"] == "ready" and row["slides"] == slides
