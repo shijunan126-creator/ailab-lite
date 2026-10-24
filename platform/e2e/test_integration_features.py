@@ -196,7 +196,8 @@ def test_schedule_create_run_and_five_task_limit(logged_in, stack):
             dialog = page.get_by_role("dialog")
             dialog.get_by_label("名称", exact=True).fill(title)
             dialog.get_by_label("要做什么", exact=True).fill(_prompt("定时"))
-            dialog.get_by_role("combobox", name=re.compile("^模式")).select_option("chat")
+            dialog.get_by_role("button", name="模式", exact=True).click()
+            page.get_by_role("listbox", name="模式", exact=True).get_by_role("option", name="对话", exact=True).click()
             with page.expect_response(lambda r: r.url.endswith("/api/v1/schedules") and r.request.method == "POST") as response:
                 dialog.get_by_role("button", name="保存", exact=True).click()
             assert response.value.status == 201, response.value.text()

@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import json
 import sys
+import shutil
+import tempfile
+import zipfile
 from pathlib import Path
 
 from lxml import etree
@@ -31,6 +34,7 @@ HERE = Path(__file__).resolve().parent
 ICON_DIR = HERE.parent / "assets" / "icons"
 ICON_CACHE = Path("/tmp/pptx-icon-cache")
 BRAND_DIR = Path("/workspace/.brand")
+TEMPLATE_DIR = Path("/workspace/.template")
 FONT = "微软雅黑"  # the sandbox maps it to Noto Sans CJK; Office users have it natively
 W, H = Inches(13.333), Inches(7.5)
 MARGIN = Inches(0.7)
@@ -286,11 +290,32 @@ class Deck:
             if key in {"primary", "accent"}:
                 self.t[key] = str(value).lstrip("#")
         FONT = self.brand.get("font") or FONT
-        template = BRAND_DIR / "template.pptx"
-        self.from_template = bool(self.brand and template.is_file())
-        self.prs = Presentation(str(template)) if self.from_template else Presentation()
+        template = TEMPLATE_DIR / "template.pptx"
+        self.use_template = template.is_file()
+        if not self.use_template:
+            template = BRAND_DIR / "template.pptx"  # historical frozen runs
+        self.from_template = self.use_template or bool(self.brand and template.is_file())
         if self.from_template:
-            if not self.brand.get("font"):
+            with tempfile.TemporaryDirectory(prefix="pptx-template-") as tmp:
+                normalized = Path(tmp) / "base.pptx"
+                with zipfile.ZipFile(template) as source, zipfile.ZipFile(normalized, "w", zipfile.ZIP_DEFLATED) as target:
+                    for entry in source.infolist():
+                        if entry.filename == "[Content_Types].xml":
+                            types = source.read(entry)
+                            if b"macroenabled" in types.lower():
+                                raise ValueError("macro templates are not supported")
+                            target.writestr(entry, types.replace(b"presentationml.template.main+xml", b"presentationml.presentation.main+xml"))
+                        else:
+                            if "vbaproject" in entry.filename.lower():
+                                raise ValueError("macro templates are not supported")
+                            with source.open(entry) as src, target.open(entry, "w") as dst:
+                                shutil.copyfileobj(src, dst, 1024 * 1024)
+                self.prs = Presentation(normalized)
+        else:
+            self.prs = Presentation()
+        self.native_slides = set()
+        if self.from_template:
+            if self.use_template or not self.brand.get("font"):
                 from pptx.opc.constants import RELATIONSHIP_TYPE as RT
 
                 theme_part = self.prs.slide_masters[0].part.part_related_by(RT.THEME)
@@ -298,6 +323,16 @@ class Deck:
                 ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
                 FONT = (theme_xml.xpath("string(.//a:minorFont/a:ea/@typeface)", namespaces=ns)
                         or theme_xml.xpath("string(.//a:minorFont/a:latin/@typeface)", namespaces=ns) or FONT)
+            if self.use_template:
+                for key, scheme in {"primary": "accent1", "accent": "accent2", "text": "dk1", "bg": "lt1", "dark": "dk2"}.items():
+                    node = theme_xml.find(f".//a:clrScheme/a:{scheme}", ns)
+                    if node is not None and len(node):
+                        color = node[0].get("lastClr") or node[0].get("val")
+                        if color and len(color) == 6:
+                            self.t[key] = color
+                self.t["soft"] = mix(self.t["bg"], self.t["primary"], 0.10)
+                self.t["muted"] = mix(self.t["bg"], self.t["text"], 0.65)
+                self.t["chart"] = self.t["primary"] + "," + self.t["accent"]
             # Retain masters, themes and relationships; remove only the template's example slides.
             for item in list(self.prs.slides._sldIdLst):
                 self.prs.part.drop_rel(item.rId)
@@ -867,6 +902,68 @@ class Deck:
         "quote": "quote", "image": "image", "closing": "closing", "end": "closing",
     }
 
+    def template_slide(self, spec: dict, layout: str) -> bool:
+        """Use native placeholders only when they can represent this spec without dropping content."""
+        from pptx.enum.shapes import PP_PLACEHOLDER as PH
+
+        # Rich layouts use the free-form renderer rather than silently losing charts/cards/etc.
+        supported = {"cover", "closing", "section", "bullets", "agenda", "two_column", "image"}
+        if layout not in supported or any(spec.get(k) for k in ("highlight", "icon", "kicker", "vs")):
+            return False
+        if layout in {"cover", "closing"} and spec.get("image"):
+            return False
+        if (spec.get("image") and layout != "image") or any(isinstance(item, dict) for item in spec.get("bullets", [])):
+            return False
+        title_types = {PH.TITLE, PH.CENTER_TITLE, PH.VERTICAL_TITLE}
+        body_types = {PH.BODY, PH.OBJECT, PH.VERTICAL_BODY, PH.VERTICAL_OBJECT}
+        if layout in {"cover", "closing", "section"}:
+            body_types = {PH.SUBTITLE, PH.BODY, PH.OBJECT}
+            chunks = ["\n".join(str(spec[k]) for k in ("subtitle", "author", "date", "number") if spec.get(k))]
+        elif layout == "two_column":
+            chunks = ["\n".join([str((spec.get(side) or {}).get("heading", "")), *map(str, (spec.get(side) or {}).get("bullets", []))])
+                      for side in ("left", "right")]
+        else:
+            chunks = ["\n".join(map(str, spec.get("bullets") or spec.get("items") or [spec.get("caption", "")]))]
+        if spec.get("subtitle") and layout not in {"cover", "closing", "section"}:
+            chunks[0] = str(spec["subtitle"]) + "\n" + chunks[0]
+        need_body = len(chunks) if any(chunks) else 0
+        candidates = []
+        for master in self.prs.slide_masters:
+            for native in master.slide_layouts:
+                types = [p.placeholder_format.type for p in native.placeholders]
+                titles = sum(t in title_types for t in types)
+                bodies = sum(t in body_types for t in types)
+                pictures = sum(t == PH.PICTURE for t in types)
+                if titles and bodies >= need_body and (layout != "image" or (pictures and spec.get("image"))):
+                    penalty = abs(bodies - need_body) * 10 + len(types)
+                    if layout in {"cover", "closing"} and PH.CENTER_TITLE in types:
+                        penalty -= 3
+                    if layout == "section" and "section" in native.name.lower():
+                        penalty -= 3
+                    candidates.append((penalty, native))
+        if not candidates:
+            return False
+        native = min(candidates, key=lambda item: item[0])[1]
+        slide = self.prs.slides.add_slide(native)
+        bodies = []
+        for placeholder in slide.placeholders:
+            kind = placeholder.placeholder_format.type
+            if placeholder.has_text_frame:
+                placeholder.text = ""  # never retain sample/default placeholder copy
+            if kind in title_types:
+                placeholder.text = str(spec.get("title", ""))
+            elif kind in body_types:
+                bodies.append(placeholder)
+            elif kind == PH.PICTURE and layout == "image":
+                placeholder.insert_picture(str(spec["image"]))
+        bodies.sort(key=lambda shape: (shape.left, shape.top))
+        for placeholder, content in zip(bodies, chunks):
+            placeholder.text = content
+        self.page += 1
+        self.native_slides.add(slide.slide_id)
+        self.notes(slide, spec)
+        return True
+
     def build(self, out: str) -> None:
         for i, s in enumerate(self.spec.get("slides", []), start=1):
             layout = self.LAYOUTS.get(str(s.get("layout", "bullets")))
@@ -874,18 +971,20 @@ class Deck:
             if layout is None:
                 warn(f"{where}: unknown layout; using bullets (choices: {', '.join(sorted(set(self.LAYOUTS.values())))})")
                 layout = "bullets"
+            if self.use_template and self.template_slide(s, layout):
+                continue
             if layout == "closing":
                 self.cover(s, where, closing=True)
             else:
                 getattr(self, layout)(s, where)
         logo = BRAND_DIR / "logo.png"
         for slide in self.prs.slides:
-            if self.brand and logo.is_file():
+            if self.brand and logo.is_file() and not self.use_template:
                 shape = slide.shapes.add_picture(str(logo), W - Inches(1.15), Inches(0.16), height=Inches(0.32))
                 if shape.width > Inches(0.9):
                     shape.height = int(shape.height * Inches(0.9) / shape.width)
                     shape.width = Inches(0.9)
-            if self.from_template:
+            if self.from_template and slide.slide_id not in self.native_slides:
                 # Author layouts on the standard canvas, then map coordinates to the template's native slide size.
                 sx, sy = self.prs.slide_width / W, self.prs.slide_height / H
                 for shape in slide.shapes:

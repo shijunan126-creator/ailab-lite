@@ -485,6 +485,30 @@ class LeaseManager:
                 result = self._provider_call("exec", lease["provider_ref"], "rm -rf /workspace/.brand", 10)
                 if result.exit_code:
                     raise LeaseError("could not reset brand directory")
+            result = self._provider_call("exec", lease["provider_ref"], "rm -rf /workspace/.template", 10)
+            if result.exit_code:
+                raise LeaseError("could not reset template directory")
+            template = (run.get("options") or {}).get("template")
+            if template and (run.get("options") or {}).get("mode", "work") == "work":
+                file_id = template["file_id"]
+                meta = self.platform.get_file(file_id, run_id=run_id, job="template")
+                if meta.get("status") != "ready" or meta["size"] > settings.max_template_bytes:
+                    raise LeaseError("template injection limit exceeded")
+                self.inject_file(
+                    lease,
+                    file_id,
+                    "/workspace/.template/template.pptx",
+                    run_id=run_id,
+                    job="template",
+                    max_bytes=settings.max_template_bytes,
+                )
+                analysis = (meta.get("meta") or {}).get("template") or (meta.get("meta") or {}).get("brand")
+                if analysis:
+                    with self.transfer_file() as local:
+                        local.write_text(json.dumps(analysis, ensure_ascii=False))
+                        self._provider_call(
+                            "put_file_from_path", lease["provider_ref"], "/workspace/.template/analysis.json", local, max_bytes=256 * 1024
+                        )
             brand = run.get("brand") or {}
             if brand and (run.get("options") or {}).get("mode", "work") == "work":
                 names = {"logo": "logo.png", "pptx": "template.pptx", "docx": "template.docx"}

@@ -6,13 +6,15 @@ import httpx
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import select_model, wait_models
+
 pytestmark = pytest.mark.e2e
 
 
 def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged_in, stack):
     page = logged_in
-    page.wait_for_selector("select option", state="attached")
-    page.select_option("select", "test-fast")
+    wait_models(page)
+    select_model(page, "test-fast")
     page.fill("textarea", "验证流式衔接")
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
@@ -41,7 +43,7 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
 
 def test_failure_keeps_one_header_and_persisted_duration(logged_in):
     page = logged_in
-    page.wait_for_selector("select option", state="attached")
+    wait_models(page)
     page.fill("textarea", "验证失败状态")
     page.keyboard.press("Enter")
     region = page.get_by_role("region", name="工作过程")

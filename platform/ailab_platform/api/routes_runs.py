@@ -77,7 +77,7 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None):
+def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
@@ -109,6 +109,10 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
         if file.status != FileStatus.READY:
             raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")
         inputs.append(file.id)
+    from .templates import freeze_template
+
+    if template is not None:
+        options["template"] = freeze_template(db, user, template, mode)
     enforce_token_quota(db, user.id)
     return model_id, options, inputs
 
@@ -126,11 +130,17 @@ def start_run(
     locked: bool = False,
     commit: bool = True,
     sibling_of: Run | None = None,
+    template=None,
+    frozen_template: dict | None = None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
     with nullcontext() if locked else user_critical_section(db, user.id):
-        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill)
+        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template)
+        if frozen_template:
+            if mode != "work":
+                raise HTTPException(400, "仅工作模式可使用模板")
+            options["template"] = dict(frozen_template)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
         if active >= user_limits(db, user.id).max_concurrent_runs:
@@ -186,7 +196,7 @@ def start_run(
 
 @router.post("/runs", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    run = start_run(db, user, body.prompt, body.model, body.file_ids, body.title, mode=body.mode, skill=body.skill)
+    run = start_run(db, user, body.prompt, body.model, body.file_ids, body.title, mode=body.mode, skill=body.skill, template=body.template)
     return run_dict(db, run, detail=True)
 
 
@@ -385,6 +395,7 @@ def _new_version(db, user, run_id, body, editing=False):
             locked=True,
             commit=False,
             sibling_of=old,
+            frozen_template=options.get("template"),
         )
         new.options = {**options, **new.options}
         conv.queue_paused = True

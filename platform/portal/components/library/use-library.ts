@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds } from "../../lib/api";
 
-export type Category = "all" | "starred" | "images" | "trash";
+export type Category = "all" | "starred" | "images" | "slides" | "trash";
 export type LibraryFilter = { category: Category; projectId?: string | null; q?: string; grouped?: boolean };
 
 export type LibraryFolder = {id: string; name: string; files: number};

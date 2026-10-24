@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { admin, AuditEntry, reason } from "../../lib/admin";
 import { formatDate } from "../../lib/format";
+import Select from "../select";
 
 // The API's action names (exact match); anything newer shows its code until it is named here.
 const ACTION_LABEL: Record<string, string> = {
@@ -64,18 +65,12 @@ export default function AuditSection() {
   return (
     <section className="admin-section">
       <div className="admin-toolbar">
-        <select value={action} onChange={(e) => setAction(e.target.value)} aria-label="按操作筛选">
-          <option value="">全部操作</option>
-          {GROUPS.map(([group, actions]) => (
-            <optgroup key={group} label={group}>
-              {actions.map((k) => (
-                <option key={k} value={k}>
-                  {ACTION_LABEL[k]}
-                </option>
-              ))}
-            </optgroup>
-          ))}
-        </select>
+        <Select
+          aria-label="按操作筛选"
+          value={action}
+          onChange={setAction}
+          options={[{ value: "", label: "全部操作" }, ...GROUPS.flatMap(([group, actions]) => actions.map((k) => ({ value: k, label: ACTION_LABEL[k], group })))]}
+        />
       </div>
       {error ? <div className="alert error">{error}</div> : null}
       {items?.length === 0 ? <div className="empty">没有记录</div> : null}

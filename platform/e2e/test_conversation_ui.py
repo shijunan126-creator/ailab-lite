@@ -9,7 +9,7 @@ import sys
 import httpx
 import pytest
 
-from .conftest import PASSWORD, PLATFORM, SERVICE_TOKENS, USERNAME, login
+from .conftest import PASSWORD, PLATFORM, SERVICE_TOKENS, USERNAME, confirm_action, login
 
 pytestmark = pytest.mark.e2e
 _seeded = []
@@ -207,10 +207,10 @@ def test_confirmed_delete_removes_sidebar_even_when_list_refresh_fails(page, sta
     row = page.locator(f".conv-item:has(a[href='/c/{conv['id']}'])")
     row.wait_for()
     page.route("**/api/v1/conversations", lambda route: route.abort())
-    page.on("dialog", lambda dialog: dialog.accept())
     row.hover()
     row.get_by_role("button", name="更多操作 预览与历史验收").click()
     page.get_by_role("menuitem", name="删除", exact=True).click()
+    confirm_action(page)
     page.wait_for_url(stack.portal + "/")
     row.wait_for(state="detached")
 
@@ -221,10 +221,10 @@ def test_failed_delete_keeps_conversation_and_reports_failure(page, stack):
     row = page.locator(f".conv-item:has(a[href='/c/{conv['id']}'])")
     row.wait_for()
     page.route(f"**/api/v1/conversations/{conv['id']}", lambda route: route.fulfill(status=503, json={"detail": "unavailable"}))
-    page.on("dialog", lambda dialog: dialog.accept())
     row.hover()
     row.get_by_role("button", name="更多操作 预览与历史验收").click()
     page.get_by_role("menuitem", name="删除", exact=True).click()
+    confirm_action(page)
     page.get_by_role("alert").filter(has_text="删除失败，请重试").wait_for()
     assert page.url.endswith("/c/" + conv["id"])
     assert row.count() == 1

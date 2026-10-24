@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, downloadUrl, FileItem, FilePreview, filePreviewUrl, filesByIds } from "../../lib/api";
+import { api, downloadUrl, errorMessage, FileItem, FilePreview, filePreviewUrl, filesByIds } from "../../lib/api";
 import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, IconShare, IconX } from "../icons";
 import { askHref } from "../library/file-menu";
 import ShareDialog from "../share-dialog";
@@ -226,19 +226,24 @@ export default function FileViewer({
 }) {
   const [version, setVersion] = useState<FileItem | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState("");
   const [sharing, setSharing] = useState(false);
   const own = useContext(FileSourceContext) === LIBRARY; // a file shared to this user is theirs to read, not to pass on
-  useEffect(() => setVersion(null), [file.id]);
+  useEffect(() => {
+    setVersion(null);
+    setRestoreError("");
+  }, [file.id]);
   const shown = version || file;
 
   async function restoreVersion(old: FileItem) {
     setRestoring(true);
+    setRestoreError("");
     try {
       const head = await api<FileItem>(`/v1/files/${old.id}/restore-version`, { method: "POST" });
       setVersion(null);
       onChanged ? onChanged(head) : onOpen(head);
     } catch (err: any) {
-      alert(`恢复失败：${err?.message || err}`);
+      setRestoreError(`恢复失败：${errorMessage(err)}`);
     } finally {
       setRestoring(false);
     }
@@ -276,6 +281,7 @@ export default function FileViewer({
           {shown.filename}
         </span>
         {(file.versions || 0) > 1 ? <Versions file={file} shown={shown} onPick={(v) => setVersion(v.id === file.id ? null : v)} /> : null}
+        {restoreError ? <span className="viewer-error" role="alert">{restoreError}</span> : null}
         {version ? (
           <button className="viewer-chip primary" disabled={restoring} onClick={() => restoreVersion(version)}>
             恢复此版本

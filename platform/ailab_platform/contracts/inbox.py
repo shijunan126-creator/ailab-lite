@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
+from .templates import TemplateSelection
+
 
 class InboxUTC(BaseModel):
     @field_serializer("*", when_used="json")
@@ -49,6 +51,7 @@ class NotificationRead(BaseModel):
 
 
 class QueueCreate(BaseModel):
+    template: TemplateSelection | None = None
     prompt: str = Field(min_length=1, max_length=8000)
     file_ids: list[str] = Field(default_factory=list, max_length=50)
     model: str | None = Field(default=None, max_length=120)
@@ -78,6 +81,7 @@ class QueuePatch(BaseModel):
 
 
 class QueuedMessageOut(InboxUTC):
+    template: dict | None = None
     id: str
     prompt: str
     file_ids: list[str]

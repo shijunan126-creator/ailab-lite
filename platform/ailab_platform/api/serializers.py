@@ -72,6 +72,7 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "model": run.model,
         "input_file_ids": run.input_file_ids or [],
         "options": run.options or {},
+        "template": {k: run.options["template"][k] for k in ("name", "source")} if (run.options or {}).get("template") else None,
         "summary": run.summary,
         "error": run.error,
         "result": {**(run.result or {}), **{k: v for k, v in (run.runtime_meta or {}).items() if k in {"plan", "question"}}},

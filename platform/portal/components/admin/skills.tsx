@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, SkillPolicy, SkillReview } from "../../lib/api";
 import { admin, Department, reason } from "../../lib/admin";
+import Select from "../select";
 
 type Catalog = { name: string; title: string; builtin: boolean };
 type ReviewPage = { items: SkillReview[]; next_cursor: string | null };
@@ -105,14 +106,13 @@ export default function SkillsSection() {
   return (
     <section className="admin-section">
       <div className="admin-toolbar">
-        <select aria-label="技能策略范围" value={scope} disabled={busy} onChange={(e) => setScope(e.target.value)}>
-          <option value="global">全平台</option>
-          {departments.map((d) => (
-            <option key={d.id} value={d.id}>
-              {d.name}
-            </option>
-          ))}
-        </select>
+        <Select
+          aria-label="技能策略范围"
+          value={scope}
+          disabled={busy}
+          onChange={setScope}
+          options={[{ value: "global", label: "全平台" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+        />
       </div>
       {error ? <div className="alert error">{error}</div> : null}
       <div className="policy-grid">
@@ -124,13 +124,13 @@ export default function SkillsSection() {
             <div key={skill.name} className="policy-card">
               <div className="policy-foot">
                 <span>{skill.title}</span>
-                <select aria-label={skill.title} disabled={busy} value={value} onChange={(e) => save(skill.name, e.target.value as SkillPolicy["state"])}>
-                  {options.map((state) => (
-                    <option key={state} value={state}>
-                      {STATE_LABEL[state]}
-                    </option>
-                  ))}
-                </select>
+                <Select
+                  aria-label={skill.title}
+                  disabled={busy}
+                  value={value}
+                  onChange={(v) => save(skill.name, v as SkillPolicy["state"])}
+                  options={options.map((state) => ({ value: state, label: STATE_LABEL[state] }))}
+                />
                 {scope !== "global" && global && global !== "allowed" ? <span className="chip">全平台：{STATE_LABEL[global]}</span> : null}
               </div>
             </div>

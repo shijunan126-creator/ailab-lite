@@ -5,6 +5,7 @@ import { API_BASE, downloadUrl, redirectIfUnauthorized, Skill } from "../../lib/
 import Modal from "../library/modal";
 import { IconDownload, IconUpload } from "../icons";
 import { frontmatterName, loadError, saveError, SkillContent } from "./skill-save";
+import { confirmDialog } from "../../lib/dialog";
 
 export type EditorTarget = { mode: "create"; content: string } | { mode: "open"; skill: Skill };
 
@@ -52,9 +53,9 @@ export default function SkillEditor({
   const editable = !!doc?.editable && !locked;
   const dirty = !!doc && editable && text !== (doc.content ?? "");
 
-  const close = useCallback(() => {
+  const close = useCallback(async () => {
     if (saving) return; // the new file id is needed to wait for its scan
-    if (dirty && !confirm("放弃未保存的修改？")) return;
+    if (dirty && !(await confirmDialog({ title: "放弃未保存的修改？", action: "放弃", danger: true }))) return;
     onClose();
   }, [saving, dirty, onClose]);
 

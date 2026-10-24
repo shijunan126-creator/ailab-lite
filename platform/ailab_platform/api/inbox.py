@@ -43,6 +43,7 @@ def queue_output(row):
         "model": row.model,
         "mode": row.options.get("mode", "work"),
         "skill": row.options.get("skill"),
+        "template": row.options.get("template"),
         "steer": row.steer,
         "state": row.state,
         "created_at": row.created_at,
@@ -77,6 +78,7 @@ def dispatch_next(db, conv):
                 skill=row.options.get("skill"),
                 locked=True,
                 commit=False,
+                frozen_template=row.options.get("template"),
             )
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()
             db.flush()

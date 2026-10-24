@@ -7,6 +7,8 @@ import Modal from "../../../components/library/modal";
 import { api, errorMessage, Schedule, Skill } from "../../../lib/api";
 import { formatDate, statusLabel } from "../../../lib/format";
 import { useProjects } from "../../../lib/projects";
+import { confirmDialog } from "../../../lib/dialog";
+import Select, { TimeSelect } from "../../../components/select";
 
 const LIMIT = 5; // the API enforces the same
 const DAYS = ["一", "二", "三", "四", "五", "六", "日"];
@@ -94,7 +96,7 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
               <button key={k} type="button" role="radio" aria-checked={d.kind === k} className={d.kind === k ? "on" : ""} onClick={() => set({ kind: k })}>{label}</button>
             ))}
           </div>
-          <input type="time" value={d.time} onChange={(e) => set({ time: e.target.value })} aria-label="时刻" />
+          <TimeSelect value={d.time} onChange={(time) => set({ time })} aria-label="时刻" />
         </div>
         <div className="collapse" data-open={d.kind === "weekly"} inert={d.kind !== "weekly"}>
           <div>
@@ -110,22 +112,24 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
       <div className="schedule-row">
         <label className="field">
           <span>模式</span>
-          <select value={d.skill ? `skill:${d.skill}` : d.mode} onChange={(e) => {
-            const v = e.target.value;
-            if (v.startsWith("skill:")) set({ skill: v.slice(6), mode: "work" });
-            else set({ skill: null, mode: v as "chat" | "work" });
-          }}>
-            <option value="chat">对话</option>
-            <option value="work">工作</option>
-            {skills.map((s) => <option key={s.name} value={`skill:${s.name}`}>{s.title}</option>)}
-          </select>
+          <Select
+            aria-label="模式"
+            value={d.skill ? `skill:${d.skill}` : d.mode}
+            options={[{ value: "chat", label: "对话" }, { value: "work", label: "工作" }, ...skills.map((s) => ({ value: `skill:${s.name}`, label: s.title }))]}
+            onChange={(v) => {
+              if (v.startsWith("skill:")) set({ skill: v.slice(6), mode: "work" });
+              else set({ skill: null, mode: v as "chat" | "work" });
+            }}
+          />
         </label>
         <label className="field">
           <span>项目</span>
-          <select value={d.project_id || ""} onChange={(e) => set({ project_id: e.target.value || null })}>
-            <option value="">不放进项目</option>
-            {(projects || []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          <Select
+            aria-label="项目"
+            value={d.project_id || ""}
+            options={[{ value: "", label: "不放进项目" }, ...(projects || []).map((p) => ({ value: p.id, label: p.name }))]}
+            onChange={(v) => set({ project_id: v || null })}
+          />
         </label>
       </div>
     </Modal>
@@ -210,7 +214,7 @@ export default function SchedulesPage() {
                   <IconPencil size={16} />
                 </button>
                 <button className="icon-btn danger-hover" aria-label={`删除 ${s.title}`} title="删除" disabled={busy === s.id}
-                  onClick={() => confirm(`删除定时任务「${s.title}」？`) && act(s, () => api(`/v1/schedules/${s.id}`, { method: "DELETE" }))}>
+                  onClick={async () => (await confirmDialog({ title: `删除定时任务「${s.title}」？`, action: "删除", danger: true })) && act(s, () => api(`/v1/schedules/${s.id}`, { method: "DELETE" }))}>
                   <IconTrash size={16} />
                 </button>
               </div>

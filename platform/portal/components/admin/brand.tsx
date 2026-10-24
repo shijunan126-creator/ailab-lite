@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, API_BASE, Brand, BrandAsset, BrandKind, errorMessage } from "../../lib/api";
+import { api, API_BASE, Brand, BrandAsset, BrandKind, errorMessage, Template, TemplateList } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
-import { IconImage, IconSheet, IconSlides, IconTrash, IconUpload } from "../icons";
+import { IconImage, IconPencil, IconSheet, IconSlides, IconTrash, IconUpload } from "../icons";
+import { confirmDialog } from "../../lib/dialog";
+import { useTemplateUpdates } from "../../lib/use-template-updates";
+import { usePopover } from "../../lib/use-popover";
 
 const POLL_MS = 2000;
 const SLOTS: { kind: BrandKind; label: string; accept: string; Icon: (p: { size?: number }) => React.ReactElement }[] = [
   { kind: "logo", label: "Logo", accept: "image/png,image/jpeg,image/svg+xml", Icon: IconImage },
-  { kind: "pptx", label: "PPT 模板", accept: ".pptx,.potx", Icon: IconSlides },
   { kind: "docx", label: "Word 模板", accept: ".docx,.dotx", Icon: IconSheet },
 ];
 const HEX = /^#[0-9a-fA-F]{6}$/;
@@ -58,7 +60,7 @@ function Slot({ kind, label, accept, Icon, asset, onChange }: (typeof SLOTS)[num
   }
 
   async function remove() {
-    if (!confirm(`删除${label}？`)) return;
+    if (!(await confirmDialog({ title: `删除${label}？`, action: "删除", danger: true }))) return;
     setBusy(true);
     try {
       await api(`/v1/admin/brand/assets/${kind}`, { method: "DELETE" });
@@ -109,6 +111,193 @@ function Slot({ kind, label, accept, Icon, asset, onChange }: (typeof SLOTS)[num
         </button>
       )}
       {error ? <span className="alert error">{error}</span> : null}
+    </div>
+  );
+}
+
+// a palette of common corporate colours; the hex field beside it takes any other
+const PALETTE = [
+  "#1F4E79", "#2563EB", "#0EA5E9", "#0F766E", "#16A34A", "#65A30D",
+  "#CA8A04", "#E0A526", "#EA580C", "#DC2626", "#BE185D", "#7C3AED",
+  "#4338CA", "#334155", "#111827", "#6B7280",
+];
+
+/** The colour as a swatch; a click opens the palette in the page (not the system colour panel). */
+function ColorSwatch({ value, onChange, label }: { value: string; onChange: (hex: string) => void; label: string }) {
+  const { open, setOpen, box } = usePopover();
+  return (
+    <span className="color-swatch" ref={box}>
+      <button type="button" className="color-swatch-btn" style={{ background: HEX.test(value) ? value : undefined }} aria-label={label} aria-expanded={open} onClick={() => setOpen(!open)} />
+      {open ? (
+        <div className="pop-menu color-palette" role="listbox" aria-label={label}>
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              type="button"
+              role="option"
+              aria-selected={c.toLowerCase() === value.toLowerCase()}
+              aria-label={c}
+              title={c}
+              style={{ background: c }}
+              onClick={() => {
+                onChange(c);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </div>
+      ) : null}
+    </span>
+  );
+}
+
+/** One company template: its first slide, its name (click the pencil to rename), what it brings. */
+function TemplateRow({ t, onChanged, onRemoved }: { t: Template; onChanged: (t: Template) => void; onRemoved: () => void }) {
+  const [name, setName] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function rename() {
+    const value = name?.trim();
+    setName(null);
+    if (!value || value === t.name) return;
+    try {
+      onChanged(await api<Template>(`/v1/templates/${t.id}`, { method: "PATCH", body: JSON.stringify({ name: value }) }));
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function remove() {
+    if (!(await confirmDialog({ title: `删除模板「${t.name}」？`, body: "同事将不能再选用它。", action: "删除", danger: true }))) return;
+    setBusy(true);
+    try {
+      await api(`/v1/templates/${t.id}`, { method: "DELETE" });
+      onRemoved();
+    } catch (err) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  }
+
+  const state = t.status === "pending" ? "检查中" : t.status === "ready" ? "" : t.reason || "不可用";
+  return (
+    <div className="brand-slot">
+      <span className="brand-thumb wide">
+        {t.thumbnail_url ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={`${API_BASE}${t.thumbnail_url}`} alt="" />
+        ) : t.status === "pending" ? (
+          <span className="chip-spin" aria-hidden="true" />
+        ) : (
+          <IconSlides size={20} />
+        )}
+      </span>
+      <span className="grow brand-slot-text">
+        {name !== null ? (
+          <input
+            className="tpl-rename"
+            autoFocus
+            value={name}
+            maxLength={60}
+            aria-label="模板名称"
+            onChange={(e) => setName(e.target.value)}
+            onBlur={rename}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) e.currentTarget.blur();
+              if (e.key === "Escape") setName(null);
+            }}
+          />
+        ) : (
+          <span className="brand-slot-name">
+            <strong className="ellipsis" title={t.filename}>{t.name}</strong>
+          </span>
+        )}
+        <span className="brand-slot-meta">
+          {state ? <span className={`status ${t.status === "pending" ? "queued" : "failed"}`}>{state}</span> : null}
+          {t.layouts ? <span>{t.layouts} 种版式</span> : null}
+          <span className="hint">{formatBytes(t.size)}</span>
+        </span>
+        {error ? <span className="alert error">{error}</span> : null}
+      </span>
+      <button className="icon-btn" onClick={() => setName(t.name)} disabled={busy} aria-label={`重命名 ${t.name}`} title="重命名">
+        <IconPencil size={16} />
+      </button>
+      <button className="icon-btn danger-hover" onClick={remove} disabled={busy} aria-label={`删除 ${t.name}`} title="删除">
+        <IconTrash size={16} />
+      </button>
+    </div>
+  );
+}
+
+/** The PPT templates everyone can pick from. Several are fine: a report deck, a pitch deck, … */
+function CompanyTemplates() {
+  const [list, setList] = useState<Template[] | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+  const picker = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    const c = new AbortController();
+    api<TemplateList>("/v1/templates?kind=pptx", { signal: c.signal })
+      .then((l) => !c.signal.aborted && setList(l.company))
+      .catch((err) => !c.signal.aborted && setError(errorMessage(err)));
+    return () => c.abort();
+  }, []);
+
+  useTemplateUpdates(list || [], (fresh) => {
+    const byId = new Map(fresh.map((t) => [t.id, t]));
+    setList((l) => l && l.map((t) => byId.get(t.id) || t));
+  });
+
+  async function upload(files: FileList) {
+    setUploading(true);
+    setError("");
+    for (const file of Array.from(files)) {
+      const form = new FormData();
+      form.append("upload", file);
+      form.append("name", file.name.replace(/\.(pptx|potx)$/i, ""));
+      form.append("scope", "company");
+      try {
+        const t = await api<Template>("/v1/templates", { method: "POST", body: form });
+        setList((l) => [t, ...(l || [])]);
+      } catch (err) {
+        setError(errorMessage(err));
+      }
+    }
+    setUploading(false);
+    if (picker.current) picker.current.value = "";
+  }
+
+  return (
+    <div className="brand-templates">
+      <div className="brand-templates-head">
+        <h3>PPT 模板</h3>
+        <button className="secondary sm" onClick={() => picker.current?.click()} disabled={uploading}>
+          {uploading ? <span className="chip-spin" aria-hidden="true" /> : <IconUpload size={15} />} 上传
+        </button>
+        <input ref={picker} type="file" accept=".pptx,.potx" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
+      </div>
+      {error ? <div className="alert error">{error}</div> : null}
+      {list === null ? (
+        error ? null : <div className="pr-loading"><span /><span /><span /></div>
+      ) : list.length ? (
+        <div className="card brand-slots">
+          {list.map((t) => (
+            <TemplateRow
+              key={t.id}
+              t={t}
+              onChanged={(next) => setList((l) => (l || []).map((x) => (x.id === next.id ? next : x)))}
+              onRemoved={() => setList((l) => (l || []).filter((x) => x.id !== t.id))}
+            />
+          ))}
+        </div>
+      ) : (
+        <button className="brand-upload" onClick={() => picker.current?.click()} disabled={uploading}>
+          <IconSlides size={20} />
+          <span>上传公司 PPT 模板</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -180,7 +369,7 @@ export default function BrandSection() {
     <label className="brand-color">
       <span>{label}</span>
       <span className="brand-color-input">
-        <input type="color" value={HEX.test(draft[key]) ? draft[key] : "#000000"} onChange={(e) => set({ [key]: e.target.value.toUpperCase() })} aria-label={label} />
+        <ColorSwatch value={draft[key]} onChange={(c) => set({ [key]: c })} label={label} />
         <input type="text" value={draft[key]} maxLength={7} onChange={(e) => set({ [key]: e.target.value.trim() })} aria-label={`${label}色值`} className={HEX.test(draft[key]) ? "" : "invalid"} />
       </span>
     </label>
@@ -229,6 +418,7 @@ export default function BrandSection() {
           <Slot key={slot.kind} {...slot} asset={brand.assets?.[slot.kind]} onChange={load} />
         ))}
       </div>
+      <CompanyTemplates />
     </section>
   );
 }

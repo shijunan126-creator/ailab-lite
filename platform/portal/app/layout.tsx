@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import DialogHost from "../components/dialog-host";
 
 export const metadata: Metadata = {
   title: "AILab",
@@ -18,7 +19,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* before the first paint: a sidebar the user closed must not appear and then slide away */}
         <script dangerouslySetInnerHTML={{ __html: SIDEBAR_STATE }} />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <DialogHost />
+      </body>
     </html>
   );
 }

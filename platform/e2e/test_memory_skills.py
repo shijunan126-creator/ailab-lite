@@ -49,7 +49,6 @@ def test_memory_edit_reload_conflict_and_controls(page, stack):
     page.get_by_role("button", name="保存", exact=True).click()
     expect(page.get_by_role("button", name="重新加载", exact=True)).to_be_visible()
     expect(page.get_by_role("textbox", name="个人偏好", exact=True)).to_have_value("本页未保存草稿")
-    page.on("dialog", lambda dialog: dialog.accept())
     page.get_by_role("button", name="重新加载", exact=True).click()
     expect(page.get_by_role("textbox", name="个人偏好", exact=True)).to_have_value("本页未保存草稿")
     page.get_by_role("button", name="保存", exact=True).click()

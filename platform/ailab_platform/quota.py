@@ -17,7 +17,7 @@ from .contracts.usage import ReserveUsageIn, SettleUsageIn, UsageErrorCode, Usag
 from .domain.ledger import MILLI, POLICY_VERSION, reserved_amount, snapshot_weight, weighted_amount
 from .domain.quota_policy import Limits, limits_for
 from .locks import user_critical_section
-from .models import FileObject, FileStatus, ModelUsage, Run, RunStatus, UsageReservation, User
+from .models import FileObject, FileStatus, ModelUsage, Run, RunStatus, Template, UsageReservation, User
 
 
 def _error(status: int, code: UsageErrorCode, **detail):
@@ -274,6 +274,7 @@ def library_bytes(db: Session, user_id: str) -> int:
             select(func.coalesce(func.sum(FileObject.size), 0)).where(
                 FileObject.user_id == user_id,
                 FileObject.purpose != "brand",
+                ~select(Template.id).where(Template.file_id == FileObject.id, Template.scope == "company").exists(),
                 or_(FileObject.status != FileStatus.REJECTED, FileObject.deleted_at.is_not(None)),
                 FileObject.purged_at.is_(None),
             )

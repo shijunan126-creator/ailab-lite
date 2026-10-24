@@ -9,7 +9,7 @@ import sys
 import httpx
 import pytest
 
-from .conftest import PASSWORD, USERNAME, login
+from .conftest import PASSWORD, USERNAME, login, wait_models
 
 pytestmark = pytest.mark.e2e
 
@@ -28,7 +28,7 @@ def test_a_question_is_answered_in_the_browser_and_the_turn_finishes(page, stack
     if reopen == "reload":
         page.set_viewport_size({"width": 390, "height": 844})
     login(page, stack)
-    page.wait_for_selector("select option", state="attached", timeout=15000)
+    wait_models(page)
     page.fill("textarea", "需要提问：这份方案用哪个版本？")
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)

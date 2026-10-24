@@ -10,19 +10,24 @@ import { Category, useLibrary } from "./use-library";
 
 type Tab = Category | "project";
 
-/** Pick ready files from the library to attach to a message. */
+/** Pick ready files from the library to attach to a message; with `only`, one file of that kind (e.g. a PPT to follow). */
 export default function LibraryPicker({
   projectId,
   attached,
   onPick,
   onClose,
+  only,
+  title = "从资料库选择",
 }: {
   projectId?: string | null;
   attached: string[]; // already on the message
   onPick: (files: FileItem[]) => void;
   onClose: () => void;
+  only?: "slides";
+  title?: string;
 }) {
   const [tab, setTab] = useState<Tab>(projectId ? "project" : "all");
+  const single = !!only;
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [chosen, setChosen] = useState<Map<string, FileItem>>(new Map());
@@ -33,12 +38,13 @@ export default function LibraryPicker({
   }, [search]);
 
   const { files, loaded, more, loadMore } = useLibrary({
-    category: tab === "project" ? "all" : tab,
+    category: only || (tab === "project" ? "all" : tab),
     projectId: tab === "project" ? projectId : null,
     q,
   });
 
   function toggle(f: FileItem) {
+    if (single) return onPick([f]);
     const next = new Map(chosen);
     if (next.has(f.id)) next.delete(f.id);
     else next.set(f.id, f);
@@ -48,17 +54,16 @@ export default function LibraryPicker({
   const tabs: [Tab, string][] = [
     ...(projectId ? ([["project", "本项目"]] as [Tab, string][]) : []),
     ["all", "全部"],
-    ["starred", "收藏"],
-    ["images", "图像"],
+    ...(single ? [] : ([["starred", "收藏"], ["images", "图像"]] as [Tab, string][])),
   ];
 
   return (
     <Modal
-      title="从资料库选择"
+      title={title}
       onClose={onClose}
       className="modal-picker"
       footer={
-        <>
+        single ? undefined : <>
           <span className="hint">{chosen.size ? `已选 ${chosen.size} 个` : ""}</span>
           <span className="spacer" />
           <button className="secondary" onClick={onClose}>
@@ -95,7 +100,7 @@ export default function LibraryPicker({
             const on = already || chosen.has(f.id);
             return (
               <button key={f.id} className={`picker-row ${on ? "on" : ""}`} disabled={!usable} onClick={() => toggle(f)}>
-                <span className={`check ${on ? "on" : ""}`}>{on ? <IconCheck size={12} /> : null}</span>
+                {single ? null : <span className={`check ${on ? "on" : ""}`}>{on ? <IconCheck size={12} /> : null}</span>}
                 <FileTile file={f} size={32} />
                 <span className="grow">
                   <span className="name">{f.filename}</span>

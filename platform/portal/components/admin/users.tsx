@@ -6,6 +6,7 @@ import { Me, Role } from "../../lib/api";
 import { formatTokens, timeAgo } from "../../lib/format";
 import { IconPlus, IconSearch, IconX } from "../icons";
 import Modal from "../library/modal";
+import Select from "../select";
 
 const ROLES: Role[] = ["dept_admin", "platform_admin", "auditor"]; // everyone is a member
 
@@ -93,14 +94,13 @@ function UserDialog({
         </label>
         <label className="field">
           <span>部门</span>
-          <select value={dept} onChange={(e) => setDept(e.target.value)} disabled={!isPlatform}>
-            <option value="">无</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="部门"
+            value={dept}
+            onChange={setDept}
+            disabled={!isPlatform}
+            options={[{ value: "", label: "无" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </label>
         <div className="field">
           <span>角色</span>
@@ -109,14 +109,12 @@ function UserDialog({
         {isPlatform ? (
           <label className="field">
             <span>额度</span>
-            <select value={policy} onChange={(e) => setPolicy(e.target.value)}>
-              <option value="">跟随部门</option>
-              {policies.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+            <Select
+              aria-label="额度"
+              value={policy}
+              onChange={setPolicy}
+              options={[{ value: "", label: "跟随部门" }, ...policies.map((p) => ({ value: p.id, label: p.name }))]}
+            />
           </label>
         ) : null}
         {user.auth === "local" ? (
@@ -201,14 +199,13 @@ function NewUserDialog({
         </label>
         <label className="field">
           <span>部门</span>
-          <select value={dept} onChange={(e) => setDept(e.target.value)} disabled={!isPlatform}>
-            <option value="">无</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="部门"
+            value={dept}
+            onChange={setDept}
+            disabled={!isPlatform}
+            options={[{ value: "", label: "无" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </label>
         <div className="field">
           <span>角色</span>
@@ -277,14 +274,12 @@ export default function UsersSection({ me, isPlatform }: { me: Me; isPlatform: b
           ) : null}
         </label>
         {isPlatform && departments.length ? (
-          <select value={dept} onChange={(e) => setDept(e.target.value)} aria-label="按部门筛选">
-            <option value="">全部部门</option>
-            {departments.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="按部门筛选"
+            value={dept}
+            onChange={setDept}
+            options={[{ value: "", label: "全部部门" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
+          />
         ) : null}
         <span className="spacer" />
         <button className="secondary" onClick={() => setCreating(true)}>

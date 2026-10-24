@@ -7,6 +7,7 @@ import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles,
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
+import { confirmDialog } from "../../../lib/dialog";
 
 const ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = { pptx: IconSlides, xlsx: IconSheet, data: IconChart };
 
@@ -214,7 +215,7 @@ export default function SkillsPage() {
   }
 
   async function remove(s: Skill) {
-    if (!s.file_id || !confirm(`删除个人技能「${s.title}」？技能文件将永久删除并释放存储空间。`)) return;
+    if (!s.file_id || !(await confirmDialog({ title: `删除技能「${s.title}」？`, body: "技能文件将永久删除。", action: "删除", danger: true }))) return;
     const resp = await fetch(`${API_BASE}/v1/skills/files/${s.file_id}`, { method: "DELETE" });
     redirectIfUnauthorized(resp);
     if (!resp.ok) setError(`删除失败（${resp.status}）`);

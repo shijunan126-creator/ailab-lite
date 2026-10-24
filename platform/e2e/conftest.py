@@ -269,5 +269,25 @@ def login(page, stack: Stack, username: str = USERNAME, password: str = PASSWORD
 @pytest.fixture()
 def logged_in(page, stack):
     login(page, stack)
-    page.wait_for_selector("select option", state="attached", timeout=15000)
+    wait_models(page)
     return page
+
+
+def wait_models(page):
+    page.get_by_role("button", name="模型", exact=True).wait_for(timeout=15000)
+
+
+def select_model(page, model):
+    from playwright.sync_api import expect
+
+    name = {"test-fast": "Test Fast", "test-pro": "Test Pro"}[model]
+    menu = page.get_by_role("button", name="模型", exact=True)
+    menu.click()
+    page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text=name).click()
+    expect(menu).to_contain_text(name)
+
+
+def confirm_action(page):
+    dialog = page.get_by_role("alertdialog")
+    dialog.get_by_role("button").last.click()
+    dialog.wait_for(state="detached")

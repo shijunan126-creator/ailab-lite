@@ -444,3 +444,40 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 已claim的steer还不是已注入；详情仅按runtime_meta.steer_ids确认顺序查有界队列表。重新加载的bubble不能从所有steered行猜测。队列scripted model应识别当前最新原始用户消息，不能把history里旧的慢任务当成新任务再次阻塞。
 - E2E通过API准备项目后须重新加载以初始化前端项目缓存；按文件ID核对移动后名称，重名会合法改名。手机证据先收起桌面遗留侧栏，避免截图只显示遮罩。
 - 品牌保存空字体用空字符串（非null）；产物菜单提问/移动必须读取文件当前项目，不能沿用对话项目。两项Portal回归由父Agent修复，未放宽浏览器断言。
+
+## 2026-10-24 Portal 动画 / 原生弹窗
+- 删除旧样式块时连带删掉了 `@keyframes spin`（b075489），所有转圈（预览、上传、忙碌按钮）都停在一帧，看起来像卡死；后端预览其实几秒就绪。现在 `tests/css-animations.test.mjs` 检查 globals.css 里用到的每个动画都有 keyframes。排查“卡住”先看 `el.getAnimations()` 是否为空，再查后端。
+- `prefers-reduced-motion` 的全局规则把动画压成 1 次；进度类转圈（`.viewer-spinner`/`.chip-spin`/`.pr-spin` 等）已豁免为慢速持续转，新增转圈类要加进同一行。
+- 不用浏览器 `confirm()/alert()`、原生 `<select>`、`type=time/color`：确认用 `lib/dialog.ts` 的 `confirmDialog()`（根布局挂 `DialogHost`，Escape 在捕获阶段拦截，不会连带关掉下面的对话框）；下拉用 `components/select.tsx`（列表 portal 到 body，不被弹窗滚动区裁切），时间用 `TimeSelect`。
+## 2026-10-24 PPT 模板
+
+- POTX 的 package main content type 不同于PPTX，python-pptx `Presentation(path)`会拒绝。Worker应注册模板main part直接打开；不要为30MiB输入重打包到受16MiB输出限制的解析目录。生成器在沙箱内规范化后再用Presentation。
+- `.potx`也必须走ZIP大小/压缩比检查。模板状态 failed 与扫描 rejected 由meta区分；FileObject仍沿用原扫描状态枚举。
+- 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。
+- 数据迁移若需补outbox，topic/deadline须取有效Settings，不能只读os.environ：生产自定义队列可能来自env_file，否则迁移任务会发到无人消费的默认队列。0028双库回归锁定自定义topic。
+- 测试服务必须核对进程归属，不能只看daemonize退出码或端口可连。macOS可能同时存在wildcard与127.0.0.1特定绑定的Redis监听；启动前检查端口独占，启动后核对pidfile与Redis INFO的process_id、验证空DB，清理时只关闭自己持有的进程。本轮最终重验改用独占26379，原16379非本任务进程保持不动。
+
+## 2026-10-24 PPT 真实首屏图跟进
+
+- **Office rendering happens in the sandbox preview pipeline, never in the platform image/Worker.** Worker预算256–384MiB，旧方案在256MiB下首屏245MiB、默认192MiB必然fallback，已被否决并撤销。不得通过平台镜像安装LO或放宽Worker隔离来重新引入它。
+- 模板ready、preview manifest和outbox同事务；复用资料库请求helper和原preview作业，不在补丁重试或ACK后重建作业。template status独立于preview，失败只保留草图，不影响Run冻结和使用。
+- immutable草图切真实图时必须改变thumbnail_url及ETag；仅替换同URL字节会让浏览器继续显示草图。API从完成资产中选择文件绑定的固定缩略图路径，模板可见性不借用普通资料库授权。
+- 真实渲染宿主进程测试仅证明renderer/租约生命周期与内容，不等于OpenSandbox容器/cgroup验收；当前证据及边界见[记录](docs/progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
+
+
+## 2026-10-24 集成后的 E2E 控件契约
+
+- Portal 模型选择现为“模型”按钮/listbox，而非原生select；必须实际点击选项并验证选中与刷新持久化。个人技能在“更多技能”menuitemradio，不保证出现在快捷chip。行政策略/定时模式同样使用页面listbox。
+- 删除等确认改为页面alertdialog，不能再监听浏览器dialog；明确点击后验证成功/失败原契约。记忆冲突“重新加载”保留草稿并无确认，不要给无确认动作添加等待。
+- 完整集成E2E必须覆盖这些变化，不能因Portal单测/build通过就沿用旧浏览器计数；本轮最终88通过及初始失败见[记录](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。
+
+
+## 2026-10-24 模板 ready 与 preview 完成是两个时刻
+
+- ready表示模板已扫描/分析、可用于Run，不代表sandbox首屏预览已完成。UI只轮询pending会停在草图；真实图已经改变URL/ETag也无法更新旧组件状态。公司管理列表和个人模板菜单均已实测复现。不能在后端延迟ready/放宽Worker限制来掩盖问题，应跟踪独立preview生命周期，见[部署缺陷复现](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md#已确认的-portal-缺陷真实缩略图不自动替换草图)。
+- 文件系统校验成功仅证明结构可挂载，不证明运行时镜像文件内容完整。存储中断后须逐文件hash与实际执行验证；镜像标签、架构一致或pull成功都不足以证明内容未损坏。个人部署的恢复/清理命令只写仓库外交接。
+
+## 2026-10-24 模板预览UI跟踪
+
+- 模板API的 `preview_status` 独立于模板 `status`；ready模板可立即选择，preview pending继续跟踪至终态，不通过thumbnail_url格式猜测状态。关闭个人菜单仅保留所选pending模板的可用性检查。轮询取消/超时/截止与失败保留草图见[修复记录](docs/progress/updates/2026-10-24-template-preview-refresh.md)。
+- E2E的health探针不能证明进程归属：SSH转发也可能占用测试端口并返回healthy。启动前核对API/Broker/Agent/Worker/Portal全部端口空闲，不能只检查Redis。首次28080/23000占用导致登录401，改用38180–38183/33100；勿终止已有SSH转发。

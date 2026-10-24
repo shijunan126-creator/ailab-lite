@@ -15,7 +15,7 @@ import uuid
 import httpx
 import pytest
 
-from .conftest import PASSWORD, PLATFORM, TOKEN, USERNAME, login
+from .conftest import PASSWORD, PLATFORM, TOKEN, USERNAME, confirm_action, login, select_model, wait_models
 
 pytestmark = pytest.mark.e2e
 
@@ -23,9 +23,9 @@ EICAR = b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*"
 
 
 def _send(page, prompt: str, model: str | None = None) -> None:
-    page.wait_for_selector("select option", state="attached")
+    wait_models(page)
     if model:
-        page.select_option("select", model)
+        select_model(page, model)
     page.fill("textarea", prompt)
     page.keyboard.press("Enter")
 
@@ -182,7 +182,7 @@ def test_changing_the_password_signs_everyone_out_and_the_new_one_works(browser,
         page.click("button[type=submit]")
         page.wait_for_selector(".error")
         login(page, stack, name, new)
-        page.wait_for_selector("select option", state="attached", timeout=15000)
+        wait_models(page)
     finally:
         ctx.close()
 
@@ -192,9 +192,13 @@ def test_changing_the_password_signs_everyone_out_and_the_new_one_works(browser,
 
 def test_the_workbench_offers_the_platforms_models_and_the_quota(logged_in) -> None:
     page = logged_in
-    options = page.eval_on_selector_all("select option", "os => os.map(o => [o.value, o.textContent])")
-    assert options == [["test-pro", "Test Pro（消耗 ×3）"], ["test-fast", "Test Fast"]]  # tests/models.test.toml, hidden ones excluded
-    assert page.input_value("select") == "test-pro"
+    menu = page.get_by_role("button", name="模型", exact=True)
+    menu.click()
+    options = page.get_by_role("listbox", name="模型", exact=True).get_by_role("option")
+    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast"]
+    assert options.nth(0).get_attribute("aria-selected") == "true"
+    assert options.nth(1).get_attribute("aria-selected") == "false"
+    menu.click()
     page.click(".user-chip")  # usage lives in the account menu
     page.wait_for_function("() => document.body.innerText.includes('今日额度已用')", timeout=15000)
     assert "deepseek" not in page.content().lower()
@@ -278,11 +282,11 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
 
 def test_the_chosen_model_is_remembered(logged_in, stack) -> None:
     page = logged_in
-    page.wait_for_selector("select option", state="attached")
-    page.select_option("select", "test-fast")
+    wait_models(page)
+    select_model(page, "test-fast")
     page.goto(stack.portal + "/")
-    page.wait_for_selector("select option", state="attached")
-    assert page.input_value("select") == "test-fast"
+    wait_models(page)
+    assert page.get_by_role("button", name="模型", exact=True).inner_text() == "Test Fast"
 
 
 def test_a_deliverable_can_be_downloaded(logged_in) -> None:
@@ -300,10 +304,10 @@ def test_a_conversation_can_be_deleted(logged_in, stack) -> None:
     page = logged_in
     conv = _start_conversation(page, "要删掉的对话")
     _wait_for_turns(page, 1)
-    page.on("dialog", lambda d: d.accept())
     page.hover(f".conv-item:has(a[href='/c/{conv}'])")
     page.locator(f".conv-item:has(a[href='/c/{conv}'])").get_by_role("button", name=re.compile(r"^更多操作 ")).click()
     page.get_by_role("menuitem", name="删除", exact=True).click()
+    confirm_action(page)
     page.wait_for_url(stack.portal + "/")
     page.wait_for_selector(".chat-home")
     assert page.locator(f".conv-item a[href='/c/{conv}']").count() == 0
@@ -331,7 +335,6 @@ def test_an_upload_is_scanned_then_downloadable_then_deletable(logged_in, stack,
         download_link.click()
     assert open(download.value.path(), encoding="utf-8").read() == "hello from the browser test\n"
 
-    page.on("dialog", lambda d: d.accept())
     row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
     row.get_by_role("menuitem", name="删除", exact=True).click()
     page.wait_for_function("(n) => !document.body.innerText.includes(n)", arg=name, timeout=15000)
@@ -363,7 +366,6 @@ def test_an_infected_upload_is_rejected_and_cannot_be_downloaded(logged_in, stac
         name,
     )
     assert page.request.get(f"{stack.portal}/api/v1/files/{file_id}/content").status == 409
-    page.on("dialog", lambda d: d.accept())
     row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
     row.get_by_role("menuitem", name="删除", exact=True).click()
     page.wait_for_function("(n) => !document.body.innerText.includes(n)", arg=name, timeout=15000)
@@ -569,7 +571,8 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     assert not any(f["filename"] == "SKILL.md" for f in page.request.get(stack.portal + "/api/v1/files").json())
 
     page.goto(stack.portal + "/")
-    page.click(".skill-chip:has-text('周报助手')")
+    page.get_by_role("button", name="更多技能", exact=True).click()
+    page.get_by_role("menuitemradio", name="周报助手", exact=True).click()
     _start_conversation(page, "帮我写本周周报")
     _wait_for_turns(page, 1)
     assert page.inner_text(".msg.user .attach-chip") == "周报助手"
@@ -577,6 +580,6 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file
-    page.on("dialog", lambda d: d.accept())
     page.locator(".skill-row", has_text="周报助手").locator("button:has-text('删除')").click()
+    confirm_action(page)
     page.wait_for_function("() => !document.body.innerText.includes('周报助手')", timeout=15000)

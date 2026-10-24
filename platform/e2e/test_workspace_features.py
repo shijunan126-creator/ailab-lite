@@ -11,7 +11,7 @@ import httpx
 import pytest
 from playwright.sync_api import expect
 
-from .conftest import PASSWORD
+from .conftest import PASSWORD, wait_models
 from .test_integration_features import _menu
 from .test_portal import _send, _start_conversation, _wait_for_turns
 
@@ -55,7 +55,7 @@ def wait_api(page, stack, path, predicate, seconds=30):
 def project(page, stack):
     created = api(page, stack, "post", "/projects", {"name": "验收项目-" + uuid.uuid4().hex[:8]})
     page.reload()
-    page.wait_for_selector("select option", state="attached")
+    wait_models(page)
     return created
 
 
@@ -358,27 +358,27 @@ def test_library_summary_file_menu_and_switch(logged_in, stack, tmp_path):
 
 def test_brand_upload_analysis_and_settings_persist(logged_in, stack, tmp_path):
     from PIL import Image
-    from pptx import Presentation
 
     page = logged_in
     old = api(page, stack, "get", "/admin/brand")
-    ppt = tmp_path / "brand-template.pptx"
-    prs = Presentation()
-    prs.slides.add_slide(prs.slide_layouts[6])
-    prs.save(ppt)
+    from docx import Document
+
+    template = tmp_path / "brand-template.docx"
+    doc = Document()
+    doc.add_heading("Brand template", 0)
+    doc.save(template)
     logo = tmp_path / "logo.png"
     Image.new("RGB", (24, 24), "#123456").save(logo)
     try:
         page.goto(stack.portal + "/admin")
         page.get_by_role("tab", name="品牌", exact=True).click()
-        page.locator(".brand-slot").filter(has=page.get_by_role("button", name="上传PPT 模板", exact=True)).locator(
+        page.locator(".brand-slot").filter(has=page.get_by_role("button", name="上传Word 模板", exact=True)).locator(
             "input[type=file]"
-        ).set_input_files(str(ppt))
+        ).set_input_files(str(template))
         page.locator(".brand-slot").filter(has=page.get_by_role("button", name="上传Logo", exact=True)).locator(
             "input[type=file]"
         ).set_input_files(str(logo))
-        expect(page.get_by_text(re.compile(r"\d+ 种版式"))).to_be_visible(timeout=30000)
-        expect(page.locator(".brand-swatches")).to_be_visible()
+        expect(page.get_by_text(re.compile(r"\d+ 种样式"))).to_be_visible(timeout=30000)
         expect(page.get_by_role("button", name="替换Logo", exact=True)).to_be_visible()
         switch = page.get_by_role("switch", name="生成文件使用公司品牌", exact=True)
         if switch.get_attribute("aria-checked") == "false":
@@ -395,7 +395,7 @@ def test_brand_upload_analysis_and_settings_persist(logged_in, stack, tmp_path):
         shot(page, "brand-admin")
         shot(page, "brand-admin", True)
     finally:
-        for kind in ("logo", "pptx"):
+        for kind in ("logo", "docx"):
             api(page, stack, "delete", "/admin/brand/assets/" + kind)
         api(page, stack, "patch", "/admin/brand", {k: old[k] for k in ("enabled", "name", "colors", "font")})
 

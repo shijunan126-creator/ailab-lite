@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-24 PPT模板集成：`feat/ppt-templates-portal`，部署固定`b2c8394`，测试`e905790`，未合main。空库0028、三类镜像冷构建/源码核对、真实Docker/runsc sandbox首屏480px JPEG（公司/个人）、有模板/无模板真实PPT、原生母版/版式和示例页剔除、queue/steer/share/inbox及PPTX/DOCX浏览器预览通过；SQLite1123/PG1208/E2E88通过。**Portal自动缩略图切换已修复并本地验证，待合并/部署**：独立preview_status及有界可取消轮询，公司/个人延迟成功、失败回退和503重试4项浏览器回归通过；本轮完整SQLite1123/118、Portal33/build通过，详见[修复记录](../progress/updates/2026-10-24-template-preview-refresh.md)。部署仍为旧b2c8394。平台/Worker无新增Office依赖；短时RSS/空间回收与外部存储稳定性、K3S仅静态渲染等边界见[最终记录](../progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。原后端sandbox缩略图实现详见[设计与专项](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)，旧Worker245MiB方案仍已撤销。
+
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 
 2026-10-24 Gate 3当前状态：PR #42 head `16a8822` 八项CI成功，已squash合入main为 `b07548995ffbce3fc618f94955c5d66b54b380c7`；同一固定提交已部署并通过有限真实模型浏览器smoke。已验完整备份恢复、既有数据0021→0024/ID数量/线性会话树/文件哈希、五服务健康与预算内短时RSS/CPU、标题指标抓取和30秒调度器真实到期执行。详情及残余边界见[Gate 3记录](../progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)。本次发布无待实现项，新增功能想法待用户决定。以下Round1/Round2及各子分支状态均为历史阶段，不代表当前仍未合并/部署。

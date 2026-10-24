@@ -5,6 +5,7 @@ import { admin, QuotaPolicy, reason } from "../../lib/admin";
 import { formatBytes, formatTokens } from "../../lib/format";
 import { IconPlus, IconTrash } from "../icons";
 import Modal from "../library/modal";
+import { confirmDialog } from "../../lib/dialog";
 
 const GB = 1024 ** 3;
 const BLANK = { name: "", daily_tokens: 200_000, monthly_tokens: 4_000_000, library_bytes: 20 * GB, max_concurrent_runs: 2, is_default: false };
@@ -93,7 +94,7 @@ export default function PoliciesSection() {
   }, []);
 
   async function remove(p: QuotaPolicy) {
-    if (!confirm(`删除额度「${p.name}」？`)) return;
+    if (!(await confirmDialog({ title: `删除额度「${p.name}」？`, action: "删除", danger: true }))) return;
     try {
       await admin.deletePolicy(p.id);
       load();

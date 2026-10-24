@@ -72,6 +72,18 @@ def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Pa
         return {}
 
 
+def _template_thumbnail(file_id, source, storage, output):
+    key = f"derived/{file_id}/template-sketch-v3.jpg"
+    try:
+        if not storage.exists(key):
+            execute("template_sketch", source, output)
+            storage.put_file(key, output / "thumb.jpg", "image/jpeg")
+        return {"thumb_key": key, "template_thumbnail": "sketch"}
+    except Exception:
+        # A derivative failure must never destroy successful template analysis.
+        return {"template_thumbnail": "unavailable"}
+
+
 def extract(data: bytes, filename: str, content_type: str) -> dict:
     with tempfile.TemporaryDirectory(prefix="ailab-extract-") as tmp:
         source = Path(tmp) / ("input" + PurePath(filename).suffix.lower())
@@ -107,7 +119,13 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         return {"file_id": file_id, "skipped": "scan_exhausted"}
     with tempfile.TemporaryDirectory(prefix="ailab-file-") as tmp:
         source = Path(tmp) / ("input" + PurePath(meta["filename"]).suffix.lower())
-        download(platform, file_id, source, settings.max_upload_bytes, job="thumbnail" if thumbnail_only else "processing")
+        download(
+            platform,
+            file_id,
+            source,
+            settings.max_template_bytes if (meta.get("meta") or {}).get("template_kind") else settings.max_upload_bytes,
+            job="thumbnail" if thumbnail_only else "processing",
+        )
         if thumbnail_only:
             thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
             if thumb:
@@ -131,6 +149,17 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        if (meta.get("meta") or {}).get("template_kind"):
+            try:
+                analysis = execute("template", source, Path(tmp) / "template")
+            except IsolationError:
+                platform.patch_file(
+                    file_id, meta={"scan": scan, "template_error": "模板无法解析", "processing": "failed"}, status="rejected"
+                )
+                return {"file_id": file_id, "failed": True}
+            thumb = _template_thumbnail(file_id, source, storage, Path(tmp) / "thumbnail")
+            platform.patch_file(file_id, meta={"scan": scan, "template": analysis, "processing": "done", **thumb}, status="ready")
+            return {"file_id": file_id, "template": analysis}
         if (meta.get("meta") or {}).get("brand_kind"):
             kind = (meta.get("meta") or {}).get("brand_kind")
             try:

@@ -1,5 +1,25 @@
 # 当前工作
 
+## 模板缩略图生命周期修复（2026-10-24，已本地验证，待PR合并）
+
+用户授权修复、提PR并在检查通过后合并；未授权再次部署。分支 `fix/template-preview-refresh`，base `origin/main@6b6825d`，起点 `23c720b`；包含此前已部署但未合main的PPT模板集成。API新增独立 `preview_status`，公司管理/个人菜单跟踪pending预览至终态；菜单关闭时仅保留所选pending模板的可用性检查。请求可取消、有15秒超时、轮询五分钟截止并退避至5秒。Ruff、SQLite1123通过/118跳过、Portal33通过/build、模板专项五服务浏览器5通过。[PR #48](https://github.com/shijunan126-creator/ailab-lite/pull/48) 已创建并登记，修复提交 `03d11bb`；等待该PR最新head检查后合并，主Agent持续监控；未重部署。验证记录见[本轮记录](updates/2026-10-24-template-preview-refresh.md)。三份`.DS_Store`保留。
+
+## PPT 模板集成测试与干净部署（2026-10-24，已部署；Portal自动切图待修复）
+
+- 当前分支 `feat/ppt-templates-portal`，测试提交`e905790`及后续文档提交；部署固定 `b2c8394047279c634802a8ef9591d8bf275fac56`，本地main merge-base`6b6825d`。未fetch/推送/PR/merge，未修改Portal，三份`.DS_Store`原样保留。下文旧后端分支/未授权部署状态为历史，本轮用户新授权允许保全配置后清空旧测试部署。
+- 当前验证：SQLite1123通过/118跳过，PG+Redis1208通过/33跳过，完整五服务E2E88通过，Portal33项/build、Ruff与三套Kustomize静态渲染通过。临时服务已结束；测试原生控件适配没有放宽业务断言。
+- 当前部署：空库0028/完整性ok/FK0；三类镜像冷构建并核对源码；九服务健康检查/HTTP探针通过，系统保持运行。真实公司/个人模板首屏JPEG、有模板/无模板各2页PPT、原生母版版式/无示例页、queue/steer/share/inbox、PPTX/DOCX浏览器预览通过。测试数据清空后重新空库启动和管理员浏览器登录通过，未合main。
+- **Portal缺陷未修复**：ready后停止轮询，真实preview URL晚到，上传模板仍显示草图；公司页面刷新/个人菜单重开后才真实。禁止编辑Portal，已记录两种路径的精确复现、API/DOM证据。不能把整个模板UI外部验收记为完成。
+- 下一步交Portal负责人修复缩略图生命周期跟踪、补回归并复验；父任务之后决定是否发布Git分支。个人配置/存储恢复诊断仅本机HANDOFF；外部存储稳定性仍为风险。资源与全部当前/历史边界见[本轮最终记录](updates/2026-10-24-ppt-templates-clean-acceptance.md)。
+
+## PPT 模板缩略图改用 sandbox 预览（2026-10-24，已实现并本地验证，待父任务集成）
+
+- 分支 `feat/ppt-templates-backend`，本轮base `0d12f75`，实现/测试提交 `ad04b19`；初版架构base为main@6b6825d。未改Portal、未push/PR/merge/deploy。目标分支原已被其他工作树检出，本轮按明确要求在当前工作树继续；接续前先核对共享分支与工作树文件基线。
+- 已撤销平台镜像Office/Poppler/字体/procps、Worker专用Office renderer及其隔离豁免/进程树RSS逻辑。Worker仅保留受限草图；API在ready同事务登记一次原preview作业，sandbox从首张真实页生成480px JPEG缓存，完成时改变thumbnail_url/ETag。预览失败不改变模板ready或可用性。
+- Ruff通过（329文件）；专项 **84通过/1跳过**，完整SQLite **1123通过/118跳过**，完整PG+Redis **1208通过/33跳过**，均无失败。临时PG/Redis25479/26479已停止且无监听，16379未动。
+- 成本：Worker/平台镜像新增Office渲染成本为零；每模板一次sandbox preview，与资料库预览同预算，加一次小图缩放/存储。旧245MiB测量属于已否决方案，不能作为当前验收。
+- 下一步：父任务审核/集成本分支，在真实OpenSandbox/cgroup与目标Linux上验收。未跑Portal/build/E2E（无Portal依赖且不修改其目录）、未构建镜像/部署/真实模型或长期容量；旧ready模板不批量回填。精确命令、当前与历史证据、清理和边界见[交付记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)，接口见[设计](../reviews/2026-10-24-ppt-templates-design.md)。
+
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 
 用户授权七项工作区功能实现、测试、提PR后合并。**未授权部署本轮功能**；线上仍为 `b075489`。
