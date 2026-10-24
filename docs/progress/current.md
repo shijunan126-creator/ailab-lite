@@ -17,4 +17,4 @@
 
 ## 下一步
 
-完成 Portal 新版验收，提交 CI PR；核对实际 head 的全部检查并修复失败后合并。新增每周组件工作流须在可用分支实际运行后才标记远端验收。
+Portal 新版已重建并通过浏览器/HTTP/完整性验收；CI [PR #38](https://github.com/shijunan126-creator/ailab-lite/pull/38) 已提交。核对实际 head 的全部检查并修复失败后合并。新增每周组件工作流须在可用分支实际运行后才标记远端验收。
