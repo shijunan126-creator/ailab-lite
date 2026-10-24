@@ -16,6 +16,15 @@
       "sha256": "f059436c5e9a58a0ceef36eb3a282d914507019005722ca83c91e64b3c5f7390",
       "version": "1.0.0"
     },
+    "skill-curator": {
+      "description": "从对话中提取或更新个人技能：判断是否值得沉淀、生成 SKILL.md 草稿、与已有技能比较，经用户确认后用 save_skill 保存",
+      "license": "NOASSERTION",
+      "name": "skill-curator",
+      "requires": [],
+      "roles": [],
+      "sha256": "11f9fc3732bb28046c1ac4c634b1571156747368be3a7891f6d51fb6b2b4a1da",
+      "version": "0.1.0"
+    },
     "xlsx": {
       "description": "做 Excel 表格 / 报表 / 数据分析（.xlsx）：表头样式、数字格式、公式、合计行、原生图表；支持多轮修改",
       "license": "NOASSERTION",

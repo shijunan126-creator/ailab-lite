@@ -1,0 +1,6 @@
+name = "skill-curator"
+version = "0.1.0"
+description = "从对话中提取或更新个人技能：判断是否值得沉淀、生成 SKILL.md 草稿、与已有技能比较，经用户确认后用 save_skill 保存"
+license = "NOASSERTION"
+requires = []
+roles = []
