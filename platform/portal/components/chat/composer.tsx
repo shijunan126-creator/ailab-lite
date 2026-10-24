@@ -27,7 +27,6 @@ const SKILLS: SkillButton[] = [
   { key: "ppt", skill: "pptx", label: "PPT 生成", Icon: IconSlides, placeholder: "说说主题、页数和给谁看，比如：给新员工介绍公司的 10 页 PPT", template: "主题：\n页数：\n给谁看：" },
   { key: "excel", skill: "xlsx", label: "Excel 表格", Icon: IconSheet, placeholder: "说说表里要有什么，比如：三个区域 7～9 月销售额，带合计和柱状图", template: "表格内容：\n时间范围：\n需要的图表：" },
   { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表", template: "想分析的问题：\n关注的指标：" },
-  { key: "curator", skill: "skill-curator", label: "提取技能", Icon: IconSparkles, placeholder: "说说要提取或更新什么，比如：从这段对话提取一个个人技能", template: "请从当前对话提取或更新一个个人技能。先判断是否值得沉淀，给我 SKILL.md 草稿和变更建议；我确认后再保存。" },
 ];
 
 const VISIBLE_SKILLS = 3; // the rest wait under "更多"
