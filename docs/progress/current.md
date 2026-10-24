@@ -8,7 +8,9 @@
 - 后端 A：`feat/projects-brand`（base `00c5cc9`）实现与独立双库验证见[记录](updates/2026-10-24-projects-brand-backend.md)；待父任务审核合入、迁移链/Portal/镜像集成。
 
 - C 后端 `feat/shares-library`（起点00c5cc9/base74e66c0）已本地提交分享/摘要/OCR选页并通过双库；通知仍no-op、0027待接0026，父Agent下一步集成；[交付与测试](updates/2026-10-24-shares-library-backend.md)。
-- 下一步：三个后端分支完成后由主 Agent 审核合入、改迁移链；Portal 同步实现；Codex 统一跑双库全套、E2E 与有限真实模型验收；PR → CI → merge。
+- 已完成：三个后端分支已合入并改链 0025←0024、0026←0025、0027←0026；分享通知接入收件箱；Portal 全部 7 项界面已实现并按合入后的接口对齐（`139ae5d`、`f106d28`）。主 Agent 本地检查：Portal 32 项 / tsc / build 通过，Ruff 通过，SQLite 迁移与品牌子集 39 通过。
+- 进行中：Codex 集成任务（起点 `f106d28`）——补 `RunDetail.steered`、分享通知跨用户锁顺序、跨分支交互；双库全套、五服务 E2E 新增功能用例与截图、有限真实模型；推送并建 PR（不合并）。
+- 下一步：主 Agent 审核截图与结果 → CI 通过后 squash 合并。不部署（未授权）；`sbx-office` 镜像需重建，部署时另行授权。
 
 - B后端 `feat/inbox-queue`（起点00c5cc9）：9992308通知/队列/steer双库验证通过（SQLite1057、PG+Redis1138），见[B记录](updates/2026-10-24-inbox-queue-backend.md)；待父任务审核合入、0026改接0025及统一Portal/E2E验收。
 
