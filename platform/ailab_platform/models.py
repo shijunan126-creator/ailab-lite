@@ -791,3 +791,60 @@ for name, columns in [
             "(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"
         ),
     )
+
+
+class MarketListing(Base):
+    """A skill submitted for public download. The listing owns metadata; versions own immutable packages."""
+
+    __tablename__ = "market_listings"
+    __table_args__ = (
+        Index("ix_market_listings_status_created", "status", "created_at", "id"),
+        Index("ix_market_listings_owner_created", "user_id", "created_at", "id"),
+        Index("ix_market_listings_slug", "slug", unique=True),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("mlst"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
+    slug: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(String(1000), default="")
+    category: Mapped[str] = mapped_column(String(40), default="其他")
+    license: Mapped[str] = mapped_column(String(80), default="NOASSERTION")
+    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    current_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MarketVersion(Base):
+    """An immutable package snapshot for one submission; a later personal edit cannot change it."""
+
+    __tablename__ = "market_versions"
+    __table_args__ = (
+        UniqueConstraint("listing_id", "version", name="uq_market_versions_listing_version"),
+        Index("ix_market_versions_status_created", "status", "created_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("mver"))
+    listing_id: Mapped[str] = mapped_column(ForeignKey("market_listings.id", ondelete="CASCADE"), index=True)
+    version: Mapped[str] = mapped_column(String(20))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    changelog: Mapped[str] = mapped_column(String(2000), default="")
+    status: Mapped[str] = mapped_column(String(20), default="pending", server_default="pending")
+    review_reason: Mapped[str] = mapped_column(String(1000), default="")
+    reviewed_by: Mapped[str | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MarketReview(Base):
+    __tablename__ = "market_reviews"
+    __table_args__ = (Index("ix_market_reviews_version_created", "version_id", "created_at"),)
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("mrev"))
+    version_id: Mapped[str] = mapped_column(ForeignKey("market_versions.id", ondelete="CASCADE"))
+    reviewer_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    decision: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(1000), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
