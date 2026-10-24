@@ -96,3 +96,14 @@ Gate 1进行中；尚未PR/merge/deploy，不将以上样本等同完整Gate 1�
 内置preview两次snapshot超时，原始错误为`Preview automation snapshot timed out after 15000ms.`，后续按HANDOFF使用Playwright。初版临时探针的身份、引用按钮选择器、JavaScript转义、发送按钮未ready、以及编号为“第0场景”导致模型合理ask_user，均已纠正/取消并完整复验；不把未发送或waiting_user写成产品失败，也不计入成功Work流式样本。原始证据只在本机，不提交raw logs或认证材料。没有确认Portal缺陷，`platform/portal/`无diff。
 
 Gate 2下一步：按授权push至`feat/ui-polish-fork-retry`并开PR到main，等待实际远端CI；Gate 3在合并前禁止进入。本轮尚无部署提交或部署迁移/数据备份验收结果。
+
+
+## Gate 2 移交：PR #42
+
+已按授权`git push origin HEAD:feat/ui-polish-fork-retry`，创建并通过T3 `link_pull_request`登记 [PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42)，base为main。首个检查快照head `fafe1d827b906f0471986fe2cf8f48af08fb4837`：changes成功，quality/SQLite/PG/storage-contracts/shell/e2e进行中，OPEN/UNSTABLE。此后追加此移交文档提交；最终head以当前Git分支为准。尚不能声称CI通过、merge或部署完成。
+
+本线程是T3委派的实现子任务；T3运行规则要求子任务不监控或轮询PR，将URL/head/待完成检查交父任务，因此在PR创建、单次状态快照与清理后移交。父任务下一步：对最新head监控CI，失败则根因修复并复验；全部green且head一致后squash merge；然后才按仓库外本机HANDOFF执行已授权备份、备份验证、部署合并main、0022→0024原数据ID/哈希/线性树核对、健康/RSS和真实浏览器smoke，失败从备份回滚。
+
+Gate 3未进入：没有部署提交、备份路径、现存用户数据迁移验收、部署RSS或线上smoke结果。不得把本次临时数据库升级head0024与真实模型浏览器结果写成部署验收。
+
+清理：五服务、Redis、临时PG、专属网络代理、浏览器均结束；14个临时端口关闭，`cleanup.json`。临时凭据配置已删除，repo Portal/.env/.DS_Store均未改。VM恢复本轮开始的停止状态，卷保留挂载，个人环境细节与检查只写本机HANDOFF。未重建/迁移/改写部署业务数据。

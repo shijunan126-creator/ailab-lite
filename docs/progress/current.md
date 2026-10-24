@@ -1,10 +1,10 @@
 # 当前工作
 
-## 最新：Round 2 Gate 1通过，Gate 2待远端CI
+## 最新：Round 2 Gate 1通过，PR #42待CI/父任务接续
 
 最新指令授权：测量并修复后端首次标题，完整双库/mock E2E与真实Gate 1通过后，才push/PR/CI/squash merge，再备份部署。Portal禁止修改。当前分支`t3/fix-agent-first-turn-titles`，基线`ca08623`（集成分支feat/ui-polish-fork-retry，base main@94d3e22）；上一轮记录已保留如下。
 
-标题已拆开gate与推理预算、catalog声明quiet关闭thinking、加规范化兜底及低基数指标；五次真实浏览器早标题通过（1.250–2.130秒）。PG C locale暴露Unicode搜索漏匹配，已后端修复并保留red/green证据。实现提交bc5eddc/d865356。完整SQLite1033/112跳过、PG+Redis1112/33跳过、mock E2E78通过；真实Gate 1逐项通过，16K窗口压缩边界已记录。下一步push/PR/远端CI，未merge/deploy；具体结果及下一步入口见[发布记录](updates/2026-10-24-release-ui-features.md#round-2首次标题修复进行中)。
+标题已拆开gate与推理预算、catalog声明quiet关闭thinking、加规范化兜底及低基数指标；五次真实浏览器早标题通过（1.250–2.130秒）。PG C locale暴露Unicode搜索漏匹配，已后端修复并保留red/green证据。实现提交bc5eddc/d865356。完整SQLite1033/112跳过、PG+Redis1112/33跳过、mock E2E78通过；真实Gate 1逐项通过，16K窗口压缩边界已记录。已push并创建/登记[PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42)，首快照changes成功/其余进行中。T3子任务规则不允许子任务监控PR，交父任务跟踪最新head CI，green后squash合并再备份部署；尚未merge/deploy。14临时端口已关闭、凭据文件已删除，VM恢复停止；具体结果及下一步入口见[发布记录](updates/2026-10-24-release-ui-features.md#round-2首次标题修复进行中)。
 
 ## 最新：真实模型发布门禁（2026-10-24，已停止）
 
