@@ -13,6 +13,8 @@ from pathlib import Path
 
 import pytest
 
+from .conftest import confirm_action
+
 pytestmark = pytest.mark.e2e
 
 SHOTS = Path(os.environ["AILAB_E2E_SHOTS"]) if os.environ.get("AILAB_E2E_SHOTS") else None
@@ -133,8 +135,8 @@ def test_delete_offers_undo_and_the_trash_restores_and_purges(logged_in, stack, 
     page.locator(".lib-row", has_text=name).get_by_role("button", name=f"更多操作 {name}", exact=True).click()
     page.locator(".lib-row", has_text=name).get_by_role("menuitem", name="删除", exact=True).click()
     page.get_by_role("tab", name="回收站").click()
-    page.on("dialog", lambda d: d.accept())
     page.locator(".lib-row", has_text=name).get_by_role("button", name=f"永久删除 {name}").click()
+    confirm_action(page)
     page.locator(".lib-row", has_text=name).wait_for(state="detached")
     files = page.request.get(f"{stack.portal}/api/v1/files?trashed=true").json()
     assert all(f["filename"] != name for f in files)

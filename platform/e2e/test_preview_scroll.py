@@ -8,6 +8,8 @@ import uuid
 import pytest
 from playwright.sync_api import expect
 
+from .conftest import select_model, wait_models
+
 pytestmark = pytest.mark.e2e
 
 
@@ -85,8 +87,8 @@ with SessionLocal() as db:
 
 def test_chat_preview_uses_the_same_continuous_pages(logged_in, stack):
     page = logged_in
-    page.wait_for_selector("select option", state="attached")
-    page.select_option("select", "test-fast")
+    wait_models(page)
+    select_model(page, "test-fast")
     page.fill("textarea", "你好")
     page.keyboard.press("Enter")
     page.locator(".turn-meta").wait_for(timeout=30000)

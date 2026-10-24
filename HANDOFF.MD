@@ -463,3 +463,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 模板ready、preview manifest和outbox同事务；复用资料库请求helper和原preview作业，不在补丁重试或ACK后重建作业。template status独立于preview，失败只保留草图，不影响Run冻结和使用。
 - immutable草图切真实图时必须改变thumbnail_url及ETag；仅替换同URL字节会让浏览器继续显示草图。API从完成资产中选择文件绑定的固定缩略图路径，模板可见性不借用普通资料库授权。
 - 真实渲染宿主进程测试仅证明renderer/租约生命周期与内容，不等于OpenSandbox容器/cgroup验收；当前证据及边界见[记录](docs/progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
+
+
+## 2026-10-24 集成后的 E2E 控件契约
+
+- Portal 模型选择现为“模型”按钮/listbox，而非原生select；必须实际点击选项并验证选中与刷新持久化。个人技能在“更多技能”menuitemradio，不保证出现在快捷chip。行政策略/定时模式同样使用页面listbox。
+- 删除等确认改为页面alertdialog，不能再监听浏览器dialog；明确点击后验证成功/失败原契约。记忆冲突“重新加载”保留草稿并无确认，不要给无确认动作添加等待。
+- 完整集成E2E必须覆盖这些变化，不能因Portal单测/build通过就沿用旧浏览器计数；本轮最终88通过及初始失败见[记录](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。

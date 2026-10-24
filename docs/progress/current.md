@@ -1,5 +1,12 @@
 # 当前工作
 
+## PPT 模板集成分支全套验证与干净部署（2026-10-24，进行中）
+
+- 当前工作树 `feat/ppt-templates-portal@b2c8394`，本地base `main@6b6825d`；后端/Portal已在此集成，下面旧后端分支交接为历史。用户现授权保全配置后清空旧测试部署、空库0028与三类镜像重建，以及完整测试/真实模型/部署验收；不push/PR/merge，不修改Portal，不动三份`.DS_Store`。
+- 本轮SQLite1123通过/118跳过，PG+Redis1208通过/33跳过，最终完整五服务E2E88通过，Portal33项/build、Ruff与三套Kustomize渲染通过。E2E旧原生控件测试已适配，未改Portal产品代码；临时PG/Redis/五服务均已结束。
+- 部署源码固定`b2c8394`，尚未完成健康/真实模型/最终资源验收。外部存储中断损坏依赖镜像层，正重建专用容器存储；个人配置与诊断只记录仓库外本机HANDOFF。
+- 下一步：固定镜像空库启动、0028/健康/新登录→模板真实缩略图/有无模板生成/Office预览/工作区部署smoke→清理测试数据与缓存、资源实测和最终文档提交。当前证据与未验边界见[本轮记录](updates/2026-10-24-ppt-templates-clean-acceptance.md)。未合main。
+
 ## PPT 模板缩略图改用 sandbox 预览（2026-10-24，已实现并本地验证，待父任务集成）
 
 - 分支 `feat/ppt-templates-backend`，本轮base `0d12f75`，实现/测试提交 `ad04b19`；初版架构base为main@6b6825d。未改Portal、未push/PR/merge/deploy。目标分支原已被其他工作树检出，本轮按明确要求在当前工作树继续；接续前先核对共享分支与工作树文件基线。
