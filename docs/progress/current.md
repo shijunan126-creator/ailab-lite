@@ -14,7 +14,8 @@
 - 集成测试（Codex，分支 `test/integration-ui-features@debb64c` 已合入）：SQLite 1030 通过/112 跳过，PG+Redis 1109/33，Portal 31，五服务 E2E 77 通过/1 失败/1 跳过（跳过为已删除的人工持有辅助）。见[集成测试记录](updates/2026-10-24-integration-tests.md)。
 - 唯一失败的决定：分支按“截至所选轮次的前缀”判断（前缀含工作轮次只能分支为工作，否则两者皆可），API/Portal 已一致；修正 E2E 断言为工作轮次只给“分支为工作”、之前的对话轮次两者都给。删除误提交的 `e2e/test_zz_hold.py`。
 - 合入后复跑（Codex）：基线 `a09d70b6d585461b2b8de3b693c4441c7704b575`，交付分支 `test/e2e-rerun-fork-contract`；fork 单跑 1 通过/0 失败/0 跳过，完整五服务 E2E 78/0/0，Ruff check/format 通过；fixture 内 Portal 31 项及隔离 build 均通过。无需修改测试或产品代码，所有临时服务已关闭。证据及未跑范围见[复跑记录](updates/2026-10-24-integration-tests.md#复跑合入后-a09d70b)。
-- 下一步：父 Agent 审核并集成复跑记录，然后向用户汇报；等待推送/PR/部署的明确指示（当前均未授权）。未验：真机 iOS/Android 键盘、真实模型的思考格式/标题时延/页码引用质量。
+- 用户授权（2026-10-24，本轮）：先用真实模型验收；通过后由 Codex 建 PR → CI 通过 → squash 合入 main → 部署合并后的 main。按此顺序设闸，任一闸失败即停并汇报；Portal 问题由主 Agent 修。
+- 进行中：Codex 任务“Real-model acceptance, PR, merge, deploy”（从 `ec59932` 起的独立工作树）。结果将写入 `updates/2026-10-24-release-ui-features.md`。未验：真机 iOS/Android 键盘、真实模型的思考格式/标题时延/页码引用质量。
 
 更新：2026-10-24。最新授权追加：对话为正常聊天AI，仅无沙箱；移除逐条模式标签与消极输入提示。此前授权：参考 Hermes，实现 Chat/Work 技能自动维护、技能页编辑、按用户归属且可编辑的 Memory System；前端交由 Claude Opus 5.5 Medium，最多两个 Claude 同时运行，后端与统一验收由主 Agent 负责。用户最新明确授权：先部署，再提交PR，检查通过后merge；本条覆盖此前未发布边界。
 
