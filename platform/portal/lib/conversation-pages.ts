@@ -23,5 +23,5 @@ export function refreshConversation(previous: ConversationDetail | null, latest:
   if (!previous || previous.id !== latest.id || !latest.turns.length) return latest;
   const older = previous.turns.filter((run) => order(run, latest.turns[0]) < 0);
   return { ...latest, turns: mergeTurns(older, latest.turns),
-    previews: mergePreviews(previous.previews, latest.previews), has_more: older.length ? previous.has_more : latest.has_more };
+    has_more: older.length ? previous.has_more : latest.has_more };
 }

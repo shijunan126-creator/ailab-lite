@@ -32,3 +32,9 @@ test('a turn the latest page no longer lists was replaced by a retry and disappe
   const latest={id:'c', turns:[run('a'),run('c')], previews:[], has_more:false};
   assert.deepEqual(refreshConversation(previous, latest).turns.map(r=>r.id), ['a','c']);
 });
+
+test('a refresh replaces the complete path preview manifest, discarding abandoned branch files', () => {
+  const previous={id:'c', turns:[run('a'),run('b')], previews:[{filename:'abandoned.pptx'}], has_more:false};
+  const latest={id:'c', turns:[run('a'),run('c')], previews:[], has_more:false};
+  assert.deepEqual(refreshConversation(previous, latest).previews, []);
+});

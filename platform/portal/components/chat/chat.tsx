@@ -407,6 +407,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   /** A new version of a turn (regenerated, or its message edited): it and everything after it give way to the new one. */
   function branchTo(old: Run, fresh: Run) {
+    olderController.current?.abort();
+    olderController.current = null;
+    setLoadingOlder(false);
+    setLivePreviews([]);
     setDetail((d) => {
       if (!d) return d;
       const at = d.turns.findIndex((t) => t.id === old.id);
@@ -455,6 +459,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   async function switchTo(runId: string) {
     if (!id) return;
     setError("");
+    olderController.current?.abort();
+    olderController.current = null;
+    setLoadingOlder(false);
     try {
       const page = await api<ConversationDetail>(`/v1/conversations/${id}/active`, {
         method: "POST", signal: actionController.current.signal,
@@ -462,6 +469,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       });
       for (const t of page.turns) opened.current?.add(t.id); // a version switch is not new content arriving
       ++loadSeq.current; // a detail load already in flight would bring the old path back
+      olderController.current?.abort();
+      olderController.current = null;
+      setLoadingOlder(false);
+      setLivePreviews([]);
       setDetail((d) => (d && d.id === page.id ? { ...page, turns: page.turns } : page));
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));

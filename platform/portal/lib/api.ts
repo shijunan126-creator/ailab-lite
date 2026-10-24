@@ -361,12 +361,12 @@ export function downloadUrl(path: string): string {
 }
 
 /** Several files by id in one request (unknown or foreign ids are left out). */
-export async function filesByIds(ids: string[]): Promise<FileItem[]> {
+export async function filesByIds(ids: string[], signal?: AbortSignal): Promise<FileItem[]> {
   const out: FileItem[] = [];
   for (let i = 0; i < ids.length; i += 200) {
     // the API takes at most 200 ids per request
     const query = ids.slice(i, i + 200).map((id) => `ids=${encodeURIComponent(id)}`).join("&");
-    out.push(...(await api<FileItem[]>(`/v1/files?limit=200&${query}`)));
+    out.push(...(await api<FileItem[]>(`/v1/files?limit=200&${query}`, { signal })));
   }
   return out;
 }
@@ -395,8 +395,14 @@ const MAX_FAILURES = 8; // consecutive attempts that delivered nothing
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+    if (signal.aborted) return resolve();
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
   });
 }
 
@@ -434,6 +440,7 @@ export async function streamRun(
     }
     if (signal.aborted) return;
     failures = delivered ? 0 : failures + 1;
+    if (failures >= MAX_FAILURES) throw new Error("连接多次中断，请刷新后重试");
     const base = RETRY_MS[Math.min(failures, RETRY_MS.length - 1)];
     await sleep(base + Math.random() * base * 0.3, signal);
   }

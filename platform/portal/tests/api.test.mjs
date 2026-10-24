@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { getEventListeners } from "node:events";
 import ts from "typescript";
 
 // Run the dependency-free browser API module with Node's built-in test runner.
@@ -103,4 +104,29 @@ test("the stream gives up after repeated failures, and stops at once when aborte
   const stopped = streamRun("r", () => {}, controller.signal);
   controller.abort();
   await stopped; // resolves quietly
+});
+
+test("empty successful SSE responses also exhaust the reconnect budget and release abort listeners", async (t) => {
+  let calls = 0;
+  const controller = new AbortController();
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return sse("");
+  });
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let result;
+  const done = streamRun("r", () => {}, controller.signal).then(() => { result = "ended"; }, () => { result = "failed"; });
+  try {
+    for (let i = 0; i < 20 && !result; i++) {
+      await new Promise((r) => setImmediate(r));
+      t.mock.timers.tick(10_000);
+      assert.ok(getEventListeners(controller.signal, "abort").length <= 1);
+    }
+  } finally {
+    controller.abort(); // the regression must not leave a hung test on the old implementation
+    await done;
+  }
+  assert.equal(result, "failed");
+  assert.equal(calls, 8);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });
