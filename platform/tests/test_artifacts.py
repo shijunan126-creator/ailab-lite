@@ -125,3 +125,13 @@ def test_hostile_filenames_are_flattened(api) -> None:
         resp = _commit(api, run_id, _stage(name.encode(), name="x.md") | {"filename": name})
         assert resp.status_code == 200, (name, resp.text)
         assert resp.json()["filename"] == expected
+
+
+def test_artifact_is_scanned_before_it_enters_the_library(api) -> None:
+    run_id = _running_run(api)
+    body = _stage(b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE")
+    resp = _commit(api, run_id, body)
+    assert resp.status_code == 400
+    assert "scanner" in resp.text
+    assert not get_storage().exists(body["staging_key"])
+    assert api.get(f"/v1/runs/{run_id}", headers=AUTH).json()["artifacts"] == []

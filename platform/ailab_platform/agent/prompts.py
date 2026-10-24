@@ -188,9 +188,11 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
             cut = f"，以下是前 {len(text)} 字" if f.get("truncated") else ""
             lines += [
                 f"（附件《{name}》：共 {f.get('chars') or len(text)} 字{cut}；原文件使用沙箱时在 /workspace/inputs/{name}）",
+                "<!-- AILAB_ATTACHMENT_START -->",
                 "```",
                 text,
                 "```",
+                "<!-- AILAB_ATTACHMENT_END -->",
             ]
         else:
             lines.append(f"（附件《{name}》：没有可直接读取的文字；原文件使用沙箱时在 /workspace/inputs/{name}）")

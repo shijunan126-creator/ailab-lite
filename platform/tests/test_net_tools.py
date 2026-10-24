@@ -529,3 +529,38 @@ def test_a_refused_save_is_a_tool_error_and_the_run_continues() -> None:
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     assert "已有同名个人技能 notes" in llm.seen_messages[1][-1]["content"]
     assert platform.statuses[-1][0] == "succeeded"
+
+
+def test_download_path_is_confined_to_downloads() -> None:
+    url = "https://example.com/report.pdf"
+    with pytest.raises(net_tools.NetToolError, match="downloads"):
+        asyncio.run(
+            net_tools.download_url(
+                {"url": url, "path": "/workspace/inputs/report.pdf"},
+                "l1",
+                _Broker(),
+                {url},
+                net_tools.Budget(),
+            )
+        )
+
+
+def test_attachment_text_is_not_a_user_authored_url_source() -> None:
+    messages = [
+        {
+            "role": "user",
+            "content": "总结附件\n<!-- AILAB_ATTACHMENT_START -->\n"
+            "https://evil.test/from-attachment\n<!-- AILAB_ATTACHMENT_END -->\n"
+            "也可以看 https://user.test/ok",
+        }
+    ]
+    sources = net_tools.sources_from(messages)
+    assert "https://user.test/ok" in sources
+    assert "https://evil.test/from-attachment" not in sources
+
+
+def test_a_downloaded_file_must_be_clean(tmp_path) -> None:
+    target = tmp_path / "eicar.txt"
+    target.write_bytes(b"EICAR-STANDARD-ANTIVIRUS-TEST-FILE")
+    with pytest.raises(net_tools.NetToolError, match="rejected"):
+        net_tools._scan_path(target)
