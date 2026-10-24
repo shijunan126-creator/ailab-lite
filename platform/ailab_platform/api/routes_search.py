@@ -39,12 +39,14 @@ def run_scan(conversation_id, before=None):
 
 def search_match_query(window, q, dialect):
     pattern = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-    lower = func.ailab_search_lower if dialect == "sqlite" else func.lower
+    # The database's C locale only lowercases ASCII. Search semantics must not
+    # depend on initdb's host locale; PostgreSQL 16 images include ICU's root locale.
+    lower = func.ailab_search_lower if dialect == "sqlite" else lambda column: func.lower(column.collate("und-x-icu"))
     prompt_hit = lower(window.c.prompt).like(pattern.lower(), escape="\\")
     answer_hit = lower(window.c.summary).like(pattern.lower(), escape="\\")
     text_column = case((prompt_hit, window.c.prompt), else_=window.c.summary)
     # Only a small slice of a matching answer crosses the DB boundary, regardless of answer size.
-    position = func.instr(lower(text_column), q.lower()) if dialect == "sqlite" else func.strpos(func.lower(text_column), q.lower())
+    position = func.instr(lower(text_column), q.lower()) if dialect == "sqlite" else func.strpos(lower(text_column), q.lower())
     left = case((position > 40, position - 40), else_=1)
     return (
         select(
