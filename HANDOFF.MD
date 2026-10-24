@@ -352,3 +352,6 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - PostgreSQL的is_head是Integer，不能写`IS true`；用`= 1`，同时满足SQLite/PG和已有部分索引条件。此次SQLite绿而PG红已用真实双库捕获并修复。
 - 并发标题须先等正文首个额度预留成功再做自身预留（不等正文生成）；否则可选标题可能在临界余额下抢走主回答额度。标题的生成超时与取消后账本清理是两段时间，不把10秒当整个job清理SLA。
+- Round 2 标题生命周期：不能在正文终态的finally无条件cancel标题。先提交正文终态，再用原任务剩余预算收尾；保留durable attempt及HTTP client直到收尾/取消，再ACK。shutdown/attempt丢失必须取消子模型并await、结算、清理heartbeat；只去掉cancel会留下无主任务。标题10秒从任务启动计时，含主额度gate，不从正文结束重置；gate慢时主动放弃标题，避免标题抢主额度。账本取消清理仍受既有HTTP重试边界，不冒称严格10秒job释放SLA。
+- `run.completed`不是`stream.end`：终态后空轮询会关SSE，关闭时列表刷新也可能早于晚到标题。空标题且有效attempt时保留最多终态后10秒的SSE窗口；先检查pending再读取事件，避免CAS刚提交时看见非空标题却漏读同事务事件。cancel/delete不留窗口；ACK/过期立即收敛。API标题写入仍走原fence与空标题CAS，取消Run不能补标题。
+- 自动标题的Markdown清洗必须在一个无ORM依赖的纯文本helper统一，Agent/内部endpoint/result fallback复用；先去链接/强调/代码/heading、折叠空白，再截40字。原始请求上限和最终存储上限不同；保留40字请求上限会在清洗前422，不能验证/解决长Markdown输入。

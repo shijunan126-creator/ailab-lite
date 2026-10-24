@@ -343,4 +343,4 @@ class ContextSettings(BaseModel):
 
 
 class ConversationTitle(BaseModel):
-    title: str = Field(min_length=1, max_length=40)
+    title: str = Field(min_length=1, max_length=4096)

@@ -221,3 +221,104 @@ def test_fork_rejects_legacy_workspace_that_was_pruned_by_later_turn():
             db.commit()
         response = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[0]["id"], "mode": "work"})
         assert response.status_code == 422 and "不可用" in response.json()["detail"]
+
+
+@pytest.mark.parametrize("terminal", ["succeeded", "failed", "canceled", "deleted"])
+def test_late_title_is_fenced_normalized_and_streamed_before_end(terminal):
+    from ailab_platform.api.routes_runs import _poll_events
+
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "question"}).json()
+        rid = run["id"]
+        owner = attempt_headers(c, rid)
+        _status(c, rid, "running")
+        _status(c, rid, "succeeded" if terminal == "deleted" else terminal)
+        if terminal == "deleted":
+            c.delete(f"/v1/conversations/{conv['id']}", headers=AUTH)
+        events, status, pending = _poll_events(rid, 0)
+        assert status in {"succeeded", "failed", "canceled"}
+        assert pending == (terminal in {"succeeded", "failed"})
+        title_url = f"/internal/runs/{rid}/conversation-title"
+        markdown = "# 你好！这是**离线演示模型**的回答 __重点__ *星号* `代码` [链接](https://example.com)\n  空白 "
+        expected = "你好！这是离线演示模型的回答 重点 星号 代码 链接 空白"
+        result = c.put(title_url, headers=owner, json={"title": markdown})
+        assert result.status_code == 200, result.text
+        assert result.json() == {"ok": terminal in {"succeeded", "failed"}}
+        assert c.put(title_url, headers={**owner, "X-Run-Attempt": "foreign"}, json={"title": "foreign"}).status_code == 409
+        if terminal in {"succeeded", "failed"}:
+            assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()["title"] == expected
+            late, _, pending = _poll_events(rid, events[-1][0])
+            assert not pending and late[-1][1:] == ("conversation.titled", {"conversation_id": conv["id"], "title": expected})
+            stream = c.get(f"/v1/runs/{rid}/events", headers=AUTH).text
+            assert stream.index("event: conversation.titled") < stream.index("event: stream.end")
+        # Ending durable ownership rejects even the once-valid attempt.
+        with SessionLocal() as db:
+            from ailab_platform.models import RunAttempt
+
+            db.get(RunAttempt, owner["X-Run-Attempt"]).ended_at = utcnow()
+            db.commit()
+        assert c.put(title_url, headers=owner, json={"title": "stale"}).status_code == 409
+        assert c.get(f"/internal/runs/{rid}/state", headers=owner).status_code == 409
+
+
+def test_retry_and_titled_fork_do_not_request_another_title():
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        c.patch(f"/v1/conversations/{conv['id']}", headers=AUTH, json={"title": "已有标题"})
+        fork = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[0]["id"], "mode": "chat"}).json()
+        assert fork["title"] == "已有标题"
+        fork_run = c.post(f"/v1/conversations/{fork['id']}/messages", headers=AUTH, json={"prompt": "next"}).json()
+        retry = c.post(f"/v1/runs/{turns[0]['id']}/retry", headers=AUTH, json={}).json()
+        for run in (fork_run, retry):
+            assert c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()["needs_conversation_title"] is False
+
+
+def test_terminal_sse_title_grace_expires_without_worker_cleanup():
+    from ailab_platform.api.routes_runs import _poll_events
+
+    with TestClient(app) as c:
+        _conv, turns = create(c)
+        rid = turns[0]["id"]
+        assert _poll_events(rid, 0)[2] is True
+        with SessionLocal() as db:
+            db.get(Run, rid).finished_at = utcnow() - timedelta(seconds=11)
+            db.commit()
+        assert _poll_events(rid, 0)[2] is False
+
+
+def test_canceled_run_cannot_title_its_live_conversation():
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "question"}).json()
+        owner = attempt_headers(c, run["id"])
+        _status(c, run["id"], "canceled")
+        assert c.put(f"/internal/runs/{run['id']}/conversation-title", headers=owner, json={"title": "late"}).json() == {"ok": False}
+        assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()["title"] == ""
+
+
+def test_title_cas_between_terminal_poll_reads_cannot_be_lost_at_stream_end(monkeypatch):
+    from sqlalchemy.orm import Session
+
+    from ailab_platform.api.routes_runs import _poll_events
+
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        rid = turns[0]["id"]
+        owner = attempt_headers(c, rid)
+        events, _, _ = _poll_events(rid, 0)
+        original = Session.scalar
+        injected = False
+
+        def scalar(db, statement, *args, **kwargs):
+            nonlocal injected
+            if not injected and "JOIN run_attempts" in str(statement):
+                injected = True
+                response = c.put(f"/internal/runs/{rid}/conversation-title", headers=owner, json={"title": "竞态标题"})
+                assert response.json() == {"ok": True}
+            return original(db, statement, *args, **kwargs)
+
+        monkeypatch.setattr(Session, "scalar", scalar)
+        late, _, pending = _poll_events(rid, events[-1][0])
+        assert injected and not pending
+        assert late[-1][1:] == ("conversation.titled", {"conversation_id": conv["id"], "title": "竞态标题"})

@@ -8,6 +8,7 @@ import logging
 import random
 import re
 from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -23,7 +24,7 @@ from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
+from ..models import Conversation, FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunOut, RunRetry
@@ -232,12 +233,33 @@ def sse_poll_delay(idle_polls: int) -> float:
     return base + random.uniform(0, 0.05 if base < 1 else 0.15)
 
 
-def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str]:
+def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str, bool]:
     with SessionLocal() as db:
-        rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
         run = db.get(Run, run_id)
         status = run.status if run else RunStatus.FAILED
-        return [(e.seq, e.type, e.payload or {}) for e in rows], status
+        pending_title = False
+        if run and status in {RunStatus.SUCCEEDED, RunStatus.FAILED} and run.finished_at:
+            finished = run.finished_at.replace(tzinfo=UTC) if run.finished_at.tzinfo is None else run.finished_at
+            if datetime.now(UTC) < finished + timedelta(seconds=10):
+                pending_title = bool(
+                    db.scalar(
+                        select(Conversation.id)
+                        .join(RunAttempt, RunAttempt.run_id == run.id)
+                        .join(OutboxMessage, OutboxMessage.claim_token == RunAttempt.id)
+                        .where(
+                            Conversation.id == run.conversation_id,
+                            Conversation.title == "",
+                            Conversation.deleted_at.is_(None),
+                            RunAttempt.ended_at.is_(None),
+                            OutboxMessage.claimed_until > datetime.now(UTC),
+                        )
+                        .limit(1)
+                    )
+                )
+        # Read events last: a title that cleared the pending check committed its event
+        # in the same transaction, so it must be drained before stream.end.
+        rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
+        return [(e.seq, e.type, e.payload or {}) for e in rows], status, pending_title
 
 
 @router.get("/runs/{run_id}/events")
@@ -265,12 +287,12 @@ async def stream_events(
         while True:
             if await request.is_disconnected():
                 return
-            events, current_status = await asyncio.to_thread(_poll_events, run_id, last_id)
+            events, current_status, pending_title = await asyncio.to_thread(_poll_events, run_id, last_id)
             for seq, type_, payload in events:
                 last_id = seq
                 data = json.dumps(payload, ensure_ascii=False)
                 yield f"id: {seq}\nevent: {type_}\ndata: {data}\n\n"
-            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events:
+            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events and not pending_title:
                 yield "event: stream.end\ndata: {}\n\n"
                 return
             if events:

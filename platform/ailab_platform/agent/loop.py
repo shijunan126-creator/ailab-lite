@@ -29,6 +29,7 @@ from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
 from ..runtime_context import attempt_id_var, delivery_id_var
 from ..telemetry import span
+from ..title_text import normalize_title
 from . import net_tools
 from .multimodal import attachment_content, input_content
 from .prompts import (
@@ -194,6 +195,9 @@ def _clip_arguments(arguments: dict, limit: int = 500) -> dict:
     return {k: (v[:limit] + f"...[+{len(v) - limit} chars]" if isinstance(v, str) and len(v) > limit else v) for k, v in arguments.items()}
 
 
+TITLE_TIMEOUT_SECONDS = 10
+
+
 class AgentLoop:
     def __init__(
         self,
@@ -224,6 +228,11 @@ class AgentLoop:
         try:
             # the light /state endpoint, not the full run with artifacts and usage: this runs every couple of seconds
             return (await self.platform.get_run_state(run_id))["status"] == RunStatus.CANCELED
+        except ClientError as exc:
+            if exc.status == 409:
+                raise
+            log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
+            return False
         except Exception:
             log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
             return False
@@ -571,15 +580,14 @@ class AgentLoop:
             },
         ]
         try:
-            async with asyncio.timeout(10):
+            async with asyncio.timeout(TITLE_TIMEOUT_SECONDS):
                 if (gate := run.get("_main_model_reserved")) is not None:
-                    await gate.wait()
+                    await self._interruptible(run_id, gate.wait())
                 response = await self._call_model(self.llm or llm_for(model), run_id, run, model, prompt, -2, tools=[], quiet=True)
-            title = response.content.strip().splitlines()
-            candidate = title[0].strip(" #*\"'“”")[:40] or None if title else None
-            if candidate and hasattr(self.platform, "set_conversation_title"):
-                await self.platform.set_conversation_title(run_id, candidate)
-            return candidate
+                candidate = normalize_title(response.content) or None
+                if candidate and hasattr(self.platform, "set_conversation_title"):
+                    await self.platform.set_conversation_title(run_id, candidate)
+                return candidate
         except (RunCanceled, asyncio.CancelledError):
             raise
         except Exception as exc:
@@ -1118,13 +1126,23 @@ class AgentLoop:
             await self._event(run_id, "agent.error", {"error": f"{type(exc).__name__}: {exc}"})
             await self.platform.set_run_status(run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000])
         finally:
-            if title_task is not None:
-                title_task.cancel()
-                await asyncio.gather(title_task, return_exceptions=True)
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
             try:
-                await self._release_turn(turn)
-            except Exception:
-                log.warning("lease release failed run=%s", run_id, exc_info=True)
-            metrics.AGENT_RUN_SECONDS.labels(outcome).observe(time.perf_counter() - run_started)
+                if title_task is not None:
+                    try:
+                        # Terminal status is already visible. Keep ownership/client alive
+                        # for the title's remaining budget, never restart its clock here.
+                        if outcome in {"succeeded", "failed"}:
+                            await title_task
+                    except Exception:
+                        pass
+                    finally:
+                        title_task.cancel()
+                        await asyncio.gather(title_task, return_exceptions=True)
+            finally:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
+                try:
+                    await self._release_turn(turn)
+                except Exception:
+                    log.warning("lease release failed run=%s", run_id, exc_info=True)
+                metrics.AGENT_RUN_SECONDS.labels(outcome).observe(time.perf_counter() - run_started)

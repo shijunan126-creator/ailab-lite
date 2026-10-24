@@ -30,7 +30,20 @@ from ..deps import get_db
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
+from ..models import (
+    Artifact,
+    Conversation,
+    FileObject,
+    FileStatus,
+    OutboxMessage,
+    Project,
+    Run,
+    RunAttempt,
+    RunStatus,
+    UsageReservation,
+    User,
+    new_id,
+)
 from ..ports.scanner import get_scanner
 from ..ports.service_auth import RunContext
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
@@ -51,6 +64,7 @@ from ..schemas import (
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
+from ..title_text import normalize_title
 from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
@@ -199,9 +213,23 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/runs/{run_id}/state", response_model=RunStateOut, dependencies=[Depends(require_scope("runs:read"))])
-def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
+def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)) -> dict:
     """The cheap status poll the Agent uses while a command/model call is running."""
     run = _run_or_404(db, run_id)
+    if x_run_attempt:
+        # A read-only ownership probe cancels in-flight model calls promptly on lease loss.
+        owned = db.scalar(
+            select(RunAttempt.id)
+            .join(OutboxMessage, OutboxMessage.claim_token == RunAttempt.id)
+            .where(
+                RunAttempt.id == x_run_attempt,
+                RunAttempt.run_id == run_id,
+                RunAttempt.ended_at.is_(None),
+                OutboxMessage.claimed_until > datetime.now(UTC),
+            )
+        )
+        if not owned:
+            raise HTTPException(409, "stale_attempt")
     return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
 
 
@@ -855,7 +883,10 @@ def set_conversation_title(
     run = _run_or_404(db, run_id)
     with user_critical_section(db, run.user_id):
         fence_attempt(db, run_id, x_run_attempt)
-        title = body.title.strip()
+        db.refresh(run)
+        if run.status == RunStatus.CANCELED:
+            return {"ok": False}
+        title = normalize_title(body.title)
         changed = (
             db.execute(
                 update(Conversation)
