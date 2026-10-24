@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-24 PPT模板集成：`feat/ppt-templates-portal`，部署固定`b2c8394`，测试`e905790`，未合main。空库0028、三类镜像冷构建/源码核对、真实Docker/runsc sandbox首屏480px JPEG（公司/个人）、有模板/无模板真实PPT、原生母版/版式和示例页剔除、queue/steer/share/inbox及PPTX/DOCX浏览器预览通过；SQLite1123/PG1208/E2E88通过。**Portal自动缩略图切换已修复并本地验证，待合并/部署**：独立preview_status及有界可取消轮询，公司/个人延迟成功、失败回退和503重试4项浏览器回归通过；本轮完整SQLite1123/118、Portal33/build通过，详见[修复记录](../progress/updates/2026-10-24-template-preview-refresh.md)。部署仍为旧b2c8394。平台/Worker无新增Office依赖；短时RSS/空间回收与外部存储稳定性、K3S仅静态渲染等边界见[最终记录](../progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。原后端sandbox缩略图实现详见[设计与专项](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)，旧Worker245MiB方案仍已撤销。
+2026-10-24 PPT模板集成：`feat/ppt-templates-portal`，部署固定`b2c8394`，测试`e905790`，未合main。空库0028、三类镜像冷构建/源码核对、真实Docker/runsc sandbox首屏480px JPEG（公司/个人）、有模板/无模板真实PPT、原生母版/版式和示例页剔除、queue/steer/share/inbox及PPTX/DOCX浏览器预览通过；SQLite1123/PG1208/E2E88通过。**Portal自动缩略图切换已修复并合入main，待部署**：独立preview_status及有界可取消轮询，公司/个人延迟成功、失败回退和503重试4项浏览器回归通过；本轮完整SQLite1123/118、Portal33/build通过，详见[修复记录](../progress/updates/2026-10-24-template-preview-refresh.md)。PR #48 head b1a610d的12项CI检查全通过，squash合并df30dd5，树与测试head相同；部署仍为旧b2c8394。平台/Worker无新增Office依赖；短时RSS/空间回收与外部存储稳定性、K3S仅静态渲染等边界见[最终记录](../progress/updates/2026-10-24-ppt-templates-clean-acceptance.md)。原后端sandbox缩略图实现详见[设计与专项](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)，旧Worker245MiB方案仍已撤销。
 
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 
