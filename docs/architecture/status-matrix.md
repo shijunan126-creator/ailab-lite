@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-24 PPT模板缩略图跟进：`feat/ppt-templates-backend` 起点 `833f64b`，运行/测试基线 `771d9fe`，真实首屏JPEG及独立受限fallback已实现并本地验证。Ruff通过；专项52通过/1跳过、SQLite1129通过/118跳过，DB/队列未改而未重跑PG全套。父任务报告初版已集成到Portal分支 `1c53b46`；本轮尚待再集成，未合入main/部署。平台镜像需补LO/Poppler/procps后重建；macOS默认192MiB会fallback，256MiB单页实测约2.038s/245.2MiB采样组RSS。成本/目标Linux未验边界见[本轮记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)，原验收见[历史记录](../progress/updates/2026-10-24-ppt-templates-backend.md)。
+2026-10-24 PPT模板缩略图：`feat/ppt-templates-backend`，base `0d12f75`，实现/测试基线 `ad04b19`。已撤销平台镜像/Worker Office渲染，改为ready同事务登记原preview outbox，由sandbox生成首张页面的480px缓存JPEG；URL/ETag切换，失败保留草图及模板可用性。Ruff通过，专项84通过/1跳过、SQLite1123通过/118跳过、PG+Redis1208通过/33跳过；临时服务已停。未改Portal、未集成本轮、未合main/部署，真实OpenSandbox/cgroup和长期容量未验。Worker/平台镜像零新增Office渲染成本，每模板一次资料库同预算sandbox preview。旧245MiB测量属于已否决方案，详见[本轮记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)、[设计](../reviews/2026-10-24-ppt-templates-design.md)。
 
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 

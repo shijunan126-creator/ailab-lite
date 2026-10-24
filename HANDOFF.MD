@@ -455,6 +455,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 ## 2026-10-24 PPT 真实首屏图跟进
 
-- LO/Poppler是渲染子进程，不能只测Python父进程RSS；按整个PGID求和，超限/超时清理整个组，即使父进程已经退出。普通解析的RLIMIT_AS不适合LO的大共享库映射；渲染保留相同MiB预算，以RSS watchdog强制执行，不暗中提高内存。
-- 硬杀不会执行子进程finally。LO profile和临时PDF必须放在Worker持有的任务临时目录内，由父目录清理；输出预算要递归计算，兼容LO同时删除临时文件的竞态。
-- macOS LO在默认192MiB下可能必然fallback；真实图的256MiB测试不是默认192MiB成功证据。缩略图失败不能把已成功分析的模板标为failed。
+- **Office rendering happens in the sandbox preview pipeline, never in the platform image/Worker.** Worker预算256–384MiB，旧方案在256MiB下首屏245MiB、默认192MiB必然fallback，已被否决并撤销。不得通过平台镜像安装LO或放宽Worker隔离来重新引入它。
+- 模板ready、preview manifest和outbox同事务；复用资料库请求helper和原preview作业，不在补丁重试或ACK后重建作业。template status独立于preview，失败只保留草图，不影响Run冻结和使用。
+- immutable草图切真实图时必须改变thumbnail_url及ETag；仅替换同URL字节会让浏览器继续显示草图。API从完成资产中选择文件绑定的固定缩略图路径，模板可见性不借用普通资料库授权。
+- 真实渲染宿主进程测试仅证明renderer/租约生命周期与内容，不等于OpenSandbox容器/cgroup验收；当前证据及边界见[记录](docs/progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。

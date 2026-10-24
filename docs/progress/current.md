@@ -1,12 +1,12 @@
 # 当前工作
 
-## PPT 模板真实首屏缩略图跟进（2026-10-24，已实现并本地验证，待父任务再集成）
+## PPT 模板缩略图改用 sandbox 预览（2026-10-24，已实现并本地验证，待父任务集成）
 
-- 父任务报告初版已合入 `feat/ppt-templates-portal@1c53b46` 并完成三种来源/冻结/turn chip验收；该信息来自父任务，不代表合入main或部署。本分支仍为 `feat/ppt-templates-backend`，本轮起点 `833f64b`，运行/回归基线 `771d9fe`；未改Portal、未push/PR/merge/deploy。
-- 已改为共享LO/Poppler首屏480px JPEG，渲染失败/超时/OOM回退草图；双缩略图失败也保留ready。按整进程组RSS与原有wall/CPU/output预算限制，临时profile/PDF随任务清理；v2 immutable缓存/ETag，兼容旧v1 WebP。
-- 本轮Ruff通过；专项 **52通过/1跳过**，完整SQLite **1129通过/118跳过**。没有DB/队列代码变更，按父任务条件未重跑PG+Redis；原双库/E2E仅为[历史验收](updates/2026-10-24-ppt-templates-backend.md)。
-- macOS单页样本256MiB配置下三次真实渲染成功，wall中位2.038s、CPU1.772s、采样整组RSS峰值245.2MiB。默认192MiB触限并回退（完整流程1.647s）；未提高默认值。20页样本256MiB也有触限，不保证所有模板都有真实图。
-- 下一步：父任务合入本轮提交并重建平台镜像（新增LO/Poppler/CJK字体/fontconfig/procps），在目标Linux既有预算下复核；Docker镜像构建/部署未执行。旧v1缓存未自动重建。详见[契约](../reviews/2026-10-24-ppt-templates-design.md)和[本轮交付](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
+- 分支 `feat/ppt-templates-backend`，本轮base `0d12f75`，实现/测试提交 `ad04b19`；初版架构base为main@6b6825d。未改Portal、未push/PR/merge/deploy。目标分支原已被其他工作树检出，本轮按明确要求在当前工作树继续；接续前先核对共享分支与工作树文件基线。
+- 已撤销平台镜像Office/Poppler/字体/procps、Worker专用Office renderer及其隔离豁免/进程树RSS逻辑。Worker仅保留受限草图；API在ready同事务登记一次原preview作业，sandbox从首张真实页生成480px JPEG缓存，完成时改变thumbnail_url/ETag。预览失败不改变模板ready或可用性。
+- Ruff通过（329文件）；专项 **84通过/1跳过**，完整SQLite **1123通过/118跳过**，完整PG+Redis **1208通过/33跳过**，均无失败。临时PG/Redis25479/26479已停止且无监听，16379未动。
+- 成本：Worker/平台镜像新增Office渲染成本为零；每模板一次sandbox preview，与资料库预览同预算，加一次小图缩放/存储。旧245MiB测量属于已否决方案，不能作为当前验收。
+- 下一步：父任务审核/集成本分支，在真实OpenSandbox/cgroup与目标Linux上验收。未跑Portal/build/E2E（无Portal依赖且不修改其目录）、未构建镜像/部署/真实模型或长期容量；旧ready模板不批量回填。精确命令、当前与历史证据、清理和边界见[交付记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)，接口见[设计](../reviews/2026-10-24-ppt-templates-design.md)。
 
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 
