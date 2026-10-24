@@ -521,10 +521,16 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
 .skill-row.broken .skill-icon { background: var(--danger-soft); color: var(--danger); }
 .skill-file { margin-top: 4px; word-break: break-all; }
 .skill-row .link.danger-text { font-size: 13px; }
+.market-panel { padding: 16px; }
+.market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.market-card { display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.market-card .skill-title { font-size: 15px; }
+.market-card .skill-desc { flex: 1; margin-top: 8px; }
+.market-card .skill-file { margin-top: 10px; }
+.market-card .market-action { align-self: flex-end; margin-top: 12px; }
 .market-action { flex: none; white-space: nowrap; min-width: 96px; }
-.skill-row.market-row { align-items: flex-start; }
-.market-row .market-action { margin-top: 1px; }
-.market-row .market-action { margin-left: auto; }
+@media (max-width: 900px) { .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 640px) { .market-grid { grid-template-columns: 1fr; } }
 .skill-file-chip { display: inline-block; margin-top: 4px; color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .skill-editor-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .skill-editor-actions .link { font-size: 13px; }
@@ -541,17 +547,6 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
   .modal.skill-editor { max-width: none; height: 100dvh; border-radius: 0; border: 0; }
   .skill-row { flex-wrap: wrap; }
   .skill-row .grow { flex-basis: calc(100% - 56px); }
-  .skill-row.market-row {
-    display: grid;
-    grid-template-columns: 42px minmax(0, 1fr);
-    grid-template-areas: "icon body" "action action";
-    align-items: start;
-    column-gap: 14px;
-    row-gap: 10px;
-  }
-  .market-row .skill-icon { grid-area: icon; }
-  .market-row .grow { grid-area: body; min-width: 0; flex-basis: auto; }
-  .market-row .market-action { grid-area: action; justify-self: end; margin: 0; }
   .skill-editor-actions { margin-left: 56px; margin-right: auto; }
   .skill-editor-head .spacer { flex-basis: 100%; }
 }

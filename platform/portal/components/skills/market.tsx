@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "../../lib/api";
-import { IconDownload, IconSparkles } from "../icons";
+import { IconDownload } from "../icons";
 
 export type MarketSkill = {
   slug: string;
@@ -56,36 +56,24 @@ export default function MarketPanel({
     }
   }
 
-  const groups = (items || []).reduce<Record<string, MarketSkill[]>>((out, item) => {
-    (out[item.category] ||= []).push(item);
-    return out;
-  }, {});
-
   return (
-    <section className="card skill-list">
-      {error ? <div className="alert error" style={{ margin: 12 }}>{error}</div> : null}
+    <section className="card market-panel">
+      {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
       {items === null ? <div className="empty">加载中…</div> : null}
       {items !== null && !items.length ? <div className="empty">市场里还没有技能</div> : null}
-      {Object.entries(groups).map(([category, list]) => (
-        <div key={category}>
-          <div className="section-title" style={{ margin: "18px 16px 6px", fontSize: 15 }}>{category}</div>
-          {list.map((item) => (
-            <div key={item.slug} className="skill-row market-row">
-              <span className="skill-icon">
-                <IconSparkles size={20} />
-              </span>
-              <div className="grow">
-                <div className="skill-title">
-                  {item.title}
-                  <span className="chip mono">{item.name}</span>
-                  {item.builtin ? <span className="chip">内置</span> : <span className="chip">可安装</span>}
-                </div>
-                <div className="skill-desc">{item.description}</div>
-                <div className="skill-file hint">
-                  {item.author} · v{item.version} · {item.license}
-                  {item.requires.length ? ` · 依赖 ${item.requires.join("、")}` : ""}
-                  {item.installed_error ? <span className="error">　无法使用：{item.installed_error}</span> : null}
-                </div>
+      {items !== null && items.length ? (
+        <div className="market-grid">
+          {items.map((item) => (
+            <article key={item.slug} className="market-card">
+              <div className="skill-title">
+                {item.title}
+                <span className="chip mono">{item.name}</span>
+              </div>
+              <div className="skill-desc">{item.description}</div>
+              <div className="skill-file hint">
+                {item.author} · v{item.version} · {item.license}
+                {item.requires.length ? ` · 依赖 ${item.requires.join("、")}` : ""}
+                {item.installed_error ? <span className="error">　无法使用：{item.installed_error}</span> : null}
               </div>
               <button
                 className={`market-action ${item.builtin || item.installed ? "secondary sm" : "primary sm"}`}
@@ -95,11 +83,11 @@ export default function MarketPanel({
                 <IconDownload size={14} />{" "}
                 {item.builtin || item.installed ? "已下载" : busy === item.slug ? "下载中…" : "下载"}
               </button>
-            </div>
+            </article>
           ))}
         </div>
-      ))}
-      <div className="hint" style={{ padding: 16 }}>
+      ) : null}
+      <div className="hint" style={{ marginTop: 14 }}>
         下载会把技能复制到你的个人技能，之后可以编辑、删除；更新需要重新下载。
       </div>
     </section>
