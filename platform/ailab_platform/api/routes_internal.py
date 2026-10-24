@@ -31,6 +31,7 @@ from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
 from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
+from ..ports.scanner import get_scanner
 from ..ports.service_auth import RunContext
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
 from ..run_state import InvalidTransition, transition_run
@@ -425,14 +426,25 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
     actual_size = storage.size(body.staging_key)
     if actual_size != body.size:
         raise reject(400, f"size mismatch: got {actual_size} expected {body.size}")
-    # Hash the staged object in chunks: artifact limits allow 100 MB and the
-    # API should not hold a second full copy just to verify it.
+    # Hash and scan the staged object in one pass. The spool cap keeps a large
+    # artifact out of the API heap while still giving clamd a readable stream.
     hasher = hashlib.sha256()
-    for chunk in storage.stream(body.staging_key):
-        hasher.update(chunk)
-    digest = hasher.hexdigest()
-    if digest != body.sha256:
-        raise reject(400, "sha256 mismatch")
+    with tempfile.SpooledTemporaryFile(max_size=8 * 1024 * 1024) as scanner_input:
+        for chunk in storage.stream(body.staging_key):
+            hasher.update(chunk)
+            scanner_input.write(chunk)
+        digest = hasher.hexdigest()
+        if digest != body.sha256:
+            raise reject(400, "sha256 mismatch")
+        scanner_input.seek(0)
+        try:
+            scan = get_scanner().scan(scanner_input)
+        except Exception as exc:
+            raise reject(503, f"artifact scanner unavailable: {type(exc).__name__}") from exc
+        if scan.verdict == "infected":
+            raise reject(400, f"artifact rejected by scanner: {scan.signature or 'malware'}")
+        if scan.verdict != "clean":
+            raise reject(503, "artifact scanner unavailable")
 
     file_id = new_id("fil")
     final_key = f"runs/{run.id}/{file_id}/{filename}"
