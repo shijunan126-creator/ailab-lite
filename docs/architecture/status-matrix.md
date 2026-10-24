@@ -121,4 +121,4 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 
 ## 2026-10-24 Chat 后端分叉 / 重试
 
-后端分支 `feat/chat-backend-fork-retry` 基于 `94d3e22`：0022迁移、首问并发标题与思考流兼容、网页来源事件、事务分叉/重试、Run归属资料库工具、平台管理员上下文阈值已实现。双库验证与存储成本见[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)；Portal由父Agent独立实现，本轮不代表前后端集成、部署或main合入。
+后端分支 `feat/chat-backend-fork-retry` 基于 `94d3e22`：0022迁移、首问并发标题与思考流兼容、网页来源事件、事务分叉/重试、Run归属资料库工具、平台管理员上下文阈值已实现。本地后端双库验证通过（SQLite全套985/108跳过、PG+Redis1061/33跳过，最终回归各11通过），存储成本与测试基线见[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)；Portal由父Agent独立实现，本轮不代表前后端集成、部署或main合入。

@@ -28,14 +28,35 @@ Work专用 `copy_library_file(file_id,path=null)` → `{ok:true,file_id,path}`�
 
 Fork在同一个用户锁/数据库事务中创建Conversation、Run、Artifact和事件副本，不创建ModelUsage、计费预留或任务。Artifact复用file_id，资料库字节不重复计额。usage显示快照放在result.forked_usage。summary_through_run_id映射到新Run。保留原created_at顺序；极端同时间戳按微秒递增保证排序稳定。
 
-过程事件选择**物理复制**（每批500条）；源事件TTL/会话GC之后仍可读。预览对象复制到新Run前缀。Work只复制分叉范围内最近已保存快照（包括失败/取消轮次的checkpoint快照），目标为新Run自有key，保存时间与对象mtime均重置；沿用workspace TTL/会话GC。Chat不复制workspace。跨DB/对象存储无分布式事务：失败回滚DB并尽力删除新对象；进程硬退出的孤立对象由既有preview/workspace GC收敛。
+过程事件选择**物理复制**（每批500条）；源会话GC不删除副本；事件本身仍按原事件时间受现有事件TTL约束。预览对象复制到新Run前缀。Work只复制分叉范围内最近已保存快照（包括失败/取消轮次的checkpoint快照），目标为新Run自有key，保存时间与对象mtime均重置；沿用workspace TTL/会话GC。Chat不复制workspace。跨DB/对象存储无分布式事务：失败回滚DB并尽力删除新对象；进程硬退出的孤立对象由既有preview/workspace GC收敛。
 
 上限：500轮、100000事件、10000对象、对象累计2GiB。复制循环60秒截止（单次存储请求仍受adapter连接/读取/重试时限约束）。超过限制422。每轮快照不再因后轮完成而立即删除；现有默认三天TTL统一回收。历史版本已删除/TTL过期的快照不能重建，Work分叉明确422。未留下任何快照的纯聊天/无沙箱轮次从空工作区开始。
 
-## 验证（待最终固定提交）
+## 验证
 
 针对性回归已覆盖标题并发/取消/失败、真实Agent/API事件链路、思考字段与尾块、分叉对象独立/失败清理/模式/摘要/usage、并发重试、资料库权限/Unicode页/路径/流式注入、平台管理员设置与迁移。完整SQLite首轮971通过/107跳过/6失败：旧工具白名单、已移除的删除快照调用、TTL辅助函数依赖ID；保留失败记录并修复，最终结果见下方追加。
 
 未运行Portal npm/build、浏览器或五服务E2E（本轮明确后端范围）；父Agent负责前端集成。Docker daemon不可用，因此使用一次性本机PostgreSQL16与Redis，独立临时目录、非默认端口，完成后关闭。未使用开发.env或开发数据库。
 
-性能与最终测试提交/结果将在验收完成后填入本记录。
+### 固定基线与最终检查
+
+运行时代码固定为 `2078445bccf61994ebffbd3f619811f86222051e`；此前主实现为 `e18da1371db0371f4470c63aeb29e0476ddf0f53`。最后的交接提交只加强账本/无outbox断言并更新文档，无运行时代码改动。
+
+- Ruff check、format --check：全部通过，285个Python文件；git diff --check通过。
+- SQLite完整套件：`e18da13`，**985 passed / 108 skipped**，118.67秒。随后`2078445`增加旧版已清除workspace的422保护，其Fork/Retry回归**11 passed**；最终以真实ModelUsage替代显示缓存的加强断言再次**11 passed**（SQLite），覆盖与主体全套不同的最终增量，不合并重复数字。
+- PostgreSQL16 + Redis完整套件：`2078445`，**1061 passed / 33 skipped**，154.45秒；迁移0022升/降/再升、迁移漂移、并发重试和双库索引EXPLAIN均执行。最终账本/无任务加强断言再次**11 passed**（PG）。
+- PostgreSQL首次全套：1056通过/33跳过/2失败，根因为Integer is_head用了`IS true`；改为`= 1`后上述最终全套通过。保留首次失败，不把SQLite接受此语法当双库正确性证据。
+- 剩余33跳过项：真实Docker/OpenSandbox及恢复/网络/传输/技能、S3、ClamAV、Keycloak和外网获取契约；另Redis不支持的scan cursor通用契约与PG行锁不适用的并发claim注入各1项。真实Redis契约/队列与PG专用用例已执行。
+- 使用本工作树源码和主检出已有的Python3.12 venv解释器，无安装/依赖变更；GNU coreutils/findutils加入PATH。临时PG监听15624、Redis16624，隔离目录与一次性test/migrations库；两项服务均已停止。未运行任何开发数据库或开发.env。
+
+### 成本与残余边界
+
+独立Mac/LocalStorage探针（`e18da13`，tracemalloc开启）：100轮、1000条过程事件、20×64KiB预览、8MiB压缩workspace；fork 201，wall **0.727秒**，进程CPU **0.723秒**，Python峰值分配 **1.26MiB**，进程最大RSS增长 **2.44MiB**（全进程最大RSS122.84MiB，含框架初始化），新对象 **9.25MiB**。原始库文件未复制、未重复计额。事件另占新数据库行；这是单次小样本，不是2vCPU/8GiB、上限2GiB、S3或长期并发容量验收。
+
+Fork CPU随元数据/事件数及本地复制字节线性增长；本地storage.copy按64KiB流式复制并哈希，S3走服务端copy，API不整份缓冲。新磁盘成本为预览副本+一个最近workspace+事件副本。用户锁持续覆盖复制，较大分叉会占用同用户写入；数量/2GiB/60秒边界限制单次工作。单次存储调用可能超过循环截止时间，仍有adapter连接/读取/重试时限；不是严格60秒HTTP SLA。杀进程后的孤立对象清理仍依赖GC，未做真实进程kill+S3组合验收。
+
+保留历史快照会增加磁盘：默认单快照压缩上限60MiB，三天TTL；新增保留成本上界随期间工作轮数增长，且既有运行内checkpoint快照也受同一TTL回收。`workspace_ttl_days=0`现在保留各轮快照直至会话GC，不能再按“只保留最新一份”估算。已在旧版本清除或已过期的历史工作区无法重建，显式422；没有沙箱活动/快照的轮次允许空工作区。事件副本保留原事件时间，因此受现有事件TTL约束。
+
+标题任务每个空标题会话额外一次模型调用（独立reserve/settle和call_id）、一次CAS与一个成功事件；没有大文件/新后台进程/存储对象。输入最多1000字问题+50×200字附件名，输出上限沿用quiet预算2048。Python CPU/RSS为有界文本与HTTP开销，真实模型CPU/RSS/计费与provider延迟未实测；不能用fake LLM测试代替。生成timeout10秒，结束时cancel+await及账本清理；主回答不await标题，正文首个额度预留先于标题，避免可选元数据抢占临界余额。失败/慢标题不阻止正文终态，但额外上游并发仍可能竞争provider资源，账本收尾可延长job清理时间。
+
+仍待父Agent：按本记录契约完成Portal集成，运行前端测试/build、真实浏览器和五服务E2E；本轮没有发布、推送、PR或main合入。

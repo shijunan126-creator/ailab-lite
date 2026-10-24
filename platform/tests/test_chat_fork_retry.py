@@ -10,7 +10,7 @@ from sqlalchemy import select
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.events import append_event
-from ailab_platform.models import Artifact, Conversation, FileObject, Run, RunEvent, utcnow
+from ailab_platform.models import Artifact, Conversation, FileObject, ModelUsage, OutboxMessage, Run, RunEvent, utcnow
 from ailab_platform.storage import get_storage
 from tests.run_claims import SERVICE, attempt_headers
 from tests.test_conversations import AUTH, _finish, _other_user, _status
@@ -38,8 +38,8 @@ def test_fork_copies_history_artifacts_usage_summary_and_independent_objects():
             old.result = {
                 "workspace_saved": True,
                 "previews": [{"filename": "a", "pages": ["1/p-01.jpg"]}],
-                "forked_usage": {"calls": 1, "prompt_tokens": 20, "completion_tokens": 10, "cached_tokens": 0},
             }
+            db.add(ModelUsage(run_id=first, user_id=old.user_id, prompt_tokens=20, completion_tokens=10))
             db.get(Conversation, conv["id"]).summary = "remember"
             db.get(Conversation, conv["id"]).summary_through_run_id = first
             file = FileObject(user_id=old.user_id, filename="a", size=4, status="ready", storage_key="unused")
@@ -63,6 +63,8 @@ def test_fork_copies_history_artifacts_usage_summary_and_independent_objects():
         with SessionLocal() as db:
             assert db.get(Conversation, fork["id"]).summary_through_run_id == copied["id"]
             assert db.get(Run, copied["id"]).result["forked_from_run_id"] == first
+            assert db.scalar(select(ModelUsage.id).where(ModelUsage.run_id == copied["id"])) is None
+            assert db.get(OutboxMessage, copied["id"]) is None
         # Physically remove source objects and source process, beyond the soft-delete guarantee.
         c.delete(f"/v1/conversations/{conv['id']}", headers=AUTH)
         storage.delete_prefix(f"previews/{first}/")
