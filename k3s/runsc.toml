@@ -2,3 +2,6 @@
 # 放到 /var/lib/rancher/k3s/agent/etc/containerd/config-v3.toml.d/ 下（k3s 生成的 config.toml 会 import 这个目录）。
 [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runsc]
   runtime_type = "io.containerd.runsc.v1"
+[plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runsc.options]
+  TypeUrl = "io.containerd.runsc.v1.options"
+  ConfigPath = "/etc/containerd/runsc.toml"

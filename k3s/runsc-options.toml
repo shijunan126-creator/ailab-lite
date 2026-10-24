@@ -1,0 +1,4 @@
+# Node-owned limit for every runsc root overlay, independent of sandbox code.
+[runsc_config]
+  overlay2 = "root:self,size=4g"
+  net-raw = "false"

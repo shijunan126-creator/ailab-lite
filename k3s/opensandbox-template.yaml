@@ -1,0 +1,16 @@
+# Server-owned BatchSandbox template; models cannot select networking or runtime.
+spec:
+  replicas: 1
+  template:
+    spec:
+      runtimeClassName: gvisor
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      containers:
+        - name: sandbox
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
