@@ -237,6 +237,9 @@ class Settings(BaseSettings):
     run_timeout_seconds: int = Field(default=900, gt=0)
     max_active_runs_per_user: int = Field(default=2, gt=0)
     max_prompt_chars: int = Field(default=8000, gt=0)
+    max_personal_templates: int = Field(default=20, ge=1, le=1000)
+    max_company_templates: int = Field(default=50, ge=1, le=1000)
+    max_template_bytes: int = Field(default=30 * 1024 * 1024, gt=0)
     max_upload_bytes: int = Field(default=50 * 1024 * 1024, gt=0)
     max_archive_bytes: int = Field(default=1024**3, gt=0)
     max_parse_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # Worker parser cap; bigger files keep metadata only

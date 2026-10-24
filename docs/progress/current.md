@@ -1,5 +1,12 @@
 # 当前工作
 
+## PPT 模板后端（2026-10-24，独立实现中）
+
+- 用户明确授权本后端子任务；分支 `feat/ppt-templates-backend`，base `main@6b6825d`。Portal归另一Agent，本分支不编辑；不推送/PR/合并/部署。
+- 已接通0028模板表/API、Worker受限扫描分析、运行/队列冻结、Broker重置注入；生成器改动单独提交。
+- PostgreSQL专项38通过；全量双库/E2E仍待验。缩略图为轻量首屏绘制，非Office像素级还原。
+- 下一步：全量Ruff/Python双库及相关跨服务E2E，记录精确结果与边界。契约见[设计](../reviews/2026-10-24-ppt-templates-design.md)，结果见[记录](updates/2026-10-24-ppt-templates-backend.md)。
+
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 
 用户授权七项工作区功能实现、测试、提PR后合并。**未授权部署本轮功能**；线上仍为 `b075489`。

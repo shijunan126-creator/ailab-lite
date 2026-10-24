@@ -209,12 +209,19 @@ def test_templates_analyzed_once_in_limited_child(api, kind, tmp_path):
         prs.save(source)
     else:
         Document().save(source)
-    asset = upload_brand(api, kind, source.read_bytes(), source.name)
-    result = process_file(asset["file_id"], WorkerAPI(api))
-    assert "brand" in result
     if kind == "pptx":
-        assert result["brand"]["slide_width"] == Inches(10)
-        assert result["brand"]["master_count"] == 1 and result["brand"]["themes"][0]["colors"]
+        response = api.post("/v1/templates", files={"upload": (source.name, source.read_bytes())})
+        assert response.status_code == 201, response.text
+        with SessionLocal() as db:
+            from ailab_platform.models import Template
+
+            asset = {"file_id": db.get(Template, response.json()["id"]).file_id}
+    else:
+        asset = upload_brand(api, kind, source.read_bytes(), source.name)
+    result = process_file(asset["file_id"], WorkerAPI(api))
+    if kind == "pptx":
+        assert result["template"]["slide_width"] == Inches(10)
+        assert result["template"]["master_count"] == 1 and result["template"]["themes"][0]["colors"]
     else:
         assert "Normal" in result["brand"]["styles"] and len(result["brand"]["styles"]) <= 50
     assert process_file(asset["file_id"], WorkerAPI(api))["skipped"] == "ready"
@@ -223,7 +230,7 @@ def test_templates_analyzed_once_in_limited_child(api, kind, tmp_path):
 def test_corrupt_brand_rejected_without_replacing_ready(api):
     first = upload_brand(api)
     process_file(first["file_id"], WorkerAPI(api))
-    second = upload_brand(api, "pptx", b"not a zip", "broken.pptx")
+    second = upload_brand(api, "docx", b"not a zip", "broken.docx")
     assert process_file(second["file_id"], WorkerAPI(api))["rejected"] == "corrupt"
     assert api.get("/v1/admin/brand").json()["logo_file_id"] == first["file_id"]
 

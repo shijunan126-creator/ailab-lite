@@ -45,7 +45,16 @@ class Schedule(BaseModel):
         return self
 
 
-class TaskInput(BaseModel):
+class NoTemplate(BaseModel):
+    @model_validator(mode="before")
+    @classmethod
+    def reject_template(cls, value):
+        if isinstance(value, dict) and value.get("template") is not None:
+            raise ValueError("定时任务暂不支持模板")
+        return value
+
+
+class TaskInput(NoTemplate):
     title: str = Field(min_length=1, max_length=60)
     prompt: str = Field(min_length=1)
     mode: Literal["chat", "work"] = "chat"
@@ -69,7 +78,7 @@ class TaskInput(BaseModel):
         return self
 
 
-class TaskPatch(BaseModel):
+class TaskPatch(NoTemplate):
     title: str | None = None
     prompt: str | None = None
     mode: Literal["chat", "work"] | None = None

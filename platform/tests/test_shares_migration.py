@@ -14,7 +14,7 @@ def test_shares_up_down_up(engine):
     with engine.begin() as conn:
         _seed_user_and_run(conn)
     _upgrade_to(engine, "head")
-    assert _version(engine) == "0027"
+    assert _version(engine) == "0028"
     with engine.begin() as conn:
         conn.execute(
             text(

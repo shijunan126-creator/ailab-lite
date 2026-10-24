@@ -444,3 +444,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 已claim的steer还不是已注入；详情仅按runtime_meta.steer_ids确认顺序查有界队列表。重新加载的bubble不能从所有steered行猜测。队列scripted model应识别当前最新原始用户消息，不能把history里旧的慢任务当成新任务再次阻塞。
 - E2E通过API准备项目后须重新加载以初始化前端项目缓存；按文件ID核对移动后名称，重名会合法改名。手机证据先收起桌面遗留侧栏，避免截图只显示遮罩。
 - 品牌保存空字体用空字符串（非null）；产物菜单提问/移动必须读取文件当前项目，不能沿用对话项目。两项Portal回归由父Agent修复，未放宽浏览器断言。
+
+## 2026-10-24 PPT 模板
+
+- POTX 的 package main content type 不同于PPTX，python-pptx `Presentation(path)`会拒绝。Worker应注册模板main part直接打开；不要为30MiB输入重打包到受16MiB输出限制的解析目录。生成器在沙箱内规范化后再用Presentation。
+- `.potx`也必须走ZIP大小/压缩比检查。模板状态 failed 与扫描 rejected 由meta区分；FileObject仍沿用原扫描状态枚举。
+- 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。

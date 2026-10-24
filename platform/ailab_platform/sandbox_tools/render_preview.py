@@ -29,7 +29,7 @@ MAX_SHEET_CHARS = 1_000_000
 
 
 def check_archive(source: Path) -> None:
-    if source.suffix.lower() not in {".docx", ".xlsx", ".xlsm", ".pptx", ".odt", ".ods", ".odp", ".odf", ".zip"}:
+    if source.suffix.lower() not in {".docx", ".xlsx", ".xlsm", ".pptx", ".potx", ".odt", ".ods", ".odp", ".odf", ".zip"}:
         return
     with zipfile.ZipFile(source) as archive:
         entries = archive.infolist()
