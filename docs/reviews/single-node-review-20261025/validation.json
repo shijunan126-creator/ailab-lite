@@ -1,0 +1,34 @@
+{
+  "sqlite": {
+    "tests": 1249,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 79,
+    "passed": 1170,
+    "seconds": 213.917
+  },
+  "postgres": {
+    "tests": 1249,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 33,
+    "passed": 1216,
+    "seconds": 216.174
+  },
+  "e2e": {
+    "tests": 98,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 98,
+    "seconds": 280.28
+  },
+  "coverage_percent": 87.04,
+  "baseline": "e23cf4d",
+  "product_baseline": "869e06b27cb82cdf4a19225f5b9be9ec3a4026b2",
+  "portal_unit": {
+    "passed": 35,
+    "failed": 0
+  },
+  "external_boundaries": "Mock model and sandbox E2E; unconfigured real component contracts skipped; no deployment."
+}

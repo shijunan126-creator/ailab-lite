@@ -1,5 +1,14 @@
 # HANDOFF
 
+## 2026-10-25 单机审查：恢复、快照与异步视图
+
+- checkpoint里的待执行工具也是已计费响应，恢复时必须在执行pending前重查累计预算，不能只在新模型调用前检查；预算耗尽后的纯文字完成与待执行工具要区分。
+- 调用部门归属应在usage reservation冻结，不是settle时查当前User。0029只从既有账本补已知历史，旧open预留的未知部门保留null。
+- 五条是pending queue容量，不是累计确认插话上限；按checkpoint确认ID和顺序展示全部已注入消息，不能截断前五条或披露未确认领取。
+- `/files?ids=`是精确版本查找，不能复用浏览列表的is_head过滤；常规列表仍只显示head。版本切换还要取消旧的before分页，并将API完整路径预览清单作为权威快照，避免旧分支残留。
+- 轮询用完成后再排下一轮、取消及请求超时；旧扫描结果仅更新仍pending的文件，不覆盖当前收藏/位置。SSE的HTTP200空EOF也计入连续失败预算；等待结束移除abort listener。
+- 有界搜索的空页带cursor表示尚未完成；UI须保留继续入口。浏览器测试等明确的查询结果，不能用未限定的option locator匹配尚未退场的最近列表。审查/验证见[本轮报告](docs/reviews/2026-10-25-single-node-review.md)。
+
 ## 2026-10-24 真实模型早标题验收
 
 - 旧实现标题10秒包含主额度gate；真实提供商曾正文成功但标题超时永久为空。Round2已将10秒改为gate通过后的模型预算，gate仍由run截止/取消约束；catalog显式声明quiet关闭thinking，timeout/error/empty采用规范化prompt兜底。同请求复测成功不能抹去首轮失败，先测gate/TTFT/reasoning/content。见[发布记录](docs/progress/updates/2026-10-24-release-ui-features.md)。
