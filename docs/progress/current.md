@@ -1,18 +1,14 @@
 # 当前工作
 
-## 当前：工作区功能（2026-10-24，进行中）
+## 当前：工作区功能（2026-10-24，已实现并本地验证，待PR/父任务验收）
 
-用户授权：实现项目说明、公司品牌套件、完成通知与收件箱、回答中排队/插话、内部只读分享、资料库摘要/OCR核验/就文件提问、移入项目带文件（**不做**管理员用量看板）；测试通过后提 PR 并合并。**未授权部署。** 主 Agent（Claude）负责前端、架构与审核，后端由 Codex `gpt-6.1-sol` medium 三个并行分支实现（A `feat/projects-brand` 0025、B `feat/inbox-queue` 0026、C `feat/shares-library` 0027，集成时改链）。
+用户授权七项工作区功能实现、测试、提PR后合并；本子任务只提PR，由父Agent审图、检查CI并决定合并。**未授权部署本轮功能。**
 
-- 分支 `feat/workspace-features`，基线 `main@74e66c0`。契约与分工见[设计](../reviews/2026-10-24-workspace-features-design.md)。
-- 后端 A：`feat/projects-brand`（base `00c5cc9`）实现与独立双库验证见[记录](updates/2026-10-24-projects-brand-backend.md)；待父任务审核合入、迁移链/Portal/镜像集成。
-
-- C 后端 `feat/shares-library`（起点00c5cc9/base74e66c0）已本地提交分享/摘要/OCR选页并通过双库；通知仍no-op、0027待接0026，父Agent下一步集成；[交付与测试](updates/2026-10-24-shares-library-backend.md)。
-- 已完成：三个后端分支已合入并改链 0025←0024、0026←0025、0027←0026；分享通知接入收件箱；Portal 全部 7 项界面已实现并按合入后的接口对齐（`139ae5d`、`f106d28`）。主 Agent 本地检查：Portal 32 项 / tsc / build 通过，Ruff 通过，SQLite 迁移与品牌子集 39 通过。
-- 进行中：Codex 集成任务（起点 `f106d28`）——补 `RunDetail.steered`、分享通知跨用户锁顺序、跨分支交互；双库全套、五服务 E2E 新增功能用例与截图、有限真实模型；推送并建 PR（不合并）。
-- 下一步：主 Agent 审核截图与结果 → CI 通过后 squash 合并。不部署（未授权）；`sbx-office` 镜像需重建，部署时另行授权。
-
-- B后端 `feat/inbox-queue`（起点00c5cc9）：9992308通知/队列/steer双库验证通过（SQLite1057、PG+Redis1138），见[B记录](updates/2026-10-24-inbox-queue-backend.md)；待父任务审核合入、0026改接0025及统一Portal/E2E验收。
+- 交付分支 `test/workspace-features-integration`，推送目标 `feat/workspace-features`，base `main@74e66c0`。起点 `f106d28`，父任务Portal修复 `57ddabf`/`e452ed6`/`9f62667`，后端修复 `e34e67c`、新增E2E `d855d01`；[契约](../reviews/2026-10-24-workspace-features-design.md)。
+- 已完成：A/B/C及Portal集成；0025←0024、0026←0025、0027←0026；分享通知接入；确认插话详情、排序分享锁、同对象有效分享复用；项目队列上下文/通知、文件移动/分享交互回归。
+- 当前验收：SQLite1094通过/117跳过、PG+Redis1178通过/33跳过、双库迁移升降再升、Portal32通过/build、Ruff通过、完整五服务E2E87通过/0失败/0跳过；最新视觉修复后22项专项通过（含全部9项新增用例），清理结果见[集成记录](updates/2026-10-24-workspace-features-integration.md)。
+- 有限真实模型：项目说明、计费摘要、重建本地技能层镜像的Docker品牌PPT、真实运行中插话均通过；证据和成本、历史失败与未验边界详见集成记录。没有把Mock/短样本当长期容量。
+- 下一步：父Agent审查截图/代码/PR、等待远端CI后决定合并；本轮尚未合入main、未部署。正式使用需重建发布sbx-office；旧品牌资产自动回收/SVG支持、真机键盘/长期容量不在本轮完成声明内。
 
 ## UI 功能发布完成（2026-10-24）
 

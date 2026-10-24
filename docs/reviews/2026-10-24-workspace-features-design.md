@@ -170,3 +170,9 @@ B `feat/inbox-queue` 保留 §3/§4 的公开字段与状态名，仅明确以�
 - 文件分享 `view` 额外返回 `file: ShareFile`（会话分享无此字段），以便只读页取得分享授权的内容/预览地址。`ShareFile={id,file_id,filename,content_type,size,content_url,download_url,preview_url,thumbnail_url}`，URL 均为 `/api/v1/shares/...` 相对代理路径，无签名地址。
 - `GET /v1/shares/for` 返回最多50项数组（最新优先；可传 cursor/limit，续页在 X-Next-Cursor 响应头）；其他分享列表仍用 `{items,next_cursor}`。`view` 的 cursor 为上一页最后一轮id，按快照路径从旧到新每页20轮。用户查找按 username/display_name 大小写敏感前缀匹配。
 - `read_library_file` 新增可选输入 `pages: [1,2,...]`（最多20页）；已有输出 `pages:[{page,offset}]` 和 Unicode offset 分页保持兼容。选页后的 offset 基于所选文本。
+
+## 集成验收澄清（2026-10-24）
+
+- `GET /v1/shares/for` 保留 C 实现与已对齐 Portal 使用的有界数组契约（默认/最大50、limit=1取最新、X-Next-Cursor续页），覆盖上文旧补充中的单对象/null写法。重复 POST 同一对象在所有者锁内复用有效分享、更新受众，不暗中推进快照；推进仍须 refresh。
+- `RunDetail.steered` 仅暴露 checkpoint 已确认 ID 对应的用户文本，依累计确认/领取顺序，最多5条；已 claim 未 checkpoint 的内容不出现在详情。分享页继续仅公开原 prompt/answer 与产物，不额外公开插话、思考或工具过程；本轮未扩展 ShareTurn。
+- 分享在写业务行/外键前按用户ID排序取得所有者及本次指定接收者锁；通知插入和200条裁剪仍在同事务/用户锁内，避免互相分享时反向嵌套用户锁。

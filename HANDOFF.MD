@@ -436,3 +436,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 不可变账本里的已结算 call_id 不能重新用于一次新推理。首次 `summary:<file_id>`；明确失败重试使用独立后缀（最多3次总调用），不得通过删除旧账本实现重试。通知接缝 `api/share_notifications.py` 当前 no-op，父 Agent 接 B helper。
 - Worker 派发标志不能写回原队列消息的 payload；内存队列会把同一对象重投，extra=forbid 的 JobEnvelope 将拒绝被污染的消息。
 - read_library_file 输入 pages=[2] 与输出 pages=[{page,offset}] 不同；扫描PDF OCR必须保持原物理页码。两页测试客户端也必须提供两页预览，否则 page_limit 是预览样本不完整，并非OCR丢页。验证与未验边界见[本轮记录](docs/progress/updates/2026-10-24-shares-library-backend.md)。
+
+## 2026-10-24 工作区集成验收
+
+- 接收者通知会取得接收者用户锁；分享不能先锁所有者、写外键后再逐个锁接收者。须在写入前按全局用户ID顺序取得所有者与指定接收者锁，通知仍同事务插入/裁剪。跨进程PG互相分享用例覆盖真实数据库锁，不能只测单进程RLock。
+- 测试子进程必须显式指定本工作树的platform cwd；复用别处venv时，editable install可能加载主工作树旧代码。不能把其他代码基线的失败算作当前分支失败，也不能把其他分支的绿算作验收。
+- 已claim的steer还不是已注入；详情仅按runtime_meta.steer_ids确认顺序查有界队列表。重新加载的bubble不能从所有steered行猜测。队列scripted model应识别当前最新原始用户消息，不能把history里旧的慢任务当成新任务再次阻塞。
+- E2E通过API准备项目后须重新加载以初始化前端项目缓存；按文件ID核对移动后名称，重名会合法改名。手机证据先收起桌面遗留侧栏，避免截图只显示遮罩。
+- 品牌保存空字体用空字符串（非null）；产物菜单提问/移动必须读取文件当前项目，不能沿用对话项目。两项Portal回归由父Agent修复，未放宽浏览器断言。

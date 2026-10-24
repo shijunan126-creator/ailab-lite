@@ -156,3 +156,10 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 ## 2026-10-24 C 后端分支补充（待集成）
 
 `feat/shares-library` 实现内部只读快照分享、资料库持久摘要与OCR选页，双库本地验证通过；通知helper仍为no-op，0027暂接0024，尚未Portal/父分支集成或合入main。接口、证据与边界见[后端交付](../progress/updates/2026-10-24-shares-library-backend.md)。
+
+
+## 2026-10-24 工作区七项功能集成验收
+
+上述A/B/C独立分支状态属于历史记录，当前已集成0025–0027与Portal，通知接缝已实接。`e34e67c`修复确认插话详情、互相分享锁顺序与有效分享复用；父任务`57ddabf`/`e452ed6`修复两项真实Portal回归，`9f62667`补视觉整理。SQLite1094、PG+Redis1178、完整五服务E2E87均通过（跳过数/基线/迁移往返/新用例/有限真实模型/成本见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)）。
+
+状态仅为**已实现并本地验证**，未合入main/未部署本轮功能，远端CI与父任务人工视觉验收待完成；生产sbx-office需重建，旧品牌资产GC仍缺、SVG拒绝。不得据此升级其他目标能力或长期容量的状态。
