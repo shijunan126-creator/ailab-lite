@@ -2,7 +2,7 @@
 
 ## 当前追加：Chat 标题时序 Round 2（2026-10-24）
 
-本工作树实际为 `t3-2e563082`，分支 `fix/chat-title-timing`，base `814c541b46e5b3a15ffe4985bc25432f8567193c`；下方其他工作树与发布记录是历史，不能作为本轮授权。本轮仅后端修复/测试/本地提交，不改Portal、不推送/PR/部署。已修复正文完成先于标题时的任务生命周期、终态SSE有界收尾与CAS竞态、共享Markdown清洗，锁定retry/fork不重复请求标题。已完成定向及修复前对照；最终代码全套SQLite/Ruff验收待追加。下一步固定运行时代码并执行最终全套，再由父Agent集成前端与统一验收。契约、历史/当前证据、性能与跳过范围见[后端Round 2记录](updates/2026-10-24-chat-fork-retry-backend.md#round-2标题完成时序修复2026-10-24)。
+本工作树实际为 `t3-2e563082`，分支 `fix/chat-title-timing`，base `814c541b46e5b3a15ffe4985bc25432f8567193c`；下方其他工作树与发布记录是历史，不能作为本轮授权。本轮仅后端修复/测试/本地提交，不改Portal、不推送/PR/部署。已修复正文完成先于标题时的任务生命周期、终态SSE有界收尾与CAS竞态、共享Markdown清洗，锁定retry/fork不重复请求标题。运行时代码固定 `0be9fac9e03d90c39fa081799fb2c3236add2af1`；最终SQLite全套1000通过/108跳过，Ruff check/format通过（286文件）。PG/Redis、Portal build/浏览器与五服务E2E未跑。下一步由父Agent集成本分支并执行前后端统一验收，不自动发布。契约、历史/当前证据、性能与跳过范围见[后端Round 2记录](updates/2026-10-24-chat-fork-retry-backend.md#round-2标题完成时序修复2026-10-24)。
 
 
 更新：2026-10-24。最新授权追加：对话为正常聊天AI，仅无沙箱；移除逐条模式标签与消极输入提示。此前授权：参考 Hermes，实现 Chat/Work 技能自动维护、技能页编辑、按用户归属且可编辑的 Memory System；前端交由 Claude Opus 5.5 Medium，最多两个 Claude 同时运行，后端与统一验收由主 Agent 负责。用户最新明确授权：先部署，再提交PR，检查通过后merge；本条覆盖此前未发布边界。

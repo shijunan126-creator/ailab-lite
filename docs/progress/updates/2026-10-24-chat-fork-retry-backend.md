@@ -78,3 +78,14 @@ Fork CPU随元数据/事件数及本地复制字节线性增长；本地storage.
 SSE仅在短暂终态且空标题时多一次有界索引查询，limit 1；`/state`携带attempt多一次只读所有权查询。不新增依赖/进程/迁移/存储对象；每个未命名会话仍最多一个并发title task和同样一次标题模型账单。代价：Agent槽位/client/claim在正文完成后最多继续占用标题剩余10秒预算及既有账本清理时间，SSE连接最多延长终态后10秒加正常poll调度开销；这不延后正文内容/终态。SQLite独立临时profile EXPLAIN两项查询均SEARCH，使用run_attempts run_id/PK、outbox claim_token与conversation既有索引，无全表扫描。100次完整 `_poll_events` 本机median 0.526ms、p95 0.780ms；不是2vCPU/8GiB长期容量、真实模型成本或PG计划证据。
 
 不运行PG/Redis、真实模型、五服务E2E、Portal npm/build或浏览器；本工作树无Portal node_modules，前端及统一验收仍由父Agent负责。没有使用开发.env/开发数据库，SQLite与查询探针均用测试引导的临时profile。父Agent下一步：集成本修复，按最终提交执行前后端统一验收；保持不自动发布。
+
+### Round 2 最终固定基线验收
+
+运行时代码及全部回归固定为 `0be9fac9e03d90c39fa081799fb2c3236add2af1`（`fix(chat): retain bounded titles after answer completion`）；后续提交只更新交接与验证记录。
+
+- **最终完整SQLite：1000 passed / 108 skipped / 10 warnings，121.99秒**，命令 `pytest tests -q -o addopts='' --tb=short`；GNU coreutils/findutils在PATH，使用Python3.12现有venv与本工作树源码。108跳过对应未启用的后端/真实组件及条件不适用项；本轮未开启PostgreSQL/Redis契约，不冒称双库验证。
+- **Ruff check与format --check全部通过，286个Python文件**；`git diff --check`通过。代码提交后重跑最终全套，包含SSE CAS竞态回归与真实晚到标题SSE链路；前一轮999 passed / 108 skipped（123.29秒）仅为加该最后竞态用例前的历史检查，不与最终数字累加。
+- 新增回归覆盖：早标题/正文先完成晚标题、标题超时、gate占用预算、shutdown与attempt-loss取消及账本/子任务回收、有效终态attempt标题写入、取消/删除拒绝、stale/foreign 409、Markdown三入口清洗与40字截断、retry/fork请求标志、终态窗口截止、CAS提交与SSE最后读取之间的竞态。真实Agent/API/SSE在本地ASGI传输执行，不是付费模型/五服务/浏览器验收。
+- 跳过的独立检查：PostgreSQL/Redis、真实上游、五服务E2E、Portal npm/build与浏览器（本工作树无Portal依赖且未修改Portal；由父Agent执行统一验收）。不新增或启动外部服务，不触碰开发.env/数据库，不推送、建PR或部署。
+
+交付状态：本分支本地实现及后端SQLite验收完成；父Agent可集成 `0be9fac`，再执行前后端统一验收。当前未合入main/未发布。Work运行若已分配sandbox，现有finally在标题收尾后释放lease，因此也可能多占用标题剩余预算；此轮未做联合容量压测，不能将上述单机查询探针当作整体容量证明。
