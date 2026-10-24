@@ -164,7 +164,7 @@ export default function BrandSection() {
     try {
       const next = await api<Brand>("/v1/admin/brand", {
         method: "PATCH",
-        body: JSON.stringify({ enabled: draft!.enabled, name: draft!.name.trim(), colors: { primary: draft!.primary, accent: draft!.accent }, font: draft!.font.trim() || null }),
+        body: JSON.stringify({ enabled: draft!.enabled, name: draft!.name.trim(), colors: { primary: draft!.primary, accent: draft!.accent }, font: draft!.font.trim() }),
       });
       setBrand(next);
       setDone(true);
