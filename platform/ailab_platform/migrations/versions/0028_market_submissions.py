@@ -37,9 +37,9 @@ def upgrade():
     op.create_table(
         "market_versions",
         sa.Column("id", sa.String(40), primary_key=True),
-        sa.Column("listing_id", sa.String(40), sa.ForeignKey("market_listings.id"), nullable=False),
+        sa.Column("listing_id", sa.String(40), sa.ForeignKey("market_listings.id", ondelete="CASCADE"), nullable=False),
         sa.Column("version", sa.String(20), nullable=False),
-        sa.Column("file_id", sa.String(40), sa.ForeignKey("files.id"), nullable=False),
+        sa.Column("file_id", sa.String(40), sa.ForeignKey("files.id", ondelete="CASCADE"), nullable=False),
         sa.Column("changelog", sa.String(2000), nullable=False),
         sa.Column("status", sa.String(20), nullable=False, server_default="pending"),
         sa.Column("review_reason", sa.String(1000), nullable=False),
@@ -54,7 +54,7 @@ def upgrade():
     op.create_table(
         "market_reviews",
         sa.Column("id", sa.String(40), primary_key=True),
-        sa.Column("version_id", sa.String(40), sa.ForeignKey("market_versions.id"), nullable=False),
+        sa.Column("version_id", sa.String(40), sa.ForeignKey("market_versions.id", ondelete="CASCADE"), nullable=False),
         sa.Column("reviewer_id", sa.String(40), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("decision", sa.String(20), nullable=False),
         sa.Column("reason", sa.String(1000), nullable=False),
