@@ -33,6 +33,8 @@ def test_tree_backfill_and_roundtrip(engine):
             )
     for _ in range(2):
         _upgrade_to(engine, "0023")
+        # The ORM describes the integrated head, including the later schedules table.
+        _upgrade_to(engine, "head")
         with engine.connect() as conn:
             assert conn.execute(text("SELECT id,parent_run_id FROM runs ORDER BY id")).all() == [
                 ("r1", None),
