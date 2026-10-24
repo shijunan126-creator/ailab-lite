@@ -92,6 +92,7 @@ class OpenSandboxProvider(SandboxProvider):
             domain=settings.osb_domain,
             protocol=settings.osb_protocol,
             api_key=settings.osb_api_key,
+            use_server_proxy=settings.osb_use_server_proxy,
             request_timeout=timedelta(seconds=settings.osb_request_timeout_seconds),
         )
         self._manager = SandboxManagerSync.create(connection_config=self._config)
@@ -139,7 +140,9 @@ class OpenSandboxProvider(SandboxProvider):
                 connection_config=self._config,
                 timeout=timedelta(seconds=lifetime),
                 ready_timeout=timedelta(seconds=90),
-                network_policy=NetworkPolicy(default_action="deny"),
+                # No retry without a sidecar policy: only an explicit deployment
+                # mode may delegate isolation to Kubernetes and its node policy.
+                network_policy=NetworkPolicy(default_action="deny") if settings.osb_network_mode == "sidecar" else None,
                 resource={"cpu": str(spec.cpu), "memory": str(spec.memory)},
                 metadata=_encode_metadata(labels or {}),
             )
@@ -195,7 +198,7 @@ class OpenSandboxProvider(SandboxProvider):
             f'p={q}; parent=$(dirname "$p"); '
             'rp=$(realpath -m "$parent") || exit 1; '
             'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; '
-            '[ ! -L "$p" ]',
+            '[ ! -L "$p" ] && mkdir -p -- "$parent"',
             timeout=15,
         )
         if check.exit_code != 0:
@@ -223,7 +226,7 @@ class OpenSandboxProvider(SandboxProvider):
         check = self.exec(
             sandbox_id,
             f'p={q}; parent=$(dirname "$p"); rp=$(realpath -m "$parent") || exit 1; '
-            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; [ ! -L "$p" ]',
+            'case "$rp" in /workspace|/workspace/*) ;; *) exit 1;; esac; [ ! -L "$p" ] && mkdir -p -- "$parent"',
             timeout=15,
         )
         if check.exit_code != 0:

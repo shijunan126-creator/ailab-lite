@@ -197,6 +197,10 @@ class Settings(BaseSettings):
     conversation_purge_days: int = Field(default=30, ge=0)
 
     # OpenSandbox server (T2 dev stand-in). Set AILAB_SANDBOX_PROVIDER=opensandbox.
+    # Kubernetes mode delegates deny-all to the provisioned namespace/CNI, never to an egress sidecar.
+    osb_network_mode: Literal["sidecar", "kubernetes"] = "sidecar"
+    osb_kubernetes_isolation_verified: bool = False
+    osb_use_server_proxy: bool = False
     osb_domain: str = "127.0.0.1:8090"
     osb_protocol: Literal["http", "https"] = "http"
     osb_api_key: str = "dev-osb-key"
@@ -393,6 +397,8 @@ class Settings(BaseSettings):
                 problems.append(f"AILAB_{name.upper()} is still the default")
         if self.sandbox_provider == "mock":
             problems.append("mock sandbox is forbidden")
+        if self.sandbox_provider == "opensandbox" and self.osb_network_mode == "kubernetes" and not self.osb_kubernetes_isolation_verified:
+            problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
         if self.scanner_backend == "stub":
             problems.append("stub scanner is forbidden")
         if self.service_token:

@@ -19,7 +19,8 @@ export default function WorkProcess({ run, items, loading, error, more, onLoad, 
   const [expanded, setExpanded] = useState<boolean | null>(null);
   const active = ["queued", "running", "waiting_user", "interrupted"].includes(run.status);
   const open = expanded ?? active;
-  return <section className={`work-process steps ${open ? "open" : ""}`} aria-label="工作过程">
+  const thinking = run.options?.mode === "chat" ? "思考" : "梳理任务";
+  return <section className={`work-process steps ${open ? "open" : ""}`} aria-label={run.options?.mode === "chat" ? "思考过程" : "工作过程"}>
     <button className="steps-head" aria-expanded={open} onClick={() => {
       setExpanded(!open);
       if (!open && !items && !loading) onLoad();
@@ -30,13 +31,13 @@ export default function WorkProcess({ run, items, loading, error, more, onLoad, 
     {open ? <div className="work-timeline">
       {items?.map((item, i) => <div key={i} className={`work-entry process-${item.kind}`}>
         {item.kind === "text" ? (item.text.trim() ? <Markdown text={item.text} /> : null)
-          : item.kind === "thinking" ? <div className="step note"><span className="step-mark" /><span>梳理任务</span></div>
+          : item.kind === "thinking" ? <div className="step note"><span className="step-mark" /><span>{thinking}</span></div>
           : item.kind === "ask" ? renderAsk(item)
           : item.kind === "plan" ? <ol className="steps-list" aria-label="计划">{item.steps.map((step) => <li key={step.id} className={`step ${MARK[step.status]}`}>
             <span className="step-mark" /><div className="step-body"><span className="step-label">{step.title}</span></div>
           </li>)}</ol>
           : <ol className="steps-list">{item.steps.map((step, j) => <li key={j} className={`step ${step.status === "running" && !active ? "note" : step.status}`}>
-            <span className="step-mark" /><div className="step-body"><span className="step-label">{step.name === "thinking" ? "梳理任务" : step.label}</span>
+            <span className="step-mark" /><div className="step-body"><span className="step-label">{step.name === "thinking" ? thinking : step.label}</span>
               {step.name !== "thinking" && step.detail ? <span className="step-detail">{step.detail}</span> : null}
               {step.name !== "thinking" && step.output ? <details><summary>输出</summary><pre className="log">{step.output}</pre></details> : null}
             </div>

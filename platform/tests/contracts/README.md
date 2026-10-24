@@ -15,4 +15,17 @@ Real endpoints: `AILAB_TEST_REDIS_URL=redis://127.0.0.1:16450/15`, `AILAB_TEST_P
 
 Performance probe: `python scripts/measure_storage.py --mib 50` then `--mib 100`. On this macOS checkout, 50/100 MiB stream write + copy + read took 0.15/0.38 s, Python allocation peak 148,697 bytes, RSS growth 278,528/688,128 bytes; two objects used 100/200 MiB of disk plus tiny metadata. These are local adapter measurements, not target-node or Broker/Worker acceptance.
 
+Controlled-fetch / deny-all acceptance on disposable real providers:
+
+```bash
+AILAB_TEST_DOCKER=1 AILAB_TEST_OSB_URL=http://127.0.0.1:18090 \
+AILAB_OSB_NETWORK_MODE=kubernetes AILAB_OSB_USE_SERVER_PROXY=true \
+AILAB_SANDBOX_IMAGE=your-nonroot-python-image AILAB_TEST_PUBLIC_FETCH=1 \
+pytest tests/contracts/test_sandbox_transfer.py tests/contracts/test_sandbox_lifecycle.py tests/contracts/test_controlled_fetch.py -q
+```
+
+Use `sidecar` for a compatible Docker/runc OpenSandbox server; never retry without policy automatically. `test_controlled_fetch` performs real public downloads, a small GitHub archive and an offline PyPI install. Malicious archives are generated locally and injected through Broker HTTP. Skill path retrieval uses the real sandbox; its API receiver is a stub (the independent API/scan tests cover persistence).
+
+`test_sandbox_network.py` additionally takes `AILAB_TEST_SANDBOX_TCP_TARGETS` (comma-separated `IPv4:port`, public/Service/Pod/node/metadata) and `AILAB_TEST_SANDBOX_UDP_TARGET` (a disposable node UDP echo responder). Check those endpoints from the node first: refusal from an already dead endpoint proves nothing. Capture node ICMP rule counters, and verify the ICMP test fails with the rule removed. This test is IPv4-only and does not establish dual-stack isolation.
+
 CI now verifies JUnit groups, so configured Redis/PG/S3 contracts cannot silently skip. Heavy Docker/Redis recovery, actual Office image smoke/skills recovery, ClamAV and browser Keycloak contracts run in `.github/workflows/real-components.yml` weekly or manually with disposable fixtures. Every selected heavy case must execute successfully (zero skips). The minimal Docker image exercises the provider contract only; the Office job separately builds the real image and runs `test_skill_sandbox.py`. Explicitly configure OpenSandbox/gVisor before claiming their acceptance. See [.github/CI.md](../../../.github/CI.md) for coverage and resource boundaries.

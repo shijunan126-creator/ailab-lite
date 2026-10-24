@@ -39,3 +39,19 @@ metadata:
 spec:
   hard:
     pods: "50"
+---
+# Root overlay is capped synchronously by runsc; kubelet also accounts logs/volumes.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: sandbox-storage
+  namespace: sandbox
+spec:
+  limits:
+    - type: Container
+      default:
+        ephemeral-storage: 5Gi
+      defaultRequest:
+        ephemeral-storage: 64Mi
+      max:
+        ephemeral-storage: 5Gi

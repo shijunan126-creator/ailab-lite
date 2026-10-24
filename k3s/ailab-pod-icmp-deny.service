@@ -1,0 +1,12 @@
+[Unit]
+Description=Close k3s Pod ICMP egress channel
+Before=k3s.service
+After=network-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ailab-pod-icmp-deny
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

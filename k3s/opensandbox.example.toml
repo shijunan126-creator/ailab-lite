@@ -1,0 +1,19 @@
+[server]
+host = "127.0.0.1"
+port = 8090
+api_key = "REPLACE-WITH-PRIVATE-KEY"
+[log]
+level = "WARNING"
+[runtime]
+type = "kubernetes"
+execd_image = "opensandbox/execd:release-1.1.1"
+[kubernetes]
+kubeconfig_path = "/etc/rancher/k3s/k3s.yaml"
+namespace = "sandbox"
+workload_provider = "batchsandbox"
+batchsandbox_template_file = "/etc/ailab/opensandbox-template.yaml"
+[ingress]
+mode = "direct"
+[secure_runtime]
+type = "gvisor"
+k8s_runtime_class = "gvisor"

@@ -32,3 +32,7 @@
 本轮 Docker daemon 不可用：新增四种真实组件 job、MinIO S3 未在本机真实重跑，远端 Actions 尚未运行；不得称为远端 CI 全绿。OpenSandbox/gVisor、多架构、付费模型/vision、企业 IdP、目标机联合负载及长期容量仍需专用环境。历史真实组件证据不充作本轮结果。操作/覆盖边界见 [.github/CI.md](../../../.github/CI.md)。
 
 下一步：获提交/推送授权后，在实际 head 运行 PR CI 与手动 `Real component contracts`（包含冷缓存镜像），核对全部分项和稳定 CI；不得用历史绿色代替。没有自动继续路线图或部署。
+
+## 后续授权与集成
+
+用户后续明确授权重建已提交的新版 Portal，并提交/合并 CI PR；此前暂缓合并已解除。不删除工作树、旧镜像或业务数据。CI 分支已集成最新 `origin/main@2093dfc`，保留 #36/#37 的代码和交接内容；首轮数字仅代表此前 `1a384558 + CI diff`，集成后的远端 head 验证另记。Portal 运行配置和验收只进入本机独立 HANDOFF。

@@ -246,24 +246,31 @@ build_images() {
   if [ "$SKIP_BUILD" = 1 ]; then ok "skipped (--skip-build)"; return; fi
   run nice -n 19 docker build -q -f "$PLATFORM/deploy/Dockerfile" -t "$PLATFORM_IMAGE" "$ROOT" >/dev/null
   [ "$DRY" = 1 ] && return
-  local id; id=$(docker image inspect "$PLATFORM_IMAGE" --format '{{.Id}}'); id=${id#sha256:}
-  docker save "$PLATFORM_IMAGE" | nice -n 19 k3s ctr -n k8s.io images import - >/dev/null
-  # `docker save` can silently produce a broken archive, so check that k3s really holds this exact image.
-  # What Docker's .Id is depends on its image store: the config digest with the classic store (CRI's image
-  # id), the index/manifest digest with the containerd snapshotter (what `ctr images ls` lists). Either match
-  # proves the import; neither means a stale or broken image.
-  local config_id listed
-  config_id=$(k3s crictl inspecti "$PLATFORM_IMAGE" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["id"])' 2>/dev/null || true)
-  listed=$(k3s ctr -n k8s.io images ls 2>/dev/null | awk -v ref="docker.io/library/$PLATFORM_IMAGE" '$1 == ref {print $3}')
-  [ "$config_id" = "sha256:$id" ] || [ "$listed" = "sha256:$id" ] \
-    || die "imported image does not match the one just built (${id:0:12}); not deploying a stale or broken image"
-  ok "built and imported (${id:0:12})"
+  docker save "$PLATFORM_IMAGE" "$SANDBOX_IMAGE" | nice -n 19 k3s ctr -n k8s.io images import - >/dev/null
+  # Classic Docker exposes the config digest; its containerd store exposes the
+  # index/manifest digest. Verify each imported image against either exact ID.
+  local image id config_id listed ref
+  for image in "$PLATFORM_IMAGE" "$SANDBOX_IMAGE"; do
+    id=$(docker image inspect "$image" --format '{{.Id}}'); id=${id#sha256:}
+    config_id=$(k3s crictl inspecti "$image" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["id"])' 2>/dev/null || true)
+    ref=$image
+    if [[ "$image" != */* ]]; then ref="docker.io/library/$image"
+    elif [[ "${image%%/*}" != *.* && "${image%%/*}" != *:* && "${image%%/*}" != localhost ]]; then ref="docker.io/$image"; fi
+    listed=$(k3s ctr -n k8s.io images ls 2>/dev/null | awk -v ref="$ref" '$1 == ref {print $3}')
+    [ "$config_id" = "sha256:$id" ] || [ "$listed" = "sha256:$id" ] \
+      || die "imported image $image does not match the one just built (${id:0:12}); not deploying a stale or broken image"
+    ok "imported $image (${id:0:12})"
+  done
 }
 
 deploy_platform() {
   step "OpenSandbox server (sandbox control plane for k3s)"
-  if curl -fsS -m 3 "$OSB_URL/health" >/dev/null 2>&1; then ok "already healthy on :8090"
-  else run bash "$PLATFORM/scripts/osb_up.sh" | tail -2; fi
+  if [ "$DRY" != 1 ]; then
+    $KUBECTL get crd batchsandboxes.sandbox.opensandbox.io >/dev/null || die "install the pinned OpenSandbox controller first (platform/deploy/README.md)"
+    python3 "$ROOT/k3s/check-node.py" || die "provision the lite node with k3s/install-runsc.sh and restart k3s first"
+    $KUBECTL apply -k "$ROOT/deploy/overlays/lite" >/dev/null
+  fi
+  run env OSB_RUNTIME=kubernetes bash "$PLATFORM/scripts/osb_up.sh" | tail -2
 
   step "secrets (random tokens; model key)"
   local existing=0; k get secret platform-secrets >/dev/null 2>&1 && existing=1

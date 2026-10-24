@@ -34,14 +34,9 @@ for _ in $(seq 1 60); do $K get node 2>/dev/null | grep -q ' Ready' && break; sl
 $K get node -o wide
 
 log "3/4 注册 runsc 到 k3s 的 containerd"
-CDIR=/var/lib/rancher/k3s/agent/etc/containerd
-# 用 k3s 生成配置里自带的 drop-in 目录（config-v3.toml.d/*.toml）；
-# 不用 config-v3.toml.tmpl：在 k3s 1.34 上会把 base 渲染两遍，containerd 报 "table grpc already exists" 起不来
-if ! k3s crictl info 2>/dev/null | grep -q '"runsc"'; then
-  install -D -m 0644 "$ROOT/k3s/runsc.toml" "$CDIR/config-v3.toml.d/runsc.toml"
-  systemctl restart k3s
-  for _ in $(seq 1 60); do $K get node 2>/dev/null | grep -q ' Ready' && break; sleep 2; done
-fi
+bash "$ROOT/k3s/install-runsc.sh"
+systemctl restart k3s
+for _ in $(seq 1 60); do $K get node 2>/dev/null | grep -q ' Ready' && break; sleep 2; done
 k3s crictl info | grep -q '"runsc"' && pass "containerd 已注册 runsc" || fail "containerd 没有 runsc 运行时"
 $K apply -k "$ROOT/deploy/overlays/lite"
 

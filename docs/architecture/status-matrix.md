@@ -56,6 +56,7 @@
 | 能力 | 实现 | 未验收 |
 |---|---|---|
 | 租约所有权与对账（T06） | 资源带 owner/lease_id/run_id 标签；LeaseStore CAS；启动与周期对账；Redis 清空后从标签重建；删除失败退避重试；续租与最长寿命；检测到第二个 Broker 拒绝启动 | Docker/OSB 生命周期各 1 passed、真实重启/Redis 记录丢失/外部删除共 2 passed；其他故障组合未验；Agent每60秒续租已在4f9f3cb接入，410中断并自动续跑一次；不再强制TTL大于Run超时，真实OSB恢复组合未验 |
+| k3s/OSB 受控联网 | 节点runsc根overlay 4GiB、namespace ephemeral-storage 5GiB/容器；显式Kubernetes断网模式，secure需隔离验收声明；节点补ICMP规则；非root上传前建父目录 | 独立3CPU/5GiB VM契约已验；完整平台/模型、IPv6/多节点/其他CNI、长期压力未验，见[专项](../reviews/2026-10-24-controlled-network.md) |
 | 准入（T08 Broker 部分） | 静态总量与内存预算、每用户上限、FIFO、带截止时间的有界队列、预览渲染保留槽 | 单 Broker；无分布式调度 |
 | 大文件传输（F8） | 已实现 API → 磁盘临时文件 → provider 流上传；交付/快照/恢复/预览输出按块，实际传输计限额；失败与取消清理、重启回收 owner 临时目录 | 真实 Docker/OSB 流式契约通过；2CPU/8GiB、Broker384MiB、双路50MiB注入/交付/快照和双路100MiB扩限压力通过，RSS约68MiB；SQLite737+取消分项 / PostgreSQL766通过，详见[F8报告](../reviews/2026-10-23-broker-streaming.md)；非五服务联合负载 |
 
@@ -106,7 +107,7 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 - 真实OSB Office+S3+PG+Redis+ClamAV联合负载、SearXNG外部检索、Prometheus抓取与告警恢复、实际Agent/Broker SIGKILL接管均已验；硬退出测试加速了该任务的持久租约与传输可见性期限。
 - 付费OCR/vision/摘要已用可核对中文样本验证并核对账本；模型目录声明与真实能力一致。公司模板/业务golden由用户明确跳过，未使用合成样本冒充业务验收。
 - 2CPU/8GiB独立混合验收首字p95=2.91s；额外冷启动或超载会显著恶化时延，保留实测，不承诺任意并发。个人部署明细只保留在本机独立HANDOFF。
-- OpenSandbox网络隔离侧车与gVisor组合不支持，保留隔离策略分别验收，不宣称该组合已通过；企业IdP、生产规模RPO/RTO和24小时稳定性不由本轮短时验收推导。
+- OpenSandbox网络侧车与gVisor仍不兼容。单节点IPv4 k3s已验显式Kubernetes隔离模式（default-deny + 节点ICMP规则），不是侧车组合通过；IPv6/多节点/其他CNI、企业IdP、生产规模RPO/RTO与24小时稳定性仍未验。
 
 ## 2026-10-24 预览与工作过程
 
@@ -114,4 +115,4 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 
 ## 2026-10-24 受控联网
 
-沙箱保持 `--network none` + gVisor；Agent 以只连已检查公网地址的客户端读取网页/GitHub issue、下载文件、获取 GitHub 公开仓库和 PyPI 依赖，Broker 流式注入沙箱。URL 来源检查、每运行请求/字节预算、归档展开上限、runsc 根 overlay 4 GiB 上限；个人技能可经 Chat/Work 新建或按版本更新，走扫描与审核。已在当前 Docker Compose + runsc 运行环境真实验收并部署，k3s/OpenSandbox 路径、npm/私有仓库、并发联网负载与低带宽泄露信号未验或未消除，见 [ADR 0007](adr/0007-controlled-public-fetch.md) 与 [验收记录](../reviews/2026-10-24-controlled-network.md)。
+沙箱保持 `--network none` + gVisor；Agent 以只连已检查公网地址的客户端读取网页/GitHub issue、下载文件、获取 GitHub 公开仓库和 PyPI 依赖，Broker 流式注入沙箱。URL 来源检查、每运行请求/字节预算、归档展开上限、runsc 根 overlay 4 GiB 上限；个人技能可经 Chat/Work 新建或按版本更新，走扫描与审核。已在当前 Docker Compose + runsc 运行环境真实验收并部署，独立单节点IPv4 k3s/OpenSandbox/gVisor 已完成契约级下载、仓库、离线依赖和隔离验收（含4GiB写满、非root目录、ICMP红绿），完整五服务/真实模型与IPv6未验；Compose并发见补充证据，npm/私有仓库与低带宽泄露信号仍未支持或消除，见 [ADR 0007](adr/0007-controlled-public-fetch.md) 与 [验收记录](../reviews/2026-10-24-controlled-network.md)。

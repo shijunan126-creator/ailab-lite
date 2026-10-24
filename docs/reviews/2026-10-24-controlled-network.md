@@ -65,4 +65,54 @@ Work 任务“获取 itsdangerous、安装 rich、做 3 页 PPT”：统一过�
 - 低带宽泄露信号未消除：搜索词、在攻击者页面已有链接中选择、请求哪些公开包/仓库（包下载统计可见）、GitHub 公开路径。运行预算限制其带宽；彻底消除需要“读过内部资料后禁止外部请求”的数据分级，属产品决策，未实现。
 - 只支持 PyPI；npm/apt/git 历史/私有仓库/需登录 API 不支持。超过 100 MiB 的 wheel（如 GPU 版 torch）会被拒绝。解析器不回溯，冲突时要求模型显式指定版本。
 - k3s/OpenSandbox 路径未配置 runsc overlay 上限，也未实测本功能；只在当前 Docker Compose + runsc 运行环境验收。
-- 未做并发联网负载、长时间稳定性或 IPv6 实网验证（运行环境无 IPv6 出口）。
+- 未做长时间稳定性或 IPv6 实网验证：本机网络本身无公网 IPv6（仅 Tailscale ULA），VM 与容器网络也未开 IPv6。代码对 IPv6 地址同样做公网检查并在多地址间回退到 IPv4，双栈站点不受影响，纯 IPv6 站点不可达。
+
+## 补充：并发（同日，部署 `net-944d977`，迁移到外置 APFS 卷之后）
+
+- 网络层（Agent 容器内，一个事件循环同时发出）：87 个请求 2.0 s 完成；42 个内网/元数据/重定向目标全部拒绝，45 个公网读取与下载全部成功，p50 0.98 s / p95 1.52 s；同一 URL 各轮下载哈希一致（无串流）；探针进程峰值 99 MiB，Agent 容器峰值 140 MiB / 384 MiB。
+- 端到端（两个账号同时，DeepSeek Flash）：每人 1 个 Chat 读 issue + 1 个 Work（仓库 + 依赖 + 测试 297 通过；下载图片做 PPT），4 个全部成功，总 93 s；第 3 个同时提交按 `max_active_runs_per_user=2` 返回 429。Work 期间 Chat 按 `agent_concurrency=3` 排队（第二个 Chat 等 6 s）。图片任务中模型自拟 URL 被来源检查拒绝后改为先搜索，属预期行为。峰值：API 144 MiB / 30%、Broker 141 MiB / 33%、Agent 113 MiB、沙箱 220 MiB / 1 核；结束后无遗留沙箱、Broker spool 与 Agent 临时目录为空。
+
+## 补充：k3s / OpenSandbox / gVisor（实现分支，2026-10-24）
+
+基线 `main@1a384558b4ac27deea660e5314d82eddf462b386`，分支 `fix/k3s-osb-network-path`；保留上方 Claude 的并发/IPv6补充。以下是本轮新证据，和前面的 Compose/真实模型验收分开。现有 Compose 运行环境未切换或重启。
+
+### 部署与根因修复
+
+- 独立 ARM64 VM：3 CPU / 5 GiB，k3s `v1.34.3+k3s1`、containerd `2.1.5-k3s1`、gVisor `release-20261019.0` 完整发行包（官方 SHA512 校验）；OpenSandbox Server/SDK 1.1.1，CRDs/controller/execd 镜像为上游 `release-1.1.1`。临时镜像是 `python:3.12-slim` + uid/gid10001 + 可写 `/workspace`，不是 Office 全量镜像。镜像导入后为 `sha256:e5ca698fc1c26affec947b3320d795fda1e6046183bc545d6e0714d87329a341`（Docker manifest/index ID；CRI config ID为`4591dd8b05022243964130c72571e082dae0924e4448016c8ebabd60f3465a7b`）。
+- **磁盘**：节点 `ConfigPath` → `/etc/containerd/runsc.toml`，`[runsc_config] overlay2="root:self,size=4g"`；namespace 增加每容器 5 GiB ephemeral-storage limit / 64 MiB request。`k3s/install-runsc.sh` 接入节点安装流程；deploy preflight检查实际 CRI runtime options、根限额、IPv4 Pod CIDR和ICMP规则。不是依赖模型遵守 `sandbox_disk_bytes`。
+- **网络**：真实 Server 创建 `gvisor + NetworkPolicy(default_action="deny")` 返回 `INVALID_PARAMETER`，明确指出侧车依赖不支持的 iptables NAT。新增显式 `osb_network_mode=kubernetes` 委托 namespace/CNI/节点断网；默认仍是 sidecar，创建失败不自动去掉策略重试。secure 在缺隔离验收声明时拒绝启动；声明只是运维对外部基础设施验收的确认，不能防止之后策略被删除。
+- **额外根因**：kube-router先于default-deny放行ICMP；gVisor无CAP_NET_RAW仍能创建SOCK_DGRAM ping socket，`net-raw=false`及ping_group_range不能关闭它。新增节点systemd一次性规则：raw PREROUTING丢弃`10.42.0.0/16`源ICMP；也影响其他Pod的诊断ping。范围固定IPv4单节点，preflight拒绝不同/双栈Pod CIDR。允许的execd入站请求的回应仍必须通过，不能把“无主动出口”说成完全没有网络包。
+- **注入目录**：OSB两条写入路径在既有exec预检中完成路径约束检查后，以执行用户mkdir父目录，再交SDK；流式仍使用同目录临时文件和mv。没有额外exec往返或全文件缓冲。
+- **部署接线**：OpenSandbox模板固定gvisor、非root、drop ALL、无提权/ServiceAccount token；`osb_up.sh`核对runtime/namespace/template及已有进程PID/命令行/启动配置摘要，拒绝复用Docker配置或来源不明的健康端口。deploy现在导入并分别校验sandbox和platform两个镜像，原来只导入platform。已在临时VM用仓库脚本实际生成私有配置、启动server、检查0600权限并跑node preflight；整套平台deploy.sh仅做dry-run和脚本回归，没有声称五服务重部署通过。
+
+### 本轮真实验收
+
+| 项目 | 证据 |
+|---|---|
+| 4 GiB 强制上限 | uid10001、512 MiB内存Pod，`statvfs`=4294967296；实际逐MiB写入4294967296字节后errno28 ENOSPC（10.78 s），finally删测试文件。不是只看配置或容量报告。 |
+| TCP主动出口 | 公网443、集群API Service443、正在运行的CoreDNS Pod53、节点上正在监听的OSB端口、元数据169.254.169.254:80均拒绝。前四个目标从节点先连通，避免把目标停机误当隔离。 |
+| UDP/ICMP | 节点UDP echo先自检成功，沙箱不能收回echo。移除节点ICMP规则时真实OSB契约因`AssertionError: ICMP egress`失败；finally恢复后通过，raw规则计数增加。Docker `--network none`同一契约通过。 |
+| 父目录/流传输 | mock/Docker/runsc/真实OSB共6项：新多层含引号中文目录的两种上传、exec用户属主、后续写文件/解压、SHA256、超限和symlink拒绝。SDK fake上传预检回归原实现4 failed、修复4 passed。 |
+| 生命周期与取消 | mock/Docker/真实OSB生命周期、续租、失联重连、真实创建后取消、排队取消、过期物理删除、stale listing回收边界，共10项；与传输合计16 passed。不是通过真实Agent Run发起取消。 |
+| Agent受控获取→Broker HTTP→沙箱 | Docker与OSB各通过1个综合契约：真实公开文件哈希、itsdangerous 2.2.0源码→解压、平台标签探针→PyPI wheel→`pip --no-index`→import。 |
+| 归档拒绝与清理 | 同一综合契约生成并经真实Broker注入的解压bomb、过多条目、`..`穿越、绝对symlink全部拒绝，目标/`.partial`均不遗留。样本用较小配置阈值触发同一代码分支，没有生成1GiB归档。 |
+| save_skill | 真实OSB/Docker读取新目录中的SKILL.md并将完整载荷交API stub；本轮全套API/Worker测试覆盖归属/PENDING/扫描/版本，不是本轮真实五服务保存技能端到端。 |
+| 回收 | 综合契约finally释放，provider inspect确认不存在、Broker transfer spool为空；本轮取消契约也确认无遗留provider资源。 |
+
+Agent侧防护不依赖沙箱runtime：公网专用客户端拒绝k3s的私有集群/Service/节点网段，仅允许HTTP(S)的80/443；DNS固定、逐跳重查、来源与请求/字节预算继续生效。直接沙箱出口与Agent公网获取是两套独立边界。
+
+### 成本、范围与验收限制
+
+- 新增常驻应用任务为0；节点规则是systemd oneshot，单条raw匹配。上传在既有预检exec里增加mkdir，不增加网络往返。新增ephemeral-storage请求每容器64Mi，根overlay每容器最多4GiB；Agent和Broker下载临时副本成本与原设计相同。
+- 单次空闲采样（不是峰值/负载基准）：OSB host server RSS约128.4MiB、进程平均CPU0.6%；controller约16MiB/2m CPU；k3s进程RSS约498MiB、进程平均CPU7%。4GiB写满探针10.78s只是本机临时盘观测，不是交互延迟承诺。没有运行全平台+ClamAV/Office的联合资源验收。
+- 根overlay限额不约束新挂载的可写卷；LimitRange依赖kubelet最终驱逐，不是硬实时磁盘配额。固定模板不提供用户可写额外卷；以后加入卷必须另设同步限制。节点磁盘还需为镜像、日志、OSB安装器卷和系统留余量。
+- 未验：完整五服务k3s部署、真实模型、Office渲染、真实技能保存/扫描端到端、长时间/并发负载、IPv6、多节点或其他CNI。现有Compose部署与数据没有被本轮切换。临时VM期间发生外盘卸载/重挂导致管理socket异常，只恢复临时VM；现有Portal仍200，但现有VM管理通路需协调者另行检查，本轮没有重启它。
+- 必需平台Ruff和新增k3s脚本Ruff、ShellCheck warning、bash语法、双overlay渲染及diff检查通过。依赖未改，lock check不适用；Portal未改，由E2E fixture执行其Node tests与production build。额外全仓Ruff扫描发现历史图形/证据/技能脚本28项问题，未修改无关文件。
+
+### 全套检查与代码基线
+
+- 本轮代码/配置基线：上述main提交加本PR工作树，23个变更代码/配置文件的排序`path NUL content NUL`聚合SHA256为`e9f3ccb34cc4117a58453781b0ae54f965225d6ada47ec14d4a6e17a472b7ee4`（不含文档和.DS_Store）。核心改动：SQLite + 临时Redis完整968 passed / 67 skipped；PG16 + Redis完整1003 passed / 33 skipped（204.86s）。核心双库后最后增加的启动进程/配置绑定 helper由脚本专项5 passed及真实Linux启动→复用成功→改配置拒绝验证，没有重复两套完整Python。
+- `AILAB_E2E=1` + 临时Redis：61 passed（176.03s）；fixture执行Portal Node tests与production build。未修改Portal。
+- 真实Docker/OSB：传输+生命周期16 passed；受控获取综合契约2 passed / mock skipped；网络契约Docker/OSB各通过，OSB的ICMP去规则红/恢复绿；再用仓库生成的Kubernetes服务器配置执行OSB传输/网络3 passed（14.55s）。fake SDK/mode/secure门禁7 passed。临时节点实际执行installer和node preflight，ICMP systemd单元enabled/active。
+- 已核对始终没有创建真实模型调用，未使用任何真实密钥；不把这些契约称为完整平台/生产验收。个人机器故障与原始日志只留私有运行交接。
+- 清理完成：临时PG/Redis容器与卷、k3s VM及其独立目录已删除，临时端口关闭、无遗留sandbox Pod或Lima进程；外盘可用空间实测增加10495976 KiB（约10.01GiB）。保留原始小体积日志在私有运行交接目录。

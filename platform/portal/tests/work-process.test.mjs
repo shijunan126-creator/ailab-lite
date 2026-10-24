@@ -37,6 +37,17 @@ test('status header uses the persisted clock, never browser wall time or a legac
  assert.equal(workHeading({status:'canceled',work_ms:125750}),'已取消 · 工作总时长：2分5秒');
  assert.equal(workHeading({status:'succeeded',started_at:'2000-01-01',finished_at:'2026-01-01',work_ms:null}),'工作已完成');
 });
+test('chat mode only thinks: its heading never reports work time',()=>{
+ const chat=(status,work_ms)=>workHeading({status,work_ms,options:{mode:'chat'}});
+ assert.equal(chat('running',3000),'正在思考…');
+ assert.equal(chat('succeeded',12400),'已思考 12秒');
+ assert.equal(chat('succeeded',300),'已思考 1秒');
+ assert.equal(chat('succeeded',125750),'已思考 2分5秒');
+ assert.equal(chat('succeeded',null),'已思考');
+ assert.equal(chat('failed',5000),'回答失败');
+ assert.equal(chat('canceled',5000),'已取消');
+ for(const status of ['running','succeeded','failed','canceled']) assert.ok(!chat(status,5000).includes('工作'));
+});
 test('network and skill tools read as their actions, with the source they used',()=>{
  const label=(name,args)=>reduceEvent([],event('agent.tool_call',{step:1,name,arguments:args}))[0].steps[0];
  assert.deepEqual([label('fetch_repo',{repo:'o/r',ref:'v1'}).label,label('fetch_repo',{repo:'o/r',ref:'v1'}).detail],['获取仓库','o/r@v1']);
