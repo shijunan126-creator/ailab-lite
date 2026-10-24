@@ -35,4 +35,4 @@ PYTHONPATH=. .venv/bin/python tests/load/agent_scheduler.py --work-seconds 10
 
 ## 发布与残余边界
 
-PR/head/远端CI/合并待补齐。已确认E2E五服务与浏览器退出，内置preview tab关闭；停止本任务专用PG/Redis，核对进程归属，25495/26495/38190–38193/33110均无监听。未停止原有服务；临时原始日志仅在仓库外。运行环境仍为部署记录 `b2c8394`；0029只在隔离测试库执行。本机外部存储链路、24小时稳定性、真机键盘、真实Docker/OSB/S3/ClamAV/Keycloak与付费模型联合验收不在本轮结论内；S3契约等待远端CI。个人配置与原有服务未动，三份`.DS_Store`保留。
+[PR #49](https://github.com/shijunan126-creator/ailab-lite/pull/49)已创建并登记；初始head `465eec4`，后续本段链接提交仅文档。最新精确head的远端CI/审查/冲突核对与合并待完成。已确认E2E五服务与浏览器退出，内置preview tab关闭；停止本任务专用PG/Redis，核对进程归属，25495/26495/38190–38193/33110均无监听。未停止原有服务；临时原始日志仅在仓库外。运行环境仍为部署记录 `b2c8394`；0029只在隔离测试库执行。本机外部存储链路、24小时稳定性、真机键盘、真实Docker/OSB/S3/ClamAV/Keycloak与付费模型联合验收不在本轮结论内；S3契约等待远端CI。个人配置与原有服务未动，三份`.DS_Store`保留。
