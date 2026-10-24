@@ -2,6 +2,7 @@
 // bold / italic / inline code. It builds React elements (no HTML strings), so model output cannot inject markup.
 import { Fragment, ReactNode } from "react";
 import CopyButton from "./copy-button";
+import FileCite from "./file-cite";
 
 const BARE_URL = /https?:\/\/[^\s<>()[\]{}"'，。、；：！？（）《》「」]+[^\s<>()[\]{}"'，。、；：！？（）《》「」.,;:!?]/;
 
@@ -20,7 +21,7 @@ function shortUrl(url: string): string {
 function inline(text: string, key = "i"): ReactNode[] {
   const out: ReactNode[] = [];
   const re = new RegExp(
-    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\((https?:\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
+    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
     "g"
   );
   let last = 0;
@@ -32,7 +33,12 @@ function inline(text: string, key = "i"): ReactNode[] {
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
     else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k)}</strong>);
     else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k)}</em>);
-    else if (m[4]) {
+    else if (m[4] && m[5].startsWith("ailab-file://")) {
+      // a library file the answer quotes: its name and page, opening the file at that page
+      const label = m[4].slice(1, m[4].indexOf("](")).trim();
+      const cite = /^ailab-file:\/\/([A-Za-z0-9_-]+)(?:\?page=(\d+))?$/.exec(m[5]);
+      out.push(cite ? <FileCite key={k} fileId={cite[1]} page={cite[2] ? Number(cite[2]) : undefined} label={label} /> : label);
+    } else if (m[4]) {
       const label = m[4].slice(1, m[4].indexOf("](")).trim();
       // [1](url) is a citation: a small numbered mark, the page on hover
       const cite = /^\[?\d{1,2}\]?$/.test(label);

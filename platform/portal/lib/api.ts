@@ -42,6 +42,8 @@ export type Run = {
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
   retry_of?: string | null; // the turn this one regenerated
+  edited_from?: string | null; // the turn whose message was edited into this one
+  versions?: { index: number; count: number; ids: string[] }; // the turns answering the same point of the conversation
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
@@ -79,9 +81,45 @@ export type Conversation = {
   updated_at: string;
   last_status?: string | null;
   forked_from?: { conversation_id: string; run_id: string } | null;
+  pinned_at?: string | null;
 };
 
-export type ConversationDetail = Conversation & { turns: Run[]; previews: Preview[]; has_more: boolean };
+export type ConversationDetail = Conversation & {
+  turns: Run[];
+  previews: Preview[];
+  has_more: boolean;
+  context?: { used_tokens: number | null; model: string | null; compact_at_tokens: number | null };
+};
+
+export type SearchHit = {
+  conversation_id: string;
+  title: string;
+  project_id: string | null;
+  run_id: string | null;
+  match: "title" | "prompt" | "answer";
+  snippet: string;
+  highlight: [number, number][];
+  updated_at: string;
+};
+
+export type Schedule = {
+  id: string;
+  title: string;
+  prompt: string;
+  mode: "chat" | "work";
+  skill: string | null;
+  model: string | null;
+  project_id: string | null;
+  schedule: { kind: "daily" | "weekdays" | "weekly"; time: string; days?: number[] };
+  timezone: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_run_id: string | null;
+  last_conversation_id: string | null;
+  last_status: string | null;
+  last_error: string | null;
+};
 
 export function previewUrl(runId: string, name: string): string {
   return `${API_BASE}/v1/runs/${runId}/previews/${name}`;
@@ -103,6 +141,8 @@ export type ModelInfo = {
   weight: number;
   tools: boolean;
   default: boolean;
+  context_tokens?: number;
+  input_budget_tokens?: number;
 };
 
 export type Limit = { used: number; limit: number };

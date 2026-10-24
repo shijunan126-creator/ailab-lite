@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Native scrolling is shared by the work pane and the full-screen viewer. */
-export default function DocumentPages({ pages, src, documentKey, total = pages.length, thumbnails = false, children }: {
+export default function DocumentPages({ pages, src, documentKey, total = pages.length, thumbnails = false, initialPage, children }: {
   pages: string[];
+  initialPage?: number; // 1-based: shown first (a citation of that page)
   src: (name: string) => string;
   documentKey: string;
   total?: number;
@@ -20,6 +21,17 @@ export default function DocumentPages({ pages, src, documentKey, total = pages.l
     setRatios({});
     if (box.current) box.current.scrollTop = 0;
   }, [documentKey]);
+  // a cited page: scroll there once its place is known (pages above it reserve their height through aspect-ratio)
+  useEffect(() => {
+    if (!initialPage || initialPage < 2 || initialPage > pages.length) return;
+    const frame = requestAnimationFrame(() => {
+      const root = box.current;
+      const page = root?.querySelector<HTMLElement>(`[data-page="${initialPage}"]`);
+      if (root && page) root.scrollTop += page.getBoundingClientRect().top - root.getBoundingClientRect().top;
+    });
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [documentKey, initialPage, pages.length, ratios[pages[0]]]); // again once the first page's shape sets the others' height
   useEffect(() => {
     const root = box.current;
     if (!root) return;

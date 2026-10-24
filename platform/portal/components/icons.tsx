@@ -314,3 +314,30 @@ export const IconFilePen = (p: Props) => (
     <path d="M14 2v4a2 2 0 0 0 2 2h4M13.38 12.62a1 1 0 0 1 3 3L11.36 20.64 8 21.5l.84-3.36z" />
   </Svg>
 );
+
+// Lucide (ISC): alarm-clock, pin, pin-off, printer
+export const IconClock = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="12" cy="13" r="8" />
+    <path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3" />
+  </Svg>
+);
+
+export const IconPin = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+  </Svg>
+);
+
+export const IconPinOff = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 17v5M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89M2 2l20 20M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11" />
+  </Svg>
+);
+
+export const IconPrinter = (p: Props) => (
+  <Svg {...p}>
+    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
+    <rect x="6" y="14" width="12" height="8" rx="1" />
+  </Svg>
+);

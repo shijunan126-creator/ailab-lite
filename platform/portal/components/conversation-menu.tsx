@@ -5,17 +5,22 @@ import { createPortal } from "react-dom";
 import { api, Conversation } from "../lib/api";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconFolderInput, IconMore, IconTrash } from "./icons";
+import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconTrash } from "./icons";
 import { MoveDialog } from "./library/projects";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
 
 const MENU_W = 176;
-const MENU_H = 92;
+const MENU_H = 164;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
-export default function ConversationMenu({ conv, onDeleted, className = "" }: { conv: Conversation; onDeleted?: () => void; className?: string }) {
+export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
+  conv: Conversation;
+  onDeleted?: () => void;
+  onPinned?: (pinnedAt: string | null) => void;
+  className?: string;
+}) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const [moving, setMoving] = useState(false);
   const [error, setError] = useState("");
@@ -60,6 +65,17 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
     projectsChanged();
   }
 
+  async function pin() {
+    setAt(null);
+    const next = !conv.pinned_at;
+    try {
+      const saved = await api<Conversation>(`/v1/conversations/${conv.id}`, { method: "PATCH", body: JSON.stringify({ pinned: next }) });
+      onPinned?.(saved?.pinned_at ?? (next ? new Date().toISOString() : null));
+    } catch {
+      setError(next ? "置顶失败，请重试" : "取消置顶失败，请重试");
+    }
+  }
+
   async function remove() {
     setAt(null);
     if (!confirm(`删除对话「${title}」？（产出的文件仍保留在资料库）`)) return;
@@ -93,6 +109,11 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
       {at
         ? createPortal(
         <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+          {onPinned ? (
+            <button className="menu-item" role="menuitem" onClick={pin}>
+              {conv.pinned_at ? <IconPinOff size={15} /> : <IconPin size={15} />} {conv.pinned_at ? "取消置顶" : "置顶"}
+            </button>
+          ) : null}
           <button
             className="menu-item"
             role="menuitem"
@@ -103,6 +124,9 @@ export default function ConversationMenu({ conv, onDeleted, className = "" }: { 
           >
             <IconFolderInput size={15} /> {conv.project_id ? "移动到…" : "移到项目"}
           </button>
+          <a className="menu-item" role="menuitem" href={`/print/${conv.id}`} target="_blank" rel="noopener" onClick={() => setAt(null)}>
+            <IconPrinter size={15} /> 导出 PDF
+          </a>
           <button className="menu-item danger" role="menuitem" onClick={remove}>
             <IconTrash size={15} /> 删除
           </button>

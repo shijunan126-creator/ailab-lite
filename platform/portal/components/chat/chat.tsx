@@ -169,10 +169,19 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     if (!id) return;
     let disposed = false;
     let controller: AbortController | null = null;
-    loadDetail().then((d) => {
+    // a search result names the turn it found: show it, on its own version of the conversation if need be
+    const url = new URL(window.location.href);
+    const target = url.searchParams.get("run");
+    if (target) {
+      url.searchParams.delete("run");
+      window.history.replaceState(window.history.state, "", url.pathname + url.search);
+    }
+    loadDetail().then(async (d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
       if (last && (!isTerminal(last.status) || last.status === "interrupted")) controller = follow(last);
+      else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target);
+      if (target && !disposed) requestAnimationFrame(() => reveal(target));
     });
     return () => {
       disposed = true;
@@ -329,7 +338,19 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
-  /** Answer the last message again; the new answer takes the old one's place. */
+  /** A new version of a turn (regenerated, or its message edited): it and everything after it give way to the new one. */
+  function branchTo(old: Run, fresh: Run) {
+    setDetail((d) => {
+      if (!d) return d;
+      const at = d.turns.findIndex((t) => t.id === old.id);
+      return { ...d, turns: [...(at < 0 ? d.turns : d.turns.slice(0, at)).filter((t) => t.id !== fresh.id), fresh] };
+    });
+    stick.current = true;
+    follow(fresh);
+    conversationsChanged();
+  }
+
+  /** Answer the last message again; the old answer stays as another version. */
   async function retry(run: Run) {
     setError("");
     try {
@@ -337,14 +358,43 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         method: "POST", signal: actionController.current.signal,
         body: JSON.stringify({ model: model || null }),
       });
-      setDetail((d) => (d ? { ...d, turns: [...d.turns.filter((t) => t.id !== run.id && t.id !== fresh.id), fresh] } : d));
-      setItems((prev) => {
-        const { [run.id]: _, ...rest } = prev;
-        return rest;
+      branchTo(run, fresh);
+    } catch (err: any) {
+      if (!actionController.current.signal.aborted) setError(errorMessage(err));
+    }
+  }
+
+  /** Send an earlier message again, changed; the conversation continues from there. */
+  async function edit(run: Run, prompt: string): Promise<boolean> {
+    setError("");
+    try {
+      const fresh = await api<Run>(`/v1/runs/${run.id}/edit`, {
+        method: "POST", signal: actionController.current.signal,
+        body: JSON.stringify({ prompt, file_ids: null, model: model || null, mode: null }),
       });
-      stick.current = true;
-      follow(fresh);
-      conversationsChanged();
+      branchTo(run, fresh);
+      return true;
+    } catch (err: any) {
+      if (!actionController.current.signal.aborted) setError(errorMessage(err));
+      return false;
+    }
+  }
+
+  const switchRef = useRef(switchTo);
+  switchRef.current = switchTo;
+
+  /** Show another version of a turn: the conversation below it follows that version. */
+  async function switchTo(runId: string) {
+    if (!id) return;
+    setError("");
+    try {
+      const page = await api<ConversationDetail>(`/v1/conversations/${id}/active`, {
+        method: "POST", signal: actionController.current.signal,
+        body: JSON.stringify({ run_id: runId }),
+      });
+      for (const t of page.turns) opened.current?.add(t.id); // a version switch is not new content arriving
+      ++loadSeq.current; // a detail load already in flight would bring the old path back
+      setDetail((d) => (d && d.id === page.id ? { ...page, turns: page.turns } : page));
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
     }
@@ -390,6 +440,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       placeholder={question ? "回答上面的问题" : id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
       projectId={projectId}
       initialFiles={initialFiles}
+      context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
     />
     </>
   );
@@ -458,6 +509,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     onResume={resume}
                     onAnswer={answer}
                     onRetry={running ? undefined : retry}
+                    onEdit={edit}
+                    onSwitch={switchTo}
+                    locked={running}
                     forkModes={forkModes[i]}
                     onFork={fork}
                   />
@@ -506,4 +560,13 @@ function TurnsSkeleton() {
       </div>
     </div>
   );
+}
+
+/** Scroll a turn into view and mark it for a moment (where a search result points). */
+function reveal(runId: string) {
+  const el = document.getElementById(`turn-${runId}`);
+  if (!el) return;
+  el.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+  el.classList.add("found");
+  setTimeout(() => el.classList.remove("found"), 1800);
 }

@@ -6,8 +6,11 @@ import { usePathname, useRouter } from "next/navigation";
 import { api, Conversation, Me, Usage } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
 import { useProjects } from "../lib/projects";
-import { IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
+import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
 import ConversationMenu from "./conversation-menu";
+import SearchDialog, { OPEN_SEARCH } from "./search";
+import { OPEN_FILE } from "./file-cite";
+import { useFileViewer } from "./preview/file-viewer";
 import { NewProjectInput } from "./library/projects";
 
 /** Pages tell the sidebar that the conversation list changed (a new one, a title, a finished answer). */
@@ -122,6 +125,33 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [settled, setSettled] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const cited = useFileViewer();
+  const openCited = cited.open;
+  useEffect(() => {
+    const open = (e: Event) => {
+      const { id, page } = (e as CustomEvent).detail || {};
+      if (id) openCited([id], id, page);
+    };
+    window.addEventListener(OPEN_FILE, open);
+    return () => window.removeEventListener(OPEN_FILE, open);
+  }, [openCited]);
+  // ⌘K / Ctrl+K anywhere opens the search; other parts of the page open it with OPEN_SEARCH
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setSearching((open) => !open);
+      }
+    };
+    const open = () => setSearching(true);
+    window.addEventListener("keydown", key);
+    window.addEventListener(OPEN_SEARCH, open);
+    return () => {
+      window.removeEventListener("keydown", key);
+      window.removeEventListener(OPEN_SEARCH, open);
+    };
+  }, []);
   // Before the first paint: remembered on wide screens; narrow screens start closed (the sidebar covers the page there).
   // Transitions start only after that, so a closed sidebar does not show and then slide away on load.
   useLayoutEffect(() => {
@@ -172,6 +202,29 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     if (window.innerWidth < 760) setCollapsed(true); // on a phone, navigating closes the drawer
   }, [pathname]);
 
+  const pinned = (conversations || []).filter((c) => c.pinned_at);
+  const recent = (conversations || []).filter((c) => !c.pinned_at);
+  const row = (c: Conversation) => (
+    <div key={c.id} className={`conv-item ${c.id === current ? "on" : ""}`}>
+      <Link href={`/c/${c.id}`} title={c.title}>
+        <span className="conv-title" key={c.title || ""}>
+          {c.pinned_at ? <IconPin size={12} /> : null}
+          {c.title || "新对话"}
+        </span>
+        <span className="conv-time">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
+      </Link>
+      <ConversationMenu conv={c} onPinned={(pinned_at) => {
+        listController.current?.abort();
+        setConversations((rows) => rows?.map((r) => (r.id === c.id ? { ...r, pinned_at } : r)) || null);
+        load();
+      }} onDeleted={() => {
+        listController.current?.abort();
+        setConversations((rows) => rows?.filter((r) => r.id !== c.id) || null);
+        if (c.id === current) router.push("/");
+      }} />
+    </div>
+  );
+
   function toggle() {
     const next = !collapsed;
     setCollapsed(next);
@@ -194,6 +247,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Link href="/" className={`side-link ${pathname === "/" ? "on" : ""}`}>
             <IconNewChat size={17} /> 新对话
           </Link>
+          <button type="button" className="side-link" onClick={() => setSearching(true)} title="搜索（⌘K）">
+            <IconSearch size={17} /> 搜索
+          </button>
           <Link href="/files" className={`side-link ${pathname.startsWith("/files") ? "on" : ""}`}>
             <IconLibrary size={17} /> 资料库
           </Link>
@@ -202,6 +258,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
           <Link href="/memory" className={`side-link ${pathname.startsWith("/memory") ? "on" : ""}`}>
             <IconHistory size={17} /> 记忆
+          </Link>
+          <Link href="/schedules" className={`side-link ${pathname.startsWith("/schedules") ? "on" : ""}`}>
+            <IconClock size={17} /> 定时任务
           </Link>
         </nav>
         <div className="side-scroll">
@@ -227,27 +286,25 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+        {pinned.length ? (
+          <>
+            <div className="side-section">置顶</div>
+            <nav className="conv-list" aria-label="置顶对话">
+              {pinned.map(row)}
+            </nav>
+          </>
+        ) : null}
         <div className="side-section">最近</div>
         <nav className="conv-list" aria-label="对话列表">
           {conversations && conversations.length === 0 ? <div className="hint conv-empty">还没有对话</div> : null}
-          {(conversations || []).map((c) => (
-            <div key={c.id} className={`conv-item ${c.id === current ? "on" : ""}`}>
-              <Link href={`/c/${c.id}`} title={c.title}>
-                <span className="conv-title" key={c.title || ""}>{c.title || "新对话"}</span>
-                <span className="conv-time">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
-              </Link>
-              <ConversationMenu conv={c} onDeleted={() => {
-                listController.current?.abort();
-                setConversations((rows) => rows?.filter((row) => row.id !== c.id) || null);
-                if (c.id === current) router.push("/");
-              }} />
-            </div>
-          ))}
+          {recent.map(row)}
         </nav>
         </div>
         <UserMenu me={me} />
       </aside>
       <div className="sidebar-scrim" onClick={toggle} aria-hidden="true" />
+      {searching ? <SearchDialog recent={conversations || []} onClose={() => setSearching(false)} /> : null}
+      {cited.viewer}
 
       <div className="main">
         {collapsed ? (

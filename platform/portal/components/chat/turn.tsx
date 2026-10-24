@@ -7,7 +7,7 @@ import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { siteOf, splitTurn, turnSources } from "../../lib/work-process";
 import CopyButton from "../copy-button";
-import { IconBranch, IconDownload, IconFile, IconRetry } from "../icons";
+import { IconBranch, IconChevronRight, IconDownload, IconFile, IconPencil, IconRetry } from "../icons";
 import { ExtTile } from "../library/file-tile";
 import Markdown from "../markdown";
 import { useFileViewer } from "../preview/file-viewer";
@@ -148,6 +148,9 @@ export default function Turn({
   onResume,
   onAnswer,
   onRetry,
+  onEdit,
+  onSwitch,
+  locked,
   forkModes,
   onFork,
 }: {
@@ -162,6 +165,9 @@ export default function Turn({
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
   onRetry?: (run: Run) => Promise<void>;
+  onEdit?: (run: Run, prompt: string) => Promise<boolean>;
+  onSwitch?: (runId: string) => Promise<void>;
+  locked?: boolean; // an answer is being written: versions and edits wait for it
   forkModes?: ForkMode[];
   onFork?: (run: Run, mode: ForkMode) => Promise<void>;
 }) {
@@ -170,6 +176,8 @@ export default function Turn({
   const [historyError, setHistoryError] = useState("");
   const [moreHistory, setMoreHistory] = useState(false);
   const [retrying, setRetrying] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   const historyCursor = useRef(0);
   const historyRequest = useRef<AbortController | null>(null);
   useEffect(() => () => historyRequest.current?.abort(), []);
@@ -206,9 +214,18 @@ export default function Turn({
   const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
 
   return (
-    <div className={`turn ${fresh ? "fresh" : ""}`}>
-      <div className="msg user">
-        <div className="bubble">{run.prompt}</div>
+    <div className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
+      <div className={`msg user ${editing !== null ? "editing" : ""}`}>
+        {editing !== null ? (
+          <EditBox value={editing} onChange={setEditing} onCancel={() => setEditing(null)} onSubmit={async () => {
+            const prompt = editing.trim();
+            if (!prompt || !onEdit) return;
+            if (prompt === run.prompt.trim()) return setEditing(null);
+            if (await onEdit(run, prompt)) setEditing(null);
+          }} />
+        ) : (
+          <div className="bubble">{run.prompt}</div>
+        )}
         {run.options?.skill ? (
           <div className="attach-row">
             <span className="attach-chip">{SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill}</span>
@@ -223,9 +240,16 @@ export default function Turn({
             ))}
           </div>
         ) : null}
-        <div className="msg-actions">
-          <CopyButton text={run.prompt} label="复制消息" />
-        </div>
+        {editing === null ? (
+          <div className="msg-actions">
+            <CopyButton text={run.prompt} label="复制消息" />
+            {onEdit && done && !locked ? (
+              <button type="button" className="icon-btn act" aria-label="编辑消息" title="编辑" onClick={() => setEditing(run.prompt)}>
+                <IconPencil size={15} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="msg assistant">
@@ -289,6 +313,25 @@ export default function Turn({
 
           {terminal ? (
             <div className={`turn-meta ${last ? "last" : ""}`}>
+              {run.versions && run.versions.count > 1 && onSwitch ? (
+                <span className="versions" role="group" aria-label="版本">
+                  <button type="button" className="icon-btn act prev" aria-label="上一个版本" disabled={locked || switching || run.versions.index <= 1}
+                    onClick={async () => {
+                      setSwitching(true);
+                      try { await onSwitch(run.versions!.ids[run.versions!.index - 2]); } finally { setSwitching(false); }
+                    }}>
+                    <IconChevronRight size={14} />
+                  </button>
+                  <span className="versions-n">{run.versions.index}/{run.versions.count}</span>
+                  <button type="button" className="icon-btn act" aria-label="下一个版本" disabled={locked || switching || run.versions.index >= run.versions.count}
+                    onClick={async () => {
+                      setSwitching(true);
+                      try { await onSwitch(run.versions!.ids[run.versions!.index]); } finally { setSwitching(false); }
+                    }}>
+                    <IconChevronRight size={14} />
+                  </button>
+                </span>
+              ) : null}
               {answer ? <CopyButton text={answer} label="复制回答" /> : null}
               {last && done && onRetry ? (
                 <button type="button" className={`icon-btn act ${retrying ? "busy" : ""}`} aria-label="重新生成" title="重新生成" disabled={retrying}
@@ -312,6 +355,49 @@ export default function Turn({
         </div>
       </div>
       {files.viewer}
+    </div>
+  );
+}
+
+/** Editing a sent message in place: Enter sends it as a new version, Escape keeps the old one. */
+function EditBox({ value, onChange, onCancel, onSubmit }: { value: string; onChange: (v: string) => void; onCancel: () => void; onSubmit: () => Promise<void> }) {
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(320, el.scrollHeight)}px`;
+  }, [value]);
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onSubmit();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="edit-box">
+      <textarea ref={area} value={value} rows={1} aria-label="编辑消息" onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            submit();
+          }
+        }} />
+      <div className="edit-actions">
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>取消</button>
+        <button type="button" className="sm" onClick={submit} disabled={busy || !value.trim()}>发送</button>
+      </div>
     </div>
   );
 }
