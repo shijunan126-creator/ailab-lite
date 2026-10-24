@@ -1418,7 +1418,8 @@ button.side-link:active { transform: none; }
 .brand-thumb img { width: 100%; height: 100%; object-fit: contain; }
 .brand-slot-text { flex: 1 1 0; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .brand-slot-name { display: flex; align-items: baseline; gap: 8px; min-width: 0; font-size: 13.5px; }
-.brand-slot-name .hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.brand-slot-name strong { flex: none; white-space: nowrap; }
+.brand-slot-name .hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brand-slot-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 12px; color: var(--muted); }
 .brand-analysis { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .brand-swatches { display: inline-flex; gap: 3px; }
