@@ -72,7 +72,6 @@ export default function MarketPanel({
               <div className="skill-desc">{item.description}</div>
               <div className="skill-file hint">
                 {item.author} · v{item.version} · {item.license}
-                {item.requires.length ? ` · 依赖 ${item.requires.join("、")}` : ""}
                 {item.installed_error ? <span className="error">　无法使用：{item.installed_error}</span> : null}
               </div>
               <button
