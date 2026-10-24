@@ -20,6 +20,7 @@ def test_pages_use_timestamp_and_id_and_reject_foreign_cursor():
                 db.add(
                     Run(
                         id=f"page_{i:03}",
+                        parent_run_id=f"page_{i - 1:03}" if i else None,
                         user_id=db.get(Conversation, conv["id"]).user_id,
                         conversation_id=conv["id"],
                         prompt=str(i),
@@ -28,6 +29,7 @@ def test_pages_use_timestamp_and_id_and_reject_foreign_cursor():
                         created_at=datetime(2026, 1, 1, tzinfo=UTC),
                     )
                 )
+            db.get(Conversation, conv["id"]).active_run_id = "page_044"
             db.commit()
         url = f"/v1/conversations/{conv['id']}"
         page = c.get(url, headers=AUTH).json()
@@ -97,6 +99,11 @@ def test_500_turn_first_page_is_bounded_and_fast():
                     for i in range(500)
                 ]
             )
+            db.flush()
+            turns = list(db.scalars(select(Run).where(Run.conversation_id == conv["id"]).order_by(Run.created_at, Run.id)))
+            for index, turn in enumerate(turns):
+                turn.parent_run_id = turns[index - 1].id if index else None
+            db.get(Conversation, conv["id"]).active_run_id = turns[-1].id
             db.commit()
             query = (
                 select(Run)

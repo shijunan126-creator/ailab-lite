@@ -212,8 +212,14 @@ def test_reconciliation_is_bounded_and_finds_recorded_total_drift(api):
         report = reconcile(db, batch_size=1, after_usage_id=row.id - 1)
         assert report["usage"][0]["call_id"] == body["call_id"] and len(report["usage"]) == 1
         # Keyset scanning finds the corrupted total, even when no suspect usage row is in that batch.
-        report = reconcile(db, batch_size=1000)
-        assert any(r["run_id"] == run.id for r in report["run_mismatches"])
+        cursor, found = "", False
+        for _ in range(100):
+            report = reconcile(db, batch_size=1000, after_run_id=cursor)
+            found |= any(r["run_id"] == run.id for r in report["run_mismatches"])
+            cursor = report["next_run_id"]
+            if found or cursor is None:
+                break
+        assert found
     with pytest.raises(ValueError):
         reconcile(None, 1001)
 

@@ -30,7 +30,7 @@ def snapshot(tmp_path):
     with Session(engine) as db:
         db.add(User(id="u", email="backup@example.test"))
         db.flush()
-        db.add(Conversation(id="c", user_id="u", title="recoverable conversation"))
+        db.add(Conversation(id="c", user_id="u", title="recoverable conversation", active_run_id="r"))
         db.flush()
         db.add(Run(id="r", user_id="u", conversation_id="c", prompt="hello", summary="restored answer", status="succeeded"))
         db.add(
