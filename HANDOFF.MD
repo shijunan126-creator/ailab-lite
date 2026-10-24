@@ -451,3 +451,4 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - `.potx`也必须走ZIP大小/压缩比检查。模板状态 failed 与扫描 rejected 由meta区分；FileObject仍沿用原扫描状态枚举。
 - 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。
 - 数据迁移若需补outbox，topic/deadline须取有效Settings，不能只读os.environ：生产自定义队列可能来自env_file，否则迁移任务会发到无人消费的默认队列。0028双库回归锁定自定义topic。
+- 测试服务必须核对进程归属，不能只看daemonize退出码或端口可连。macOS可能同时存在wildcard与127.0.0.1特定绑定的Redis监听；启动前检查端口独占，启动后核对pidfile与Redis INFO的process_id、验证空DB，清理时只关闭自己持有的进程。本轮最终重验改用独占26379，原16379非本任务进程保持不动。

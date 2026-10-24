@@ -36,13 +36,13 @@ PY=/Users/michael/Developer/ailab-lite/platform/.venv/bin/python
 /Users/michael/Developer/ailab-lite/platform/.venv/bin/ruff format --check .
 # SQLite 全量：1113 passed, 118 skipped，0 failed/error；148.17s。
 PYTHONPATH=. "$PY" -m pytest -o addopts='' tests -q --tb=short
-# 临时 PostgreSQL16 + Redis 全量：1198 passed, 33 skipped，0 failed/error；192.57s。
-PYTHONPATH=. AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/15 \
+# 临时 PostgreSQL16 + Redis 全量：1198 passed, 33 skipped，0 failed/error；独占26379最终188.21s。
+PYTHONPATH=. AILAB_TEST_REDIS_URL=redis://127.0.0.1:26379/15 \
  AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_test \
  AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:15432/ailab_migrations \
  "$PY" -m pytest -o addopts='' tests -q --tb=short
-# 相关五服务E2E：1 passed，0 failed/skipped，19.50s。
-PYTHONPATH=. AILAB_E2E=1 AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/14 \
+# 相关五服务E2E：1 passed，0 failed/skipped，18.76s。
+PYTHONPATH=. AILAB_E2E=1 AILAB_TEST_REDIS_URL=redis://127.0.0.1:26379/14 \
  AILAB_E2E_BASE_PORT=18480 AILAB_E2E_PORTAL_PORT=13400 \
  AILAB_E2E_PORTAL_DIR=/Users/michael/Developer/ailab-lite/platform/portal \
  AILAB_E2E_LOG_DIR=/tmp/ailab-ppt-e2e-logs \
@@ -65,6 +65,6 @@ PYTHONPATH=. AILAB_E2E=1 AILAB_TEST_REDIS_URL=redis://127.0.0.1:16379/14 \
 
 ## 清理与部署移交
 
-- PostgreSQL/Redis为本次initdb/启动的专用临时服务，绑定127.0.0.1:15432/16379，未连接开发者数据库；已确认pg_ctl/redis shutdown完成，15432/16379无监听。E2E的五个子服务已退出，18480–18483/13400无监听。
+- PostgreSQL/Redis为本次initdb/启动的专用临时服务，最终使用独占127.0.0.1:15432/26379，未连接开发者数据库；启动前lsof无监听，Redis pidfile与INFO process_id一致且新DBSIZE=0。首轮16379存在另一个wildcard非本任务Redis监听，本任务特定绑定实例日志证实已自行退出，原进程未被操作；为消除端口歧义，在26379重新完整验证。最终按pidfile/INFO核准归属后关闭，15432/26379无监听。E2E的五个子服务已退出，18480–18483/13400无监听。
 - 父任务集成并复核后才能另行授权部署：备份→升级0028→发布应用→**重建sbx-office镜像及技能层**→等待迁移模板ready→真实模板/无模板/品牌/续跑验收。此分支未推送、无PR、未合并、未部署。
 - 残余风险：联系图保真度、软删除字节长期保留、资料库one-off过期、迁移扫描等待窗口、真实Office/安全组件组合和生产规模性能；均不可由本地mock或短样本替代验收。
