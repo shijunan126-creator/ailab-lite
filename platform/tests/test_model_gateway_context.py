@@ -43,6 +43,9 @@ async def upstream(kind, seen):
                 )
                 await writer.drain()
                 return
+            if kind == "reasoning" and seen[-1][1].get("thinking") != {"type": "disabled"}:
+                await reader.read()
+                return
             if kind == "slow":
                 await reader.read()
                 return
@@ -53,7 +56,7 @@ async def upstream(kind, seen):
             )
             chunk = {"model": "actual-" + kind, "choices": [{"delta": delta}]}
             writer.write(("data: " + json.dumps(chunk) + "\n\n").encode())
-            if kind in {"ok", "title"}:
+            if kind in {"ok", "title", "reasoning"}:
                 writer.write(
                     b'data: {"choices":[{"delta":{},"finish_reason":"stop"}],'
                     b'"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
@@ -309,6 +312,7 @@ def test_context_api_keyset_and_summary_compare_and_set():
                 db.add(
                     Run(
                         id=f"ctx-{run.id}-{n:03}",
+                        parent_run_id=f"ctx-{run.id}-{n - 1:03}" if n else None,
                         conversation_id=run.conversation_id,
                         user_id=run.user_id,
                         prompt=f"history-{n}",
@@ -318,6 +322,7 @@ def test_context_api_keyset_and_summary_compare_and_set():
                         created_at=run.created_at - timedelta(seconds=201 - n),
                     )
                 )
+            run.parent_run_id = f"ctx-{run.id}-199"
             db.commit()
         bootstrap = c.get(f"/internal/runs/{current['id']}/model-input", headers=SERVICE).json()
         assert bootstrap["prompt"] == "latest" and bootstrap["history"] == []
@@ -333,12 +338,12 @@ def test_context_api_keyset_and_summary_compare_and_set():
         owner = attempt_headers(c, current["id"])
         body = {"expected_through_run_id": None, "through_run_id": first["history"][-1]["id"], "summary": "important decisions"}
         assert c.put(summary_url, headers=owner, json=body).status_code == 200
-        assert c.put(summary_url, headers=owner, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 422
         next_page = c.get(url, headers=SERVICE).json()
         assert next_page["summary"] == "important decisions"
         assert next_page["history"] == second["history"]
         body.update(expected_through_run_id=body["through_run_id"], through_run_id=current["id"])
-        assert c.put(summary_url, headers=owner, json=body).status_code == 409
+        assert c.put(summary_url, headers=owner, json=body).status_code == 422
         assert c.get(url, headers=AUTH).status_code == 403
 
 
@@ -358,16 +363,15 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
 
         async def settle_usage(self, payload):
             result = await super().settle_usage(payload)
-            if title_result == "settlement" and len(self.settlements) == 2:
+            if title_result == "settlement" and self.reservations[payload["call_id"]]["max_output_tokens"] == 2048:
                 raise RuntimeError("settlement retries exhausted")
             return result
 
     class Model(LLMClient):
-        count = 0
-
         async def chat(self, messages, tools, model, user_id=None):
-            self.count += 1
-            if self.count == 1:
+            is_title = "会话标题" in messages[0]["content"]
+            if not is_title:
+                await asyncio.sleep(0.03)  # title completes while answer is in flight
                 return LLMResponse(content="这里是确认后的回答。", usage={"prompt_tokens": 5, "completion_tokens": 3})
             if title_result == "error":
                 raise LLMError("title unavailable")
@@ -377,10 +381,8 @@ def test_optional_title_keeps_successful_answer_and_plain_text(monkeypatch, titl
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=Model()).process("run_1", attempt_id="att_1"))
     status, result = platform.statuses[-1]
     assert status == "succeeded" and result["summary"] == "这里是确认后的回答。"
-    assert result["result"].get("conversation_title") == (title_result if title_result == "城市更新汇报" else None)
     assert len(platform.reservations) == (1 if title_result == "quota" else 2)
     assert len(platform.reservations) == len(platform.settlements)
-    assert any(p["max_output_tokens"] == 2048 for p in platform.reservations.values()) if title_result != "quota" else True
     assert all(payload["step"] != -2 for name, payload in platform.events if name in {"agent.delta", "agent.thinking"})
 
 
@@ -407,7 +409,7 @@ def test_title_uses_real_ledger_and_bounded_model_request(monkeypatch):
             assert title == "城市更新汇报"
             assert len(seen) == 2 and seen[1][1]["max_tokens"] == 2048
             title_input = json.loads(seen[1][1]["messages"][1]["content"])
-            assert len(title_input["question"]) == len(title_input["answer"]) == 1000
+            assert len(title_input["question"]) == 1000 and "answer" not in title_input
             with SessionLocal() as db:
                 rows = list(db.scalars(select(ModelUsage).where(ModelUsage.run_id == run["id"])))
                 assert len(rows) == 2 and len({r.call_id for r in rows}) == 2
@@ -441,3 +443,24 @@ def test_settlement_failure_stops_fallback(monkeypatch):
             assert len(first_seen) == 1 and not second_seen
 
     asyncio.run(exercise())
+
+
+def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
+    from ailab_platform.model_transport import ModelTransport
+    from tests.test_agent_loop import FakePlatform
+
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.5)
+
+    async def scenario():
+        seen = []
+        async with upstream("reasoning", seen) as address:
+            model = ModelTransport(address, disable_reasoning_for_quiet=True)
+            platform = FakePlatform()
+            run = {"model": "m", "prompt": "question", "needs_conversation_title": True, "_attempt_id": "a"}
+            assert await AgentLoop(platform=platform, llm=model)._conversation_title("r", run) == "hello"
+            assert seen[0][1]["thinking"] == {"type": "disabled"}
+            assert len(platform.reservations) == len(platform.settlements) == 1
+            assert next(iter(platform.reservations.values()))["quiet"] is True
+            assert "thinking" not in model._request([], [], "m", None, True)[0]
+
+    asyncio.run(scenario())

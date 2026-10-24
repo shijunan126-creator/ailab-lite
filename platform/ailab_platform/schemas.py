@@ -75,7 +75,18 @@ class RunCreate(PromptRequest):
     skill: str | None = Field(default=None, max_length=40)  # a skill the user picked (implies work)
 
 
+class RunVersions(BaseModel):
+    index: int
+    count: int
+    ids: list[str]
+
+
 class RunOut(ORMModel):
+    parent_run_id: str | None = None
+    edited_from: str | None = None
+    versions: RunVersions | None = None
+    retry_of: str | None = None
+    superseded_by_run_id: str | None = None
     id: str
     user_id: str
     conversation_id: str | None = None
@@ -102,8 +113,10 @@ class RunDetail(RunOut):
 
 
 class InternalRunDetail(RunDetail):
+    project_library: list[dict] = Field(default_factory=list)
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 
+    context_settings: dict = Field(default_factory=dict)
     needs_conversation_title: bool = False
     history: list[dict] = Field(default_factory=list)
     workspace_restore_key: str | None = None
@@ -138,6 +151,7 @@ class ConversationCreate(BaseModel):
 
 
 class ConversationPatch(BaseModel):
+    pinned: bool | None = None
     title: str = Field(default=None, min_length=1, max_length=200)
     project_id: str | None = None
 
@@ -145,6 +159,8 @@ class ConversationPatch(BaseModel):
     def require_changes(self):
         if "title" in self.model_fields_set and (self.title is None or not self.title.strip()):
             raise ValueError("title must not be blank")
+        if "pinned" in self.model_fields_set and self.pinned is None:
+            raise ValueError("pinned must be a boolean")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self
@@ -158,6 +174,9 @@ class MessageCreate(PromptRequest):
 
 
 class ConversationOut(UTCModel):
+    active_run_id: str | None = None
+    pinned_at: datetime | None = None
+    forked_from: dict | None = None
     id: str
     project_id: str | None
     title: str
@@ -167,7 +186,24 @@ class ConversationOut(UTCModel):
     last_status: str | None = None
 
 
+class ConversationContext(BaseModel):
+    used_tokens: int | None = None
+    model: str | None = None
+    compact_at_tokens: int | None = None
+
+
+class ConversationActive(BaseModel):
+    run_id: str = Field(min_length=1, max_length=40)
+
+
+class RunEdit(PromptRequest):
+    file_ids: list[str] | None = Field(default=None, max_length=50)
+    model: str | None = Field(default=None, max_length=120)
+    mode: Literal["chat", "work"] | None = None
+
+
 class ConversationDetail(ConversationOut):
+    context: ConversationContext = Field(default_factory=ConversationContext)
     has_more: bool = False
     turns: list[RunDetail] = Field(default_factory=list)
     previews: list[dict] = Field(default_factory=list)
@@ -210,6 +246,8 @@ class LibraryFilePatch(BaseModel):
 
     @model_validator(mode="after")
     def require_changes(self):
+        if "pinned" in self.model_fields_set and self.pinned is None:
+            raise ValueError("pinned must be a boolean")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self
@@ -321,3 +359,38 @@ class ArtifactIn(BaseModel):
     size: int
     sha256: str
     role: str = "output"
+
+
+class ConversationFork(BaseModel):
+    run_id: str = Field(max_length=40)
+    mode: Literal["chat", "work"]
+
+
+class RunRetry(BaseModel):
+    model: str | None = Field(default=None, max_length=120)
+    mode: Literal["chat", "work"] | None = None
+
+
+class ContextSettings(BaseModel):
+    auto_compact: bool = False
+    threshold_ratio: float = Field(default=0.5, ge=0.2, le=0.95)
+
+
+class ConversationTitle(BaseModel):
+    title: str = Field(min_length=1, max_length=4096)
+
+
+class ConversationSearchItem(UTCModel):
+    conversation_id: str
+    title: str
+    project_id: str | None
+    run_id: str | None
+    match: Literal["title", "prompt", "answer"]
+    snippet: str
+    highlight: list[tuple[int, int]]
+    updated_at: datetime
+
+
+class ConversationSearchResult(BaseModel):
+    items: list[ConversationSearchItem]
+    next_cursor: str | None

@@ -39,10 +39,10 @@ function usePreview(file: FileItem): FilePreview | null {
   return preview;
 }
 
-function PageScroll({ file, preview }: { file: FileItem; preview: FilePreview }) {
+function PageScroll({ file, preview, page }: { file: FileItem; preview: FilePreview; page?: number }) {
   const pages = preview.pages || [];
   const total = preview.page_count || pages.length;
-  return <DocumentPages pages={pages} src={(name) => filePreviewUrl(file.id, name)} documentKey={file.id} total={total}>
+  return <DocumentPages pages={pages} src={(name) => filePreviewUrl(file.id, name)} documentKey={file.id} total={total} initialPage={page}>
     {total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
       <IconDownload size={15} /> 下载查看全部 {total} 页
     </a> : null}
@@ -122,14 +122,14 @@ function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
   );
 }
 
-function Body({ file }: { file: FileItem }) {
+function Body({ file, page }: { file: FileItem; page?: number }) {
   const preview = usePreview(file);
   if (file.status !== "ready") return <Unavailable file={file} />;
   if (!preview || preview.status === "pending") return <Waiting />;
   if (preview.status !== "ready") return <Unavailable file={file} reason={preview.status === "failed" ? preview.reason : undefined} />;
   switch (preview.kind) {
     case "pages":
-      return <PageScroll file={file} preview={preview} />;
+      return <PageScroll file={file} preview={preview} page={page} />;
     case "sheets":
       return (
         <div className="viewer-sheet">
@@ -202,9 +202,11 @@ export default function FileViewer({
   onClose,
   onChanged,
   chatHref,
+  page,
 }: {
   files: FileItem[];
   file: FileItem;
+  page?: number; // open a document at this page (a citation points there)
   onOpen: (file: FileItem) => void;
   onClose: () => void;
   onChanged?: (head: FileItem) => void; // an old version was restored: the list has a new head
@@ -282,7 +284,7 @@ export default function FileViewer({
         </button>
       </header>
       <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <Body key={shown.id} file={shown} />
+        <Body key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
         {prev ? (
           <button className="viewer-nav prev" onClick={() => onOpen(prev)} aria-label="上一个文件">
             <IconChevronRight size={22} />
@@ -300,21 +302,21 @@ export default function FileViewer({
 }
 
 /** Opens the viewer from places that hold only file ids (a turn's attachments, its artifacts). */
-export function useFileViewer(): { open: (ids: string[], id: string) => void; viewer: React.ReactNode } {
-  const [state, setState] = useState<{ files: FileItem[]; file: FileItem } | null>(null);
+export function useFileViewer(): { open: (ids: string[], id: string, page?: number) => void; viewer: React.ReactNode } {
+  const [state, setState] = useState<{ files: FileItem[]; file: FileItem; page?: number } | null>(null);
   const asked = useRef(0);
-  const open = useCallback((ids: string[], id: string) => {
+  const open = useCallback((ids: string[], id: string, page?: number) => {
     const ticket = ++asked.current; // a later click wins over a slower earlier lookup
     filesByIds(ids)
       .then((files) => {
         const file = files.find((f) => f.id === id);
-        if (ticket === asked.current && file) setState({ files, file });
+        if (ticket === asked.current && file) setState({ files, file, page });
       })
       .catch(() => undefined);
   }, []);
   const close = useCallback(() => setState(null), []);
   const viewer = state ? (
-    <FileViewer files={state.files} file={state.file} onOpen={(file) => setState((s) => (s ? { ...s, file } : s))} onClose={close} />
+    <FileViewer files={state.files} file={state.file} page={state.page} onOpen={(file) => setState((s) => (s ? { ...s, file, page: undefined } : s))} onClose={close} />
   ) : null;
   return { open, viewer };
 }

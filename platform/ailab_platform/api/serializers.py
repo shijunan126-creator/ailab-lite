@@ -60,6 +60,10 @@ def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
 def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
     out = {
         "id": run.id,
+        "retry_of": run.retry_of,
+        "edited_from": run.edited_from,
+        "parent_run_id": run.parent_run_id,
+        "superseded_by_run_id": run.superseded_by_run_id,
         "user_id": run.user_id,
         "conversation_id": run.conversation_id,
         "title": run.title,
@@ -89,7 +93,7 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
             for f in db.scalars(select(FileObject).where(FileObject.id.in_(run.input_file_ids or [])))
         ]
         usage = db.execute(select(ModelUsage).where(ModelUsage.run_id == run.id)).scalars().all()
-        out["usage"] = {
+        out["usage"] = (run.result or {}).get("forked_usage") or {
             "prompt_tokens": sum(u.prompt_tokens for u in usage),
             "completion_tokens": sum(u.completion_tokens for u in usage),
             "cached_tokens": sum(u.cached_tokens for u in usage),

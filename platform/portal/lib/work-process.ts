@@ -1,6 +1,15 @@
 import type { EventItem, Run } from "./api";
 
-export type Step = { name: string; label: string; detail?: string; status: "running" | "ok" | "failed" | "note"; output?: string; modelStep?: number };
+export type Source = { title: string; url: string; site: string };
+export type Step = {
+  name: string;
+  label: string;
+  detail?: string;
+  status: "running" | "ok" | "failed" | "note";
+  output?: string;
+  modelStep?: number;
+  sources?: Source[];
+};
 export type PlanStep = { id: string; title: string; status: "pending" | "running" | "done" | "skipped" | "failed" };
 export type Item =
   | { kind: "plan"; steps: PlanStep[] }
@@ -39,6 +48,16 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "安装依赖", detail: (Array.isArray(args?.packages) ? args.packages : []).join(" ") };
     case "save_skill":
       return { label: args?.mode === "update" ? "更新个人技能" : "保存个人技能", detail: args?.name };
+    case "search_library":
+      return { label: "搜索资料库", detail: args?.query };
+    case "read_library_file":
+      return { label: "阅读资料", detail: args?.filename || args?.file_id };
+    case "copy_library_file":
+      return { label: "复制到工作区", detail: args?.path || args?.filename || args?.file_id };
+    case "memory":
+      return { label: "更新记忆" };
+    case "update_plan":
+      return { label: "更新计划" };
     default:
       return { label: name };
   }
@@ -52,31 +71,20 @@ function lastSteps(items: Item[]): Step[] {
   return group.steps;
 }
 
-/** Fold one event of a run into its display items (text segments interleaved with groups of steps). */
+/** Fold one event of a run into its display items: the model's reasoning, its text, and groups of tool steps, in order. */
 export function reduceEvent(items: Item[], event: EventItem): Item[] {
   const p = event.payload || {};
   const next = items.map((it) => (it.kind === "steps" ? { kind: "steps" as const, steps: it.steps.map((s) => ({ ...s })) } : { ...it }));
   // anything else the model does means it has stopped thinking
-  if (event.type !== "agent.thinking")
-    for (const it of next) {
-      if (it.kind === "thinking") it.done = true;
-      if (it.kind === "steps") for (const s of it.steps) if (s.name === "thinking" && s.status === "running") s.status = "note";
-    }
+  if (event.type !== "agent.thinking") for (const it of next) if (it.kind === "thinking") it.done = true;
   const note = (label: string, detail?: string, status: Step["status"] = "note") => lastSteps(next).push({ name: event.type, label, detail, status });
   switch (event.type) {
     case "agent.thinking": {
       const last = next[next.length - 1];
-      if (last && last.kind === "steps") {
-        // thinking between tool calls belongs to the work: one entry in the steps, not a block of its own
-        const prev = last.steps[last.steps.length - 1];
-        if (prev && prev.name === "thinking" && prev.status === "running") prev.detail = "正在梳理任务";
-        else last.steps.push({ name: "thinking", label: "思考", status: "running" });
-        last.steps[last.steps.length - 1].detail = `${Math.max(1, Math.round(p.seconds || 0))} 秒`;
-        break;
-      }
-      if (last && last.kind === "thinking" && last.step === p.step) {
+      if (last && last.kind === "thinking" && last.step === p.step && !last.done) {
+        last.text += p.text || "";
         last.seconds = p.seconds ?? last.seconds;
-      } else next.push({ kind: "thinking", step: p.step, text: "", seconds: p.seconds || 0, done: false });
+      } else next.push({ kind: "thinking", step: p.step, text: p.text || "", seconds: p.seconds || 0, done: false });
       break;
     }
     case "agent.delta": {
@@ -104,6 +112,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
         if (step) {
           step.status = p.ok ? "ok" : "failed";
           step.output = [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500);
+          if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
           break;
         }
       }
@@ -132,7 +141,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       note("已换用备用模型", [p.from_label || p.from, p.to_label || p.to].filter(Boolean).join(" → ") || undefined);
       break;
     case "agent.context_compacted":
-      note("已整理较早的对话", p.turns ? `${p.turns} 轮` : undefined);
+      note("已压缩较早的对话", p.turns ? `${p.turns} 轮` : undefined);
       break;
     case "agent.skill":
       note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
@@ -141,11 +150,8 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       for (const f of p.files || [])
         note("已读取附件", `${f.filename}（${f.chars} 字${f.truncated ? "，内容较长，只读了开头部分" : ""}）`, "ok");
       break;
-    case "agent.sandbox":
-      note("沙箱已就绪");
-      break;
     case "agent.waiting_sandbox":
-      note("等待空闲沙箱…");
+      note("排队中，马上开始…");
       break;
     case "preview.updated":
       note("预览已更新", p.filename, "ok");
@@ -157,7 +163,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       note("提示", p.message, "failed");
       break;
     case "agent.autodeliver":
-      note("自动归档", p.filename);
+      note("已存入资料库", p.filename);
       break;
     default:
       break;
@@ -189,5 +195,64 @@ export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" |
     case "failed": return duration ? `执行失败 · 工作总时长：${duration}` : "执行失败";
     case "canceled": return duration ? `已取消 · 工作总时长：${duration}` : "已取消";
     default: return duration ? `工作总时长：${duration}` : "工作已完成";
+  }
+}
+
+/** A turn's display: the process (reasoning, tools, narration between them) and the answer, which is the text after the model's
+ * last action. While the run streams, that text is shown as the answer at once; if a tool call follows, it becomes narration.
+ * Notes the platform adds afterwards (a preview, a file saved) stay in the process without pulling the answer back in. */
+export function splitTurn(items: Item[] | null | undefined): { process: Item[]; answer: string } {
+  const list = items || [];
+  const acts = (it: Item) => it.kind !== "text" && (it.kind !== "steps" || it.steps.some((s) => s.modelStep !== undefined));
+  let cut = list.length;
+  while (cut > 0 && !acts(list[cut - 1])) cut--;
+  const tail = list.slice(cut);
+  const answer = tail.map((it) => (it.kind === "text" ? it.text : "")).filter((t) => t.trim()).join("\n\n").trim();
+  return { process: [...list.slice(0, cut), ...tail.filter((it) => it.kind !== "text")], answer };
+}
+
+export type Thought = { title: string; body: string };
+
+/** The outline of one reasoning block. Models that summarise their thinking start each part with a bold line ("**Checking the data**");
+ * those lines become the outline. Without them the block is one part named by its first sentence. */
+export function thoughtOutline(text: string): Thought[] {
+  const parts: Thought[] = [];
+  let current: Thought | null = null;
+  for (const line of text.replace(/\r\n/g, "\n").split("\n")) {
+    const heading = /^\s*\*\*([^*]{1,80})\*\*\s*$/.exec(line) || /^\s*#{1,4}\s+(.{1,80})$/.exec(line);
+    if (heading) {
+      current = { title: heading[1].trim(), body: "" };
+      parts.push(current);
+    } else if (current) current.body += (current.body ? "\n" : "") + line;
+    else if (line.trim()) {
+      current = { title: "", body: line };
+      parts.push(current);
+    }
+  }
+  for (const part of parts) {
+    part.body = part.body.trim();
+    if (!part.title) {
+      const first = /^[^。！？.!?\n]{1,60}[。！？.!?]?/.exec(part.body)?.[0] || part.body.slice(0, 40);
+      // named by its first sentence: opening it shows the rest, not the same sentence again
+      part.title = first.replace(/[。.!！?？]$/, "");
+      part.body = part.body.slice(first.length).trim();
+    }
+  }
+  return parts.filter((part) => part.title || part.body);
+}
+
+/** Every web page the turn read or found, once each, in the order they came up. */
+export function turnSources(items: Item[] | null | undefined): Source[] {
+  const seen = new Map<string, Source>();
+  for (const it of items || []) if (it.kind === "steps") for (const s of it.steps) for (const src of s.sources || []) if (!seen.has(src.url)) seen.set(src.url, src);
+  return [...seen.values()];
+}
+
+/** example.com for https://www.example.com/a/b */
+export function siteOf(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
   }
 }

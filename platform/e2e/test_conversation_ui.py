@@ -43,9 +43,11 @@ with SessionLocal() as db:
     db.add(conv); db.flush()
     runs=[]
     for i in range(COUNT):
-        run=Run(user_id=user.id, conversation_id=conv.id, prompt=f"历史消息 {i:03}", model="test-fast", status="succeeded",
+        run=Run(user_id=user.id, conversation_id=conv.id, parent_run_id=runs[-1] if runs else None,
+            prompt=f"历史消息 {i:03}", model="test-fast", status="succeeded",
             summary=(f"第 {i} 轮分析。"+"这是一段用于保持阅读位置的内容。"*30), created_at=utcnow()-timedelta(days=30)+timedelta(seconds=i))
         db.add(run); db.flush(); runs.append(run.id)
+    conv.active_run_id = run.id
     attempt = None
     if ACTIVE:
         run.status="running"
@@ -87,7 +89,7 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
     login(page, stack, path="/c/" + conv["id"])
     page.wait_for_selector(".turn")
     emit(stack, conv["run"], "first.xlsx", 1)
-    page.wait_for_selector("button:has-text('打开预览（1）')")
+    page.get_by_role("button", name="打开预览（1）").wait_for()
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（1）").click()
     page.wait_for_selector(".sheet-grid td")
@@ -104,7 +106,7 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
     page.get_by_role("button", name="关闭预览").click()
     page.wait_for_selector(".preview-pane", state="detached")
     emit(stack, conv["run"], "third.xlsx", 1)
-    page.wait_for_selector("button:has-text('打开预览（3）')")
+    page.get_by_role("button", name="打开预览（3）").wait_for()
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（3）").click()
     assert page.locator(".preview-tab.on").inner_text() == "first.xlsx"

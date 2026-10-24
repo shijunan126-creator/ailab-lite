@@ -70,7 +70,7 @@ def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     The TTL is enforced on the object store itself (S3 LastModified / local mtime),
     so a missing or stale database flag cannot keep a snapshot alive forever.
     """
-    if settings.workspace_ttl_days <= 0:  # 0 = keep snapshots (until a newer turn replaces them)
+    if settings.workspace_ttl_days <= 0:  # 0 = keep per-turn snapshots until conversation GC
         return 0
     now = now or datetime.now(UTC)
     cutoff = now - timedelta(days=settings.workspace_ttl_days)

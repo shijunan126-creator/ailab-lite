@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from ailab_platform.migrate import alembic_config, run_migrations
 from ailab_platform.models import ModelUsage, UsageReservation
-from tests.test_migrations import _downgrade_to, _seed_user_and_run, _upgrade_to
+from tests.test_migrations import _downgrade_to, _seed_user_and_run
 from tests.test_migrations import engine as engine
 
 
@@ -46,7 +46,7 @@ def test_file_ledger_roundtrip_preserves_owner_amount_and_subject(engine):
     _downgrade_to(engine, parent)
     with engine.connect() as conn:
         assert conn.execute(text("SELECT run_id, weighted_amount FROM model_usage WHERE call_id='ocr-test'")).one() == ("f1", 123000)
-    _upgrade_to(engine, "0018")
+    run_migrations(engine)  # ORM describes head, not the intermediate 0018 schema.
     with Session(engine) as db:
         row = db.query(ModelUsage).filter_by(call_id="ocr-test").one()
         assert (row.run_id, row.file_id, row.subject, row.user_id, row.weighted_amount) == (None, "f1", "file_job", "u1", 123000)

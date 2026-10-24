@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { DragEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -43,8 +44,8 @@ function purgeText(file: FileItem): string {
 }
 
 function statusText(file: FileItem): string | null {
-  if (file.status === "rejected") return "已拒绝";
-  if (file.status === "pending") return file.meta?.processing === "error" ? "扫描出错" : "扫描中";
+  if (file.status === "rejected") return "未通过检查";
+  if (file.status === "pending") return file.meta?.processing === "error" ? "检查出错" : "检查中";
   return null;
 }
 
@@ -384,11 +385,11 @@ function Library() {
 
       {projectId ? (
         <div className="library-crumb">
-          <a href={`/files?c=${tab}`}>{TABS.find(([key]) => key === tab)?.[1] || "资料库"}</a>
+          <Link href={`/files?c=${tab}`}>{TABS.find(([key]) => key === tab)?.[1] || "资料库"}</Link>
           <IconChevronRight size={14} />
           <span>{project?.name || files[0]?.meta?.trashed_project_name || "已删除项目"}</span>
           <span className="spacer" />
-          {project ? <a href={`/p/${projectId}`}>打开项目</a> : null}
+          {project ? <Link href={`/p/${projectId}`}>打开项目</Link> : null}
         </div>
       ) : null}
 
@@ -397,11 +398,11 @@ function Library() {
       {showsFiles && loaded && !projectId && folders.length > 0 ? (
         <div className="project-grid library-folders">
           {folders.map(folder => (
-            <a className="project-card" key={folder.id} href={`/files?c=${tab}&project=${folder.id}`}>
+            <Link className="project-card" key={folder.id} href={`/files?c=${tab}&project=${folder.id}`}>
               <span className="project-mark"><IconFolder size={22} /></span>
               <span className="project-card-name" title={folder.name}>{folder.name}</span>
               <span className="meta">{folder.files} 个文件</span>
-            </a>
+            </Link>
           ))}
         </div>
       ) : null}
@@ -409,7 +410,7 @@ function Library() {
       {!showsFiles ? (
         <div className="project-grid">
           {(projects || []).map((p: Project) => (
-            <a key={p.id} className="project-card" href={`/files?project=${p.id}`}>
+            <Link key={p.id} className="project-card" href={`/files?project=${p.id}`}>
               <span className="project-mark">
                 <IconFolder size={18} />
               </span>
@@ -417,7 +418,7 @@ function Library() {
               <span className="meta">
                 {p.files} 个文件 · {p.conversations} 个对话
               </span>
-            </a>
+            </Link>
           ))}
           {addingProject ? (
             <div className="project-card adding">
@@ -500,7 +501,7 @@ function Library() {
                         <div className="meta">
                           <span className="lib-mobile-meta">{formatBytes(f.size)} · {trash ? purgeText(f) : timeAgo(f.created_at)}</span>
                           {(f.versions || 0) > 1 ? <span>{f.versions} 个版本</span> : null}
-                          {f.meta?.skill ? <a className="meta-project" href="/skills">个人技能 · {f.meta.skill.title}</a> : null}
+                          {f.meta?.skill ? <Link className="meta-project" href="/skills">个人技能 · {f.meta.skill.title}</Link> : null}
                           {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
                         </div>
                       </div>

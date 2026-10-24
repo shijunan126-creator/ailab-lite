@@ -4,12 +4,13 @@ import test from 'node:test';
 import ts from 'typescript';
 const source = await readFile(new URL('../lib/work-process.ts', import.meta.url), 'utf8');
 const compiled = ts.transpile(source, {module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022});
-const {reduceEvent,workHeading} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {reduceEvent,workHeading,splitTurn,thoughtOutline,turnSources,siteOf} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 const event=(type,payload)=>({type,payload});
 
-test('public narrative, plan updates and tools retain their order without raw reasoning',()=>{
+test('reasoning, narrative, plan updates and tools retain their order; reasoning text streams into its block',()=>{
  let items=[];
- items=reduceEvent(items,event('agent.thinking',{step:0,text:'PRIVATE_REASONING',seconds:3}));
+ items=reduceEvent(items,event('agent.thinking',{step:0,text:'**检查环境**\n先看',seconds:1}));
+ items=reduceEvent(items,event('agent.thinking',{step:0,text:'看 Python 版本。',seconds:3}));
  items=reduceEvent(items,event('agent.message',{step:0,content:'先检查环境。'}));
  items=reduceEvent(items,event('plan.updated',{steps:[{id:'a',title:'检查环境',status:'running'}]}));
  items=reduceEvent(items,event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'python -V'}}));
@@ -18,10 +19,18 @@ test('public narrative, plan updates and tools retain their order without raw re
  assert.equal(JSON.stringify(items),before,'updates must not mutate earlier state');
  items=reduceEvent(changed,event('plan.updated',{steps:[{id:'a',title:'检查环境',status:'done'}]}));
  assert.deepEqual(items.map(i=>i.kind),['thinking','text','plan','steps','plan']);
+ assert.equal(items[0].text,'**检查环境**\n先看看 Python 版本。');
+ assert.equal(items[0].seconds,3);
+ assert.equal(items[0].done,true);
  assert.equal(items[2].steps[0].status,'running');
  assert.equal(items[4].steps[0].status,'done');
- assert.ok(!JSON.stringify(items).includes('PRIVATE_REASONING'));
  assert.equal(items[3].steps[0].status,'ok');
+});
+test('a new model step starts a new reasoning block',()=>{
+ let items=reduceEvent([],event('agent.thinking',{step:0,text:'a',seconds:1}));
+ items=reduceEvent(items,event('agent.tool_call',{step:0,name:'web_search',arguments:{query:'q'}}));
+ items=reduceEvent(items,event('agent.thinking',{step:1,text:'b',seconds:1}));
+ assert.deepEqual(items.filter(i=>i.kind==='thinking').map(i=>i.text),['a','b']);
 });
 test('late tool result cannot finish a later call with the same name',()=>{
  let items=reduceEvent([],event('agent.tool_call',{step:2,name:'exec',arguments:{}}));
@@ -55,4 +64,34 @@ test('network and skill tools read as their actions, with the source they used',
  assert.equal(label('download_url',{url:'https://x.test/a.png'}).label,'下载文件');
  assert.equal(label('save_skill',{name:'s',mode:'update'}).label,'更新个人技能');
  assert.equal(label('save_skill',{name:'s',mode:'create'}).label,'保存个人技能');
+});
+
+test('the answer is the text after the last action; trailing platform notes do not pull it into the process',()=>{
+ let items=reduceEvent([],event('agent.tool_call',{step:0,name:'web_search',arguments:{query:'q'}}));
+ items=reduceEvent(items,event('agent.tool_result',{step:0,name:'web_search',ok:true,sources:[{title:'A',url:'https://a.test/x',site:'a.test'},{title:'bad',url:'javascript:alert(1)'}]}));
+ items=reduceEvent(items,event('agent.delta',{step:1,text:'答案'}));
+ let split=splitTurn(items);
+ assert.equal(split.answer,'答案');
+ assert.deepEqual(split.process.map(i=>i.kind),['steps']);
+ items=reduceEvent(items,event('preview.updated',{filename:'a.pptx'}));
+ split=splitTurn(items);
+ assert.equal(split.answer,'答案');
+ assert.ok(!split.process.some(i=>i.kind==='text'));
+ assert.deepEqual(turnSources(items).map(s=>s.url),['https://a.test/x']);
+ // narration followed by another tool call belongs to the process
+ items=reduceEvent(items,event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'ls'}}));
+ split=splitTurn(items);
+ assert.equal(split.answer,'');
+ assert.ok(split.process.some(i=>i.kind==='text'));
+ assert.equal(splitTurn(null).answer,'');
+});
+test('reasoning outline: bold lines name the parts, else the first sentence',()=>{
+ assert.deepEqual(thoughtOutline('**读题**\n用户想要表格。\n\n**设计列**\n地区、月份。').map(p=>p.title),['读题','设计列']);
+ assert.equal(thoughtOutline('**读题**\n用户想要表格。')[0].body,'用户想要表格。');
+ const plain=thoughtOutline('用户问的是天气。我需要先搜索今天的预报，然后总结。');
+ assert.equal(plain.length,1);
+ assert.equal(plain[0].title,'用户问的是天气');
+ assert.equal(plain[0].body,'我需要先搜索今天的预报，然后总结。');
+ assert.deepEqual(thoughtOutline(''),[]);
+ assert.equal(siteOf('https://www.example.com/a'),'example.com');
 });

@@ -30,6 +30,7 @@ HTTP_REQUESTS = Counter("ailab_http_requests_total", "HTTP requests", ["service"
 HTTP_SECONDS = Histogram("ailab_http_request_seconds", "Time to first response byte", ["service", "route"], buckets=_FAST)
 
 RUNS = Counter("ailab_runs_total", "Runs that entered a status", ["status"])
+CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes and fallback causes", ["outcome", "reason"])
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)
 MODEL_TOKENS = Counter("ailab_model_tokens_total", "Model tokens as reported by the upstream", ["model", "kind"])
 QUOTA_REJECTIONS = Counter("ailab_quota_rejections_total", "Requests refused by a quota", ["kind"])
@@ -70,6 +71,9 @@ KNOWN_TOOLS = frozenset(
         "exec",
         "deliver_file",
         "finish",
+        "search_library",
+        "read_library_file",
+        "copy_library_file",
         "web_search",
         "read_url",
         "download_url",

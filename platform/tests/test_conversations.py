@@ -74,7 +74,7 @@ def test_a_conversation_collects_turns_and_gets_a_title() -> None:
         assert "history" not in public and "workspace_restore_key" not in public
 
 
-def test_the_newest_workspace_is_restored_and_older_ones_are_dropped() -> None:
+def test_the_newest_workspace_is_restored_and_older_ones_retained_for_forks() -> None:
     storage = get_storage()
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
@@ -87,7 +87,7 @@ def test_the_newest_workspace_is_restored_and_older_ones_are_dropped() -> None:
 
         storage.put_bytes(f"workspaces/{two['id']}.tgz", b"tar-2")
         _finish(c, two["id"], "ok", workspace_saved=True)
-        assert not storage.exists(f"workspaces/{one['id']}.tgz")
+        assert storage.exists(f"workspaces/{one['id']}.tgz")
         three = send("再加一列")
         assert c.get(f"/internal/runs/{three['id']}", headers=SERVICE).json()["workspace_restore_key"] == f"workspaces/{two['id']}.tgz"
 

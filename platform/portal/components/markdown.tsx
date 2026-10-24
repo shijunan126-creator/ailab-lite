@@ -1,10 +1,29 @@
 // A small Markdown renderer for model answers: headings, paragraphs, lists, quotes, code, tables, links,
 // bold / italic / inline code. It builds React elements (no HTML strings), so model output cannot inject markup.
 import { Fragment, ReactNode } from "react";
+import CopyButton from "./copy-button";
+import FileCite from "./file-cite";
+
+const BARE_URL = /https?:\/\/[^\s<>()[\]{}"'，。、；：！？（）《》「」]+[^\s<>()[\]{}"'，。、；：！？（）《》「」.,;:!?]/;
+
+/** example.com/docs/guide for a bare link: readable, still the whole address on hover. */
+function shortUrl(url: string): string {
+  try {
+    const u = new URL(url);
+    const path = u.pathname === "/" ? "" : decodeURIComponent(u.pathname).replace(/\/$/, "");
+    const short = u.hostname.replace(/^www\./, "") + path;
+    return short.length > 48 ? short.slice(0, 46) + "…" : short;
+  } catch {
+    return url;
+  }
+}
 
 function inline(text: string, key = "i"): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\((https?:\/\/[^)\s]+)\))/g;
+  const re = new RegExp(
+    String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
+    "g"
+  );
   let last = 0;
   let m: RegExpExecArray | null;
   let n = 0;
@@ -14,11 +33,24 @@ function inline(text: string, key = "i"): ReactNode[] {
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
     else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k)}</strong>);
     else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k)}</em>);
-    else if (m[4]) {
-      const label = m[4].slice(1, m[4].indexOf("]("));
+    else if (m[4] && m[5].startsWith("ailab-file://")) {
+      // a library file the answer quotes: its name and page, opening the file at that page
+      const label = m[4].slice(1, m[4].indexOf("](")).trim();
+      const cite = /^ailab-file:\/\/([A-Za-z0-9_-]+)(?:\?page=(\d+))?$/.exec(m[5]);
+      out.push(cite ? <FileCite key={k} fileId={cite[1]} page={cite[2] ? Number(cite[2]) : undefined} label={label} /> : label);
+    } else if (m[4]) {
+      const label = m[4].slice(1, m[4].indexOf("](")).trim();
+      // [1](url) is a citation: a small numbered mark, the page on hover
+      const cite = /^\[?\d{1,2}\]?$/.test(label);
       out.push(
-        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener">
-          {label}
+        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]}>
+          {cite ? label.replace(/[[\]]/g, "") : inline(label, k)}
+        </a>
+      );
+    } else if (m[6]) {
+      out.push(
+        <a key={k} href={m[6]} target="_blank" rel="noreferrer noopener" className="md-url" title={m[6]}>
+          {shortUrl(m[6])}
         </a>
       );
     }
@@ -32,12 +64,12 @@ function cells(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
   let key = 0;
-  const isBreak = (l: string) => /^(#{1,4}\s|```|>\s?|[-*+]\s|\d+[.)]\s|\|)/.test(l) || /^\s*(---|\*\*\*)\s*$/.test(l);
+  const isBreak = (l: string) => /^(#{1,4}\s|\s*```|>\s?|[-*+]\s|\d+[.)]\s|\|)/.test(l) || /^\s*(---|\*\*\*)\s*$/.test(l);
   while (i < lines.length) {
     const line = lines[i];
     const k = `b${key++}`;
@@ -45,15 +77,23 @@ export default function Markdown({ text }: { text: string }) {
       i++;
       continue;
     }
-    if (line.startsWith("```")) {
+    if (line.trimStart().startsWith("```")) {
+      const lang = line.trim().slice(3).trim().split(/\s/)[0];
       const body: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith("```")) body.push(lines[i++]);
+      while (i < lines.length && !lines[i].trimStart().startsWith("```")) body.push(lines[i++]);
       i++;
+      const code = body.join("\n");
       blocks.push(
-        <pre key={k} className="md-code">
-          <code>{body.join("\n")}</code>
-        </pre>
+        <div key={k} className="md-codeblock">
+          <div className="md-code-head">
+            <span>{lang || "代码"}</span>
+            <CopyButton text={code} label="复制代码" />
+          </div>
+          <pre className="md-code">
+            <code>{code}</code>
+          </pre>
+        </div>
       );
       continue;
     }
@@ -128,5 +168,5 @@ export default function Markdown({ text }: { text: string }) {
       </p>
     );
   }
-  return <div className="md">{blocks}</div>;
+  return <div className={`md ${streaming ? "streaming" : ""}`}>{blocks}</div>;
 }

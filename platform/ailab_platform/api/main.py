@@ -29,6 +29,7 @@ from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_internal import router as internal_router
+from .routes_library_tools import router as library_tools_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
 from .routes_ocr import router as ocr_router
@@ -36,6 +37,9 @@ from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
 from .routes_runs import router as runs_router
 from .routes_runtime import router as runtime_router
+from .routes_schedules import router as schedules_router
+from .routes_schedules import schedules_forever
+from .routes_search import router as search_router
 from .routes_skills import router as skills_router
 
 setup_logging("api")
@@ -72,7 +76,9 @@ async def lifespan(_: FastAPI):
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
+    schedules = asyncio.create_task(schedules_forever(), name="schedules")
     yield
+    schedules.cancel()
     lifecycle_cleanup.cancel()
     preview_dispatch.cancel()
     reaper.cancel()
@@ -114,6 +120,7 @@ app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)
 app.include_router(memory_router)
+app.include_router(library_tools_router)
 app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)
@@ -123,6 +130,7 @@ app.include_router(vision_router)
 app.include_router(model_context_router)
 app.include_router(jobs_router)
 app.include_router(runtime_router)
+app.include_router(schedules_router)
 
 
 @app.get("/healthz")
@@ -179,3 +187,6 @@ def root() -> dict:
 @app.get("/metrics", include_in_schema=False, dependencies=[Depends(metrics_auth)])
 def metrics_endpoint() -> Response:
     return metrics_response()
+
+
+app.include_router(search_router)

@@ -1,9 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
-import { IconDownload, IconFile } from "../icons";
+import { siteOf, splitTurn, turnSources } from "../../lib/work-process";
+import CopyButton from "../copy-button";
+import { IconBranch, IconChevronRight, IconDownload, IconFile, IconPencil, IconRetry } from "../icons";
+import { ExtTile } from "../library/file-tile";
 import Markdown from "../markdown";
 import { useFileViewer } from "../preview/file-viewer";
 
@@ -13,6 +18,8 @@ import { reduceEvent, type Item } from "../../lib/work-process";
 import WorkProcess from "./work-process";
 const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf)$/i;
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
+
+export type ForkMode = "chat" | "work";
 
 /** The agent stopped to ask. Answered here or from the composer; the run continues on its own afterwards. */
 function Ask({ item, live, onAnswer }: { item: Extract<Item, { kind: "ask" }>; live: boolean; onAnswer: (value: string) => Promise<void> }) {
@@ -68,35 +75,116 @@ function Ask({ item, live, onAnswer }: { item: Extract<Item, { kind: "ask" }>; l
   );
 }
 
+const MENU_W = 184;
+
+/** Continue from this turn in a new conversation. A conversation that already worked in files can only go on working. */
+function ForkButton({ modes, onFork }: { modes: ForkMode[]; onFork: (mode: ForkMode) => Promise<void> }) {
+  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  const menu = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!at) return;
+    const close = (e: Event) => {
+      if (e.type === "mousedown" && (menu.current?.contains(e.target as Node) || button.current?.contains(e.target as Node))) return;
+      setAt(null);
+    };
+    const key = (e: KeyboardEvent) => e.key === "Escape" && setAt(null);
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", key);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [at]);
+  async function fork(mode: ForkMode) {
+    setAt(null);
+    setBusy(true);
+    try {
+      await onFork(mode);
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <button ref={button} type="button" className={`icon-btn act ${at ? "open" : ""}`} aria-label="从这里分支" title="从这里分支" aria-expanded={!!at} disabled={busy}
+        onClick={() => {
+          if (at) return setAt(null);
+          const r = button.current!.getBoundingClientRect();
+          const height = 12 + modes.length * 38;
+          const above = r.top - height - 6 > 8;
+          setAt({ top: above ? r.top - height - 6 : r.bottom + 6, left: Math.min(Math.max(8, r.left), window.innerWidth - MENU_W - 8) });
+        }}>
+        <IconBranch size={15} />
+      </button>
+      {at ? createPortal(
+        <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+          {modes.map((mode) => (
+            <button key={mode} className="menu-item" role="menuitem" onClick={() => fork(mode)}>
+              <IconBranch size={15} /> {mode === "chat" ? "分支为对话" : "分支为工作"}
+            </button>
+          ))}
+        </div>,
+        document.body
+      ) : null}
+    </>
+  );
+}
+
 export default function Turn({
   run,
   items,
   live,
+  last,
+  fresh,
   modelName,
   previewKey,
   onPreview,
   onResume,
   onAnswer,
+  onRetry,
+  onEdit,
+  onSwitch,
+  locked,
+  forkModes,
+  onFork,
 }: {
   run: Run;
   items: Item[] | undefined;
   live: boolean;
+  last?: boolean;
+  fresh?: boolean;
   modelName: (id: string) => string;
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
+  onRetry?: (run: Run) => Promise<void>;
+  onEdit?: (run: Run, prompt: string) => Promise<boolean>;
+  onSwitch?: (runId: string) => Promise<void>;
+  locked?: boolean; // an answer is being written: versions and edits wait for it
+  forkModes?: ForkMode[];
+  onFork?: (run: Run, mode: ForkMode) => Promise<void>;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
   const [moreHistory, setMoreHistory] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
   const historyCursor = useRef(0);
   const historyRequest = useRef<AbortController | null>(null);
   useEffect(() => () => historyRequest.current?.abort(), []);
   const files = useFileViewer();
   const shown = items ?? history;
   const terminal = isTerminal(run.status);
+  const chat = run.options?.mode === "chat";
 
   async function loadHistory() {
     if (historyRequest.current) return;
@@ -117,14 +205,27 @@ export default function Turn({
       historyRequest.current = null;
     }
   }
-  const answer = terminal ? run.summary?.trim() : "";
-  const lastText = shown?.findLastIndex((item) => item.kind === "text") ?? -1;
-  const process = shown?.filter((item, index) => !(index === lastText && item.kind === "text" && item.text.trim() === answer));
+  const { process, answer: streamed } = splitTurn(shown);
+  // the confirmed answer once the run is over; until then whatever the model has written after its last step
+  const answer = (terminal && run.status !== "interrupted" ? run.summary?.trim() : "") || streamed;
+  // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
+  const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
+  const sources = turnSources(shown);
+  const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
 
   return (
-    <div className="turn">
-      <div className="msg user">
-        <div className="bubble">{run.prompt}</div>
+    <div className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
+      <div className={`msg user ${editing !== null ? "editing" : ""}`}>
+        {editing !== null ? (
+          <EditBox value={editing} onChange={setEditing} onCancel={() => setEditing(null)} onSubmit={async () => {
+            const prompt = editing.trim();
+            if (!prompt || !onEdit) return;
+            if (prompt === run.prompt.trim()) return setEditing(null);
+            if (await onEdit(run, prompt)) setEditing(null);
+          }} />
+        ) : (
+          <div className="bubble">{run.prompt}</div>
+        )}
         {run.options?.skill ? (
           <div className="attach-row">
             <span className="attach-chip">{SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill}</span>
@@ -139,16 +240,26 @@ export default function Turn({
             ))}
           </div>
         ) : null}
+        {editing === null ? (
+          <div className="msg-actions">
+            <CopyButton text={run.prompt} label="复制消息" />
+            {onEdit && done && !locked ? (
+              <button type="button" className="icon-btn act" aria-label="编辑消息" title="编辑" onClick={() => setEditing(run.prompt)}>
+                <IconPencil size={15} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div className="msg assistant">
         <div className="avatar-ai">A</div>
         <div className="assistant-body">
-          <WorkProcess run={run} items={process} loading={loadingHistory} error={historyError}
-            more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
+          {showProcess ? <WorkProcess run={run} items={shown == null ? null : process} live={live}
+            loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
-              onAnswer={(value) => onAnswer!(run, item.id, value)} />} />
-          {answer ? <Markdown text={answer} /> : null}
+              onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
+          {answer ? <Markdown text={answer} streaming={live && !terminal} /> : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{run.error}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">
@@ -162,9 +273,7 @@ export default function Turn({
             <div className="files">
               {run.artifacts.map((a) => (
                 <div key={a.id} className="file-card">
-                  <span className="icon">
-                    <IconFile size={18} />
-                  </span>
+                  <ExtTile filename={a.filename} size={38} />
                   <div className="grow">
                     <div className="name" title={a.filename}>
                       {a.filename}
@@ -183,23 +292,112 @@ export default function Turn({
                     预览
                   </button>
                   <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
-                    <IconDownload size={15} /> 下载
+                    <IconDownload size={15} /> <span className="dl-label">下载</span>
                   </a>
                 </div>
               ))}
             </div>
           ) : null}
 
+          {sources.length && terminal ? (
+            <div className="sources" aria-label="来源">
+              {sources.slice(0, 8).map((s) => (
+                <a key={s.url} className="source" href={s.url} target="_blank" rel="noreferrer noopener" title={s.title || s.url}>
+                  <span className="source-mark">{(s.site || siteOf(s.url))[0]?.toUpperCase()}</span>
+                  <span className="source-name">{s.title || s.site || siteOf(s.url)}</span>
+                </a>
+              ))}
+              {sources.length > 8 ? <span className="source more">+{sources.length - 8}</span> : null}
+            </div>
+          ) : null}
+
           {terminal ? (
-            <div className="turn-meta">
-              <span>{modelName(run.model)}</span>
-              {run.usage?.prompt_tokens ? <span>{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
-              <a href={`/runs/${run.id}`}>详情</a>
+            <div className={`turn-meta ${last ? "last" : ""}`}>
+              {run.versions && run.versions.count > 1 && onSwitch ? (
+                <span className="versions" role="group" aria-label="版本">
+                  <button type="button" className="icon-btn act prev" aria-label="上一个版本" disabled={locked || switching || run.versions.index <= 1}
+                    onClick={async () => {
+                      setSwitching(true);
+                      try { await onSwitch(run.versions!.ids[run.versions!.index - 2]); } finally { setSwitching(false); }
+                    }}>
+                    <IconChevronRight size={14} />
+                  </button>
+                  <span className="versions-n">{run.versions.index}/{run.versions.count}</span>
+                  <button type="button" className="icon-btn act" aria-label="下一个版本" disabled={locked || switching || run.versions.index >= run.versions.count}
+                    onClick={async () => {
+                      setSwitching(true);
+                      try { await onSwitch(run.versions!.ids[run.versions!.index]); } finally { setSwitching(false); }
+                    }}>
+                    <IconChevronRight size={14} />
+                  </button>
+                </span>
+              ) : null}
+              {answer ? <CopyButton text={answer} label="复制回答" /> : null}
+              {last && done && onRetry ? (
+                <button type="button" className={`icon-btn act ${retrying ? "busy" : ""}`} aria-label="重新生成" title="重新生成" disabled={retrying}
+                  onClick={async () => {
+                    setRetrying(true);
+                    try {
+                      await onRetry(run);
+                    } finally {
+                      setRetrying(false);
+                    }
+                  }}>
+                  <IconRetry size={15} />
+                </button>
+              ) : null}
+              {done && onFork && forkModes?.length ? <ForkButton modes={forkModes} onFork={(mode) => onFork(run, mode)} /> : null}
+              <span className="meta-text">{modelName(run.model)}</span>
+              {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
+              <Link className="meta-text" href={`/runs/${run.id}`}>详情</Link>
             </div>
           ) : null}
         </div>
       </div>
       {files.viewer}
+    </div>
+  );
+}
+
+/** Editing a sent message in place: Enter sends it as a new version, Escape keeps the old one. */
+function EditBox({ value, onChange, onCancel, onSubmit }: { value: string; onChange: (v: string) => void; onCancel: () => void; onSubmit: () => Promise<void> }) {
+  const area = useRef<HTMLTextAreaElement | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+  }, []);
+  useEffect(() => {
+    const el = area.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(320, el.scrollHeight)}px`;
+  }, [value]);
+  async function submit() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await onSubmit();
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="edit-box">
+      <textarea ref={area} value={value} rows={1} aria-label="编辑消息" onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Escape") onCancel();
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            submit();
+          }
+        }} />
+      <div className="edit-actions">
+        <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>取消</button>
+        <button type="button" className="sm" onClick={submit} disabled={busy || !value.trim()}>发送</button>
+      </div>
     </div>
   );
 }

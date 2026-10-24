@@ -28,13 +28,25 @@ export function thumbUrl(file: FileItem): string | null {
   return isImage(file) && file.size <= INLINE_MAX ? downloadUrl(file.download_url) : null;
 }
 
+/** A file known only by its name: its extension in the family colour. */
+export function ExtTile({ filename, size = 36 }: { filename: string; size?: number }) {
+  const ext = extOf(filename);
+  const tone = TONES.find(([re]) => re.test(ext))?.[1] || "gray";
+  return (
+    <span className={`file-tile tone-${tone}`} style={{ width: size, height: size }} aria-hidden="true">
+      <span className="file-tile-ext">{(ext || "file").slice(0, 4)}</span>
+    </span>
+  );
+}
+
 export default function FileTile({ file, size = 36 }: { file: FileItem; size?: number }) {
   const thumb = thumbUrl(file);
+  if (!thumb) return <ExtTile filename={file.filename} size={size} />;
   const ext = extOf(file.filename);
   const tone = TONES.find(([re]) => re.test(ext))?.[1] || "gray";
   return (
     <span className={`file-tile tone-${tone}`} style={{ width: size, height: size }} aria-hidden="true">
-      {thumb ? <img src={thumb} alt="" loading="lazy" decoding="async" /> : <span className="file-tile-ext">{(ext || "file").slice(0, 4)}</span>}
+      <img src={thumb} alt="" loading="lazy" decoding="async" />
     </span>
   );
 }

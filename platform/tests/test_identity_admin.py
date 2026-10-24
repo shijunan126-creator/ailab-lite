@@ -358,3 +358,37 @@ def test_department_policy_governs_storage_and_concurrency_too(env):
         with pytest.raises(HTTPException) as exc:
             enforce_library_quota(db, user_id, 6)
         assert exc.value.status_code == 413
+
+
+def test_context_settings_platform_admin_only_and_audited(env):
+    from ailab_platform.models import PlatformSetting
+
+    with TestClient(app) as c:
+        for role in ("user", "dept_admin", "auditor"):
+            assert c.get("/v1/admin/settings/context", headers=_headers(env, role)).status_code == 403
+            assert (
+                c.put(
+                    "/v1/admin/settings/context", headers=_headers(env, role), json={"auto_compact": True, "threshold_ratio": 0.7}
+                ).status_code
+                == 403
+            )
+        admin = _headers(env, "platform_admin")
+        with SessionLocal() as db:
+            row = db.get(PlatformSetting, "context")
+            if row:
+                db.delete(row)
+                db.commit()
+        initial = c.get("/v1/admin/settings/context", headers=admin).json()
+        assert initial["auto_compact"] is False and initial["threshold_ratio"] == 0.5
+        assert all(set(m) == {"id", "name", "context_tokens"} for m in initial["models"])
+        for ratio in (0.19, 0.96):
+            assert (
+                c.put("/v1/admin/settings/context", headers=admin, json={"auto_compact": True, "threshold_ratio": ratio}).status_code == 422
+            )
+        changed = c.put("/v1/admin/settings/context", headers=admin, json={"auto_compact": True, "threshold_ratio": 0.7})
+        assert changed.status_code == 200 and changed.json()["threshold_ratio"] == 0.7
+        with SessionLocal() as db:
+            assert db.scalar(select(AuditLog.id).where(AuditLog.action == "settings.context.update"))
+            assert db.get(PlatformSetting, "context").value["auto_compact"] is True
+            db.delete(db.get(PlatformSetting, "context"))
+            db.commit()

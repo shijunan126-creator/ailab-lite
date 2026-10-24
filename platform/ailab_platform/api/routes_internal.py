@@ -26,11 +26,25 @@ from ..config import settings
 from ..contracts.file_preview import PreviewCompletion
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
+from ..conversation_tree import path_ids
 from ..deps import get_db
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
-from ..models import Artifact, Conversation, FileObject, FileStatus, Project, Run, RunStatus, UsageReservation, User, new_id
+from ..models import (
+    Artifact,
+    Conversation,
+    FileObject,
+    FileStatus,
+    OutboxMessage,
+    Project,
+    Run,
+    RunAttempt,
+    RunStatus,
+    UsageReservation,
+    User,
+    new_id,
+)
 from ..ports.scanner import get_scanner
 from ..ports.service_auth import RunContext
 from ..quota import enforce_library_quota, reserve_usage, run_usage_totals, settle_usage
@@ -38,6 +52,7 @@ from ..run_state import InvalidTransition, transition_run
 from ..schemas import (
     ArtifactIn,
     CommitOut,
+    ConversationTitle,
     EventIn,
     EventOut,
     FileOut,
@@ -50,6 +65,7 @@ from ..schemas import (
 )
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
+from ..title_text import normalize_title
 from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
@@ -119,42 +135,36 @@ def workspace_key(run_id: str) -> str:
     return f"workspaces/{run_id}.tgz"
 
 
-def workspace_alive(run: Run, now: datetime) -> bool:
-    """Whether this turn's workspace is still inside the retention window.
-
-    New snapshots carry workspace_saved_at; older rows fall back to finished_at
-    so deploying the TTL does not resurrect or lose their existing snapshots.
-    """
+def workspace_data(run: Run) -> dict:
     result = run.result or {}
-    if not result.get("workspace_saved"):
+    if result.get("workspace_saved"):
+        return {"key": result.get("workspace_key"), "saved_at": result.get("workspace_saved_at")}
+    return (run.runtime_meta or {}).get("workspace") or {}
+
+
+def workspace_alive(run: Run, now: datetime) -> bool:
+    """Snapshot eligibility matches the object-store TTL; checkpoint snapshots cover failed/canceled turns too."""
+    snapshot = workspace_data(run)
+    if not snapshot:
         return False
-    saved_at = result.get("workspace_saved_at")
-    when: datetime | None = None
-    if isinstance(saved_at, str):
+    saved_at, when = snapshot.get("saved_at"), None
+    if isinstance(saved_at, int | float):
+        when = datetime.fromtimestamp(saved_at, UTC)
+    elif isinstance(saved_at, str):
         try:
             when = datetime.fromisoformat(saved_at)
         except ValueError:
-            when = None
+            pass
     when = when or run.finished_at or run.created_at
-    if when is None:
-        return False
-    if when.tzinfo is None:  # SQLite drops tzinfo
+    if when.tzinfo is None:
         when = when.replace(tzinfo=UTC)
-    if settings.workspace_ttl_days <= 0:  # 0 = no expiry (not "expire at once")
-        return True
-    return when + timedelta(days=settings.workspace_ttl_days) > now
+    return settings.workspace_ttl_days <= 0 or when + timedelta(days=settings.workspace_ttl_days) > now
 
 
 def _earlier_turns(db: Session, run: Run) -> list[Run]:
-    if not run.conversation_id:
-        return []
-    return list(
-        db.scalars(
-            select(Run)
-            .where(Run.conversation_id == run.conversation_id, Run.created_at <= run.created_at, Run.id != run.id)
-            .order_by(Run.created_at, Run.id)
-        )
-    )
+    from ..conversation_tree import path_runs
+
+    return path_runs(db, run.conversation_id, run.parent_run_id) if run.conversation_id else []
 
 
 @router.get("/runs/{run_id}", response_model=InternalRunDetail, dependencies=[Depends(require_scope("runs:read"))])
@@ -175,6 +185,25 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
+    out["project_library"] = []
+    if conversation and conversation.project_id:
+        out["project_library"] = [
+            {"file_id": f.id, "filename": f.filename[:200]}
+            for f in db.scalars(
+                select(FileObject)
+                .where(
+                    FileObject.user_id == run.user_id,
+                    FileObject.project_id == conversation.project_id,
+                    FileObject.status == FileStatus.READY,
+                    FileObject.purpose == "library",
+                    FileObject.is_head == 1,
+                    FileObject.deleted_at.is_(None),
+                    FileObject.purged_at.is_(None),
+                )
+                .order_by(FileObject.created_at.desc(), FileObject.id.desc())
+                .limit(50)
+            )
+        ]
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
@@ -183,21 +212,33 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     out["memory"] = memory_for(owner, for_model=True) if owner else {}
     out.update(skill_input_for(db, owner))
     now = datetime.now(UTC)
-    newest = next((t for t in reversed(earlier) if (t.result or {}).get("workspace_saved")), None)
+    newest = next((t for t in reversed(earlier) if workspace_data(t)), None)
     alive = newest is not None and workspace_alive(newest, now)
     own = (run.runtime_meta or {}).get("workspace")
-    out["workspace_restore_key"] = (
-        own["key"] if own else ((newest.result or {}).get("workspace_key") or workspace_key(newest.id)) if alive else None
-    )
+    out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
     # the last turn left files, but they are past the retention window: tell the model instead of letting it hunt
     out["workspace_expired"] = newest is not None and not alive
     return out
 
 
 @router.get("/runs/{run_id}/state", response_model=RunStateOut, dependencies=[Depends(require_scope("runs:read"))])
-def internal_run_state(run_id: str, db: Session = Depends(get_db)) -> dict:
+def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)) -> dict:
     """The cheap status poll the Agent uses while a command/model call is running."""
     run = _run_or_404(db, run_id)
+    if x_run_attempt:
+        # A read-only ownership probe cancels in-flight model calls promptly on lease loss.
+        owned = db.scalar(
+            select(RunAttempt.id)
+            .join(OutboxMessage, OutboxMessage.claim_token == RunAttempt.id)
+            .where(
+                RunAttempt.id == x_run_attempt,
+                RunAttempt.run_id == run_id,
+                RunAttempt.ended_at.is_(None),
+                OutboxMessage.claimed_until > datetime.now(UTC),
+            )
+        )
+        if not owned:
+            raise HTTPException(409, "stale_attempt")
     return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
 
 
@@ -237,28 +278,7 @@ def internal_transition(
             db.commit()
         except InvalidTransition as exc:
             raise HTTPException(409, f"invalid transition: {exc}") from exc
-    if changed and (run.result or {}).get("workspace_saved"):
-        _drop_older_workspaces(db, run)
     return run_dict(db, run, detail=True)
-
-
-def _drop_older_workspaces(db: Session, run: Run) -> None:
-    """Only the newest workspace of a conversation is ever restored; delete the ones before it (best effort)."""
-    storage = get_storage()
-    for turn in _earlier_turns(db, run):
-        result = dict(turn.result or {})
-        if not result.get("workspace_saved"):
-            continue
-        try:
-            storage.delete((turn.result or {}).get("workspace_key") or workspace_key(turn.id))
-        except Exception:
-            log.warning("could not delete workspace of %s", turn.id, exc_info=True)
-            continue
-        with user_critical_section(db, run.user_id):
-            # Storage I/O may overlap a late usage settlement; merge the current JSON.
-            db.refresh(turn)
-            turn.result = {**(turn.result or {}), "workspace_saved": False}
-            db.commit()
 
 
 @router.post("/runs/{run_id}/events", response_model=EventOut, dependencies=[Depends(require_scope("runs:events"))])
@@ -474,6 +494,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
             .join(Run, Run.id == Artifact.run_id)
             .where(
                 Run.conversation_id == run.conversation_id,
+                Run.id.in_([*path_ids(db, run.conversation_id, run.parent_run_id), run.id]),
                 FileObject.user_id == run.user_id,
                 FileObject.filename == filename,
                 FileObject.deleted_at.is_(None),
@@ -687,7 +708,10 @@ def _bound_file(
     if file.user_id != context.user_id or file.status != FileStatus.READY:
         raise HTTPException(status_code=404, detail="file not found for run")
     attached = file.id in (run.input_file_ids or [])
+    if principal.service == "broker" and file.purpose == "library" and file.id in ((run.runtime_meta or {}).get("library_file_ids") or []):
+        attached = True
     if not attached and run.conversation_id:
+        ancestors = path_ids(db, run.conversation_id, run.parent_run_id)
         elements = (
             func.json_array_elements_text(Run.input_file_ids).table_valued("value")
             if db.bind.dialect.name == "postgresql"
@@ -698,6 +722,7 @@ def _bound_file(
                 select(
                     exists().where(
                         Run.conversation_id == run.conversation_id,
+                        Run.id.in_(ancestors),
                         Run.user_id == run.user_id,
                         exists(select(1).select_from(elements).where(elements.c.value == file.id)).correlate(Run),
                     )
@@ -709,7 +734,12 @@ def _bound_file(
                 db.scalar(
                     select(Artifact.id)
                     .join(Run, Run.id == Artifact.run_id)
-                    .where(Artifact.file_id == file.id, Run.conversation_id == run.conversation_id, Run.user_id == run.user_id)
+                    .where(
+                        Artifact.file_id == file.id,
+                        Run.conversation_id == run.conversation_id,
+                        Run.id.in_(ancestors),
+                        Run.user_id == run.user_id,
+                    )
                     .limit(1)
                 )
                 is not None
@@ -861,3 +891,34 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         file.meta = meta
         db.commit()
         return {"ok": True}
+
+
+@router.put("/runs/{run_id}/conversation-title", dependencies=[Depends(require_scope("runs:status"))])
+def set_conversation_title(
+    run_id: str, body: ConversationTitle, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+):
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        fence_attempt(db, run_id, x_run_attempt)
+        db.refresh(run)
+        if run.status == RunStatus.CANCELED:
+            return {"ok": False}
+        title = normalize_title(body.title)
+        changed = (
+            db.execute(
+                update(Conversation)
+                .where(
+                    Conversation.id == run.conversation_id,
+                    Conversation.user_id == run.user_id,
+                    Conversation.deleted_at.is_(None),
+                    Conversation.title == "",
+                )
+                .values(title=title)
+            ).rowcount
+            if title
+            else 0
+        )
+        if changed:
+            append_event(db, run.id, "conversation.titled", {"conversation_id": run.conversation_id, "title": title}, commit=False)
+        db.commit()
+        return {"ok": bool(changed)}

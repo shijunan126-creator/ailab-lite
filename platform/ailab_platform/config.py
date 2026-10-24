@@ -182,7 +182,7 @@ class Settings(BaseSettings):
     max_sandbox_write_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # write_file tool
     max_auto_deliver_files: int = Field(default=20, gt=0)
     max_workspace_bytes: int = Field(default=60 * 1024 * 1024, gt=0)  # compressed workspace carried between turns of a conversation
-    workspace_ttl_days: int = Field(default=3, ge=0)  # keep the last workspace of a conversation at most this long; 0 = keep it
+    workspace_ttl_days: int = Field(default=3, ge=0)  # retain per-turn workspaces for forks/retry this long; 0 = keep all
     workspace_cleanup_interval_seconds: int = Field(default=3600, gt=0)  # scan the object store for expired snapshots hourly
 
     backup_timeout_seconds: int = Field(default=3600, ge=1)
@@ -272,6 +272,9 @@ class Settings(BaseSettings):
     job_deadline_seconds: int = Field(default=86400, ge=60)
     run_max_attempts: int = Field(default=3, gt=0)  # deliveries before a run is failed as a poison message
     file_max_attempts: int = Field(default=3, gt=0)
+    schedules_enabled: bool = True
+    schedules_interval_seconds: float = Field(default=30, gt=0, le=3600)
+    schedules_deadline_seconds: float = Field(default=20, gt=0, le=300)
     reaper_interval_seconds: int = Field(default=60, gt=0)
     reaper_grace_seconds: int = Field(default=120, ge=0)  # don't touch work younger than this
 

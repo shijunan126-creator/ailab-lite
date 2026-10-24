@@ -2,25 +2,33 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds, ModelInfo, Skill, uploadFile } from "../../lib/api";
-import { IconChart, IconFile, IconLibrary, IconPlus, IconSend, IconSheet, IconSlides, IconSparkles, IconUpload } from "../icons";
+import { IconArrowUp, IconChart, IconFile, IconLibrary, IconPlus, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
+import ContextMeter, { estimateTokens } from "./context-meter";
 
 export type Attachment = { id: string; filename: string; status: string };
 export type Mode = "chat" | "work";
 export type SendOptions = { mode: Mode; skill?: string };
 
-type SkillButton = { key: string; skill: string; label: string; Icon: (p: { size?: number }) => React.ReactElement; placeholder: string };
+type SkillButton = {
+  key: string;
+  skill: string;
+  label: string;
+  Icon: (p: { size?: number }) => React.ReactElement;
+  placeholder: string;
+  template?: string; // what "/" fills in: the questions this skill needs answered
+};
 
 // What the skill buttons ask for. `skill` is the platform skill that gets preloaded for the model.
 const SKILLS: SkillButton[] = [
-  { key: "ppt", skill: "pptx", label: "PPT 生成", Icon: IconSlides, placeholder: "说说主题、页数和给谁看，比如：给新员工介绍公司的 10 页 PPT" },
-  { key: "excel", skill: "xlsx", label: "Excel 表格", Icon: IconSheet, placeholder: "说说表里要有什么，比如：三个区域 7～9 月销售额，带合计和柱状图" },
-  { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表" },
+  { key: "ppt", skill: "pptx", label: "PPT 生成", Icon: IconSlides, placeholder: "说说主题、页数和给谁看，比如：给新员工介绍公司的 10 页 PPT", template: "主题：\n页数：\n给谁看：" },
+  { key: "excel", skill: "xlsx", label: "Excel 表格", Icon: IconSheet, placeholder: "说说表里要有什么，比如：三个区域 7～9 月销售额，带合计和柱状图", template: "表格内容：\n时间范围：\n需要的图表：" },
+  { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表", template: "想分析的问题：\n关注的指标：" },
 ];
 
 const MODE_HINT: Record<Mode, string> = {
-  chat: "搜索、问答、写代码，不运行沙箱",
-  work: "运行代码，生成可下载文件",
+  chat: "问答、搜索、写作",
+  work: "动手完成任务，交付文件",
 };
 
 export default function Composer({
@@ -35,6 +43,7 @@ export default function Composer({
   placeholder,
   projectId,
   initialFiles,
+  context,
 }: {
   models: ModelInfo[];
   model: string;
@@ -47,6 +56,7 @@ export default function Composer({
   placeholder?: string;
   projectId?: string | null; // uploads from here go into this project
   initialFiles?: Attachment[]; // e.g. "talk about these" from the library
+  context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -55,12 +65,16 @@ export default function Composer({
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [mode, setModeState] = useState<Mode>("work");
   const [picked, setPicked] = useState<SkillButton | null>(null);
   const area = useRef<HTMLTextAreaElement | null>(null);
 
   const [enabled, setEnabled] = useState<Set<string> | null>(null); // skills switched on in the 技能 page
   const [mine, setMine] = useState<Skill[]>([]); // the user's own skills (personal, switched on)
+  const [builtin, setBuiltin] = useState<Skill[]>([]); // platform skills switched on
+  const [slashAt, setSlashAt] = useState(0); // highlighted entry of the "/" menu
+  const [slashClosed, setSlashClosed] = useState(false); // Escape: the "/" stays text
 
   useEffect(() => {
     if (localStorage.getItem("ailab.mode") === "chat") setModeState("chat");
@@ -68,6 +82,7 @@ export default function Composer({
       .then((list) => {
         setEnabled(new Set(list.filter((s) => s.enabled).map((s) => s.name)));
         setMine(list.filter((s) => s.scope === "personal" && s.enabled));
+        setBuiltin(list.filter((s) => s.scope === "builtin" && s.enabled));
       })
       .catch(() => setEnabled(null));
   }, []);
@@ -120,7 +135,7 @@ export default function Composer({
     };
   }, [files]);
 
-  async function upload(list: FileList) {
+  async function upload(list: FileList | File[]) {
     setError("");
     setUploading(true);
     try {
@@ -143,6 +158,38 @@ export default function Composer({
   const waiting = files.some((f) => f.status === "pending");
   const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !!model;
 
+  // "/" at the start of an empty message lists the skills; picking one fills in what it needs
+  const buttons: SkillButton[] = [
+    ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
+    ...mine.map((m) => ({ key: `my-${m.name}`, skill: m.name, label: m.title, Icon: IconSparkles, placeholder: `说说要做什么，会按你的「${m.title}」技能来做` })),
+  ];
+  const slashQuery = /^\/(\S*)$/.exec(text)?.[1];
+  const slashItems: SkillButton[] =
+    slashQuery === undefined || slashClosed
+      ? []
+      : [
+          ...buttons,
+          ...builtin
+            .filter((b) => !SKILLS.some((s) => s.skill === b.name))
+            .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` })),
+        ].filter((b) => !slashQuery || `${b.label} ${b.skill}`.toLowerCase().includes(slashQuery.toLowerCase()));
+  const slashIndex = Math.min(slashAt, Math.max(0, slashItems.length - 1));
+
+  function choose(s: SkillButton) {
+    setPicked(s);
+    if (mode === "chat") setMode("work");
+    const template = s.template || "";
+    setText(template);
+    requestAnimationFrame(() => {
+      const el = area.current;
+      if (!el) return;
+      el.focus();
+      const end = template.indexOf("\n");
+      const caret = end < 0 ? template.length : end;
+      el.setSelectionRange(caret, caret);
+    });
+  }
+
   async function send() {
     if (!canSend) return;
     const ok = await onSend(
@@ -158,13 +205,29 @@ export default function Composer({
   }
 
   return (
-    <div className="composer-box">
+    <div
+      className={`composer-box ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes("Files")) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setDragging(false);
+        upload(e.dataTransfer.files);
+      }}
+    >
       {files.length ? (
         <div className="attach-row">
           {files.map((f) => (
             <span key={f.id} className={`attach-chip ${f.status}`}>
-              <IconFile size={13} /> {f.filename}
-              {f.status === "pending" ? " · 扫描中" : f.status === "rejected" ? " · 已拒绝" : ""}
+              {f.status === "pending" ? <span className="chip-spin" aria-hidden="true" /> : <IconFile size={13} />} {f.filename}
+              {f.status === "pending" ? <span className="chip-state">检查中</span> : f.status === "rejected" ? <span className="chip-state">未通过检查</span> : null}
               <button className="link" aria-label={`移除 ${f.filename}`} onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>
                 ✕
               </button>
@@ -182,6 +245,17 @@ export default function Composer({
           </span>
         </div>
       ) : null}
+      {slashItems.length ? (
+        <div className="slash-menu" id="slash-menu" role="listbox" aria-label="技能">
+          {slashItems.map((s, i) => (
+            <button key={s.key} type="button" role="option" aria-selected={i === slashIndex} className={`slash-item ${i === slashIndex ? "on" : ""}`}
+              onMouseMove={() => setSlashAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(s)}>
+              <span className="slash-icon"><s.Icon size={15} /></span>
+              <span className="slash-label">{s.label}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
       <textarea
         ref={area}
         rows={1}
@@ -189,8 +263,38 @@ export default function Composer({
         aria-label="消息"
         placeholder={picked?.placeholder || placeholder || "输入消息，Enter 发送，Shift + Enter 换行"}
         value={text}
-        onChange={(e) => setText(e.target.value)}
+        onChange={(e) => {
+          setText(e.target.value);
+          setSlashAt(0);
+          if (!e.target.value.startsWith("/")) setSlashClosed(false);
+        }}
+        aria-expanded={slashItems.length > 0}
+        aria-controls={slashItems.length ? "slash-menu" : undefined}
+        onPaste={(e) => {
+          // a screenshot or a copied file goes in as an attachment, text pastes as usual
+          const pasted = Array.from(e.clipboardData.files);
+          if (!pasted.length) return;
+          e.preventDefault();
+          upload(pasted);
+        }}
         onKeyDown={(e) => {
+          if (slashItems.length && !e.nativeEvent.isComposing) {
+            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+              e.preventDefault();
+              setSlashAt((slashIndex + (e.key === "ArrowDown" ? 1 : slashItems.length - 1)) % slashItems.length);
+              return;
+            }
+            if (e.key === "Enter" || e.key === "Tab") {
+              e.preventDefault();
+              choose(slashItems[slashIndex]);
+              return;
+            }
+            if (e.key === "Escape") {
+              e.preventDefault();
+              setSlashClosed(true);
+              return;
+            }
+          }
           // isComposing: Enter that confirms a Chinese IME candidate must not send the message
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
@@ -228,7 +332,7 @@ export default function Composer({
             </div>
           ) : null}
         </div>
-        <div className="mode-toggle" role="radiogroup" aria-label="模式">
+        <div className="mode-toggle" role="radiogroup" aria-label="模式" data-mode={mode}>
           {(["chat", "work"] as Mode[]).map((m) => (
             <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} title={MODE_HINT[m]} onClick={() => setMode(m)}>
               {m === "chat" ? "对话" : "工作"}
@@ -236,16 +340,7 @@ export default function Composer({
           ))}
         </div>
         {mode === "work"
-          ? [
-              ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
-              ...mine.map((m) => ({
-                key: `my-${m.name}`,
-                skill: m.name,
-                label: m.title,
-                Icon: IconSparkles,
-                placeholder: `说说要做什么，会按你的「${m.title}」技能来做`,
-              })),
-            ].map((s) => (
+          ? buttons.map((s) => (
               <button
                 key={s.key}
                 className={`skill-chip ${picked?.key === s.key ? "on" : ""}`}
@@ -272,6 +367,11 @@ export default function Composer({
         ) : null}
         <span className="spacer" />
         <span className="composer-right">
+        {(() => {
+          const info = models.find((m) => m.id === model);
+          const limit = info?.input_budget_tokens || info?.context_tokens;
+          return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
+        })()}
         <select value={model} aria-label="模型" onChange={(e) => onModel(e.target.value)}>
           {models.map((m) => (
             <option key={m.id} value={m.id}>
@@ -282,12 +382,12 @@ export default function Composer({
         </select>
         {error ? <span className="error hint">{error}</span> : null}
         {running ? (
-          <button className="secondary" onClick={onStop}>
-            ■ 停止
+          <button className="send-btn stop" onClick={onStop} aria-label="停止" title="停止">
+            <IconStop size={14} />
           </button>
         ) : (
-          <button onClick={send} disabled={!canSend} aria-label="发送">
-            <IconSend size={16} /> <span className="send-label">发送</span>
+          <button className="send-btn" onClick={send} disabled={!canSend} aria-label="发送" title="发送">
+            {uploading ? <span className="chip-spin light" aria-hidden="true" /> : <IconArrowUp size={18} />}
           </button>
         )}
         </span>

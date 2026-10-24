@@ -1,5 +1,9 @@
 # 单机能力状态
 
+2026-10-24 Round2：`d865356`修复标题gate预算/quiet非思考/失败兜底，真实Gate1逐项通过；SQLite1033、PG+Redis1112、E2E78通过。PG C locale Unicode搜索已修复。16K临时窗口压缩、非真机手机等边界见[发布记录](../progress/updates/2026-10-24-release-ui-features.md#round-2-最终本地结果代码提交-d865356)。[PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42)已创建/登记，Gate2待远端CI与父任务接续，尚未merged/deployed。下方Round1失败保留为历史证据。
+
+2026-10-24 发布门禁：`ec59932` 的真实模型 Chat 已观察思考大纲、框外正文流式与网页来源，但首轮早标题10秒超时、复测成功，Gate 1 未通过；其余真实模型场景未执行，未PR/merge/deploy。历史 mock 集成证据不等于外部验收，详见[发布门禁记录](../progress/updates/2026-10-24-release-ui-features.md)。
+
 更新于 2026-10-23，分支 `feat/remaining-work`。任务编号对应 [差距审查](../reviews/2026-10-23-single-node-architecture-gap.md) 第 6 节，范围与默认决策见 [ADR 0001](adr/0001-single-node-scope.md)。
 
 项目接续、计划和验收记录入口见 [项目进度](../progress/README.md)，最新授权范围见 [当前工作](../progress/current.md)。本页只维护能力状态；“合入”指当前集成分支，不代表已合入远端 main。
@@ -118,3 +122,24 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 ## 2026-10-24 受控联网
 
 沙箱保持 `--network none` + gVisor；Agent 以只连已检查公网地址的客户端读取网页/GitHub issue、下载文件、获取 GitHub 公开仓库和 PyPI 依赖，Broker 流式注入沙箱。URL 来源检查、每运行请求/字节预算、归档展开上限、runsc 根 overlay 4 GiB 上限；个人技能可经 Chat/Work 新建或按版本更新，走扫描与审核。已在当前 Docker Compose + runsc 运行环境真实验收并部署，独立单节点IPv4 k3s/OpenSandbox/gVisor 已完成契约级下载、仓库、离线依赖和隔离验收（含4GiB写满、非root目录、ICMP红绿），完整五服务/真实模型与IPv6未验；Compose并发见补充证据，npm/私有仓库与低带宽泄露信号仍未支持或消除，见 [ADR 0007](adr/0007-controlled-public-fetch.md) 与 [验收记录](../reviews/2026-10-24-controlled-network.md)。
+
+## 2026-10-24 Chat 后端分叉 / 重试
+
+后端分支 `feat/chat-backend-fork-retry` 基于 `94d3e22`：0022迁移、首问并发标题与思考流兼容、网页来源事件、事务分叉/重试、Run归属资料库工具、平台管理员上下文阈值已实现。本地后端双库验证通过（SQLite全套985/108跳过、PG+Redis1061/33跳过，最终回归各11通过），存储成本与测试基线见[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)；Portal由父Agent独立实现，本轮不代表前后端集成、部署或main合入。
+
+前端集成：`feat/ui-polish-fork-retry` 已合入上述后端并实现 Portal 侧思考大纲、正文流式分离、来源/引用、复制/重试/分叉、首问标题实时更新、管理员上下文阈值；本地 Portal/SQLite/五服务 E2E 结果见[前端/集成记录](../progress/updates/2026-10-24-ui-polish-fork-retry.md)。未部署、未合入 main，真机键盘与真实模型未验。
+
+2026-10-24 Round 2 后端标题修复：`fix/chat-title-timing@0be9fac`基于父Agent合并基线`814c541`，正文终态后保留原预算内标题任务、终态SSE有界收尾与共享Markdown规范化；SQLite全套1000通过/108跳过、Ruff通过。PG/Portal/浏览器/五服务统一验收未运行，父Agent负责集成；见同一[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)。
+
+
+## 2026-10-24 会话树 / 置顶 / 全局搜索后端
+
+后端分支 `feat/chat-tree-pin-search`，实际base `09a011b`，运行时 `e4c70cb`：0023树形Run/活动叶节点、编辑与版本选择、祖先限定history/workspace/summary/预览/fork/隐含文件授权、置顶、有界全局搜索、主调用上下文用量已实现。准确验证结果、最终契约及成本见[专项记录](../progress/updates/2026-10-24-chat-tree-pin-search.md)。尚待父Agent合入平行任务和Portal/E2E集成；未push/PR/deploy，不能视为main或生产能力。
+
+## 2026-10-24 定时任务与页码引用后端增量
+
+`feat/schedules-citations` 本地后端已实现：每用户五条任务/用户锁、next_run_at CAS和Run/outbox原子提交、DST与失败收敛、项目删除停用、Worker缓存页标记、工具页码及Chat/Work项目索引/引用规则。双库全套与最终增量通过；未集成Portal/会话树、未部署、未合入main。0024当前接0022，合入sibling0023后必须重接；详细数字、成本、未验边界见[交付记录](../progress/updates/2026-10-24-schedules-citations.md)。
+
+2026-10-24 合并功能统一验收：`test/integration-ui-features` 基于 `2e1a741`，测试代码 `6d01882`；0024已重接0023，双库完整套件/迁移往返通过，新增13项浏览器验收，完整五服务E2E77通过/1失败/1手动辅助跳过。会话级Work分叉限制与当前祖先前缀语义存在待父Agent处理差异，保留失败测试；完整结果/首轮证据见[集成测试记录](../progress/updates/2026-10-24-integration-tests.md)。未发布、未合入main。
+
+2026-10-24 前缀分支契约决定后复跑：基线 `a09d70b`，交付分支 `test/e2e-rerun-fork-contract`；fork 单跑1通过、完整五服务E2E78通过，均0失败/0跳过，Ruff及fixture内Portal31项/隔离build通过。未修改产品代码；上述会话级与前缀语义差异已按父Agent决定解决，历史失败不代表本次结果。未部署、未合入main，真实模型/真机等边界仍保留，见[复跑记录](../progress/updates/2026-10-24-integration-tests.md#复跑合入后-a09d70b)。

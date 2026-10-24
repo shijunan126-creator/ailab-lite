@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-24 真实模型早标题验收
+
+- 旧实现标题10秒包含主额度gate；真实提供商曾正文成功但标题超时永久为空。Round2已将10秒改为gate通过后的模型预算，gate仍由run截止/取消约束；catalog显式声明quiet关闭thinking，timeout/error/empty采用规范化prompt兜底。同请求复测成功不能抹去首轮失败，先测gate/TTFT/reasoning/content。见[发布记录](docs/progress/updates/2026-10-24-release-ui-features.md)。
+- 人工持有五服务stack的临时启动器应保持父进程直到清理，不能假设启动器退出后子进程仍存活；复用隔离Portal目录须先核对源码并检查生产build，目录存在不代表 `.next` build可用。当前会话详情集合字段为 `turns`，不是 `runs`；聊天布局没有 `main` 标签。临时探针错误与产品失败分开记录。
+
 ## 开始新任务
 
 - 先读 `AGENTS.md`、[当前工作](docs/progress/current.md) 和本文，再检查真实 worktree、branch、HEAD 与 `git status --short --branch`；保留已有修改。目标/计划/验收入口见 [项目进度](docs/progress/README.md)，不要把下方历史分支记录当作当前状态。
@@ -340,3 +345,57 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 对话是正常助手，仅不提供沙箱执行/文件交付工具。不要先注入工作模式的全套沙箱指令再追加“只对话”，也不要把写代码/脚本/SQL草稿等同于实际执行。只在确实需要沙箱操作时解释具体限制，不逐轮宣告模式。
 - 模式选项保留在输入器即可；消息元信息只展示实际技能和附件，普通chat不添加模式chip。界面说明不能代替工具白名单：搜索/读网页/技能/记忆允许，沙箱工具仍由Agent实际白名单拒绝。
+
+## 2026-10-24 Fork / 重试 / 资料库工具 / 压缩阈值
+
+- “任意轮次分叉”和“重试前恢复”要求保留历史工作区；不要在后轮完成时删前轮快照。当前保留至既有workspace TTL；失败/取消轮次也可能有runtime_meta.workspace快照。源对象过期/缺失时Work fork必须422，不能静默换用错误工作区。克隆对象使用新Run自有key和一致保存时间，不能仅重写数据库指针。
+- Fork不复制账本/任务，只复制显示usage、事件和预览，Artifact复用file_id；否则会重新执行或重复计费/资料库字节。DB与对象存储不能原子提交，复制失败须回滚DB并清理新key，硬退出仍靠既有GC收敛。复制过程必须有数量、字节、时间上限。
+- Retry必须在同一user锁和事务内复用start_run检查、创建outbox并标记旧Run已替代；不能把一个会自行commit的start_run嵌进外层事务。summary边界若正是被替代轮次，要清空摘要并重建；否则旧回答仍会漏进模型上下文。skill隐含work时，队列topic也须按最终options.mode生成。
+- Chat已提供资料库搜索/阅读；旧测试精确工具白名单需要同步，不能为让旧白名单测试绿而移除新工具。资料库原文件由Broker拿API核准的Run grant流式注入，不能让Agent整份缓冲，也不能给模型传user_id作为归属依据。
+- Admin审计原来只识别GET/POST/PATCH/DELETE；新增PUT路由须同步审计method映射，否则正常403/422会变KeyError/500。设置按bootstrap一次主键读取，无需每步查询或无失效机制的进程缓存。
+- 自动压缩的软阈值在完整装配后的历史上应用；硬溢出仍增量处理。不能对每追加一条历史就触发低阈值摘要：固定系统prompt已经超过软阈值时，会造成逐轮重复付费摘要。没有待压历史时软阈值不是拒绝当前问题的硬上限。
+
+- PostgreSQL的is_head是Integer，不能写`IS true`；用`= 1`，同时满足SQLite/PG和已有部分索引条件。此次SQLite绿而PG红已用真实双库捕获并修复。
+- 并发标题须先等正文首个额度预留成功再做自身预留（不等正文生成）；否则可选标题可能在临界余额下抢走主回答额度。标题的生成超时与取消后账本清理是两段时间，不把10秒当整个job清理SLA。
+
+## 2026-10-24 Portal 打磨 / 思考展示 / 分叉重试
+
+- 应用内链接必须用 `next/link`；`<a href="/…">` 是整页导航，切会话会白屏重载。`/c/[id]` 用 `key={id}` 重挂载 Chat，靠 `lib/conversation-cache.ts` 即时显示；新会话发送后先写缓存再 `router.push`，问题立即可见。
+- 正文 = 模型最后一次动作之后的文本（`splitTurn`）。“动作”只算思考/计划/提问/带 `modelStep` 的工具步骤；预览/归档等平台提示不算，否则正文在答完那刻被拉回过程框。E2E 取答案用 `.assistant-body > .md`，过程里的思考也渲染 `.md`。
+- 收起内容用 `.collapse`（grid 0fr→1fr）始终在 DOM 中；关闭时子元素 `visibility: hidden` + `inert`，否则 Playwright 视其可见、键盘可聚焦。`.live` 是旧的实时指示类（inline-flex+圆点），新组件不能复用此类名。
+- 依赖 localStorage 的初始布局（侧栏收起）要在首帧前应用：根布局内联脚本写 `html[data-sidebar]`，`.shell.settling` 期间禁止过渡；否则刷新后侧栏先出现再淡出，E2E `is_visible` 也会抓到中间态。
+- iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
+- 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
+
+- Round 2 标题生命周期：不能在正文终态的finally无条件cancel标题。先提交正文终态，再用原任务剩余预算收尾；保留durable attempt及HTTP client直到收尾/取消，再ACK。shutdown/attempt丢失必须取消子模型并await、结算、清理heartbeat；只去掉cancel会留下无主任务。Round2起标题10秒从主额度gate通过后计时，不从正文结束重置；gate不抢主额度，受run截止/取消约束；正文未预留即失败时取消gate任务。账本取消清理仍受既有HTTP重试边界，不冒称严格10秒job释放SLA。
+- `run.completed`不是`stream.end`：终态后空轮询会关SSE，关闭时列表刷新也可能早于晚到标题。空标题且有效attempt时保留最多终态后10秒的SSE窗口；先检查pending再读取事件，避免CAS刚提交时看见非空标题却漏读同事务事件。cancel/delete不留窗口；ACK/过期立即收敛。API标题写入仍走原fence与空标题CAS，取消Run不能补标题。
+- 自动标题的Markdown清洗必须在一个无ORM依赖的纯文本helper统一，Agent/内部endpoint/result fallback复用；先去链接/强调/代码/heading、折叠空白，再截40字。原始请求上限和最终存储上限不同；保留40字请求上限会在清洗前422，不能验证/解决长Markdown输入。
+
+## 2026-10-24 会话树 / 搜索 / composer用量
+
+- 树形会话没有“时间之前就是历史”的语义；模型history/摘要through/workspace/预览/fork/隐含附件与产物版本父节点都必须按Run祖先读取。superseded_by_run_id只剩审计用途，不能继续作为隐藏过滤。Run直接入库的测试数据要同时设置parent_run_id和conversation.active_run_id；不要在业务读取时增加时间排序fallback掩盖缺失关系。
+- 递归CTE命中索引不等于单层O(log N)：SQLite可把join变成每层扫conversation索引；PG可把相关EXISTS去相关成会话半连接，500轮首屏曾p95 165.18ms失败。当前按id标量取parent和其conversation，边界500层，双库EXPLAIN与分页延迟须一起验。
+- conversation.summary是可替换缓存；每次模型读取检查through_run_id是该Run祖先，失效则空摘要+从祖先重算。CAS要比较数据库实际缓存边界，同时校验客户端看到的有效边界，才能覆盖另一分支的失效缓存，而非永久冲突或泄漏旧答案。
+- 搜索是有界扫描而非全文索引，每请求最多50会话/1000 Run候选；空items加next_cursor仍须续查，直到null。SQLite原生lower只识别ASCII，搜索用专用Unicode lower函数；snippet/highlight按Unicode code point，Portal不能直接把带emoji的偏移当UTF-16下标。查询长于120字符时仍要高亮可见命中部分。
+- 旧账本没记录quiet用途，不能从output上限/顺序猜正文调用；0023新增nullable quiet并在reservation冻结、ledger结算沿用，历史unknown的composer计量返回null。标题/压缩结算晚于正文也不应覆盖主调用表值。
+- 迁移测试降到中间版本后，不要用最新ORM查询缺失的新列：原0018账本往返测试已改为升级head后做ORM断言。大树测试会让全库超过1000行，对账测试必须消费next_run_id，不能假设第一批包含自己的随机Run。
+
+## 2026-10-24 定时任务 / 资料库页码引用
+
+- 定时执行不能直接 enqueue 或调用会自行 commit 的 start_run：用户锁内 CAS next_run_at，并用 start_run(locked=True, commit=False)，claim/新会话/Run/outbox 同事务。只将可预期业务错误回滚至 savepoint 并记录失败；基础设施异常让整个事务回滚。项目删除清空 project_id 且停用任务，避免下一轮在错误上下文静默执行。
+- zoneinfo 给不存在的墙钟时间也会构造 datetime；须 UTC roundtrip 检查，秋季重复时间固定 fold=0。每周恰逢缺失时间可能要等14天，不能只扫描未来7天。PG可能返回宿主时区 aware datetime，不能用 replace(tzinfo=UTC) 做转换；只给SQLite naive补UTC，aware用 astimezone。
+- Worker显式页标记必须包含第一页，旧无标记缓存不能默认为第一页；DOCX段落/Excel sheet不能冒充渲染页。内部 bootstrap 返回的新字段还必须加入 InternalRunDetail，否则 FastAPI 会静默过滤，handler单测无法发现。
+- 此子任务0024临时接0022（没有0023 stub）；父Agent合入会话树0023后必须reparent为0023并做双库迁移回归。接口、测试、成本和未验边界见 [后端记录](docs/progress/updates/2026-10-24-schedules-citations.md)。
+
+## 2026-10-24 合并功能测试
+
+- 独立迁移分支合并后，中间revision的结构测试可保持原目标，但 `compare_metadata(..., Base.metadata)` 必须先升级集成head；最新ORM包含后续表时，在0023直接比较会把合法0024误判为漂移。完整线性链另用0021→0022→0023→0024逐步升/降/再升锁定，不能删掉漂移断言。
+- 不要把人工持有stack的辅助（如曾误提交的 `e2e/test_zz_hold.py`，默认持有5400秒）放进 `e2e/`：全套会被它卡住，已删除；人工浏览器检查用HANDOFF里的Playwright路线临时起stack。旧测试种子也必须遵循会话树关系，不能只按创建时间写Run（见前面会话树章节）。
+- 分支契约已统一为“截至所选轮次的祖先前缀”：前缀里有Work轮次只能分支为Work，前缀全是Chat可分支为Chat或Work（用户需求“工作只能分支为工作”指工作轮次；更早的纯对话轮次分出的新会话不含任何工作内容）。API、Portal与E2E同此语义；E2E同时断言工作轮次只给Work、之前的对话轮次两者都给。首轮及最终证据入口见[集成测试记录](docs/progress/updates/2026-10-24-integration-tests.md)。
+
+
+## 2026-10-24 Round2 发布验收陷阱
+
+- PostgreSQL UTF8不等于Unicode大小写转换：initdb C locale的lower('ÉCOLE')仍为'École'。搜索窗口已显式使用ICU root `und-x-icu`，PG16部署须包含此collation；双库EXPLAIN与C locale回归均应保留。不能通过切换测试locale或skip掩盖契约失败。
+- 新路由的composer可先出现、model选项稍后加载；浏览器探针应等发送按钮enabled并确认POST被接收，不能只按Enter后把未创建Run误当模型卡住。文件页码引用渲染为`.md-file`按钮，非a；用原始Markdown校验ailab-file与page，再点按钮测查看器几何。
+- 真实低阈值压缩可用临时catalog收紧合法context预算，管理员threshold_ratio=0.2；必须记录此缩小窗口与真实provider调用边界，不能写成默认百万窗口长期容量证明。个人catalog与开发.env不变。

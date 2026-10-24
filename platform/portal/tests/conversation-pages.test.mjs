@@ -26,3 +26,9 @@ test('microsecond timestamps sort chronologically even when whole seconds omit t
   ]);
   assert.deepEqual(turns.map(r=>r.id), ['z','a','b']);
 });
+
+test('a turn the latest page no longer lists was replaced by a retry and disappears', () => {
+  const previous={id:'c', turns:[run('a'),run('b')], previews:[], has_more:false};
+  const latest={id:'c', turns:[run('a'),run('c')], previews:[], has_more:false};
+  assert.deepEqual(refreshConversation(previous, latest).turns.map(r=>r.id), ['a','c']);
+});

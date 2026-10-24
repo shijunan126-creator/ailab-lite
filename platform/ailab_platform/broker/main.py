@@ -201,6 +201,31 @@ def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.post("/leases/{lease_id}/library-file", dependencies=[Depends(require_scope("sandbox:use"))])
+def copy_library_file(lease_id: str, body: dict):
+    from pathlib import PurePosixPath
+
+    from ..paths import normalize_path
+
+    manager = get_manager()
+    try:
+        lease = manager.get(lease_id)
+        file_id = str(body.get("file_id") or "")
+        file = manager.platform.get_file(file_id, run_id=lease["run_id"])
+        destination = str(body.get("path") or PurePosixPath(file["filename"]).name)
+        if not destination.startswith("/"):
+            destination = f"/workspace/inputs/{destination}"
+        path = normalize_path(destination, "/workspace/inputs")
+        if path == "/workspace/inputs":
+            raise ValueError("需要指定资料文件名")
+        manager.inject_file(lease, file_id, path, run_id=lease["run_id"])
+        return {"file_id": file_id, "path": path}
+    except (ValueError, SandboxError) as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except LeaseError as exc:
+        raise HTTPException(410, exc.detail()) from exc
+
+
 @router.get("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
 def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     try:

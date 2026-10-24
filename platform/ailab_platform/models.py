@@ -217,6 +217,15 @@ class Conversation(Base):
     __tablename__ = "conversations"
     __table_args__ = (
         Index("ix_conversations_user_updated", "user_id", "updated_at"),
+        Index("ix_conversations_user_pinned", "user_id", "pinned_at", "updated_at"),
+        Index(
+            "ix_conversations_user_search",
+            "user_id",
+            "updated_at",
+            "id",
+            sqlite_where=text("deleted_at IS NULL"),
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index("ix_conversations_deleted", "deleted_at", "id"),
         Index(
             "ix_conversations_user_project_live",
@@ -230,6 +239,9 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cnv"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
+    active_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    forked_from: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
@@ -242,6 +254,7 @@ class Conversation(Base):
 class Run(Base):
     __tablename__ = "runs"
     __table_args__ = (
+        Index("ix_runs_conversation_parent", "conversation_id", "parent_run_id", "created_at", "id"),
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
         Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
@@ -252,6 +265,10 @@ class Run(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), index=True, nullable=True)
+    superseded_by_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    parent_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    edited_from: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    retry_of: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     prompt: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(20), default=RunStatus.QUEUED, index=True)
@@ -425,6 +442,7 @@ class ModelUsage(Base):
     __tablename__ = "model_usage"
     __table_args__ = (
         Index("ix_model_usage_run_created", "run_id", "created_at"),
+        Index("ix_model_usage_context", "run_id", "quiet", "status", "created_at", "id"),
         Index("ix_model_usage_user_created", "user_id", "created_at"),
         Index("ix_model_usage_status_id", "status", "id"),
         Index("ix_model_usage_call_id", "call_id", unique=True),
@@ -434,6 +452,7 @@ class ModelUsage(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     # Not a foreign key: the ledger outlives the runs it records (a purged conversation's usage still counts).
     run_id: Mapped[str | None] = mapped_column(String(40), index=True)
+    quiet: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
     file_id: Mapped[str | None] = mapped_column(String(40))
     call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -480,6 +499,7 @@ class UsageReservation(Base):
 
     call_id: Mapped[str] = mapped_column(String(80), primary_key=True)
     run_id: Mapped[str | None] = mapped_column(String(40))
+    quiet: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
     file_id: Mapped[str | None] = mapped_column(String(40))
     user_id: Mapped[str] = mapped_column(String(40))
@@ -609,3 +629,38 @@ Index(
     sqlite_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
     postgresql_where=text("is_head = 1 AND deleted_at IS NULL AND purged_at IS NULL"),
 )
+
+
+class PlatformSetting(Base):
+    __tablename__ = "platform_settings"
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ScheduledTask(Base):
+    __tablename__ = "scheduled_tasks"
+    __table_args__ = (
+        Index("ix_scheduled_tasks_due", "enabled", "next_run_at"),
+        Index("ix_scheduled_tasks_user", "user_id"),
+        Index("ix_scheduled_tasks_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sch"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(60))
+    prompt: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(10), default="chat")
+    skill: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    schedule: Mapped[dict] = mapped_column(JSON)
+    timezone: Mapped[str] = mapped_column(String(100))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

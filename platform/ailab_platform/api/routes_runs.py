@@ -7,10 +7,12 @@ import json
 import logging
 import random
 import re
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import metrics
@@ -22,10 +24,10 @@ from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
+from ..models import Conversation, FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
-from ..schemas import EventOut, RunCreate, RunDetail, RunOut
+from ..schemas import EventOut, RunCreate, RunDetail, RunEdit, RunOut, RunRetry
 from ..skill_policy import run_disabled_skills
 from ..storage import get_storage
 from .routes_skills import usable_personal
@@ -59,7 +61,20 @@ def list_models(_: User = Depends(current_user)) -> dict:
     """The models this user can choose from. Never exposes upstream URLs, upstream names or keys."""
     catalog = get_catalog()
     default = catalog.default_id()
-    return {"default": default, "models": [{**m.public(), "default": m.id == default} for m in catalog.available()]}
+    from ..model_policy import ModelPolicy
+
+    return {
+        "default": default,
+        "models": [
+            {
+                **m.public(),
+                "default": m.id == default,
+                "context_tokens": m.context_tokens,
+                "input_budget_tokens": ModelPolicy.input_budget(m),
+            }
+            for m in catalog.available()
+        ],
+    }
 
 
 def start_run(
@@ -72,8 +87,12 @@ def start_run(
     conversation: Conversation | None = None,
     mode: str = "work",
     skill: str | None = None,
+    locked: bool = False,
+    commit: bool = True,
+    sibling_of: Run | None = None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
+    expected_active = conversation.active_run_id if conversation else None
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
@@ -91,7 +110,7 @@ def start_run(
     if spec is None or not spec.available:
         raise HTTPException(status_code=400, detail=f"model not available: {model_id}")
 
-    with user_critical_section(db, user.id):  # the limits are checked and the run written as one step
+    with nullcontext() if locked else user_critical_section(db, user.id):
         enforce_token_quota(db, user.id)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
@@ -100,15 +119,17 @@ def start_run(
             raise HTTPException(status_code=429, detail="too many active runs for this user")
         if conversation is not None:
             db.refresh(conversation)  # project deletion may have completed while this request waited
+            if conversation.active_run_id != expected_active:
+                raise HTTPException(409, "对话路径已改变，请刷新后重试")
+            from ..conversation_tree import path_ids, require_idle
+
+            require_idle(db, conversation.id)
+            if not sibling_of and len(path_ids(db, conversation.id, conversation.active_run_id)) >= 500:
+                raise HTTPException(422, "对话路径最多500轮")
             if conversation.deleted_at is not None:
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
-            busy = db.scalar(
-                select(func.count()).select_from(Run).where(Run.conversation_id == conversation.id, Run.status.not_in(RunStatus.TERMINAL))
-            )
-            if busy:
-                raise HTTPException(status_code=409, detail="this conversation is still answering the previous message")
 
         inputs: list[str] = []
         for file_id in file_ids:
@@ -128,6 +149,7 @@ def start_run(
         run = Run(
             user_id=user.id,
             conversation_id=conversation.id if conversation is not None else None,
+            parent_run_id=sibling_of.parent_run_id if sibling_of else expected_active,
             title=(title or prompt.strip().splitlines()[0])[:200],
             prompt=prompt,
             model=model_id,
@@ -139,12 +161,21 @@ def start_run(
             conversation.model = model_id
             conversation.updated_at = utcnow()
         db.flush()
+        if conversation is not None:
+            changed = db.execute(
+                update(Conversation)
+                .where(Conversation.id == conversation.id, Conversation.active_run_id == expected_active)
+                .values(active_run_id=run.id)
+            ).rowcount
+            if not changed:
+                raise HTTPException(409, "对话路径已改变，请刷新后重试")
         from .jobs import stage_job
 
-        stage_job(db, "run", run_id=run.id, mode=mode)
+        stage_job(db, "run", run_id=run.id, mode=options["mode"])
         append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model}, commit=False)
-        db.commit()
-        db.refresh(run)
+        if commit:
+            db.commit()
+            db.refresh(run)
 
     return run
 
@@ -228,12 +259,33 @@ def sse_poll_delay(idle_polls: int) -> float:
     return base + random.uniform(0, 0.05 if base < 1 else 0.15)
 
 
-def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str]:
+def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str, bool]:
     with SessionLocal() as db:
-        rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
         run = db.get(Run, run_id)
         status = run.status if run else RunStatus.FAILED
-        return [(e.seq, e.type, e.payload or {}) for e in rows], status
+        pending_title = False
+        if run and status in {RunStatus.SUCCEEDED, RunStatus.FAILED} and run.finished_at:
+            finished = run.finished_at.replace(tzinfo=UTC) if run.finished_at.tzinfo is None else run.finished_at
+            if datetime.now(UTC) < finished + timedelta(seconds=10):
+                pending_title = bool(
+                    db.scalar(
+                        select(Conversation.id)
+                        .join(RunAttempt, RunAttempt.run_id == run.id)
+                        .join(OutboxMessage, OutboxMessage.claim_token == RunAttempt.id)
+                        .where(
+                            Conversation.id == run.conversation_id,
+                            Conversation.title == "",
+                            Conversation.deleted_at.is_(None),
+                            RunAttempt.ended_at.is_(None),
+                            OutboxMessage.claimed_until > datetime.now(UTC),
+                        )
+                        .limit(1)
+                    )
+                )
+        # Read events last: a title that cleared the pending check committed its event
+        # in the same transaction, so it must be drained before stream.end.
+        rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
+        return [(e.seq, e.type, e.payload or {}) for e in rows], status, pending_title
 
 
 @router.get("/runs/{run_id}/events")
@@ -261,12 +313,12 @@ async def stream_events(
         while True:
             if await request.is_disconnected():
                 return
-            events, current_status = await asyncio.to_thread(_poll_events, run_id, last_id)
+            events, current_status, pending_title = await asyncio.to_thread(_poll_events, run_id, last_id)
             for seq, type_, payload in events:
                 last_id = seq
                 data = json.dumps(payload, ensure_ascii=False)
                 yield f"id: {seq}\nevent: {type_}\ndata: {data}\n\n"
-            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events:
+            if current_status in RunStatus.TERMINAL | {RunStatus.WAITING_USER, RunStatus.INTERRUPTED} and not events and not pending_title:
                 yield "event: stream.end\ndata: {}\n\n"
                 return
             if events:
@@ -286,3 +338,68 @@ async def stream_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+def _new_version(db, user, run_id, body, editing=False):
+    from ..conversation_tree import path_ids, require_idle, siblings_query
+
+    with user_critical_section(db, user.id):
+        old = _get_owned_run(db, run_id, user)
+        db.refresh(old)
+        conv = db.get(Conversation, old.conversation_id, populate_existing=True) if old.conversation_id else None
+        if not conv or conv.deleted_at is not None:
+            raise HTTPException(409, "只能修改对话中的消息")
+        require_idle(db, conv.id)
+        ids = path_ids(db, conv.id, conv.active_run_id)
+        if old.status not in RunStatus.TERMINAL or old.id not in ids or (not editing and conv.active_run_id != old.id):
+            raise HTTPException(409, "只能编辑当前路径已结束的消息，重试仅限最后一轮")
+        if len(list(db.scalars(siblings_query(conv.id, old.parent_run_id).limit(50)))) >= 50:
+            raise HTTPException(422, "每轮最多50个版本")
+        file_ids = body.file_ids if editing and body.file_ids is not None else old.input_file_ids or []
+        for file_id in file_ids:
+            file = db.get(FileObject, file_id, populate_existing=True)
+            if (
+                not file
+                or file.user_id != user.id
+                or file.status != FileStatus.READY
+                or file.deleted_at
+                or file.purged_at
+                or file.purpose != "library"
+            ):
+                raise HTTPException(422, "附件已不可用")
+        options = dict(old.options or {})
+        new = start_run(
+            db,
+            user,
+            body.prompt if editing else old.prompt,
+            body.model or old.model,
+            file_ids,
+            None if editing else old.title,
+            conversation=conv,
+            mode=body.mode or options.get("mode") or "work",
+            skill=options.get("skill"),
+            locked=True,
+            commit=False,
+            sibling_of=old,
+        )
+        new.options = {**options, **new.options}
+        if editing:
+            new.edited_from = old.id
+        else:
+            new.retry_of = old.id
+            old.superseded_by_run_id = new.id  # legacy audit field, no longer controls path membership
+        # The shared summary cache is reusable only at an ancestor of the replacement's parent.
+        if conv.summary_through_run_id not in path_ids(db, conv.id, old.parent_run_id):
+            conv.summary, conv.summary_through_run_id = None, None
+        db.commit()
+        return run_dict(db, new, detail=True)
+
+
+@router.post("/runs/{run_id}/retry", response_model=RunDetail, status_code=201)
+def retry_run(run_id: str, body: RunRetry, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return _new_version(db, user, run_id, body)
+
+
+@router.post("/runs/{run_id}/edit", response_model=RunDetail, status_code=201)
+def edit_run(run_id: str, body: RunEdit, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    return _new_version(db, user, run_id, body, editing=True)

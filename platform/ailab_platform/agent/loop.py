@@ -29,6 +29,7 @@ from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
 from ..runtime_context import attempt_id_var, delivery_id_var
 from ..telemetry import span
+from ..title_text import normalize_title
 from . import net_tools
 from .multimodal import attachment_content, input_content
 from .prompts import (
@@ -37,6 +38,7 @@ from .prompts import (
     load_skill,
     memory_prompt,
     personal_header,
+    project_library_prompt,
     skills,
     system_prompt_for,
     user_prompt,
@@ -55,10 +57,35 @@ THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
-FILE_TOOLS = frozenset({"write_file", "exec", "deliver_file", *net_tools.NAMES})  # tools that change /workspace or its outputs
+FILE_TOOLS = frozenset(
+    {"copy_library_file", "write_file", "exec", "deliver_file", *net_tools.NAMES}
+)  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+
+
+def web_sources(result: dict) -> list[dict]:
+    from urllib.parse import urlsplit
+
+    sources, seen = [], set()
+    for item in result.get("results", [result]):
+        if not isinstance(item, dict):
+            continue
+        url = item.get("url")
+        if not isinstance(url, str):
+            continue
+        try:
+            parsed = urlsplit(url)
+            if parsed.scheme not in {"http", "https"} or not parsed.hostname or parsed.username or parsed.password or url in seen:
+                continue
+        except ValueError:
+            continue
+        seen.add(url)
+        sources.append({"title": str(item.get("title") or parsed.hostname)[:200], "url": url, "site": parsed.hostname})
+        if len(sources) == 10:
+            break
+    return sources
 
 
 class RunPaused(Exception):
@@ -169,6 +196,9 @@ def _clip_arguments(arguments: dict, limit: int = 500) -> dict:
     return {k: (v[:limit] + f"...[+{len(v) - limit} chars]" if isinstance(v, str) and len(v) > limit else v) for k, v in arguments.items()}
 
 
+TITLE_TIMEOUT_SECONDS = 10
+
+
 class AgentLoop:
     def __init__(
         self,
@@ -199,6 +229,11 @@ class AgentLoop:
         try:
             # the light /state endpoint, not the full run with artifacts and usage: this runs every couple of seconds
             return (await self.platform.get_run_state(run_id))["status"] == RunStatus.CANCELED
+        except ClientError as exc:
+            if exc.status == 409:
+                raise
+            log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
+            return False
         except Exception:
             log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
             return False
@@ -437,7 +472,7 @@ class AgentLoop:
             output_limit = min(output_limit, 2048)
         if max_output_tokens is not None:
             output_limit = min(output_limit, max_output_tokens)
-        call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model)
+        call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet)
         await self.platform.reserve_usage(
             {
                 "call_id": call.call_id,
@@ -445,10 +480,13 @@ class AgentLoop:
                 "attempt_id": run["_attempt_id"],
                 "alias": model,
                 "mode": (run.get("options") or {}).get("mode", "work"),
+                "quiet": quiet,
                 "max_output_tokens": call.max_output_tokens,
                 "estimated_input_tokens": estimated_input,
             }
         )
+        if not quiet and (gate := run.get("_main_model_reserved")) is not None:
+            gate.set()
         token = model_call.set(call)
 
         async def on_text(text: str) -> None:
@@ -526,27 +564,62 @@ class AgentLoop:
                 ttft_metric.labels(metrics.model_label(model)).observe(call.ttft_seconds)
             metrics.LLM_SECONDS.labels(model_label).observe(time.perf_counter() - call_started)
 
-    async def _conversation_title(self, run_id: str, run: dict, answer: str) -> str | None:
+    async def _conversation_title(self, run_id: str, run: dict, answer: str = "") -> str | None:
         if not run.get("needs_conversation_title"):
             return None
         model = run.get("_last_model") or run["model"]
         prompt = [
             {
                 "role": "system",
-                "content": "根据用户问题和确认回答生成简洁中文会话标题，最多40字。只输出标题文字，不加引号、Markdown或说明。",
+                "content": "概括用户问题生成简洁中文会话标题，不逐字照抄首句，最多40字。只输出标题文字，不加引号、Markdown或说明。",
             },
-            {"role": "user", "content": json.dumps({"question": run["prompt"][:1000], "answer": answer[:1000]}, ensure_ascii=False)},
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {"question": run["prompt"][:1000], "files": [f.get("filename", "")[:200] for f in (run.get("input_files") or [])][:50]},
+                    ensure_ascii=False,
+                ),
+            },
         ]
+        # The main reservation owns priority, but preparation must not spend the
+        # metadata inference budget. The enclosing run deadline/cancellation owns
+        # this wait; also bound direct callers that do not use the job runner.
+        if (gate := run.get("_main_model_reserved")) is not None:
+            async with asyncio.timeout(settings.run_timeout_seconds):
+                await self._interruptible(run_id, gate.wait())
+        reason = "none"
         try:
-            async with asyncio.timeout(10):
+            async with asyncio.timeout(TITLE_TIMEOUT_SECONDS):
                 response = await self._call_model(self.llm or llm_for(model), run_id, run, model, prompt, -2, tools=[], quiet=True)
-            title = response.content.strip().splitlines()
-            return title[0].strip(" #*\"'“”")[:40] or None if title else None
+                candidate = normalize_title(response.content) or None
+                if not candidate:
+                    reason = "empty"
         except (RunCanceled, asyncio.CancelledError):
             raise
         except Exception as exc:
-            # Optional metadata must not discard a completed, metered answer.
-            log.warning("conversation title skipped run=%s error=%s", run_id, type(exc).__name__)
+            if isinstance(exc, ClientError) and exc.status == 409:
+                raise
+            reason = "timeout" if isinstance(exc, TimeoutError) else "error"
+            candidate = None
+            log.warning("conversation title inference failed run=%s error=%s", run_id, type(exc).__name__)
+        outcome = "ok"
+        if not candidate:
+            # A visible deterministic label is preferable to an indefinitely
+            # unnamed conversation. API empty-title CAS still preserves renames.
+            first_line = next((line for line in run["prompt"].splitlines() if line.strip()), "")
+            candidate = normalize_title(first_line) or normalize_title(run["prompt"]) or "对话"
+            outcome = "fallback"
+        try:
+            if hasattr(self.platform, "set_conversation_title"):
+                await self.platform.set_conversation_title(run_id, candidate)
+            metrics.CONVERSATION_TITLES.labels(outcome, reason).inc()
+            return candidate
+        except (RunCanceled, asyncio.CancelledError):
+            raise
+        except Exception as exc:
+            # Never hide cancellation/ownership loss behind a metadata retry.
+            metrics.CONVERSATION_TITLES.labels("timeout" if isinstance(exc, TimeoutError) else "error", "persist").inc()
+            log.warning("conversation title persistence failed run=%s error=%s", run_id, type(exc).__name__)
             return None
 
     async def _assemble_context(self, run_id, run, model, base):
@@ -555,6 +628,8 @@ class AgentLoop:
         policy = ModelPolicy(get_catalog())
         spec = get_catalog().get(model)
         budget = policy.input_budget(spec)
+        config = run.get("context_settings") or {}
+        threshold = min(budget, int(config.get("threshold_ratio", 0.5) * spec.context_tokens)) if config.get("auto_compact") else budget
         fixed = [base[0], base[-1]]
         context_tools = tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()
         if not spec.supports({"tools"}):
@@ -614,6 +689,8 @@ class AgentLoop:
                 while estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) > budget:
                     await compact()
             if not page["has_more"]:
+                while pending and estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) > threshold:
+                    await compact()
                 return assemble()
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
         raise LLMError("context pagination limit reached")
@@ -712,6 +789,7 @@ class AgentLoop:
                 "stdout": (result.get("stdout") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
                 "stderr": (result.get("stderr") or "")[:2000],
                 "error": result.get("error"),
+                **({"sources": web_sources(result)} if call.name in {"web_search", "read_url"} else {}),
                 **({"images": [i["path"] for i in result.get("images", [])]} if call.name == "search_images" else {}),
             },
         )
@@ -887,6 +965,7 @@ class AgentLoop:
         run["_attempt_id"] = attempt_id
         turn = _Turn(run)
         turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
+        title_task = None
         heartbeat = asyncio.create_task(self._heartbeat(run_id, turn))
         run_started, outcome = time.perf_counter(), "error"
         try:
@@ -915,6 +994,9 @@ class AgentLoop:
                     await self._ensure_lease(turn, run_id, required=True)  # fail explicitly before reusing completed file operations
             prior = await self.platform.get_run_usage(run_id)
             run["_ledger_tokens"] = prior["prompt_tokens"] + prior["completion_tokens"]
+            if run.get("needs_conversation_title"):
+                run["_main_model_reserved"] = asyncio.Event()
+                title_task = asyncio.create_task(self._conversation_title(run_id, run))
             model = run.get("model") or ""
             llm = self.llm or llm_for(model)  # fails the run early if the model is gone from the catalog
             options = run.get("options") or {}
@@ -935,6 +1017,7 @@ class AgentLoop:
                         "role": "system",
                         "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
                         + memory_prompt(run.get("memory") or {})
+                        + project_library_prompt(run.get("project_library") or [])
                         + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
                     },
                     *history_messages(run.get("history")),
@@ -1040,9 +1123,6 @@ class AgentLoop:
                 text = "\n\n".join(turn.thinking)
                 result["thinking"] = {"text": text[-THINKING_KEEP_CHARS:], "seconds": round(turn.thinking_seconds, 1)}
             if error is None:
-                title = await self._conversation_title(run_id, run, state["final_summary"] or "已完成请求")
-                if title:
-                    result["conversation_title"] = title
                 await self.platform.set_run_status(run_id, RunStatus.SUCCEEDED, summary=state["final_summary"] or "完成", result=result)
                 outcome = "succeeded"
             else:
@@ -1074,10 +1154,23 @@ class AgentLoop:
             await self._event(run_id, "agent.error", {"error": f"{type(exc).__name__}: {exc}"})
             await self.platform.set_run_status(run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000])
         finally:
-            heartbeat.cancel()
-            await asyncio.gather(heartbeat, return_exceptions=True)
             try:
-                await self._release_turn(turn)
-            except Exception:
-                log.warning("lease release failed run=%s", run_id, exc_info=True)
-            metrics.AGENT_RUN_SECONDS.labels(outcome).observe(time.perf_counter() - run_started)
+                if title_task is not None:
+                    try:
+                        # Terminal status is already visible. Keep ownership/client alive
+                        # for the title's remaining budget, never restart its clock here.
+                        if outcome in {"succeeded", "failed"} and run["_main_model_reserved"].is_set():
+                            await title_task
+                    except Exception:
+                        pass
+                    finally:
+                        title_task.cancel()
+                        await asyncio.gather(title_task, return_exceptions=True)
+            finally:
+                heartbeat.cancel()
+                await asyncio.gather(heartbeat, return_exceptions=True)
+                try:
+                    await self._release_turn(turn)
+                except Exception:
+                    log.warning("lease release failed run=%s", run_id, exc_info=True)
+                metrics.AGENT_RUN_SECONDS.labels(outcome).observe(time.perf_counter() - run_started)

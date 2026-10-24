@@ -25,6 +25,7 @@ class UsageErrorCode(StrEnum):
 
 
 class ReserveUsageIn(BaseModel):
+    quiet: bool | None = None
     model_config = ConfigDict(extra="forbid")
     call_id: str = Field(min_length=1, max_length=80)
     run_id: str | None = Field(default=None, min_length=1, max_length=40)

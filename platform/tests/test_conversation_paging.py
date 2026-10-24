@@ -20,6 +20,7 @@ def test_pages_use_timestamp_and_id_and_reject_foreign_cursor():
                 db.add(
                     Run(
                         id=f"page_{i:03}",
+                        parent_run_id=f"page_{i - 1:03}" if i else None,
                         user_id=db.get(Conversation, conv["id"]).user_id,
                         conversation_id=conv["id"],
                         prompt=str(i),
@@ -28,6 +29,7 @@ def test_pages_use_timestamp_and_id_and_reject_foreign_cursor():
                         created_at=datetime(2026, 1, 1, tzinfo=UTC),
                     )
                 )
+            db.get(Conversation, conv["id"]).active_run_id = "page_044"
             db.commit()
         url = f"/v1/conversations/{conv['id']}"
         page = c.get(url, headers=AUTH).json()
@@ -64,7 +66,7 @@ def test_auto_title_candidates_are_confirmed_bounded_and_optional():
             ("```md\n# 示例标题\n```\n普通回答", {}, ""),
             ("# 总结\n答案", {}, ""),
             ("普通回答", {"conversation_title": "多区域销售预测"}, "多区域销售预测"),
-            ("普通回答", {"conversation_title": "长" * 41}, ""),
+            ("普通回答", {"conversation_title": "长" * 41}, "长" * 40),
             ("普通回答", {"conversation_title": ["坏数据"]}, ""),
         ]:
             conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
@@ -97,6 +99,11 @@ def test_500_turn_first_page_is_bounded_and_fast():
                     for i in range(500)
                 ]
             )
+            db.flush()
+            turns = list(db.scalars(select(Run).where(Run.conversation_id == conv["id"]).order_by(Run.created_at, Run.id)))
+            for index, turn in enumerate(turns):
+                turn.parent_run_id = turns[index - 1].id if index else None
+            db.get(Conversation, conv["id"]).active_run_id = turns[-1].id
             db.commit()
             query = (
                 select(Run)
@@ -192,3 +199,11 @@ def test_agent_transition_applies_optional_title_in_same_commit():
         )
         assert response.status_code == 200, response.text
         assert client.get(f"/v1/conversations/{conversation['id']}", headers=AUTH).json()["title"] == "普通聊天的自动标题"
+
+
+def test_result_title_normalizes_inline_markdown_whitespace_and_caps_length():
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "question"}).json()
+        _finish(c, run["id"], "answer", conversation_title="# **强调** __重点__ *内容* `代码` [链接](https://example.com)\n  " + "长" * 50)
+        assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()["title"] == ("强调 重点 内容 代码 链接 " + "长" * 50)[:40]

@@ -20,7 +20,10 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
     try:
         expect(region).to_have_count(1)
         expect(region.locator(".steps-head")).to_contain_text("正在工作中")
-        expect(region).to_contain_text("环境已就绪")
+        # text after the last step is the answer: it streams outside the process box, not inside it
+        answer = page.locator(".assistant-body > .md")
+        expect(answer).to_contain_text("环境已就绪")
+        assert "环境已就绪" not in region.inner_text()
         details = page.request.get(stack.portal + "/api/v1/conversations/" + page.url.rsplit("/", 1)[-1]).json()
         run = details["turns"][-1]
         assert page.request.post(stack.portal + f"/api/v1/runs/{run['id']}/cancel").ok
@@ -31,8 +34,7 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
         page.locator(".turn-meta").wait_for()
         expect(page.locator(".steps-head > span").nth(1)).to_have_text(text)
         page.locator(".steps-head").click()
-        expect(page.get_by_role("region", name="工作过程")).to_contain_text("环境已就绪")
-        assert page.locator(".thinking-body").count() == 0
+        expect(page.locator(".assistant-body > .md")).to_contain_text("环境已就绪")
     finally:
         httpx.post(stack.agent + "/e2e/release-stream", timeout=5).raise_for_status()
 

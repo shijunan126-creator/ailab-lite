@@ -68,7 +68,7 @@ def _pdf(data: Path) -> dict:
 
     reader = PdfReader(data)
     pages = len(reader.pages)
-    text = "\n".join((page.extract_text() or "") for page in reader.pages[:20])
+    text = "".join(f"\f[page:{index + 1}]\n{page.extract_text() or ''}" for index, page in enumerate(reader.pages[:20]))
     return {"kind": "pdf", "pages": pages, "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
 
 
@@ -94,7 +94,8 @@ def _pptx(data: Path) -> dict:
 
     prs = Presentation(data)
     chunks: list[str] = []
-    for slide in prs.slides:
+    for index, slide in enumerate(prs.slides):
+        chunks.append(f"\f[page:{index + 1}]")
         for shape in slide.shapes:
             if shape.has_text_frame and shape.text.strip():
                 chunks.append(shape.text)
