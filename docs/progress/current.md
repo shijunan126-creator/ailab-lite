@@ -1,26 +1,18 @@
 # 当前工作
 
-## 后端并行子任务：会话树 / 置顶 / 全局搜索（2026-10-24）
+## 当前：UI 打磨与对话新功能（2026-10-24，集成中）
 
-- 最新专项授权：后端实现和本地提交，禁止修改Portal、push/PR/deploy；不启动其他路线图事项。父Agent继续负责Portal与平行分支集成。
-- 子工作树 `t3-14e9630c`，分支 `feat/chat-tree-pin-search`，实际base `09a011b`（父集成分支随后已前进）。运行时/测试固定 `e4c70cb`，迁移链新增 `0022→0023_conversation_tree`；兄弟计划任务0024由父Agent接到0023之后。
-- 已实现树形祖先路径、编辑/版本切换、原子发送/重试、置顶、全局有界搜索、quiet账本与composer上下文量；契约、EXPLAIN、成本和验证均在[专项交付记录](updates/2026-10-24-chat-tree-pin-search.md)。SQLite全套1004通过/110跳过、PG+Redis全套1081通过/33跳过，临时服务已停止；不代表Portal、浏览器、五服务集成、部署或main合入。
-- 下一步：父Agent合入本分支及另外两个平行分支，Portal按搜索next_cursor续查与Unicode偏移契约集成，再做整体验收。下面保留父任务与历史记录，本子任务未扩大其发布权限。
+授权（用户最新两条指令）：
+1. 打磨 UI/交互/动效，去掉“隔离沙箱”等技术措辞；修复切换刷新、正文在思考框内、思考不显示、标题延迟、引用链接、预览弹出时机、手机键盘与横向滑动、批量栏浮动；新增任意轮次分叉、重试、Chat/Work 读资料库、管理员上下文压缩阈值。
+2. 追加且仅限：编辑较早消息 + 版本箭头；导出 PDF（不做 Markdown 导出）；置顶 + 全局搜索；“/”选技能并填模板；项目答案引用库文件（文件名+页码）；定时任务（每用户最多 5 个）；非侵入式 token 计数与上下文占用。**不做**：语音、点赞点踩、生成文件版本对比。记忆能力经核对已在对话/工作两种模式实现（快照注入 + memory 工具），未改动。
 
-## 本工作树交付：定时任务 / 资料库页码引用（2026-10-24）
+分工：主 Agent（Claude）负责前端、整体架构、UI 与审核；后端与全部测试运行由 Codex `gpt-6.1-sol` medium 子任务负责。**未授权部署、推送、PR、合入 main**；下方旧的“先部署再 PR”授权不适用。
 
-后端子任务分支 `feat/schedules-citations`，基线 `09a011b`（`feat/ui-polish-fork-retry` 当时 HEAD）；仅本地实现与提交，不改 Portal、不推送/PR/部署。CRUD、五条用户锁上限、原子调度/新会话/Run/outbox、项目删除停用、Worker 页标记、资料库工具页码与项目索引 prompt 已实现。完整 SQLite 996/109跳过、PG+Redis1072/33跳过；最终新增故障/审计/额度增量 SQLite11/1跳过、PG12通过，Ruff通过。[交付契约与证据](updates/2026-10-24-schedules-citations.md)。
-
-下一步由父Agent合入 sibling 0023，再将 **0024.down_revision 从0022改为0023**，保留并行模型/schema/bootstrap字段，做双库迁移回归与Portal/浏览器/E2E统一验收。当前0024未使用stub；未做前后端集成或生产验收。下方为父分支及历史工作记录，不覆盖本工作树最新边界。
-
-## 当前：UI 打磨 + 分叉 / 重试 / 思考展示（2026-10-24）
-
-授权（用户最新指令）：打磨 UI/交互/动效、去掉“隔离沙箱”等技术措辞、修复切换刷新/正文在思考框内/思考不显示/标题延迟/引用链接/预览弹出/手机键盘与横向滑动/批量栏浮动；新增任意轮次分叉（对话→对话/工作，工作→工作）、最后一轮重试、Chat/Work 主动读资料库、管理员上下文压缩阈值。前端与整体架构由主 Agent 负责，后端由 Codex `gpt-6.1-sol` medium 子任务实现。**未授权部署、推送、PR、合入 main**；下方旧的“先部署再 PR”授权不适用于本轮。
-
-- 集成分支 `feat/ui-polish-fork-retry`（基线 `main@94d3e22`），已合入后端 `feat/chat-backend-fork-retry@f897f41`（迁移 0022）。前端结果、根因与验证见 [前端/集成记录](updates/2026-10-24-ui-polish-fork-retry.md)；后端契约与双库证据见 [后端记录](updates/2026-10-24-chat-fork-retry-backend.md)。
-- 当前检查：Portal 30 项/tsc/build 通过；SQLite 全套 1026 通过/68 跳过；五服务 E2E 66/67，唯一失败（侧栏收起刷新闪烁）已修复，待复跑。
-- 已合入 Codex 第二轮 `fix/chat-title-timing@c59351f`：正文先结束时标题任务有界收尾并经 SSE 送达（`run.completed → conversation.titled → stream.end`），标题统一清洗 Markdown；SQLite 1000 通过/108 跳过（Codex 运行），证据见[后端记录 Round 2](updates/2026-10-24-chat-fork-retry-backend.md#round-2标题完成时序修复2026-10-24)。
-- 下一步：合入第二轮 → 复跑 Ruff/SQLite 全套/E2E（有条件再跑 PG）→ 更新本节与记录 → 向用户汇报并等待是否部署/提 PR 的指示。未验：真机 iOS/Android 键盘、真实模型思考格式与标题时延。
+- 集成分支 `feat/ui-polish-fork-retry`（基线 `main@94d3e22`）。已合入后端分支：`feat/chat-backend-fork-retry@f897f41`（0022）、`fix/chat-title-timing@c59351f`、`feat/chat-tree-pin-search@35193b2`（0023）、`feat/schedules-citations@2245bb8`（0024，合入时 down_revision 改为 0023）。迁移链 0021→0022→0023→0024。
+- 记录：[前端/集成](updates/2026-10-24-ui-polish-fork-retry.md)、[后端 fork/retry/标题](updates/2026-10-24-chat-fork-retry-backend.md)、[会话树/置顶/搜索](updates/2026-10-24-chat-tree-pin-search.md)、[定时任务/页码引用](updates/2026-10-24-schedules-citations.md)。
+- 当前检查（主 Agent 合并后）：Portal 31 项 / tsc / build 通过；Ruff 通过；迁移与 fork/retry/定时任务相关测试冒烟通过；无头浏览器人工审核新功能（编辑→2/2、切回 1/2、“/”模板、⌘K 搜索高亮、置顶、定时任务、上下文环）无报错。各子分支自身的双库全套结果见各自记录，**不等于合并后结果**。
+- 进行中：Codex 集成测试任务（分支 `test/integration-ui-features`）——合并后 SQLite/PG 全套、迁移链双库、Portal、五服务 E2E，并为新功能补浏览器 E2E。
+- 下一步：审核其结果并修复其报告的 Portal 问题 → 更新本节与记录 → 向用户汇报，等待是否部署/提 PR。未验：真机 iOS/Android 键盘、真实模型的思考格式/标题时延/页码引用质量。
 
 更新：2026-10-24。最新授权追加：对话为正常聊天AI，仅无沙箱；移除逐条模式标签与消极输入提示。此前授权：参考 Hermes，实现 Chat/Work 技能自动维护、技能页编辑、按用户归属且可编辑的 Memory System；前端交由 Claude Opus 5.5 Medium，最多两个 Claude 同时运行，后端与统一验收由主 Agent 负责。用户最新明确授权：先部署，再提交PR，检查通过后merge；本条覆盖此前未发布边界。
 
