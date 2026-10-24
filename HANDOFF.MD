@@ -308,3 +308,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - `tarfile` 的 data filter 会去掉前导 `/`（绝对名落在目标目录内，不报错），但对 `..` 和绝对链接抛异常；解压脚本要在 finally 里清理部分目录，否则拒绝后留下半个仓库。
 - URL 来源提取的正则只取 ASCII URL 字符；否则“链接。”里的中文句号会并进 URL，导致用户给的链接被判为未授权。
 - 离线演示（MockLLM）原以“tools 是否为空”区分 Chat/Work；Chat 有了 save_skill 后它会去调沙箱工具。Mock 只能按本轮实际提供的工具名决定脚本。E2E 依赖 Redis（默认 6379），本机没有时用 `AILAB_TEST_REDIS_URL` 指向一次性实例，否则整套报 broker did not come up。
+
+## 2026-10-24 CI / 测试完整性
+
+- `docs/` 不等于文档：历史验收目录有 Python/Shell/Dockerfile。CI 只对白名单 Markdown 省测，未知文件保守全套；重命名关闭检测以保留双端路径，始终比较完整 PR base...head。
+- GitHub job success 不证明真实契约执行：专门验证 JUnit 中匹配的 Redis/PG/S3/重型组件用例，拒绝无报告、无匹配或跳过；S3 的 local inode 不适用项单独白名单。新增 job 必须同步 `ci_gate.py`，门禁严格校验完整集合。
+- 脱敏回归不要把 `private` 等普通单词在整个配置中全文禁用，macOS 正常 `/private/` 路径会误报。应逐项断言敏感字段和 URL 的预期脱敏值，同时保留合法路径。
+- E2E 的 npm test/build 输出须流式留在 `e2e-logs/`，失败 trace/截图要用一次真实故障探针验保存；不能只凭 hook 代码声称诊断生效。就绪必须是 200，404 不是服务可用；kill 后还要 wait 回收。
+- 独立生产依赖 venv 里的服务导入才证明 dev extras 没有掩盖启动缺包。重型 Docker/Office/ClamAV/Keycloak 每周/手动验收与每 PR 流水线分开；工作流静态通过不等于真实组件或远端 Actions 已通过。

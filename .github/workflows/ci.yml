@@ -50,6 +50,14 @@ jobs:
       - run: python scripts/check_imports.py
       - run: python scripts/check_skills.py
       - run: python tests/golden/run.py --self-test
+      - name: Import services with only production dependencies
+        env:
+          AILAB_ENV_FILE: /tmp/ailab-ci-no-env
+          AILAB_DATA_DIR: ${{ runner.temp }}/runtime-data
+        run: |
+          python -m venv "$RUNNER_TEMP/runtime"
+          "$RUNNER_TEMP/runtime/bin/pip" install -c constraints.txt '.[postgres,opensandbox]'
+          "$RUNNER_TEMP/runtime/bin/python" scripts/check_imports.py
 
   python:
     needs: changes
@@ -107,6 +115,15 @@ jobs:
             args+=(--cov=ailab_platform --cov-report=term-missing --cov-report=xml:test-results/coverage.xml)
           fi
           pytest tests -ra --durations=10 --junitxml=test-results/results.xml "${args[@]}"
+      - name: Require real database and queue coverage
+        env:
+          DATABASE: ${{ matrix.database }}
+        run: |
+          args=(--require 'contracts.test_queue::.*\[redis\]$')
+          if [ "$DATABASE" = postgres ]; then
+            args+=(--require 'contracts.test_database::.*\[postgres\]$' --require 'contracts.test_ledger_database::' --require 'contracts.test_backup::test_postgres' --require 'tests.test_migrations::')
+          fi
+          python ../.github/scripts/verify_junit.py test-results/results.xml "${args[@]}"
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -164,6 +181,11 @@ jobs:
           done
           curl -fsS --max-time 2 "$AILAB_TEST_S3_URL/minio/health/ready"
       - run: pytest tests/contracts/test_storage.py -ra --junitxml=test-results/storage.xml
+      - name: Require S3 cases to run
+        run: >-
+          python ../.github/scripts/verify_junit.py test-results/storage.xml
+          --require 'contracts.test_storage::.*\[s3\]$'
+          --allow-skip '::test_copy_pins_source_before_concurrent_replacement\[s3\]$'
       - name: Stop service
         if: always()
         run: if [ -n "${MINIO_PID:-}" ]; then kill "$MINIO_PID"; fi
@@ -189,8 +211,11 @@ jobs:
           kubectl kustomize platform/deploy/overlays/dev > /tmp/dev.yaml
           kubectl kustomize platform/deploy/overlays/lite > /tmp/lite.yaml
           kubectl kustomize deploy/overlays/lite > /tmp/sandbox.yaml
-          shellcheck -S warning deploy.sh tests/*.sh platform/scripts/*.sh
-          bash -n deploy.sh
+          git ls-files -z '*.sh' | xargs -0 shellcheck -s bash -S warning
+          shellcheck -S warning images/sbx-office/smoke/smoke.sh
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(git ls-files -z '*.sh')
 
   e2e:
     # The fixture owns Portal Node tests + an isolated production build, avoiding a duplicate build job.
@@ -249,20 +274,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@v7
       - name: Require selected suites to pass
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: |
-          python3 - <<'CHECK'
-          import json, os
-          jobs = json.loads(os.environ['RESULTS'])
-          bad = [name for name, job in jobs.items() if job['result'] not in ('success', 'skipped')]
-          outputs = jobs['changes'].get('outputs', {})
-          if set(outputs) != {'code', 'backend', 'e2e'} or any(v not in ('true', 'false') for v in outputs.values()):
-              raise SystemExit('Invalid scope outputs')
-          selected = {'quality': 'code', 'shell': 'code', 'python': 'backend', 'storage-contracts': 'backend', 'e2e': 'e2e'}
-          missing = [name for name, flag in selected.items() if outputs.get(flag) == 'true' and jobs[name]['result'] != 'success']
-          if jobs['changes']['result'] != 'success' or bad or missing:
-              raise SystemExit(f'CI failed: {sorted(set(bad + missing))}')
-          print('All selected checks passed.')
-          CHECK
+        run: python3 .github/scripts/ci_gate.py

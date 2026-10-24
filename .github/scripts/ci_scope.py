@@ -3,7 +3,7 @@
 import json
 import os
 import subprocess
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 DOC_FILES = {
     ".github/CI.md",
@@ -21,11 +21,15 @@ DOC_FILES = {
 def scope(paths):
     code = backend = e2e = False
     for path in paths:
-        if path.startswith("docs/") or path in DOC_FILES:
+        # Unknown/executable files inside docs are still code. Do not normalize an
+        # unrecognized path into the documentation or Portal optimization.
+        parts = PurePosixPath(path).parts
+        canonical = bool(path) and not path.startswith("/") and ".." not in parts and str(PurePosixPath(path)) == path
+        if canonical and (path in DOC_FILES or (path.startswith("docs/") and path.endswith(".md"))):
             continue
         code = e2e = True
         # Portal changes need its Node tests, production build and browser suite, but no DB suite.
-        if not path.startswith("platform/portal/"):
+        if not canonical or not path.startswith("platform/portal/"):
             backend = True
     return {"code": code, "backend": backend, "e2e": e2e}
 
@@ -37,7 +41,12 @@ def main():
             event["pull_request"]["base"]["sha"],
             event["pull_request"]["head"]["sha"],
         )
-        paths = subprocess.check_output(["git", "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}"]).decode().split("\0")
+        # Disabling rename detection keeps both sides, including moves into docs.
+        paths = (
+            subprocess.check_output(["git", "diff", "--no-renames", "--name-only", "-z", f"{base}...{head}"])
+            .decode("utf-8", errors="surrogateescape")
+            .split("\0")
+        )
         result = scope(path for path in paths if path)
     else:
         result = dict.fromkeys(("code", "backend", "e2e"), True)

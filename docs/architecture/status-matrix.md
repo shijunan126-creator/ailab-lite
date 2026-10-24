@@ -80,7 +80,7 @@
 
 | 能力 | 实现 | 未验收 |
 |---|---|---|
-| 契约测试（T10） | `platform/tests/contracts/`：Storage（Local/S3）、JobQueue（memory/Redis）、DB（SQLite/PG）共用一套用例；真实后端未配置时跳过 | 2026-10-23 真实 MinIO 契约15 passed/1 local-only skip；Linux PG16/Redis/全局S3/原生clamd最终753 passed/9分项skip；CI 已改固定源码 SHA256 构建/缓存 MinIO，首轮新工作流验收见 [CI 更新](../progress/updates/2026-10-23-ci-refresh.md) |
+| 契约测试（T10） | `platform/tests/contracts/`：Storage（Local/S3）、JobQueue（memory/Redis）、DB（SQLite/PG）共用一套用例；CI JUnit 防静默跳过、可测门禁与每周 Docker/Office/ClamAV/Keycloak 入口见 [2026-10-24 更新](../progress/updates/2026-10-24-ci-test-completeness.md)，本轮尚未远端验收；本地未配置外部后端仍跳过 | 2026-10-23 真实 MinIO 契约15 passed/1 local-only skip；Linux PG16/Redis/全局S3/原生clamd最终753 passed/9分项skip；CI 已改固定源码 SHA256 构建/缓存 MinIO，首轮新工作流验收见 [CI 更新](../progress/updates/2026-10-23-ci-refresh.md) |
 | 部署（T11） | `platform/deploy/base` + `overlays/dev|lite`；Broker 独立 Service；公共入口路径白名单；NetworkPolicy（含 Worker→Broker、Worker→ClamAV）；PVC 参数化与容量告警。渲染需 kustomize ≥ 5.7 | 隔离 2CPU/8GiB k3s 7/7 Ready、网络/Secret/离线smoke通过；Redis故障探测约1s；单轮无OOM但有CPU节流；lite hostNetwork公网防火墙未验 |
 | 备份恢复（T12） | `ops.backup create/verify/restore`：SQLite 在线备份或 pg_dump、对象清单与哈希、脱敏配置；恢复到空目录并冒烟 | 隔离k3s 57对象/241MiB create+verify+restore+verify=4.14s、RSS60.1MiB，新API下载/预览/Run通过；生产数据量RPO/RTO与异机介质未验；需停写/GC |
 | 存储生命周期（T12） | 过期上传暂存、孤立派生对象、终态 Run 的旧事件、软删 30 天的对话、过期回收站、三天工作区；持久删除意图 + 重试；每类有设置与低基数指标 | — |
