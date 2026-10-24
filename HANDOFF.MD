@@ -444,3 +444,8 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 已claim的steer还不是已注入；详情仅按runtime_meta.steer_ids确认顺序查有界队列表。重新加载的bubble不能从所有steered行猜测。队列scripted model应识别当前最新原始用户消息，不能把history里旧的慢任务当成新任务再次阻塞。
 - E2E通过API准备项目后须重新加载以初始化前端项目缓存；按文件ID核对移动后名称，重名会合法改名。手机证据先收起桌面遗留侧栏，避免截图只显示遮罩。
 - 品牌保存空字体用空字符串（非null）；产物菜单提问/移动必须读取文件当前项目，不能沿用对话项目。两项Portal回归由父Agent修复，未放宽浏览器断言。
+
+## 2026-10-24 Portal 动画 / 原生弹窗
+- 删除旧样式块时连带删掉了 `@keyframes spin`（b075489），所有转圈（预览、上传、忙碌按钮）都停在一帧，看起来像卡死；后端预览其实几秒就绪。现在 `tests/css-animations.test.mjs` 检查 globals.css 里用到的每个动画都有 keyframes。排查“卡住”先看 `el.getAnimations()` 是否为空，再查后端。
+- `prefers-reduced-motion` 的全局规则把动画压成 1 次；进度类转圈（`.viewer-spinner`/`.chip-spin`/`.pr-spin` 等）已豁免为慢速持续转，新增转圈类要加进同一行。
+- 不用浏览器 `confirm()/alert()`、原生 `<select>`、`type=time/color`：确认用 `lib/dialog.ts` 的 `confirmDialog()`（根布局挂 `DialogHost`，Escape 在捕获阶段拦截，不会连带关掉下面的对话框）；下拉用 `components/select.tsx`（列表 portal 到 body，不被弹窗滚动区裁切），时间用 `TimeSelect`。
