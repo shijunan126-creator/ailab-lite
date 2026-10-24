@@ -37,6 +37,7 @@ from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
 from .routes_runs import router as runs_router
 from .routes_runtime import router as runtime_router
+from .routes_search import router as search_router
 from .routes_skills import router as skills_router
 
 setup_logging("api")
@@ -181,3 +182,6 @@ def root() -> dict:
 @app.get("/metrics", include_in_schema=False, dependencies=[Depends(metrics_auth)])
 def metrics_endpoint() -> Response:
     return metrics_response()
+
+
+app.include_router(search_router)
