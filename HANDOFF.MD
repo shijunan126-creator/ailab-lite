@@ -399,3 +399,14 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - PostgreSQL UTF8不等于Unicode大小写转换：initdb C locale的lower('ÉCOLE')仍为'École'。搜索窗口已显式使用ICU root `und-x-icu`，PG16部署须包含此collation；双库EXPLAIN与C locale回归均应保留。不能通过切换测试locale或skip掩盖契约失败。
 - 新路由的composer可先出现、model选项稍后加载；浏览器探针应等发送按钮enabled并确认POST被接收，不能只按Enter后把未创建Run误当模型卡住。文件页码引用渲染为`.md-file`按钮，非a；用原始Markdown校验ailab-file与page，再点按钮测查看器几何。
 - 真实低阈值压缩可用临时catalog收紧合法context预算，管理员threshold_ratio=0.2；必须记录此缩小窗口与真实provider调用边界，不能写成默认百万窗口长期容量证明。个人catalog与开发.env不变。
+
+
+## 2026-10-24 合并main后的部署验收
+
+- 部署固定merge SHA，镜像内Python及Portal源码逐文件比对，不能只用镜像tag推断内容。个人catalog挂载会覆盖仓库默认配置；quiet直接回答能力需在个人catalog显式配置，不能假设代码升级就启用。
+- 本机编排历史资源上限可能高于仓库manifest；验收须核对实际限制并采集CPU/RSS。Docker MemUsage不是进程RSS；临时docker exec观察进程本身会抬高RSS，必须剔除或明确作为保守上界。模型主Run结束后标题/预览仍可能短暂工作，不把刚终态的采样称为长期空闲。
+- 备份不仅复制DB：停写后完整数据卷归档，checksum再读校验、实际恢复读取SQLite并核对每个ready对象的hash。迁移后先做严格ID/数量比较，再执行smoke；smoke之后比较旧ID保留，不能把自己新增测试数据误报迁移丢失/增生。
+- 搜索标题命中不承诺正文mark；浏览器应断言可选结果和导航。会话列表接口返回数组，不能使用旧items包装。清理须限定专用测试账号，按公开软删除契约保留审计数据；删除会话不会删除资料库产物。
+- 定时任务“立即运行”不能证明后台dispatcher运行；另安排一次真实未来到期，记录相对到期时间的延迟并删除任务。空队列CPU探针只是每轮成本估算，不是任务执行负载。监控须使用ops凭据，旧service token的403不能通过放宽认证处理。
+- PDF浏览器smoke区分print视图/print调用和系统保存文件；拦截window.print便于自动化时必须记录边界。内置preview超时按既有两次失败规则回退，不能把工具超时当产品错误。
+- 本次部署和详细证据见[Gate 3发布记录](docs/progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)；个人备份/配置/地址/账号/原始日志只记仓库外本机HANDOFF。
