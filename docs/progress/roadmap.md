@@ -50,3 +50,6 @@
 ## 2026-10-24 PPT 模板后端子任务
 
 用户授权公司/个人/单轮PPT模板后端，不包含Portal/发布。`feat/ppt-templates-backend` 已实现并本地双库/相关五服务验证，未合并/部署；父任务下一步集成Portal、确认联系图视觉边界，再另行授权0028迁移与sbx-office重建。精确验收、成本、未验边界见[交付记录](updates/2026-10-24-ppt-templates-backend.md)，接口见[设计](../reviews/2026-10-24-ppt-templates-design.md)。
+
+
+PPT缩略图后续授权已在同一后端分支实现：真实首屏JPEG优先、独立受限草图fallback，SQLite1129通过/118跳过，DB/队列未改。父任务下一步再集成并重建平台镜像、验证目标Linux预算；默认192MiB在macOS触限，不隐瞒为真实渲染成功。详见[本轮记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。

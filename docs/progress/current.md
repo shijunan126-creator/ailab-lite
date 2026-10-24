@@ -1,11 +1,12 @@
 # 当前工作
 
-## PPT 模板真实首屏缩略图跟进（2026-10-24，本分支实现中）
+## PPT 模板真实首屏缩略图跟进（2026-10-24，已实现并本地验证，待父任务再集成）
 
-- 父任务报告已将初版后端合入 `feat/ppt-templates-portal@1c53b46` 并完成公司/个人/one-off、冻结与turn chip的Portal验收；该信息来自父任务，不代表合入main或部署。本分支仍为 `feat/ppt-templates-backend`，本轮起点 `833f64b`，不改Portal、不push/PR/merge/deploy。
-- 本轮改为共享LO/Poppler首屏JPEG，渲染失败/超时/OOM回退草图，保留ready；原有默认内存/wall预算不提高。Worker镜像补依赖并监测整进程组RSS，profile/PDF随临时目录清理。
-- 目前专项51通过/1跳过；全量SQLite运行中。未改DB/队列，因此不按父任务条件重跑PG+Redis全套；初版双库历史结果见[原交付](updates/2026-10-24-ppt-templates-backend.md)，不能冒充本轮结果。
-- 下一步：完成Ruff/SQLite及真实渲染成本测量，提交本分支后交父任务再集成。设计见[契约](../reviews/2026-10-24-ppt-templates-design.md)，本轮结果见[跟进记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
+- 父任务报告初版已合入 `feat/ppt-templates-portal@1c53b46` 并完成三种来源/冻结/turn chip验收；该信息来自父任务，不代表合入main或部署。本分支仍为 `feat/ppt-templates-backend`，本轮起点 `833f64b`，运行/回归基线 `771d9fe`；未改Portal、未push/PR/merge/deploy。
+- 已改为共享LO/Poppler首屏480px JPEG，渲染失败/超时/OOM回退草图；双缩略图失败也保留ready。按整进程组RSS与原有wall/CPU/output预算限制，临时profile/PDF随任务清理；v2 immutable缓存/ETag，兼容旧v1 WebP。
+- 本轮Ruff通过；专项 **52通过/1跳过**，完整SQLite **1129通过/118跳过**。没有DB/队列代码变更，按父任务条件未重跑PG+Redis；原双库/E2E仅为[历史验收](updates/2026-10-24-ppt-templates-backend.md)。
+- macOS单页样本256MiB配置下三次真实渲染成功，wall中位2.038s、CPU1.772s、采样整组RSS峰值245.2MiB。默认192MiB触限并回退（完整流程1.647s）；未提高默认值。20页样本256MiB也有触限，不保证所有模板都有真实图。
+- 下一步：父任务合入本轮提交并重建平台镜像（新增LO/Poppler/CJK字体/fontconfig/procps），在目标Linux既有预算下复核；Docker镜像构建/部署未执行。旧v1缓存未自动重建。详见[契约](../reviews/2026-10-24-ppt-templates-design.md)和[本轮交付](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
 
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 
