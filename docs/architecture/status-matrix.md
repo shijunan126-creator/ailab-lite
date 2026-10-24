@@ -145,3 +145,8 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 2026-10-24 合并功能统一验收：`test/integration-ui-features` 基于 `2e1a741`，测试代码 `6d01882`；0024已重接0023，双库完整套件/迁移往返通过，新增13项浏览器验收，完整五服务E2E77通过/1失败/1手动辅助跳过。会话级Work分叉限制与当前祖先前缀语义存在待父Agent处理差异，保留失败测试；完整结果/首轮证据见[集成测试记录](../progress/updates/2026-10-24-integration-tests.md)。未发布、未合入main。
 
 2026-10-24 前缀分支契约决定后复跑：基线 `a09d70b`，交付分支 `test/e2e-rerun-fork-contract`；fork 单跑1通过、完整五服务E2E78通过，均0失败/0跳过，Ruff及fixture内Portal31项/隔离build通过。未修改产品代码；上述会话级与前缀语义差异已按父Agent决定解决，历史失败不代表本次结果。未部署、未合入main，真实模型/真机等边界仍保留，见[复跑记录](../progress/updates/2026-10-24-integration-tests.md#复跑合入后-a09d70b)。
+
+
+## 2026-10-24 C 后端分支补充（待集成）
+
+`feat/shares-library` 实现内部只读快照分享、资料库持久摘要与OCR选页，双库本地验证通过；通知helper仍为no-op，0027暂接0024，尚未Portal/父分支集成或合入main。接口、证据与边界见[后端交付](../progress/updates/2026-10-24-shares-library-backend.md)。

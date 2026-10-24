@@ -410,3 +410,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 定时任务“立即运行”不能证明后台dispatcher运行；另安排一次真实未来到期，记录相对到期时间的延迟并删除任务。空队列CPU探针只是每轮成本估算，不是任务执行负载。监控须使用ops凭据，旧service token的403不能通过放宽认证处理。
 - PDF浏览器smoke区分print视图/print调用和系统保存文件；拦截window.print便于自动化时必须记录边界。内置preview超时按既有两次失败规则回退，不能把工具超时当产品错误。
 - 本次部署和详细证据见[Gate 3发布记录](docs/progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)；个人备份/配置/地址/账号/原始日志只记仓库外本机HANDOFF。
+
+## 2026-10-24 C 分支：内部分享 / 资料库摘要
+
+- 分享的 file/conversation 外键使用 ON DELETE SET NULL；否则软删除后的永久清理会被分享记录挡住。授权必须同时检查对象存活、所有者活跃、受众和固定 through_run_id 路径；不能用当前活动路径替代快照，不能把输入附件当产物授权。
+- 分享复用文件流/ETag接口后须覆盖 immutable 缓存为 private/no-store；分享 DTO 的文件地址走 `/api/v1/shares/...`，不能复用所有者 download_url 或对象存储签名URL。
+- 摘要须扩展完整 JobEnvelope→claim→Worker→API→业务结果→ACK 链路，并和 READY/OCR完成同事务 stage_job；明显无文本的文件直接 skipped，避免每个图片都产生空作业。OCR晚到只重新排队一次。
+- 不可变账本里的已结算 call_id 不能重新用于一次新推理。首次 `summary:<file_id>`；明确失败重试使用独立后缀（最多3次总调用），不得通过删除旧账本实现重试。通知接缝 `api/share_notifications.py` 当前 no-op，父 Agent 接 B helper。
+- Worker 派发标志不能写回原队列消息的 payload；内存队列会把同一对象重投，extra=forbid 的 JobEnvelope 将拒绝被污染的消息。
+- read_library_file 输入 pages=[2] 与输出 pages=[{page,offset}] 不同；扫描PDF OCR必须保持原物理页码。两页测试客户端也必须提供两页预览，否则 page_limit 是预览样本不完整，并非OCR丢页。验证与未验边界见[本轮记录](docs/progress/updates/2026-10-24-shares-library-backend.md)。
