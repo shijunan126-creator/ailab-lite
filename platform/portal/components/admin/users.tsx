@@ -1,26 +1,28 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { admin, AdminUser, Department, QuotaPolicy, reason, ROLE_LABEL } from "../../lib/admin";
-import { Me, Role } from "../../lib/api";
+import { admin, AdminUser, Department, QuotaPolicy, reason } from "../../lib/admin";
+import { Me } from "../../lib/api";
 import { formatTokens, timeAgo } from "../../lib/format";
 import { IconPlus, IconSearch, IconX } from "../icons";
 import Modal from "../library/modal";
 import Select from "../select";
 
-const ROLES: Role[] = ["dept_admin", "platform_admin", "auditor"]; // everyone is a member
-
-function RolePicker({ value, onChange, allowPlatform }: { value: Role[]; onChange: (roles: Role[]) => void; allowPlatform: boolean }) {
+function AdminToggle({ on, onChange, disabled }: { on: boolean; onChange: (on: boolean) => void; disabled?: boolean }) {
   return (
-    <div className="role-picker">
-      {ROLES.filter((r) => allowPlatform || r === "dept_admin").map((r) => {
-        const on = value.includes(r);
-        return (
-          <button type="button" key={r} className={`role-chip ${on ? "on" : ""}`} aria-pressed={on} onClick={() => onChange(on ? value.filter((x) => x !== r) : [...value, r])}>
-            {ROLE_LABEL[r]}
-          </button>
-        );
-      })}
+    <div className="field-row">
+      <span>{on ? "管理者" : "普通用户"}</span>
+      <button
+        type="button"
+        className={`switch ${on ? "on" : ""}`}
+        role="switch"
+        aria-checked={on}
+        aria-label="管理者权限"
+        disabled={disabled}
+        onClick={() => onChange(!on)}
+      >
+        <span className="knob" />
+      </button>
     </div>
   );
 }
@@ -42,7 +44,7 @@ function UserDialog({
 }) {
   const [name, setName] = useState(user.display_name);
   const [dept, setDept] = useState(user.dept?.id || "");
-  const [roles, setRoles] = useState<Role[]>(user.roles.filter((r) => r !== "user"));
+  const [isAdmin, setIsAdmin] = useState(user.roles.some((r) => r !== "user"));
   const [policy, setPolicy] = useState(user.quota_policy?.id || "");
   const [disabled, setDisabled] = useState(user.disabled);
   const [password, setPassword] = useState("");
@@ -59,8 +61,8 @@ function UserDialog({
       if ((dept || null) !== (user.dept?.id || null)) change.dept_id = dept || null;
       if ((policy || null) !== (user.quota_policy?.id || null)) change.quota_policy_id = policy || null;
       if (disabled !== user.disabled) change.disabled = disabled;
-      const before = user.roles.filter((r) => r !== "user").sort().join();
-      if ([...roles].sort().join() !== before) change.roles = ["user", ...roles];
+      const before = user.roles.some((r) => r !== "user");
+      if (isAdmin !== before) change.roles = isAdmin ? ["user", "platform_admin"] : ["user"];
       const saved = Object.keys(change).length ? await admin.patchUser(user.id, change) : user;
       if (password) await admin.setPassword(user.id, password);
       onSaved(saved);
@@ -102,10 +104,13 @@ function UserDialog({
             options={[{ value: "", label: "无" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
           />
         </label>
-        <div className="field">
-          <span>角色</span>
-          <RolePicker value={roles} onChange={setRoles} allowPlatform={isPlatform} />
-        </div>
+        {isPlatform ? (
+          <div className="field">
+            <span>权限</span>
+            <AdminToggle on={isAdmin} onChange={setIsAdmin} />
+            <span className="hint">关闭后是普通用户；开启后拥有全部管理权限。</span>
+          </div>
+        ) : null}
         {isPlatform ? (
           <label className="field">
             <span>额度</span>
@@ -151,7 +156,7 @@ function NewUserDialog({
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [dept, setDept] = useState(defaultDept);
-  const [roles, setRoles] = useState<Role[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -160,7 +165,7 @@ function NewUserDialog({
     setBusy(true);
     setError("");
     try {
-      onSaved(await admin.createUser({ username: username.trim(), display_name: name.trim() || username.trim(), password, dept_id: dept || null, roles: ["user", ...roles] }));
+      onSaved(await admin.createUser({ username: username.trim(), display_name: name.trim() || username.trim(), password, dept_id: dept || null, roles: isAdmin ? ["user", "platform_admin"] : ["user"] }));
     } catch (err) {
       setError(reason(err));
       setBusy(false);
@@ -207,10 +212,13 @@ function NewUserDialog({
             options={[{ value: "", label: "无" }, ...departments.map((d) => ({ value: d.id, label: d.name }))]}
           />
         </label>
-        <div className="field">
-          <span>角色</span>
-          <RolePicker value={roles} onChange={setRoles} allowPlatform={isPlatform} />
-        </div>
+        {isPlatform ? (
+          <div className="field">
+            <span>权限</span>
+            <AdminToggle on={isAdmin} onChange={setIsAdmin} />
+            <span className="hint">默认是普通用户；开启后拥有全部管理权限。</span>
+          </div>
+        ) : null}
       </form>
     </Modal>
   );
@@ -304,13 +312,7 @@ export default function UsersSection({ me, isPlatform }: { me: Me; isPlatform: b
               </span>
               <span className="col dept">{u.dept?.name || ""}</span>
               <span className="col roles">
-                {u.roles
-                  .filter((r) => r !== "user")
-                  .map((r) => (
-                    <span key={r} className="chip">
-                      {ROLE_LABEL[r]}
-                    </span>
-                  ))}
+                {u.roles.some((r) => r !== "user") ? <span className="chip">管理者</span> : <span className="chip">普通用户</span>}
               </span>
               <span className="col num" title="本月用量（按模型倍率折算）">
                 {formatTokens(u.usage.monthly)}
