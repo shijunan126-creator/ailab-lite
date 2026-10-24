@@ -310,7 +310,11 @@ def test_library_summary_file_menu_and_switch(logged_in, stack, tmp_path):
             lambda fs: any(f["filename"] == path.name and f.get("meta", {}).get("summary", {}).get("status") == "done" for f in fs),
         )
         file = next(f for f in files if f["filename"] == path.name)
-        expect(row.locator(".lib-summary")).to_have_text(file["meta"]["summary"]["text"], timeout=15000)
+        # Preserve every word; the mock includes bold and a quoted last paragraph.
+        summary = file["meta"]["summary"]["text"].replace("**", "")
+        summary = " ".join(re.sub(r"(?m)^>\s*", "", summary).split())
+        expect(row.locator(".lib-summary")).to_have_text(summary, timeout=15000)
+        expect(row.locator(".lib-summary")).not_to_contain_text("**")
         shot(page, "library-summary")
         shot(page, "library-summary", True)
         page.set_viewport_size({"width": 1360, "height": 860})
