@@ -105,3 +105,7 @@ API 每请求扫描有界，允许空页带续查游标。Portal 只自动续查
 结构化验收结果见[validation.json](single-node-review-20261025/validation.json)。PR、精确检查 head、合并 SHA 与最终清理见[本轮交付](../progress/updates/2026-10-25-single-node-review.md)。合并不等于部署，运行环境仍需后续单独发布。
 
 视觉证据：[桌面续查](single-node-review-20261025/review-search-desktop.png)、[手机续查](single-node-review-20261025/review-search-mobile.png)、[保留版本引用](single-node-review-20261025/review-historical-citation.png)。截图来自隔离测试数据；验证布局、入口和原文展示，不代表真机键盘验收。
+
+### 远端性能门禁修正
+
+首轮PR head `f601680`的SQLite性能分项失败：25次样本的exclusive插值p95=156.32ms、最大209.30ms，另外24次约25–33ms。原先25次采样的历史本机数字保留原统计口径，不与后续数字混用。门槛仍为150ms；复验改用100次实测nearest-rank p95并报告最大值，以对应95%的请求预算，没有skip或失败重试。PG、E2E、真实S3与其余独立门禁在首轮已通过；最新head状态以交付记录为准。

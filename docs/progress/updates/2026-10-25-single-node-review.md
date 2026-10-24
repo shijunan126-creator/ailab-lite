@@ -36,3 +36,11 @@ PYTHONPATH=. .venv/bin/python tests/load/agent_scheduler.py --work-seconds 10
 ## 发布与残余边界
 
 [PR #49](https://github.com/shijunan126-creator/ailab-lite/pull/49)已创建并登记；初始head `465eec4`，后续本段链接提交仅文档。最新精确head的远端CI/审查/冲突核对与合并待完成。已确认E2E五服务与浏览器退出，内置preview tab关闭；停止本任务专用PG/Redis，核对进程归属，25495/26495/38190–38193/33110均无监听。未停止原有服务；临时原始日志仅在仓库外。运行环境仍为部署记录 `b2c8394`；0029只在隔离测试库执行。本机外部存储链路、24小时稳定性、真机键盘、真实Docker/OSB/S3/ClamAV/Keycloak与付费模型联合验收不在本轮结论内；S3契约等待远端CI。个人配置与原有服务未动，三份`.DS_Store`保留。
+
+## 远端首轮失败与修复
+
+PR head `f6016805ca80aa5da49f8a1aa0c935d676397764` 的 [CI 40112028351](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40112028351)：PG、五服务E2E、真实S3契约、quality/shell与范围判断通过；SQLite只有500轮首屏性能分项失败，进而使聚合CI失败。日志是p95=156.32ms、max=209.30ms，其余24/25请求约25–33ms；没有业务断言/覆盖率失败。
+
+原因是测试用25次样本的`statistics.quantiles`默认exclusive插值，p95落在第24与第25个值之间、权重70%落在最大值；这个定义不能直接代表“至少95%的实测请求低于150ms”。现在保持150ms门槛，不skip、不加失败重试、不提高机器预算，改为100次采样并取实测nearest-rank p95，同时保留max用于暴露尖峰。
+
+修复仅改变性能测试和交接文档，产品代码仍为`869e06b`；双库性能专项各11项通过，SQLite覆盖率下100次p95=18.31ms/max20.13ms，PG p95=16.40ms/max18.87ms；SQLite完整套件1170通过/79跳过，覆盖率87.04%。专用PG/Redis再次核对归属后停止。本段测试工作树为f601680加本次测试/文档diff，产品树仍869e06b；测试文件哈希见validation.json。新head远端门禁待确认。首轮失败不被后续绿结果抹去。

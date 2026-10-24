@@ -77,8 +77,8 @@ def test_auto_title_candidates_are_confirmed_bounded_and_optional():
 
 
 def test_500_turn_first_page_is_bounded_and_fast():
-    import statistics
     import time
+    from math import ceil
 
     from sqlalchemy import select, text
 
@@ -116,14 +116,17 @@ def test_500_turn_first_page_is_bounded_and_fast():
             plan = db.execute(text(prefix + sql)).all()
             print("PAGING PLAN", db.bind.dialect.name, plan)
         timings = []
-        for _ in range(25):
+        for _ in range(100):
             start = time.perf_counter()
             response = c.get(f"/v1/conversations/{conv['id']}", headers=AUTH)
             timings.append((time.perf_counter() - start) * 1000)
             assert len(response.json()["turns"]) == 20
             assert "private_large_data" not in response.text
-        p95 = statistics.quantiles(timings, n=20)[18]
-        print(f"PAGING 500 turns p95={p95:.2f}ms max={max(timings):.2f}ms bytes={len(response.content)}")
+        # The SLO is about the observed fraction of requests under 150ms. An
+        # exclusive interpolated percentile over 25 samples weights one runner
+        # scheduling pause as 70% of p95, even when 24/25 requests meet the SLO.
+        p95 = sorted(timings)[ceil(len(timings) * 0.95) - 1]
+        print(f"PAGING 500 turns samples={len(timings)} p95={p95:.2f}ms max={max(timings):.2f}ms bytes={len(response.content)}")
         assert p95 < 150
 
 

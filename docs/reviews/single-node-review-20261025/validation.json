@@ -30,5 +30,29 @@
     "passed": 35,
     "failed": 0
   },
-  "external_boundaries": "Mock model and sandbox E2E; unconfigured real component contracts skipped; no deployment."
+  "external_boundaries": "Mock model and sandbox E2E; unconfigured real component contracts skipped; no deployment.",
+  "ci_followup": {
+    "base": "f6016805ca80aa5da49f8a1aa0c935d676397764",
+    "product_unchanged": true,
+    "test_file_sha256": "d2f9dabba67cfbc9961f985d264f35ff36656933100f24850267ae190fc0ba6c",
+    "samples": 100,
+    "p95_budget_ms": 150,
+    "method": "empirical nearest rank",
+    "sqlite_coverage_full": {
+      "passed": 1170,
+      "skipped": 79,
+      "coverage_percent": 87.04
+    },
+    "sqlite_performance": {
+      "passed": 11,
+      "p95_ms": 18.31,
+      "max_ms": 20.13,
+      "coverage_enabled": true
+    },
+    "postgres_performance": {
+      "passed": 11,
+      "p95_ms": 16.4,
+      "max_ms": 18.87
+    }
+  }
 }
