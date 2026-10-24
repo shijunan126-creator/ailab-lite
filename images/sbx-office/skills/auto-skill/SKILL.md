@@ -1,6 +1,6 @@
 ---
-name: skill-curator
-title: 技能策展人
+name: auto-skill
+title: 自动技能
 description: 从对话中提取或更新个人技能：判断是否值得沉淀、生成 SKILL.md 草稿、与已有技能比较，经用户确认后用 save_skill 保存
 ---
 

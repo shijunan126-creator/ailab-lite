@@ -95,9 +95,9 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
         method: "POST",
         body: JSON.stringify({
           prompt:
-            "请使用 skill-curator 分析这段对话，判断是否值得保存为个人技能。先给 SKILL.md 草稿、变更建议以及是否应更新已有技能；不要直接保存，等我确认。",
+            "请使用 auto-skill 分析这段对话，判断是否值得保存为个人技能。先给 SKILL.md 草稿、变更建议以及是否应更新已有技能；不要直接保存，等我确认。",
           mode: "work",
-          skill: "skill-curator",
+          skill: "auto-skill",
         }),
       });
       conversationsChanged();
