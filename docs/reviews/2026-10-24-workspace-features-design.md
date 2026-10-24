@@ -135,3 +135,11 @@
 - 分享：查看按页读取快照路径（≤ 20 轮/页）。
 - 摘要：每个库文件一次便宜模型调用（输入 ≤ 6k token、输出 ≤ 200 token），计入用户用量；可关闭。
 - 品牌：模板分析每次上传一次；每个 Work 租约注入 ≤ 3 个文件（模板通常 < 5 MiB）。
+
+## Portal 对契约的补充（主 Agent，集成时由各分支对齐）
+
+- 分享：每个所有者对同一对象只有一个有效分享。`GET /v1/shares/for?…` 返回 `Share | null`；对已有有效分享的对象再 `POST /v1/shares` 返回该分享（按请求更新受众/接收人），不建第二个。文件分享的 `GET /v1/shares/{id}/view` 带 `file: ShareFile`、`turns: []`。`ShareFile.download_url`/`thumbnail_url` 为分享作用域的 API 相对路径（`/v1/shares/{id}/files/{fid}/…`），Portal 加 `/api` 前缀。
+- 排队：会话空闲时 `POST …/queue` 的 409 `detail` 含“空闲”，Portal 据此改为直接发送；其余 409/422 显示原因。`RunDetail.steered: [{id, prompt}]`（按领取顺序），刷新后仍显示该轮的插话。
+- 资料库设置：`GET/PATCH /v1/admin/settings/library` → `{summaries: bool}`。
+- 品牌：资产上传 multipart 字段名 `file`；资产 DTO 的 `thumbnail_url` 为 API 相对路径（无则 null）；`analysis` 键：`theme_colors: ["#RRGGBB"]`、`fonts: {major, minor}`、`layouts: [str]`（pptx）、`styles: [str]`（docx）、失败时 `error: str`。
+- 移入项目：`PATCH /v1/conversations/{id}` 带 `move_files`；`ConversationOut.active_run_id` 已有，Portal 用于分享“更新到最新”。
