@@ -12,3 +12,5 @@
 - 验证上传→扫描/受限分析→ready与ETag、Run frozen选择→Broker文件注入→下一轮恢复工作区后.template消失。生成器另用真实python-pptx模板/POTX测试原生Title/Body/Two Content版式、示例页删除、无额外品牌logo及富内容fallback。
 - `PYTHONPATH=. python -c 'import tests.conftest; from tests.measure_templates import main; main()'`：20页/44,559字节小样本，5次中位CPU0.112341s、wall0.192465s，子进程peak RSS最大45,498,368字节，输出最大5,857字节。是本机短样本，不是30MiB图像模板或2vCPU长期容量证据。无新运行依赖；分析仅一次，Pillow首屏图缓存于derived。
 - 首轮全量失败如实保留：macOS缺GNU PATH导致快照/预览测试失败；另捕获无template多写空options及清库fixture遗漏templates外键。已修复兼容及fixture并按GNU PATH重跑，不放宽业务断言。
+- 最后补查修复：旧品牌迁移补任务的topic/deadline取有效Settings（涵盖env_file自定义队列），双库迁移测试验证非默认topic；不能只用os.environ或硬编码默认队列。
+- 可重现性能探针：`AILAB_MEASURE_LARGE=1 PYTHONPATH=. python -c 'import tests.conftest; from tests.measure_templates import main; main()'`。最终小样本CPU中位0.113845s/wall0.183472s/RSS最大44,498,944字节；另一次9张随机1024×1024图片、28,405,889字节模板：解析+首屏图CPU0.148174s/wall0.195082s/子进程RSS81,018,880字节、输出39,227字节。输入ZIP/Pillow/输出限制均沿用受限子进程；这些不含ClamAV成本，也不是生产容量证据。

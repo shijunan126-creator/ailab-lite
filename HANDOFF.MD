@@ -450,3 +450,4 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - POTX 的 package main content type 不同于PPTX，python-pptx `Presentation(path)`会拒绝。Worker应注册模板main part直接打开；不要为30MiB输入重打包到受16MiB输出限制的解析目录。生成器在沙箱内规范化后再用Presentation。
 - `.potx`也必须走ZIP大小/压缩比检查。模板状态 failed 与扫描 rejected 由meta区分；FileObject仍沿用原扫描状态枚举。
 - 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。
+- 数据迁移若需补outbox，topic/deadline须取有效Settings，不能只读os.environ：生产自定义队列可能来自env_file，否则迁移任务会发到无人消费的默认队列。0028双库回归锁定自定义topic。

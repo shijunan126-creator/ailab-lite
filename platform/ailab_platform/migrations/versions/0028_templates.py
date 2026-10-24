@@ -1,6 +1,5 @@
 """PPT templates and promotion of the legacy brand PPT slot."""
 
-import os
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
@@ -15,6 +14,8 @@ depends_on = None
 
 
 def upgrade():
+    from ailab_platform.config import settings
+
     table = op.create_table(
         "templates",
         sa.Column("id", sa.String(40), primary_key=True),
@@ -87,7 +88,7 @@ def upgrade():
             conn.execute(
                 outbox.insert().values(
                     id=job_id,
-                    topic=os.environ.get("AILAB_FILE_QUEUE", "ailab:stream:files"),
+                    topic=settings.file_queue,
                     created_at=now,
                     payload={
                         "job_id": job_id,
@@ -97,7 +98,7 @@ def upgrade():
                         "run_id": None,
                         "mode": "work",
                         "attempt": 1,
-                        "deadline": (now + timedelta(days=365)).isoformat(),
+                        "deadline": (now + timedelta(seconds=settings.job_deadline_seconds)).isoformat(),
                         "enqueued_at": now.isoformat(),
                     },
                 )

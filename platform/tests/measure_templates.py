@@ -1,12 +1,15 @@
 """Small local template parser probe; no developer profile, network or model."""
 
 import json
+import os
 import statistics
 import tempfile
 import time
 from pathlib import Path
 
+from PIL import Image
 from pptx import Presentation
+from pptx.util import Inches
 
 from ailab_platform.worker.isolate import execute
 
@@ -46,6 +49,31 @@ def main():
                 indent=2,
             )
         )
+
+        if os.environ.get("AILAB_MEASURE_LARGE") == "1":
+            prs = Presentation()
+            for index in range(9):
+                image = root / f"image-{index}.png"
+                Image.frombytes("RGB", (1024, 1024), os.urandom(1024 * 1024 * 3)).save(image)
+                slide = prs.slides.add_slide(prs.slide_layouts[6])
+                slide.shapes.add_picture(str(image), 0, 0, width=Inches(10))
+            source = root / "large.pptx"
+            prs.save(source)
+            started = time.perf_counter()
+            output = root / "large-output"
+            result = execute("template", source, output, measure=True)
+            print(
+                json.dumps(
+                    {
+                        "input_bytes": source.stat().st_size,
+                        "slides": result["slides"],
+                        "wall_seconds": time.perf_counter() - started,
+                        **result["measurement"],
+                        "output_bytes": sum(p.stat().st_size for p in output.iterdir() if p.is_file()),
+                    },
+                    indent=2,
+                )
+            )
 
 
 if __name__ == "__main__":
