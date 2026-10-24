@@ -1,21 +1,21 @@
 # 当前工作
 
-更新：2026-10-24。用户授权：实现安全、完整的受控联网并真实验收、部署；更新 README；提交 PR，CI 通过后合并 main；最后委派 Codex（gpt-6.1-sol, medium）把本项目迁移到移动硬盘（APFS 分区、挂载、应对拔插、验证）。
+更新：2026-10-24。当前授权是k3s/OpenSandbox受控联网实现子任务：修复、真实验证、提交到分支、推送并创建PR；**不合并**，由协调者审查CI后决定。此前外盘迁移已完成；个人路径和运行环境只见私有HANDOFF。
 
 ## 已完成
 
-- 受控联网：沙箱保持 `--network none` + gVisor，Agent 获取公开资源后经 Broker 流式注入；网页/GitHub issue、下载、仓库、PyPI 依赖、个人技能保存。决策 [ADR 0007](../architecture/adr/0007-controlled-public-fetch.md)，证据 [专项验收](../reviews/2026-10-24-controlled-network.md)，本轮记录 [更新](updates/2026-10-24-controlled-network.md)。
-- 已部署到现有本机运行环境（Colima VM 内 Docker Compose），同时上线了此前未部署的 PR #32 内容和迁移 0021；runsc 根 overlay 4 GiB 上限写入 Colima profile。
-- README 已更新。前序工作（PR #32）已在 main。
+- 既有受控联网PR #33和README已在main；当前Compose部署不变。
+- 本分支补齐k3s节点runsc 4GiB根overlay、namespace ephemeral-storage、OSB显式Kubernetes断网模式/secure门禁、kube-router ICMP缺口、非root注入目录；部署核对runtime/template/进程配置并导入sandbox镜像。
+- 独立3CPU/5GiB ARM64 k3s/OpenSandbox/gVisor已完成契约验收，临时VM、目录、PG/Redis与卷已清理，外盘回收约10.01GiB。详见[本轮更新](updates/2026-10-24-k3s-osb-network.md)、[详细新旧证据](../reviews/2026-10-24-controlled-network.md)、[ADR0007](../architecture/adr/0007-controlled-public-fetch.md)。
 
-## 代码与证据
+## 分支、基线与验证
 
-- 已合并到 main `ab85a9b`（原分支 `feat/safe-network-access`，base `5fc9103`）；三个未跟踪 `.DS_Store` 保留。HANDOFF 中原有一条未提交记录（PG15511 随旧 VM 删除）随本分支提交。
-- 部署明细、备份位置、验收脚本只在本机独立 HANDOFF。
+- `fix/k3s-osb-network-path`，base `main@1a384558b4ac27deea660e5314d82eddf462b386`；Claude原有review补充已保留，三个未跟踪`.DS_Store`未动。
+- 核心双库：SQLite968 passed/67 skipped，PG16+Redis1003/33 skipped；E2E61（包含Portal测试/build）；真实Docker/OSB传输+生命周期16、联网综合2、网络各通过；仓库生成OSB配置复验3。最后进程/启动配置绑定由专项5及真实Linux启动/复用/配置变更拒绝验证。完整细节和代码指纹见详细报告。
+- 平台及新增脚本Ruff、ShellCheck、bash、双overlay和diff检查通过；无依赖或Portal源码变更。额外全仓Ruff28项历史问题未修。
 
-## 下一步
+## 剩余与下一步
 
-1. 已完成：[PR #33](https://github.com/shijunan126-creator/ailab-lite/pull/33) 最新 head `944d977` 的 CI 全部通过（含 e2e、双库），已合并为 main `ab85a9b`，本地 main 已快进并核对。
-2. 进行中：Codex 子任务把本项目迁移到移动硬盘；结果、挂载方式与拔插行为只记录在本机独立 HANDOFF。迁移后工作树和运行环境路径可能变化，接续前先核对本机 HANDOFF 与实际挂载。
-
-不自动开展路线图其他事项。残余风险（低带宽泄露信号、npm/私有仓库、k3s 路径未验）见专项验收。
+1. 协调者审查本分支PR及CI，重点看固定IPv4单节点/CNI假设、节点ICMP规则影响所有Pod诊断ping、secure隔离声明不等于持续attestation。实现子任务不合并。
+2. 完整五服务k3s/Office/真实模型/真实技能保存扫描端到端、IPv6、多节点/其他CNI及长期并发仍未验；不自动开始这些验收或其他路线图任务。
+3. 临时VM期间外盘卸载/重挂导致现有VM管理socket异常。现有Portal仍200，但profile管理状态Broken；本轮未重启/修复现有VM，不据Portal200声称全部服务或数据健康。协调者先查看私有HANDOFF再决定维护动作。

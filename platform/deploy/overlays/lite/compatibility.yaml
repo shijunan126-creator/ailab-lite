@@ -31,6 +31,7 @@ metadata:
 data:
   AILAB_DATABASE_URL: sqlite:////data/platform.db
   AILAB_OSB_DOMAIN: 127.0.0.1:8090
+  AILAB_OSB_NETWORK_MODE: kubernetes
 ---
 apiVersion: apps/v1
 kind: StatefulSet

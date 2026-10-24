@@ -31,7 +31,7 @@ docker() {
   case "$*" in
     *ailab.content-hash*) echo "$want" ;;
     *Id*) echo sha256:configuration ;;
-    save*) echo image-archive ;;
+    save*) [[ "$*" == *office:lite* ]] || exit 1; echo image-archive ;;
   esac
 }
 k3s() {
@@ -67,3 +67,73 @@ deploy_platform
     )
     result = subprocess.run(["bash", "-euo", "pipefail", "-c", script], capture_output=True, text=True)
     assert result.returncode != 0, "a failed kubectl apply must never be reported as a successful deployment"
+
+
+def test_kubernetes_deploy_refuses_existing_docker_osb_config(tmp_path):
+    import os
+
+    home = tmp_path / "osb"
+    home.mkdir()
+    config = home / "sandbox.toml"
+    config.write_text('[runtime]\ntype = "docker"\n[server]\nport = 8090\napi_key = "test"\n')
+    binary = tmp_path / "venv/bin/opensandbox-server"
+    binary.parent.mkdir(parents=True)
+    binary.write_text("#!/bin/sh\nexit 1\n")
+    binary.chmod(0o755)
+    commands = tmp_path / "commands"
+    commands.mkdir()
+    curl = commands / "curl"
+    curl.write_text("#!/bin/sh\nexit 0\n")
+    curl.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(ROOT / "platform/scripts/osb_up.sh")],
+        env=os.environ
+        | {
+            "OSB_HOME": str(home),
+            "OSB_VENV": str(binary.parents[1]),
+            "OSB_CONFIG": str(config),
+            "OSB_RUNTIME": "kubernetes",
+            "PATH": str(commands) + os.pathsep + os.environ["PATH"],
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0
+    assert "existing config runtime differs" in result.stderr
+
+
+def test_osb_healthy_endpoint_cannot_reuse_untracked_or_changed_process(tmp_path):
+    import json
+
+    helper = ROOT / "platform/scripts/osb_process.py"
+    config = tmp_path / "config.toml"
+    config.write_text('[runtime]\ntype = "kubernetes"\n')
+    for record in (None, {"pid": 0, "config": str(config), "sha256": "stale"}):
+        if record:
+            (tmp_path / "server-process.json").write_text(json.dumps(record))
+        result = subprocess.run(["python3", str(helper), "check", str(tmp_path), str(config)], capture_output=True, text=True)
+        assert result.returncode != 0
+        assert "not bound to this reviewed startup config" in result.stderr
+
+
+def test_osb_process_record_freezes_referenced_template(tmp_path, monkeypatch):
+    import runpy
+    import sys
+
+    helper = ROOT / "platform/scripts/osb_process.py"
+    config, template = tmp_path / "config.toml", tmp_path / "template.yaml"
+    template.write_text("reviewed template")
+    config.write_text(f'[kubernetes]\nbatchsandbox_template_file = "{template}"\n')
+    monkeypatch.setattr(sys, "argv", [str(helper), "record", str(tmp_path), str(config), "12345"])
+    runpy.run_path(str(helper), run_name="__main__")
+    original = Path.read_bytes
+    monkeypatch.setattr(
+        Path, "read_bytes", lambda path: f"python\0--config\0{config}\0".encode() if str(path) == "/proc/12345/cmdline" else original(path)
+    )
+    monkeypatch.setattr(sys, "argv", [str(helper), "check", str(tmp_path), str(config)])
+    runpy.run_path(str(helper), run_name="__main__")
+    template.write_text("changed after startup")
+    import pytest
+
+    with pytest.raises(SystemExit, match="not bound to this reviewed startup config"):
+        runpy.run_path(str(helper), run_name="__main__")

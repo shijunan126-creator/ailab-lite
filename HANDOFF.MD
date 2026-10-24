@@ -308,3 +308,14 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - `tarfile` 的 data filter 会去掉前导 `/`（绝对名落在目标目录内，不报错），但对 `..` 和绝对链接抛异常；解压脚本要在 finally 里清理部分目录，否则拒绝后留下半个仓库。
 - URL 来源提取的正则只取 ASCII URL 字符；否则“链接。”里的中文句号会并进 URL，导致用户给的链接被判为未授权。
 - 离线演示（MockLLM）原以“tools 是否为空”区分 Chat/Work；Chat 有了 save_skill 后它会去调沙箱工具。Mock 只能按本轮实际提供的工具名决定脚本。E2E 依赖 Redis（默认 6379），本机没有时用 `AILAB_TEST_REDIS_URL` 指向一次性实例，否则整套报 broker did not come up。
+
+## 2026-10-24 k3s / OpenSandbox 受控联网
+
+- `sandbox_disk_bytes` 是业务预算，不是节点磁盘隔离。k3s containerd 要经 `ConfigPath` 读取 `[runsc_config] overlay2="root:self,size=4g"`；`bash k3s/install-runsc.sh` 安装、节点维护窗口重启 k3s，再跑 `k3s/check-node.py`。1.34.3 的默认配置没有自动 import 目录，本轮最小 `config-v3.toml.tmpl`（只渲染一次 base）已实测。不能复制整份生成配置再追加 base，旧“所有 template 都不可用”的记录过宽。自定义 template 不覆盖。
+- namespace LimitRange 5Gi ephemeral-storage 依赖 kubelet 驱逐，不能替代同步根overlay上限；mounted writable volume 也不在根overlay限制里。本轮 uid10001、512Mi内存的Pod实际写到4294967296字节后ENOSPC，不能只用statvfs声称写入限额已验证。
+- OSB Server/SDK 1.1.1 明确拒绝 gVisor + sidecar networkPolicy。默认sidecar不改；只能显式选 Kubernetes 模式并先验证 namespace/CNI/节点规则。secure 还要求隔离验收声明（不是持续证明）。健康端点不能证明server跑Kubernetes，`osb_up.sh`现在拒绝复用Docker模式配置，并核对固定namespace/runtime/template。
+- kube-router 默认放行 ICMP，gVisor无CAP_NET_RAW仍可用SOCK_DGRAM ping socket。`net-raw=false`、drop ALL及ping_group_range都不足以断绝该出口；节点按固定IPv4 Pod CIDR补raw PREROUTING规则并由systemd持久化。本轮移除规则时ICMP契约红、恢复后绿；该规则也关闭其他Pod的诊断ping。换CIDR/双栈/CNI/节点拓扑必须重验，lite preflight拒绝不匹配CIDR。
+- OSB注入文件前先在既有exec预检里以执行用户mkdir父目录，再交SDK上传；否则execd可创建错误属主目录。真实传输契约必须使用全新多层目录，并在其中写入/解压，不能只测已有outputs。
+- 新版gVisor必须安装整个发行包（runsc、shim、同目录gvisor-bin/），只复制两个二进制会在创建时缺gvisor_sentry失败。下载发行包并校验官方SHA512，见gVisor安装文档。
+- Colima自定义COLIMA_HOME必须先mkdir；目录不存在会悄悄回退默认目录。`--runtime docker --kubernetes`默认让k3s使用`--docker`，这不能验证containerd配置。独立临时VM里移除k3s unit的`--docker`再daemon-reload/restart，或从一开始选containerd。绝不能在共用部署VM上照搬。
+- 复验入口见 `platform/tests/contracts/README.md` 和部署README：真实传输/生命周期、公开下载与离线安装、恶意归档清理、TCP/UDP/ICMP边界。TCP/UDP要先从节点验证目标正在监听；“目标本来不可达”不算隔离证据。save_skill契约只验证真实沙箱取回文件和API调用载荷，API持久化/扫描由独立测试覆盖，不能混称五服务端到端。
