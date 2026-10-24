@@ -265,6 +265,9 @@ def _run_ocr(file_id: str, db: Session):
             file = eligible(db, file_id)
             get_storage().put_bytes(key, text.encode(), "text/plain; charset=utf-8")
             file.meta = {**file.meta, "ocr": "done", "ocr_text_key": key}
+            from .routes_library_summary import request_summary
+
+            request_summary(db, file)
             db.commit()
         return {"ocr": "done", "chars": len(text)}
     except Exception as exc:

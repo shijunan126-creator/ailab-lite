@@ -50,7 +50,7 @@ def test_library_search_and_text_pages_are_owned_ready_and_project_first():
         found = c.post(url + "/search", headers=SERVICE, json={"query": "libtool-"}).json()["files"]
         assert found[0]["file_id"] == ids[0]
         assert set(ids[:2]) <= {f["file_id"] for f in found} and not set(ids[2:]) & {f["file_id"] for f in found}
-        assert set(found[0]) == {"file_id", "filename", "content_type", "size", "project", "updated_at"}
+        assert set(found[0]) == {"file_id", "filename", "content_type", "size", "project", "updated_at", "summary"}
         assert c.post(url + "/search", headers=SERVICE, json={"query": "", "limit": 21}).status_code == 422
         first = c.post(url + "/read", headers=SERVICE, json={"file_id": ids[0]}).json()
         assert first["text"] == text_[:30000] and first["next_offset"] == 30000 and first["truncated"]

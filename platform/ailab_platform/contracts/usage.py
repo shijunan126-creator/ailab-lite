@@ -33,17 +33,17 @@ class ReserveUsageIn(BaseModel):
     file_id: str | None = Field(default=None, min_length=1, max_length=40)
     attempt_id: str = Field(min_length=1, max_length=80)
     alias: str = Field(min_length=1, max_length=120)
-    mode: Literal["chat", "work", "ocr"]
+    mode: Literal["chat", "work", "ocr", "summary"]
     max_output_tokens: int = Field(gt=0, le=10_000_000)
     estimated_input_tokens: int = Field(ge=0, le=10_000_000)
 
     @model_validator(mode="after")
     def valid_subject(self):
         if self.subject == "run":
-            if not self.run_id or self.file_id or self.mode == "ocr":
+            if not self.run_id or self.file_id or self.mode in {"ocr", "summary"}:
                 raise ValueError("run subject requires run_id and chat/work mode")
-        elif not self.file_id or self.run_id or self.mode != "ocr":
-            raise ValueError("file_job requires file_id, no run_id and ocr mode")
+        elif not self.file_id or self.run_id or self.mode not in {"ocr", "summary"}:
+            raise ValueError("file_job requires file_id, no run_id and ocr/summary mode")
         return self
 
 

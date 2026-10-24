@@ -154,6 +154,10 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def summarize_file(self, file_id: str) -> dict:
+        timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
+        return self._send(self._req("POST", f"/internal/files/{file_id}/summary", timeout=timeout, json={})).json()
+
     def ocr(self, file_id: str, *, prepare: bool = False) -> dict:
         suffix = "/prepare" if prepare else ""
         # The API bounds one OCR run by its total model timeout; the read timeout must outlast it.

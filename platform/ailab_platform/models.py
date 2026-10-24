@@ -55,6 +55,7 @@ class User(Base):
     __table_args__ = (
         Index("uq_users_issuer_subject", "issuer", "external_subject", unique=True),
         Index("ix_users_created_id", "created_at", "id"),
+        Index("ix_users_display_name", "display_name"),
         Index("ix_users_dept_created_id", "dept_id", "created_at", "id"),
     )
 
@@ -664,3 +665,31 @@ class ScheduledTask(Base):
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Share(Base):
+    __tablename__ = "shares"
+    __table_args__ = (
+        Index("ix_shares_owner_created_id", "owner_id", "created_at", "id"),
+        Index("ix_shares_conversation_owner", "conversation_id", "owner_id"),
+        Index("ix_shares_file_owner", "file_id", "owner_id"),
+        Index("ix_shares_audience_created_id", "audience", "created_at", "id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("shr"))
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(20))
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    file_id: Mapped[str | None] = mapped_column(ForeignKey("files.id", ondelete="SET NULL"), nullable=True)
+    audience: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ShareRecipient(Base):
+    __tablename__ = "share_recipients"
+    __table_args__ = (Index("ix_share_recipients_user_share", "user_id", "share_id"),)
+    share_id: Mapped[str] = mapped_column(ForeignKey("shares.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)

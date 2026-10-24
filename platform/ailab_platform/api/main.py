@@ -29,6 +29,7 @@ from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_internal import router as internal_router
+from .routes_library_summary import router as library_summary_router
 from .routes_library_tools import router as library_tools_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
@@ -40,6 +41,7 @@ from .routes_runtime import router as runtime_router
 from .routes_schedules import router as schedules_router
 from .routes_schedules import schedules_forever
 from .routes_search import router as search_router
+from .routes_shares import router as shares_router
 from .routes_skills import router as skills_router
 
 setup_logging("api")
@@ -113,6 +115,8 @@ async def reject_oversized_upload(request: Request, call_next):
     return await call_next(request)
 
 
+app.include_router(shares_router)
+app.include_router(library_summary_router)
 app.include_router(auth_router)
 app.include_router(admin_router)
 app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])

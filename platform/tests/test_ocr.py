@@ -616,3 +616,41 @@ def test_offline_model_accepts_multimodal_text_fallback():
     messages = [{"role": "user", "content": [{"type": "text", "text": "hello"}, {"type": "text", "text": "图片未能读取"}]}]
     response = asyncio.run(MockLLM().chat(messages, [], "test-fast"))
     assert "hello" in response.content
+
+
+def test_scanned_pdf_ocr_selected_pages_and_citation_target(api, upstream):
+
+    seen, reply = upstream
+    reply["text"] = "第二页的扫描原文"
+    fid = upload(api, "scan-page-selection.pdf", blank_pdf(2), "application/pdf")
+    process_file(fid, platform=OCRClient(api))
+
+    class TwoPageClient(OCRClient):
+        def render_preview(self, file_id, job_id):
+            result = super().render_preview(file_id, job_id)
+            result["preview"]["pages"].append("p-02.jpg")
+            first = result["assets"]["p-01.jpg"]
+            second_key = f"derived/{file_id}/preview/p-02.jpg"
+            get_storage().put_bytes(second_key, get_storage().get_bytes(first["key"]), "image/jpeg")
+            result["assets"]["p-02.jpg"] = {**first, "key": second_key}
+            return result
+
+    run_ocr_job(api, fid, client=TwoPageClient(api))
+    with SessionLocal() as db:
+        meta = db.get(FileObject, fid).meta
+        assert meta.get("ocr") == "done", meta.get("ocr_reason")
+        text = get_storage().get_bytes(meta["ocr_text_key"]).decode()
+    assert "\f[page:1]\n" in text and "\f[page:2]\n" in text
+    assert len(seen) == 2
+    run = api.post("/v1/runs", headers=AUTH, json={"prompt": "按页阅读", "mode": "chat"}).json()
+    response = api.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid, "pages": [2]})
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert page["text"] == "第二页的扫描原文" and page["pages"] == [{"page": 2, "offset": 0}]
+    # The physical page number survives OCR -> library read -> the established citation protocol.
+    citation = f"ailab-file://{fid}?page={page['pages'][0]['page']}"
+    from urllib.parse import parse_qs, urlparse
+
+    parsed = urlparse(citation)
+    assert parsed.netloc == fid and parse_qs(parsed.query) == {"page": ["2"]}
+    # No UI changes here: the Portal's existing file citation handler receives this exact page=2.
