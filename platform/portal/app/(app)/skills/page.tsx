@@ -5,6 +5,7 @@ import { formatBytes } from "../../../lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
+import MarketPanel from "../../../components/skills/market";
 import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
@@ -104,6 +105,7 @@ export default function SkillsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<"mine" | "market">("mine");
   const [editing, setEditing] = useState<EditorTarget | null>(null);
   const [scanning, setScanning] = useState<ReadonlySet<string>>(new Set()); // new versions not yet scanned
   const scans = useRef<AbortController | null>(null);
@@ -148,6 +150,11 @@ export default function SkillsPage() {
     const file = await scanned(fileId);
     if (file === null) setError(`${label}：仍在安全扫描，稍后刷新查看`);
     else if (file && scanProblem(file)) setError(`${label}：${scanProblem(file)}`);
+  }
+
+  function installed(fileId: string, title: string) {
+    setTab("mine");
+    settle(fileId, `安装 ${title}`);
   }
 
   function saved(fileId: string, label: string) {
@@ -240,6 +247,19 @@ export default function SkillsPage() {
       </div>
       {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
 
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        <button className={tab === "mine" ? "primary sm" : "secondary sm"} onClick={() => setTab("mine")}>
+          我的技能
+        </button>
+        <button className={tab === "market" ? "primary sm" : "secondary sm"} onClick={() => setTab("market")}>
+          技能市场
+        </button>
+      </div>
+
+      {tab === "market" ? (
+        <MarketPanel onInstalled={installed} />
+      ) : (
+      <>
       <h2 className="section-title">通用技能</h2>
       <p className="hint section-hint">平台提供，所有人都可以用。</p>
       <section className="card skill-list">
@@ -289,6 +309,8 @@ export default function SkillsPage() {
           />
         ))}
       </section>
+      </>
+      )}
       {editing ? (
         <SkillEditor
           target={editing}

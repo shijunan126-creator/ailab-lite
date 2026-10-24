@@ -33,6 +33,7 @@ from .routes_inbox import router as inbox_router
 from .routes_internal import router as internal_router
 from .routes_library_summary import router as library_summary_router
 from .routes_library_tools import router as library_tools_router
+from .routes_market import router as market_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
 from .routes_ocr import router as ocr_router
@@ -129,6 +130,7 @@ app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)
+app.include_router(market_router)
 app.include_router(memory_router)
 app.include_router(library_tools_router)
 app.include_router(files_router)
