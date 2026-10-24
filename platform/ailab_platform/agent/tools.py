@@ -195,7 +195,17 @@ READ_URL = {
 
 
 # Tools that need a sandbox: the first call to one of them starts it.
-SANDBOX_TOOLS = {"list_files", "read_file", "write_file", "exec", "deliver_file", "search_images", "load_skill", *net_tools.NAMES}
+SANDBOX_TOOLS = {
+    "copy_library_file",
+    "list_files",
+    "read_file",
+    "write_file",
+    "exec",
+    "deliver_file",
+    "search_images",
+    "load_skill",
+    *net_tools.NAMES,
+}
 
 WEB_TOOLS = [WEB_SEARCH, READ_URL]
 
@@ -223,9 +233,41 @@ MEMORY = {
 }
 
 
+def _library_tool(name, description, properties, required):
+    return {
+        "type": "function",
+        "function": {
+            "name": name,
+            "description": description,
+            "parameters": {"type": "object", "properties": properties, "required": required},
+        },
+    }
+
+
+LIBRARY_TOOLS = [
+    _library_tool(
+        "search_library",
+        "搜索资料库",
+        {"query": {"type": "string"}, "limit": {"type": "integer", "default": 10, "minimum": 1, "maximum": 20}},
+        ["query"],
+    ),
+    _library_tool(
+        "read_library_file",
+        "阅读资料",
+        {"file_id": {"type": "string"}, "offset": {"type": "integer", "default": 0, "minimum": 0}},
+        ["file_id"],
+    ),
+]
+COPY_LIBRARY = _library_tool(
+    "copy_library_file", "复制到工作区", {"file_id": {"type": "string"}, "path": {"type": ["string", "null"]}}, ["file_id"]
+)
+
+
 def tools_for_turn() -> list[dict]:
     return [
         MEMORY,
+        *LIBRARY_TOOLS,
+        COPY_LIBRARY,
         ASK_USER,
         UPDATE_PLAN,
         *TOOLS,
@@ -238,7 +280,7 @@ def tools_for_turn() -> list[dict]:
 
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
-    return [MEMORY, LOAD_SKILL, *(WEB_TOOLS if web.enabled() else []), net_tools.SAVE_SKILL]
+    return [MEMORY, *LIBRARY_TOOLS, LOAD_SKILL, *(WEB_TOOLS if web.enabled() else []), net_tools.SAVE_SKILL]
 
 
 class ToolContext:
@@ -280,6 +322,13 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     if INVALID_ARGUMENTS_KEY in args:
         raise ToolError("tool arguments were not valid JSON; resend the call with a well-formed JSON object")
     ctx = ctx or ToolContext()
+    if name == "search_library":
+        return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
+    if name == "read_library_file":
+        return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
+    if name == "copy_library_file":
+        file = await ctx.platform.library(ctx.run_id, "authorize-copy", {"file_id": args.get("file_id")})
+        return {"ok": True, **await broker.copy_library_file(lease_id, file["file_id"], args.get("path"))}
     if name == "memory":
         return {"ok": True, **await ctx.platform.memory(ctx.run_id, args)}
     try:

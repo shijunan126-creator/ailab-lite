@@ -11,7 +11,7 @@ from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
-from ..schemas import ConversationCreate, ConversationDetail, ConversationOut, ConversationPatch, MessageCreate, RunDetail
+from ..schemas import ConversationCreate, ConversationDetail, ConversationFork, ConversationOut, ConversationPatch, MessageCreate, RunDetail
 from .routes_runs import start_run
 from .serializers import run_dict
 
@@ -26,12 +26,15 @@ def _owned(db: Session, conversation_id: str, user: User) -> Conversation:
 
 
 def _turns(db: Session, conv: Conversation) -> list[Run]:
-    return list(db.scalars(select(Run).where(Run.conversation_id == conv.id).order_by(Run.created_at, Run.id)))
+    return list(
+        db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None)).order_by(Run.created_at, Run.id))
+    )
 
 
 def conversation_out(conv: Conversation, last_status: str | None = None) -> dict:
     return {
         "id": conv.id,
+        "forked_from": conv.forked_from,
         "project_id": conv.project_id,
         "title": conv.title,
         "model": conv.model,
@@ -63,7 +66,7 @@ def list_conversations(
         owned_project(db, project_id, user)
     last_status = (
         select(Run.status)
-        .where(Run.conversation_id == Conversation.id)
+        .where(Run.conversation_id == Conversation.id, Run.superseded_by_run_id.is_(None))
         .order_by(Run.created_at.desc(), Run.id.desc())
         .limit(1)
         .scalar_subquery()
@@ -98,7 +101,7 @@ def get_conversation(
     db: Session = Depends(get_db),
 ) -> dict:
     conv = _owned(db, conversation_id, user)
-    query = select(Run).where(Run.conversation_id == conv.id, Run.user_id == user.id)
+    query = select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None), Run.user_id == user.id)
     if before:
         cursor = db.get(Run, before)
         if cursor is None or cursor.conversation_id != conv.id:
@@ -107,7 +110,10 @@ def get_conversation(
     rows = list(db.scalars(query.order_by(Run.created_at.desc(), Run.id.desc()).limit(limit + 1)))
     turns = list(reversed(rows[:limit]))
     last_status = db.scalar(
-        select(Run.status).where(Run.conversation_id == conv.id).order_by(Run.created_at.desc(), Run.id.desc()).limit(1)
+        select(Run.status)
+        .where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None))
+        .order_by(Run.created_at.desc(), Run.id.desc())
+        .limit(1)
     )
     display_turns = []
     for run in turns:
@@ -146,7 +152,9 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
     """Hidden from the list (the runs and the files they produced stay in the library). A running turn is canceled."""
     with user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
-        pending = db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.status.not_in(RunStatus.TERMINAL)))
+        pending = db.scalars(
+            select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None), Run.status.not_in(RunStatus.TERMINAL))
+        )
         for run in pending:
             transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted", commit=False)
         conv.deleted_at = utcnow()
@@ -159,3 +167,166 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
     conv = _owned(db, conversation_id, user)
     run = start_run(db, user, body.prompt, body.model, body.file_ids, conversation=conv, mode=body.mode, skill=body.skill)
     return run_dict(db, run, detail=True)
+
+
+@router.post("/{conversation_id}/fork", response_model=ConversationOut, status_code=201)
+def fork_conversation(conversation_id: str, body: ConversationFork, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Copy at most 500 turns, 100k events and 2 GiB of derived objects; never copy ledger or file bytes."""
+    import time
+    from copy import deepcopy
+    from datetime import UTC, datetime, timedelta
+
+    from ..models import Artifact, RunEvent
+    from ..storage import get_storage
+    from .routes_internal import workspace_alive, workspace_data, workspace_key
+
+    storage, copied_keys = get_storage(), []
+    total_bytes, total_events = 0, 0
+    deadline = time.monotonic() + 60
+
+    def check_deadline():
+        if time.monotonic() >= deadline:
+            raise HTTPException(422, "分叉复制超过60秒，请缩小范围后重试")
+
+    try:
+        with user_critical_section(db, user.id):
+            source = _owned(db, conversation_id, user)
+            db.refresh(source)
+            target = db.get(Run, body.run_id, populate_existing=True)
+            if not target or target.conversation_id != source.id or target.superseded_by_run_id:
+                raise HTTPException(404, "轮次不存在")
+            if target.status not in RunStatus.TERMINAL:
+                raise HTTPException(422, "只能从已结束的轮次分叉")
+            turns = list(
+                db.scalars(
+                    select(Run)
+                    .where(
+                        Run.conversation_id == source.id,
+                        Run.superseded_by_run_id.is_(None),
+                        tuple_(Run.created_at, Run.id) <= (target.created_at, target.id),
+                    )
+                    .order_by(Run.created_at, Run.id)
+                    .limit(501)
+                )
+            )
+            if len(turns) > 500:
+                raise HTTPException(422, "分叉最多复制500轮对话")
+            if any((r.options or {}).get("mode", "work") != "chat" for r in turns) and body.mode != "work":
+                raise HTTPException(422, "包含工作轮次的对话只能分叉为工作模式")
+            conv = Conversation(
+                user_id=user.id,
+                project_id=source.project_id,
+                title=source.title,
+                model=source.model,
+                forked_from={"conversation_id": source.id, "run_id": target.id},
+            )
+            db.add(conv)
+            db.flush()
+            mapping = {}
+
+            def copy_object(src, dst):
+                nonlocal total_bytes
+                check_deadline()
+                total_bytes += storage.info(src).size
+                if total_bytes > 2 * 1024**3 or len(copied_keys) >= 10000:
+                    raise HTTPException(422, "分叉对象超过2GiB或10000个上限")
+                copied_keys.append(dst)
+                storage.copy(src, dst)
+
+            previous_created = None
+            for old in turns:
+                check_deadline()
+                if old.status not in RunStatus.TERMINAL:
+                    raise HTTPException(422, "复制范围中存在未结束的轮次")
+                result = deepcopy(old.result or {})
+                result["forked_from_run_id"] = old.id
+                result["forked_usage"] = run_dict(db, old, detail=True)["usage"]
+                for key in ("workspace_saved", "workspace_key", "workspace_saved_at", "workspace_bytes"):
+                    result.pop(key, None)
+                created = old.created_at
+                if previous_created is not None and created <= previous_created:
+                    created = previous_created + timedelta(microseconds=1)
+                previous_created = created
+                new = Run(
+                    user_id=user.id,
+                    conversation_id=conv.id,
+                    title=old.title,
+                    prompt=old.prompt,
+                    summary=old.summary,
+                    error=old.error,
+                    status=old.status,
+                    options=deepcopy(old.options),
+                    model=old.model,
+                    input_file_ids=deepcopy(old.input_file_ids),
+                    created_at=created,
+                    started_at=old.started_at,
+                    finished_at=old.finished_at,
+                    work_ms=old.work_ms,
+                    result=result,
+                )
+                db.add(new)
+                db.flush()
+                mapping[old.id] = new
+                for artifact in db.scalars(select(Artifact).where(Artifact.run_id == old.id)):
+                    db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role))
+                # Copy events in pages to bound memory; the source can subsequently be purged independently.
+                after = 0
+                while True:
+                    check_deadline()
+                    events = list(
+                        db.scalars(
+                            select(RunEvent).where(RunEvent.run_id == old.id, RunEvent.seq > after).order_by(RunEvent.seq).limit(500)
+                        )
+                    )
+                    if not events:
+                        break
+                    total_events += len(events)
+                    if total_events > 100000:
+                        raise HTTPException(422, "分叉过程记录超过100000条上限")
+                    for event in events:
+                        db.add(
+                            RunEvent(
+                                run_id=new.id, seq=event.seq, type=event.type, payload=deepcopy(event.payload), created_at=event.created_at
+                            )
+                        )
+                    after = events[-1].seq
+                    db.flush()
+                cursor = None
+                while True:
+                    page = storage.list_prefix(f"previews/{old.id}/", cursor=cursor, limit=100)
+                    for obj in page:
+                        copy_object(obj.key, obj.key.replace(f"previews/{old.id}/", f"previews/{new.id}/", 1))
+                    cursor = page.cursor
+                    if cursor is None:
+                        break
+            if source.summary_through_run_id in mapping:
+                conv.summary = source.summary
+                conv.summary_through_run_id = mapping[source.summary_through_run_id].id
+            if body.mode == "work":
+                newest = next((r for r in reversed(turns) if workspace_data(r) or "workspace_saved" in (r.result or {})), None)
+                if newest:
+                    if not workspace_data(newest):
+                        raise HTTPException(422, "分叉点工作区已过期或不可用")
+                    key = workspace_data(newest).get("key") or workspace_key(newest.id)
+                    if not workspace_alive(newest, datetime.now(UTC)) or not storage.exists(key):
+                        raise HTTPException(422, "分叉点工作区已过期或不可用")
+                    copied = mapping[newest.id]
+                    dest = workspace_key(copied.id)
+                    copy_object(key, dest)
+                    copied.result = {
+                        **copied.result,
+                        "workspace_saved": True,
+                        "workspace_key": dest,
+                        "workspace_saved_at": datetime.now(UTC).isoformat(),
+                        "workspace_bytes": storage.info(dest).size,
+                    }
+            db.commit()
+            return conversation_out(conv, target.status)
+    except BaseException:
+        db.rollback()
+        for key in copied_keys:
+            try:
+                storage.delete(key)
+            except Exception:
+                pass  # orphan preview/workspace objects are also covered by the reaper
+        raise

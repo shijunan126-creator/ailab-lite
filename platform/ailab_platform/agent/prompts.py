@@ -96,7 +96,7 @@ WORKSPACE_EXPIRED_NOTE = """
 
 # 上一轮的工作区已过期
 这个对话上一轮留下的文件（规格文件、脚本、outputs）超过了保留期，已被平台清理，这一轮的沙箱里没有它们。
-用户要在原文件上修改时，先告诉他这一点；已交付的文件还在他的资料库里，可以请他作为附件重新上传，或者按对话内容重新生成。"""
+用户要在原文件上修改时，先告诉他这一点；已交付的文件还在他的资料库里，可用 search_library 查找并 copy_library_file 复制后继续修改。"""
 
 CHAT_MODE_NOTE = """你是 AILab 助手，用中文和 Markdown 帮用户完成任务，先给结论，简洁自然。
 
@@ -158,6 +158,11 @@ def system_prompt_for(
 ) -> str:
     """Describe the actual capabilities; preload a picked skill and omit disabled skill names."""
     base = CHAT_MODE_NOTE if mode == "chat" else system_prompt(frozenset(disabled))
+    base += (
+        "\n可用 search_library 搜索资料库、read_library_file 分页读取已提取正文；"
+        "工作时可 copy_library_file 复制资料到工作区。"
+        "引用网页事实时，在主张后用 [简短标题](https://…) 标注来源，不裸贴URL，不在末尾堆参考链接。\n"
+    )
     if web.enabled():
         base += WEB_NOTE
     if mode == "chat":

@@ -7,6 +7,7 @@ import json
 import logging
 import random
 import re
+from contextlib import nullcontext
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
@@ -25,7 +26,7 @@ from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, Run, RunEvent, RunStatus, User, utcnow
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
-from ..schemas import EventOut, RunCreate, RunDetail, RunOut
+from ..schemas import EventOut, RunCreate, RunDetail, RunOut, RunRetry
 from ..skill_policy import run_disabled_skills
 from ..storage import get_storage
 from .routes_skills import usable_personal
@@ -72,6 +73,8 @@ def start_run(
     conversation: Conversation | None = None,
     mode: str = "work",
     skill: str | None = None,
+    locked: bool = False,
+    commit: bool = True,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     if len(prompt) > settings.max_prompt_chars:
@@ -91,7 +94,7 @@ def start_run(
     if spec is None or not spec.available:
         raise HTTPException(status_code=400, detail=f"model not available: {model_id}")
 
-    with user_critical_section(db, user.id):  # the limits are checked and the run written as one step
+    with nullcontext() if locked else user_critical_section(db, user.id):
         enforce_token_quota(db, user.id)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
@@ -141,10 +144,11 @@ def start_run(
         db.flush()
         from .jobs import stage_job
 
-        stage_job(db, "run", run_id=run.id, mode=mode)
+        stage_job(db, "run", run_id=run.id, mode=options["mode"])
         append_event(db, run.id, "run.created", {"title": run.title, "status": run.status, "model": run.model}, commit=False)
-        db.commit()
-        db.refresh(run)
+        if commit:
+            db.commit()
+            db.refresh(run)
 
     return run
 
@@ -286,3 +290,57 @@ async def stream_events(
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@router.post("/runs/{run_id}/retry", response_model=RunDetail, status_code=201)
+def retry_run(run_id: str, body: RunRetry, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    with user_critical_section(db, user.id):
+        old = _get_owned_run(db, run_id, user)
+        db.refresh(old)
+        if old.status not in RunStatus.TERMINAL:
+            raise HTTPException(409, "先停止当前回答")
+        conv = db.get(Conversation, old.conversation_id) if old.conversation_id else None
+        if not conv or conv.deleted_at is not None:
+            raise HTTPException(409, "只能重试对话的最后一条消息")
+        last = db.scalar(
+            select(Run.id)
+            .where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None))
+            .order_by(Run.created_at.desc(), Run.id.desc())
+            .limit(1)
+        )
+        if old.superseded_by_run_id or last != old.id:
+            raise HTTPException(409, "只能重试最后一条消息，该消息已被替代或已有后续回答")
+        for file_id in old.input_file_ids or []:
+            file = db.get(FileObject, file_id, populate_existing=True)
+            if (
+                not file
+                or file.user_id != user.id
+                or file.status != FileStatus.READY
+                or file.deleted_at
+                or file.purged_at
+                or file.purpose != "library"
+            ):
+                raise HTTPException(422, "附件已不可用")
+        options = dict(old.options or {})
+        mode = body.mode or options.get("mode") or "work"
+        new = start_run(
+            db,
+            user,
+            old.prompt,
+            body.model or old.model,
+            old.input_file_ids or [],
+            old.title,
+            conversation=conv,
+            mode=mode,
+            skill=options.get("skill"),
+            locked=True,
+            commit=False,
+        )
+        new.options = {**options, **new.options}
+        new.retry_of = old.id
+        old.superseded_by_run_id = new.id
+        # A summary including the replaced answer must not leak that answer into the retry.
+        if conv.summary_through_run_id == old.id:
+            conv.summary, conv.summary_through_run_id = None, None
+        db.commit()
+        return run_dict(db, new, detail=True)

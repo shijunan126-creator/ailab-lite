@@ -167,14 +167,23 @@ class _StreamState:
         text = thinking = ""
         for choice in chunk.get("choices") or []:
             delta = choice.get("delta") or {}
+            reasoning = next(
+                (delta[k] for k in ("reasoning_content", "reasoning", "thinking") if isinstance(delta.get(k), str) and delta[k]), ""
+            )
+            if not reasoning:
+                reasoning = "".join(
+                    str(item.get("text") or item.get("summary") or "")
+                    for item in delta.get("reasoning_details") or []
+                    if isinstance(item, dict)
+                )
             if call is not None:
                 call.output_bytes += len((delta.get("content", "") or "").encode())
-                call.output_bytes += len((delta.get("reasoning_content", "") or "").encode())
+                call.output_bytes += len(reasoning.encode())
                 for tool in delta.get("tool_calls") or []:
                     call.output_bytes += sum(len(str(v).encode()) for v in (tool.get("function") or {}).values())
-            if delta.get("reasoning_content"):
-                self.reasoning.append(delta["reasoning_content"])
-                thinking += delta["reasoning_content"]
+            if reasoning:
+                self.reasoning.append(reasoning)
+                thinking += reasoning
             if delta.get("content"):
                 self.content.append(delta["content"])
                 text += delta["content"]

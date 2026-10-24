@@ -303,6 +303,12 @@ class AsyncPlatformClient(_PlatformApi):
     async def pause_run(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/pause", json=payload))).json()
 
+    async def set_conversation_title(self, run_id: str, title: str) -> dict:
+        return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/conversation-title", json={"title": title}))).json()
+
+    async def library(self, run_id: str, action: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/library/{action}", json=payload))).json()
+
     async def get_model_context(self, run_id: str, after: str | None = None) -> dict:
         return (
             await self._send(self._req("GET", f"/internal/runs/{run_id}/model-context", params={"after": after} if after else {}))
@@ -430,6 +436,13 @@ class AsyncBrokerClient(_Service):
             json={"cmd": cmd, "timeout_seconds": timeout_seconds},
         )
         return (await self._send(req)).json()
+
+    async def copy_library_file(self, lease_id: str, file_id: str, path: str | None = None) -> dict:
+        return (
+            await self._send(
+                self._req("POST", f"/internal/leases/{lease_id}/library-file", timeout=150, json={"file_id": file_id, "path": path})
+            )
+        ).json()
 
     async def put_file(self, lease_id: str, path: str, data: bytes) -> None:
         await self._send(self._req("PUT", f"/internal/leases/{lease_id}/files", timeout=120, params={"path": path}, content=data))

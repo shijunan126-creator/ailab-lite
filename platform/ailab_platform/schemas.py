@@ -76,6 +76,8 @@ class RunCreate(PromptRequest):
 
 
 class RunOut(ORMModel):
+    retry_of: str | None = None
+    superseded_by_run_id: str | None = None
     id: str
     user_id: str
     conversation_id: str | None = None
@@ -104,6 +106,7 @@ class RunDetail(RunOut):
 class InternalRunDetail(RunDetail):
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 
+    context_settings: dict = Field(default_factory=dict)
     needs_conversation_title: bool = False
     history: list[dict] = Field(default_factory=list)
     workspace_restore_key: str | None = None
@@ -158,6 +161,7 @@ class MessageCreate(PromptRequest):
 
 
 class ConversationOut(UTCModel):
+    forked_from: dict | None = None
     id: str
     project_id: str | None
     title: str
@@ -321,3 +325,22 @@ class ArtifactIn(BaseModel):
     size: int
     sha256: str
     role: str = "output"
+
+
+class ConversationFork(BaseModel):
+    run_id: str = Field(max_length=40)
+    mode: Literal["chat", "work"]
+
+
+class RunRetry(BaseModel):
+    model: str | None = Field(default=None, max_length=120)
+    mode: Literal["chat", "work"] | None = None
+
+
+class ContextSettings(BaseModel):
+    auto_compact: bool = False
+    threshold_ratio: float = Field(default=0.5, ge=0.2, le=0.95)
+
+
+class ConversationTitle(BaseModel):
+    title: str = Field(min_length=1, max_length=40)

@@ -29,6 +29,7 @@ from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_internal import router as internal_router
+from .routes_library_tools import router as library_tools_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
 from .routes_ocr import router as ocr_router
@@ -114,6 +115,7 @@ app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(skills_router)
 app.include_router(memory_router)
+app.include_router(library_tools_router)
 app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)

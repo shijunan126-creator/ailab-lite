@@ -182,7 +182,7 @@ class Settings(BaseSettings):
     max_sandbox_write_bytes: int = Field(default=20 * 1024 * 1024, gt=0)  # write_file tool
     max_auto_deliver_files: int = Field(default=20, gt=0)
     max_workspace_bytes: int = Field(default=60 * 1024 * 1024, gt=0)  # compressed workspace carried between turns of a conversation
-    workspace_ttl_days: int = Field(default=3, ge=0)  # keep the last workspace of a conversation at most this long; 0 = keep it
+    workspace_ttl_days: int = Field(default=3, ge=0)  # retain per-turn workspaces for forks/retry this long; 0 = keep all
     workspace_cleanup_interval_seconds: int = Field(default=3600, gt=0)  # scan the object store for expired snapshots hourly
 
     backup_timeout_seconds: int = Field(default=3600, ge=1)

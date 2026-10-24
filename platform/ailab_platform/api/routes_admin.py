@@ -15,13 +15,15 @@ from sqlalchemy.orm import Session
 
 from ..accounts import AccountError, create_user, revoke_sessions, set_password
 from ..audit import AuditedRoute, record_audit
+from ..catalog import get_catalog
+from ..context_settings import context_settings
 from ..contracts.identity import ROLES, Principal
 from ..deps import current_user, get_db
 from ..domain.authorization import Target, policy
 from ..domain.ledger import MILLI
-from ..models import AuditLog, Department, ModelUsage, QuotaPolicy, User, UserRole, utcnow
+from ..models import AuditLog, Department, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
 from ..quota import quota_windows
-from ..schemas import UTCModel
+from ..schemas import ContextSettings, UTCModel
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"], route_class=AuditedRoute)
 Limit = Query(default=50, ge=1, le=100)
@@ -595,3 +597,52 @@ def admin_usage(
     }
     _commit(db, user, "usage.list", "usage", detail={"group_by": group_by})
     return result
+
+
+def _context_admin(user):
+    if "platform_admin" not in user.principal.roles:
+        raise HTTPException(403, "仅平台管理员可管理上下文设置")
+
+
+def _context_out(db):
+    return {
+        **context_settings(db),
+        "models": [{"id": m.id, "name": m.name, "context_tokens": m.context_tokens} for m in get_catalog().available()],
+    }
+
+
+@router.get("/settings/context")
+def get_context_settings(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _context_admin(user)
+    out = _context_out(db)
+    _commit(db, user, "settings.context.read", "settings", "context")
+    return out
+
+
+@router.put("/settings/context")
+def put_context_settings(body: ContextSettings, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    _context_admin(user)
+    # Serialize all admins on one existing row, including first creation of the setting.
+    from ..locks import user_critical_section
+
+    admin_id = db.scalar(select(User.id).order_by(User.id).limit(1))
+    with user_critical_section(db, admin_id):
+        row = db.get(PlatformSetting, "context", populate_existing=True)
+        if row is None:
+            row = PlatformSetting(key="context", value=body.model_dump())
+            db.add(row)
+        else:
+            row.value = body.model_dump()
+        _commit(
+            db,
+            user,
+            "settings.context.update",
+            "settings",
+            "context",
+            {
+                "fields": ["auto_compact", "threshold_ratio"],
+                "auto_compact": body.auto_compact,
+                "threshold_ratio": str(body.threshold_ratio),
+            },
+        )
+        return _context_out(db)
