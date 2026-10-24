@@ -42,6 +42,7 @@ from .prompts import (
     skills,
     system_prompt_for,
     user_prompt,
+    workspace_prompt,
 )
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
@@ -1016,6 +1017,7 @@ class AgentLoop:
                     {
                         "role": "system",
                         "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                        + workspace_prompt(run.get("project_instructions") or "", run.get("brand") or {})
                         + memory_prompt(run.get("memory") or {})
                         + project_library_prompt(run.get("project_library") or [])
                         + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),

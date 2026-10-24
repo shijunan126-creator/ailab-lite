@@ -13,7 +13,7 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "6a3fb142845f9cc4f8a426d8cf5cd05c3fee39ebe80402976ac2c2ee112fdd43",
+      "sha256": "47445db272be6333a929696fe962d21093b1c80e83aff65e81a77c0319606cab",
       "version": "1.0.0"
     },
     "xlsx": {
@@ -26,7 +26,7 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "68f0e3c42ed18687e0860b3494836b4195495e5393e1400862f618139971a37b",
+      "sha256": "2edc8edc40c830cb9d4d63657e08bd2e7b84bcd6c25ada82f7640f74e58c2990",
       "version": "1.0.0"
     }
   }

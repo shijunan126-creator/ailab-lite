@@ -34,6 +34,9 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .routes_memory import memory_for
 
     out["memory"] = memory_for(owner, for_model=True) if owner else {}
+    from .brand import workspace_input
+
+    out.update(workspace_input(db, run))
     out.update(skill_input_for(db, owner))  # the same effective policy as the legacy internal GET
     path = ancestor_query(run.conversation_id, run.parent_run_id)
     newest = (

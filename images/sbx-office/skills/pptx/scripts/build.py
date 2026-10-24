@@ -30,6 +30,7 @@ from pptx.util import Emu, Inches, Pt
 HERE = Path(__file__).resolve().parent
 ICON_DIR = HERE.parent / "assets" / "icons"
 ICON_CACHE = Path("/tmp/pptx-icon-cache")
+BRAND_DIR = Path("/workspace/.brand")
 FONT = "微软雅黑"  # the sandbox maps it to Noto Sans CJK; Office users have it natively
 W, H = Inches(13.333), Inches(7.5)
 MARGIN = Inches(0.7)
@@ -275,18 +276,49 @@ class Deck:
             if theme not in THEMES:
                 warn(f"unknown theme {theme!r}; using azure (choices: {', '.join(THEMES)})")
             self.t = THEMES.get(theme, THEMES["azure"])
-        self.prs = Presentation()
-        self.prs.slide_width, self.prs.slide_height = W, H
-        self.blank = self.prs.slide_layouts[6]
+        global FONT
+        FONT = "微软雅黑"
+        self.brand = {}
+        if spec.get("brand") is not False and (BRAND_DIR / "brand.json").is_file():
+            self.brand = json.loads((BRAND_DIR / "brand.json").read_text(encoding="utf-8"))
+        self.t = dict(self.t)
+        for key, value in (self.brand.get("colors") or {}).items():
+            if key in {"primary", "accent"}:
+                self.t[key] = str(value).lstrip("#")
+        FONT = self.brand.get("font") or FONT
+        template = BRAND_DIR / "template.pptx"
+        self.from_template = bool(self.brand and template.is_file())
+        self.prs = Presentation(str(template)) if self.from_template else Presentation()
+        if self.from_template:
+            if not self.brand.get("font"):
+                from pptx.opc.constants import RELATIONSHIP_TYPE as RT
+
+                theme_part = self.prs.slide_masters[0].part.part_related_by(RT.THEME)
+                theme_xml = etree.fromstring(theme_part.blob, etree.XMLParser(resolve_entities=False, no_network=True))
+                ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+                FONT = (theme_xml.xpath("string(.//a:minorFont/a:ea/@typeface)", namespaces=ns)
+                        or theme_xml.xpath("string(.//a:minorFont/a:latin/@typeface)", namespaces=ns) or FONT)
+            # Retain masters, themes and relationships; remove only the template's example slides.
+            for item in list(self.prs.slides._sldIdLst):
+                self.prs.part.drop_rel(item.rId)
+                self.prs.slides._sldIdLst.remove(item)
+            self.blank = min(self.prs.slide_layouts, key=lambda layout: len(layout.placeholders))
+        else:
+            self.prs.slide_width, self.prs.slide_height = W, H
+            self.blank = self.prs.slide_layouts[6]
         self.footer = spec.get("footer", spec.get("title", ""))
         self.page = 0
 
     # ---- frame shared by content slides
     def new_slide(self, bg: str | None = None):
         slide = self.prs.slides.add_slide(self.blank)
-        fill = slide.background.fill
-        fill.solid()
-        fill.fore_color.rgb = rgb(bg or self.t["bg"])
+        for placeholder in list(slide.placeholders):
+            element = placeholder._element
+            element.getparent().remove(element)
+        if not self.from_template or bg is not None:
+            fill = slide.background.fill
+            fill.solid()
+            fill.fore_color.rgb = rgb(bg or self.t["bg"])
         self.page += 1
         return slide
 
@@ -846,6 +878,19 @@ class Deck:
                 self.cover(s, where, closing=True)
             else:
                 getattr(self, layout)(s, where)
+        logo = BRAND_DIR / "logo.png"
+        for slide in self.prs.slides:
+            if self.brand and logo.is_file():
+                shape = slide.shapes.add_picture(str(logo), W - Inches(1.15), Inches(0.16), height=Inches(0.32))
+                if shape.width > Inches(0.9):
+                    shape.height = int(shape.height * Inches(0.9) / shape.width)
+                    shape.width = Inches(0.9)
+            if self.from_template:
+                # Author layouts on the standard canvas, then map coordinates to the template's native slide size.
+                sx, sy = self.prs.slide_width / W, self.prs.slide_height / H
+                for shape in slide.shapes:
+                    shape.left, shape.top = int(shape.left * sx), int(shape.top * sy)
+                    shape.width, shape.height = int(shape.width * sx), int(shape.height * sy)
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         self.prs.save(out)
 

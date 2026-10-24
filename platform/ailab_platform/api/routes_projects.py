@@ -12,7 +12,7 @@ from ..locks import user_critical_section
 from ..models import Conversation, FileObject, Project, Run, RunStatus, ScheduledTask, User, utcnow
 from ..naming import name_key
 from ..run_state import transition_run
-from ..schemas import ProjectIn, ProjectOut
+from ..schemas import ProjectIn, ProjectOut, ProjectPatch
 
 router = APIRouter(prefix="/v1/projects", tags=["projects"])
 
@@ -45,6 +45,7 @@ def _project_rows(db: Session, user_id: str, project_id: str | None = None) -> l
         {
             "id": project.id,
             "name": project.name,
+            "instructions": project.instructions,
             "created_at": project.created_at,
             "updated_at": project.updated_at,
             "conversations": conversation_count,
@@ -78,14 +79,17 @@ def get_project(project_id: str, user: User = Depends(current_user), db: Session
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
-def rename_project(project_id: str, body: ProjectIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+def rename_project(project_id: str, body: ProjectPatch, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     with user_critical_section(db, user.id):
         project = owned_project(db, project_id, user)
-        key = name_key(body.name)
-        if db.scalar(select(Project.id).where(Project.user_id == user.id, Project.name_key == key, Project.id != project_id).limit(1)):
-            raise HTTPException(409, "已有同名项目，请换一个名称")
-        project.name_key = key
-        project.name = body.name.strip()
+        if body.name is not None:
+            key = name_key(body.name)
+            if db.scalar(select(Project.id).where(Project.user_id == user.id, Project.name_key == key, Project.id != project_id).limit(1)):
+                raise HTTPException(409, "已有同名项目，请换一个名称")
+            project.name_key = key
+            project.name = body.name.strip()
+        if body.instructions is not None:
+            project.instructions = body.instructions
         project.updated_at = utcnow()
         db.commit()
         return _project_rows(db, user.id, project_id)[0]

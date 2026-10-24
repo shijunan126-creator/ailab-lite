@@ -25,6 +25,7 @@ from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_f
 from .routes_admin import router as admin_router
 from .routes_auth import me
 from .routes_auth import router as auth_router
+from .routes_brand import router as brand_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
@@ -115,6 +116,7 @@ async def reject_oversized_upload(request: Request, call_next):
 
 app.include_router(auth_router)
 app.include_router(admin_router)
+app.include_router(brand_router)
 app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)
