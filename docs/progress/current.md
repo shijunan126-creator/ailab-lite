@@ -1,11 +1,12 @@
 # 当前工作
 
-## PPT 模板后端（2026-10-24，独立实现中）
+## PPT 模板后端（2026-10-24，独立分支已实现，未合并/部署）
 
-- 用户明确授权本后端子任务；分支 `feat/ppt-templates-backend`，base `main@6b6825d`。Portal归另一Agent，本分支不编辑；不推送/PR/合并/部署。
-- 已接通0028模板表/API、Worker受限扫描分析、运行/队列冻结、Broker重置注入；生成器改动单独提交。
-- PostgreSQL专项38通过；全量双库/E2E仍待验。缩略图为轻量首屏绘制，非Office像素级还原。
-- 下一步：全量Ruff/Python双库及相关跨服务E2E，记录精确结果与边界。契约见[设计](../reviews/2026-10-24-ppt-templates-design.md)，结果见[记录](updates/2026-10-24-ppt-templates-backend.md)。
+- 用户授权的后端子任务已实现：`feat/ppt-templates-backend`，base `main@6b6825d`，最终运行/回归基线 `d09043a`。Portal归另一Agent，本分支零Portal改动；未push/PR/merge/deploy。
+- 已接通0028模板注册/旧品牌迁移、受限Worker扫描分析/首屏图、Run/queue冻结、Broker重置注入、生成器原生版式参考及资料库`category=slides`（含folders）。
+- 最终Ruff通过；SQLite **1113通过/118跳过**，PG+Redis **1198通过/33跳过**，相关五服务E2E **1通过/0跳过**；双库升降再升/自定义topic/EXPLAIN已覆盖。PG/Redis及E2E子服务均已停止。
+- 缩略图为轻量首屏联系图，非Office像素级渲染；注册模板软删保留字节、个人继续计配额。定时非空template拒绝422，template队列不允许steer400。真实镜像/ClamAV联合验收未做。
+- 下一步：父任务集成Portal分支并确认缩略图视觉边界；另行授权部署时迁移0028、重建sbx-office、等待迁移模板ready。契约见[设计](../reviews/2026-10-24-ppt-templates-design.md)，精确命令/结果/成本与风险见[交付记录](updates/2026-10-24-ppt-templates-backend.md)。
 
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 
