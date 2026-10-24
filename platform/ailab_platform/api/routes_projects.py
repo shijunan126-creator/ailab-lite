@@ -103,6 +103,13 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
         runs = db.scalars(select(Run).where(Run.conversation_id.in_(conversation_ids), Run.status.not_in(RunStatus.TERMINAL))).all()
         for run in runs:
             transition_run(db, run.id, RunStatus.CANCELED, reason="project_deleted", commit=False)
+        from ..models import QueuedMessage
+
+        db.execute(
+            update(QueuedMessage)
+            .where(QueuedMessage.conversation_id.in_(conversation_ids), QueuedMessage.state == "queued")
+            .values(state="canceled", updated_at=utcnow())
+        )
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
         while lineages := list(

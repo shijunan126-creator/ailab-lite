@@ -109,7 +109,10 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         workspace = body.state.get("workspace")
         if workspace and not str(workspace.get("key", "")).startswith(f"workspaces/{run_id}/"):
             raise HTTPException(422, "invalid workspace key")
-        run.runtime_meta = {**(run.runtime_meta or {}), "plan": body.state.get("plan", []), "workspace": workspace}
+        from .inbox import acknowledge_steers
+
+        steer_ids = acknowledge_steers(db, run, body.state)
+        run.runtime_meta = {**(run.runtime_meta or {}), "plan": body.state.get("plan", []), "workspace": workspace, "steer_ids": steer_ids}
         old = db.scalars(select(RunCheckpoint).where(RunCheckpoint.run_id == run_id, RunCheckpoint.step < step - 1)).all()
         for row in old:
             schedule_object_deletion(db, row.state_key, "checkpoint")

@@ -29,6 +29,7 @@ from .routes_brand import router as brand_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
+from .routes_inbox import router as inbox_router
 from .routes_internal import router as internal_router
 from .routes_library_tools import router as library_tools_router
 from .routes_memory import router as memory_router
@@ -192,3 +193,5 @@ def metrics_endpoint() -> Response:
 
 
 app.include_router(search_router)
+
+app.include_router(inbox_router)

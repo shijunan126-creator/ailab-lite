@@ -8,6 +8,8 @@
 - 后端 A：`feat/projects-brand`（base `00c5cc9`）实现与独立双库验证见[记录](updates/2026-10-24-projects-brand-backend.md)；待父任务审核合入、迁移链/Portal/镜像集成。
 - 下一步：三个后端分支完成后由主 Agent 审核合入、改迁移链；Portal 同步实现；Codex 统一跑双库全套、E2E 与有限真实模型验收；PR → CI → merge。
 
+- B后端 `feat/inbox-queue`（起点00c5cc9）：9992308通知/队列/steer双库验证通过（SQLite1057、PG+Redis1138），见[B记录](updates/2026-10-24-inbox-queue-backend.md)；待父任务审核合入、0026改接0025及统一Portal/E2E验收。
+
 ## UI 功能发布完成（2026-10-24）
 
 用户授权顺序：真实模型验收 → PR/CI green → squash merge → 备份并部署合并后的 main。三个门禁现均通过；本次没有产品代码或 `platform/portal/` 改动。

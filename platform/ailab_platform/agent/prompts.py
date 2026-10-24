@@ -212,6 +212,7 @@ def history_messages(history: list[dict] | None) -> list[dict]:
     out: list[dict] = []
     for turn in history or []:
         out.append({"role": "user", "content": turn.get("prompt") or ""})
+        out.extend({"role": "user", "content": prompt} for prompt in turn.get("steers", []))
         reply = turn.get("reply") or "（没有回复）"
         if turn.get("files"):
             reply += "\n\n（这一轮产出的文件：" + "、".join(turn["files"]) + "）"

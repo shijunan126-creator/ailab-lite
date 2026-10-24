@@ -297,6 +297,9 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_checkpoint(self, run_id: str) -> dict | None:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
 
+    async def claim_steers(self, run_id: str) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/steer/claim"))).json()
+
     async def put_checkpoint(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("PUT", f"/internal/runs/{run_id}/checkpoint", json=payload))).json()
 

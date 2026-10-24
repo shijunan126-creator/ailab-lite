@@ -182,7 +182,19 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             f.filename
             for f in db.scalars(select(FileObject).join(Artifact, Artifact.file_id == FileObject.id).where(Artifact.run_id == turn.id))
         ]
-        history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
+        from .inbox import steers_for_run
+
+        applied = (turn.runtime_meta or {}).get("steer_ids", [])
+        steers = [row.prompt for row in steers_for_run(db, turn) if row.id in applied]
+        history.append(
+            {
+                **({"steers": steers} if steers else {}),
+                "prompt": turn.prompt,
+                "reply": reply[:HISTORY_CHARS],
+                "status": turn.status,
+                "files": files,
+            }
+        )
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
     out["project_library"] = []
@@ -242,7 +254,31 @@ def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=N
         )
         if not owned:
             raise HTTPException(409, "stale_attempt")
-    return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
+    from ..models import QueuedMessage
+    from .inbox import pending_query
+
+    pending = False
+    if run.status == RunStatus.RUNNING:
+        applied = (run.runtime_meta or {}).get("steer_ids", [])
+        pending = bool(
+            db.scalar(
+                select(QueuedMessage.id)
+                .where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered", QueuedMessage.id.not_in(applied))
+                .limit(1)
+            )
+        )
+        if not pending and run.conversation_id:
+            conv = db.get(Conversation, run.conversation_id)
+            if conv and conv.active_run_id == run.id and not conv.queue_paused:
+                pending = bool(
+                    db.scalar(pending_query(conv.id).where(QueuedMessage.steer.is_(True)).with_only_columns(QueuedMessage.id).limit(1))
+                )
+    return {
+        "steer_pending": pending,
+        "status": run.status,
+        "finished_at": run.finished_at,
+        "job_id": (run.runtime_meta or {}).get("job_id", run.id),
+    }
 
 
 @router.post("/runs/{run_id}/status", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])

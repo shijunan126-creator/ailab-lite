@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from .contracts.inbox import QueuedMessageOut
+
 
 class UTCModel(BaseModel):
     @field_serializer("*", when_used="json")
@@ -221,6 +223,8 @@ class RunEdit(PromptRequest):
 
 
 class ConversationDetail(ConversationOut):
+    queue: list[QueuedMessageOut] = Field(default_factory=list)
+    queue_paused: bool = False
     context: ConversationContext = Field(default_factory=ConversationContext)
     has_more: bool = False
     turns: list[RunDetail] = Field(default_factory=list)
@@ -340,6 +344,7 @@ class CommitOut(BaseModel):
 
 
 class RunStateOut(BaseModel):
+    steer_pending: bool = False
     job_id: str | None = None
     status: str
     finished_at: datetime | None = None

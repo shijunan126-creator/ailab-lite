@@ -20,12 +20,12 @@ from sqlalchemy.orm import Session
 from .models import User
 
 _guard = threading.Lock()
-_locks: dict[str, threading.Lock] = {}
+_locks: dict[str, threading.RLock] = {}
 
 
-def _lock_for(user_id: str) -> threading.Lock:
+def _lock_for(user_id: str) -> threading.RLock:
     with _guard:
-        return _locks.setdefault(user_id, threading.Lock())
+        return _locks.setdefault(user_id, threading.RLock())
 
 
 @contextmanager

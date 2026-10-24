@@ -419,3 +419,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 技能目录哈希包括所有文件。测试直接 import 镜像内 build.py 会写入 `__pycache__` 并导致技能校验失败；导入临时副本，修改 SKILL.md/build.py 后同步重新生成 `images/sbx-office/skills/index.json`。本轮需要重建 sbx-office 镜像，未重建/部署不能称运行镜像已有品牌支持。
 - 老集成迁移测试固定 head=0024，新增0025必须一起扩展逐步升/降/再升链与 head 断言，保留漂移校验。父任务合入0026/0027时继续扩展；不能只改生产 migration 后跳过旧测试。
 - SVG拒绝、旧品牌物理资产留存与API候选显示约定见[契约修改](docs/reviews/2026-10-24-workspace-features-design.md#a-分支对契约的修改)。旧品牌尚无自动回收，计入平台磁盘而非个人配额；不要用普通库删除接口清理仍可能被 checkpoint 引用的资产。
+
+## 2026-10-24 Inbox / Queue / Steer 后端 B
+
+- 统一 `transition_run` 若锁后refresh，必须先flush调用方pending ORM变更；否则ask_user刚写的question/runtime_meta被丢弃。用户锁须可重入，既有调用方已持同一锁；PG仍靠用户行锁持到事务结束。
+- Steer claim不是注入确认：已领取未checkpoint消息须在新attempt重新返回；ID、messages与agent.steered同checkpoint事务确认。领取时直接发事件或只返回queued，会在claim后进程死掉时丢失提示。等待通知的永久去重不能依赖会被200条裁剪的notification行。
+- Agent真实历史来自分页model-context，不只legacy internal GET；两处都要补steers，history_messages在原prompt后按注入顺序插入。额外状态轮询会改变取消时序/把瞬态故障变终态；复用原状态心跳字段，不加每步HTTP请求。
+- 分叉需复制已确认steer历史并重映射事件queued_id（待处理queue不复制）；新增queue会话外键要求GC先按批清queue，不能直接删除会话。
+- 终态派发用savepoint区分预期准入失败（暂停并保留队列）与基础设施失败（整个终态事务回滚）。会话通过项目删除也必须取消queue。0026在B临时接0024，父任务改链并同步集成head断言；见[B记录](docs/progress/updates/2026-10-24-inbox-queue-backend.md)。

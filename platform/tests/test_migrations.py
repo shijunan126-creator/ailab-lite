@@ -572,3 +572,19 @@ def test_work_time_upgrade_downgrade_preserves_legacy_history(engine):
     with engine.connect() as conn:
         assert conn.execute(text("SELECT summary FROM runs WHERE id='r1'")).scalar() == "preserved"
     _upgrade_to(engine, "0021")
+
+
+def test_inbox_queue_upgrade_downgrade_upgrade(engine):
+    _upgrade_to(engine, "0024")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0026")
+    assert {"notifications", "queued_messages"} <= set(inspect(engine).get_table_names())
+    assert "queue_paused" in {c["name"] for c in inspect(engine).get_columns("conversations")}
+    _downgrade_to(engine, "0024")
+    assert "notifications" not in inspect(engine).get_table_names()
+    assert "queue_paused" not in {c["name"] for c in inspect(engine).get_columns("conversations")}
+    _upgrade_to(engine, "0026")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

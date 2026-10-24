@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..contracts.model_context import SummaryUpdate
 from ..conversation_tree import ancestor_query, path_ids
 from ..deps import get_db
-from ..models import Conversation, Run, User
+from ..models import Conversation, QueuedMessage, Run, User
 from ..service_auth import require_scope
 from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_data, workspace_key
 from .routes_skills import skill_input_for
@@ -80,18 +80,40 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
                 func.substr(Run.prompt, 1, 16000).label("prompt"),
                 func.substr(Run.summary, 1, 16000).label("summary"),
                 Run.status,
+                Run.runtime_meta["steer_ids"].label("steer_ids"),
                 func.substr(Run.error, 1, 16000).label("error"),
             ).where(Run.conversation_id == conversation.id, Run.id.in_(page))
         )
     }
+    history, chars = [], 0
+    for id_ in page:
+        row = rows[id_]
+        applied = row.steer_ids or []
+        prompts = (
+            dict(
+                db.execute(
+                    select(QueuedMessage.id, QueuedMessage.prompt).where(QueuedMessage.run_id == id_, QueuedMessage.state == "steered")
+                ).all()
+            )
+            if applied
+            else {}
+        )
+        steers = [prompts[qid] for qid in applied if qid in prompts]
+        item = {"id": id_, "prompt": row.prompt, "reply": row.summary or row.error or "", "status": row.status}
+        if steers:
+            item["steers"] = steers
+        size = len(item["prompt"]) + len(item["reply"]) + sum(map(len, steers))
+        # Steers can make one turn much larger than its original prompt. Keep a
+        # page near 256k characters, always making progress on a single large turn.
+        if history and chars + size > 256000:
+            break
+        history.append(item)
+        chars += size
     return {
         "summary": (conversation.summary or "") if through else "",
         "through_run_id": through,
-        "history": [
-            {"id": id_, "prompt": rows[id_].prompt, "reply": rows[id_].summary or rows[id_].error or "", "status": rows[id_].status}
-            for id_ in page
-        ],
-        "has_more": len(ids) > start + 100,
+        "history": history,
+        "has_more": len(ids) > start + len(history),
     }
 
 
