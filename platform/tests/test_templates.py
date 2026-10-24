@@ -97,7 +97,7 @@ def test_registry_visibility_permissions_quota_and_library_exclusion(api):
     assert own["status"] == "ready" and own["slides"] == 1 and own["layouts"] == 11
     assert own["thumbnail_url"] == f"/v1/templates/{own['id']}/thumbnail"
     thumb = api.get(own["thumbnail_url"])
-    assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/webp"
+    assert thumb.status_code == 200 and thumb.headers["content-type"] == "image/jpeg"
     assert "immutable" in thumb.headers["cache-control"]
     assert api.get(own["thumbnail_url"], headers={"If-None-Match": thumb.headers["etag"]}).status_code == 304
     assert api.get(own["thumbnail_url"], headers=outsider).status_code == 404
@@ -152,7 +152,7 @@ def test_limits_names_size_and_bounded_lists(api, monkeypatch):
     assert api.get("/v1/templates?kind=docx").status_code == 422
 
 
-@pytest.mark.parametrize("slides,potx", [(0, False), (1, True)])
+@pytest.mark.parametrize("slides,potx", [(0, False), (0, True), (1, True)])
 def test_analysis_potx_and_empty_deck_thumbnail(api, slides, potx):
     row = ready(api, name="layout.potx" if potx else "empty.pptx", data=pptx(slides, potx=potx))
     assert row["status"] == "ready" and row["slides"] == slides

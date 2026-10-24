@@ -75,6 +75,10 @@ def output(db, row, user, file=None):
     meta = file.meta or {}
     analysis = meta.get("template") or meta.get("brand") or {}
     status, reason = template_status(file)
+    rendered = rendered_thumbnail(file)
+    thumbnail_url = f"/v1/templates/{row.id}/thumbnail"
+    if rendered:
+        thumbnail_url += f"?v={rendered['sha256']}"
     return {
         "id": row.id,
         "kind": row.kind,
@@ -82,7 +86,7 @@ def output(db, row, user, file=None):
         "name": row.name,
         "status": status,
         "reason": reason,
-        "thumbnail_url": f"/v1/templates/{row.id}/thumbnail" if status == "ready" and meta.get("thumb_key") else None,
+        "thumbnail_url": thumbnail_url if status == "ready" and (rendered or meta.get("thumb_key")) else None,
         "layouts": len(analysis["layouts"]) if "layouts" in analysis else None,
         "slides": analysis.get("slides"),
         "size": file.size,
@@ -210,15 +214,35 @@ def delete_template(template_id: str, user: User = Depends(current_user), db: Se
         db.commit()
 
 
+def rendered_thumbnail(file):
+    meta = file.meta or {}
+    asset = meta.get("template_preview_thumbnail")
+    if (meta.get("preview") or {}).get("status") == "ready" and asset:
+        if asset.get("key") == f"derived/{file.id}/preview/template-thumbnail.jpg":
+            return asset
+    return None
+
+
 @router.get("/{template_id}/thumbnail")
 def thumbnail(template_id: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
     row = visible_template(db, template_id, user)
     file = db.get(FileObject, row.file_id)
-    key = (file.meta or {}).get("thumb_key")
+    rendered = rendered_thumbnail(file)
+    key = rendered["key"] if rendered else (file.meta or {}).get("thumb_key")
     if template_status(file)[0] != "ready" or not key or not key.startswith(f"derived/{file.id}/"):
         raise HTTPException(404, "缩略图尚未就绪")
-    headers = {"ETag": f'"{file.sha256}-template-v1"', "Cache-Control": "private, max-age=31536000, immutable"}
+    version = (
+        rendered["sha256"]
+        if rendered
+        else "sketch-v3"
+        if key.endswith("template-sketch-v3.jpg")
+        else "v2"
+        if key.endswith(".jpg")
+        else "v1"
+    )
+    media_type = "image/jpeg" if key.endswith(".jpg") else "image/webp"
+    headers = {"ETag": f'"{file.sha256}-template-{version}"', "Cache-Control": "private, max-age=31536000, immutable"}
     if request.headers.get("if-none-match") == headers["ETag"]:
         return Response(status_code=304, headers=headers)
     db.close()
-    return _ClosingStreamingResponse(get_storage().stream(key), media_type="image/webp", headers=headers)
+    return _ClosingStreamingResponse(get_storage().stream(key), media_type=media_type, headers=headers)

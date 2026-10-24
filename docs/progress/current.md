@@ -1,12 +1,12 @@
 # 当前工作
 
-## PPT 模板后端（2026-10-24，独立分支已实现，未合并/部署）
+## PPT 模板缩略图改用 sandbox 预览（2026-10-24，已实现并本地验证，待父任务集成）
 
-- 用户授权的后端子任务已实现：`feat/ppt-templates-backend`，base `main@6b6825d`，最终运行/回归基线 `d09043a`。Portal归另一Agent，本分支零Portal改动；未push/PR/merge/deploy。
-- 已接通0028模板注册/旧品牌迁移、受限Worker扫描分析/首屏图、Run/queue冻结、Broker重置注入、生成器原生版式参考及资料库`category=slides`（含folders）。
-- 最终Ruff通过；SQLite **1113通过/118跳过**，PG+Redis **1198通过/33跳过**，相关五服务E2E **1通过/0跳过**；双库升降再升/自定义topic/EXPLAIN已覆盖。PG/Redis及E2E子服务均已停止。
-- 缩略图为轻量首屏联系图，非Office像素级渲染；注册模板软删保留字节、个人继续计配额。定时非空template拒绝422，template队列不允许steer400。真实镜像/ClamAV联合验收未做。
-- 下一步：父任务集成Portal分支并确认缩略图视觉边界；另行授权部署时迁移0028、重建sbx-office、等待迁移模板ready。契约见[设计](../reviews/2026-10-24-ppt-templates-design.md)，精确命令/结果/成本与风险见[交付记录](updates/2026-10-24-ppt-templates-backend.md)。
+- 分支 `feat/ppt-templates-backend`，本轮base `0d12f75`，实现/测试提交 `ad04b19`；初版架构base为main@6b6825d。未改Portal、未push/PR/merge/deploy。目标分支原已被其他工作树检出，本轮按明确要求在当前工作树继续；接续前先核对共享分支与工作树文件基线。
+- 已撤销平台镜像Office/Poppler/字体/procps、Worker专用Office renderer及其隔离豁免/进程树RSS逻辑。Worker仅保留受限草图；API在ready同事务登记一次原preview作业，sandbox从首张真实页生成480px JPEG缓存，完成时改变thumbnail_url/ETag。预览失败不改变模板ready或可用性。
+- Ruff通过（329文件）；专项 **84通过/1跳过**，完整SQLite **1123通过/118跳过**，完整PG+Redis **1208通过/33跳过**，均无失败。临时PG/Redis25479/26479已停止且无监听，16379未动。
+- 成本：Worker/平台镜像新增Office渲染成本为零；每模板一次sandbox preview，与资料库预览同预算，加一次小图缩放/存储。旧245MiB测量属于已否决方案，不能作为当前验收。
+- 下一步：父任务审核/集成本分支，在真实OpenSandbox/cgroup与目标Linux上验收。未跑Portal/build/E2E（无Portal依赖且不修改其目录）、未构建镜像/部署/真实模型或长期容量；旧ready模板不批量回填。精确命令、当前与历史证据、清理和边界见[交付记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)，接口见[设计](../reviews/2026-10-24-ppt-templates-design.md)。
 
 ## 当前：工作区功能（2026-10-24，已合入 main，未部署）
 

@@ -17,6 +17,9 @@
 - `category=slides` 同时支持 `/v1/files` 与 `/v1/files/folders`；按大小写不敏感的 `.pptx/.potx` 后缀过滤，保留原分页/项目/回收站权限。0028 增加两项稀疏 slides 索引；SQLite 小样本可能选择已有 folder covering index，允许这一有索引的等价计划。
 - POTX 由受限 Worker 注册其 main content type 后直接读包，不重打包，避免30MiB输入挤占16MiB子进程输出限制。Broker保留原字节，生成器在沙箱中将POTX main type规范化为PPTX。
 - 旧品牌有效PPT文件转为 `purpose=template` 并由迁移 outbox 重新扫描/分析、补缩略图；迁移不解析文件。旧品牌指针仅用于降级与历史冻结Run兼容，不再是新品牌资产种类。
-- **缩略图视觉边界**：受限子进程以 Pillow 轻量绘制首张 slide（无 slide 时首个 layout）的图片、文本和形状，不引入 Worker LibreOffice；主题背景、复杂效果/图表/母版对象不保证像素级还原。它是模板选择联系图，非产物预览/视觉验收。生成文件的完整预览仍走原 Broker Office 渲染。此项属于本契约的保真度边界，需要产品/父任务确认是否接受。
+- **缩略图（替代被否决的 Worker Office 渲染方案）**：Worker 仅在原有限额内生成轻量草图。API 在模板 ready 的同一事务调用资料库共用的 `preview_requests.request_preview`，写入 pending manifest/job_id 和 outbox；用户锁串行化，已登记的 pending/ready/failed 预览均不因模板补丁或文件作业重投而再次排队。作业消费/claim/ACK/超时/失败沿用既有链路。
+- 真实页面由原 `worker.preview → Broker LibraryRenderer → render profile sandbox` 产生，PPTX/POTX 使用同一 Office 预览（最多40页、总派生输出32MiB、120秒总wall、现有sandbox内存/租约预算）。sandbox 内从首张页面 JPEG 缩放到约480px宽，额外生成一次 `derived/{file_id}/preview/template-thumbnail.jpg`；不在 Worker/API 解码或渲染 Office。40页加一个缩略图允许最多41个内部完成资产，API仍校验文件归属、固定路径、MIME、hash及manifest一致性。
+- API 仅在当前预览 ready 且缩略图完成时选择真实图，否则保留草图；模板 status 不依赖 preview。真实图 URL 追加 `?v=<缩略图sha256>`，ETag 同时变化，避免浏览器复用 immutable 草图；新草图为独立 `template-sketch-v3.jpg`，旧v1 WebP/v2 JPEG仍可读。模板 JSON 不新增字段，模板可见性及库/搜索/分享排除规则不变。
+- 平台镜像不含 LibreOffice/Poppler/字体/procps；撤销仅为 Office 渲染加入的 Worker RSS watchdog/隔离豁免。新增 Office 渲染成本在 Worker/平台镜像为零；每模板一次 sandbox preview，与一次资料库预览成本相同，加一次小图缩放和JPEG存储。源文件/已生成页面不在平台进程新增完整缓冲。真实容器部署及长期容量仍由父任务后续验收，详见[跟进记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
 - 注册模板软删除不回收原文件/派生文件；它仍可能被已冻结Run使用。个人模板的保留字节继续计入配额。单轮资料库模板沿用资料库文件现有回收/版本过期语义。
 - 定时任务创建/更新显式拒绝非空 template（422）；null/缺省忽略。模板队列不允许 steer，防止将下一轮模板错误应用到当前轮。

@@ -921,6 +921,10 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         activate_asset(db, file)
     if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
         request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
+    if file.purpose == "template" and file.status == FileStatus.READY and (file.meta or {}).get("template"):
+        from .preview_requests import request_preview
+
+        request_preview(db, file, retry_stale=False)
     from .routes_library_summary import request_summary
 
     request_summary(db, file)
@@ -947,6 +951,9 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         for name, asset in assets.items():
             if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
                 raise HTTPException(status_code=400, detail="invalid asset")
+        thumbnail = assets.get("template-thumbnail.jpg")
+        if thumbnail and (file.purpose != "template" or preview.status != "ready" or preview.kind != "pages"):
+            raise HTTPException(status_code=400, detail="invalid template thumbnail")
         expected = (
             set(preview.pages or [])
             if preview.kind == "pages"
@@ -956,6 +963,8 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
             if preview.kind == "text"
             else set()
         )
+        if thumbnail:
+            expected.add("template-thumbnail.jpg")
         if preview.status == "ready" and preview.kind in {"pages", "sheets", "text"} and (not expected or set(assets) != expected):
             raise HTTPException(status_code=400, detail="manifest assets do not match")
         if (meta.get("preview") or {}).get("status") != "pending":
@@ -967,6 +976,8 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
             ):
                 raise HTTPException(status_code=400, detail="invalid asset content type")
         meta["preview_assets"] = assets
+        if thumbnail:
+            meta["template_preview_thumbnail"] = thumbnail
         if preview.image == "display.webp":
             meta["display_key"] = f"derived/{file_id}/display.webp"
             meta["thumb_key"] = f"derived/{file_id}/thumb.webp"

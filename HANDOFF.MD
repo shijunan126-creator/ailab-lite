@@ -456,3 +456,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 模板Run冻结在 `options.template`，队列/重试/编辑复制冻结值，不再重新解析可删除注册项。Broker必须restore后清 `.template`，连无模板轮也要清。
 - 数据迁移若需补outbox，topic/deadline须取有效Settings，不能只读os.environ：生产自定义队列可能来自env_file，否则迁移任务会发到无人消费的默认队列。0028双库回归锁定自定义topic。
 - 测试服务必须核对进程归属，不能只看daemonize退出码或端口可连。macOS可能同时存在wildcard与127.0.0.1特定绑定的Redis监听；启动前检查端口独占，启动后核对pidfile与Redis INFO的process_id、验证空DB，清理时只关闭自己持有的进程。本轮最终重验改用独占26379，原16379非本任务进程保持不动。
+
+## 2026-10-24 PPT 真实首屏图跟进
+
+- **Office rendering happens in the sandbox preview pipeline, never in the platform image/Worker.** Worker预算256–384MiB，旧方案在256MiB下首屏245MiB、默认192MiB必然fallback，已被否决并撤销。不得通过平台镜像安装LO或放宽Worker隔离来重新引入它。
+- 模板ready、preview manifest和outbox同事务；复用资料库请求helper和原preview作业，不在补丁重试或ACK后重建作业。template status独立于preview，失败只保留草图，不影响Run冻结和使用。
+- immutable草图切真实图时必须改变thumbnail_url及ETag；仅替换同URL字节会让浏览器继续显示草图。API从完成资产中选择文件绑定的固定缩略图路径，模板可见性不借用普通资料库授权。
+- 真实渲染宿主进程测试仅证明renderer/租约生命周期与内容，不等于OpenSandbox容器/cgroup验收；当前证据及边界见[记录](docs/progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)。

@@ -72,6 +72,18 @@ def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Pa
         return {}
 
 
+def _template_thumbnail(file_id, source, storage, output):
+    key = f"derived/{file_id}/template-sketch-v3.jpg"
+    try:
+        if not storage.exists(key):
+            execute("template_sketch", source, output)
+            storage.put_file(key, output / "thumb.jpg", "image/jpeg")
+        return {"thumb_key": key, "template_thumbnail": "sketch"}
+    except Exception:
+        # A derivative failure must never destroy successful template analysis.
+        return {"template_thumbnail": "unavailable"}
+
+
 def extract(data: bytes, filename: str, content_type: str) -> dict:
     with tempfile.TemporaryDirectory(prefix="ailab-extract-") as tmp:
         source = Path(tmp) / ("input" + PurePath(filename).suffix.lower())
@@ -145,9 +157,8 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     file_id, meta={"scan": scan, "template_error": "模板无法解析", "processing": "failed"}, status="rejected"
                 )
                 return {"file_id": file_id, "failed": True}
-            key = f"derived/{file_id}/template-v1.webp"
-            storage.put_file(key, Path(tmp) / "template" / "thumb.webp", "image/webp")
-            platform.patch_file(file_id, meta={"scan": scan, "template": analysis, "thumb_key": key, "processing": "done"}, status="ready")
+            thumb = _template_thumbnail(file_id, source, storage, Path(tmp) / "thumbnail")
+            platform.patch_file(file_id, meta={"scan": scan, "template": analysis, "processing": "done", **thumb}, status="ready")
             return {"file_id": file_id, "template": analysis}
         if (meta.get("meta") or {}).get("brand_kind"):
             kind = (meta.get("meta") or {}).get("brand_kind")

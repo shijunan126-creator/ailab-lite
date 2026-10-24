@@ -1,13 +1,9 @@
-"""Bounded first-slide/layout contact thumbnail, not a full office renderer.
-
-Runs only in the limited parser process. Unsupported effects are intentionally
-omitted; this preview is for choosing a template, not artifact acceptance.
-"""
+"""Lightweight template sketch, only in a limited parser child."""
 
 import io
 
 
-def thumbnail(prs, output):
+def _sketch(prs, output):
     from PIL import Image, ImageDraw, ImageFont
 
     width, height = 480, max(1, round(480 * prs.slide_height / prs.slide_width))
@@ -43,4 +39,16 @@ def thumbnail(prs, output):
                     draw.rectangle((x, y, x + w, y + h), fill="#" + str(color))
             except (AttributeError, TypeError):
                 pass
-    canvas.save(output / "thumb.webp", "WEBP", quality=75, method=4)
+    canvas.save(output / "thumb.jpg", "JPEG", quality=82, optimize=True)
+
+
+def sketch(source, output):
+    from pptx.opc.constants import CONTENT_TYPE as CT
+    from pptx.opc.package import PartFactory
+    from pptx.package import Package
+    from pptx.parts.presentation import PresentationPart
+
+    PartFactory.part_type_for[CT.PML_TEMPLATE_MAIN] = PresentationPart
+    prs = Package.open(source).main_document_part.presentation
+    _sketch(prs, output)
+    return {"thumbnail": "sketch"}

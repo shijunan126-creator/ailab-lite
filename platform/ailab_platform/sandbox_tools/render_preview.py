@@ -19,7 +19,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-PAGES = {".pptx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
+PAGES = {".pptx", ".potx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
 SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv"}
 MAX_PAGES = 40
 MAX_ROWS, MAX_COLS = 200, 40
@@ -70,6 +70,16 @@ def pages(src: Path, out: Path) -> dict:
         )
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
     return {"kind": "pages", "pages": names, "page_count": count}
+
+
+def template_thumbnail(out: Path, result: dict) -> None:
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = 16_000_000
+    with Image.open(out / result["pages"][0]) as image:
+        width = min(480, image.width)
+        size = (width, max(1, round(image.height * width / image.width)))
+        image.convert("RGB").resize(size, Image.Resampling.LANCZOS).save(out / "template-thumbnail.jpg", "JPEG", quality=82)
 
 
 def _color(c) -> str | None:
@@ -212,6 +222,9 @@ def main() -> int:
         check_archive(src)
         if ext in PAGES:
             result = pages(src, out)
+            if "--template-thumbnail" in sys.argv[3:]:
+                template_thumbnail(out, result)
+                result["thumbnail"] = "template-thumbnail.jpg"
         elif ext in SHEETS:
             result = sheets(src, out)
         else:

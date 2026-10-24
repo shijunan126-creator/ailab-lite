@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-PAGES = {".pdf", ".docx", ".doc", ".pptx", ".ppt", ".odt", ".odp", ".rtf"}
+PAGES = {".pdf", ".docx", ".doc", ".pptx", ".potx", ".ppt", ".odt", ".odp", ".rtf"}
 SANDBOX_SHEETS = {".xls", ".ods"}
 LOCAL_SHEETS = {".xlsx", ".xlsm", ".csv", ".tsv"}
 IMAGES = {".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".ico", ".avif", ".svg"}
@@ -76,7 +76,7 @@ class PreviewAsset(BaseModel):
 class PreviewCompletion(BaseModel):
     job_id: str = Field(min_length=1, max_length=40)
     preview: FilePreview
-    assets: dict[str, PreviewAsset] = Field(default_factory=dict, max_length=40)
+    assets: dict[str, PreviewAsset] = Field(default_factory=dict, max_length=41)
 
 
 def preview_kind(filename: str, content_type: str) -> str | None:

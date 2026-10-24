@@ -7,7 +7,6 @@ import hashlib
 import logging
 import os
 import tempfile
-import uuid
 import zipfile
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -23,7 +22,7 @@ from sqlalchemy import func, literal_column, or_, select, tuple_
 from sqlalchemy.orm import Session
 
 from ..config import settings
-from ..contracts.file_preview import PREVIEW_VERSION, FilePreview, preview_kind, text_manifest
+from ..contracts.file_preview import PREVIEW_VERSION, FilePreview
 from ..deps import current_user, get_db
 from ..library import (
     THUMBNAIL_VERSION,
@@ -462,28 +461,9 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
             cached = None
         if cached and (cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300):
             return cached
-        job_id = None
-        kind = "image" if meta.get("display_key") else preview_kind(file.filename, file.content_type)
-        suffix = Path(file.filename).suffix.lower()
-        if kind is None:
-            manifest = {"status": "unsupported", "kind": None}
-        elif kind == "text":
-            manifest = text_manifest(file.filename, meta) if meta.get("text_key") else {"status": "pending", "kind": "text"}
-        elif kind == "image" and (suffix == ".svg" or file.content_type.split(";")[0] == "image/svg+xml"):
-            manifest = {"status": "ready", "kind": "image", "image": "original"}
-        elif kind == "image" and meta.get("display_key"):
-            manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
-        else:
-            manifest = {"status": "pending", "kind": kind}
-            job_id = uuid.uuid4().hex
-            meta.update(preview_requested_at=now, preview_job_id=job_id)
-            stage_job(db, "preview", file_id=file_id, job_id=job_id)
-        if manifest["status"] == "pending" and job_id is None:
-            job_id = uuid.uuid4().hex
-            meta.update(preview_requested_at=now, preview_job_id=job_id)
-            stage_job(db, "preview", file_id=file_id, job_id=job_id)
-        meta["preview"] = manifest
-        file.meta = meta
+        from .preview_requests import request_preview
+
+        manifest, job_id = request_preview(db, file)
         db.commit()
         if job_id:
             from .preview_dispatch import dispatch_preview_jobs

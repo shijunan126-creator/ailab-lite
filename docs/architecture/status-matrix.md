@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-24 PPT模板后端：`feat/ppt-templates-backend` / base `main@6b6825d` 已实现并本地验证，运行代码 `d09043a`，未合并/部署。公司/个人/单轮文件、0028品牌迁移、Run/queue冻结、Broker重置注入、PPT原生版式参考及slides筛选已接通。SQLite1113通过/118跳过、PG+Redis1198通过/33跳过，相关五服务E2E1通过；临时服务已停。缩略图为轻量联系图，真实Office/ClamAV与Portal集成仍待父任务验收。见[设计](../reviews/2026-10-24-ppt-templates-design.md)和[交付记录](../progress/updates/2026-10-24-ppt-templates-backend.md)。
+2026-10-24 PPT模板缩略图：`feat/ppt-templates-backend`，base `0d12f75`，实现/测试基线 `ad04b19`。已撤销平台镜像/Worker Office渲染，改为ready同事务登记原preview outbox，由sandbox生成首张页面的480px缓存JPEG；URL/ETag切换，失败保留草图及模板可用性。Ruff通过，专项84通过/1跳过、SQLite1123通过/118跳过、PG+Redis1208通过/33跳过；临时服务已停。未改Portal、未集成本轮、未合main/部署，真实OpenSandbox/cgroup和长期容量未验。Worker/平台镜像零新增Office渲染成本，每模板一次资料库同预算sandbox preview。旧245MiB测量属于已否决方案，详见[本轮记录](../progress/updates/2026-10-24-ppt-template-thumbnail-rendering.md)、[设计](../reviews/2026-10-24-ppt-templates-design.md)。
 
 2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
 
