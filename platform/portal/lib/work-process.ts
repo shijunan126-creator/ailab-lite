@@ -165,8 +165,22 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
   return next;
 }
 
-export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at">): string {
-  const duration = typeof run.work_ms === "number" ? `${Math.floor(run.work_ms / 60000)}分${Math.floor(run.work_ms / 1000) % 60}秒` : null;
+export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" | "options">): string {
+  const ms = typeof run.work_ms === "number" ? run.work_ms : null;
+  if (run.options?.mode === "chat") {
+    // chat only answers: its time is thinking, not work
+    const thought = ms === null ? null : ms < 60000 ? `${Math.max(1, Math.round(ms / 1000))}秒` : `${Math.floor(ms / 60000)}分${Math.floor(ms / 1000) % 60}秒`;
+    switch (run.status) {
+      case "running": return "正在思考…";
+      case "queued": return "等待开始";
+      case "waiting_user": return "等待你回答";
+      case "interrupted": return "已暂停";
+      case "failed": return "回答失败";
+      case "canceled": return "已取消";
+      default: return thought ? `已思考 ${thought}` : "已思考";
+    }
+  }
+  const duration = ms === null ? null : `${Math.floor(ms / 60000)}分${Math.floor(ms / 1000) % 60}秒`;
   switch (run.status) {
     case "running": return "正在工作中…";
     case "queued": return run.started_at ? "等待继续" : "等待开始";
