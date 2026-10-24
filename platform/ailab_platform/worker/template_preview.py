@@ -1,4 +1,4 @@
-"""First-page Office thumbnail and a best-effort sketch, only in limited children."""
+"""Lightweight template sketch, only in a limited parser child."""
 
 import io
 
@@ -40,21 +40,6 @@ def _sketch(prs, output):
             except (AttributeError, TypeError):
                 pass
     canvas.save(output / "thumb.jpg", "JPEG", quality=82, optimize=True)
-
-
-def render(source, output):
-    from PIL import Image
-
-    from ..sandbox_tools.render_preview import pages
-
-    result = pages(source, output, max_pages=1, scale_to=480, width_only=True)
-    Image.MAX_IMAGE_PIXELS = 16_000_000
-    if not result["pages"]:
-        raise ValueError("no_rendered_page")
-    with Image.open(output / result["pages"][0]) as image:
-        image.thumbnail((480, 960))
-        image.convert("RGB").save(output / "thumb.jpg", "JPEG", quality=82, optimize=True)
-    return {"thumbnail": "rendered"}
 
 
 def sketch(source, output):

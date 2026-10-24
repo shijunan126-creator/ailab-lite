@@ -157,10 +157,10 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     check_archive(source)
     if operation == "template":
         return analyze_template(source, output)
-    if operation in {"template_thumbnail", "template_sketch"}:
-        from .template_preview import render, sketch
+    if operation == "template_sketch":
+        from .template_preview import sketch
 
-        return render(source, output) if operation == "template_thumbnail" else sketch(source, output)
+        return sketch(source, output)
     if operation == "brand":
         return analyze_brand(source, output, options["kind"])
     if operation == "ocr_pdf":

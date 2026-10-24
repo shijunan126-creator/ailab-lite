@@ -9,12 +9,6 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1
 
-# The Worker reuses the sandbox Office renderer for one cached template thumbnail.
-# Other services share this image but never start LibreOffice.
-RUN apt-get update \
- && apt-get install -y --no-install-recommends libreoffice-impress-nogui poppler-utils fonts-noto-cjk fontconfig procps \
- && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 
 COPY platform/pyproject.toml platform/constraints.txt platform/README.md ./

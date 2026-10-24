@@ -46,6 +46,8 @@ class LibraryRenderer:
         if suffix not in PAGES | SANDBOX_SHEETS and not pdf_mime:
             raise LeaseError("unsupported sandbox preview type")
         source = "/workspace/inputs/input" + suffix
+        template = meta.get("template_kind") == "pptx"
+        thumbnail_option = " --template-thumbnail" if template else ""
 
         def prepare(lease: dict) -> None:
             self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)
@@ -63,7 +65,8 @@ class LibraryRenderer:
             remaining = max(1, int(120 - (time.monotonic() - started)))
             result = self.manager.exec(
                 lease_id,
-                f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py {shlex.quote(source)} /workspace/.ailab/preview",
+                f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
+                f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
             )
             if time.monotonic() - started >= 120 or result.exit_code != 0:
@@ -83,6 +86,10 @@ class LibraryRenderer:
                     raise LeaseError("invalid_render_output")
                 preview = {"status": "ready", "kind": "pages", "pages": names, "page_count": manifest.get("page_count")}
                 mime = "image/jpeg"
+                if template:
+                    if manifest.get("thumbnail") != "template-thumbnail.jpg":
+                        raise LeaseError("invalid_render_output")
+                    names = [*names, "template-thumbnail.jpg"]
             elif kind == "sheets" and manifest.get("data") == "sheets.json":
                 names, mime = ["sheets.json"], "application/json"
                 preview = {"status": "ready", "kind": "sheets", "data": "sheets.json"}

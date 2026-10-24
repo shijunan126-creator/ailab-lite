@@ -19,7 +19,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-PAGES = {".pptx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
+PAGES = {".pptx", ".potx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
 SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv"}
 MAX_PAGES = 40
 MAX_ROWS, MAX_COLS = 200, 40
@@ -40,7 +40,7 @@ def check_archive(source: Path) -> None:
 
 
 def soffice(src: Path, fmt: str, outdir: Path) -> Path:
-    profile = Path(tempfile.mkdtemp(prefix="lo-profile-", dir=outdir))  # a private profile: parallel runs do not collide
+    profile = Path(tempfile.mkdtemp(prefix="lo-profile-"))  # a private profile: parallel runs do not collide
     try:
         subprocess.run(
             ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
@@ -56,22 +56,30 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     return out
 
 
-def pages(src: Path, out: Path, *, max_pages: int = MAX_PAGES, scale_to: int = 1280, width_only: bool = False) -> dict:
-    with tempfile.TemporaryDirectory(dir=out if max_pages == 1 else None) as tmp:
-        fmt = 'pdf:impress_pdf_Export:{"PageRange":{"type":"string","value":"1"}}' if max_pages == 1 else "pdf"
-        pdf = src if src.suffix.lower() == ".pdf" else soffice(src, fmt, Path(tmp))
+def pages(src: Path, out: Path) -> dict:
+    with tempfile.TemporaryDirectory() as tmp:
+        pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
-        scaling = ["-scale-to-x", str(scale_to), "-scale-to-y", "-1"] if width_only else ["-scale-to", str(scale_to)]
         subprocess.run(
-            ["pdftoppm", "-jpeg", "-jpegopt", "quality=82", *scaling, "-l", str(max_pages), str(pdf), str(out / "p")],
+            ["pdftoppm", "-jpeg", "-jpegopt", "quality=82", "-scale-to", "1280", "-l", str(MAX_PAGES), str(pdf), str(out / "p")],
             check=True,
             capture_output=True,
             timeout=90,
         )
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
     return {"kind": "pages", "pages": names, "page_count": count}
+
+
+def template_thumbnail(out: Path, result: dict) -> None:
+    from PIL import Image
+
+    Image.MAX_IMAGE_PIXELS = 16_000_000
+    with Image.open(out / result["pages"][0]) as image:
+        width = min(480, image.width)
+        size = (width, max(1, round(image.height * width / image.width)))
+        image.convert("RGB").resize(size, Image.Resampling.LANCZOS).save(out / "template-thumbnail.jpg", "JPEG", quality=82)
 
 
 def _color(c) -> str | None:
@@ -214,6 +222,9 @@ def main() -> int:
         check_archive(src)
         if ext in PAGES:
             result = pages(src, out)
+            if "--template-thumbnail" in sys.argv[3:]:
+                template_thumbnail(out, result)
+                result["thumbnail"] = "template-thumbnail.jpg"
         elif ext in SHEETS:
             result = sheets(src, out)
         else:

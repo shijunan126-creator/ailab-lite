@@ -77,3 +77,27 @@ def test_render_uses_the_reserved_render_class_and_reads_bound_to_its_job(tmp_pa
     assert spec.profile == "render" and principal.system and spec.max_lifetime <= 120
     assert reads and all(r.get("job") == "preview" and r.get("preview_job") == "job" for r in reads)
     assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["soffice", "pdftoppm", "pdfinfo", "timeout"]), reason="Office tools unavailable")
+@pytest.mark.parametrize("potx", [False, True])
+def test_template_real_sandbox_preview_includes_cached_first_page_thumbnail(tmp_path, potx):
+    from PIL import Image
+
+    from tests.test_templates import pptx
+
+    filename = "template.potx" if potx else "template.pptx"
+    manager, renderer, storage = setup_renderer(tmp_path, pptx(slides=2, potx=potx), filename)
+    original = manager.platform.get_file
+    manager.platform.get_file = lambda fid, **bound: {
+        **original(fid, **bound),
+        "meta": {"template_kind": "pptx", "preview_job_id": "job", "preview": {"status": "pending", "kind": "pages"}},
+    }
+    result = renderer.render("file", "job")
+    assert len(result["preview"]["pages"]) == 2
+    assert set(result["assets"]) == {*result["preview"]["pages"], "template-thumbnail.jpg"}
+    asset = result["assets"]["template-thumbnail.jpg"]
+    assert asset["key"] == "derived/file/preview/template-thumbnail.jpg"
+    with Image.open(io.BytesIO(storage.get_bytes(asset["key"]))) as image:
+        assert image.format == "JPEG" and image.width == 480
+    assert manager.active_leases() == []

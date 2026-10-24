@@ -34,7 +34,6 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
             }
         )
     )
-    peak_tree_rss = 0
     started = time.monotonic()
     with open(output / "stderr.log", "wb") as errors:
         proc = subprocess.Popen(
@@ -48,21 +47,17 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
             while proc.poll() is None:
                 if time.monotonic() - started > (timeout or settings.parse_timeout_seconds):
                     raise IsolationError("timeout")
-                if _output_size(output, recursive=options.get("watch_process_tree", False)) > MAX_OUTPUT_BYTES:
+                if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > MAX_OUTPUT_BYTES:
                     raise IsolationError("output_limit")
                 # macOS ignores RLIMIT_AS; use an RSS watchdog for dev in addition to CPU/wall/file limits.
-                if options.get("watch_process_tree"):
-                    peak_tree_rss = max(peak_tree_rss, _process_group_rss(proc.pid))
-                    if peak_tree_rss > (memory_mb or settings.parse_memory_mb) * 1024 * 1024:
-                        raise IsolationError("memory_limit")
-                elif sys.platform == "darwin":
+                if sys.platform == "darwin":
                     rss = subprocess.run(
                         ["ps", "-o", "rss=", "-p", str(proc.pid)], capture_output=True, text=True, timeout=1
                     ).stdout.strip()
                     if rss and int(rss) > (memory_mb or settings.parse_memory_mb) * 1024:
                         raise IsolationError("memory_limit")
                 time.sleep(0.05)
-            if _output_size(output, recursive=options.get("watch_process_tree", False)) > MAX_OUTPUT_BYTES:
+            if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > MAX_OUTPUT_BYTES:
                 raise IsolationError("output_limit")
             result = output / "result.json"
             if not result.exists():
@@ -80,50 +75,19 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
             data = json.loads(result.read_text())
             if data.get("error"):
                 raise IsolationError(data["error"])
-            if options.get("measure") and options.get("watch_process_tree"):
-                data.setdefault("measurement", {})["peak_process_tree_rss_bytes"] = peak_tree_rss
             return data
         finally:
-            if proc.poll() is None or options.get("watch_process_tree"):
-                try:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
+            if proc.poll() is None:
+                os.killpg(proc.pid, signal.SIGKILL)
             proc.wait()
-
-
-def _output_size(output: Path, *, recursive: bool) -> int:
-    total = 0
-    for path in output.glob("**/*" if recursive else "*"):
-        try:
-            if path.is_file():
-                total += path.stat().st_size
-        except FileNotFoundError:
-            # LibreOffice removes temporary profile files while the watcher runs.
-            continue
-    return total
-
-
-def _process_group_rss(group_id: int) -> int:
-    # Include LibreOffice/Poppler, not just their small Python parent.
-    output = subprocess.run(["ps", "-axo", "pgid=,rss="], capture_output=True, text=True, timeout=1, check=True).stdout
-    return sum(
-        int(rss) * 1024
-        for line in output.splitlines()
-        if len(fields := line.split()) == 2
-        for group, rss in [fields]
-        if int(group) == group_id
-    )
 
 
 def _child(spec: dict) -> None:
     import resource
 
     memory = spec["memory_mb"] * 1024 * 1024
-    if sys.platform.startswith("linux") and not spec["options"].get("watch_process_tree"):
+    if sys.platform.startswith("linux"):
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
-    # Office maps large shared libraries; its resident process tree is bounded by
-    # the parent watchdog to the same memory budget, rather than virtual size.
     resource.setrlimit(resource.RLIMIT_CPU, (spec["cpu_seconds"], spec["cpu_seconds"] + 1))
     resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT_BYTES, MAX_OUTPUT_BYTES))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
@@ -141,10 +105,9 @@ def _child(spec: dict) -> None:
         result = {"error": error}
     if spec["options"].get("measure"):
         usage = resource.getrusage(resource.RUSAGE_SELF)
-        children = resource.getrusage(resource.RUSAGE_CHILDREN) if spec["options"].get("watch_process_tree") else None
         result["measurement"] = {
             "peak_rss_bytes": usage.ru_maxrss if sys.platform == "darwin" else usage.ru_maxrss * 1024,
-            "cpu_seconds": usage.ru_utime + usage.ru_stime + (children.ru_utime + children.ru_stime if children else 0),
+            "cpu_seconds": usage.ru_utime + usage.ru_stime,
         }
     (Path(spec["output"]) / "result.json").write_text(json.dumps(result, ensure_ascii=False))
 

@@ -73,26 +73,15 @@ def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Pa
 
 
 def _template_thumbnail(file_id, source, storage, output):
-    # Reserve a small part of the existing wall budget for an independent fallback:
-    # a killed/OOM renderer must never destroy successful template analysis.
-    key = f"derived/{file_id}/template-v2.jpg"
+    key = f"derived/{file_id}/template-sketch-v3.jpg"
     try:
-        if storage.exists(key):
-            return {"thumb_key": key, "template_thumbnail": "cached"}
+        if not storage.exists(key):
+            execute("template_sketch", source, output)
+            storage.put_file(key, output / "thumb.jpg", "image/jpeg")
+        return {"thumb_key": key, "template_thumbnail": "sketch"}
     except Exception:
-        pass
-    budgets = [("template_thumbnail", 0.85), ("template_sketch", 0.15)]
-    for operation, fraction in budgets:
-        folder = output / operation
-        try:
-            info = execute(operation, source, folder, timeout=settings.parse_timeout_seconds * fraction, watch_process_tree=True)
-            storage.put_file(key, folder / "thumb.jpg", "image/jpeg")
-            return {"thumb_key": key, "template_thumbnail": info["thumbnail"]}
-        except Exception:
-            # A missing renderer, timeout, OOM or derivative upload failure is not
-            # a template parsing failure. Preserve the successful analysis.
-            continue
-    return {"template_thumbnail": "unavailable"}
+        # A derivative failure must never destroy successful template analysis.
+        return {"template_thumbnail": "unavailable"}
 
 
 def extract(data: bytes, filename: str, content_type: str) -> dict:
