@@ -381,3 +381,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - zoneinfo 给不存在的墙钟时间也会构造 datetime；须 UTC roundtrip 检查，秋季重复时间固定 fold=0。每周恰逢缺失时间可能要等14天，不能只扫描未来7天。PG可能返回宿主时区 aware datetime，不能用 replace(tzinfo=UTC) 做转换；只给SQLite naive补UTC，aware用 astimezone。
 - Worker显式页标记必须包含第一页，旧无标记缓存不能默认为第一页；DOCX段落/Excel sheet不能冒充渲染页。内部 bootstrap 返回的新字段还必须加入 InternalRunDetail，否则 FastAPI 会静默过滤，handler单测无法发现。
 - 此子任务0024临时接0022（没有0023 stub）；父Agent合入会话树0023后必须reparent为0023并做双库迁移回归。接口、测试、成本和未验边界见 [后端记录](docs/progress/updates/2026-10-24-schedules-citations.md)。
+
+## 2026-10-24 合并功能测试
+
+- 独立迁移分支合并后，中间revision的结构测试可保持原目标，但 `compare_metadata(..., Base.metadata)` 必须先升级集成head；最新ORM包含后续表时，在0023直接比较会把合法0024误判为漂移。完整线性链另用0021→0022→0023→0024逐步升/降/再升锁定，不能删掉漂移断言。
+- `e2e/test_zz_hold.py` 是人工浏览器持有辅助，最长5400秒；默认全套必须跳过，需 `AILAB_E2E_HOLD=1` 才启用。旧测试种子也必须遵循会话树关系，不能只按创建时间写Run（见前面会话树章节）。
+- 本次fork验收明确发现“含Work会话只允许Work”和当前“截至所选轮次祖先前缀”语义有差异；不要为绿灯改测最后一轮，父Agent需统一产品/API/Portal契约。首轮及最终证据入口见[集成测试记录](docs/progress/updates/2026-10-24-integration-tests.md)。
