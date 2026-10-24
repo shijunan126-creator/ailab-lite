@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, Conversation, Me, Usage } from "../lib/api";
@@ -121,6 +121,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me | null>(null);
   const [conversations, setConversations] = useState<Conversation[] | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [settled, setSettled] = useState(false);
+  // Before the first paint: remembered on wide screens; narrow screens start closed (the sidebar covers the page there).
+  // Transitions start only after that, so a closed sidebar does not show and then slide away on load.
+  useLayoutEffect(() => {
+    setCollapsed(window.innerWidth < 760 || localStorage.getItem("ailab.sidebar") === "closed");
+    const frame = requestAnimationFrame(() => setSettled(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const [addingProject, setAddingProject] = useState(false);
   const projects = useProjects();
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
@@ -139,8 +147,6 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     api<Me>("/v1/auth/me").then(setMe).catch(() => setMe(null));
-    // remembered on wide screens; narrow screens start with the sidebar closed (it covers the page there)
-    setCollapsed(window.innerWidth < 760 || localStorage.getItem("ailab.sidebar") === "closed");
     load();
     const titled = (e: Event) => {
       const { id, title } = (e as CustomEvent).detail || {};
@@ -173,7 +179,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className={`shell ${collapsed ? "collapsed" : ""}`}>
+    <div className={`shell ${collapsed ? "collapsed" : ""} ${settled ? "" : "settling"}`}>
       <aside className="sidebar" aria-label="侧栏">
         <div className="sidebar-head">
           <Link className="brand" href="/">

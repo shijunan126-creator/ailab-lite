@@ -415,6 +415,9 @@ label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 
 .shell { --side-w: 260px; display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); min-height: 100vh; transition: grid-template-columns var(--t-slow) var(--ease); }
 .shell.collapsed { --side-w: 0px; }
+.shell.settling, .shell.settling .sidebar, .shell.settling .sidebar-scrim { transition: none !important; }
+html[data-sidebar="closed"] .shell.settling { --side-w: 0px; }
+html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: hidden; }
 .sidebar { position: sticky; top: 0; height: 100vh; height: var(--app-h, 100dvh); display: flex; flex-direction: column; gap: 4px; padding: 12px 10px; background: var(--surface-2); border-right: 1px solid var(--border); min-height: 0; min-width: 0; overflow: hidden; transition: opacity var(--t) var(--ease), visibility 0s; }
 .sidebar > * { min-width: 239px; }
 .shell.collapsed .sidebar { opacity: 0; visibility: hidden; transition: opacity var(--t-fast), visibility 0s var(--t-slow); }
