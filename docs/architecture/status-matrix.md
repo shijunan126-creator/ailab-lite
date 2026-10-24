@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
+
 2026-10-24 Gate 3当前状态：PR #42 head `16a8822` 八项CI成功，已squash合入main为 `b07548995ffbce3fc618f94955c5d66b54b380c7`；同一固定提交已部署并通过有限真实模型浏览器smoke。已验完整备份恢复、既有数据0021→0024/ID数量/线性会话树/文件哈希、五服务健康与预算内短时RSS/CPU、标题指标抓取和30秒调度器真实到期执行。详情及残余边界见[Gate 3记录](../progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)。本次发布无待实现项，新增功能想法待用户决定。以下Round1/Round2及各子分支状态均为历史阶段，不代表当前仍未合并/部署。
 
 2026-10-24 Round2：`d865356`修复标题gate预算/quiet非思考/失败兜底，真实Gate1逐项通过；SQLite1033、PG+Redis1112、E2E78通过。PG C locale Unicode搜索已修复。16K临时窗口压缩、非真机手机等边界见[发布记录](../progress/updates/2026-10-24-release-ui-features.md#round-2-最终本地结果代码提交-d865356)。[PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42)已创建/登记，当时Gate2待远端CI与父任务接续；现已merged/deployed，见页首。下方Round1失败保留为历史证据。
@@ -145,3 +147,19 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 2026-10-24 合并功能统一验收：`test/integration-ui-features` 基于 `2e1a741`，测试代码 `6d01882`；0024已重接0023，双库完整套件/迁移往返通过，新增13项浏览器验收，完整五服务E2E77通过/1失败/1手动辅助跳过。会话级Work分叉限制与当前祖先前缀语义存在待父Agent处理差异，保留失败测试；完整结果/首轮证据见[集成测试记录](../progress/updates/2026-10-24-integration-tests.md)。未发布、未合入main。
 
 2026-10-24 前缀分支契约决定后复跑：基线 `a09d70b`，交付分支 `test/e2e-rerun-fork-contract`；fork 单跑1通过、完整五服务E2E78通过，均0失败/0跳过，Ruff及fixture内Portal31项/隔离build通过。未修改产品代码；上述会话级与前缀语义差异已按父Agent决定解决，历史失败不代表本次结果。未部署、未合入main，真实模型/真机等边界仍保留，见[复跑记录](../progress/updates/2026-10-24-integration-tests.md#复跑合入后-a09d70b)。
+
+### 工作区后端 A（2026-10-24，独立分支）
+
+`feat/projects-brand` 已实现项目说明/定时项目上下文、扫描品牌套件与冻结注入、会话产物 lineage 同事务移动；尚未集成 Portal 或重建/部署 sbx-office。验证、资源成本和旧资产回收缺口见[后端 A 记录](../progress/updates/2026-10-24-projects-brand-backend.md)。不改变上表其他能力的验收状态。
+
+
+## 2026-10-24 C 后端分支补充（待集成）
+
+`feat/shares-library` 实现内部只读快照分享、资料库持久摘要与OCR选页，双库本地验证通过；通知helper仍为no-op，0027暂接0024，尚未Portal/父分支集成或合入main。接口、证据与边界见[后端交付](../progress/updates/2026-10-24-shares-library-backend.md)。
+
+
+## 2026-10-24 工作区七项功能集成验收
+
+上述A/B/C独立分支状态属于历史记录，当前已集成0025–0027与Portal，通知接缝已实接。`e34e67c`修复确认插话详情、互相分享锁顺序与有效分享复用；父任务`57ddabf`/`e452ed6`修复两项真实Portal回归，`9f62667`补视觉整理。SQLite1094、PG+Redis1178、完整五服务E2E87均通过（跳过数/基线/迁移往返/新用例/有限真实模型/成本见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)）。
+
+状态仅为**已实现并本地验证**，未合入main/未部署本轮功能，远端CI与父任务人工视觉验收待完成；生产sbx-office需重建，旧品牌资产GC仍缺、SVG拒绝。不得据此升级其他目标能力或长期容量的状态。

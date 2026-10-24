@@ -59,11 +59,13 @@ export function MoveDialog({
   current,
   onPick,
   onClose,
+  footer,
 }: {
   title: string;
   current?: string | null; // the project they are all in now, if they share one
   onPick: (projectId: string | null) => void;
   onClose: () => void;
+  footer?: React.ReactNode;
 }) {
   const projects = useProjects();
   const [adding, setAdding] = useState(false);
@@ -75,7 +77,7 @@ export function MoveDialog({
     </button>
   );
   return (
-    <Modal title={title} onClose={onClose} className="modal-sm">
+    <Modal title={title} onClose={onClose} className="modal-sm" footer={footer}>
       <div className="pick-list">
         {row(null, "不属于任何项目", <span className="pick-none" />)}
         {(projects || []).map((p) => row(p.id, p.name, <IconFolder size={17} />))}

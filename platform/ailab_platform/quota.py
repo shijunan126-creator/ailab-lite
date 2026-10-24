@@ -273,6 +273,7 @@ def library_bytes(db: Session, user_id: str) -> int:
         db.scalar(
             select(func.coalesce(func.sum(FileObject.size), 0)).where(
                 FileObject.user_id == user_id,
+                FileObject.purpose != "brand",
                 or_(FileObject.status != FileStatus.REJECTED, FileObject.deleted_at.is_not(None)),
                 FileObject.purged_at.is_(None),
             )

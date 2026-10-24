@@ -55,6 +55,7 @@ class User(Base):
     __table_args__ = (
         Index("uq_users_issuer_subject", "issuer", "external_subject", unique=True),
         Index("ix_users_created_id", "created_at", "id"),
+        Index("ix_users_display_name", "display_name"),
         Index("ix_users_dept_created_id", "dept_id", "created_at", "id"),
     )
 
@@ -204,6 +205,7 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("prj"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
     name_key: Mapped[str] = mapped_column(
         String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["name"])
     )
@@ -239,6 +241,7 @@ class Conversation(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("cnv"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
+    queue_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     active_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     forked_from: Mapped[dict | None] = mapped_column(JSON, nullable=True)
@@ -664,3 +667,70 @@ class ScheduledTask(Base):
     last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    __table_args__ = (
+        Index("ix_notifications_user_created", "user_id", "created_at", "id"),
+        Index("ix_notifications_unread", "user_id", sqlite_where=text("read_at IS NULL"), postgresql_where=text("read_at IS NULL")),
+        Index("ix_notifications_run_kind", "run_id", "kind"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ntf"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200))
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    share_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class QueuedMessage(Base):
+    __tablename__ = "queued_messages"
+    __table_args__ = (
+        Index("ix_queued_messages_conversation_state", "conversation_id", "state", "created_at", "id"),
+        Index("ix_queued_messages_run_state", "run_id", "state", "created_at", "id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("que"))
+    conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    prompt: Mapped[str] = mapped_column(Text)
+    file_ids: Mapped[list] = mapped_column(JSON, default=list)
+    model: Mapped[str] = mapped_column(String(120))
+    options: Mapped[dict] = mapped_column(JSON, default=dict)
+    steer: Mapped[bool] = mapped_column(Boolean, default=False)
+    state: Mapped[str] = mapped_column(String(20), default="queued")
+    after_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class Share(Base):
+    __tablename__ = "shares"
+    __table_args__ = (
+        Index("ix_shares_owner_created_id", "owner_id", "created_at", "id"),
+        Index("ix_shares_conversation_owner", "conversation_id", "owner_id"),
+        Index("ix_shares_file_owner", "file_id", "owner_id"),
+        Index("ix_shares_audience_created_id", "audience", "created_at", "id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("shr"))
+    owner_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    kind: Mapped[str] = mapped_column(String(20))
+    conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    file_id: Mapped[str | None] = mapped_column(ForeignKey("files.id", ondelete="SET NULL"), nullable=True)
+    audience: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ShareRecipient(Base):
+    __tablename__ = "share_recipients"
+    __table_args__ = (Index("ix_share_recipients_user_share", "user_id", "share_id"),)
+    share_id: Mapped[str] = mapped_column(ForeignKey("shares.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)

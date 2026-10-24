@@ -42,6 +42,7 @@ from .prompts import (
     skills,
     system_prompt_for,
     user_prompt,
+    workspace_prompt,
 )
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
@@ -211,6 +212,7 @@ class AgentLoop:
         self._states: dict[str, dict] = {}
         self._steps: dict[str, int] = {}
         self._lease_errors: dict[str, Exception] = {}
+        self._steer_pending: set[str] = set()
         self.llm = llm  # tests inject one; otherwise each run uses its catalog model's client
 
     async def _event(self, run_id: str, type_: str, payload: dict) -> None:
@@ -228,7 +230,12 @@ class AgentLoop:
         hiccup must not fail a run whose task is fine."""
         try:
             # the light /state endpoint, not the full run with artifacts and usage: this runs every couple of seconds
-            return (await self.platform.get_run_state(run_id))["status"] == RunStatus.CANCELED
+            heartbeat = await self.platform.get_run_state(run_id)
+            if heartbeat.get("steer_pending", False):
+                self._steer_pending.add(run_id)
+            else:
+                self._steer_pending.discard(run_id)
+            return heartbeat["status"] == RunStatus.CANCELED
         except ClientError as exc:
             if exc.status == 409:
                 raise
@@ -802,6 +809,24 @@ class AgentLoop:
                 turn.delivered[path] = result.get("size", 0)
         return result
 
+    async def _apply_steers(self, run_id: str, turn: _Turn, *, pending: bool | None = None) -> None:
+        if pending is None:
+            pending = (await self.platform.get_run_state(run_id)).get("steer_pending", False)
+        if not pending:
+            return
+        claimed = await self.platform.claim_steers(run_id)
+        self._steer_pending.discard(run_id)
+        state = self._states[run_id]
+        applied = state.setdefault("steer_ids", [])
+        changed = False
+        for row in claimed["items"]:
+            if row["id"] not in applied:
+                state["messages"].append({"role": "user", "content": row["prompt"]})
+                applied.append(row["id"])
+                changed = True
+        if changed:
+            await self._checkpoint(run_id, turn)
+
     async def _checkpoint(self, run_id: str, turn: _Turn) -> None:
         state = self._states[run_id]
         state.update(artifacts=turn.artifacts, delivered=turn.delivered)
@@ -951,6 +976,7 @@ class AgentLoop:
             self._states.pop(run_id, None)
             self._steps.pop(run_id, None)
             self._lease_errors.pop(run_id, None)
+            self._steer_pending.discard(run_id)
 
     async def _process(self, run_id, attempt, attempt_id, checkpoint):
         run = await self.platform.get_run(run_id)
@@ -1016,6 +1042,7 @@ class AgentLoop:
                     {
                         "role": "system",
                         "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                        + workspace_prompt(run.get("project_instructions") or "", run.get("brand") or {})
                         + memory_prompt(run.get("memory") or {})
                         + project_library_prompt(run.get("project_library") or [])
                         + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
@@ -1047,6 +1074,7 @@ class AgentLoop:
                     left = settings.max_agent_steps - step
                     if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
                         messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
+                    await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
                     response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
                     if offered == [] and response.tool_calls:
                         log.warning("run %s: model asked for tools in a words-only turn; ignoring", run_id)
@@ -1093,6 +1121,7 @@ class AgentLoop:
                 else:
                     # Out of steps: rather than ending on a bare error, let the model tell the user where things stand.
                     messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
+                    await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
                     response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
                     messages.append({"role": "assistant", "content": response.content})
                     state["final_summary"] = response.content

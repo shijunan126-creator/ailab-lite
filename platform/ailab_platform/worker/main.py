@@ -9,6 +9,7 @@ import socket
 import threading
 import time
 from contextlib import asynccontextmanager
+from dataclasses import replace
 
 from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
@@ -45,6 +46,7 @@ def handle_message(queue, msg) -> None:
             _handle(queue, msg, file_id)
             return
         envelope = JobEnvelope.model_validate(msg.payload)
+        msg = replace(msg, payload=dict(msg.payload))
         if trace_context is not None:
             trace_token = trace_context.set(envelope.traceparent)
         if envelope.kind == "run":
@@ -61,6 +63,7 @@ def handle_message(queue, msg) -> None:
             msg.payload["preview_only"] = envelope.kind == "preview"
             msg.payload["thumbnail_only"] = envelope.kind == "thumbnail"
             msg.payload["ocr_only"] = envelope.kind == "ocr"
+            msg.payload["summary_only"] = envelope.kind == "summary"
 
             class Completion:
                 completed = False
@@ -110,6 +113,19 @@ def _handle(queue, msg, file_id) -> None:
         except Exception:
             log.exception("preview job could not complete for %s", file_id)
             return
+        queue.ack(settings.file_queue, msg)
+        return
+    if msg.payload.get("summary_only") is True:
+        platform = PlatformClient(service="worker")
+        try:
+            result = platform.summarize_file(file_id)
+            if result.get("status") == "failed" and result.get("attempt", 0) < 3:
+                return
+        except Exception as exc:
+            if not _obsolete_job(exc):
+                return
+        finally:
+            platform.close()
         queue.ack(settings.file_queue, msg)
         return
     if msg.payload.get("ocr_only") is True:

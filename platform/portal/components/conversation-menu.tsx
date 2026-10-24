@@ -2,17 +2,18 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, Conversation } from "../lib/api";
+import { api, Conversation, errorMessage } from "../lib/api";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconTrash } from "./icons";
+import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconShare, IconTrash } from "./icons";
+import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
 
 const MENU_W = 176;
-const MENU_H = 164;
+const MENU_H = 200;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
 export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
@@ -23,6 +24,8 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
 }) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const [moving, setMoving] = useState(false);
+  const [withFiles, setWithFiles] = useState(true);
+  const [sharing, setSharing] = useState(false);
   const [error, setError] = useState("");
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -56,9 +59,16 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
   async function move(projectId: string | null) {
     setMoving(false);
     if (projectId === (conv.project_id || null)) return;
-    const ok = await api(`/v1/conversations/${conv.id}`, { method: "PATCH", body: JSON.stringify({ project_id: projectId }) }).then(
+    // the files it made go with it, so the project's library has what its conversations produced
+    const ok = await api(`/v1/conversations/${conv.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ project_id: projectId, move_files: withFiles }),
+    }).then(
       () => true,
-      () => false
+      (err) => {
+        setError(errorMessage(err));
+        return false;
+      }
     );
     if (ok) window.dispatchEvent(new CustomEvent(CONVERSATION_MOVED, { detail: { id: conv.id, project_id: projectId } }));
     conversationsChanged();
@@ -124,6 +134,16 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
           >
             <IconFolderInput size={15} /> {conv.project_id ? "移动到…" : "移到项目"}
           </button>
+          <button
+            className="menu-item"
+            role="menuitem"
+            onClick={() => {
+              setAt(null);
+              setSharing(true);
+            }}
+          >
+            <IconShare size={15} /> 分享
+          </button>
           <a className="menu-item" role="menuitem" href={`/print/${conv.id}`} target="_blank" rel="noopener" onClick={() => setAt(null)}>
             <IconPrinter size={15} /> 导出 PDF
           </a>
@@ -134,7 +154,23 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
             document.body
           )
         : null}
-      {moving ? <MoveDialog title={`移动「${title}」`} current={conv.project_id || null} onPick={move} onClose={() => setMoving(false)} /> : null}
+      {sharing ? (
+        <ShareDialog target={{ kind: "conversation", conversationId: conv.id, activeRunId: conv.active_run_id }} title={title} onClose={() => setSharing(false)} />
+      ) : null}
+      {moving ? (
+        <MoveDialog
+          title={`移动「${title}」`}
+          current={conv.project_id || null}
+          onPick={move}
+          onClose={() => setMoving(false)}
+          footer={
+            <label className="check-row">
+              <input type="checkbox" checked={withFiles} onChange={(e) => setWithFiles(e.target.checked)} />
+              连同产出的文件
+            </label>
+          }
+        />
+      ) : null}
     </>
   );
 }

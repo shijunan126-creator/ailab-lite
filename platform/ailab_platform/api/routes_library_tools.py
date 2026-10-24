@@ -5,7 +5,7 @@ import re
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import case, select
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,14 @@ class Search(BaseModel):
 class Read(BaseModel):
     file_id: str = Field(max_length=40)
     offset: int = Field(default=0, ge=0, le=10_000_000)
+    pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
+
+    @field_validator("pages")
+    @classmethod
+    def valid_pages(cls, value):
+        if value is not None and any(page < 1 or page > 100000 for page in value):
+            raise ValueError("invalid page number")
+        return value
 
 
 def _ready(db, run_id, file_id):
@@ -79,6 +87,7 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
                 "content_type": f.content_type,
                 "size": f.size,
                 "project": project,
+                "summary": str(((f.meta or {}).get("summary") or {}).get("text") or "")[:120],
                 "updated_at": f.created_at.replace(tzinfo=UTC).isoformat(),
             }
             for f, project in db.execute(q)
@@ -91,6 +100,8 @@ def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
     _, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
     keys = list(filter(None, [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]))
+    if body.pages is not None:
+        return read_selected_pages(file, keys, body)
     pages = []
     current_page = None
     marker_tail = ""
@@ -158,3 +169,51 @@ def authorize_copy(run_id: str, body: Read, x_run_attempt: str | None = Header(d
         run.runtime_meta = {**(run.runtime_meta or {}), "library_file_ids": sorted(ids)}
         db.commit()
     return {"file_id": file.id, "filename": file.filename}
+
+
+def read_selected_pages(file, keys, body):
+    """Select explicit physical pages while streaming, retaining only one response window."""
+    selected = set(body.pages)
+    keep, boundaries, position = "", [], 0
+    current = None
+
+    def take(text):
+        nonlocal keep, position
+        if current not in selected:
+            return
+        start = max(0, body.offset - position)
+        piece = text[start : start + max(0, 30001 - len(keep))]
+        if piece:
+            if not boundaries or boundaries[-1]["page"] != current:
+                boundaries.append({"page": current, "offset": len(keep)})
+            keep += piece
+        position += len(text)
+
+    for key in keys:
+        current, tail = None, ""
+        decoder = codecs.getincrementaldecoder("utf-8")("replace")
+        with get_storage().open_stream(key) as chunks:
+            for chunk in chunks:
+                combined = tail + decoder.decode(chunk)
+                consumed = 0
+                for marker in re.finditer(r"\f\[page:(\d+)\]\n", combined):
+                    take(combined[consumed : marker.start()])
+                    current = int(marker[1])
+                    consumed = marker.end()
+                rest = combined[consumed:]
+                take(rest[:-40] if len(rest) > 40 else "")
+                tail = rest[-40:]
+                if len(keep) >= 30001:
+                    break
+            if len(keep) < 30001:
+                take(tail + decoder.decode(b"", final=True))
+        if len(keep) >= 30001:
+            break
+    return {
+        "file_id": file.id,
+        "filename": file.filename,
+        "text": keep[:30000],
+        "pages": [p for p in boundaries if p["offset"] < 30000],
+        "truncated": len(keep) > 30000,
+        "next_offset": body.offset + 30000 if len(keep) > 30000 else None,
+    }

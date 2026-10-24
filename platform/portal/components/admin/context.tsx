@@ -86,6 +86,44 @@ export default function ContextSection() {
         <button onClick={save} disabled={!dirty || busy}>{busy ? "保存中…" : done ? "已保存" : "保存"}</button>
         {dirty ? <button className="link" onClick={() => { setOn(saved.auto_compact); setRatio(saved.threshold_ratio); }}>还原</button> : null}
       </div>
+      <LibrarySettings />
     </section>
+  );
+}
+
+/** A short summary of each library file, written once when the file is ready; it helps both people and the model pick a file. */
+function LibrarySettings() {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    api<{ summaries: boolean }>("/v1/admin/settings/library", { signal: controller.signal })
+      .then((s) => setOn(s.summaries))
+      .catch((err) => !controller.signal.aborted && setError(errorMessage(err)));
+    return () => controller.abort();
+  }, []);
+  async function toggle() {
+    if (on === null) return;
+    const next = !on;
+    setOn(next);
+    setError("");
+    try {
+      const saved = await api<{ summaries: boolean }>("/v1/admin/settings/library", { method: "PATCH", body: JSON.stringify({ summaries: next }) });
+      setOn(saved.summaries);
+    } catch (err) {
+      setOn(!next);
+      setError(errorMessage(err));
+    }
+  }
+  return (
+    <div className="card card-pad library-settings">
+      <div className="field-row">
+        <span>为资料库文件生成摘要</span>
+        <button type="button" role="switch" aria-checked={!!on} aria-label="为资料库文件生成摘要" className={`switch ${on ? "on" : ""}`} disabled={on === null} onClick={toggle}>
+          <span className="knob" />
+        </button>
+      </div>
+      {error ? <div className="alert error">{error}</div> : null}
+    </div>
   );
 }

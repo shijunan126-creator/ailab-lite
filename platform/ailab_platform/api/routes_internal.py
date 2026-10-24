@@ -182,7 +182,19 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             f.filename
             for f in db.scalars(select(FileObject).join(Artifact, Artifact.file_id == FileObject.id).where(Artifact.run_id == turn.id))
         ]
-        history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
+        from .inbox import steers_for_run
+
+        applied = (turn.runtime_meta or {}).get("steer_ids", [])
+        steers = [row.prompt for row in steers_for_run(db, turn) if row.id in applied]
+        history.append(
+            {
+                **({"steers": steers} if steers else {}),
+                "prompt": turn.prompt,
+                "reply": reply[:HISTORY_CHARS],
+                "status": turn.status,
+                "files": files,
+            }
+        )
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
     out["project_library"] = []
@@ -210,6 +222,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .routes_memory import memory_for
 
     out["memory"] = memory_for(owner, for_model=True) if owner else {}
+    from .brand import workspace_input
+
+    out.update(workspace_input(db, run))
     out.update(skill_input_for(db, owner))
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if workspace_data(t)), None)
@@ -239,7 +254,31 @@ def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=N
         )
         if not owned:
             raise HTTPException(409, "stale_attempt")
-    return {"status": run.status, "finished_at": run.finished_at, "job_id": (run.runtime_meta or {}).get("job_id", run.id)}
+    from ..models import QueuedMessage
+    from .inbox import pending_query
+
+    pending = False
+    if run.status == RunStatus.RUNNING:
+        applied = (run.runtime_meta or {}).get("steer_ids", [])
+        pending = bool(
+            db.scalar(
+                select(QueuedMessage.id)
+                .where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered", QueuedMessage.id.not_in(applied))
+                .limit(1)
+            )
+        )
+        if not pending and run.conversation_id:
+            conv = db.get(Conversation, run.conversation_id)
+            if conv and conv.active_run_id == run.id and not conv.queue_paused:
+                pending = bool(
+                    db.scalar(pending_query(conv.id).where(QueuedMessage.steer.is_(True)).with_only_columns(QueuedMessage.id).limit(1))
+                )
+    return {
+        "steer_pending": pending,
+        "status": run.status,
+        "finished_at": run.finished_at,
+        "job_id": (run.runtime_meta or {}).get("job_id", run.id),
+    }
 
 
 @router.post("/runs/{run_id}/status", response_model=RunDetail, dependencies=[Depends(require_scope("runs:status"))])
@@ -705,6 +744,19 @@ def _bound_file(
     if run.status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
         raise HTTPException(status_code=403, detail="run is not active")
     context = RunContext(run.id, run.user_id, run.conversation_id)
+    if file.purpose == "brand":
+        snapshot = (run.runtime_meta or {}).get("brand") or {}
+        if (
+            principal.service == "broker"
+            and job == "brand"
+            and file.status == FileStatus.READY
+            and file.id in (snapshot.get("assets") or {}).values()
+            and (run.options or {}).get("mode", "work") == "work"
+        ):
+            return file
+        raise HTTPException(404, "brand assets require the brand injection path")
+    if job == "brand":
+        raise HTTPException(404, "not a brand asset")
     if file.user_id != context.user_id or file.status != FileStatus.READY:
         raise HTTPException(status_code=404, detail="file not found for run")
     attached = file.id in (run.input_file_ids or [])
@@ -756,7 +808,7 @@ def _bound_file(
 
 
 FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview")
-FileJob = Literal["processing", "thumbnail", "preview"]
+FileJob = Literal["processing", "thumbnail", "preview", "brand"]
 
 
 @router.get("/files/{file_id}", response_model=FileOut)
@@ -781,15 +833,21 @@ def internal_get_file_content(
     db: Session = Depends(get_db),
 ) -> Response:
     file = _bound_file(db, file_id, principal, run_id, job, preview_job)
+    key, size = file.storage_key, file.size
+    media = file.content_type
+    if job == "brand" and (file.meta or {}).get("brand_kind") == "logo":
+        key = f"derived/{file.id}/logo.png"
+        size = (file.meta or {}).get("brand", {}).get("png_bytes", 0)
+        media = "image/png"
     db.close()
     from .routes_files import _ClosingStreamingResponse
 
     return _ClosingStreamingResponse(
-        get_storage().stream(file.storage_key),
-        media_type=file.content_type,
+        get_storage().stream(key),
+        media_type=media,
         headers={
             "Content-Disposition": f"attachment; filename*=UTF-8''{quote(file.filename)}",
-            "Content-Length": str(file.size),
+            "Content-Length": str(size),
         },
     )
 
@@ -803,7 +861,10 @@ def internal_patch_file(
     db: Session = Depends(get_db),
 ) -> dict:
     file = _bound_file(db, file_id, principal, None, job)
-    with user_critical_section(db, file.user_id):
+    from .brand import brand_lock
+
+    lock = brand_lock(db) if file.purpose == "brand" else user_critical_section(db, file.user_id)
+    with lock:
         db.refresh(file)
         return _apply_file_patch(db, file, body, principal, job)
 
@@ -840,8 +901,15 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if file.purpose == "brand":
+        from .brand import activate_asset
+
+        activate_asset(db, file)
     if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
         request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
+    from .routes_library_summary import request_summary
+
+    request_summary(db, file)
     db.commit()
     db.refresh(file)
     return file_dict(file)

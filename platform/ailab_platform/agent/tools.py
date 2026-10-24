@@ -253,9 +253,13 @@ LIBRARY_TOOLS = [
     ),
     _library_tool(
         "read_library_file",
-        "阅读资料。pages=[{page,offset}] 标出返回 text 中的页起点（Unicode字符偏移）；"
+        "阅读资料。输入 pages=[1,2] 可选物理页；返回 pages=[{page,offset}] 标出 text 中的页起点（Unicode字符偏移）；"
         "首项 offset=0 表示窗口延续该页。空数组表示页码未知，不可猜测。",
-        {"file_id": {"type": "string"}, "offset": {"type": "integer", "default": 0, "minimum": 0}},
+        {
+            "file_id": {"type": "string"},
+            "offset": {"type": "integer", "default": 0, "minimum": 0},
+            "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20},
+        },
         ["file_id"],
     ),
 ]

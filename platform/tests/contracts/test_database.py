@@ -51,3 +51,31 @@ def test_gc_presign_and_conversation_lookup_plans(engine):
                 for row in conn.execute(text(("EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN ") + statement))
             )
             assert "INDEX" in plan.upper(), plan
+
+
+def test_inbox_queue_queries_use_indexes(engine):
+    run_migrations(engine)
+    statements = {
+        "ix_notifications_user_created": [
+            "SELECT id FROM notifications WHERE user_id='u' ORDER BY created_at DESC, id DESC LIMIT 51",
+            "SELECT created_at FROM notifications WHERE user_id='u' ORDER BY created_at DESC, id DESC LIMIT 1",
+            "SELECT id FROM notifications WHERE user_id='u' ORDER BY created_at DESC, id DESC LIMIT 200",
+        ],
+        "ix_notifications_unread": ["SELECT count(*) FROM notifications WHERE user_id='u' AND read_at IS NULL"],
+        "ix_notifications_run_kind": ["SELECT id FROM notifications WHERE run_id='r' AND kind='run.waiting' LIMIT 1"],
+        "ix_queued_messages_conversation_state": [
+            "SELECT id FROM queued_messages WHERE conversation_id='c' AND state='queued' ORDER BY created_at, id LIMIT 5",
+            "SELECT id FROM queued_messages WHERE conversation_id='c' AND state='queued' AND steer=true ORDER BY created_at, id LIMIT 1",
+        ],
+        "ix_queued_messages_run_state": [
+            "SELECT id FROM queued_messages WHERE run_id='r' AND state='steered' ORDER BY created_at, id",
+        ],
+    }
+    with engine.begin() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SET LOCAL enable_seqscan=off"))
+        for index, queries in statements.items():
+            for query in queries:
+                prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+                plan = " ".join(str(row) for row in conn.execute(text(prefix + query)))
+                assert index in plan, plan

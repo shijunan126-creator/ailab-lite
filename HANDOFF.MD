@@ -410,3 +410,37 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 定时任务“立即运行”不能证明后台dispatcher运行；另安排一次真实未来到期，记录相对到期时间的延迟并删除任务。空队列CPU探针只是每轮成本估算，不是任务执行负载。监控须使用ops凭据，旧service token的403不能通过放宽认证处理。
 - PDF浏览器smoke区分print视图/print调用和系统保存文件；拦截window.print便于自动化时必须记录边界。内置preview超时按既有两次失败规则回退，不能把工具超时当产品错误。
 - 本次部署和详细证据见[Gate 3发布记录](docs/progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)；个人备份/配置/地址/账号/原始日志只记仓库外本机HANDOFF。
+
+## 2026-10-24 项目说明 / 品牌后端
+
+- 品牌候选不能直接覆盖有效设置指针：先扫描，再在受限子进程分析，READY 与设置激活同事务。品牌更新/Worker激活/首轮快照共用平台设置锁；运行快照写入还要取得运行所有者锁，避免覆盖 checkpoint 的 runtime_meta。不要在持有用户锁时反向调用首轮品牌 bootstrap。
+- `InternalRunDetail` 必须显式声明新 bootstrap 字段，否则旧 GET 会被 response_model 静默过滤。Worker 文件 DTO 没有 purpose 字段，品牌分析分派依据管理员设置的 `meta.brand_kind`，不要只在 ORM 上设置 purpose 就认为 Worker 会进入新分支。
+- 品牌资产不等于资料库文件：单文件与批量 owner API、配额计数、库列表/工具及 Broker 的普通 copy 路径都要检查。Broker 品牌读取必须绑定 Work Run 的冻结资产集合及 `job=brand`；恢复工作区后重置 `.brand` 再注入，禁止旧快照覆盖本轮配置。
+- 技能目录哈希包括所有文件。测试直接 import 镜像内 build.py 会写入 `__pycache__` 并导致技能校验失败；导入临时副本，修改 SKILL.md/build.py 后同步重新生成 `images/sbx-office/skills/index.json`。本轮需要重建 sbx-office 镜像，未重建/部署不能称运行镜像已有品牌支持。
+- 老集成迁移测试固定 head=0024，新增0025必须一起扩展逐步升/降/再升链与 head 断言，保留漂移校验。父任务合入0026/0027时继续扩展；不能只改生产 migration 后跳过旧测试。
+- SVG拒绝、旧品牌物理资产留存与API候选显示约定见[契约修改](docs/reviews/2026-10-24-workspace-features-design.md#a-分支对契约的修改)。旧品牌尚无自动回收，计入平台磁盘而非个人配额；不要用普通库删除接口清理仍可能被 checkpoint 引用的资产。
+
+## 2026-10-24 Inbox / Queue / Steer 后端 B
+
+- 统一 `transition_run` 若锁后refresh，必须先flush调用方pending ORM变更；否则ask_user刚写的question/runtime_meta被丢弃。用户锁须可重入，既有调用方已持同一锁；PG仍靠用户行锁持到事务结束。
+- Steer claim不是注入确认：已领取未checkpoint消息须在新attempt重新返回；ID、messages与agent.steered同checkpoint事务确认。领取时直接发事件或只返回queued，会在claim后进程死掉时丢失提示。等待通知的永久去重不能依赖会被200条裁剪的notification行。
+- Agent真实历史来自分页model-context，不只legacy internal GET；两处都要补steers，history_messages在原prompt后按注入顺序插入。额外状态轮询会改变取消时序/把瞬态故障变终态；复用原状态心跳字段，不加每步HTTP请求。
+- 分叉需复制已确认steer历史并重映射事件queued_id（待处理queue不复制）；新增queue会话外键要求GC先按批清queue，不能直接删除会话。
+- 终态派发用savepoint区分预期准入失败（暂停并保留队列）与基础设施失败（整个终态事务回滚）。会话通过项目删除也必须取消queue。0026在B临时接0024，父任务改链并同步集成head断言；见[B记录](docs/progress/updates/2026-10-24-inbox-queue-backend.md)。
+
+## 2026-10-24 C 分支：内部分享 / 资料库摘要
+
+- 分享的 file/conversation 外键使用 ON DELETE SET NULL；否则软删除后的永久清理会被分享记录挡住。授权必须同时检查对象存活、所有者活跃、受众和固定 through_run_id 路径；不能用当前活动路径替代快照，不能把输入附件当产物授权。
+- 分享复用文件流/ETag接口后须覆盖 immutable 缓存为 private/no-store；分享 DTO 的文件地址走 `/api/v1/shares/...`，不能复用所有者 download_url 或对象存储签名URL。
+- 摘要须扩展完整 JobEnvelope→claim→Worker→API→业务结果→ACK 链路，并和 READY/OCR完成同事务 stage_job；明显无文本的文件直接 skipped，避免每个图片都产生空作业。OCR晚到只重新排队一次。
+- 不可变账本里的已结算 call_id 不能重新用于一次新推理。首次 `summary:<file_id>`；明确失败重试使用独立后缀（最多3次总调用），不得通过删除旧账本实现重试。通知接缝 `api/share_notifications.py` 当前 no-op，父 Agent 接 B helper。
+- Worker 派发标志不能写回原队列消息的 payload；内存队列会把同一对象重投，extra=forbid 的 JobEnvelope 将拒绝被污染的消息。
+- read_library_file 输入 pages=[2] 与输出 pages=[{page,offset}] 不同；扫描PDF OCR必须保持原物理页码。两页测试客户端也必须提供两页预览，否则 page_limit 是预览样本不完整，并非OCR丢页。验证与未验边界见[本轮记录](docs/progress/updates/2026-10-24-shares-library-backend.md)。
+
+## 2026-10-24 工作区集成验收
+
+- 接收者通知会取得接收者用户锁；分享不能先锁所有者、写外键后再逐个锁接收者。须在写入前按全局用户ID顺序取得所有者与指定接收者锁，通知仍同事务插入/裁剪。跨进程PG互相分享用例覆盖真实数据库锁，不能只测单进程RLock。
+- 测试子进程必须显式指定本工作树的platform cwd；复用别处venv时，editable install可能加载主工作树旧代码。不能把其他代码基线的失败算作当前分支失败，也不能把其他分支的绿算作验收。
+- 已claim的steer还不是已注入；详情仅按runtime_meta.steer_ids确认顺序查有界队列表。重新加载的bubble不能从所有steered行猜测。队列scripted model应识别当前最新原始用户消息，不能把history里旧的慢任务当成新任务再次阻塞。
+- E2E通过API准备项目后须重新加载以初始化前端项目缓存；按文件ID核对移动后名称，重名会合法改名。手机证据先收起桌面遗留侧栏，避免截图只显示遮罩。
+- 品牌保存空字体用空字符串（非null）；产物菜单提问/移动必须读取文件当前项目，不能沿用对话项目。两项Portal回归由父Agent修复，未放宽浏览器断言。

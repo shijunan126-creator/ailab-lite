@@ -9,6 +9,7 @@ import { useProjects } from "../lib/projects";
 import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
 import ConversationMenu from "./conversation-menu";
 import SearchDialog, { OPEN_SEARCH } from "./search";
+import Inbox, { InboxButton, useNotices } from "./inbox";
 import { OPEN_FILE } from "./file-cite";
 import { useFileViewer } from "./preview/file-viewer";
 import { NewProjectInput } from "./library/projects";
@@ -164,6 +165,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
   const listController = useRef<AbortController | null>(null);
+  const notices = useNotices(current);
+  const [inboxAt, setInboxAt] = useState<HTMLElement | null>(null);
   useVisibleViewport();
 
   const load = useCallback(() => {
@@ -239,6 +242,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <span className="brand-mark">A</span>
             AILab
           </Link>
+          <span className="spacer" />
+          <InboxButton unread={notices.unread} onOpen={(el) => setInboxAt(inboxAt ? null : el)} />
           <button className="icon-btn" onClick={toggle} aria-label="收起侧栏" title="收起侧栏">
             <IconPanel size={18} />
           </button>
@@ -305,6 +310,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <div className="sidebar-scrim" onClick={toggle} aria-hidden="true" />
       {searching ? <SearchDialog recent={conversations || []} onClose={() => setSearching(false)} /> : null}
       {cited.viewer}
+      {inboxAt ? <Inbox anchor={inboxAt} onClose={() => setInboxAt(null)} onUnread={notices.setUnread} /> : null}
 
       <div className="main">
         {collapsed ? (
@@ -315,6 +321,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <Link className="icon-btn" href="/" aria-label="新对话" title="新对话">
               <IconNewChat size={18} />
             </Link>
+            <InboxButton unread={notices.unread} onOpen={(el) => setInboxAt(inboxAt ? null : el)} />
           </div>
         ) : null}
         {children}

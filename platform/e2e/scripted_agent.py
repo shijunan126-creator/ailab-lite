@@ -25,6 +25,19 @@ FEATURE_ANSWER = "这是过程框外的流式最终回答。"
 FEATURE_TITLE = "集成测试生成标题"
 feature_versions: dict[str, int] = {}
 title_release = asyncio.Event()
+workspace_release = asyncio.Event()
+workspace_seen: dict[str, list[dict]] = {}
+
+
+@app.post("/e2e/workspace-release")
+async def release_workspace():
+    workspace_release.set()
+    return {"ok": True}
+
+
+@app.get("/e2e/workspace-seen")
+async def seen_workspace():
+    return workspace_seen
 
 
 @app.post("/e2e/release-title")
@@ -68,6 +81,29 @@ class QuestionThenAnswer(LLMClient):
 
     async def chat(self, messages, tools, model, user_id=None):
         prompt = _last_user_text(messages)
+        original = next(
+            (
+                m["content"]
+                for m in reversed(messages)
+                if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].startswith("工作区")
+            ),
+            "",
+        )
+        if original:
+            workspace_seen[original] = messages
+            if original.startswith("工作区保持") and not any(m.get("role") == "tool" for m in messages):
+                workspace_release.clear()
+                await asyncio.wait_for(workspace_release.wait(), timeout=45)
+                return LLMResponse(
+                    tool_calls=[ToolCall("workspace_step", "exec", {"cmd": "echo workspace"})],
+                    usage={"prompt_tokens": 20, "completion_tokens": 10},
+                )
+            if original.startswith("工作区失败"):
+                workspace_release.clear()
+                await asyncio.wait_for(workspace_release.wait(), timeout=45)
+                raise LLMError("workspace intentional failure")
+            if original.startswith(("工作区保持", "工作区说明", "工作区续发")):
+                return LLMResponse(content="工作区完成：" + prompt, usage={"prompt_tokens": 20, "completion_tokens": 10})
         if messages and "概括用户问题生成" in str(messages[0].get("content")):
             if json.loads(prompt).get("question") == FEATURE_STREAM:
                 await asyncio.wait_for(title_release.wait(), timeout=8)

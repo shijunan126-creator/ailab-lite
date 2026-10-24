@@ -273,12 +273,11 @@ class LeaseManager:
         with tempfile.TemporaryDirectory(prefix="transfer-", dir=root) as directory:
             yield Path(directory) / "file"
 
-    def inject_file(self, lease: dict, file_id: str, path: str, **binding) -> None:
+    def inject_file(self, lease: dict, file_id: str, path: str, *, max_bytes: int | None = None, **binding) -> None:
+        limit = min(max_bytes or settings.max_upload_bytes, settings.max_upload_bytes)
         with self.transfer_file() as local:
-            self.platform.download_file(file_id, local, max_bytes=settings.max_upload_bytes, **binding)
-            self._provider_call(
-                "put_file_from_path", lease["provider_ref"], self._checked(path), local, max_bytes=settings.max_upload_bytes
-            )
+            self.platform.download_file(file_id, local, max_bytes=limit, **binding)
+            self._provider_call("put_file_from_path", lease["provider_ref"], self._checked(path), local, max_bytes=limit)
 
     def _download(self, lease: dict, path: str, local: Path, limit: int) -> None:
         size = self._provider_call("file_size", lease["sandbox_id"], path)
@@ -481,6 +480,30 @@ class LeaseManager:
             lease["inputs"] = injected
             if run.get("workspace_restore_key"):
                 self._restore_workspace(lease, run["workspace_restore_key"])
+            # Restore first: a previous workspace must never override this run's frozen brand.
+            if "brand" in run:
+                result = self._provider_call("exec", lease["provider_ref"], "rm -rf /workspace/.brand", 10)
+                if result.exit_code:
+                    raise LeaseError("could not reset brand directory")
+            brand = run.get("brand") or {}
+            if brand and (run.get("options") or {}).get("mode", "work") == "work":
+                names = {"logo": "logo.png", "pptx": "template.pptx", "docx": "template.docx"}
+                total = 0
+                for kind, file_id in (brand.get("assets") or {}).items():
+                    if kind not in names:
+                        raise LeaseError("unknown brand asset kind")
+                    meta = self.platform.get_file(file_id, run_id=run_id, job="brand")
+                    limit = 2 * 1024 * 1024 if kind == "logo" else 10 * 1024 * 1024
+                    size = (meta.get("meta") or {}).get("brand", {}).get("png_bytes", meta["size"]) if kind == "logo" else meta["size"]
+                    total += size
+                    if meta.get("status") != "ready" or size > limit or total > 22 * 1024 * 1024:
+                        raise LeaseError("brand injection limit exceeded")
+                    self.inject_file(lease, file_id, f"/workspace/.brand/{names[kind]}", run_id=run_id, job="brand", max_bytes=limit)
+                with self.transfer_file() as local:
+                    local.write_text(json.dumps(brand, ensure_ascii=False))
+                    self._provider_call(
+                        "put_file_from_path", lease["provider_ref"], "/workspace/.brand/brand.json", local, max_bytes=64 * 1024
+                    )
 
         def queued(decision: AdmissionDecision) -> None:
             try:

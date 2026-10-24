@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from ..conversation_tree import path_ids, path_runs, require_idle, siblings_query
 from ..deps import current_user, get_db
-from ..library import owned_project
+from ..library import move_lineage, owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, Run, RunStatus, User, utcnow
+from ..models import Artifact, Conversation, FileObject, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
 from ..schemas import (
     ConversationActive,
@@ -110,7 +110,11 @@ def get_conversation(
             key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
         }
         display_turns.append(out)
+    from .inbox import pending_query, queue_output
+
     return {
+        "queue": [queue_output(row) for row in db.scalars(pending_query(conv.id).limit(5))],
+        "queue_paused": conv.queue_paused,
         **conversation_out(conv, last_status),
         "turns": display_turns,
         "previews": path_previews(db, conv.id, ids),
@@ -125,6 +129,37 @@ def rename_conversation(
 ) -> dict:
     with user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
+        moved = None
+        if body.move_files:
+            # Artifact.run_id and Run.conversation_id are indexed; lineage lookup uses its unique head index.
+            lineages = (
+                select(FileObject.lineage_id)
+                .join(Artifact, Artifact.file_id == FileObject.id)
+                .join(Run, Run.id == Artifact.run_id)
+                .where(
+                    Run.conversation_id == conv.id,
+                    Run.user_id == user.id,
+                    FileObject.user_id == user.id,
+                    FileObject.purpose == "library",
+                    FileObject.deleted_at.is_(None),
+                    FileObject.purged_at.is_(None),
+                )
+            )
+            heads = select(FileObject).where(
+                FileObject.lineage_id.in_(lineages),
+                FileObject.is_head == 1,
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
+            # Validate before any mutation; keyset batches bound memory, while every move commits together.
+            if body.project_id is not None:
+                owned_project(db, body.project_id, user)
+            moved, after = 0, ""
+            while batch := db.scalars(heads.where(FileObject.id > after).order_by(FileObject.id).limit(200)).all():
+                for head in batch:
+                    move_lineage(db, head, body.project_id)
+                moved += len(batch)
+                after = batch[-1].id
         if "project_id" in body.model_fields_set:
             if body.project_id is not None:
                 owned_project(db, body.project_id, user)
@@ -135,7 +170,7 @@ def rename_conversation(
             conv.title = body.title.strip()[:200]
         conv.updated_at = utcnow()
         db.commit()
-        return conversation_out(conv)
+        return {**conversation_out(conv), "moved_files": moved}
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -146,6 +181,13 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
         pending = db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.status.not_in(RunStatus.TERMINAL)))
         for run in pending:
             transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted", commit=False)
+        from ..models import QueuedMessage
+
+        db.execute(
+            update(QueuedMessage)
+            .where(QueuedMessage.conversation_id == conv.id, QueuedMessage.state == "queued")
+            .values(state="canceled", updated_at=utcnow())
+        )
         conv.deleted_at = utcnow()
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -246,6 +288,33 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 db.add(new)
                 db.flush()
                 mapping[old.id] = new
+                from ..models import QueuedMessage
+                from .inbox import steers_for_run
+
+                applied = (old.runtime_meta or {}).get("steer_ids", [])
+                copied_steers = {}
+                if applied:
+                    for row in steers_for_run(db, old):
+                        if row.id not in applied:
+                            continue
+                        copied = QueuedMessage(
+                            conversation_id=conv.id,
+                            user_id=user.id,
+                            prompt=row.prompt,
+                            file_ids=deepcopy(row.file_ids),
+                            model=row.model,
+                            options=deepcopy(row.options),
+                            steer=True,
+                            state="steered",
+                            run_id=new.id,
+                            after_run_id=new.id,
+                            created_at=row.created_at,
+                            updated_at=row.updated_at,
+                        )
+                        db.add(copied)
+                        db.flush()
+                        copied_steers[row.id] = copied.id
+                    new.runtime_meta = {"steer_ids": [copied_steers[qid] for qid in applied if qid in copied_steers]}
                 for artifact in db.scalars(select(Artifact).where(Artifact.run_id == old.id)):
                     db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role))
                 # Copy events in pages to bound memory; the source can subsequently be purged independently.
@@ -263,11 +332,10 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     if total_events > 100000:
                         raise HTTPException(422, "分叉过程记录超过100000条上限")
                     for event in events:
-                        db.add(
-                            RunEvent(
-                                run_id=new.id, seq=event.seq, type=event.type, payload=deepcopy(event.payload), created_at=event.created_at
-                            )
-                        )
+                        payload = deepcopy(event.payload)
+                        if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
+                            payload["queued_id"] = copied_steers[payload["queued_id"]]
+                        db.add(RunEvent(run_id=new.id, seq=event.seq, type=event.type, payload=payload, created_at=event.created_at))
                     after = events[-1].seq
                     db.flush()
                 cursor = None
@@ -368,6 +436,8 @@ def select_active(conversation_id: str, body: ConversationActive, user: User = D
         ).rowcount
         if not changed:
             raise HTTPException(409, "对话路径已改变，请刷新后重试")
+        if expected != run.id:
+            conv.queue_paused = True
         db.commit()
     return get_conversation(conversation_id, before=None, limit=20, user=user, db=db)
 
