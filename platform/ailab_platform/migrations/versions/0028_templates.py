@@ -14,7 +14,7 @@ depends_on = None
 
 
 def upgrade():
-    from ailab_platform.config import settings
+    from ailab_platform.config import settings as config_settings
 
     table = op.create_table(
         "templates",
@@ -88,7 +88,7 @@ def upgrade():
             conn.execute(
                 outbox.insert().values(
                     id=job_id,
-                    topic=settings.file_queue,
+                    topic=config_settings.file_queue,
                     created_at=now,
                     payload={
                         "job_id": job_id,
@@ -98,7 +98,7 @@ def upgrade():
                         "run_id": None,
                         "mode": "work",
                         "attempt": 1,
-                        "deadline": (now + timedelta(seconds=settings.job_deadline_seconds)).isoformat(),
+                        "deadline": (now + timedelta(seconds=config_settings.job_deadline_seconds)).isoformat(),
                         "enqueued_at": now.isoformat(),
                     },
                 )
