@@ -3,15 +3,25 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select, tuple_
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from ..conversation_tree import path_ids, path_runs, require_idle, siblings_query
 from ..deps import current_user, get_db
 from ..library import owned_project
 from ..locks import user_critical_section
 from ..models import Conversation, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
-from ..schemas import ConversationCreate, ConversationDetail, ConversationFork, ConversationOut, ConversationPatch, MessageCreate, RunDetail
+from ..schemas import (
+    ConversationActive,
+    ConversationCreate,
+    ConversationDetail,
+    ConversationFork,
+    ConversationOut,
+    ConversationPatch,
+    MessageCreate,
+    RunDetail,
+)
 from .routes_runs import start_run
 from .serializers import run_dict
 
@@ -25,15 +35,11 @@ def _owned(db: Session, conversation_id: str, user: User) -> Conversation:
     return conv
 
 
-def _turns(db: Session, conv: Conversation) -> list[Run]:
-    return list(
-        db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None)).order_by(Run.created_at, Run.id))
-    )
-
-
 def conversation_out(conv: Conversation, last_status: str | None = None) -> dict:
     return {
         "id": conv.id,
+        "pinned_at": conv.pinned_at,
+        "active_run_id": conv.active_run_id,
         "forked_from": conv.forked_from,
         "project_id": conv.project_id,
         "title": conv.title,
@@ -42,17 +48,6 @@ def conversation_out(conv: Conversation, last_status: str | None = None) -> dict
         "updated_at": conv.updated_at,
         "last_status": last_status,
     }
-
-
-def latest_previews(turns: list[Run]) -> list[dict]:
-    """The newest preview of every file the conversation produced (a later turn's render replaces an earlier one)."""
-    by_file: dict[str, dict] = {}
-    for run in turns:
-        for preview in (run.result or {}).get("previews") or []:
-            if isinstance(preview, dict) and preview.get("filename"):
-                by_file.pop(preview["filename"], None)  # re-insert: most recently touched last
-                by_file[preview["filename"]] = {**preview, "run_id": run.id}  # preview URLs are per run
-    return list(by_file.values())
 
 
 @router.get("", response_model=list[ConversationOut])
@@ -64,17 +59,11 @@ def list_conversations(
 ) -> list[dict]:
     if project_id is not None:
         owned_project(db, project_id, user)
-    last_status = (
-        select(Run.status)
-        .where(Run.conversation_id == Conversation.id, Run.superseded_by_run_id.is_(None))
-        .order_by(Run.created_at.desc(), Run.id.desc())
-        .limit(1)
-        .scalar_subquery()
-    )
+    last_status = select(Run.status).where(Run.id == Conversation.active_run_id).scalar_subquery()
     rows = db.execute(
         select(Conversation, last_status)
         .where(Conversation.user_id == user.id, Conversation.deleted_at.is_(None), Conversation.project_id == project_id)
-        .order_by(Conversation.updated_at.desc())
+        .order_by(Conversation.pinned_at.desc().nulls_last(), Conversation.updated_at.desc(), Conversation.id.desc())
         .limit(limit)
     ).all()
     return [conversation_out(conv, last) for conv, last in rows]
@@ -101,23 +90,22 @@ def get_conversation(
     db: Session = Depends(get_db),
 ) -> dict:
     conv = _owned(db, conversation_id, user)
-    query = select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None), Run.user_id == user.id)
+    ids = path_ids(db, conv.id, conv.active_run_id)
+    stop = len(ids)
     if before:
-        cursor = db.get(Run, before)
-        if cursor is None or cursor.conversation_id != conv.id:
-            raise HTTPException(status_code=404, detail="turn not found")
-        query = query.where(tuple_(Run.created_at, Run.id) < (cursor.created_at, cursor.id))
-    rows = list(db.scalars(query.order_by(Run.created_at.desc(), Run.id.desc()).limit(limit + 1)))
-    turns = list(reversed(rows[:limit]))
-    last_status = db.scalar(
-        select(Run.status)
-        .where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None))
-        .order_by(Run.created_at.desc(), Run.id.desc())
-        .limit(1)
-    )
+        if before not in ids:
+            raise HTTPException(404, "轮次不在当前路径")
+        stop = ids.index(before)
+    page_ids = ids[max(0, stop - limit) : stop]
+    rows = {r.id: r for r in db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.id.in_(page_ids)))}
+    turns = [rows[id_] for id_ in page_ids]
+    leaf = db.get(Run, conv.active_run_id) if conv.active_run_id else None
+    last_status = leaf.status if leaf else None
     display_turns = []
     for run in turns:
         out = run_dict(db, run, detail=True)
+        siblings = list(db.scalars(siblings_query(conv.id, run.parent_run_id).limit(50)))
+        out["versions"] = {"index": siblings.index(run.id) + 1, "count": len(siblings), "ids": siblings}
         out["result"] = {
             key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
         }
@@ -125,8 +113,9 @@ def get_conversation(
     return {
         **conversation_out(conv, last_status),
         "turns": display_turns,
-        "previews": latest_previews(turns),
-        "has_more": len(rows) > limit,
+        "previews": path_previews(db, conv.id, ids),
+        "context": conversation_context(db, leaf),
+        "has_more": stop > limit,
     }
 
 
@@ -140,6 +129,8 @@ def rename_conversation(
             if body.project_id is not None:
                 owned_project(db, body.project_id, user)
             conv.project_id = body.project_id
+        if "pinned" in body.model_fields_set:
+            conv.pinned_at = utcnow() if body.pinned else None
         if "title" in body.model_fields_set:
             conv.title = body.title.strip()[:200]
         conv.updated_at = utcnow()
@@ -152,9 +143,7 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
     """Hidden from the list (the runs and the files they produced stay in the library). A running turn is canceled."""
     with user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
-        pending = db.scalars(
-            select(Run).where(Run.conversation_id == conv.id, Run.superseded_by_run_id.is_(None), Run.status.not_in(RunStatus.TERMINAL))
-        )
+        pending = db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.status.not_in(RunStatus.TERMINAL)))
         for run in pending:
             transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted", commit=False)
         conv.deleted_at = utcnow()
@@ -193,22 +182,11 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             source = _owned(db, conversation_id, user)
             db.refresh(source)
             target = db.get(Run, body.run_id, populate_existing=True)
-            if not target or target.conversation_id != source.id or target.superseded_by_run_id:
+            if not target or target.conversation_id != source.id:
                 raise HTTPException(404, "轮次不存在")
             if target.status not in RunStatus.TERMINAL:
                 raise HTTPException(422, "只能从已结束的轮次分叉")
-            turns = list(
-                db.scalars(
-                    select(Run)
-                    .where(
-                        Run.conversation_id == source.id,
-                        Run.superseded_by_run_id.is_(None),
-                        tuple_(Run.created_at, Run.id) <= (target.created_at, target.id),
-                    )
-                    .order_by(Run.created_at, Run.id)
-                    .limit(501)
-                )
-            )
+            turns = path_runs(db, source.id, target.id)
             if len(turns) > 500:
                 raise HTTPException(422, "分叉最多复制500轮对话")
             if any((r.options or {}).get("mode", "work") != "chat" for r in turns) and body.mode != "work":
@@ -250,6 +228,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 new = Run(
                     user_id=user.id,
                     conversation_id=conv.id,
+                    parent_run_id=mapping[old.parent_run_id].id if old.parent_run_id in mapping else None,
                     title=old.title,
                     prompt=old.prompt,
                     summary=old.summary,
@@ -299,6 +278,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     cursor = page.cursor
                     if cursor is None:
                         break
+            conv.active_run_id = mapping[target.id].id
             if source.summary_through_run_id in mapping:
                 conv.summary = source.summary
                 conv.summary_through_run_id = mapping[source.summary_through_run_id].id
@@ -330,3 +310,74 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             except Exception:
                 pass  # orphan preview/workspace objects are also covered by the reaper
         raise
+
+
+def conversation_context(db, leaf):
+    from ..catalog import get_catalog
+    from ..context_settings import context_settings
+    from ..models import ModelUsage
+
+    usage = (
+        db.scalar(
+            select(ModelUsage)
+            .where(ModelUsage.run_id == leaf.id, ModelUsage.quiet.is_(False), ModelUsage.status == "settled")
+            .order_by(ModelUsage.created_at.desc(), ModelUsage.id.desc())
+            .limit(1)
+        )
+        if leaf
+        else None
+    )
+    model = (usage.alias or usage.model) if usage else (leaf.model if leaf else None)
+    config = context_settings(db)
+    spec = get_catalog().get(model) if model else None
+    return {
+        "used_tokens": usage.prompt_tokens if usage else None,
+        "model": model,
+        "compact_at_tokens": int(spec.context_tokens * config["threshold_ratio"]) if spec and config["auto_compact"] else None,
+    }
+
+
+@router.post("/{conversation_id}/active", response_model=ConversationDetail)
+def select_active(conversation_id: str, body: ConversationActive, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    with user_critical_section(db, user.id):
+        conv = _owned(db, conversation_id, user)
+        db.refresh(conv)
+        require_idle(db, conv.id)
+        run = db.get(Run, body.run_id)
+        if not run or run.conversation_id != conv.id:
+            raise HTTPException(404, "轮次不存在")
+        expected = conv.active_run_id
+        depth = len(path_ids(db, conv.id, run.id))
+        while True:
+            child = db.scalar(
+                select(Run.id)
+                .where(Run.conversation_id == conv.id, Run.parent_run_id == run.id)
+                .order_by(Run.created_at.desc(), Run.id.desc())
+                .limit(1)
+            )
+            if child is None:
+                break
+            depth += 1
+            if depth > 500:
+                raise HTTPException(422, "对话路径最多500轮")
+            run = db.get(Run, child)
+        changed = db.execute(
+            update(Conversation)
+            .where(Conversation.id == conv.id, Conversation.active_run_id == expected)
+            .values(active_run_id=run.id, updated_at=utcnow())
+        ).rowcount
+        if not changed:
+            raise HTTPException(409, "对话路径已改变，请刷新后重试")
+        db.commit()
+    return get_conversation(conversation_id, before=None, limit=20, user=user, db=db)
+
+
+def path_previews(db, conversation_id, ids):
+    rows = dict(db.execute(select(Run.id, Run.result["previews"]).where(Run.conversation_id == conversation_id, Run.id.in_(ids))).all())
+    by_file = {}
+    for id_ in ids:
+        for preview in rows.get(id_) or []:
+            if isinstance(preview, dict) and preview.get("filename"):
+                by_file.pop(preview["filename"], None)
+                by_file[preview["filename"]] = {**preview, "run_id": id_}
+    return list(by_file.values())
