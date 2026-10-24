@@ -50,10 +50,8 @@ def test_confirmed_steers_bounded_checkpoint_order_and_index(api):  # noqa: F811
         order = list(reversed(ids[:6]))
         db.get(Run, run).runtime_meta = {"steer_ids": order}
         db.commit()
-        query = (
-            select(QueuedMessage.id, QueuedMessage.prompt)
-            .where(QueuedMessage.run_id == run, QueuedMessage.state == "steered", QueuedMessage.id.in_(order[:5]))
-            .limit(5)
+        query = select(QueuedMessage.id, QueuedMessage.prompt).where(
+            QueuedMessage.run_id == run, QueuedMessage.state == "steered", QueuedMessage.id.in_(order)
         )
         pg = db.bind.dialect.name == "postgresql"
         if pg:
@@ -62,5 +60,6 @@ def test_confirmed_steers_bounded_checkpoint_order_and_index(api):  # noqa: F811
         plan = str(db.execute(text(("EXPLAIN " if pg else "EXPLAIN QUERY PLAN ") + sql)).all())
         assert "ix_queued_messages_run_state" in plan or "queued_messages_pkey" in plan or "sqlite_autoindex_queued_messages" in plan
     result = api.get("/v1/runs/" + run, headers=AUTH).json()["steered"]
-    assert result == [{"id": qid, "prompt": f"steer-{5 - i}"} for i, qid in enumerate(order[:5])]
+    # Five is the pending queue capacity, not the cumulative number of acknowledged steers.
+    assert result == [{"id": qid, "prompt": f"steer-{5 - i}"} for i, qid in enumerate(order)]
     assert detail(api, conv)["turns"][0]["steered"] == result

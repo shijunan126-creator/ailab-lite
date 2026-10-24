@@ -106,15 +106,30 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
   useEffect(() => {
     if (!enabled || !pending) return;
     const mine = view.current;
-    const timer = setInterval(async () => {
-      const fresh: FileItem[] | null = await filesByIds(pending.split(",")).catch(() => null);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]);
+      const fresh: FileItem[] | null = await filesByIds(pending.split(","), signal).catch(() => null);
       // only a change of filter makes this stale: a reload or "load more" meanwhile (star, move...) must not
       // throw the scan result away, or the file would show 扫描中 until the page is refreshed
-      if (!fresh || mine !== view.current) return;
-      const byId = new Map(fresh.map((f) => [f.id, f] as const));
-      setFiles((prev) => prev.filter((f) => f.status !== "pending" || byId.has(f.id)).map((f) => byId.get(f.id) || f)); // gone: deleted elsewhere
-    }, 2000);
-    return () => clearInterval(timer);
+      if (controller.signal.aborted || mine !== view.current) return;
+      if (fresh) {
+        const byId = new Map(fresh.map((f) => [f.id, f] as const));
+        setFiles((prev) => prev.filter((f) => f.status !== "pending" || byId.has(f.id)).map((f) => {
+          const scanned = byId.get(f.id);
+          // A concurrent reload/mutation may already have newer status, star or project data.
+          return f.status === "pending" && scanned ? { ...f, status: scanned.status, meta: scanned.meta,
+            preview: scanned.preview, thumbnail_url: scanned.thumbnail_url } : f;
+        }));
+      }
+      timer = setTimeout(poll, 2000);
+    };
+    timer = setTimeout(poll, 2000);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
   }, [pending, enabled]);
 
   return { files, folders, setFiles, loaded, more: more || folderMore, error, reload, loadMore };

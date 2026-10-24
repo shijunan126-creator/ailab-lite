@@ -58,6 +58,8 @@ def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
 
 
 def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
+    if detail:
+        return run_dicts(db, [run])[0]
     out = {
         "id": run.id,
         "retry_of": run.retry_of,
@@ -84,36 +86,53 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "finished_at": run.finished_at,
         "work_ms": run.work_ms,
     }
-    if detail:
-        applied = (run.runtime_meta or {}).get("steer_ids", [])[:5]
-        prompts = (
-            dict(
-                db.execute(
-                    select(QueuedMessage.id, QueuedMessage.prompt)
-                    .where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered", QueuedMessage.id.in_(applied))
-                    .limit(5)
-                ).all()
-            )
-            if applied
-            else {}
-        )
-        out["steered"] = [{"id": qid, "prompt": prompts[qid]} for qid in applied if qid in prompts]
-        rows = db.execute(
-            select(Artifact, FileObject).join(FileObject, Artifact.file_id == FileObject.id).where(Artifact.run_id == run.id)
-        ).all()
-        out["artifacts"] = [artifact_dict(a, f) for a, f in rows]
-        out["input_files"] = [
-            {"file_id": f.id, "filename": f.filename}
-            for f in db.scalars(select(FileObject).where(FileObject.id.in_(run.input_file_ids or [])))
-        ]
-        usage = db.execute(select(ModelUsage).where(ModelUsage.run_id == run.id)).scalars().all()
-        out["usage"] = (run.result or {}).get("forked_usage") or {
-            "prompt_tokens": sum(u.prompt_tokens for u in usage),
-            "completion_tokens": sum(u.completion_tokens for u in usage),
-            "cached_tokens": sum(u.cached_tokens for u in usage),
-            "calls": len(usage),
-        }
     return out
+
+
+def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
+    """Serialize one bounded page with four related-row reads, regardless of turn count."""
+    if not runs:
+        return []
+    ids = [run.id for run in runs]
+    artifacts = {}
+    for artifact, file in db.execute(
+        select(Artifact, FileObject).join(FileObject, Artifact.file_id == FileObject.id).where(Artifact.run_id.in_(ids))
+    ):
+        artifacts.setdefault(artifact.run_id, []).append(artifact_dict(artifact, file))
+    file_ids = {fid for run in runs for fid in run.input_file_ids or []}
+    files = dict(db.execute(select(FileObject.id, FileObject.filename).where(FileObject.id.in_(file_ids))).all()) if file_ids else {}
+    applied = {run.id: (run.runtime_meta or {}).get("steer_ids", []) for run in runs}
+    steer_ids = {qid for values in applied.values() for qid in values}
+    prompts = (
+        {
+            (rid, qid): prompt
+            for rid, qid, prompt in db.execute(
+                select(QueuedMessage.run_id, QueuedMessage.id, QueuedMessage.prompt).where(
+                    QueuedMessage.run_id.in_(ids), QueuedMessage.id.in_(steer_ids), QueuedMessage.state == "steered"
+                )
+            )
+        }
+        if steer_ids
+        else {}
+    )
+    columns = ("prompt_tokens", "completion_tokens", "cached_tokens")
+    usage = {
+        row[0]: dict(zip((*columns, "calls"), row[1:], strict=True))
+        for row in db.execute(
+            select(ModelUsage.run_id, *(func.sum(getattr(ModelUsage, name)) for name in columns), func.count(ModelUsage.id))
+            .where(ModelUsage.run_id.in_(ids))
+            .group_by(ModelUsage.run_id)
+        )
+    }
+    result = []
+    for run in runs:
+        out = run_dict(db, run)
+        out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
+        out["artifacts"] = artifacts.get(run.id, [])
+        out["input_files"] = [{"file_id": fid, "filename": files[fid]} for fid in run.input_file_ids or [] if fid in files]
+        out["usage"] = (run.result or {}).get("forked_usage") or usage.get(run.id, dict.fromkeys((*columns, "calls"), 0))
+        result.append(out)
+    return result
 
 
 def file_dicts(db: Session, files: list[FileObject]) -> list[dict]:

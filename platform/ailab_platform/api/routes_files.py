@@ -177,10 +177,10 @@ def list_files(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    stmt = select(FileObject.id).where(
-        FileObject.user_id == user.id, FileObject.purpose == "library", FileObject.is_head == literal_column("1")
-    )
-    stmt = stmt.where(FileObject.deleted_at.is_not(None)) if trashed else stmt.where(*live_file_predicates())
+    # Explicit IDs refer to immutable versions (citations/artifacts), while browsing lists only heads.
+    heads = (FileObject.is_head == literal_column("1"),) if ids is None else ()
+    visible = (FileObject.deleted_at.is_not(None),) if trashed else (FileObject.deleted_at.is_(None), FileObject.purged_at.is_(None))
+    stmt = select(FileObject.id).where(FileObject.user_id == user.id, FileObject.purpose == "library", *heads, *visible)
     if ids is not None:
         stmt = stmt.where(FileObject.id.in_(ids))
     if project_id is not None:
@@ -213,14 +213,13 @@ def list_files(
             raise HTTPException(status_code=400, detail="invalid file cursor")
         stmt = stmt.where(tuple_(order, FileObject.id) < tuple_(position, previous.id))
     page_ids = list(db.scalars(stmt.order_by(order.desc(), FileObject.id.desc()).limit(limit).offset(offset)))
-    visible = (FileObject.deleted_at.is_not(None),) if trashed else live_file_predicates()
     by_id = {
         f.id: f
         for f in db.scalars(
             select(FileObject).where(
                 FileObject.id.in_(page_ids),
                 FileObject.user_id == user.id,
-                FileObject.is_head == literal_column("1"),
+                *heads,
                 *visible,
             )
         )

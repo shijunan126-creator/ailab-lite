@@ -30,6 +30,8 @@ def test_template_migration_promotes_brand_and_roundtrips(engine, monkeypatch):
         assert row == ("pptx", "company", None, "Legacy", "f1", "u1")
         assert conn.execute(text("SELECT purpose,status FROM files WHERE id='f1'")).one() == ("template", "pending")
         assert conn.execute(text("SELECT topic FROM outbox WHERE id LIKE 'tpl_migrate_%'")).scalar() == settings.file_queue
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
     _downgrade_to(engine, "0027")
     assert "templates" not in inspect(engine).get_table_names()

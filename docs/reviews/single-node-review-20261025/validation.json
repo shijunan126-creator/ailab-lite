@@ -1,0 +1,58 @@
+{
+  "sqlite": {
+    "tests": 1249,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 79,
+    "passed": 1170,
+    "seconds": 213.917
+  },
+  "postgres": {
+    "tests": 1249,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 33,
+    "passed": 1216,
+    "seconds": 216.174
+  },
+  "e2e": {
+    "tests": 98,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "passed": 98,
+    "seconds": 280.28
+  },
+  "coverage_percent": 87.04,
+  "baseline": "e23cf4d",
+  "product_baseline": "869e06b27cb82cdf4a19225f5b9be9ec3a4026b2",
+  "portal_unit": {
+    "passed": 35,
+    "failed": 0
+  },
+  "external_boundaries": "Mock model and sandbox E2E; unconfigured real component contracts skipped; no deployment.",
+  "ci_followup": {
+    "base": "f6016805ca80aa5da49f8a1aa0c935d676397764",
+    "product_unchanged": true,
+    "test_file_sha256": "d2f9dabba67cfbc9961f985d264f35ff36656933100f24850267ae190fc0ba6c",
+    "samples": 100,
+    "p95_budget_ms": 150,
+    "method": "empirical nearest rank",
+    "sqlite_coverage_full": {
+      "passed": 1170,
+      "skipped": 79,
+      "coverage_percent": 87.04
+    },
+    "sqlite_performance": {
+      "passed": 11,
+      "p95_ms": 18.31,
+      "max_ms": 20.13,
+      "coverage_enabled": true
+    },
+    "postgres_performance": {
+      "passed": 11,
+      "p95_ms": 16.4,
+      "max_ms": 18.87
+    }
+  }
+}

@@ -1069,10 +1069,12 @@ class AgentLoop:
                     raise LeaseInterrupted()
                 if await self._is_canceled(run_id):
                     raise RunCanceled()
+                # A resumed checkpoint can already contain a paid response and pending tools.
+                # Enforce the budget before either executing those tools or dispatching another call.
+                if run["_ledger_tokens"] >= settings.run_max_tokens:
+                    error = _token_limit_error(run)
+                    break
                 if not state["pending"]:
-                    if run["_ledger_tokens"] >= settings.run_max_tokens:
-                        error = _token_limit_error(run)
-                        break
                     left = settings.max_agent_steps - step
                     if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
                         messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})

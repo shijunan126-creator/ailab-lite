@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 
-from ailab_platform.adapters.runtime import UNCERTAIN_EXEC
+from ailab_platform.adapters.runtime import UNCERTAIN_EXEC, fresh_state
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.clients import ClientError
 from ailab_platform.config import settings
@@ -32,6 +32,25 @@ def script() -> list[LLMResponse]:
 
 class Crash(BaseException):
     """Stands in for SIGKILL: not an Exception, so no handler in the loop may swallow it."""
+
+
+def test_resume_rechecks_budget_before_pending_tools(monkeypatch):
+    """A death after checkpointing the response must not bypass its budget gate."""
+    monkeypatch.setattr(settings, "run_max_tokens", 100)
+    platform, broker, llm = FakePlatform(), SandboxSpy(), ScriptedLLM([])
+    platform.prior_usage = {"prompt_tokens": 80, "completion_tokens": 20}
+    state = fresh_state()
+    state["messages"] = [{"role": "user", "content": "build"}]
+    state["pending"] = [{"id": EXEC.id, "name": EXEC.name, "arguments": EXEC.arguments, "ordinal": 0}]
+    platform.checkpoint = {"step": 1, "state": state}
+
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt=2, attempt_id="att_2"))
+
+    assert broker.execs == []
+    assert broker.leases == 0
+    assert llm.seen_messages == []
+    assert platform.statuses[-1][0] == "failed"
+    assert "token limit" in platform.statuses[-1][1]["error"]
 
 
 class SandboxSpy(FakeBroker):

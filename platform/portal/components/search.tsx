@@ -32,8 +32,35 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [active, setActive] = useState(0);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
   const list = useRef<HTMLDivElement | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+
+  async function search(query: string, after: string | null, controller: AbortController, append: boolean) {
+    const found: SearchHit[] = [];
+    try {
+      // Bound each interaction, retaining the continuation instead of reporting an unfinished scan as empty.
+      for (let i = 0; i < 6; i++) {
+        const res: { items: SearchHit[]; next_cursor: string | null } = await api(
+          `/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=20${after ? `&cursor=${encodeURIComponent(after)}` : ""}`,
+          { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]) }
+        );
+        if (controller.signal.aborted) return;
+        found.push(...res.items.filter((h) => !found.some((x) => x.conversation_id === h.conversation_id)));
+        after = res.next_cursor;
+        if (!after || found.length >= 12) break;
+      }
+      if (controller.signal.aborted) return;
+      setHits((previous) => append ? [...(previous || []), ...found.filter((h) => !previous?.some((x) => x.conversation_id === h.conversation_id))] : found);
+      setCursor(after);
+      setError("");
+    } catch (err: any) {
+      if (!controller.signal.aborted) setError(String(err?.message || err));
+    } finally {
+      if (!controller.signal.aborted) setLoading(false);
+    }
+  }
 
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -47,36 +74,18 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
   useEffect(() => {
     const query = q.trim();
     setActive(0);
+    setCursor(null);
+    setError("");
     if (!query) {
       setHits(null);
       setLoading(false);
       return;
     }
     const controller = new AbortController();
+    controllerRef.current = controller;
+    setHits([]);
     setLoading(true);
-    const timer = setTimeout(async () => {
-      // the API bounds its work per request: a page can come back short with a cursor to go on from
-      const found: SearchHit[] = [];
-      let cursor: string | null = null;
-      try {
-        for (let i = 0; i < 6; i++) {
-          const res: { items: SearchHit[]; next_cursor: string | null } = await api(
-            `/v1/search?q=${encodeURIComponent(query.slice(0, 200))}&limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
-            { signal: controller.signal }
-          );
-          found.push(...res.items.filter((h) => !found.some((x) => x.conversation_id === h.conversation_id)));
-          cursor = res.next_cursor;
-          if (!cursor || found.length >= 12) break;
-        }
-        if (controller.signal.aborted) return;
-        setHits(found);
-        setError("");
-      } catch (err: any) {
-        if (!controller.signal.aborted) setError(String(err?.message || err));
-      } finally {
-        if (!controller.signal.aborted) setLoading(false);
-      }
-    }, 180);
+    const timer = setTimeout(() => search(query, null, controller, false), 180);
     return () => {
       clearTimeout(timer);
       controller.abort();
@@ -152,7 +161,13 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
               <span className="search-when">{timeAgo(row.when)}</span>
             </button>
           ))}
-          {hits && !hits.length && !loading ? <div className="search-empty">没有找到相关对话</div> : null}
+          {cursor ? <button className="link" disabled={loading} onClick={() => {
+            const controller = controllerRef.current;
+            if (!controller || controller.signal.aborted || loading) return;
+            setLoading(true);
+            search(q.trim(), cursor, controller, true);
+          }}>继续搜索</button> : null}
+          {hits && !hits.length && !loading && !cursor ? <div className="search-empty">没有找到相关对话</div> : null}
           {error ? <div className="alert error">{error}</div> : null}
         </div>
       </div>
