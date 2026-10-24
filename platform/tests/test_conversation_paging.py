@@ -127,6 +127,66 @@ def test_500_turn_first_page_is_bounded_and_fast():
         assert p95 < 150
 
 
+def test_detail_batches_related_rows_instead_of_querying_each_turn():
+    from sqlalchemy import event
+
+    from ailab_platform.api.routes_conversations import get_conversation
+    from ailab_platform.models import User
+
+    with TestClient(app) as c:
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
+        with SessionLocal() as db:
+            conversation = db.get(Conversation, conv["id"])
+            owner = db.get(User, conversation.user_id)
+            previous = None
+            for i in range(25):
+                run = Run(user_id=owner.id, conversation_id=conversation.id, parent_run_id=previous, prompt=str(i), status="succeeded")
+                db.add(run)
+                db.flush()
+                previous = run.id
+            conversation.active_run_id = previous
+            db.commit()
+            statements = []
+            connection = db.connection()
+            event.listen(connection, "before_cursor_execute", lambda conn, cursor, statement, *args: statements.append(statement))
+            result = get_conversation(conv["id"], before=None, limit=20, user=owner, db=db)
+            reads = [s for s in statements if s.lstrip().upper().startswith(("SELECT", "WITH"))]
+            assert len(result["turns"]) == 20
+            print(f"DETAIL BATCH {db.bind.dialect.name}: {len(reads)} reads for 20 turns (previously 86)")
+            assert len(reads) <= 12, f"detail performed {len(reads)} reads for one page"
+
+
+def test_batched_detail_query_plans_use_existing_indexes():
+    from sqlalchemy import func, select, text
+
+    from ailab_platform.models import Artifact, ModelUsage, QueuedMessage
+
+    with TestClient(app), SessionLocal() as db:
+        queries = {
+            "artifacts": select(Artifact.run_id).where(Artifact.run_id.in_(["plan-a", "plan-b"])),
+            "usage": select(ModelUsage.run_id, func.sum(ModelUsage.prompt_tokens))
+            .where(ModelUsage.run_id.in_(["plan-a", "plan-b"]))
+            .group_by(ModelUsage.run_id),
+            "steers": select(QueuedMessage.run_id, QueuedMessage.prompt).where(
+                QueuedMessage.run_id.in_(["plan-a", "plan-b"]),
+                QueuedMessage.id.in_(["qid-a", "qid-b"]),
+                QueuedMessage.state == "steered",
+            ),
+            "siblings": select(Run.id, func.row_number().over(partition_by=Run.parent_run_id, order_by=(Run.created_at, Run.id))).where(
+                Run.conversation_id == "plan-conversation", Run.parent_run_id.in_(["plan-a", "plan-b"])
+            ),
+        }
+        postgres = db.bind.dialect.name == "postgresql"
+        if postgres:
+            # Check index eligibility independently of the tiny fixture's cost-based sequential scan choice.
+            db.execute(text("SET LOCAL enable_seqscan=off"))
+        for name, query in queries.items():
+            sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
+            plan = db.execute(text(("EXPLAIN " if postgres else "EXPLAIN QUERY PLAN ") + sql)).all()
+            print(f"DETAIL PLAN {db.bind.dialect.name} {name}: {plan}")
+            assert "INDEX" in str(plan).upper(), (name, plan)
+
+
 def test_title_database_failure_does_not_fail_the_confirmed_answer(monkeypatch):
     from sqlalchemy.exc import SQLAlchemyError
 

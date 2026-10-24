@@ -94,6 +94,16 @@ def test_restore_version_is_a_new_copy_and_history_does_not_change(api):
     assert api.get(f"/v1/files/{first['id']}/content").content == b"old bytes"
 
 
+def test_exact_ids_resolve_historical_versions_without_polluting_library_list(api):
+    first = ready(api, "cited-history.txt", b"original citation")
+    second = version(api, first)
+    listed_ids = {row["id"] for row in api.get("/v1/files").json()}
+    assert first["id"] not in listed_ids and second["id"] in listed_ids
+    looked_up = api.get("/v1/files", params=[("ids", first["id"]), ("ids", second["id"])]).json()
+    assert {row["id"] for row in looked_up} == {first["id"], second["id"]}
+    assert api.get(first["download_url"]).content == b"original citation"
+
+
 def test_restore_version_quota_and_copy_failure_roll_back(api, monkeypatch):
     first = ready(api)
     second = version(api, first)
@@ -111,13 +121,13 @@ def test_restore_version_quota_and_copy_failure_roll_back(api, monkeypatch):
     assert history(api, first)[0]["id"] == second["id"]
 
 
-def test_list_search_ids_and_projects_only_show_live_heads(api):
+def test_browsing_lists_heads_but_explicit_ids_preserve_version_identity(api):
     p = project(api)
     first = ready(api, "report.txt")
     second = version(api, first)
     api.patch(f"/v1/files/{first['id']}", json={"project_id": p["id"], "starred": True})
     assert listed(api) == listed(api, q="report") == listed(api, category="starred") == [second["id"]]
-    assert listed(api, ids=first["id"]) == []
+    assert listed(api, ids=first["id"]) == [first["id"]]
     assert api.get(f"/v1/projects/{p['id']}").json()["files"] == 1
     assert api.delete(f"/v1/files/{first['id']}").status_code == 204
     assert listed(api) == listed(api, q="report") == listed(api, ids=second["id"]) == []

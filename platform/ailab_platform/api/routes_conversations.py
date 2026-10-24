@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import select, update
+from sqlalchemy import func, or_, select, update
 from sqlalchemy.orm import Session
 
-from ..conversation_tree import path_ids, path_runs, require_idle, siblings_query
+from ..conversation_tree import path_ids, path_runs, require_idle
 from ..deps import current_user, get_db
 from ..library import move_lineage, owned_project
 from ..locks import user_critical_section
@@ -23,7 +23,7 @@ from ..schemas import (
     RunDetail,
 )
 from .routes_runs import start_run
-from .serializers import run_dict
+from .serializers import run_dict, run_dicts
 
 router = APIRouter(prefix="/v1/conversations", tags=["conversations"])
 
@@ -101,15 +101,30 @@ def get_conversation(
     turns = [rows[id_] for id_ in page_ids]
     leaf = db.get(Run, conv.active_run_id) if conv.active_run_id else None
     last_status = leaf.status if leaf else None
-    display_turns = []
-    for run in turns:
-        out = run_dict(db, run, detail=True)
-        siblings = list(db.scalars(siblings_query(conv.id, run.parent_run_id).limit(50)))
+    parents = {run.parent_run_id for run in turns}
+    siblings_by_parent = {}
+    if parents:
+        window = (
+            select(
+                Run.id,
+                Run.parent_run_id,
+                func.row_number().over(partition_by=Run.parent_run_id, order_by=(Run.created_at, Run.id)).label("position"),
+            )
+            .where(
+                Run.conversation_id == conv.id,
+                or_(Run.parent_run_id.in_(parents - {None}), Run.parent_run_id.is_(None) if None in parents else False),
+            )
+            .subquery()
+        )
+        for rid, parent, _ in db.execute(select(window).where(window.c.position <= 50).order_by(window.c.position)):
+            siblings_by_parent.setdefault(parent, []).append(rid)
+    display_turns = run_dicts(db, turns)
+    for run, out in zip(turns, display_turns, strict=True):
+        siblings = siblings_by_parent[run.parent_run_id]
         out["versions"] = {"index": siblings.index(run.id) + 1, "count": len(siblings), "ids": siblings}
         out["result"] = {
             key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
         }
-        display_turns.append(out)
     from .inbox import pending_query, queue_output
 
     return {
