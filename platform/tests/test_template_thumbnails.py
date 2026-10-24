@@ -73,10 +73,12 @@ def test_ready_stages_one_preview_with_retries_and_atomic_rollback(api, potx):
 def test_thumbnail_switches_url_and_etag_only_when_preview_ready(api):
     row = ready(api)
     fid = file_id(row)
+    assert row["preview_status"] == "pending"
     sketch = api.get(row["thumbnail_url"])
     assert sketch.status_code == 200 and "immutable" in sketch.headers["cache-control"]
     body = complete(api, fid)
     fresh = api.get(f"/v1/templates/{row['id']}").json()
+    assert fresh["preview_status"] == "ready"
     assert fresh["status"] == "ready" and fresh["thumbnail_url"] != row["thumbnail_url"]
     assert body["assets"]["template-thumbnail.jpg"]["sha256"] in fresh["thumbnail_url"]
     rendered = api.get(fresh["thumbnail_url"], headers={"If-None-Match": sketch.headers["etag"]})
@@ -98,6 +100,7 @@ def test_failed_preview_keeps_sketch_and_template_usable(api):
     complete(api, fid, failed=True)
     assert api.patch(f"/internal/files/{fid}", headers=SERVICE, json={"status": "ready"}).status_code == 200
     fresh = api.get(f"/v1/templates/{row['id']}").json()
+    assert fresh["preview_status"] == "failed"
     assert fresh["status"] == "ready" and fresh["reason"] is None
     assert fresh["thumbnail_url"] == row["thumbnail_url"]
     assert api.get(fresh["thumbnail_url"]).status_code == 200

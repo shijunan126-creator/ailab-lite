@@ -5,6 +5,7 @@ import { api, API_BASE, Brand, BrandAsset, BrandKind, errorMessage, Template, Te
 import { formatBytes } from "../../lib/format";
 import { IconImage, IconPencil, IconSheet, IconSlides, IconTrash, IconUpload } from "../icons";
 import { confirmDialog } from "../../lib/dialog";
+import { useTemplateUpdates } from "../../lib/use-template-updates";
 import { usePopover } from "../../lib/use-popover";
 
 const POLL_MS = 2000;
@@ -244,21 +245,10 @@ function CompanyTemplates() {
     return () => c.abort();
   }, []);
 
-  const pendingKey = (list || []).filter((t) => t.status === "pending").map((t) => t.id).join(",");
-  useEffect(() => {
-    if (!pendingKey) return;
-    let stale = false;
-    const timer = setTimeout(async () => {
-      const fresh = await Promise.all(pendingKey.split(",").map((id) => api<Template>(`/v1/templates/${id}`).catch(() => null)));
-      if (stale) return;
-      const byId = new Map(fresh.filter((t): t is Template => !!t).map((t) => [t.id, t]));
-      setList((l) => (l ? l.map((t) => byId.get(t.id) || t) : l));
-    }, POLL_MS);
-    return () => {
-      stale = true;
-      clearTimeout(timer);
-    };
-  }, [pendingKey, list]);
+  useTemplateUpdates(list || [], (fresh) => {
+    const byId = new Map(fresh.map((t) => [t.id, t]));
+    setList((l) => l && l.map((t) => byId.get(t.id) || t));
+  });
 
   async function upload(files: FileList) {
     setUploading(true);

@@ -37,6 +37,7 @@ class TemplateOut(UTCModel):
     status: Literal["pending", "ready", "rejected", "failed"]
     reason: str | None
     thumbnail_url: str | None
+    preview_status: Literal["pending", "ready", "failed", "unsupported"]
     layouts: int | None
     slides: int | None
     size: int
@@ -86,6 +87,7 @@ def output(db, row, user, file=None):
         "name": row.name,
         "status": status,
         "reason": reason,
+        "preview_status": (meta.get("preview") or {}).get("status", "unsupported"),
         "thumbnail_url": thumbnail_url if status == "ready" and (rendered or meta.get("thumb_key")) else None,
         "layouts": len(analysis["layouts"]) if "layouts" in analysis else None,
         "slides": analysis.get("slides"),

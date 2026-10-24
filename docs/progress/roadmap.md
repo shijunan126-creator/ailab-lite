@@ -53,3 +53,8 @@
 
 
 PPT缩略图最新授权改为sandbox预览流水线，撤回平台镜像/Worker Office渲染；ready同事务登记一次preview outbox，首屏派生480px JPEG切换URL，失败保留草图与模板可用性。父任务下一步集成并在真实sandbox环境验收；不需要为此给平台镜像安装Office。当前双库结果和边界见[本轮记录](updates/2026-10-24-ppt-template-thumbnail-rendering.md)。
+
+
+## 2026-10-24 模板缩略图UI修复与合并授权
+
+用户授权主Agent修复公司/个人模板真实缩略图自动更新，完成验证后提PR并合并至main；包括此前已验收但未合main的模板集成。独立preview_status、有界可取消轮询及两条UI路径的成功/失败回归已本地通过；未授权再次部署。结果与边界见[本轮记录](updates/2026-10-24-template-preview-refresh.md)。

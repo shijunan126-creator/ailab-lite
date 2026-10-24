@@ -3,11 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { api, API_BASE, errorMessage, FileItem, Template, TemplateList, TemplateRef } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
+import { useTemplateUpdates } from "../../lib/use-template-updates";
 import { usePopover } from "../../lib/use-popover";
 import { IconCheck, IconChevronDown, IconLibrary, IconSlides, IconTemplate, IconUpload, IconX } from "../icons";
 import LibraryPicker from "../library/library-picker";
-
-const POLL_MS = 1500;
 
 /** The template a message follows: a saved one, or a library PPT for this message only. */
 export type TemplateChoice = { ref: TemplateRef; name: string; pending: boolean };
@@ -51,34 +50,23 @@ export default function TemplatePicker({
     return () => c.abort();
   }, [open]);
 
-  // a template still being checked: follow it until it can be used (or can't)
-  const pendingIds = [...(list?.personal || []), ...(list?.company || [])].filter((t) => t.status === "pending").map((t) => t.id);
-  if (value?.pending && "id" in value.ref && !pendingIds.includes(value.ref.id)) pendingIds.push(value.ref.id);
-  const pendingKey = pendingIds.join(",");
-  useEffect(() => {
-    if (!pendingKey) return;
-    let stale = false;
-    const timer = setTimeout(async () => {
-      const fresh = await Promise.all(pendingKey.split(",").map((id) => api<Template>(`/v1/templates/${id}`).catch(() => null)));
-      if (stale) return;
-      const byId = new Map(fresh.filter((t): t is Template => !!t).map((t) => [t.id, t]));
-      setList((l) => (l ? { company: l.company.map((t) => byId.get(t.id) || t), personal: l.personal.map((t) => byId.get(t.id) || t) } : l));
-      const chosen = latest.current;
-      const now = chosen && "id" in chosen.ref ? byId.get(chosen.ref.id) : undefined;
-      if (chosen?.pending && now && now.status !== "pending") {
-        if (now.status === "ready") onChange({ ...chosen, pending: false });
-        else {
-          onChange(null);
-          setError(now.reason || "这份模板无法使用");
-        }
+  const watched = [...(list?.personal || []), ...(list?.company || [])].filter(
+    (t) => open || (value?.pending && "id" in value.ref && value.ref.id === t.id),
+  );
+  const selectedPendingId = value?.pending && "id" in value.ref ? value.ref.id : null;
+  useTemplateUpdates(watched, (fresh) => {
+    const byId = new Map(fresh.map((t) => [t.id, t]));
+    setList((l) => (l ? { company: l.company.map((t) => byId.get(t.id) || t), personal: l.personal.map((t) => byId.get(t.id) || t) } : l));
+    const chosen = latest.current;
+    const now = chosen && "id" in chosen.ref ? byId.get(chosen.ref.id) : undefined;
+    if (chosen?.pending && now && now.status !== "pending") {
+      if (now.status === "ready") onChange({ ...chosen, pending: false });
+      else {
+        onChange(null);
+        setError(now.reason || "这份模板无法使用");
       }
-    }, POLL_MS);
-    return () => {
-      stale = true;
-      clearTimeout(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingKey, list]);
+    }
+  }, selectedPendingId);
 
   function choose(t: Template) {
     if (t.status !== "ready" && t.status !== "pending") return;

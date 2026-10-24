@@ -1,5 +1,9 @@
 # 当前工作
 
+## 模板缩略图生命周期修复（2026-10-24，已本地验证，待PR合并）
+
+用户授权修复、提PR并在检查通过后合并；未授权再次部署。分支 `fix/template-preview-refresh`，base `origin/main@6b6825d`，起点 `23c720b`；包含此前已部署但未合main的PPT模板集成。API新增独立 `preview_status`，公司管理/个人菜单跟踪pending预览至终态；菜单关闭时仅保留所选pending模板的可用性检查。请求可取消、有15秒超时、轮询五分钟截止并退避至5秒。Ruff、SQLite1123通过/118跳过、Portal33通过/build、模板专项五服务浏览器5通过。等待PR检查后合并；未重部署。验证记录见[本轮记录](updates/2026-10-24-template-preview-refresh.md)。三份`.DS_Store`保留。
+
 ## PPT 模板集成测试与干净部署（2026-10-24，已部署；Portal自动切图待修复）
 
 - 当前分支 `feat/ppt-templates-portal`，测试提交`e905790`及后续文档提交；部署固定 `b2c8394047279c634802a8ef9591d8bf275fac56`，本地main merge-base`6b6825d`。未fetch/推送/PR/merge，未修改Portal，三份`.DS_Store`原样保留。下文旧后端分支/未授权部署状态为历史，本轮用户新授权允许保全配置后清空旧测试部署。

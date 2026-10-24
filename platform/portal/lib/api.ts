@@ -186,6 +186,7 @@ export type Template = {
   name: string;
   status: "pending" | "ready" | "rejected" | "failed";
   reason: string | null;
+  preview_status: "pending" | "ready" | "failed" | "unsupported";
   thumbnail_url: string | null; // without the /api prefix
   layouts: number | null;
   slides: number | null;

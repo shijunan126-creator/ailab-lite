@@ -476,3 +476,8 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - ready表示模板已扫描/分析、可用于Run，不代表sandbox首屏预览已完成。UI只轮询pending会停在草图；真实图已经改变URL/ETag也无法更新旧组件状态。公司管理列表和个人模板菜单均已实测复现。不能在后端延迟ready/放宽Worker限制来掩盖问题，应跟踪独立preview生命周期，见[部署缺陷复现](docs/progress/updates/2026-10-24-ppt-templates-clean-acceptance.md#已确认的-portal-缺陷真实缩略图不自动替换草图)。
 - 文件系统校验成功仅证明结构可挂载，不证明运行时镜像文件内容完整。存储中断后须逐文件hash与实际执行验证；镜像标签、架构一致或pull成功都不足以证明内容未损坏。个人部署的恢复/清理命令只写仓库外交接。
+
+## 2026-10-24 模板预览UI跟踪
+
+- 模板API的 `preview_status` 独立于模板 `status`；ready模板可立即选择，preview pending继续跟踪至终态，不通过thumbnail_url格式猜测状态。关闭个人菜单仅保留所选pending模板的可用性检查。轮询取消/超时/截止与失败保留草图见[修复记录](docs/progress/updates/2026-10-24-template-preview-refresh.md)。
+- E2E的health探针不能证明进程归属：SSH转发也可能占用测试端口并返回healthy。启动前核对API/Broker/Agent/Worker/Portal全部端口空闲，不能只检查Redis。首次28080/23000占用导致登录401，改用38180–38183/33100；勿终止已有SSH转发。
