@@ -522,6 +522,8 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
 .skill-file { margin-top: 4px; word-break: break-all; }
 .skill-row .link.danger-text { font-size: 13px; }
 .market-action { flex: none; white-space: nowrap; min-width: 96px; }
+.skill-row.market-row { align-items: flex-start; }
+.market-row .market-action { margin-top: 1px; }
 .skill-file-chip { display: inline-block; margin-top: 4px; color: var(--accent); background: var(--accent-soft); border-color: transparent; }
 .skill-editor-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .skill-editor-actions .link { font-size: 13px; }

@@ -70,7 +70,7 @@ export default function MarketPanel({
         <div key={category}>
           <div className="section-title" style={{ margin: "18px 16px 6px", fontSize: 15 }}>{category}</div>
           {list.map((item) => (
-            <div key={item.slug} className="skill-row">
+            <div key={item.slug} className="skill-row market-row">
               <span className="skill-icon">
                 <IconSparkles size={20} />
               </span>
@@ -93,7 +93,7 @@ export default function MarketPanel({
                 onClick={() => install(item)}
               >
                 <IconDownload size={14} />{" "}
-                {item.builtin ? "已内置" : item.installed ? "已下载" : busy === item.slug ? "下载中…" : "下载"}
+                {item.builtin || item.installed ? "已下载" : busy === item.slug ? "下载中…" : "下载"}
               </button>
             </div>
           ))}
