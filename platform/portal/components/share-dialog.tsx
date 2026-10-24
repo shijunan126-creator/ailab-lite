@@ -83,9 +83,11 @@ export default function ShareDialog({ target, title, onClose }: { target: Target
 
   useEffect(() => {
     const c = new AbortController();
-    api<Share | null>(`/v1/shares/for?${query(target)}`, { signal: c.signal })
-      .then((s) => {
+    // the newest live share of this thing; the dialog keeps working on that one
+    api<Share[]>(`/v1/shares/for?${query(target)}&limit=1`, { signal: c.signal })
+      .then((rows) => {
         if (c.signal.aborted) return;
+        const s = rows[0] || null;
         setShare(s || null);
         if (s) {
           setAudience(s.audience);

@@ -1,4 +1,4 @@
-"""The merged 0022/0023/0024 chain is linear and round-trips existing history."""
+"""The merged 0022 to 0027 chain is linear and round-trips existing history."""
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -13,8 +13,9 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0026"]
-    assert [scripts.get_revision(rev).down_revision for rev in ("0022", "0023", "0024", "0025", "0026")] == ["0021", "0022", "0023", "0024", "0025"]
+    assert scripts.get_heads() == ["0027"]
+    revisions = ("0022", "0023", "0024", "0025", "0026", "0027")
+    assert [scripts.get_revision(rev).down_revision for rev in revisions] == ["0021", "0022", "0023", "0024", "0025", "0026"]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
             conn.execute(text("PRAGMA foreign_keys=ON"))
@@ -28,19 +29,21 @@ def test_integrated_feature_chain_up_down_reup(engine):
             )
         )
         conn.execute(text("UPDATE runs SET conversation_id='c1',summary='保留回答' WHERE id='r1'"))
-    for revision in ("0022", "0023", "0024", "0025"):
+    for revision in ("0022", "0023", "0024", "0025", "0026", "0027"):
         _upgrade_to(engine, revision)
         assert _version(engine) == revision
-    for revision in ("0024", "0023", "0022", "0021"):
+    for revision in ("0026", "0025", "0024", "0023", "0022", "0021"):
         _downgrade_to(engine, revision)
         assert _version(engine) == revision
     assert "scheduled_tasks" not in inspect(engine).get_table_names()
-    for revision in ("0022", "0023", "0024", "0025"):
+    for revision in ("0022", "0023", "0024", "0025", "0026", "0027"):
         _upgrade_to(engine, revision)
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT conversation_id,summary,parent_run_id FROM runs WHERE id='r1'")).one() == ("c1", "保留回答", None)
         assert conn.execute(text("SELECT active_run_id FROM conversations WHERE id='c1'")).scalar() == "r1"
+        _upgrade_to(engine, "head")
+    with engine.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
         if engine.dialect.name == "sqlite":
             assert conn.execute(text("PRAGMA foreign_key_check")).all() == []

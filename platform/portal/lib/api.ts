@@ -137,8 +137,8 @@ export type Share = {
   updated_at: string;
 };
 
-export type ShareFile = Pick<FileItem, "id" | "filename" | "content_type" | "size" | "version" | "thumbnail_url" | "preview"> & {
-  download_url: string;
+export type ShareFile = Pick<FileItem, "id" | "filename" | "content_type" | "size" | "thumbnail_url"> & {
+  download_url: string; // /api/v1/shares/<id>/files/<file>/content: reachable only through the share
 };
 
 export type ShareView = {

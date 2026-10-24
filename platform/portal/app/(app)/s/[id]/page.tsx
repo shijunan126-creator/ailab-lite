@@ -11,7 +11,8 @@ import FileViewer, { FileSource, FileSourceContext } from "../../../../component
 
 /** A shared file in the shape the viewer reads; it is always a finished file. */
 function asFile(f: ShareFile): FileItem {
-  return { ...f, status: "ready", meta: {}, created_at: "", versions: 1 };
+  const local = (url?: string | null) => (url ? url.replace(/^\/api(?=\/)/, "") : url);
+  return { ...f, download_url: local(f.download_url) || "", thumbnail_url: f.content_type.startsWith("image/") ? local(f.thumbnail_url) : null, status: "ready", meta: {}, created_at: "", version: 1, versions: 1 };
 }
 
 function FileCard({ file, onOpen }: { file: ShareFile; onOpen: () => void }) {
@@ -23,7 +24,7 @@ function FileCard({ file, onOpen }: { file: ShareFile; onOpen: () => void }) {
         <div className="meta">{formatBytes(file.size)}</div>
       </div>
       <button className="secondary sm" onClick={onOpen}>预览</button>
-      <a className="btn secondary sm" href={downloadUrl(file.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${file.filename}`}>
+      <a className="btn secondary sm" href={downloadUrl(asFile(file).download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${file.filename}`}>
         <IconDownload size={15} /> <span className="dl-label">下载</span>
       </a>
     </div>

@@ -162,3 +162,11 @@ B `feat/inbox-queue` 保留 §3/§4 的公开字段与状态名，仅明确以�
 - 后续轮次的 legacy history 与分页 `model-context` 都包含 `steers: [prompt]`（仅非空时），放在该轮原 prompt 后。分页仍最多100轮，增加256k字符软预算，单个大轮次仍完整返回以保证推进。
 
 无新增依赖、Portal 修改或部署。迁移在 B 独立分支仍为 `0026 ← 0024`，集成方改为 `0026 ← 0025`，并同步迁移链测试。
+
+
+## C 分支对契约的修改
+
+- 摘要失败后允许最多两次后续重试。首个模型调用仍为 `summary:<file_id>`；后续显式失败重试使用 `summary:<file_id>:retry:1|2`，同一调用身份绝不重放。原因：既有用量账本不可变；对已派发但响应丢失的请求复用同一 call_id 无法同时保证去重、准确计费和可重试。重投成功作业不产生额外模型调用；失败作业保留 failed 状态等待后续投递，最多3次模型调用，分别冻结定价。
+- 文件分享 `view` 额外返回 `file: ShareFile`（会话分享无此字段），以便只读页取得分享授权的内容/预览地址。`ShareFile={id,file_id,filename,content_type,size,content_url,download_url,preview_url,thumbnail_url}`，URL 均为 `/api/v1/shares/...` 相对代理路径，无签名地址。
+- `GET /v1/shares/for` 返回最多50项数组（最新优先；可传 cursor/limit，续页在 X-Next-Cursor 响应头）；其他分享列表仍用 `{items,next_cursor}`。`view` 的 cursor 为上一页最后一轮id，按快照路径从旧到新每页20轮。用户查找按 username/display_name 大小写敏感前缀匹配。
+- `read_library_file` 新增可选输入 `pages: [1,2,...]`（最多20页）；已有输出 `pages:[{page,offset}]` 和 Unicode offset 分页保持兼容。选页后的 offset 基于所选文本。

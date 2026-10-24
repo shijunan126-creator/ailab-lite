@@ -585,6 +585,7 @@ def test_inbox_queue_upgrade_downgrade_upgrade(engine):
     assert "notifications" not in inspect(engine).get_table_names()
     assert "queue_paused" not in {c["name"] for c in inspect(engine).get_columns("conversations")}
     _upgrade_to(engine, "0026")
+    _upgrade_to(engine, "head")  # the ORM includes later revisions: compare at the integrated head
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

@@ -6,6 +6,8 @@
 
 - 分支 `feat/workspace-features`，基线 `main@74e66c0`。契约与分工见[设计](../reviews/2026-10-24-workspace-features-design.md)。
 - 后端 A：`feat/projects-brand`（base `00c5cc9`）实现与独立双库验证见[记录](updates/2026-10-24-projects-brand-backend.md)；待父任务审核合入、迁移链/Portal/镜像集成。
+
+- C 后端 `feat/shares-library`（起点00c5cc9/base74e66c0）已本地提交分享/摘要/OCR选页并通过双库；通知仍no-op、0027待接0026，父Agent下一步集成；[交付与测试](updates/2026-10-24-shares-library-backend.md)。
 - 下一步：三个后端分支完成后由主 Agent 审核合入、改迁移链；Portal 同步实现；Codex 统一跑双库全套、E2E 与有限真实模型验收；PR → CI → merge。
 
 - B后端 `feat/inbox-queue`（起点00c5cc9）：9992308通知/队列/steer双库验证通过（SQLite1057、PG+Redis1138），见[B记录](updates/2026-10-24-inbox-queue-backend.md)；待父任务审核合入、0026改接0025及统一Portal/E2E验收。

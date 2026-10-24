@@ -907,6 +907,9 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         activate_asset(db, file)
     if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
         request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
+    from .routes_library_summary import request_summary
+
+    request_summary(db, file)
     db.commit()
     db.refresh(file)
     return file_dict(file)

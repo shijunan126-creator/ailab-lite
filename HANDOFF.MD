@@ -427,3 +427,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - Agent真实历史来自分页model-context，不只legacy internal GET；两处都要补steers，history_messages在原prompt后按注入顺序插入。额外状态轮询会改变取消时序/把瞬态故障变终态；复用原状态心跳字段，不加每步HTTP请求。
 - 分叉需复制已确认steer历史并重映射事件queued_id（待处理queue不复制）；新增queue会话外键要求GC先按批清queue，不能直接删除会话。
 - 终态派发用savepoint区分预期准入失败（暂停并保留队列）与基础设施失败（整个终态事务回滚）。会话通过项目删除也必须取消queue。0026在B临时接0024，父任务改链并同步集成head断言；见[B记录](docs/progress/updates/2026-10-24-inbox-queue-backend.md)。
+
+## 2026-10-24 C 分支：内部分享 / 资料库摘要
+
+- 分享的 file/conversation 外键使用 ON DELETE SET NULL；否则软删除后的永久清理会被分享记录挡住。授权必须同时检查对象存活、所有者活跃、受众和固定 through_run_id 路径；不能用当前活动路径替代快照，不能把输入附件当产物授权。
+- 分享复用文件流/ETag接口后须覆盖 immutable 缓存为 private/no-store；分享 DTO 的文件地址走 `/api/v1/shares/...`，不能复用所有者 download_url 或对象存储签名URL。
+- 摘要须扩展完整 JobEnvelope→claim→Worker→API→业务结果→ACK 链路，并和 READY/OCR完成同事务 stage_job；明显无文本的文件直接 skipped，避免每个图片都产生空作业。OCR晚到只重新排队一次。
+- 不可变账本里的已结算 call_id 不能重新用于一次新推理。首次 `summary:<file_id>`；明确失败重试使用独立后缀（最多3次总调用），不得通过删除旧账本实现重试。通知接缝 `api/share_notifications.py` 当前 no-op，父 Agent 接 B helper。
+- Worker 派发标志不能写回原队列消息的 payload；内存队列会把同一对象重投，extra=forbid 的 JobEnvelope 将拒绝被污染的消息。
+- read_library_file 输入 pages=[2] 与输出 pages=[{page,offset}] 不同；扫描PDF OCR必须保持原物理页码。两页测试客户端也必须提供两页预览，否则 page_limit 是预览样本不完整，并非OCR丢页。验证与未验边界见[本轮记录](docs/progress/updates/2026-10-24-shares-library-backend.md)。

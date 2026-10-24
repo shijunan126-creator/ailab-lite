@@ -371,11 +371,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   async function resumeQueue() {
     if (!id) return;
     try {
-      const run = await api<Run>(`/v1/conversations/${id}/queue/resume`, { method: "POST" });
+      await api<QueuedMessage>(`/v1/conversations/${id}/queue/resume`, { method: "POST" });
       const d = await loadDetail();
-      const started = d?.turns.find((t) => t.id === run.id) || run;
-      stick.current = true;
-      follow(started);
+      const started = d?.turns[d.turns.length - 1];
+      if (started && !isTerminal(started.status)) {
+        stick.current = true;
+        follow(started);
+      }
     } catch (err) {
       setError(errorMessage(err));
       loadDetail();

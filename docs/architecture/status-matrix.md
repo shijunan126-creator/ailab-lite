@@ -151,3 +151,8 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 ### 工作区后端 A（2026-10-24，独立分支）
 
 `feat/projects-brand` 已实现项目说明/定时项目上下文、扫描品牌套件与冻结注入、会话产物 lineage 同事务移动；尚未集成 Portal 或重建/部署 sbx-office。验证、资源成本和旧资产回收缺口见[后端 A 记录](../progress/updates/2026-10-24-projects-brand-backend.md)。不改变上表其他能力的验收状态。
+
+
+## 2026-10-24 C 后端分支补充（待集成）
+
+`feat/shares-library` 实现内部只读快照分享、资料库持久摘要与OCR选页，双库本地验证通过；通知helper仍为no-op，0027暂接0024，尚未Portal/父分支集成或合入main。接口、证据与边界见[后端交付](../progress/updates/2026-10-24-shares-library-backend.md)。

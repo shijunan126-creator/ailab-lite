@@ -16,8 +16,10 @@ const HEX = /^#[0-9a-fA-F]{6}$/;
 /** What the template brings, read from the file itself: its colours, fonts and layouts. */
 function Analysis({ asset }: { asset: BrandAsset }) {
   const a = asset.analysis || {};
-  const colors: string[] = (a.theme_colors || a.colors || []).filter((c: unknown) => typeof c === "string" && HEX.test(c as string)).slice(0, 8);
-  const fonts: string[] = [a.fonts?.major, a.fonts?.minor, ...(Array.isArray(a.fonts) ? a.fonts : [])].filter((f) => typeof f === "string" && f).slice(0, 2);
+  const theme = Array.isArray(a.themes) ? a.themes[0] || {} : {};
+  // theme colours come as bare hex ("1F4E79") keyed by role (dk1, accent1, …)
+  const colors: string[] = [...new Set(Object.values(theme.colors || {}).map((c) => `#${String(c)}`.toUpperCase()))].filter((c) => HEX.test(c)).slice(0, 8);
+  const fonts: string[] = [theme.fonts?.majorFont, theme.fonts?.minorFont].filter((f) => typeof f === "string" && f);
   const layouts: number | null = Array.isArray(a.layouts) ? a.layouts.length : null;
   const styles: number | null = Array.isArray(a.styles) ? a.styles.length : null;
   return (
