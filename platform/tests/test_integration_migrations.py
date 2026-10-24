@@ -1,4 +1,4 @@
-"""The merged 0022 to 0028 chain is linear and round-trips existing history."""
+"""The merged 0022 to 0029 chain is linear and round-trips existing history."""
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -13,9 +13,18 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0028"]
-    revisions = ("0022", "0023", "0024", "0025", "0026", "0027", "0028")
-    assert [scripts.get_revision(rev).down_revision for rev in revisions] == ["0021", "0022", "0023", "0024", "0025", "0026", "0027"]
+    assert scripts.get_heads() == ["0029"]
+    revisions = ("0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029")
+    assert [scripts.get_revision(rev).down_revision for rev in revisions] == [
+        "0021",
+        "0022",
+        "0023",
+        "0024",
+        "0025",
+        "0026",
+        "0027",
+        "0028",
+    ]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
             conn.execute(text("PRAGMA foreign_keys=ON"))
@@ -29,14 +38,14 @@ def test_integrated_feature_chain_up_down_reup(engine):
             )
         )
         conn.execute(text("UPDATE runs SET conversation_id='c1',summary='保留回答' WHERE id='r1'"))
-    for revision in ("0022", "0023", "0024", "0025", "0026", "0027", "0028"):
+    for revision in ("0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029"):
         _upgrade_to(engine, revision)
         assert _version(engine) == revision
-    for revision in ("0027", "0026", "0025", "0024", "0023", "0022", "0021"):
+    for revision in ("0028", "0027", "0026", "0025", "0024", "0023", "0022", "0021"):
         _downgrade_to(engine, revision)
         assert _version(engine) == revision
     assert "scheduled_tasks" not in inspect(engine).get_table_names()
-    for revision in ("0022", "0023", "0024", "0025", "0026", "0027", "0028"):
+    for revision in ("0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029"):
         _upgrade_to(engine, revision)
     _upgrade_to(engine, "head")
     with engine.connect() as conn:

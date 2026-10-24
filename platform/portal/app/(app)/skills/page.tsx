@@ -6,6 +6,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import MarketPanel from "../../../components/skills/market";
+import MarketSubmit from "../../../components/skills/market-submit";
+import MarketSubmissions from "../../../components/skills/market-submissions";
 import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
@@ -55,6 +57,7 @@ function SkillRow({
   onToggle,
   onOpen,
   onDelete,
+  onSubmit,
 }: {
   s: Skill;
   busy: boolean;
@@ -62,6 +65,7 @@ function SkillRow({
   onToggle: (on: boolean) => void;
   onOpen: () => void;
   onDelete?: () => void;
+  onSubmit?: () => void;
 }) {
   const Icon = ICONS[s.name] || IconSparkles;
   const action = s.scope === "personal" && s.kind === "zip" ? "更新" : s.scope === "personal" && s.kind === "md" ? "编辑" : "查看";
@@ -88,6 +92,11 @@ function SkillRow({
         <button className="link" onClick={onOpen} disabled={locked} aria-label={`${action} ${s.title}`}>
           {action}
         </button>
+        {onSubmit ? (
+          <button className="link" onClick={onSubmit} title="申请上架到技能市场">
+            申请上架
+          </button>
+        ) : null}
         {onDelete ? (
           <button className="link danger-text" onClick={onDelete} title="删除这个技能">
             删除
@@ -106,6 +115,8 @@ export default function SkillsPage() {
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
   const [tab, setTab] = useState<"mine" | "market">("mine");
+  const [submitting, setSubmitting] = useState<Skill | null>(null);
+  const [submissionRefresh, setSubmissionRefresh] = useState(0);
   const [editing, setEditing] = useState<EditorTarget | null>(null);
   const [scanning, setScanning] = useState<ReadonlySet<string>>(new Set()); // new versions not yet scanned
   const scans = useRef<AbortController | null>(null);
@@ -306,11 +317,23 @@ export default function SkillsPage() {
             onToggle={(on) => toggle(s, on)}
             onOpen={() => setEditing({ mode: "open", skill: s })}
             onDelete={() => remove(s)}
+            onSubmit={() => setSubmitting(s)}
           />
         ))}
       </section>
+      <MarketSubmissions refreshKey={submissionRefresh} />
       </>
       )}
+      {submitting ? (
+        <MarketSubmit
+          skill={submitting}
+          onClose={() => setSubmitting(null)}
+          onSubmitted={() => {
+            setSubmitting(null);
+            setSubmissionRefresh((n) => n + 1);
+          }}
+        />
+      ) : null}
       {editing ? (
         <SkillEditor
           target={editing}
