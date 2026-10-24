@@ -272,6 +272,9 @@ class Settings(BaseSettings):
     job_deadline_seconds: int = Field(default=86400, ge=60)
     run_max_attempts: int = Field(default=3, gt=0)  # deliveries before a run is failed as a poison message
     file_max_attempts: int = Field(default=3, gt=0)
+    schedules_enabled: bool = True
+    schedules_interval_seconds: float = Field(default=30, gt=0, le=3600)
+    schedules_deadline_seconds: float = Field(default=20, gt=0, le=300)
     reaper_interval_seconds: int = Field(default=60, gt=0)
     reaper_grace_seconds: int = Field(default=120, ge=0)  # don't touch work younger than this
 

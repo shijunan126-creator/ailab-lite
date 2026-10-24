@@ -213,7 +213,9 @@ async def recognize(db, file, spec):
             )
         if sum(len(text) for text in results.values()) > 200_000:
             raise ValueError("text_limit")
-    text = results[0] if pdf is None else "\n\n".join(f"第 {page + 1} 页\n{results[page]}" for page in sorted(results))
+    text = "\f[page:1]\n" + results[0] if pdf is None else "\n".join(f"\f[page:{page + 1}]\n{results[page]}" for page in sorted(results))
+    if len(text) > 200_000:
+        raise ValueError("text_limit")
     if not text.strip():
         raise ValueError("empty_ocr_text")
     return text

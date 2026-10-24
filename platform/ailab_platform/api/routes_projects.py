@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from ..deps import current_user, get_db
 from ..library import live_file_predicates, owned_project, trash_lineages
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, Project, Run, RunStatus, User, utcnow
+from ..models import Conversation, FileObject, Project, Run, RunStatus, ScheduledTask, User, utcnow
 from ..naming import name_key
 from ..run_state import transition_run
 from ..schemas import ProjectIn, ProjectOut
@@ -112,6 +112,7 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
             for head in db.scalars(select(FileObject).where(FileObject.lineage_id.in_(lineages), FileObject.is_head == 1)):
                 head.meta = {**(head.meta or {}), "trashed_project_name": project.name}
             trash_lineages(db, user.id, lineages, project_id=project.id)
+        db.execute(update(ScheduledTask).where(ScheduledTask.project_id == project.id).values(project_id=None, enabled=False))
         db.delete(project)
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

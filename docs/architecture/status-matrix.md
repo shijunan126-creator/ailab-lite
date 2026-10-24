@@ -124,3 +124,7 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 后端分支 `feat/chat-backend-fork-retry` 基于 `94d3e22`：0022迁移、首问并发标题与思考流兼容、网页来源事件、事务分叉/重试、Run归属资料库工具、平台管理员上下文阈值已实现。本地后端双库验证通过（SQLite全套985/108跳过、PG+Redis1061/33跳过，最终回归各11通过），存储成本与测试基线见[后端交付记录](../progress/updates/2026-10-24-chat-fork-retry-backend.md)；Portal由父Agent独立实现，本轮不代表前后端集成、部署或main合入。
 
 前端集成：`feat/ui-polish-fork-retry` 已合入上述后端并实现 Portal 侧思考大纲、正文流式分离、来源/引用、复制/重试/分叉、首问标题实时更新、管理员上下文阈值；本地 Portal/SQLite/五服务 E2E 结果见[前端/集成记录](../progress/updates/2026-10-24-ui-polish-fork-retry.md)。未部署、未合入 main，真机键盘与真实模型未验。
+
+## 2026-10-24 定时任务与页码引用后端增量
+
+`feat/schedules-citations` 本地后端已实现：每用户五条任务/用户锁、next_run_at CAS和Run/outbox原子提交、DST与失败收敛、项目删除停用、Worker缓存页标记、工具页码及Chat/Work项目索引/引用规则。双库全套与最终增量通过；未集成Portal/会话树、未部署、未合入main。0024当前接0022，合入sibling0023后必须重接；详细数字、成本、未验边界见[交付记录](../progress/updates/2026-10-24-schedules-citations.md)。

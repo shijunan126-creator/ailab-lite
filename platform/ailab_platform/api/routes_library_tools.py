@@ -1,6 +1,7 @@
 """Run-bound library discovery and Worker-text reads; never parse user files here."""
 
 import codecs
+import re
 from datetime import UTC
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -90,6 +91,9 @@ def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
     _, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
     keys = list(filter(None, [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]))
+    pages = []
+    current_page = None
+    marker_tail = ""
     if not keys:
         text = str(meta.get("excerpt") or "")
         keep = text[body.offset : body.offset + 30001]
@@ -108,6 +112,16 @@ def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
                     yield decoder.decode(b"", final=True)
 
                 for text in decoded():
+                    # Track explicit Worker markers while streaming skipped characters, without buffering the file.
+                    combined = marker_tail + text
+                    base = position - len(marker_tail)
+                    for match in re.finditer(r"\f\[page:(\d+)\]\n", combined):
+                        boundary = base + match.end()
+                        if boundary <= body.offset:
+                            current_page = int(match[1])
+                        elif boundary <= body.offset + 30000:
+                            pages.append({"page": int(match[1]), "offset": boundary - body.offset})
+                    marker_tail = combined[-40:]
                     start = max(0, body.offset - position)
                     keep += text[start : start + max(0, 30001 - len(keep))]
                     position += len(text)
@@ -115,11 +129,15 @@ def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
                         break
             if len(keep) >= 30001:
                 break
+    if current_page is not None:
+        pages.insert(0, {"page": current_page, "offset": 0})
+    pages = [dict(pair) for pair in dict.fromkeys(tuple(item.items()) for item in pages)]
     truncated = len(keep) > 30000
     return {
         "file_id": file.id,
         "filename": file.filename,
         "text": keep[:30000],
+        "pages": pages,
         "truncated": truncated,
         "next_offset": body.offset + 30000 if truncated else None,
     }

@@ -361,3 +361,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 依赖 localStorage 的初始布局（侧栏收起）要在首帧前应用：根布局内联脚本写 `html[data-sidebar]`，`.shell.settling` 期间禁止过渡；否则刷新后侧栏先出现再淡出，E2E `is_visible` 也会抓到中间态。
 - iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
 - 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
+
+## 2026-10-24 定时任务 / 资料库页码引用
+
+- 定时执行不能直接 enqueue 或调用会自行 commit 的 start_run：用户锁内 CAS next_run_at，并用 start_run(locked=True, commit=False)，claim/新会话/Run/outbox 同事务。只将可预期业务错误回滚至 savepoint 并记录失败；基础设施异常让整个事务回滚。项目删除清空 project_id 且停用任务，避免下一轮在错误上下文静默执行。
+- zoneinfo 给不存在的墙钟时间也会构造 datetime；须 UTC roundtrip 检查，秋季重复时间固定 fold=0。每周恰逢缺失时间可能要等14天，不能只扫描未来7天。PG可能返回宿主时区 aware datetime，不能用 replace(tzinfo=UTC) 做转换；只给SQLite naive补UTC，aware用 astimezone。
+- Worker显式页标记必须包含第一页，旧无标记缓存不能默认为第一页；DOCX段落/Excel sheet不能冒充渲染页。内部 bootstrap 返回的新字段还必须加入 InternalRunDetail，否则 FastAPI 会静默过滤，handler单测无法发现。
+- 此子任务0024临时接0022（没有0023 stub）；父Agent合入会话树0023后必须reparent为0023并做双库迁移回归。接口、测试、成本和未验边界见 [后端记录](docs/progress/updates/2026-10-24-schedules-citations.md)。
