@@ -143,3 +143,10 @@
 - 资料库设置：`GET/PATCH /v1/admin/settings/library` → `{summaries: bool}`。
 - 品牌：资产上传 multipart 字段名 `file`；资产 DTO 的 `thumbnail_url` 为 API 相对路径（无则 null）；`analysis` 键：`theme_colors: ["#RRGGBB"]`、`fonts: {major, minor}`、`layouts: [str]`（pptx）、`styles: [str]`（docx）、失败时 `error: str`。
 - 移入项目：`PATCH /v1/conversations/{id}` 带 `move_files`；`ConversationOut.active_run_id` 已有，Portal 用于分享“更新到最新”。
+
+## A 分支对契约的修改
+
+- **SVG 暂拒绝**：logo 上传只接受 PNG/JPEG（≤ 2 MiB），Worker 校验真实格式并归一化为 PNG。当前 Worker 依赖没有 SVG 栅格化器；Pillow 不解码 SVG。为不增加原生渲染依赖及其内存/攻击面，本轮返回 422，不把 SVG 原文注入沙箱。
+- **旧资产物理留存**：READY 切换和 DELETE 立即移除旧资产的有效设置指针，后续运行使用新设置；旧不可变文件暂留，供已冻结 `runtime_meta.brand` 的运行续跑。立刻物理删除会破坏冻结/续跑契约；现有文件 GC 不跟踪这种跨用户品牌引用，本轮不新增无索引的全历史 Run JSON 扫描。旧版本/被覆盖的候选资产暂不自动回收，管理员反复替换会增加平台磁盘占用；父任务需明确后续引用生命周期/回收策略，不能当作已有 GC 验收。
+- **有界资产**：每个 PPTX/DOCX 模板 ≤ 10 MiB，仍受现有 `max_upload_bytes` / `max_parse_bytes` 的较小值约束；归一化 logo ≤ 2 MiB、≤ 1600 万像素。每个 Work 租约最多三个资产、合计 ≤ 22 MiB（加 ≤ 64 KiB 的 brand.json），Broker 下载与 provider 写入都执行字节上限。
+- **后台候选与有效版本分离**：GET 返回的 `assets[kind]` 显示最新 pending/rejected 候选（无候选时显示有效资产），顶层 `*_file_id` 始终是当前 READY 有效资产。上传不递增有效版本；成功分析激活、设置 PATCH、资产 DELETE 才递增。模板暂不生成缩略图，`thumbnail_url=null`；logo 提供 WebP 缩略图。

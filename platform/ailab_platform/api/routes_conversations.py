@@ -8,9 +8,9 @@ from sqlalchemy.orm import Session
 
 from ..conversation_tree import path_ids, path_runs, require_idle, siblings_query
 from ..deps import current_user, get_db
-from ..library import owned_project
+from ..library import move_lineage, owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, Run, RunStatus, User, utcnow
+from ..models import Artifact, Conversation, FileObject, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
 from ..schemas import (
     ConversationActive,
@@ -125,6 +125,37 @@ def rename_conversation(
 ) -> dict:
     with user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
+        moved = None
+        if body.move_files:
+            # Artifact.run_id and Run.conversation_id are indexed; lineage lookup uses its unique head index.
+            lineages = (
+                select(FileObject.lineage_id)
+                .join(Artifact, Artifact.file_id == FileObject.id)
+                .join(Run, Run.id == Artifact.run_id)
+                .where(
+                    Run.conversation_id == conv.id,
+                    Run.user_id == user.id,
+                    FileObject.user_id == user.id,
+                    FileObject.purpose == "library",
+                    FileObject.deleted_at.is_(None),
+                    FileObject.purged_at.is_(None),
+                )
+            )
+            heads = select(FileObject).where(
+                FileObject.lineage_id.in_(lineages),
+                FileObject.is_head == 1,
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
+            # Validate before any mutation; keyset batches bound memory, while every move commits together.
+            if body.project_id is not None:
+                owned_project(db, body.project_id, user)
+            moved, after = 0, ""
+            while batch := db.scalars(heads.where(FileObject.id > after).order_by(FileObject.id).limit(200)).all():
+                for head in batch:
+                    move_lineage(db, head, body.project_id)
+                moved += len(batch)
+                after = batch[-1].id
         if "project_id" in body.model_fields_set:
             if body.project_id is not None:
                 owned_project(db, body.project_id, user)
@@ -135,7 +166,7 @@ def rename_conversation(
             conv.title = body.title.strip()[:200]
         conv.updated_at = utcnow()
         db.commit()
-        return conversation_out(conv)
+        return {**conversation_out(conv), "moved_files": moved}
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)

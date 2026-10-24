@@ -69,7 +69,7 @@ def content_disposition(filename: str) -> str:
 
 def _owned_file(db: Session, file_id: str, user: User) -> FileObject:
     file = db.get(FileObject, file_id, populate_existing=True)
-    if file is None or file.user_id != user.id:
+    if file is None or file.user_id != user.id or file.purpose == "brand":
         raise HTTPException(status_code=404, detail="file not found")
     return file
 
@@ -284,7 +284,9 @@ def list_file_folders(
 def _owned_files(db: Session, ids: list[str], user: User) -> list[FileObject]:
     unique = list(dict.fromkeys(ids))
     files = db.scalars(
-        select(FileObject).where(FileObject.id.in_(unique), FileObject.user_id == user.id).execution_options(populate_existing=True)
+        select(FileObject)
+        .where(FileObject.id.in_(unique), FileObject.user_id == user.id, FileObject.purpose != "brand")
+        .execution_options(populate_existing=True)
     ).all()
     by_id = {file.id: file for file in files}
     if len(by_id) != len(unique):

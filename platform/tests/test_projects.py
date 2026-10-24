@@ -61,7 +61,7 @@ def test_project_crud_counts_and_utc(api):
     one = project(api, "  项目 A  ")
     assert one["name"] == "项目 A" and one["conversations"] == one["files"] == 0
     assert one["created_at"].endswith("Z") and one["updated_at"].endswith("Z")
-    assert set(one) == {"id", "name", "created_at", "updated_at", "conversations", "files"}
+    assert set(one) == {"id", "name", "instructions", "created_at", "updated_at", "conversations", "files"}
     two = project(api, "项目 B")
     conv = api.post("/v1/conversations", json={"project_id": one["id"]}).json()
     upload(api, project_id=one["id"])

@@ -155,6 +155,8 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     from ..sandbox_tools.render_preview import check_archive
 
     check_archive(source)
+    if operation == "brand":
+        return analyze_brand(source, output, options["kind"])
     if operation == "ocr_pdf":
         from .ocr import low_text_pages
 
@@ -177,3 +179,55 @@ def run(operation: str, source: Path, output: Path, options: dict) -> dict:
             info["skill_error"] = str(exc)
         return info
     raise ValueError("unknown operation")
+
+
+def analyze_brand(source: Path, output: Path, kind: str) -> dict:
+    if kind == "logo":
+        from PIL import Image, ImageOps
+
+        Image.MAX_IMAGE_PIXELS = 16_000_000
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(source) as image:
+                if image.format not in {"PNG", "JPEG"}:
+                    raise ValueError("corrupt")
+                image.load()
+                with ImageOps.exif_transpose(image) as oriented:
+                    oriented.convert("RGBA").save(output / "logo.png", "PNG")
+                size = (output / "logo.png").stat().st_size
+                if size > 2 * 1024 * 1024:
+                    raise ValueError("output_limit")
+                return {"width": image.width, "height": image.height, "png_bytes": size}
+    if kind == "docx":
+        from docx import Document
+
+        doc = Document(source)
+        return {"styles": [style.name[:120] for style in list(doc.styles)[:50]]}
+    if kind == "pptx":
+        import zipfile
+
+        from lxml import etree
+        from pptx import Presentation
+
+        prs = Presentation(source)
+        themes = []
+        with zipfile.ZipFile(source) as archive:
+            for name in sorted(n for n in archive.namelist() if n.startswith("ppt/theme/theme") and n.endswith(".xml"))[:20]:
+                theme = etree.fromstring(archive.read(name), etree.XMLParser(resolve_entities=False, no_network=True))
+                ns = {"a": "http://schemas.openxmlformats.org/drawingml/2006/main"}
+                colors = {}
+                for entry in theme.findall(".//a:clrScheme/*", ns):
+                    if len(entry):
+                        colors[etree.QName(entry).localname] = entry[0].get("val") or entry[0].get("lastClr")
+                fonts = {
+                    key: theme.xpath(f"string(.//a:{key}/a:latin/@typeface)", namespaces=ns)[:120] for key in ("majorFont", "minorFont")
+                }
+                themes.append({"colors": colors, "fonts": fonts})
+        return {
+            "slide_width": prs.slide_width,
+            "slide_height": prs.slide_height,
+            "layouts": [layout.name[:120] for master in prs.slide_masters for layout in master.slide_layouts][:100],
+            "master_count": len(prs.slide_masters),
+            "themes": themes,
+        }
+    raise ValueError("unknown brand kind")

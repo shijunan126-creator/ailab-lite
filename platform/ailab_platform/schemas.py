@@ -124,6 +124,8 @@ class InternalRunDetail(RunDetail):
     disabled_skills: list[str] = Field(default_factory=list)
     personal_skills: list[dict] = Field(default_factory=list)
     memory: dict = Field(default_factory=dict)
+    project_instructions: str = ""
+    brand: dict = Field(default_factory=dict)
 
 
 class ProjectIn(BaseModel):
@@ -135,7 +137,19 @@ class ProjectIn(BaseModel):
         return value.strip() if isinstance(value, str) else value
 
 
+class ProjectPatch(ProjectIn):
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    instructions: str | None = Field(default=None, max_length=4000)
+
+    @model_validator(mode="after")
+    def require_changes(self):
+        if not self.model_fields_set or any(getattr(self, key) is None for key in self.model_fields_set):
+            raise ValueError("at least one non-null field is required")
+        return self
+
+
 class ProjectOut(UTCModel):
+    instructions: str = ""
     id: str
     name: str
     created_at: datetime
@@ -151,6 +165,7 @@ class ConversationCreate(BaseModel):
 
 
 class ConversationPatch(BaseModel):
+    move_files: bool = False
     pinned: bool | None = None
     title: str = Field(default=None, min_length=1, max_length=200)
     project_id: str | None = None
@@ -161,6 +176,8 @@ class ConversationPatch(BaseModel):
             raise ValueError("title must not be blank")
         if "pinned" in self.model_fields_set and self.pinned is None:
             raise ValueError("pinned must be a boolean")
+        if "move_files" in self.model_fields_set and "project_id" not in self.model_fields_set:
+            raise ValueError("move_files requires project_id")
         if not self.model_fields_set:
             raise ValueError("at least one field is required")
         return self
@@ -174,6 +191,7 @@ class MessageCreate(PromptRequest):
 
 
 class ConversationOut(UTCModel):
+    moved_files: int | None = None
     active_run_id: str | None = None
     pinned_at: datetime | None = None
     forked_from: dict | None = None

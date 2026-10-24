@@ -204,6 +204,7 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("prj"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
     name_key: Mapped[str] = mapped_column(
         String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["name"])
     )

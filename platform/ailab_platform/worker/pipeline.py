@@ -131,6 +131,20 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        if (meta.get("meta") or {}).get("brand_kind"):
+            kind = (meta.get("meta") or {}).get("brand_kind")
+            try:
+                if source.stat().st_size > settings.max_parse_bytes:
+                    raise IsolationError("input_limit")
+                analysis = execute("brand", source, Path(tmp) / "brand", kind=kind)
+                if kind == "logo":
+                    storage.put_file(f"derived/{file_id}/logo.png", Path(tmp) / "brand" / "logo.png", "image/png")
+                thumb = _images(file_id, source, meta, storage, Path(tmp) / "images") if kind == "logo" else {}
+                platform.patch_file(file_id, meta={"scan": scan, "brand": analysis, "processing": "done", **thumb}, status="ready")
+                return {"file_id": file_id, "brand": analysis}
+            except IsolationError as exc:
+                platform.patch_file(file_id, meta={"scan": scan, "brand_error": str(exc), "processing": "rejected"}, status="rejected")
+                return {"file_id": file_id, "rejected": str(exc)}
         thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
         if source.stat().st_size > settings.max_parse_bytes:
             info = {"kind": "too_large", "chars": 0, "bytes": source.stat().st_size, "truncated": True}

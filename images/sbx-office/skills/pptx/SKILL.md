@@ -70,3 +70,11 @@ description: 做演示文稿 / PPT / 汇报材料（.pptx）：多种版式、�
    "series": [{"name": "示范街", "values": [27, 24, 19, 15]}]}, "bullets": ["降幅 12 个百分点"]}
 ]}
 ```
+
+
+## 公司品牌
+
+如 `/workspace/.brand/brand.json` 存在，默认使用其中的品牌颜色和字体；用户明确要求时才不用。
+PPT 生成器自动读取该目录的 `logo.png` 与 `template.pptx`（保留母版和原始尺寸）；`deck.json` 中 `"brand": false` 可关闭。
+Excel 的标题、表头和图表沿用品牌颜色与字体。Word 如有 `template.docx`，用
+`Document("/workspace/.brand/template.docx")` 新建报告并沿用模板样式。

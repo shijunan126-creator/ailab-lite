@@ -48,3 +48,11 @@ description: 做 Excel 表格 / 报表 / 数据分析（.xlsx）：表头样式�
 ```
 
 `charts[].type`：`column`（柱状）、`bar`（条形）、`line`（折线）、`pie`（饼图）；`values` 写列名，可以多列。
+
+
+## 公司品牌
+
+如 `/workspace/.brand/brand.json` 存在，默认使用其中的品牌颜色和字体；用户明确要求时才不用。
+PPT 生成器自动读取该目录的 `logo.png` 与 `template.pptx`（保留母版和原始尺寸）；`deck.json` 中 `"brand": false` 可关闭。
+Excel 的标题、表头和图表沿用品牌颜色与字体。Word 如有 `template.docx`，用
+`Document("/workspace/.brand/template.docx")` 新建报告并沿用模板样式。

@@ -410,3 +410,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 定时任务“立即运行”不能证明后台dispatcher运行；另安排一次真实未来到期，记录相对到期时间的延迟并删除任务。空队列CPU探针只是每轮成本估算，不是任务执行负载。监控须使用ops凭据，旧service token的403不能通过放宽认证处理。
 - PDF浏览器smoke区分print视图/print调用和系统保存文件；拦截window.print便于自动化时必须记录边界。内置preview超时按既有两次失败规则回退，不能把工具超时当产品错误。
 - 本次部署和详细证据见[Gate 3发布记录](docs/progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)；个人备份/配置/地址/账号/原始日志只记仓库外本机HANDOFF。
+
+## 2026-10-24 项目说明 / 品牌后端
+
+- 品牌候选不能直接覆盖有效设置指针：先扫描，再在受限子进程分析，READY 与设置激活同事务。品牌更新/Worker激活/首轮快照共用平台设置锁；运行快照写入还要取得运行所有者锁，避免覆盖 checkpoint 的 runtime_meta。不要在持有用户锁时反向调用首轮品牌 bootstrap。
+- `InternalRunDetail` 必须显式声明新 bootstrap 字段，否则旧 GET 会被 response_model 静默过滤。Worker 文件 DTO 没有 purpose 字段，品牌分析分派依据管理员设置的 `meta.brand_kind`，不要只在 ORM 上设置 purpose 就认为 Worker 会进入新分支。
+- 品牌资产不等于资料库文件：单文件与批量 owner API、配额计数、库列表/工具及 Broker 的普通 copy 路径都要检查。Broker 品牌读取必须绑定 Work Run 的冻结资产集合及 `job=brand`；恢复工作区后重置 `.brand` 再注入，禁止旧快照覆盖本轮配置。
+- 技能目录哈希包括所有文件。测试直接 import 镜像内 build.py 会写入 `__pycache__` 并导致技能校验失败；导入临时副本，修改 SKILL.md/build.py 后同步重新生成 `images/sbx-office/skills/index.json`。本轮需要重建 sbx-office 镜像，未重建/部署不能称运行镜像已有品牌支持。
+- 老集成迁移测试固定 head=0024，新增0025必须一起扩展逐步升/降/再升链与 head 断言，保留漂移校验。父任务合入0026/0027时继续扩展；不能只改生产 migration 后跳过旧测试。
+- SVG拒绝、旧品牌物理资产留存与API候选显示约定见[契约修改](docs/reviews/2026-10-24-workspace-features-design.md#a-分支对契约的修改)。旧品牌尚无自动回收，计入平台磁盘而非个人配额；不要用普通库删除接口清理仍可能被 checkpoint 引用的资产。

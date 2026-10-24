@@ -13,8 +13,8 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0024"]
-    assert [scripts.get_revision(rev).down_revision for rev in ("0022", "0023", "0024")] == ["0021", "0022", "0023"]
+    assert scripts.get_heads() == ["0025"]
+    assert [scripts.get_revision(rev).down_revision for rev in ("0022", "0023", "0024", "0025")] == ["0021", "0022", "0023", "0024"]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
             conn.execute(text("PRAGMA foreign_keys=ON"))
@@ -28,14 +28,14 @@ def test_integrated_feature_chain_up_down_reup(engine):
             )
         )
         conn.execute(text("UPDATE runs SET conversation_id='c1',summary='保留回答' WHERE id='r1'"))
-    for revision in ("0022", "0023", "0024"):
+    for revision in ("0022", "0023", "0024", "0025"):
         _upgrade_to(engine, revision)
         assert _version(engine) == revision
-    for revision in ("0023", "0022", "0021"):
+    for revision in ("0024", "0023", "0022", "0021"):
         _downgrade_to(engine, revision)
         assert _version(engine) == revision
     assert "scheduled_tasks" not in inspect(engine).get_table_names()
-    for revision in ("0022", "0023", "0024"):
+    for revision in ("0022", "0023", "0024", "0025"):
         _upgrade_to(engine, revision)
     with engine.connect() as conn:
         assert conn.execute(text("SELECT conversation_id,summary,parent_run_id FROM runs WHERE id='r1'")).one() == ("c1", "保留回答", None)
