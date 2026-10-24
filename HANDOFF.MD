@@ -361,3 +361,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 依赖 localStorage 的初始布局（侧栏收起）要在首帧前应用：根布局内联脚本写 `html[data-sidebar]`，`.shell.settling` 期间禁止过渡；否则刷新后侧栏先出现再淡出，E2E `is_visible` 也会抓到中间态。
 - iOS：输入框 <16px 会在聚焦时缩放且不回弹，用户看到“能左右滑、键盘收起后不回来”。手机端统一 16px；键盘只缩 visual viewport，聊天需固定到 `--app-h/--app-top`（`useVisibleViewport`）。无头 Chromium 无法复现键盘，真机仍需验。
 - 完成后自动打开预览只在“本页跟随的 turn 有 preview.updated 且终态 succeeded”时触发一次，且仅宽屏；不要在 `preview.updated` 时打开（用户明确反对）。E2E 中电子表格/PPT 用例据此改为等待自动打开。
+
+## 2026-10-24 会话树 / 搜索 / composer用量
+
+- 树形会话没有“时间之前就是历史”的语义；模型history/摘要through/workspace/预览/fork/隐含附件与产物版本父节点都必须按Run祖先读取。superseded_by_run_id只剩审计用途，不能继续作为隐藏过滤。Run直接入库的测试数据要同时设置parent_run_id和conversation.active_run_id；不要在业务读取时增加时间排序fallback掩盖缺失关系。
+- 递归CTE命中索引不等于单层O(log N)：SQLite可把join变成每层扫conversation索引；PG可把相关EXISTS去相关成会话半连接，500轮首屏曾p95 165.18ms失败。当前按id标量取parent和其conversation，边界500层，双库EXPLAIN与分页延迟须一起验。
+- conversation.summary是可替换缓存；每次模型读取检查through_run_id是该Run祖先，失效则空摘要+从祖先重算。CAS要比较数据库实际缓存边界，同时校验客户端看到的有效边界，才能覆盖另一分支的失效缓存，而非永久冲突或泄漏旧答案。
+- 搜索是有界扫描而非全文索引，每请求最多50会话/1000 Run候选；空items加next_cursor仍须续查，直到null。SQLite原生lower只识别ASCII，搜索用专用Unicode lower函数；snippet/highlight按Unicode code point，Portal不能直接把带emoji的偏移当UTF-16下标。查询长于120字符时仍要高亮可见命中部分。
+- 旧账本没记录quiet用途，不能从output上限/顺序猜正文调用；0023新增nullable quiet并在reservation冻结、ledger结算沿用，历史unknown的composer计量返回null。标题/压缩结算晚于正文也不应覆盖主调用表值。
+- 迁移测试降到中间版本后，不要用最新ORM查询缺失的新列：原0018账本往返测试已改为升级head后做ORM断言。大树测试会让全库超过1000行，对账测试必须消费next_run_id，不能假设第一批包含自己的随机Run。
