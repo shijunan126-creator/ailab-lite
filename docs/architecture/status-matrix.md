@@ -33,8 +33,8 @@
 | T19 OCR / 多模态 / Office 预览 | 已实现，本地验收 | OCR持久任务/文件归属计费、归一化vision输入、文本回退与图片预算/引用checkpoint已接通；受控TCP上游与双库回归通过，付费vision质量未验 |
 | T20 办公 Skills 治理 | 治理实现完成，业务评测待外部输入 | manifest/哈希、管理员/部门策略、个人审核、管理UI；当前真实Docker证明/非root不可改/快照恢复通过；digest身份、公司模板/业务golden未验，见[最终验收](../reviews/2026-10-23-t07-runtime.md) |
 | T21 文档与扩展交付 | 本轮接续记录完成 | current/矩阵/HANDOFF/ADR与最终证据同步，记录统一代码基线与外部未验边界；未推送/未部署 |
-| 用户记忆与技能在线编辑（2026-10-24） | 本地实现与双库/浏览器验收通过；未合入 main | 用户记忆CAS/开关/按轮快照与Chat/Work工具；技能页Markdown编辑/ZIP整包替换、Agent更新CAS；结果与未验边界见[审查](../reviews/2026-10-24-memory-skills.md) |
-| 对话能力与模式文案（2026-10-24） | 本地修正与浏览器验收通过；未合入 main | 正常助手能力，仅无沙箱工具；不主动播报模式、无逐条模式标签，见[追加验收](../progress/updates/2026-10-24-chat-capabilities.md) |
+| 用户记忆与技能在线编辑（2026-10-24） | 已部署并通过验收；PR #39已合入 main | 用户记忆CAS/开关/按轮快照与Chat/Work工具；技能页Markdown编辑/ZIP整包替换、Agent更新CAS；结果与未验边界见[审查](../reviews/2026-10-24-memory-skills.md) |
+| 对话能力与模式文案（2026-10-24） | 已部署并通过验收；PR #39已合入 main | 正常助手能力，仅无沙箱工具；不主动播报模式、无逐条模式标签，见[追加验收](../progress/updates/2026-10-24-chat-capabilities.md) |
 
 ## 计量与额度
 
