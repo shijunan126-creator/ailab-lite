@@ -13,7 +13,8 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0024"]
+    assert scripts.get_heads() == ["0026"]
+    assert scripts.get_revision("0026").down_revision == "0024"
     assert [scripts.get_revision(rev).down_revision for rev in ("0022", "0023", "0024")] == ["0021", "0022", "0023"]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
@@ -37,6 +38,7 @@ def test_integrated_feature_chain_up_down_reup(engine):
     assert "scheduled_tasks" not in inspect(engine).get_table_names()
     for revision in ("0022", "0023", "0024"):
         _upgrade_to(engine, revision)
+    _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT conversation_id,summary,parent_run_id FROM runs WHERE id='r1'")).one() == ("c1", "保留回答", None)
         assert conn.execute(text("SELECT active_run_id FROM conversations WHERE id='c1'")).scalar() == "r1"

@@ -156,6 +156,7 @@ class Settings(BaseSettings):
     sandbox_runtime: Literal["runc", "runsc"] = "runc"
     sandbox_image: str = "harbor.ailab.local/sandbox/sbx-office:lite"
     runtime_heartbeat_seconds: float = Field(default=60, gt=0, le=60)
+    notify_after_seconds: int = Field(default=60, ge=10, le=3600)
     checkpoint_max_bytes: int = Field(default=4 * 1024 * 1024, ge=1024, le=16 * 1024 * 1024)
     ask_user_timeout_hours: int = Field(default=72, ge=1, le=720)
     sandbox_ttl_seconds: int = Field(default=1200, ge=1)

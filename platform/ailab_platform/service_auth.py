@@ -19,6 +19,7 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
             "jobs:run",
             "runs:read",
             "runs:status",
+            "runs:steer",
             "runs:events",
             "usage:reserve",
             "usage:write",

@@ -110,7 +110,11 @@ def get_conversation(
             key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
         }
         display_turns.append(out)
+    from .inbox import pending_query, queue_output
+
     return {
+        "queue": [queue_output(row) for row in db.scalars(pending_query(conv.id).limit(5))],
+        "queue_paused": conv.queue_paused,
         **conversation_out(conv, last_status),
         "turns": display_turns,
         "previews": path_previews(db, conv.id, ids),
@@ -146,6 +150,13 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
         pending = db.scalars(select(Run).where(Run.conversation_id == conv.id, Run.status.not_in(RunStatus.TERMINAL)))
         for run in pending:
             transition_run(db, run.id, RunStatus.CANCELED, reason="conversation_deleted", commit=False)
+        from ..models import QueuedMessage
+
+        db.execute(
+            update(QueuedMessage)
+            .where(QueuedMessage.conversation_id == conv.id, QueuedMessage.state == "queued")
+            .values(state="canceled", updated_at=utcnow())
+        )
         conv.deleted_at = utcnow()
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
@@ -368,6 +379,8 @@ def select_active(conversation_id: str, body: ConversationActive, user: User = D
         ).rowcount
         if not changed:
             raise HTTPException(409, "对话路径已改变，请刷新后重试")
+        if expected != run.id:
+            conv.queue_paused = True
         db.commit()
     return get_conversation(conversation_id, before=None, limit=20, user=user, db=db)
 

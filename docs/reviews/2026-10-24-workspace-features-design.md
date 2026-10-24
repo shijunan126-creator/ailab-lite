@@ -135,3 +135,15 @@
 - 分享：查看按页读取快照路径（≤ 20 轮/页）。
 - 摘要：每个库文件一次便宜模型调用（输入 ≤ 6k token、输出 ≤ 200 token），计入用户用量；可关闭。
 - 品牌：模板分析每次上传一次；每个 Work 租约注入 ≤ 3 个文件（模板通常 < 5 MiB）。
+
+## B 分支对契约的修改
+
+B `feat/inbox-queue` 保留 §3/§4 的公开字段与状态名，仅明确以下恢复/错误响应细节：
+
+- `POST /internal/runs/{id}/steer/claim` 返回 `{items: QueuedMessage[]}`；同一 Run 已领取但尚未被 checkpoint 确认的消息会重新返回。checkpoint `state.steer_ids` 是累计已注入 ID，API 同事务保存确认与 `agent.steered`，而不是领取时发事件。这样 claim 后、checkpoint 前硬退出不会丢消息；恢复后的 checkpoint 已含 ID 时不重复注入。
+- `steer_pending` 加在既有轻量 `/internal/runs/{id}/state`（Agent 的取消/状态心跳），复用原轮询，无新轮询器。claim 新增仅 Agent 的 `runs:steer` scope，并验证与该 Run 绑定的活跃 attempt。
+- `queue/resume` 成功返回启动的 `QueuedMessage`（`state=started`）；空队列或暂不能启动返回409。自动派发遇到预期模型/文件/技能/额度准入错误时保持原 Run 终态，保留消息并暂停队列；基础设施异常回滚整个终态事务。
+- 持久化 `conversations.queue_paused`（默认 false，0026 增/删列）；等待通知去重标记保存在既有 `runtime_meta`，不依赖会被裁剪的通知记录。
+- 后续轮次的 legacy history 与分页 `model-context` 都包含 `steers: [prompt]`（仅非空时），放在该轮原 prompt 后。分页仍最多100轮，增加256k字符软预算，单个大轮次仍完整返回以保证推进。
+
+无新增依赖、Portal 修改或部署。迁移在 B 独立分支仍为 `0026 ← 0024`，集成方改为 `0026 ← 0025`，并同步迁移链测试。

@@ -212,6 +212,7 @@ def execute_task(db, task, user, now):
             run = start_run(
                 db, user, task.prompt, task.model, [], conversation=conv, mode=task.mode, skill=task.skill, locked=True, commit=False
             )
+            run.options = {**run.options, "schedule_id": task.id}
         task.last_run_id, task.last_conversation_id = run.id, conv.id
         task.last_status, task.last_error = run.status, None
         EXECUTIONS.labels("started").inc()

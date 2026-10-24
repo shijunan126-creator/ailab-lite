@@ -77,22 +77,7 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def start_run(
-    db: Session,
-    user: User,
-    prompt: str,
-    model: str | None,
-    file_ids: list[str],
-    title: str | None = None,
-    conversation: Conversation | None = None,
-    mode: str = "work",
-    skill: str | None = None,
-    locked: bool = False,
-    commit: bool = True,
-    sibling_of: Run | None = None,
-) -> Run:
-    """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
-    expected_active = conversation.active_run_id if conversation else None
+def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
@@ -110,8 +95,42 @@ def start_run(
     if spec is None or not spec.available:
         raise HTTPException(status_code=400, detail=f"model not available: {model_id}")
 
+    inputs: list[str] = []
+    for file_id in file_ids:
+        file = db.get(FileObject, file_id, populate_existing=True)
+        if (
+            file is None
+            or file.user_id != user.id
+            or file.purpose != "library"
+            or file.deleted_at is not None
+            or file.purged_at is not None
+        ):
+            raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
+        if file.status != FileStatus.READY:
+            raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")
+        inputs.append(file.id)
+    enforce_token_quota(db, user.id)
+    return model_id, options, inputs
+
+
+def start_run(
+    db: Session,
+    user: User,
+    prompt: str,
+    model: str | None,
+    file_ids: list[str],
+    title: str | None = None,
+    conversation: Conversation | None = None,
+    mode: str = "work",
+    skill: str | None = None,
+    locked: bool = False,
+    commit: bool = True,
+    sibling_of: Run | None = None,
+) -> Run:
+    """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
+    expected_active = conversation.active_run_id if conversation else None
     with nullcontext() if locked else user_critical_section(db, user.id):
-        enforce_token_quota(db, user.id)
+        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill)
 
         active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == user.id, Run.status.in_(RunStatus.ACTIVE)))
         if active >= user_limits(db, user.id).max_concurrent_runs:
@@ -130,21 +149,6 @@ def start_run(
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
-
-        inputs: list[str] = []
-        for file_id in file_ids:
-            file = db.get(FileObject, file_id, populate_existing=True)
-            if (
-                file is None
-                or file.user_id != user.id
-                or file.purpose != "library"
-                or file.deleted_at is not None
-                or file.purged_at is not None
-            ):
-                raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
-            if file.status != FileStatus.READY:
-                raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")
-            inputs.append(file.id)
 
         run = Run(
             user_id=user.id,
@@ -383,6 +387,7 @@ def _new_version(db, user, run_id, body, editing=False):
             sibling_of=old,
         )
         new.options = {**options, **new.options}
+        conv.queue_paused = True
         if editing:
             new.edited_from = old.id
         else:

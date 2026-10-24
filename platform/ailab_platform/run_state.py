@@ -29,7 +29,7 @@ class InvalidTransition(ValueError):
     pass
 
 
-def transition_run(
+def _transition_run(
     db: Session,
     run_id: str,
     new_status: str,
@@ -91,6 +91,23 @@ def transition_run(
         append_event(db, run.id, "run.failed", {"error": run.error}, commit=False)
     elif new_status == RunStatus.CANCELED:
         append_event(db, run.id, "run.canceled", {"reason": reason}, commit=False)
+    from .api.inbox import on_transition
+
+    on_transition(db, run)
     if commit:
         db.commit()
     return run, True
+
+
+def transition_run(db: Session, run_id: str, new_status: str, **kwargs) -> tuple[Run, bool]:
+    from .locks import user_critical_section
+
+    run = db.get(Run, run_id)
+    if run is None:
+        raise LookupError(run_id)
+    # Reentrant for existing callers already holding admission; PG row locks live
+    # through commit. Refresh after locking, before the status CAS or dispatch.
+    with user_critical_section(db, run.user_id):
+        db.flush()
+        db.refresh(run)
+        return _transition_run(db, run_id, new_status, **kwargs)
