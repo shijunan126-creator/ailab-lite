@@ -7,7 +7,7 @@ import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { siteOf, splitTurn, turnSources } from "../../lib/work-process";
 import CopyButton from "../copy-button";
-import { IconBranch, IconChevronRight, IconDownload, IconFile, IconPencil, IconRetry, IconCornerDownRight } from "../icons";
+import { IconBranch, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconTemplate } from "../icons";
 import { ExtTile } from "../library/file-tile";
 import FileMenu from "../library/file-menu";
 import Markdown from "../markdown";
@@ -235,6 +235,11 @@ export default function Turn({
         {run.options?.skill ? (
           <div className="attach-row">
             <span className="attach-chip">{SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill}</span>
+            {run.template ? (
+              <span className="attach-chip" title={run.template.name}>
+                <IconTemplate size={13} /> {run.template.name}
+              </span>
+            ) : null}
           </div>
         ) : null}
         {run.input_files?.length ? (

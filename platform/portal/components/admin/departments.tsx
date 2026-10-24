@@ -4,6 +4,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { admin, Department, QuotaPolicy, reason } from "../../lib/admin";
 import { IconPlus, IconTrash } from "../icons";
 import Modal from "../library/modal";
+import { confirmDialog } from "../../lib/dialog";
+import Select from "../select";
 
 function DepartmentDialog({
   dept,
@@ -61,27 +63,21 @@ function DepartmentDialog({
         </label>
         <label className="field">
           <span>上级部门</span>
-          <select value={parent} onChange={(e) => setParent(e.target.value)}>
-            <option value="">无</option>
-            {departments
-              .filter((d) => d.id !== dept?.id)
-              .map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-          </select>
+          <Select
+            aria-label="上级部门"
+            value={parent}
+            onChange={setParent}
+            options={[{ value: "", label: "无" }, ...departments.filter((d) => d.id !== dept?.id).map((d) => ({ value: d.id, label: d.name }))]}
+          />
         </label>
         <label className="field">
           <span>额度</span>
-          <select value={policy} onChange={(e) => setPolicy(e.target.value)}>
-            <option value="">默认</option>
-            {policies.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="额度"
+            value={policy}
+            onChange={setPolicy}
+            options={[{ value: "", label: "默认" }, ...policies.map((p) => ({ value: p.id, label: p.name }))]}
+          />
         </label>
       </form>
     </Modal>
@@ -106,7 +102,7 @@ export default function DepartmentsSection() {
   }, []);
 
   async function remove(d: Department) {
-    if (!confirm(`删除部门「${d.name}」？`)) return;
+    if (!(await confirmDialog({ title: `删除部门「${d.name}」？`, action: "删除", danger: true }))) return;
     try {
       await admin.deleteDepartment(d.id);
       load();

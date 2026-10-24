@@ -8,6 +8,7 @@ import { conversationsChanged } from "./app-shell";
 import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconShare, IconTrash } from "./icons";
 import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
+import { confirmDialog } from "../lib/dialog";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
@@ -88,7 +89,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
 
   async function remove() {
     setAt(null);
-    if (!confirm(`删除对话「${title}」？（产出的文件仍保留在资料库）`)) return;
+    if (!(await confirmDialog({ title: `删除对话「${title}」？`, body: "产出的文件仍保留在资料库。", action: "删除", danger: true }))) return;
     try {
       await api(`/v1/conversations/${conv.id}`, { method: "DELETE" });
     } catch {

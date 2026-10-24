@@ -38,6 +38,7 @@ export type Run = {
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string }[];
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
+  template?: { name: string; source: "template" | "file" } | null;
   result?: { previews?: Preview[]; [key: string]: any };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
@@ -158,7 +159,7 @@ export type ShareView = {
   next_cursor: string | null;
 };
 
-export type BrandKind = "logo" | "pptx" | "docx";
+export type BrandKind = "logo" | "docx";
 export type BrandAsset = {
   file_id: string;
   filename: string;
@@ -176,6 +177,26 @@ export type Brand = {
   updated_at: string | null;
   assets: Partial<Record<BrandKind, BrandAsset | null>>;
 };
+
+/** A PPT template: the company's (everyone sees them) or one of the user's own. Using one means referencing its look and layouts. */
+export type Template = {
+  id: string;
+  kind: "pptx";
+  scope: "company" | "personal";
+  name: string;
+  status: "pending" | "ready" | "rejected" | "failed";
+  reason: string | null;
+  thumbnail_url: string | null; // without the /api prefix
+  layouts: number | null;
+  slides: number | null;
+  size: number;
+  filename: string;
+  created_at: string;
+  can_edit: boolean;
+};
+export type TemplateList = { company: Template[]; personal: Template[] };
+/** What a message asks to follow: a saved template, or a pptx from the library just for this message. */
+export type TemplateRef = { id: string } | { file_id: string };
 
 export type SearchHit = {
   conversation_id: string;

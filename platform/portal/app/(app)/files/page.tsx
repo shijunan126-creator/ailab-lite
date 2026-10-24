@@ -28,6 +28,7 @@ import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
 import { formatBytes, formatDate, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
+import { confirmDialog } from "../../../lib/dialog";
 
 type Tab = Category | "projects";
 const BATCH = 200; // the most files one request may touch
@@ -177,14 +178,14 @@ function Library() {
     );
   }
 
-  function purge(list: FileItem[]) {
+  async function purge(list: FileItem[]) {
     const label = list.length === 1 ? `「${list[0].filename}」` : `这 ${list.length} 个文件`;
-    if (!confirm(`永久删除${label}及其所有版本？无法恢复。`)) return;
+    if (!(await confirmDialog({ title: `永久删除${label}？`, body: "所有版本一并删除，无法恢复。", action: "永久删除", danger: true }))) return;
     run(() => batch("purge", list), () => setSelected(new Set()));
   }
 
-  function emptyTrash() {
-    if (!confirm("清空回收站？其中的文件将永久删除，无法恢复。")) return;
+  async function emptyTrash() {
+    if (!(await confirmDialog({ title: "清空回收站？", body: "其中的文件将永久删除，无法恢复。", action: "清空", danger: true }))) return;
     run(() => api("/v1/trash", { method: "DELETE" }));
   }
 

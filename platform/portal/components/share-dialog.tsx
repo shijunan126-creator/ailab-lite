@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, Person, Share } from "../lib/api";
 import { IconCheck, IconLink, IconUsers, IconX } from "./icons";
 import Modal from "./library/modal";
+import { confirmDialog } from "../lib/dialog";
 
 type Target = { kind: "conversation"; conversationId: string; activeRunId?: string | null } | { kind: "file"; fileId: string };
 
@@ -138,7 +139,7 @@ export default function ShareDialog({ target, title, onClose }: { target: Target
   }
 
   async function revoke() {
-    if (!share || !confirm("停止分享？已打开的同事将无法再查看。")) return;
+    if (!share || !(await confirmDialog({ title: "停止分享？", body: "同事将无法再打开这个链接。", action: "停止分享", danger: true }))) return;
     setBusy(true);
     try {
       await api(`/v1/shares/${share.id}`, { method: "DELETE" });

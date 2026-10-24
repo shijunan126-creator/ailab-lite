@@ -1,14 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, FileItem, filesByIds, ModelInfo, Skill, uploadFile } from "../../lib/api";
-import { IconArrowUp, IconChart, IconFile, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
+import { api, FileItem, filesByIds, ModelInfo, Skill, TemplateRef, uploadFile } from "../../lib/api";
+import { usePopover } from "../../lib/use-popover";
+import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
+import ModelMenu from "./model-menu";
+import TemplatePicker, { TemplateChoice } from "./template-picker";
 
 export type Attachment = { id: string; filename: string; status: string };
 export type Mode = "chat" | "work";
-export type SendOptions = { mode: Mode; skill?: string };
+export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef };
 
 type SkillButton = {
   key: string;
@@ -25,6 +28,8 @@ const SKILLS: SkillButton[] = [
   { key: "excel", skill: "xlsx", label: "Excel 表格", Icon: IconSheet, placeholder: "说说表里要有什么，比如：三个区域 7～9 月销售额，带合计和柱状图", template: "表格内容：\n时间范围：\n需要的图表：" },
   { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表", template: "想分析的问题：\n关注的指标：" },
 ];
+
+const VISIBLE_SKILLS = 3; // the rest wait under "更多"
 
 const MODE_HINT: Record<Mode, string> = {
   chat: "问答、搜索、写作",
@@ -70,7 +75,9 @@ export default function Composer({
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [mode, setModeState] = useState<Mode>("work");
-  const [picked, setPicked] = useState<SkillButton | null>(null);
+  const [picked, setPickedState] = useState<SkillButton | null>(null);
+  const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
+  const more = usePopover();
   const area = useRef<HTMLTextAreaElement | null>(null);
 
   const [enabled, setEnabled] = useState<Set<string> | null>(null); // skills switched on in the 技能 page
@@ -89,6 +96,11 @@ export default function Composer({
       })
       .catch(() => setEnabled(null));
   }, []);
+
+  function setPicked(next: SkillButton | null) {
+    setPickedState(next);
+    if (next?.skill !== "pptx") setTemplate(null);
+  }
 
   function setMode(next: Mode) {
     setModeState(next);
@@ -159,24 +171,28 @@ export default function Composer({
   }
 
   const waiting = files.some((f) => f.status === "pending");
-  const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !!model;
+  const templateWaiting = !!template?.pending;
+  const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !templateWaiting && !!model;
   const queueing = running && !!onQueue;
-  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !!model;
+  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !templateWaiting && !!model;
 
   // "/" at the start of an empty message lists the skills; picking one fills in what it needs
   const buttons: SkillButton[] = [
     ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
     ...mine.map((m) => ({ key: `my-${m.name}`, skill: m.name, label: m.title, Icon: IconSparkles, placeholder: `说说要做什么，会按你的「${m.title}」技能来做` })),
   ];
+  const extraBuiltin: SkillButton[] = builtin
+    .filter((b) => !SKILLS.some((s) => s.skill === b.name))
+    .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` }));
+  const shown = buttons.slice(0, VISIBLE_SKILLS);
+  const overflow = [...buttons.slice(VISIBLE_SKILLS), ...extraBuiltin];
   const slashQuery = /^\/(\S*)$/.exec(text)?.[1];
   const slashItems: SkillButton[] =
     slashQuery === undefined || slashClosed
       ? []
       : [
           ...buttons,
-          ...builtin
-            .filter((b) => !SKILLS.some((s) => s.skill === b.name))
-            .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` })),
+          ...extraBuiltin,
         ].filter((b) => !slashQuery || `${b.label} ${b.skill}`.toLowerCase().includes(slashQuery.toLowerCase()));
   const slashIndex = Math.min(slashAt, Math.max(0, slashItems.length - 1));
 
@@ -198,7 +214,7 @@ export default function Composer({
   async function send(steer = false) {
     if (queueing ? !canQueue : !canSend) return;
     const ready = files.filter((f) => f.status === "ready").map((f) => f.id);
-    const options: SendOptions = picked ? { mode: "work", skill: picked.skill } : { mode };
+    const options: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
     const ok = queueing ? await onQueue!(text.trim(), ready, options, steer) : await onSend(text.trim(), ready, options);
     if (ok) {
       setText("");
@@ -246,6 +262,7 @@ export default function Composer({
               ✕
             </button>
           </span>
+          {picked.skill === "pptx" ? <TemplatePicker value={template} onChange={setTemplate} projectId={projectId} /> : null}
         </div>
       ) : null}
       {slashItems.length ? (
@@ -344,7 +361,7 @@ export default function Composer({
           ))}
         </div>
         {mode === "work"
-          ? buttons.map((s) => (
+          ? shown.map((s) => (
               <button
                 key={s.key}
                 className={`skill-chip ${picked?.key === s.key ? "on" : ""}`}
@@ -357,6 +374,38 @@ export default function Composer({
               </button>
             ))
           : null}
+        {mode === "work" && overflow.length ? (
+          <div className="skill-more" ref={more.box}>
+            <button
+              className={`skill-chip ${picked && overflow.some((s) => s.key === picked.key) ? "on" : ""}`}
+              onClick={() => more.setOpen(!more.open)}
+              aria-expanded={more.open}
+              aria-haspopup="menu"
+              aria-label="更多技能"
+              title="更多"
+            >
+              <IconGrid size={14} /> <span className="chip-label">更多</span>
+            </button>
+            {more.open ? (
+              <div className="pop-menu skill-more-menu" role="menu" aria-label="更多技能">
+                {overflow.map((s) => (
+                  <button
+                    key={s.key}
+                    role="menuitemradio"
+                    aria-checked={picked?.key === s.key}
+                    className={`menu-item ${picked?.key === s.key ? "on" : ""}`}
+                    onClick={() => {
+                      more.setOpen(false);
+                      pick(s);
+                    }}
+                  >
+                    <s.Icon size={15} /> <span className="grow">{s.label}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <input ref={picker} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
         {library ? (
           <LibraryPicker
@@ -376,14 +425,7 @@ export default function Composer({
           const limit = info?.input_budget_tokens || info?.context_tokens;
           return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
         })()}
-        <select value={model} aria-label="模型" onChange={(e) => onModel(e.target.value)}>
-          {models.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-              {m.weight !== 1 ? `（消耗 ×${m.weight}）` : ""}
-            </option>
-          ))}
-        </select>
+        <ModelMenu models={models} value={model} onChange={onModel} />
         {error ? <span className="error hint">{error}</span> : null}
         {queueing && text.trim() ? (
           <button className="send-btn queue" onClick={() => send(false)} disabled={!canQueue} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">
