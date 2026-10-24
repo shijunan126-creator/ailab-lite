@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-24 工作区B：通知/排队/steer后端独立分支已实现，9992308本地SQLite1057/PG+Redis1138通过，尚未集成/部署；见[B记录](../progress/updates/2026-10-24-inbox-queue-backend.md)。
+
 2026-10-24 Gate 3当前状态：PR #42 head `16a8822` 八项CI成功，已squash合入main为 `b07548995ffbce3fc618f94955c5d66b54b380c7`；同一固定提交已部署并通过有限真实模型浏览器smoke。已验完整备份恢复、既有数据0021→0024/ID数量/线性会话树/文件哈希、五服务健康与预算内短时RSS/CPU、标题指标抓取和30秒调度器真实到期执行。详情及残余边界见[Gate 3记录](../progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)。本次发布无待实现项，新增功能想法待用户决定。以下Round1/Round2及各子分支状态均为历史阶段，不代表当前仍未合并/部署。
 
 2026-10-24 Round2：`d865356`修复标题gate预算/quiet非思考/失败兜底，真实Gate1逐项通过；SQLite1033、PG+Redis1112、E2E78通过。PG C locale Unicode搜索已修复。16K临时窗口压缩、非真机手机等边界见[发布记录](../progress/updates/2026-10-24-release-ui-features.md#round-2-最终本地结果代码提交-d865356)。[PR #42](https://github.com/shijunan126-creator/ailab-lite/pull/42)已创建/登记，当时Gate2待远端CI与父任务接续；现已merged/deployed，见页首。下方Round1失败保留为历史证据。

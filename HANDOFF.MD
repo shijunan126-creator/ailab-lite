@@ -410,3 +410,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 定时任务“立即运行”不能证明后台dispatcher运行；另安排一次真实未来到期，记录相对到期时间的延迟并删除任务。空队列CPU探针只是每轮成本估算，不是任务执行负载。监控须使用ops凭据，旧service token的403不能通过放宽认证处理。
 - PDF浏览器smoke区分print视图/print调用和系统保存文件；拦截window.print便于自动化时必须记录边界。内置preview超时按既有两次失败规则回退，不能把工具超时当产品错误。
 - 本次部署和详细证据见[Gate 3发布记录](docs/progress/updates/2026-10-24-release-ui-features.md#gate-3部署合并后的-mainround-3)；个人备份/配置/地址/账号/原始日志只记仓库外本机HANDOFF。
+
+## 2026-10-24 Inbox / Queue / Steer 后端 B
+
+- 统一 `transition_run` 若锁后refresh，必须先flush调用方pending ORM变更；否则ask_user刚写的question/runtime_meta被丢弃。用户锁须可重入，既有调用方已持同一锁；PG仍靠用户行锁持到事务结束。
+- Steer claim不是注入确认：已领取未checkpoint消息须在新attempt重新返回；ID、messages与agent.steered同checkpoint事务确认。领取时直接发事件或只返回queued，会在claim后进程死掉时丢失提示。等待通知的永久去重不能依赖会被200条裁剪的notification行。
+- Agent真实历史来自分页model-context，不只legacy internal GET；两处都要补steers，history_messages在原prompt后按注入顺序插入。额外状态轮询会改变取消时序/把瞬态故障变终态；复用原状态心跳字段，不加每步HTTP请求。
+- 分叉需复制已确认steer历史并重映射事件queued_id（待处理queue不复制）；新增queue会话外键要求GC先按批清queue，不能直接删除会话。
+- 终态派发用savepoint区分预期准入失败（暂停并保留队列）与基础设施失败（整个终态事务回滚）。会话通过项目删除也必须取消queue。0026在B临时接0024，父任务改链并同步集成head断言；见[B记录](docs/progress/updates/2026-10-24-inbox-queue-backend.md)。
