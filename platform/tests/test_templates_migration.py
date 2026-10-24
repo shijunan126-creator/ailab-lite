@@ -1,4 +1,4 @@
-"""0028 up/down/up with brand promotion and real SQLite/PG query plans."""
+"""0028 to 0029 up/down/up with brand promotion and real SQLite/PG query plans."""
 
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
@@ -24,7 +24,7 @@ def test_template_migration_promotes_brand_and_roundtrips(engine, monkeypatch):
             )
         )
         conn.execute(text("INSERT INTO platform_settings(key,value) VALUES ('brand',:value)"), {"value": '{"pptx_template_file_id":"f1"}'})
-    _upgrade_to(engine, "0028")
+    _upgrade_to(engine, "0029")
     with engine.connect() as conn:
         row = conn.execute(text("SELECT kind,scope,owner_id,name,file_id,created_by FROM templates")).one()
         assert row == ("pptx", "company", None, "Legacy", "f1", "u1")
@@ -36,6 +36,6 @@ def test_template_migration_promotes_brand_and_roundtrips(engine, monkeypatch):
     with engine.connect() as conn:
         assert conn.execute(text("SELECT purpose,status FROM files WHERE id='f1'")).one() == ("brand", "ready")
         assert conn.execute(text("SELECT count(*) FROM outbox WHERE id LIKE 'tpl_migrate_%'")).scalar() == 0
-    _upgrade_to(engine, "0028")
+    _upgrade_to(engine, "0029")
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM templates")).scalar() == 1
