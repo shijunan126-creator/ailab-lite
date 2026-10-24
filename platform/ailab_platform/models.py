@@ -635,3 +635,32 @@ class PlatformSetting(Base):
     __tablename__ = "platform_settings"
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class ScheduledTask(Base):
+    __tablename__ = "scheduled_tasks"
+    __table_args__ = (
+        Index("ix_scheduled_tasks_due", "enabled", "next_run_at"),
+        Index("ix_scheduled_tasks_user", "user_id"),
+        Index("ix_scheduled_tasks_project", "project_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sch"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    title: Mapped[str] = mapped_column(String(60))
+    prompt: Mapped[str] = mapped_column(Text)
+    mode: Mapped[str] = mapped_column(String(10), default="chat")
+    skill: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
+    schedule: Mapped[dict] = mapped_column(JSON)
+    timezone: Mapped[str] = mapped_column(String(100))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

@@ -131,3 +131,7 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 ## 2026-10-24 会话树 / 置顶 / 全局搜索后端
 
 后端分支 `feat/chat-tree-pin-search`，实际base `09a011b`，运行时 `e4c70cb`：0023树形Run/活动叶节点、编辑与版本选择、祖先限定history/workspace/summary/预览/fork/隐含文件授权、置顶、有界全局搜索、主调用上下文用量已实现。准确验证结果、最终契约及成本见[专项记录](../progress/updates/2026-10-24-chat-tree-pin-search.md)。尚待父Agent合入平行任务和Portal/E2E集成；未push/PR/deploy，不能视为main或生产能力。
+
+## 2026-10-24 定时任务与页码引用后端增量
+
+`feat/schedules-citations` 本地后端已实现：每用户五条任务/用户锁、next_run_at CAS和Run/outbox原子提交、DST与失败收敛、项目删除停用、Worker缓存页标记、工具页码及Chat/Work项目索引/引用规则。双库全套与最终增量通过；未集成Portal/会话树、未部署、未合入main。0024当前接0022，合入sibling0023后必须重接；详细数字、成本、未验边界见[交付记录](../progress/updates/2026-10-24-schedules-citations.md)。

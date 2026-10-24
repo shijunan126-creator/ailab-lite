@@ -113,6 +113,7 @@ class RunDetail(RunOut):
 
 
 class InternalRunDetail(RunDetail):
+    project_library: list[dict] = Field(default_factory=list)
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 
     context_settings: dict = Field(default_factory=dict)

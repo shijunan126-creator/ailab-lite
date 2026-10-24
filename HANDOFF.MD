@@ -374,3 +374,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 搜索是有界扫描而非全文索引，每请求最多50会话/1000 Run候选；空items加next_cursor仍须续查，直到null。SQLite原生lower只识别ASCII，搜索用专用Unicode lower函数；snippet/highlight按Unicode code point，Portal不能直接把带emoji的偏移当UTF-16下标。查询长于120字符时仍要高亮可见命中部分。
 - 旧账本没记录quiet用途，不能从output上限/顺序猜正文调用；0023新增nullable quiet并在reservation冻结、ledger结算沿用，历史unknown的composer计量返回null。标题/压缩结算晚于正文也不应覆盖主调用表值。
 - 迁移测试降到中间版本后，不要用最新ORM查询缺失的新列：原0018账本往返测试已改为升级head后做ORM断言。大树测试会让全库超过1000行，对账测试必须消费next_run_id，不能假设第一批包含自己的随机Run。
+
+## 2026-10-24 定时任务 / 资料库页码引用
+
+- 定时执行不能直接 enqueue 或调用会自行 commit 的 start_run：用户锁内 CAS next_run_at，并用 start_run(locked=True, commit=False)，claim/新会话/Run/outbox 同事务。只将可预期业务错误回滚至 savepoint 并记录失败；基础设施异常让整个事务回滚。项目删除清空 project_id 且停用任务，避免下一轮在错误上下文静默执行。
+- zoneinfo 给不存在的墙钟时间也会构造 datetime；须 UTC roundtrip 检查，秋季重复时间固定 fold=0。每周恰逢缺失时间可能要等14天，不能只扫描未来7天。PG可能返回宿主时区 aware datetime，不能用 replace(tzinfo=UTC) 做转换；只给SQLite naive补UTC，aware用 astimezone。
+- Worker显式页标记必须包含第一页，旧无标记缓存不能默认为第一页；DOCX段落/Excel sheet不能冒充渲染页。内部 bootstrap 返回的新字段还必须加入 InternalRunDetail，否则 FastAPI 会静默过滤，handler单测无法发现。
+- 此子任务0024临时接0022（没有0023 stub）；父Agent合入会话树0023后必须reparent为0023并做双库迁移回归。接口、测试、成本和未验边界见 [后端记录](docs/progress/updates/2026-10-24-schedules-citations.md)。

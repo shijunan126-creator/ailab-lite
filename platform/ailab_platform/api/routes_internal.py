@@ -185,6 +185,25 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         history.append({"prompt": turn.prompt, "reply": reply[:HISTORY_CHARS], "status": turn.status, "files": files})
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
+    out["project_library"] = []
+    if conversation and conversation.project_id:
+        out["project_library"] = [
+            {"file_id": f.id, "filename": f.filename[:200]}
+            for f in db.scalars(
+                select(FileObject)
+                .where(
+                    FileObject.user_id == run.user_id,
+                    FileObject.project_id == conversation.project_id,
+                    FileObject.status == FileStatus.READY,
+                    FileObject.purpose == "library",
+                    FileObject.is_head == 1,
+                    FileObject.deleted_at.is_(None),
+                    FileObject.purged_at.is_(None),
+                )
+                .order_by(FileObject.created_at.desc(), FileObject.id.desc())
+                .limit(50)
+            )
+        ]
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
