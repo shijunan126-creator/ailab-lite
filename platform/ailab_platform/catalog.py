@@ -60,6 +60,9 @@ class ModelSpec:
     # Thinking models (DeepSeek V4.x) refuse the next turn of a tool conversation unless the previous
     # reasoning_content is sent back; others reject or ignore it. Hence a per-model switch.
     echo_reasoning: bool = False
+    # DeepSeek's explicit non-thinking mode for metadata/summary calls. Opt in only
+    # for endpoints that support thinking.type; never infer capability from a URL.
+    disable_reasoning_for_quiet: bool = False
 
     def supports(self, required: set[str]) -> bool:
         declared = set(self.capabilities) if self.capabilities is not None else ({"tools"} if self.tools else set())
@@ -130,6 +133,8 @@ def parse_catalog(data: dict) -> Catalog:
         spec = ModelSpec(**{**item, "id": mid, "name": str(item.get("name") or mid)})
         if spec.provider not in PROVIDERS:
             raise CatalogError(f"{where} ({mid}): provider must be one of {sorted(PROVIDERS)}")
+        if type(spec.disable_reasoning_for_quiet) is not bool:
+            raise CatalogError(f"{where}: disable_reasoning_for_quiet must be a boolean")
         if spec.provider == "openai" and not spec.base_url:
             raise CatalogError(f"{where} ({mid}): base_url is required for provider 'openai'")
         if spec.api_key_env and not spec.api_key_env.startswith(KEY_ENV_PREFIX):

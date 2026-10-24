@@ -57,6 +57,7 @@ class ModelCall:
     output_bytes: int = 0
     emitted: bool = False
     ttft_seconds: float | None = None
+    quiet: bool = False
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
@@ -324,7 +325,11 @@ def llm_for(model_id: str) -> LLMClient:
     from .model_transport import ModelTransport
 
     return ModelTransport(
-        spec.base_url, spec.api_key(), spec.upstream_model or spec.id, echo_reasoning=spec.echo_reasoning or settings.llm_echo_reasoning
+        spec.base_url,
+        spec.api_key(),
+        spec.upstream_model or spec.id,
+        echo_reasoning=spec.echo_reasoning or settings.llm_echo_reasoning,
+        disable_reasoning_for_quiet=spec.disable_reasoning_for_quiet,
     )
 
 

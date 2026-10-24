@@ -472,7 +472,7 @@ class AgentLoop:
             output_limit = min(output_limit, 2048)
         if max_output_tokens is not None:
             output_limit = min(output_limit, max_output_tokens)
-        call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model)
+        call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet)
         await self.platform.reserve_usage(
             {
                 "call_id": call.call_id,
@@ -581,20 +581,45 @@ class AgentLoop:
                 ),
             },
         ]
+        # The main reservation owns priority, but preparation must not spend the
+        # metadata inference budget. The enclosing run deadline/cancellation owns
+        # this wait; also bound direct callers that do not use the job runner.
+        if (gate := run.get("_main_model_reserved")) is not None:
+            async with asyncio.timeout(settings.run_timeout_seconds):
+                await self._interruptible(run_id, gate.wait())
+        reason = "none"
         try:
             async with asyncio.timeout(TITLE_TIMEOUT_SECONDS):
-                if (gate := run.get("_main_model_reserved")) is not None:
-                    await self._interruptible(run_id, gate.wait())
                 response = await self._call_model(self.llm or llm_for(model), run_id, run, model, prompt, -2, tools=[], quiet=True)
                 candidate = normalize_title(response.content) or None
-                if candidate and hasattr(self.platform, "set_conversation_title"):
-                    await self.platform.set_conversation_title(run_id, candidate)
-                return candidate
+                if not candidate:
+                    reason = "empty"
         except (RunCanceled, asyncio.CancelledError):
             raise
         except Exception as exc:
-            # Optional metadata must not discard a completed, metered answer.
-            log.warning("conversation title skipped run=%s error=%s", run_id, type(exc).__name__)
+            if isinstance(exc, ClientError) and exc.status == 409:
+                raise
+            reason = "timeout" if isinstance(exc, TimeoutError) else "error"
+            candidate = None
+            log.warning("conversation title inference failed run=%s error=%s", run_id, type(exc).__name__)
+        outcome = "ok"
+        if not candidate:
+            # A visible deterministic label is preferable to an indefinitely
+            # unnamed conversation. API empty-title CAS still preserves renames.
+            first_line = next((line for line in run["prompt"].splitlines() if line.strip()), "")
+            candidate = normalize_title(first_line) or normalize_title(run["prompt"]) or "对话"
+            outcome = "fallback"
+        try:
+            if hasattr(self.platform, "set_conversation_title"):
+                await self.platform.set_conversation_title(run_id, candidate)
+            metrics.CONVERSATION_TITLES.labels(outcome, reason).inc()
+            return candidate
+        except (RunCanceled, asyncio.CancelledError):
+            raise
+        except Exception as exc:
+            # Never hide cancellation/ownership loss behind a metadata retry.
+            metrics.CONVERSATION_TITLES.labels("timeout" if isinstance(exc, TimeoutError) else "error", "persist").inc()
+            log.warning("conversation title persistence failed run=%s error=%s", run_id, type(exc).__name__)
             return None
 
     async def _assemble_context(self, run_id, run, model, base):
@@ -1134,7 +1159,7 @@ class AgentLoop:
                     try:
                         # Terminal status is already visible. Keep ownership/client alive
                         # for the title's remaining budget, never restart its clock here.
-                        if outcome in {"succeeded", "failed"}:
+                        if outcome in {"succeeded", "failed"} and run["_main_model_reserved"].is_set():
                             await title_task
                     except Exception:
                         pass

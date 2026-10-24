@@ -43,6 +43,9 @@ async def upstream(kind, seen):
                 )
                 await writer.drain()
                 return
+            if kind == "reasoning" and seen[-1][1].get("thinking") != {"type": "disabled"}:
+                await reader.read()
+                return
             if kind == "slow":
                 await reader.read()
                 return
@@ -53,7 +56,7 @@ async def upstream(kind, seen):
             )
             chunk = {"model": "actual-" + kind, "choices": [{"delta": delta}]}
             writer.write(("data: " + json.dumps(chunk) + "\n\n").encode())
-            if kind in {"ok", "title"}:
+            if kind in {"ok", "title", "reasoning"}:
                 writer.write(
                     b'data: {"choices":[{"delta":{},"finish_reason":"stop"}],'
                     b'"usage":{"prompt_tokens":10,"completion_tokens":2}}\n\ndata: [DONE]\n\n'
@@ -440,3 +443,24 @@ def test_settlement_failure_stops_fallback(monkeypatch):
             assert len(first_seen) == 1 and not second_seen
 
     asyncio.run(exercise())
+
+
+def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
+    from ailab_platform.model_transport import ModelTransport
+    from tests.test_agent_loop import FakePlatform
+
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.5)
+
+    async def scenario():
+        seen = []
+        async with upstream("reasoning", seen) as address:
+            model = ModelTransport(address, disable_reasoning_for_quiet=True)
+            platform = FakePlatform()
+            run = {"model": "m", "prompt": "question", "needs_conversation_title": True, "_attempt_id": "a"}
+            assert await AgentLoop(platform=platform, llm=model)._conversation_title("r", run) == "hello"
+            assert seen[0][1]["thinking"] == {"type": "disabled"}
+            assert len(platform.reservations) == len(platform.settlements) == 1
+            assert next(iter(platform.reservations.values()))["quiet"] is True
+            assert "thinking" not in model._request([], [], "m", None, True)[0]
+
+    asyncio.run(scenario())

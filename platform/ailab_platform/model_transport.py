@@ -24,6 +24,7 @@ class ModelTransport(LLMClient):
         upstream_model: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
         echo_reasoning: bool = False,
+        disable_reasoning_for_quiet: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -33,6 +34,7 @@ class ModelTransport(LLMClient):
         # reasoning_content back; other upstreams may reject the extra field. Off by default, and switched on
         # for good the first time the upstream asks for it (see _asks_for_reasoning).
         self.echo_reasoning = echo_reasoning
+        self.disable_reasoning_for_quiet = disable_reasoning_for_quiet
 
     def _outgoing(self, messages: list[dict]) -> list[dict]:
         if self.echo_reasoning:
@@ -99,6 +101,8 @@ class ModelTransport(LLMClient):
         call = model_call.get()
         if call is not None:
             payload["max_tokens"] = call.max_output_tokens
+            if call.quiet and self.disable_reasoning_for_quiet:
+                payload["thinking"] = {"type": "disabled"}
             if call.run_id:
                 headers["x-run-id"] = call.run_id
             headers["x-call-id"] = call.call_id

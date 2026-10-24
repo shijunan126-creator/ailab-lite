@@ -58,7 +58,7 @@ def test_title_is_concurrent_and_slow_title_never_delays_answer(slow_title, monk
                 return {**await super().get_run(id_), "needs_conversation_title": True, "options": {"mode": "chat"}}
 
             async def set_conversation_title(self, id_, title):
-                assert main_started.is_set() and title == "概括问题"
+                assert main_started.is_set() and title == ("hi" if slow_title else "概括问题")
                 titled.set()
                 await self.append_event(id_, "conversation.titled", {"conversation_id": "c", "title": title})
 
@@ -83,7 +83,7 @@ def test_title_is_concurrent_and_slow_title_never_delays_answer(slow_title, monk
         p = Platform()
         await asyncio.wait_for(AgentLoop(platform=p, broker=FakeBroker(), llm=Model()).process("r", attempt_id="a"), 2)
         assert p.statuses[-1][0] == "succeeded" and title_closed.is_set()
-        assert titled.is_set() != slow_title
+        assert titled.is_set()
         assert len(p.reservations) == 2 and len(p.settlements) == 2
         assert not [t for t in asyncio.all_tasks() if t is not asyncio.current_task() and not t.done()]
 
@@ -294,24 +294,60 @@ def test_title_survives_answer_completion_and_is_owned_until_finished(stop, monk
     asyncio.run(scenario())
 
 
-def test_title_budget_includes_reservation_gate_and_does_not_restart(monkeypatch):
+def test_slow_gate_does_not_consume_title_model_budget(monkeypatch):
     monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.05)
 
     async def scenario():
-        platform = FakePlatform()
+        class Platform(FakePlatform):
+            async def set_conversation_title(self, rid, title):
+                self.title = title
+
+        class Model(LLMClient):
+            async def chat(self, *args, **kwargs):
+                await asyncio.sleep(0.02)
+                return LLMResponse(content="模型标题")
+
+        platform = Platform()
         gate = asyncio.Event()
-        run = {**await platform.get_run("r"), "needs_conversation_title": True, "_main_model_reserved": gate}
-        loop = AgentLoop(platform=platform, broker=FakeBroker())
-        assert await asyncio.wait_for(loop._conversation_title("r", run), 0.5) is None
-        assert not platform.reservations
-        gate.set()  # A later main reservation cannot restart the expired title.
-        await asyncio.sleep(0)
-        assert not platform.reservations and len(asyncio.all_tasks()) == 1
+        run = {**await platform.get_run("r"), "needs_conversation_title": True, "_attempt_id": "a", "_main_model_reserved": gate}
+        task = asyncio.create_task(AgentLoop(platform=platform, llm=Model())._conversation_title("r", run))
+        await asyncio.sleep(0.08)
+        assert not task.done() and not platform.reservations
+        gate.set()
+        assert await task == "模型标题" and platform.title == "模型标题"
+        assert len(platform.reservations) == len(platform.settlements) == 1
 
     asyncio.run(scenario())
 
 
-def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch):
+def test_title_timeout_applies_normalized_prompt_fallback(monkeypatch):
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.02)
+
+    async def scenario():
+        class Platform(FakePlatform):
+            async def set_conversation_title(self, rid, title):
+                self.title = title
+
+        class Model(LLMClient):
+            async def chat(self, *args, **kwargs):
+                await asyncio.Event().wait()
+
+        platform = Platform()
+        run = {
+            **await platform.get_run("r"),
+            "_attempt_id": "a",
+            "prompt": "\n# **资源释放** `指南`\n额外说明",
+            "needs_conversation_title": True,
+        }
+        assert await AgentLoop(platform=platform, llm=Model())._conversation_title("r", run) == "资源释放 指南"
+        assert platform.title == "资源释放 指南"
+        assert len(platform.reservations) == len(platform.settlements) == 1
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch, fallback):
     import threading
 
     import httpx
@@ -339,6 +375,8 @@ def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch):
             async def chat(self, messages, *args, **kwargs):
                 if "会话标题" in messages[0]["content"]:
                     assert await asyncio.to_thread(waiting.wait, 2)
+                    if fallback:
+                        raise TimeoutError("metadata inference timed out")
                     return LLMResponse(content="# **晚到** `标题`", usage={"prompt_tokens": 1, "completion_tokens": 1})
                 await asyncio.sleep(0.02)
                 return LLMResponse(content="answer", usage={"prompt_tokens": 1, "completion_tokens": 1})
@@ -357,7 +395,9 @@ def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch):
             )
             stream = response.text
             assert stream.index("event: run.completed") < stream.index("event: conversation.titled") < stream.index("event: stream.end")
-            assert c.get(f"/v1/conversations/{run['conversation_id']}", headers=AUTH).json()["title"] == "晚到 标题"
+            assert c.get(f"/v1/conversations/{run['conversation_id']}", headers=AUTH).json()["title"] == (
+                "问题" if fallback else "晚到 标题"
+            )
         finally:
             await platform.aclose()
 
