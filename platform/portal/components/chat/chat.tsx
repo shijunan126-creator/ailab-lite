@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Conversation, ConversationDetail, downloadUrl, errorMessage, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, downloadUrl, errorMessage, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
@@ -14,6 +14,7 @@ import { IconBranch, IconChevronRight, IconFolder, IconSlides } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane from "./preview-pane";
+import QueueStrip from "./queue-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
 
@@ -143,6 +144,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             // a file made or changed by this turn opens once the turn is done, not on every intermediate render
             const file = updatedPreview.current[run.id];
             delete updatedPreview.current[run.id];
+            // a message queued behind this answer has started on its own: follow it like one sent from here
+            const next = d?.turns[d.turns.length - 1];
+            if (next && next.id !== run.id && !isTerminal(next.status) && !controller.signal.aborted) {
+              stick.current = true;
+              follow(next);
+            }
             const finished = d?.turns.find((t) => t.id === run.id);
             if (!file || finished?.status !== "succeeded" || controller.signal.aborted) return;
             if (!window.matchMedia("(min-width: 761px)").matches) return; // on a phone the pane covers the chat: the file card opens it
@@ -317,6 +324,64 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
+  async function queue(prompt: string, fileIds: string[], options: SendOptions, steer: boolean): Promise<boolean> {
+    if (!id) return false;
+    setBusy(true);
+    setError("");
+    try {
+      const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue`, {
+        method: "POST",
+        signal: actionController.current.signal,
+        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, steer, ...options }),
+      });
+      setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== item.id), item] } : d));
+      return true;
+    } catch (err) {
+      const message = errorMessage(err);
+      // the answer finished while this was being written: it goes out as a normal message
+      if (/^409 /.test(String((err as any)?.message)) && message.includes("空闲")) {
+        await loadDetail();
+        return send(prompt, fileIds, options);
+      }
+      setError(message);
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeQueued(qid: string, body: { prompt?: string; steer?: boolean } | null): Promise<boolean> {
+    if (!id) return false;
+    try {
+      if (body) {
+        const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue/${qid}`, { method: "PATCH", body: JSON.stringify(body) });
+        setDetail((d) => (d ? { ...d, queue: (d.queue || []).map((q) => (q.id === qid ? item : q)) } : d));
+      } else {
+        await api(`/v1/conversations/${id}/queue/${qid}`, { method: "DELETE" });
+        setDetail((d) => (d ? { ...d, queue: (d.queue || []).filter((q) => q.id !== qid) } : d));
+      }
+      return true;
+    } catch (err) {
+      setError(errorMessage(err));
+      loadDetail();
+      return false;
+    }
+  }
+
+  async function resumeQueue() {
+    if (!id) return;
+    try {
+      const run = await api<Run>(`/v1/conversations/${id}/queue/resume`, { method: "POST" });
+      const d = await loadDetail();
+      const started = d?.turns.find((t) => t.id === run.id) || run;
+      stick.current = true;
+      follow(started);
+    } catch (err) {
+      setError(errorMessage(err));
+      loadDetail();
+    }
+  }
+
   async function answer(run: Run, questionId: string, value: string) {
     const resumed = await api<Run>(`/v1/runs/${run.id}/answer`, {
       method: "POST", signal: actionController.current.signal,
@@ -436,9 +501,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       busy={busy}
       running={running && !question}
       onSend={send}
+      onQueue={id && !question ? queue : undefined}
       onStop={stop}
       autoFocus
-      placeholder={question ? "回答上面的问题" : id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
+      placeholder={question ? "回答上面的问题" : running ? "补充或下一条消息" : id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
       projectId={projectId}
       initialFiles={initialFiles}
       context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
@@ -515,6 +581,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     locked={running}
                     forkModes={forkModes[i]}
                     onFork={fork}
+                    projectId={projectId}
                   />
                 ))}
               </div>
@@ -526,6 +593,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                   <IconSlides size={14} /> <span>预览</span> <span className="count">{previews.length}</span>
                 </button>
               ) : null}
+              <QueueStrip
+                queue={detail?.queue || []}
+                paused={!!detail?.queue_paused}
+                running={running && !question}
+                onSteer={async (qid) => void (await changeQueued(qid, { steer: true }))}
+                onEdit={(qid, prompt) => changeQueued(qid, { prompt })}
+                onRemove={async (qid) => void (await changeQueued(qid, null))}
+                onResume={resumeQueue}
+              />
               {composer}
             </div>
           </>

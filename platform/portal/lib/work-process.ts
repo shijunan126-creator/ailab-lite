@@ -16,7 +16,8 @@ export type Item =
   | { kind: "ask"; id: string; question: string; options: string[]; allowText: boolean; answer?: string }
   | { kind: "text"; step: number; text: string }
   | { kind: "thinking"; step: number; text: string; seconds: number; done: boolean }
-  | { kind: "steps"; steps: Step[] };
+  | { kind: "steps"; steps: Step[] }
+  | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
 
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
 
@@ -130,6 +131,9 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
     case "agent.ask_user":
       if (!next.some((it) => it.kind === "ask" && it.id === p.question_id))
         next.push({ kind: "ask", id: p.question_id, question: p.question || "", options: p.options || [], allowText: p.allow_text !== false });
+      break;
+    case "agent.steered":
+      if (!next.some((it) => it.kind === "steer" && it.id === p.queued_id)) next.push({ kind: "steer", id: String(p.queued_id || ""), prompt: String(p.prompt || "") });
       break;
     case "agent.ask_answered":
       for (const it of next) if (it.kind === "ask" && it.id === p.question_id) it.answer = p.answer ?? "";

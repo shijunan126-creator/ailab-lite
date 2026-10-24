@@ -95,3 +95,15 @@ test('reasoning outline: bold lines name the parts, else the first sentence',()=
  assert.deepEqual(thoughtOutline(''),[]);
  assert.equal(siteOf('https://www.example.com/a'),'example.com');
 });
+
+test('a message added while the answer runs is kept once and ends the text before it as process, not answer',()=>{
+ let items=[];
+ items=reduceEvent(items,event('agent.delta',{step:0,text:'先看第一部分。'}));
+ items=reduceEvent(items,event('agent.steered',{queued_id:'q1',prompt:'顺便对比去年'}));
+ items=reduceEvent(items,event('agent.steered',{queued_id:'q1',prompt:'顺便对比去年'}));
+ items=reduceEvent(items,event('agent.delta',{step:1,text:'已加入去年的对比。'}));
+ assert.deepEqual(items.filter((it)=>it.kind==='steer'),[{kind:'steer',id:'q1',prompt:'顺便对比去年'}]);
+ const {process,answer}=splitTurn(items);
+ assert.equal(answer,'已加入去年的对比。');
+ assert.ok(process.some((it)=>it.kind==='text'&&it.text.includes('先看第一部分')));
+});

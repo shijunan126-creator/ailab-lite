@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, FileItem, FilePreview, filePreviewUrl, filesByIds } from "../../lib/api";
-import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, IconX } from "../icons";
+import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, IconShare, IconX } from "../icons";
+import { askHref } from "../library/file-menu";
+import ShareDialog from "../share-dialog";
 import FileTile from "../library/file-tile";
 import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
@@ -12,17 +14,23 @@ import DocumentPages from "./pages";
 
 const POLL_MS = 1500;
 
+/** Where a viewed file's preview comes from: the user's own library, or a share someone opened to them. */
+export type FileSource = { preview: (fileId: string) => string; asset: (fileId: string, name: string) => string };
+const LIBRARY: FileSource = { preview: (id) => `/v1/files/${id}/preview`, asset: filePreviewUrl };
+export const FileSourceContext = createContext<FileSource>(LIBRARY);
+
 /** The preview of one file: what the list already knows when it is ready, else asked for (which starts a render) and polled. */
 function usePreview(file: FileItem): FilePreview | null {
   const known = file.preview?.status === "ready" ? file.preview : null;
   const [preview, setPreview] = useState<FilePreview | null>(known);
+  const source = useContext(FileSourceContext);
   useEffect(() => {
     setPreview(known);
     if (known || file.status !== "ready") return;
     let stale = false;
     let timer: ReturnType<typeof setTimeout>;
     const ask = () =>
-      api<FilePreview>(`/v1/files/${file.id}/preview`)
+      api<FilePreview>(source.preview(file.id))
         .then((p) => {
           if (stale) return;
           setPreview(p);
@@ -40,9 +48,10 @@ function usePreview(file: FileItem): FilePreview | null {
 }
 
 function PageScroll({ file, preview, page }: { file: FileItem; preview: FilePreview; page?: number }) {
+  const source = useContext(FileSourceContext);
   const pages = preview.pages || [];
   const total = preview.page_count || pages.length;
-  return <DocumentPages pages={pages} src={(name) => filePreviewUrl(file.id, name)} documentKey={file.id} total={total} initialPage={page}>
+  return <DocumentPages pages={pages} src={(name) => source.asset(file.id, name)} documentKey={file.id} total={total} initialPage={page}>
     {total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
       <IconDownload size={15} /> 下载查看全部 {total} 页
     </a> : null}
@@ -50,12 +59,13 @@ function PageScroll({ file, preview, page }: { file: FileItem; preview: FilePrev
 }
 
 function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
+  const source = useContext(FileSourceContext);
   const [text, setText] = useState<string | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
     if (!preview.text) return;
     let stale = false;
-    fetch(filePreviewUrl(file.id, preview.text))
+    fetch(source.asset(file.id, preview.text))
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((t) => !stale && setText(t))
       .catch((e) => !stale && setError(String(e?.message || e)));
@@ -90,11 +100,12 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
 }
 
 function ImageView({ file, preview }: { file: FileItem; preview: FilePreview }) {
+  const source = useContext(FileSourceContext);
   const [zoomed, setZoomed] = useState(false);
   return (
     <div className={`viewer-image ${zoomed ? "zoomed" : ""}`} onClick={() => setZoomed(!zoomed)}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={filePreviewUrl(file.id, preview.image || "original")} alt={file.filename} decoding="async" />
+      <img src={source.asset(file.id, preview.image || "original")} alt={file.filename} decoding="async" />
     </div>
   );
 }
@@ -123,6 +134,7 @@ function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
 }
 
 function Body({ file, page }: { file: FileItem; page?: number }) {
+  const source = useContext(FileSourceContext);
   const preview = usePreview(file);
   if (file.status !== "ready") return <Unavailable file={file} />;
   if (!preview || preview.status === "pending") return <Waiting />;
@@ -133,7 +145,7 @@ function Body({ file, page }: { file: FileItem; page?: number }) {
     case "sheets":
       return (
         <div className="viewer-sheet">
-          <Sheets src={preview.data ? filePreviewUrl(file.id, preview.data) : null} />
+          <Sheets src={preview.data ? source.asset(file.id, preview.data) : null} />
         </div>
       );
     case "text":
@@ -214,6 +226,8 @@ export default function FileViewer({
 }) {
   const [version, setVersion] = useState<FileItem | null>(null);
   const [restoring, setRestoring] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  const own = useContext(FileSourceContext) === LIBRARY; // a file shared to this user is theirs to read, not to pass on
   useEffect(() => setVersion(null), [file.id]);
   const shown = version || file;
 
@@ -274,6 +288,11 @@ export default function FileViewer({
                 <IconMessage size={18} />
               </a>
             ) : null}
+            {own && !version ? (
+              <button className="icon-btn" onClick={() => setSharing(true)} title="分享" aria-label={`分享 ${file.filename}`}>
+                <IconShare size={18} />
+              </button>
+            ) : null}
             <a className="icon-btn" href={downloadUrl(shown.download_url)} title="下载" aria-label={`下载 ${shown.filename}`}>
               <IconDownload size={18} />
             </a>
@@ -283,6 +302,7 @@ export default function FileViewer({
           <IconX size={18} />
         </button>
       </header>
+      {sharing ? <ShareDialog target={{ kind: "file", fileId: file.id }} title={file.filename} onClose={() => setSharing(false)} /> : null}
       <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
         <Body key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
         {prev ? (
@@ -316,7 +336,14 @@ export function useFileViewer(): { open: (ids: string[], id: string, page?: numb
   }, []);
   const close = useCallback(() => setState(null), []);
   const viewer = state ? (
-    <FileViewer files={state.files} file={state.file} page={state.page} onOpen={(file) => setState((s) => (s ? { ...s, file, page: undefined } : s))} onClose={close} />
+    <FileViewer
+      files={state.files}
+      file={state.file}
+      page={state.page}
+      onOpen={(file) => setState((s) => (s ? { ...s, file, page: undefined } : s))}
+      onClose={close}
+      chatHref={(f) => askHref(f.id, f.project_id)}
+    />
   ) : null;
   return { open, viewer };
 }

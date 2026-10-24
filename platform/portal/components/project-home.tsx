@@ -9,6 +9,7 @@ import { projectsChanged } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
 import { IconDownload, IconFolder, IconMore, IconPencil, IconTrash } from "./icons";
 import ConversationMenu from "./conversation-menu";
+import ProjectBrief from "./project-brief";
 import FileTile from "./library/file-tile";
 import FileViewer from "./preview/file-viewer";
 import { useLibrary } from "./library/use-library";
@@ -114,6 +115,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
         </div>
       </div>
 
+      <ProjectBrief project={project} />
       {error ? <div className="alert error">{error}</div> : null}
       {composer}
 

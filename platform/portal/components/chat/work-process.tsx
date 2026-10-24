@@ -3,7 +3,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Run } from "../../lib/api";
 import { type Item, type PlanStep, type Step, siteOf, thoughtOutline, workHeading } from "../../lib/work-process";
-import { IconBook, IconBulb, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX } from "../icons";
+import { IconBook, IconBulb, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX, IconCornerDownRight } from "../icons";
 import Markdown from "../markdown";
 
 const MARK: Record<PlanStep["status"], string> = { pending: "pending", running: "running", done: "ok", skipped: "note", failed: "failed" };
@@ -132,6 +132,7 @@ export default function WorkProcess({ run, items, live, loading, error, more, on
             {item.kind === "text" ? (item.text.trim() ? <div className="pr-narration"><Markdown text={item.text} /></div> : null)
               : item.kind === "thinking" ? <Thinking item={item} label={thinking} live={live} />
               : item.kind === "ask" ? renderAsk(item)
+              : item.kind === "steer" ? <div className="pr-steer"><IconCornerDownRight size={13} /> 收到补充</div>
               : item.kind === "plan" ? <ol className="steps-list" aria-label="计划">{item.steps.map((step) => <li key={step.id} className={`step plan-step ${MARK[step.status]}`}>
                 <span className="step-mark" /><div className="step-body"><span className="step-label">{step.title}</span></div>
               </li>)}</ol>

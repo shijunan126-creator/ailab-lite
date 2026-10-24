@@ -7,8 +7,9 @@ import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { siteOf, splitTurn, turnSources } from "../../lib/work-process";
 import CopyButton from "../copy-button";
-import { IconBranch, IconChevronRight, IconDownload, IconFile, IconPencil, IconRetry } from "../icons";
+import { IconBranch, IconChevronRight, IconDownload, IconFile, IconPencil, IconRetry, IconCornerDownRight } from "../icons";
 import { ExtTile } from "../library/file-tile";
+import FileMenu from "../library/file-menu";
 import Markdown from "../markdown";
 import { useFileViewer } from "../preview/file-viewer";
 
@@ -153,6 +154,7 @@ export default function Turn({
   locked,
   forkModes,
   onFork,
+  projectId,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -170,6 +172,7 @@ export default function Turn({
   locked?: boolean; // an answer is being written: versions and edits wait for it
   forkModes?: ForkMode[];
   onFork?: (run: Run, mode: ForkMode) => Promise<void>;
+  projectId?: string | null; // where this conversation's files are kept
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -212,6 +215,9 @@ export default function Turn({
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
   const sources = turnSources(shown);
   const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
+  // what the user added while this answer ran: from the turn itself once it is saved, from the stream until then
+  const steered = [...(run.steered || [])];
+  for (const it of shown || []) if (it.kind === "steer" && !steered.some((x) => x.id === it.id)) steered.push({ id: it.id, prompt: it.prompt });
 
   return (
     <div className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
@@ -240,6 +246,12 @@ export default function Turn({
             ))}
           </div>
         ) : null}
+        {steered.map((x) => (
+          <div key={x.id} className="bubble steer">
+            <IconCornerDownRight size={13} />
+            <span>{x.prompt}</span>
+          </div>
+        ))}
         {editing === null ? (
           <div className="msg-actions">
             <CopyButton text={run.prompt} label="复制消息" />
@@ -294,6 +306,7 @@ export default function Turn({
                   <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
                     <IconDownload size={15} /> <span className="dl-label">下载</span>
                   </a>
+                  <FileMenu fileId={a.file_id} filename={a.filename} projectId={projectId} />
                 </div>
               ))}
             </div>

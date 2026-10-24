@@ -44,6 +44,7 @@ export type Run = {
   retry_of?: string | null; // the turn this one regenerated
   edited_from?: string | null; // the turn whose message was edited into this one
   versions?: { index: number; count: number; ids: string[] }; // the turns answering the same point of the conversation
+  steered?: { id: string; prompt: string }[]; // messages the user added while it was running, in the order it took them
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
@@ -82,6 +83,8 @@ export type Conversation = {
   last_status?: string | null;
   forked_from?: { conversation_id: string; run_id: string } | null;
   pinned_at?: string | null;
+  active_run_id?: string | null; // the last turn of the version on show
+  moved_files?: number | null; // only in the reply to a move that carried the files along
 };
 
 export type ConversationDetail = Conversation & {
@@ -89,6 +92,89 @@ export type ConversationDetail = Conversation & {
   previews: Preview[];
   has_more: boolean;
   context?: { used_tokens: number | null; model: string | null; compact_at_tokens: number | null };
+  queue?: QueuedMessage[];
+  queue_paused?: boolean; // the turn before it did not finish well, or the path changed: the user decides
+};
+
+/** A message written while an answer is still running. steer: delivered into that answer at its next step. */
+export type QueuedMessage = {
+  id: string;
+  prompt: string;
+  file_ids: string[];
+  model: string;
+  mode: "chat" | "work";
+  skill: string | null;
+  steer: boolean;
+  state: "queued" | "steered" | "started" | "canceled";
+  created_at: string;
+};
+
+export type NotificationKind = "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received";
+export type Notice = {
+  id: string;
+  kind: NotificationKind;
+  title: string;
+  conversation_id: string | null;
+  run_id: string | null;
+  share_id: string | null;
+  created_at: string;
+  read_at: string | null;
+};
+
+export type Person = { id: string; username: string; display_name: string };
+
+export type Share = {
+  id: string;
+  kind: "conversation" | "file";
+  conversation_id: string | null;
+  file_id: string | null;
+  audience: "people" | "everyone";
+  recipients: Person[];
+  title: string;
+  url: string; // the Portal page, /s/<id>
+  through_run_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ShareFile = Pick<FileItem, "id" | "filename" | "content_type" | "size" | "version" | "thumbnail_url" | "preview"> & {
+  download_url: string;
+};
+
+export type ShareView = {
+  share: Share;
+  owner: { display_name: string };
+  title: string;
+  turns: {
+    id: string;
+    prompt: string;
+    answer: string;
+    created_at: string;
+    mode: "chat" | "work";
+    artifacts: ShareFile[];
+    attachments: { filename: string }[];
+  }[];
+  file?: ShareFile | null; // a file share: the file itself
+  next_cursor: string | null;
+};
+
+export type BrandKind = "logo" | "pptx" | "docx";
+export type BrandAsset = {
+  file_id: string;
+  filename: string;
+  status: string;
+  size: number;
+  analysis: Record<string, any> | null;
+  thumbnail_url: string | null;
+};
+export type Brand = {
+  enabled: boolean;
+  name: string;
+  colors: { primary: string; accent: string };
+  font: string | null;
+  version: number;
+  updated_at: string | null;
+  assets: Partial<Record<BrandKind, BrandAsset | null>>;
 };
 
 export type SearchHit = {
@@ -209,6 +295,7 @@ export function filePreviewUrl(fileId: string, name: string): string {
 export type Project = {
   id: string;
   name: string;
+  instructions?: string; // the standing brief every conversation in the project starts with
   created_at: string;
   updated_at: string;
   conversations: number;

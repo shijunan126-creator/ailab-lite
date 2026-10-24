@@ -341,3 +341,64 @@ export const IconPrinter = (p: Props) => (
     <rect x="6" y="14" width="12" height="8" rx="1" />
   </Svg>
 );
+
+export const IconBell = (p: Props) => (
+  <Svg {...p}>
+    <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
+    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+  </Svg>
+);
+
+export const IconShare = (p: Props) => (
+  <Svg {...p}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
+  </Svg>
+);
+
+export const IconLink = (p: Props) => (
+  <Svg {...p}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+  </Svg>
+);
+
+export const IconUsers = (p: Props) => (
+  <Svg {...p}>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
+  </Svg>
+);
+
+export const IconPalette = (p: Props) => (
+  <Svg {...p}>
+    <path d="M12 22a10 10 0 1 1 10-10c0 2.8-2.2 4-4 4h-2a2 2 0 0 0-1.5 3.3A1.6 1.6 0 0 1 12 22z" />
+    <circle cx="7.5" cy="10.5" r="1" />
+    <circle cx="12" cy="7.5" r="1" />
+    <circle cx="16.5" cy="10.5" r="1" />
+  </Svg>
+);
+
+export const IconQueue = (p: Props) => (
+  <Svg {...p}>
+    <path d="M3 6h13M3 12h9M3 18h9" />
+    <path d="m16 15 3 3 3-3M19 10v8" />
+  </Svg>
+);
+
+export const IconCornerDownRight = (p: Props) => (
+  <Svg {...p}>
+    <path d="m15 10 5 5-5 5" />
+    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
+  </Svg>
+);
+
+export const IconAsk = (p: Props) => (
+  <Svg {...p}>
+    <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
+    <path d="M9.6 9.5a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.2-2.4 3.2M12 16.5h.01" />
+  </Svg>
+);

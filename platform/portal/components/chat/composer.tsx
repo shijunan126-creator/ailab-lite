@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds, ModelInfo, Skill, uploadFile } from "../../lib/api";
-import { IconArrowUp, IconChart, IconFile, IconLibrary, IconPlus, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
+import { IconArrowUp, IconChart, IconFile, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
 
@@ -38,6 +38,7 @@ export default function Composer({
   busy,
   running,
   onSend,
+  onQueue,
   onStop,
   autoFocus,
   placeholder,
@@ -51,6 +52,8 @@ export default function Composer({
   busy: boolean;
   running: boolean;
   onSend: (prompt: string, fileIds: string[], options: SendOptions) => Promise<boolean>;
+  // while an answer runs: the message waits for it (steer: or goes into it at its next step)
+  onQueue?: (prompt: string, fileIds: string[], options: SendOptions, steer: boolean) => Promise<boolean>;
   onStop: () => void;
   autoFocus?: boolean;
   placeholder?: string;
@@ -157,6 +160,8 @@ export default function Composer({
 
   const waiting = files.some((f) => f.status === "pending");
   const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !!model;
+  const queueing = running && !!onQueue;
+  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !!model;
 
   // "/" at the start of an empty message lists the skills; picking one fills in what it needs
   const buttons: SkillButton[] = [
@@ -190,13 +195,11 @@ export default function Composer({
     });
   }
 
-  async function send() {
-    if (!canSend) return;
-    const ok = await onSend(
-      text.trim(),
-      files.filter((f) => f.status === "ready").map((f) => f.id),
-      picked ? { mode: "work", skill: picked.skill } : { mode }
-    );
+  async function send(steer = false) {
+    if (queueing ? !canQueue : !canSend) return;
+    const ready = files.filter((f) => f.status === "ready").map((f) => f.id);
+    const options: SendOptions = picked ? { mode: "work", skill: picked.skill } : { mode };
+    const ok = queueing ? await onQueue!(text.trim(), ready, options, steer) : await onSend(text.trim(), ready, options);
     if (ok) {
       setText("");
       setFiles([]);
@@ -296,9 +299,10 @@ export default function Composer({
             }
           }
           // isComposing: Enter that confirms a Chinese IME candidate must not send the message
+          // Alt/Option+Enter while an answer runs: hand the message to that answer now
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault();
-            send();
+            send(queueing && e.altKey);
           }
         }}
       />
@@ -381,12 +385,17 @@ export default function Composer({
           ))}
         </select>
         {error ? <span className="error hint">{error}</span> : null}
+        {queueing && text.trim() ? (
+          <button className="send-btn queue" onClick={() => send(false)} disabled={!canQueue} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">
+            <IconQueue size={16} />
+          </button>
+        ) : null}
         {running ? (
           <button className="send-btn stop" onClick={onStop} aria-label="停止" title="停止">
             <IconStop size={14} />
           </button>
         ) : (
-          <button className="send-btn" onClick={send} disabled={!canSend} aria-label="发送" title="发送">
+          <button className="send-btn" onClick={() => send()} disabled={!canSend} aria-label="发送" title="发送">
             {uploading ? <span className="chip-spin light" aria-hidden="true" /> : <IconArrowUp size={18} />}
           </button>
         )}

@@ -13,6 +13,7 @@ import {
   IconMore,
   IconRestore,
   IconSearch,
+  IconShare,
   IconStar,
   IconTrash,
   IconUpload,
@@ -22,6 +23,7 @@ import {
 import FileTile, { thumbUrl } from "../../../components/library/file-tile";
 import { MoveDialog, NewProjectInput } from "../../../components/library/projects";
 import FileViewer from "../../../components/preview/file-viewer";
+import ShareDialog from "../../../components/share-dialog";
 import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
 import { formatBytes, formatDate, timeAgo } from "../../../lib/format";
@@ -70,6 +72,7 @@ function Library() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [moving, setMoving] = useState<FileItem[] | null>(null);
+  const [sharing, setSharing] = useState<FileItem | null>(null);
   const [viewing, setViewing] = useState<FileItem | null>(null);
   const [addingProject, setAddingProject] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -268,6 +271,18 @@ function Library() {
             >
               <IconFolderInput size={15} /> 移动到项目
             </button>
+            {f.status === "ready" ? (
+              <button
+                className="menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenuFor(null);
+                  setSharing(f);
+                }}
+              >
+                <IconShare size={15} /> 分享
+              </button>
+            ) : null}
             <button
               className="menu-item danger"
               role="menuitem"
@@ -503,6 +518,9 @@ function Library() {
                           {(f.versions || 0) > 1 ? <span>{f.versions} 个版本</span> : null}
                           {f.meta?.skill ? <Link className="meta-project" href="/skills">个人技能 · {f.meta.skill.title}</Link> : null}
                           {st && !trash ? <span className={`status ${f.status === "rejected" ? "failed" : "queued"}`}>{st}</span> : null}
+                          {f.meta?.summary?.status === "done" && f.meta.summary.text && !trash ? (
+                            <span className="lib-summary" title={f.meta.summary.text}>{f.meta.summary.text}</span>
+                          ) : null}
                         </div>
                       </div>
                     </div>
@@ -578,6 +596,7 @@ function Library() {
         </div>
       ) : null}
 
+      {sharing ? <ShareDialog target={{ kind: "file", fileId: sharing.id }} title={sharing.filename} onClose={() => setSharing(null)} /> : null}
       {moving ? (
         <MoveDialog
           title={moving.length === 1 ? `移动「${moving[0].filename}」` : `移动 ${moving.length} 个文件`}
