@@ -93,14 +93,14 @@ export default function MarketPanel({
                 onClick={() => install(item)}
               >
                 <IconDownload size={14} />{" "}
-                {item.builtin ? "已内置" : item.installed ? "已添加" : busy === item.slug ? "安装中…" : "添加到我的技能"}
+                {item.builtin ? "已内置" : item.installed ? "已下载" : busy === item.slug ? "下载中…" : "下载"}
               </button>
             </div>
           ))}
         </div>
       ))}
       <div className="hint" style={{ padding: 16 }}>
-        安装会把技能复制到你的个人技能，之后可以编辑、删除；更新需要重新安装。
+        下载会把技能复制到你的个人技能，之后可以编辑、删除；更新需要重新下载。
       </div>
     </section>
   );
