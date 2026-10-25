@@ -173,7 +173,7 @@ export default function PreviewPane({
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>
       ) : current ? (
-        <div className={`preview-body ${current.kind === "html" ? "pane-scroll" : ""}`} key={`${current.filename}:${current.file_id || ""}`}>
+        <div className="preview-body" key={`${current.filename}:${current.file_id || ""}`}>
           {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
         </div>
       ) : null}
