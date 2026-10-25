@@ -263,7 +263,7 @@ def test_foreground_keeps_head_and_failure_tail_with_cjk_transport(tmp_path, mon
     class Broker:
         async def exec(self, lease_id, command, timeout=None):
             result = await asyncio.to_thread(provider.exec, lease_id, command, timeout)
-            assert len(result.stdout.encode()) < 64000
+            assert len(result.stdout.encode()) < 120000
             return {"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
 
     command = shlex.join(
@@ -277,8 +277,8 @@ def test_foreground_keeps_head_and_failure_tail_with_cjk_transport(tmp_path, mon
         result = asyncio.run(execute_tool("exec", {"cmd": command}, lease, Broker()))
         for stream, ending in [("stdout", "FAILURE\n"), ("stderr", "ERROR")]:
             assert result[stream].endswith(ending) and "elided" in result[stream]
-            if character == "中":
-                assert result[stream].startswith("HEAD") and len(result[stream]) >= 9000
+            assert result[stream].startswith("HEAD") and len(result[stream]) >= 9000
+            assert result[stream][-8000:] == (character * 20000 + ending)[-8000:]
     finally:
         provider.release(lease)
 

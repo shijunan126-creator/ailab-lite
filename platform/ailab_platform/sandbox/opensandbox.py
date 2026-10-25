@@ -185,8 +185,8 @@ class OpenSandboxProvider(SandboxProvider):
             duration = int(execution.complete.execution_time_in_millis)
         return ExecResult(
             exit_code=int(exit_code),
-            stdout=_join(execution.logs.stdout)[-64000:],
-            stderr=_join(execution.logs.stderr)[-64000:],
+            stdout=_join(execution.logs.stdout)[-128000:],
+            stderr=_join(execution.logs.stderr)[-128000:],
             duration_ms=duration,
         )
 

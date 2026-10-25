@@ -96,21 +96,6 @@ def supervise(payload, directory):
         put(directory / "exit", result)
 
 
-def wire_stream(text):
-    # Two streams get 30KB each; leave >4KB for fixed protocol metadata.
-    # JSON escaping costs at most six bytes per character. Preserve the full
-    # 8000-character tail for ordinary/CJK text, adapt only pathological controls.
-    if len(json.dumps(text, ensure_ascii=False).encode("utf-8")) <= 30000:
-        return text
-    head, tail = text[:1000], text[-8000:]
-    while len(json.dumps(head + "\n...[wire elided]...\n" + tail, ensure_ascii=False).encode("utf-8")) > 30000:
-        if head:
-            head = head[: len(head) // 2]
-        else:
-            tail = tail[len(tail) // 10 + 1 :]
-    return head + "\n...[wire elided]...\n" + tail
-
-
 def control(payload):
     ROOT.mkdir(mode=0o700, exist_ok=True)
     directory = ROOT / payload["handle"]
@@ -206,7 +191,7 @@ def control(payload):
     code = completed.get("exit_code")
     running = code is None and alive(meta)
     if payload.get("initial") and code is not None:
-        return {"ok": code == 0, **{key: wire_stream(value) if key in {"stdout", "stderr"} else value for key, value in completed.items()}}
+        return {"ok": code == 0, **completed}
     return {
         "ok": running or code is not None,
         "error": "" if running or code is not None else "后台进程退出状态丢失，请先检查文件",
@@ -226,4 +211,9 @@ if __name__ == "__main__":
     if request["action"] == "supervise":
         supervise(request, ROOT / request["handle"])
     else:
-        print(json.dumps(control(request), ensure_ascii=False))
+        encoded = json.dumps(control(request), ensure_ascii=False)
+        # Two <=9050-character streams cost at most 108600 bytes even if every
+        # character needs a six-byte JSON escape. Leave room for fixed metadata.
+        if len(encoded.encode("utf-8")) > 120000:
+            raise ValueError("命令输出超过内部传输上限")
+        print(encoded)
