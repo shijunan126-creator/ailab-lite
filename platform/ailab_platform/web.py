@@ -30,6 +30,7 @@ import socket
 import tempfile
 import time
 from collections.abc import AsyncIterator
+from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urljoin, urlsplit, urlunsplit
@@ -37,6 +38,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpcore
 import httpx
 
+from . import reader
 from .config import settings
 
 USER_AGENT = "AILab-lite/0.1 (safe web research; https://github.com/shijunan126-creator/ailab-lite)"
@@ -432,12 +434,10 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
     }
 
 
-async def read_url(url: str, max_chars: int | None = None) -> dict:
+async def fetch_html(url: str) -> dict:
+    """One bounded public fetch of a text-like page: raw decoded text, nothing extracted. The
+    Agent's read_url and the Portal's reader share it — same caps, one fetch per click."""
     current = _validate_url(url)
-    limit = max(1000, min(int(max_chars or settings.web_max_chars), 60_000))
-    issue = GITHUB_ISSUE.match(current)
-    if issue:
-        return await read_github_issue(*issue.groups(), limit)
     headers = {
         "Accept": "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.1",
         "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.7",
@@ -456,8 +456,28 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
             )
             encoding = resp.encoding or "utf-8"
     text = body.decode(encoding, "replace")
-    title, links = "", []
-    if ctype in ("text/html", "application/xhtml+xml", "") or text.lstrip().startswith("<"):
+    title = ""
+    if m := re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S):
+        title = _clean(unescape(m[1]))[:300]
+    return {
+        "url": final,
+        "title": title,
+        "text": text,
+        "content_type": ctype or "text/html",
+        "truncated": truncated,
+    }
+
+
+async def read_url(url: str, max_chars: int | None = None) -> dict:
+    current = _validate_url(url)
+    limit = max(1000, min(int(max_chars or settings.web_max_chars), 60_000))
+    issue = GITHUB_ISSUE.match(current)
+    if issue:
+        return await read_github_issue(*issue.groups(), limit)
+    page = await fetch_html(current)
+    final, ctype, text, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
+    title, links = page["title"], []
+    if ctype in ("text/html", "application/xhtml+xml") or text.lstrip().startswith("<"):
         title, text, links = extract_html(text, final)
     elif ctype == "application/json":
         try:
@@ -474,7 +494,38 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
         "url": final,
         "title": title or urlsplit(final).netloc,
         "text": text,
-        "content_type": ctype or "text/html",
+        "content_type": ctype,
         "truncated": truncated,
         "links": links,
+    }
+
+
+async def read_page(url: str) -> dict:
+    """The side-pane reader's view of one public page: the main content as structured blocks
+    (see ailab_platform.reader) — the article without the site chrome around it."""
+    current = _validate_url(url)
+    if issue := GITHUB_ISSUE.match(current):
+        page = await read_github_issue(*issue.groups(), 20_000)
+        return {
+            "url": page["url"],
+            "title": page["title"],
+            "blocks": reader.markdown_to_blocks(page["text"]),
+            "truncated": page["truncated"],
+        }
+    page = await fetch_html(current)
+    ctype, raw = page["content_type"], page["text"]
+    if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
+        blocks = reader.extract_blocks(raw, page["url"])
+    elif ctype == "application/json":
+        try:
+            blocks = [{"type": "pre", "text": json.dumps(json.loads(raw), ensure_ascii=False, indent=1)[:20_000], "lt": 0}]
+        except ValueError:
+            blocks = [{"type": "pre", "text": raw[:20_000], "lt": 0}]
+    else:
+        blocks = reader.markdown_to_blocks(raw)
+    return {
+        "url": page["url"],
+        "title": page["title"] or urlsplit(page["url"]).netloc,
+        "blocks": blocks,
+        "truncated": page["truncated"],
     }
