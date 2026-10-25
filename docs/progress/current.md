@@ -7,7 +7,7 @@
 - 修复 resume后的checkpoint删除旧快照却遗留result引用：checkpoint事务同步结果引用再提交删除；红绿覆盖崩溃后下一轮恢复、过期判断、Work fork独立副本。真实Docker又发现并修复跨tmpfs helper安装EXDEV和SIGKILL supervisor遗留活后代；macOS身份检查补齐Z拒绝。
 - 已验证Docker/runc与runsc各400连续exec，分别209.262/259.915秒，四次采样各5 PID/0 Z；静默poll、9028字符头尾、20000字符CJK命令、4成员kill-tree、kill-all、supervisor失踪失败/槽位释放、tar与release正常。轮询分别6/5次exec_wait仅2快照、旧对象删除、最终1对象；OpenSandbox1.1.1/runc+dns+nft也完成400次/1012.291秒、每100次5 PID/0 Z，静默2次wait和相同控制生命周期通过，快照2次wait/2快照/最终1对象。三条真实路径9项通过、0失败/跳过。
 - 最终产品/测试`38a71f8`：SQLite1248通过/132跳过，PG16+Redis1335通过/45跳过，Portal38项/build、Ruff355文件、五服务E2E98通过/0跳过，均0失败。包含未配置外部组件及可选OTEL跳过；真实沙箱另验不冒充全套外部组合。所有本轮结果、失败历史、性能成本和清理统一写入[最终记录](updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)。历史子分支待接收/待cherry-pick均不代表当前集成缺失。
-- 本轮PG/Redis/五服务/OSB均停止，测试容器/卷/四个镜像已删除，专用Docker计数全0；`ailab-verify=Stopped`，七应用/DB端口、OSB38090及43100–43220均无监听，默认context未改，无本轮测试/helper残留。下一步：父任务接收`38a71f8`与本轮最终文档提交，无待实现修复；继续保留真实模型1–4小时、目标2vCPU/8GiB整栈容量、真实手机未验。不自动开启其他路线项或发布；旧审查证据见[review3](updates/2026-10-25-long-runs-review3.md)。
+- 本轮PG/Redis/五服务/OSB均停止，测试容器/卷/四个镜像已删除，专用Docker计数全0；`ailab-verify=Stopped`，七应用/DB端口、OSB38090及43100–43220均无监听，默认context未改，无本轮测试/helper残留。已快进合入本地集成分支 `feat/long-runs-sources@7f94cba`（领先 `origin/main` 41个提交）。下一步：等待用户授权推送/PR/合并/部署，无待实现修复；继续保留真实模型1–4小时、目标2vCPU/8GiB整栈容量、真实手机未验。不自动开启其他路线项或发布；旧审查证据见[review3](updates/2026-10-25-long-runs-review3.md)。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
