@@ -20,6 +20,11 @@ export type Item =
   | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
 
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
+const LOOP_REASON: Record<string, string> = {
+  identical_call_result: "同一操作重复得到相同结果",
+  repeated_call_error: "同一操作反复出错",
+  alternating_call_result: "两个操作来回重复",
+};
 
 function describeTool(name: string, args: any): { label: string; detail?: string } {
   switch (name) {
@@ -117,6 +122,8 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
         if (step) {
           step.status = p.ok ? "ok" : "failed";
           step.output = [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500);
+          // a command still going after its first wait: the model comes back to it with exec_wait
+          if (p.running) step.label = `${step.label} · 仍在运行`;
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
           break;
         }
@@ -154,7 +161,7 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       break;
     case "agent.budget": {
       const minutes = typeof p.minutes === "number" ? `已工作 ${Math.round(p.minutes)} 分钟` : undefined;
-      if (p.kind === "nudge") note("提醒换个方法", p.reason);
+      if (p.kind === "nudge") note("提醒换个方法", LOOP_REASON[p.reason] || p.reason);
       else if (p.kind === "wrap_up") note("开始收尾", p.reason || minutes);
       // runs recorded before v2 still carry these
       else if (p.kind === "soft") note("检查进度", minutes);
