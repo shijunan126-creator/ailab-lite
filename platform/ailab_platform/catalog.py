@@ -184,7 +184,3 @@ def get_catalog() -> Catalog:
             log.warning("model %s is hidden from users: %s", spec.id, why)
     log.info("model catalog: %s (default %s)", [m.id for m in catalog.available()], catalog.default_id())
     return catalog
-
-
-def reset_catalog() -> None:
-    get_catalog.cache_clear()
