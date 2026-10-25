@@ -541,3 +541,5 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 小时自查/收尾提示必须等 pending assistant/tool 配对后再注入；v1 checkpoint 的 review_at/progress_marks 不再是门禁。重复检测必须读 durable tool_log，不依赖会被压缩的 messages；只让真实 steer/人工继续重置窗口，crash 与平台提示不能重置。正常 exec_wait 的 total_bytes/output_tail 变化必须参与比较，idle/duration 不应掩盖重复。
 - MockSandbox 也要把 helper 的 /tmp/ailab-background 映射到自身 sandbox 根，避免宿主不同租约共享句柄/上限。真实Linux /proc围栏与mock宿主ps证据仍分开报告。
 - 完整测试前添加GNU coreutils/findutils路径；PG测试 conftest 启动会 DROP/CREATE public，同一个临时业务库不能并发启动第二个pytest（包括不使用DB的定向文件）。本轮环境误启及旧spy断言失败不计入最终验收；以最终单独完整运行计数为准。
+
+- yield=0 也可能在首次读取状态前已经完成，不能因零等待就省略完成后的 stdout/stderr。用延迟身份探针让 `printf quick` 在首次状态读取前完成，修复前稳定丢stdout；修复后仍一次Broker往返并返回完整短命令结果。

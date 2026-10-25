@@ -17,6 +17,7 @@ class LocalBroker:
     def __init__(self, tmp_path):
         self.root = tmp_path / "jobs"
         self.commands = []
+        self.source_transform = lambda source: source
 
     async def exec(self, lease, command, timeout=None):
         self.commands.append(command)
@@ -24,6 +25,7 @@ class LocalBroker:
         source = Path(__file__).parents[1] / "ailab_platform/agent/background_helper.py"
         original = source.read_bytes()
         changed = original.replace(b'Path("/tmp/ailab-background")', f"Path({str(self.root)!r})".encode())
+        changed = self.source_transform(changed)
         args[0] = sys.executable
         args[2] = args[2].replace(repr(original.decode()), repr(changed.decode()))
         child = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -233,3 +235,13 @@ def test_command_lifetime_is_clamped_to_remaining_budget(tmp_path):
         assert completed["exit_code"] == -9 and not completed["running"]
 
     asyncio.run(scenario())
+
+
+def test_legacy_immediate_yield_preserves_output_if_command_already_exited(tmp_path):
+    broker = LocalBroker(tmp_path)
+    broker.source_transform = lambda source: source.replace(
+        b"def process_starttime(pid):", b"def process_starttime(pid):\n    time.sleep(0.2)"
+    )
+    result = asyncio.run(execute_tool("exec", {"cmd": "printf quick", "background": True}, "lease", broker))
+    assert len(broker.commands) == 1
+    assert result["exit_code"] == 0 and result["stdout"] == "quick"

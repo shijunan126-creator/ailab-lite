@@ -166,7 +166,7 @@ def control(payload):
         completed = {"exit_code": completed}
     code = completed.get("exit_code")
     running = code is None and alive(meta)
-    if payload.get("initial") and code is not None and payload["seconds"] > 0:
+    if payload.get("initial") and code is not None:
         return {"ok": code == 0, **completed}
     return {
         "ok": running or code is not None,
