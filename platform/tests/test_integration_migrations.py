@@ -13,8 +13,8 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0029"]
-    revisions = ("0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029")
+    assert scripts.get_heads() == ["0030"]
+    revisions = ("0022", "0023", "0024", "0025", "0026", "0027", "0028", "0029", "0030")
     assert [scripts.get_revision(rev).down_revision for rev in revisions] == [
         "0021",
         "0022",
@@ -24,6 +24,7 @@ def test_integrated_feature_chain_up_down_reup(engine):
         "0026",
         "0027",
         "0028",
+        "0029",
     ]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:
@@ -41,7 +42,7 @@ def test_integrated_feature_chain_up_down_reup(engine):
     for revision in revisions:
         _upgrade_to(engine, revision)
         assert _version(engine) == revision
-    for revision in ("0028", "0027", "0026", "0025", "0024", "0023", "0022", "0021"):
+    for revision in ("0029", "0028", "0027", "0026", "0025", "0024", "0023", "0022", "0021"):
         _downgrade_to(engine, revision)
         assert _version(engine) == revision
     assert "scheduled_tasks" not in inspect(engine).get_table_names()

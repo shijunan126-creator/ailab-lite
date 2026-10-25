@@ -263,6 +263,7 @@ class Run(Base):
         Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
         Index("ix_runs_waiting", "status", "waiting_since", "id"),
+        Index("ix_runs_status_id", "status", "id"),
         Index("ix_runs_finished", "status", "finished_at", "id"),
     )
 

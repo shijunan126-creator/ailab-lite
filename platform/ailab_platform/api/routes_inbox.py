@@ -159,7 +159,7 @@ def resume_queue(conversation_id: str, user: User = Depends(current_user), db: S
         db.refresh(conv)
         require_idle(db, conv.id)
         conv.queue_paused = False
-        row = dispatch_next(db, conv)
+        row = dispatch_next(db, conv, raise_admission=True)
         db.commit()
         if row is None:
             raise HTTPException(409, "队列为空或消息暂时无法启动")

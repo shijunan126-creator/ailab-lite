@@ -4,7 +4,8 @@ import test from 'node:test';
 import ts from 'typescript';
 const source = await readFile(new URL('../lib/work-process.ts', import.meta.url), 'utf8');
 const compiled = ts.transpile(source, {module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022});
-const {reduceEvent,workHeading,splitTurn,thoughtOutline,turnSources,siteOf} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const mod = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {reduceEvent,workHeading,splitTurn,thoughtOutline,turnSources,siteOf} = mod;
 const event=(type,payload)=>({type,payload});
 
 test('reasoning, narrative, plan updates and tools retain their order; reasoning text streams into its block',()=>{
@@ -106,4 +107,31 @@ test('a message added while the answer runs is kept once and ends the text befor
  const {process,answer}=splitTurn(items);
  assert.equal(answer,'已加入去年的对比。');
  assert.ok(process.some((it)=>it.kind==='text'&&it.text.includes('先看第一部分')));
+});
+test('sources the answer links to come first in its order; the rest are more',()=>{
+ const {splitSources,urlKey}=mod;
+ const a={title:'A',url:'https://a.com/x/',site:'a.com'},b={title:'B',url:'https://b.com/y',site:'b.com'},c={title:'C',url:'https://c.com/',site:'c.com'};
+ const {cited,more}=splitSources([a,b,c],'事实一 [B站](https://b.com/y#top)。事实二 [A](https://a.com/x) 再次 [B](https://b.com/y)');
+ assert.deepEqual(cited.map(s=>s.title),['B','A']);
+ assert.deepEqual(more.map(s=>s.title),['C']);
+ assert.equal(urlKey('https://a.com/x/#h'),urlKey('https://a.com/x'));
+ assert.deepEqual(splitSources([a],'没有链接').cited,[]);
+});
+test('budget events, run-scope compaction and background commands read plainly',()=>{
+ let items=[];
+ items=reduceEvent(items,event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'make',background:true}}));
+ items=reduceEvent(items,event('agent.tool_call',{step:2,name:'exec_wait',arguments:{handle:'a'}}));
+ items=reduceEvent(items,event('agent.budget',{kind:'extended',minutes:60.2,extension_minutes:30}));
+ items=reduceEvent(items,event('agent.budget',{kind:'nudge',reason:'repeated_call_error'}));
+ items=reduceEvent(items,event('agent.budget',{kind:'paused',minutes:240,reason:'已工作4小时，已暂停，可继续'}));
+ items=reduceEvent(items,event('agent.context_compacted',{scope:'run',messages:40}));
+ const steps=items.flatMap(i=>i.kind==='steps'?i.steps:[]);
+ assert.deepEqual(steps.map(s=>s.label),['运行命令','查看命令进度','有进展，继续工作','提醒换个方法','已暂停','已压缩本轮较早的步骤']);
+ assert.equal(steps[4].detail,'已工作4小时');
+ assert.equal(steps[3].detail,'同一操作反复出错');
+ let run=reduceEvent([],event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'make'}}));
+ run=reduceEvent(run,event('agent.tool_result',{step:1,name:'exec',ok:true,running:true,stdout:'building…'}));
+ assert.equal(run[0].steps[0].label,'运行命令 · 仍在运行');
+ assert.equal(run[0].steps[0].output,'building…');
+ assert.equal(run[0].steps[0].status,'note');
 });

@@ -20,6 +20,11 @@ export type Item =
   | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
 
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
+const LOOP_REASON: Record<string, string> = {
+  identical_call_result: "同一操作重复得到相同结果",
+  repeated_call_error: "同一操作反复出错",
+  alternating_call_result: "两个操作来回重复",
+};
 
 function describeTool(name: string, args: any): { label: string; detail?: string } {
   switch (name) {
@@ -28,7 +33,11 @@ function describeTool(name: string, args: any): { label: string; detail?: string
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
     case "exec":
-      return { label: "运行命令", detail: String(args?.cmd || "").slice(0, 160) };
+      return { label: "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
+    case "exec_wait":
+      return { label: "查看命令进度" };
+    case "exec_kill":
+      return { label: "停止命令" };
     case "write_file":
       return { label: "写入文件", detail: args?.path };
     case "read_file":
@@ -113,6 +122,11 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
         if (step) {
           step.status = p.ok ? "ok" : "failed";
           step.output = [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500);
+          // a command still going after its first wait: the model comes back to it with exec_wait
+          if (p.running) {
+            step.label = `${step.label} · 仍在运行`;
+            step.status = "note"; // not finished: no tick until a later look sees it end
+          }
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
           break;
         }
@@ -145,8 +159,20 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       note("已换用备用模型", [p.from_label || p.from, p.to_label || p.to].filter(Boolean).join(" → ") || undefined);
       break;
     case "agent.context_compacted":
-      note("已压缩较早的对话", p.turns ? `${p.turns} 轮` : undefined);
+      if (p.scope === "run") note("已压缩本轮较早的步骤", p.messages ? `${p.messages} 条` : undefined);
+      else note("已压缩较早的对话", p.turns ? `${p.turns} 轮` : undefined);
       break;
+    case "agent.budget": {
+      const minutes = typeof p.minutes === "number" ? `已工作 ${Math.round(p.minutes)} 分钟` : undefined;
+      if (p.kind === "nudge") note("提醒换个方法", LOOP_REASON[p.reason] || p.reason);
+      else if (p.kind === "wrap_up") note("开始收尾", p.reason || minutes);
+      // runs recorded before v2 still carry these
+      else if (p.kind === "soft") note("检查进度", minutes);
+      else if (p.kind === "extended") note("有进展，继续工作", p.extension_minutes ? `延长 ${p.extension_minutes} 分钟` : undefined, "ok");
+      // the reason's cause only: "，已暂停，可继续" is what the 继续 button beside the turn already says
+      else if (p.kind === "paused") note("已暂停", String(p.reason || "").replace(/[，,]?\s*已暂停.*$/, "") || minutes);
+      break;
+    }
     case "agent.skill":
       note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
       break;
@@ -250,6 +276,29 @@ export function turnSources(items: Item[] | null | undefined): Source[] {
   const seen = new Map<string, Source>();
   for (const it of items || []) if (it.kind === "steps") for (const s of it.steps) for (const src of s.sources || []) if (!seen.has(src.url)) seen.set(src.url, src);
   return [...seen.values()];
+}
+
+/** One address for one page: the fragment and a trailing slash don't make another source. */
+export function urlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.href.replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+}
+
+/** The sources an answer links to, in its order, and the rest the turn came across. */
+export function splitSources(sources: Source[], answer: string): { cited: Source[]; more: Source[] } {
+  const byKey = new Map(sources.map((s) => [urlKey(s.url), s]));
+  const cited = new Map<string, Source>();
+  for (const m of answer.matchAll(/\]\((https?:\/\/[^)\s]+)/g)) {
+    const key = urlKey(m[1]);
+    const source = byKey.get(key);
+    if (source && !cited.has(key)) cited.set(key, source);
+  }
+  return { cited: [...cited.values()], more: sources.filter((s) => !cited.has(urlKey(s.url))) };
 }
 
 /** example.com for https://www.example.com/a/b */

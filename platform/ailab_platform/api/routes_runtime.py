@@ -15,7 +15,7 @@ from .. import quota
 from ..config import settings
 from ..deps import current_user, get_db
 from ..events import append_event
-from ..library import schedule_object_deletion
+from ..library import delete_storage_objects, schedule_object_deletion
 from ..locks import user_critical_section
 from ..models import Conversation, Run, RunAttempt, RunCheckpoint, RunStatus, User
 from ..run_state import transition_run
@@ -106,6 +106,7 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
                 runtime_version=1,
             )
         )
+        previous_workspace = (run.runtime_meta or {}).get("workspace") or {}
         workspace = body.state.get("workspace")
         if workspace and not str(workspace.get("key", "")).startswith(f"workspaces/{run_id}/"):
             raise HTTPException(422, "invalid workspace key")
@@ -117,7 +118,29 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         for row in old:
             schedule_object_deletion(db, row.state_key, "checkpoint")
             db.delete(row)
+        previous_key = previous_workspace.get("key")
+        if previous_key and previous_key != (workspace or {}).get("key"):
+            # A resumed pause can retain a published result. Readers prefer that
+            # result over runtime_meta, including after a crash merges partial results.
+            # Move its reference in the same transaction before retiring the object.
+            result = dict(run.result or {})
+            if result.get("workspace_key") == previous_key:
+                for field in ("workspace_key", "workspace_saved_at", "workspace_bytes"):
+                    result.pop(field, None)
+                result["workspace_saved"] = bool(workspace)
+                if workspace:
+                    result.update(
+                        workspace_key=workspace["key"],
+                        workspace_saved_at=workspace.get("saved_at"),
+                        workspace_bytes=workspace.get("size", 0),
+                    )
+                run.result = result
+            schedule_object_deletion(db, previous_key, "workspace")
         db.commit()
+    if previous_key and previous_key != (workspace or {}).get("key"):
+        # The winning checkpoint now references the new immutable object. The
+        # committed deletion intent retries any failed delete or crash here.
+        delete_storage_objects([previous_key])
     return {"step": step}
 
 
@@ -126,14 +149,20 @@ class PauseIn(BaseModel):
     question: dict | None = None
     error: str = Field(default="", max_length=2000)
     auto_resume: bool = False
+    summary: str | None = Field(default=None, max_length=200000)
+    result: dict | None = None
 
 
-def queue_continuation(db, run):
+def queue_continuation(db, run, *, new_window=False):
     # A continuation is a new unit of work. An old ACK can only delete its old job.
     job_id = uuid4().hex
     meta = dict(run.runtime_meta or {})
+    meta["budget_window_id"] = job_id if new_window else meta.get("budget_window_id", meta.get("job_id", run.id))
     meta["job_id"] = job_id
     run.runtime_meta = meta
+    result = dict(run.result or {})
+    result.pop("pause", None)
+    run.result = result
     db.execute(
         update(RunAttempt)
         .where(RunAttempt.run_id == run.id, RunAttempt.ended_at.is_(None))
@@ -163,7 +192,28 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             meta.update(question={**q, "created_at": datetime.now(UTC).isoformat()}, answer=None)
             append_event(db, run.id, "agent.ask_user", q, commit=False)
         run.runtime_meta = meta
-        transition_run(db, run.id, body.status, error=body.error, commit=False)
+        result = {**(run.result or {}), **(body.result or {})}
+        # Pause metadata describes this pause only, unlike retained previews and sources.
+        if not (body.result or {}).get("pause"):
+            result.pop("pause", None)
+        pause = result.get("pause") or {}
+        if isinstance(pause, dict) and pause.get("kind") == "quota":
+            try:
+                reset = datetime.fromisoformat(pause["resets_at"])
+                if reset.tzinfo is not None:
+                    # A monthly reset can be later than the ordinary interruption timeout.
+                    run.waiting_since = max(run.waiting_since, reset.astimezone(UTC))
+            except (KeyError, TypeError, ValueError):
+                pass
+        transition_run(
+            db,
+            run.id,
+            body.status,
+            error=body.error,
+            summary=body.summary,
+            result=result,
+            commit=False,
+        )
         db.execute(
             update(RunAttempt)
             .where(RunAttempt.id == x_run_attempt, RunAttempt.ended_at.is_(None))
@@ -184,6 +234,9 @@ class AnswerIn(BaseModel):
 def _admit_continuation(db, run):
     """The paused run released its slot; continuing acquires one under the same user lock as creation."""
     quota.enforce_token_quota(db, run.user_id)
+    usage = quota.run_usage_totals(db, run.id)
+    if usage["prompt_tokens"] + usage["completion_tokens"] >= settings.run_max_tokens:
+        raise HTTPException(409, "本轮累计用量已达上限，请在新任务中继续")
     active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == run.user_id, Run.status.in_(RunStatus.ACTIVE)))
     if active >= quota.user_limits(db, run.user_id).max_concurrent_runs:
         raise HTTPException(429, "too many active runs for this user")
@@ -234,6 +287,6 @@ def resume_run(run_id: str, user: User = Depends(current_user), db: Session = De
         _admit_continuation(db, run)
         # A person deciding to continue renews the one automatic continuation a lease loss gets.
         run.runtime_meta = {**meta, "auto_resumes": 0}
-        queue_continuation(db, run)
+        queue_continuation(db, run, new_window=(run.result or {}).get("pause", {}).get("kind") in {"budget", "quota"})
         db.commit()
     return run_dict(db, run, detail=True)

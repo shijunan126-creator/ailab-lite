@@ -4,10 +4,15 @@ import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from ailab_platform.api.reaper import purge_expired_workspaces
 from ailab_platform.api.routes_internal import workspace_alive, workspace_key
 from ailab_platform.storage import LocalStorage
 from tests.run_claims import attempt_headers
+from tests.test_ledger_protocol import api  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures("api")
 
 
 def test_expired_workspace_objects_are_deleted(tmp_path) -> None:
@@ -96,3 +101,67 @@ def test_an_expired_workspace_is_reported_to_the_agent(monkeypatch) -> None:
             db.commit()
         got = c.get(f"/internal/runs/{two['id']}", headers=service).json()
         assert got["workspace_restore_key"] == workspace_key(one["id"]) and got["workspace_expired"] is False
+
+
+@pytest.mark.parametrize("lazy", [True, False])
+def test_workspace_gc_streams_objects_without_snapshot_sized_queries(monkeypatch, lazy):
+    from sqlalchemy import event
+
+    from ailab_platform.api import reaper
+    from ailab_platform.config import settings
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import Run, RunStatus, User
+
+    monkeypatch.setattr(settings, "gc_batch_size", 7)
+    now = datetime.now(UTC)
+    protected = {f"workspaces/gc_live_{i}/current.tgz" for i in range(23)}
+    with SessionLocal() as db:
+        owner = db.query(User.id).first()[0]
+        db.add_all(
+            Run(
+                id=f"gc_live_{i}",
+                user_id=owner,
+                prompt="gc",
+                status=RunStatus.INTERRUPTED,
+                runtime_meta={"workspace": {"key": key}},
+            )
+            for i, key in enumerate(sorted(protected))
+        )
+        db.commit()
+        engine = db.get_bind()
+
+    queries = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        if "runs" in statement and statement.lstrip().upper().startswith("SELECT"):
+            queries.append((statement, len(parameters)))
+
+    class StreamingStorage:
+        deleted = 0
+
+        def objects(self):
+            for key in sorted(protected):
+                yield SimpleNamespace(key=key, modified_at=now - timedelta(days=5))
+            for i in range(2000):
+                # Reading ahead before deletion catches list(iterator), even for
+                # backends that supply a lazy object page.
+                assert not lazy or self.deleted == i
+                yield SimpleNamespace(key=f"workspaces/old_{i}.tgz", modified_at=now - timedelta(days=5))
+
+        def delete(self, key):
+            assert key not in protected
+            self.deleted += 1
+
+    storage = StreamingStorage()
+    monkeypatch.setattr(reaper, "_page", lambda *_: storage.objects() if lazy else list(storage.objects()))
+    event.listen(engine, "before_cursor_execute", record)
+    try:
+        assert purge_expired_workspaces(storage, now) == 2000
+    finally:
+        event.remove(engine, "before_cursor_execute", record)
+        with SessionLocal() as db:
+            db.query(Run).filter(Run.id.like("gc_live_%")).delete(synchronize_session=False)
+            db.commit()
+    assert queries
+    assert all(count <= 4 and "LIMIT" in statement.upper() for statement, count in queries)
+    assert any(" > " in statement for statement, _ in queries)

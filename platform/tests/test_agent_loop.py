@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
-from tests.runtime_fakes import CheckpointFake
+from tests.runtime_fakes import CheckpointFake, background_request
 
 
 class FakePlatform(CheckpointFake):
@@ -61,7 +62,7 @@ class FakeBroker:
         return {"lease_id": "lease_1", "provider": "fake", "inputs": []}
 
     async def exec(self, lease_id, cmd, timeout=None):
-        return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     async def refresh_previews(self, lease_id):
         self.preview_calls += 1
@@ -114,7 +115,7 @@ def test_tool_call_with_invalid_json_is_not_executed() -> None:
     llm = ScriptedLLM([LLMResponse(tool_calls=[bad]), LLMResponse(content="giving up")])
     platform, broker = _run(llm)
 
-    assert broker.put_calls == []  # no empty file written
+    assert not [p for p, _ in broker.put_calls if not p.startswith("/workspace/.ailab-")]  # no user file written
     result = next(p for t, p in platform.events if t == "agent.tool_result")
     assert result["ok"] is False and "valid JSON" in result["error"]
     # the model sees its own malformed text and the error
@@ -178,7 +179,7 @@ class RichBroker(FakeBroker):
         self.exec_started = True
         if self.slow_exec:
             await asyncio.sleep(30)  # a long-running command
-        return {"exit_code": 0, "stdout": "", "stderr": ""}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": ""})}
 
     async def release(self, lease_id):
         self.released += 1
@@ -224,8 +225,7 @@ def test_token_limit_stops_the_run_but_keeps_the_work(monkeypatch) -> None:
         ]
     )
     platform, _ = _run(llm, broker=broker)
-    status, kw = platform.statuses[-1][0], platform.statuses[-1][1]
-    assert status == "failed" and "token limit" in kw["error"]
+    assert platform.statuses[-1][0] == "failed" and "累计用量已达上限" in platform.statuses[-1][1]["error"]
     assert broker.commits == ["/workspace/outputs/partial.md"]
     assert len(llm.responses) == 1  # no further model call once the budget was consumed
 
@@ -463,7 +463,7 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
     broker.get_file = get_file
     find = ToolCall(id="c1", name="search_images", arguments={"query": "city skyline", "count": 2})
     platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[find]), LLMResponse(content="ok")]), broker=broker)
-    paths = [p for p, _ in broker.put_calls]
+    paths = [p for p, _ in broker.put_calls if not p.startswith("/workspace/.ailab-")]
     assert paths == [
         "/workspace/assets/images/city_skyline_1.jpg",
         "/workspace/assets/images/city_skyline_2.jpg",
@@ -476,7 +476,7 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
 
 def test_near_the_step_limit_the_model_is_told_to_wrap_up(monkeypatch) -> None:
     monkeypatch.setattr(settings, "max_agent_steps", 8)
-    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="exec", arguments={"cmd": "true"})]) for i in range(5)]
+    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="exec", arguments={"cmd": f"echo {i}"})]) for i in range(5)]
     llm = ScriptedLLM([*work, LLMResponse(content="done")])
     _run(llm)
     notes = [m for m in llm.seen_messages[-1] if m["role"] == "user" and "平台提示" in m["content"]]
@@ -489,14 +489,14 @@ def test_running_out_of_steps_ends_with_a_summary_not_a_bare_error(monkeypatch) 
     again = ToolCall(id="c2", name="exec", arguments={"cmd": "true"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[deliver]), LLMResponse(tool_calls=[again]), LLMResponse(content="做完了大半，还差最后一页")])
     platform, _ = _run(llm)
-    status, kw = platform.statuses[-1]
-    assert status == "succeeded" and kw["summary"] == "做完了大半，还差最后一页"  # something was delivered
+    assert platform.paused["status"] == "interrupted"
+    assert platform.checkpoint["state"]["final_summary"] == "做完了大半，还差最后一页"
     assert llm.seen_messages[-1][-1]["content"].startswith("（平台提示：本轮的步数已用完")
 
     llm = ScriptedLLM([LLMResponse(tool_calls=[again]), LLMResponse(tool_calls=[again]), LLMResponse(content="没做成")])
     platform, _ = _run(llm)
-    status, kw = platform.statuses[-1]
-    assert status == "failed" and "exceeded 2 steps" in kw["error"] and kw["summary"] == "没做成"
+    assert platform.paused["status"] == "interrupted"
+    assert "可继续" in platform.paused["error"] and platform.checkpoint["state"]["final_summary"] == "没做成"
 
 
 def test_exec_accepts_command_as_well_as_cmd() -> None:
@@ -505,12 +505,15 @@ def test_exec_accepts_command_as_well_as_cmd() -> None:
 
     async def exec_(lease_id, cmd, timeout=None):
         seen.append(cmd)
-        return {"exit_code": 0, "stdout": "", "stderr": ""}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": ""})}
 
     broker.exec = exec_
     call = ToolCall(id="c1", name="exec", arguments={"command": "echo hi"})
     _run(ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="ok")]), broker=broker)
-    assert seen == ["echo hi"]
+
+    requests = [background_request(broker, command) for command in seen]
+    assert [request["action"] for request in requests] == ["start", "kill_all"]
+    assert requests[0]["cmd"] == "echo hi"
 
 
 def test_the_turns_thinking_is_kept_with_the_run() -> None:
@@ -593,3 +596,42 @@ def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):
         assert closed.is_set()
 
     asyncio.run(scenario())
+
+
+def test_running_exec_events_expose_progress_without_handle():
+    class Broker(FakeBroker):
+        async def exec(self, lease_id, cmd, timeout=None):
+            return {
+                "exit_code": 0,
+                "stdout": json.dumps(
+                    {
+                        "ok": True,
+                        "running": True,
+                        "handle": "a" * 32,
+                        "exit_code": None,
+                        "output_tail": "progress" * 500,
+                        "idle_seconds": 17,
+                    }
+                ),
+            }
+
+    for name in ("exec", "exec_wait", "exec_kill"):
+        args = {"cmd": "build"} if name == "exec" else {"handle": "a" * 32, "seconds": 0}
+        platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", name, args)]), LLMResponse(content="done")]), broker=Broker())
+        event = next(p for t, p in platform.events if t == "agent.tool_result")
+        assert event["running"] is True and event["exit_code"] is None and event["idle_seconds"] == 17
+        assert event["stdout"] == ("progress" * 500)[:2000] and "handle" not in event
+
+
+def test_consumed_large_write_is_not_copied_into_durable_tool_log():
+    platform, _ = _run(
+        ScriptedLLM(
+            [
+                LLMResponse(tool_calls=[ToolCall("c", "write_file", {"path": "/workspace/a", "content": "x" * 100000})]),
+                LLMResponse(content="done"),
+            ]
+        )
+    )
+    record = platform.checkpoint["state"]["tool_log"]["0:0"]
+    assert "arguments" not in record and len(json.dumps(record)) < 4096
+    assert len(record["arguments_fingerprint"]) == len(record["result_fingerprint"]) == 64

@@ -67,8 +67,8 @@ WORKSPACE_GC_LOCK = "ailab:lock:workspace-gc"
 def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     """Delete workspace snapshots whose object-store timestamp is older than the TTL.
 
-    The TTL is enforced on the object store itself (S3 LastModified / local mtime),
-    so a missing or stale database flag cannot keep a snapshot alive forever.
+    Object timestamps govern TTL, except the exact checkpoint snapshot still
+    needed by a live run (including a quota pause waiting for next month).
     """
     if settings.workspace_ttl_days <= 0:  # 0 = keep per-turn snapshots until conversation GC
         return 0
@@ -76,7 +76,29 @@ def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     cutoff = now - timedelta(days=settings.workspace_ttl_days)
     storage = storage or get_storage()
     removed = 0
+    protected = set()
+    with SessionLocal() as db:
+        # Equality uses the status index; keyset pages bound metadata reads even
+        # with many paused runs. Snapshot count never becomes SQL parameters.
+        for status in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_USER, RunStatus.INTERRUPTED):
+            after = ""
+            while True:
+                rows = db.execute(
+                    select(Run.id, Run.runtime_meta)
+                    .where(Run.status == status, Run.id > after)
+                    .order_by(Run.id)
+                    .limit(settings.gc_batch_size)
+                ).all()
+                for run_id, meta in rows:
+                    key = ((meta or {}).get("workspace") or {}).get("key")
+                    if key:
+                        protected.add(key)
+                if len(rows) < settings.gc_batch_size:
+                    break
+                after = rows[-1].id
     for item in _page(storage, "workspaces/"):
+        if item.key in protected:
+            continue
         modified = item.modified_at
         if modified.tzinfo is None:  # a custom backend may return a naive timestamp
             modified = modified.replace(tzinfo=UTC)

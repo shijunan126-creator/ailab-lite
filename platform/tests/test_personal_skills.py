@@ -154,7 +154,7 @@ def test_the_model_sees_personal_skills_and_reads_one_whose_files_reach_the_sand
     tool_msg = llm.seen_messages[1][-1]["content"]
     assert "运行 scripts/fill.py" in tool_msg and "/workspace/.ailab/skills/weekly/" in tool_msg
     # read before there was a sandbox: installed once the exec leased one
-    assert sorted(p for p, _ in broker.put_calls) == [
+    assert sorted(p for p, _ in broker.put_calls if not p.startswith("/workspace/.ailab-")) == [
         "/workspace/.ailab/skills/weekly/SKILL.md",
         "/workspace/.ailab/skills/weekly/scripts/fill.py",
     ]

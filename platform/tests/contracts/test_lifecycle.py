@@ -33,6 +33,7 @@ OLD = NOW - timedelta(days=40)
 def env(tmp_path, monkeypatch, engine):
     run_migrations(engine)
     factory = sessionmaker(engine, expire_on_commit=False)
+    monkeypatch.setattr("ailab_platform.api.reaper.SessionLocal", factory)
     with factory() as db:
         db.add(User(id="u", email="gc@example.test"))
         db.commit()

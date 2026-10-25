@@ -13,7 +13,8 @@ import { CONVERSATION_MOVED } from "../conversation-menu";
 import { IconBranch, IconChevronRight, IconFolder, IconSlides } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
-import PreviewPane from "./preview-pane";
+import PreviewPane, { type PaneSources } from "./preview-pane";
+import { SourcesSheet } from "./sources";
 import QueueStrip from "./queue-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
@@ -66,6 +67,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [livePreviews, setLivePreviews] = useState<Preview[]>([]);
   const [paneOpen, setPaneOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
+  const [paneSources, setPaneSources] = useState<PaneSources | null>(null); // a turn's sources: a pane tab on wide screens
+  const [sourcesOn, setSourcesOn] = useState(false); // that tab is the one shown
+  const [sheetSources, setSheetSources] = useState<PaneSources | null>(null); // the same on a phone, as a bottom sheet
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
@@ -153,8 +158,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             const finished = d?.turns.find((t) => t.id === run.id);
             if (!file || finished?.status !== "succeeded" || controller.signal.aborted) return;
             if (!window.matchMedia("(min-width: 761px)").matches) return; // on a phone the pane covers the chat: the file card opens it
-            setSelected(file);
-            setPaneOpen(true);
+            showFile(file);
           });
           conversationsChanged();
         },
@@ -256,6 +260,35 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }, [detail]);
 
   const modelName = (m: string) => models.find((x) => x.id === m)?.name || m;
+
+  const openFiles = previews.filter((p) => !closedFiles.includes(p.filename));
+  function showFile(filename: string) {
+    setClosedFiles((closed) => closed.filter((f) => f !== filename));
+    setSelected(filename);
+    setSourcesOn(false);
+    setPaneOpen(true);
+  }
+  function closeFile(filename: string) {
+    const rest = openFiles.filter((p) => p.filename !== filename);
+    setClosedFiles((closed) => [...closed, filename]);
+    if (!rest.length && !paneSources) return setPaneOpen(false);
+    if (!rest.length) setSourcesOn(true);
+    else if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
+  }
+  function showSources(run: Run, sources: PaneSources["sources"], answer: string) {
+    const next = { runId: run.id, sources, answer };
+    if (!window.matchMedia("(min-width: 761px)").matches) return setSheetSources(next);
+    // the same turn's sources, already shown: the button closes them again
+    if (paneOpen && sourcesOn && paneSources?.runId === run.id) return closeSources();
+    setPaneSources(next);
+    setSourcesOn(true);
+    setPaneOpen(true);
+  }
+  function closeSources() {
+    setPaneSources(null);
+    setSourcesOn(false);
+    if (!openFiles.length) setPaneOpen(false);
+  }
   const ext = (name: string) => name.split(".").pop()?.toLowerCase() || "";
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
   // Then the one preview of the same kind that this turn rendered is the delivered file's.
@@ -503,7 +536,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail();
   }
 
-  const showPane = paneOpen && previews.length > 0;
+  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources);
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />
@@ -582,10 +615,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     fresh={!opened.current?.has(t.id)}
                     modelName={modelName}
                     previewKey={previewKey}
-                    onPreview={(f) => {
-                      setSelected(f);
-                      setPaneOpen(true);
-                    }}
+                    onPreview={showFile}
                     onResume={resume}
                     onAnswer={answer}
                     onRetry={running ? undefined : retry}
@@ -595,14 +625,21 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     forkModes={forkModes[i]}
                     onFork={fork}
                     projectId={projectId}
+                    sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
+                    onSources={showSources}
                   />
                 ))}
               </div>
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
-              {!paneOpen && previews.length ? (
-                <button className="preview-reopen" aria-label={`打开预览（${previews.length}）`} onClick={() => { setSelected((value) => value || previews[previews.length - 1]?.filename || null); setPaneOpen(true); }}>
+              {(!showPane || !openFiles.length) && previews.length ? (
+                <button className="preview-reopen" aria-label={`打开预览（${previews.length}）`} onClick={() => {
+                  setClosedFiles([]);
+                  setSelected((value) => value || previews[previews.length - 1]?.filename || null);
+                  setSourcesOn(false);
+                  setPaneOpen(true);
+                }}>
                   <IconSlides size={14} /> <span>预览</span> <span className="count">{previews.length}</span>
                 </button>
               ) : null}
@@ -623,14 +660,20 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
       {showPane ? (
         <PreviewPane
-          previews={previews}
+          previews={openFiles}
           selected={selected}
-          onSelect={setSelected}
-          onClose={() => setPaneOpen(false)}
+          onSelect={(f) => { setSelected(f); setSourcesOn(false); }}
+          onCloseFile={closeFile}
+          sources={paneSources}
+          sourcesOn={sourcesOn}
+          onSourcesTab={() => setSourcesOn(true)}
+          onCloseSources={closeSources}
+          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); }}
           live={!!streaming && running}
           downloads={downloads}
         />
       ) : null}
+      {sheetSources ? <SourcesSheet sources={sheetSources.sources} answer={sheetSources.answer} onClose={() => setSheetSources(null)} /> : null}
     </div>
   );
 }

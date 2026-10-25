@@ -1,5 +1,30 @@
 # 当前工作
 
+## 本机部署来源与长任务（2026-10-25，有限真实验收完成）
+
+用户已授权把固定 `main@72901e34dadee26f9fa8e5958b713a8e1a0bf4f6` 部署到现有本机环境，保留业务数据、账号、模型密钥与个人配置；本轮只提交本地文档，不 push。分支 `docs/deploy-long-runs`，base 为该 main。已按既有个人运维流程恢复存储/VM、完整备份业务卷并实际解包检查，迁移 `0028 → 0029 → 0030` 成功；切换前后的原有业务 ID 全部相同，文件哈希、SQLite quick_check 与外键检查通过。个人脚本、配置、原始证据与财务记录仅留本机独立 HANDOFF，不入 Git。
+
+- 旧运行中断的当次内核证据先为 USB link change interrupt，随后 APFS 未完成事务并卸载；已有自动挂载器因旧 VM 存活而拒绝重挂。复用原恢复流程，未强制卸载/清库；硬件链路根因未消除，不能用恢复后健康声称稳定性已证明。
+- 新版五应用健康，平台 177、Portal 82 份源码与固定提交匹配；VM 2 vCPU/8 GiB。Ruff、完整 SQLite Python 1251通过/131跳过、Portal 38项及部署构建通过。真实模型首轮曾因提供商402余额不足失败；用户随后充值并明确恢复验收，不把首轮失败隐去。
+- 真实Chat10.14秒/10来源，来源按钮/桌面tab/文内pill/刷新恢复和390×844抽屉通过；模型DOCX52.64秒交付及浏览器Office预览通过，192.45秒长命令/3次exec_wait、取消、ask_user继续和受控日额度暂停/UI继续通过。强制重复检测路径未触发，明确保留未验。
+- 真实工作1590.89秒（26分30.89秒），8阶段各180秒numpy计算、逐阶段分析，交付DOCX/CSV并完成最终预览；53次采样观察26次claim续期、投递始终1、workspace最多/最终1份、终态checkpoint122222字节，无stall误判/OOM/重启。九服务RSS合计中位1930.21MiB，VM可用内存最低5628.86MiB。83条调用、余额减少¥0.16，开始/每10分钟/结束均有本机记录，低于¥8授权。
+- 最终0030/quick_check正常/FK0、原ID保留、10份文件SHA正确；仅禁用本轮两个合成账号，未删除数据，活动/等待/中断Run0，部署留运行。详细资源/测试、失败历史、探针修正及边界见[部署记录](updates/2026-10-25-deploy-long-runs.md)。
+- 下一步：本地文档提交交父任务审阅，无待实现/待部署或需继续付费的本轮工作；保留完整1–4小时/真实额度重置、强制重复检测、真实手机、长期并发及硬件链路稳定性边界，不启动其他路线项。下方“未部署”为各历史阶段，不覆盖本节。
+
+## 来源与长任务（2026-10-25，PR #59 已合入 main，未部署）
+
+- [PR #59](https://github.com/shijunan126-creator/ailab-lite/pull/59) 最终 head `ae0d134` 的 8 项远端检查全部通过，squash 合入 main `dfa27d2`，合并树与测试 head 一致。合并前同步了 main 的 PR #56/#57/#58：`agent/loop.py` 删除旧死代码方法、`portal/lib/api.ts` 在 #58 的结构化错误解析上保留额度重置提示；CI 首轮 ask_user E2E 失败为测试自身的异步等待缺陷（见 HANDOFF），已改为 API 轮询。
+- 下一步：部署需用户另行授权；部署后验收真实模型 1–4 小时长任务（含额度真实重置）、目标机 2vCPU/8GiB 整栈容量与真机交互。不自动启动其他路线项。
+
+### 合并前最终验收记录
+
+统一范围：Portal来源面板、Run来源持久化/恢复、长任务v2预算窗口/短claim续租/统一exec/重复检测、日/月额度暂停和各轮审查修复。集成分支 `feat/long-runs-sources@a677a5f` 已含 `490de63`/`a96cd84`；最终测试分支 `feat/long-runs-final`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-015c88c8`，起始干净。授权本地修复、真实沙箱和全套测试及提交，不改Portal，不push/PR/merge/deploy，不接触个人部署/DB/非测试容器。
+
+- 修复 resume后的checkpoint删除旧快照却遗留result引用：checkpoint事务同步结果引用再提交删除；红绿覆盖崩溃后下一轮恢复、过期判断、Work fork独立副本。真实Docker又发现并修复跨tmpfs helper安装EXDEV和SIGKILL supervisor遗留活后代；macOS身份检查补齐Z拒绝。
+- 已验证Docker/runc与runsc各400连续exec，分别209.262/259.915秒，四次采样各5 PID/0 Z；静默poll、9028字符头尾、20000字符CJK命令、4成员kill-tree、kill-all、supervisor失踪失败/槽位释放、tar与release正常。轮询分别6/5次exec_wait仅2快照、旧对象删除、最终1对象；OpenSandbox1.1.1/runc+dns+nft也完成400次/1012.291秒、每100次5 PID/0 Z，静默2次wait和相同控制生命周期通过，快照2次wait/2快照/最终1对象。三条真实路径9项通过、0失败/跳过。
+- 最终产品/测试`38a71f8`：SQLite1248通过/132跳过，PG16+Redis1335通过/45跳过，Portal38项/build、Ruff355文件、五服务E2E98通过/0跳过，均0失败。包含未配置外部组件及可选OTEL跳过；真实沙箱另验不冒充全套外部组合。所有本轮结果、失败历史、性能成本和清理统一写入[最终记录](updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)。历史子分支待接收/待cherry-pick均不代表当前集成缺失。
+- 本轮PG/Redis/五服务/OSB均停止，测试容器/卷/四个镜像已删除，专用Docker计数全0；`ailab-verify=Stopped`，七应用/DB端口、OSB38090及43100–43220均无监听，默认context未改，无本轮测试/helper残留。已快进合入本地集成分支 `feat/long-runs-sources@7f94cba`（领先 `origin/main` 41个提交）。下一步：等待用户授权推送/PR/合并/部署，无待实现修复；继续保留真实模型1–4小时、目标2vCPU/8GiB整栈容量、真实手机未验。不自动开启其他路线项或发布；旧审查证据见[review3](updates/2026-10-25-long-runs-review3.md)。
+
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
 用户要求确认项目能否实际跑通，重点补足真实OpenSandbox验证。分支 `verify/real-sandbox-acceptance`，base `origin/main@9cfadfa`（已含PR #46/#49/#51）。允许隔离测试与必要修复；不替换现有部署、不迁移个人业务库、不清理现有服务/数据。

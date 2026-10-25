@@ -254,8 +254,8 @@ def test_a_spreadsheet_opens_in_the_preview_once_it_is_done_and_can_be_revised(l
     page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
     grid = page.inner_text(".preview-pane .sheet-grid")
     assert "华东" in grid and "合计" in grid
-    assert page.inner_text(".preview-tab.on") == "sales.xlsx"
-    page.click(".preview-pane button[aria-label='关闭预览']")
+    assert page.inner_text(".pane-tab.on .pane-tab-name") == "sales.xlsx"
+    page.get_by_role("button", name="关闭 sales.xlsx", exact=True).click()
     assert page.locator(".preview-pane").count() == 0
     page.click(".file-card button:has-text('预览')")
     page.wait_for_selector(".preview-pane .sheet-grid")
