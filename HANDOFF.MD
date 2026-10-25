@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-25 分支模式与手机预览
+
+- 从纯Chat历史fork为Work时，旧Run.options仍为Chat；会话级forked_from.mode必须作为前后端分支能力推断的初始状态，否则早期轮次可绕回Chat。旧JSON无mode时仍按历史推断。
+- 手机fixed chat-layout会形成独立层叠上下文，内部预览z-index不能压过外部main-top；预览打开时须处理外部浮动按钮，普通聊天也须预留顶部空间。collapsed选择器优先级可覆盖手机面包屑padding，需一起核对。
+
 ## 2026-10-25 本机部署恢复与长任务验收
 
 - 外置存储掉线后，VM/SSH mux仍可存活并占用Portal入口端口，监听存在不等于页面健康。先核对实际挂载UUID、`COLIMA_HOME`、Docker socket与进程命令行；同名Colima profile可分别位于内盘/外盘，不能按名字停错测试VM。个人路径/端口/原始证据仅留本机独立HANDOFF。

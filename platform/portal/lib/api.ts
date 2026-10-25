@@ -87,7 +87,7 @@ export type Conversation = {
   created_at: string;
   updated_at: string;
   last_status?: string | null;
-  forked_from?: { conversation_id: string; run_id: string } | null;
+  forked_from?: { conversation_id: string; run_id: string; mode?: "chat" | "work" } | null;
   pinned_at?: string | null;
   active_run_id?: string | null; // the last turn of the version on show
   moved_files?: number | null; // only in the reply to a move that carried the files along

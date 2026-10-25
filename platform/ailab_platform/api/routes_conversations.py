@@ -250,14 +250,17 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             turns = path_runs(db, source.id, target.id)
             if len(turns) > 500:
                 raise HTTPException(422, "分叉最多复制500轮对话")
-            if any((r.options or {}).get("mode", "work") != "chat" for r in turns) and body.mode != "work":
+            # A work branch takes the whole history into work, so nothing in it can branch back into chat.
+            worked = (source.forked_from or {}).get("mode") == "work" or any((r.options or {}).get("mode", "work") != "chat" for r in turns)
+            if worked and body.mode != "work":
                 raise HTTPException(422, "包含工作轮次的对话只能分叉为工作模式")
+            title = source.title or (turns[0].title if turns else "")
             conv = Conversation(
                 user_id=user.id,
                 project_id=source.project_id,
-                title=source.title,
+                title=f"{title} · 分支"[:200] if title else "",
                 model=source.model,
-                forked_from={"conversation_id": source.id, "run_id": target.id},
+                forked_from={"conversation_id": source.id, "run_id": target.id, "mode": body.mode},
             )
             db.add(conv)
             db.flush()
