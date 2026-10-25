@@ -1,12 +1,13 @@
 # 当前工作
 
-## 长任务 v2 后端（2026-10-25，正在本地验收）
+## 长任务 v2 后端（2026-10-25，本地验收完成，待父任务集成）
 
 本轮在 `/Users/michael/.t3/worktrees/ailab-lite/t3-dff90f42` 的 `feat/long-runs-v2`，以实际集成 HEAD `b729c134b92a697a1cfe5a387aed53172c6561f1` 为 base。后续旧小节中的路径与 HEAD 均为历史；不改 Portal，不 push/PR/merge/deploy。
 
-- 已实现统一 yielding exec、持久化工具日志循环检测（提醒一次后暂停）和无进展门禁的小时自查；保留 token/quota、300步、20分钟 liveness、4小时 hard cap 与续租。ADR0008已修订。
-- 正在完成完整 SQLite、PG16+Redis、Portal test/build 与五服务E2E；最终产品SHA、计数、契约及剩余风险统一写入[本轮记录](updates/2026-10-25-long-runs-sources.md#长任务-v2-统一-exec重复检测与预算简化)。
-- 下一步：跑完最终整树验收，停止本任务测试组件，本地提交后交父任务集成 Portal；不自动发布或启动其他路线项。
+- 已实现统一 yielding exec、持久化工具日志循环检测（提醒一次后暂停）和每小时信息自查（不再按进展延期）；保留 token/quota、300步、20分钟 liveness、4小时 hard cap 与续租。ADR0008已修订。
+- 产品提交`fe4fc38`、`217dba7`、`763e376`；最终产品/测试基线`763e376`：Ruff352文件、SQLite1211通过/122跳过、PG16+Redis1298通过/35跳过、Portal38测试/build、五服务E2E98通过/0跳过，均0失败。精确契约/红绿证据/初始失败/成本见[本轮记录](updates/2026-10-25-long-runs-sources.md#long-runs-v2)。
+- 专属五服务、PG16和Redis已停止，七端口无监听。真实1–4小时模型、真实Linux/provider进程联合验收、目标2vCPU/8GiB资源/并发仍待验；Portal新契约提示未在本分支实现。
+- 下一步：父任务从固定base `b729c13`集成此分支提交，与其Portal适配共同重验。当前父集成分支已独立前进，本轮未移动/修改它；不自动push/PR/merge/deploy或启动其他路线项。
 
 ## 来源与长任务完整集成（2026-10-25，最终本地验收完成，未合并/未部署）
 

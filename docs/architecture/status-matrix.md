@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-25 长任务v2后端：`feat/long-runs-v2`基于`b729c13`，统一yielding exec、durable工具日志重复检测及提醒后暂停、小时自查无延期门禁；Portal由父任务适配。产品`763e376`及本轮完整验收/契约/资源边界见[统一记录](../progress/updates/2026-10-25-long-runs-sources.md#long-runs-v2)。本地后端能力，不代表Portal新契约消费、真实长时模型或上线验收。
+
 2026-10-25 最终来源/长任务集成：`feat/long-runs-sources@0caa73b` + `feat/quota-pause-gc@65b47e0`，base `origin/main@09599a0`。来源面板/Run来源、长任务预算/租约/后台exec与日/月额度暂停已集成，本地全套最终复核见[统一交接](../progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。GC非终态保护集keyset分页、0030(status,id)索引，精确引用快照保留；真实1–4小时模型、真实sandbox后台exec、目标机RSS与真机手机待验。未合入main/未部署；下文子分支“未集成”均为历史阶段。
 
 2026-10-25 Run 来源持久化：`feat/run-sources@41da18f` 本地实现整轮网页来源去重/50条上限、checkpoint恢复、终态结果与详情输出；未集成Portal或合入main，验证边界见[交付记录](../progress/updates/2026-10-25-run-sources.md)。
