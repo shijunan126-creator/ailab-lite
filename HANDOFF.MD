@@ -2,7 +2,7 @@
 
 ## 2026-10-25 Run 网页来源
 
-- `agent.tool_result.sources` 是单次工具的事件数据，不能当作重开会话的持久结果；来源与工具完成记录同 checkpoint 保存，终态写 `run.result.sources`，会话详情还需放行该键。旧 checkpoint 缺键须默认空列表；每次工具最多10条、整轮 URL 去重并保留首次顺序最多50条。暂停不写 result，续跑从 checkpoint 恢复。见[交付记录](docs/progress/updates/2026-10-25-run-sources.md)。
+- `agent.tool_result.sources` 是单次工具的事件数据，不能当作重开会话的持久结果；来源与工具完成记录同 checkpoint 保存，终态写 `run.result.sources`，会话详情还需放行该键。旧 checkpoint 缺键须默认空列表；每次工具最多10条、整轮 URL 去重并保留首次顺序最多50条。waiting_user、预算与租约中断暂停也须写 result.sources；API在用户锁内合并暂停及失败的部分result，避免续跑后崩溃抹掉已保存的预览/计划。续跑仍从checkpoint恢复。见[交付记录](docs/progress/updates/2026-10-25-run-sources.md)。
 
 ## 2026-10-25 真实沙箱验收
 
@@ -506,9 +506,16 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 ## 2026-10-25 长任务与续租
 
-- 不要用 Run 时长作 claim/visibility TTL；延长任务必须独立续租。renew 只接受未过期的原 token，失败应停止执行且保留 durable job。预算暂停用 pause/checkpoint，不能先 set_status(interrupted) 绕过安全快照检查。
+- 不要用 Run 时长作 claim/visibility TTL；延长任务必须独立续租。renew 只接受未过期的原 token；409立即停止，瞬态失败须有界重试，仅成功响应延长本地截止，持续故障在lease安全边界前停止并保留durable job。claim/renew响应耗时不能加到所有权期限。预算暂停用 pause/checkpoint，不能先 set_status(interrupted) 绕过安全快照检查。
 - 手动继续时须注入新窗口提示，解除 checkpoint 中旧收尾提示；有 pending tool 时先记待注入标志，等工具结果配对后再注入，不能在 assistant/tool 中间插用户消息。
 - 时间/步数窗口以 durable job_id 标识：同 job 的 crash 延续原窗口，人工 resume/answer 新 job 才重置。原有 next_step/tool_log invocation 编号不归零，否则交付去重和不可重放工具会撞号。累计 tokens/quota 永不随时间续跑重置。
 - 新增原始输入引用时只保存 messages 索引；复制包含 base64 图片的 user_message 到 checkpoint 顶层会绕过 checkpoint_state 的图片引用转换。本轮已有 OCR 体积回归抓到并修正。
 - PG 返回带 Asia/Hong_Kong offset 的时间时必须 astimezone(UTC)，不能 replace(tzinfo=UTC)；后者在租约测试中凭空增加8小时。fault dispatcher 断言须停用测试 API 的后台 dispatcher，避免其先发布导致手动 dispatch 返回0；不能把竞态当恢复失败。
 - 后台 exec 句柄只对当前沙箱有效，控制文件不进入 workspace 快照。暂停/完成先停止追踪的后台命令再强制快照；恢复不得把旧PID当新任务进程。真实 Linux/provider 与宿主子进程证据须分开记录，见[长任务记录](docs/progress/updates/2026-10-25-long-runs.md)。
+
+
+## 2026-10-25 长任务来源集成回归
+
+- 同一分支不能由两个worktree并发提交。强制共享checkout会在另一处推进HEAD时让本地旧index看起来是反向暂存；立即隔离到原基线的新分支，不能提交这些反向差异。此次父checkout推进`1d531fe`，修复隔离为`feat/long-runs-sources-fixes`，Portal未改；父任务应cherry-pick修复。
+- 完整Python测试须从本worktree的`platform/`启动；从仓库根运行会让SIGKILL子进程找不到`tests.faults`，不是业务恢复失败。集成来源测试的旧“token预算耗尽=failed”断言须更新为ADR0008的可继续interrupted，同时检查暂停结果来源；不能按旧分支各自绿推断合并后绿。
+- 来源tab合入后，预览侧栏的区域名为“侧栏”，文件tab为`.pane-tab`，关闭按钮按文件名（如“关闭 sales.xlsx”）；选中文件名用`.pane-tab.on .pane-tab-name`，整栏可用Esc关闭。E2E不能沿用旧`.preview-tab`/“文件预览”/全局“关闭预览”定位，也不能改产品来迁就旧定位器。此次首轮4项E2E失败均由此导致，详见[集成记录](docs/progress/updates/2026-10-25-long-runs-sources.md)。
