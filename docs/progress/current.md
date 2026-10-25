@@ -1,20 +1,14 @@
 # 当前工作
 
-## 来源面板与长任务预算（2026-10-25，进行中，未合并/未部署）
+## 长任务与来源集成（2026-10-25，本地验收完成，交父任务集成，未合并/未部署）
 
-用户要求：来源从堆叠胶囊改为「来源」入口（桌面右侧栏可单独关闭的tab，手机半屏可拖拽底部抽屉）、文内引用气泡；Agent 20步/900秒硬砍改为可长时间后台运行，超时先监控/自检再决定停止。分工：Portal由Claude，后端与测试由Codex（gpt-6.1-sol medium）。
+用户授权：集成来源面板与长任务后端，修复审查发现，完整双库/Portal/五服务验收并本地提交；不push/PR/merge/deploy，不改Portal行为。历史发布授权不适用于本轮。
 
-- Portal：分支 `feat/sources-panel`（base `origin/main@09599a0`），提交 `aa1b31e`。Portal 36项测试、tsc、build通过；Playwright无头（mock API）验证桌面tab开关、手机抽屉半屏→全屏→回半屏→关闭、文内气泡/普通链接区分，0页面错误。读取 `run.result.sources`，缺失时回退事件流。
-- 后端（Codex，独立worktree）：`feat/run-sources`（来源持久化到 `run.result.sources`）与 `feat/long-runs`（步数改为防失控上限、可续租job租约、停滞看门狗、活跃工时软预算+有进展才自动延长、硬上限后以可继续的 interrupted 收尾、后台exec+exec_wait/exec_kill）。
-- 下一步：收两份Codex报告→审查→Portal接入新事件/工具名与中文提示→合并到一个集成分支并全量验证。未授权PR/合并/部署。
-
-## 长任务后端（2026-10-25，本地提交与验收完成，交父任务集成）
-
-分支 `feat/long-runs`，base `09599a03e774983a2bb66202c2376e04ada58e94`。产品提交 `8d7762d`（短claim续租）、`4a96642`（预算暂停/后台命令/本轮上下文压缩）、`a1d2137`（人工续跑解除旧收尾指令）。用户授权仅后端、本地提交；Portal diff为空，无推送/PR/合并/部署或迁移。下方历史发布授权不适用于本轮。
-
-- 固定产品提交 `a1d21379aef0a14d4a39f8b838244b59089a50fe`：Ruff345；完整SQLite1162通过/121跳过、PG16+Redis1248通过/35跳过，均0失败。Portal隔离源码副本35 tests/default production build通过。独占PG/Redis已停止，两端口无监听。
-- max_agent_steps=300，job_lease_seconds=300并每60秒续租；stall=1200秒、soft=3600秒、review=1800秒、max=14400秒。预算在步骤边界有界收尾后 interrupted+resumable；同job crash保留窗口，新job人工续跑重置时间/步数而不重置2M累计token/quota。新增agent.budget、exec_wait、exec_kill与exec(background=true)，精确字段/中文原因/成本/失败历史见[本轮记录](updates/2026-10-25-long-runs.md)，设计见[ADR0008](../architecture/adr/0008-long-run-budgets-and-leases.md)。
-- 下一步由父任务集成Portal标签、budget事件和保存结果，并安排真实Linux沙箱后台命令/慢模型长时验收。本轮未验证真实provider连续1–4小时、多服务E2E或容器RSS；宿主子进程/SIGKILL checkpoint证据与这些边界分开。无待实现后端项，不自动发布或启动其他路线项。
+- 指定集成基线`abb4a9f`已包含Portal来源入口/引用气泡与预算/后台工具提示（`aa1b31e`、`abb4a9f`）、来源持久化`41da18f`、长任务后端`8d7762d..a1d2137`（含ADR0008）。已核对`loop.py`冲突解决同时保留BudgetPause与最终result.sources。各子分支历史结果见[来源](updates/2026-10-25-run-sources.md)与[长任务](updates/2026-10-25-long-runs.md)，本轮统一验收见[集成记录](updates/2026-10-25-long-runs-sources.md)。
+- 产品修复`b23730e`，consumer契约回归`fe78365`，E2E定位器适配`c7a3290`：瞬态job续租失败在安全期限内退避重试，409立即停止；claim/renew响应时间不增加租约。API在用户锁内合并暂停/失败的部分结果；waiting_user、预算暂停与租约中断均持久sources；回归核对单Run/会话详情的来源与可继续中断原因。
+- 当前工作树`/Users/michael/.t3/worktrees/ailab-lite/t3-12d66bb9`，分支`feat/long-runs-sources-fixes`，base `abb4a9f`。原要求分支`feat/long-runs-sources`同时被主checkout使用且并发推进`1d531fe`，因此隔离修复，未将Portal反向差异纳入提交。父任务须cherry-pick本轮修复及交接提交；本轮测试不包含并发的`1d531fe`。
+- 最终验收：Ruff check/format（347文件）、SQLite1180通过/121跳过、PG16+Redis1266通过/35跳过、Portal37项/default production build、五服务E2E98通过/0跳过，均0失败。测试产品基线`c7a3290`（SQLite先验`fe78365`，后端树相同），初轮失败与修正保留在集成记录；专属PG/Redis及五服务已停止，七端口无监听。真实provider连续1–4小时、Linux sandbox后台exec、目标机RSS/容量未验。
+- 下一步：父任务cherry-pick隔离分支的三个修复/测试提交及本轮文档提交，复核包含其并发Portal改动的最终集成树；本轮无待实现修复。未授权发布，不启动其他路线项。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 

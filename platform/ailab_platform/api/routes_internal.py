@@ -304,6 +304,10 @@ def internal_transition(
         try:
             result = body.result
             if result is not None:
+                # Failure output is partial (for example sources collected before a crash).
+                # Preserve previously saved progress under the same ownership lock.
+                if body.status == RunStatus.FAILED:
+                    result = {**(run.result or {}), **result}
                 result = {**result, "usage_totals": run_usage_totals(db, run_id)}
             run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
             if changed:

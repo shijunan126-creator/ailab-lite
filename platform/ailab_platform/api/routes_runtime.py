@@ -165,7 +165,15 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             meta.update(question={**q, "created_at": datetime.now(UTC).isoformat()}, answer=None)
             append_event(db, run.id, "agent.ask_user", q, commit=False)
         run.runtime_meta = meta
-        transition_run(db, run.id, body.status, error=body.error, summary=body.summary, result=body.result, commit=False)
+        transition_run(
+            db,
+            run.id,
+            body.status,
+            error=body.error,
+            summary=body.summary,
+            result={**(run.result or {}), **body.result} if body.result is not None else None,
+            commit=False,
+        )
         db.execute(
             update(RunAttempt)
             .where(RunAttempt.id == x_run_attempt, RunAttempt.ended_at.is_(None))
