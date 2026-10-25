@@ -87,8 +87,8 @@ def test_sources_survive_checkpoint_and_waiting_user_resume(web_tools):
     assert platform.checkpoint["state"]["sources"] == [source(0), source(1)]
     platform.checkpoint["answer"] = {"question_id": platform.paused["question"]["question_id"], "answer": "yes"}
     asyncio.run(
-        AgentLoop(platform=platform, broker=FakeBroker(), llm=ScriptedLLM([search(1), LLMResponse(content="done")])).resume(
-            "r", platform.checkpoint, attempt_id="b", attempt=2
+        AgentLoop(platform=platform, broker=FakeBroker(), llm=ScriptedLLM([search(1), LLMResponse(content="done")])).process(
+            "r", attempt=2, attempt_id="b", checkpoint=platform.checkpoint
         )
     )
     assert platform.statuses[-1][0] == "succeeded"
