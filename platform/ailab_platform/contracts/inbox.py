@@ -93,10 +93,5 @@ class QueuedMessageOut(InboxUTC):
     created_at: datetime
 
 
-class SteeredEvent(BaseModel):
-    queued_id: str
-    prompt: str
-
-
 class SteerClaimOut(BaseModel):
     items: list[QueuedMessageOut]
