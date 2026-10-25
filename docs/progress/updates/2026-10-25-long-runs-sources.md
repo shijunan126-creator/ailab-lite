@@ -203,19 +203,33 @@ SQLite122/PG35跳过构成与上文v2最终验收相同（外部Docker/OpenSandb
 
 新建专用 Colima `ailab-verify`，aarch64、2 CPU/8 GiB/60 GiB、Docker29.5.2；默认 Docker context 始终 default。CLI 显式 context，OSB SDK 明确同一测试 socket。共享缓存 `/Users/michael/Library/Caches/ailab-final-015c/` 保存日志、隔离配置和 PG；不提交原始运行数据。进程合同镜像 `ailab-final-exec:015c` 基于 python:3.12-slim-trixie，加 procps、uid10001、workspace；不冒充 Office 功能重验。runsc `release-20261019.0` 通过官方完整包 SHA512 校验安装，仅修改新建测试 VM。[官方安装说明](https://gvisor.dev/docs/user_guide/install/)。
 
-| 路径 | 连续 exec | 用时 | 每100次采样 PID / 僵尸 | 运行中轮询 / workspace快照 / 最终存活对象 |
+| 路径 | 连续 exec | 用时 | 每100次采样 PID / 僵尸 | exec_wait调用 / workspace快照 / 最终存活对象 |
 |---|---:|---:|---|---|
 | Docker/runc | 400 | 209.262s | 5 / 0，四次 | 6 / 2 / 1 |
 | Docker/runsc | 400 | 259.915s | 5 / 0，四次 | 5 / 2 / 1 |
-| OpenSandbox1.1.1/runc + dns+nft | 验证中 | 待完成 | 已完成100次：5 / 0 | 2 / 2 / 1 |
+| OpenSandbox1.1.1/runc + dns+nft | 400 | 1012.291s | 5 / 0，四次 | 2 / 2 / 1 |
 
-两条 Docker 路径均在同一 lease 顺序运行400命令，PID上限256、采样均远低于64；末尾 tar 和 kill-all 正常。静默 sleep5 经4次 exec_wait 完成；20,009字符原始输出保留 HEAD+TAIL，共9,028字符；命令恰20,000字符（含CJK）正常。exec_kill 清掉4成员进程组，pause使用同一 kill_all 控制后无残留sleep，reaper仍存活；supervisor真实SIGKILL后 exec_wait 返回 running=false/exit=-1，单槽位可启动下一命令，孤儿后代被清理。release 后 inspect 确认资源不存在。snapshot合同通过真实 exec/tar、API checkpoint CAS 和实际存储对象确认：running poll 不产生每次快照，完成时新快照替代旧快照，旧对象实际不存在。
+三条路径各在同一 lease 顺序运行400命令，PID上限256、采样均远低于64；末尾 tar 和 kill-all 正常。Docker静默 sleep5 经4次 exec_wait 完成；20,009字符原始输出保留 HEAD+TAIL，共9,028字符；命令恰20,000字符（含CJK）正常。exec_kill 清掉4成员进程组，pause使用同一 kill_all 控制后无残留sleep，reaper仍存活；supervisor真实SIGKILL后 exec_wait 返回 running=false/exit=-1，单槽位可启动下一命令，孤儿后代被清理。release 后 inspect 确认资源不存在。snapshot合同通过真实 exec/tar、API checkpoint CAS 和实际存储对象确认：running poll 不产生每次快照，完成时新快照替代旧快照，旧对象实际不存在。
 
-OpenSandbox 使用全新缓存 store.db，server回环38090、端口范围43100–43220、pids_limit256，SDK/server均1.1.1。启动先遇 macOS无setsid、范围不足100端口，两项均仅修正隔离测试启动配置；未启动或读取个人默认store。已完成的额外独立 live sample：5 PID、0 Z，reaper RSS16,936KiB；这不是目标机容量或进程峰值。最终压力和清理结果待写入。
+OpenSandbox 使用全新缓存 store.db，server回环38090、端口范围43100–43220、pids_limit256，SDK/server均1.1.1。启动先遇 macOS无setsid、范围不足100端口，两项均仅修正隔离测试启动配置；未启动或读取个人默认store。已完成的额外独立 live sample：5 PID、0 Z，reaper RSS16,936KiB；这不是目标机容量或进程峰值。OpenSandbox连续压力和控制生命周期2项通过（1078.78秒），快照另1项通过；静默命令经2次wait完成，9028字符头尾/20000字符命令/4成员kill-tree/kill-all/真实supervisor SIGKILL/-1退出/单槽重用/reaper存活及release均通过。Docker/runc共3项通过（压力+控制223.88秒、快照10.32秒），Docker/runsc共3项通过（288.51秒），三条真实路径合计9项通过、0失败、0跳过。压测reaper在macOS身份判断修正前启动，但该修正仅影响非Linux分支；Linux产品行为与最终提交一致。
 
 ### 最终整树验证与清理
 
-最终双库、E2E及资源清理仍在执行；结果在本节收尾时填写。Portal直接 npm test 38通过，production build通过；Next自动生成的next-env差异已恢复，Portal源码与a677a5f相同。Ruff check/format355文件通过。
+产品/回归提交 `38a71f8999be9419d86a88f3f23225ab2e303027`（父 `a677a5f`）。最终检查的产品源码与该提交逐文件一致；后续只完善文档，不更改产品。Python3.12.11、constraints依赖、GNU coreutils/findutils PATH，从本worktree platform运行。
+
+| 检查 | 最终结果 |
+|---|---|
+| Ruff check / format --check、git diff --check | 通过，355个Python文件 |
+| SQLite完整 `pytest tests -q` | 1248 passed / 132 skipped / 0 failed，退出0 |
+| PG16.15 + Redis8.10.2完整同套 | 1335 passed / 45 skipped / 0 failed，退出0 |
+| Portal直接 `npm test` / `npm run build` | 38 passed / 0 failed；production build通过 |
+| PG16+Redis五服务E2E | 98 passed / 0 skipped / 0 failed，退出0；模型/沙箱为mock |
+| 恢复/分叉定向 | 39 passed；包含新增2项红绿回归 |
+| 后台命令专项 | 29 passed；包括真实宿主SIGKILL及全部原生命周期/输出回归 |
+
+完整双库各收集1380项；pytest重复-q隐藏总计时，通过最终progress逐项标记与退出0核对计数，未把中止轮次或skip当通过。PG45跳过为Docker14、OpenSandbox13、S3 8、host mock真实namespace3，以及ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher分支/可选OTEL SDK各1；SQLite额外87个PG/Redis条件项。相比review3依赖环境，本venv未安装可选OTEL SDK导致额外1跳过。真实exec/snapshot的Docker/OSB合同另行配置后通过；其他未配置外部组合仍明确未验。保留Starlette弃用和SQLite表达式索引反射警告。
+
+Portal E2E独立副本再次执行38项/build，不能代替直接检查。Next自动生成的next-env差异已恢复，Portal源码与a677a5f相同。测试只使用本轮PG data-dir的ailab_test/ailab_migrations/ailab_e2e三库；127.0.0.1:35482/36489，后端RedisDB15，E2EDB13。五服务38880–38883/33800由夹具停止；Redis INFO process_id与本轮pidfile核对为65908后shutdown，PG按本轮data-dir用pg_ctl fast停止，上述七端口已无监听。OSB按本轮PID69938、命令行、独立配置hash及进程组核对后停止；未使用全局osb_down。四个本轮镜像标签已删除；专用Docker system df确认 Images/Containers/Local Volumes/Build Cache全部0。Colima `ailab-verify=Stopped`（13:21:34 UTC+8），保留profile但不保留运行任务；默认Docker context仍为default。最终lsof检查35482/36489/38880–38883/33800/38090及OSB范围43100–43220全部无监听，ps检查本worktree无pytest/五服务/helper存活。未停止其他用户进程或容器，个人部署/数据库未读写。
 
 资源成本：无新依赖、服务、数据库查询或迁移。引用同步只操作已有 result 的几个标量；helper安装额外临时副本仅为小型脚本。reaper每租约一个进程、沿用50ms时钟，跟踪的Popen集合受exec并发上限约束；先清进程组后回收可避免孤儿占用CPU/RSS和槽位。400短exec包含真实provider往返和Python启动，不作为2vCPU整栈吞吐承诺；VM内压力与宿主PG/Redis/模型替身E2E不能证明整栈2vCPU/8GiB容量。
 

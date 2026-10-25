@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-25 第三轮独立长任务审查：`feat/long-runs-review3`，base集成`a0a3ae0`，产品`490de63` + `a96cd84`。12项均确认并修复（含#9不收敛/#10字节超限），累计Run token上限改终态FAILED；预算窗口与job分离、进程回收、helper文件传输、poll快照成本/旧对象删除、冻结checkpoint与重投总结围栏见[第三轮证据](../progress/updates/2026-10-25-long-runs-review3.md)。最终本地SQLite1246/125跳过、PG+Redis1333/38跳过、Portal38/build、五服务E2E98/0跳过及Ruff通过；未推送/未合并/未部署，真实provider与目标机容量仍待验。
+2026-10-25 来源与长任务最终验收：集成`feat/long-runs-sources@a677a5f`，最终`feat/long-runs-final@38a71f8`。来源面板/Run来源、v2预算/续租/统一exec/重复检测、额度暂停和review3已集成；补齐checkpoint/result快照引用原子同步、真实tmpfs helper安装、SIGKILL监督进程的孤儿组清理。Docker/runc、Docker/runsc、OpenSandbox/runc+dns+nft各400次exec：209.262/259.915/1012.291秒，四次采样均5 PID/0 Z；真实合同共9项通过。SQLite1248/132跳过、PG+Redis1335/45跳过、Portal38/build、E2E98/0跳过及Ruff通过。精确边界/清理见[最终记录](../progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)；未合并/未部署，真实1–4小时模型、整栈目标容量、手机仍待验。
 
 2026-10-25 长任务v2审查修复：`feat/long-runs-v2-fixes`基于集成`8a2bfed`（含Portal `a4fa0b6`），补齐有界checkpoint日志/旧格式恢复、exec头尾与传输字节预算、静默wait排除、运行状态事件和无Agent句柄列表时的租约全量清理。本地验收及残余边界见[统一记录](../progress/updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)；不代表真实长时模型、目标机容量或上线验收。
 
@@ -40,7 +40,7 @@
 | T04 真实扫描与隔离解析 | 完成（原生 ARM64 ClamAV 已验收） | 见“文件” |
 | T05 服务认证与授权 | 完成（静态凭据适配器） | 见“安全” |
 | T06 Broker 持久租约与对账 | 完成（Agent续租已接入） | 见“沙箱” |
-| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、attempt栅栏与稳定交付；长任务短claim续租、活跃预算/无进展暂停、后台exec和本轮上下文压缩已本地双库验收，瞬态续租容错、暂停来源与失败结果保留已集成，统一验收见[来源/长任务集成](../progress/updates/2026-10-25-long-runs-sources.md)；真实Linux后台进程/长时模型待验，原后端证据见[长任务](../progress/updates/2026-10-25-long-runs.md)。既有真实OSB/Docker恢复与SIGKILL历史证据见[验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
+| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、attempt栅栏与稳定交付；长任务短claim续租、活跃预算/无进展暂停、后台exec和本轮上下文压缩已本地双库验收，瞬态续租容错、暂停来源与失败结果保留已集成，统一验收见[来源/长任务集成](../progress/updates/2026-10-25-long-runs-sources.md)；真实Linux Docker/runc+runsc与OpenSandbox/runc后台进程已验，真实长时模型/整栈容量/手机待验，见[最终记录](../progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)；原后端证据见[长任务](../progress/updates/2026-10-25-long-runs.md)。既有真实OSB/Docker恢复与SIGKILL历史证据见[验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
 | T08 单机调度隔离 | 已实现，本地验收 | Chat/Work固定有界分槽，暂停释放槽，回答/恢复重查准入，同会话串行；真实模型容量未验 |
 | T09 事务副作用与重试 | 已实现，本地验收 | Run/文件/预览/缩略图/OCR/续跑经持久任务信封与claim/ACK；全业务attempt栅栏在T07接通，SIGTERM/Redis丢失与双库回归通过 |
 | T10 单实例契约测试 | 完成（真实 MinIO 已验收） | 见“运维” |
