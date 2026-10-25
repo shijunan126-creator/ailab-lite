@@ -52,9 +52,7 @@ def test_retries_transient_errors_with_backoff(_fast_retries) -> None:
     assert _chat(client).content == "hi"
     assert len(seen) == 3
     # exponential backoff with 0.5x-1.5x jitter: attempt n sleeps 2**n seconds, spread
-    assert [round(s / 2**n, 1) for n, s in enumerate(_fast_retries)] and all(
-        0.5 <= s / 2**n <= 1.5 for n, s in enumerate(_fast_retries)
-    )
+    assert [round(s / 2**n, 1) for n, s in enumerate(_fast_retries)] and all(0.5 <= s / 2**n <= 1.5 for n, s in enumerate(_fast_retries))
 
 
 def test_gives_up_after_max_retries() -> None:
