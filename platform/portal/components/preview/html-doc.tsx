@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 // Injected into the fetched document: reports the document's real height to the parent, so the
 // iframe can be sized to its content and the pane scrolls instead of showing dead space below
 // the last slide (scaled-deck layouts keep their unscaled height otherwise).
-const HEIGHT_HOOK = `<script>(function(){var post=function(){var h=Math.max(document.documentElement.scrollHeight,document.body?document.body.scrollHeight:0);try{parent.postMessage({ailabHtmlHeight:h},"*")}catch(e){}};if(window.ResizeObserver){new ResizeObserver(post).observe(document.documentElement)}window.addEventListener("load",post);post()}())</script>`;
+const HEIGHT_HOOK = `<script>(function(){var post=function(){var b=document.body;var h=b?b.scrollHeight:0;try{parent.postMessage({ailabHtmlHeight:h},"*")}catch(e){}};if(window.ResizeObserver){new ResizeObserver(post).observe(document.body)}window.addEventListener("load",post);var n=0;var t=setInterval(function(){post();if(++n>20)clearInterval(t)},500);post()}())</script>`;
 
 /** Injects the pane integration (height reporting) into a fetched document. */
 export function withHeightHook(html: string): string {
