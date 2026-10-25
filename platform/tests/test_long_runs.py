@@ -1,6 +1,8 @@
 """Long work pauses safely; duration is independent of ownership and progress."""
 
 import asyncio
+import json
+import shlex
 
 import pytest
 from pydantic import ValidationError
@@ -119,7 +121,9 @@ def test_stalled_tool_cancels_and_preserves_uncertain_intent(monkeypatch):
     canceled = []
 
     class Hung(FakeBroker):
-        async def exec(self, *args, **kwargs):
+        async def exec(self, lease_id, command, timeout=None):
+            if json.loads(shlex.split(command)[-1])["action"] == "kill_all":
+                return await super().exec(lease_id, command, timeout)
             try:
                 await asyncio.Event().wait()
             finally:
@@ -220,13 +224,11 @@ def test_stalled_model_is_canceled_metered_and_paused(monkeypatch):
 
 @pytest.mark.parametrize("name", ["exec_wait", "exec_kill"])
 def test_started_background_controls_can_replay_on_resume(name):
-    import json
-
     class Broker(FakeBroker):
-        controls = 0
+        controls = []
 
-        async def exec(self, *args, **kwargs):
-            self.controls += 1
+        async def exec(self, lease_id, command, timeout=None):
+            self.controls.append(json.loads(shlex.split(command)[-1])["action"])
             return {"exit_code": 0, "stdout": json.dumps({"ok": True, "handle": "a" * 32, "running": False, "exit_code": 0})}
 
     state = fresh_state()
@@ -237,7 +239,7 @@ def test_started_background_controls_can_replay_on_resume(name):
     platform.checkpoint = {"step": 1, "state": state}
     broker = Broker()
     _run(ScriptedLLM([LLMResponse(content="已检查")]), platform, broker, attempt_id="next")
-    assert broker.controls == 1
+    assert broker.controls == [{"exec_wait": "wait", "exec_kill": "kill"}[name], "kill_all"]
     assert platform.checkpoint["state"]["tool_log"]["0:0"]["result"]["ok"]
 
 
