@@ -166,6 +166,7 @@ def test_step_budget_resumes_with_new_window_and_keeps_lifetime_usage(monkeypatc
     model = ScriptedLLM([LLMResponse(content="全部完成")])
     _run(model, platform, attempt_id="a2")
     assert len(model.seen_messages) == 1 and platform.statuses[-1][0] == "succeeded"
+    assert any("此前收尾限制已解除" in str(m.get("content")) for m in model.seen_messages[0])
 
 
 def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input(monkeypatch):

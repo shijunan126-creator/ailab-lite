@@ -18,6 +18,8 @@ class WorkBudget:
     def __init__(self, state, window_id):
         self.state = state
         if state.get("budget", {}).get("window_id") != window_id:
+            if state.get("budget"):
+                state["budget_note_pending"] = True
             state["budget"] = {
                 "window_id": window_id,
                 "active_seconds": 0.0,

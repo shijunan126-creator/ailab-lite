@@ -1218,6 +1218,14 @@ class AgentLoop:
                 if run["_ledger_tokens"] >= settings.run_max_tokens:
                     raise BudgetPause(_token_limit_error(run))
                 if not state["pending"]:
+                    if state.pop("budget_note_pending", False):
+                        messages.append(
+                            {
+                                "role": "user",
+                                "content": "（平台提示：用户已继续任务，本轮已开启新的时间和步数窗口。请检查已保存的计划和文件，"
+                                "继续未完成的工作；此前收尾限制已解除。不要重复已确认交付或可能已执行的命令。）",
+                            }
+                        )
                     left = step_limit - step
                     if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
                         messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
