@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import httpx
+import pytest
 
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.api.main import app
@@ -111,3 +112,64 @@ asyncio.run(run())
     assert checkpoint["state"]["tool_log"]["0:1"]["result"]["interrupted"] is True
     assert len(checkpoint["state"]["artifacts"]) == 1
     assert Path(marker).read_text().splitlines() == ["delivered", "background_started"]
+
+
+@pytest.mark.parametrize("failure", ["client", "unexpected"])
+def test_resumed_crash_preserves_prior_results_and_sources(api, failure):  # noqa: F811
+    from ailab_platform.adapters.runtime import fresh_state
+    from ailab_platform.clients import ClientError
+    from tests.test_conversations import AUTH
+
+    conversation = api.post("/v1/conversations", headers=AUTH, json={}).json()
+    response = api.post(f"/v1/conversations/{conversation['id']}/messages", headers=AUTH, json={"prompt": "Search"})
+    rid = response.json()["id"]
+    token = claim(api, rid)["token"]
+    headers = {**SERVICE, "X-Run-Attempt": token}
+    assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    sources = [{"title": "Page", "url": "https://example.com/", "site": "example.com"}]
+    state = fresh_state()
+    state["sources"] = sources
+    assert api.put(f"/internal/runs/{rid}/checkpoint", headers=headers, json={"expected_step": 0, "state": state}).status_code == 200
+    prior = {"previews": [{"file_id": "preview"}], "plan": [{"title": "prior plan"}], "custom": "keep"}
+    with SessionLocal() as db:
+        db.get(Run, rid).result = prior
+        db.commit()
+    reason = "预算已暂停，可继续"
+    assert (
+        api.post(
+            f"/internal/runs/{rid}/pause", headers=headers, json={"status": "interrupted", "error": reason, "result": {"sources": sources}}
+        ).status_code
+        == 200
+    )
+    for detail in (
+        api.get(f"/v1/runs/{rid}", headers=AUTH).json(),
+        api.get(f"/v1/conversations/{conversation['id']}", headers=AUTH).json()["turns"][0],
+    ):
+        assert detail["result"]["sources"] == sources
+        assert detail["result"]["previews"] == prior["previews"]
+        assert detail["resumable"] and detail["error"] == reason
+    assert api.post(f"/v1/runs/{rid}/resume", headers=AUTH).status_code == 200
+    with SessionLocal() as db:
+        job_id = db.get(Run, rid).runtime_meta["job_id"]
+    next_token = claim(api, job_id)["token"]
+
+    class Crashed(ScriptedLLM):
+        async def chat(self, *args, **kwargs):
+            if failure == "client":
+                raise ClientError("GET", "/model", 503, "model unavailable")
+            raise RuntimeError("model crashed")
+
+    async def crash():
+        platform = await platform_client()
+        try:
+            await AgentLoop(platform, FakeBroker(), Crashed([])).process(rid, attempt_id=next_token, attempt=2)
+        finally:
+            await platform.aclose()
+
+    asyncio.run(crash())
+    detail = api.get(f"/v1/runs/{rid}", headers=AUTH).json()
+    assert detail["status"] == "failed" and detail["error"]
+    assert detail["result"]["sources"] == sources
+    with SessionLocal() as db:
+        result = db.get(Run, rid).result
+        assert all(result[key] == value for key, value in prior.items())

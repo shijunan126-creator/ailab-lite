@@ -1004,7 +1004,9 @@ class AgentLoop:
                 await self._workspace_checkpoint(run_id, turn, force=True)
                 await self._checkpoint(run_id, turn)
                 await self._release_turn(turn)
-                await self.platform.pause_run(run_id, {"status": RunStatus.WAITING_USER, "question": q})
+                await self.platform.pause_run(
+                    run_id, {"status": RunStatus.WAITING_USER, "question": q, "result": {"sources": state["sources"]}}
+                )
                 raise RunPaused()
         elif call.name == "update_plan":
             steps = call.arguments.get("steps")
@@ -1068,6 +1070,7 @@ class AgentLoop:
                 "auto_resume": False,
                 "summary": state["final_summary"],
                 "result": {
+                    "sources": state["sources"],
                     "artifacts": turn.artifacts,
                     "plan": state["plan"],
                     "previews": list(turn.previews.values()),
@@ -1359,7 +1362,15 @@ class AgentLoop:
                 await self._release_turn(turn)
             except Exception:
                 log.warning("lost lease release will be reconciled run=%s", run_id)
-            await self.platform.pause_run(run_id, {"status": RunStatus.INTERRUPTED, "error": f"工作区租约中断：{exc}", "auto_resume": True})
+            await self.platform.pause_run(
+                run_id,
+                {
+                    "status": RunStatus.INTERRUPTED,
+                    "error": f"工作区租约中断：{exc}",
+                    "auto_resume": True,
+                    "result": {"sources": state["sources"]},
+                },
+            )
             outcome = "interrupted"
         except RunCanceled:
             outcome = "canceled"

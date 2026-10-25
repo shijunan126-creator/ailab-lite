@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from .. import metrics, obs
 from ..catalog import get_catalog
-from ..clients import AsyncPlatformClient
+from ..clients import AsyncPlatformClient, ClientError
 from ..config import settings
 from ..contracts.jobs import JobEnvelope, RunStatus
 from ..deps import metrics_auth
@@ -39,13 +39,41 @@ def visibility_seconds() -> int:
     return settings.job_lease_seconds
 
 
-async def _with_job_heartbeat(work, platform, job_id, token):
+async def _with_job_heartbeat(work, platform, job_id, token, *, lease_started_at=None):
     async def renew():
+        clock = asyncio.get_running_loop()
+        lease = settings.job_lease_seconds
+        interval = min(60, lease / 3)
+        margin = min(30, lease / 5)
+        # Start conservatively at ownership acquisition; a renew may have committed even
+        # when its response is lost, but only a confirmed response extends our deadline.
+        last_success = clock.time() if lease_started_at is None else lease_started_at
+        delay = interval
+        failures = 0
         while True:
-            await asyncio.sleep(min(60, settings.job_lease_seconds / 3))
-            # Fail closed on renewal failure. Stop work before another consumer can own the job;
-            # the last durable checkpoint and lease expiry recover transient API failures too.
-            await platform.job_action(job_id, "renew", token=token)
+            remaining = last_success + lease - margin - clock.time()
+            if remaining <= 0:
+                raise TimeoutError("job renewal safety deadline exceeded")
+            await asyncio.sleep(min(delay, remaining))
+            remaining = last_success + lease - margin - clock.time()
+            if remaining <= 0:
+                raise TimeoutError("job renewal safety deadline exceeded")
+            started = clock.time()
+            try:
+                async with asyncio.timeout(min(10, lease / 6, remaining)):
+                    await platform.job_action(job_id, "renew", token=token)
+            except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status == 409:
+                    raise  # stale ownership must stop immediately, even during an outage
+                failures += 1
+                delay = min(15, interval / 4) * 2 ** min(failures - 1, 4)
+                delay = min(delay, interval)
+                log.warning("job renew failed; retrying within ownership deadline job=%s failures=%d", job_id, failures)
+            else:
+                # The API sets expiry before responding, so response latency is not lease time.
+                last_success = started
+                failures = 0
+                delay = interval
 
     processing = asyncio.create_task(work)
     heartbeat = asyncio.create_task(renew())
@@ -77,6 +105,7 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
                 raise ValueError("non-run envelope on Agent stream")
             if trace_context is not None:
                 trace_token = trace_context.set(envelope.traceparent)
+            lease_started_at = asyncio.get_running_loop().time()
             claim = await platform.job_action(job_id, "claim", consumer=CONSUMER)
             if claim["state"] != "claimed":
                 await asyncio.to_thread(queue.ack, topic, msg)
@@ -95,7 +124,13 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
             return
         if loop is None:
             owned_runtime = loop = AgentLoop(platform=platform)
-        await _with_job_heartbeat(_handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token)), platform, job_id, token)
+        await _with_job_heartbeat(
+            _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token)),
+            platform,
+            job_id,
+            token,
+            lease_started_at=lease_started_at,
+        )
         if token:
             state = await platform.get_run_state(msg.payload["run_id"])
             if (
