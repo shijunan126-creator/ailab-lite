@@ -521,17 +521,7 @@ class AgentLoop:
         except ClientError as exc:
             # Only the business reservation refusal pauses work. Upstream model
             # throttling and unrelated 429s keep their own failure/retry contracts.
-            try:
-                detail = json.loads(exc.body).get("detail")
-            except (ValueError, AttributeError):
-                detail = None
-            if (
-                exc.status == 429
-                and isinstance(detail, dict)
-                and detail.get("code") == "quota_exceeded"
-                and detail.get("window") in {"daily_tokens", "monthly_tokens"}
-                and isinstance(detail.get("resets_at"), str)
-            ):
+            if (detail := exc.quota_detail) is not None:
                 raise QuotaPause(detail["window"], detail["resets_at"]) from exc
             raise
         if not quiet and (gate := run.get("_main_model_reserved")) is not None:

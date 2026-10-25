@@ -8,6 +8,7 @@ that boundary explicit.
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -31,6 +32,23 @@ class ClientError(RuntimeError):
         super().__init__(f"{method} {url} -> {status}: {body[:500]}")
         self.status = status
         self.body = body
+
+    @property
+    def quota_detail(self) -> dict | None:
+        if self.status != 429:
+            return None
+        try:
+            detail = json.loads(self.body).get("detail")
+        except (ValueError, AttributeError):
+            return None
+        if (
+            isinstance(detail, dict)
+            and detail.get("code") == "quota_exceeded"
+            and detail.get("window") in {"daily_tokens", "monthly_tokens"}
+            and isinstance(detail.get("resets_at"), str)
+        ):
+            return detail
+        return None
 
 
 def _raise(method: str, url: str, resp: httpx.Response) -> None:
@@ -346,7 +364,7 @@ class AsyncPlatformClient(_PlatformApi):
                 async with asyncio.timeout(5):
                     return (await self._send(request)).json()
             except ClientError as exc:
-                if exc.status not in {408, 429, 500, 502, 503, 504} or attempt == 3:
+                if exc.quota_detail is not None or exc.status not in {408, 429, 500, 502, 503, 504} or attempt == 3:
                     raise
             except (httpx.TransportError, TimeoutError):
                 if attempt == 3:

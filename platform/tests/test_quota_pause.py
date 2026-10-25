@@ -222,3 +222,33 @@ def test_monthly_pause_survives_timeout_and_workspace_gc_until_reset(api, monkey
         expire_interrupted_runs(db, reset + timedelta(hours=settings.ask_user_timeout_hours + 1))
         assert db.get(Run, rid).status == "canceled"
     assert purge_expired_workspaces(storage, reset + timedelta(days=5)) == 1
+
+
+@pytest.mark.parametrize("quota", [True, False])
+def test_http_usage_client_does_not_retry_business_quota_but_retries_transient_429(monkeypatch, quota):
+    import httpx
+
+    from ailab_platform.clients import AsyncPlatformClient
+
+    monkeypatch.setattr("ailab_platform.clients.USAGE_RETRY_BACKOFF_SECONDS", 0)
+    calls = []
+    body = (
+        {"detail": {"code": "quota_exceeded", "window": "daily_tokens", "resets_at": PAUSE["resets_at"]}} if quota else {"detail": "busy"}
+    )
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(429, json=body)
+
+    async def reserve():
+        client = AsyncPlatformClient(base_url="http://test", token="test-service")
+        await client._http.aclose()
+        client._http = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        try:
+            with pytest.raises(ClientError):
+                await client.reserve_usage({"call_id": "call", "run_id": "run"})
+        finally:
+            await client.aclose()
+
+    asyncio.run(reserve())
+    assert len(calls) == (1 if quota else 4)
