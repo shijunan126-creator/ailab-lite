@@ -27,7 +27,7 @@ function runError(error: string): string {
   return error;
 }
 
-const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf)$/i;
+const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf|html?|xhtml)$/i;
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
 
 export type ForkMode = "chat" | "work";
