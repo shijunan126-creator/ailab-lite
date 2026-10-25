@@ -11,7 +11,7 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path("/tmp/ailab-background")
+ROOT = Path(__file__).resolve().parent
 
 
 def put(path, data):
@@ -22,7 +22,10 @@ def put(path, data):
 
 def process_starttime(pid):
     if sys.platform == "linux":
-        return Path(f"/proc/{pid}/stat").read_text().split(")", 1)[1].split()[19]
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        if fields[0] == "Z":
+            raise ProcessLookupError(pid)
+        return fields[19]
     # Host-process contract tests run on macOS; production Linux uses /proc without spawning ps.
     value = subprocess.check_output(["ps", "-o", "lstart=", "-p", str(pid)], text=True).strip()
     if not value:
@@ -38,6 +41,7 @@ def alive(meta):
 
 
 def supervise(payload, directory):
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     cap = payload["log_bytes"]
     started = time.monotonic()
     child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -96,6 +100,60 @@ def supervise(payload, directory):
         put(directory / "exit", result)
 
 
+def reap_workers():
+    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    if sys.platform == "linux":
+        import ctypes
+
+        # Adopt orphaned grandchildren too; completed process trees must not leak zombies.
+        if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
+            raise OSError(ctypes.get_errno(), "cannot establish background subreaper")
+    while ROOT.exists():
+        for request in ROOT.glob("*/request"):
+            payload = json.loads(request.read_text())
+            request.unlink()
+            worker = subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve()), json.dumps({**payload, "action": "supervise"})],
+                start_new_session=True,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            try:
+                identity = process_starttime(worker.pid)
+            except (OSError, subprocess.CalledProcessError):
+                identity = "exited"
+            put(
+                request.parent / "meta",
+                {
+                    "pid": worker.pid,
+                    "starttime": identity,
+                    "log_bytes": payload["log_bytes"],
+                    "started_at": time.time(),
+                },
+            )
+        time.sleep(0.05)
+
+
+def start_worker(payload, directory):
+    reaper_meta = ROOT / "reaper"
+    if not reaper_meta.exists() or not alive(json.loads(reaper_meta.read_text())):
+        parent = subprocess.Popen(
+            [sys.executable, str(Path(__file__).resolve()), json.dumps({"action": "reap"})],
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        put(reaper_meta, {"pid": parent.pid, "starttime": process_starttime(parent.pid)})
+    put(directory / "request", payload)
+    deadline = time.monotonic() + 5
+    while not (directory / "meta").exists():
+        if time.monotonic() >= deadline:
+            raise TimeoutError("background reaper did not acknowledge start; inspect workspace before retry")
+        time.sleep(0.01)
+
+
 def control(payload):
     ROOT.mkdir(mode=0o700, exist_ok=True)
     directory = ROOT / payload["handle"]
@@ -136,27 +194,7 @@ def control(payload):
             if len(candidates) >= payload["max_jobs"]:
                 return {"ok": False, "error": "后台命令并发数已达上限，请先等待或终止已有命令"}
             directory.mkdir(mode=0o700)
-            source = sys.argv[0] if sys.argv[0] != "-c" else None
-            # The same helper source was supplied in the command; persist it only in this lease.
-            helper = ROOT / "helper.py"
-            if source:
-                helper.write_bytes(Path(source).read_bytes())
-            else:
-                helper.write_text(globals()["HELPER_SOURCE"])
-            worker = subprocess.Popen(
-                [sys.executable, str(helper), json.dumps({**payload, "action": "supervise"})],
-                start_new_session=True,
-                stdin=subprocess.DEVNULL,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            meta = {
-                "pid": worker.pid,
-                "starttime": process_starttime(worker.pid),
-                "log_bytes": payload["log_bytes"],
-                "started_at": time.time(),
-            }
-            put(directory / "meta", meta)
+            start_worker(payload, directory)
         payload = {**payload, "action": "wait", "initial": True}
     if not (directory / "meta").exists():
         return {"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
@@ -190,11 +228,15 @@ def control(payload):
         completed = {"exit_code": completed}
     code = completed.get("exit_code")
     running = code is None and alive(meta)
+    if code is None and not running:
+        code = -1
+        completed = {"exit_code": code, "error": "后台进程退出状态丢失，请先检查文件"}
+        put(directory / "exit", completed)
     if payload.get("initial") and code is not None:
         return {"ok": code == 0, **completed}
     return {
         "ok": running or code is not None,
-        "error": "" if running or code is not None else "后台进程退出状态丢失，请先检查文件",
+        "error": completed.get("error", ""),
         "handle": payload["handle"],
         "running": running,
         "exit_code": code,
@@ -207,8 +249,16 @@ def control(payload):
 
 
 if __name__ == "__main__":
-    request = json.loads(sys.argv[1])
-    if request["action"] == "supervise":
+    argument = sys.argv[1]
+    if argument.startswith("{"):
+        request = json.loads(argument)
+    else:
+        path = Path(argument)
+        request = json.loads(path.read_text())
+        path.unlink()
+    if request["action"] == "reap":
+        reap_workers()
+    elif request["action"] == "supervise":
         supervise(request, ROOT / request["handle"])
     else:
         encoded = json.dumps(control(request), ensure_ascii=False)

@@ -225,4 +225,15 @@ class MockSandbox(SandboxProvider):
         self.cancel_exec(sandbox_id)
         root = self._sandbox_root(sandbox_id)
         if root.exists():
+            # Detached helper processes are outside MockSandbox's exec registry.
+            from ..agent.background_helper import alive
+
+            for path in [*root.glob("background/*/meta"), root / "background/reaper"]:
+                if path.exists():
+                    meta = json.loads(path.read_text())
+                    if alive(meta):
+                        try:
+                            os.killpg(meta["pid"], signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
             shutil.rmtree(root)

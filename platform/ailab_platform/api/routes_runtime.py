@@ -15,7 +15,7 @@ from .. import quota
 from ..config import settings
 from ..deps import current_user, get_db
 from ..events import append_event
-from ..library import schedule_object_deletion
+from ..library import delete_storage_objects, schedule_object_deletion
 from ..locks import user_critical_section
 from ..models import Conversation, Run, RunAttempt, RunCheckpoint, RunStatus, User
 from ..run_state import transition_run
@@ -106,6 +106,7 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
                 runtime_version=1,
             )
         )
+        previous_workspace = (run.runtime_meta or {}).get("workspace") or {}
         workspace = body.state.get("workspace")
         if workspace and not str(workspace.get("key", "")).startswith(f"workspaces/{run_id}/"):
             raise HTTPException(422, "invalid workspace key")
@@ -117,7 +118,14 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         for row in old:
             schedule_object_deletion(db, row.state_key, "checkpoint")
             db.delete(row)
+        previous_key = previous_workspace.get("key")
+        if previous_key and previous_key != (workspace or {}).get("key"):
+            schedule_object_deletion(db, previous_key, "workspace")
         db.commit()
+    if previous_key and previous_key != (workspace or {}).get("key"):
+        # The winning checkpoint now references the new immutable object. The
+        # committed deletion intent retries any failed delete or crash here.
+        delete_storage_objects([previous_key])
     return {"step": step}
 
 
@@ -130,10 +138,11 @@ class PauseIn(BaseModel):
     result: dict | None = None
 
 
-def queue_continuation(db, run):
+def queue_continuation(db, run, *, new_window=False):
     # A continuation is a new unit of work. An old ACK can only delete its old job.
     job_id = uuid4().hex
     meta = dict(run.runtime_meta or {})
+    meta["budget_window_id"] = job_id if new_window else meta.get("budget_window_id", meta.get("job_id", run.id))
     meta["job_id"] = job_id
     run.runtime_meta = meta
     result = dict(run.result or {})
@@ -263,6 +272,6 @@ def resume_run(run_id: str, user: User = Depends(current_user), db: Session = De
         _admit_continuation(db, run)
         # A person deciding to continue renews the one automatic continuation a lease loss gets.
         run.runtime_meta = {**meta, "auto_resumes": 0}
-        queue_continuation(db, run)
+        queue_continuation(db, run, new_window=(run.result or {}).get("pause", {}).get("kind") in {"budget", "quota"})
         db.commit()
     return run_dict(db, run, detail=True)

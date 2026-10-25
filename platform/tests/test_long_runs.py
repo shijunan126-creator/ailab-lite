@@ -2,7 +2,6 @@
 
 import asyncio
 import json
-import shlex
 
 import pytest
 from pydantic import ValidationError
@@ -12,6 +11,7 @@ from ailab_platform.agent.budgets import BudgetPause, WorkBudget
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import Settings, settings
 from ailab_platform.llm import LLMResponse, ToolCall
+from tests.runtime_fakes import background_request
 from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM, _run
 
 
@@ -72,7 +72,7 @@ def test_active_window_excludes_queue_and_survives_crash_but_resets_on_continue(
     assert continued.data["active_seconds"] == 0 and continued.data["start_step"] == 140
 
 
-def test_hard_cap_saves_workspace_and_pauses_even_if_model_finishes(monkeypatch):
+def test_hard_cap_wraps_but_a_finished_answer_succeeds(monkeypatch):
     class Model(ScriptedLLM):
         async def chat(self, *args, **kwargs):
             response = await super().chat(*args, **kwargs)
@@ -89,11 +89,11 @@ def test_hard_cap_saves_workspace_and_pauses_even_if_model_finishes(monkeypatch)
     )
     loop = AgentLoop(platform, broker, model)
     asyncio.run(loop.process("run_1", attempt_id="a"))
-    assert platform.paused["status"] == "interrupted" and platform.paused["auto_resume"] is False
-    assert "已工作4小时" in platform.paused["error"]
+    assert platform.paused is None
+    assert platform.statuses[-1][0] == "succeeded"
     assert platform.checkpoint["state"]["workspace"]
     assert broker.snapshots > 0
-    assert {p["kind"] for t, p in platform.events if t == "agent.budget"} == {"wrap_up", "paused"}
+    assert {p["kind"] for t, p in platform.events if t == "agent.budget"} == {"wrap_up"}
 
 
 def test_hourly_self_check_reaches_model_without_event():
@@ -122,7 +122,7 @@ def test_stalled_tool_cancels_and_preserves_uncertain_intent(monkeypatch):
 
     class Hung(FakeBroker):
         async def exec(self, lease_id, command, timeout=None):
-            if json.loads(shlex.split(command)[-1])["action"] == "kill_all":
+            if background_request(self, command)["action"] == "kill_all":
                 return await super().exec(lease_id, command, timeout)
             try:
                 await asyncio.Event().wait()
@@ -228,7 +228,7 @@ def test_started_background_controls_can_replay_on_resume(name):
         controls = []
 
         async def exec(self, lease_id, command, timeout=None):
-            self.controls.append(json.loads(shlex.split(command)[-1])["action"])
+            self.controls.append(background_request(self, command)["action"])
             return {"exit_code": 0, "stdout": json.dumps({"ok": True, "handle": "a" * 32, "running": False, "exit_code": 0})}
 
     state = fresh_state()

@@ -21,11 +21,11 @@ def fingerprint(value):
 
 
 def bookkeeping_result(result):
-    kept = result
-    if len(json.dumps(result, ensure_ascii=False).encode()) > 4096:
-        kept = {"ok": bool(result.get("ok")), "compacted": True}
-        if result.get("error"):
-            kept["error"] = str(result["error"])[:500]
+    kept = {"ok": bool(result.get("ok")), "compacted": True}
+    if result.get("interrupted"):
+        kept["interrupted"] = True
+    if result.get("error"):
+        kept["error"] = str(result["error"])[:500]
     return kept
 
 

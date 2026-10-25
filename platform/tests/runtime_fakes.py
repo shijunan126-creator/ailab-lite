@@ -24,3 +24,14 @@ class CheckpointFake:
     async def pause_run(self, run_id, payload):
         self.paused = payload
         return {"status": payload["status"]}
+
+
+def background_request(broker, command):
+    import shlex
+
+    path = shlex.split(command)[-1]
+    if path.startswith("{"):
+        return json.loads(path)
+    files = dict(getattr(broker, "put_calls", []))
+    files.update(getattr(broker, "files", {}))
+    return json.loads(files[path])

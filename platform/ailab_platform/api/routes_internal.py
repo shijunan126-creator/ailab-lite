@@ -172,7 +172,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The run, and for a conversation turn: the earlier turns (for the model) and the workspace to restore (for the Broker)."""
     run = _run_or_404(db, run_id)
     out = run_dict(db, run, detail=True)
-    out["budget_window_id"] = (run.runtime_meta or {}).get("job_id", run.id)
+    out["budget_window_id"] = (run.runtime_meta or {}).get("budget_window_id", (run.runtime_meta or {}).get("job_id", run.id))
     earlier = _earlier_turns(db, run)
     history = []
     for turn in earlier[-HISTORY_TURNS:]:

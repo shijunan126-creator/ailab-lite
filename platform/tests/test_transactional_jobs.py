@@ -364,7 +364,12 @@ def test_budget_pause_exposes_saved_progress_and_resume_starts_new_window(api): 
     response = api.post(
         f"/internal/runs/{rid}/pause",
         headers=headers,
-        json={"status": "interrupted", "error": reason, "summary": "部分完成", "result": {"workspace_saved": True}},
+        json={
+            "status": "interrupted",
+            "error": reason,
+            "summary": "部分完成",
+            "result": {"workspace_saved": True, "pause": {"kind": "budget"}},
+        },
     )
     assert response.status_code == 200, response.text
     detail = api.get(f"/v1/runs/{rid}", headers=AUTH).json()

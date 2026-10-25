@@ -33,6 +33,7 @@ from ..title_text import normalize_title
 from . import net_tools
 from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
+from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .multimodal import attachment_content, input_content
 from .prompts import (
     WORKSPACE_EXPIRED_NOTE,
@@ -62,7 +63,7 @@ WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finis
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
 FILE_TOOLS = frozenset(
-    {"copy_library_file", "write_file", "exec", "exec_wait", "exec_kill", "deliver_file", *net_tools.NAMES}
+    {"copy_library_file", "write_file", "exec", "deliver_file", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
@@ -192,7 +193,7 @@ def _arguments_json(arguments: dict) -> str:
 
 
 def _token_limit_error(run: dict) -> str:
-    return "本轮累计用量已达上限，已暂停；请在新任务中继续"
+    return "本轮累计用量已达上限；请在新任务中继续"
 
 
 def _clip_arguments(arguments: dict, limit: int = 500) -> dict:
@@ -201,6 +202,10 @@ def _clip_arguments(arguments: dict, limit: int = 500) -> dict:
 
 
 TITLE_TIMEOUT_SECONDS = 10
+
+
+class TokenLimit(Exception):
+    pass
 
 
 class AgentLoop:
@@ -743,6 +748,9 @@ class AgentLoop:
         tools = tools_for_turn() if offered is None else offered
         if estimator.estimate(model, {"messages": messages, "tools": tools}) < limit * 0.65:
             return
+        prior = self._states[run_id].get("compaction", {})
+        if prior.get("after", 0) >= limit * 0.65 and prior.get("limit") == limit:
+            raise BudgetPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
         # Keep two complete recent assistant/tool groups; never split a tool call from its result.
         groups = [i for i, message in enumerate(messages) if message["role"] == "assistant"]
         if len(groups) < 3:
@@ -780,10 +788,14 @@ class AgentLoop:
             {"role": "system", "content": "本轮执行摘要（仅作背景）：\n" + response.content[:16000]},
             *messages[cut:],
         ]
+        after = estimator.estimate(model, {"messages": messages, "tools": tools})
+        state["compaction"] = {"after": after, "limit": limit}
         await self._checkpoint(run_id, turn)
         await self._event(run_id, "agent.context_compacted", {"scope": "run", "messages": cut - 1})
+        if after >= limit * 0.65:
+            raise BudgetPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
         if turn.run["_ledger_tokens"] >= settings.run_max_tokens:
-            raise BudgetPause(_token_limit_error(turn.run))
+            raise TokenLimit(_token_limit_error(turn.run))
 
     async def _user_content(self, run_id, run, model):
         files = run.get("input_files") or []
@@ -853,7 +865,9 @@ class AgentLoop:
                 ctx = ToolContext(run_id, self.platform, turn.messages, turn.net_budget)
                 budget = self._budgets[run_id]
                 budget.update()
-                ctx.exec_lifetime_seconds = settings.run_max_seconds - budget.data["active_seconds"]
+                ctx.exec_lifetime_seconds = (
+                    120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
+                )
                 with span("agent.tool", tool=tool):
                     result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
         except (RunCanceled, LeaseInterrupted, BudgetPause):
@@ -929,10 +943,16 @@ class AgentLoop:
             budget.update()
         state = self._states[run_id]
         state.update(artifacts=turn.artifacts, delivered=turn.delivered)
-        saved = await self.platform.put_checkpoint(
-            run_id, {"expected_step": self._steps[run_id], "state": checkpoint_state(state, turn.run.get("_image_files", {}))}
-        )
+        compact_log(state)
+        payload, exceeded = bounded_checkpoint(checkpoint_state(state, turn.run.get("_image_files", {})), settings.checkpoint_max_bytes)
+        saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps[run_id], "state": payload})
         self._steps[run_id] = saved["step"]
+        if exceeded:
+            state.clear()
+            state.update(payload)
+            turn.messages = state["messages"]
+            turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
+            raise BudgetPause(CAPACITY_NOTE)
 
     async def _workspace_checkpoint(self, run_id: str, turn: _Turn, *, force=False) -> None:
         if not turn.lease_id:
@@ -948,7 +968,7 @@ class AgentLoop:
     async def _record_workspace(self, run_id: str, turn: _Turn, snapshot: dict) -> dict:
         state = self._states[run_id]
         state["workspace"] = {**snapshot, "step": self._steps[run_id], "saved_at": time.time()}
-        state["workspace_dirty"] = False
+        state["workspace_dirty"] = bool(state.get("background_jobs"))
         await self._checkpoint(run_id, turn)
         return state["workspace"]
 
@@ -1060,7 +1080,13 @@ class AgentLoop:
             return
         state = self._states[run_id]
         # Older checkpoints may have no Agent-side handles; the lease registry owns all processes.
-        await background_exec("exec_kill_all", {}, turn.lease_id, self.broker)
+        if state.get("background_jobs"):
+            state["workspace_dirty"] = True
+        try:
+            await background_exec("exec_kill_all", {}, turn.lease_id, self.broker)
+        except Exception:
+            log.warning("background cleanup failed run=%s; lease release will destroy processes", run_id, exc_info=True)
+            state["workspace_dirty"] = True
         state["background_jobs"] = []
 
     async def _budget_pause(self, run_id, turn, reason, *, pause=None):
@@ -1072,10 +1098,16 @@ class AgentLoop:
         state["finished"] = False
         if turn.lease_id:
             await self._stop_background(run_id, turn)
-            await self._finish_previews(turn, run_id)
-            if pause is None:
-                await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
-            await self._workspace_checkpoint(run_id, turn, force=True)
+            try:
+                await self._finish_previews(turn, run_id)
+                if pause is None:
+                    await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+                await self._workspace_checkpoint(run_id, turn, force=True)
+            except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status == 409:
+                    raise
+                state["workspace_dirty"] = True
+                log.warning("pause cleanup incomplete run=%s", run_id, exc_info=True)
         await self._checkpoint(run_id, turn)
         await self._event(
             run_id,
@@ -1091,7 +1123,7 @@ class AgentLoop:
                 "auto_resume": False,
                 "summary": state["final_summary"],
                 "result": {
-                    "pause": pause,
+                    "pause": pause or {"kind": "budget"},
                     "sources": state["sources"],
                     "artifacts": turn.artifacts,
                     "plan": state["plan"],
@@ -1182,6 +1214,8 @@ class AgentLoop:
             mode, skill = options.get("mode", "work"), options.get("skill")
             turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
             turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
+            if state.get("checkpoint_capacity_exceeded"):
+                raise BudgetPause(CAPACITY_NOTE)
             if not state["messages"]:  # the first pass only: the prompt becomes part of the checkpoint from here on
                 picked_text = await self._read_personal(turn, run_id, skill) if skill in turn.personal else None
                 if skill:
@@ -1205,8 +1239,8 @@ class AgentLoop:
                     *history_messages(run.get("history")),
                     {"role": "user", "content": await self._user_content(run_id, run, model)},
                 ]
-                state["user_message_index"] = len(messages) - 1
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
+                state["user_message_index"] = len(state["messages"]) - 1
                 await self._checkpoint(run_id, turn)
             messages = state["messages"]
             turn.messages = messages
@@ -1244,7 +1278,7 @@ class AgentLoop:
                 # A resumed checkpoint can already contain a paid response and pending tools.
                 # Enforce the budget before either executing those tools or dispatching another call.
                 if run["_ledger_tokens"] >= settings.run_max_tokens:
-                    raise BudgetPause(_token_limit_error(run))
+                    raise TokenLimit(_token_limit_error(run))
                 if not state["pending"]:
                     if note := state.pop("time_note_pending", None):
                         messages.append({"role": "user", "content": note})
@@ -1296,7 +1330,7 @@ class AgentLoop:
                     if response.content:
                         await self._event(run_id, "agent.message", {"step": step, "content": response.content})
                     if calls and run["_ledger_tokens"] >= settings.run_max_tokens:
-                        raise BudgetPause(_token_limit_error(run))
+                        raise TokenLimit(_token_limit_error(run))
                 while state["pending"]:
                     data = state["pending"][0]
                     call = ToolCall(data["id"], data["name"], data["arguments"])
@@ -1320,29 +1354,45 @@ class AgentLoop:
                         state["background_jobs"] = sorted(jobs)
                     if call.name == "finish" and result.get("ok"):
                         state.update(finished=True, final_summary=result.get("summary") or state["final_summary"])
+                    changed = call.name in FILE_TOOLS or (
+                        call.name in {"exec_wait", "exec_kill"}
+                        and not result.get("running")
+                        and result.get("exit_code") is not None
+                        and result.get("handle") not in state.get("snapshotted_execs", [])
+                    )
+                    if changed:
+                        state["workspace_dirty"] = True
+                        if call.name in {"exec_wait", "exec_kill"}:
+                            state["snapshotted_execs"] = [*state.get("snapshotted_execs", [])[-7:], result["handle"]]
                     await self._checkpoint(run_id, turn)
-                    if call.name in FILE_TOOLS:
+                    if changed:
                         await self._workspace_checkpoint(run_id, turn)
                 state["next_step"] += 1
                 await self._checkpoint(run_id, turn)
             budget.update()
-            if budget.data["active_seconds"] >= settings.run_max_seconds and budget.data.get("pause_step") is None:
+            if (
+                not state["finished"]
+                and budget.data["active_seconds"] >= settings.run_max_seconds
+                and budget.data.get("pause_step") is None
+            ):
                 budget.wrap(f"已工作{settings.run_max_seconds / 3600:g}小时，已暂停，可继续")
-            if budget.data.get("pause_step") is not None:
+            if not state["finished"] and budget.data.get("pause_step") is not None:
                 pause_reason = budget.data["reason"]
             if error is None and not state["finished"]:
                 if run["_ledger_tokens"] >= settings.run_max_tokens:
-                    raise BudgetPause(_token_limit_error(run))
+                    raise TokenLimit(_token_limit_error(run))
                 else:
                     # Out of steps: rather than ending on a bare error, let the model tell the user where things stand.
-                    messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
-                    await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
-                    response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
-                    messages.append({"role": "assistant", "content": response.content})
-                    state["final_summary"] = response.content
-                    await self._checkpoint(run_id, turn)
-                    await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})
-                    await self._event(run_id, "agent.warning", {"message": f"本轮用完了 {settings.max_agent_steps} 步"})
+                    if not state.get("out_of_steps_done"):
+                        messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
+                        await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
+                        response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
+                        messages.append({"role": "assistant", "content": response.content})
+                        state["final_summary"] = response.content
+                        state["out_of_steps_done"] = True
+                        await self._checkpoint(run_id, turn)
+                        await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})
+                        await self._event(run_id, "agent.warning", {"message": f"本轮用完了 {settings.max_agent_steps} 步"})
                     pause_reason = f"本轮已完成 {settings.max_agent_steps} 步，已暂停，可继续"
             if pause_reason:
                 raise BudgetPause(pause_reason)
@@ -1381,6 +1431,25 @@ class AgentLoop:
             else:
                 await self.platform.set_run_status(run_id, RunStatus.FAILED, error=error, summary=state["final_summary"], result=result)
                 outcome = "failed"
+        except TokenLimit as exc:
+            await self._stop_background(run_id, turn)
+            if turn.lease_id:
+                try:
+                    await self._finish_previews(turn, run_id)
+                    await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+                    await self._workspace_checkpoint(run_id, turn, force=True)
+                except Exception as cleanup_error:
+                    if isinstance(cleanup_error, ClientError) and cleanup_error.status == 409:
+                        raise
+                    log.warning("token cap cleanup incomplete run=%s", run_id, exc_info=True)
+            await self.platform.set_run_status(
+                run_id,
+                RunStatus.FAILED,
+                error=str(exc),
+                summary=state["final_summary"],
+                result={"sources": state["sources"], "artifacts": turn.artifacts, "plan": state["plan"]},
+            )
+            outcome = "failed"
         except BudgetPause as exc:
             await self._budget_pause(run_id, turn, exc.reason, pause=getattr(exc, "pause", None))
             outcome = "interrupted"

@@ -3,7 +3,6 @@
 import asyncio
 import json
 import os
-import shlex
 import signal
 import subprocess
 import sys
@@ -23,6 +22,7 @@ from ailab_platform.llm import LLMResponse
 from ailab_platform.models import OutboxMessage, Run
 from ailab_platform.queue import get_queue
 from tests.faults.test_transactional_jobs import api  # noqa: F401
+from tests.runtime_fakes import background_request
 from tests.test_agent_loop import FakeBroker, ScriptedLLM
 from tests.test_ledger_protocol import SERVICE
 from tests.test_transactional_jobs import action, claim, start
@@ -93,7 +93,7 @@ asyncio.run(run())
             raise AssertionError("confirmed delivery repeated")
 
         async def exec(self, lease_id, command, timeout=None):
-            payload = json.loads(shlex.split(command)[-1])
+            payload = background_request(self, command)
             assert payload["action"] == "kill_all", "background start repeated"
             return {"exit_code": 0, "stdout": json.dumps({"ok": True, "running": False, "killed": 0})}
 

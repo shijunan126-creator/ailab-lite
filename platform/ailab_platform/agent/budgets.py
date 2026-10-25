@@ -34,6 +34,7 @@ class WorkBudget:
                 "start_step": state["next_step"],
             }
             state["finished"] = False
+            state.pop("out_of_steps_done", None)
         self.data = state["budget"]
         self.data.pop("review_at", None)
         self.data.pop("review_progress", None)

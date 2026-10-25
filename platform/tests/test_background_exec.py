@@ -17,20 +17,52 @@ class LocalBroker:
     def __init__(self, tmp_path):
         self.root = tmp_path / "jobs"
         self.commands = []
+        self.uploads = []
         self.source_transform = lambda source: source
 
+    async def put_file(self, lease, path, data):
+        self.uploads.append(path)
+        target = self.root.parent / "workspace" / Path(path).name
+        target.parent.mkdir(exist_ok=True)
+        target.write_bytes(data)
+
     async def exec(self, lease, command, timeout=None):
+        import hashlib
+
         self.commands.append(command)
+        original = (Path(__file__).parents[1] / "ailab_platform/agent/background_helper.py").read_bytes()
+        changed = self.source_transform(original)
+        staging = self.root.parent / "workspace" / (".ailab-helper-" + hashlib.sha256(original).hexdigest() + ".py")
+        if staging.exists():
+            staging.write_bytes(changed)
+        command = command.replace("/tmp/ailab-background", str(self.root)).replace("/workspace", str(self.root.parent / "workspace"))
+        if changed != original:
+            command = command.replace(hashlib.sha256(original).hexdigest(), hashlib.sha256(changed).hexdigest())
+            if staging.exists():
+                staging.rename(staging.with_name(".ailab-helper-" + hashlib.sha256(changed).hexdigest() + ".py"))
         args = shlex.split(command)
-        source = Path(__file__).parents[1] / "ailab_platform/agent/background_helper.py"
-        original = source.read_bytes()
-        changed = original.replace(b'Path("/tmp/ailab-background")', f"Path({str(self.root)!r})".encode())
-        changed = self.source_transform(changed)
         args[0] = sys.executable
-        args[2] = args[2].replace(repr(original.decode()), repr(changed.decode()))
         child = await asyncio.create_subprocess_exec(*args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         out, err = await asyncio.wait_for(child.communicate(), timeout or 30)
         return {"exit_code": child.returncode, "stdout": out.decode(), "stderr": err.decode()}
+
+
+@pytest.fixture(autouse=True)
+def stop_test_reaper(tmp_path):
+    yield
+    import json
+    import signal
+
+    for path in [*tmp_path.glob("jobs/*/meta"), tmp_path / "jobs/reaper"]:
+        if path.exists():
+            try:
+                from ailab_platform.agent.background_helper import alive
+
+                meta = json.loads(path.read_text())
+                if alive(meta):
+                    os.killpg(meta["pid"], signal.SIGKILL)
+            except ProcessLookupError:
+                pass
 
 
 def test_background_tools_start_wait_kill_and_cap(tmp_path, monkeypatch):
@@ -215,6 +247,9 @@ def test_large_short_output_survives_provider_control_transport(tmp_path, monkey
     class Broker:
         calls = 0
 
+        async def put_file(self, lease_id, path, data):
+            await asyncio.to_thread(provider.put_file, lease_id, path, data)
+
         async def exec(self, lease_id, command, timeout=None):
             self.calls += 1
             result = await asyncio.to_thread(provider.exec, lease_id, command, timeout)
@@ -261,6 +296,9 @@ def test_foreground_keeps_head_and_failure_tail_with_cjk_transport(tmp_path, mon
     lease = provider.acquire("cjk-tail", "mock")
 
     class Broker:
+        async def put_file(self, lease_id, path, data):
+            await asyncio.to_thread(provider.put_file, lease_id, path, data)
+
         async def exec(self, lease_id, command, timeout=None):
             result = await asyncio.to_thread(provider.exec, lease_id, command, timeout)
             assert len(result.stdout.encode()) < 120000
@@ -314,3 +352,47 @@ def test_finish_kills_legacy_registry_jobs_missing_from_checkpoint(tmp_path):
             await background_exec("exec_kill", {"handle": handle[0]}, "lease_1", broker)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("text", ["a" * 19990, "中" * 19990, "'" * 19990], ids=["ascii", "cjk", "quotes"])
+def test_old_command_capacity_survives_transport(tmp_path, text):
+    broker = LocalBroker(tmp_path)
+    result = asyncio.run(background_exec("exec", {"cmd": "true # " + text}, "lease", broker))
+    assert result["exit_code"] == 0
+    assert all(len(cmd) < 20000 for cmd in broker.commands)
+    assert len(list(broker.root.glob("helper-*.py"))) == 1
+
+
+def test_supervisor_disappearing_without_exit_is_failed_and_prunable(tmp_path, monkeypatch):
+    import json
+
+    monkeypatch.setattr(settings, "exec_background_max_jobs", 1)
+    broker = LocalBroker(tmp_path)
+    directory = broker.root / ("a" * 32)
+    directory.mkdir(parents=True)
+    (directory / "meta").write_text(json.dumps({"pid": os.getpid(), "starttime": "not-this-process", "log_bytes": 4096}))
+    result = asyncio.run(background_exec("exec_wait", {"handle": "a" * 32, "seconds": 0}, "lease", broker))
+    assert result["running"] is False and result["exit_code"] == -1 and result["error"]
+    assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
+
+
+def test_linux_zombie_is_not_alive(monkeypatch):
+    from ailab_platform.agent import background_helper as helper
+
+    monkeypatch.setattr(helper.sys, "platform", "linux")
+    monkeypatch.setattr(Path, "read_text", lambda self: "123 (name) Z " + " ".join(["0"] * 18 + ["999"]))
+    assert helper.alive({"pid": 123, "starttime": "999"}) is False
+
+
+def test_helper_is_installed_once_verified_and_reinstalled_on_agent_resume(tmp_path):
+    broker = LocalBroker(tmp_path)
+    for _ in range(2):
+        assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", broker))["exit_code"] == 0
+    assert sum(".ailab-helper-" in path for path in broker.uploads) == 1
+    resumed = LocalBroker(tmp_path)
+    assert asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", resumed))["exit_code"] == 0
+    assert len(list(broker.root.glob("helper-*.py"))) == 1
+    helper = next(broker.root.glob("helper-*.py"))
+    helper.write_text("raise RuntimeError('tampered')")
+    with pytest.raises(ValueError, match="控制失败"):
+        asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", resumed))

@@ -138,7 +138,7 @@ def test_nonquota_pause_removes_stale_quota_metadata(api, resume_first):  # noqa
             db.commit()
         assert api.post(f"/internal/runs/{rid}/pause", headers=headers, json={"status": "interrupted"}).status_code == 200
     detail = api.get(f"/v1/runs/{rid}", headers=AUTH).json()
-    assert detail["status"] == "interrupted" and detail["resumable"] and not detail["result"].get("pause")
+    assert detail["status"] == "interrupted" and detail["resumable"] and (detail["result"].get("pause") or {}).get("kind") != "quota"
     assert detail["result"]["sources"] == SOURCES
 
 
@@ -252,3 +252,36 @@ def test_http_usage_client_does_not_retry_business_quota_but_retries_transient_4
 
     asyncio.run(reserve())
     assert len(calls) == (1 if quota else 4)
+
+
+def test_run_token_cap_releases_conversation_and_permits_inbox_resume(api, monkeypatch):  # noqa: F811
+    from ailab_platform.llm import ToolCall
+    from tests.test_ledger_protocol import SERVICE
+
+    conv, rid, headers = conversation(api)
+    token = headers["X-Run-Attempt"]
+    assert save(api, rid, headers).status_code == 200
+    queued = enqueue(api, conv).json()
+
+    monkeypatch.setattr(settings, "run_max_tokens", 100)
+    model = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("more", "list_files", {})], usage={"prompt_tokens": 101})])
+    process(rid, token, model)
+    result = api.get(f"/v1/runs/{rid}", headers=AUTH).json()
+    assert result["status"] == "failed" and not result["resumable"]
+    # FAILED deliberately pauses the queue; explicit queue resume now admits a
+    # fresh Run instead of being blocked by a non-resumable interrupted Run.
+    response = api.post(f"/v1/conversations/{conv}/queue/resume", headers=AUTH)
+    assert response.status_code == 200, response.text
+    with SessionLocal() as db:
+        from ailab_platform.models import QueuedMessage
+
+        item = db.get(QueuedMessage, queued["id"])
+        assert item.state == "started" and item.run_id != rid
+        next_run = item.run_id
+    next_headers = {**SERVICE, "X-Run-Attempt": claim(api, next_run)["token"]}
+    assert api.post(f"/internal/runs/{next_run}/status", headers=next_headers, json={"status": "running"}).status_code == 200
+    assert finish(api, next_run, next_headers).status_code == 200
+    response = api.post(
+        f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "continue in new run", "model": "test-fast", "mode": "chat"}
+    )
+    assert response.status_code == 201, response.text

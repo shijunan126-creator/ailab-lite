@@ -8,7 +8,7 @@ import json
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
-from tests.runtime_fakes import CheckpointFake
+from tests.runtime_fakes import CheckpointFake, background_request
 
 
 class FakePlatform(CheckpointFake):
@@ -115,7 +115,7 @@ def test_tool_call_with_invalid_json_is_not_executed() -> None:
     llm = ScriptedLLM([LLMResponse(tool_calls=[bad]), LLMResponse(content="giving up")])
     platform, broker = _run(llm)
 
-    assert broker.put_calls == []  # no empty file written
+    assert not [p for p, _ in broker.put_calls if not p.startswith("/workspace/.ailab-")]  # no user file written
     result = next(p for t, p in platform.events if t == "agent.tool_result")
     assert result["ok"] is False and "valid JSON" in result["error"]
     # the model sees its own malformed text and the error
@@ -225,7 +225,7 @@ def test_token_limit_stops_the_run_but_keeps_the_work(monkeypatch) -> None:
         ]
     )
     platform, _ = _run(llm, broker=broker)
-    assert platform.paused["status"] == "interrupted" and "累计用量已达上限" in platform.paused["error"]
+    assert platform.statuses[-1][0] == "failed" and "累计用量已达上限" in platform.statuses[-1][1]["error"]
     assert broker.commits == ["/workspace/outputs/partial.md"]
     assert len(llm.responses) == 1  # no further model call once the budget was consumed
 
@@ -463,7 +463,7 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
     broker.get_file = get_file
     find = ToolCall(id="c1", name="search_images", arguments={"query": "city skyline", "count": 2})
     platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[find]), LLMResponse(content="ok")]), broker=broker)
-    paths = [p for p, _ in broker.put_calls]
+    paths = [p for p, _ in broker.put_calls if not p.startswith("/workspace/.ailab-")]
     assert paths == [
         "/workspace/assets/images/city_skyline_1.jpg",
         "/workspace/assets/images/city_skyline_2.jpg",
@@ -510,9 +510,8 @@ def test_exec_accepts_command_as_well_as_cmd() -> None:
     broker.exec = exec_
     call = ToolCall(id="c1", name="exec", arguments={"command": "echo hi"})
     _run(ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="ok")]), broker=broker)
-    import shlex
 
-    requests = [json.loads(shlex.split(command)[-1]) for command in seen]
+    requests = [background_request(broker, command) for command in seen]
     assert [request["action"] for request in requests] == ["start", "kill_all"]
     assert requests[0]["cmd"] == "echo hi"
 

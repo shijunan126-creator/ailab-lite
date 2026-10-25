@@ -268,3 +268,55 @@ def test_paused_event_stream_delivers_the_question_and_closes(api):  # noqa: F81
     stream = api.get(f"/v1/runs/{rid}/events", headers=AUTH)
     assert "event: agent.ask_user" in stream.text
     assert stream.text.endswith("event: stream.end\ndata: {}\n\n")
+
+
+def test_superseded_workspace_deletion_waits_for_winning_checkpoint(api):  # noqa: F811
+    from ailab_platform.api.reaper import drain_object_deletions
+    from ailab_platform.models import LifecycleDeletion
+
+    rid, _, headers = owned(api)
+    storage = get_storage()
+    old, new = f"workspaces/{rid}/old.tgz", f"workspaces/{rid}/new.tgz"
+    for key in (old, new):
+        storage.put_bytes(key, b"archive", "application/gzip")
+    state = fresh_state()
+    state["workspace"] = {"key": old}
+    assert save(api, rid, headers, state=state).status_code == 200
+    state["workspace"] = {"key": new}
+    assert save(api, rid, headers, step=0, state=state).status_code == 409
+    with SessionLocal() as db:
+        assert not db.scalar(select(LifecycleDeletion.id).where(LifecycleDeletion.key == old))
+    assert save(api, rid, headers, step=1, state=state).status_code == 200
+    assert not storage.exists(old) and storage.exists(new)
+    with SessionLocal() as db:
+        assert db.scalar(select(LifecycleDeletion.id).where(LifecycleDeletion.key == old))
+        drain_object_deletions(db, storage)
+    assert not storage.exists(old) and storage.exists(new)
+    assert api.get(f"/internal/runs/{rid}/checkpoint", headers=headers).json()["state"]["workspace"]["key"] == new
+
+
+@pytest.mark.parametrize("kind", ["answer", "automatic", "budget"])
+def test_only_explicit_budget_resume_resets_window(api, kind):  # noqa: F811
+    rid, _, headers = owned(api)
+    state = fresh_state()
+    state["budget"] = {"window_id": rid, "active_seconds": 99, "start_step": 0}
+    assert save(api, rid, headers, state=state).status_code == 200
+    if kind == "answer":
+        assert pause(api, rid, headers).status_code == 200
+        response = api.post(f"/v1/runs/{rid}/answer", headers=AUTH, json={"question_id": rid + ":q", "answer": "A"})
+    else:
+        response = api.post(
+            f"/internal/runs/{rid}/pause",
+            headers=headers,
+            json={
+                "status": "interrupted",
+                "auto_resume": kind == "automatic",
+                "result": {"pause": {"kind": "budget"}} if kind == "budget" else {},
+            },
+        )
+        assert response.status_code == 200
+        if kind == "budget":
+            response = api.post(f"/v1/runs/{rid}/resume", headers=AUTH)
+    assert response.status_code in {200, 202}, response.text
+    body = api.get(f"/internal/runs/{rid}", headers=SERVICE).json()
+    assert (body["budget_window_id"] != rid) == (kind == "budget")

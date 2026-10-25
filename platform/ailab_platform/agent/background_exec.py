@@ -1,5 +1,6 @@
 """One bounded exec mechanism over the existing Broker privilege."""
 
+import hashlib
 import json
 import math
 import re
@@ -31,6 +32,8 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None):
     command_text = args.get("cmd") or args.get("command")
     if name == "exec" and (not isinstance(command_text, str) or not command_text.strip()):
         raise ValueError("后台命令不能为空")
+    if name == "exec" and len(command_text) > 20000:
+        raise ValueError("命令不能超过20000字符")
     lifetime = settings.run_max_seconds if max_seconds is None else max(0.001, min(max_seconds, settings.run_max_seconds))
     payload = {
         "action": {"exec": "start", "exec_wait": "wait", "exec_kill": "kill", "exec_kill_all": "kill_all"}[name],
@@ -43,14 +46,32 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None):
         "max_seconds": lifetime,
         "expires_at": time.time() + lifetime,
     }
-    source = Path(__file__).with_name("background_helper.py").read_text()
-    program = f"HELPER_SOURCE={source!r};exec(HELPER_SOURCE)"
-    command = "python3 -c " + shlex.quote(program) + " " + shlex.quote(json.dumps(payload))
-    if len(command) > 20000:
-        raise ValueError("后台命令过长，请先写入脚本文件再执行")
+    source = Path(__file__).with_name("background_helper.py").read_bytes()
+    digest = hashlib.sha256(source).hexdigest()
+    installed = getattr(broker, "_background_helpers", None)
+    if installed is None:
+        installed = broker._background_helpers = set()
+    helper = f"/tmp/ailab-background/helper-{digest}.py"
+    staging = f"/workspace/.ailab-helper-{digest}.py"
+    if (lease_id, digest) not in installed:
+        await broker.put_file(lease_id, staging, source)
+    request = f"/workspace/.ailab-exec-{uuid4().hex}.json"
+    await broker.put_file(lease_id, request, json.dumps(payload, ensure_ascii=False).encode())
+    # Verify on every invocation, including after Agent restart or sandbox restore.
+    # The control payload never competes with Broker's command-length budget.
+    program = (
+        "import hashlib,os,runpy,sys;from pathlib import Path;"
+        f"p=Path({helper!r});s=Path({staging!r});"
+        "p.parent.mkdir(mode=0o700,parents=True,exist_ok=True);"
+        f"assert hashlib.sha256((s if s.exists() else p).read_bytes()).hexdigest()=={digest!r};"
+        "s.replace(p) if s.exists() else None;"
+        "sys.argv=[str(p),sys.argv[1]];runpy.run_path(str(p),run_name='__main__')"
+    )
+    command = "python3 -c " + shlex.quote(program) + " " + shlex.quote(request)
     result = await broker.exec(lease_id, command, math.ceil(seconds + 10))
     if result.get("exit_code") != 0:
         raise ValueError("后台命令控制失败：" + str(result.get("stderr", ""))[-500:])
+    installed.add((lease_id, digest))
     response = json.loads(result["stdout"])
     if name == "exec" and response.get("exit_code") is not None:
         return {

@@ -119,10 +119,6 @@ def test_failed_run_keeps_completed_sources(web_tools, failure):
             LLMResponse(tool_calls=[ToolCall("next", "web_search", {"query": "1"})], usage={"completion_tokens": settings.run_max_tokens})
         )
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=Failing(responses)).process("r", attempt_id="a"))
-    if failure == "budget":
-        assert platform.paused["status"] == "interrupted"
-        assert platform.paused["result"]["sources"] == [source(0), source(1)]
-        return
     assert platform.statuses[-1][0] == "failed"
     assert platform.statuses[-1][1]["result"]["sources"] == [source(0), source(1)]
 
