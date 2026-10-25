@@ -75,7 +75,6 @@ def create_lease(body: LeaseCreate) -> dict:
     try:
         lease = manager.create(
             run_id=body.run_id,
-            inputs=[i.model_dump() for i in body.inputs],
             image=body.image,
             ttl_seconds=body.ttl_seconds,
             wait_seconds=settings.sandbox_wait_seconds,

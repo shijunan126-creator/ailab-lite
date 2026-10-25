@@ -94,7 +94,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
         db.refresh(conv)
         leaf = db.get(Run, conv.active_run_id, populate_existing=True) if conv.active_run_id else None
         if not leaf or leaf.status not in {RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_USER}:
-            raise HTTPException(409, "对话空闲，请直接发送")
+            raise HTTPException(409, {"code": "conversation_idle", "message": "对话空闲，请直接发送"})
         if len(db.scalars(pending_query(conv.id).limit(5)).all()) >= 5:
             raise HTTPException(422, "最多排队5条消息")
         if body.template is not None and body.steer:

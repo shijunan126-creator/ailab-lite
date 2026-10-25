@@ -107,7 +107,10 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
         ):
             raise HTTPException(status_code=400, detail=f"unknown file_id: {file_id}")
         if file.status != FileStatus.READY:
-            raise HTTPException(status_code=409, detail=f"file {file_id} is {file.status}, not usable yet")
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "file_not_ready", "message": f"文件还没检查完（{file.status}），稍候再发送"},
+            )
         inputs.append(file.id)
     from .templates import freeze_template
 

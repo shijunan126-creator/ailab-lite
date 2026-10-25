@@ -107,7 +107,10 @@ def test_retry_is_atomic_and_excluded_from_history_and_workspace(status):
         assert history["through_run_id"] is None and [r["id"] for r in history["history"]] == [prior]
         assert c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": old, "mode": "work"}).status_code == 422
         assert c.post(f"/v1/runs/{prior}/retry", headers=AUTH, json={}).status_code == 409
-        assert c.post(f"/v1/runs/{new['id']}/retry", headers=AUTH, json={}).json()["detail"] == "先停止当前回答"
+        assert c.post(f"/v1/runs/{new['id']}/retry", headers=AUTH, json={}).json()["detail"] == {
+            "code": "conversation_busy",
+            "message": "上一条消息还在回答中，请稍候或先停止它",
+        }
         assert c.post(f"/v1/runs/{old}/retry", headers=_other_user(c), json={}).status_code == 404
 
 

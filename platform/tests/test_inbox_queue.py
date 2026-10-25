@@ -145,7 +145,7 @@ def test_pause_resume_and_edit(api, status):  # noqa: F811
     headers = {**SERVICE, "X-Run-Attempt": claim(api, new)["token"]}
     api.post(f"/internal/runs/{new}/status", headers=headers, json={"status": "running"})
     finish(api, new, headers)
-    assert enqueue(api, conv).json() == {"detail": "对话空闲，请直接发送"}
+    assert enqueue(api, conv).json() == {"detail": {"code": "conversation_idle", "message": "对话空闲，请直接发送"}}
     response = api.post(f"/v1/runs/{new}/edit", headers=AUTH, json={"prompt": "replacement"})
     assert response.status_code == 201, response.text
     assert detail(api, conv)["queue_paused"] is True

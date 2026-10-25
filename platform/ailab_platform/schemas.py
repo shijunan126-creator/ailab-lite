@@ -302,16 +302,10 @@ class FilePatch(BaseModel):
     status: str | None = None
 
 
-class InputFile(BaseModel):
-    file_id: str
-    filename: str | None = None
-
-
 class LeaseCreate(BaseModel):
     run_id: str
     image: str | None = None
     ttl_seconds: int | None = None
-    inputs: list[InputFile] = Field(default_factory=list)
 
 
 class LeaseOut(BaseModel):
