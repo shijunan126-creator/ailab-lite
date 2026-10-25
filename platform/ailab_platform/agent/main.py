@@ -35,12 +35,29 @@ CONSUMER = f"agent-{socket.gethostname()}-{os.getpid()}"
 
 
 def visibility_seconds() -> int:
-    """How long a run message may stay unacked before another consumer takes it over.
+    """Transport redelivery is independent of run duration; durable claims fence duplicates."""
+    return settings.job_lease_seconds
 
-    Longer than the hard run timeout, so an unacked message always means the
-    consumer died rather than that the run is merely slow.
-    """
-    return settings.run_timeout_seconds + 60
+
+async def _with_job_heartbeat(work, platform, job_id, token):
+    async def renew():
+        while True:
+            await asyncio.sleep(min(60, settings.job_lease_seconds / 3))
+            # Fail closed on renewal failure. Stop work before another consumer can own the job;
+            # the last durable checkpoint and lease expiry recover transient API failures too.
+            await platform.job_action(job_id, "renew", token=token)
+
+    processing = asyncio.create_task(work)
+    heartbeat = asyncio.create_task(renew())
+    try:
+        done, _ = await asyncio.wait({processing, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+        if heartbeat in done:
+            await heartbeat
+        await processing
+    finally:
+        processing.cancel()
+        heartbeat.cancel()
+        await asyncio.gather(processing, heartbeat, return_exceptions=True)
 
 
 async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None = None) -> None:
@@ -78,7 +95,7 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
             return
         if loop is None:
             owned_runtime = loop = AgentLoop(platform=platform)
-        await _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token))
+        await _with_job_heartbeat(_handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token)), platform, job_id, token)
         if token:
             state = await platform.get_run_state(msg.payload["run_id"])
             if (
@@ -124,7 +141,7 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
     attempt = int(msg.payload["attempt"]) if durable else max(msg.deliveries, int(msg.payload.get("attempt", 1)))
 
     lock = run_lock_key(run_id)
-    token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.run_timeout_seconds + 30)
+    token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.job_lease_seconds)
     if token is None:
         log.warning("run %s is already being executed elsewhere; dropping duplicate message", run_id)
         await ack_transport()
@@ -133,15 +150,7 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
     log.info("picked run %s (attempt %d)", run_id, attempt)
     try:
         try:
-            await asyncio.wait_for(
-                loop.process(run_id, attempt=attempt, attempt_id=msg.payload.get("attempt_id")), timeout=settings.run_timeout_seconds
-            )
-        except TimeoutError:
-            log.error("run %s hit the %ss timeout", run_id, settings.run_timeout_seconds)
-            try:
-                await platform.set_run_status(run_id, RunStatus.FAILED, error=f"run timeout after {settings.run_timeout_seconds}s")
-            except Exception:
-                log.exception("could not mark timed-out run %s failed", run_id)
+            await loop.process(run_id, attempt=attempt, attempt_id=msg.payload.get("attempt_id"))
         except asyncio.CancelledError:
             # Shutting down (rolling deploy, SIGTERM). Waiting for the visibility timeout would
             # leave the run stalled for ~16 minutes, so hand it to the next agent right away.

@@ -298,3 +298,41 @@ def test_worker_scan_exhausted_counter_is_not_repeated_by_redelivery(api, monkey
         queue.enqueue(settings.file_queue, payload)
         main.handle_message(queue, queue.dequeue(settings.file_queue, timeout=0))
     assert counter.value == 1
+
+
+def test_short_claim_renewal_is_token_fenced_and_cannot_revive_expiry(api, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(settings, "run_timeout_seconds", 86400)
+    rid = start(api)
+    first = claim(api, rid)
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, rid)
+        assert 290 < (job.claimed_until.replace(tzinfo=UTC) - datetime.now(UTC)).total_seconds() <= 300
+        job.claimed_until = datetime.now(UTC) + timedelta(seconds=1)
+        db.commit()
+    assert action(api, rid, "renew", "wrong").status_code == 409
+    assert action(api, rid, "renew", first["token"]).status_code == 200
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, rid)
+        assert (job.claimed_until.replace(tzinfo=UTC) - datetime.now(UTC)).total_seconds() > 290
+        assert job.deliveries == 1
+        job.claimed_until = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+    assert action(api, rid, "renew", first["token"]).status_code == 409
+    assert claim(api, rid)["attempt"] == 2
+    assert action(api, rid, "renew", first["token"]).status_code == 409
+
+
+def test_renew_requires_job_service_scope(api, monkeypatch):  # noqa: F811
+    from ailab_platform.ports.service_auth import ServicePrincipal
+    from ailab_platform.service_auth import authenticator
+
+    original = authenticator.authenticate
+    monkeypatch.setattr(
+        authenticator,
+        "authenticate",
+        lambda token: ServicePrincipal("worker", frozenset({"jobs:file"})) if token == "worker" else original(token),
+    )
+    rid = start(api)
+    token = claim(api, rid)["token"]
+    response = api.post(f"/internal/jobs/{rid}/renew", headers={"X-Service-Token": "worker"}, json={"token": token})
+    assert response.status_code == 403
