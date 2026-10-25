@@ -301,14 +301,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   // turns already there when the conversation opened appear with it; only turns that arrive afterwards animate in
   const opened = useRef<Set<string> | null>(null);
   if (detail && opened.current === null) opened.current = new Set(detail.turns.map((t) => t.id));
-  // a conversation that has worked in files can only branch into work: chat has no workspace to carry on in
+  // a conversation that has worked in files can only branch into work: chat has no workspace to carry on in.
+  // A work branch is work from its first turn, including the turns it carried over.
+  const forkedAsWork = detail?.forked_from?.mode === "work";
   const forkModes = useMemo(() => {
-    let worked = false;
+    let worked = forkedAsWork;
     return turns.map((t) => {
       worked ||= t.options?.mode !== "chat";
       return (worked ? ["work"] : ["chat", "work"]) as ForkMode[];
     });
-  }, [turns]);
+  }, [turns, forkedAsWork]);
   const projectId = id ? detail?.project_id || null : project?.id || null;
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
   const running = turns.some((t) => !isTerminal(t.status));

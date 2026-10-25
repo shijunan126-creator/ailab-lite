@@ -1201,6 +1201,10 @@ button.pr-row:active { transform: none; }
   input, textarea, select, .composer-box textarea { font-size: 16px; }
   /* pinned to the visible viewport: the keyboard pushes nothing off screen and nothing stays pushed after it closes */
   .chat-layout { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); }
+  /* the fixed layout is its own stacking layer under the floating sidebar/new/inbox buttons: keep a row free for them,
+     and hide them while the full-screen preview covers the chat */
+  .chat-main { padding-top: 48px; }
+  .shell:has(.preview-pane) .main-top { visibility: hidden; }
   .composer-dock { padding-bottom: max(10px, env(safe-area-inset-bottom)); }
   .composer-tools { gap: 6px; }
   .composer-right select { max-width: 168px; }
@@ -1209,7 +1213,7 @@ button.pr-row:active { transform: none; }
   .file-card .dl-label { display: none; }
   .msg.user .bubble { max-width: 88%; }
   .work-timeline { max-height: 38vh; }
-  .chat-crumb { padding-top: 12px; padding-left: 56px; }
+  .chat-crumb, .shell.collapsed .chat-crumb { padding-top: 0; padding-left: 12px; }
   .turn-meta .meta-text:nth-of-type(n+2) { display: none; }
 }
 
