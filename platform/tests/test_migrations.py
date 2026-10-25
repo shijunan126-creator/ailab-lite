@@ -604,3 +604,76 @@ def test_workspace_gc_status_cursor_index_round_trip(engine):
         assert "ix_runs_status_id" not in {index["name"] for index in inspect(conn).get_indexes("runs")}
         assert conn.scalar(text("SELECT prompt FROM runs WHERE id='r1'")) == "p"
     _upgrade_to(engine, "0030")
+
+
+def test_template_and_slides_queries_use_indexes(engine):
+    # A missing user on a shared, tiny table legitimately favors ix_files_user_id.
+    # Use migrated, isolated tables and selective data, with the normal planner.
+    _upgrade_to(engine, "head")
+    with engine.begin() as db:
+        _seed_user_and_run(db)
+        db.execute(
+            text("INSERT INTO projects (id,user_id,name,created_at,updated_at) VALUES ('p1','u1','Plan fixture','2026-01-01','2026-01-01')")
+        )
+        db.execute(
+            text(
+                "INSERT INTO files (id,lineage_id,user_id,project_id,filename,name_key,content_type,size,sha256,storage_key,"
+                "status,version,meta,created_at,is_head,purpose) "
+                "VALUES (:id,:id,'u1','p1',:filename,:filename,'application/octet-stream',1,'',:id,'ready',1,'{}','2026-01-01',1,'library')"
+            ),
+            [{"id": f"plan-{i:05}", "filename": f"deck-{i}.pptx" if i % 20 == 0 else f"notes-{i}.txt"} for i in range(10000)],
+        )
+        db.execute(
+            text(
+                "INSERT INTO templates (id,kind,scope,owner_id,name,file_id,created_by,created_at,updated_at,deleted_at) "
+                "VALUES (:id,'pptx',:scope,:owner,'Plan fixture','plan-00000','u1','2026-01-01','2026-01-01',:deleted)"
+            ),
+            [
+                {
+                    "id": f"tpl-plan-{i:05}",
+                    "scope": "company" if i % 2 == 0 else "personal",
+                    "owner": None if i % 2 == 0 else "u1",
+                    "deleted": None if i < 200 else "2026-01-02",
+                }
+                for i in range(5000)
+            ],
+        )
+        db.execute(text("ANALYZE files"))
+        db.execute(text("ANALYZE templates"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        queries = [
+            (
+                "SELECT id FROM templates WHERE scope='company' AND kind='pptx' AND deleted_at IS NULL ORDER "
+                "BY created_at DESC,id DESC LIMIT 50",
+                "ix_templates_company",
+            ),
+            (
+                "SELECT id FROM templates WHERE scope='personal' AND owner_id='u1' AND kind='pptx' AND "
+                "deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 20",
+                "ix_templates_personal",
+            ),
+            (
+                "SELECT id FROM files WHERE user_id='u1' AND purpose='library' AND is_head=1 AND "
+                "deleted_at IS NULL AND purged_at IS NULL AND (lower(filename) LIKE '%.pptx' OR "
+                "lower(filename) LIKE '%.potx') ORDER BY created_at DESC,id DESC LIMIT 50",
+                "ix_files_slides",
+            ),
+            (
+                "SELECT project_id,count(*) FROM files WHERE user_id='u1' AND purpose='library' AND "
+                "is_head=1 AND deleted_at IS NULL AND purged_at IS NULL AND (lower(filename) LIKE '%.pptx' OR "
+                "lower(filename) LIKE '%.potx') AND project_id>'' GROUP BY project_id ORDER BY project_id LIMIT 100",
+                "ix_files_slides_folders",
+            ),
+        ]
+        catalog = (
+            "SELECT indexname FROM pg_indexes WHERE schemaname=current_schema()"
+            if engine.dialect.name == "postgresql"
+            else ("SELECT name FROM sqlite_master WHERE type='index'")
+        )
+        indexes = set(db.execute(text(catalog)).scalars())
+        for sql, expected in queries:
+            assert expected in indexes
+            assert db.execute(text(sql)).first() is not None
+            plan = str(db.execute(text(prefix + sql)).all()).lower()
+            assert expected in plan or (expected == "ix_files_slides_folders" and "ix_files_folder_listing" in plan), plan
+            print(f"{engine.dialect.name} {expected}: {plan}")
