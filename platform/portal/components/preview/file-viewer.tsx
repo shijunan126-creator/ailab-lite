@@ -7,7 +7,7 @@ import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, Ic
 import { askHref } from "../library/file-menu";
 import ShareDialog from "../share-dialog";
 import FileTile from "../library/file-tile";
-import { HtmlDocFrame, useDocText } from "./html-doc";
+import { HtmlDocView } from "./html-doc";
 import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
 import Sheets from "./sheets";
@@ -105,8 +105,6 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
  * script runs but nothing in it can reach this app's cookies or storage. */
 function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
   const [mode, setMode] = useState<"render" | "code">("render");
-  // The rendered view needs the whole document: the text preview is a truncated excerpt.
-  const { html, error } = useDocText(downloadUrl(file.download_url));
   return (
     <div className="viewer-html">
       <div className="viewer-modes" role="tablist" aria-label="预览方式">
@@ -118,13 +116,7 @@ function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
         </button>
       </div>
       {mode === "render" ? (
-        error ? (
-          <Unavailable file={file} reason={error} />
-        ) : html === null ? (
-          <Waiting />
-        ) : (
-          <HtmlDocFrame html={html} title={file.filename} />
-        )
+        <HtmlDocView url={downloadUrl(file.download_url)} title={file.filename} renderError={(reason) => <Unavailable file={file} reason={reason} />} />
       ) : (
         <TextView file={file} preview={preview} />
       )}

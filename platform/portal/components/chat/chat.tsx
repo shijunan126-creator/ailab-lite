@@ -684,6 +684,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     projectId={projectId}
                     sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
                     onSources={showSources}
+                    onOpenLink={(url, title) => openReader({ url, title })}
                   />
                 ))}
               </div>
