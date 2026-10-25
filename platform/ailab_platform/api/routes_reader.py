@@ -6,9 +6,9 @@ uses. One bounded fetch per call; a click costs at most one page load.
 """
 
 import asyncio
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from urllib.parse import urlsplit
 
 from .. import web
 from ..deps import current_user
@@ -30,7 +30,7 @@ async def reader(url: str = Query(min_length=1, max_length=2000), _: User = Depe
         raise HTTPException(status_code=400, detail="only http(s) links can be opened in the reader")
     try:
         page = await asyncio.wait_for(web.read_url(url), timeout=READ_TIMEOUT_SECONDS)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         raise HTTPException(status_code=504, detail=f"page did not finish loading within {READ_TIMEOUT_SECONDS}s")
     except web.WebError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
