@@ -1,10 +1,12 @@
 # 当前工作
 
-## main 合并后 CI 索引回归（2026-10-25，修复验证中）
+## main 合并后 CI 索引回归（2026-10-25，已合并且main完整CI通过）
 
-用户授权修复最新 main CI 并完成 PR/合并闭环；本轮仅测试与交接文档，无产品部署变更。基线 `origin/main@d789479`，分支 `fix/template-query-plan-ci`，保留既有 `.DS_Store`。
+[PR #73](https://github.com/shijunan126-creator/ailab-lite/pull/73) head `80cb51c` 的8项检查全部通过，squash合入 `main@137d9a3274d89a32057300aa8c1f48a63699d0e7`，合并树与测试head相同；[合并后main完整CI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40195893591) 8项全部成功，包含SQLite、PostgreSQL、存储和浏览器E2E。
 
-PR #72 的文档范围门禁通过，但合并后完整 CI `40191406645` 的 PostgreSQL 索引计划测试失败；此前“全部收尾”没有覆盖这次 main 检查。将依赖共享历史数据/不存在用户、关闭顺序扫描的检查移到独立迁移数据库，固定 10000 文件/5000 模板并 ANALYZE，用默认优化器验证四条非空查询及索引存在性。本地完整双库、最终专项、Ruff及Portal build通过；删除索引的双库反向验证均失败。下一步：提 PR，检查 PR 与合并后 main 的完整 CI；保留既有摘要显示风险，不扩展到其他功能。[验证记录](updates/2026-10-25-template-query-plan-ci.md)。
+修复共享稀疏表/不存在用户导致的索引计划误报：独立迁移库固定10000文件/5000模板并ANALYZE，默认优化器验证四条非空查询及专用索引存在。本地完整双库、最终专项、Ruff和Portal build通过，删除索引的双库反向验证均失败。仅改测试/文档，无产品查询/迁移/运行时变化，无需部署；保留既有摘要显示风险。临时PG/Redis已停止，原`.DS_Store`保留。
+
+最终验收记录在本地分支 `docs/template-query-plan-accepted`，base `origin/main@137d9a3`，仅记录已完成结果，不再推送纯文档触发重复全套检查。下一步：本轮无待实现、待合并修复或待部署项，不自动开启其他任务。[验证记录](updates/2026-10-25-template-query-plan-ci.md)。
 
 ## 分支模式、标题与手机顶部（2026-10-25，已部署）
 
