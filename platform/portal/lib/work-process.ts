@@ -28,7 +28,11 @@ function describeTool(name: string, args: any): { label: string; detail?: string
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
     case "exec":
-      return { label: "运行命令", detail: String(args?.cmd || "").slice(0, 160) };
+      return { label: args?.background ? "后台运行命令" : "运行命令", detail: String(args?.cmd || args?.command || "").slice(0, 160) };
+    case "exec_wait":
+      return { label: "查看后台命令" };
+    case "exec_kill":
+      return { label: "停止后台命令" };
     case "write_file":
       return { label: "写入文件", detail: args?.path };
     case "read_file":
@@ -145,8 +149,17 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       note("已换用备用模型", [p.from_label || p.from, p.to_label || p.to].filter(Boolean).join(" → ") || undefined);
       break;
     case "agent.context_compacted":
-      note("已压缩较早的对话", p.turns ? `${p.turns} 轮` : undefined);
+      if (p.scope === "run") note("已压缩本轮较早的步骤", p.messages ? `${p.messages} 条` : undefined);
+      else note("已压缩较早的对话", p.turns ? `${p.turns} 轮` : undefined);
       break;
+    case "agent.budget": {
+      const minutes = typeof p.minutes === "number" ? `已工作 ${Math.round(p.minutes)} 分钟` : undefined;
+      if (p.kind === "soft") note("检查进度", minutes);
+      else if (p.kind === "extended") note("有进展，继续工作", p.extension_minutes ? `延长 ${p.extension_minutes} 分钟` : undefined, "ok");
+      else if (p.kind === "wrap_up") note("开始收尾", p.reason || minutes);
+      else if (p.kind === "paused") note("已暂停", p.reason || minutes);
+      break;
+    }
     case "agent.skill":
       note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
       break;

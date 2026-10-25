@@ -957,6 +957,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .ask-form { display: flex; gap: 8px; }
 .ask-form input { flex: 1; min-width: 0; }
 .resume { display: flex; align-items: center; gap: 10px; }
+.resume-why { color: var(--muted); font-size: 13px; }
 .quota-banner { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; padding: 8px 12px; border-radius: 10px; background: var(--warn-soft); color: var(--warn); font-size: 13px; font-weight: 550; }
 .quota-banner span { margin-left: auto; font-weight: 400; opacity: .85; }
 .quota-banner.over { background: var(--danger-soft); color: var(--danger); }

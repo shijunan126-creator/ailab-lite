@@ -117,3 +117,14 @@ test('sources the answer links to come first in its order; the rest are more',()
  assert.equal(urlKey('https://a.com/x/#h'),urlKey('https://a.com/x'));
  assert.deepEqual(splitSources([a],'没有链接').cited,[]);
 });
+test('budget events, run-scope compaction and background commands read plainly',()=>{
+ let items=[];
+ items=reduceEvent(items,event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'make',background:true}}));
+ items=reduceEvent(items,event('agent.tool_call',{step:2,name:'exec_wait',arguments:{handle:'a'}}));
+ items=reduceEvent(items,event('agent.budget',{kind:'extended',minutes:60.2,extension_minutes:30}));
+ items=reduceEvent(items,event('agent.budget',{kind:'paused',minutes:240,reason:'已工作4小时，已暂停，可继续'}));
+ items=reduceEvent(items,event('agent.context_compacted',{scope:'run',messages:40}));
+ const steps=items.flatMap(i=>i.kind==='steps'?i.steps:[]);
+ assert.deepEqual(steps.map(s=>s.label),['后台运行命令','查看后台命令','有进展，继续工作','已暂停','已压缩本轮较早的步骤']);
+ assert.equal(steps[3].detail,'已工作4小时，已暂停，可继续');
+});

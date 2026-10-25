@@ -18,6 +18,15 @@ export type { Item } from "../../lib/work-process";
 import { reduceEvent, type Item } from "../../lib/work-process";
 import { SourcesButton } from "./sources";
 import WorkProcess from "./work-process";
+/** Runs that ended before budgets paused instead: their stored English reason, said plainly. */
+function runError(error: string): string {
+  const steps = /^agent exceeded (\d+) steps$/.exec(error);
+  if (steps) return `本轮用完了 ${steps[1]} 步`;
+  const timeout = /^run timeout after (\d+)s$/.exec(error);
+  if (timeout) return `本轮超过了 ${Math.round(Number(timeout[1]) / 60)} 分钟`;
+  return error;
+}
+
 const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf)$/i;
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
 
@@ -283,12 +292,13 @@ export default function Turn({
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
           {answer ? <Markdown text={answer} streaming={live && !terminal} sources={sources} /> : null}
-          {run.status === "failed" && run.error ? <div className="alert error">出错了：{run.error}</div> : null}
+          {run.status === "failed" && run.error ? <div className="alert error">出错了：{runError(run.error)}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">
               <button className="secondary sm" onClick={() => onResume(run)}>
                 继续
               </button>
+              {run.error ? <span className="resume-why">{run.error}</span> : null}
             </div>
           ) : null}
 
