@@ -22,6 +22,8 @@ READ_TIMEOUT_SECONDS = 45
 @router.get("/reader")
 async def reader(url: str = Query(min_length=1, max_length=2000), _: User = Depends(current_user)) -> dict:
     """The readable text of one public web page, for the side pane's 网页 view."""
+    if not web.enabled():  # the same switch that gives the Agent its web tools
+        raise HTTPException(status_code=404, detail="web access is not enabled")
     try:
         parsed = urlsplit(url.strip())
     except ValueError:

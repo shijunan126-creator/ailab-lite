@@ -269,22 +269,24 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }, [detail, livePreviews]);
 
   // A newly delivered (or regenerated) HTML deck opens in the pane by itself, so the next
-  // prompt can be written while looking at the result. The first pass only takes note:
-  // opening old deliveries on conversation load would be noise.
+  // prompt can be written while looking at the result. The first pass over a loaded conversation
+  // only takes note: opening old deliveries on load would be noise. "First" means the first time
+  // the conversation's detail exists, not the first time there is an HTML file — a conversation's
+  // very first deck is a delivery, not history.
   const seenHtml = useRef<Map<string, string>>(new Map());
+  const htmlBaselined = useRef(false);
+  const hasDetail = !!detail;
   const noted = useMemo(() => previews.filter((p) => p.kind === "html"), [previews]);
   useEffect(() => {
-    const fresh = noted.filter((p) => seenHtml.current.get(p.filename) !== p.file_id);
-    if (seenHtml.current.size === 0 && noted.length) {
+    if (!hasDetail) return;
+    if (!htmlBaselined.current) {
+      htmlBaselined.current = true;
       for (const p of noted) seenHtml.current.set(p.filename, p.file_id || "");
       return;
     }
-    let opened = false;
-    for (const p of fresh) {
-      seenHtml.current.set(p.filename, p.file_id || "");
-      opened = true;
-    }
-    if (opened && fresh.length) {
+    const fresh = noted.filter((p) => seenHtml.current.get(p.filename) !== p.file_id);
+    for (const p of fresh) seenHtml.current.set(p.filename, p.file_id || "");
+    if (fresh.length) {
       const last = fresh[fresh.length - 1];
       setClosedFiles((closed) => closed.filter((f) => f !== last.filename));
       setSelected(last.filename);
@@ -293,7 +295,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       setPaneOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noted]);
+  }, [noted, hasDetail]);
 
   const downloads = useMemo(() => {
     const out: Record<string, string> = {};

@@ -22,7 +22,7 @@ function shortUrl(url: string): string {
 /** Web pages the turn read, by address: a link to one of them is a citation. */
 type Cites = Map<string, Source> | undefined;
 
-type LinkOpener = (url: string, title?: string) => void;
+type LinkOpener = (url: string, title: string) => void;
 
 function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): ReactNode[] {
   // Left-click hands the link to the side-pane reader; ctrl/middle/right keep the new tab.
@@ -97,15 +97,6 @@ export default function Markdown({
   sources?: Source[];
   onOpenLink?: (url: string, title: string) => void;
 }) {
-  // Left-clicks hand the link to the side-pane reader (ctrl/middle/right still use the tab);
-  // undefined keeps plain new-tab links where no pane exists.
-  const open = onOpenLink
-    ? (href: string, title?: string) => (e: React.MouseEvent) => {
-        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-        e.preventDefault();
-        onOpenLink(href, title || href);
-      }
-    : undefined;
   const cites: Cites = sources?.length ? new Map(sources.map((s) => [urlKey(s.url), s])) : undefined;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -143,7 +134,7 @@ export default function Markdown({
     if (h) {
       const level = Math.min(4, h[1].length + 1);
       const Tag = `h${level}` as "h2" | "h3" | "h4" | "h5";
-      blocks.push(<Tag key={k}>{inline(h[2], k, cites, open)}</Tag>);
+      blocks.push(<Tag key={k}>{inline(h[2], k, cites, onOpenLink)}</Tag>);
       i++;
       continue;
     }
@@ -155,7 +146,7 @@ export default function Markdown({
     if (line.startsWith(">")) {
       const body: string[] = [];
       while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-      blocks.push(<blockquote key={k}>{inline(body.join(" "), k, cites, open)}</blockquote>);
+      blocks.push(<blockquote key={k}>{inline(body.join(" "), k, cites, onOpenLink)}</blockquote>);
       continue;
     }
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
@@ -167,11 +158,11 @@ export default function Markdown({
         <div key={k} className="md-table">
           <table>
             <thead>
-              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites, open)}</th>)}</tr>
+              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites, onOpenLink)}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`, cites, open)}</td>)}</tr>
+                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`, cites, onOpenLink)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -188,7 +179,7 @@ export default function Markdown({
         const nested = m[1].length >= 2;
         items.push(
           <li key={items.length} className={nested ? "nested" : undefined}>
-            {inline(m[3], `${k}l${items.length}`, cites, open)}
+            {inline(m[3], `${k}l${items.length}`, cites, onOpenLink)}
           </li>
         );
         i++;
@@ -204,7 +195,7 @@ export default function Markdown({
         {para.map((l, j) => (
           <Fragment key={j}>
             {j ? <br /> : null}
-            {inline(l, `${k}p${j}`, cites, open)}
+            {inline(l, `${k}p${j}`, cites, onOpenLink)}
           </Fragment>
         ))}
       </p>
