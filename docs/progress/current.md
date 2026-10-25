@@ -1,5 +1,13 @@
 # 当前工作
 
+## 来源面板与长任务预算（2026-10-25，进行中，未合并/未部署）
+
+用户要求：来源从堆叠胶囊改为「来源」入口（桌面右侧栏可单独关闭的tab，手机半屏可拖拽底部抽屉）、文内引用气泡；Agent 20步/900秒硬砍改为可长时间后台运行，超时先监控/自检再决定停止。分工：Portal由Claude，后端与测试由Codex（gpt-6.1-sol medium）。
+
+- Portal：分支 `feat/sources-panel`（base `origin/main@09599a0`），提交 `aa1b31e`。Portal 36项测试、tsc、build通过；Playwright无头（mock API）验证桌面tab开关、手机抽屉半屏→全屏→回半屏→关闭、文内气泡/普通链接区分，0页面错误。读取 `run.result.sources`，缺失时回退事件流。
+- 后端（Codex，独立worktree）：`feat/run-sources`（来源持久化到 `run.result.sources`）与 `feat/long-runs`（步数改为防失控上限、可续租job租约、停滞看门狗、活跃工时软预算+有进展才自动延长、硬上限后以可继续的 interrupted 收尾、后台exec+exec_wait/exec_kill）。
+- 下一步：收两份Codex报告→审查→Portal接入新事件/工具名与中文提示→合并到一个集成分支并全量验证。未授权PR/合并/部署。
+
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
 用户要求确认项目能否实际跑通，重点补足真实OpenSandbox验证。分支 `verify/real-sandbox-acceptance`，base `origin/main@9cfadfa`（已含PR #46/#49/#51）。允许隔离测试与必要修复；不替换现有部署、不迁移个人业务库、不清理现有服务/数据。
