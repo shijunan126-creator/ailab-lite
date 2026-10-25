@@ -1,6 +1,11 @@
 # 当前工作
 
-## 来源与长任务最终验收（2026-10-25，本地验收完成，未合并/未部署）
+## 来源与长任务（2026-10-25，PR #59 已合入 main，未部署）
+
+- [PR #59](https://github.com/shijunan126-creator/ailab-lite/pull/59) 最终 head `ae0d134` 的 8 项远端检查全部通过，squash 合入 main `dfa27d2`，合并树与测试 head 一致。合并前同步了 main 的 PR #56/#57/#58：`agent/loop.py` 删除旧死代码方法、`portal/lib/api.ts` 在 #58 的结构化错误解析上保留额度重置提示；CI 首轮 ask_user E2E 失败为测试自身的异步等待缺陷（见 HANDOFF），已改为 API 轮询。
+- 下一步：部署需用户另行授权；部署后验收真实模型 1–4 小时长任务（含额度真实重置）、目标机 2vCPU/8GiB 整栈容量与真机交互。不自动启动其他路线项。
+
+### 合并前最终验收记录
 
 统一范围：Portal来源面板、Run来源持久化/恢复、长任务v2预算窗口/短claim续租/统一exec/重复检测、日/月额度暂停和各轮审查修复。集成分支 `feat/long-runs-sources@a677a5f` 已含 `490de63`/`a96cd84`；最终测试分支 `feat/long-runs-final`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-015c88c8`，起始干净。授权本地修复、真实沙箱和全套测试及提交，不改Portal，不push/PR/merge/deploy，不接触个人部署/DB/非测试容器。
 
