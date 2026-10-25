@@ -1,4 +1,4 @@
-"""Administrative metadata only. Never join conversations, files or run content."""
+"""Administrative metadata only. File provenance is metadata; never joins conversation content."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import case, func, select, tuple_, update
+from sqlalchemy import case, func, or_, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ from ..contracts.identity import ROLES, Principal
 from ..deps import current_user, get_db
 from ..domain.authorization import Target, policy
 from ..domain.ledger import MILLI
-from ..models import AuditLog, Department, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
+from ..models import AuditLog, Department, FileObject, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
 from ..quota import quota_windows
 from ..schemas import ContextSettings, UTCModel
 
@@ -595,6 +595,80 @@ def admin_user_usage(
             "output_tokens": sum(item["output_tokens"] for item in items),
             "calls": sum(item["calls"] for item in items),
         },
+    }
+
+
+def _file_provenance(row: FileObject, owner: User | None) -> dict:
+    return {
+        "id": row.id,
+        "filename": row.filename,
+        "content_type": row.content_type,
+        "size": row.size,
+        "sha256": row.sha256,
+        "status": row.status,
+        "version": row.version,
+        "lineage_id": row.lineage_id,
+        "project_id": row.project_id,
+        "created_at": row.created_at,
+        "deleted_at": row.deleted_at,
+        "purged": row.purged_at is not None,
+        "uploader": {
+            "id": owner.id,
+            "username": owner.username,
+            "display_name": owner.display_name,
+        }
+        if owner
+        else None,
+    }
+
+
+@router.get("/files")
+def admin_files(
+    q: str = Query(default="", max_length=200),
+    limit: int = Limit,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Find who uploaded a file. Metadata only; file content is not returned here."""
+    if "platform_admin" not in user.principal.roles:
+        raise HTTPException(403, "forbidden")
+    stmt = select(FileObject, User).outerjoin(User, User.id == FileObject.user_id)
+    needle = q.strip()
+    if needle:
+        stmt = stmt.where(
+            or_(
+                FileObject.id == needle,
+                FileObject.filename.ilike(f"%{needle}%"),
+                FileObject.sha256.startswith(needle),
+            )
+        )
+    rows = db.execute(stmt.order_by(FileObject.created_at.desc(), FileObject.id.desc()).limit(limit)).all()
+    _commit(db, user, "files.provenance", "file", detail={"query": bool(needle)})
+    return {"items": [_file_provenance(file, owner) for file, owner in rows]}
+
+
+@router.get("/files/{file_id}")
+def admin_file_detail(
+    file_id: str,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Version history and uploader for one file lineage."""
+    if "platform_admin" not in user.principal.roles:
+        raise HTTPException(403, "forbidden")
+    file = db.get(FileObject, file_id)
+    if file is None:
+        raise HTTPException(404, "file not found")
+    rows = db.execute(
+        select(FileObject, User)
+        .outerjoin(User, User.id == FileObject.user_id)
+        .where(FileObject.lineage_id == file.lineage_id)
+        .order_by(FileObject.version.desc())
+    ).all()
+    _commit(db, user, "files.provenance", "file", file_id)
+    return {
+        "lineage_id": file.lineage_id,
+        "versions": [_file_provenance(item, owner) for item, owner in rows],
     }
 
 
