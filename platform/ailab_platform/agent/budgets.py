@@ -14,6 +14,13 @@ class BudgetPause(Exception):
         super().__init__(reason)
 
 
+class QuotaPause(BudgetPause):
+    def __init__(self, window: str, resets_at: str):
+        self.pause = {"kind": "quota", "window": window, "resets_at": resets_at}
+        period = "今日" if window == "daily_tokens" else "本月"
+        super().__init__(f"{period}额度已用完，已暂停，额度恢复后可继续")
+
+
 class WorkBudget:
     def __init__(self, state, window_id):
         self.state = state

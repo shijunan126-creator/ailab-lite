@@ -4,10 +4,15 @@ import os
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
+import pytest
+
 from ailab_platform.api.reaper import purge_expired_workspaces
 from ailab_platform.api.routes_internal import workspace_alive, workspace_key
 from ailab_platform.storage import LocalStorage
 from tests.run_claims import attempt_headers
+from tests.test_ledger_protocol import api  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures("api")
 
 
 def test_expired_workspace_objects_are_deleted(tmp_path) -> None:

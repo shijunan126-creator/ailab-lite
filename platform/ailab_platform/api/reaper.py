@@ -67,8 +67,8 @@ WORKSPACE_GC_LOCK = "ailab:lock:workspace-gc"
 def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     """Delete workspace snapshots whose object-store timestamp is older than the TTL.
 
-    The TTL is enforced on the object store itself (S3 LastModified / local mtime),
-    so a missing or stale database flag cannot keep a snapshot alive forever.
+    Object timestamps govern TTL, except the exact checkpoint snapshot still
+    needed by a live run (including a quota pause waiting for next month).
     """
     if settings.workspace_ttl_days <= 0:  # 0 = keep per-turn snapshots until conversation GC
         return 0
@@ -76,7 +76,16 @@ def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     cutoff = now - timedelta(days=settings.workspace_ttl_days)
     storage = storage or get_storage()
     removed = 0
-    for item in _page(storage, "workspaces/"):
+    items = list(_page(storage, "workspaces/"))
+    if not items:
+        return 0
+    run_ids = {item.key.split("/")[1].removesuffix(".tgz") for item in items}
+    with SessionLocal() as db:
+        metas = db.scalars(select(Run.runtime_meta).where(Run.id.in_(run_ids), Run.status.not_in(RunStatus.TERMINAL))).all()
+        protected = {((meta or {}).get("workspace") or {}).get("key") for meta in metas}
+    for item in items:
+        if item.key in protected:
+            continue
         modified = item.modified_at
         if modified.tzinfo is None:  # a custom backend may return a naive timestamp
             modified = modified.replace(tzinfo=UTC)

@@ -33,7 +33,7 @@ from ..telemetry import span
 from ..title_text import normalize_title
 from . import net_tools
 from .background_exec import background_exec
-from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, WorkBudget
+from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .multimodal import attachment_content, input_content
 from .prompts import (
     WORKSPACE_EXPIRED_NOTE,
@@ -505,18 +505,35 @@ class AgentLoop:
         if max_output_tokens is not None:
             output_limit = min(output_limit, max_output_tokens)
         call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet)
-        await self.platform.reserve_usage(
-            {
-                "call_id": call.call_id,
-                "run_id": run_id,
-                "attempt_id": run["_attempt_id"],
-                "alias": model,
-                "mode": (run.get("options") or {}).get("mode", "work"),
-                "quiet": quiet,
-                "max_output_tokens": call.max_output_tokens,
-                "estimated_input_tokens": estimated_input,
-            }
-        )
+        try:
+            await self.platform.reserve_usage(
+                {
+                    "call_id": call.call_id,
+                    "run_id": run_id,
+                    "attempt_id": run["_attempt_id"],
+                    "alias": model,
+                    "mode": (run.get("options") or {}).get("mode", "work"),
+                    "quiet": quiet,
+                    "max_output_tokens": call.max_output_tokens,
+                    "estimated_input_tokens": estimated_input,
+                }
+            )
+        except ClientError as exc:
+            # Only the business reservation refusal pauses work. Upstream model
+            # throttling and unrelated 429s keep their own failure/retry contracts.
+            try:
+                detail = json.loads(exc.body).get("detail")
+            except (ValueError, AttributeError):
+                detail = None
+            if (
+                exc.status == 429
+                and isinstance(detail, dict)
+                and detail.get("code") == "quota_exceeded"
+                and detail.get("window") in {"daily_tokens", "monthly_tokens"}
+                and isinstance(detail.get("resets_at"), str)
+            ):
+                raise QuotaPause(detail["window"], detail["resets_at"]) from exc
+            raise
         if not quiet and (gate := run.get("_main_model_reserved")) is not None:
             gate.set()
         token = model_call.set(call)
@@ -1043,7 +1060,7 @@ class AgentLoop:
             await background_exec("exec_kill", {"handle": handle}, turn.lease_id, self.broker)
         state["background_jobs"] = []
 
-    async def _budget_pause(self, run_id, turn, reason):
+    async def _budget_pause(self, run_id, turn, reason, *, pause=None):
         budget = self._budgets[run_id]
         budget.update()
         budget.suspended = True  # saving a stalled step must not immediately trip the watchdog again
@@ -1053,7 +1070,8 @@ class AgentLoop:
         if turn.lease_id:
             await self._stop_background(run_id, turn)
             await self._finish_previews(turn, run_id)
-            await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+            if pause is None:
+                await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
             await self._workspace_checkpoint(run_id, turn, force=True)
         await self._checkpoint(run_id, turn)
         await self._event(
@@ -1070,6 +1088,7 @@ class AgentLoop:
                 "auto_resume": False,
                 "summary": state["final_summary"],
                 "result": {
+                    "pause": pause,
                     "sources": state["sources"],
                     "artifacts": turn.artifacts,
                     "plan": state["plan"],
@@ -1351,7 +1370,7 @@ class AgentLoop:
                 await self.platform.set_run_status(run_id, RunStatus.FAILED, error=error, summary=state["final_summary"], result=result)
                 outcome = "failed"
         except BudgetPause as exc:
-            await self._budget_pause(run_id, turn, exc.reason)
+            await self._budget_pause(run_id, turn, exc.reason, pause=getattr(exc, "pause", None))
             outcome = "interrupted"
         except RunPaused:
             outcome = "waiting_user"

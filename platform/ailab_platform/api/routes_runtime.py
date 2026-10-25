@@ -136,6 +136,9 @@ def queue_continuation(db, run):
     meta = dict(run.runtime_meta or {})
     meta["job_id"] = job_id
     run.runtime_meta = meta
+    result = dict(run.result or {})
+    result.pop("pause", None)
+    run.result = result
     db.execute(
         update(RunAttempt)
         .where(RunAttempt.run_id == run.id, RunAttempt.ended_at.is_(None))
@@ -165,13 +168,26 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             meta.update(question={**q, "created_at": datetime.now(UTC).isoformat()}, answer=None)
             append_event(db, run.id, "agent.ask_user", q, commit=False)
         run.runtime_meta = meta
+        result = {**(run.result or {}), **(body.result or {})}
+        # Pause metadata describes this pause only, unlike retained previews and sources.
+        if not (body.result or {}).get("pause"):
+            result.pop("pause", None)
+        pause = result.get("pause") or {}
+        if isinstance(pause, dict) and pause.get("kind") == "quota":
+            try:
+                reset = datetime.fromisoformat(pause["resets_at"])
+                if reset.tzinfo is not None:
+                    # A monthly reset can be later than the ordinary interruption timeout.
+                    run.waiting_since = max(run.waiting_since, reset.astimezone(UTC))
+            except (KeyError, TypeError, ValueError):
+                pass
         transition_run(
             db,
             run.id,
             body.status,
             error=body.error,
             summary=body.summary,
-            result={**(run.result or {}), **body.result} if body.result is not None else None,
+            result=result,
             commit=False,
         )
         db.execute(

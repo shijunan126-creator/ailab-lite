@@ -61,6 +61,8 @@ def measure(engine):
         )
         conn.execute(text("ANALYZE"))
         queries = {
+            "live_workspaces": "SELECT runtime_meta FROM runs WHERE id IN ('probe-00001','probe-05000','probe-09000') "
+            "AND status NOT IN ('succeeded','failed','canceled')",
             "waiting": "SELECT id FROM runs WHERE status='waiting_user' AND waiting_since<'2026-10-23' ORDER BY waiting_since,id LIMIT 100",
             "claim": "SELECT id FROM outbox WHERE claim_token='token-5000'",
             "checkpoint_object": "SELECT run_id FROM run_checkpoints WHERE state_key='checkpoints/probe-100' LIMIT 1",
@@ -69,6 +71,7 @@ def measure(engine):
         }
         prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
         result = {name: [list(row) for row in conn.execute(text(prefix + query))] for name, query in queries.items()}
+        assert ("sqlite_autoindex_runs_1" if engine.dialect.name == "sqlite" else "runs_pkey") in str(result["live_workspaces"])
         for name, index in (
             ("waiting", "ix_runs_waiting"),
             ("claim", "ix_outbox_claim_token"),
