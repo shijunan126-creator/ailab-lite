@@ -59,6 +59,14 @@ app.add_middleware(RuntimeContextMiddleware)
 router = APIRouter(prefix="/internal", tags=["leases"])
 
 
+@app.exception_handler(LeaseError)
+async def lease_error_response(_: Request, exc: LeaseError) -> JSONResponse:
+    """The mapping every endpoint that addresses an existing lease shares: 410 once the
+    lease is gone, 503 while the broker cannot serve it. Endpoints that mean something
+    different at creation or release time keep their own local except."""
+    return JSONResponse(status_code=410 if isinstance(exc, LeaseLostError) else 503, content={"detail": exc.detail()})
+
+
 @router.post("/render", dependencies=[Depends(require_scope("sandbox:render"))])
 def render_library_file(body: dict) -> dict:
     if set(body) != {"file_id", "job_id"} or not all(isinstance(v, str) and 1 <= len(v) <= 100 for v in body.values()):
@@ -118,36 +126,26 @@ def admission_status(run_id: str) -> dict:
 
 @router.get("/leases/{lease_id}/status", dependencies=[Depends(require_scope("sandbox:use"))])
 def lease_status(lease_id: str) -> dict:
-    try:
-        return get_manager().status(lease_id)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
+    return get_manager().status(lease_id)
 
 
 @router.post("/leases/{lease_id}/renew", dependencies=[Depends(require_scope("sandbox:use"))])
 def renew_lease(lease_id: str, ttl_seconds: int | None = Query(default=None, ge=1)) -> dict:
     try:
         return get_manager().renew(lease_id, ttl_seconds)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.get("/leases/{lease_id}", dependencies=[Depends(require_scope("sandbox:use"))])
 def get_lease(lease_id: str) -> dict:
-    try:
-        return get_manager().get(lease_id)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
+    return get_manager().get(lease_id)
 
 
 @router.post("/leases/{lease_id}/exec", response_model=ExecOut, dependencies=[Depends(require_scope("sandbox:use"))])
 def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     try:
         result = get_manager().exec(lease_id, body.cmd, body.timeout_seconds)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return asdict(result)
@@ -161,8 +159,6 @@ def put_file(
 ) -> dict:
     try:
         get_manager().put_file(lease_id, path, payload)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "path": path, "bytes": len(payload)}
@@ -183,8 +179,6 @@ async def put_fetched(lease_id: str, request: Request, path: str = Query(..., mi
                 out.write(chunk)
         try:
             await run_in_threadpool(manager.put_fetched, lease_id, path, local, size)
-        except LeaseError as exc:
-            raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
         except SandboxError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "path": path, "bytes": size}
@@ -194,8 +188,6 @@ async def put_fetched(lease_id: str, request: Request, path: str = Query(..., mi
 def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
     try:
         return {"files": get_manager().list_files(lease_id, path)}
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -229,8 +221,6 @@ def copy_library_file(lease_id: str, body: dict):
 def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
     try:
         data = get_manager().get_file(lease_id, path)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return Response(content=data, media_type="application/octet-stream")
@@ -240,8 +230,6 @@ def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
 def commit_artifact(lease_id: str, body: CommitIn) -> dict:
     try:
         return get_manager().commit(lease_id, body.path, body.filename, body.role)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except ArtifactRejected as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:
@@ -254,8 +242,6 @@ def commit_artifact(lease_id: str, body: CommitIn) -> dict:
 def refresh_previews(lease_id: str) -> dict:
     try:
         return {"previews": get_manager().refresh_previews(lease_id)}
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except SandboxError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -264,8 +250,6 @@ def refresh_previews(lease_id: str) -> dict:
 def snapshot_workspace(lease_id: str) -> dict:
     try:
         return get_manager().snapshot(lease_id)
-    except LeaseError as exc:
-        raise HTTPException(status_code=410 if isinstance(exc, LeaseLostError) else 503, detail=exc.detail()) from exc
     except ArtifactRejected as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:

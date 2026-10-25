@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { IconArrowLeft, IconDownload, IconFile } from "../../../../components/icons";
-import { api, downloadUrl, EventItem, Run, streamRun } from "../../../../lib/api";
+import {EventItem, Run, api, downloadUrl, errorMessage, streamRun} from "../../../../lib/api";
 import { formatBytes, formatDate, isTerminal, statusLabel } from "../../../../lib/format";
 
 type Described = { label: string; detail: string; tone?: "done" | "bad" | "tool_call" | "tool_result" };
@@ -69,7 +69,7 @@ export default function RunPage() {
       const fresh = await api<Run>(`/v1/runs/${id}`);
       if (mine === loadSeq.current) setRun(fresh);
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
     }
   }, [id]);
 
@@ -91,7 +91,7 @@ export default function RunPage() {
       () => setStreaming(false)
     ).catch((err) => {
       if (!cancelled) {
-        setError(String(err?.message || err));
+        setError(errorMessage(err));
         setStreaming(false);
       }
     });
@@ -110,7 +110,7 @@ export default function RunPage() {
       await api(`/v1/runs/${id}/cancel`, { method: "POST" });
       await loadRun();
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
     }
   }
 

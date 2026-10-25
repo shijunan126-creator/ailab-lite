@@ -36,7 +36,7 @@ function usePreview(file: FileItem): FilePreview | null {
           setPreview(p);
           if (p.status === "pending") timer = setTimeout(ask, POLL_MS);
         })
-        .catch((err) => !stale && setPreview({ status: "failed", reason: String(err?.message || err) }));
+        .catch((err) => !stale && setPreview({ status: "failed", reason: errorMessage(err) }));
     ask();
     return () => {
       stale = true;

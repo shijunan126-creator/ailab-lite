@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, API_BASE, Brand, BrandAsset, BrandKind, errorMessage, Template, TemplateList } from "../../lib/api";
 import { formatBytes } from "../../lib/format";
 import { IconImage, IconPencil, IconSheet, IconSlides, IconTrash, IconUpload } from "../icons";
+import Switch from "../switch";
 import { confirmDialog } from "../../lib/dialog";
 import { useTemplateUpdates } from "../../lib/use-template-updates";
 import { usePopover } from "../../lib/use-popover";
@@ -380,9 +381,7 @@ export default function BrandSection() {
       <div className="card card-pad">
         <div className="field-row">
           <span>生成文件使用公司品牌</span>
-          <button type="button" role="switch" aria-checked={draft.enabled} aria-label="生成文件使用公司品牌" className={`switch ${draft.enabled ? "on" : ""}`} onClick={() => set({ enabled: !draft.enabled })}>
-            <span className="knob" />
-          </button>
+          <Switch on={draft.enabled} label="生成文件使用公司品牌" onChange={(enabled) => set({ enabled })} />
         </div>
         <div className="brand-fields">
           <label className="field">

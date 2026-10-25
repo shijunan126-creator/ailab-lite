@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { admin, QuotaPolicy, reason } from "../../lib/admin";
 import { formatBytes, formatTokens } from "../../lib/format";
 import { IconPlus, IconTrash } from "../icons";
+import Switch from "../switch";
 import Modal from "../library/modal";
 import { confirmDialog } from "../../lib/dialog";
 
@@ -70,9 +71,7 @@ function PolicyDialog({ policy, onSaved, onClose }: { policy: QuotaPolicy | null
         <Num label="同时运行的任务" value={form.max_concurrent_runs} onChange={(n) => set({ max_concurrent_runs: n })} />
         <div className="field-row">
           <span>设为默认</span>
-          <button type="button" className={`switch ${form.is_default ? "on" : ""}`} role="switch" aria-checked={form.is_default} aria-label="设为默认" onClick={() => set({ is_default: !form.is_default })}>
-            <span className="knob" />
-          </button>
+          <Switch on={form.is_default} label="设为默认" onChange={(is_default) => set({ is_default })} />
         </div>
       </form>
     </Modal>

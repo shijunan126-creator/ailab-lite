@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, downloadUrl, EventItem, quotaMessage, Run } from "../../lib/api";
+import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { splitTurn, turnSources, type Source } from "../../lib/work-process";
 import CopyButton from "../copy-button";
@@ -45,7 +45,7 @@ function Ask({ item, live, onAnswer }: { item: Extract<Item, { kind: "ask" }>; l
     try {
       await onAnswer(value.trim());
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
       setBusy(false);
     }
   }
@@ -226,7 +226,7 @@ export default function Turn({
       if (events.length) historyCursor.current = events[events.length - 1].seq;
       setMoreHistory(events.length === 200);
     } catch (error: any) {
-      if (!controller.signal.aborted) setHistoryError(String(error?.message || error));
+      if (!controller.signal.aborted) setHistoryError(errorMessage(error));
     } finally {
       if (!controller.signal.aborted) setLoadingHistory(false);
       historyRequest.current = null;

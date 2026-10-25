@@ -25,7 +25,7 @@ import { MoveDialog, NewProjectInput } from "../../../components/library/project
 import FileViewer from "../../../components/preview/file-viewer";
 import ShareDialog from "../../../components/share-dialog";
 import { Category, useLibrary } from "../../../components/library/use-library";
-import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
+import {FileItem, Info, MAX_ATTACHMENTS, Project, api, archiveUrl, downloadUrl, errorMessage, uploadFile} from "../../../lib/api";
 import { fileStatusText, formatBytes, formatDate, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
 import { confirmDialog } from "../../../lib/dialog";
@@ -132,7 +132,7 @@ function Library() {
       await work();
       after?.();
     } catch (err: any) {
-      setNotice(String(err?.message || err));
+      setNotice(errorMessage(err));
     } finally {
       reload();
     }
@@ -214,7 +214,7 @@ function Library() {
       for (const file of Array.from(list)) await uploadFile(file, projectId);
       if (projectId) projectsChanged();
     } catch (err: any) {
-      setNotice(String(err?.message || err));
+      setNotice(errorMessage(err));
     } finally {
       if (inputRef.current) inputRef.current.value = "";
       setBusy(false);
