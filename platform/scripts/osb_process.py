@@ -1,4 +1,4 @@
-"""Bind reuse of the local Kubernetes server to its reviewed startup config."""
+"""Bind reuse of a local server to its reviewed startup config."""
 
 import hashlib
 import json

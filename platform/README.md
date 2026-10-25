@@ -276,6 +276,8 @@ bash scripts/dev_up.sh
 （端口 8090、API key `dev-osb-key`），并等待 `/health`。`scripts/osb_down.sh` 只停 server，不动平台服务。
 SDK 是可选依赖：`pip install -e '.[opensandbox]'`。
 
+Docker runtime的新配置强制使用`[egress] mode = "dns+nft"`：DNS-only模式不能阻止直接IP连接，不能作为deny-all隔离。已有配置不自动改写；先停止原server、显式更新模式并重启，再对已知可达的TCP/UDP端点和ICMP做隔离验收。启动脚本会拒绝DNS-only配置，以及无法核对启动配置的已有健康server，避免配置改了但旧进程仍在运行。
+
 ## 外部信息（SearXNG）
 
 沙箱默认 `egress: deny`。需要最新外部信息时，Agent 在**沙箱外**调用两个工具：

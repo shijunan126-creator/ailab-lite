@@ -116,6 +116,44 @@ def test_osb_healthy_endpoint_cannot_reuse_untracked_or_changed_process(tmp_path
         assert "not bound to this reviewed startup config" in result.stderr
 
 
+def test_docker_osb_startup_rejects_dns_only_and_generates_packet_filtering(tmp_path):
+    import os
+    import tomllib
+
+    home, venv, commands = (tmp_path / name for name in ("osb", "venv", "commands"))
+    home.mkdir()
+    (venv / "bin").mkdir(parents=True)
+    commands.mkdir()
+    config = home / "sandbox.toml"
+    example = '[server]\nhost = "127.0.0.1"\nport = 8080\n[runtime]\ntype = "docker"\n[egress]\nmode = "dns"\n'
+    binary = venv / "bin/opensandbox-server"
+    binary.write_text("#!/bin/sh\ncat > \"$2\" <<'TOML'\n" + example + "TOML\n")
+    binary.chmod(0o755)
+    curl = commands / "curl"
+    curl.write_text("#!/bin/sh\nexit 0\n")
+    curl.chmod(0o755)
+    env = os.environ | {
+        "OSB_HOME": str(home),
+        "OSB_VENV": str(venv),
+        "OSB_CONFIG": str(config),
+        "OSB_RUNTIME": "docker",
+        "OSB_PORT": "19091",
+        "OSB_API_KEY": 'disposable-quote"-key',
+        "PATH": str(commands) + os.pathsep + os.environ["PATH"],
+    }
+    config.write_text(example)
+    result = subprocess.run(["bash", str(ROOT / "platform/scripts/osb_up.sh")], env=env, capture_output=True, text=True)
+    assert result.returncode != 0 and "Docker deny-all requires" in result.stderr
+    assert config.read_text() == example  # no silent rewrite of an existing deployment
+    config.unlink()
+    result = subprocess.run(["bash", str(ROOT / "platform/scripts/osb_up.sh")], env=env, capture_output=True, text=True)
+    assert result.returncode != 0 and "not bound to this reviewed startup config" in result.stderr
+    generated = tomllib.loads(config.read_text())
+    assert generated["egress"]["mode"] == "dns+nft"
+    assert generated["server"]["port"] == 19091
+    assert generated["server"]["api_key"] == env["OSB_API_KEY"]
+
+
 def test_osb_process_record_freezes_referenced_template(tmp_path, monkeypatch):
     import runpy
     import sys
