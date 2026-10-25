@@ -1,5 +1,7 @@
 # 当前工作
 
+- 2026-10-25 来源持久化子任务：`feat/run-sources`，base `origin/main@09599a0`，代码 `41da18f`；Run 来源去重/50条上限/checkpoint恢复与详情输出已实现，仅本地提交；验证及下一步父任务合入 `feat/long-runs`/Portal 来源面板见[交付记录](updates/2026-10-25-run-sources.md)，未推送/PR/合并/部署。
+
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
 用户要求确认项目能否实际跑通，重点补足真实OpenSandbox验证。分支 `verify/real-sandbox-acceptance`，base `origin/main@9cfadfa`（已含PR #46/#49/#51）。允许隔离测试与必要修复；不替换现有部署、不迁移个人业务库、不清理现有服务/数据。
