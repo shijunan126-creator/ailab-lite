@@ -342,6 +342,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setPaneOpen(true);
   }
   function closeReader() {
+    setPaneReader(null);
     setReaderOn(false);
     if (!openFiles.length && !paneSources) setPaneOpen(false);
   }

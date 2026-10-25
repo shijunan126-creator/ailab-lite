@@ -396,9 +396,10 @@ export function errorCode(err: unknown): string | null {
   return typeof detail?.code === "string" ? detail.code : null;
 }
 
-export type ReaderPage = { url: string; title: string; text: string; truncated: boolean };
+export type ReaderBlock = { type: string; text?: string; src?: string; alt?: string; ordered?: boolean };
+export type ReaderPage = { url: string; title: string; blocks: ReaderBlock[]; truncated: boolean };
 
-/** One public page's readable text, fetched server-side for the side pane's 网页 view. */
+/** One public page's main content as reader blocks, fetched server-side for the side pane's 网页 view. */
 export function reader(url: string, signal?: AbortSignal): Promise<ReaderPage> {
   return api<ReaderPage>(`/v1/reader?url=${encodeURIComponent(url)}`, { signal });
 }

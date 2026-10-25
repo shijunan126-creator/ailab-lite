@@ -15,17 +15,34 @@ export function withResizeGuard(html: string): string {
   return RESIZE_GUARD + html;
 }
 
+// Rendered documents are kept across pane opens and render/source tab switches: a deck is one
+// large fetch, and the frame is torn down on every unmount. A few entries, insertion-ordered LRU.
+const DOC_CACHE = new Map<string, string>();
+const DOC_CACHE_MAX = 8;
+
 /** Fetches a same-origin document URL (the session cookie authorizes it) for iframe rendering. */
 export function useDocText(url: string): { html: string | null; error: string } {
-  const [html, setHtml] = useState<string | null>(null);
+  const [html, setHtml] = useState<string | null>(() => DOC_CACHE.get(url) ?? null);
   const [error, setError] = useState("");
   useEffect(() => {
+    const cached = DOC_CACHE.get(url);
+    if (cached !== undefined) {
+      setHtml(cached);
+      setError("");
+      return;
+    }
     let stale = false;
     setHtml(null);
     setError("");
     fetch(url)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((h) => !stale && setHtml(h))
+      .then((h) => {
+        if (stale) return;
+        DOC_CACHE.set(url, h);
+        const oldest = DOC_CACHE.keys().next();
+        if (DOC_CACHE.size > DOC_CACHE_MAX && !oldest.done && oldest.value !== url) DOC_CACHE.delete(oldest.value);
+        setHtml(h);
+      })
       .catch((e) => !stale && setError(String(e?.message || e)));
     return () => {
       stale = true;

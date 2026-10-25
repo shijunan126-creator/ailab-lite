@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, ReaderPage } from "../../lib/api";
+import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, ReaderBlock, ReaderPage } from "../../lib/api";
 import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
@@ -28,6 +28,44 @@ function HtmlPane({ preview }: { preview: Preview }) {
       renderError={(reason) => <div className="hint" style={{ margin: 16 }}>无法加载文件：{reason}</div>}
     />
   );
+}
+
+/** The extracted page as blocks: headings, list runs, images and code — the shape the reader API
+ * returns, so chrome the extractor dropped never reaches the pane. */
+function BlocksView({ blocks }: { blocks: ReaderBlock[] }) {
+  const out: ReactNode[] = [];
+  let list: { key: string; ordered: boolean; items: ReaderBlock[] } | null = null;
+  const flush = () => {
+    if (!list) return;
+    const items = list.items.map((b, i) => <li key={i}>{b.text}</li>);
+    out.push(list.ordered ? <ol key={list.key} className="reader-list">{items}</ol> : <ul key={list.key} className="reader-list">{items}</ul>);
+    list = null;
+  };
+  blocks.forEach((b, i) => {
+    const key = `b${i}`;
+    if (b.type === "li") {
+      if (!list || list.ordered !== !!b.ordered) {
+        flush();
+        list = { key, ordered: !!b.ordered, items: [] };
+      }
+      list.items.push(b);
+      return;
+    }
+    flush();
+    if (b.type === "img") {
+      out.push(<img key={key} className="reader-img" src={b.src} alt={b.alt || ""} loading="lazy" referrerPolicy="no-referrer" />);
+    } else if (b.type === "pre") {
+      out.push(<pre key={key} className="reader-pre">{b.text}</pre>);
+    } else if (b.type.startsWith("h")) {
+      // the page title is the pane's h2: document headings render two levels down from their own
+      const rank = Math.min((Number(b.type.slice(1)) || 1) + 2, 5);
+      out.push(createElement(`h${rank}`, { key, className: "reader-h" }, b.text));
+    } else {
+      out.push(<p key={key}>{b.text}</p>);
+    }
+  });
+  flush();
+  return <>{out}</>;
 }
 
 function ReaderView({ url }: { url: string }) {
@@ -59,9 +97,13 @@ function ReaderView({ url }: { url: string }) {
     <article className="reader">
       <h2 className="reader-title">{page.title}</h2>
       <a className="reader-url" href={page.url} target="_blank" rel="noreferrer noopener">{page.url}</a>
-      <div className="reader-text">
-        {page.text.split("\n").map((line, i) => (line.trim() ? <p key={i}>{line}</p> : null))}
-      </div>
+      {page.blocks.length ? (
+        <div className="reader-text">
+          <BlocksView blocks={page.blocks} />
+        </div>
+      ) : (
+        <div className="hint">未能提取正文（页面可能是脚本渲染）；<a href={page.url} target="_blank" rel="noreferrer noopener">打开原文</a></div>
+      )}
       {page.truncated ? (
         <div className="hint">内容较长，已截断；<a href={page.url} target="_blank" rel="noreferrer noopener">打开原文</a></div>
       ) : null}
