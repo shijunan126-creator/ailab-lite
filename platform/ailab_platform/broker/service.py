@@ -20,6 +20,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
 
 from .. import metrics
 from ..adapters.lease_store_redis import RedisLeaseStore
@@ -389,8 +391,11 @@ class LeaseManager:
                             "max_expires_at": (now + timedelta(seconds=spec.max_lifetime)).isoformat(),
                             "create_deadline": (now + timedelta(seconds=settings.osb_request_timeout_seconds + 150)).isoformat(),
                         }
-                        self._save(lease)
+                        # Registered in flight before the first save: cleanup_once skips
+                        # creating-state leases it finds in this set, and the save is the
+                        # moment the lease first becomes visible to it.
                         self._inflight.add(lease_id)
+                        self._save(lease)
                         break
                     position = decision.position
                 # Event delivery never holds the admission condition across an HTTP call.
@@ -1043,11 +1048,24 @@ class LeaseManager:
                         self.cleanup_once()
                         self._recovering = False
                         self._notify()
+                except BrokerOwnershipError:
+                    self._fenced = True
+                    with self._condition:
+                        self._notify()
+                    log.error("broker fenced: the owner lock was taken by another process")
+                    return
+                except (RedisConnectionError, RedisTimeoutError) as exc:
+                    # An unreachable Redis is not a lost lock. Nothing mutated while it was
+                    # down - every mutation goes through the store - and once it answers
+                    # again the claim above is authoritative: if the TTL lapsed and another
+                    # broker took over, that claim fails and we fence then. Fencing here
+                    # would trade one blip for a permanent stop only a pod restart cures.
+                    log.warning("broker ownership heartbeat skipped: %s", exc)
                 except Exception:
                     self._fenced = True
                     with self._condition:
                         self._notify()
-                    log.error("broker fenced after ownership failure")
+                    log.error("broker fenced after ownership failure", exc_info=True)
                     return
 
         def reconcile() -> None:

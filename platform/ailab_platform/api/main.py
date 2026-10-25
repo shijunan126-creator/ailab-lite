@@ -77,6 +77,14 @@ async def lifespan(_: FastAPI):
     register_once("api-state", ApiStateCollector())
     init_db()
     warn_storage_capacity()
+    if settings.database_url.startswith("sqlite"):
+        # The per-user critical section has no DB-level brace on SQLite (locks.py): its
+        # correctness rests entirely on this service being exactly one process. Say so
+        # loudly, because scaling out silently drops every check-then-write guarantee.
+        log.warning(
+            "SQLite database: run exactly one API process (replicas=1, uvicorn workers=1); "
+            "per-user locks have no database-level protection otherwise"
+        )
     log.info("platform api ready db=%s storage=%s", settings.redacted()["database_url"], settings.storage_backend)
     preview_dispatch = asyncio.create_task(dispatch_forever(), name="preview-outbox")
     reaper = asyncio.create_task(reap_forever(), name="reaper")

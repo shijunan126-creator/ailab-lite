@@ -4,6 +4,7 @@ A limit that is checked in one transaction and enforced by a later insert can be
 arrive together: each sees room, each inserts. Two layers close that:
 
 * an in-process lock per user (covers a single API process: SQLite deployments, and threads of one replica);
+  on SQLite there is no second layer - the single-process property IS the guarantee, and the API warns at startup;
 * on PostgreSQL, a row lock on the user (``SELECT ... FOR UPDATE``), held until the surrounding transaction
   commits or rolls back - this is what serializes several API replicas.
 """
