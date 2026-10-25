@@ -124,6 +124,7 @@ class RunDetail(RunOut):
 
 
 class InternalRunDetail(RunDetail):
+    budget_window_id: str | None = None
     project_library: list[dict] = Field(default_factory=list)
     """What the Agent and Broker get: the run plus its conversation context (never sent to browsers)."""
 

@@ -49,8 +49,8 @@ def test_resume_rechecks_budget_before_pending_tools(monkeypatch):
     assert broker.execs == []
     assert broker.leases == 0
     assert llm.seen_messages == []
-    assert platform.statuses[-1][0] == "failed"
-    assert "token limit" in platform.statuses[-1][1]["error"]
+    assert platform.paused["status"] == "interrupted"
+    assert "累计用量已达上限" in platform.paused["error"]
 
 
 class SandboxSpy(FakeBroker):

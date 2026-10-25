@@ -140,8 +140,8 @@ def test_token_limit_stops_before_tools_run(monkeypatch):
     calls = [ToolCall("c", "write_file", {"path": "/workspace/x", "content": "no"})]
     llm = ScriptedLLM([LLMResponse(content="over budget", tool_calls=calls, usage={"prompt_tokens": 101})])
     platform, broker = _run(llm)
-    assert platform.statuses[-1][0] == "failed"
-    assert "token limit" in platform.statuses[-1][1]["error"]
+    assert platform.paused["status"] == "interrupted"
+    assert "累计用量已达上限" in platform.paused["error"]
     assert broker.leases == 0 and broker.put_calls == []
 
 
@@ -161,7 +161,7 @@ def test_recovered_run_keeps_the_tokens_consumed_by_earlier_attempts(monkeypatch
 
     llm = ScriptedLLM([])
     platform, _ = _run(llm, platform=RecoveredPlatform())
-    assert "token limit" in platform.statuses[-1][1]["error"]
+    assert "累计用量已达上限" in platform.paused["error"]
     assert llm.seen_messages == []
 
 

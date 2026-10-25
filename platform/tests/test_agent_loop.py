@@ -224,8 +224,7 @@ def test_token_limit_stops_the_run_but_keeps_the_work(monkeypatch) -> None:
         ]
     )
     platform, _ = _run(llm, broker=broker)
-    status, kw = platform.statuses[-1][0], platform.statuses[-1][1]
-    assert status == "failed" and "token limit" in kw["error"]
+    assert platform.paused["status"] == "interrupted" and "累计用量已达上限" in platform.paused["error"]
     assert broker.commits == ["/workspace/outputs/partial.md"]
     assert len(llm.responses) == 1  # no further model call once the budget was consumed
 
@@ -489,14 +488,14 @@ def test_running_out_of_steps_ends_with_a_summary_not_a_bare_error(monkeypatch) 
     again = ToolCall(id="c2", name="exec", arguments={"cmd": "true"})
     llm = ScriptedLLM([LLMResponse(tool_calls=[deliver]), LLMResponse(tool_calls=[again]), LLMResponse(content="做完了大半，还差最后一页")])
     platform, _ = _run(llm)
-    status, kw = platform.statuses[-1]
-    assert status == "succeeded" and kw["summary"] == "做完了大半，还差最后一页"  # something was delivered
+    assert platform.paused["status"] == "interrupted"
+    assert platform.checkpoint["state"]["final_summary"] == "做完了大半，还差最后一页"
     assert llm.seen_messages[-1][-1]["content"].startswith("（平台提示：本轮的步数已用完")
 
     llm = ScriptedLLM([LLMResponse(tool_calls=[again]), LLMResponse(tool_calls=[again]), LLMResponse(content="没做成")])
     platform, _ = _run(llm)
-    status, kw = platform.statuses[-1]
-    assert status == "failed" and "exceeded 2 steps" in kw["error"] and kw["summary"] == "没做成"
+    assert platform.paused["status"] == "interrupted"
+    assert "可继续" in platform.paused["error"] and platform.checkpoint["state"]["final_summary"] == "没做成"
 
 
 def test_exec_accepts_command_as_well_as_cmd() -> None:
