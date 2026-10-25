@@ -11,6 +11,7 @@ import json
 import re
 import shlex
 import subprocess
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,34 @@ while time.time() < deadline:
     time.sleep(min(1, max(0, deadline - time.time())))
 os._exit(0)
 """
+
+
+def _exec_tailed(args: list[str], timeout: float) -> tuple[int, bytes, bytes]:
+    """Run a command keeping only the last 128 KiB of each stream. docker exec output is untrusted
+    model output; a command that spews bytes for the whole timeout must not set the size of this
+    process's heap, so the streams are drained incrementally into bounded tails."""
+    proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    tails = [bytearray(), bytearray()]
+
+    def tail(index: int) -> None:
+        stream = proc.stdout if index == 0 else proc.stderr
+        while chunk := stream.read(65536):
+            buf = tails[index]
+            buf.extend(chunk)
+            del buf[:-128_000]
+
+    threads = [threading.Thread(target=tail, args=(i,), daemon=True) for i in range(2)]
+    for thread in threads:
+        thread.start()
+    try:
+        code = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait()
+        raise SandboxError(f"docker command timed out: {' '.join(args[:4])}") from None
+    for thread in threads:
+        thread.join(5)
+    return code, bytes(tails[0]), bytes(tails[1])
 
 
 def _run(args: list[str], timeout: float | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
@@ -153,11 +182,11 @@ class DockerSandbox(SandboxProvider):
             "-c",
             cmd,
         ]
-        proc = _run(args, timeout=timeout + 20)
+        code, out, err = _exec_tailed(args, timeout + 20)
         return ExecResult(
-            exit_code=proc.returncode,
-            stdout=proc.stdout.decode("utf-8", "replace")[-128000:],
-            stderr=proc.stderr.decode("utf-8", "replace")[-128000:],
+            exit_code=code,
+            stdout=out.decode("utf-8", "replace")[-128000:],
+            stderr=err.decode("utf-8", "replace")[-128000:],
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 

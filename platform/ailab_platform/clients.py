@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import time
 from pathlib import Path
 from typing import NamedTuple
@@ -369,7 +370,7 @@ class AsyncPlatformClient(_PlatformApi):
             except (httpx.TransportError, TimeoutError):
                 if attempt == 3:
                     raise
-            await asyncio.sleep(USAGE_RETRY_BACKOFF_SECONDS * 2**attempt)
+            await asyncio.sleep(USAGE_RETRY_BACKOFF_SECONDS * 2**attempt * random.uniform(0.5, 1.5))
         raise AssertionError("unreachable")
 
     async def reserve_usage(self, payload: dict) -> dict:

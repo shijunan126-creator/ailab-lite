@@ -767,8 +767,8 @@ class LeaseManager:
             self.platform.append_event(
                 lease["run_id"], "sandbox.released", {"lease_id": lease["lease_id"], "reason": lease.get("reason", "released")}
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("sandbox.released event not appended for run %s: %s", lease["run_id"], exc)
 
     # ---------------------------------------------------------------- sandbox I/O
     def exec(self, lease_id: str, cmd: str, timeout: int | None = None) -> ExecResult:
