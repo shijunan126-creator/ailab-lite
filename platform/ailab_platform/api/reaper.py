@@ -76,14 +76,27 @@ def purge_expired_workspaces(storage=None, now: datetime | None = None) -> int:
     cutoff = now - timedelta(days=settings.workspace_ttl_days)
     storage = storage or get_storage()
     removed = 0
-    items = list(_page(storage, "workspaces/"))
-    if not items:
-        return 0
-    run_ids = {item.key.split("/")[1].removesuffix(".tgz") for item in items}
+    protected = set()
     with SessionLocal() as db:
-        metas = db.scalars(select(Run.runtime_meta).where(Run.id.in_(run_ids), Run.status.not_in(RunStatus.TERMINAL))).all()
-        protected = {((meta or {}).get("workspace") or {}).get("key") for meta in metas}
-    for item in items:
+        # Equality uses the status index; keyset pages bound metadata reads even
+        # with many paused runs. Snapshot count never becomes SQL parameters.
+        for status in (RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_USER, RunStatus.INTERRUPTED):
+            after = ""
+            while True:
+                rows = db.execute(
+                    select(Run.id, Run.runtime_meta)
+                    .where(Run.status == status, Run.id > after)
+                    .order_by(Run.id)
+                    .limit(settings.gc_batch_size)
+                ).all()
+                for run_id, meta in rows:
+                    key = ((meta or {}).get("workspace") or {}).get("key")
+                    if key:
+                        protected.add(key)
+                if len(rows) < settings.gc_batch_size:
+                    break
+                after = rows[-1].id
+    for item in _page(storage, "workspaces/"):
         if item.key in protected:
             continue
         modified = item.modified_at

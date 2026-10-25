@@ -32,7 +32,7 @@ def measure(engine):
                     "title": "probe",
                     "prompt": "probe",
                     "model": "mock",
-                    "status": "waiting_user" if i < 50 else "succeeded" if i < 150 else "queued",
+                    "status": ("queued", "running", "waiting_user", "interrupted")[i % 4] if i < 400 else "succeeded",
                     "waiting_since": now - timedelta(days=4) if i < 50 else None,
                     "finished_at": now - timedelta(days=8) if 50 <= i < 150 else None,
                 }
@@ -61,8 +61,11 @@ def measure(engine):
         )
         conn.execute(text("ANALYZE"))
         queries = {
-            "live_workspaces": "SELECT runtime_meta FROM runs WHERE id IN ('probe-00001','probe-05000','probe-09000') "
-            "AND status NOT IN ('succeeded','failed','canceled')",
+            **{
+                f"live_workspaces_{status}": f"SELECT id,runtime_meta FROM runs WHERE status='{status}' "
+                "AND id>'probe-00010' ORDER BY id LIMIT 100"
+                for status in ("queued", "running", "waiting_user", "interrupted")
+            },
             "waiting": "SELECT id FROM runs WHERE status='waiting_user' AND waiting_since<'2026-10-23' ORDER BY waiting_since,id LIMIT 100",
             "claim": "SELECT id FROM outbox WHERE claim_token='token-5000'",
             "checkpoint_object": "SELECT run_id FROM run_checkpoints WHERE state_key='checkpoints/probe-100' LIMIT 1",
@@ -71,7 +74,9 @@ def measure(engine):
         }
         prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
         result = {name: [list(row) for row in conn.execute(text(prefix + query))] for name, query in queries.items()}
-        assert ("sqlite_autoindex_runs_1" if engine.dialect.name == "sqlite" else "runs_pkey") in str(result["live_workspaces"])
+        for name, plan in result.items():
+            if name.startswith("live_workspaces_"):
+                assert any(index in str(plan) for index in ("ix_runs_status_id", "ix_runs_status")), plan
         for name, index in (
             ("waiting", "ix_runs_waiting"),
             ("claim", "ix_outbox_claim_token"),
