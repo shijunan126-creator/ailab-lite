@@ -43,7 +43,7 @@ os._exit(0)
 """
 
 
-def _run(args: list[str], timeout: int | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
+def _run(args: list[str], timeout: float | None = None, input_bytes: bytes | None = None) -> subprocess.CompletedProcess:
     try:
         return subprocess.run(args, capture_output=True, timeout=timeout, input=input_bytes)
     except FileNotFoundError as exc:
@@ -262,13 +262,18 @@ class DockerSandbox(SandboxProvider):
                 continue
         return out[:500]
 
-    def inspect(self, provider_ref: str) -> SandboxResource | None:
-        proc = _run(["docker", "inspect", provider_ref], timeout=20)
+    def _inspect_info(self, provider_ref: str, timeout: float = 20) -> dict | None:
+        proc = _run(["docker", "inspect", provider_ref], timeout=timeout)
         if proc.returncode != 0:
             if any(s in proc.stderr.decode("utf-8", "replace").lower() for s in ("no such object:", "no such container:")):
                 return None
             raise SandboxError("docker inspect failed")
-        info = json.loads(proc.stdout)[0]
+        return json.loads(proc.stdout)[0]
+
+    def inspect(self, provider_ref: str) -> SandboxResource | None:
+        info = self._inspect_info(provider_ref)
+        if info is None:
+            return None
         labels = info["Config"].get("Labels") or {}
         running = info["State"]["Running"]
         if running:
@@ -276,7 +281,14 @@ class DockerSandbox(SandboxProvider):
             if meta.returncode == 0:
                 labels.update(json.loads(meta.stdout))
             elif b"No such file" not in meta.stderr:
-                raise SandboxError("docker lease metadata unavailable")
+                # PID 1 can expire between inspect and exec. Confirm its state;
+                # an unavailable daemon or a live-container error is still a failure.
+                current = self._inspect_info(provider_ref)
+                if current is None:
+                    return None
+                if current["State"]["Running"]:
+                    raise SandboxError("docker lease metadata unavailable")
+                return SandboxResource(current["Id"], current["Config"].get("Labels") or {}, False)
         return SandboxResource(info["Id"], labels, running)
 
     def list_owned(self, owner: str) -> list[SandboxResource]:
@@ -314,10 +326,16 @@ class DockerSandbox(SandboxProvider):
 
     def release(self, sandbox_id: str) -> None:
         proc = _run(["docker", "rm", "-f", sandbox_id], timeout=60)
-        if proc.returncode != 0 and not any(
-            s in proc.stderr.decode("utf-8", "replace").lower() for s in ("no such object:", "no such container:")
-        ):
-            raise SandboxError("docker delete failed")
+        error = proc.stderr.decode("utf-8", "replace").lower()
+        if proc.returncode == 0 or any(s in error for s in ("no such object:", "no such container:")):
+            return
+        if "removal" in error and "already in progress" in error:
+            deadline = time.monotonic() + 5
+            while (remaining := deadline - time.monotonic()) > 0:
+                if self._inspect_info(sandbox_id, timeout=min(2, remaining)) is None:
+                    return
+                time.sleep(min(0.2, remaining))
+        raise SandboxError("docker delete failed")
 
     def health(self) -> bool:
         proc = _run(["docker", "info", "--format", "{{.ServerVersion}}"], timeout=20)

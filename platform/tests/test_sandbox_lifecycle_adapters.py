@@ -37,6 +37,50 @@ def test_docker_root_only_metadata_overrides_creation_labels(monkeypatch):
     assert resource.labels["ailab.expires_at"] == "renewed"
 
 
+@pytest.mark.parametrize("stopped", [None, {"Id": "ref", "State": {"Running": False}, "Config": {"Labels": {}}}])
+def test_docker_inspect_rechecks_resource_if_it_exits_during_metadata_read(monkeypatch, stopped):
+    active = {"Id": "ref", "State": {"Running": True}, "Config": {"Labels": {}}}
+    replies = iter(
+        [
+            subprocess.CompletedProcess([], 0, json.dumps([active]).encode(), b""),
+            subprocess.CompletedProcess([], 1, b"", b"container is not running"),
+            subprocess.CompletedProcess([], 0, json.dumps([stopped]).encode(), b"")
+            if stopped
+            else subprocess.CompletedProcess([], 1, b"", b"No such object: ref"),
+        ]
+    )
+    monkeypatch.setattr(docker, "_run", lambda *_a, **_k: next(replies))
+    resource = docker.DockerSandbox().inspect("ref")
+    assert resource is None if stopped is None else resource.running is False
+
+
+def test_docker_inspect_does_not_hide_metadata_failure_on_live_resource(monkeypatch):
+    active = {"Id": "ref", "State": {"Running": True}, "Config": {"Labels": {}}}
+    monkeypatch.setattr(
+        docker,
+        "_run",
+        lambda args, **_: subprocess.CompletedProcess(
+            args, 0 if args[1] == "inspect" else 1, json.dumps([active]).encode(), b"permission denied"
+        ),
+    )
+    with pytest.raises(SandboxError, match="metadata unavailable"):
+        docker.DockerSandbox().inspect("ref")
+
+
+def test_docker_release_waits_for_concurrent_auto_removal(monkeypatch):
+    stopped = {"Id": "ref", "State": {"Running": False}, "Config": {"Labels": {}}}
+    replies = iter(
+        [
+            subprocess.CompletedProcess([], 1, b"", b"removal of container ref is already in progress"),
+            subprocess.CompletedProcess([], 0, json.dumps([stopped]).encode(), b""),
+            subprocess.CompletedProcess([], 1, b"", b"No such object: ref"),
+        ]
+    )
+    monkeypatch.setattr(docker, "_run", lambda *_a, **_k: next(replies))
+    monkeypatch.setattr(docker.time, "sleep", lambda _: None)
+    docker.DockerSandbox().release("ref")
+
+
 def test_opensandbox_connection_failure_does_not_erase_resource():
     provider = OpenSandboxProvider.__new__(OpenSandboxProvider)
 
