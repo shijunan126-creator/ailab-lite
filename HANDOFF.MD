@@ -580,3 +580,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - budget_window_id与job_id不是同一个概念。只有用户明确继续budget/stall/loop/quota暂停才新窗口；回答ask_user和lease自动恢复只换job。便宜的/run/state必须仍返回真实job_id，否则Agent队列消费会错认所有权。累计token cap不可继续，使用FAILED终态释放会话；日/月额度继续保留quota暂停。步数总结须和out_of_steps_done一起持久化。
 - 清理错误不能把已完成回答或预算暂停改成FAILED；kill-all日志警告，最终释放租约。最终验收基线、红绿、资源成本和真实Docker不可用边界见[第三轮记录](docs/progress/updates/2026-10-25-long-runs-review3.md)。
 - Playwright Python 的 `page.wait_for_function("async ... => ...")` 不会等待异步谓词：返回的 Promise 本身为真，第一次求值就放行（PR #59 CI 中 ask_user E2E 因此在 Run 尚为 running 时断言）。等 API 状态用 Python 侧带截止时间的轮询（见 `e2e/test_ask_user_ui.py::_wait_status`），回答文字出现早于 Run 终态是正常顺序。
+
+## 2026-10-25 PDF 分享入口 E2E
+
+- UI 操作迁移时同步检查端到端入口：PDF 已移入分享弹窗，打印路径测试须先点分享，再点弹窗中的导出按钮，同时断言旧菜单项不存在。PR #64 提前合并后 E2E 因旧定位器超时，不能将单元测试通过等同发布检查通过；部署须等待修复后的完整 CI。
