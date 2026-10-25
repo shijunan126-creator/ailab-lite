@@ -277,8 +277,12 @@ def test_export_prints_all_turns_of_selected_path(logged_in, context):
     expect(page.locator(".versions-n")).to_have_text("2/2", timeout=20000)
     answers = page.locator(".assistant-body > .md").all_inner_texts()
     _menu(page, conv)
+    expect(page.get_by_role("menuitem", name="导出 PDF", exact=True)).to_have_count(0)
+    page.get_by_role("menuitem", name="分享", exact=True).click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog.get_by_role("button", name="创建链接", exact=True)).to_be_visible()
     with page.expect_popup() as popup:
-        page.get_by_role("menuitem", name="导出 PDF", exact=True).click()
+        dialog.get_by_role("button", name="导出 PDF", exact=True).click()
     printed = popup.value
     printed.wait_for_url(f"**/print/{conv}")
     expect(printed.locator(".print-turn")).to_have_count(2)
