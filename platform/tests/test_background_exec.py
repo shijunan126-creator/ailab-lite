@@ -396,3 +396,26 @@ def test_helper_is_installed_once_verified_and_reinstalled_on_agent_resume(tmp_p
     helper.write_text("raise RuntimeError('tampered')")
     with pytest.raises(ValueError, match="控制失败"):
         asyncio.run(background_exec("exec", {"cmd": "true"}, "lease", resumed))
+
+
+def test_mock_translates_command_paths_inside_file_payload(tmp_path, monkeypatch):
+    from ailab_platform.sandbox.mock import MockSandbox
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    provider = MockSandbox()
+    lease = provider.acquire("file-payload", "mock")
+
+    class Broker:
+        async def put_file(self, lease, path, data):
+            await asyncio.to_thread(provider.put_file, lease, path, data)
+
+        async def exec(self, lease, command, timeout=None):
+            result = await asyncio.to_thread(provider.exec, lease, command, timeout)
+            return {"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
+
+    try:
+        result = asyncio.run(background_exec("exec", {"cmd": "printf output > /workspace/outputs/result.txt"}, lease, Broker()))
+        assert result["exit_code"] == 0, result
+        assert provider.get_file(lease, "/workspace/outputs/result.txt") == b"output"
+    finally:
+        provider.release(lease)

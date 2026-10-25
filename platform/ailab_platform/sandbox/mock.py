@@ -113,13 +113,17 @@ class MockSandbox(SandboxProvider):
                 count += 1
         return count
 
-    def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
+    def _translate_command(self, sandbox_id: str, cmd: str) -> str:
         translated = cmd
         root = self._sandbox_root(sandbox_id)
         translated = translated.replace("/tmp/ailab-background", str(root / "background"))
         translated = translated.replace("/workspace", str(root / "workspace"))
         translated = translated.replace("/opt/skills", str(SKILLS))
-        translated = translated.replace("/opt/ailab-tools", str(TOOLS))
+        return translated.replace("/opt/ailab-tools", str(TOOLS))
+
+    def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
+        translated = self._translate_command(sandbox_id, cmd)
+        root = self._sandbox_root(sandbox_id)
         env = os.environ.copy()
         env["PATH"] = f"{Path(sys.executable).parent}:{env.get('PATH', '')}"
         started = time.monotonic()
@@ -174,6 +178,11 @@ class MockSandbox(SandboxProvider):
     def put_file(self, sandbox_id: str, path: str, data: bytes) -> None:
         target = self._translate(sandbox_id, path)
         target.parent.mkdir(parents=True, exist_ok=True)
+        if path.startswith("/workspace/.ailab-exec-") and path.endswith(".json"):
+            payload = json.loads(data)
+            if isinstance(payload.get("cmd"), str):
+                payload["cmd"] = self._translate_command(sandbox_id, payload["cmd"])
+                data = json.dumps(payload, ensure_ascii=False).encode()
         target.write_bytes(data)
 
     def get_file(self, sandbox_id: str, path: str) -> bytes:
