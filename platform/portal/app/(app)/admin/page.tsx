@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import SkillsSection from "../../../components/admin/skills";
+import FilesSection from "../../../components/admin/files";
 import AuditSection from "../../../components/admin/audit";
 import BrandSection from "../../../components/admin/brand";
 import ContextSection from "../../../components/admin/context";
@@ -12,12 +13,14 @@ import UsageSection from "../../../components/admin/usage";
 import UsersSection from "../../../components/admin/users";
 import { api, Me } from "../../../lib/api";
 
-type Tab = "users" | "departments" | "policies" | "usage" | "audit" | "skills" | "brand" | "context";
+type Tab = "users" | "departments" | "policies" | "usage" | "files" | "audit" | "skills" | "brand" | "context";
 const TABS: [Tab, string][] = [
   ["users", "用户"],
   ["departments", "部门"],
   ["policies", "额度"],
   ["usage", "用量"],
+  ["files", "文件"],
+  ["files", "文件"],
   ["audit", "审计"],
   ["skills", "技能"],
   ["brand", "品牌"],
@@ -68,6 +71,8 @@ function Admin() {
       {tab === "departments" ? <DepartmentsSection /> : null}
       {tab === "policies" ? <PoliciesSection /> : null}
       {tab === "usage" ? <UsageSection /> : null}
+      {tab === "files" ? <FilesSection /> : null}
+      {tab === "files" ? <FilesSection /> : null}
       {tab === "audit" ? <AuditSection /> : null}
       {tab === "skills" ? <SkillsSection /> : null}
       {tab === "brand" ? <BrandSection /> : null}
