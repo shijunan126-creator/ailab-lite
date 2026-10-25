@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-25真实沙箱补验（本地通过，待远端检查/合并，未部署）：真实Docker/runsc 9项、OpenSandbox/runc+dns+nft 9项、PG16+Redis+OpenSandbox五服务浏览器7项通过，均0跳过；SQLite/PG全Python1178/1224通过（跳过81/35）。修复Docker到期竞态与OpenSandbox DNS-only字面IP绕过，模型/扫描仍为测试替身，不能推导Kubernetes/gVisor或付费模型联合验收。见[本轮记录](../progress/updates/2026-10-25-real-sandbox-acceptance.md)。
+2026-10-25真实沙箱补验（PR #54已合并main `a646ba3`，未部署）：真实Docker/runsc 9项、OpenSandbox/runc+dns+nft 9项、PG16+Redis+OpenSandbox五服务浏览器7项通过，均0跳过；SQLite/PG全Python1178/1224通过（跳过81/35）。head `16245a7` 的8项CI全通过。修复Docker到期竞态与OpenSandbox DNS-only字面IP绕过，模型/扫描仍为测试替身，不能推导Kubernetes/gVisor或付费模型联合验收。见[本轮记录](../progress/updates/2026-10-25-real-sandbox-acceptance.md)。
 
 2026-10-25 单机全量审查：已实现恢复前预算复核、0029调用部门快照、详情批量读取、历史版本精确查找、完整已确认插话和Portal异步生命周期修复；本地SQLite1170/PG1216/E2E98及Portal35/build通过（跳过/覆盖率/基线见交付），[PR #49](https://github.com/shijunan126-creator/ailab-lite/pull/49) head `0dc2884` 八项检查全部通过，已squash合入main `d11f86e`，合并树与测试head一致；未部署。范围与实测成本见[审查](../reviews/2026-10-25-single-node-review.md)，以[交付记录](../progress/updates/2026-10-25-single-node-review.md)的最终检查head和验收边界为准。下文旧状态保留历史证据，不能覆盖本条。
 

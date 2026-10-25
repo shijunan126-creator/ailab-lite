@@ -1,12 +1,13 @@
 # 当前工作
 
-## 真实沙箱可运行性验证（2026-10-25，本地通过，待远端门禁）
+## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
 用户要求确认项目能否实际跑通，重点补足真实OpenSandbox验证。分支 `verify/real-sandbox-acceptance`，base `origin/main@9cfadfa`（已含PR #46/#49/#51）。允许隔离测试与必要修复；不替换现有部署、不迁移个人业务库、不清理现有服务/数据。
 
 - 已读仓库与本机运行交接，现有五应用健康，实际provider为Docker；尚无OpenSandbox服务。本次部署只读基线SQLite0028/quick_check正常/FK0，尚无文件或Run数据。
 - 修复Docker到期/删除竞态和OpenSandbox DNS-only字面IP绕过；新配置默认dns+nft、旧配置拒绝且绑定实际进程。代码/测试`6d5c305`、`1ca7c6d`、`6933c72`。真实Docker/runsc 9项、OpenSandbox/runc+dns+nft 9项、PG16+Redis+OpenSandbox五服务浏览器7项通过，均0跳过。SQLite/PG全套1178/1224通过（跳过81/35），Portal35/build、Ruff339、shell检查通过。
-- 专属五服务/浏览器/PG/Redis/OpenSandbox及镜像已清理，原九容器保持运行、五应用健康；原0028业务库未迁移，原有ID保留并保留期间新增的用户数据。个人配置与三份.DS_Store未动。[PR #54](https://github.com/shijunan126-creator/ailab-lite/pull/54)已创建并登记，首个远端head `5dc3678`，本条后续提交仅文档；下一步核对最新精确head远端检查后按既有授权合并，不部署。详细失败、验证与边界见[本轮记录](updates/2026-10-25-real-sandbox-acceptance.md)。
+- 专属五服务/浏览器/PG/Redis/OpenSandbox及镜像已清理，原九容器保持运行、五应用健康；原0028业务库未迁移，原有ID保留并保留期间新增的用户数据。个人配置与三份.DS_Store未动。[PR #54](https://github.com/shijunan126-creator/ailab-lite/pull/54)最终head `16245a718e86ab61701441218b46c9360b67251f` 的8项远端检查全部通过，无阻塞审查/冲突，squash合入main `a646ba355dd35f6f65d300ee7b480338125b493e`；本PR的14个文件与测试head一致，同时保留main并行合入的账号UI变更。结果见[本轮记录](updates/2026-10-25-real-sandbox-acceptance.md)。
+- 当前仅文档交接分支`docs/real-sandbox-merged`，base `origin/main@a646ba3`。本轮验证/修复及产品合并已完成，无待实现项；不自动部署或启动下一路线项，发布需后续授权。模型/扫描替身、外部组合及长期容量边界仍保留。
 
 ## 单机全量代码审查与修复（2026-10-25，PR #49已合入main，未部署）
 
