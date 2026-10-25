@@ -123,7 +123,10 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
           step.status = p.ok ? "ok" : "failed";
           step.output = [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500);
           // a command still going after its first wait: the model comes back to it with exec_wait
-          if (p.running) step.label = `${step.label} · 仍在运行`;
+          if (p.running) {
+            step.label = `${step.label} · 仍在运行`;
+            step.status = "note"; // not finished: no tick until a later look sees it end
+          }
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
           break;
         }
@@ -166,7 +169,8 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       // runs recorded before v2 still carry these
       else if (p.kind === "soft") note("检查进度", minutes);
       else if (p.kind === "extended") note("有进展，继续工作", p.extension_minutes ? `延长 ${p.extension_minutes} 分钟` : undefined, "ok");
-      else if (p.kind === "paused") note("已暂停", p.reason || minutes);
+      // the reason's cause only: "，已暂停，可继续" is what the 继续 button beside the turn already says
+      else if (p.kind === "paused") note("已暂停", String(p.reason || "").replace(/[，,]?\s*已暂停.*$/, "") || minutes);
       break;
     }
     case "agent.skill":

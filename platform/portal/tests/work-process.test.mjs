@@ -127,10 +127,11 @@ test('budget events, run-scope compaction and background commands read plainly',
  items=reduceEvent(items,event('agent.context_compacted',{scope:'run',messages:40}));
  const steps=items.flatMap(i=>i.kind==='steps'?i.steps:[]);
  assert.deepEqual(steps.map(s=>s.label),['运行命令','查看命令进度','有进展，继续工作','提醒换个方法','已暂停','已压缩本轮较早的步骤']);
- assert.equal(steps[4].detail,'已工作4小时，已暂停，可继续');
+ assert.equal(steps[4].detail,'已工作4小时');
  assert.equal(steps[3].detail,'同一操作反复出错');
  let run=reduceEvent([],event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'make'}}));
  run=reduceEvent(run,event('agent.tool_result',{step:1,name:'exec',ok:true,running:true,stdout:'building…'}));
  assert.equal(run[0].steps[0].label,'运行命令 · 仍在运行');
  assert.equal(run[0].steps[0].output,'building…');
+ assert.equal(run[0].steps[0].status,'note');
 });
