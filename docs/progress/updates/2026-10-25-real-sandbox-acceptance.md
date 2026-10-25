@@ -12,3 +12,5 @@
 - 确认并修复Docker自动到期的inspect/exec与并发删除竞态；真实网络测试证实OpenSandbox默认DNS-only会放行直接IP，启动脚本改为新配置默认`dns+nft`、旧配置明确拒绝，健康进程也须匹配启动配置。真实启动与再次复用通过。
 - 所有专用五服务/浏览器、PG/Redis、OpenSandbox服务/沙箱/回声探针已结束；只删除本任务测试镜像标签。原部署九容器保留、五应用健康；原有ID全部保留，验证期间存在新增用户活动，没有要求计数相等或清理用户数据。三份`.DS_Store`未动。
 - 未部署修复、未迁移现有0028数据库、未更新个人配置。付费模型、ClamAV、S3与这些真实组件的联合验收、Kubernetes/gVisor OpenSandbox组合、IPv6及长期容量未在本轮重验。下一步核对PR精确head的远端检查后按既有合并授权集成。
+
+[PR #54](https://github.com/shijunan126-creator/ailab-lite/pull/54)已创建并登记，首个远端head`5dc3678`；随后本链接/状态提交只修改文档。精确最新head的远端门禁仍需独立确认，不能沿用旧head的绿结果。
