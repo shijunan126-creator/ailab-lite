@@ -99,6 +99,49 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
   );
 }
 
+/** Skills deliver self-contained HTML decks ("double-click to page through"): render them, with the
+ * source one tab away. The frame is origin-less (no allow-same-origin), so the deck's page-turn
+ * script runs but nothing in it can reach this app's cookies or storage. */
+function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
+  const [mode, setMode] = useState<"render" | "code">("render");
+  const [html, setHtml] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    let stale = false;
+    // The rendered view needs the whole document: the text preview is a truncated excerpt.
+    fetch(downloadUrl(file.download_url))
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((h) => !stale && setHtml(h))
+      .catch((e) => !stale && setError(errorMessage(e)));
+    return () => {
+      stale = true;
+    };
+  }, [file.id, file.download_url]);
+  return (
+    <div className="viewer-html">
+      <div className="viewer-modes" role="tablist" aria-label="预览方式">
+        <button type="button" role="tab" aria-selected={mode === "render"} className={`viewer-mode ${mode === "render" ? "on" : ""}`} onClick={() => setMode("render")}>
+          渲染
+        </button>
+        <button type="button" role="tab" aria-selected={mode === "code"} className={`viewer-mode ${mode === "code" ? "on" : ""}`} onClick={() => setMode("code")}>
+          源码
+        </button>
+      </div>
+      {mode === "render" ? (
+        error ? (
+          <Unavailable file={file} reason={error} />
+        ) : html === null ? (
+          <Waiting />
+        ) : (
+          <iframe className="viewer-frame" sandbox="allow-scripts allow-popups allow-modals" srcDoc={html} title={file.filename} />
+        )
+      ) : (
+        <TextView file={file} preview={preview} />
+      )}
+    </div>
+  );
+}
+
 function ImageView({ file, preview }: { file: FileItem; preview: FilePreview }) {
   const source = useContext(FileSourceContext);
   const [zoomed, setZoomed] = useState(false);
@@ -149,7 +192,11 @@ function Body({ file, page }: { file: FileItem; page?: number }) {
         </div>
       );
     case "text":
-      return <TextView file={file} preview={preview} />;
+      return (file.content_type || "").split(";")[0] === "text/html" || /\.(html?|xhtml)$/i.test(file.filename) ? (
+        <HtmlView file={file} preview={preview} />
+      ) : (
+        <TextView file={file} preview={preview} />
+      );
     case "image":
       return <ImageView file={file} preview={preview} />;
     default:

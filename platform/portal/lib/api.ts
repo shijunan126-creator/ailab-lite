@@ -395,6 +395,13 @@ export function errorCode(err: unknown): string | null {
   return typeof detail?.code === "string" ? detail.code : null;
 }
 
+export type ReaderPage = { url: string; title: string; text: string; truncated: boolean };
+
+/** One public page's readable text, fetched server-side for the side pane's 网页 view. */
+export function reader(url: string, signal?: AbortSignal): Promise<ReaderPage> {
+  return api<ReaderPage>(`/v1/reader?url=${encodeURIComponent(url)}`, { signal });
+}
+
 export function downloadUrl(path: string): string {
   return `${API_BASE}${path}`; // same-origin: the session cookie authorizes the download
 }
