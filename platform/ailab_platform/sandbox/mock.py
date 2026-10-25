@@ -153,8 +153,8 @@ class MockSandbox(SandboxProvider):
         host_ws = str(root / "workspace")
         return ExecResult(
             exit_code,
-            stdout[-64000:].replace(host_ws, "/workspace"),
-            stderr[-64000:].replace(host_ws, "/workspace"),
+            stdout[-128000:].replace(host_ws, "/workspace"),
+            stderr[-128000:].replace(host_ws, "/workspace"),
             int((time.monotonic() - started) * 1000),
         )
 

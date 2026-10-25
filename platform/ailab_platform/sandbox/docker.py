@@ -155,8 +155,8 @@ class DockerSandbox(SandboxProvider):
         proc = _run(args, timeout=timeout + 20)
         return ExecResult(
             exit_code=proc.returncode,
-            stdout=proc.stdout.decode("utf-8", "replace")[-64000:],
-            stderr=proc.stderr.decode("utf-8", "replace")[-64000:],
+            stdout=proc.stdout.decode("utf-8", "replace")[-128000:],
+            stderr=proc.stderr.decode("utf-8", "replace")[-128000:],
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 

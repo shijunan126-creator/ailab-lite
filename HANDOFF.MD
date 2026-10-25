@@ -546,3 +546,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - Agent的background_jobs可能累积已被helper淘汰的旧句柄，不能按当前进程cap截取该列表做暂停清理；会漏掉真实活跃进程并在快照期间继续写文件。暂停/完成改用租约内部注册表一次kill_all，按进程身份围栏停止所有保留进程。新增“旧句柄占满前N项”回归修复前稳定失败。
 - 五服务E2E的显式PG数据库不会像后端tests/conftest自动清schema；重跑前重建自己的一次性E2E库。沿用前一轮库会导致answer.md→answer (2).md等重名及预览测试污染，不能把这种失败当产品回归或放宽文件名断言。
+
+
+## 2026-10-25 长任务 v2 审查修复
+
+- 持久化重复检测只需规范化参数/结果指纹。不要把 write_file 内容、exec脚本或 read_file 全文复制进每次重写的 tool_log；已消费结果可压缩为有界记账，但保留 result 完成标记、未确认 exec 的 started 标记和独立交付去重。旧 pending 结果尚未配对进 messages，不能提前压缩；没有参数的 v1日志不能虚构调用身份参与检测。
+- 长命令仍 running 的 exec_wait 是等待，不是重复操作；必须中断 identical/alternating 后缀，不能过滤后把等待两侧的旧观察拼成假循环。已结束 wait 仍参与检测。
+- exec stdout/stderr 需要头部与错误尾部。JSON 协议上限要按序列化后 UTF-8 字节验算，中文、四字节字符和 NUL 转义分别测试；每流1000字符头+8000字符尾（另有省略标记），最坏每字符转义6B，两流约108.6KB；helper序列化后UTF-8须≤120000B，provider内部尾截断上限128000字符。不能等provider截断JSON，也不能为了64KB上限削掉约定的8000字符尾部。
+- kill_all 的权威来源是租约内注册表，调用本身也不能以 Agent checkpoint 的 background_jobs 非空为条件。旧 checkpoint 没有该列表也须在暂停/完成快照前清理；控制请求不应计入测试spy的用户exec执行/故障编号。

@@ -43,6 +43,7 @@ def supervise(payload, directory):
     child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
     streams = {child.stdout: "stdout", child.stderr: "stderr"}
+    tails = {"stdout": "", "stderr": ""}
     prefixes, counts = {"stdout": "", "stderr": ""}, {"stdout": 0, "stderr": 0}
     decoders = {name: codecs.getincrementaldecoder("utf-8")(errors="replace") for name in prefixes}
     total = 0
@@ -55,14 +56,16 @@ def supervise(payload, directory):
                     name = streams[stream]
                     tail = decoders[name].decode(b"", final=True)
                     counts[name] += len(tail)
-                    prefixes[name] = (prefixes[name] + tail)[:4000]
+                    prefixes[name] = (prefixes[name] + tail)[:1000]
+                    tails[name] = (tails[name] + tail)[-8000:]
                     streams.pop(stream)
                     stream.close()
                     continue
                 name = streams[stream]
                 text = decoders[name].decode(chunk)
                 counts[name] += len(text)
-                prefixes[name] = (prefixes[name] + text)[:4000]
+                prefixes[name] = (prefixes[name] + text)[:1000]
+                tails[name] = (tails[name] + text)[-8000:]
                 fcntl.flock(log, fcntl.LOCK_EX)
                 try:
                     while chunk:
@@ -83,9 +86,13 @@ def supervise(payload, directory):
             os.killpg(os.getpgrp(), signal.SIGKILL)
         result = {"exit_code": code, "duration_ms": int((time.monotonic() - started) * 1000)}
         for name, prefix in prefixes.items():
-            result[name] = prefix
-            if counts[name] > len(prefix):
-                result[name] += f"\n...[truncated {counts[name] - len(prefix)} chars]"
+            result[name] = tails[name]
+            if counts[name] > 8000:
+                result[name] = (
+                    prefix
+                    + (f"\n...[elided {counts[name] - 9000} chars]...\n" if counts[name] > 9000 else "")
+                    + tails[name][-min(8000, counts[name] - 1000) :]
+                )
         put(directory / "exit", result)
 
 
@@ -204,4 +211,9 @@ if __name__ == "__main__":
     if request["action"] == "supervise":
         supervise(request, ROOT / request["handle"])
     else:
-        print(json.dumps(control(request), ensure_ascii=False))
+        encoded = json.dumps(control(request), ensure_ascii=False)
+        # Two <=9050-character streams cost at most 108600 bytes even if every
+        # character needs a six-byte JSON escape. Leave room for fixed metadata.
+        if len(encoded.encode("utf-8")) > 120000:
+            raise ValueError("命令输出超过内部传输上限")
+        print(encoded)

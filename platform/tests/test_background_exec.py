@@ -144,7 +144,8 @@ def test_pruning_keeps_running_and_recent_completed_handles(tmp_path, monkeypatc
     asyncio.run(scenario())
 
 
-def test_pause_kills_jobs_before_snapshot(tmp_path):
+@pytest.mark.parametrize("legacy_registry", [False, True])
+def test_pause_kills_jobs_before_snapshot(tmp_path, legacy_registry):
     from ailab_platform.adapters.runtime import fresh_state
     from ailab_platform.agent.budgets import WorkBudget
     from ailab_platform.agent.loop import AgentLoop, _Turn
@@ -171,7 +172,8 @@ def test_pause_kills_jobs_before_snapshot(tmp_path):
     async def scenario():
         start = await execute_tool("exec", {"cmd": "sleep 30", "background": True}, "lease", broker)
         handle.append(start["handle"])
-        state["background_jobs"] = ["f" * 32] * settings.exec_background_max_jobs + handle[:]
+        if not legacy_registry:
+            state["background_jobs"] = ["f" * 32] * settings.exec_background_max_jobs + handle[:]
         try:
             await loop._budget_pause("r", turn, "测试暂停")
             assert state["background_jobs"] == []
@@ -223,8 +225,8 @@ def test_large_short_output_survives_provider_control_transport(tmp_path, monkey
     try:
         result = asyncio.run(execute_tool("exec", {"cmd": command}, lease, broker))
         assert broker.calls == 1 and result["ok"]
-        assert result["stdout"] == "中" * 4000 + "\n...[truncated 501 chars]"
-        assert result["stderr"] == "\x00" * 4000 + "\n...[truncated 500 chars]"
+        assert result["stdout"] == "中" * 4500 + "\n"
+        assert result["stderr"] == "\x00" * 4500
     finally:
         provider.release(lease)
 
@@ -248,3 +250,67 @@ def test_legacy_immediate_yield_preserves_output_if_command_already_exited(tmp_p
     result = asyncio.run(execute_tool("exec", {"cmd": "printf quick", "background": True}, "lease", broker))
     assert len(broker.commands) == 1
     assert result["exit_code"] == 0 and result["stdout"] == "quick"
+
+
+@pytest.mark.parametrize("character", ["中", "\x00", "😀"])
+def test_foreground_keeps_head_and_failure_tail_with_cjk_transport(tmp_path, monkeypatch, character):
+    from ailab_platform.sandbox.mock import MockSandbox
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    provider = MockSandbox()
+    lease = provider.acquire("cjk-tail", "mock")
+
+    class Broker:
+        async def exec(self, lease_id, command, timeout=None):
+            result = await asyncio.to_thread(provider.exec, lease_id, command, timeout)
+            assert len(result.stdout.encode()) < 120000
+            return {"exit_code": result.exit_code, "stdout": result.stdout, "stderr": result.stderr}
+
+    command = shlex.join(
+        [
+            sys.executable,
+            "-c",
+            f"import sys; print('HEAD'+{character!r}*20000+'FAILURE'); sys.stderr.write('HEAD'+{character!r}*20000+'ERROR')",
+        ]
+    )
+    try:
+        result = asyncio.run(execute_tool("exec", {"cmd": command}, lease, Broker()))
+        for stream, ending in [("stdout", "FAILURE\n"), ("stderr", "ERROR")]:
+            assert result[stream].endswith(ending) and "elided" in result[stream]
+            assert result[stream].startswith("HEAD") and len(result[stream]) >= 9000
+            assert result[stream][-8000:] == (character * 20000 + ending)[-8000:]
+    finally:
+        provider.release(lease)
+
+
+def test_finish_kills_legacy_registry_jobs_missing_from_checkpoint(tmp_path):
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    class Broker(LocalBroker, FakeBroker):
+        def __init__(self):
+            LocalBroker.__init__(self, tmp_path)
+            FakeBroker.__init__(self)
+
+        async def snapshot(self, lease_id):
+            status = await background_exec("exec_wait", {"handle": handle[0], "seconds": 0}, lease_id, self)
+            assert not status["running"] and status["exit_code"] == -9
+            return await FakeBroker.snapshot(self, lease_id)
+
+    broker, handle = Broker(), []
+
+    async def scenario():
+        started = await background_exec("exec", {"cmd": "sleep 30", "background": True}, "lease_1", broker)
+        handle.append(started["handle"])
+        try:
+            llm = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", "list_files", {})]), LLMResponse(content="done")])
+            platform = FakePlatform()
+            await AgentLoop(platform, broker, llm).process("run_1", attempt_id="a")
+            status = await background_exec("exec_wait", {"handle": handle[0], "seconds": 0}, "lease_1", broker)
+            assert not status["running"] and status["exit_code"] == -9
+            assert platform.statuses[-1][0] == "succeeded"
+        finally:
+            await background_exec("exec_kill", {"handle": handle[0]}, "lease_1", broker)
+
+    asyncio.run(scenario())

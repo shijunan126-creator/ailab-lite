@@ -1,13 +1,13 @@
 # 当前工作
 
-## 长任务 v2 后端（2026-10-25，本地验收完成，待父任务集成）
+## 长任务 v2 审查修复（2026-10-25，本地验收完成，待父任务接收）
 
-本轮在 `/Users/michael/.t3/worktrees/ailab-lite/t3-dff90f42` 的 `feat/long-runs-v2`，以实际集成 HEAD `b729c134b92a697a1cfe5a387aed53172c6561f1` 为 base。后续旧小节中的路径与 HEAD 均为历史；不改 Portal，不 push/PR/merge/deploy。
+本轮在 `/Users/michael/.t3/worktrees/ailab-lite/t3-70b44db6`，分支 `feat/long-runs-v2-fixes`，base 为集成分支 `feat/long-runs-sources@8a2bfed`（包含 v2 `fe4fc38..bdbf63d` 和 Portal `a4fa0b6`）。起始 T3 分支名为 `t3/long-runs-v2-fixes`，已按授权新建指定分支；工作区起始干净。不改 Portal，不 push/PR/merge/deploy。
 
-- 已实现统一 yielding exec、持久化工具日志循环检测（提醒一次后暂停）和每小时信息自查（不再按进展延期）；保留 token/quota、300步、20分钟 liveness、4小时 hard cap 与续租。ADR0008已修订。
-- 产品提交`fe4fc38`、`217dba7`、`763e376`；最终产品/测试基线`763e376`：Ruff352文件、SQLite1211通过/122跳过、PG16+Redis1298通过/35跳过、Portal38测试/build、五服务E2E98通过/0跳过，均0失败。精确契约/红绿证据/初始失败/成本见[本轮记录](updates/2026-10-25-long-runs-sources.md#long-runs-v2)。
-- 专属五服务、PG16和Redis已停止，七端口无监听。真实1–4小时模型、真实Linux/provider进程联合验收、目标2vCPU/8GiB资源/并发仍待验；Portal新契约提示未在本分支实现。
-- 下一步：父任务从固定base `b729c13`集成此分支提交，与其Portal适配共同重验。当前父集成分支已独立前进，本轮未移动/修改它；不自动push/PR/merge/deploy或启动其他路线项。
+- 修复 checkpoint 工具日志大参数/结果增长、前台 exec 丢失尾部和控制 JSON 传输越界、静默运行 wait 误判、工具事件缺少运行状态；同时修复旧 checkpoint 无 background_jobs 时暂停/完成漏杀租约内进程。
+- 新日志保留规范化参数/结果 SHA256 与最多4KiB结果记账；旧已消费日志恢复时压缩，旧 pending 完整结果与未确认 exec 的不可重放围栏保留。300步100KB交替写/读的最终checkpoint 30,055,882→106,352 B，累计300次序列化4,526,564,627→19,171,737 B。
+- 产品提交 `2648c91`、`71c1d20`；最终测试适配 `2bbe905`（产品与 `71c1d20` 相同）。最终 Ruff352文件、SQLite1221通过/122跳过、PG16+Redis1308通过/35跳过、Portal38项/build、五服务E2E98通过/0跳过，均0失败。专属PG/Redis及五服务均已停止，七端口无监听。精确基线、跳过项、成本及风险见[本轮审查修复](updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)。
+- 下一步：父任务审阅并接收上述三个固定提交及本轮文档交接；本任务无待实现修复。真实1–4小时模型、真实Linux/provider进程与目标2vCPU/8GiB容量仍待验，不自动集成、启动其他路线项或发布。
 
 ## 来源与长任务完整集成（2026-10-25，最终本地验收完成，未合并/未部署）
 

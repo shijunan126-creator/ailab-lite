@@ -31,7 +31,7 @@ def test_patterns_and_user_boundary(items, reason):
 def test_timings_are_volatile_but_advancing_output_is_not():
     args = {"handle": "a" * 32, "seconds": 1}
     same = [("exec_wait", args, {"ok": True, "running": True, "total_bytes": 5, "idle_seconds": i}) for i in range(4)]
-    assert detect_loop(log_for(same)) == "identical_call_result"
+    assert detect_loop(log_for(same)) is None
     advancing = [("exec_wait", args, {"ok": True, "running": True, "total_bytes": i, "output_tail": str(i)}) for i in range(20)]
     assert detect_loop(log_for(advancing)) is None
 
@@ -75,3 +75,43 @@ def test_user_steer_resets_observations_and_nudge():
     assert detect_loop(state["tool_log"], state["loop_start"]) is None
     assert state["messages"][-1] == {"role": "user", "content": "换一个方法"}
     assert json.dumps(state)
+
+
+def test_compact_observations_bound_large_payloads_and_keep_identity():
+    from ailab_platform.agent.stuck import compact_log, observation
+
+    items = [
+        ("write_file", {"path": "a", "content": "w" * 100000}, {"ok": True}),
+        ("read_file", {"path": "a"}, {"ok": True, "content": "r" * 100000}),
+    ] * 150
+    old = log_for(items)
+    state = {"next_step": 300, "pending": [], "tool_log": old}
+    compact_log(state)
+    assert len(json.dumps(state).encode()) < 120000
+    assert all("arguments" not in r and len(json.dumps(r["result"])) < 4096 for r in old.values())
+    assert detect_loop(old) == "alternating_call_result"
+    assert observation(*items[0]) == old["0:0"]
+
+
+def test_legacy_pending_result_is_preserved_until_consumed():
+    from ailab_platform.agent.stuck import compact_log
+
+    log = log_for([("exec", {"cmd": "script"}, {"ok": True, "stdout": "x" * 100000})])
+    state = {"next_step": 0, "pending": [{"ordinal": 0}], "tool_log": log}
+    compact_log(state)
+    assert log["0:0"]["result"]["stdout"] == "x" * 100000
+    state["pending"] = []
+    compact_log(state)
+    assert log["0:0"]["result"]["compacted"]
+    assert detect_loop({"0:0": {"name": "exec", "result": {"ok": True}}}) is None
+
+
+def test_silent_running_waits_break_identical_and_alternating_patterns():
+    args = {"handle": "a" * 32}
+    for names in [("a",) * 20, ("a", "b") * 10]:
+        log = log_for(
+            [("exec_wait", {**args, "handle": name}, {"ok": True, "running": True, "idle_seconds": i}) for i, name in enumerate(names)]
+        )
+        assert detect_loop(log) is None
+    finished = log_for([("exec_wait", args, {"ok": True, "running": False, "exit_code": 0})] * 4)
+    assert detect_loop(finished) == "identical_call_result"

@@ -144,3 +144,43 @@ SQLite的122跳过包含48个PG条件项、43个Redis条件项及31个真实外�
 宿主macOS最终成本探针（产品763e376，非目标2vCPU容量证据）：10个短true命令一次Broker往返，median327.93ms、max337.01ms，含两次Python启动与至多250ms退出轮询；8个sleep监督进程RSS合计122640KiB，单个15120–15712KiB，不含命令后代；单次kill_all停止8个进程54.58ms。默认8MiB环日志+每句柄约32KiB以内UTF-8流前缀/退出元数据；内部provider响应上限8K→64K字符，模型可见输出不变。无新服务/依赖/数据库查询/迁移；CPU开销为每命令一个Python监督进程，空闲select至多4次/秒，控制wait轮询至多4次/秒（Linux /proc读取，macOS测试使用ps）。
 
 残余边界：没有真实模型连续1–4小时、真实Linux/provider后台进程联合验收或目标2vCPU/8GiB资源/并发验收；本轮mock宿主子进程、PG/Redis与浏览器链路不能替代。Portal由父任务消费nudge/新exec结果，本分支不改UI，现有UI测试通过不能宣称v2新提示已被Portal呈现。重复检测是规范化后的模式检测，不能识别所有语义死循环；无输出的合法长任务可能收到提醒，模型应改变等待方式/检查外部进展。
+
+
+<a id="long-runs-v2-review-fixes"></a>
+
+### v2 审查修复：checkpoint、输出与等待契约
+
+本轮授权以父集成 `feat/long-runs-sources@8a2bfed` 为base，在独立 `feat/long-runs-v2-fixes` 修复；该base已含v2全部提交和Portal `a4fa0b6`。不改Portal，不push/PR/merge/deploy。上文v2计数、4K前缀和“静默等待可能触发提醒”是旧基线历史证据，本节取代相关契约。
+
+修复内容：
+
+- 每次完成工具只存参数/结果规范化SHA256、失败/等待标志与至多4096 UTF-8字节的结果记账（超限仅留ok/compacted和最多500字符error），不再持久化完整参数。检测读取指纹，结果仍有完成标记；模型messages、artifacts、delivered与稳定invocation编号保持原合同。恢复旧raw-arguments日志时计算指纹并压缩已消费结果；无参数v1日志仅压缩结果、不参与检测。旧pending尚未配对到messages的完整结果不提前压缩；未确认exec仍不可重放。
+- exec前台每流保留1000字符head+8000字符tail，中间省略；不足窗口时保持全文。wire JSON保持ensure_ascii=False，每流含省略标记不超过约9050字符；最坏每字符6B转义，两流≤108600B加固定元数据，序列化后UTF-8硬检查≤120000B，provider内部尾截断上限64000→128000字符，因此中文/NUL/四字节字符均保留完整头尾合同，不再为传输缩短尾部。运行中poll仍最多4000字节环日志尾部。没有新增依赖/服务/SQL/迁移；internal transport额外上界64K字符（最坏UTF-8约256KB/流），helper实际响应≤120KB，模型可见输出不随provider上限增加。
+- running=true的exec_wait中断重复后缀，不参与identical/alternating，也不会把等待前后的观察拼接；已完成wait继续检测。4h cap、stall watchdog、token/quota/step预算不变。
+- exec/exec_wait/exec_kill的agent.tool_result新增running布尔值、idle_seconds（无值时null）；running时stdout取output_tail并截2000字符，exit_code仍null；其他原字段不变，不发送handle。
+- 暂停、ask_user、完成只要持有lease就调用权威注册表kill_all，不再依赖Agent background_jobs列表存在。额外成本为每次结束/暂停最多一次有界Broker控制往返。零等待立即退出输出回归保留。
+
+事件形状（非exec工具不新增running/idle_seconds）：
+
+```json
+{"step":0,"name":"exec_wait","ok":true,"running":true,"exit_code":null,"stdout":"最多2000字符output_tail","stderr":"","error":"","idle_seconds":17}
+```
+
+checkpoint合成测量：300步交替write_file(content=100000 ASCII字符)/read_file(content=100000 ASCII字符)，路径按步变化，固定messages上下文21000字符；每步序列化一次完整checkpoint_state，使用UTF-8 JSON（ensure_ascii=False），前后相同上下文。最终30,055,882→106,352 B（约282.6倍缩小），累计300次4,526,564,627→19,171,737 B（约236.1倍减少）。本机Python3.12 tracemalloc测量序列化循环14.020→0.605秒，追踪峰值90,338,096→542,624 B；不是进程RSS或目标机容量/数据库磁盘实测。实际每工具多次checkpoint仍会乘上写入次数，但大payload不再随已完成步数重复写入；messages上下文与快照成本不计入此独立tool_log比较。新增回归固定300步日志上限，不依赖耗时门槛。
+
+红绿：在8a2bfed产品文件上，新增大write日志、运行事件、静默wait及长输出尾部断言均失败；无Agent列表的暂停和完成两项在原kill_all调用条件下也失败。修复后执行最终整树验收。初次定向78通过/1失败仅旧spy断言“整个Run只发一次exec”，现分别验证start和最终kill_all控制请求；恢复spy和SIGKILL故障回归同样区分控制请求，不改变用户命令/交付不重放断言。首次SQLite全套因该故障spy拒绝kill_all出现1失败后中断；一次后续SQLite在收紧128K传输保证时主动中断，早期98项E2E虽通过也不作为最终树验收，后续全部重跑。
+
+产品提交：`2648c91e53ea46ff4fb1d0dff4c189023421217c`（日志、头尾、等待、事件和旧registry清理），`71c1d20b1f15cfd19896324c32847951dfe354d4`（128K transport与极端字符完整尾部保证）；最终测试适配`2bbe9052a4405288fbcc66f3aff4fc1ee157b537`仅修改budget故障fake，不改产品。最终验证如下：
+
+- Ruff check/format：352文件通过；git diff --check通过。
+- `2bbe905`整树SQLite：1221 passed / 122 skipped / 0 failed，170.70秒。
+- `2bbe905`整树PG16.15 + Redis8.10.2：1308 passed / 35 skipped / 0 failed，217.01秒。与SQLite独立进程和数据库；同一PG测试库没有并发pytest。
+- Portal源码始终与base相同：直接npm test 38 passed、npm run build通过；最终E2E独立副本再次38项与production build通过。
+- 最终产品`71c1d20`的PG16+Redis五服务E2E：98 passed / 0 skipped / 0 failed，292.08秒；其后`2bbe905`仅改tests/test_long_runs.py中的fake，E2E测试/夹具和产品文件完全相同，未因该无关单测修改重复E2E。
+- 新transport/旧registry/真实SIGKILL恢复定向24 passed，9.93秒；budget故障fake最终13 passed，0.48秒。最终完整双库包含所有新增/修改回归与原零等待立即完成、交付去重/不可重放测试。
+
+SQLite122/PG35跳过构成与上文v2最终验收相同（外部Docker/OpenSandbox/S3/ClamAV/OIDC/public fetch等未配置，不作为通过）；保留既有20/19条反射/弃用警告。中途检查记录：旧SIGKILL spy拒绝kill_all的首轮SQLite出现1失败后中断；收紧128K合同前的SQLite与之后因Hung fake挂起清理的双库轮次均主动中断，不计为完成。Hung fake现仅挂起用户start、清理正常返回，控制重放测试明确验证wait/kill之后单次kill_all；不放宽用户start/交付不重放断言。
+
+清理：本轮新建PG data-dir与ailab_test/ailab_migrations/ailab_e2e三库，绑定127.0.0.1:35982；Redis36989，后端DB15、E2E DB13。E2E四Python服务38780–38783、Portal33700。最终E2E夹具已停止五服务；Redis INFO process_id=892与本轮pidfile一致后shutdown，PG按本轮data-dir经pg_ctl fast停止；35982/36989/38780–38783/33700七端口最终lsof均无监听。未停止其他用户服务。
+
+原始日志/合成测量脚本与结果在本机 `/tmp/ailab-v2-fixes-70b4/`，不提交原始运行数据。残余边界仍为真实模型1–4h、真实Linux/provider后台进程、目标2vCPU/8GiB并发容量；本轮宿主子进程、mock模型/沙箱与浏览器链路不能替代。Portal源码未改，本轮只补齐后端事件合同，不声明新增UI已实测呈现。
