@@ -2,7 +2,7 @@
 
 ## 来源抽屉与新对话返回修复（2026-10-25）
 
-用户授权 `fix/sources-sheet-swipe`（base `origin/main@d5b4fa6`）推送、PR、CI全绿后squash合并并保留数据部署。产品提交 `a48a164` / `c433cd5`；本地Portal 38项测试及production build通过，按授权不跑本地Ruff/Python/E2E、不做付费模型验收。下一步：推送PR，CI全绿后合并，再按个人运维流程备份并部署固定main、核对五应用健康。记录见[本轮更新](updates/2026-10-25-sources-sheet-swipe.md)。历史部署状态以最新个人运维记录为准，下方PDF“部署前”小节已过时。
+[PR #68](https://github.com/shijunan126-creator/ailab-lite/pull/68) 已在远端选中检查全部成功后 squash 合入 `main@c7c93e6`，并按个人运维流程备份、解包校验后部署该固定提交。五应用 healthy；原六表 ID、10份文件哈希保留，SQLite 0030/quick_check正常/FK0。Portal本地38项测试/build通过；按授权不跑本地Ruff/Python/E2E，CI Python/storage-contracts由范围选择器跳过。不做付费模型验收，可选手机浏览器抽屉/真机手势未验。当前文档分支 `docs/sources-swipe-deployed`，base `origin/main@c7c93e6`；本轮无待部署/待实现项，不启动其他路线。详见[本轮更新](updates/2026-10-25-sources-sheet-swipe.md)。旧PDF“部署前”小节已过时。
 
 
 ## PDF 分享入口部署前修复（2026-10-25）
