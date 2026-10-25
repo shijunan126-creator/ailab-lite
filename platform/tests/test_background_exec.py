@@ -171,9 +171,12 @@ def test_pause_kills_jobs_before_snapshot(tmp_path):
     async def scenario():
         start = await execute_tool("exec", {"cmd": "sleep 30", "background": True}, "lease", broker)
         handle.append(start["handle"])
-        state["background_jobs"] = handle[:]
-        await loop._budget_pause("r", turn, "测试暂停")
-        assert state["background_jobs"] == []
+        state["background_jobs"] = ["f" * 32] * settings.exec_background_max_jobs + handle[:]
+        try:
+            await loop._budget_pause("r", turn, "测试暂停")
+            assert state["background_jobs"] == []
+        finally:
+            await execute_tool("exec_kill", {"handle": start["handle"]}, "lease", broker)
 
     asyncio.run(scenario())
     assert order == ["snapshot"]

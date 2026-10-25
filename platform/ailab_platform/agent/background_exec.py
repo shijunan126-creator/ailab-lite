@@ -12,7 +12,7 @@ from ..config import settings
 
 
 async def background_exec(name, args, lease_id, broker, *, max_seconds=None):
-    handle = uuid4().hex if name == "exec" else args.get("handle", "")
+    handle = uuid4().hex if name in {"exec", "exec_kill_all"} else args.get("handle", "")
     if not isinstance(handle, str) or not re.fullmatch(r"[0-9a-f]{32}", handle):
         raise ValueError("后台命令句柄无效")
     if name == "exec":
@@ -33,7 +33,7 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None):
         raise ValueError("后台命令不能为空")
     lifetime = settings.run_max_seconds if max_seconds is None else max(0.001, min(max_seconds, settings.run_max_seconds))
     payload = {
-        "action": "start" if name == "exec" else "wait" if name == "exec_wait" else "kill",
+        "action": {"exec": "start", "exec_wait": "wait", "exec_kill": "kill", "exec_kill_all": "kill_all"}[name],
         "handle": handle,
         "cmd": command_text,
         "seconds": min(seconds, lifetime) if name == "exec" else seconds,

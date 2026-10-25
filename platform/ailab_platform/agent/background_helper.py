@@ -92,6 +92,23 @@ def supervise(payload, directory):
 def control(payload):
     ROOT.mkdir(mode=0o700, exist_ok=True)
     directory = ROOT / payload["handle"]
+    if payload["action"] == "kill_all":
+        # Agent-side lists can contain pruned handles; the lease-local registry is authoritative.
+        killed = 0
+        with (ROOT / "lock").open("w") as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            for candidate in ROOT.glob("*/meta"):
+                if (candidate.parent / "exit").exists():
+                    continue
+                meta = json.loads(candidate.read_text())
+                if alive(meta):
+                    try:
+                        os.killpg(meta["pid"], signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    killed += 1
+                put(candidate.parent / "exit", {"exit_code": -9})
+        return {"ok": True, "running": False, "killed": killed}
     if payload["action"] == "start":
         with (ROOT / "lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)

@@ -543,3 +543,6 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 完整测试前添加GNU coreutils/findutils路径；PG测试 conftest 启动会 DROP/CREATE public，同一个临时业务库不能并发启动第二个pytest（包括不使用DB的定向文件）。本轮环境误启及旧spy断言失败不计入最终验收；以最终单独完整运行计数为准。
 
 - yield=0 也可能在首次读取状态前已经完成，不能因零等待就省略完成后的 stdout/stderr。用延迟身份探针让 `printf quick` 在首次状态读取前完成，修复前稳定丢stdout；修复后仍一次Broker往返并返回完整短命令结果。
+
+- Agent的background_jobs可能累积已被helper淘汰的旧句柄，不能按当前进程cap截取该列表做暂停清理；会漏掉真实活跃进程并在快照期间继续写文件。暂停/完成改用租约内部注册表一次kill_all，按进程身份围栏停止所有保留进程。新增“旧句柄占满前N项”回归修复前稳定失败。
+- 五服务E2E的显式PG数据库不会像后端tests/conftest自动清schema；重跑前重建自己的一次性E2E库。沿用前一轮库会导致answer.md→answer (2).md等重名及预览测试污染，不能把这种失败当产品回归或放宽文件名断言。

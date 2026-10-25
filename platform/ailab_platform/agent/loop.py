@@ -1051,8 +1051,8 @@ class AgentLoop:
         if not turn.lease_id:
             return
         state = self._states[run_id]
-        for handle in state.get("background_jobs", [])[: settings.exec_background_max_jobs]:
-            await background_exec("exec_kill", {"handle": handle}, turn.lease_id, self.broker)
+        if state.get("background_jobs"):
+            await background_exec("exec_kill_all", {}, turn.lease_id, self.broker)
         state["background_jobs"] = []
 
     async def _budget_pause(self, run_id, turn, reason, *, pause=None):
