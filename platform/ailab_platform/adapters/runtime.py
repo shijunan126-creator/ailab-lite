@@ -16,6 +16,7 @@ def fresh_state():
         "tool_log": {},
         "plan": [],
         "artifacts": [],
+        "sources": [],
         "delivered": {},
         "workspace": None,
         "workspace_dirty": False,  # file tools ran since the last saved snapshot
@@ -28,6 +29,7 @@ def restored_state(checkpoint):
     state = deepcopy(checkpoint["state"])
     if state.get("runtime_version") != RUNTIME_VERSION:
         raise ValueError("unsupported runtime checkpoint")
+    state.setdefault("sources", [])  # checkpoints written before sources were persisted
     return state
 
 
