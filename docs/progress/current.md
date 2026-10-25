@@ -1,8 +1,10 @@
 # 当前工作
 
-## 分支模式、标题与手机顶部（2026-10-25，待 CI）
+## 分支模式、标题与手机顶部（2026-10-25，已部署）
 
-用户授权补测试、PR、CI 绿后 squash 合并并保留数据部署；不做付费模型验收。分支 `fix/fork-mode-title-mobile-top`，base `origin/main@a99701b`；产品基线 `045da0b`。已复核工作分支继承模式、标题后缀与手机层叠上下文修复，并补针对性测试。本地 Ruff357文件、相关Python40项、Portal38项/build通过；完整Python/双库/E2E交CI。下一步：PR检查全绿后合并固定head，按个人运维流程备份/解包校验并部署合并main，确认五应用健康。当前尚未合并/部署。[本轮记录](updates/2026-10-25-fork-mode-title-mobile-top.md)。
+[PR #70](https://github.com/shijunan126-creator/ailab-lite/pull/70) 最终8项CI成功后 squash 合入 `main@b961bc2876a8fb544429f656d127ac1be1c6fe21`，已按个人运维流程完整备份、实际解包检查后部署该固定提交。五应用 healthy；迁移0030不变，原六表ID、11份文件哈希及账号/密钥/个人配置保留。按授权不跑本地完整套件、不做付费模型验收；可选390×844浏览器检查未做。
+
+首轮CI `test_library_summary_file_menu_and_switch` 失败：摘要API已done，但文件页15秒内未出现`.lib-summary`；重跑通过。疑似文件页在摘要完成前停止刷新的既有竞态，未修，保留残余风险。当前文档分支 `docs/fork-mobile-deployed`，base `origin/main@b961bc2`；下一步：本小文档PR CI绿后合并，无待部署或自动开启的实现项。[本轮记录](updates/2026-10-25-fork-mode-title-mobile-top.md)。
 
 ## 来源抽屉与新对话返回修复（2026-10-25）
 
