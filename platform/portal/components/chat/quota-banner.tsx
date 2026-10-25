@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { api, Usage, UsageAlert } from "../../lib/api";
+import { api, untilReset, Usage, UsageAlert } from "../../lib/api";
 
 const WINDOW = { daily_tokens: "今日", monthly_tokens: "本月" } as const;
 
@@ -35,7 +35,7 @@ export default function QuotaBanner({ refresh }: { refresh: unknown }) {
   return (
     <div className={`quota-banner ${over ? "over" : ""}`} role="status">
       {over ? `${WINDOW[alert.window]}额度已用完` : `${WINDOW[alert.window]}额度已用 ${Math.min(99, Math.round(window.percent))}%`}
-      <span>{resetsAt(alert.resets_at)} 恢复</span>
+      <span title={resetsAt(alert.resets_at)}>{untilReset(alert.resets_at) || "即将"}恢复</span>
     </div>
   );
 }

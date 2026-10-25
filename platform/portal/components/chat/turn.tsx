@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, downloadUrl, EventItem, Run } from "../../lib/api";
+import { api, downloadUrl, EventItem, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { splitTurn, turnSources, type Source } from "../../lib/work-process";
 import CopyButton from "../copy-button";
@@ -84,6 +84,16 @@ function Ask({ item, live, onAnswer }: { item: Extract<Item, { kind: "ask" }>; l
       ) : null}
     </div>
   );
+}
+
+/** A run paused for quota: how long until it can go on, kept current while it is on screen. */
+function QuotaWait({ pause }: { pause: { window: string; resets_at: string } }) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span className="resume-why" title={new Date(pause.resets_at).toLocaleString("zh-CN", { hour12: false })}>{quotaMessage(pause.window, pause.resets_at, now)}</span>;
 }
 
 const MENU_W = 184;
@@ -229,6 +239,7 @@ export default function Turn({
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
   // kept on the run once it ends; from the stream (or loaded history) until then
   const sources = run.result?.sources?.length ? run.result.sources : turnSources(shown);
+  const quotaPause = run.status === "interrupted" && run.result?.pause?.kind === "quota" ? run.result.pause : null;
   const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
   // what the user added while this answer ran: from the turn itself once it is saved, from the stream until then
   const steered = [...(run.steered || [])];
@@ -298,7 +309,7 @@ export default function Turn({
               <button className="secondary sm" onClick={() => onResume(run)}>
                 继续
               </button>
-              {run.error ? <span className="resume-why">{run.error}</span> : null}
+              {quotaPause ? <QuotaWait pause={quotaPause} /> : run.error ? <span className="resume-why">{run.error}</span> : null}
             </div>
           ) : null}
 
