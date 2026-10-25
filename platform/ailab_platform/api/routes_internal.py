@@ -175,6 +175,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The run, and for a conversation turn: the earlier turns (for the model) and the workspace to restore (for the Broker)."""
     run = _run_or_404(db, run_id)
     out = run_dict(db, run, detail=True)
+    out["budget_window_id"] = (run.runtime_meta or {}).get("budget_window_id", (run.runtime_meta or {}).get("job_id", run.id))
     earlier = _earlier_turns(db, run)
     history = []
     for turn in earlier[-HISTORY_TURNS:]:
@@ -303,6 +304,10 @@ def internal_transition(
         try:
             result = body.result
             if result is not None:
+                # Failure output is partial (for example sources collected before a crash).
+                # Preserve previously saved progress under the same ownership lock.
+                if body.status == RunStatus.FAILED:
+                    result = {**(run.result or {}), **result}
                 result = {**result, "usage_totals": run_usage_totals(db, run_id)}
             run, changed = transition_run(db, run_id, body.status, summary=body.summary, error=body.error, result=result, commit=False)
             if changed:

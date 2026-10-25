@@ -7,7 +7,7 @@ import ts from "typescript";
 // Run the dependency-free browser API module with Node's built-in test runner.
 const source = await readFile(new URL("../lib/api.ts", import.meta.url), "utf8");
 const compiled = ts.transpile(source, { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 });
-const { api, streamRun, filesByIds, archiveUrl } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
+const { api, streamRun, filesByIds, archiveUrl, untilReset, quotaMessage, errorMessage } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 
 test("a successful 204 DELETE has no JSON body", async (t) => {
   t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
@@ -129,4 +129,17 @@ test("empty successful SSE responses also exhaust the reconnect budget and relea
   assert.equal(result, "failed");
   assert.equal(calls, 8);
   assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+});
+
+test("a used-up quota says how long until it resets", () => {
+  const now = Date.parse("2026-10-25T12:00:00Z");
+  assert.equal(untilReset("2026-10-25T12:07:10Z", now), "8 分钟后");
+  assert.equal(untilReset("2026-10-25T15:20:00Z", now), "3 小时 20 分钟后");
+  assert.equal(untilReset("2026-10-25T16:00:00Z", now), "4 小时后");
+  assert.equal(untilReset("2026-10-28T12:00:00Z", now), "3 天后");
+  assert.equal(untilReset("2026-10-25T11:00:00Z", now), "");
+  assert.equal(quotaMessage("daily_tokens", "2026-10-25T15:20:00Z", now), "今日额度已用完，3 小时 20 分钟后恢复");
+  assert.equal(quotaMessage("monthly_tokens", "2026-10-25T11:00:00Z", now), "本月额度已恢复");
+  const refused = errorMessage(new Error('429 {"detail":{"code":"quota_exceeded","window":"daily_tokens","resets_at":"2099-01-01T00:00:00Z"}}'));
+  assert.match(refused, /^今日额度已用完，\d+ 天后恢复$/);
 });

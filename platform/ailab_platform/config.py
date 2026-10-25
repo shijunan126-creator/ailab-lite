@@ -231,10 +231,15 @@ class Settings(BaseSettings):
     skills_dir: Path | None = None
 
     # Agent / run limits
-    max_agent_steps: int = Field(default=20, gt=0)
+    max_agent_steps: int = Field(default=300, ge=1, le=10000)
     run_max_tokens: int = Field(default=2_000_000, gt=0)  # prompt + completion tokens per run
     sandbox_wait_seconds: int = Field(default=300, gt=0)  # how long a run queues for a free sandbox
-    run_timeout_seconds: int = Field(default=900, gt=0)
+    run_timeout_seconds: int = Field(default=900, gt=0)  # legacy title-gate bound; no total Run timeout
+    job_lease_seconds: int = Field(default=300, ge=120, le=900)
+    run_stall_seconds: int = Field(default=1200, ge=601, le=86400)
+    run_max_seconds: int = Field(default=14400, ge=60, le=86400)
+    exec_background_max_jobs: int = Field(default=8, ge=1, le=16)
+    exec_background_log_bytes: int = Field(default=1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_active_runs_per_user: int = Field(default=2, gt=0)
     max_prompt_chars: int = Field(default=8000, gt=0)
     max_personal_templates: int = Field(default=20, ge=1, le=1000)
@@ -290,6 +295,12 @@ class Settings(BaseSettings):
     def agent_slots(self):
         if self.chat_reserved_slots >= self.agent_concurrency:
             raise ValueError("chat_reserved_slots must be less than agent_concurrency")
+        return self
+
+    @model_validator(mode="after")
+    def long_run_limits(self):
+        if self.run_stall_seconds <= max(600, self.llm_total_timeout_seconds or self.llm_timeout_seconds):
+            raise ValueError("run_stall_seconds must exceed single-call and exec deadlines")
         return self
 
     @field_validator("quota_timezone")

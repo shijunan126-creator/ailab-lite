@@ -25,7 +25,8 @@ _NAME_RE = re.compile(r"[^a-zA-Z0-9_.-]")
 # PID 1 is a trusted, isolated supervisor. Exiting stops every process in the PID
 # namespace; Docker --rm then removes the writable layer even if the Broker died.
 EXPIRY_SUPERVISOR = """
-import json, os, sys, time
+import json, os, signal, sys, time
+signal.signal(signal.SIGCHLD, signal.SIG_IGN)
 from datetime import datetime
 deadline, maximum, grace = map(float, sys.argv[1:])
 while time.time() < deadline:
@@ -155,8 +156,8 @@ class DockerSandbox(SandboxProvider):
         proc = _run(args, timeout=timeout + 20)
         return ExecResult(
             exit_code=proc.returncode,
-            stdout=proc.stdout.decode("utf-8", "replace")[-8000:],
-            stderr=proc.stderr.decode("utf-8", "replace")[-8000:],
+            stdout=proc.stdout.decode("utf-8", "replace")[-128000:],
+            stderr=proc.stderr.decode("utf-8", "replace")[-128000:],
             duration_ms=int((time.monotonic() - started) * 1000),
         )
 

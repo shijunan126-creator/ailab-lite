@@ -123,7 +123,9 @@ def get_conversation(
         siblings = siblings_by_parent[run.parent_run_id]
         out["versions"] = {"index": siblings.index(run.id) + 1, "count": len(siblings), "ids": siblings}
         out["result"] = {
-            key: value for key, value in out["result"].items() if key in {"previews", "thinking", "plan", "question", "resumable"}
+            key: value
+            for key, value in out["result"].items()
+            if key in {"previews", "thinking", "plan", "question", "resumable", "sources"}
         }
     from .inbox import pending_query, queue_output
 

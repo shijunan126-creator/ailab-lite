@@ -1,0 +1,236 @@
+# 2026-10-25 长任务与来源集成
+
+授权仅本地实现、测试和提交；不push/PR/merge/deploy，不改Portal行为。固定集成基线`abb4a9f`包括Portal来源面板`aa1b31e`与长任务提示`abb4a9f`、来源后端`41da18f`、长任务后端`8d7762d..a1d2137`。`loop.py`合并冲突已检查：步数耗尽走BudgetPause，正常最终结果保留sources，两者均在。
+
+修复工作树`/Users/michael/.t3/worktrees/ailab-lite/t3-12d66bb9`，实际分支`feat/long-runs-sources-fixes`，base `abb4a9f`，修复提交`b23730e`，consumer契约测试`fe78365`，E2E定位器适配`c7a3290`。指定分支`feat/long-runs-sources`同时在主checkout使用；执行期间主checkout并发提交`1d531fe`，共享分支导致本地旧index呈现反向Portal差异。已隔离回指定基线并保留父任务提交，未提交反向差异、未改Portal产品文件。本轮证据不覆盖`1d531fe`；父任务接收本轮提交后须复核最终树。
+
+## 修复与回归
+
+1. Job续租：正常仍每min(60, lease/3)秒一次；瞬态异常在剩余安全窗口内指数退避，默认15/30/60秒；每次总超时最多10秒，且不越过剩余安全窗口。只有成功响应才更新本地所有权期限，按请求开始时间保守计时；初始期限从claim请求前开始，网络响应时间不授予额外租约。409立即取消工作；持续故障在lease减min(30秒, lease/5)处停止，默认300秒租约在270秒边界停，durable job保留恢复。Fault回归覆盖1/2次503后恢复且超过两轮原始租约仍继续、409、连续503、挂起HTTP调用和claim耗时。
+2. 崩溃结果：API transition在用户锁/attempt fence内对FAILED的部分result与旧run.result合并，后续新值覆盖同名键；错误仍以FAILED、run.error及run.failed事件暴露。真实API+checkpoint+pause+resume+AgentLoop回归分别注入ClientError和RuntimeError，保留旧previews/plan/自定义键与sources，不把崩溃伪装为成功。
+3. 暂停来源：waiting_user、BudgetPause及LeaseInterrupted都传result.sources；API pause在用户锁内合并部分结果。来源仍由原工具/checkpoint路径按URL去重、单工具10条/整轮50条，不增加历史事件回放。回归覆盖三类暂停；原run-sources的token预算“failed”断言更新为ADR0008的interrupted。
+4. 输出契约：单Run与conversation.turns均已有result.sources/run.error，回归验证resumable=true时来源、旧预览和中断原因均可重新读取。无需改Portal或DTO。
+
+## 当前验收
+
+测试命令以本worktree `platform/`为cwd，复用主checkout Python3.12虚拟环境，实际导入本worktree代码；GNU coreutils/findutils PATH。依赖目录使用本地副本/硬链接，Portal由E2E夹具复制同基线源码后运行默认production build。完整日志与JUnit保留在本机`/tmp/ailab-integration-12d6/`，不提交原始业务/测试数据。
+
+| 检查 | 本轮结果 |
+|---|---|
+| Ruff check / format --check | 均通过，347个Python文件 |
+| 定向来源/恢复与心跳 | 来源/恢复18项通过；补充claim计时后心跳6项通过 |
+| 完整SQLite `pytest tests -q` | 1180 passed / 121 skipped / 0 failed，178.417秒；产品基线`fe78365`（与`c7a3290`后端树一致） |
+| 完整PG16+Redis `pytest tests -q` | 1266 passed / 35 skipped / 0 failed，228.406秒；产品基线`c7a3290` |
+| Portal `npm test` / `npm run build` | 37通过/0跳过；E2E独立副本默认production build通过 |
+| 五服务 `AILAB_E2E=1 pytest e2e -q` | 98 passed / 0 skipped / 0 failed，291.365秒；基线`c7a3290` |
+
+SQLite跳过121项为未配置PG/Redis和外部服务契约；PG跳过35项：Docker11、OpenSandbox10、S3 8，ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher锁语义分支各1。没有将跳过计为通过。
+
+隔离PostgreSQL16.15/Redis8.10.2绑定127.0.0.1:35572/36579；PG业务测试库`ailab_test`、迁移库`ailab_migrations`均本任务新建。E2E五服务端口38280–38283/33200、Redis DB13；后端Redis契约DB15。启动前核对端口空闲，启动后核对postgres/redis进程归属。测试后PG以pg_ctl停止、Redis核对pidfile与INFO process_id=14209后关闭，E2E夹具停止五服务；最终35572/36579/38280–38283/33200七个端口均无监听。
+
+失败历史：新增回归在修复前复现8项失败（瞬态续租、持续失败截止和暂停来源），409立即停止原已通过；在只修pause合并后，两类续跑崩溃仍因缺失previews失败，之后修FAILED合并通过。首个定向命令误从仓库根启动，SIGKILL子进程无法导入tests.faults；从platform重跑18项通过。首次全量SQLite因补齐claim耗时边界主动中止，不计最终验收；随后完整运行中的旧consumer测试仍要求一次ConnectionError立即停止，已将其改为真正的409所有权丢失，瞬态容错由新fault测试覆盖。首次完整SQLite为1179通过/1失败/121跳过，PG为1265通过/1失败/35跳过，均仅此旧consumer断言失败；随后按新契约重跑完整双库。首次E2E为94通过/4失败/0跳过，380.350秒，原因均为Portal来源侧栏改版后的旧定位器（关闭预览按钮、preview-tab类和文件预览区域名）；仅修改E2E以当前pane-tab/侧栏/文件关闭按钮及Esc定位，保留焦点、选择、关闭/返回和滚动验收，没有修改Portal产品代码。
+
+## 成本与剩余边界
+
+无新依赖、迁移、查询、轮询或后台任务。健康路径每运行Run每分钟一次已有索引单行续租UPDATE+commit；故障路径默认15/30/60秒退避，只在原lease安全期限内重试，避免API短暂重启重做长任务。API结果合并在原用户锁/事务中完成，CPU与内存随已有result大小线性，来源额外至多50条；不复制大文件或base64输入，也不新增常驻缓存。没有新CPU/RSS/磁盘容量实测，不外推2vCPU/8GiB负载表现。
+
+未验真实模型连续1–4小时、真实Linux/OpenSandbox/Docker sandbox后台exec及目标机cgroup/RSS/长期容量。宿主子进程/SIGKILL与mock五服务证据不能替代这些边界；来源真实外网provider与中断部署演练亦未验。下一步由父任务cherry-pick修复/交接提交、复核最终Portal集成树；发布与真实长期验收另行授权，不自动开始下一路线项。
+
+## 最终整树复核与额度暂停GC修复
+
+此节为最终集成验收，覆盖上文各隔离子分支的结果；上文计数及“等待cherry-pick”均为历史阶段。用户授权本地修复/完整重验/提交，不改Portal，不push/PR/merge/deploy。
+
+### 基线与范围
+
+- 集成分支 `feat/long-runs-sources@0caa73b058bbde291a755fd38c53ce8b9befd101`，共同base `origin/main@09599a03e774983a2bb66202c2376e04ada58e94`；修复分支 `feat/quota-pause-gc`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-59566e53`。起始实际分支名为T3的`t3/59566e53`但HEAD与指定集成head一致，工作树干净，直接从该HEAD创建修复分支。
+- 最终产品/测试提交 `65b47e0`，其父为 `0caa73b`。已包含Portal来源面板/引用入口、Run来源持久化与checkpoint恢复、长任务时间/步数/token预算、后台exec生命周期、短claim续租与故障退避，以及 `30a1fb3`/`b90ffa8` 的额度暂停/HTTP拒绝不重试契约。`0caa73b`为额度交接文档。无需再次接收已包含的历史子分支提交。
+- 测试从本工作树 `platform/`启动，复用主checkout的Python3.12虚拟环境但导入本工作树源码；GNU coreutils/findutils PATH。Portal node_modules为本地硬链接副本，未改Portal源码。测试原始日志/JUnit/EXPLAIN存于本机 `/tmp/ailab-gc-5956/`，不提交运行数据。
+
+### 根因、修复与EXPLAIN
+
+旧GC从对象页提取Run ID再构造IN条件，并对对象页额外list化。核对实现后确认`_page()`本身只取`gc_batch_size`个对象的一页并持久cursor，并非一次遍历所有存储对象；但对象数量驱动SQL参数的耦合不合理，也不应额外物化迭代器。
+
+新实现先按queued/running/waiting_user/interrupted四个非终态状态读取ID/runtime_meta，每页最多`gc_batch_size`，按ID keyset继续，只保留非空checkpoint.workspace.key。然后直接迭代当前对象页，保留精确引用key，旧快照/终态对象继续按原TTL删除。SQL每页最多4个绑定参数（SQLite含LIMIT/OFFSET），与快照数无关；不读prompt/result，不新增模型请求、外部调用或后台任务。
+
+仅已有status索引时，初始10000行EXPLAIN显示SQLite可能为ORDER BY id沿主键遍历终态历史，PG小集合则用status索引后排序。因此新增Alembic `0030`（父0029）创建`ix_runs_status_id(status,id)`，模型同步；升级/降级/再升级保留原Run，全链测试从0021至0030并回退。无新增配置/依赖。
+
+最终EXPLAIN探针为10000 Run（9600终态、四种非终态各100），10000 outbox、1000 checkpoint；四个状态均执行实际等价的`status=:status AND id>:after ORDER BY id LIMIT 100`：
+
+- SQLite：`SEARCH runs USING INDEX ix_runs_status_id (status=? AND id>?)`，无需临时排序。
+- PostgreSQL16.15：每状态`Index Scan using ix_runs_status`，`Index Cond: status=...`，`Filter: id>...`后对至多100个状态匹配行排序；无顺序全表扫描。优化器仍偏好既有更窄索引，未强制指定或禁用seqscan。复合索引提供更大/稀疏集合的有序访问路径，但本次不声称已验生产规模计划。
+- 原waiting/claim/checkpoint-object/checkpoint-GC四项索引探针同时通过。原探针以9850个queued为主，只适用于旧主键IN查询；本轮明确更换为终态历史占多数的GC分布。最初“PG必须选新索引”的过严断言已按实际允许status索引修正，保留原始日志说明，不将其误报业务故障。
+
+两项新增回归以23个暂停Run、页长7及2000个过期对象覆盖：lazy迭代器禁止删除前预读全部对象；eager页则用statement计数约束每条查询参数及LIMIT，二者都验证跨多页精确保护。隔离替换回原`0caa73b`的reaper时两项均失败，修复后通过。定向含额度/TTL/迁移18通过、2个未配置PG跳过；定向初次因迁移链预期漏加0029父节点失败，已修正并重跑，最终全套包含双库升降级。
+
+### 最终完整验证
+
+全部基于产品/测试提交`65b47e0`，此后仅改交接文档；双库均完整运行一次，未以历史计数代替本轮最终树。原始日志与JUnit在上述本机目录。
+
+| 检查 | 最终结果 |
+|---|---|
+| Ruff check / format --check | 通过，350个Python文件 |
+| SQLite `pytest tests -q` | 1194 passed / 122 skipped / 0 failed，182.58秒 |
+| PG16+Redis `pytest tests -q` | 1281 passed / 35 skipped / 0 failed，230.07秒 |
+| `cd portal && npm test && npm run build` | 38 passed / 0 skipped / 0 failed；默认production build通过 |
+| PG16+Redis五服务 `AILAB_E2E=1 pytest e2e -q` | 98 passed / 0 skipped / 0 failed，296.89秒；模型/沙箱为mock |
+| 10000行SQLite与PG16 EXPLAIN | 四种非终态状态查询与四项既有runtime查询索引断言通过 |
+
+完整套件没有失败。SQLite122跳过包括未配置PG/Redis与外部组件；新增0030迁移往返在SQLite通过、PG参数分支在SQLite轮跳过，PG轮通过。PG35跳过：Docker11、OpenSandbox10、S3 8，ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher锁语义分支各1。既有Starlette测试客户端弃用和SQLite表达式索引反射警告保留，未将skip计为通过。E2E独立Portal副本另执行同基线test/build，不代替上表直接命令。
+
+### 成本、清理与剩余验收
+
+每轮GC对象页仍最多`gc_batch_size`（默认100）；metadata临时内存受页长限制，持久到本轮结束的保护集仅含非终态Run引用的key，内存O(被保护key数)，不随历史快照对象总数增长。每状态至少一次有界SELECT，再随该状态Run数按页增长；空存储也会有四个最小查询。数据库索引额外磁盘O(全部Run数)，每次status变化维护一次，迁移建立索引需要扫描历史Run；没有在目标机测索引建立时间/锁影响。保留快照磁盘契约不变，不声称消除大量暂停任务自身的容量开销。
+
+专属PostgreSQL16.15绑定127.0.0.1:35782，Redis8.10.2绑定127.0.0.1:36789；本任务新建data-dir与`ailab_test`/`ailab_migrations`/`ailab_e2e`三个数据库。后端契约Redis DB15，E2E DB13，五服务端口38580–38583/33500。均启动前确认端口空闲，启动后核对监听进程归属。最终E2E夹具停止五服务，Redis核对本轮pidfile与INFO process_id=87845一致后shutdown，PG使用本轮data-dir经pg_ctl fast停止；35782/36789/38580–38583/33500七端口最终均无监听。未停止其他用户进程。
+
+仍未验真实provider连续1–4小时、真实跨日/月额度恢复、真实Linux/OpenSandbox/Docker后台exec与长期快照保留、目标2vCPU/8GiB机器RSS/CPU/磁盘、真实手机键盘/触控。五服务模型/沙箱替身与宿主子进程证据不能代替上述验收；外部服务skip保留。未合并main、未push/PR/merge/deploy。父任务下一步接收本修复分支的产品和文档提交，按独立授权安排真实长期/目标机/手机验收；不自动发布或开始下一路线项。
+
+
+<a id="long-runs-v2"></a>
+
+## 长任务 v2：统一 exec、重复检测与预算简化
+
+授权：以实际 `feat/long-runs-sources@b729c134b92a697a1cfe5a387aed53172c6561f1` 为基线，在独立 `feat/long-runs-v2` 本地实现后端；Portal 交父任务适配，不 push/PR/merge/deploy。上文旧分支 HEAD/路径属于历史验收。
+
+实现：所有 exec 同一 helper、短命令一次 Broker 往返保持独立 stdout/stderr，超 yield 返回句柄；wait 上限300秒、输出增量/idle_seconds、8个句柄/先清理最老已退出项；生命周期受剩余 hard Run budget 约束。持久化工具日志检测相同调用+结果×4、同调用错误×3、AB完整循环×6，提醒一次后继续重复则暂停。用户 steer/手动继续重置，crash 不重置。去掉可刷进展的延期门禁，小时信息自查不发事件；4小时最多3步收尾、300步/token/quota/liveness/续租不变。详细决策、兼容和性能预算见[ADR0008](../../architecture/adr/0008-long-run-budgets-and-leases.md)。
+
+配置：删除 `run_soft_budget_seconds` / `run_review_interval_seconds` 及 `.env.example`/部署配置中的对应变量；Settings `extra="ignore"` 允许旧 `AILAB_*` 继续存在。`exec_background_max_jobs` 默认4→8；字段名及1–16范围不变。旧 checkpoint 的 review/progress 字段恢复时丢弃，不修改 durable invocation 编号。
+
+产品提交：`fe4fc3827c0ab7c3cfc09dfacd7715038383808e`（统一exec/重复检测/预算简化），`217dba7dfef62c960e9cf8265059ffc76909a2d4`（零等待命令已退出时保留stdout/stderr），`763e376f3fa4e193df76082d1d0020e1e3586376`（暂停/完成从租约权威注册表停止全部进程）。最终测试以 `763e376` 为产品/测试基线；本节后续文档提交不改产品。
+
+### 最终工具与事件契约
+
+- `exec(cmd,yield_seconds=30)`：显式yield范围1–120秒；`timeout_seconds`为兼容别名，同范围/语义，显式yield优先。`background:true`兼容为零等待。模型不再需要选择前台/后台，工具schema只展示yield。完成仍返回 `{ok,stdout,stderr,exit_code,duration_ms}`，非零exit的ok=false；一次Broker往返，保留独立stdout/stderr及原4K字符前缀/截断语义。
+- 仍运行的exec返回如下；`output_tail`合并stdout/stderr，是从offset起可保留的最后最多4000字节（UTF-8替换解码）；`total_bytes`为累计字节数，`truncated`表示请求offset之前的输出已被尾部窗口丢弃。
+
+```json
+{
+  "ok": true,
+  "error": "",
+  "handle": "32位小写hex",
+  "running": true,
+  "exit_code": null,
+  "output_tail": "新增输出尾部",
+  "idle_seconds": 2.3,
+  "hint": "命令仍在运行；用 exec_wait 等待并检查输出进展。",
+  "total_bytes": 123,
+  "truncated": false
+}
+```
+
+- `exec_wait(handle,seconds=30,offset=0)`：seconds为0–300整数，退出会提前返回。同一字段集合；完成时 `running=false,exit_code=<int>,hint=""`，其余字段仍给出增量尾部/累计字节/空闲时间。wait/kill的 `ok=true` 表示取得已知状态，命令是否成功须看exit_code。`exec_kill`返回同一观察集合，首次强制终止exit=-9，已退出则保留原exit；句柄保留期间幂等。缺失句柄返回 `{ok:false,running:false,error:"后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}`；cap满返回 `{ok:false,error:"后台命令并发数已达上限，请先等待或终止已有命令"}`。
+- `agent.budget`只有三种kind。nudge为 `{kind:"nudge",reason:"identical_call_result"|"repeated_call_error"|"alternating_call_result"}`；wrap_up为 `{kind:"wrap_up",minutes:<active分钟一位小数>,reason:<中文原因>}`；paused为 `{kind:"paused",minutes:<同上>,reason:<run.error>}`。不再发送soft/extended/extension_minutes，小时自查只注入平台note。
+- 重复操作run.error：`检测到重复操作，已暂停，可继续`；4小时：`已工作4小时，已暂停，可继续`（配置非默认值时替换小时数）；步数：`本轮已完成 300 步，已暂停，可继续`（使用配置值）；liveness：`长时间未收到模型或工具进展，已暂停，可继续`；token：`本轮累计用量已达上限，已暂停；请在新任务中继续`；quota不变：`今日额度已用完，已暂停，额度恢复后可继续` / `本月额度已用完，已暂停，额度恢复后可继续`。均沿用interrupted、auto_resume=false及checkpoint/workspace保留；token耗尽仍不能同Run继续，quota保留原result.pause语义。
+
+### 验收与成本
+
+最终产品/测试基线 `763e376f3fa4e193df76082d1d0020e1e3586376`，本地整树检查：
+
+- Ruff check + format check：352文件通过。
+- SQLite完整 `pytest tests -q`：1211 passed / 122 skipped / 0 failed，195.88秒。
+- PostgreSQL16.15 + Redis8.10.2完整同套：1298 passed / 35 skipped / 0 failed，247.82秒。
+- Portal `npm test`：38 passed / 0 failed；production build通过。Portal源码与起点b729c13相同，最终E2E也从该未改源码构建运行。
+- PostgreSQL16 + Redis五服务E2E：98 passed / 0 skipped / 0 failed，294.18秒；使用mock模型/沙箱。
+- 定向：82 passed，包含旧v1字段恢复、pending工具配对后自查、命令生命周期、快速退出竞态、带旧句柄的全量停止、所有重复模式。
+
+SQLite的122跳过包含48个PG条件项、43个Redis条件项及31个真实外部组件条件项；PG+Redis的35跳过为ClamAV1、public-fetch1、Docker11、OpenSandbox10、OIDC1、真实网络目标1、S3 8，以及memory Redis游标1/SQLite dispatcher竞态1两个不适用项。既有20/19条反射与弃用警告保留，无失败。没有把未配置的外部组件写成通过。
+
+测试组件：独占127.0.0.1:35882/36889，PG业务/迁移/E2E分别使用本任务新建的ailab_test/ailab_migrations/ailab_e2e；后端Redis DB15，E2E DB13。E2E五服务38680–38683/33600。启动前核对端口、进程归属，最终夹具停止五服务；Redis INFO process_id=37232与本轮pidfile一致后shutdown，PG使用本轮data-dir经pg_ctl fast停止；七端口最终均无监听。未清理其他用户服务/业务数据。
+
+红绿证据：在隔离归档的 `b729c13` 上，新“小时自查/旧checkpoint”回归稳定失败（仍保留review_at/progress_marks）；在 `fe4fc38` 上注入200ms身份读取延迟，legacy background=true的printf已退出却丢stdout，新增回归1失败；`217dba7`定向82通过。另一个“旧句柄占满前N项”的暂停回归在旧实现稳定失败，`763e376`改为内部单次kill_all控制（不向模型新增工具/API），按租约注册表清理全部保留进程，定向82通过。其余历史全套及本轮初始中断运行不冒充最终计数。
+
+初次完整检查漏GNU PATH导致macOS stat -c两项失败，随后修正环境；旧恢复spy断言原始命令的7项失败已改为解开helper payload，仍验证不重放/交付幂等。一次额外PG定向启动会按conftest重建同临时schema，因此中断该受扰全套并独立重跑；最终PG全套运行期间未再启动同业务库pytest。首次Portal构建使用共享node_modules软链接触发Turbopack根目录限制，改为本worktree npm ci；旧E2E在62通过/0失败时为锁定最终产品基线主动停止，最终另行整套运行。重跑沿用旧E2E业务库出现文件名`answer (2).md`与预览失败2项，已重建本任务E2E库，最终使用全新数据整套运行；不改Portal/不放宽断言。
+
+宿主macOS最终成本探针（产品763e376，非目标2vCPU容量证据）：10个短true命令一次Broker往返，median327.93ms、max337.01ms，含两次Python启动与至多250ms退出轮询；8个sleep监督进程RSS合计122640KiB，单个15120–15712KiB，不含命令后代；单次kill_all停止8个进程54.58ms。默认8MiB环日志+每句柄约32KiB以内UTF-8流前缀/退出元数据；内部provider响应上限8K→64K字符，模型可见输出不变。无新服务/依赖/数据库查询/迁移；CPU开销为每命令一个Python监督进程，空闲select至多4次/秒，控制wait轮询至多4次/秒（Linux /proc读取，macOS测试使用ps）。
+
+残余边界：没有真实模型连续1–4小时、真实Linux/provider后台进程联合验收或目标2vCPU/8GiB资源/并发验收；本轮mock宿主子进程、PG/Redis与浏览器链路不能替代。Portal由父任务消费nudge/新exec结果，本分支不改UI，现有UI测试通过不能宣称v2新提示已被Portal呈现。重复检测是规范化后的模式检测，不能识别所有语义死循环；无输出的合法长任务可能收到提醒，模型应改变等待方式/检查外部进展。
+
+
+<a id="long-runs-v2-review-fixes"></a>
+
+### v2 审查修复：checkpoint、输出与等待契约
+
+本轮授权以父集成 `feat/long-runs-sources@8a2bfed` 为base，在独立 `feat/long-runs-v2-fixes` 修复；该base已含v2全部提交和Portal `a4fa0b6`。不改Portal，不push/PR/merge/deploy。上文v2计数、4K前缀和“静默等待可能触发提醒”是旧基线历史证据，本节取代相关契约。
+
+修复内容：
+
+- 每次完成工具只存参数/结果规范化SHA256、失败/等待标志与至多4096 UTF-8字节的结果记账（超限仅留ok/compacted和最多500字符error），不再持久化完整参数。检测读取指纹，结果仍有完成标记；模型messages、artifacts、delivered与稳定invocation编号保持原合同。恢复旧raw-arguments日志时计算指纹并压缩已消费结果；无参数v1日志仅压缩结果、不参与检测。旧pending尚未配对到messages的完整结果不提前压缩；未确认exec仍不可重放。
+- exec前台每流保留1000字符head+8000字符tail，中间省略；不足窗口时保持全文。wire JSON保持ensure_ascii=False，每流含省略标记不超过约9050字符；最坏每字符6B转义，两流≤108600B加固定元数据，序列化后UTF-8硬检查≤120000B，provider内部尾截断上限64000→128000字符，因此中文/NUL/四字节字符均保留完整头尾合同，不再为传输缩短尾部。运行中poll仍最多4000字节环日志尾部。没有新增依赖/服务/SQL/迁移；internal transport额外上界64K字符（最坏UTF-8约256KB/流），helper实际响应≤120KB，模型可见输出不随provider上限增加。
+- running=true的exec_wait中断重复后缀，不参与identical/alternating，也不会把等待前后的观察拼接；已完成wait继续检测。4h cap、stall watchdog、token/quota/step预算不变。
+- exec/exec_wait/exec_kill的agent.tool_result新增running布尔值、idle_seconds（无值时null）；running时stdout取output_tail并截2000字符，exit_code仍null；其他原字段不变，不发送handle。
+- 暂停、ask_user、完成只要持有lease就调用权威注册表kill_all，不再依赖Agent background_jobs列表存在。额外成本为每次结束/暂停最多一次有界Broker控制往返。零等待立即退出输出回归保留。
+
+事件形状（非exec工具不新增running/idle_seconds）：
+
+```json
+{"step":0,"name":"exec_wait","ok":true,"running":true,"exit_code":null,"stdout":"最多2000字符output_tail","stderr":"","error":"","idle_seconds":17}
+```
+
+checkpoint合成测量：300步交替write_file(content=100000 ASCII字符)/read_file(content=100000 ASCII字符)，路径按步变化，固定messages上下文21000字符；每步序列化一次完整checkpoint_state，使用UTF-8 JSON（ensure_ascii=False），前后相同上下文。最终30,055,882→106,352 B（约282.6倍缩小），累计300次4,526,564,627→19,171,737 B（约236.1倍减少）。本机Python3.12 tracemalloc测量序列化循环14.020→0.605秒，追踪峰值90,338,096→542,624 B；不是进程RSS或目标机容量/数据库磁盘实测。实际每工具多次checkpoint仍会乘上写入次数，但大payload不再随已完成步数重复写入；messages上下文与快照成本不计入此独立tool_log比较。新增回归固定300步日志上限，不依赖耗时门槛。
+
+红绿：在8a2bfed产品文件上，新增大write日志、运行事件、静默wait及长输出尾部断言均失败；无Agent列表的暂停和完成两项在原kill_all调用条件下也失败。修复后执行最终整树验收。初次定向78通过/1失败仅旧spy断言“整个Run只发一次exec”，现分别验证start和最终kill_all控制请求；恢复spy和SIGKILL故障回归同样区分控制请求，不改变用户命令/交付不重放断言。首次SQLite全套因该故障spy拒绝kill_all出现1失败后中断；一次后续SQLite在收紧128K传输保证时主动中断，早期98项E2E虽通过也不作为最终树验收，后续全部重跑。
+
+产品提交：`2648c91e53ea46ff4fb1d0dff4c189023421217c`（日志、头尾、等待、事件和旧registry清理），`71c1d20b1f15cfd19896324c32847951dfe354d4`（128K transport与极端字符完整尾部保证）；最终测试适配`2bbe9052a4405288fbcc66f3aff4fc1ee157b537`仅修改budget故障fake，不改产品。最终验证如下：
+
+- Ruff check/format：352文件通过；git diff --check通过。
+- `2bbe905`整树SQLite：1221 passed / 122 skipped / 0 failed，170.70秒。
+- `2bbe905`整树PG16.15 + Redis8.10.2：1308 passed / 35 skipped / 0 failed，217.01秒。与SQLite独立进程和数据库；同一PG测试库没有并发pytest。
+- Portal源码始终与base相同：直接npm test 38 passed、npm run build通过；最终E2E独立副本再次38项与production build通过。
+- 最终产品`71c1d20`的PG16+Redis五服务E2E：98 passed / 0 skipped / 0 failed，292.08秒；其后`2bbe905`仅改tests/test_long_runs.py中的fake，E2E测试/夹具和产品文件完全相同，未因该无关单测修改重复E2E。
+- 新transport/旧registry/真实SIGKILL恢复定向24 passed，9.93秒；budget故障fake最终13 passed，0.48秒。最终完整双库包含所有新增/修改回归与原零等待立即完成、交付去重/不可重放测试。
+
+SQLite122/PG35跳过构成与上文v2最终验收相同（外部Docker/OpenSandbox/S3/ClamAV/OIDC/public fetch等未配置，不作为通过）；保留既有20/19条反射/弃用警告。中途检查记录：旧SIGKILL spy拒绝kill_all的首轮SQLite出现1失败后中断；收紧128K合同前的SQLite与之后因Hung fake挂起清理的双库轮次均主动中断，不计为完成。Hung fake现仅挂起用户start、清理正常返回，控制重放测试明确验证wait/kill之后单次kill_all；不放宽用户start/交付不重放断言。
+
+清理：本轮新建PG data-dir与ailab_test/ailab_migrations/ailab_e2e三库，绑定127.0.0.1:35982；Redis36989，后端DB15、E2E DB13。E2E四Python服务38780–38783、Portal33700。最终E2E夹具已停止五服务；Redis INFO process_id=892与本轮pidfile一致后shutdown，PG按本轮data-dir经pg_ctl fast停止；35982/36989/38780–38783/33700七端口最终lsof均无监听。未停止其他用户服务。
+
+原始日志/合成测量脚本与结果在本机 `/tmp/ailab-v2-fixes-70b4/`，不提交原始运行数据。残余边界仍为真实模型1–4h、真实Linux/provider后台进程、目标2vCPU/8GiB并发容量；本轮宿主子进程、mock模型/沙箱与浏览器链路不能替代。Portal源码未改，本轮只补齐后端事件合同，不声明新增UI已实测呈现。
+
+
+<a id="final-real-sandbox-validation"></a>
+
+## 最终快照引用修复与真实沙箱验收（2026-10-25）
+
+本轮 test sub-agent 从集成 `feat/long-runs-sources@a677a5f`（含 review3 `490de63`/`a96cd84`）出发；实际初始分支 `t3/workspace-snapshot-reference`，工作树干净，新建 `feat/long-runs-final`。范围为引用修复、真实 sandbox 与最终整树验收，不改 Portal、不 push/PR/merge/deploy，不接触个人部署、个人数据库或非测试容器。此节取代前面历史阶段的待集成/待真实 sandbox 结论；真实长时模型、容量和手机边界仍保留。
+
+### 根因与红绿
+
+- 新 API 回归先在原代码稳定复现两项失败：pause K1 → resume → checkpoint K2 删除 K1 → FAILED 合并部分结果后，下一轮判断工作区过期、fork 返回422。checkpoint 获胜事务现在同步仍指向 K1 的 result.workspace_key/saved_at/bytes/saved，再写删除意图并提交；未获胜 CAS 不更新也不删除。保持旧对象及时删除，不增加历史快照保留。测试同时走 internal run 与 model-input 两个恢复入口、过期判断，以及 fork 后删除源对象仍可恢复独立副本。GC 继续保护非终态 runtime_meta 最新精确 key；未新增 SQL 或迁移。
+- 首次真实 Docker helper 启动即报 `OSError: [Errno 18] Invalid cross-device link`：workspace→tmpfs rename。改为目标目录临时写入、原子 replace、删除 staging，保留 hash 验证与一次安装复用。
+- 之后真实 SIGKILL supervisor 回归证明 slot 已释放但 sleep 后代仍存活。reaper 改为观察退出 supervisor、清理进程组后回收，Linux 用 WNOWAIT 避免 leader PID 复用；收养的后代亦被回收。新增真实 provider 合同与本机实际子进程回归。macOS ps 身份也排除 Z，避免已完成进程 teardown 的 EPERM；专项最终29项通过。
+- 首次双库全套遇到上述 macOS teardown 错误后主动中止，E2E同步中止；这些轮次不计最终验收。真实 snapshot 探针最初从 /tmp 下载被 provider 路径限制拒绝，修正探针使用 /workspace/.ailab 并从 tar 排除该目录，没有放宽产品路径校验。
+
+### 真实环境与已确认测量
+
+新建专用 Colima `ailab-verify`，aarch64、2 CPU/8 GiB/60 GiB、Docker29.5.2；默认 Docker context 始终 default。CLI 显式 context，OSB SDK 明确同一测试 socket。共享缓存 `/Users/michael/Library/Caches/ailab-final-015c/` 保存日志、隔离配置和 PG；不提交原始运行数据。进程合同镜像 `ailab-final-exec:015c` 基于 python:3.12-slim-trixie，加 procps、uid10001、workspace；不冒充 Office 功能重验。runsc `release-20261019.0` 通过官方完整包 SHA512 校验安装，仅修改新建测试 VM。[官方安装说明](https://gvisor.dev/docs/user_guide/install/)。
+
+| 路径 | 连续 exec | 用时 | 每100次采样 PID / 僵尸 | exec_wait调用 / workspace快照 / 最终存活对象 |
+|---|---:|---:|---|---|
+| Docker/runc | 400 | 209.262s | 5 / 0，四次 | 6 / 2 / 1 |
+| Docker/runsc | 400 | 259.915s | 5 / 0，四次 | 5 / 2 / 1 |
+| OpenSandbox1.1.1/runc + dns+nft | 400 | 1012.291s | 5 / 0，四次 | 2 / 2 / 1 |
+
+三条路径各在同一 lease 顺序运行400命令，PID上限256、采样均远低于64；末尾 tar 和 kill-all 正常。Docker静默 sleep5 经4次 exec_wait 完成；20,009字符原始输出保留 HEAD+TAIL，共9,028字符；命令恰20,000字符（含CJK）正常。exec_kill 清掉4成员进程组，pause使用同一 kill_all 控制后无残留sleep，reaper仍存活；supervisor真实SIGKILL后 exec_wait 返回 running=false/exit=-1，单槽位可启动下一命令，孤儿后代被清理。release 后 inspect 确认资源不存在。snapshot合同通过真实 exec/tar、API checkpoint CAS 和实际存储对象确认：running poll 不产生每次快照，完成时新快照替代旧快照，旧对象实际不存在。
+
+OpenSandbox 使用全新缓存 store.db，server回环38090、端口范围43100–43220、pids_limit256，SDK/server均1.1.1。启动先遇 macOS无setsid、范围不足100端口，两项均仅修正隔离测试启动配置；未启动或读取个人默认store。已完成的额外独立 live sample：5 PID、0 Z，reaper RSS16,936KiB；这不是目标机容量或进程峰值。OpenSandbox连续压力和控制生命周期2项通过（1078.78秒），快照另1项通过；静默命令经2次wait完成，9028字符头尾/20000字符命令/4成员kill-tree/kill-all/真实supervisor SIGKILL/-1退出/单槽重用/reaper存活及release均通过。Docker/runc共3项通过（压力+控制223.88秒、快照10.32秒），Docker/runsc共3项通过（288.51秒），三条真实路径合计9项通过、0失败、0跳过。压测reaper在macOS身份判断修正前启动，但该修正仅影响非Linux分支；Linux产品行为与最终提交一致。
+
+### 最终整树验证与清理
+
+产品/回归提交 `38a71f8999be9419d86a88f3f23225ab2e303027`（父 `a677a5f`）。最终检查的产品源码与该提交逐文件一致；后续只完善文档，不更改产品。Python3.12.11、constraints依赖、GNU coreutils/findutils PATH，从本worktree platform运行。
+
+| 检查 | 最终结果 |
+|---|---|
+| Ruff check / format --check、git diff --check | 通过，355个Python文件 |
+| SQLite完整 `pytest tests -q` | 1248 passed / 132 skipped / 0 failed，退出0 |
+| PG16.15 + Redis8.10.2完整同套 | 1335 passed / 45 skipped / 0 failed，退出0 |
+| Portal直接 `npm test` / `npm run build` | 38 passed / 0 failed；production build通过 |
+| PG16+Redis五服务E2E | 98 passed / 0 skipped / 0 failed，退出0；模型/沙箱为mock |
+| 恢复/分叉定向 | 39 passed；包含新增2项红绿回归 |
+| 后台命令专项 | 29 passed；包括真实宿主SIGKILL及全部原生命周期/输出回归 |
+
+完整双库各收集1380项；pytest重复-q隐藏总计时，通过最终progress逐项标记与退出0核对计数，未把中止轮次或skip当通过。PG45跳过为Docker14、OpenSandbox13、S3 8、host mock真实namespace3，以及ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher分支/可选OTEL SDK各1；SQLite额外87个PG/Redis条件项。相比review3依赖环境，本venv未安装可选OTEL SDK导致额外1跳过。真实exec/snapshot的Docker/OSB合同另行配置后通过；其他未配置外部组合仍明确未验。保留Starlette弃用和SQLite表达式索引反射警告。
+
+Portal E2E独立副本再次执行38项/build，不能代替直接检查。Next自动生成的next-env差异已恢复，Portal源码与a677a5f相同。测试只使用本轮PG data-dir的ailab_test/ailab_migrations/ailab_e2e三库；127.0.0.1:35482/36489，后端RedisDB15，E2EDB13。五服务38880–38883/33800由夹具停止；Redis INFO process_id与本轮pidfile核对为65908后shutdown，PG按本轮data-dir用pg_ctl fast停止，上述七端口已无监听。OSB按本轮PID69938、命令行、独立配置hash及进程组核对后停止；未使用全局osb_down。四个本轮镜像标签已删除；专用Docker system df确认 Images/Containers/Local Volumes/Build Cache全部0。Colima `ailab-verify=Stopped`（13:21:34 UTC+8），保留profile但不保留运行任务；默认Docker context仍为default。最终lsof检查35482/36489/38880–38883/33800/38090及OSB范围43100–43220全部无监听，ps检查本worktree无pytest/五服务/helper存活。未停止其他用户进程或容器，个人部署/数据库未读写。
+
+资源成本：无新依赖、服务、数据库查询或迁移。引用同步只操作已有 result 的几个标量；helper安装额外临时副本仅为小型脚本。reaper每租约一个进程、沿用50ms时钟，跟踪的Popen集合受exec并发上限约束；先清进程组后回收可避免孤儿占用CPU/RSS和槽位。400短exec包含真实provider往返和Python启动，不作为2vCPU整栈吞吐承诺；VM内压力与宿主PG/Redis/模型替身E2E不能证明整栈2vCPU/8GiB容量。
+
+剩余：真实模型连续1–4小时、目标2vCPU/8GiB整栈并发/峰值RSS/延迟、真实手机；未重验Office渲染、ClamAV/S3/OIDC等外部组合、OSB+k8s/gVisor与网络安全全矩阵。保持本地未合并、未部署，下一步由父任务接收最终提交与证据，不自动发布或进入其他路线项。

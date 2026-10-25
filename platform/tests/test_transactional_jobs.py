@@ -298,3 +298,87 @@ def test_worker_scan_exhausted_counter_is_not_repeated_by_redelivery(api, monkey
         queue.enqueue(settings.file_queue, payload)
         main.handle_message(queue, queue.dequeue(settings.file_queue, timeout=0))
     assert counter.value == 1
+
+
+def test_short_claim_renewal_is_token_fenced_and_cannot_revive_expiry(api, monkeypatch):  # noqa: F811
+    monkeypatch.setattr(settings, "run_timeout_seconds", 86400)
+    rid = start(api)
+    first = claim(api, rid)
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, rid)
+        assert (
+            290
+            < (
+                (job.claimed_until.astimezone(UTC) if job.claimed_until.tzinfo else job.claimed_until.replace(tzinfo=UTC))
+                - datetime.now(UTC)
+            ).total_seconds()
+            <= 300
+        )
+        job.claimed_until = datetime.now(UTC) + timedelta(seconds=1)
+        db.commit()
+    assert action(api, rid, "renew", "wrong").status_code == 409
+    assert action(api, rid, "renew", first["token"]).status_code == 200
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, rid)
+        assert (
+            (job.claimed_until.astimezone(UTC) if job.claimed_until.tzinfo else job.claimed_until.replace(tzinfo=UTC)) - datetime.now(UTC)
+        ).total_seconds() > 290
+        assert job.deliveries == 1
+        job.claimed_until = datetime.now(UTC) - timedelta(seconds=1)
+        db.commit()
+    assert action(api, rid, "renew", first["token"]).status_code == 409
+    assert claim(api, rid)["attempt"] == 2
+    assert action(api, rid, "renew", first["token"]).status_code == 409
+
+
+def test_renew_requires_job_service_scope(api, monkeypatch):  # noqa: F811
+    from ailab_platform.ports.service_auth import ServicePrincipal
+    from ailab_platform.service_auth import authenticator
+
+    original = authenticator.authenticate
+    monkeypatch.setattr(
+        authenticator,
+        "authenticate",
+        lambda token: ServicePrincipal("worker", frozenset({"jobs:file"})) if token == "worker" else original(token),
+    )
+    rid = start(api)
+    token = claim(api, rid)["token"]
+    response = api.post(f"/internal/jobs/{rid}/renew", headers={"X-Service-Token": "worker"}, json={"token": token})
+    assert response.status_code == 403
+
+
+def test_budget_pause_exposes_saved_progress_and_resume_starts_new_window(api):  # noqa: F811
+    from ailab_platform.adapters.runtime import fresh_state
+    from tests.test_ledger_protocol import AUTH
+
+    rid = start(api)
+    token = claim(api, rid)["token"]
+    headers = {**SERVICE, "X-Run-Attempt": token}
+    response = api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running", "attempt_id": token})
+    assert response.status_code == 200, response.text
+    state = fresh_state()
+    state["plan"] = [{"id": "a", "title": "未完成", "status": "pending"}]
+    response = api.put(f"/internal/runs/{rid}/checkpoint", headers=headers, json={"expected_step": 0, "state": state})
+    assert response.status_code == 200, response.text
+    reason = "已工作4小时，已暂停，可继续"
+    response = api.post(
+        f"/internal/runs/{rid}/pause",
+        headers=headers,
+        json={
+            "status": "interrupted",
+            "error": reason,
+            "summary": "部分完成",
+            "result": {"workspace_saved": True, "pause": {"kind": "budget"}},
+        },
+    )
+    assert response.status_code == 200, response.text
+    detail = api.get(f"/v1/runs/{rid}", headers=AUTH).json()
+    assert detail["resumable"] and detail["error"] == reason and detail["summary"] == "部分完成"
+    assert detail["result"]["workspace_saved"] and detail["result"]["plan"] == state["plan"]
+    response = api.post(f"/v1/runs/{rid}/resume", headers=AUTH)
+    assert response.status_code == 200, response.text
+    next_window = api.get(f"/internal/runs/{rid}", headers=SERVICE).json()["budget_window_id"]
+    assert next_window != rid
+    assert action(api, rid, "ack", token).status_code == 200
+    with SessionLocal() as db:
+        assert db.get(OutboxMessage, next_window) is not None

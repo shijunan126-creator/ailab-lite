@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from .. import metrics, obs
 from ..catalog import get_catalog
-from ..clients import AsyncPlatformClient
+from ..clients import AsyncPlatformClient, ClientError
 from ..config import settings
 from ..contracts.jobs import JobEnvelope, RunStatus
 from ..deps import metrics_auth
@@ -35,12 +35,57 @@ CONSUMER = f"agent-{socket.gethostname()}-{os.getpid()}"
 
 
 def visibility_seconds() -> int:
-    """How long a run message may stay unacked before another consumer takes it over.
+    """Transport redelivery is independent of run duration; durable claims fence duplicates."""
+    return settings.job_lease_seconds
 
-    Longer than the hard run timeout, so an unacked message always means the
-    consumer died rather than that the run is merely slow.
-    """
-    return settings.run_timeout_seconds + 60
+
+async def _with_job_heartbeat(work, platform, job_id, token, *, lease_started_at=None):
+    async def renew():
+        clock = asyncio.get_running_loop()
+        lease = settings.job_lease_seconds
+        interval = min(60, lease / 3)
+        margin = min(30, lease / 5)
+        # Start conservatively at ownership acquisition; a renew may have committed even
+        # when its response is lost, but only a confirmed response extends our deadline.
+        last_success = clock.time() if lease_started_at is None else lease_started_at
+        delay = interval
+        failures = 0
+        while True:
+            remaining = last_success + lease - margin - clock.time()
+            if remaining <= 0:
+                raise TimeoutError("job renewal safety deadline exceeded")
+            await asyncio.sleep(min(delay, remaining))
+            remaining = last_success + lease - margin - clock.time()
+            if remaining <= 0:
+                raise TimeoutError("job renewal safety deadline exceeded")
+            started = clock.time()
+            try:
+                async with asyncio.timeout(min(10, lease / 6, remaining)):
+                    await platform.job_action(job_id, "renew", token=token)
+            except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status == 409:
+                    raise  # stale ownership must stop immediately, even during an outage
+                failures += 1
+                delay = min(15, interval / 4) * 2 ** min(failures - 1, 4)
+                delay = min(delay, interval)
+                log.warning("job renew failed; retrying within ownership deadline job=%s failures=%d", job_id, failures)
+            else:
+                # The API sets expiry before responding, so response latency is not lease time.
+                last_success = started
+                failures = 0
+                delay = interval
+
+    processing = asyncio.create_task(work)
+    heartbeat = asyncio.create_task(renew())
+    try:
+        done, _ = await asyncio.wait({processing, heartbeat}, return_when=asyncio.FIRST_COMPLETED)
+        if heartbeat in done:
+            await heartbeat
+        await processing
+    finally:
+        processing.cancel()
+        heartbeat.cancel()
+        await asyncio.gather(processing, heartbeat, return_exceptions=True)
 
 
 async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None = None) -> None:
@@ -60,6 +105,7 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
                 raise ValueError("non-run envelope on Agent stream")
             if trace_context is not None:
                 trace_token = trace_context.set(envelope.traceparent)
+            lease_started_at = asyncio.get_running_loop().time()
             claim = await platform.job_action(job_id, "claim", consumer=CONSUMER)
             if claim["state"] != "claimed":
                 await asyncio.to_thread(queue.ack, topic, msg)
@@ -78,7 +124,13 @@ async def handle_message(loop: AgentLoop, queue, msg: Message, topic: str | None
             return
         if loop is None:
             owned_runtime = loop = AgentLoop(platform=platform)
-        await _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token))
+        await _with_job_heartbeat(
+            _handle_message(loop, queue, msg, platform, topic=topic, durable=bool(token)),
+            platform,
+            job_id,
+            token,
+            lease_started_at=lease_started_at,
+        )
         if token:
             state = await platform.get_run_state(msg.payload["run_id"])
             if (
@@ -124,7 +176,7 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
     attempt = int(msg.payload["attempt"]) if durable else max(msg.deliveries, int(msg.payload.get("attempt", 1)))
 
     lock = run_lock_key(run_id)
-    token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.run_timeout_seconds + 30)
+    token = "durable" if durable else await asyncio.to_thread(queue.acquire_lock, lock, settings.job_lease_seconds)
     if token is None:
         log.warning("run %s is already being executed elsewhere; dropping duplicate message", run_id)
         await ack_transport()
@@ -133,15 +185,7 @@ async def _handle_message(loop: AgentLoop, queue, msg: Message, platform, *, top
     log.info("picked run %s (attempt %d)", run_id, attempt)
     try:
         try:
-            await asyncio.wait_for(
-                loop.process(run_id, attempt=attempt, attempt_id=msg.payload.get("attempt_id")), timeout=settings.run_timeout_seconds
-            )
-        except TimeoutError:
-            log.error("run %s hit the %ss timeout", run_id, settings.run_timeout_seconds)
-            try:
-                await platform.set_run_status(run_id, RunStatus.FAILED, error=f"run timeout after {settings.run_timeout_seconds}s")
-            except Exception:
-                log.exception("could not mark timed-out run %s failed", run_id)
+            await loop.process(run_id, attempt=attempt, attempt_id=msg.payload.get("attempt_id"))
         except asyncio.CancelledError:
             # Shutting down (rolling deploy, SIGTERM). Waiting for the visibility timeout would
             # leave the run stalled for ~16 minutes, so hand it to the next agent right away.

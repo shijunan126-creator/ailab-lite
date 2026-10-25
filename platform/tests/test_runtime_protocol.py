@@ -268,3 +268,111 @@ def test_paused_event_stream_delivers_the_question_and_closes(api):  # noqa: F81
     stream = api.get(f"/v1/runs/{rid}/events", headers=AUTH)
     assert "event: agent.ask_user" in stream.text
     assert stream.text.endswith("event: stream.end\ndata: {}\n\n")
+
+
+@pytest.mark.parametrize("reader", ["next_turn", "fork"])
+def test_resumed_crash_restores_latest_workspace_after_superseded_deletion(api, reader):  # noqa: F811
+    conv = api.post("/v1/conversations", headers=AUTH, json={}).json()["id"]
+    response = api.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "work", "mode": "work"})
+    assert response.status_code == 201, response.text
+    rid = response.json()["id"]
+    headers = {**SERVICE, "X-Run-Attempt": claim(api, rid)["token"]}
+    assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    storage = get_storage()
+    old, new = f"workspaces/{rid}/old.tgz", f"workspaces/{rid}/new.tgz"
+    storage.put_bytes(old, b"old archive")
+    storage.put_bytes(new, b"latest archive")
+    state = fresh_state()
+    state["workspace"] = {"key": old, "saved_at": (datetime.now(UTC) - timedelta(days=10)).isoformat(), "bytes": 11}
+    assert save(api, rid, headers, state=state).status_code == 200
+    response = api.post(
+        f"/internal/runs/{rid}/pause",
+        headers=headers,
+        json={
+            "status": "interrupted",
+            "result": {
+                "workspace_saved": True,
+                "workspace_key": old,
+                "workspace_saved_at": state["workspace"]["saved_at"],
+                "workspace_bytes": 11,
+            },
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert api.post(f"/v1/runs/{rid}/resume", headers=AUTH).status_code == 200
+    with SessionLocal() as db:
+        job_id = db.get(Run, rid).runtime_meta["job_id"]
+    headers = {**SERVICE, "X-Run-Attempt": claim(api, job_id)["token"]}
+    assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    state["workspace"] = {"key": new, "saved_at": datetime.now(UTC).isoformat(), "bytes": 14}
+    assert save(api, rid, headers, step=1, state=state).status_code == 200
+    assert not storage.exists(old)
+    response = api.post(
+        f"/internal/runs/{rid}/transition", headers=headers, json={"status": "failed", "error": "crash", "result": {"sources": []}}
+    )
+    assert response.status_code == 200, response.text
+    if reader == "fork":
+        response = api.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": rid, "mode": "work"})
+        assert response.status_code == 201, response.text
+        conv = response.json()["id"]
+        storage.delete(new)  # the fork must own an independent copy
+    response = api.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "continue", "mode": "work"})
+    assert response.status_code == 201, response.text
+    next_id = response.json()["id"]
+    for route in (f"/internal/runs/{next_id}", f"/internal/runs/{next_id}/model-input"):
+        restored = api.get(route, headers=SERVICE).json()
+        assert restored["workspace_expired"] is False
+        assert restored["workspace_restore_key"]
+        assert storage.get_bytes(restored["workspace_restore_key"]) == b"latest archive"
+
+
+def test_superseded_workspace_deletion_waits_for_winning_checkpoint(api):  # noqa: F811
+    from ailab_platform.api.reaper import drain_object_deletions
+    from ailab_platform.models import LifecycleDeletion
+
+    rid, _, headers = owned(api)
+    storage = get_storage()
+    old, new = f"workspaces/{rid}/old.tgz", f"workspaces/{rid}/new.tgz"
+    for key in (old, new):
+        storage.put_bytes(key, b"archive", "application/gzip")
+    state = fresh_state()
+    state["workspace"] = {"key": old}
+    assert save(api, rid, headers, state=state).status_code == 200
+    state["workspace"] = {"key": new}
+    assert save(api, rid, headers, step=0, state=state).status_code == 409
+    with SessionLocal() as db:
+        assert not db.scalar(select(LifecycleDeletion.id).where(LifecycleDeletion.key == old))
+    assert save(api, rid, headers, step=1, state=state).status_code == 200
+    assert not storage.exists(old) and storage.exists(new)
+    with SessionLocal() as db:
+        assert db.scalar(select(LifecycleDeletion.id).where(LifecycleDeletion.key == old))
+        drain_object_deletions(db, storage)
+    assert not storage.exists(old) and storage.exists(new)
+    assert api.get(f"/internal/runs/{rid}/checkpoint", headers=headers).json()["state"]["workspace"]["key"] == new
+
+
+@pytest.mark.parametrize("kind", ["answer", "automatic", "budget"])
+def test_only_explicit_budget_resume_resets_window(api, kind):  # noqa: F811
+    rid, _, headers = owned(api)
+    state = fresh_state()
+    state["budget"] = {"window_id": rid, "active_seconds": 99, "start_step": 0}
+    assert save(api, rid, headers, state=state).status_code == 200
+    if kind == "answer":
+        assert pause(api, rid, headers).status_code == 200
+        response = api.post(f"/v1/runs/{rid}/answer", headers=AUTH, json={"question_id": rid + ":q", "answer": "A"})
+    else:
+        response = api.post(
+            f"/internal/runs/{rid}/pause",
+            headers=headers,
+            json={
+                "status": "interrupted",
+                "auto_resume": kind == "automatic",
+                "result": {"pause": {"kind": "budget"}} if kind == "budget" else {},
+            },
+        )
+        assert response.status_code == 200
+        if kind == "budget":
+            response = api.post(f"/v1/runs/{rid}/resume", headers=AUTH)
+    assert response.status_code in {200, 202}, response.text
+    body = api.get(f"/internal/runs/{rid}", headers=SERVICE).json()
+    assert (body["budget_window_id"] != rid) == (kind == "budget")

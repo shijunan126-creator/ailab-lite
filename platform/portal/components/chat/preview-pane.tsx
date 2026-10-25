@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Preview, previewUrl } from "../../lib/api";
-import { IconDownload } from "../icons";
+import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
+import type { Source } from "../../lib/work-process";
+import { SourcesList } from "./sources";
 
 function Pages({ preview }: { preview: Preview }) {
   const pages = preview.pages || [];
@@ -12,10 +14,18 @@ function Pages({ preview }: { preview: Preview }) {
   return <DocumentPages pages={pages} src={(name) => previewUrl(preview.run_id!, name)} documentKey={`${preview.run_id}:${preview.filename}`} thumbnails />;
 }
 
+export type PaneSources = { runId: string; sources: Source[]; answer: string };
+
+/** The side pane: one tab per previewed file and one for a turn's sources, each closed on its own. */
 export default function PreviewPane({
   previews,
   selected,
   onSelect,
+  onCloseFile,
+  sources,
+  sourcesOn,
+  onSourcesTab,
+  onCloseSources,
   onClose,
   live,
   downloads,
@@ -23,6 +33,11 @@ export default function PreviewPane({
   previews: Preview[];
   selected: string | null;
   onSelect: (filename: string) => void;
+  onCloseFile: (filename: string) => void;
+  sources: PaneSources | null;
+  sourcesOn: boolean;
+  onSourcesTab: () => void;
+  onCloseSources: () => void;
   onClose: () => void;
   live: boolean;
   downloads: Record<string, string>;
@@ -47,7 +62,7 @@ export default function PreviewPane({
       }
     };
     if (mobile) window.addEventListener("popstate", pop);
-    pane.current?.querySelector<HTMLButtonElement>('[aria-label="关闭预览"]')?.focus();
+    pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus();
     window.addEventListener("keydown", key);
     return () => {
       window.removeEventListener("keydown", key);
@@ -57,31 +72,42 @@ export default function PreviewPane({
     };
   }, []);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
-  if (!current) return null;
+  const showSources = !!sources && (sourcesOn || !current);
+  if (!current && !sources) return null;
+  const tab = (key: string, label: string, on: boolean, select: () => void, close: () => void) => (
+    <div key={key} className={`pane-tab ${on ? "on" : ""}`}>
+      <button type="button" className="pane-tab-name" onClick={select} title={label}>{label}</button>
+      <button type="button" className="pane-tab-x" onClick={close} aria-label={`关闭 ${label}`}><IconX size={13} /></button>
+    </div>
+  );
   return (
-    <aside ref={pane} className="preview-pane" aria-label="文件预览">
+    <aside ref={pane} className="preview-pane" aria-label="侧栏">
       <div className="preview-head">
-        <div className="preview-tabs">
-          {previews.map((p) => (
-            <button key={p.filename} className={`preview-tab ${p.filename === current.filename ? "on" : ""}`} onClick={() => onSelect(p.filename)}>
-              {p.filename}
-            </button>
-          ))}
+        <div className="preview-tabs" role="tablist">
+          {previews.map((p) => tab(p.filename, p.filename, !showSources && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
+          {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
         </div>
         <span className="spacer" />
-        {live ? <span className="live on">实时</span> : null}
-        {downloads[current.filename] ? (
-          <a className="btn secondary sm" href={downloads[current.filename]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`}>
-            <IconDownload size={15} />
-          </a>
+        {!showSources && current ? (
+          <>
+            {live ? <span className="live on">实时</span> : null}
+            {downloads[current.filename] ? (
+              <a className="btn secondary sm" href={downloads[current.filename]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`}>
+                <IconDownload size={15} />
+              </a>
+            ) : null}
+          </>
         ) : null}
-        <button className="link" onClick={onClose} aria-label="关闭预览">
-          ✕
-        </button>
       </div>
-      <div className="preview-body" key={current.filename}>
-        {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : null}
-      </div>
+      {showSources ? (
+        <div className="preview-body sources-body" key={`sources-${sources!.runId}`}>
+          <SourcesList sources={sources!.sources} answer={sources!.answer} />
+        </div>
+      ) : current ? (
+        <div className="preview-body" key={current.filename}>
+          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : null}
+        </div>
+      ) : null}
     </aside>
   );
 }

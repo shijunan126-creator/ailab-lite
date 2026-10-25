@@ -58,7 +58,7 @@ def pending_query(conversation_id):
     )
 
 
-def dispatch_next(db, conv):
+def dispatch_next(db, conv, *, raise_admission=False):
     from .routes_runs import start_run
 
     row = db.scalar(pending_query(conv.id).limit(1))
@@ -84,6 +84,8 @@ def dispatch_next(db, conv):
             db.flush()
         return row
     except HTTPException:
+        if raise_admission:
+            raise
         conv.queue_paused = True
         return None
 

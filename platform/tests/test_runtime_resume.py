@@ -4,6 +4,7 @@ and keeps one delivery identity per file. Also: lease loss, waiting for an answe
 from __future__ import annotations
 
 import asyncio
+import json
 
 import pytest
 
@@ -13,6 +14,7 @@ from ailab_platform.clients import ClientError
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMResponse, ToolCall
 from ailab_platform.runtime_context import delivery_id_var
+from tests.runtime_fakes import background_request
 from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
 
 TERMINAL = {"succeeded", "failed", "canceled"}
@@ -50,7 +52,7 @@ def test_resume_rechecks_budget_before_pending_tools(monkeypatch):
     assert broker.leases == 0
     assert llm.seen_messages == []
     assert platform.statuses[-1][0] == "failed"
-    assert "token limit" in platform.statuses[-1][1]["error"]
+    assert "累计用量已达上限" in platform.statuses[-1][1]["error"]
 
 
 class SandboxSpy(FakeBroker):
@@ -78,12 +80,18 @@ class SandboxSpy(FakeBroker):
         def write():
             self.files[path] = data
 
-        self._step("write", write)
+        if path.startswith("/workspace/.ailab-"):
+            write()
+        else:
+            self._step("write", write)
 
     async def exec(self, lease_id, cmd, timeout=None):
+        if background_request(self, cmd)["action"] == "kill_all":
+            return {"exit_code": 0, "stdout": json.dumps({"ok": True, "running": False, "killed": 0})}
+
         def run():
-            self.execs.append(cmd)
-            return {"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1}
+            self.execs.append(background_request(self, cmd)["cmd"])
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1})}
 
         return self._step("exec", run)
 
@@ -119,7 +127,9 @@ def test_a_killed_agent_resumes_without_repeating_or_losing_work(crash_at, when)
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt=2, attempt_id="att_2"))
 
     assert platform.statuses[-1][0] == "succeeded"
-    assert broker.files == {"/workspace/outputs/a.md": b"a"}  # writes are idempotent overwrites
+    assert {p: data for p, data in broker.files.items() if not p.startswith("/workspace/.ailab-")} == {
+        "/workspace/outputs/a.md": b"a"
+    }  # writes are idempotent overwrites
     state = platform.checkpoint["state"]
     assert {call_id: rec["name"] for call_id, rec in state["tool_log"].items()} == {
         "0:0": "write_file",
@@ -157,7 +167,7 @@ def test_a_lost_lease_interrupts_the_run_and_hands_it_to_the_next_attempt(monkey
 
         async def exec(self, lease_id, cmd, timeout=None):
             await asyncio.sleep(5)  # a long command: the heartbeat notices the loss while it runs
-            return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     platform = FakePlatform()
     llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])
@@ -183,7 +193,7 @@ def test_transient_renewal_failures_do_not_cost_the_lease(monkeypatch):
                 await asyncio.sleep(0.005)
                 if failures["left"] == 0:
                     break
-            return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     platform = FakePlatform()
     llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])
@@ -236,7 +246,8 @@ def test_an_answer_resumes_the_question_it_was_given_for_and_only_that_one():
     run(2)
     # The first question was answered; the second was never answered, so the run must pause again, not reuse "A".
     assert platform.paused["question"]["question_id"] == "run_1:1:0"
-    assert platform.checkpoint["state"]["tool_log"]["0:0"]["result"] == {"ok": True, "answer": "A"}
+    assert platform.checkpoint["state"]["tool_log"]["0:0"]["result"] == {"ok": True, "compacted": True}
+    assert any('"answer": "A"' in str(m.get("content")) for m in platform.checkpoint["state"]["messages"])
     assert "answer" not in platform.checkpoint["state"]
 
 

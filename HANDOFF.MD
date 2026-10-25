@@ -1,5 +1,23 @@
 # HANDOFF
 
+## 2026-10-25 长任务最终真实沙箱验收
+
+- 删除同 Run 被替代的 workspace 前，同一 checkpoint 事务也必须更新仍指向该对象的 `result.workspace_*`。暂停结果会跨 resume 保留，FAILED 又合并部分 result；只改 runtime_meta 会被旧 result 遮蔽，造成下一轮误过期、restore 或 Work fork 指向已删对象。fork 必须复制为新 Run 自有对象；GC 继续保护当前非终态 runtime_meta 的精确 key。
+- Docker 的 `/tmp` 是独立 tmpfs。helper 从 `/workspace` 直接 `Path.replace` 到 `/tmp` 在真实容器报 EXDEV；先验证内容，再在目标目录写临时文件并原子替换，最后删除 staging。宿主 mock 的同盘目录无法覆盖这个边界。
+- subreaper 只忽略 SIGCHLD 能回收僵尸，却不能停止被 SIGKILL/OOM 监督进程留下的活后代。helper reaper 使用 SIGCHLD 默认处理；Linux `waitid(WNOWAIT)` 保留已退出 leader 的 PID，先杀该进程组，再 waitpid 回收；继续回收收养的孤儿，避免 PID 复用竞态。Docker expiry PID 1 仍使用 SIGCHLD=SIG_IGN。macOS 身份检查也须拒绝 ps 的 Z 状态，否则清理会把僵尸误判存活并报 EPERM。
+- 专用 Colima 用 `--activate=false`，Docker 测试的 CLI shim 强制 `--context colima-ailab-verify`，SDK 单独指定同一测试 socket；共享目录用用户缓存目录，不用宿主 /tmp。OpenSandbox 1.1.1 在 macOS 需要 setsid；测试只在缓存目录提供包装器，配置独立 store.db、dns+nft、回环端口和至少100端口的分配范围，绝不沿用个人默认 store。共享宿主不要运行全局pgrep的osb_down.sh；按本轮pidfile、命令行与配置hash核对后仅停止自己的PID。新 runsc 已改为完整 gvisor tarball，按官方 SHA512 校验，不能只装旧单文件；guest 缺 bzip2 时在宿主解包后复制完整目录。详见[最终验收](docs/progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)。
+
+## 2026-10-25 额度暂停
+
+- 用户日/月额度的429发生在模型reserve之前，不是上游模型故障；只在reserve接缝识别 `detail.code=quota_exceeded`，转为独立BudgetPause子类。不要把所有429都当额度暂停，也不要让它触发重试、fallback或LLM失败计数。标题推理仍独立best-effort，不能因标题额度失败暂停已成功回答。
+- 普通预算暂停会自动交付outputs leftovers；额度暂停必须跳过额外交付，仅保存checkpoint、workspace和已有预览/产物/计划/来源。API合并部分result时必须主动清掉旧pause；成功继续在同一事务清除，后续其他暂停即使省略result也清除。
+- 手动queue/resume须透传准入429 detail；自动终态派发则在savepoint拒绝后保持队列暂停，不能把预期额度失败回滚为前一Run失败。
+- 月额度重置可能晚于72小时中断取消与3天workspace TTL：额度暂停的waiting_since作为取消宽限期起点取max(now,resets_at)，GC按有界对象页通过Run主键批查runtime_meta，保留live Run引用的精确checkpoint快照。只保护当前快照，终态/替代快照恢复TTL；独立GC测试须给collector绑定自己的DB factory，不能查全局未初始化或其他测试库。详见[本轮记录](docs/progress/updates/2026-10-25-quota-pause.md)。
+
+## 2026-10-25 Run 网页来源
+
+- `agent.tool_result.sources` 是单次工具的事件数据，不能当作重开会话的持久结果；来源与工具完成记录同 checkpoint 保存，终态写 `run.result.sources`，会话详情还需放行该键。旧 checkpoint 缺键须默认空列表；每次工具最多10条、整轮 URL 去重并保留首次顺序最多50条。waiting_user、预算与租约中断暂停也须写 result.sources；API在用户锁内合并暂停及失败的部分result，避免续跑后崩溃抹掉已保存的预览/计划。续跑仍从checkpoint恢复。见[交付记录](docs/progress/updates/2026-10-25-run-sources.md)。
+
 ## 2026-10-25 真实沙箱验收
 
 - OpenSandbox server 1.1.1示例的egress DNS-only模式不能拦字面IP，即使SDK请求default_action=deny。Docker侧车模式必须用dns+nft，并先用正常非root容器证明TCP/UDP/ICMP目标可达，再从沙箱测阻断；不要把仅DNS失败写成完整断网。
@@ -499,3 +517,58 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 模板API的 `preview_status` 独立于模板 `status`；ready模板可立即选择，preview pending继续跟踪至终态，不通过thumbnail_url格式猜测状态。关闭个人菜单仅保留所选pending模板的可用性检查。轮询取消/超时/截止与失败保留草图见[修复记录](docs/progress/updates/2026-10-24-template-preview-refresh.md)。
 - E2E的health探针不能证明进程归属：SSH转发也可能占用测试端口并返回healthy。启动前核对API/Broker/Agent/Worker/Portal全部端口空闲，不能只检查Redis。首次28080/23000占用导致登录401，改用38180–38183/33100；勿终止已有SSH转发。
+
+## 2026-10-25 长任务与续租
+
+- 不要用 Run 时长作 claim/visibility TTL；延长任务必须独立续租。renew 只接受未过期的原 token；409立即停止，瞬态失败须有界重试，仅成功响应延长本地截止，持续故障在lease安全边界前停止并保留durable job。claim/renew响应耗时不能加到所有权期限。预算暂停用 pause/checkpoint，不能先 set_status(interrupted) 绕过安全快照检查。
+- 手动继续时须注入新窗口提示，解除 checkpoint 中旧收尾提示；有 pending tool 时先记待注入标志，等工具结果配对后再注入，不能在 assistant/tool 中间插用户消息。
+- 时间/步数窗口使用独立 budget_window_id：crash、lease自动恢复和ask_user回答延续原窗口，仅用户明确继续预算类暂停才重置（第三轮修正旧job_id设计）。原有 next_step/tool_log invocation 编号不归零，否则交付去重和不可重放工具会撞号。累计 tokens/quota 永不随时间续跑重置。
+- 新增原始输入引用时只保存 messages 索引；复制包含 base64 图片的 user_message 到 checkpoint 顶层会绕过 checkpoint_state 的图片引用转换。本轮已有 OCR 体积回归抓到并修正。
+- PG 返回带 Asia/Hong_Kong offset 的时间时必须 astimezone(UTC)，不能 replace(tzinfo=UTC)；后者在租约测试中凭空增加8小时。fault dispatcher 断言须停用测试 API 的后台 dispatcher，避免其先发布导致手动 dispatch 返回0；不能把竞态当恢复失败。
+- 后台 exec 句柄只对当前沙箱有效，控制文件不进入 workspace 快照。暂停/完成先停止追踪的后台命令再强制快照；恢复不得把旧PID当新任务进程。真实 Linux/provider 与宿主子进程证据须分开记录，见[长任务记录](docs/progress/updates/2026-10-25-long-runs.md)。
+
+
+## 2026-10-25 长任务来源集成回归
+
+- 同一分支不能由两个worktree并发提交。强制共享checkout会在另一处推进HEAD时让本地旧index看起来是反向暂存；立即隔离到原基线的新分支，不能提交这些反向差异。此次父checkout推进`1d531fe`，修复隔离为`feat/long-runs-sources-fixes`，Portal未改；父任务应cherry-pick修复。
+- 完整Python测试须从本worktree的`platform/`启动；从仓库根运行会让SIGKILL子进程找不到`tests.faults`，不是业务恢复失败。集成来源测试的旧“token预算耗尽=failed”断言须更新为ADR0008的可继续interrupted，同时检查暂停结果来源；不能按旧分支各自绿推断合并后绿。
+- 来源tab合入后，预览侧栏的区域名为“侧栏”，文件tab为`.pane-tab`，关闭按钮按文件名（如“关闭 sales.xlsx”）；选中文件名用`.pane-tab.on .pane-tab-name`，整栏可用Esc关闭。E2E不能沿用旧`.preview-tab`/“文件预览”/全局“关闭预览”定位，也不能改产品来迁就旧定位器。此次首轮4项E2E失败均由此导致，详见[集成记录](docs/progress/updates/2026-10-25-long-runs-sources.md)。
+
+
+## 2026-10-25 Workspace GC 的保护集与分页
+
+- GC保护关系应从非终态Run的checkpoint工作区key推导，不能从快照对象列表反推一个IN参数/对象；这会让SQL变量数量随存储增长。仅分页读取ID/runtime_meta并保留非空精确key，再逐项消费有界对象页。
+- `_page()`实际每轮仅返回一个`gc_batch_size`页并保存cursor，并非遍历整个存储；仍不要额外list化或为该页构造IN查询。新增回归分别用lazy迭代器抓预读取、用2000对象/SQL参数计数抓快照数量耦合，并以23个暂停Run/页长7检查跨页保护。
+- keyset分页不等于数据库一定高效：仅status索引时SQLite可能为ORDER BY id沿主键扫终态历史；0030增加(status,id)。10000行EXPLAIN中SQLite复合索引双条件范围扫描，PG16对每状态100行选择已有status索引+排序，均无顺序全表扫描。计划选择依赖分布，不强制PG使用某一个索引。详见[最终集成复核](docs/progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。
+
+
+## 2026-10-25 长任务 v2
+
+- exec 不能靠模型预判 background；短命令同一个 Broker 调用等待 helper 结束，长命令交回句柄。stdout/stderr 必须保留独立语义。控制 JSON 可能因转义超过原 provider 8K 上限，内部提升至64K，模型输出仍各4K字符/轮询尾部4KB；大中文+控制字符回归不能只用不截断的假 transport。
+- 小时自查/收尾提示必须等 pending assistant/tool 配对后再注入；v1 checkpoint 的 review_at/progress_marks 不再是门禁。重复检测必须读 durable tool_log，不依赖会被压缩的 messages；只让真实 steer/人工继续重置窗口，crash 与平台提示不能重置。正常 exec_wait 的 total_bytes/output_tail 变化必须参与比较，idle/duration 不应掩盖重复。
+- MockSandbox 也要把 helper 的 /tmp/ailab-background 映射到自身 sandbox 根，避免宿主不同租约共享句柄/上限。真实Linux /proc围栏与mock宿主ps证据仍分开报告。
+- 完整测试前添加GNU coreutils/findutils路径；PG测试 conftest 启动会 DROP/CREATE public，同一个临时业务库不能并发启动第二个pytest（包括不使用DB的定向文件）。本轮环境误启及旧spy断言失败不计入最终验收；以最终单独完整运行计数为准。
+
+- yield=0 也可能在首次读取状态前已经完成，不能因零等待就省略完成后的 stdout/stderr。用延迟身份探针让 `printf quick` 在首次状态读取前完成，修复前稳定丢stdout；修复后仍一次Broker往返并返回完整短命令结果。
+
+- Agent的background_jobs可能累积已被helper淘汰的旧句柄，不能按当前进程cap截取该列表做暂停清理；会漏掉真实活跃进程并在快照期间继续写文件。暂停/完成改用租约内部注册表一次kill_all，按进程身份围栏停止所有保留进程。新增“旧句柄占满前N项”回归修复前稳定失败。
+- 五服务E2E的显式PG数据库不会像后端tests/conftest自动清schema；重跑前重建自己的一次性E2E库。沿用前一轮库会导致answer.md→answer (2).md等重名及预览测试污染，不能把这种失败当产品回归或放宽文件名断言。
+
+
+## 2026-10-25 长任务 v2 审查修复
+
+- 持久化重复检测只需规范化参数/结果指纹。不要把 write_file 内容、exec脚本或 read_file 全文复制进每次重写的 tool_log；已消费结果可压缩为有界记账，但保留 result 完成标记、未确认 exec 的 started 标记和独立交付去重。旧 pending 结果尚未配对进 messages，不能提前压缩；没有参数的 v1日志不能虚构调用身份参与检测。
+- 长命令仍 running 的 exec_wait 是等待，不是重复操作；必须中断 identical/alternating 后缀，不能过滤后把等待两侧的旧观察拼成假循环。已结束 wait 仍参与检测。
+- exec stdout/stderr 需要头部与错误尾部。JSON 协议上限要按序列化后 UTF-8 字节验算，中文、四字节字符和 NUL 转义分别测试；每流1000字符头+8000字符尾（另有省略标记），最坏每字符转义6B，两流约108.6KB；helper序列化后UTF-8须≤120000B，provider内部尾截断上限128000字符。不能等provider截断JSON，也不能为了64KB上限削掉约定的8000字符尾部。
+- kill_all 的权威来源是租约内注册表，调用本身也不能以 Agent checkpoint 的 background_jobs 非空为条件。旧 checkpoint 没有该列表也须在暂停/完成快照前清理；控制请求不应计入测试spy的用户exec执行/故障编号。
+
+
+## 2026-10-25 长任务第三轮独立审查
+
+- **PID 1必须回收退出子进程。** Docker expiry supervisor设SIGCHLD=SIG_IGN；helper每租约一个常驻父进程回收supervisor，Linux启用PR_SET_CHILD_SUBREAPER接住孤儿后代，不依赖OpenSandbox未知PID 1。supervisor自身须恢复SIGCHLD默认行为，否则child.wait可能丢失真实exit code。/proc身份除了starttime还必须拒绝Z；无exit文件但已死的supervisor须失败并可淘汰，不能永久占住8个句柄槽。
+- helper/请求内联在Broker命令里会把20,000字符预算吃掉；改为hash校验的每租约安装和一次性JSON请求文件。Mock原来的路径替换只覆盖内联cmd，文件payload也必须映射/workspace、skills和tools，否则宿主回归会全部“完成”却没有文件。真实provider不使用Mock映射。
+- running exec_wait不是文件变更。完成wait首次确认才保存；存在运行中后台进程时，快照不能清掉可能继续变动的标记。新checkpoint CAS提交之后才能删除旧工作区key；删除意图与CAS同事务，提交后尝试删除、GC重试，不删除最新durable引用。原0030保护集与有界分页保留。
+- 4KiB以下结果也会跨续跑窗口累积超4MiB。已消费日志只保留身份指纹/完成状态；pending结果和started非重放围栏不能提前删。必须独立验算checkpoint JSON UTF-8字节数；超限写有界冻结记录并暂停，不能让413把任务变成FAILED，也不能恢复执行被省略的paid/pending内容。压缩后仍超阈值就暂停，不能每步付费重压。
+- budget_window_id与job_id不是同一个概念。只有用户明确继续budget/stall/loop/quota暂停才新窗口；回答ask_user和lease自动恢复只换job。便宜的/run/state必须仍返回真实job_id，否则Agent队列消费会错认所有权。累计token cap不可继续，使用FAILED终态释放会话；日/月额度继续保留quota暂停。步数总结须和out_of_steps_done一起持久化。
+- 清理错误不能把已完成回答或预算暂停改成FAILED；kill-all日志警告，最终释放租约。最终验收基线、红绿、资源成本和真实Docker不可用边界见[第三轮记录](docs/progress/updates/2026-10-25-long-runs-review3.md)。
+- Playwright Python 的 `page.wait_for_function("async ... => ...")` 不会等待异步谓词：返回的 Promise 本身为真，第一次求值就放行（PR #59 CI 中 ask_user E2E 因此在 Run 尚为 running 时断言）。等 API 状态用 Python 侧带截止时间的轮询（见 `e2e/test_ask_user_ui.py::_wait_status`），回答文字出现早于 Run 终态是正常顺序。

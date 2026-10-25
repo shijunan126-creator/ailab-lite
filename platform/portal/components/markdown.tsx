@@ -3,6 +3,7 @@
 import { Fragment, ReactNode } from "react";
 import CopyButton from "./copy-button";
 import FileCite from "./file-cite";
+import { urlKey, type Source } from "../lib/work-process";
 
 const BARE_URL = /https?:\/\/[^\s<>()[\]{}"'，。、；：！？（）《》「」]+[^\s<>()[\]{}"'，。、；：！？（）《》「」.,;:!?]/;
 
@@ -18,7 +19,10 @@ function shortUrl(url: string): string {
   }
 }
 
-function inline(text: string, key = "i"): ReactNode[] {
+/** Web pages the turn read, by address: a link to one of them is a citation. */
+type Cites = Map<string, Source> | undefined;
+
+function inline(text: string, key = "i", cites?: Cites): ReactNode[] {
   const out: ReactNode[] = [];
   const re = new RegExp(
     String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
@@ -31,8 +35,8 @@ function inline(text: string, key = "i"): ReactNode[] {
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${n++}`;
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
-    else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k)}</strong>);
-    else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k)}</em>);
+    else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k, cites)}</strong>);
+    else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k, cites)}</em>);
     else if (m[4] && m[5].startsWith("ailab-file://")) {
       // a library file the answer quotes: its name and page, opening the file at that page
       const label = m[4].slice(1, m[4].indexOf("](")).trim();
@@ -40,11 +44,19 @@ function inline(text: string, key = "i"): ReactNode[] {
       out.push(cite ? <FileCite key={k} fileId={cite[1]} page={cite[2] ? Number(cite[2]) : undefined} label={label} /> : label);
     } else if (m[4]) {
       const label = m[4].slice(1, m[4].indexOf("](")).trim();
+      const source = cites?.get(urlKey(m[5]));
       // [1](url) is a citation: a small numbered mark, the page on hover
       const cite = /^\[?\d{1,2}\]?$/.test(label);
-      out.push(
+      if (source && !cite) {
+        // a page the turn read, cited after a claim: a small pill named as the answer names it
+        out.push(
+          <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className="md-src" title={source.title || m[5]}>
+            {label}
+          </a>
+        );
+      } else out.push(
         <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]}>
-          {cite ? label.replace(/[[\]]/g, "") : inline(label, k)}
+          {cite ? label.replace(/[[\]]/g, "") : inline(label, k, cites)}
         </a>
       );
     } else if (m[6]) {
@@ -64,7 +76,8 @@ function cells(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-export default function Markdown({ text, streaming }: { text: string; streaming?: boolean }) {
+export default function Markdown({ text, streaming, sources }: { text: string; streaming?: boolean; sources?: Source[] }) {
+  const cites: Cites = sources?.length ? new Map(sources.map((s) => [urlKey(s.url), s])) : undefined;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
   let i = 0;
@@ -101,7 +114,7 @@ export default function Markdown({ text, streaming }: { text: string; streaming?
     if (h) {
       const level = Math.min(4, h[1].length + 1);
       const Tag = `h${level}` as "h2" | "h3" | "h4" | "h5";
-      blocks.push(<Tag key={k}>{inline(h[2], k)}</Tag>);
+      blocks.push(<Tag key={k}>{inline(h[2], k, cites)}</Tag>);
       i++;
       continue;
     }
@@ -113,7 +126,7 @@ export default function Markdown({ text, streaming }: { text: string; streaming?
     if (line.startsWith(">")) {
       const body: string[] = [];
       while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-      blocks.push(<blockquote key={k}>{inline(body.join(" "), k)}</blockquote>);
+      blocks.push(<blockquote key={k}>{inline(body.join(" "), k, cites)}</blockquote>);
       continue;
     }
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
@@ -125,11 +138,11 @@ export default function Markdown({ text, streaming }: { text: string; streaming?
         <div key={k} className="md-table">
           <table>
             <thead>
-              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`)}</th>)}</tr>
+              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites)}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`)}</td>)}</tr>
+                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`, cites)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -146,7 +159,7 @@ export default function Markdown({ text, streaming }: { text: string; streaming?
         const nested = m[1].length >= 2;
         items.push(
           <li key={items.length} className={nested ? "nested" : undefined}>
-            {inline(m[3], `${k}l${items.length}`)}
+            {inline(m[3], `${k}l${items.length}`, cites)}
           </li>
         );
         i++;
@@ -162,7 +175,7 @@ export default function Markdown({ text, streaming }: { text: string; streaming?
         {para.map((l, j) => (
           <Fragment key={j}>
             {j ? <br /> : null}
-            {inline(l, `${k}p${j}`)}
+            {inline(l, `${k}p${j}`, cites)}
           </Fragment>
         ))}
       </p>

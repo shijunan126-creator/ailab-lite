@@ -589,3 +589,18 @@ def test_inbox_queue_upgrade_downgrade_upgrade(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_workspace_gc_status_cursor_index_round_trip(engine):
+    _upgrade_to(engine, "0029")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0030")
+    with engine.connect() as conn:
+        indexes = {index["name"]: index["column_names"] for index in inspect(conn).get_indexes("runs")}
+        assert indexes["ix_runs_status_id"] == ["status", "id"]
+    _downgrade_to(engine, "0029")
+    with engine.connect() as conn:
+        assert "ix_runs_status_id" not in {index["name"] for index in inspect(conn).get_indexes("runs")}
+        assert conn.scalar(text("SELECT prompt FROM runs WHERE id='r1'")) == "p"
+    _upgrade_to(engine, "0030")

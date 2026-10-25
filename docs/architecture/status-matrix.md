@@ -1,5 +1,13 @@
 # 单机能力状态
 
+2026-10-25 来源与长任务最终验收：集成`feat/long-runs-sources@a677a5f`，最终`feat/long-runs-final@38a71f8`。来源面板/Run来源、v2预算/续租/统一exec/重复检测、额度暂停和review3已集成；补齐checkpoint/result快照引用原子同步、真实tmpfs helper安装、SIGKILL监督进程的孤儿组清理。Docker/runc、Docker/runsc、OpenSandbox/runc+dns+nft各400次exec：209.262/259.915/1012.291秒，四次采样均5 PID/0 Z；真实合同共9项通过。SQLite1248/132跳过、PG+Redis1335/45跳过、Portal38/build、E2E98/0跳过及Ruff通过。精确边界/清理见[最终记录](../progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)；未合并/未部署，真实1–4小时模型、整栈目标容量、手机仍待验。
+
+2026-10-25 长任务v2审查修复：`feat/long-runs-v2-fixes`基于集成`8a2bfed`（含Portal `a4fa0b6`），补齐有界checkpoint日志/旧格式恢复、exec头尾与传输字节预算、静默wait排除、运行状态事件和无Agent句柄列表时的租约全量清理。本地验收及残余边界见[统一记录](../progress/updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)；不代表真实长时模型、目标机容量或上线验收。
+
+2026-10-25 最终来源/长任务集成：`feat/long-runs-sources@0caa73b` + `feat/quota-pause-gc@65b47e0`，base `origin/main@09599a0`。来源面板/Run来源、长任务预算/租约/后台exec与日/月额度暂停已集成，本地全套最终复核见[统一交接](../progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。GC非终态保护集keyset分页、0030(status,id)索引，精确引用快照保留；真实1–4小时模型、真实sandbox后台exec、目标机RSS与真机手机待验。未合入main/未部署；下文子分支“未集成”均为历史阶段。
+
+2026-10-25 Run 来源持久化：`feat/run-sources@41da18f` 本地实现整轮网页来源去重/50条上限、checkpoint恢复、终态结果与详情输出；未集成Portal或合入main，验证边界见[交付记录](../progress/updates/2026-10-25-run-sources.md)。
+
 2026-10-25真实沙箱补验（PR #54已合并main `a646ba3`，未部署）：真实Docker/runsc 9项、OpenSandbox/runc+dns+nft 9项、PG16+Redis+OpenSandbox五服务浏览器7项通过，均0跳过；SQLite/PG全Python1178/1224通过（跳过81/35）。head `16245a7` 的8项CI全通过。修复Docker到期竞态与OpenSandbox DNS-only字面IP绕过，模型/扫描仍为测试替身，不能推导Kubernetes/gVisor或付费模型联合验收。见[本轮记录](../progress/updates/2026-10-25-real-sandbox-acceptance.md)。
 
 2026-10-25 单机全量审查：已实现恢复前预算复核、0029调用部门快照、详情批量读取、历史版本精确查找、完整已确认插话和Portal异步生命周期修复；本地SQLite1170/PG1216/E2E98及Portal35/build通过（跳过/覆盖率/基线见交付），[PR #49](https://github.com/shijunan126-creator/ailab-lite/pull/49) head `0dc2884` 八项检查全部通过，已squash合入main `d11f86e`，合并树与测试head一致；未部署。范围与实测成本见[审查](../reviews/2026-10-25-single-node-review.md)，以[交付记录](../progress/updates/2026-10-25-single-node-review.md)的最终检查head和验收边界为准。下文旧状态保留历史证据，不能覆盖本条。
@@ -32,7 +40,7 @@
 | T04 真实扫描与隔离解析 | 完成（原生 ARM64 ClamAV 已验收） | 见“文件” |
 | T05 服务认证与授权 | 完成（静态凭据适配器） | 见“安全” |
 | T06 Broker 持久租约与对账 | 完成（Agent续租已接入） | 见“沙箱” |
-| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、心跳、attempt栅栏与稳定交付；后续真实OSB/Docker恢复与进程SIGKILL已验，见[最终修复验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
+| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、attempt栅栏与稳定交付；长任务短claim续租、活跃预算/无进展暂停、后台exec和本轮上下文压缩已本地双库验收，瞬态续租容错、暂停来源与失败结果保留已集成，统一验收见[来源/长任务集成](../progress/updates/2026-10-25-long-runs-sources.md)；真实Linux Docker/runc+runsc与OpenSandbox/runc后台进程已验，真实长时模型/整栈容量/手机待验，见[最终记录](../progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)；原后端证据见[长任务](../progress/updates/2026-10-25-long-runs.md)。既有真实OSB/Docker恢复与SIGKILL历史证据见[验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
 | T08 单机调度隔离 | 已实现，本地验收 | Chat/Work固定有界分槽，暂停释放槽，回答/恢复重查准入，同会话串行；真实模型容量未验 |
 | T09 事务副作用与重试 | 已实现，本地验收 | Run/文件/预览/缩略图/OCR/续跑经持久任务信封与claim/ACK；全业务attempt栅栏在T07接通，SIGTERM/Redis丢失与双库回归通过 |
 | T10 单实例契约测试 | 完成（真实 MinIO 已验收） | 见“运维” |
@@ -55,7 +63,7 @@
 | 能力 | 实现 | 未验收 |
 |---|---|---|
 | 调用级账本（T01） | 每次模型调用先预留、后结算：`call_id` 唯一、结算幂等、定价快照（模型倍率、缓存折扣、policy_version）冻结、金额为整数 milli；断流记 `estimated`，API 不可达时预留过期转 `unreconciled`，晚到结算原行修正。账本不引用 runs，对话被清除后用量仍在。对账 CLI：`ops.reconcile_usage` | 上游是否严格遵守 `max_tokens`、模型专用 tokenizer、网关侧对账 |
-| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`。Run 内 Token 预算保持软上限（ADR 0001） | — |
+| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`（本轮保持UTC）。中途reserve额度拒绝保存并人工可续跑暂停，恢复准入保留结构化429，暂停元数据及月度快照保留见[额度暂停](../progress/updates/2026-10-25-quota-pause.md)。Run累计token cap使用FAILED终态并要求新任务，释放会话；日/月额度仍可暂停继续（ADR 0008第三轮修正） | — |
 | 额度策略 | 用户策略 → 部门策略 → 默认策略 → settings，统一经 `quota.user_limits` 用于 Token、资料库空间、并发 Run、用量摘要 | — |
 | 用量提醒 | `/v1/usage` 返回各窗口 used/reserved/percent/resets_at 与 80%/100% 告警；Portal 输入框上方显示提醒 | — |
 

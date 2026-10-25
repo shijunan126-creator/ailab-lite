@@ -81,7 +81,7 @@ def _claim_locked(db, job, body):
     job_id = job.id
     now = datetime.now(UTC)
     token = uuid4().hex
-    ttl = settings.run_timeout_seconds + settings.drain_seconds + 60 if job.payload["kind"] == "run" else 660
+    ttl = settings.job_lease_seconds if job.payload["kind"] == "run" else 660
     won = db.execute(
         update(OutboxMessage)
         .execution_options(synchronize_session=False)
@@ -175,6 +175,30 @@ def _claim_locked(db, job, body):
     db.commit()
     # attempt counts deliveries of this job, so a continuation after an answer starts at 1 and only a re-claim after a death is > 1
     return {"state": "claimed", "token": token, "attempt": job.deliveries, "attempt_id": token if envelope.kind == "run" else None}
+
+
+@router.post("/{job_id}/renew")
+def renew_job(
+    job_id: str,
+    body: FinishIn,
+    principal: ServicePrincipal = Depends(require_scope("jobs:run", "jobs:file")),
+    db: Session = Depends(get_db),
+):
+    job = _job(db, job_id, principal)
+    if job is None:
+        raise HTTPException(409, "stale_claim")
+    now = datetime.now(UTC)
+    ttl = settings.job_lease_seconds if job.payload["kind"] == "run" else 660
+    won = db.execute(
+        update(OutboxMessage)
+        .where(OutboxMessage.id == job_id, OutboxMessage.claim_token == body.token, OutboxMessage.claimed_until > now)
+        .values(claimed_until=now + timedelta(seconds=ttl), next_attempt_at=now + timedelta(seconds=ttl))
+        .execution_options(synchronize_session=False)
+    ).rowcount
+    if not won:
+        raise HTTPException(409, "stale_claim")
+    db.commit()
+    return {"ok": True}
 
 
 @router.post("/{job_id}/ack")

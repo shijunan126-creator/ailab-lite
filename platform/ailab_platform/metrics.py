@@ -69,6 +69,8 @@ KNOWN_TOOLS = frozenset(
         "read_file",
         "write_file",
         "exec",
+        "exec_wait",
+        "exec_kill",
         "deliver_file",
         "finish",
         "search_library",

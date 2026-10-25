@@ -39,7 +39,12 @@ export type Run = {
   input_files?: { file_id: string; filename: string }[];
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   template?: { name: string; source: "template" | "file" } | null;
-  result?: { previews?: Preview[]; [key: string]: any };
+  result?: {
+    previews?: Preview[];
+    sources?: { title: string; url: string; site: string }[];
+    pause?: { kind: "quota"; window: "daily_tokens" | "monthly_tokens"; resets_at: string }; // why an interrupted run rests
+    [key: string]: any;
+  };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
   retry_of?: string | null; // the turn this one regenerated
@@ -341,6 +346,24 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await resp.json()) as T;
 }
 
+const QUOTA_WINDOW: Record<string, string> = { daily_tokens: "今日", monthly_tokens: "本月" };
+
+/** "8 分钟后", "3 小时 20 分钟后", "2 天后": how long until a quota window starts over; "" once it has. */
+export function untilReset(resetsAt: string, now = Date.now()): string {
+  const ms = new Date(resetsAt).getTime() - now;
+  if (Number.isNaN(ms) || ms <= 0) return "";
+  const minutes = Math.ceil(ms / 60000);
+  if (minutes < 60) return `${minutes} 分钟后`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return minutes % 60 ? `${hours} 小时 ${minutes % 60} 分钟后` : `${hours} 小时后`;
+  return `${Math.round(hours / 24)} 天后`;
+}
+
+export function quotaMessage(window: string, resetsAt: string, now = Date.now()): string {
+  const left = untilReset(resetsAt, now);
+  return left ? `${QUOTA_WINDOW[window] || ""}额度已用完，${left}恢复` : `${QUOTA_WINDOW[window] || ""}额度已恢复`;
+}
+
 /** The parsed `detail` of a failed API call, or null when the error is not an API response. */
 function errorDetail(err: unknown): any {
   const text = String((err as any)?.message || err || "");
@@ -359,6 +382,7 @@ export function errorMessage(err: unknown): string {
   const detail = errorDetail(err);
   if (detail === null) return text;
   if (typeof detail === "string" && detail) return detail;
+  if (detail?.code === "quota_exceeded" && detail.resets_at) return quotaMessage(detail.window, detail.resets_at);
   if (typeof detail?.message === "string" && detail.message) return detail.message; // {"code", "message"} errors
   if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
   const m = /^(\d{3}) ([\s\S]*)$/.exec(text);
