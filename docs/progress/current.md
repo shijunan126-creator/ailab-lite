@@ -1,5 +1,9 @@
 # 当前工作
 
+## 分支模式、标题与手机顶部（2026-10-25，待 CI）
+
+用户授权补测试、PR、CI 绿后 squash 合并并保留数据部署；不做付费模型验收。分支 `fix/fork-mode-title-mobile-top`，base `origin/main@a99701b`；产品基线 `045da0b`。已复核工作分支继承模式、标题后缀与手机层叠上下文修复，并补针对性测试。本地 Ruff357文件、相关Python40项、Portal38项/build通过；完整Python/双库/E2E交CI。下一步：PR检查全绿后合并固定head，按个人运维流程备份/解包校验并部署合并main，确认五应用健康。当前尚未合并/部署。[本轮记录](updates/2026-10-25-fork-mode-title-mobile-top.md)。
+
 ## 来源抽屉与新对话返回修复（2026-10-25）
 
 [PR #68](https://github.com/shijunan126-creator/ailab-lite/pull/68) 已在远端选中检查全部成功后 squash 合入 `main@c7c93e6`，并按个人运维流程备份、解包校验后部署该固定提交。五应用 healthy；原六表 ID、10份文件哈希保留，SQLite 0030/quick_check正常/FK0。Portal本地38项测试/build通过；按授权不跑本地Ruff/Python/E2E，CI Python/storage-contracts由范围选择器跳过。不做付费模型验收，可选手机浏览器抽屉/真机手势未验。当前文档分支 `docs/sources-swipe-deployed`，base `origin/main@c7c93e6`；本轮无待部署/待实现项，不启动其他路线。详见[本轮更新](updates/2026-10-25-sources-sheet-swipe.md)。旧PDF“部署前”小节已过时。

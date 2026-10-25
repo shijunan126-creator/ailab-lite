@@ -55,7 +55,7 @@ def test_fork_copies_history_artifacts_usage_summary_and_independent_objects():
         response = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": first, "mode": "work"})
         assert response.status_code == 201, response.text
         fork = response.json()
-        assert fork["forked_from"] == {"conversation_id": conv["id"], "run_id": first}
+        assert fork["forked_from"] == {"conversation_id": conv["id"], "run_id": first, "mode": "work"}
         detail = c.get(f"/v1/conversations/{fork['id']}", headers=AUTH).json()
         copied = detail["turns"][0]
         assert len(detail["turns"]) == 1 and copied["usage"]["prompt_tokens"] == 20
@@ -270,7 +270,7 @@ def test_retry_and_titled_fork_do_not_request_another_title():
         conv, turns = create(c)
         c.patch(f"/v1/conversations/{conv['id']}", headers=AUTH, json={"title": "已有标题"})
         fork = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[0]["id"], "mode": "chat"}).json()
-        assert fork["title"] == "已有标题"
+        assert fork["title"] == "已有标题 · 分支"
         fork_run = c.post(f"/v1/conversations/{fork['id']}/messages", headers=AUTH, json={"prompt": "next"}).json()
         retry = c.post(f"/v1/runs/{turns[0]['id']}/retry", headers=AUTH, json={}).json()
         for run in (fork_run, retry):
@@ -325,3 +325,35 @@ def test_title_cas_between_terminal_poll_reads_cannot_be_lost_at_stream_end(monk
         late, _, pending = _poll_events(rid, events[-1][0])
         assert injected and not pending
         assert late[-1][1:] == ("conversation.titled", {"conversation_id": conv["id"], "title": "竞态标题"})
+
+
+@pytest.mark.parametrize(
+    ("source_title", "first_title", "expected"),
+    [("原标题", "首轮", "原标题 · 分支"), ("", "首轮", "首轮 · 分支"), ("", "", ""), ("长" * 199, "首轮", ("长" * 199 + " · 分支")[:200])],
+)
+def test_fork_title_uses_conversation_then_first_turn_and_preserves_empty(source_title, first_title, expected):
+    with TestClient(app) as c:
+        conv, turns = create(c)
+        with SessionLocal() as db:
+            db.get(Conversation, conv["id"]).title = source_title
+            db.get(Run, turns[0]["id"]).title = first_title
+            db.commit()
+        response = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[0]["id"], "mode": "chat"})
+        assert response.status_code == 201, response.text
+        assert response.json()["title"] == expected
+
+
+def test_work_branch_of_chat_history_cannot_fork_back_to_chat():
+    with TestClient(app) as c:
+        conv, turns = create(c, ("chat", "chat"))
+        response = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": turns[-1]["id"], "mode": "work"})
+        assert response.status_code == 201, response.text
+        fork = response.json()
+        assert fork["forked_from"]["mode"] == "work"
+        detail = c.get(f"/v1/conversations/{fork['id']}", headers=AUTH).json()
+        assert detail["forked_from"]["mode"] == "work"
+        assert all(turn["options"]["mode"] == "chat" for turn in detail["turns"])
+        for turn in detail["turns"]:
+            url = f"/v1/conversations/{fork['id']}/fork"
+            assert c.post(url, headers=AUTH, json={"run_id": turn["id"], "mode": "chat"}).status_code == 422
+            assert c.post(url, headers=AUTH, json={"run_id": turn["id"], "mode": "work"}).status_code == 201
