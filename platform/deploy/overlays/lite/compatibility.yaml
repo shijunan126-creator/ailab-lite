@@ -32,6 +32,10 @@ data:
   AILAB_DATABASE_URL: sqlite:////data/platform.db
   AILAB_OSB_DOMAIN: 127.0.0.1:8090
   AILAB_OSB_NETWORK_MODE: kubernetes
+  # A sandbox pod requests this whole value, and the lite target is a 2-vCPU node where the
+  # platform pods leave ~800m allocatable: at the 1-CPU default the scheduler can never place
+  # one ("Insufficient cpu"), so every sandbox-acquire 502s after a 60s pod-ready timeout.
+  AILAB_SANDBOX_CPU: "0.75"
 ---
 apiVersion: apps/v1
 kind: StatefulSet
