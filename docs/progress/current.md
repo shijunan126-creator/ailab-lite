@@ -8,6 +8,14 @@
 - 后端（Codex，独立worktree）：`feat/run-sources`（来源持久化到 `run.result.sources`）与 `feat/long-runs`（步数改为防失控上限、可续租job租约、停滞看门狗、活跃工时软预算+有进展才自动延长、硬上限后以可继续的 interrupted 收尾、后台exec+exec_wait/exec_kill）。
 - 下一步：收两份Codex报告→审查→Portal接入新事件/工具名与中文提示→合并到一个集成分支并全量验证。未授权PR/合并/部署。
 
+## 长任务后端（2026-10-25，本地提交与验收完成，交父任务集成）
+
+分支 `feat/long-runs`，base `09599a03e774983a2bb66202c2376e04ada58e94`。产品提交 `8d7762d`（短claim续租）、`4a96642`（预算暂停/后台命令/本轮上下文压缩）、`a1d2137`（人工续跑解除旧收尾指令）。用户授权仅后端、本地提交；Portal diff为空，无推送/PR/合并/部署或迁移。下方历史发布授权不适用于本轮。
+
+- 固定产品提交 `a1d21379aef0a14d4a39f8b838244b59089a50fe`：Ruff345；完整SQLite1162通过/121跳过、PG16+Redis1248通过/35跳过，均0失败。Portal隔离源码副本35 tests/default production build通过。独占PG/Redis已停止，两端口无监听。
+- max_agent_steps=300，job_lease_seconds=300并每60秒续租；stall=1200秒、soft=3600秒、review=1800秒、max=14400秒。预算在步骤边界有界收尾后 interrupted+resumable；同job crash保留窗口，新job人工续跑重置时间/步数而不重置2M累计token/quota。新增agent.budget、exec_wait、exec_kill与exec(background=true)，精确字段/中文原因/成本/失败历史见[本轮记录](updates/2026-10-25-long-runs.md)，设计见[ADR0008](../architecture/adr/0008-long-run-budgets-and-leases.md)。
+- 下一步由父任务集成Portal标签、budget事件和保存结果，并安排真实Linux沙箱后台命令/慢模型长时验收。本轮未验证真实provider连续1–4小时、多服务E2E或容器RSS；宿主子进程/SIGKILL checkpoint证据与这些边界分开。无待实现后端项，不自动发布或启动其他路线项。
+
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
 用户要求确认项目能否实际跑通，重点补足真实OpenSandbox验证。分支 `verify/real-sandbox-acceptance`，base `origin/main@9cfadfa`（已含PR #46/#49/#51）。允许隔离测试与必要修复；不替换现有部署、不迁移个人业务库、不清理现有服务/数据。

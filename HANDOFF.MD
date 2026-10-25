@@ -503,3 +503,12 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 模板API的 `preview_status` 独立于模板 `status`；ready模板可立即选择，preview pending继续跟踪至终态，不通过thumbnail_url格式猜测状态。关闭个人菜单仅保留所选pending模板的可用性检查。轮询取消/超时/截止与失败保留草图见[修复记录](docs/progress/updates/2026-10-24-template-preview-refresh.md)。
 - E2E的health探针不能证明进程归属：SSH转发也可能占用测试端口并返回healthy。启动前核对API/Broker/Agent/Worker/Portal全部端口空闲，不能只检查Redis。首次28080/23000占用导致登录401，改用38180–38183/33100；勿终止已有SSH转发。
+
+## 2026-10-25 长任务与续租
+
+- 不要用 Run 时长作 claim/visibility TTL；延长任务必须独立续租。renew 只接受未过期的原 token，失败应停止执行且保留 durable job。预算暂停用 pause/checkpoint，不能先 set_status(interrupted) 绕过安全快照检查。
+- 手动继续时须注入新窗口提示，解除 checkpoint 中旧收尾提示；有 pending tool 时先记待注入标志，等工具结果配对后再注入，不能在 assistant/tool 中间插用户消息。
+- 时间/步数窗口以 durable job_id 标识：同 job 的 crash 延续原窗口，人工 resume/answer 新 job 才重置。原有 next_step/tool_log invocation 编号不归零，否则交付去重和不可重放工具会撞号。累计 tokens/quota 永不随时间续跑重置。
+- 新增原始输入引用时只保存 messages 索引；复制包含 base64 图片的 user_message 到 checkpoint 顶层会绕过 checkpoint_state 的图片引用转换。本轮已有 OCR 体积回归抓到并修正。
+- PG 返回带 Asia/Hong_Kong offset 的时间时必须 astimezone(UTC)，不能 replace(tzinfo=UTC)；后者在租约测试中凭空增加8小时。fault dispatcher 断言须停用测试 API 的后台 dispatcher，避免其先发布导致手动 dispatch 返回0；不能把竞态当恢复失败。
+- 后台 exec 句柄只对当前沙箱有效，控制文件不进入 workspace 快照。暂停/完成先停止追踪的后台命令再强制快照；恢复不得把旧PID当新任务进程。真实 Linux/provider 与宿主子进程证据须分开记录，见[长任务记录](docs/progress/updates/2026-10-25-long-runs.md)。

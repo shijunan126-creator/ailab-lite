@@ -126,6 +126,8 @@ class PauseIn(BaseModel):
     question: dict | None = None
     error: str = Field(default="", max_length=2000)
     auto_resume: bool = False
+    summary: str | None = Field(default=None, max_length=200000)
+    result: dict | None = None
 
 
 def queue_continuation(db, run):
@@ -163,7 +165,7 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             meta.update(question={**q, "created_at": datetime.now(UTC).isoformat()}, answer=None)
             append_event(db, run.id, "agent.ask_user", q, commit=False)
         run.runtime_meta = meta
-        transition_run(db, run.id, body.status, error=body.error, commit=False)
+        transition_run(db, run.id, body.status, error=body.error, summary=body.summary, result=body.result, commit=False)
         db.execute(
             update(RunAttempt)
             .where(RunAttempt.id == x_run_attempt, RunAttempt.ended_at.is_(None))
@@ -184,6 +186,9 @@ class AnswerIn(BaseModel):
 def _admit_continuation(db, run):
     """The paused run released its slot; continuing acquires one under the same user lock as creation."""
     quota.enforce_token_quota(db, run.user_id)
+    usage = quota.run_usage_totals(db, run.id)
+    if usage["prompt_tokens"] + usage["completion_tokens"] >= settings.run_max_tokens:
+        raise HTTPException(409, "本轮累计用量已达上限，请在新任务中继续")
     active = db.scalar(select(func.count()).select_from(Run).where(Run.user_id == run.user_id, Run.status.in_(RunStatus.ACTIVE)))
     if active >= quota.user_limits(db, run.user_id).max_concurrent_runs:
         raise HTTPException(429, "too many active runs for this user")

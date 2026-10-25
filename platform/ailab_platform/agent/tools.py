@@ -15,6 +15,7 @@ from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools
+from .background_exec import background_exec
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
 
@@ -63,11 +64,13 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "exec",
-            "description": "在沙箱内执行 shell 命令，返回 stdout/stderr/exit_code。",
+            "description": "在沙箱内执行 shell 命令。长构建或下载用 background=true，返回句柄；"
+            "用 exec_wait 监测输出进展，仅确认停滞时 exec_kill。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "cmd": {"type": "string"},
+                    "background": {"type": "boolean", "default": False},
                     "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 600},
                 },
                 "required": ["cmd"],
@@ -90,6 +93,30 @@ TOOLS: list[dict] = [
         },
     },
 ]
+
+for _name, _description in (
+    ("exec_wait", "等待后台命令，返回新增输出尾部、累计输出字节、是否运行和退出码。传上次 total_bytes 为 offset；先监测进展。"),
+    ("exec_kill", "终止确认无进展的后台命令及其子进程；可安全重复调用。"),
+):
+    TOOLS.append(
+        {
+            "type": "function",
+            "function": {
+                "name": _name,
+                "description": _description,
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "handle": {"type": "string"},
+                        "seconds": {"type": "integer", "minimum": 0, "maximum": 600},
+                        "offset": {"type": "integer", "minimum": 0},
+                    },
+                    "required": ["handle"],
+                },
+            },
+        }
+    )
+
 
 ASK_USER = {
     "type": "function",
@@ -201,6 +228,8 @@ SANDBOX_TOOLS = {
     "read_file",
     "write_file",
     "exec",
+    "exec_wait",
+    "exec_kill",
     "deliver_file",
     "search_images",
     "load_skill",
@@ -355,6 +384,13 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             return await net_tools.save_skill(args, ctx.run_id, lease_id, broker, ctx.platform)
     except net_tools.NetToolError as exc:
         raise ToolError(str(exc)) from exc
+    if name in {"exec_wait", "exec_kill"} or (name == "exec" and args.get("background") is True):
+        if name == "exec" and not str(args.get("cmd") or args.get("command") or "").strip():
+            raise ToolError("exec requires cmd")
+        try:
+            return await background_exec(name, args, lease_id, broker)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
     if name == "exec":
         cmd = str(args.get("cmd") or args.get("command") or "").strip()  # models sometimes say "command"
         if not cmd:

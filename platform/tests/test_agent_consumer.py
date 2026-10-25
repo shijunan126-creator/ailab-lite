@@ -106,13 +106,16 @@ def test_redelivered_job_reports_the_attempt_the_claim_counted(env) -> None:
     assert loop.calls == [("run_1", 2, "tok_2")]
 
 
-def test_timeout_fails_the_run_and_acks(env) -> None:
+def test_old_total_timeout_no_longer_kills_active_run(env) -> None:
     q, msg = env
-    _handle(FakeLoop("hang"), q, msg)
-    assert FakePlatform.statuses[-1][:2] == ("run_1", "failed")
-    assert "timeout" in FakePlatform.statuses[-1][2]["error"]
+
+    class Slow(FakeLoop):
+        async def process(self, *args, **kwargs):
+            await asyncio.sleep(1.1)  # exceeds the legacy 1-second setting
+
+    _handle(Slow(), q, msg)
+    assert FakePlatform.statuses == []
     assert _actions("ack") == [("run_1", {"token": "tok_1"})]
-    assert q.outstanding(settings.run_queue) == []
 
 
 def test_unexpected_crash_fails_the_run_and_acks(env) -> None:
@@ -183,3 +186,29 @@ def test_sigterm_cancels_the_consumer_at_once_and_keeps_uvicorns_handler(monkeyp
 
     asyncio.run(scenario())
     assert calls == ["uvicorn"]
+
+
+def test_live_job_is_renewed_on_short_clock_and_failure_stops_unfenced_work(env, monkeypatch):
+    q, msg = env
+    monkeypatch.setattr(settings, "job_lease_seconds", 0.03)
+    canceled = []
+
+    class RenewalFailure(FakePlatform):
+        async def job_action(self, job_id, action, **body):
+            await super().job_action(job_id, action, **body)
+            if action == "renew" and len(_actions("renew")) == 2:
+                raise ConnectionError("API unavailable")
+            return dict(self.claim) if action == "claim" else {"ok": True}
+
+    class Working(FakeLoop):
+        async def process(self, *args, **kwargs):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                canceled.append(True)
+
+    monkeypatch.setattr(agent_main, "AsyncPlatformClient", RenewalFailure)
+    with pytest.raises(ConnectionError):
+        _handle(Working(), q, msg)
+    assert len(_actions("renew")) == 2 and canceled
+    assert not _actions("ack") and FakePlatform.statuses == []
