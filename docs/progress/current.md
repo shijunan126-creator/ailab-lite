@@ -1,5 +1,10 @@
 # 当前工作
 
+## 来源抽屉与新对话返回修复（2026-10-25）
+
+用户授权 `fix/sources-sheet-swipe`（base `origin/main@d5b4fa6`）推送、PR、CI全绿后squash合并并保留数据部署。产品提交 `a48a164` / `c433cd5`；本地Portal 38项测试及production build通过，按授权不跑本地Ruff/Python/E2E、不做付费模型验收。下一步：推送PR，CI全绿后合并，再按个人运维流程备份并部署固定main、核对五应用健康。记录见[本轮更新](updates/2026-10-25-sources-sheet-swipe.md)。历史部署状态以最新个人运维记录为准，下方PDF“部署前”小节已过时。
+
+
 ## PDF 分享入口部署前修复（2026-10-25）
 
 用户授权重新部署。PR #64 已合并至 `main@99fd678`，但 E2E 仍点击已移除菜单项而失败；本轮 `fix/share-pdf-e2e` 从该 main 修复测试路径，并保留打印全部选定分支内容的断言。部署尚未切换，原应用运行；已构建并核对固定源码，不将失败版本上线。下一步：修复 PR 全绿后合并，再部署固定合并版本、备份/校验数据并验证分享/PDF。详见[本轮记录](updates/2026-10-25-share-pdf-deploy.md)。

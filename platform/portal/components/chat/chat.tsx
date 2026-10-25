@@ -340,7 +340,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         cacheConversation({ ...created, turns: [run], previews: [], has_more: false });
         conversationsChanged();
         if (projectId) projectsChanged();
-        router.push(`/c/${convId}`);
+        // the blank new-chat page becomes this conversation, so Back leaves it rather than returning to an empty composer;
+        // a project's page is a page of its own and stays behind it
+        if (projectId) router.push(`/c/${convId}`);
+        else router.replace(`/c/${convId}`);
         return true;
       }
       setDetail((d) => (d ? { ...d, turns: [...d.turns, run] } : d));
