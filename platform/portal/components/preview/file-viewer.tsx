@@ -7,6 +7,7 @@ import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, Ic
 import { askHref } from "../library/file-menu";
 import ShareDialog from "../share-dialog";
 import FileTile from "../library/file-tile";
+import { HtmlDocFrame, useDocText } from "./html-doc";
 import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
 import Sheets from "./sheets";
@@ -104,19 +105,8 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
  * script runs but nothing in it can reach this app's cookies or storage. */
 function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
   const [mode, setMode] = useState<"render" | "code">("render");
-  const [html, setHtml] = useState<string | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    let stale = false;
-    // The rendered view needs the whole document: the text preview is a truncated excerpt.
-    fetch(downloadUrl(file.download_url))
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
-      .then((h) => !stale && setHtml(h))
-      .catch((e) => !stale && setError(errorMessage(e)));
-    return () => {
-      stale = true;
-    };
-  }, [file.id, file.download_url]);
+  // The rendered view needs the whole document: the text preview is a truncated excerpt.
+  const { html, error } = useDocText(downloadUrl(file.download_url));
   return (
     <div className="viewer-html">
       <div className="viewer-modes" role="tablist" aria-label="预览方式">
@@ -133,7 +123,7 @@ function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
         ) : html === null ? (
           <Waiting />
         ) : (
-          <iframe className="viewer-frame" sandbox="allow-scripts allow-popups allow-modals" srcDoc={html} title={file.filename} />
+          <HtmlDocFrame html={html} title={file.filename} />
         )
       ) : (
         <TextView file={file} preview={preview} />

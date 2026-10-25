@@ -58,9 +58,10 @@ export type Preview = {
   filename: string;
   version: number;
   run_id?: string;
-  kind?: "pages" | "sheets";
+  kind?: "pages" | "sheets" | "html";
   pages?: string[]; // "<n>/p-01.jpg", relative to the run's previews
   data?: string; // "<n>/sheets.json"
+  file_id?: string; // kind "html": the delivered file itself, rendered in the pane
   errors?: string[];
   error?: string;
 };

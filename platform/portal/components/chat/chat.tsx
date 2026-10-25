@@ -253,8 +253,47 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       byFile.delete(p.filename);
       byFile.set(p.filename, p);
     }
+    // Skills deliver self-contained HTML decks: they preview in the pane straight from the
+    // delivered file, newest delivery wins. `version` counts deliveries of this name so the
+    // pane's iframe refetches (and the viewer shows it) on every regeneration.
+    const htmlVersions = new Map<string, number>();
+    for (const t of detail?.turns || []) {
+      for (const a of t.artifacts || []) {
+        if ((a.content_type || "").split(";")[0] !== "text/html" && !/\.(html?|xhtml)$/i.test(a.filename)) continue;
+        const version = (htmlVersions.get(a.filename) || 0) + 1;
+        htmlVersions.set(a.filename, version);
+        byFile.set(a.filename, { filename: a.filename, version, run_id: t.id, kind: "html", file_id: a.file_id });
+      }
+    }
     return [...byFile.values()].filter((p) => p.kind);
   }, [detail, livePreviews]);
+
+  // A newly delivered (or regenerated) HTML deck opens in the pane by itself, so the next
+  // prompt can be written while looking at the result. The first pass only takes note:
+  // opening old deliveries on conversation load would be noise.
+  const seenHtml = useRef<Map<string, string>>(new Map());
+  const noted = useMemo(() => previews.filter((p) => p.kind === "html"), [previews]);
+  useEffect(() => {
+    const fresh = noted.filter((p) => seenHtml.current.get(p.filename) !== p.file_id);
+    if (seenHtml.current.size === 0 && noted.length) {
+      for (const p of noted) seenHtml.current.set(p.filename, p.file_id || "");
+      return;
+    }
+    let opened = false;
+    for (const p of fresh) {
+      seenHtml.current.set(p.filename, p.file_id || "");
+      opened = true;
+    }
+    if (opened && fresh.length) {
+      const last = fresh[fresh.length - 1];
+      setClosedFiles((closed) => closed.filter((f) => f !== last.filename));
+      setSelected(last.filename);
+      setSourcesOn(false);
+      setReaderOn(false);
+      setPaneOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noted]);
 
   const downloads = useMemo(() => {
     const out: Record<string, string> = {};

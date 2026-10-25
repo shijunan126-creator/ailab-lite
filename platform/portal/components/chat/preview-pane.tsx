@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { errorMessage, Preview, previewUrl, reader as fetchReader, ReaderPage } from "../../lib/api";
+import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, ReaderPage } from "../../lib/api";
 import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
+import { HtmlDocFrame, useDocText } from "../preview/html-doc";
 import type { Source } from "../../lib/work-process";
 import { SourcesList } from "./sources";
 
@@ -16,6 +17,20 @@ function Pages({ preview }: { preview: Preview }) {
 
 export type PaneSources = { runId: string; sources: Source[]; answer: string };
 export type PaneReader = { url: string; title: string };
+
+/** A delivered HTML deck, rendered beside the conversation: the newest delivery wins, and a
+ * regenerated file (new file id) refetches by itself. */
+function HtmlPane({ preview }: { preview: Preview }) {
+  const { html, error } = useDocText(downloadUrl(`/v1/files/${preview.file_id}/content`));
+  if (error) return <div className="hint" style={{ margin: 16 }}>无法加载文件：{error}</div>;
+  if (html === null)
+    return (
+      <div className="viewer-state">
+        <span className="viewer-spinner" aria-label="正在加载" />
+      </div>
+    );
+  return <HtmlDocFrame html={html} title={preview.filename} />;
+}
 
 function ReaderView({ url }: { url: string }) {
   const [page, setPage] = useState<ReaderPage | null>(null);
@@ -160,8 +175,8 @@ export default function PreviewPane({
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>
       ) : current ? (
-        <div className="preview-body" key={current.filename}>
-          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : null}
+        <div className="preview-body" key={`${current.filename}:${current.file_id || ""}`}>
+          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
         </div>
       ) : null}
     </aside>
