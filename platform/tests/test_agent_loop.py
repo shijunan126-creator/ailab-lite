@@ -458,7 +458,8 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
     broker = FakeBroker()
 
     async def get_file(lease_id, path):
-        raise FileNotFoundError(path)
+        # what the real client raises when the broker answers 400 for a path that is not there
+        raise ClientError("GET", f"/internal/leases/{lease_id}/files?path={path}", 400, "get_file failed")
 
     broker.get_file = get_file
     find = ToolCall(id="c1", name="search_images", arguments={"query": "city skyline", "count": 2})
