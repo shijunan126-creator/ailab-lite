@@ -4,6 +4,8 @@ and keeps one delivery identity per file. Also: lease loss, waiting for an answe
 from __future__ import annotations
 
 import asyncio
+import json
+import shlex
 
 import pytest
 
@@ -82,8 +84,8 @@ class SandboxSpy(FakeBroker):
 
     async def exec(self, lease_id, cmd, timeout=None):
         def run():
-            self.execs.append(cmd)
-            return {"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1}
+            self.execs.append(json.loads(shlex.split(cmd)[-1])["cmd"])
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1})}
 
         return self._step("exec", run)
 
@@ -157,7 +159,7 @@ def test_a_lost_lease_interrupts_the_run_and_hands_it_to_the_next_attempt(monkey
 
         async def exec(self, lease_id, cmd, timeout=None):
             await asyncio.sleep(5)  # a long command: the heartbeat notices the loss while it runs
-            return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     platform = FakePlatform()
     llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])
@@ -183,7 +185,7 @@ def test_transient_renewal_failures_do_not_cost_the_lease(monkeypatch):
                 await asyncio.sleep(0.005)
                 if failures["left"] == 0:
                     break
-            return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+            return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     platform = FakePlatform()
     llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])

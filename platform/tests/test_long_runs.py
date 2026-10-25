@@ -21,7 +21,6 @@ def test_defaults_and_config_validation():
         {"max_agent_steps": 10001},
         {"job_lease_seconds": 119},
         {"run_max_seconds": 86401},
-        {"run_soft_budget_seconds": 4000, "run_max_seconds": 3600},
         {"run_stall_seconds": 600},
         {"run_stall_seconds": 1200, "llm_total_timeout_seconds": 1201},
         {"exec_background_max_jobs": 17},
@@ -31,21 +30,23 @@ def test_defaults_and_config_validation():
             Settings(_env_file=None, **changes)
 
 
-def test_reviews_extend_only_for_new_measurable_progress(monkeypatch):
+def test_hourly_self_check_has_no_progress_gate_and_old_checkpoint_resumes(monkeypatch):
     clock = [0.0]
     monkeypatch.setattr("ailab_platform.agent.budgets.time.monotonic", lambda: clock[0])
     state = fresh_state()
-    budget = WorkBudget(state, "job")
+    state["budget"] = {"window_id": "job", "active_seconds": 0, "start_step": 0, "review_at": 3600, "review_progress": 2}
     state["progress_marks"] = ["plan:1"]
+    budget = WorkBudget(state, "job")
+    assert "review_at" not in budget.data and "progress_marks" not in state
     clock[0] = 3600
-    assert budget.boundary() == ["soft", "extended"]
-    assert budget.data["review_at"] == 5400
-    # Emitting text or repeating a completed plan does not buy more work time.
-    budget.progress()
-    clock[0] = 5400
-    assert budget.boundary() == ["soft", "wrap_up"]
+    assert budget.boundary() == ["self_check"]
+    clock[0] = 7200
+    assert budget.boundary() == ["self_check"]
+    assert "pause_step" not in budget.data
+    clock[0] = 14400
+    assert budget.boundary() == ["wrap_up"]
     state["next_step"] = 3
-    with pytest.raises(BudgetPause, match="暂无新的"):
+    with pytest.raises(BudgetPause, match="已工作4小时"):
         budget.boundary()
 
 
@@ -93,13 +94,13 @@ def test_hard_cap_saves_workspace_and_pauses_even_if_model_finishes(monkeypatch)
     assert {p["kind"] for t, p in platform.events if t == "agent.budget"} == {"wrap_up", "paused"}
 
 
-def test_soft_review_note_and_extension_reach_model():
+def test_hourly_self_check_reaches_model_without_event():
     platform = FakePlatform()
 
     class Model(ScriptedLLM):
         async def chat(self, *args, **kwargs):
             response = await super().chat(*args, **kwargs)
-            loop._budgets["run_1"].data["active_seconds"] = settings.run_soft_budget_seconds
+            loop._budgets["run_1"].data["active_seconds"] = 3600
             return response
 
     model = Model(
@@ -108,7 +109,7 @@ def test_soft_review_note_and_extension_reach_model():
     loop = AgentLoop(platform, FakeBroker(), model)
     asyncio.run(loop.process("run_1", attempt_id="a"))
     kinds = [p["kind"] for t, p in platform.events if t == "agent.budget"]
-    assert kinds == ["soft", "extended"]
+    assert kinds == []
     assert any("对照计划" in str(m.get("content")) for m in model.seen_messages[-1])
 
 
@@ -200,14 +201,6 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     assert platform.checkpoint and platform.reservations
 
 
-def test_new_window_does_not_count_historical_progress_for_extensions():
-    state = fresh_state()
-    state["progress_marks"] = ["old-completed-step"]
-    budget = WorkBudget(state, "continued")
-    budget.data["active_seconds"] = settings.run_soft_budget_seconds
-    assert budget.boundary() == ["soft", "wrap_up"]
-
-
 def test_stalled_model_is_canceled_metered_and_paused(monkeypatch):
     monkeypatch.setattr(settings, "run_stall_seconds", 0.02)
     monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.005)
@@ -246,3 +239,23 @@ def test_started_background_controls_can_replay_on_resume(name):
     _run(ScriptedLLM([LLMResponse(content="已检查")]), platform, broker, attempt_id="next")
     assert broker.controls == 1
     assert platform.checkpoint["state"]["tool_log"]["0:0"]["result"]["ok"]
+
+
+def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
+    state = fresh_state()
+    state["budget"] = {"window_id": "run_1", "active_seconds": 3600, "review_at": 3600, "review_progress": 1, "start_step": 0}
+    state["progress_marks"] = ["old-file"]
+    state["messages"] = [
+        {"role": "user", "content": "继续检查"},
+        {"role": "assistant", "tool_calls": [{"id": "c", "type": "function", "function": {"name": "list_files", "arguments": "{}"}}]},
+    ]
+    state["pending"] = [{"id": "c", "name": "list_files", "arguments": {}, "ordinal": 0}]
+    platform = FakePlatform()
+    platform.checkpoint = {"step": 1, "state": state}
+    model = ScriptedLLM([LLMResponse(content="检查完成")])
+    _run(model, platform, attempt_id="retry")
+    assert platform.statuses[-1][0] == "succeeded"
+    messages = model.seen_messages[0]
+    assert [message["role"] for message in messages] == ["user", "assistant", "tool", "user"]
+    assert "对照计划" in messages[-1]["content"]
+    assert "review_at" not in platform.checkpoint["state"]["budget"]

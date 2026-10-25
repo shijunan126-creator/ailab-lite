@@ -4,7 +4,7 @@ import time
 
 from ..config import settings
 
-REVIEW_NOTE = "（平台提示：已达到工作时间预算。请对照计划检查已完成的步骤和文件，判断继续工作还是交付已有成果，并向用户说明进度。）"
+REVIEW_NOTE = "（平台提示：已持续工作一小时。请对照计划检查已完成的步骤和文件，检查方向是否合理，并向用户说明进度。）"
 BUDGET_WRAP_NOTE = "（平台提示：本轮工作预算需要收尾。请停止扩展任务，保存并交付已有文件，说明未完成的计划；平台将暂停，用户可继续。）"
 
 
@@ -30,12 +30,15 @@ class WorkBudget:
             state["budget"] = {
                 "window_id": window_id,
                 "active_seconds": 0.0,
-                "review_at": settings.run_soft_budget_seconds,
-                "review_progress": len(state.get("progress_marks", [])),
+                "self_check_at": 3600,
                 "start_step": state["next_step"],
             }
             state["finished"] = False
         self.data = state["budget"]
+        self.data.pop("review_at", None)
+        self.data.pop("review_progress", None)
+        state.pop("progress_marks", None)
+        self.data.setdefault("self_check_at", max(3600, int(self.data["active_seconds"] // 3600) * 3600))
         self.tick = time.monotonic()
         self.last_progress_at = self.tick
         self.suspended = False
@@ -59,14 +62,10 @@ class WorkBudget:
             return []
         if elapsed >= settings.run_max_seconds:
             return self.wrap(f"已工作{settings.run_max_seconds / 3600:g}小时，已暂停，可继续")
-        if elapsed < self.data["review_at"]:
-            return []
-        progress = len(self.state.get("progress_marks", []))
-        events = ["soft"]
-        if progress > self.data["review_progress"]:
-            self.data.update(review_at=elapsed + settings.run_review_interval_seconds, review_progress=progress)
-            return [*events, "extended"]
-        return [*events, *self.wrap("本轮暂无新的计划或文件进展，已暂停，可继续")]
+        if elapsed >= self.data["self_check_at"]:
+            self.data["self_check_at"] = (int(elapsed // 3600) + 1) * 3600
+            return ["self_check"]
+        return []
 
     def wrap(self, reason):
         self.data.update(pause_step=self.state["next_step"] + 3, reason=reason)
