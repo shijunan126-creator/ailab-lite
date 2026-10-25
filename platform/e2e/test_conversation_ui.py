@@ -93,23 +93,23 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（1）").click()
     page.wait_for_selector(".sheet-grid td")
-    assert page.get_by_role("button", name="关闭预览").evaluate("(el)=>el===document.activeElement")
+    assert page.locator(".pane-tab.on .pane-tab-name").evaluate("(el)=>el===document.activeElement")
     emit(stack, conv["run"], "second.xlsx", 1)
-    page.wait_for_selector('.preview-tab:has-text("second.xlsx")')
-    assert page.locator(".preview-tab.on").inner_text() == "first.xlsx"
+    page.wait_for_selector('.pane-tab:has-text("second.xlsx")')
+    assert page.locator(".pane-tab.on").inner_text() == "first.xlsx"
     page.screenshot(path=str(stack.log_dir / ("preview-open-mobile.png" if mobile else "preview-open-desktop.png")))
     assert page.locator(".preview-pane").bounding_box()["width"] <= page.viewport_size["width"]
     if mobile:
         page.keyboard.press("Tab")
         assert page.evaluate("!!document.activeElement.closest('.preview-pane')")
     emit(stack, conv["run"], "first.xlsx", 2)
-    page.get_by_role("button", name="关闭预览").click()
+    page.keyboard.press("Escape")
     page.wait_for_selector(".preview-pane", state="detached")
     emit(stack, conv["run"], "third.xlsx", 1)
     page.get_by_role("button", name="打开预览（3）").wait_for()
     assert page.locator(".preview-pane").count() == 0
     page.get_by_role("button", name="打开预览（3）").click()
-    assert page.locator(".preview-tab.on").inner_text() == "first.xlsx"
+    assert page.locator(".pane-tab.on").inner_text() == "first.xlsx"
     if mobile:
         page.go_back()
     else:
