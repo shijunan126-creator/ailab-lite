@@ -184,3 +184,39 @@ SQLite122/PG35跳过构成与上文v2最终验收相同（外部Docker/OpenSandb
 清理：本轮新建PG data-dir与ailab_test/ailab_migrations/ailab_e2e三库，绑定127.0.0.1:35982；Redis36989，后端DB15、E2E DB13。E2E四Python服务38780–38783、Portal33700。最终E2E夹具已停止五服务；Redis INFO process_id=892与本轮pidfile一致后shutdown，PG按本轮data-dir经pg_ctl fast停止；35982/36989/38780–38783/33700七端口最终lsof均无监听。未停止其他用户服务。
 
 原始日志/合成测量脚本与结果在本机 `/tmp/ailab-v2-fixes-70b4/`，不提交原始运行数据。残余边界仍为真实模型1–4h、真实Linux/provider后台进程、目标2vCPU/8GiB并发容量；本轮宿主子进程、mock模型/沙箱与浏览器链路不能替代。Portal源码未改，本轮只补齐后端事件合同，不声明新增UI已实测呈现。
+
+
+<a id="final-real-sandbox-validation"></a>
+
+## 最终快照引用修复与真实沙箱验收（2026-10-25）
+
+本轮 test sub-agent 从集成 `feat/long-runs-sources@a677a5f`（含 review3 `490de63`/`a96cd84`）出发；实际初始分支 `t3/workspace-snapshot-reference`，工作树干净，新建 `feat/long-runs-final`。范围为引用修复、真实 sandbox 与最终整树验收，不改 Portal、不 push/PR/merge/deploy，不接触个人部署、个人数据库或非测试容器。此节取代前面历史阶段的待集成/待真实 sandbox 结论；真实长时模型、容量和手机边界仍保留。
+
+### 根因与红绿
+
+- 新 API 回归先在原代码稳定复现两项失败：pause K1 → resume → checkpoint K2 删除 K1 → FAILED 合并部分结果后，下一轮判断工作区过期、fork 返回422。checkpoint 获胜事务现在同步仍指向 K1 的 result.workspace_key/saved_at/bytes/saved，再写删除意图并提交；未获胜 CAS 不更新也不删除。保持旧对象及时删除，不增加历史快照保留。测试同时走 internal run 与 model-input 两个恢复入口、过期判断，以及 fork 后删除源对象仍可恢复独立副本。GC 继续保护非终态 runtime_meta 最新精确 key；未新增 SQL 或迁移。
+- 首次真实 Docker helper 启动即报 `OSError: [Errno 18] Invalid cross-device link`：workspace→tmpfs rename。改为目标目录临时写入、原子 replace、删除 staging，保留 hash 验证与一次安装复用。
+- 之后真实 SIGKILL supervisor 回归证明 slot 已释放但 sleep 后代仍存活。reaper 改为观察退出 supervisor、清理进程组后回收，Linux 用 WNOWAIT 避免 leader PID 复用；收养的后代亦被回收。新增真实 provider 合同与本机实际子进程回归。macOS ps 身份也排除 Z，避免已完成进程 teardown 的 EPERM；专项最终29项通过。
+- 首次双库全套遇到上述 macOS teardown 错误后主动中止，E2E同步中止；这些轮次不计最终验收。真实 snapshot 探针最初从 /tmp 下载被 provider 路径限制拒绝，修正探针使用 /workspace/.ailab 并从 tar 排除该目录，没有放宽产品路径校验。
+
+### 真实环境与已确认测量
+
+新建专用 Colima `ailab-verify`，aarch64、2 CPU/8 GiB/60 GiB、Docker29.5.2；默认 Docker context 始终 default。CLI 显式 context，OSB SDK 明确同一测试 socket。共享缓存 `/Users/michael/Library/Caches/ailab-final-015c/` 保存日志、隔离配置和 PG；不提交原始运行数据。进程合同镜像 `ailab-final-exec:015c` 基于 python:3.12-slim-trixie，加 procps、uid10001、workspace；不冒充 Office 功能重验。runsc `release-20261019.0` 通过官方完整包 SHA512 校验安装，仅修改新建测试 VM。[官方安装说明](https://gvisor.dev/docs/user_guide/install/)。
+
+| 路径 | 连续 exec | 用时 | 每100次采样 PID / 僵尸 | 运行中轮询 / workspace快照 / 最终存活对象 |
+|---|---:|---:|---|---|
+| Docker/runc | 400 | 209.262s | 5 / 0，四次 | 6 / 2 / 1 |
+| Docker/runsc | 400 | 259.915s | 5 / 0，四次 | 5 / 2 / 1 |
+| OpenSandbox1.1.1/runc + dns+nft | 验证中 | 待完成 | 已完成100次：5 / 0 | 2 / 2 / 1 |
+
+两条 Docker 路径均在同一 lease 顺序运行400命令，PID上限256、采样均远低于64；末尾 tar 和 kill-all 正常。静默 sleep5 经4次 exec_wait 完成；20,009字符原始输出保留 HEAD+TAIL，共9,028字符；命令恰20,000字符（含CJK）正常。exec_kill 清掉4成员进程组，pause使用同一 kill_all 控制后无残留sleep，reaper仍存活；supervisor真实SIGKILL后 exec_wait 返回 running=false/exit=-1，单槽位可启动下一命令，孤儿后代被清理。release 后 inspect 确认资源不存在。snapshot合同通过真实 exec/tar、API checkpoint CAS 和实际存储对象确认：running poll 不产生每次快照，完成时新快照替代旧快照，旧对象实际不存在。
+
+OpenSandbox 使用全新缓存 store.db，server回环38090、端口范围43100–43220、pids_limit256，SDK/server均1.1.1。启动先遇 macOS无setsid、范围不足100端口，两项均仅修正隔离测试启动配置；未启动或读取个人默认store。已完成的额外独立 live sample：5 PID、0 Z，reaper RSS16,936KiB；这不是目标机容量或进程峰值。最终压力和清理结果待写入。
+
+### 最终整树验证与清理
+
+最终双库、E2E及资源清理仍在执行；结果在本节收尾时填写。Portal直接 npm test 38通过，production build通过；Next自动生成的next-env差异已恢复，Portal源码与a677a5f相同。Ruff check/format355文件通过。
+
+资源成本：无新依赖、服务、数据库查询或迁移。引用同步只操作已有 result 的几个标量；helper安装额外临时副本仅为小型脚本。reaper每租约一个进程、沿用50ms时钟，跟踪的Popen集合受exec并发上限约束；先清进程组后回收可避免孤儿占用CPU/RSS和槽位。400短exec包含真实provider往返和Python启动，不作为2vCPU整栈吞吐承诺；VM内压力与宿主PG/Redis/模型替身E2E不能证明整栈2vCPU/8GiB容量。
+
+剩余：真实模型连续1–4小时、目标2vCPU/8GiB整栈并发/峰值RSS/延迟、真实手机；未重验Office渲染、ClamAV/S3/OIDC等外部组合、OSB+k8s/gVisor与网络安全全矩阵。保持本地未合并、未部署，下一步由父任务接收最终提交与证据，不自动发布或进入其他路线项。

@@ -64,7 +64,9 @@ async def background_exec(name, args, lease_id, broker, *, max_seconds=None):
         f"p=Path({helper!r});s=Path({staging!r});"
         "p.parent.mkdir(mode=0o700,parents=True,exist_ok=True);"
         f"assert hashlib.sha256((s if s.exists() else p).read_bytes()).hexdigest()=={digest!r};"
-        "s.replace(p) if s.exists() else None;"
+        # /tmp is a separate tmpfs on real Docker leases; rename from /workspace is EXDEV.
+        "t=p.with_name(p.name+'.'+str(os.getpid())+'.tmp');"
+        "(t.write_bytes(s.read_bytes()),t.replace(p),s.unlink()) if s.exists() else None;"
         "sys.argv=[str(p),sys.argv[1]];runpy.run_path(str(p),run_name='__main__')"
     )
     command = "python3 -c " + shlex.quote(program) + " " + shlex.quote(request)

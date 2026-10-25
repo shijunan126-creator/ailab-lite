@@ -120,6 +120,21 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
             db.delete(row)
         previous_key = previous_workspace.get("key")
         if previous_key and previous_key != (workspace or {}).get("key"):
+            # A resumed pause can retain a published result. Readers prefer that
+            # result over runtime_meta, including after a crash merges partial results.
+            # Move its reference in the same transaction before retiring the object.
+            result = dict(run.result or {})
+            if result.get("workspace_key") == previous_key:
+                for field in ("workspace_key", "workspace_saved_at", "workspace_bytes"):
+                    result.pop(field, None)
+                result["workspace_saved"] = bool(workspace)
+                if workspace:
+                    result.update(
+                        workspace_key=workspace["key"],
+                        workspace_saved_at=workspace.get("saved_at"),
+                        workspace_bytes=workspace.get("size", 0),
+                    )
+                run.result = result
             schedule_object_deletion(db, previous_key, "workspace")
         db.commit()
     if previous_key and previous_key != (workspace or {}).get("key"):

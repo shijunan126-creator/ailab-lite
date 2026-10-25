@@ -27,10 +27,10 @@ def process_starttime(pid):
             raise ProcessLookupError(pid)
         return fields[19]
     # Host-process contract tests run on macOS; production Linux uses /proc without spawning ps.
-    value = subprocess.check_output(["ps", "-o", "lstart=", "-p", str(pid)], text=True).strip()
-    if not value:
+    value = subprocess.check_output(["ps", "-o", "stat=", "-o", "lstart=", "-p", str(pid)], text=True).strip()
+    if not value or value.startswith("Z"):
         raise ProcessLookupError(pid)
-    return value
+    return value.split(None, 1)[1]
 
 
 def alive(meta):
@@ -101,14 +101,36 @@ def supervise(payload, directory):
 
 
 def reap_workers():
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
+    signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     if sys.platform == "linux":
         import ctypes
 
         # Adopt orphaned grandchildren too; completed process trees must not leak zombies.
         if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:
             raise OSError(ctypes.get_errno(), "cannot establish background subreaper")
+    workers = {}
     while ROOT.exists():
+        while True:
+            try:
+                if sys.platform == "linux":
+                    # Keep the leader's PID reserved until its entire process group
+                    # is killed. A SIGKILL/OOM victim cannot clean up its own children.
+                    exited = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                    pid = exited.si_pid if exited else 0
+                else:
+                    pid, _ = os.waitpid(-1, os.WNOHANG)
+                if not pid:
+                    break
+                if pid in workers:
+                    try:
+                        os.killpg(pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    workers.pop(pid)
+                if sys.platform == "linux":
+                    os.waitpid(pid, 0)
+            except ChildProcessError:
+                break
         for request in ROOT.glob("*/request"):
             payload = json.loads(request.read_text())
             request.unlink()
@@ -119,6 +141,7 @@ def reap_workers():
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
+            workers[worker.pid] = worker
             try:
                 identity = process_starttime(worker.pid)
             except (OSError, subprocess.CalledProcessError):

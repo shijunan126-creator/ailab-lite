@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-25 长任务最终真实沙箱验收
+
+- 删除同 Run 被替代的 workspace 前，同一 checkpoint 事务也必须更新仍指向该对象的 `result.workspace_*`。暂停结果会跨 resume 保留，FAILED 又合并部分 result；只改 runtime_meta 会被旧 result 遮蔽，造成下一轮误过期、restore 或 Work fork 指向已删对象。fork 必须复制为新 Run 自有对象；GC 继续保护当前非终态 runtime_meta 的精确 key。
+- Docker 的 `/tmp` 是独立 tmpfs。helper 从 `/workspace` 直接 `Path.replace` 到 `/tmp` 在真实容器报 EXDEV；先验证内容，再在目标目录写临时文件并原子替换，最后删除 staging。宿主 mock 的同盘目录无法覆盖这个边界。
+- subreaper 只忽略 SIGCHLD 能回收僵尸，却不能停止被 SIGKILL/OOM 监督进程留下的活后代。helper reaper 使用 SIGCHLD 默认处理；Linux `waitid(WNOWAIT)` 保留已退出 leader 的 PID，先杀该进程组，再 waitpid 回收；继续回收收养的孤儿，避免 PID 复用竞态。Docker expiry PID 1 仍使用 SIGCHLD=SIG_IGN。macOS 身份检查也须拒绝 ps 的 Z 状态，否则清理会把僵尸误判存活并报 EPERM。
+- 专用 Colima 用 `--activate=false`，Docker 测试的 CLI shim 强制 `--context colima-ailab-verify`，SDK 单独指定同一测试 socket；共享目录用用户缓存目录，不用宿主 /tmp。OpenSandbox 1.1.1 在 macOS 需要 setsid；测试只在缓存目录提供包装器，配置独立 store.db、dns+nft、回环端口和至少100端口的分配范围，绝不沿用个人默认 store。新 runsc 已改为完整 gvisor tarball，按官方 SHA512 校验，不能只装旧单文件；guest 缺 bzip2 时在宿主解包后复制完整目录。详见[最终验收](docs/progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)。
+
 ## 2026-10-25 额度暂停
 
 - 用户日/月额度的429发生在模型reserve之前，不是上游模型故障；只在reserve接缝识别 `detail.code=quota_exceeded`，转为独立BudgetPause子类。不要把所有429都当额度暂停，也不要让它触发重试、fallback或LLM失败计数。标题推理仍独立best-effort，不能因标题额度失败暂停已成功回答。

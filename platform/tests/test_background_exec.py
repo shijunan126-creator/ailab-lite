@@ -237,6 +237,32 @@ def test_timeout_alias_and_legacy_settings_are_compatible(tmp_path, monkeypatch)
     assert result["stdout"] == "ok" and len(broker.commands) == 1
 
 
+def test_killed_supervisor_reaper_stops_orphaned_process_group(tmp_path, monkeypatch):
+    import json
+    import signal
+
+    monkeypatch.setattr(settings, "exec_background_max_jobs", 1)
+    broker = LocalBroker(tmp_path)
+
+    async def scenario():
+        job = await background_exec("exec", {"cmd": "sleep 120 & sleep 120 & wait", "yield_seconds": 1}, "lease", broker)
+        meta = json.loads((broker.root / job["handle"] / "meta").read_text())
+        os.kill(meta["pid"], signal.SIGKILL)
+        failed = await background_exec("exec_wait", {"handle": job["handle"], "seconds": 1}, "lease", broker)
+        assert not failed["running"] and failed["exit_code"] == -1
+        for _ in range(100):
+            try:
+                os.killpg(meta["pid"], 0)
+            except ProcessLookupError:
+                break
+            await asyncio.sleep(0.05)
+        else:
+            pytest.fail("reaper left the killed supervisor's process group alive")
+        assert (await background_exec("exec", {"cmd": "true", "yield_seconds": 1}, "lease", broker))["exit_code"] == 0
+
+    asyncio.run(scenario())
+
+
 def test_large_short_output_survives_provider_control_transport(tmp_path, monkeypatch):
     from ailab_platform.sandbox.mock import MockSandbox
 

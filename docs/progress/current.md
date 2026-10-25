@@ -1,13 +1,13 @@
 # 当前工作
 
-## 长任务第三轮独立审查（2026-10-25，本地验收完成，待父任务接收）
+## 来源与长任务最终验收（2026-10-25，本地验证进行中，未合并/未部署）
 
-本轮工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-a50ec0f9`，分支 `feat/long-runs-review3`，base 为实际集成 `feat/long-runs-sources@a0a3ae0`，起始干净。授权只实现审查修复和本地提交；不改Portal、不push/PR/merge/deploy。
+统一范围：Portal来源面板、Run来源持久化/恢复、长任务v2预算窗口/短claim续租/统一exec/重复检测、日/月额度暂停和各轮审查修复。集成分支 `feat/long-runs-sources@a677a5f` 已含 `490de63`/`a96cd84`；最终测试分支 `feat/long-runs-final`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-015c88c8`，起始干净。授权本地修复、真实沙箱和全套测试及提交，不改Portal，不push/PR/merge/deploy，不接触个人部署/DB/非测试容器。
 
-- 12项均确认并修复，无反驳项。产品/回归 `490de63`，Mock文件payload路径兼容 `a96cd84`。包括PID 1/reaper和Z态、poll快照/提交后删除、真实assembly用户索引、best-effort清理、token cap终态、120s收尾、20,000字符命令、完成不误暂停、不收敛/字节超限停止、总结marker与独立预算窗口。
-- 最终产品/测试基线`a96cd84`：Ruff355文件、SQLite1246通过/125跳过、PG16+Redis1333通过/38跳过、Portal38项/build、五服务E2E98通过/0跳过，均0失败。原始`a0a3ae0`上22项专项21红/1绿。精确逐项证据、资源成本、初轮失败和重跑记录统一见[第三轮记录](updates/2026-10-25-long-runs-review3.md)。
-- 专属PG16/Redis与五服务均已停止，七端口无监听；Portal源码与base相同。下一步：父任务审阅并接收两个产品提交及本轮文档提交，本任务无待实现项；不自动集成或发布。真实Docker/OpenSandbox压力、1–4小时模型、目标2vCPU/8GiB容量仍未验；本机默认Docker socket不存在，未擅自启动个人VM。
-- 历史v2与来源/长任务集成提交已在本轮起点中，先前待cherry-pick和旧head均为历史记录，详见[来源集成记录](updates/2026-10-25-long-runs-sources.md)。本轮不自动开启其他路线项或沿用历史发布授权。
+- 修复 resume后的checkpoint删除旧快照却遗留result引用：checkpoint事务同步结果引用再提交删除；红绿覆盖崩溃后下一轮恢复、过期判断、Work fork独立副本。真实Docker又发现并修复跨tmpfs helper安装EXDEV和SIGKILL supervisor遗留活后代；macOS身份检查补齐Z拒绝。
+- 已验证Docker/runc与runsc各400连续exec，分别209.262/259.915秒，四次采样各5 PID/0 Z；静默poll、9028字符头尾、20000字符CJK命令、4成员kill-tree、kill-all、supervisor失踪失败/槽位释放、tar与release正常。轮询快照分别6/5次poll仅2快照、旧对象删除、最终1对象；OpenSandbox同一路径正在压力验收，快照已通过。
+- Portal38项及production build、Ruff355文件通过；最终SQLite、PG16+Redis、五服务E2E重跑中。所有本轮结果、失败历史、性能成本和清理统一写入[最终记录](updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)。历史子分支待接收/待cherry-pick均不代表当前集成缺失。
+- 下一步：完成OpenSandbox/全套门禁、清理本轮专用资源、提交并交父任务接收；继续保留真实模型1–4小时、目标2vCPU/8GiB整栈容量、真实手机未验。不自动开启其他路线项或发布；旧审查证据见[review3](updates/2026-10-25-long-runs-review3.md)。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
