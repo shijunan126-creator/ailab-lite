@@ -18,6 +18,9 @@ from ailab_platform.sandbox.opensandbox import OpenSandboxProvider
 
 @pytest.fixture(params=["mock", "docker", "opensandbox"])
 def provider(request, tmp_path, monkeypatch):
+    # OpenSandbox's Docker backend shares the daemon with direct Docker tests.
+    # Distinct owners prevent either reconciler adopting/deleting the other's resources.
+    monkeypatch.setattr(settings, "broker_owner", f"contract-{request.param}-{uuid.uuid4().hex}")
     if request.param == "docker":
         if os.environ.get("AILAB_TEST_DOCKER") != "1":
             pytest.skip("set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image")
@@ -188,3 +191,38 @@ def test_stale_listing_is_confirmed_before_real_resource_deletion(provider, monk
     finally:
         manager.release(handle)
         manager.close()
+
+
+def test_exec_deadline_and_cancellation_stop_real_work(provider):
+    import time
+    from concurrent.futures import ThreadPoolExecutor
+
+    from ailab_platform.sandbox.base import SandboxError
+
+    spec = SandboxSpec(image=settings.sandbox_image, ttl=120)
+    ref = provider.acquire("exec-" + uuid.uuid4().hex[:12], spec.image, spec=spec)
+    try:
+        started = time.monotonic()
+        result = provider.exec(ref, "sleep 60", 1)
+        assert result.exit_code != 0
+        assert time.monotonic() - started < 15
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(provider.exec, ref, "echo ready > /workspace/started; sleep 60; echo completed", 70)
+            try:
+                deadline = time.monotonic() + 15
+                while provider.exec(ref, "test -f /workspace/started", 5).exit_code != 0:
+                    assert time.monotonic() < deadline, "long command never started"
+                    time.sleep(0.1)
+                if not provider.cancel_exec(ref):
+                    provider.release(ref)
+                try:
+                    result = future.result(timeout=15)
+                except SandboxError:
+                    assert provider.inspect(ref) is None
+                else:
+                    assert result.exit_code != 0 and "completed" not in result.stdout
+            finally:
+                # A failed interrupt must not leave a minute-long command or executor behind.
+                provider.release(ref)
+    finally:
+        provider.release(ref)

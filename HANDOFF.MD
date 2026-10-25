@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-25 真实沙箱验收
+
+- OpenSandbox server 1.1.1示例的egress DNS-only模式不能拦字面IP，即使SDK请求default_action=deny。Docker侧车模式必须用dns+nft，并先用正常非root容器证明TCP/UDP/ICMP目标可达，再从沙箱测阻断；不要把仅DNS失败写成完整断网。
+- `osb_up.sh`生成安全新配置、拒绝原DNS-only配置，Docker也须绑定已启动进程的配置hash。修改文件不等于运行策略已更新；先停原server再显式更新，不能从/health=200推断正确进程。curl缺失在起进程前失败，回环探针绕过宿主代理。
+- Docker自动到期会发生inspect→元数据exec竞态，以及rm撞自动删除；仅确认停止/不存在后收敛，不能吞daemon/权限错误。删除冲突等待有截止。
+- Docker/OpenSandbox共享daemon时，metadata都包含owner标签；并行测试必须各用独立broker_owner，避免对账互相收养/清除。主线技能更新后先同步测试Office镜像，409 skill_index_mismatch不能靠放宽attestation解决。真实组合/失败历史/边界见[验收](docs/reviews/2026-10-25-real-sandbox-acceptance.md)。
+
 ## 2026-10-25 单机审查：恢复、快照与异步视图
 
 - 性能门禁的p95按实测请求nearest-rank定义，保留150ms与100次采样/最大延迟。旧25次样本使用`statistics.quantiles`默认exclusive插值，一次209ms延迟尖峰会算出156ms，虽其余24次约25–33ms；不能用提高门槛或反复重跑代替修正统计口径。初次CI失败及后续结果见本轮交付。

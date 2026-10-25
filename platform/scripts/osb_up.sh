@@ -11,6 +11,11 @@ OSB_RUNTIME=${OSB_RUNTIME:-docker}
 OSB_API_KEY=${OSB_API_KEY:-${AILAB_OSB_API_KEY:-dev-osb-key}}
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 
+if ! command -v curl >/dev/null 2>&1; then
+  echo '[osb_up] curl is required for the readiness check' >&2
+  exit 1
+fi
+
 if [ ! -x "$OSB_VENV/bin/opensandbox-server" ]; then
   echo "[osb_up] installing opensandbox-server into $OSB_VENV"
   python3 -m venv "$OSB_VENV"
@@ -19,6 +24,7 @@ if [ ! -x "$OSB_VENV/bin/opensandbox-server" ]; then
 fi
 
 mkdir -p "$(dirname "$OSB_CONFIG")" "$OSB_HOME"
+OSB_NEW_CONFIG=0
 if [ ! -f "$OSB_CONFIG" ]; then
   if [ "$OSB_RUNTIME" = kubernetes ]; then
     cp "$ROOT/k3s/opensandbox-template.yaml" "$OSB_HOME/opensandbox-template.yaml"
@@ -34,10 +40,34 @@ p.chmod(0o600)
 CONFIG
   elif [ "$OSB_RUNTIME" = docker ]; then
     "$OSB_VENV/bin/opensandbox-server" init-config "$OSB_CONFIG" --example docker
+    OSB_NEW_CONFIG=1
   else
     echo '[osb_up] unknown OSB_RUNTIME' >&2; exit 1
   fi
 fi
+OSB_CONFIG="$OSB_CONFIG" OSB_NEW_CONFIG="$OSB_NEW_CONFIG" OSB_PORT="$OSB_PORT" OSB_API_KEY="$OSB_API_KEY" OSB_RUNTIME="$OSB_RUNTIME" python3 - <<'CONFIG'
+import json, os, re, tomllib
+from pathlib import Path
+p = Path(os.environ["OSB_CONFIG"])
+s = p.read_text()
+if os.environ["OSB_NEW_CONFIG"] == "1":
+    # DNS-only filtering does not block literal-IP connections.
+    s = re.sub(r'(\[egress\][\s\S]*?^mode\s*=\s*)"dns"', r'\1"dns+nft"', s, count=1, flags=re.M)
+config = tomllib.loads(s)
+if config.get("runtime", {}).get("type") != os.environ["OSB_RUNTIME"]:
+    raise SystemExit("[osb_up] existing config runtime differs; refusing to reuse an unsafe backend")
+if config.get("runtime", {}).get("type") == "docker" and config.get("egress", {}).get("mode") != "dns+nft":
+    raise SystemExit('[osb_up] Docker deny-all requires [egress] mode = "dns+nft"; stop the old server and update its config explicitly')
+server = re.search(r'^\[server\]\s*\n(?P<body>[\s\S]*?)(?=^\[|\Z)', s, re.M)
+if not server:
+    raise SystemExit("[osb_up] missing server configuration")
+body = re.sub(r'^port\s*=.*$', 'port = ' + str(int(os.environ["OSB_PORT"])), server["body"], count=1, flags=re.M)
+if not config.get("server", {}).get("api_key"):
+    body += '\napi_key = ' + json.dumps(os.environ["OSB_API_KEY"]) + '\n'
+s = s[:server.start("body")] + body + s[server.end("body"):]
+p.write_text(s)
+p.chmod(0o600)
+CONFIG
 OSB_CONFIG="$OSB_CONFIG" OSB_RUNTIME="$OSB_RUNTIME" OSB_ROOT="$ROOT" python3 - <<'CHECK'
 import os, tomllib
 from pathlib import Path
@@ -55,15 +85,9 @@ if os.environ["OSB_RUNTIME"] == "kubernetes":
     if not template.is_file() or template.read_bytes() != expected.read_bytes():
         raise SystemExit("[osb_up] install the reviewed node-owned OpenSandbox template before starting")
 CHECK
-sed -i "s/^port = 8080/port = $OSB_PORT/" "$OSB_CONFIG"
-if ! grep -q '^api_key = ' "$OSB_CONFIG"; then
-  sed -i "s|^# api_key = .*|api_key = \"$OSB_API_KEY\"|" "$OSB_CONFIG"
-fi
 
-if curl -fsS --max-time 3 "http://127.0.0.1:$OSB_PORT/health" >/dev/null 2>&1; then
-  if [ "$OSB_RUNTIME" = kubernetes ]; then
-    python3 "$ROOT/platform/scripts/osb_process.py" check "$OSB_HOME" "$OSB_CONFIG"
-  fi
+if curl --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:$OSB_PORT/health" >/dev/null 2>&1; then
+  python3 "$ROOT/platform/scripts/osb_process.py" check "$OSB_HOME" "$OSB_CONFIG"
   echo "[osb_up] already healthy on :$OSB_PORT"
   exit 0
 fi
@@ -71,11 +95,9 @@ fi
 cd "$OSB_HOME"
 setsid nohup "$OSB_VENV/bin/opensandbox-server" --config "$OSB_CONFIG" > "$OSB_HOME/server.log" 2>&1 < /dev/null &
 server_pid=$!
-if [ "$OSB_RUNTIME" = kubernetes ]; then
-  python3 "$ROOT/platform/scripts/osb_process.py" record "$OSB_HOME" "$OSB_CONFIG" "$server_pid"
-fi
+python3 "$ROOT/platform/scripts/osb_process.py" record "$OSB_HOME" "$OSB_CONFIG" "$server_pid"
 for _ in $(seq 1 40); do
-  if curl -fsS --max-time 3 "http://127.0.0.1:$OSB_PORT/health" >/dev/null 2>&1; then
+  if curl --noproxy '*' -fsS --max-time 3 "http://127.0.0.1:$OSB_PORT/health" >/dev/null 2>&1; then
     echo "[osb_up] ready on http://127.0.0.1:$OSB_PORT"
     exit 0
   fi
