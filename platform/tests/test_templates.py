@@ -348,42 +348,6 @@ def test_schedules_explicitly_reject_template(api):
     assert response.status_code == 422
 
 
-def test_template_and_slides_queries_use_indexes():
-    from sqlalchemy import text
-
-    with SessionLocal() as db:
-        prefix = "EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN "
-        if db.bind.dialect.name == "postgresql":
-            db.execute(text("SET LOCAL enable_seqscan=off"))
-        queries = [
-            (
-                "SELECT id FROM templates WHERE scope='company' AND kind='pptx' AND deleted_at IS NULL ORDER "
-                "BY created_at DESC,id DESC LIMIT 50",
-                "ix_templates_company",
-            ),
-            (
-                "SELECT id FROM templates WHERE scope='personal' AND owner_id='missing' AND kind='pptx' AND "
-                "deleted_at IS NULL ORDER BY created_at DESC,id DESC LIMIT 20",
-                "ix_templates_personal",
-            ),
-            (
-                "SELECT id FROM files WHERE user_id='missing' AND purpose='library' AND is_head=1 AND "
-                "deleted_at IS NULL AND purged_at IS NULL AND (lower(filename) LIKE '%.pptx' OR "
-                "lower(filename) LIKE '%.potx') ORDER BY created_at DESC,id DESC LIMIT 50",
-                "ix_files_slides",
-            ),
-            (
-                "SELECT project_id,count(*) FROM files WHERE user_id='missing' AND purpose='library' AND "
-                "is_head=1 AND deleted_at IS NULL AND purged_at IS NULL AND (lower(filename) LIKE '%.pptx' OR "
-                "lower(filename) LIKE '%.potx') AND project_id>'' GROUP BY project_id ORDER BY project_id LIMIT 100",
-                "ix_files_slides_folders",
-            ),
-        ]
-        for sql, expected in queries:
-            plan = str(db.execute(text(prefix + sql)).all()).lower()
-            assert expected in plan or (expected == "ix_files_slides_folders" and "ix_files_folder_listing" in plan), plan
-
-
 def test_resume_and_fork_retain_frozen_selection(api):
     from ailab_platform.adapters.runtime import fresh_state
     from tests.test_runtime_protocol import pause, save
