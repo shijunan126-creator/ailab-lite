@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { api, Conversation, errorMessage } from "../lib/api";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconFolderInput, IconMore, IconPin, IconPinOff, IconPrinter, IconShare, IconSparkles, IconTrash } from "./icons";
+import { IconFolderInput, IconMore, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
 import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 import { confirmDialog } from "../lib/dialog";
@@ -169,9 +169,6 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
           >
             <IconShare size={15} /> 分享
           </button>
-          <a className="menu-item" role="menuitem" href={`/print/${conv.id}`} target="_blank" rel="noopener" onClick={() => setAt(null)}>
-            <IconPrinter size={15} /> 导出 PDF
-          </a>
           <button className="menu-item danger" role="menuitem" onClick={remove}>
             <IconTrash size={15} /> 删除
           </button>

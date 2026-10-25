@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, Person, Share } from "../lib/api";
-import { IconCheck, IconLink, IconUsers, IconX } from "./icons";
+import { IconCheck, IconLink, IconPrinter, IconUsers, IconX } from "./icons";
 import Modal from "./library/modal";
 import { confirmDialog } from "../lib/dialog";
 
@@ -161,6 +161,13 @@ export default function ShareDialog({ target, title, onClose }: { target: Target
 
   const stale = share && target.kind === "conversation" && target.activeRunId && share.through_run_id !== target.activeRunId;
   const ready = audience === "everyone" || people.length > 0;
+  // a conversation can also leave as paper: the print view's dialog saves it as PDF
+  const pdf =
+    target.kind === "conversation" ? (
+      <button className="link" onClick={() => window.open(`/print/${target.conversationId}`, "_blank", "noopener")}>
+        <IconPrinter size={15} /> 导出 PDF
+      </button>
+    ) : null;
   return (
     <Modal
       title={`分享「${title}」`}
@@ -169,6 +176,7 @@ export default function ShareDialog({ target, title, onClose }: { target: Target
       footer={
         share ? (
           <>
+            {pdf}
             <button className="link danger" onClick={revoke} disabled={busy}>
               停止分享
             </button>
@@ -184,6 +192,7 @@ export default function ShareDialog({ target, title, onClose }: { target: Target
           </>
         ) : (
           <>
+            {pdf}
             {error ? <span className="alert error grow-alert">{error}</span> : <span className="spacer" />}
             <button className="secondary" onClick={onClose}>取消</button>
             <button onClick={create} disabled={busy || share === undefined || !ready}>
