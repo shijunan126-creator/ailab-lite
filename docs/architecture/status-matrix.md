@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-25 第三轮独立长任务审查：`feat/long-runs-review3`，base集成`a0a3ae0`，产品`490de63` + `a96cd84`。12项均确认并修复（含#9不收敛/#10字节超限），累计Run token上限改终态FAILED；预算窗口与job分离、进程回收、helper文件传输、poll快照成本/旧对象删除、冻结checkpoint与重投总结围栏见[第三轮证据](../progress/updates/2026-10-25-long-runs-review3.md)。最终本地SQLite1246/125跳过、PG+Redis1333/38跳过、Portal38/build、五服务E2E98/0跳过及Ruff通过；未推送/未合并/未部署，真实provider与目标机容量仍待验。
+
 2026-10-25 长任务v2审查修复：`feat/long-runs-v2-fixes`基于集成`8a2bfed`（含Portal `a4fa0b6`），补齐有界checkpoint日志/旧格式恢复、exec头尾与传输字节预算、静默wait排除、运行状态事件和无Agent句柄列表时的租约全量清理。本地验收及残余边界见[统一记录](../progress/updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)；不代表真实长时模型、目标机容量或上线验收。
 
 2026-10-25 最终来源/长任务集成：`feat/long-runs-sources@0caa73b` + `feat/quota-pause-gc@65b47e0`，base `origin/main@09599a0`。来源面板/Run来源、长任务预算/租约/后台exec与日/月额度暂停已集成，本地全套最终复核见[统一交接](../progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。GC非终态保护集keyset分页、0030(status,id)索引，精确引用快照保留；真实1–4小时模型、真实sandbox后台exec、目标机RSS与真机手机待验。未合入main/未部署；下文子分支“未集成”均为历史阶段。
@@ -61,7 +63,7 @@
 | 能力 | 实现 | 未验收 |
 |---|---|---|
 | 调用级账本（T01） | 每次模型调用先预留、后结算：`call_id` 唯一、结算幂等、定价快照（模型倍率、缓存折扣、policy_version）冻结、金额为整数 milli；断流记 `estimated`，API 不可达时预留过期转 `unreconciled`，晚到结算原行修正。账本不引用 runs，对话被清除后用量仍在。对账 CLI：`ops.reconcile_usage` | 上游是否严格遵守 `max_tokens`、模型专用 tokenizer、网关侧对账 |
-| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`（本轮保持UTC）。中途reserve额度拒绝保存并人工可续跑暂停，恢复准入保留结构化429，暂停元数据及月度快照保留见[额度暂停](../progress/updates/2026-10-25-quota-pause.md)。Run累计token cap独立暂停并拒绝同Run继续（ADR 0008） | — |
+| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`（本轮保持UTC）。中途reserve额度拒绝保存并人工可续跑暂停，恢复准入保留结构化429，暂停元数据及月度快照保留见[额度暂停](../progress/updates/2026-10-25-quota-pause.md)。Run累计token cap使用FAILED终态并要求新任务，释放会话；日/月额度仍可暂停继续（ADR 0008第三轮修正） | — |
 | 额度策略 | 用户策略 → 部门策略 → 默认策略 → settings，统一经 `quota.user_limits` 用于 Token、资料库空间、并发 Run、用量摘要 | — |
 | 用量提醒 | `/v1/usage` 返回各窗口 used/reserved/percent/resets_at 与 80%/100% 告警；Portal 输入框上方显示提醒 | — |
 

@@ -1,23 +1,13 @@
 # 当前工作
 
-## 长任务 v2 审查修复（2026-10-25，本地验收完成，待父任务接收）
+## 长任务第三轮独立审查（2026-10-25，本地验收完成，待父任务接收）
 
-本轮在 `/Users/michael/.t3/worktrees/ailab-lite/t3-70b44db6`，分支 `feat/long-runs-v2-fixes`，base 为集成分支 `feat/long-runs-sources@8a2bfed`（包含 v2 `fe4fc38..bdbf63d` 和 Portal `a4fa0b6`）。起始 T3 分支名为 `t3/long-runs-v2-fixes`，已按授权新建指定分支；工作区起始干净。不改 Portal，不 push/PR/merge/deploy。
+本轮工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-a50ec0f9`，分支 `feat/long-runs-review3`，base 为实际集成 `feat/long-runs-sources@a0a3ae0`，起始干净。授权只实现审查修复和本地提交；不改Portal、不push/PR/merge/deploy。
 
-- 修复 checkpoint 工具日志大参数/结果增长、前台 exec 丢失尾部和控制 JSON 传输越界、静默运行 wait 误判、工具事件缺少运行状态；同时修复旧 checkpoint 无 background_jobs 时暂停/完成漏杀租约内进程。
-- 新日志保留规范化参数/结果 SHA256 与最多4KiB结果记账；旧已消费日志恢复时压缩，旧 pending 完整结果与未确认 exec 的不可重放围栏保留。300步100KB交替写/读的最终checkpoint 30,055,882→106,352 B，累计300次序列化4,526,564,627→19,171,737 B。
-- 产品提交 `2648c91`、`71c1d20`；最终测试适配 `2bbe905`（产品与 `71c1d20` 相同）。最终 Ruff352文件、SQLite1221通过/122跳过、PG16+Redis1308通过/35跳过、Portal38项/build、五服务E2E98通过/0跳过，均0失败。专属PG/Redis及五服务均已停止，七端口无监听。精确基线、跳过项、成本及风险见[本轮审查修复](updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)。
-- 下一步：父任务审阅并接收上述三个固定提交及本轮文档交接；本任务无待实现修复。真实1–4小时模型、真实Linux/provider进程与目标2vCPU/8GiB容量仍待验，不自动集成、启动其他路线项或发布。
-
-## 来源与长任务完整集成（2026-10-25，最终本地验收完成，未合并/未部署）
-
-本轮授权：基于 `feat/long-runs-sources@0caa73b`，在 `feat/quota-pause-gc` 修复工作区GC性能问题并完整重验集成树；不改Portal、不push/PR/merge/deploy。共同base `origin/main@09599a0`。当前工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-59566e53`，产品修复 `65b47e0`。以下历史发布记录不构成本轮发布授权。
-
-- 完整交付包括Portal来源面板/引用入口、Run来源持久化与恢复、长任务活跃时间/步数/token预算、短租约续租与故障恢复、sandbox后台exec生命周期，以及日/月额度耗尽时保留checkpoint/工作区/已有结果、暂停并人工继续。集成分支已包含来源/长任务修复、Portal后续消费契约及额度提交 `30a1fb3`、`b90ffa8`、`0caa73b`，不再需要重复cherry-pick这些历史提交。
-- 本轮GC从非终态Run构建精确工作区key保护集，按状态+ID keyset分页，仅读取ID/runtime_meta；对象页逐项处理，不再按快照数量构造IN参数。新增0030 `(status,id)`索引，保留精确保护/终态与旧快照TTL。细节、双库EXPLAIN、成本与最终计数统一见[最终集成记录](updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。额度业务契约见[额度暂停记录](updates/2026-10-25-quota-pause.md)。
-- 最终产品/测试基线`65b47e0`：Ruff350文件、SQLite1194通过/122跳过、PG16+Redis1281通过/35跳过、Portal38项及production build、五服务E2E98通过/0跳过，均0失败；定向18通过/2跳过、旧实现两项新增回归失败。专属PG/Redis与五服务已停止，七端口无监听。计数、跳过、EXPLAIN及残余成本见统一记录。
-- 剩余边界：真实模型连续1–4小时（含真实日/月额度重置）、真实Linux sandbox后台exec/长期快照保留、目标2vCPU/8GiB机器CPU/RSS/磁盘，以及真实手机交互检查。mock浏览器与宿主子进程证据不能替代它们。
-- 下一步：所有提交已合入本地集成分支 `feat/long-runs-sources`（head `dd36f0a`，领先 `origin/main` 22个提交），无待实现修复。等待用户授权推送/PR/合并/部署；另行安排真实长时模型、真实sandbox后台exec、目标机资源与真机验收。不自动开启其他路线项。
+- 12项均确认并修复，无反驳项。产品/回归 `490de63`，Mock文件payload路径兼容 `a96cd84`。包括PID 1/reaper和Z态、poll快照/提交后删除、真实assembly用户索引、best-effort清理、token cap终态、120s收尾、20,000字符命令、完成不误暂停、不收敛/字节超限停止、总结marker与独立预算窗口。
+- 最终产品/测试基线`a96cd84`：Ruff355文件、SQLite1246通过/125跳过、PG16+Redis1333通过/38跳过、Portal38项/build、五服务E2E98通过/0跳过，均0失败。原始`a0a3ae0`上22项专项21红/1绿。精确逐项证据、资源成本、初轮失败和重跑记录统一见[第三轮记录](updates/2026-10-25-long-runs-review3.md)。
+- 专属PG16/Redis与五服务均已停止，七端口无监听；Portal源码与base相同。下一步：父任务审阅并接收两个产品提交及本轮文档提交，本任务无待实现项；不自动集成或发布。真实Docker/OpenSandbox压力、1–4小时模型、目标2vCPU/8GiB容量仍未验；本机默认Docker socket不存在，未擅自启动个人VM。
+- 历史v2与来源/长任务集成提交已在本轮起点中，先前待cherry-pick和旧head均为历史记录，详见[来源集成记录](updates/2026-10-25-long-runs-sources.md)。本轮不自动开启其他路线项或沿用历史发布授权。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 

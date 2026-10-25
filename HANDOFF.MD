@@ -515,7 +515,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 不要用 Run 时长作 claim/visibility TTL；延长任务必须独立续租。renew 只接受未过期的原 token；409立即停止，瞬态失败须有界重试，仅成功响应延长本地截止，持续故障在lease安全边界前停止并保留durable job。claim/renew响应耗时不能加到所有权期限。预算暂停用 pause/checkpoint，不能先 set_status(interrupted) 绕过安全快照检查。
 - 手动继续时须注入新窗口提示，解除 checkpoint 中旧收尾提示；有 pending tool 时先记待注入标志，等工具结果配对后再注入，不能在 assistant/tool 中间插用户消息。
-- 时间/步数窗口以 durable job_id 标识：同 job 的 crash 延续原窗口，人工 resume/answer 新 job 才重置。原有 next_step/tool_log invocation 编号不归零，否则交付去重和不可重放工具会撞号。累计 tokens/quota 永不随时间续跑重置。
+- 时间/步数窗口使用独立 budget_window_id：crash、lease自动恢复和ask_user回答延续原窗口，仅用户明确继续预算类暂停才重置（第三轮修正旧job_id设计）。原有 next_step/tool_log invocation 编号不归零，否则交付去重和不可重放工具会撞号。累计 tokens/quota 永不随时间续跑重置。
 - 新增原始输入引用时只保存 messages 索引；复制包含 base64 图片的 user_message 到 checkpoint 顶层会绕过 checkpoint_state 的图片引用转换。本轮已有 OCR 体积回归抓到并修正。
 - PG 返回带 Asia/Hong_Kong offset 的时间时必须 astimezone(UTC)，不能 replace(tzinfo=UTC)；后者在租约测试中凭空增加8小时。fault dispatcher 断言须停用测试 API 的后台 dispatcher，避免其先发布导致手动 dispatch 返回0；不能把竞态当恢复失败。
 - 后台 exec 句柄只对当前沙箱有效，控制文件不进入 workspace 快照。暂停/完成先停止追踪的后台命令再强制快照；恢复不得把旧PID当新任务进程。真实 Linux/provider 与宿主子进程证据须分开记录，见[长任务记录](docs/progress/updates/2026-10-25-long-runs.md)。
@@ -554,3 +554,13 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 长命令仍 running 的 exec_wait 是等待，不是重复操作；必须中断 identical/alternating 后缀，不能过滤后把等待两侧的旧观察拼成假循环。已结束 wait 仍参与检测。
 - exec stdout/stderr 需要头部与错误尾部。JSON 协议上限要按序列化后 UTF-8 字节验算，中文、四字节字符和 NUL 转义分别测试；每流1000字符头+8000字符尾（另有省略标记），最坏每字符转义6B，两流约108.6KB；helper序列化后UTF-8须≤120000B，provider内部尾截断上限128000字符。不能等provider截断JSON，也不能为了64KB上限削掉约定的8000字符尾部。
 - kill_all 的权威来源是租约内注册表，调用本身也不能以 Agent checkpoint 的 background_jobs 非空为条件。旧 checkpoint 没有该列表也须在暂停/完成快照前清理；控制请求不应计入测试spy的用户exec执行/故障编号。
+
+
+## 2026-10-25 长任务第三轮独立审查
+
+- **PID 1必须回收退出子进程。** Docker expiry supervisor设SIGCHLD=SIG_IGN；helper每租约一个常驻父进程回收supervisor，Linux启用PR_SET_CHILD_SUBREAPER接住孤儿后代，不依赖OpenSandbox未知PID 1。supervisor自身须恢复SIGCHLD默认行为，否则child.wait可能丢失真实exit code。/proc身份除了starttime还必须拒绝Z；无exit文件但已死的supervisor须失败并可淘汰，不能永久占住8个句柄槽。
+- helper/请求内联在Broker命令里会把20,000字符预算吃掉；改为hash校验的每租约安装和一次性JSON请求文件。Mock原来的路径替换只覆盖内联cmd，文件payload也必须映射/workspace、skills和tools，否则宿主回归会全部“完成”却没有文件。真实provider不使用Mock映射。
+- running exec_wait不是文件变更。完成wait首次确认才保存；存在运行中后台进程时，快照不能清掉可能继续变动的标记。新checkpoint CAS提交之后才能删除旧工作区key；删除意图与CAS同事务，提交后尝试删除、GC重试，不删除最新durable引用。原0030保护集与有界分页保留。
+- 4KiB以下结果也会跨续跑窗口累积超4MiB。已消费日志只保留身份指纹/完成状态；pending结果和started非重放围栏不能提前删。必须独立验算checkpoint JSON UTF-8字节数；超限写有界冻结记录并暂停，不能让413把任务变成FAILED，也不能恢复执行被省略的paid/pending内容。压缩后仍超阈值就暂停，不能每步付费重压。
+- budget_window_id与job_id不是同一个概念。只有用户明确继续budget/stall/loop/quota暂停才新窗口；回答ask_user和lease自动恢复只换job。便宜的/run/state必须仍返回真实job_id，否则Agent队列消费会错认所有权。累计token cap不可继续，使用FAILED终态释放会话；日/月额度继续保留quota暂停。步数总结须和out_of_steps_done一起持久化。
+- 清理错误不能把已完成回答或预算暂停改成FAILED；kill-all日志警告，最终释放租约。最终验收基线、红绿、资源成本和真实Docker不可用边界见[第三轮记录](docs/progress/updates/2026-10-25-long-runs-review3.md)。
