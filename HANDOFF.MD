@@ -533,3 +533,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - GC保护关系应从非终态Run的checkpoint工作区key推导，不能从快照对象列表反推一个IN参数/对象；这会让SQL变量数量随存储增长。仅分页读取ID/runtime_meta并保留非空精确key，再逐项消费有界对象页。
 - `_page()`实际每轮仅返回一个`gc_batch_size`页并保存cursor，并非遍历整个存储；仍不要额外list化或为该页构造IN查询。新增回归分别用lazy迭代器抓预读取、用2000对象/SQL参数计数抓快照数量耦合，并以23个暂停Run/页长7检查跨页保护。
 - keyset分页不等于数据库一定高效：仅status索引时SQLite可能为ORDER BY id沿主键扫终态历史；0030增加(status,id)。10000行EXPLAIN中SQLite复合索引双条件范围扫描，PG16对每状态100行选择已有status索引+排序，均无顺序全表扫描。计划选择依赖分布，不强制PG使用某一个索引。详见[最终集成复核](docs/progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。
+
+
+## 2026-10-25 长任务 v2
+
+- exec 不能靠模型预判 background；短命令同一个 Broker 调用等待 helper 结束，长命令交回句柄。stdout/stderr 必须保留独立语义。控制 JSON 可能因转义超过原 provider 8K 上限，内部提升至64K，模型输出仍各4K字符/轮询尾部4KB；大中文+控制字符回归不能只用不截断的假 transport。
+- 小时自查/收尾提示必须等 pending assistant/tool 配对后再注入；v1 checkpoint 的 review_at/progress_marks 不再是门禁。重复检测必须读 durable tool_log，不依赖会被压缩的 messages；只让真实 steer/人工继续重置窗口，crash 与平台提示不能重置。正常 exec_wait 的 total_bytes/output_tail 变化必须参与比较，idle/duration 不应掩盖重复。
+- MockSandbox 也要把 helper 的 /tmp/ailab-background 映射到自身 sandbox 根，避免宿主不同租约共享句柄/上限。真实Linux /proc围栏与mock宿主ps证据仍分开报告。
+- 完整测试前添加GNU coreutils/findutils路径；PG测试 conftest 启动会 DROP/CREATE public，同一个临时业务库不能并发启动第二个pytest（包括不使用DB的定向文件）。本轮环境误启及旧spy断言失败不计入最终验收；以最终单独完整运行计数为准。

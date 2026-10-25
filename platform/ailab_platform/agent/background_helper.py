@@ -1,5 +1,6 @@
 """Executed inside the sandbox via exec (stdlib only). Not imported by platform services."""
 
+import codecs
 import fcntl
 import json
 import os
@@ -38,38 +39,54 @@ def alive(meta):
 
 def supervise(payload, directory):
     cap = payload["log_bytes"]
-    child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    deadline = time.monotonic() + payload["max_seconds"]
+    started = time.monotonic()
+    child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
+    streams = {child.stdout: "stdout", child.stderr: "stderr"}
+    prefixes, counts = {"stdout": "", "stderr": ""}, {"stdout": 0, "stderr": 0}
+    decoders = {name: codecs.getincrementaldecoder("utf-8")(errors="replace") for name in prefixes}
     total = 0
     with (directory / "log").open("w+b", buffering=0) as log:
-        while time.monotonic() < deadline:
-            if not select.select([child.stdout], [], [], min(1, max(0, deadline - time.monotonic())))[0]:
-                continue
-            chunk = os.read(child.stdout.fileno(), 65536)
-            if not chunk:
-                break
-            fcntl.flock(log, fcntl.LOCK_EX)
-            try:
-                while chunk:
-                    start = total % cap
-                    part, chunk = chunk[: cap - start], chunk[cap - start :]
-                    log.seek(start)
-                    log.write(part)
-                    total += len(part)
-                put(directory / "progress", {"total_bytes": total})
-            finally:
-                fcntl.flock(log, fcntl.LOCK_UN)
-        else:
-            # All descendants share this supervisor's process group.
-            put(directory / "exit", -9)
-            os.killpg(os.getpgrp(), signal.SIGKILL)
+        while streams and time.monotonic() < deadline:
+            ready = select.select(list(streams), [], [], min(0.25, max(0, deadline - time.monotonic())))[0]
+            for stream in ready:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    name = streams[stream]
+                    tail = decoders[name].decode(b"", final=True)
+                    counts[name] += len(tail)
+                    prefixes[name] = (prefixes[name] + tail)[:4000]
+                    streams.pop(stream)
+                    stream.close()
+                    continue
+                name = streams[stream]
+                text = decoders[name].decode(chunk)
+                counts[name] += len(text)
+                prefixes[name] = (prefixes[name] + text)[:4000]
+                fcntl.flock(log, fcntl.LOCK_EX)
+                try:
+                    while chunk:
+                        start = total % cap
+                        part, chunk = chunk[: cap - start], chunk[cap - start :]
+                        log.seek(start)
+                        log.write(part)
+                        total += len(part)
+                    put(directory / "progress", {"total_bytes": total, "last_output_at": time.time()})
+                finally:
+                    fcntl.flock(log, fcntl.LOCK_UN)
         try:
-            code = child.wait(timeout=max(0.1, deadline - time.monotonic()))
+            code = child.wait(timeout=max(0.001, deadline - time.monotonic()))
+            if streams:
+                raise subprocess.TimeoutExpired(payload["cmd"], payload["max_seconds"])
         except subprocess.TimeoutExpired:
-            put(directory / "exit", -9)
+            put(directory / "exit", {"exit_code": -9})
             os.killpg(os.getpgrp(), signal.SIGKILL)
-        put(directory / "exit", code)
-    child.stdout.close()
+        result = {"exit_code": code, "duration_ms": int((time.monotonic() - started) * 1000)}
+        for name, prefix in prefixes.items():
+            result[name] = prefix
+            if counts[name] > len(prefix):
+                result[name] += f"\n...[truncated {counts[name] - len(prefix)} chars]"
+        put(directory / "exit", result)
 
 
 def control(payload):
@@ -78,22 +95,22 @@ def control(payload):
     if payload["action"] == "start":
         with (ROOT / "lock").open("w") as lock:
             fcntl.flock(lock, fcntl.LOCK_EX)
-            active = 0
-            for candidate in ROOT.glob("*/meta"):
-                if not (candidate.parent / "exit").exists() and alive(json.loads(candidate.read_text())):
-                    active += 1
-            if active >= payload["max_jobs"]:
-                return {"ok": False, "error": "后台命令并发数已达上限，请先等待或终止已有命令"}
-            # Finished jobs are explicitly removed on start; total disk is bounded by the job cap.
             import shutil
 
-            for candidate in list(ROOT.iterdir()):
-                if candidate.is_dir() and (
-                    not (candidate / "meta").exists()
-                    or (candidate / "exit").exists()
+            candidates = sorted((p for p in ROOT.iterdir() if p.is_dir()), key=lambda p: p.stat().st_mtime)
+            # Retain recent completed handles too; prune only exited/stale entries, oldest first.
+            for candidate in candidates[:]:
+                if len(candidates) < payload["max_jobs"]:
+                    break
+                if (
+                    (candidate / "exit").exists()
+                    or not (candidate / "meta").exists()
                     or not alive(json.loads((candidate / "meta").read_text()))
                 ):
                     shutil.rmtree(candidate)
+                    candidates.remove(candidate)
+            if len(candidates) >= payload["max_jobs"]:
+                return {"ok": False, "error": "后台命令并发数已达上限，请先等待或终止已有命令"}
             directory.mkdir(mode=0o700)
             source = sys.argv[0] if sys.argv[0] != "-c" else None
             # The same helper source was supplied in the command; persist it only in this lease.
@@ -109,9 +126,14 @@ def control(payload):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            meta = {"pid": worker.pid, "starttime": process_starttime(worker.pid), "log_bytes": payload["log_bytes"]}
+            meta = {
+                "pid": worker.pid,
+                "starttime": process_starttime(worker.pid),
+                "log_bytes": payload["log_bytes"],
+                "started_at": time.time(),
+            }
             put(directory / "meta", meta)
-        return {"ok": True, "handle": payload["handle"], "running": True, "output": "", "total_bytes": 0}
+        payload = {**payload, "action": "wait", "initial": True}
     if not (directory / "meta").exists():
         return {"ok": False, "running": False, "error": "后台命令已不存在；租约恢复后请检查工作区，勿直接重复启动"}
     meta = json.loads((directory / "meta").read_text())
@@ -119,15 +141,18 @@ def control(payload):
     if payload["action"] == "kill" and not (directory / "exit").exists():
         if alive(meta):
             os.killpg(meta["pid"], signal.SIGKILL)
-        put(directory / "exit", -9)
-    deadline = time.monotonic() + min(payload["seconds"], 590)
+        put(directory / "exit", {"exit_code": -9})
+    deadline = time.monotonic() + min(payload["seconds"], 300)
     while payload["action"] == "wait" and not (directory / "exit").exists() and alive(meta) and time.monotonic() < deadline:
         time.sleep(min(0.25, max(0, deadline - time.monotonic())))
     total, output, start = 0, b"", payload["offset"]
+    last_output_at = meta.get("started_at", time.time())
     if (directory / "log").exists():
         with (directory / "log").open("rb") as log:
             fcntl.flock(log, fcntl.LOCK_SH)
-            total = json.loads((directory / "progress").read_text())["total_bytes"] if (directory / "progress").exists() else 0
+            progress = json.loads((directory / "progress").read_text()) if (directory / "progress").exists() else {}
+            total = progress.get("total_bytes", 0)
+            last_output_at = progress.get("last_output_at", last_output_at)
             start = max(payload["offset"], total - min(4000, payload["log_bytes"]))
             if start < total:
                 pos = start % payload["log_bytes"]
@@ -136,15 +161,22 @@ def control(payload):
                 if len(output) < total - start:
                     log.seek(0)
                     output += log.read(total - start - len(output))
-    code = json.loads((directory / "exit").read_text()) if (directory / "exit").exists() else None
+    completed = json.loads((directory / "exit").read_text()) if (directory / "exit").exists() else {}
+    if isinstance(completed, int):  # v1 handles may finish while an Agent is being upgraded.
+        completed = {"exit_code": completed}
+    code = completed.get("exit_code")
     running = code is None and alive(meta)
+    if payload.get("initial") and code is not None and payload["seconds"] > 0:
+        return {"ok": code == 0, **completed}
     return {
         "ok": running or code is not None,
         "error": "" if running or code is not None else "后台进程退出状态丢失，请先检查文件",
         "handle": payload["handle"],
         "running": running,
         "exit_code": code,
-        "output": output.decode(errors="replace"),
+        "output_tail": output.decode(errors="replace"),
+        "idle_seconds": round(max(0, time.time() - last_output_at), 3),
+        "hint": "命令仍在运行；用 exec_wait 等待并检查输出进展。" if running else "",
         "total_bytes": total,
         "truncated": start > payload["offset"],
     }

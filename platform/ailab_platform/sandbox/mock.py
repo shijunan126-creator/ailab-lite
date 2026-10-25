@@ -116,6 +116,7 @@ class MockSandbox(SandboxProvider):
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = cmd
         root = self._sandbox_root(sandbox_id)
+        translated = translated.replace("/tmp/ailab-background", str(root / "background"))
         translated = translated.replace("/workspace", str(root / "workspace"))
         translated = translated.replace("/opt/skills", str(SKILLS))
         translated = translated.replace("/opt/ailab-tools", str(TOOLS))
@@ -152,8 +153,8 @@ class MockSandbox(SandboxProvider):
         host_ws = str(root / "workspace")
         return ExecResult(
             exit_code,
-            stdout[-8000:].replace(host_ws, "/workspace"),
-            stderr[-8000:].replace(host_ws, "/workspace"),
+            stdout[-64000:].replace(host_ws, "/workspace"),
+            stderr[-64000:].replace(host_ws, "/workspace"),
             int((time.monotonic() - started) * 1000),
         )
 

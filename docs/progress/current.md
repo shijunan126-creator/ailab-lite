@@ -1,5 +1,13 @@
 # 当前工作
 
+## 长任务 v2 后端（2026-10-25，正在本地验收）
+
+本轮在 `/Users/michael/.t3/worktrees/ailab-lite/t3-dff90f42` 的 `feat/long-runs-v2`，以实际集成 HEAD `b729c134b92a697a1cfe5a387aed53172c6561f1` 为 base。后续旧小节中的路径与 HEAD 均为历史；不改 Portal，不 push/PR/merge/deploy。
+
+- 已实现统一 yielding exec、持久化工具日志循环检测（提醒一次后暂停）和无进展门禁的小时自查；保留 token/quota、300步、20分钟 liveness、4小时 hard cap 与续租。ADR0008已修订。
+- 正在完成完整 SQLite、PG16+Redis、Portal test/build 与五服务E2E；最终产品SHA、计数、契约及剩余风险统一写入[本轮记录](updates/2026-10-25-long-runs-sources.md#长任务-v2-统一-exec重复检测与预算简化)。
+- 下一步：跑完最终整树验收，停止本任务测试组件，本地提交后交父任务集成 Portal；不自动发布或启动其他路线项。
+
 ## 来源与长任务完整集成（2026-10-25，最终本地验收完成，未合并/未部署）
 
 本轮授权：基于 `feat/long-runs-sources@0caa73b`，在 `feat/quota-pause-gc` 修复工作区GC性能问题并完整重验集成树；不改Portal、不push/PR/merge/deploy。共同base `origin/main@09599a0`。当前工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-59566e53`，产品修复 `65b47e0`。以下历史发布记录不构成本轮发布授权。

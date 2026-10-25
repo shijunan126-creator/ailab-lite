@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from ailab_platform.agent.loop import AgentLoop
 from ailab_platform.config import settings
@@ -61,7 +62,7 @@ class FakeBroker:
         return {"lease_id": "lease_1", "provider": "fake", "inputs": []}
 
     async def exec(self, lease_id, cmd, timeout=None):
-        return {"exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": "", "duration_ms": 1})}
 
     async def refresh_previews(self, lease_id):
         self.preview_calls += 1
@@ -178,7 +179,7 @@ class RichBroker(FakeBroker):
         self.exec_started = True
         if self.slow_exec:
             await asyncio.sleep(30)  # a long-running command
-        return {"exit_code": 0, "stdout": "", "stderr": ""}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": ""})}
 
     async def release(self, lease_id):
         self.released += 1
@@ -475,7 +476,7 @@ def test_search_images_puts_pictures_and_credits_into_the_sandbox() -> None:
 
 def test_near_the_step_limit_the_model_is_told_to_wrap_up(monkeypatch) -> None:
     monkeypatch.setattr(settings, "max_agent_steps", 8)
-    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="exec", arguments={"cmd": "true"})]) for i in range(5)]
+    work = [LLMResponse(tool_calls=[ToolCall(id=f"c{i}", name="exec", arguments={"cmd": f"echo {i}"})]) for i in range(5)]
     llm = ScriptedLLM([*work, LLMResponse(content="done")])
     _run(llm)
     notes = [m for m in llm.seen_messages[-1] if m["role"] == "user" and "平台提示" in m["content"]]
@@ -504,12 +505,15 @@ def test_exec_accepts_command_as_well_as_cmd() -> None:
 
     async def exec_(lease_id, cmd, timeout=None):
         seen.append(cmd)
-        return {"exit_code": 0, "stdout": "", "stderr": ""}
+        return {"exit_code": 0, "stdout": json.dumps({"ok": True, "exit_code": 0, "stdout": "", "stderr": ""})}
 
     broker.exec = exec_
     call = ToolCall(id="c1", name="exec", arguments={"command": "echo hi"})
     _run(ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="ok")]), broker=broker)
-    assert seen == ["echo hi"]
+    import shlex
+
+    assert len(seen) == 1
+    assert json.loads(shlex.split(seen[0])[-1])["cmd"] == "echo hi"
 
 
 def test_the_turns_thinking_is_kept_with_the_run() -> None:

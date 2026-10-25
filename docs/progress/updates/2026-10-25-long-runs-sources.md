@@ -84,3 +84,14 @@ SQLite跳过121项为未配置PG/Redis和外部服务契约；PG跳过35项：Do
 专属PostgreSQL16.15绑定127.0.0.1:35782，Redis8.10.2绑定127.0.0.1:36789；本任务新建data-dir与`ailab_test`/`ailab_migrations`/`ailab_e2e`三个数据库。后端契约Redis DB15，E2E DB13，五服务端口38580–38583/33500。均启动前确认端口空闲，启动后核对监听进程归属。最终E2E夹具停止五服务，Redis核对本轮pidfile与INFO process_id=87845一致后shutdown，PG使用本轮data-dir经pg_ctl fast停止；35782/36789/38580–38583/33500七端口最终均无监听。未停止其他用户进程。
 
 仍未验真实provider连续1–4小时、真实跨日/月额度恢复、真实Linux/OpenSandbox/Docker后台exec与长期快照保留、目标2vCPU/8GiB机器RSS/CPU/磁盘、真实手机键盘/触控。五服务模型/沙箱替身与宿主子进程证据不能代替上述验收；外部服务skip保留。未合并main、未push/PR/merge/deploy。父任务下一步接收本修复分支的产品和文档提交，按独立授权安排真实长期/目标机/手机验收；不自动发布或开始下一路线项。
+
+
+## 长任务 v2：统一 exec、重复检测与预算简化
+
+授权：以实际 `feat/long-runs-sources@b729c134b92a697a1cfe5a387aed53172c6561f1` 为基线，在独立 `feat/long-runs-v2` 本地实现后端；Portal 交父任务适配，不 push/PR/merge/deploy。上文旧分支 HEAD/路径属于历史验收。
+
+实现：所有 exec 同一 helper、短命令一次 Broker 往返保持独立 stdout/stderr，超 yield 返回句柄；wait 上限300秒、输出增量/idle_seconds、8个句柄/先清理最老已退出项；生命周期受剩余 hard Run budget 约束。持久化工具日志检测相同调用+结果×4、同调用错误×3、AB完整循环×6，提醒一次后继续重复则暂停。用户 steer/手动继续重置，crash 不重置。去掉可刷进展的延期门禁，小时信息自查不发事件；4小时最多3步收尾、300步/token/quota/liveness/续租不变。详细决策、兼容和性能预算见[ADR0008](../../architecture/adr/0008-long-run-budgets-and-leases.md)。
+
+配置：删除 `run_soft_budget_seconds` / `run_review_interval_seconds` 及 `.env.example`/部署配置中的对应变量；Settings `extra="ignore"` 允许旧 `AILAB_*` 继续存在。`exec_background_max_jobs` 默认4→8；字段名及1–16范围不变。旧 checkpoint 的 review/progress 字段恢复时丢弃，不修改 durable invocation 编号。
+
+最终验收与精确契约：待最终整树检查完成后补全，不把此前基线的绿色结果算作本轮证据。

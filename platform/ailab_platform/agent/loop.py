@@ -9,7 +9,6 @@ and office files written to /workspace/outputs get rendered previews while the t
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import time
@@ -47,6 +46,7 @@ from .prompts import (
     user_prompt,
     workspace_prompt,
 )
+from .stuck import STUCK_ERROR, STUCK_NOTE, detect_loop
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
@@ -851,6 +851,9 @@ class AgentLoop:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
                 ctx = ToolContext(run_id, self.platform, turn.messages, turn.net_budget)
+                budget = self._budgets[run_id]
+                budget.update()
+                ctx.exec_lifetime_seconds = settings.run_max_seconds - budget.data["active_seconds"]
                 with span("agent.tool", tool=tool):
                     result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
         except (RunCanceled, LeaseInterrupted, BudgetPause):
@@ -909,6 +912,8 @@ class AgentLoop:
                 applied.append(row["id"])
                 changed = True
         if changed:
+            state["loop_start"] = len(state["tool_log"])
+            state.pop("loop_nudge", None)
             await self._checkpoint(run_id, turn)
 
     async def _checkpoint(self, run_id: str, turn: _Turn) -> None:
@@ -1208,15 +1213,17 @@ class AgentLoop:
             while state["next_step"] < step_limit and not state["finished"]:
                 kinds = budget.boundary()
                 if kinds:
-                    messages.append({"role": "user", "content": BUDGET_WRAP_NOTE if "wrap_up" in kinds else REVIEW_NOTE})
+                    state["time_note_pending"] = BUDGET_WRAP_NOTE if "wrap_up" in kinds else REVIEW_NOTE
                     for kind in kinds:
+                        if kind == "self_check":
+                            continue
                         await self._event(
                             run_id,
                             "agent.budget",
                             {
                                 "kind": kind,
                                 "minutes": round(budget.data["active_seconds"] / 60, 1),
-                                "extension_minutes": settings.run_review_interval_seconds / 60 if kind == "extended" else 0,
+                                "reason": budget.data.get("reason", ""),
                             },
                         )
                     await self._checkpoint(run_id, turn)
@@ -1230,7 +1237,11 @@ class AgentLoop:
                 if run["_ledger_tokens"] >= settings.run_max_tokens:
                     raise BudgetPause(_token_limit_error(run))
                 if not state["pending"]:
+                    if note := state.pop("time_note_pending", None):
+                        messages.append({"role": "user", "content": note})
                     if state.pop("budget_note_pending", False):
+                        state["loop_start"] = len(state["tool_log"])
+                        state.pop("loop_nudge", None)
                         messages.append(
                             {
                                 "role": "user",
@@ -1242,6 +1253,16 @@ class AgentLoop:
                     if left == WRAP_UP_STEPS and settings.max_agent_steps > 2 * WRAP_UP_STEPS:
                         messages.append({"role": "user", "content": WRAP_UP_NOTE.format(n=left)})
                     await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
+                    reason = detect_loop(state["tool_log"], state.get("loop_start", 0))
+                    if reason:
+                        nudge = state.get("loop_nudge")
+                        if nudge and len(state["tool_log"]) > nudge["at"]:
+                            raise BudgetPause(STUCK_ERROR)
+                        if not nudge:
+                            state["loop_nudge"] = {"at": len(state["tool_log"]), "reason": reason}
+                            messages.append({"role": "user", "content": STUCK_NOTE})
+                            await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": reason})
+                            await self._checkpoint(run_id, turn)
                     await self._compact_work_context(run_id, turn, llm, model, offered)
                     response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
                     if offered == [] and response.tool_calls:
@@ -1278,7 +1299,7 @@ class AgentLoop:
                             if source["url"] not in seen and len(state["sources"]) < 50:
                                 state["sources"].append(source)
                                 seen.add(source["url"])
-                    state["tool_log"][invocation] = {"name": call.name, "result": result}
+                    state["tool_log"][invocation] = {"name": call.name, "arguments": call.arguments, "result": result}
                     messages.append(tool_result_message(call.id, call.name, result))
                     state["pending"].pop(0)
                     if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):
@@ -1288,14 +1309,6 @@ class AgentLoop:
                         else:
                             jobs.discard(result["handle"])
                         state["background_jobs"] = sorted(jobs)
-                    if result.get("ok"):
-                        marks = set(state.get("progress_marks", []))
-                        if call.name == "update_plan":
-                            marks.update("plan:" + item["id"] for item in state["plan"] if item["status"] in {"done", "skipped"})
-                        elif call.name in {"write_file", "deliver_file"}:
-                            identity = {"args": call.arguments, "file_id": result.get("file_id"), "sha256": result.get("sha256")}
-                            marks.add(hashlib.sha256(_arguments_json(identity).encode()).hexdigest())
-                        state["progress_marks"] = sorted(marks)
                     if call.name == "finish" and result.get("ok"):
                         state.update(finished=True, final_summary=result.get("summary") or state["final_summary"])
                     await self._checkpoint(run_id, turn)

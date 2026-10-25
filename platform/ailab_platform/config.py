@@ -237,10 +237,8 @@ class Settings(BaseSettings):
     run_timeout_seconds: int = Field(default=900, gt=0)  # legacy title-gate bound; no total Run timeout
     job_lease_seconds: int = Field(default=300, ge=120, le=900)
     run_stall_seconds: int = Field(default=1200, ge=601, le=86400)
-    run_soft_budget_seconds: int = Field(default=3600, ge=60, le=86400)
-    run_review_interval_seconds: int = Field(default=1800, ge=60, le=86400)
     run_max_seconds: int = Field(default=14400, ge=60, le=86400)
-    exec_background_max_jobs: int = Field(default=4, ge=1, le=16)
+    exec_background_max_jobs: int = Field(default=8, ge=1, le=16)
     exec_background_log_bytes: int = Field(default=1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_active_runs_per_user: int = Field(default=2, gt=0)
     max_prompt_chars: int = Field(default=8000, gt=0)
@@ -301,8 +299,6 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def long_run_limits(self):
-        if self.run_soft_budget_seconds > self.run_max_seconds:
-            raise ValueError("run_soft_budget_seconds exceeds run_max_seconds")
         if self.run_stall_seconds <= max(600, self.llm_total_timeout_seconds or self.llm_timeout_seconds):
             raise ValueError("run_stall_seconds must exceed single-call and exec deadlines")
         return self
