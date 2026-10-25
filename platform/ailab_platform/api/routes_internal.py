@@ -72,7 +72,7 @@ from .inbox import pending_query
 from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
-from .runtime_fence import fence_attempt
+from .runtime_fence import fenced_run
 from .serializers import file_dict, run_dict
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -297,9 +297,7 @@ def internal_transition(
     if body.status not in AGENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"bad status: {body.status}")
     run = _run_or_404(db, run_id)
-    with user_critical_section(db, run.user_id):
-        db.refresh(run)
-        fence_attempt(db, run_id, x_run_attempt or body.attempt_id)
+    with fenced_run(db, run, x_run_attempt or body.attempt_id) as run:
         try:
             result = body.result
             if result is not None:
@@ -325,8 +323,7 @@ def internal_append_event(
     run_id: str, body: EventIn, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
 ) -> dict:
     run = _run_or_404(db, run_id)
-    with user_critical_section(db, run.user_id):
-        fence_attempt(db, run_id, x_run_attempt)
+    with fenced_run(db, run, x_run_attempt):
         event = append_event(db, run_id, body.type, body.payload)
     return {
         "seq": event.seq,
@@ -428,9 +425,7 @@ def internal_commit_artifact(
     database row is committed, so a failure in between can be retried.
     """
     run = _run_or_404(db, body.run_id)
-    with user_critical_section(db, run.user_id):
-        db.refresh(run)
-        fence_attempt(db, run.id, x_run_attempt)
+    with fenced_run(db, run, x_run_attempt) as run:
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")
         if not body.staging_key.startswith("staging/") or ".." in body.staging_key.split("/"):
@@ -635,9 +630,7 @@ async def internal_save_skill(
 
         def record() -> dict:
             run = _run_or_404(db, run_id)
-            with user_critical_section(db, run.user_id):
-                db.refresh(run)
-                fence_attempt(db, run.id, x_run_attempt)
+            with fenced_run(db, run, x_run_attempt) as run:
                 prior = db.get(RunDelivery, (run.id, x_delivery_id))
                 if prior:
                     return prior.result
@@ -983,9 +976,7 @@ def set_conversation_title(
     run_id: str, body: ConversationTitle, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
 ):
     run = _run_or_404(db, run_id)
-    with user_critical_section(db, run.user_id):
-        fence_attempt(db, run_id, x_run_attempt)
-        db.refresh(run)
+    with fenced_run(db, run, x_run_attempt) as run:
         if run.status == RunStatus.CANCELED:
             return {"ok": False}
         title = normalize_title(body.title)
