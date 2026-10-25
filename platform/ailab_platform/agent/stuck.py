@@ -20,23 +20,54 @@ def fingerprint(value):
     return hashlib.sha256(json.dumps(normalized(value), ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-def detect_loop(tool_log, start=0):
-    """Return a reason for a repeated suffix since the latest user/steer boundary.
+def bookkeeping_result(result):
+    kept = result
+    if len(json.dumps(result, ensure_ascii=False).encode()) > 4096:
+        kept = {"ok": bool(result.get("ok")), "compacted": True}
+        if result.get("error"):
+            kept["error"] = str(result["error"])[:500]
+    return kept
 
-    Six A/B cycles means twelve observations. Only the last twelve are needed;
-    arguments must be durable, so old v1 records without them are ignored.
-    """
+
+def observation(name, arguments, result):
+    """Keep identity and bounded bookkeeping; model messages own the consumed payload."""
+    return {
+        "name": name,
+        "arguments_fingerprint": fingerprint(arguments),
+        "result_fingerprint": fingerprint(result),
+        "failed": result.get("ok") is False or bool(result.get("error")),
+        "waiting": name == "exec_wait" and result.get("running") is True,
+        "result": bookkeeping_result(result),
+    }
+
+
+def compact_log(state):
+    # Legacy completed records can coexist with pending results not yet paired into messages.
+    pending = {f"{state['next_step']}:{item['ordinal']}" for item in state.get("pending", [])}
+    for key, record in list(state["tool_log"].items()):
+        if key not in pending and "arguments" in record and "result" in record:
+            state["tool_log"][key] = observation(record["name"], record["arguments"], record["result"])
+        elif key not in pending and "result" in record:
+            record["result"] = bookkeeping_result(record["result"])
+
+
+def detect_loop(tool_log, start=0):
+    """Inspect a bounded suffix; running waits break repetition patterns."""
     ordered = sorted(tool_log.items(), key=lambda item: tuple(int(n) for n in item[0].split(":")))
-    records = [record for _, record in ordered[start:][-12:] if "arguments" in record and "result" in record]
-    pairs = [fingerprint([r["name"], r["arguments"], r["result"]]) for r in records]
+    records = []
+    for _, record in ordered[start:][-12:]:
+        if "arguments" in record and "result" in record:
+            record = observation(record["name"], record["arguments"], record["result"])
+        if "arguments_fingerprint" not in record or record.get("waiting"):
+            records = []
+        else:
+            records.append(record)
+    calls = [(r["name"], r["arguments_fingerprint"]) for r in records]
+    pairs = [(call, r["result_fingerprint"]) for call, r in zip(calls, records)]
     if len(pairs) >= 4 and len(set(pairs[-4:])) == 1:
         return "identical_call_result"
-    if len(records) >= 3:
-        errors = records[-3:]
-        if all(r["result"].get("ok") is False or r["result"].get("error") for r in errors):
-            calls = [fingerprint([r["name"], r["arguments"]]) for r in errors]
-            if len(set(calls)) == 1:
-                return "repeated_call_error"
+    if len(records) >= 3 and all(r["failed"] for r in records[-3:]) and len(set(calls[-3:])) == 1:
+        return "repeated_call_error"
     if len(pairs) == 12 and pairs[-1] != pairs[-2] and pairs == pairs[-2:] * 6:
         return "alternating_call_result"
     return None

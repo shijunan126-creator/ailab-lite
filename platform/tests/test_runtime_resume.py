@@ -83,6 +83,9 @@ class SandboxSpy(FakeBroker):
         self._step("write", write)
 
     async def exec(self, lease_id, cmd, timeout=None):
+        if json.loads(shlex.split(cmd)[-1])["action"] == "kill_all":
+            return {"exit_code": 0, "stdout": json.dumps({"ok": True, "running": False, "killed": 0})}
+
         def run():
             self.execs.append(json.loads(shlex.split(cmd)[-1])["cmd"])
             return {"exit_code": 0, "stdout": json.dumps({"exit_code": 0, "stdout": "built", "stderr": "", "duration_ms": 1})}

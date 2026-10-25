@@ -512,8 +512,9 @@ def test_exec_accepts_command_as_well_as_cmd() -> None:
     _run(ScriptedLLM([LLMResponse(tool_calls=[call]), LLMResponse(content="ok")]), broker=broker)
     import shlex
 
-    assert len(seen) == 1
-    assert json.loads(shlex.split(seen[0])[-1])["cmd"] == "echo hi"
+    requests = [json.loads(shlex.split(command)[-1]) for command in seen]
+    assert [request["action"] for request in requests] == ["start", "kill_all"]
+    assert requests[0]["cmd"] == "echo hi"
 
 
 def test_the_turns_thinking_is_kept_with_the_run() -> None:
@@ -596,3 +597,42 @@ def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):
         assert closed.is_set()
 
     asyncio.run(scenario())
+
+
+def test_running_exec_events_expose_progress_without_handle():
+    class Broker(FakeBroker):
+        async def exec(self, lease_id, cmd, timeout=None):
+            return {
+                "exit_code": 0,
+                "stdout": json.dumps(
+                    {
+                        "ok": True,
+                        "running": True,
+                        "handle": "a" * 32,
+                        "exit_code": None,
+                        "output_tail": "progress" * 500,
+                        "idle_seconds": 17,
+                    }
+                ),
+            }
+
+    for name in ("exec", "exec_wait", "exec_kill"):
+        args = {"cmd": "build"} if name == "exec" else {"handle": "a" * 32, "seconds": 0}
+        platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[ToolCall("c", name, args)]), LLMResponse(content="done")]), broker=Broker())
+        event = next(p for t, p in platform.events if t == "agent.tool_result")
+        assert event["running"] is True and event["exit_code"] is None and event["idle_seconds"] == 17
+        assert event["stdout"] == ("progress" * 500)[:2000] and "handle" not in event
+
+
+def test_consumed_large_write_is_not_copied_into_durable_tool_log():
+    platform, _ = _run(
+        ScriptedLLM(
+            [
+                LLMResponse(tool_calls=[ToolCall("c", "write_file", {"path": "/workspace/a", "content": "x" * 100000})]),
+                LLMResponse(content="done"),
+            ]
+        )
+    )
+    record = platform.checkpoint["state"]["tool_log"]["0:0"]
+    assert "arguments" not in record and len(json.dumps(record)) < 4096
+    assert len(record["arguments_fingerprint"]) == len(record["result_fingerprint"]) == 64

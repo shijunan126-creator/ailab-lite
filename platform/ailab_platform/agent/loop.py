@@ -46,7 +46,7 @@ from .prompts import (
     user_prompt,
     workspace_prompt,
 )
-from .stuck import STUCK_ERROR, STUCK_NOTE, detect_loop
+from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
@@ -880,7 +880,15 @@ class AgentLoop:
                 "name": call.name,
                 "ok": bool(result.get("ok")),
                 "exit_code": result.get("exit_code"),
-                "stdout": (result.get("stdout") or (f"已读取技能说明（{len(shown)} 字）" if shown else ""))[:2000],
+                "stdout": (
+                    (result.get("output_tail") if result.get("running") else result.get("stdout"))
+                    or (f"已读取技能说明（{len(shown)} 字）" if shown else "")
+                )[:2000],
+                **(
+                    {"running": bool(result.get("running")), "idle_seconds": result.get("idle_seconds")}
+                    if call.name in {"exec", "exec_wait", "exec_kill"}
+                    else {}
+                ),
                 "stderr": (result.get("stderr") or "")[:2000],
                 "error": result.get("error"),
                 **({"sources": web_sources(result)} if call.name in {"web_search", "read_url"} else {}),
@@ -1051,8 +1059,8 @@ class AgentLoop:
         if not turn.lease_id:
             return
         state = self._states[run_id]
-        if state.get("background_jobs"):
-            await background_exec("exec_kill_all", {}, turn.lease_id, self.broker)
+        # Older checkpoints may have no Agent-side handles; the lease registry owns all processes.
+        await background_exec("exec_kill_all", {}, turn.lease_id, self.broker)
         state["background_jobs"] = []
 
     async def _budget_pause(self, run_id, turn, reason, *, pause=None):
@@ -1126,6 +1134,7 @@ class AgentLoop:
             return
         checkpoint = checkpoint or await self.platform.get_checkpoint(run_id)
         state = restored_state(checkpoint) if checkpoint else fresh_state()
+        compact_log(state)
         self._states[run_id] = state
         self._steps[run_id] = checkpoint["step"] if checkpoint else 0
         if checkpoint and checkpoint.get("answer") is not None:
@@ -1299,7 +1308,7 @@ class AgentLoop:
                             if source["url"] not in seen and len(state["sources"]) < 50:
                                 state["sources"].append(source)
                                 seen.add(source["url"])
-                    state["tool_log"][invocation] = {"name": call.name, "arguments": call.arguments, "result": result}
+                    state["tool_log"][invocation] = observation(call.name, call.arguments, result)
                     messages.append(tool_result_message(call.id, call.name, result))
                     state["pending"].pop(0)
                     if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):

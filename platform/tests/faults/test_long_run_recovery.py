@@ -1,7 +1,9 @@
 """SIGKILL in a long-running background start recovers under a short durable lease."""
 
 import asyncio
+import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -90,8 +92,10 @@ asyncio.run(run())
         async def commit(self, *args, **kwargs):
             raise AssertionError("confirmed delivery repeated")
 
-        async def exec(self, *args, **kwargs):
-            raise AssertionError("background start repeated")
+        async def exec(self, lease_id, command, timeout=None):
+            payload = json.loads(shlex.split(command)[-1])
+            assert payload["action"] == "kill_all", "background start repeated"
+            return {"exit_code": 0, "stdout": json.dumps({"ok": True, "running": False, "killed": 0})}
 
         async def snapshot(self, *args):
             return {"key": f"workspaces/{rid}/snapshot.tgz", "size": 1}

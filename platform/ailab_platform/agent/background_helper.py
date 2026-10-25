@@ -43,6 +43,7 @@ def supervise(payload, directory):
     child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
     streams = {child.stdout: "stdout", child.stderr: "stderr"}
+    tails = {"stdout": "", "stderr": ""}
     prefixes, counts = {"stdout": "", "stderr": ""}, {"stdout": 0, "stderr": 0}
     decoders = {name: codecs.getincrementaldecoder("utf-8")(errors="replace") for name in prefixes}
     total = 0
@@ -55,14 +56,16 @@ def supervise(payload, directory):
                     name = streams[stream]
                     tail = decoders[name].decode(b"", final=True)
                     counts[name] += len(tail)
-                    prefixes[name] = (prefixes[name] + tail)[:4000]
+                    prefixes[name] = (prefixes[name] + tail)[:1000]
+                    tails[name] = (tails[name] + tail)[-8000:]
                     streams.pop(stream)
                     stream.close()
                     continue
                 name = streams[stream]
                 text = decoders[name].decode(chunk)
                 counts[name] += len(text)
-                prefixes[name] = (prefixes[name] + text)[:4000]
+                prefixes[name] = (prefixes[name] + text)[:1000]
+                tails[name] = (tails[name] + text)[-8000:]
                 fcntl.flock(log, fcntl.LOCK_EX)
                 try:
                     while chunk:
@@ -83,10 +86,29 @@ def supervise(payload, directory):
             os.killpg(os.getpgrp(), signal.SIGKILL)
         result = {"exit_code": code, "duration_ms": int((time.monotonic() - started) * 1000)}
         for name, prefix in prefixes.items():
-            result[name] = prefix
-            if counts[name] > len(prefix):
-                result[name] += f"\n...[truncated {counts[name] - len(prefix)} chars]"
+            result[name] = tails[name]
+            if counts[name] > 8000:
+                result[name] = (
+                    prefix
+                    + (f"\n...[elided {counts[name] - 9000} chars]...\n" if counts[name] > 9000 else "")
+                    + tails[name][-min(8000, counts[name] - 1000) :]
+                )
         put(directory / "exit", result)
+
+
+def wire_stream(text):
+    # Two streams get 30KB each; leave >4KB for fixed protocol metadata.
+    # JSON escaping costs at most six bytes per character. Preserve the full
+    # 8000-character tail for ordinary/CJK text, adapt only pathological controls.
+    if len(json.dumps(text, ensure_ascii=False).encode("utf-8")) <= 30000:
+        return text
+    head, tail = text[:1000], text[-8000:]
+    while len(json.dumps(head + "\n...[wire elided]...\n" + tail, ensure_ascii=False).encode("utf-8")) > 30000:
+        if head:
+            head = head[: len(head) // 2]
+        else:
+            tail = tail[len(tail) // 10 + 1 :]
+    return head + "\n...[wire elided]...\n" + tail
 
 
 def control(payload):
@@ -184,7 +206,7 @@ def control(payload):
     code = completed.get("exit_code")
     running = code is None and alive(meta)
     if payload.get("initial") and code is not None:
-        return {"ok": code == 0, **completed}
+        return {"ok": code == 0, **{key: wire_stream(value) if key in {"stdout", "stderr"} else value for key, value in completed.items()}}
     return {
         "ok": running or code is not None,
         "error": "" if running or code is not None else "后台进程退出状态丢失，请先检查文件",
