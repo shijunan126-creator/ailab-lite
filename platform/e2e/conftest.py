@@ -1,7 +1,7 @@
 """Browser tests against a real stack: four Python services, Redis, and the Portal's production build.
 
-Everything is real except the two things that cost money or need privileges: the sandbox is the mock
-provider (a temp directory) and the models are the mock ones from tests/models.test.toml.
+Models are deterministic mocks. The sandbox defaults to mock; explicitly opt in to a disposable
+Docker/OpenSandbox backend with a matching Office image to exercise real isolation and execution.
 
     AILAB_E2E=1 pytest e2e                       (needs Redis, Node, and Chromium - see below)
 
@@ -11,6 +11,10 @@ Environment:
     AILAB_E2E_BASE_PORT / _PORTAL_PORT default 18080..18083 and 13000
     AILAB_E2E_PORTAL_DIR               test another checkout of the Portal (needs its node_modules), e.g. a dependency-upgrade branch
     AILAB_E2E_LOG_DIR                  where service logs are copied (default platform/e2e-logs)
+    AILAB_E2E_SANDBOX_PROVIDER         mock (default), docker or opensandbox; real backends must be disposable
+    AILAB_E2E_SANDBOX_IMAGE            required for real backends; must match this checkout's skills
+    AILAB_E2E_DATABASE_URL             optional disposable PostgreSQL database; default isolated SQLite
+    AILAB_SANDBOX_RUNTIME / OSB_*      runtime / OpenSandbox connection settings for the selected real backend
 """
 
 from __future__ import annotations
@@ -114,6 +118,12 @@ def _build_portal(workdir: Path) -> Path:
 def stack(tmp_path_factory):
     import redis
 
+    provider = os.environ.get("AILAB_E2E_SANDBOX_PROVIDER", "mock")
+    if provider not in {"mock", "docker", "opensandbox"}:
+        raise RuntimeError("unknown AILAB_E2E_SANDBOX_PROVIDER")
+    image = os.environ.get("AILAB_E2E_SANDBOX_IMAGE", "")
+    if provider != "mock" and not image:
+        raise RuntimeError("real E2E sandbox requires AILAB_E2E_SANDBOX_IMAGE matching this checkout")
     work = tmp_path_factory.mktemp("e2e")
     tag = uuid.uuid4().hex[:8]
     ports = {"api": BASE_PORT, "broker": BASE_PORT + 1, "agent": BASE_PORT + 2, "worker": BASE_PORT + 3}
@@ -124,11 +134,11 @@ def stack(tmp_path_factory):
         AILAB_ENV_FILE=str(work / "no-such.env"),  # never read a developer's real .env (it may hold model keys)
         AILAB_DATA_DIR=str(data),
         AILAB_STORAGE_ROOT=str(data / "storage"),
-        AILAB_DATABASE_URL=f"sqlite:///{data}/e2e.db",
+        AILAB_DATABASE_URL=os.environ.get("AILAB_E2E_DATABASE_URL") or f"sqlite:///{data}/e2e.db",
         AILAB_REDIS_URL=REDIS_URL,
         AILAB_RUN_QUEUE=f"ailab:stream:e2e-runs-{tag}",
         AILAB_FILE_QUEUE=f"ailab:stream:e2e-files-{tag}",
-        AILAB_SANDBOX_PROVIDER="mock",
+        AILAB_SANDBOX_PROVIDER=provider,
         AILAB_IMAGE_SEARCH_PROVIDER="mock",
         AILAB_MODELS_FILE=str(PLATFORM / "tests" / "models.test.toml"),
         AILAB_API_BASE_URL=f"http://127.0.0.1:{ports['api']}",
@@ -143,7 +153,17 @@ def stack(tmp_path_factory):
         ),
         AILAB_RUN_TIMEOUT_SECONDS="120",
         AILAB_REAPER_INTERVAL_SECONDS="3600",
+        AILAB_BROKER_OWNER=f"e2e-{tag}",
     )
+    if provider != "mock":
+        env["AILAB_SANDBOX_IMAGE"] = image
+        # Copy only explicit adapter settings, never developer database/model credentials.
+        names = (
+            ("AILAB_SANDBOX_RUNTIME",)
+            if provider == "docker"
+            else ("AILAB_OSB_DOMAIN", "AILAB_OSB_PROTOCOL", "AILAB_OSB_API_KEY", "AILAB_OSB_USE_SERVER_PROXY", "AILAB_OSB_NETWORK_MODE")
+        )
+        env.update({name: os.environ[name] for name in names if name in os.environ})
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     procs: list[subprocess.Popen] = []
     logs = []
