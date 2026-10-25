@@ -1,5 +1,9 @@
 # HANDOFF
 
+## 2026-10-25 Run 网页来源
+
+- `agent.tool_result.sources` 是单次工具的事件数据，不能当作重开会话的持久结果；来源与工具完成记录同 checkpoint 保存，终态写 `run.result.sources`，会话详情还需放行该键。旧 checkpoint 缺键须默认空列表；每次工具最多10条、整轮 URL 去重并保留首次顺序最多50条。暂停不写 result，续跑从 checkpoint 恢复。见[交付记录](docs/progress/updates/2026-10-25-run-sources.md)。
+
 ## 2026-10-25 真实沙箱验收
 
 - OpenSandbox server 1.1.1示例的egress DNS-only模式不能拦字面IP，即使SDK请求default_action=deny。Docker侧车模式必须用dns+nft，并先用正常非root容器证明TCP/UDP/ICMP目标可达，再从沙箱测阻断；不要把仅DNS失败写成完整断网。

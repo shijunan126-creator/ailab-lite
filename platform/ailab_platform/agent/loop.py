@@ -1110,6 +1110,12 @@ class AgentLoop:
                     call = ToolCall(data["id"], data["name"], data["arguments"])
                     invocation = f"{step}:{data['ordinal']}"
                     result = await self._durable_tool(turn, run_id, call, step, invocation)
+                    if call.name in {"web_search", "read_url"}:
+                        seen = {source["url"] for source in state["sources"]}
+                        for source in web_sources(result):
+                            if source["url"] not in seen and len(state["sources"]) < 50:
+                                state["sources"].append(source)
+                                seen.add(source["url"])
                     state["tool_log"][invocation] = {"name": call.name, "result": result}
                     messages.append(tool_result_message(call.id, call.name, result))
                     state["pending"].pop(0)
@@ -1136,7 +1142,12 @@ class AgentLoop:
                     await self._event(run_id, "agent.warning", {"message": f"本轮用完了 {settings.max_agent_steps} 步"})
                     if not turn.artifacts:
                         error = f"agent exceeded {settings.max_agent_steps} steps"  # nothing to show for it: a failure
-            result: dict = {"artifacts": turn.artifacts, "plan": state["plan"], "previews": list(turn.previews.values())}
+            result: dict = {
+                "artifacts": turn.artifacts,
+                "plan": state["plan"],
+                "previews": list(turn.previews.values()),
+                "sources": state["sources"],
+            }
             if turn.lease_id:
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
@@ -1182,11 +1193,13 @@ class AgentLoop:
             if exc.status == 409:
                 # Ownership was lost. No more business writes from this attempt.
                 raise
-            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=str(exc)[:2000])
+            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=str(exc)[:2000], result={"sources": state["sources"]})
         except Exception as exc:
             log.exception("agent run %s failed", run_id)
             await self._event(run_id, "agent.error", {"error": f"{type(exc).__name__}: {exc}"})
-            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000])
+            await self.platform.set_run_status(
+                run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000], result={"sources": state["sources"]}
+            )
         finally:
             try:
                 if title_task is not None:
