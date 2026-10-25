@@ -13,6 +13,13 @@ export function statusLabel(status: string): string {
   return STATUS_LABEL[status] || status;
 }
 
+/** The one status line a file shows while the Worker has not made it ready yet: null once it is usable. */
+export function fileStatusText(file: { status: string; meta?: Record<string, any> | null }): string | null {
+  if (file.status === "rejected") return "未通过检查";
+  if (file.status === "pending") return file.meta?.processing === "error" ? "检查出错" : "检查中";
+  return null;
+}
+
 /** Nothing more will happen to the run by itself. An interrupted run rests until someone continues it. */
 export function isTerminal(status: string): boolean {
   return status === "succeeded" || status === "failed" || status === "canceled" || status === "interrupted";

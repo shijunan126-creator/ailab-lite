@@ -450,7 +450,6 @@ class LeaseManager:
     def create(
         self,
         run_id: str,
-        inputs: list[dict] | None = None,
         image: str | None = None,
         ttl_seconds: int | None = None,
         *,
