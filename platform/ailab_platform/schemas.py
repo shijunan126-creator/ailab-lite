@@ -378,13 +378,6 @@ class RunTransitionIn(RunStatusIn):
     attempt_id: str | None = Field(default=None, max_length=40)
 
 
-class UsageIn(BaseModel):
-    model: str = ""
-    prompt_tokens: int = Field(default=0, ge=0)
-    completion_tokens: int = Field(default=0, ge=0)
-    cached_tokens: int = Field(default=0, ge=0)
-
-
 class ArtifactIn(BaseModel):
     run_id: str
     staging_key: str

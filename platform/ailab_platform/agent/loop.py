@@ -34,7 +34,7 @@ from . import net_tools
 from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
-from .multimodal import attachment_content, input_content
+from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
     WORKSPACE_EXPIRED_NOTE,
     history_messages,
@@ -453,7 +453,7 @@ class AgentLoop:
             catalog = Catalog([ModelSpec(model, model, provider="mock")])
         policy = ModelPolicy(catalog)
         required = {"tools"} if offered else set()
-        if any(isinstance(m.get("content"), list) and any(p.get("type") == "image_url" for p in m["content"]) for m in messages):
+        if has_image_part(messages):
             required.add("vision")
         candidates = policy.candidates(model, required)
         for index, spec in enumerate(candidates):
@@ -1133,18 +1133,6 @@ class AgentLoop:
                 },
             },
         )
-
-    async def start(self, run_id: str, *, attempt_id: str, attempt: int = 1) -> None:
-        await self.process(run_id, attempt=attempt, attempt_id=attempt_id)
-
-    async def resume(self, run_id: str, checkpoint: dict, *, attempt_id: str, attempt: int = 1) -> None:
-        await self.process(run_id, attempt=attempt, attempt_id=attempt_id, checkpoint=checkpoint)
-
-    async def cancel(self, run_id: str) -> None:
-        await self.platform.set_run_status(run_id, RunStatus.CANCELED)
-
-    async def snapshot(self, run_id: str) -> dict:
-        return await self.platform.get_checkpoint(run_id)
 
     async def process(self, run_id: str, attempt: int = 1, *, attempt_id: str | None = None, checkpoint: dict | None = None) -> None:
         if not attempt_id:

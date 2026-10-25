@@ -297,7 +297,3 @@ def get_storage() -> Storage:
     if settings.storage_backend == "local":
         return LocalStorage(settings.storage_path)
     raise ValueError(f"unknown storage backend: {settings.storage_backend}")
-
-
-def reset_storage() -> None:
-    get_storage.cache_clear()

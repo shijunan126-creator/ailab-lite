@@ -38,8 +38,10 @@ from ..models import (
     FileStatus,
     OutboxMessage,
     Project,
+    QueuedMessage,
     Run,
     RunAttempt,
+    RunDelivery,
     RunStatus,
     UsageReservation,
     User,
@@ -66,6 +68,7 @@ from ..schemas import (
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
 from ..title_text import normalize_title
+from .inbox import pending_query
 from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
@@ -255,9 +258,6 @@ def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=N
         )
         if not owned:
             raise HTTPException(409, "stale_attempt")
-    from ..models import QueuedMessage
-    from .inbox import pending_query
-
     pending = False
     if run.status == RunStatus.RUNNING:
         applied = (run.runtime_meta or {}).get("steer_ids", [])
@@ -436,8 +436,6 @@ def internal_commit_artifact(
     with user_critical_section(db, run.user_id):
         db.refresh(run)
         fence_attempt(db, run.id, x_run_attempt)
-        from ..models import RunDelivery
-
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")
         if not body.staging_key.startswith("staging/") or ".." in body.staging_key.split("/"):
@@ -453,8 +451,6 @@ def internal_commit_artifact(
 def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) -> dict:
     if not body.staging_key.startswith("staging/"):
         raise HTTPException(status_code=400, detail="staging_key must be under staging/")
-    from ..models import RunDelivery
-
     storage = get_storage()
 
     def reject(code: int, detail: str) -> HTTPException:
@@ -643,8 +639,6 @@ async def internal_save_skill(
             raise HTTPException(400, "empty skill")
 
         def record() -> dict:
-            from ..models import RunDelivery
-
             run = _run_or_404(db, run_id)
             with user_critical_section(db, run.user_id):
                 db.refresh(run)
@@ -714,8 +708,6 @@ async def internal_save_skill(
 
 def _enqueue_thumbnail(db: Session, file: FileObject) -> None:
     if file.status == FileStatus.READY and not (file.meta or {}).get("thumb_key") and thumbnail_candidate(file.filename, file.content_type):
-        from .jobs import stage_job
-
         stage_job(db, "thumbnail", file_id=file.id)
 
 

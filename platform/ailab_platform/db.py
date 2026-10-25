@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Iterator
-from contextlib import contextmanager
 
 from sqlalchemy import create_engine, event, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -85,16 +83,3 @@ def init_db() -> None:
 
         ensure_bootstrap_admin(db)
         db.commit()
-
-
-@contextmanager
-def session_scope() -> Iterator[Session]:
-    db = SessionLocal()
-    try:
-        yield db
-        db.commit()
-    except Exception:
-        db.rollback()
-        raise
-    finally:
-        db.close()

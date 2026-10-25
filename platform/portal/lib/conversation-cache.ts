@@ -14,7 +14,3 @@ export function cacheConversation(detail: ConversationDetail): void {
   cache.set(detail.id, detail);
   while (cache.size > LIMIT) cache.delete(cache.keys().next().value!);
 }
-
-export function forgetConversation(id: string): void {
-  cache.delete(id);
-}

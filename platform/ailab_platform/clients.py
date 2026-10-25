@@ -11,7 +11,7 @@ import asyncio
 import json
 import time
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import NamedTuple
 
 import httpx
 
@@ -506,11 +506,3 @@ class AsyncBrokerClient(_Service):
         r = await self._raw(req)
         if r.status_code not in (200, 204, 404):
             _raise(req.method, req.url, r)
-
-
-def run_summary(run: dict) -> str:
-    return str(run.get("summary") or "")
-
-
-def run_artifacts(run: dict) -> list[dict[str, Any]]:
-    return list(run.get("artifacts") or [])
