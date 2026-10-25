@@ -39,7 +39,7 @@ export type Run = {
   input_files?: { file_id: string; filename: string }[];
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   template?: { name: string; source: "template" | "file" } | null;
-  result?: { previews?: Preview[]; [key: string]: any };
+  result?: { previews?: Preview[]; sources?: { title: string; url: string; site: string }[]; [key: string]: any };
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
   retry_of?: string | null; // the turn this one regenerated

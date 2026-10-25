@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, EventItem, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
-import { siteOf, splitTurn, turnSources } from "../../lib/work-process";
+import { splitTurn, turnSources, type Source } from "../../lib/work-process";
 import CopyButton from "../copy-button";
 import { IconBranch, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconTemplate } from "../icons";
 import { ExtTile } from "../library/file-tile";
@@ -16,6 +16,7 @@ import { useFileViewer } from "../preview/file-viewer";
 export { reduceEvent } from "../../lib/work-process";
 export type { Item } from "../../lib/work-process";
 import { reduceEvent, type Item } from "../../lib/work-process";
+import { SourcesButton } from "./sources";
 import WorkProcess from "./work-process";
 const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf)$/i;
 const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
@@ -155,6 +156,8 @@ export default function Turn({
   forkModes,
   onFork,
   projectId,
+  sourcesOpen,
+  onSources,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -173,6 +176,8 @@ export default function Turn({
   forkModes?: ForkMode[];
   onFork?: (run: Run, mode: ForkMode) => Promise<void>;
   projectId?: string | null; // where this conversation's files are kept
+  sourcesOpen?: boolean;
+  onSources?: (run: Run, sources: Source[], answer: string) => void;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -213,7 +218,8 @@ export default function Turn({
   const answer = (terminal && run.status !== "interrupted" ? run.summary?.trim() : "") || streamed;
   // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
-  const sources = turnSources(shown);
+  // kept on the run once it ends; from the stream (or loaded history) until then
+  const sources = run.result?.sources?.length ? run.result.sources : turnSources(shown);
   const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
   // what the user added while this answer ran: from the turn itself once it is saved, from the stream until then
   const steered = [...(run.steered || [])];
@@ -276,7 +282,7 @@ export default function Turn({
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
-          {answer ? <Markdown text={answer} streaming={live && !terminal} /> : null}
+          {answer ? <Markdown text={answer} streaming={live && !terminal} sources={sources} /> : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{run.error}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">
@@ -317,18 +323,6 @@ export default function Turn({
             </div>
           ) : null}
 
-          {sources.length && terminal ? (
-            <div className="sources" aria-label="来源">
-              {sources.slice(0, 8).map((s) => (
-                <a key={s.url} className="source" href={s.url} target="_blank" rel="noreferrer noopener" title={s.title || s.url}>
-                  <span className="source-mark">{(s.site || siteOf(s.url))[0]?.toUpperCase()}</span>
-                  <span className="source-name">{s.title || s.site || siteOf(s.url)}</span>
-                </a>
-              ))}
-              {sources.length > 8 ? <span className="source more">+{sources.length - 8}</span> : null}
-            </div>
-          ) : null}
-
           {terminal ? (
             <div className={`turn-meta ${last ? "last" : ""}`}>
               {run.versions && run.versions.count > 1 && onSwitch ? (
@@ -365,6 +359,7 @@ export default function Turn({
                 </button>
               ) : null}
               {done && onFork && forkModes?.length ? <ForkButton modes={forkModes} onFork={(mode) => onFork(run, mode)} /> : null}
+              {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
               <span className="meta-text">{modelName(run.model)}</span>
               {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
               <Link className="meta-text" href={`/runs/${run.id}`}>详情</Link>

@@ -4,7 +4,8 @@ import test from 'node:test';
 import ts from 'typescript';
 const source = await readFile(new URL('../lib/work-process.ts', import.meta.url), 'utf8');
 const compiled = ts.transpile(source, {module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022});
-const {reduceEvent,workHeading,splitTurn,thoughtOutline,turnSources,siteOf} = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const mod = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+const {reduceEvent,workHeading,splitTurn,thoughtOutline,turnSources,siteOf} = mod;
 const event=(type,payload)=>({type,payload});
 
 test('reasoning, narrative, plan updates and tools retain their order; reasoning text streams into its block',()=>{
@@ -106,4 +107,13 @@ test('a message added while the answer runs is kept once and ends the text befor
  const {process,answer}=splitTurn(items);
  assert.equal(answer,'已加入去年的对比。');
  assert.ok(process.some((it)=>it.kind==='text'&&it.text.includes('先看第一部分')));
+});
+test('sources the answer links to come first in its order; the rest are more',()=>{
+ const {splitSources,urlKey}=mod;
+ const a={title:'A',url:'https://a.com/x/',site:'a.com'},b={title:'B',url:'https://b.com/y',site:'b.com'},c={title:'C',url:'https://c.com/',site:'c.com'};
+ const {cited,more}=splitSources([a,b,c],'事实一 [B站](https://b.com/y#top)。事实二 [A](https://a.com/x) 再次 [B](https://b.com/y)');
+ assert.deepEqual(cited.map(s=>s.title),['B','A']);
+ assert.deepEqual(more.map(s=>s.title),['C']);
+ assert.equal(urlKey('https://a.com/x/#h'),urlKey('https://a.com/x'));
+ assert.deepEqual(splitSources([a],'没有链接').cited,[]);
 });

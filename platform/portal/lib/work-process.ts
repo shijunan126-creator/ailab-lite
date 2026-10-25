@@ -252,6 +252,29 @@ export function turnSources(items: Item[] | null | undefined): Source[] {
   return [...seen.values()];
 }
 
+/** One address for one page: the fragment and a trailing slash don't make another source. */
+export function urlKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.href.replace(/\/$/, "");
+  } catch {
+    return url;
+  }
+}
+
+/** The sources an answer links to, in its order, and the rest the turn came across. */
+export function splitSources(sources: Source[], answer: string): { cited: Source[]; more: Source[] } {
+  const byKey = new Map(sources.map((s) => [urlKey(s.url), s]));
+  const cited = new Map<string, Source>();
+  for (const m of answer.matchAll(/\]\((https?:\/\/[^)\s]+)/g)) {
+    const key = urlKey(m[1]);
+    const source = byKey.get(key);
+    if (source && !cited.has(key)) cited.set(key, source);
+  }
+  return { cited: [...cited.values()], more: sources.filter((s) => !cited.has(urlKey(s.url))) };
+}
+
 /** example.com for https://www.example.com/a/b */
 export function siteOf(url: string): string {
   try {
