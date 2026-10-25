@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Conversation, ConversationDetail, downloadUrl, errorMessage, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
@@ -316,8 +316,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       conversationsChanged();
       return true;
     } catch (err: any) {
-      const message = errorMessage(err);
-      setError(/^409 /.test(String(err?.message)) && !/[\u4e00-\u9fff]/.test(message) ? "上一条消息还在回答中，请稍候或先停止它" : message);
+      // the server's conversation_busy message is already the friendly, actionable text
+      setError(errorMessage(err));
       return false;
     } finally {
       setBusy(false);
@@ -339,7 +339,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     } catch (err) {
       const message = errorMessage(err);
       // the answer finished while this was being written: it goes out as a normal message
-      if (/^409 /.test(String((err as any)?.message)) && message.includes("空闲")) {
+      if (errorCode(err) === "conversation_idle") {
         await loadDetail();
         return send(prompt, fileIds, options);
       }

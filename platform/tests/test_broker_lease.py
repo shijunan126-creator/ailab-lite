@@ -9,6 +9,7 @@ from pathlib import Path
 from ailab_platform.adapters.lease_store_memory import MemoryLeaseStore
 from ailab_platform.broker.service import LeaseManager
 from ailab_platform.sandbox.mock import MockSandbox
+from ailab_platform.schemas import LeaseCreate
 
 from .fakes import FakeRedis
 
@@ -146,7 +147,11 @@ def test_inputs_come_from_the_run_not_from_the_caller() -> None:
         run_inputs=["f1", "f2"],
     )
     manager, provider, _ = _manager_with(api)
-    lease = manager.create("run_x", inputs=[{"file_id": "other"}])  # caller tries to smuggle a file
+    # The wire schema drops caller-supplied inputs (extra fields are ignored);
+    # attachments come only from the API's run record, never from the lease body.
+    body = LeaseCreate(run_id="run_x", inputs=[{"file_id": "other"}]).model_dump()
+    assert "inputs" not in body
+    lease = manager.create(**body)
 
     assert [i["path"] for i in lease["inputs"]] == ["/workspace/inputs/a.txt", "/workspace/inputs/a (2).txt"]
     assert provider.get_file(lease["sandbox_id"], "/workspace/inputs/a.txt") == b"one"

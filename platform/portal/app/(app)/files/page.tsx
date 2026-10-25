@@ -26,7 +26,7 @@ import FileViewer from "../../../components/preview/file-viewer";
 import ShareDialog from "../../../components/share-dialog";
 import { Category, useLibrary } from "../../../components/library/use-library";
 import { api, archiveUrl, downloadUrl, FileItem, Info, MAX_ATTACHMENTS, Project, uploadFile } from "../../../lib/api";
-import { formatBytes, formatDate, timeAgo } from "../../../lib/format";
+import { fileStatusText, formatBytes, formatDate, timeAgo } from "../../../lib/format";
 import { projectsChanged, useProjects } from "../../../lib/projects";
 import { confirmDialog } from "../../../lib/dialog";
 
@@ -44,12 +44,6 @@ const DAY = 86_400_000;
 function purgeText(file: FileItem): string {
   const days = file.purge_at ? Math.max(0, Math.ceil((new Date(file.purge_at).getTime() - Date.now()) / DAY)) : null;
   return days === null ? "" : days === 0 ? "今天永久删除" : `${days} 天后永久删除`;
-}
-
-function statusText(file: FileItem): string | null {
-  if (file.status === "rejected") return "未通过检查";
-  if (file.status === "pending") return file.meta?.processing === "error" ? "检查出错" : "检查中";
-  return null;
 }
 
 /** Where "talk about these" opens: their project if they share one, else a plain new chat. */
@@ -470,7 +464,7 @@ function Library() {
             <div key={f.id} className={`image-card ${selected.has(f.id) ? "on" : ""} ${menuFor === f.id ? "menu-open" : ""}`}>
               <button className="image-thumb" onClick={() => (selected.size ? toggle(f.id) : setViewing(f))} aria-label={f.filename}>
                 {thumbUrl(f) ? <img src={thumbUrl(f)!} alt="" loading="lazy" decoding="async" /> : <FileTile file={f} size={44} />}
-                {statusText(f) ? <span className="status queued">{statusText(f)}</span> : null}
+                {fileStatusText(f) ? <span className="status queued">{fileStatusText(f)}</span> : null}
               </button>
               {checkbox(f)}
               {starButton(f)}
@@ -507,7 +501,7 @@ function Library() {
           </thead>
           <tbody>
             {files.map((f) => {
-              const st = statusText(f);
+              const st = fileStatusText(f);
               const open = () => (selected.size || trash ? toggle(f.id) : setViewing(f)); // the trash only selects
               return (
                 <tr key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>

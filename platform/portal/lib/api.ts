@@ -341,19 +341,34 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await resp.json()) as T;
 }
 
+/** The parsed `detail` of a failed API call, or null when the error is not an API response. */
+function errorDetail(err: unknown): any {
+  const text = String((err as any)?.message || err || "");
+  const m = /^(\d{3}) ([\s\S]*)$/.exec(text);
+  if (!m) return null;
+  try {
+    return JSON.parse(m[2])?.detail ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** What to tell the user about a failed request: the API's own detail ("409 {"detail":"…"}" → "…"), else the text. */
 export function errorMessage(err: unknown): string {
   const text = String((err as any)?.message || err || "");
+  const detail = errorDetail(err);
+  if (detail === null) return text;
+  if (typeof detail === "string" && detail) return detail;
+  if (typeof detail?.message === "string" && detail.message) return detail.message; // {"code", "message"} errors
+  if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
   const m = /^(\d{3}) ([\s\S]*)$/.exec(text);
-  if (!m) return text;
-  try {
-    const detail = JSON.parse(m[2])?.detail;
-    if (typeof detail === "string" && detail) return detail;
-    if (Array.isArray(detail) && detail[0]?.msg) return String(detail[0].msg);
-  } catch {
-    // not JSON: the body as it came
-  }
-  return m[2] || text;
+  return m ? m[2] : text;
+}
+
+/** The machine-readable code of a failed API call ({"detail": {"code": "…"}}), for branching that must not match on wording. */
+export function errorCode(err: unknown): string | null {
+  const detail = errorDetail(err);
+  return typeof detail?.code === "string" ? detail.code : null;
 }
 
 export function downloadUrl(path: string): string {

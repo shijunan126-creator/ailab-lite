@@ -56,7 +56,7 @@ class FakeBroker:
         self.preview_calls = 0
         self.snapshots = 0
 
-    async def create_lease(self, run_id, inputs=None, **_):
+    async def create_lease(self, run_id, **_):
         self.leases += 1
         return {"lease_id": "lease_1", "provider": "fake", "inputs": []}
 
@@ -160,7 +160,7 @@ class RichBroker(FakeBroker):
         self.released = 0
         self.listings = 0
 
-    async def create_lease(self, run_id, inputs=None, **_):
+    async def create_lease(self, run_id, **_):
         if self.lease_failures:
             self.lease_failures -= 1
             raise ClientError("POST", "u", 429, "sandbox capacity reached (1)")

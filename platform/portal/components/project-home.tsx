@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
-import { formatBytes, timeAgo } from "../lib/format";
+import { fileStatusText, formatBytes, timeAgo } from "../lib/format";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
 import { IconDownload, IconFolder, IconMore, IconPencil, IconTrash } from "./icons";
@@ -162,7 +162,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
                 <span className="grow name">{f.filename}</span>
               </button>
               <span className="meta">
-                {f.status === "pending" ? "检查中" : f.status === "rejected" ? "未通过检查" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
+                {fileStatusText(f) ?? `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
               </span>
               {f.status === "ready" ? (
                 <a className="icon-btn" href={downloadUrl(f.download_url)} aria-label={`下载 ${f.filename}`} title="下载">

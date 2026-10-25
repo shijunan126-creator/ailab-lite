@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, FileItem, filesByIds, ModelInfo, Skill, TemplateRef, uploadFile } from "../../lib/api";
+import { fileStatusText } from "../../lib/format";
 import { usePopover } from "../../lib/use-popover";
 import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
@@ -243,15 +244,18 @@ export default function Composer({
     >
       {files.length ? (
         <div className="attach-row">
-          {files.map((f) => (
-            <span key={f.id} className={`attach-chip ${f.status}`}>
-              {f.status === "pending" ? <span className="chip-spin" aria-hidden="true" /> : <IconFile size={13} />} {f.filename}
-              {f.status === "pending" ? <span className="chip-state">检查中</span> : f.status === "rejected" ? <span className="chip-state">未通过检查</span> : null}
-              <button className="link" aria-label={`移除 ${f.filename}`} onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>
-                ✕
-              </button>
-            </span>
-          ))}
+          {files.map((f) => {
+            const state = fileStatusText(f);
+            return (
+              <span key={f.id} className={`attach-chip ${f.status}`}>
+                {f.status === "pending" ? <span className="chip-spin" aria-hidden="true" /> : <IconFile size={13} />} {f.filename}
+                {state ? <span className="chip-state">{state}</span> : null}
+                <button className="link" aria-label={`移除 ${f.filename}`} onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>
+                  ✕
+                </button>
+              </span>
+            );
+          })}
         </div>
       ) : null}
       {picked ? (

@@ -44,7 +44,8 @@ def path_runs(db, conversation_id, leaf_id):
 
 def require_idle(db, conversation_id):
     if db.scalar(select(Run.id).where(Run.conversation_id == conversation_id, Run.status.not_in(RunStatus.TERMINAL)).limit(1)):
-        raise HTTPException(409, "先停止当前回答")
+        # `code` is the stable contract the Portal branches on; `message` is what a human reads.
+        raise HTTPException(409, {"code": "conversation_busy", "message": "上一条消息还在回答中，请稍候或先停止它"})
 
 
 def siblings_query(conversation_id, parent_id):

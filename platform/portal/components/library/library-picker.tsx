@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { FileItem } from "../../lib/api";
-import { formatBytes, timeAgo } from "../../lib/format";
+import { fileStatusText, formatBytes, timeAgo } from "../../lib/format";
 import { IconCheck, IconSearch } from "../icons";
 import FileTile from "./file-tile";
 import Modal from "./modal";
@@ -105,7 +105,7 @@ export default function LibraryPicker({
                 <span className="grow">
                   <span className="name">{f.filename}</span>
                   <span className="meta">
-                    {f.status === "pending" ? "检查中" : f.status === "rejected" ? "未通过检查" : `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
+                    {fileStatusText(f) ?? `${formatBytes(f.size)} · ${timeAgo(f.created_at)}`}
                   </span>
                 </span>
               </button>
