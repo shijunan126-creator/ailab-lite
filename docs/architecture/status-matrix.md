@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-25 本机部署：固定main `72901e3`已通过保留数据的0028→0029→0030迁移，真实来源桌面/390×844、模型DOCX/预览、3分钟exec_wait、取消、问答继续与受控额度暂停/UI继续通过；26分30.89秒真实模型+runsc工作、8阶段各180秒计算/报告交付，观察26次短claim续期、投递1次、workspace最多/最终1对象、无stall误判/OOM/重启。九服务RSS合计中位1930.21MiB，本轮余额减少¥0.16。完整1–4小时/真实额度重置、强制重复检测、真实手机和硬件链路稳定性仍未验；[本轮记录](../progress/updates/2026-10-25-deploy-long-runs.md)区分当前检查、探针失败与历史证据。下文旧“未部署”仅代表当时阶段。
+
 2026-10-25 来源与长任务最终验收：集成`feat/long-runs-sources@a677a5f`，最终`feat/long-runs-final@38a71f8`。来源面板/Run来源、v2预算/续租/统一exec/重复检测、额度暂停和review3已集成；补齐checkpoint/result快照引用原子同步、真实tmpfs helper安装、SIGKILL监督进程的孤儿组清理。Docker/runc、Docker/runsc、OpenSandbox/runc+dns+nft各400次exec：209.262/259.915/1012.291秒，四次采样均5 PID/0 Z；真实合同共9项通过。SQLite1248/132跳过、PG+Redis1335/45跳过、Portal38/build、E2E98/0跳过及Ruff通过。精确边界/清理见[最终记录](../progress/updates/2026-10-25-long-runs-sources.md#final-real-sandbox-validation)；未合并/未部署，真实1–4小时模型、整栈目标容量、手机仍待验。
 
 2026-10-25 长任务v2审查修复：`feat/long-runs-v2-fixes`基于集成`8a2bfed`（含Portal `a4fa0b6`），补齐有界checkpoint日志/旧格式恢复、exec头尾与传输字节预算、静默wait排除、运行状态事件和无Agent句柄列表时的租约全量清理。本地验收及残余边界见[统一记录](../progress/updates/2026-10-25-long-runs-sources.md#long-runs-v2-review-fixes)；不代表真实长时模型、目标机容量或上线验收。
