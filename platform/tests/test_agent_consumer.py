@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 
 from ailab_platform.agent import main as agent_main
+from ailab_platform.clients import ClientError
 from ailab_platform.config import settings
 from ailab_platform.contracts.jobs import JobEnvelope
 from ailab_platform.queue import InMemoryQueue
@@ -188,16 +189,16 @@ def test_sigterm_cancels_the_consumer_at_once_and_keeps_uvicorns_handler(monkeyp
     assert calls == ["uvicorn"]
 
 
-def test_live_job_is_renewed_on_short_clock_and_failure_stops_unfenced_work(env, monkeypatch):
+def test_live_job_is_renewed_on_short_clock_and_stale_claim_stops_unfenced_work(env, monkeypatch):
     q, msg = env
-    monkeypatch.setattr(settings, "job_lease_seconds", 0.03)
+    monkeypatch.setattr(settings, "job_lease_seconds", 0.3)
     canceled = []
 
     class RenewalFailure(FakePlatform):
         async def job_action(self, job_id, action, **body):
             await super().job_action(job_id, action, **body)
             if action == "renew" and len(_actions("renew")) == 2:
-                raise ConnectionError("API unavailable")
+                raise ClientError("POST", "/renew", 409, "stale_claim")
             return dict(self.claim) if action == "claim" else {"ok": True}
 
     class Working(FakeLoop):
@@ -208,7 +209,7 @@ def test_live_job_is_renewed_on_short_clock_and_failure_stops_unfenced_work(env,
                 canceled.append(True)
 
     monkeypatch.setattr(agent_main, "AsyncPlatformClient", RenewalFailure)
-    with pytest.raises(ConnectionError):
+    with pytest.raises(ClientError, match="stale_claim"):
         _handle(Working(), q, msg)
     assert len(_actions("renew")) == 2 and canceled
     assert not _actions("ack") and FakePlatform.statuses == []
