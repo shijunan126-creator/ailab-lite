@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 
 import httpx
 import pytest
@@ -17,6 +18,16 @@ pytestmark = pytest.mark.e2e
 def _token(stack) -> dict:
     token = httpx.post(stack.api + "/v1/auth/login", json={"username": USERNAME, "password": PASSWORD}).json()["token"]
     return {"Authorization": f"Bearer {token}"}
+
+
+def _wait_status(stack, headers, run_id: str, status: str, timeout: float) -> None:
+    deadline = time.monotonic() + timeout
+    while True:
+        current = httpx.get(stack.api + f"/v1/runs/{run_id}", headers=headers).json()["status"]
+        if current == status:
+            return
+        assert time.monotonic() < deadline, f"run {run_id} still {current}, expected {status}"
+        time.sleep(0.2)
 
 
 def _turn(stack, headers, conversation_id: str) -> dict:
@@ -69,9 +80,9 @@ with SessionLocal() as db:
 
     page.get_by_role("button", name="精简版", exact=True).click()
     page.get_by_text("好的，按「精简版」继续完成。", exact=True).wait_for(timeout=90000)
-    page.wait_for_function(
-        "async (id) => (await (await fetch('/api/v1/runs/' + id)).json()).status === 'succeeded'", arg=waiting["id"], timeout=15000
-    )
+    # The answer is visible before the run's cleanup (stopping commands, snapshot) ends it; wait for the run itself.
+    # (wait_for_function with an async predicate passes on the returned Promise and does not wait.)
+    _wait_status(stack, headers, waiting["id"], "succeeded", timeout=15)
     assert page.get_by_text("好的，按「精简版」继续完成。", exact=True).count() == 1
 
     done = _turn(stack, headers, conversation_id)
