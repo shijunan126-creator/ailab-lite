@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import AuthBrand from "../../components/auth-brand";
+import { errorMessage } from "../../lib/api";
 
 export default function RegisterPage() {
   const [mode, setMode] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export default function RegisterPage() {
       if (!resp.ok) throw new Error((await resp.json().catch(() => ({})))?.detail || `注册失败（${resp.status}）`);
       window.location.href = "/";
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
       setBusy(false);
     }
   }

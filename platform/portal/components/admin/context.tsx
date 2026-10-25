@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import { formatTokens } from "../../lib/format";
+import Switch from "../switch";
 
 type ContextSettings = { auto_compact: boolean; threshold_ratio: number; models: { id: string; name: string; context_tokens: number }[] };
 
@@ -53,9 +54,7 @@ export default function ContextSection() {
       <div className="card card-pad">
         <div className="field-row">
           <span>自动压缩上下文</span>
-          <button type="button" role="switch" aria-checked={on} aria-label="自动压缩上下文" className={`switch ${on ? "on" : ""}`} onClick={() => setOn(!on)}>
-            <span className="knob" />
-          </button>
+          <Switch on={on} label="自动压缩上下文" onChange={setOn} />
         </div>
         <div className="collapse" data-open={on} inert={!on}>
           <div>
@@ -119,9 +118,7 @@ function LibrarySettings() {
     <div className="card card-pad library-settings">
       <div className="field-row">
         <span>为资料库文件生成摘要</span>
-        <button type="button" role="switch" aria-checked={!!on} aria-label="为资料库文件生成摘要" className={`switch ${on ? "on" : ""}`} disabled={on === null} onClick={toggle}>
-          <span className="knob" />
-        </button>
+        <Switch on={!!on} label="为资料库文件生成摘要" disabled={on === null} onChange={toggle} />
       </div>
       {error ? <div className="alert error">{error}</div> : null}
     </div>

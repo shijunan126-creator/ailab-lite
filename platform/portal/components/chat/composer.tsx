@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { api, FileItem, filesByIds, ModelInfo, Skill, TemplateRef, uploadFile } from "../../lib/api";
+import {FileItem, ModelInfo, Skill, TemplateRef, api, errorMessage, filesByIds, uploadFile} from "../../lib/api";
 import { fileStatusText } from "../../lib/format";
 import { usePopover } from "../../lib/use-popover";
 import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
@@ -160,11 +160,11 @@ export default function Composer({
           const item = await uploadFile(file, projectId);
           setFiles((prev) => [...prev, { id: item.id, filename: item.filename, status: item.status }]);
         } catch (err: any) {
-          setError(String(err?.message || err));
+          setError(errorMessage(err));
         }
       }
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
     } finally {
       setUploading(false);
       if (picker.current) picker.current.value = "";

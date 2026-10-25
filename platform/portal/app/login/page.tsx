@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import AuthBrand from "../../components/auth-brand";
+import { errorMessage } from "../../lib/api";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -41,7 +42,7 @@ export default function LoginPage() {
       const asked = window.location.pathname === "/login" ? new URLSearchParams(window.location.search).get("next") || "/" : window.location.pathname;
       window.location.href = asked.startsWith("/") && !asked.startsWith("//") ? asked : "/";
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
       setBusy(false);
     }
   }

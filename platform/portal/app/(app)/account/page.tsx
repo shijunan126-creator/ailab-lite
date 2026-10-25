@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import { api, Me } from "../../../lib/api";
+import {Me, api, errorMessage} from "../../../lib/api";
 
 export default function AccountPage() {
   const [me, setMe] = useState<Me | null>(null);
@@ -34,7 +34,7 @@ export default function AccountPage() {
       await fetch("/api/auth/logout", { method: "POST" });
       window.location.href = "/login";
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
       setBusy(false);
     }
   }

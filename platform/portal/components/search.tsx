@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { api, Conversation, SearchHit } from "../lib/api";
+import {Conversation, SearchHit, api, errorMessage} from "../lib/api";
 import { timeAgo } from "../lib/format";
 import { IconFolder, IconMessage, IconSearch } from "./icons";
 
@@ -56,7 +56,7 @@ export default function SearchDialog({ recent, onClose }: { recent: Conversation
       setCursor(after);
       setError("");
     } catch (err: any) {
-      if (!controller.signal.aborted) setError(String(err?.message || err));
+      if (!controller.signal.aborted) setError(errorMessage(err));
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Project } from "../../lib/api";
+import {Project, errorMessage} from "../../lib/api";
 import { createProject, useProjects } from "../../lib/projects";
 import { IconCheck, IconFolder, IconFolderPlus, IconX } from "../icons";
 import Modal from "./modal";
@@ -19,7 +19,7 @@ export function NewProjectInput({ onCreated, onCancel }: { onCreated: (p: Projec
     try {
       onCreated(await createProject(value));
     } catch (err: any) {
-      setError(String(err?.message || err));
+      setError(errorMessage(err));
       setBusy(false);
     }
   }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, FileItem, filesByIds } from "../../lib/api";
+import {FileItem, api, errorMessage, filesByIds} from "../../lib/api";
 
 export type Category = "all" | "starred" | "images" | "slides" | "trash";
 export type LibraryFilter = { category: Category; projectId?: string | null; q?: string; grouped?: boolean };
@@ -58,7 +58,7 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
       setMore(list.length === limit);
       setError("");
     } catch (err: any) {
-      if (mine === seq.current) setError(String(err?.message || err));
+      if (mine === seq.current) setError(errorMessage(err));
     } finally {
       if (mine === seq.current) setLoaded(true);
     }
@@ -82,7 +82,7 @@ export function useLibrary(filter: LibraryFilter, enabled = true) {
       });
       setMore(list.length === PAGE);
     } catch (err: any) {
-      if (mine === seq.current) setError(String(err?.message || err));
+      if (mine === seq.current) setError(errorMessage(err));
     }
   }, [key, folderMore]);
 

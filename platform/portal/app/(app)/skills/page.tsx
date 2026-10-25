@@ -3,6 +3,7 @@
 import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import Switch from "../../../components/switch";
 import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import MarketPanel from "../../../components/skills/market";
@@ -33,14 +34,6 @@ description: 按团队模板写周报：本周完成、问题与风险、下周�
 把这个 SKILL.md 和 scripts/、assets/ 等文件夹一起打成 .zip 上传，
 说明里用相对路径引用，比如：python scripts/fill.py
 `;
-
-function Switch({ on, label, onChange, disabled }: { on: boolean; label: string; onChange: (on: boolean) => void; disabled?: boolean }) {
-  return (
-    <button role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? "on" : ""}`} disabled={disabled} onClick={() => onChange(!on)}>
-      <span className="knob" />
-    </button>
-  );
-}
 
 async function getFile(id: string, signal: AbortSignal): Promise<ScannedFile | null> {
   const resp = await fetch(`${API_BASE}/v1/files/${id}`, { signal, cache: "no-store" });

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { IconClock, IconPencil, IconPlus, IconSend, IconTrash } from "../../../components/icons";
+import Switch from "../../../components/switch";
 import Modal from "../../../components/library/modal";
 import { api, errorMessage, Schedule, Skill } from "../../../lib/api";
 import { formatDate, statusLabel } from "../../../lib/format";
@@ -189,10 +190,12 @@ export default function SchedulesPage() {
         <div className="card schedule-list">
           {list.map((s) => (
             <div key={s.id} className={`schedule ${s.enabled ? "" : "off"}`}>
-              <button type="button" role="switch" aria-checked={s.enabled} aria-label={`${s.enabled ? "停用" : "启用"} ${s.title}`} className={`switch ${s.enabled ? "on" : ""}`}
-                disabled={busy === s.id} onClick={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}>
-                <span className="knob" />
-              </button>
+              <Switch
+                on={s.enabled}
+                label={`${s.enabled ? "停用" : "启用"} ${s.title}`}
+                disabled={busy === s.id}
+                onChange={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}
+              />
               <div className="grow">
                 <div className="schedule-title">{s.title}</div>
                 <div className="schedule-meta">

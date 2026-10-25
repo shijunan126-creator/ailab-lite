@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconPlus, IconTrash } from "../../../components/icons";
+import Switch from "../../../components/switch";
 import { api } from "../../../lib/api";
 import { timeAgo } from "../../../lib/format";
 
@@ -64,14 +65,6 @@ function problem(e: unknown): { stale: boolean; message: string } {
     return { stale: false, message: "有内容为空或超出容量" };
   }
   return { stale: false, message: `没能保存：${text}` };
-}
-
-function Switch({ on, label, onChange, disabled }: { on: boolean; label: string; onChange: (on: boolean) => void; disabled?: boolean }) {
-  return (
-    <button role="switch" aria-checked={on} aria-label={label} className={`switch ${on ? "on" : ""}`} disabled={disabled} onClick={() => onChange(!on)}>
-      <span className="knob" />
-    </button>
-  );
 }
 
 export default function MemoryPage() {

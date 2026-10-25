@@ -5,6 +5,7 @@ import { admin, AdminUser, Department, QuotaPolicy, reason, UserUsage } from "..
 import { Me } from "../../lib/api";
 import { formatTokens, timeAgo } from "../../lib/format";
 import { IconPlus, IconSearch, IconX } from "../icons";
+import Switch from "../switch";
 import Modal from "../library/modal";
 import Select from "../select";
 
@@ -12,17 +13,7 @@ function AdminToggle({ on, onChange, disabled }: { on: boolean; onChange: (on: b
   return (
     <div className="field-row">
       <span>{on ? "管理者" : "普通用户"}</span>
-      <button
-        type="button"
-        className={`switch ${on ? "on" : ""}`}
-        role="switch"
-        aria-checked={on}
-        aria-label="管理者权限"
-        disabled={disabled}
-        onClick={() => onChange(!on)}
-      >
-        <span className="knob" />
-      </button>
+      <Switch on={on} label="管理者权限" onChange={onChange} disabled={disabled} />
     </div>
   );
 }
@@ -148,9 +139,7 @@ function UserDialog({
         ) : null}
         <div className="field-row">
           <span>停用账号</span>
-          <button type="button" className={`switch ${disabled ? "on" : ""}`} role="switch" aria-checked={disabled} aria-label="停用账号" onClick={() => setDisabled(!disabled)}>
-            <span className="knob" />
-          </button>
+          <Switch on={disabled} label="停用账号" onChange={setDisabled} />
         </div>
       </form>
     </Modal>
