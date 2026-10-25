@@ -1,5 +1,14 @@
 # 当前工作
 
+## 用户额度耗尽暂停（2026-10-25，本地验收完成，交父任务集成）
+
+本轮唯一授权：从集成基线 `80d3b4a` 新建 `feat/quota-pause`，实现日/月额度中途拒绝时保存并暂停、人工继续及明确的额度错误契约；不改 Portal，不 push/PR/merge/deploy。当前工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-cfac648a`，产品/测试提交 `30a1fb3`、`b90ffa8`。旧小节中的分支与验收仅是历史，不能视作本轮已验证。
+
+- 预留请求的业务 `quota_exceeded` 转为 `interrupted`、resumable、不自动续跑；保存 checkpoint/workspace/previews/artifacts/plan/sources，不额外交付，不进入模型重试/降级/失败计数。日/月额度继续按 UTC。恢复及后续非额度暂停清除旧 `result.pause`；单 Run 累计 token cap 保持独立。
+- 验证中确认手动队列恢复此前吞掉额度429，现透传结构化 detail；后台派发仍暂停队列。月额度可能超过原72小时取消/3天快照TTL：取消宽限期从重置时刻起算，GC保留live Run正在引用的精确checkpoint快照，终态/旧快照恢复既有TTL。
+- 最终产品基线`b90ffa8`：Ruff check/format349文件，SQLite1191通过/121跳过，PG16+Redis1277通过/35跳过，Portal38通过/production build，五服务E2E98通过/0跳过，均0失败；定向11项通过，隔离原基线10项业务回归失败/瞬态429对照1项通过。GC查询双库10000行EXPLAIN均使用主键索引。详细契约、性能成本、失败历史和边界见[本轮记录](updates/2026-10-25-quota-pause.md)。专属PG/Redis与五服务已停止，七端口无监听。
+- 下一步：父任务按顺序cherry-pick `30a1fb3`、`b90ffa8`及本轮文档提交，核对最终集成树。本轮无待实现项；真实provider跨日/月、真实沙箱长期磁盘保留、目标机CPU/RSS/容量未验，额度恢复测试通过提高默认额度模拟。未获发布授权，不开启下一路线项。
+
 ## 长任务与来源集成（2026-10-25，本地验收完成，交父任务集成，未合并/未部署）
 
 用户授权：集成来源面板与长任务后端，修复审查发现，完整双库/Portal/五服务验收并本地提交；不push/PR/merge/deploy，不改Portal行为。历史发布授权不适用于本轮。

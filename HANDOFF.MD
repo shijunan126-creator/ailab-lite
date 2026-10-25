@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-25 额度暂停
+
+- 用户日/月额度的429发生在模型reserve之前，不是上游模型故障；只在reserve接缝识别 `detail.code=quota_exceeded`，转为独立BudgetPause子类。不要把所有429都当额度暂停，也不要让它触发重试、fallback或LLM失败计数。标题推理仍独立best-effort，不能因标题额度失败暂停已成功回答。
+- 普通预算暂停会自动交付outputs leftovers；额度暂停必须跳过额外交付，仅保存checkpoint、workspace和已有预览/产物/计划/来源。API合并部分result时必须主动清掉旧pause；成功继续在同一事务清除，后续其他暂停即使省略result也清除。
+- 手动queue/resume须透传准入429 detail；自动终态派发则在savepoint拒绝后保持队列暂停，不能把预期额度失败回滚为前一Run失败。
+- 月额度重置可能晚于72小时中断取消与3天workspace TTL：额度暂停的waiting_since作为取消宽限期起点取max(now,resets_at)，GC按有界对象页通过Run主键批查runtime_meta，保留live Run引用的精确checkpoint快照。只保护当前快照，终态/替代快照恢复TTL；独立GC测试须给collector绑定自己的DB factory，不能查全局未初始化或其他测试库。详见[本轮记录](docs/progress/updates/2026-10-25-quota-pause.md)。
+
 ## 2026-10-25 Run 网页来源
 
 - `agent.tool_result.sources` 是单次工具的事件数据，不能当作重开会话的持久结果；来源与工具完成记录同 checkpoint 保存，终态写 `run.result.sources`，会话详情还需放行该键。旧 checkpoint 缺键须默认空列表；每次工具最多10条、整轮 URL 去重并保留首次顺序最多50条。waiting_user、预算与租约中断暂停也须写 result.sources；API在用户锁内合并暂停及失败的部分result，避免续跑后崩溃抹掉已保存的预览/计划。续跑仍从checkpoint恢复。见[交付记录](docs/progress/updates/2026-10-25-run-sources.md)。

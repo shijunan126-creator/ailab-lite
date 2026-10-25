@@ -57,7 +57,7 @@
 | 能力 | 实现 | 未验收 |
 |---|---|---|
 | 调用级账本（T01） | 每次模型调用先预留、后结算：`call_id` 唯一、结算幂等、定价快照（模型倍率、缓存折扣、policy_version）冻结、金额为整数 milli；断流记 `estimated`，API 不可达时预留过期转 `unreconciled`，晚到结算原行修正。账本不引用 runs，对话被清除后用量仍在。对账 CLI：`ops.reconcile_usage` | 上游是否严格遵守 `max_tokens`、模型专用 tokenizer、网关侧对账 |
-| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`。Run 内 Token 预算保持软上限（ADR 0001） | — |
+| 硬额度（T02） | 用户日/月额度在预留时原子检查（已结算 + 未结算预留），并发 Run 不会同时越界；周期按 `quota_timezone`（本轮保持UTC）。中途reserve额度拒绝保存并人工可续跑暂停，恢复准入保留结构化429，暂停元数据及月度快照保留见[额度暂停](../progress/updates/2026-10-25-quota-pause.md)。Run累计token cap独立暂停并拒绝同Run继续（ADR 0008） | — |
 | 额度策略 | 用户策略 → 部门策略 → 默认策略 → settings，统一经 `quota.user_limits` 用于 Token、资料库空间、并发 Run、用量摘要 | — |
 | 用量提醒 | `/v1/usage` 返回各窗口 used/reserved/percent/resets_at 与 80%/100% 告警；Portal 输入框上方显示提醒 | — |
 
