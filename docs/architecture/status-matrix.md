@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-10-25 最终来源/长任务集成：`feat/long-runs-sources@0caa73b` + `feat/quota-pause-gc@65b47e0`，base `origin/main@09599a0`。来源面板/Run来源、长任务预算/租约/后台exec与日/月额度暂停已集成，本地全套最终复核见[统一交接](../progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。GC非终态保护集keyset分页、0030(status,id)索引，精确引用快照保留；真实1–4小时模型、真实sandbox后台exec、目标机RSS与真机手机待验。未合入main/未部署；下文子分支“未集成”均为历史阶段。
+
 2026-10-25 Run 来源持久化：`feat/run-sources@41da18f` 本地实现整轮网页来源去重/50条上限、checkpoint恢复、终态结果与详情输出；未集成Portal或合入main，验证边界见[交付记录](../progress/updates/2026-10-25-run-sources.md)。
 
 2026-10-25真实沙箱补验（PR #54已合并main `a646ba3`，未部署）：真实Docker/runsc 9项、OpenSandbox/runc+dns+nft 9项、PG16+Redis+OpenSandbox五服务浏览器7项通过，均0跳过；SQLite/PG全Python1178/1224通过（跳过81/35）。head `16245a7` 的8项CI全通过。修复Docker到期竞态与OpenSandbox DNS-only字面IP绕过，模型/扫描仍为测试替身，不能推导Kubernetes/gVisor或付费模型联合验收。见[本轮记录](../progress/updates/2026-10-25-real-sandbox-acceptance.md)。

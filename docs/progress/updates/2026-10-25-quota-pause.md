@@ -40,3 +40,8 @@
 SQLite121跳过为未配置PG/Redis与外部组件；PG35跳过：Docker11、OpenSandbox10、S3 8，ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher锁语义分支各1。不将skip计为通过。
 
 真实provider跨日/月运行、真实沙箱长时间磁盘保留及目标机容量未验；重置后路径以提高额度模拟解除拒绝，未等待真实日历月份。已有未配置外部组件按全量skip如实保留。父任务下一步按顺序cherry-pick `30a1fb3`、`b90ffa8`及本轮文档提交并核对最终树；无待实现修复，不启动发布。
+
+
+## 最终集成后的GC复核
+
+上述b90ffa8阶段的“每页批查/有界内存”性能描述不完整，不能作为最终GC验收：当时实现将对象页list化并按快照派生IN参数。最终 `feat/quota-pause-gc@65b47e0` 已改为非终态Run keyset分页保护集与对象页逐项处理，新增0030索引及红绿回归。最终整树基线、实际EXPLAIN和全部套件结果统一见[最终集成记录](2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)，替代上文待父任务接收旧额度提交的下一步。

@@ -1,23 +1,14 @@
 # 当前工作
 
-## 用户额度耗尽暂停（2026-10-25，本地验收完成，交父任务集成）
+## 来源与长任务完整集成（2026-10-25，最终本地验收完成，未合并/未部署）
 
-本轮唯一授权：从集成基线 `80d3b4a` 新建 `feat/quota-pause`，实现日/月额度中途拒绝时保存并暂停、人工继续及明确的额度错误契约；不改 Portal，不 push/PR/merge/deploy。当前工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-cfac648a`，产品/测试提交 `30a1fb3`、`b90ffa8`。旧小节中的分支与验收仅是历史，不能视作本轮已验证。
+本轮授权：基于 `feat/long-runs-sources@0caa73b`，在 `feat/quota-pause-gc` 修复工作区GC性能问题并完整重验集成树；不改Portal、不push/PR/merge/deploy。共同base `origin/main@09599a0`。当前工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-59566e53`，产品修复 `65b47e0`。以下历史发布记录不构成本轮发布授权。
 
-- 预留请求的业务 `quota_exceeded` 转为 `interrupted`、resumable、不自动续跑；保存 checkpoint/workspace/previews/artifacts/plan/sources，不额外交付，不进入模型重试/降级/失败计数。日/月额度继续按 UTC。恢复及后续非额度暂停清除旧 `result.pause`；单 Run 累计 token cap 保持独立。
-- 验证中确认手动队列恢复此前吞掉额度429，现透传结构化 detail；后台派发仍暂停队列。月额度可能超过原72小时取消/3天快照TTL：取消宽限期从重置时刻起算，GC保留live Run正在引用的精确checkpoint快照，终态/旧快照恢复既有TTL。
-- 最终产品基线`b90ffa8`：Ruff check/format349文件，SQLite1191通过/121跳过，PG16+Redis1277通过/35跳过，Portal38通过/production build，五服务E2E98通过/0跳过，均0失败；定向11项通过，隔离原基线10项业务回归失败/瞬态429对照1项通过。GC查询双库10000行EXPLAIN均使用主键索引。详细契约、性能成本、失败历史和边界见[本轮记录](updates/2026-10-25-quota-pause.md)。专属PG/Redis与五服务已停止，七端口无监听。
-- 下一步：父任务按顺序cherry-pick `30a1fb3`、`b90ffa8`及本轮文档提交，核对最终集成树。本轮无待实现项；真实provider跨日/月、真实沙箱长期磁盘保留、目标机CPU/RSS/容量未验，额度恢复测试通过提高默认额度模拟。未获发布授权，不开启下一路线项。
-
-## 长任务与来源集成（2026-10-25，本地验收完成，交父任务集成，未合并/未部署）
-
-用户授权：集成来源面板与长任务后端，修复审查发现，完整双库/Portal/五服务验收并本地提交；不push/PR/merge/deploy，不改Portal行为。历史发布授权不适用于本轮。
-
-- 指定集成基线`abb4a9f`已包含Portal来源入口/引用气泡与预算/后台工具提示（`aa1b31e`、`abb4a9f`）、来源持久化`41da18f`、长任务后端`8d7762d..a1d2137`（含ADR0008）。已核对`loop.py`冲突解决同时保留BudgetPause与最终result.sources。各子分支历史结果见[来源](updates/2026-10-25-run-sources.md)与[长任务](updates/2026-10-25-long-runs.md)，本轮统一验收见[集成记录](updates/2026-10-25-long-runs-sources.md)。
-- 产品修复`b23730e`，consumer契约回归`fe78365`，E2E定位器适配`c7a3290`：瞬态job续租失败在安全期限内退避重试，409立即停止；claim/renew响应时间不增加租约。API在用户锁内合并暂停/失败的部分结果；waiting_user、预算暂停与租约中断均持久sources；回归核对单Run/会话详情的来源与可继续中断原因。
-- 当前工作树`/Users/michael/.t3/worktrees/ailab-lite/t3-12d66bb9`，分支`feat/long-runs-sources-fixes`，base `abb4a9f`。原要求分支`feat/long-runs-sources`同时被主checkout使用且并发推进`1d531fe`，因此隔离修复，未将Portal反向差异纳入提交。父任务须cherry-pick本轮修复及交接提交；本轮测试不包含并发的`1d531fe`。
-- 最终验收：Ruff check/format（347文件）、SQLite1180通过/121跳过、PG16+Redis1266通过/35跳过、Portal37项/default production build、五服务E2E98通过/0跳过，均0失败。测试产品基线`c7a3290`（SQLite先验`fe78365`，后端树相同），初轮失败与修正保留在集成记录；专属PG/Redis及五服务已停止，七端口无监听。真实provider连续1–4小时、Linux sandbox后台exec、目标机RSS/容量未验。
-- 下一步：父任务cherry-pick隔离分支的三个修复/测试提交及本轮文档提交，复核包含其并发Portal改动的最终集成树；本轮无待实现修复。未授权发布，不启动其他路线项。
+- 完整交付包括Portal来源面板/引用入口、Run来源持久化与恢复、长任务活跃时间/步数/token预算、短租约续租与故障恢复、sandbox后台exec生命周期，以及日/月额度耗尽时保留checkpoint/工作区/已有结果、暂停并人工继续。集成分支已包含来源/长任务修复、Portal后续消费契约及额度提交 `30a1fb3`、`b90ffa8`、`0caa73b`，不再需要重复cherry-pick这些历史提交。
+- 本轮GC从非终态Run构建精确工作区key保护集，按状态+ID keyset分页，仅读取ID/runtime_meta；对象页逐项处理，不再按快照数量构造IN参数。新增0030 `(status,id)`索引，保留精确保护/终态与旧快照TTL。细节、双库EXPLAIN、成本与最终计数统一见[最终集成记录](updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。额度业务契约见[额度暂停记录](updates/2026-10-25-quota-pause.md)。
+- 最终产品/测试基线`65b47e0`：Ruff350文件、SQLite1194通过/122跳过、PG16+Redis1281通过/35跳过、Portal38项及production build、五服务E2E98通过/0跳过，均0失败；定向18通过/2跳过、旧实现两项新增回归失败。专属PG/Redis与五服务已停止，七端口无监听。计数、跳过、EXPLAIN及残余成本见统一记录。
+- 剩余边界：真实模型连续1–4小时（含真实日/月额度重置）、真实Linux sandbox后台exec/长期快照保留、目标2vCPU/8GiB机器CPU/RSS/磁盘，以及真实手机交互检查。mock浏览器与宿主子进程证据不能替代它们。
+- 下一步：父任务接收 `feat/quota-pause-gc` 的`65b47e0`与其后交接提交；无待实现修复。后续另行安排真实长期/目标机/手机验收；未授权发布，不自动开启其他路线项。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 

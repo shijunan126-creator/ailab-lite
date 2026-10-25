@@ -35,3 +35,52 @@ SQLite跳过121项为未配置PG/Redis和外部服务契约；PG跳过35项：Do
 无新依赖、迁移、查询、轮询或后台任务。健康路径每运行Run每分钟一次已有索引单行续租UPDATE+commit；故障路径默认15/30/60秒退避，只在原lease安全期限内重试，避免API短暂重启重做长任务。API结果合并在原用户锁/事务中完成，CPU与内存随已有result大小线性，来源额外至多50条；不复制大文件或base64输入，也不新增常驻缓存。没有新CPU/RSS/磁盘容量实测，不外推2vCPU/8GiB负载表现。
 
 未验真实模型连续1–4小时、真实Linux/OpenSandbox/Docker sandbox后台exec及目标机cgroup/RSS/长期容量。宿主子进程/SIGKILL与mock五服务证据不能替代这些边界；来源真实外网provider与中断部署演练亦未验。下一步由父任务cherry-pick修复/交接提交、复核最终Portal集成树；发布与真实长期验收另行授权，不自动开始下一路线项。
+
+## 最终整树复核与额度暂停GC修复
+
+此节为最终集成验收，覆盖上文各隔离子分支的结果；上文计数及“等待cherry-pick”均为历史阶段。用户授权本地修复/完整重验/提交，不改Portal，不push/PR/merge/deploy。
+
+### 基线与范围
+
+- 集成分支 `feat/long-runs-sources@0caa73b058bbde291a755fd38c53ce8b9befd101`，共同base `origin/main@09599a03e774983a2bb66202c2376e04ada58e94`；修复分支 `feat/quota-pause-gc`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-59566e53`。起始实际分支名为T3的`t3/59566e53`但HEAD与指定集成head一致，工作树干净，直接从该HEAD创建修复分支。
+- 最终产品/测试提交 `65b47e0`，其父为 `0caa73b`。已包含Portal来源面板/引用入口、Run来源持久化与checkpoint恢复、长任务时间/步数/token预算、后台exec生命周期、短claim续租与故障退避，以及 `30a1fb3`/`b90ffa8` 的额度暂停/HTTP拒绝不重试契约。`0caa73b`为额度交接文档。无需再次接收已包含的历史子分支提交。
+- 测试从本工作树 `platform/`启动，复用主checkout的Python3.12虚拟环境但导入本工作树源码；GNU coreutils/findutils PATH。Portal node_modules为本地硬链接副本，未改Portal源码。测试原始日志/JUnit/EXPLAIN存于本机 `/tmp/ailab-gc-5956/`，不提交运行数据。
+
+### 根因、修复与EXPLAIN
+
+旧GC从对象页提取Run ID再构造IN条件，并对对象页额外list化。核对实现后确认`_page()`本身只取`gc_batch_size`个对象的一页并持久cursor，并非一次遍历所有存储对象；但对象数量驱动SQL参数的耦合不合理，也不应额外物化迭代器。
+
+新实现先按queued/running/waiting_user/interrupted四个非终态状态读取ID/runtime_meta，每页最多`gc_batch_size`，按ID keyset继续，只保留非空checkpoint.workspace.key。然后直接迭代当前对象页，保留精确引用key，旧快照/终态对象继续按原TTL删除。SQL每页最多4个绑定参数（SQLite含LIMIT/OFFSET），与快照数无关；不读prompt/result，不新增模型请求、外部调用或后台任务。
+
+仅已有status索引时，初始10000行EXPLAIN显示SQLite可能为ORDER BY id沿主键遍历终态历史，PG小集合则用status索引后排序。因此新增Alembic `0030`（父0029）创建`ix_runs_status_id(status,id)`，模型同步；升级/降级/再升级保留原Run，全链测试从0021至0030并回退。无新增配置/依赖。
+
+最终EXPLAIN探针为10000 Run（9600终态、四种非终态各100），10000 outbox、1000 checkpoint；四个状态均执行实际等价的`status=:status AND id>:after ORDER BY id LIMIT 100`：
+
+- SQLite：`SEARCH runs USING INDEX ix_runs_status_id (status=? AND id>?)`，无需临时排序。
+- PostgreSQL16.15：每状态`Index Scan using ix_runs_status`，`Index Cond: status=...`，`Filter: id>...`后对至多100个状态匹配行排序；无顺序全表扫描。优化器仍偏好既有更窄索引，未强制指定或禁用seqscan。复合索引提供更大/稀疏集合的有序访问路径，但本次不声称已验生产规模计划。
+- 原waiting/claim/checkpoint-object/checkpoint-GC四项索引探针同时通过。原探针以9850个queued为主，只适用于旧主键IN查询；本轮明确更换为终态历史占多数的GC分布。最初“PG必须选新索引”的过严断言已按实际允许status索引修正，保留原始日志说明，不将其误报业务故障。
+
+两项新增回归以23个暂停Run、页长7及2000个过期对象覆盖：lazy迭代器禁止删除前预读全部对象；eager页则用statement计数约束每条查询参数及LIMIT，二者都验证跨多页精确保护。隔离替换回原`0caa73b`的reaper时两项均失败，修复后通过。定向含额度/TTL/迁移18通过、2个未配置PG跳过；定向初次因迁移链预期漏加0029父节点失败，已修正并重跑，最终全套包含双库升降级。
+
+### 最终完整验证
+
+全部基于产品/测试提交`65b47e0`，此后仅改交接文档；双库均完整运行一次，未以历史计数代替本轮最终树。原始日志与JUnit在上述本机目录。
+
+| 检查 | 最终结果 |
+|---|---|
+| Ruff check / format --check | 通过，350个Python文件 |
+| SQLite `pytest tests -q` | 1194 passed / 122 skipped / 0 failed，182.58秒 |
+| PG16+Redis `pytest tests -q` | 1281 passed / 35 skipped / 0 failed，230.07秒 |
+| `cd portal && npm test && npm run build` | 38 passed / 0 skipped / 0 failed；默认production build通过 |
+| PG16+Redis五服务 `AILAB_E2E=1 pytest e2e -q` | 98 passed / 0 skipped / 0 failed，296.89秒；模型/沙箱为mock |
+| 10000行SQLite与PG16 EXPLAIN | 四种非终态状态查询与四项既有runtime查询索引断言通过 |
+
+完整套件没有失败。SQLite122跳过包括未配置PG/Redis与外部组件；新增0030迁移往返在SQLite通过、PG参数分支在SQLite轮跳过，PG轮通过。PG35跳过：Docker11、OpenSandbox10、S3 8，ClamAV/公共fetch/OIDC/网络targets/Redis scan cursor/PG dispatcher锁语义分支各1。既有Starlette测试客户端弃用和SQLite表达式索引反射警告保留，未将skip计为通过。E2E独立Portal副本另执行同基线test/build，不代替上表直接命令。
+
+### 成本、清理与剩余验收
+
+每轮GC对象页仍最多`gc_batch_size`（默认100）；metadata临时内存受页长限制，持久到本轮结束的保护集仅含非终态Run引用的key，内存O(被保护key数)，不随历史快照对象总数增长。每状态至少一次有界SELECT，再随该状态Run数按页增长；空存储也会有四个最小查询。数据库索引额外磁盘O(全部Run数)，每次status变化维护一次，迁移建立索引需要扫描历史Run；没有在目标机测索引建立时间/锁影响。保留快照磁盘契约不变，不声称消除大量暂停任务自身的容量开销。
+
+专属PostgreSQL16.15绑定127.0.0.1:35782，Redis8.10.2绑定127.0.0.1:36789；本任务新建data-dir与`ailab_test`/`ailab_migrations`/`ailab_e2e`三个数据库。后端契约Redis DB15，E2E DB13，五服务端口38580–38583/33500。均启动前确认端口空闲，启动后核对监听进程归属。最终E2E夹具停止五服务，Redis核对本轮pidfile与INFO process_id=87845一致后shutdown，PG使用本轮data-dir经pg_ctl fast停止；35782/36789/38580–38583/33500七端口最终均无监听。未停止其他用户进程。
+
+仍未验真实provider连续1–4小时、真实跨日/月额度恢复、真实Linux/OpenSandbox/Docker后台exec与长期快照保留、目标2vCPU/8GiB机器RSS/CPU/磁盘、真实手机键盘/触控。五服务模型/沙箱替身与宿主子进程证据不能代替上述验收；外部服务skip保留。未合并main、未push/PR/merge/deploy。父任务下一步接收本修复分支的产品和文档提交，按独立授权安排真实长期/目标机/手机验收；不自动发布或开始下一路线项。

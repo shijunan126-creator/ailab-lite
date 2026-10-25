@@ -526,3 +526,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 同一分支不能由两个worktree并发提交。强制共享checkout会在另一处推进HEAD时让本地旧index看起来是反向暂存；立即隔离到原基线的新分支，不能提交这些反向差异。此次父checkout推进`1d531fe`，修复隔离为`feat/long-runs-sources-fixes`，Portal未改；父任务应cherry-pick修复。
 - 完整Python测试须从本worktree的`platform/`启动；从仓库根运行会让SIGKILL子进程找不到`tests.faults`，不是业务恢复失败。集成来源测试的旧“token预算耗尽=failed”断言须更新为ADR0008的可继续interrupted，同时检查暂停结果来源；不能按旧分支各自绿推断合并后绿。
 - 来源tab合入后，预览侧栏的区域名为“侧栏”，文件tab为`.pane-tab`，关闭按钮按文件名（如“关闭 sales.xlsx”）；选中文件名用`.pane-tab.on .pane-tab-name`，整栏可用Esc关闭。E2E不能沿用旧`.preview-tab`/“文件预览”/全局“关闭预览”定位，也不能改产品来迁就旧定位器。此次首轮4项E2E失败均由此导致，详见[集成记录](docs/progress/updates/2026-10-25-long-runs-sources.md)。
+
+
+## 2026-10-25 Workspace GC 的保护集与分页
+
+- GC保护关系应从非终态Run的checkpoint工作区key推导，不能从快照对象列表反推一个IN参数/对象；这会让SQL变量数量随存储增长。仅分页读取ID/runtime_meta并保留非空精确key，再逐项消费有界对象页。
+- `_page()`实际每轮仅返回一个`gc_batch_size`页并保存cursor，并非遍历整个存储；仍不要额外list化或为该页构造IN查询。新增回归分别用lazy迭代器抓预读取、用2000对象/SQL参数计数抓快照数量耦合，并以23个暂停Run/页长7检查跨页保护。
+- keyset分页不等于数据库一定高效：仅status索引时SQLite可能为ORDER BY id沿主键扫终态历史；0030增加(status,id)。10000行EXPLAIN中SQLite复合索引双条件范围扫描，PG16对每状态100行选择已有status索引+排序，均无顺序全表扫描。计划选择依赖分布，不强制PG使用某一个索引。详见[最终集成复核](docs/progress/updates/2026-10-25-long-runs-sources.md#最终整树复核与额度暂停gc修复)。
