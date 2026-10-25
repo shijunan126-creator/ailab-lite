@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from typing import Any
 
@@ -79,7 +80,7 @@ class ModelTransport(LLMClient):
                 if resp.status_code not in RETRYABLE_STATUS or last:
                     raise LLMError(f"model gateway returned {resp.status_code}: {body}", retryable=resp.status_code in RETRYABLE_STATUS)
                 reason = f"{resp.status_code} {body}"
-            delay = settings.llm_retry_backoff_seconds * (2**attempt)
+            delay = settings.llm_retry_backoff_seconds * (2**attempt) * random.uniform(0.5, 1.5)
             log.warning("model call failed (%s); retry %d/%d in %.1fs", reason, attempt + 1, attempts - 1, delay)
             await asyncio.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover
@@ -208,7 +209,7 @@ class ModelTransport(LLMClient):
                     error.output_started = state.emitted
                     raise error from exc
                 reason = repr(exc)
-            delay = settings.llm_retry_backoff_seconds * (2**attempt)
+            delay = settings.llm_retry_backoff_seconds * (2**attempt) * random.uniform(0.5, 1.5)
             log.warning("model stream failed (%s); retry %d/%d in %.1fs", reason, attempt + 1, attempts - 1, delay)
             await asyncio.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover

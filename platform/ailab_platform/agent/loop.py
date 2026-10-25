@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import random
 import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime
@@ -477,7 +478,7 @@ class AgentLoop:
                         break
                     if retry == settings.llm_max_retries:
                         raise
-                    await asyncio.sleep(settings.llm_retry_backoff_seconds * 2**retry)
+                    await asyncio.sleep(settings.llm_retry_backoff_seconds * 2**retry * random.uniform(0.5, 1.5))
         raise LLMError("all eligible models failed")
 
     async def _model_attempt(
@@ -1485,7 +1486,7 @@ class AgentLoop:
                         if outcome in {"succeeded", "failed"} and run["_main_model_reserved"].is_set():
                             await title_task
                     except Exception:
-                        pass
+                        log.debug("conversation title task failed", exc_info=True)
                     finally:
                         title_task.cancel()
                         await asyncio.gather(title_task, return_exceptions=True)

@@ -116,14 +116,17 @@ app.add_middleware(
 
 
 @app.middleware("http")
-async def reject_oversized_upload(request: Request, call_next):
-    """Starlette parses the whole multipart body before the handler runs, so the size
-    check inside the handler comes too late to spare the disk. Refuse on Content-Length
-    first. (A chunked upload has no Content-Length: cap it at the reverse proxy.)"""
-    if request.method == "POST" and request.url.path == "/v1/files":
-        declared = request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > settings.max_upload_bytes + 64 * 1024:
-            return JSONResponse(status_code=413, content={"detail": f"file exceeds {settings.max_upload_bytes} bytes"})
+async def reject_oversized_body(request: Request, call_next):
+    """Starlette parses the whole body (multipart spool, JSON text) before the handler and its
+    pydantic limits run, so an in-handler check is too late to spare memory or disk. Refuse on
+    Content-Length first. Every body-accepting path is covered: uploads get the upload budget,
+    everything else a backstop of the same size - a JSON document has no business approaching it.
+    (A chunked request has no Content-Length: cap it at the reverse proxy.)"""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit():
+        size = int(declared)
+        if request.method in {"POST", "PUT", "PATCH"} and size > settings.max_upload_bytes + 64 * 1024:
+            return JSONResponse(status_code=413, content={"detail": f"request body exceeds {settings.max_upload_bytes} bytes"})
     return await call_next(request)
 
 

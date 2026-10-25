@@ -265,6 +265,25 @@ def release_lease(lease_id: str) -> Response:
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
+@app.middleware("http")
+async def reject_oversized_body(request: Request, call_next):
+    """The Agent streams files it writes with a declared size, so refuse the ones over the write
+    budget before Starlette spools them into this process's heap. PUT /fetched is capped at the
+    web-download budget (its handler streams and re-checks mid-body); everything else gets the
+    upload budget as a backstop - no internal body has a reason to be bigger."""
+    declared = request.headers.get("content-length", "")
+    if declared.isdigit():
+        size = int(declared)
+        limit = (
+            settings.max_sandbox_write_bytes
+            if request.method == "PUT" and request.url.path.endswith("/files")
+            else settings.max_upload_bytes
+        )
+        if request.method in {"POST", "PUT", "PATCH"} and size > limit + 64 * 1024:
+            return JSONResponse(status_code=413, content={"detail": f"request body exceeds {limit} bytes"})
+    return await call_next(request)
+
+
 app.include_router(router)
 from .routes_skills import router as skills_router  # noqa: E402
 

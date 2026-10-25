@@ -28,6 +28,7 @@ import json
 import re
 import socket
 import tempfile
+import time
 from collections.abc import AsyncIterator
 from html.parser import HTMLParser
 from pathlib import Path
@@ -172,11 +173,15 @@ async def open_public(client: httpx.AsyncClient, url: str, headers: dict[str, st
     raise WebError("too many redirects")
 
 
-async def _read_bounded(resp: httpx.Response, limit: int) -> tuple[bytes, bool]:
+async def _read_bounded(resp: httpx.Response, limit: int, deadline: float | None = None) -> tuple[bytes, bool]:
     chunks: list[bytes] = []
     total = 0
     async for chunk in resp.aiter_bytes():
-        if total + len(chunk) > limit:
+        if deadline is not None and time.monotonic() >= deadline:
+            # The read timeout only bounds silence between chunks; a peer trickling bytes
+            # forever needs a wall-clock budget too (the same trap the internal download closes).
+            raise WebError("response did not finish within the transfer deadline")
+        if total + len(chunk) >= limit:
             chunks.append(chunk[: limit - total])
             return b"".join(chunks), True
         total += len(chunk)
@@ -187,7 +192,7 @@ async def _read_bounded(resp: httpx.Response, limit: int) -> tuple[bytes, bool]:
 async def get_json(url: str, max_bytes: int, headers: dict[str, str] | None = None):
     async with public_client(settings.web_fetch_timeout_seconds, {"Accept": "application/json", **(headers or {})}) as client:
         async with open_public(client, url) as resp:
-            body, truncated = await _read_bounded(resp, max_bytes)
+            body, truncated = await _read_bounded(resp, max_bytes, deadline=time.monotonic() + settings.web_transfer_deadline_seconds)
     if truncated:
         raise WebError(f"response from {url} is larger than {max_bytes} bytes")
     try:
@@ -210,8 +215,13 @@ async def download(url: str, max_bytes: int) -> AsyncIterator[dict]:
                 if declared and declared.isdigit() and int(declared) > max_bytes:
                     raise WebError(f"download is {declared} bytes; the limit is {max_bytes}")
                 digest, size = hashlib.sha256(), 0
+                deadline = time.monotonic() + settings.web_transfer_deadline_seconds
                 with target.open("wb") as out:
                     async for chunk in resp.aiter_bytes():
+                        if time.monotonic() >= deadline:
+                            # The read timeout bounds silence between chunks, not total duration;
+                            # a server trickling bytes must not hold the fetch open forever.
+                            raise WebError("download did not finish within the transfer deadline")
                         size += len(chunk)
                         if size > max_bytes:
                             raise WebError(f"download exceeds {max_bytes} bytes")
@@ -441,7 +451,9 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
             declared = resp.headers.get("content-length")
             if declared and declared.isdigit() and int(declared) > settings.web_max_bytes:
                 raise WebError(f"page is too large ({declared} bytes)")
-            body, truncated = await _read_bounded(resp, settings.web_max_bytes)
+            body, truncated = await _read_bounded(
+                resp, settings.web_max_bytes, deadline=time.monotonic() + settings.web_transfer_deadline_seconds
+            )
             encoding = resp.encoding or "utf-8"
     text = body.decode(encoding, "replace")
     title, links = "", []

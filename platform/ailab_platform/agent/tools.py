@@ -10,7 +10,7 @@ import json
 from typing import Any
 
 from .. import images, web
-from ..clients import AsyncBrokerClient
+from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
@@ -466,7 +466,9 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         credits_path = f"{images.ASSET_DIR}/credits.json"
         try:
             existing = await broker.get_file(lease_id, credits_path)
-        except Exception:
+        except ClientError as exc:
+            if exc.status != 400:  # a 400 is the broker's "the path is not there"; a lost lease or auth failure must surface
+                raise
             existing = None
         await broker.put_file(lease_id, credits_path, images.merge_credits(existing, found))
         return {

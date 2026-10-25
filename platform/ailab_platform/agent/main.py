@@ -304,8 +304,10 @@ async def lifespan(_: FastAPI):
         _task.cancel()
         try:
             await _task
-        except (asyncio.CancelledError, Exception):
+        except asyncio.CancelledError:
             pass
+        except Exception:
+            log.debug("consumer task failed during shutdown", exc_info=True)
 
 
 app = FastAPI(title="AILab Agent Service", version="0.1.0", lifespan=lifespan)

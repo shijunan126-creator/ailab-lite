@@ -119,9 +119,12 @@ class RequestContextMiddleware:
         started = time.perf_counter()
         status = 500
 
+        responded = False
+
         async def send_with_id(message: Message) -> None:
-            nonlocal status
+            nonlocal status, responded
             if message["type"] == "http.response.start":
+                responded = True
                 status = message["status"]
                 if current_span is not None:
                     current_span.set_attribute("http.response.status_code", status)
@@ -147,7 +150,18 @@ class RequestContextMiddleware:
             from .telemetry import span
 
             with nullcontext(None) if scope["path"] in QUIET_PATHS else span("http.request", method=scope["method"]) as current_span:
-                await self.app(scope, receive, send_with_id)
+                try:
+                    await self.app(scope, receive, send_with_id)
+                except Exception:
+                    # No response started: the access line in send_with_id never fires, and the
+                    # traceback falls to uvicorn's own handler outside this request_id. Log the
+                    # request line here so a 500 stays in the same stream as every other line.
+                    if not responded:
+                        elapsed = time.perf_counter() - started
+                        template = getattr(scope.get("route"), "path", None) or "unmatched"
+                        metrics.observe_http(self.service, scope["method"], template, 500, elapsed)
+                        self.log.exception("%s %s -> 500 %.0fms", scope["method"], scope["path"], elapsed * 1000)
+                    raise
         finally:
             traceparent_var.reset(trace_token)
             request_id_var.reset(token)
