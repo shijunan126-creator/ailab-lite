@@ -58,9 +58,10 @@ export type Preview = {
   filename: string;
   version: number;
   run_id?: string;
-  kind?: "pages" | "sheets";
+  kind?: "pages" | "sheets" | "html";
   pages?: string[]; // "<n>/p-01.jpg", relative to the run's previews
   data?: string; // "<n>/sheets.json"
+  file_id?: string; // kind "html": the delivered file itself, rendered in the pane
   errors?: string[];
   error?: string;
 };
@@ -393,6 +394,13 @@ export function errorMessage(err: unknown): string {
 export function errorCode(err: unknown): string | null {
   const detail = errorDetail(err);
   return typeof detail?.code === "string" ? detail.code : null;
+}
+
+export type ReaderPage = { url: string; title: string; text: string; truncated: boolean };
+
+/** One public page's readable text, fetched server-side for the side pane's 网页 view. */
+export function reader(url: string, signal?: AbortSignal): Promise<ReaderPage> {
+  return api<ReaderPage>(`/v1/reader?url=${encodeURIComponent(url)}`, { signal });
 }
 
 export function downloadUrl(path: string): string {

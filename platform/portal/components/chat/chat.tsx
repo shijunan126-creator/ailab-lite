@@ -15,6 +15,7 @@ import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane, { type PaneSources } from "./preview-pane";
 import { SourcesSheet } from "./sources";
+import type { PaneReader } from "./preview-pane";
 import QueueStrip from "./queue-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
@@ -70,6 +71,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
   const [paneSources, setPaneSources] = useState<PaneSources | null>(null); // a turn's sources: a pane tab on wide screens
   const [sourcesOn, setSourcesOn] = useState(false); // that tab is the one shown
+  const [paneReader, setPaneReader] = useState<PaneReader | null>(null); // a web page a source opened into: one tab
+  const [readerOn, setReaderOn] = useState(false);
   const [sheetSources, setSheetSources] = useState<PaneSources | null>(null); // the same on a phone, as a bottom sheet
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -250,8 +253,49 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       byFile.delete(p.filename);
       byFile.set(p.filename, p);
     }
+    // Skills deliver self-contained HTML decks: they preview in the pane straight from the
+    // delivered file, newest delivery wins. `version` counts deliveries of this name so the
+    // pane's iframe refetches (and the viewer shows it) on every regeneration.
+    const htmlVersions = new Map<string, number>();
+    for (const t of detail?.turns || []) {
+      for (const a of t.artifacts || []) {
+        if ((a.content_type || "").split(";")[0] !== "text/html" && !/\.(html?|xhtml)$/i.test(a.filename)) continue;
+        const version = (htmlVersions.get(a.filename) || 0) + 1;
+        htmlVersions.set(a.filename, version);
+        byFile.set(a.filename, { filename: a.filename, version, run_id: t.id, kind: "html", file_id: a.file_id });
+      }
+    }
     return [...byFile.values()].filter((p) => p.kind);
   }, [detail, livePreviews]);
+
+  // A newly delivered (or regenerated) HTML deck opens in the pane by itself, so the next
+  // prompt can be written while looking at the result. The first pass over a loaded conversation
+  // only takes note: opening old deliveries on load would be noise. "First" means the first time
+  // the conversation's detail exists, not the first time there is an HTML file — a conversation's
+  // very first deck is a delivery, not history.
+  const seenHtml = useRef<Map<string, string>>(new Map());
+  const htmlBaselined = useRef(false);
+  const hasDetail = !!detail;
+  const noted = useMemo(() => previews.filter((p) => p.kind === "html"), [previews]);
+  useEffect(() => {
+    if (!hasDetail) return;
+    if (!htmlBaselined.current) {
+      htmlBaselined.current = true;
+      for (const p of noted) seenHtml.current.set(p.filename, p.file_id || "");
+      return;
+    }
+    const fresh = noted.filter((p) => seenHtml.current.get(p.filename) !== p.file_id);
+    for (const p of fresh) seenHtml.current.set(p.filename, p.file_id || "");
+    if (fresh.length) {
+      const last = fresh[fresh.length - 1];
+      setClosedFiles((closed) => closed.filter((f) => f !== last.filename));
+      setSelected(last.filename);
+      setSourcesOn(false);
+      setReaderOn(false);
+      setPaneOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noted, hasDetail]);
 
   const downloads = useMemo(() => {
     const out: Record<string, string> = {};
@@ -266,6 +310,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setClosedFiles((closed) => closed.filter((f) => f !== filename));
     setSelected(filename);
     setSourcesOn(false);
+    setReaderOn(false);
     setPaneOpen(true);
   }
   function closeFile(filename: string) {
@@ -282,12 +327,23 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     if (paneOpen && sourcesOn && paneSources?.runId === run.id) return closeSources();
     setPaneSources(next);
     setSourcesOn(true);
+    setReaderOn(false);
     setPaneOpen(true);
   }
   function closeSources() {
     setPaneSources(null);
     setSourcesOn(false);
-    if (!openFiles.length) setPaneOpen(false);
+    if (!openFiles.length && !paneReader) setPaneOpen(false);
+  }
+  function openReader(source: { url: string; title: string }) {
+    setPaneReader({ url: source.url, title: source.title });
+    setReaderOn(true);
+    setSourcesOn(false);
+    setPaneOpen(true);
+  }
+  function closeReader() {
+    setReaderOn(false);
+    if (!openFiles.length && !paneSources) setPaneOpen(false);
   }
   const ext = (name: string) => name.split(".").pop()?.toLowerCase() || "";
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
@@ -632,6 +688,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     projectId={projectId}
                     sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
                     onSources={showSources}
+                    onOpenLink={(url, title) => openReader({ url, title })}
                   />
                 ))}
               </div>
@@ -663,17 +720,22 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         )}
       </section>
 
-      {showPane ? (
+      {showPane || paneReader ? (
         <PreviewPane
           previews={openFiles}
           selected={selected}
-          onSelect={(f) => { setSelected(f); setSourcesOn(false); }}
+          onSelect={(f) => { setSelected(f); setSourcesOn(false); setReaderOn(false); }}
           onCloseFile={closeFile}
           sources={paneSources}
-          sourcesOn={sourcesOn}
-          onSourcesTab={() => setSourcesOn(true)}
+          sourcesOn={sourcesOn && !readerOn}
+          onSourcesTab={() => { setSourcesOn(true); setReaderOn(false); }}
           onCloseSources={closeSources}
-          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); }}
+          reader={paneReader}
+          readerOn={readerOn}
+          onReaderTab={() => { setReaderOn(true); setSourcesOn(false); }}
+          onCloseReader={closeReader}
+          onRead={openReader}
+          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); setPaneReader(null); setReaderOn(false); }}
           live={!!streaming && running}
           downloads={downloads}
         />

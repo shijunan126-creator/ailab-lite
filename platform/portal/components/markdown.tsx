@@ -22,7 +22,17 @@ function shortUrl(url: string): string {
 /** Web pages the turn read, by address: a link to one of them is a citation. */
 type Cites = Map<string, Source> | undefined;
 
-function inline(text: string, key = "i", cites?: Cites): ReactNode[] {
+type LinkOpener = (url: string, title: string) => void;
+
+function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): ReactNode[] {
+  // Left-click hands the link to the side-pane reader; ctrl/middle/right keep the new tab.
+  const click = open
+    ? (href: string, title?: string) => (e: React.MouseEvent) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault();
+        open(href, title || href);
+      }
+    : undefined;
   const out: ReactNode[] = [];
   const re = new RegExp(
     String.raw`(\`[^\`]+\`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\(((?:https?|ailab-file):\/\/[^)\s]+)(?:\s+"[^"]*")?\))|(` + BARE_URL.source + ")",
@@ -35,8 +45,8 @@ function inline(text: string, key = "i", cites?: Cites): ReactNode[] {
     if (m.index > last) out.push(text.slice(last, m.index));
     const k = `${key}-${n++}`;
     if (m[1]) out.push(<code key={k}>{m[1].slice(1, -1)}</code>);
-    else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k, cites)}</strong>);
-    else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k, cites)}</em>);
+    else if (m[2]) out.push(<strong key={k}>{inline(m[2].slice(2, -2), k, cites, open)}</strong>);
+    else if (m[3]) out.push(<em key={k}>{inline(m[3].slice(1, -1), k, cites, open)}</em>);
     else if (m[4] && m[5].startsWith("ailab-file://")) {
       // a library file the answer quotes: its name and page, opening the file at that page
       const label = m[4].slice(1, m[4].indexOf("](")).trim();
@@ -50,18 +60,18 @@ function inline(text: string, key = "i", cites?: Cites): ReactNode[] {
       if (source && !cite) {
         // a page the turn read, cited after a claim: a small pill named as the answer names it
         out.push(
-          <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className="md-src" title={source.title || m[5]}>
+          <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className="md-src" title={source.title || m[5]} onClick={click?.(m[5], source.title || m[5])}>
             {label}
           </a>
         );
       } else out.push(
-        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]}>
-          {cite ? label.replace(/[[\]]/g, "") : inline(label, k, cites)}
+        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]} onClick={click?.(m[5])}>
+          {cite ? label.replace(/[[\]]/g, "") : inline(label, k, cites, open)}
         </a>
       );
     } else if (m[6]) {
       out.push(
-        <a key={k} href={m[6]} target="_blank" rel="noreferrer noopener" className="md-url" title={m[6]}>
+        <a key={k} href={m[6]} target="_blank" rel="noreferrer noopener" className="md-url" title={m[6]} onClick={click?.(m[6])}>
           {shortUrl(m[6])}
         </a>
       );
@@ -76,7 +86,17 @@ function cells(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-export default function Markdown({ text, streaming, sources }: { text: string; streaming?: boolean; sources?: Source[] }) {
+export default function Markdown({
+  text,
+  streaming,
+  sources,
+  onOpenLink,
+}: {
+  text: string;
+  streaming?: boolean;
+  sources?: Source[];
+  onOpenLink?: (url: string, title: string) => void;
+}) {
   const cites: Cites = sources?.length ? new Map(sources.map((s) => [urlKey(s.url), s])) : undefined;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -114,7 +134,7 @@ export default function Markdown({ text, streaming, sources }: { text: string; s
     if (h) {
       const level = Math.min(4, h[1].length + 1);
       const Tag = `h${level}` as "h2" | "h3" | "h4" | "h5";
-      blocks.push(<Tag key={k}>{inline(h[2], k, cites)}</Tag>);
+      blocks.push(<Tag key={k}>{inline(h[2], k, cites, onOpenLink)}</Tag>);
       i++;
       continue;
     }
@@ -126,7 +146,7 @@ export default function Markdown({ text, streaming, sources }: { text: string; s
     if (line.startsWith(">")) {
       const body: string[] = [];
       while (i < lines.length && lines[i].startsWith(">")) body.push(lines[i++].replace(/^>\s?/, ""));
-      blocks.push(<blockquote key={k}>{inline(body.join(" "), k, cites)}</blockquote>);
+      blocks.push(<blockquote key={k}>{inline(body.join(" "), k, cites, onOpenLink)}</blockquote>);
       continue;
     }
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
@@ -138,11 +158,11 @@ export default function Markdown({ text, streaming, sources }: { text: string; s
         <div key={k} className="md-table">
           <table>
             <thead>
-              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites)}</th>)}</tr>
+              <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites, onOpenLink)}</th>)}</tr>
             </thead>
             <tbody>
               {rows.map((r, ri) => (
-                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`, cites)}</td>)}</tr>
+                <tr key={ri}>{head.map((_, j) => <td key={j}>{inline(r[j] || "", `${k}${ri}${j}`, cites, onOpenLink)}</td>)}</tr>
               ))}
             </tbody>
           </table>
@@ -159,7 +179,7 @@ export default function Markdown({ text, streaming, sources }: { text: string; s
         const nested = m[1].length >= 2;
         items.push(
           <li key={items.length} className={nested ? "nested" : undefined}>
-            {inline(m[3], `${k}l${items.length}`, cites)}
+            {inline(m[3], `${k}l${items.length}`, cites, onOpenLink)}
           </li>
         );
         i++;
@@ -175,7 +195,7 @@ export default function Markdown({ text, streaming, sources }: { text: string; s
         {para.map((l, j) => (
           <Fragment key={j}>
             {j ? <br /> : null}
-            {inline(l, `${k}p${j}`, cites)}
+            {inline(l, `${k}p${j}`, cites, onOpenLink)}
           </Fragment>
         ))}
       </p>
