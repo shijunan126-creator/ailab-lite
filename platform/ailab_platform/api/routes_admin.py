@@ -540,6 +540,64 @@ def list_audit(
     return result
 
 
+@router.get("/users/{target_id}/usage")
+def admin_user_usage(
+    target_id: str,
+    from_: datetime | None = Query(default=None, alias="from"),
+    to: datetime | None = None,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """Per-user token usage, grouped by model; no prompts or answers."""
+    _require(db, user, "usage.list")
+    target = db.get(User, target_id)
+    if target is None:
+        raise HTTPException(404, "user not found")
+    if _scoped(user.principal, "usage.list") and target.dept_id != user.dept_id:
+        raise HTTPException(403, "forbidden")
+    end = (to or utcnow()).replace(tzinfo=UTC) if to is None or to.tzinfo is None else to
+    start = from_ or end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    if start >= end or end - start > timedelta(days=366):
+        raise HTTPException(422, "usage range must be between 0 and 366 days")
+    rows = db.execute(
+        select(
+            ModelUsage.model,
+            func.sum(ModelUsage.weighted_amount),
+            func.sum(ModelUsage.prompt_tokens),
+            func.sum(ModelUsage.completion_tokens),
+            func.count(),
+        )
+        .where(ModelUsage.user_id == target.id, ModelUsage.created_at >= start, ModelUsage.created_at < end)
+        .group_by(ModelUsage.model)
+        .order_by(ModelUsage.model)
+    ).all()
+    items = [
+        {
+            "model": model,
+            "weighted": round((cost or 0) / MILLI),
+            "input_tokens": inputs or 0,
+            "output_tokens": outputs or 0,
+            "calls": calls,
+        }
+        for model, cost, inputs, outputs, calls in rows
+    ]
+    _commit(db, user, "usage.list", "user", target.id, detail={"group_by": "model"})
+    return {
+        "user": {"id": target.id, "display_name": target.display_name, "username": target.username},
+        "from": start,
+        "to": end,
+        "items": items,
+        "total": {
+            "weighted": sum(item["weighted"] for item in items),
+            "input_tokens": sum(item["input_tokens"] for item in items),
+            "output_tokens": sum(item["output_tokens"] for item in items),
+            "calls": sum(item["calls"] for item in items),
+        },
+    }
+
+
 @router.get("/usage")
 def admin_usage(
     from_: datetime | None = Query(default=None, alias="from"),

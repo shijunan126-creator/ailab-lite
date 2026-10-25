@@ -47,6 +47,12 @@ export type AuditEntry = {
 
 export type UsageRow = { key: string; label: string; weighted: number; input_tokens: number; output_tokens: number; calls: number };
 
+export type UserUsage = {
+  user: { id: string; display_name: string; username: string | null };
+  items: { model: string; weighted: number; input_tokens: number; output_tokens: number; calls: number }[];
+  total: { weighted: number; input_tokens: number; output_tokens: number; calls: number };
+};
+
 export const ROLE_LABEL: Record<Role, string> = {
   user: "成员",
   dept_admin: "部门管理员",
@@ -83,6 +89,7 @@ export const admin = {
   patchUser: (id: string, body: Partial<{ display_name: string; dept_id: string | null; roles: Role[]; disabled: boolean; quota_policy_id: string | null }>) =>
     api<AdminUser>(`/v1/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   setPassword: (id: string, password: string) => api<void>(`/v1/admin/users/${id}/password`, { method: "POST", body: JSON.stringify({ password }) }),
+  userUsage: (id: string) => api<UserUsage>(`/v1/admin/users/${id}/usage`),
   departments: () => everyPage<Department>("/v1/admin/departments"),
   saveDepartment: (body: { name: string; parent_id?: string | null; quota_policy_id?: string | null }, id?: string) =>
     api<Department>(id ? `/v1/admin/departments/${id}` : "/v1/admin/departments", { method: id ? "PATCH" : "POST", body: JSON.stringify(body) }),

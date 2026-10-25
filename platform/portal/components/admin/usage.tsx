@@ -46,7 +46,7 @@ function Segmented<T extends string>({ value, options, onChange, label }: { valu
 
 export default function UsageSection() {
   const [range, setRange] = useState<Range>("month");
-  const [group, setGroup] = useState<Group>("dept");
+  const [group, setGroup] = useState<Group>("user");
   const [rows, setRows] = useState<UsageRow[] | null>(null);
   const [error, setError] = useState("");
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
-import { admin, AdminUser, Department, QuotaPolicy, reason } from "../../lib/admin";
+import { admin, AdminUser, Department, QuotaPolicy, reason, UserUsage } from "../../lib/admin";
 import { Me } from "../../lib/api";
 import { formatTokens, timeAgo } from "../../lib/format";
 import { IconPlus, IconSearch, IconX } from "../icons";
@@ -48,8 +48,13 @@ function UserDialog({
   const [policy, setPolicy] = useState(user.quota_policy?.id || "");
   const [disabled, setDisabled] = useState(user.disabled);
   const [password, setPassword] = useState("");
+  const [usage, setUsage] = useState<UserUsage | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    admin.userUsage(user.id).then(setUsage).catch(() => setUsage(null));
+  }, [user.id]);
 
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -121,6 +126,19 @@ function UserDialog({
               options={[{ value: "", label: "跟随部门" }, ...policies.map((p) => ({ value: p.id, label: p.name }))]}
             />
           </label>
+        ) : null}
+        {usage ? (
+          <div className="field">
+            <span>本月用量</span>
+            <div className="hint">
+              {formatTokens(usage.total.weighted)} · {usage.total.calls} 次调用
+            </div>
+            {usage.items.map((item) => (
+              <div key={item.model} className="hint">
+                {item.model}：{formatTokens(item.weighted)} · {item.calls} 次
+              </div>
+            ))}
+          </div>
         ) : null}
         {user.auth === "local" ? (
           <label className="field">
