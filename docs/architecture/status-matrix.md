@@ -32,7 +32,7 @@
 | T04 真实扫描与隔离解析 | 完成（原生 ARM64 ClamAV 已验收） | 见“文件” |
 | T05 服务认证与授权 | 完成（静态凭据适配器） | 见“安全” |
 | T06 Broker 持久租约与对账 | 完成（Agent续租已接入） | 见“沙箱” |
-| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、心跳、attempt栅栏与稳定交付；后续真实OSB/Docker恢复与进程SIGKILL已验，见[最终修复验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
+| T07 Runtime / checkpoint / ask_user | 已实现，本地验收 | checkpoint/CAS、ask_user、续跑、attempt栅栏与稳定交付；长任务短claim续租、活跃预算/无进展暂停、后台exec和本轮上下文压缩已本地双库验收，真实Linux后台进程/长时模型待验，见[长任务](../progress/updates/2026-10-25-long-runs.md)。既有真实OSB/Docker恢复与SIGKILL历史证据见[验收](../reviews/2026-10-23-library-runtime-acceptance.md) |
 | T08 单机调度隔离 | 已实现，本地验收 | Chat/Work固定有界分槽，暂停释放槽，回答/恢复重查准入，同会话串行；真实模型容量未验 |
 | T09 事务副作用与重试 | 已实现，本地验收 | Run/文件/预览/缩略图/OCR/续跑经持久任务信封与claim/ACK；全业务attempt栅栏在T07接通，SIGTERM/Redis丢失与双库回归通过 |
 | T10 单实例契约测试 | 完成（真实 MinIO 已验收） | 见“运维” |

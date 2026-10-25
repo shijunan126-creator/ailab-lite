@@ -1,8 +1,12 @@
 # 当前工作
 
-## 长任务后端（2026-10-25，本地实施中）
+## 长任务后端（2026-10-25，本地提交与验收完成，交父任务集成）
 
-当前工作树 `feat/long-runs` 从 `09599a03e774983a2bb66202c2376e04ada58e94` 建立；用户授权仅后端、本地小提交，不改 Portal、不推送/PR/合并/部署。短 claim 租约与 Agent 续租已接通，取消总 Run timeout；预算暂停、进展审查及后台 exec 已实现，正在全量验证，尚不宣称验收完成。下一步完成 SQLite/隔离 PG16+Redis、检查恢复/资源边界，并将 Portal 接口交父任务。[本轮记录](updates/2026-10-25-long-runs.md)。下方历史发布授权不适用于本轮。
+分支 `feat/long-runs`，base `09599a03e774983a2bb66202c2376e04ada58e94`。产品提交 `8d7762d`（短claim续租）、`4a96642`（预算暂停/后台命令/本轮上下文压缩）、`a1d2137`（人工续跑解除旧收尾指令）。用户授权仅后端、本地提交；Portal diff为空，无推送/PR/合并/部署或迁移。下方历史发布授权不适用于本轮。
+
+- 固定产品提交 `a1d21379aef0a14d4a39f8b838244b59089a50fe`：Ruff345；完整SQLite1162通过/121跳过、PG16+Redis1248通过/35跳过，均0失败。Portal隔离源码副本35 tests/default production build通过。独占PG/Redis已停止，两端口无监听。
+- max_agent_steps=300，job_lease_seconds=300并每60秒续租；stall=1200秒、soft=3600秒、review=1800秒、max=14400秒。预算在步骤边界有界收尾后 interrupted+resumable；同job crash保留窗口，新job人工续跑重置时间/步数而不重置2M累计token/quota。新增agent.budget、exec_wait、exec_kill与exec(background=true)，精确字段/中文原因/成本/失败历史见[本轮记录](updates/2026-10-25-long-runs.md)，设计见[ADR0008](../architecture/adr/0008-long-run-budgets-and-leases.md)。
+- 下一步由父任务集成Portal标签、budget事件和保存结果，并安排真实Linux沙箱后台命令/慢模型长时验收。本轮未验证真实provider连续1–4小时、多服务E2E或容器RSS；宿主子进程/SIGKILL checkpoint证据与这些边界分开。无待实现后端项，不自动发布或启动其他路线项。
 
 ## 真实沙箱可运行性验证（2026-10-25，PR #54已合并，未部署）
 
