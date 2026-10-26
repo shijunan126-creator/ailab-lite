@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 read_url 改用 Crawl4AI（已提PR，未验证未部署）
+
+用户要求用 Crawl4AI 替换网页读取。分支 `feat/crawl4ai-reader`，base `main@2233870`。隔离 crawler 容器 + egress 代理，决定见 [ADR 0021](../architecture/adr/0021-isolated-browser-rendering-for-read-url.md)。按用户要求未跑测试/构建，CI 为首次验证；Crawl4AI 版本与参数名需首次构建时确认。下一步：PR CI 结果；部署前需给个人 Compose 增加 crawler/egress 两个容器。详见[记录](updates/2026-10-26-crawl4ai-reader.md)。
+
 ## 2026-10-26 首页对话/工作开关上移（本地验证，PR 待合并）
 
 用户要求：新对话首页把对话/工作开关放到“有什么我能帮你的吗？”下面（参考豆包），技能按钮与模型同一行。分支 `feat/home-mode-under-heading`（叠在 `chore/remove-temporary-chat` 之上）：模式状态提到 `useChatMode`/`ModeToggle`，首页（无项目）开关在标题下，输入框不再重复；对话页和项目首页开关仍在输入框内。首页桌面/窄屏/390px 手机实测加号、技能、模型、发送同一行（手机截断模型名）；对话页桌面同一行但技能只剩图标，手机仍两行。真实浏览器用 Playwright 截图，未部署。
