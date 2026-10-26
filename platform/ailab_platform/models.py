@@ -614,6 +614,31 @@ class RunDelivery(Base):
     result: Mapped[dict] = mapped_column(JSON)
 
 
+class MemoryEpisode(Base):
+    """One immutable conversation episode seen by the dream.
+
+    Storing a digest and a content hash gives the extractor provenance and makes re-processing a
+    run a no-op. It is deliberately separate from memory facts: an episode can be re-read later
+    without being injected into every prompt.
+    """
+
+    __tablename__ = "memory_episodes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "content_hash", name="uq_memory_episode_user_hash"),
+        Index("ix_memory_episode_user_observed", "user_id", "observed_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("epi"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    digest: Mapped[str] = mapped_column(Text)
+    token_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MemoryDreamRun(Base):
     """One user-night background consolidation. Never creates a visible Run or RunEvent."""
 

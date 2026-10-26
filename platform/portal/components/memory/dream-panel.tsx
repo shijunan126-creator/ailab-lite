@@ -6,7 +6,7 @@ import Switch from "../switch";
 
 type DreamSettings = { enabled: boolean; timezone: string | null; window_start: string; window_end: string };
 type Change = {
-  op: "add" | "update" | "noop";
+  op: "add" | "invalidate" | "noop";
   id?: string | null;
   kind: "user" | "memory";
   content: string;
@@ -164,8 +164,8 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
                 <div className="dream-detail">
                   {detail.changes.length ? detail.changes.map((change, i) => (
                     <div key={i} className="dream-change">
-                      <span className="dream-op">{change.op === "add" ? "新增" : "更新"}</span>
-                      <span className="grow">{change.content}</span>
+                      <span className="dream-op">{change.op === "add" ? "新增" : change.op === "invalidate" ? "失效" : "无变更"}</span>
+                      <span className="grow">{change.content || change.reason}</span>
                       <span className="hint">{Math.round(change.confidence * 100)}%</span>
                     </div>
                   )) : <div className="hint">这次没有需要保留的新内容。</div>}

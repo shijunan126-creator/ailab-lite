@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
 
 from ailab_platform.api.main import app
@@ -16,20 +17,22 @@ from ailab_platform.models import MemoryDreamRun, Run, RunEvent, User
 from .test_skill_settings import _user
 
 
-def test_dream_plan_validation_drops_unsafe_or_unknown_changes() -> None:
+def test_dream_plan_is_append_only_and_requires_an_invalidation_target() -> None:
     plan = DreamPlan.model_validate(
-        {
-            "changes": [
-                {"op": "add", "kind": "user", "content": "喜欢简洁", "confidence": 0.9, "evidence_run_ids": ["run_1"]},
-                {"op": "add", "kind": "user", "content": "喜欢简洁", "confidence": 0.9, "evidence_run_ids": ["run_1"]},
-                {"op": "update", "id": "mem_missing", "content": "x", "confidence": 0.9},
-                {"op": "add", "kind": "memory", "content": "低置信", "confidence": 0.2, "evidence_run_ids": ["run_1"]},
-            ]
-        }
+        {"changes": [{"op": "invalidate", "id": "mem_a", "reason": "explicit replacement"}]}
     )
-    memory = {"entries": [{"id": "mem_a", "kind": "user", "content": "旧", "superseded_by": None}]}
-    got = service._validate(plan, memory, {"run_1"})
-    assert [(c.op, c.content) for c in got.changes] == [("add", "喜欢简洁")]
+    assert plan.changes[0].op == "invalidate"
+    with pytest.raises(ValueError):
+        DreamPlan.model_validate({"changes": [{"op": "invalidate", "reason": "missing id"}]})
+
+
+def test_fuzzy_candidate_selection_prefers_related_facts() -> None:
+    active = [
+        {"id": "mem_a", "content": "用户喜欢简洁的中文回答", "entities": ["中文"]},
+        {"id": "mem_b", "content": "用户目前住在上海", "entities": ["上海"]},
+    ]
+    ids = [c["id"] for c in service._candidates({"text": "用户偏好简洁中文", "entities": []}, active)]
+    assert "mem_a" in ids and "mem_b" not in ids
 
 
 def test_memory_routes_expose_dream_settings_and_history() -> None:
@@ -110,17 +113,25 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
             )
             db.commit()
 
-        async def fake_model(memory, runs, user):
-            return DreamPlan.model_validate(
+        async def fake_extract(episodes, active, user):
+            episode = episodes[0]
+            return [
                 {
-                    "changes": [
-                        {"op": "add", "kind": "user", "content": "周报先结论后风险", "confidence": 0.95, "evidence_run_ids": [runs[0].id]}
-                    ],
-                    "journal": "整理周报偏好",
+                    "text": "周报先结论后风险",
+                    "kind": "user",
+                    "entities": ["周报"],
+                    "evidence_run_ids": [episode.run_id],
+                    "evidence_episode_ids": [episode.id],
+                    "source_quote": "以后周报先结论后风险",
+                    "confidence": 0.95,
                 }
-            ), {"prompt_tokens": 20, "completion_tokens": 5}
+            ], {"prompt_tokens": 20, "completion_tokens": 5}, "fake"
 
-        monkeypatch.setattr(service, "_call_model", fake_model)
+        async def fake_judge(facts, active, user, model):
+            return {}, {"prompt_tokens": 0, "completion_tokens": 0}
+
+        monkeypatch.setattr(service, "_extract", fake_extract)
+        monkeypatch.setattr(service, "_judge", fake_judge)
         monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
         asyncio.run(service.process_dream("dream_test"))
         with SessionLocal() as db:

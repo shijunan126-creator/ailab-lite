@@ -38,7 +38,11 @@ class MemoryEntryInput(BaseModel):
     # keeps older Portal/MemoryUpdate clients from wiping confidence and evidence.
     confidence: float | None = Field(default=None, ge=0, le=1)
     evidence_run_ids: list[str] | None = Field(default=None, max_length=50)
+    evidence_episode_ids: list[str] | None = Field(default=None, max_length=50)
+    entities: list[str] | None = Field(default=None, max_length=20)
+    source_quote: str | None = Field(default=None, max_length=1000)
     valid_from: datetime | None = None
+    invalid_at: datetime | None = None
     superseded_by: str | None = Field(default=None, max_length=40)
     last_used_at: datetime | None = None
 
@@ -125,22 +129,29 @@ class MemoryDreamSettings(BaseModel):
 
 
 class DreamChange(BaseModel):
-    """One validated change proposed by the dream model. The server, not the model, applies it."""
+    """One validated change proposed by the dream model. The server, not the model, applies it.
+
+    Facts are append-only: add a new fact and, when justified, invalidate an old one. We never
+    ask an LLM to overwrite a fact's text in place.
+    """
 
     model_config = ConfigDict(extra="forbid")
-    op: Literal["add", "update", "noop"]
+    op: Literal["add", "invalidate", "noop"]
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory"] = "memory"
     content: str = Field(default="", max_length=1000)
     confidence: float = Field(default=0.0, ge=0, le=1)
     evidence_run_ids: list[str] = Field(default_factory=list, max_length=20)
+    evidence_episode_ids: list[str] = Field(default_factory=list, max_length=20)
+    entities: list[str] = Field(default_factory=list, max_length=20)
+    source_quote: str = Field(default="", max_length=1000)
     reason: str = Field(default="", max_length=300)
 
     @model_validator(mode="after")
     def valid(self):
-        if self.op == "update" and not self.id:
-            raise ValueError("update needs an id")
-        if self.op in {"add", "update"} and (not self.content.strip() or "\x00" in self.content):
+        if self.op == "invalidate" and not self.id:
+            raise ValueError("invalidate needs an id")
+        if self.op == "add" and (not self.content.strip() or "\x00" in self.content):
             raise ValueError("change content is required")
         return self
 

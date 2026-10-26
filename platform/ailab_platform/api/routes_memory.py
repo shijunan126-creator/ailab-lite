@@ -30,7 +30,11 @@ def _entry(entry: dict) -> dict:
     out = dict(entry)
     out.setdefault("confidence", 1.0)
     out.setdefault("evidence_run_ids", [])
+    out.setdefault("evidence_episode_ids", [])
+    out.setdefault("entities", [])
+    out.setdefault("source_quote", "")
     out.setdefault("valid_from", entry.get("updated_at"))
+    out.setdefault("invalid_at", None)
     out.setdefault("superseded_by", None)
     out.setdefault("last_used_at", None)
     return out
@@ -54,7 +58,7 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         else:
             # A superseded fact stays visible to the user for audit, but the model must never
             # act on it again.
-            result["entries"] = [e for e in result["entries"] if not e.get("superseded_by")]
+            result["entries"] = [e for e in result["entries"] if not e.get("superseded_by") and not e.get("invalid_at")]
     return result
 
 
@@ -66,7 +70,7 @@ def write_memory(db, user, body, source):
     now = datetime.now(UTC)
     entries = []
     for entry in body.entries:
-        if entry.id and entry.id not in old:
+        if entry.id and entry.id not in old and not entry.id.startswith("mem_"):
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
         if prior is None:
@@ -79,7 +83,11 @@ def write_memory(db, user, body, source):
                     "updated_at": now.isoformat(),
                     "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
                     "evidence_run_ids": list(entry.evidence_run_ids or []),
+                    "evidence_episode_ids": list(entry.evidence_episode_ids or []),
+                    "entities": list(entry.entities or []),
+                    "source_quote": entry.source_quote or "",
                     "valid_from": (entry.valid_from or now).isoformat(),
+                    "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
                     "superseded_by": entry.superseded_by,
                     "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
                 }
@@ -87,12 +95,23 @@ def write_memory(db, user, body, source):
             continue
         merged = dict(prior)
         changed = prior["content"] != entry.content or prior["kind"] != entry.kind
-        for field in ("confidence", "evidence_run_ids", "valid_from", "superseded_by", "last_used_at"):
+        for field in (
+            "confidence",
+            "evidence_run_ids",
+            "evidence_episode_ids",
+            "entities",
+            "source_quote",
+            "valid_from",
+            "invalid_at",
+            "superseded_by",
+            "last_used_at",
+        ):
             value = getattr(entry, field)
             if value is not None:
-                merged[field] = value.isoformat() if field in {"valid_from", "last_used_at"} else value
-        if merged["evidence_run_ids"]:
-            merged["evidence_run_ids"] = list(dict.fromkeys(merged["evidence_run_ids"]))
+                merged[field] = value.isoformat() if field in {"valid_from", "invalid_at", "last_used_at"} else value
+        for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
+            if merged.get(field):
+                merged[field] = list(dict.fromkeys(merged[field]))
         if changed:
             merged["content"] = entry.content
             merged["kind"] = entry.kind
