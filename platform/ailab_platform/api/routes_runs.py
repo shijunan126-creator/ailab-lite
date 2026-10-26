@@ -77,11 +77,17 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None):
+def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None, intent=None):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
-    if skill:
+    if intent:
+        if intent != "extract_skill":
+            raise HTTPException(status_code=400, detail=f"unknown intent: {intent}")
+        if skill:
+            raise HTTPException(status_code=400, detail="内置操作不能同时指定技能")
+        options = {"mode": "chat", "intent": intent}
+    elif skill:
         if skill in run_disabled_skills(db, user):
             raise HTTPException(status_code=400, detail=f"技能「{skill}」已关闭，可在侧栏「技能」里打开")
         known = skills().get(skill) or usable_personal(db, user).get(skill)
@@ -130,6 +136,7 @@ def start_run(
     conversation: Conversation | None = None,
     mode: str = "work",
     skill: str | None = None,
+    intent: str | None = None,
     locked: bool = False,
     commit: bool = True,
     sibling_of: Run | None = None,
@@ -139,7 +146,7 @@ def start_run(
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
     with nullcontext() if locked else user_critical_section(db, user.id):
-        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template)
+        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template, intent)
         if frozen_template:
             if mode != "work":
                 raise HTTPException(400, "仅工作模式可使用模板")
@@ -167,7 +174,7 @@ def start_run(
             user_id=user.id,
             conversation_id=conversation.id if conversation is not None else None,
             parent_run_id=sibling_of.parent_run_id if sibling_of else expected_active,
-            title=(title or prompt.strip().splitlines()[0])[:200],
+            title=(title or ("提取技能" if intent == "extract_skill" else prompt.strip().splitlines()[0]))[:200],
             prompt=prompt,
             model=model_id,
             input_file_ids=inputs,
@@ -199,7 +206,18 @@ def start_run(
 
 @router.post("/runs", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    run = start_run(db, user, body.prompt, body.model, body.file_ids, body.title, mode=body.mode, skill=body.skill, template=body.template)
+    run = start_run(
+        db,
+        user,
+        body.prompt,
+        body.model,
+        body.file_ids,
+        body.title,
+        mode=body.mode,
+        skill=body.skill,
+        template=body.template,
+        intent=body.intent,
+    )
     return run_dict(db, run, detail=True)
 
 

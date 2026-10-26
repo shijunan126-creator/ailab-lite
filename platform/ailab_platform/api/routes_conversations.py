@@ -214,7 +214,16 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
 def send_message(conversation_id: str, body: MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     conv = _owned(db, conversation_id, user)
     run = start_run(
-        db, user, body.prompt, body.model, body.file_ids, conversation=conv, mode=body.mode, skill=body.skill, template=body.template
+        db,
+        user,
+        body.prompt,
+        body.model,
+        body.file_ids,
+        conversation=conv,
+        mode=body.mode,
+        skill=body.skill,
+        template=body.template,
+        intent=body.intent,
     )
     return run_dict(db, run, detail=True)
 

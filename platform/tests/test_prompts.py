@@ -23,8 +23,14 @@ def test_the_system_prompt_lists_the_skills_but_does_not_inline_them() -> None:
 
 def test_load_skill_returns_the_whole_skill() -> None:
     assert "/opt/skills/pptx/scripts/build.py" in prompts.load_skill("pptx")
-    with pytest.raises(KeyError, match="available: auto-skill, pptx, xlsx"):
+    with pytest.raises(KeyError, match="available: pptx, xlsx"):
         prompts.load_skill("nope")
+
+
+def test_extract_skill_is_built_into_the_chat_prompt() -> None:
+    text = prompts.system_prompt_for("chat", intent="extract_skill")
+    assert "# 内置功能：提取技能" in text and "save_skill" in text
+    assert "auto-skill" not in text
 
 
 def test_missing_skills_fail_loudly(monkeypatch, tmp_path) -> None:

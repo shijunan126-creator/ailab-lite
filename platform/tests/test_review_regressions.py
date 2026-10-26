@@ -322,6 +322,6 @@ def test_simultaneous_skill_toggles_preserve_both_changes(api, monkeypatch):
     def toggle(name):
         return TestClient(app).put(f"/v1/skills/{name}", headers=auth, json={"enabled": False}).status_code
 
-    with ThreadPoolExecutor(max_workers=3) as pool:
-        assert list(pool.map(toggle, ["pptx", "auto-skill", "xlsx"])) == [200, 200, 200]
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(toggle, ["pptx", "xlsx"])) == [200, 200]
     assert all(not skill["enabled"] for skill in api.get("/v1/skills", headers=auth).json())

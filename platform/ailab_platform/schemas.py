@@ -77,6 +77,7 @@ class RunCreate(PromptRequest):
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"  # chat: answer in words only, no tools, never a sandbox
     skill: str | None = Field(default=None, max_length=40)  # a skill the user picked (implies work)
+    intent: Literal["extract_skill"] | None = None  # a built-in action, not a skill
 
 
 class RunVersions(BaseModel):
@@ -201,6 +202,7 @@ class MessageCreate(PromptRequest):
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=40)
+    intent: Literal["extract_skill"] | None = None
 
 
 class ConversationOut(UTCModel):

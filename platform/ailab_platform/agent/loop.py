@@ -1217,7 +1217,9 @@ class AgentLoop:
                 messages: list[dict] = [
                     {
                         "role": "system",
-                        "content": system_prompt_for(mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text)
+                        "content": system_prompt_for(
+                            mode, skill, turn.disabled_skills, list(turn.personal.values()), picked_text, options.get("intent")
+                        )
                         + workspace_prompt(
                             run.get("project_instructions") or "", run.get("brand") or {}, (run.get("options") or {}).get("template")
                         )
