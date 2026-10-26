@@ -236,16 +236,7 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
     _wait_for_turns(page, 1)
     _open_all_steps(page)
     assert "运行命令" in page.inner_text(".steps")
-    conversation_url = page.url
-    page.locator(".turn-meta").get_by_role("button", name="详情", exact=True).click()
-    page.get_by_role("tab", name="详情", exact=True).wait_for()
-    assert page.url == conversation_url
-    page.wait_for_function("() => document.body.innerText.includes('run.completed')", timeout=30000)
-    page.wait_for_selector(".chip:has-text('model: test-fast')")  # the run itself loads separately from its events
-    body = page.inner_text("body")
-    assert "model: test-fast" in body  # the chip next to the title
-    for event in ("run.created", "agent.started", "agent.tool_call", "run.completed"):
-        assert event in body, f"{event} missing from the timeline"
+    assert page.locator(".turn-meta").get_by_text("详情", exact=True).count() == 0
 
 
 def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
@@ -410,7 +401,7 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_work_process_outlines_the_reasoning_and_survives_reload(logged_in):
+def test_work_process_shows_full_reasoning_after_one_click_and_survives_reload(logged_in):
     from playwright.sync_api import expect
 
     page = logged_in
@@ -422,18 +413,17 @@ def test_work_process_outlines_the_reasoning_and_survives_reload(logged_in):
     expect(head).to_contain_text("工作总时长：")
     assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    # the outline names the reasoning by its first sentence; the rest opens on request
-    thought = process.locator(".pr-thought").first
-    expect(thought.locator(".pr-label")).to_have_text("用户说：「你好呀」")
-    expect(thought.locator(".pr-thought-body")).to_be_hidden()
-    thought.locator("button").click()
-    expect(thought.locator(".pr-thought-body")).to_contain_text("这是离线演示模型")
+    # One expansion shows the actual text, without a second outline-only fold.
+    thought = process.locator(".pr-thought-body").first
+    expect(thought).to_contain_text("用户说：「你好呀」")
+    expect(thought).to_contain_text("这是离线演示模型")
+    assert process.locator(".pr-thought .collapse").count() == 0
     duration = head.locator("span").nth(1).inner_text()
     page.reload()
     page.locator(".turn-meta").wait_for()
     expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
     page.locator(".steps-head").click()
-    expect(page.get_by_role("region", name="工作过程").locator(".pr-label").first).to_have_text("用户说：「你好呀」")
+    expect(page.get_by_role("region", name="工作过程").locator(".pr-thought-body").first).to_contain_text("用户说：「你好呀」")
 
 
 def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
@@ -479,6 +469,7 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
     _wait_for_turns(page, 1, seconds=120)
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "已加载技能" in steps and "交付文件" in steps
     filename = page.locator(".file-card .name").inner_text()
@@ -499,6 +490,7 @@ def test_an_attachment_is_read_without_a_sandbox(logged_in, tmp_path) -> None:
     _wait_for_turns(page, 1)
     assert "我读到了 1 个附件的内容" in page.inner_text(".assistant-body > .md")
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已读取附件").wait_for()
     assert "已读取附件" in page.inner_text(".steps") and "会议纪要.txt" in page.inner_text(".steps")
 
 
@@ -580,6 +572,7 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     _wait_for_turns(page, 1)
     assert page.inner_text(".msg.user .attach-chip") == "周报助手"
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
     assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file

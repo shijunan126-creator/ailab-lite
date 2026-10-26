@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
@@ -17,6 +17,7 @@ export type { Item } from "../../lib/work-process";
 import { reduceEvent, type Item } from "../../lib/work-process";
 import { SourcesButton } from "./sources";
 import WorkProcess from "./work-process";
+import { useViewport } from "../viewport-block";
 /** Runs that ended before budgets paused instead: their stored English reason, said plainly. */
 function runError(error: string): string {
   const steps = /^agent exceeded (\d+) steps$/.exec(error);
@@ -176,7 +177,6 @@ export default function Turn({
   projectId,
   sourcesOpen,
   onSources,
-  onDetails,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -197,8 +197,8 @@ export default function Turn({
   projectId?: string | null; // where this conversation's files are kept
   sourcesOpen?: boolean;
   onSources?: (run: Run, sources: Source[], answer: string) => void;
-  onDetails: (run: Run) => void;
 }) {
+  const [processExpanded, setProcessExpanded] = useState<boolean | null>(null);
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState("");
@@ -233,21 +233,24 @@ export default function Turn({
       historyRequest.current = null;
     }
   }
-  const { process, answer: streamed } = splitTurn(shown);
+  const { process, answer: streamed } = useMemo(() => splitTurn(shown), [shown]);
   // the confirmed answer once the run is over; until then whatever the model has written after its last step
   const answer = (terminal && run.status !== "interrupted" ? run.summary?.trim() : "") || streamed;
   // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
   // kept on the run once it ends; from the stream (or loaded history) until then
-  const sources = run.result?.sources?.length ? run.result.sources : turnSources(shown);
+  const eventSources = useMemo(() => turnSources(shown), [shown]);
+  const sources = run.result?.sources?.length ? run.result.sources : eventSources;
   const quotaPause = run.status === "interrupted" && run.result?.pause?.kind === "quota" ? run.result.pause : null;
   const done = run.status === "succeeded" || run.status === "failed" || run.status === "canceled";
   // what the user added while this answer ran: from the turn itself once it is saved, from the stream until then
   const steered = [...(run.steered || [])];
   for (const it of shown || []) if (it.kind === "steer" && !steered.some((x) => x.id === it.id)) steered.push({ id: it.id, prompt: it.prompt });
 
+  const viewport = useViewport(!terminal || editing !== null || !!files.viewer, 240);
   return (
-    <div className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
+    <div ref={viewport.ref} style={viewport.style} data-mounted={viewport.visible} className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
+      {viewport.visible ? <>
       <div className={`msg user ${editing !== null ? "editing" : ""}`}>
         {editing !== null ? (
           <EditBox value={editing} onChange={setEditing} onCancel={() => setEditing(null)} onSubmit={async () => {
@@ -299,11 +302,11 @@ export default function Turn({
       <div className="msg assistant">
         <div className="avatar-ai">A</div>
         <div className="assistant-body">
-          {showProcess ? <WorkProcess run={run} items={shown == null ? null : process} live={live}
+          {showProcess ? <WorkProcess expanded={processExpanded} onExpanded={setProcessExpanded} run={run} items={shown == null ? null : process} live={live}
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
-          {answer ? <Markdown text={answer} streaming={live && !terminal} sources={sources} /> : null}
+          {answer ? <Markdown virtual text={answer} streaming={live && !terminal} sources={sources} /> : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{runError(run.error)}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">
@@ -384,12 +387,12 @@ export default function Turn({
               {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
               <span className="meta-text">{modelName(run.model)}</span>
               {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
-              <button type="button" className="link meta-text" onClick={() => onDetails(run)}>详情</button>
             </div>
           ) : null}
         </div>
       </div>
       {files.viewer}
+      </> : null}
     </div>
   );
 }

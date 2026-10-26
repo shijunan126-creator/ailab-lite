@@ -1062,7 +1062,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .work-process .dot.failed { background: var(--danger); }
 .work-process .dot.spin { width: 14px; height: 14px; background: none; border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 
-.work-timeline { max-height: min(340px, 44vh); overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); padding: 8px 10px 10px; scroll-behavior: smooth;
+.work-timeline { max-height: min(340px, 44vh); overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); padding: 8px 10px 10px; scroll-behavior: auto;
   mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 6px), transparent 100%); }
 .work-entry { animation: rise-in var(--t) var(--ease) both; }
 .work-entry + .work-entry { margin-top: 2px; }

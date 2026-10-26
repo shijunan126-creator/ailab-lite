@@ -30,7 +30,7 @@ def _menu(page, conv):
     row.locator(".conv-more").click()
 
 
-def test_reasoning_outline_and_early_title_while_answer_streams(logged_in, stack):
+def test_full_reasoning_and_early_title_while_answer_streams(logged_in, stack):
     page = logged_in
     # Detect an accidental document reload while the first title arrives via SSE.
     page.evaluate("window.integrationDocument = 'same-document'")
@@ -38,15 +38,12 @@ def test_reasoning_outline_and_early_title_while_answer_streams(logged_in, stack
     try:
         expect(page.locator(".assistant-body > .md")).to_have_text(FEATURE_ANSWER, timeout=15000)
         expect(page.locator(".turn-meta")).to_have_count(0)
-        rows = page.locator(".pr-thought")
-        expect(rows).to_have_count(2)
-        expect(rows.locator(".pr-label")).to_have_text(["分析问题", "组织回答"])
-        body = rows.first.locator(".pr-thought-body")
-        expect(body).to_be_hidden()
-        expect(rows.first.locator(".collapse")).to_have_attribute("inert", "")
-        rows.first.get_by_role("button").click()
+        body = page.locator(".pr-thought-body")
         expect(body).to_be_visible()
+        expect(body).to_contain_text("分析问题")
+        expect(body).to_contain_text("组织回答")
         expect(body).to_contain_text("先确认目标和约束")
+        assert body.locator(".collapse").count() == 0
         expect(page.locator(".conv-item.on .conv-title")).to_have_text("新对话")
         httpx.post(stack.agent + "/e2e/release-title", timeout=5).raise_for_status()
         expect(page.locator(".conv-item.on .conv-title")).to_have_text(FEATURE_TITLE, timeout=15000)
