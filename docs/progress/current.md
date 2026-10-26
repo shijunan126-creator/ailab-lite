@@ -1,8 +1,12 @@
 # 当前工作
 
-## 2026-10-26 reader 修复发布（已授权，进行中）
+## 2026-10-26 reader 修复已合并并部署（完成）
 
-用户现已明确授权提交全部本轮修复、CI通过后合并、最终测试和清理、部署最新main。分支`fix/merged-reader-validation`，base`c6ff8f9`，产品`fa562ab`、验收文档`2d54f5f`。此前“不发布”边界仅对应上一轮。本轮下一步：PR精确head检查通过后squash合并，核对合并main完整CI；准备个人Compose的crawler/egress隔离接线并实测，完整备份/解包校验后切换固定main及部署后验收。保留原主目录未提交修改和全部个人数据/配置；仅清理逐项核实的本轮临时资源，私有运维材料不入Git。[已有验证及本轮发布记录](updates/2026-10-26-merged-reader-validation.md)。
+用户授权全部本轮修复提交/merge、最后测试清理并部署最新。PR95 head`658bcd9`八检查成功后squash合入`main@cc247a2f4b92b609f5fccba2b74ee9462a9ba06c`；合并main CI40325349760八job全部success。完整双库、存储及浏览器CI均通过；固定main已部署，个人Compose加入crawler/egress并验收真实网络隔离。SQLite0033不变、原账号/六表ID/个人配置与11ready文件SHA保留，完整备份实际解包/独立内盘副本验证通过。
+
+11容器运行、七应用/reader healthy、无OOM/重启；实际Agent静态/JS两级读取、桌面/390×844模式与项目菜单、原会话及来源、CSP、72静态资源与pageerror0通过。目标VM双render约5.33s，crawler采样最高915MiB/1GiB接近上限；完成后约77MiB，不推导任意站点/长期容量。专用Compose测试容器/网络和候选标签已清，正式/回滚镜像及备份保留；原主目录未提交修改未动。
+
+当前分支`docs/reader-release-accepted`，base`origin/main@cc247a2`。下一步：本轮无待修复/待部署项；此收尾交接仅本地提交，不再以纯文档PR触发重复全套CI。线上整栈长期并发、真实手机/USB物理稳定性、crawler传递依赖全锁定仍为边界，不自动开展新路线。[完整验证及发布记录](updates/2026-10-26-merged-reader-validation.md)。下方为历史阶段。
 
 ## 2026-10-26 已合并PR92/93/94补测与超时修复（本地完成，不发布）
 

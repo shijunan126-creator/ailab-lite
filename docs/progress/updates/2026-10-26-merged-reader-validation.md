@@ -49,3 +49,14 @@
 ## 后续发布授权
 
 用户已授权本轮修复全部提交/merge、最后测试清理并部署最新版。上一节“不发布”是历史阶段；当前执行顺序为PR CI→固定head squash→合并main完整CI→个人Compose隔离接线验收→备份/切换/线上验证。发布进度由current.md和本节后续更新接续，个人配置/原始数据仅留本机。
+
+## 发布完成（2026-10-26）
+
+- [PR95](https://github.com/shijunan126-creator/ailab-lite/pull/95) head`658bcd96aff1b18c1cdaeba5d5de2024fdcdb0e9`八检查success、无阻塞review/冲突后squash合并`cc247a2f4b92b609f5fccba2b74ee9462a9ba06c`。[合并main CI40325349760](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40325349760)八job success：SQLite1389/107skip、PG1437/59skip、storage15/1skip、E2E114/1skip。此为最终修复代码的完整双库CI，覆盖前节“最终PG仅定向”的本地边界。
+- 固定main运行源码等值候选四镜像已部署；原Office保留。个人Compose新增crawler/egress，内部network加每容器namespace nft规则：crawler仅代理出口、仅Agent入站，代理公网80/443与私网拒绝；启动setpriv后实际UID10002/10001、CapEff/Prm/Bnd0、NNP1、只读root、无业务卷/模型配置。12正反探测在重启前后均通过，生产实际Agent静态完整页零browser、JS页一次browser通过。私有配置/脚本/原始证据保留本机运维目录，不入Git。
+- 目标VM短测双并发渲染均200、约5.33–5.35s，采样最高915MiB/1GiB，proxy约49MiB；接近内存上限，保留任意站点/长期并发边界。example.com本次仅156字符，合法触发weak=short；首轮测试错误要求其不渲染，改用python.org/about1332字符验证静态路径，并保留失败日志。无产品修改/断言放宽。
+- 停五写入者前active0，完整业务卷备份实际解包检查0033/quick_check ok/FK0及独立内盘副本一致；原账号、六表ID、11ready文件哈希、个人env/toml/login字节保留，最终完整性再次通过。此轮无迁移。
+- 部署后最终：后端五Python服务含egress的190源码/renderer源码匹配固定main；11容器running、七应用/reader healthy、无OOM/重启。实际Agent静态1332字符/JS1462字符与renderer调用数正确；真实登录/3原会话读取、桌面及390×844模式切换/项目重命名说明删除、原来源pane/iframe/CSP、72静态资源HTTP200、pageerror0；验收创建的两个空项目已删除，原项目集合一致，无付费模型调用。
+- 验收脚本初次默认docker exec root，因drop ALL无DAC绕过权限，无法遍历归UID10001所有的0700源码子目录，导致egress只读到42文件。改用实际service UID后190文件hash一致；未修改产品/放宽源码检查。公开页面、私有凭据未输出到Git。
+- 完成后短时三次采样crawler77.24MiB/proxy40.88MiB，其余服务预算内；采样不证明长期容量。专用Compose测试项目及网络删除、5个candidate别名删除，正式release、crawler-base重建标签、旧回滚镜像和备份均保留。未无差别prune/清业务/删用户工作树。原主目录git状态保持。个人current-deploy与HANDOFF更新，服务保持运行。
+- 本轮交接分支`docs/reader-release-accepted`，base`origin/main@cc247a2`，纯收尾文档仅本地提交；全部产品修复已合main、部署验收完成，无待发布项。保留长期容量/真机/硬件链路/依赖全锁定边界。
