@@ -56,6 +56,15 @@ def test_chat_mode_offers_only_read_only_web_tools(monkeypatch) -> None:
 
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     names = {tool["function"]["name"] for tool in tools.tools_for_chat()}
-    assert names == {"web_search", "read_url", "save_skill", "load_skill", "memory", "search_library", "read_library_file"}
+    assert names == {
+        "web_search",
+        "read_url",
+        "save_skill",
+        "load_skill",
+        "memory",
+        "recall_history",
+        "search_library",
+        "read_library_file",
+    }
     work_names = {tool["function"]["name"] for tool in tools.tools_for_turn()}
     assert {"web_search", "read_url"} <= work_names

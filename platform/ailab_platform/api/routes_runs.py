@@ -77,7 +77,7 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None):
+def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None, memory="on"):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode}
@@ -88,6 +88,8 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
         if not known:
             raise HTTPException(status_code=400, detail=f"unknown skill: {skill}")
         options = {"mode": "work", "skill": skill, "skill_title": known.get("title") or skill}  # a skill is work by definition
+    if memory == "off":
+        options["memory"] = "off"  # a temporary chat: not read from, not learned from, not searched later
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -135,11 +137,12 @@ def start_run(
     sibling_of: Run | None = None,
     template=None,
     frozen_template: dict | None = None,
+    memory: str = "on",
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
     with nullcontext() if locked else user_critical_section(db, user.id):
-        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template)
+        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template, memory)
         if frozen_template:
             if mode != "work":
                 raise HTTPException(400, "仅工作模式可使用模板")
@@ -162,6 +165,12 @@ def start_run(
                 raise HTTPException(status_code=404, detail="conversation not found")
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
+            # A temporary chat stays temporary: the client cannot switch memory back on halfway.
+            parent_id = sibling_of.parent_run_id if sibling_of else expected_active
+            parent = db.get(Run, parent_id) if parent_id else None
+            first = db.scalar(select(Run).where(Run.conversation_id == conversation.id).order_by(Run.created_at, Run.id).limit(1))
+            if any((r.options or {}).get("memory") == "off" for r in (parent, sibling_of, first) if r is not None):
+                options["memory"] = "off"
 
         run = Run(
             user_id=user.id,
@@ -199,7 +208,18 @@ def start_run(
 
 @router.post("/runs", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    run = start_run(db, user, body.prompt, body.model, body.file_ids, body.title, mode=body.mode, skill=body.skill, template=body.template)
+    run = start_run(
+        db,
+        user,
+        body.prompt,
+        body.model,
+        body.file_ids,
+        body.title,
+        mode=body.mode,
+        skill=body.skill,
+        template=body.template,
+        memory=body.memory,
+    )
     return run_dict(db, run, detail=True)
 
 

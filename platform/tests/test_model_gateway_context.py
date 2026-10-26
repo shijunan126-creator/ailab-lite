@@ -261,7 +261,7 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
             self.summary, self.through = payload["summary"], payload["through_run_id"]
             self.saved.append(payload)
 
-    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3000, max_output_tokens=1000)])
+    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3300, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     bridge = Context()
 

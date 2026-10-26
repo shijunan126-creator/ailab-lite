@@ -27,6 +27,7 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
             "sandbox:use",
             "skills:save_for_run",
             "memory:write_for_run",
+            "memory:recall_for_run",
         }
     ),
     "broker": frozenset({"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "artifacts:commit_for_run"}),
