@@ -133,7 +133,9 @@ async def read(request: web.Request) -> web.Response:
         )
     markdown = result.markdown
     # The pruned view drops navigation and boilerplate; a page it empties (short or unusual layout) keeps the full text.
-    text = (getattr(markdown, "fit_markdown", "") or "").strip() or (getattr(markdown, "raw_markdown", "") or str(markdown or "")).strip()
+    text = (getattr(markdown, "fit_markdown", "") or "").strip() or (
+        getattr(markdown, "raw_markdown", "") or (markdown if isinstance(markdown, str) else "")
+    ).strip()
     title = str((result.metadata or {}).get("title") or "")[:300]
     if not text or CHALLENGE.fullmatch(title.strip()) or CHALLENGE.fullmatch(text.strip()):
         return web.json_response(
