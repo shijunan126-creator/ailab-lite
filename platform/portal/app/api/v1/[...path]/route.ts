@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 const FORWARD_REQUEST_HEADERS = ["content-type", "content-length", "accept", "last-event-id", "x-request-id", "if-none-match"];
 // cache-control / etag: the API marks what may be kept (immutable thumbnails); everything else stays no-store.
-const FORWARD_RESPONSE_HEADERS = ["content-type", "content-disposition", "content-length", "x-accel-buffering", "x-request-id", "cache-control", "etag", "x-next-cursor"];
+const FORWARD_RESPONSE_HEADERS = ["content-type", "content-disposition", "content-length", "x-accel-buffering", "x-request-id", "cache-control", "etag", "x-next-cursor", "content-security-policy", "referrer-policy"];
 
 async function proxy(req: NextRequest, ctx: { params: Promise<{ path: string[] }> }): Promise<Response> {
   const { path } = await ctx.params;

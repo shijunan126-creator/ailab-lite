@@ -71,7 +71,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
   const [paneSources, setPaneSources] = useState<PaneSources | null>(null); // a turn's sources: a pane tab on wide screens
   const [sourcesOn, setSourcesOn] = useState(false); // that tab is the one shown
-  const [paneReader, setPaneReader] = useState<PaneReader | null>(null); // a web page a source opened into: one tab
+  const [readers, setReaders] = useState<PaneReader[]>([]);
+  const [readerUrl, setReaderUrl] = useState<string | null>(null);
+  const paneReader = readers.find((r) => r.url === readerUrl) || readers[readers.length - 1];
   const [readerOn, setReaderOn] = useState(false);
   const [sheetSources, setSheetSources] = useState<PaneSources | null>(null); // the same on a phone, as a bottom sheet
   const [busy, setBusy] = useState(false);
@@ -325,9 +327,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   function closeFile(filename: string) {
     const rest = openFiles.filter((p) => p.filename !== filename);
     setClosedFiles((closed) => [...closed, filename]);
-    if (!rest.length && !paneSources) return setPaneOpen(false);
-    if (!rest.length) setSourcesOn(true);
-    else if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
+    if (!rest.length && !paneSources && !readers.length) return setPaneOpen(false);
+    if (!rest.length) {
+      if (!readerOn) {
+        if (paneSources) setSourcesOn(true);
+        else setReaderOn(true);
+      }
+      return;
+    }
+    if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
   }
   function showSources(run: Run, sources: PaneSources["sources"], answer: string) {
     const next = { runId: run.id, sources, answer };
@@ -342,18 +350,31 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   function closeSources() {
     setPaneSources(null);
     setSourcesOn(false);
-    if (!openFiles.length && !paneReader) setPaneOpen(false);
+    if (!openFiles.length) {
+      if (readers.length) setReaderOn(true);
+      else setPaneOpen(false);
+    }
   }
   function openReader(source: { url: string; title: string }) {
-    setPaneReader({ url: source.url, title: source.title });
+    let url: URL;
+    try { url = new URL(source.url); } catch { return; }
+    if (!["http:", "https:"].includes(url.protocol)) return;
+    const next = { url: url.href, title: source.title || url.hostname };
+    setReaders((prev) => prev.some((r) => r.url === next.url) ? prev : [...prev, next]);
+    setReaderUrl(next.url);
     setReaderOn(true);
     setSourcesOn(false);
     setPaneOpen(true);
   }
-  function closeReader() {
-    setPaneReader(null);
+  function closeReader(url: string) {
+    const rest = readers.filter((r) => r.url !== url);
+    setReaders(rest);
+    if (paneReader?.url !== url) return;
+    setReaderUrl(rest[rest.length - 1]?.url || null);
+    if (rest.length) return;
     setReaderOn(false);
-    if (!openFiles.length && !paneSources) setPaneOpen(false);
+    if (paneSources) setSourcesOn(true);
+    else if (!openFiles.length) setPaneOpen(false);
   }
   const ext = (name: string) => name.split(".").pop()?.toLowerCase() || "";
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
@@ -732,7 +753,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         )}
       </section>
 
-      {showPane || paneReader ? (
+      {showPane ? (
         <PreviewPane
           previews={openFiles}
           selected={selected}
@@ -742,12 +763,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           sourcesOn={sourcesOn && !readerOn}
           onSourcesTab={() => { setSourcesOn(true); setReaderOn(false); }}
           onCloseSources={closeSources}
-          reader={paneReader}
+          readers={readers}
+          readerUrl={paneReader?.url || null}
           readerOn={readerOn}
-          onReaderTab={() => { setReaderOn(true); setSourcesOn(false); }}
+          onReaderTab={(url) => { setReaderUrl(url); setReaderOn(true); setSourcesOn(false); }}
           onCloseReader={closeReader}
           onRead={openReader}
-          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); setPaneReader(null); setReaderOn(false); }}
+          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); setReaders([]); setReaderUrl(null); setReaderOn(false); }}
           live={!!streaming && running}
           downloads={downloads}
         />
