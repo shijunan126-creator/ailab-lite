@@ -201,6 +201,7 @@ def copy_library_file(lease_id: str, body: dict):
     manager = get_manager()
     try:
         lease = manager.get(lease_id)
+        manager.touch(lease_id)
         file_id = str(body.get("file_id") or "")
         file = manager.platform.get_file(file_id, run_id=lease["run_id"])
         destination = str(body.get("path") or PurePosixPath(file["filename"]).name)

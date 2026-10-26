@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import logging
@@ -13,6 +14,7 @@ import tempfile
 import threading
 import time
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -46,6 +48,10 @@ SNAPSHOT_PATH = f"{TOOL_DIR}/snapshot.tgz"
 PREVIEW_SCRIPT = f"{TOOL_DIR}/render_preview.py"
 PREVIEW_PATTERNS = ("*.pptx", "*.docx", "*.xlsx", "*.pdf")
 MAX_PREVIEWS_PER_CALL = 3
+EVICT_REASON = "evicted_idle"
+EVICT_SAVE_SECONDS = 600  # reconciliation leaves a sandbox being saved alone this long
+EVICT_QUIET_SECONDS = 30  # wait for an operation already in flight before the workspace is packed
+EVICT_RETRY_SECONDS = 2.0  # how often a queued request looks for something to reclaim
 
 
 class LeaseError(RuntimeError):
@@ -123,6 +129,25 @@ def _unique_name(name: str, used: set[str]) -> str:
     return candidate
 
 
+def _operation(method):
+    """Calls an agent makes on a lease count as activity, and an in-flight one makes it unreclaimable.
+
+    Renewals, status reads and releases are deliberately not wrapped: the Agent's heartbeat would otherwise
+    keep every sandbox looking busy.
+    """
+
+    @functools.wraps(method)
+    def wrapper(self, handle, *args, **kwargs):
+        lease_id = self._id(handle)
+        self._operation_started(lease_id)
+        try:
+            return method(self, handle, *args, **kwargs)
+        finally:
+            self._operation_finished(lease_id)
+
+    return wrapper
+
+
 class LeaseManager:
     def __init__(
         self,
@@ -167,7 +192,39 @@ class LeaseManager:
             lambda: settings.sandbox_max_per_user,
             lambda: settings.sandbox_queue_limit,
             lambda: settings.sandbox_render_max_ttl_seconds,
+            lambda: settings.sandbox_burst_watermark,
         )
+        # Activity lives in this process only: the Broker is the single owner of every lease, and a write
+        # per command would contend with renewals on the lease record. After a restart every lease starts
+        # a fresh idle period, so nothing is reclaimed on stale evidence.
+        self._activity: dict[str, float] = {}
+        self._operations: dict[str, int] = {}
+        self._activity_lock = threading.Lock()
+
+    def _operation_started(self, lease_id: str) -> None:
+        with self._activity_lock:
+            self._operations[lease_id] = self._operations.get(lease_id, 0) + 1
+            self._activity[lease_id] = time.monotonic()
+
+    def _operation_finished(self, lease_id: str) -> None:
+        with self._activity_lock:
+            left = self._operations.get(lease_id, 1) - 1
+            if left > 0:
+                self._operations[lease_id] = left
+            else:
+                self._operations.pop(lease_id, None)
+            self._activity[lease_id] = time.monotonic()
+
+    def touch(self, lease_id: str) -> None:
+        with self._activity_lock:
+            self._activity[lease_id] = time.monotonic()
+
+    def idle_seconds(self, lease: dict) -> float:
+        """Seconds since the last operation on this lease; zero while one is running."""
+        with self._activity_lock:
+            if self._operations.get(lease["lease_id"]):
+                return 0.0
+            return time.monotonic() - self._activity.setdefault(lease["lease_id"], time.monotonic())
 
     def _notify(self) -> None:
         with self._condition:
@@ -343,7 +400,7 @@ class LeaseManager:
         started = time.perf_counter()
         wait = settings.sandbox_wait_seconds if wait_seconds is None else max(0, wait_seconds)
         deadline, request_id = time.monotonic() + wait, uuid.uuid4().hex
-        last_position = None
+        last_position, next_reclaim = None, 0.0
         with self._condition:
             if principal.run_id in self._pending_runs:
                 raise AdmissionRejected("run_already_waiting")
@@ -397,11 +454,14 @@ class LeaseManager:
                         self._inflight.add(lease_id)
                         self._save(lease)
                         break
-                    position = decision.position
+                    position, blocked_by = decision.position, decision.reason
                 # Event delivery never holds the admission condition across an HTTP call.
                 if on_queued and position != last_position:
                     on_queued(decision)
                 last_position = position
+                if blocked_by in {"user_limit", "capacity"} and time.monotonic() >= next_reclaim:
+                    next_reclaim = time.monotonic() + EVICT_RETRY_SECONDS
+                    self._reclaim_for(principal, spec, blocked_by)
                 with self._condition:
                     # Do not miss a release while the progress callback runs.
                     remaining = deadline - time.monotonic()
@@ -432,6 +492,7 @@ class LeaseManager:
                 if _expired(lease):
                     raise LeaseExpiredError("lease expired during sandbox preparation")
                 lease["state"] = "active"
+                self.touch(lease_id)
                 # Activation reaches the resource first, so a crash/Redis flush can
                 # only adopt fully staged input, never a partially prepared sandbox.
                 self._provider_call("update_metadata", ref, self._metadata(lease))
@@ -573,6 +634,7 @@ class LeaseManager:
             self._save(lease)
             return lease
 
+    @_operation
     def cancel_exec(self, handle: str | LeaseHandle) -> bool:
         lease = self._load(handle)
         return self._provider_call("cancel_exec", lease["provider_ref"])
@@ -597,9 +659,12 @@ class LeaseManager:
             lease["restored"] = False
             lease["restore_error"] = str(exc)[:300]
 
+    @_operation
     def snapshot(self, lease_id: str) -> dict:
         """Pack /workspace (minus inputs and platform files) into storage for the conversation's next turn."""
-        lease = self._load(lease_id)
+        return self._snapshot_lease(self._load(lease_id))
+
+    def _snapshot_lease(self, lease: dict) -> dict:
         sandbox_id = lease["sandbox_id"]
         cmd = (
             f"mkdir -p {TOOL_DIR} && tar -czf {SNAPSHOT_PATH} -C /workspace --exclude=./.ailab --exclude=./inputs . "
@@ -630,6 +695,7 @@ class LeaseManager:
                 out[path] = fp
         return out
 
+    @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
         """Render previews of office files in /workspace/outputs that are new or changed since the last call.
 
@@ -723,6 +789,9 @@ class LeaseManager:
     def _finish(self, lease: dict, state: str, reason: str) -> None:
         lease.update(state=state, reason=reason, closed_at=datetime.now(UTC).isoformat())
         self._save(lease)
+        with self._activity_lock:
+            self._activity.pop(lease["lease_id"], None)
+            self._operations.pop(lease["lease_id"], None)
         with self._condition:
             self._notify()
 
@@ -735,6 +804,8 @@ class LeaseManager:
                 raise BrokerOwnershipError("broker is rebuilding lease ownership")
             if not lease or lease["state"] in {"released", "failed"}:
                 return
+            if self._being_saved(lease):
+                return  # the reclaim in progress deletes it once the workspace is stored
             if isinstance(handle, LeaseHandle) and lease["provider_ref"] != handle.provider_ref:
                 raise LeaseLostError("lease handle does not match its resource")
             if lease["state"] != "releasing":
@@ -780,6 +851,7 @@ class LeaseManager:
             log.warning("sandbox.released event not appended for run %s: %s", lease["run_id"], exc)
 
     # ---------------------------------------------------------------- sandbox I/O
+    @_operation
     def exec(self, lease_id: str, cmd: str, timeout: int | None = None) -> ExecResult:
         lease = self._load(lease_id)
         timeout = timeout or settings.sandbox_exec_timeout_seconds
@@ -802,6 +874,7 @@ class LeaseManager:
         except PathError as exc:
             raise SandboxError(str(exc)) from exc
 
+    @_operation
     def put_file(self, lease_id: str, path: str, data: bytes) -> None:
         lease = self._load(lease_id)
         path = self._checked(path)
@@ -809,6 +882,7 @@ class LeaseManager:
             raise SandboxError(f"file too large to write ({len(data)} > {settings.max_sandbox_write_bytes} bytes)")
         self._provider_call("put_file", lease["sandbox_id"], path, data)
 
+    @_operation
     def put_fetched(self, lease_id: str, path: str, local: Path, size: int) -> None:
         """A public download the Agent fetched outside the sandbox, already spooled to disk by the route."""
         lease = self._load(lease_id)
@@ -817,6 +891,7 @@ class LeaseManager:
             raise SandboxError(f"download too large ({size} > {settings.web_download_max_bytes} bytes)")
         self._provider_call("put_file_from_path", lease["sandbox_id"], path, local, max_bytes=settings.web_download_max_bytes)
 
+    @_operation
     def get_file(self, lease_id: str, path: str) -> bytes:
         lease = self._load(lease_id)
         path = self._checked(path)
@@ -824,10 +899,12 @@ class LeaseManager:
             self._download(lease, path, local, settings.max_sandbox_read_bytes)
             return local.read_bytes()
 
+    @_operation
     def list_files(self, lease_id: str, path: str) -> list[dict]:
         lease = self._load(lease_id)
         return self._provider_call("list_files", lease["sandbox_id"], self._checked(path))
 
+    @_operation
     def commit(self, lease_id: str, path: str, filename: str | None = None, role: str = "output") -> dict:
         lease = self._load(lease_id)
         path = self._checked(path, OUTPUTS)  # only /workspace/outputs is archived
@@ -865,6 +942,90 @@ class LeaseManager:
             except Exception:
                 log.warning("could not delete staging object %s", staging_key, exc_info=True)
             raise
+
+    # ---------------------------------------------------------------- reclaiming idle sandboxes
+    @staticmethod
+    def _being_saved(lease: dict) -> bool:
+        return lease.get("state") == "releasing" and lease.get("reason") == EVICT_REASON and lease.get("retry_at", 0) > time.time()
+
+    def _pick_victim(self, principal: LeasePrincipal, why: str, live: list[dict]) -> dict | None:
+        """The sandbox to give up for a waiting request, or None when nobody may be asked to.
+
+        A sandbox is only ever reclaimed after sandbox_evict_idle_seconds without any operation, so a
+        reclaimed workspace is never one that is being worked in, and two busy runs cannot trade places
+        forever. Under the user's own cap only their own sandboxes qualify; for pool capacity everyone's do,
+        but only once the pool is almost full, and the user holding the most sandboxes gives one up first.
+        """
+        work = [x for x in live if x["spec"]["profile"] != "render"]
+        mine = why == "user_limit"
+        scope = [x for x in work if x["user_id"] == principal.user_id] if mine else work
+        if any(x["state"] == "releasing" and x.get("reason") == EVICT_REASON for x in scope):
+            return None  # the capacity from the last reclaim is still on its way
+        if why == "capacity" and self.admission.utilization(live) < settings.sandbox_preempt_utilization:
+            return None
+        held = Counter(x["user_id"] for x in work)
+        idle = {x["lease_id"]: self.idle_seconds(x) for x in scope}
+        floor = settings.sandbox_evict_idle_seconds
+        candidates = [
+            x
+            for x in scope
+            if x["state"] == "active" and x["run_id"] != principal.run_id and not _expired(x) and idle[x["lease_id"]] >= floor
+        ]
+        return max(candidates, key=lambda x: (held[x["user_id"]], idle[x["lease_id"]]), default=None)
+
+    def _reclaim_for(self, principal: LeasePrincipal, spec: SandboxSpec, why: str) -> bool:
+        """Start giving up one idle sandbox. Never called with the admission condition held."""
+        if spec.profile == "render":
+            return False
+        try:
+            victim = self._pick_victim(principal, why, self.active_leases())
+            if victim is None:
+                return False
+            lease_id = victim["lease_id"]
+            with self._stripe(lease_id):
+                lease = self.store.get(lease_id)
+                if not lease or lease["state"] != "active" or self.idle_seconds(lease) < settings.sandbox_evict_idle_seconds:
+                    return False
+                # releasing first: every call on it now answers 410, and reconciliation leaves it alone while it is saved
+                lease.update(state="releasing", reason=EVICT_REASON, retry_at=time.time() + EVICT_SAVE_SECONDS)
+                lease["evicted_for"] = principal.run_id
+                self._save(lease)
+        except (LeaseConflictError, BrokerOwnershipError):
+            return False
+        metrics.SANDBOX_EVICTIONS.labels(why).inc()
+        log.info("reclaiming idle sandbox %s (run %s) for run %s: %s", lease_id, victim["run_id"], principal.run_id, why)
+        threading.Thread(target=self._finish_eviction, args=(lease_id,), name=f"evict-{lease_id[:12]}", daemon=True).start()
+        return True
+
+    def _finish_eviction(self, lease_id: str) -> None:
+        """Save the workspace, record where, then delete. A failed save still frees the slot: the run's own checkpoint remains."""
+        try:
+            deadline = time.monotonic() + EVICT_QUIET_SECONDS
+            while self._operations.get(lease_id) and time.monotonic() < deadline:
+                time.sleep(0.25)
+            lease = self.store.get(lease_id)
+            saved = None
+            if lease and lease.get("provider_ref"):
+                try:
+                    saved = {**self._snapshot_lease(lease), "saved_at": time.time()}
+                except Exception:
+                    log.warning("workspace not saved before reclaiming %s", lease_id, exc_info=True)
+            for _ in range(3):
+                with self._stripe(lease_id):
+                    lease = self.store.get(lease_id)
+                    if not lease or lease["state"] != "releasing":
+                        return
+                    lease.update(retry_at=0, eviction_done=True)
+                    if saved:
+                        lease["eviction_snapshot"] = saved
+                    try:
+                        self._save(lease)
+                    except LeaseConflictError:
+                        continue
+                    self._delete_resource(lease)
+                    return
+        except Exception:
+            log.warning("reclaiming %s did not finish; reconciliation will delete it", lease_id, exc_info=True)
 
     # ---------------------------------------------------------------- housekeeping
     def recover(self) -> None:

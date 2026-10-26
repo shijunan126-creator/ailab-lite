@@ -45,6 +45,7 @@ SANDBOX_ACQUIRE_SECONDS = Histogram(
 SANDBOX_EXEC_SECONDS = Histogram("ailab_sandbox_exec_seconds", "Command execution in a sandbox", ["provider"], buckets=_SLOW)
 SANDBOX_CAPACITY_REJECTIONS = Counter("ailab_sandbox_capacity_rejections_total", "Lease requests turned away because all slots were taken")
 SANDBOX_ADMISSION_WAIT_SECONDS = Histogram("ailab_sandbox_admission_wait_seconds", "Time waiting for admission", buckets=_SLOW)
+SANDBOX_EVICTIONS = Counter("ailab_sandbox_evictions_total", "Idle sandboxes reclaimed for a waiting request", ["reason"])
 SANDBOX_RECONCILE_ACTIONS = Counter("ailab_sandbox_reconcile_actions_total", "Lease reconciliation actions", ["action"])
 SANDBOX_PROVIDER_ERRORS = Counter("ailab_sandbox_provider_errors_total", "Sandbox provider errors", ["provider", "operation"])
 

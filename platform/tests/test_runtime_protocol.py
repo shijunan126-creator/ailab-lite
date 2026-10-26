@@ -187,6 +187,39 @@ def test_one_automatic_continuation_then_the_user_decides(api):  # noqa: F811
     assert api.post(f"/v1/runs/{rid}/resume", headers=AUTH).status_code == 200  # the user continues it: budget renewed
 
 
+def _claimed_again(api, rid):  # noqa: F811
+    with SessionLocal() as db:
+        job = db.get(Run, rid).runtime_meta["job_id"]
+    attempt = claim(api, job)
+    headers = {**SERVICE, "X-Run-Attempt": attempt["attempt_id"]}
+    assert api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    return headers
+
+
+def test_reclaims_resume_on_their_own_budget_of_three(api):  # noqa: F811
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers).status_code == 200
+    reclaimed = {"status": "interrupted", "error": "reclaimed", "auto_resume": True, "evicted": True}
+    for _ in range(3):
+        assert api.post(f"/internal/runs/{rid}/pause", headers=headers, json=reclaimed).json()["status"] == "queued"
+        headers = _claimed_again(api, rid)
+    # then the user decides
+    assert api.post(f"/internal/runs/{rid}/pause", headers=headers, json=reclaimed).json()["status"] == "interrupted"
+    with SessionLocal() as db:  # the file shares one database: leave no waiting run behind for the expiry tests
+        db.get(Run, rid).status = "canceled"
+        db.commit()
+
+
+def test_a_reclaim_does_not_use_up_the_automatic_resume_for_faults(api):  # noqa: F811
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers).status_code == 200
+    reclaimed = {"status": "interrupted", "error": "reclaimed", "auto_resume": True, "evicted": True}
+    fault = {"status": "interrupted", "error": "lease lost", "auto_resume": True}
+    assert api.post(f"/internal/runs/{rid}/pause", headers=headers, json=reclaimed).json()["status"] == "queued"
+    headers = _claimed_again(api, rid)
+    assert api.post(f"/internal/runs/{rid}/pause", headers=headers, json=fault).json()["status"] == "queued"
+
+
 def test_an_interrupted_run_nobody_continues_is_canceled_in_time(api):  # noqa: F811
     from ailab_platform.api.reaper import expire_interrupted_runs
 
