@@ -13,6 +13,7 @@ import { CONVERSATION_MOVED } from "../conversation-menu";
 import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
+import ModeToggle, { useChatMode } from "./mode-toggle";
 import PreviewPane, { type PaneSources } from "./preview-pane";
 import { SourcesSheet } from "./sources";
 import type { PaneReader } from "./preview-pane";
@@ -58,6 +59,7 @@ function useInitialFiles(active: boolean): Attachment[] | undefined {
 }
 
 export default function Chat({ id, project }: { id: string | null; project?: Project | null }) {
+  const [mode, setMode] = useChatMode();
   const router = useRouter();
   const initialFiles = useInitialFiles(!id);
   const projects = useProjects();
@@ -634,6 +636,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     <>
     <QuotaBanner refresh={streaming} />
     <Composer
+      mode={mode}
+      onMode={setMode}
+      modeBelow={!id && !project}
       models={models}
       model={model}
       onModel={setModel}
@@ -659,7 +664,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         ) : !id ? (
           <>
             <div className="chat-home">
-              <h1>有什么我能帮你的吗？</h1>
+              <div className="home-hero">
+                <h1>有什么我能帮你的吗？</h1>
+                <ModeToggle mode={mode} onChange={setMode} />
+              </div>
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}

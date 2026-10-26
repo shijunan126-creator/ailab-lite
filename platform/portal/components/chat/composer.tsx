@@ -7,11 +7,11 @@ import { usePopover } from "../../lib/use-popover";
 import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
+import ModeToggle, { Mode } from "./mode-toggle";
 import ModelMenu from "./model-menu";
 import TemplatePicker, { TemplateChoice } from "./template-picker";
 
 export type Attachment = { id: string; filename: string; status: string };
-export type Mode = "chat" | "work";
 export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef };
 
 type SkillButton = {
@@ -32,13 +32,11 @@ const SKILLS: SkillButton[] = [
 
 const VISIBLE_SKILLS = 3; // the rest wait under "更多"
 
-const MODE_HINT: Record<Mode, string> = {
-  chat: "问答、搜索、写作",
-  work: "动手完成任务，交付文件",
-};
-
 export default function Composer({
   models,
+  mode,
+  onMode,
+  modeBelow,
   model,
   onModel,
   busy,
@@ -52,6 +50,9 @@ export default function Composer({
   initialFiles,
   context,
 }: {
+  mode: Mode;
+  onMode: (next: Mode) => void;
+  modeBelow?: boolean; // the page shows the toggle itself (under its heading), so it is not repeated here
   models: ModelInfo[];
   model: string;
   onModel: (id: string) => void;
@@ -75,7 +76,6 @@ export default function Composer({
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const [dragging, setDragging] = useState(false);
-  const [mode, setModeState] = useState<Mode>("work");
   const [picked, setPickedState] = useState<SkillButton | null>(null);
   const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
   const more = usePopover();
@@ -88,7 +88,6 @@ export default function Composer({
   const [slashClosed, setSlashClosed] = useState(false); // Escape: the "/" stays text
 
   useEffect(() => {
-    if (localStorage.getItem("ailab.mode") === "chat") setModeState("chat");
     api<Skill[]>("/v1/skills")
       .then((list) => {
         setEnabled(new Set(list.filter((s) => s.enabled).map((s) => s.name)));
@@ -103,15 +102,13 @@ export default function Composer({
     if (next?.skill !== "pptx") setTemplate(null);
   }
 
-  function setMode(next: Mode) {
-    setModeState(next);
-    localStorage.setItem("ailab.mode", next);
-    if (next === "chat") setPicked(null); // a skill makes files: that is work
-  }
+  useEffect(() => {
+    if (mode === "chat") setPickedState(null); // a skill makes files: that is work
+  }, [mode]);
 
   function pick(s: SkillButton) {
     setPicked(picked?.key === s.key ? null : s);
-    if (mode === "chat") setMode("work");
+    if (mode === "chat") onMode("work");
     area.current?.focus();
   }
   const picker = useRef<HTMLInputElement | null>(null);
@@ -199,7 +196,7 @@ export default function Composer({
 
   function choose(s: SkillButton) {
     setPicked(s);
-    if (mode === "chat") setMode("work");
+    if (mode === "chat") onMode("work");
     const template = s.template || "";
     setText(template);
     requestAnimationFrame(() => {
@@ -226,7 +223,7 @@ export default function Composer({
 
   return (
     <div
-      className={`composer-box ${dragging ? "dragging" : ""}`}
+      className={`composer-box ${dragging ? "dragging" : ""} ${modeBelow ? "" : "has-mode"}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -357,13 +354,7 @@ export default function Composer({
             </div>
           ) : null}
         </div>
-        <div className="mode-toggle" role="radiogroup" aria-label="模式" data-mode={mode}>
-          {(["chat", "work"] as Mode[]).map((m) => (
-            <button key={m} role="radio" aria-checked={mode === m} className={mode === m ? "on" : ""} title={MODE_HINT[m]} onClick={() => setMode(m)}>
-              {m === "chat" ? "对话" : "工作"}
-            </button>
-          ))}
-        </div>
+        {modeBelow ? null : <ModeToggle mode={mode} onChange={onMode} />}
         {mode === "work"
           ? shown.map((s) => (
               <button
