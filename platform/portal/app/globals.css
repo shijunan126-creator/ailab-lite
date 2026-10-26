@@ -1547,7 +1547,13 @@ button.side-link:active { transform: none; }
 
 /* composer: skills beyond the first few, the model menu, the PPT template picker */
 .skill-more, .model-menu, .tpl-anchor { position: relative; display: inline-flex; }
-.skill-more-menu { min-width: 188px; max-height: min(320px, 50vh); overflow-y: auto; }
+.skill-more-menu { min-width: 188px; max-width: min(300px, calc(100vw - 24px)); max-height: min(320px, 50vh); overflow-y: auto; }
+.skill-more-menu .menu-item { text-align: left; }
+@container (max-width: 480px) {
+  .composer-box .skill-more { position: static; }  /* the menu hangs off the whole box, so it stays on screen */
+  .composer-box .skill-more-menu { max-width: 100%; }
+}
+.skill-more-menu .menu-item .grow { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .menu-item.on { color: var(--accent); background: var(--accent-soft); }
 .model-btn { display: inline-flex; align-items: center; gap: 4px; max-width: 180px; background: none; color: var(--muted); border: 0; border-radius: 999px; padding: 5px 8px 5px 10px; font-size: 13px; font-weight: 500; }
 .model-btn:hover, .model-btn[aria-expanded="true"] { background: var(--surface-2); color: var(--text); }
