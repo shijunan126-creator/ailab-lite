@@ -267,6 +267,8 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
 
 
 def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
+    from playwright.sync_api import expect
+
     page = logged_in
     _start_conversation(page, "帮我做一个 PPT")
     _wait_for_turns(page, 1, seconds=120)
@@ -277,7 +279,16 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
-        page.wait_for_selector(".viewer img", timeout=15000)
+        surface = page.locator(".preview-pane, .viewer")
+        expect(surface).to_have_count(1)
+        page_image = surface.locator("img, .pdf-page canvas").first
+        expect(page_image).to_be_visible(timeout=15000)
+        if page_image.evaluate("el => el.tagName === 'IMG'"):
+            expect(page_image).to_have_js_property("complete", True)
+            assert page_image.evaluate("el => el.naturalWidth > 0 && el.naturalHeight > 0")
+        else:
+            assert page_image.evaluate("""el => el.width > 0 && el.height > 0 &&
+                el.getContext('2d').getImageData(0, 0, el.width, el.height).data.some((v, i) => i % 4 !== 3 && v < 240)""")
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 

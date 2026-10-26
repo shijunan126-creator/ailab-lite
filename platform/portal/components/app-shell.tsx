@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { api, Conversation, Me, Usage } from "../lib/api";
+import { api, API_BASE, Conversation, Me, Usage, redirectIfUnauthorized } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
 import { useProjects } from "../lib/projects";
 import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
@@ -299,10 +299,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   project={p}
                   onRename={() => setRenamingProject(p.id)}
                   onBrief={() => router.push(`/p/${p.id}`)}
-                  onDeleted={() => {
+                  onDeleted={async () => {
                     conversationsChanged();
-                    // its conversations went with it: leave a page that no longer exists
-                    if (p.id === currentProject || conversations?.find((c) => c.id === current)?.project_id === p.id) router.push("/");
+                    if (p.id === currentProject) return router.push("/");
+                    if (!current) return;
+                    // The sidebar lists unassigned conversations only, so it cannot tell whether this one was deleted.
+                    const response = await fetch(`${API_BASE}/v1/conversations/${current}?limit=1`, {
+                      cache: "no-store", signal: AbortSignal.timeout(10000),
+                    });
+                    redirectIfUnauthorized(response);
+                    await response.body?.cancel();
+                    if (response.status === 404 && window.location.pathname === pathname) router.replace("/");
                   }}
                 />
               </div>

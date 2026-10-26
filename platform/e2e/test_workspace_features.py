@@ -103,6 +103,47 @@ def test_project_brief_persists_and_reaches_model(logged_in, stack):
         api(page, stack, "delete", "/projects/" + p["id"])
 
 
+@pytest.mark.parametrize("mobile", [False, True])
+def test_sidebar_project_menu_renames_edits_brief_and_deletes_its_open_conversation(logged_in, stack, mobile):
+    page = logged_in
+    p = project(page, stack)
+    if mobile:
+        page.set_viewport_size({"width": 390, "height": 844})
+    if page.locator(".shell.collapsed").count():
+        page.get_by_role("button", name="展开侧栏", exact=True).click()
+    row = page.locator(".project-item").filter(has=page.locator(f'a[href="/p/{p["id"]}"]'))
+    try:
+        row.get_by_role("button", name="更多操作 " + p["name"], exact=True).click()
+        menu = page.get_by_role("menu")
+        assert menu.evaluate("el => el.parentElement === document.body")
+        menu.get_by_role("menuitem", name="重命名", exact=True).click()
+        field = page.get_by_role("textbox", name="项目名称", exact=True)
+        field.fill(p["name"] + "-改名")
+        field.press("Enter")
+        expect(row).to_contain_text(p["name"] + "-改名")
+        row.get_by_role("button").click()
+        page.get_by_role("menuitem", name="项目说明", exact=True).click()
+        brief = page.get_by_role("textbox", name="项目说明", exact=True)
+        brief.fill("菜单打开的项目说明")
+        page.locator(".project-brief").get_by_role("button", name="保存", exact=True).click()
+        expect(page.get_by_role("button", name="项目说明", exact=True)).to_contain_text("菜单打开的项目说明")
+        conv = api(page, stack, "post", "/conversations", {"project_id": p["id"]})
+        page.goto(stack.portal + "/c/" + conv["id"])
+        wait_models(page)
+        if page.locator(".shell.collapsed").count():
+            page.get_by_role("button", name="展开侧栏", exact=True).click()
+        row.get_by_role("button").click()
+        page.get_by_role("menuitem", name="删除项目", exact=True).click()
+        page.get_by_role("alertdialog").get_by_role("button", name="删除", exact=True).click()
+        page.wait_for_url(stack.portal + "/")
+        expect(row).to_have_count(0)
+        assert page.request.get(stack.portal + "/api/v1/conversations/" + conv["id"]).status == 404
+        p = None
+    finally:
+        if p:
+            api(page, stack, "delete", "/projects/" + p["id"])
+
+
 def test_queue_edit_remove_auto_dispatch_and_mobile(logged_in, stack):
     page = logged_in
     conv, _ = hold(page, stack)
@@ -127,6 +168,44 @@ def test_queue_edit_remove_auto_dispatch_and_mobile(logged_in, stack):
         turns = api(page, stack, "get", "/conversations/" + conv)["turns"]
         assert len(turns) == 2 and turns[1]["parent_run_id"] == turns[0]["id"]
     finally:
+        release(stack)
+
+
+def test_queue_mutation_survives_an_older_detail_response(logged_in, stack):
+    page = logged_in
+    held = []
+    snapshots = []
+    hold_reads = True
+
+    def detail(route):
+        response = route.fetch()
+        snapshot = response.json()
+        snapshots.append(snapshot)
+        if len(snapshots) == 1 or not hold_reads:
+            route.fulfill(response=response)
+        else:
+            held.append((route, snapshot))
+
+    page.route("**/api/v1/conversations/*?limit=20", detail)
+    conv, _ = hold(page, stack)
+    try:
+        deadline = time.monotonic() + 10
+        while not held and time.monotonic() < deadline:
+            page.wait_for_timeout(50)
+        assert held, "running status did not refresh the detail"
+        assert all(not snapshot["queue"] for _, snapshot in held)
+        _send(page, "工作区续发-keep-after-refresh")
+        row = page.locator(".queue-row").filter(has_text="工作区续发-keep-after-refresh")
+        expect(row).to_be_visible()
+        # Complete the latest read only after the confirmed write is already on screen.
+        hold_reads = False
+        for route, snapshot in held:
+            route.fulfill(json=snapshot)
+        page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+        expect(row).to_be_visible()
+        assert api(page, stack, "get", "/conversations/" + conv)["queue"][0]["prompt"] == "工作区续发-keep-after-refresh"
+    finally:
+        page.unroute("**/api/v1/conversations/*?limit=20", detail)
         release(stack)
 
 

@@ -4,6 +4,14 @@
 
 用户要求：新对话首页把对话/工作开关放到“有什么我能帮你的吗？”下面（参考豆包），技能按钮与模型同一行。分支 `feat/home-mode-under-heading`（叠在 `chore/remove-temporary-chat` 之上）：模式状态提到 `useChatMode`/`ModeToggle`，首页（无项目）开关在标题下，输入框不再重复；对话页和项目首页开关仍在输入框内。首页桌面/窄屏/390px 手机实测加号、技能、模型、发送同一行（手机截断模型名）；对话页桌面同一行但技能只剩图标，手机仍两行。真实浏览器用 Playwright 截图，未部署。
 
+## 2026-10-26 PR #93 项目菜单与 E2E 修复（合并授权，不部署）
+
+独立 worktree `/private/tmp/ailab-reader-original`，分支 `feat/project-menu`，原 head `4743fcd`，已同步 `origin/main@ddaf756`；主目录未提交文档保持不动。用户授权两 PR 绿后 squash 合并，不部署。#93 首次失败根因是既有会话详情 GET 的旧空队列覆盖已成功的 queue POST，相关 Chat 代码与 main 逐字相同；可控旧响应回归已复现红灯。现在对本地确认写入记版本，过期详情改读新快照，保留流结束后跟随下一轮的 continuation；队列增删改及发送/恢复共用该规则。
+
+菜单回归还捕获 #93 新缺陷：侧栏会话列表只含无项目会话，不能据此判断项目删除是否删掉当前会话。改为删除后一次有截止时间的 limit=1 存在性读取，404 才离开且忽略切页后的结果。桌面/390px 手机覆盖重命名、说明、删除与导航。PPT 旧 E2E 也须按真实实时侧栏/通用 viewer 验图片，不能固定只等 viewer。
+
+最终分组浏览器13/13通过（含完整workspace模块与PPT），Portal42及production build/TypeScript、Ruff通过。验证/失败历史见[记录](updates/2026-10-26-sidebar-project-menu.md)。本轮只交付该 PR；完整精确 head 双库、存储与 Portal/E2E 由 PR CI 验收，合并状态/mergeCommit 以 [PR #93](https://github.com/shijunan126-creator/ailab-lite/pull/93) 为准。下一具体动作仅为核对八检查、无阻塞评审及 MERGEABLE 后匹配 head squash 合并；不启动其他路线，不改个人部署。
+
 ## 2026-10-26 移除“临时对话”（本地完成，未提交）
 
 用户不需要该功能，分支 `chore/remove-temporary-chat`（base `main@5218577`）整体移除：输入框开关与 `SendOptions.memory`、请求体 `memory` 字段、`run.options.memory="off"` 的写入/继承、`scope.excluded_from_memory` 及检索/索引/dream/记忆接口里的排除、提示词与工具隐藏分支、`MEMORY_TOOLS`；dream 回到每次最多取40轮。已按该标记写入的旧轮次不再被排除（本机只有测试数据）。ADR 0019 已改。未部署。

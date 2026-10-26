@@ -14,7 +14,7 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
   project: Project;
   onRename: () => void;
   onBrief: () => void;
-  onDeleted: () => void;
+  onDeleted: () => void | Promise<void>;
 }) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
   const [error, setError] = useState("");
@@ -49,7 +49,7 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
   async function remove() {
     setAt(null);
     try {
-      if (await deleteProject(project)) onDeleted();
+      if (await deleteProject(project)) await onDeleted();
     } catch (err) {
       setError(errorMessage(err));
     }
