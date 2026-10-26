@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-26 任务详情侧栏
+
+- 详情是当前对话的附属视图，应通过同一预览侧栏 tabs 打开；独立 `/runs` 路由会卸载聊天，写死返回 `/` 则丢失上下文。不要用事件到达触发 `scrollIntoView`，历史回放会强制滚到结束；侧栏焦点切换用 `preventScroll`。桌面侧栏改变聊天换行，关闭后须在原宽度恢复打开前的滚动位置。
+- 将链接改成按钮时检查手机 `nth-of-type` 样式：它按所有同标签兄弟计数，复制/重试等按钮会使“详情”意外命中隐藏规则。辅助元数据隐藏应限定 `span`。新增详情滚动区需覆盖通用 `.preview-body` 的 overflow，浏览器实际滚轮验证，不能仅检查 scrollHeight。
+- 当前模型交付的无实时预览清单文件走文件卡“预览”打开 `.viewer`；有 `Run.result.previews` 的实时文件才走侧栏 tab。E2E不得假设产物自动打开，或把两种入口混为一个。验证见[本轮记录](docs/progress/updates/2026-10-26-run-details-tabs.md)。
+
+
 ## 2026-10-25 分支模式与手机预览
 
 - 从纯Chat历史fork为Work时，旧Run.options仍为Chat；会话级forked_from.mode必须作为前后端分支能力推断的初始状态，否则早期轮次可绕回Chat。旧JSON无mode时仍按历史推断。

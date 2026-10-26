@@ -1,5 +1,12 @@
 # 当前工作
 
+## 2026-10-26 任务详情 tabs 与返回定位（本地验证完成）
+
+用户授权修复：桌面右侧详情 tab、手机 tabs、返回原对话及位置、详情从任务开头展示。分支 `fix/run-details-tabs`，base `4358ead`；保留进入任务前的存储恢复文档修改和 `.DS_Store`，未据旧计划扩展授权。详情入口已改为会话内状态，复用预览侧栏与事件展示；不再跳独立页面或自动滚底。桌面关闭侧栏后恢复打开前滚动位置；手机返回只收起侧栏。历史 `/runs/:id` 链接仍可打开，返回指向所属会话。
+
+代码提交 `fa1435e`：Portal 38项/build与TypeScript、Ruff、完整SQLite Python 1256通过/132跳过，以及五服务浏览器组41通过/0跳过。桌面及390×844覆盖详情初始顶部/实际滚动、文件tabs切换、关闭非当前tab、返回原位置、手机浏览器Back与Escape；历史失败与修正均保留在记录。临时五服务已由夹具停止，专用Redis经PID核对后关闭，六个本轮端口均无监听。下一步：本轮无待实现修复，代码仅本地；未push/PR/merge/deploy，后续发布须另行授权，不自动启动其他路线项。[本轮记录](updates/2026-10-26-run-details-tabs.md)。
+
+
 ## main 合并后 CI 索引回归（2026-10-25，已合并且main完整CI通过）
 
 [PR #73](https://github.com/shijunan126-creator/ailab-lite/pull/73) head `80cb51c` 的8项检查全部通过，squash合入 `main@137d9a3274d89a32057300aa8c1f48a63699d0e7`，合并树与测试head相同；[合并后main完整CI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40195893591) 8项全部成功，包含SQLite、PostgreSQL、存储和浏览器E2E。
