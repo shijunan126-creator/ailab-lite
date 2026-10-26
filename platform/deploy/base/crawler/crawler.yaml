@@ -76,10 +76,18 @@ spec:
             matchLabels: {app: platform-agent}
       ports:
         - {protocol: TCP, port: 8090}
-  # Chromium sends every hostname to the proxy, so the crawler needs no DNS and no other route.
+  # DNS resolves the proxy Service; page connections still have only the proxy route.
   egress:
     - to:
         - podSelector:
             matchLabels: {app: platform-egress}
       ports:
         - {protocol: TCP, port: 4750}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}

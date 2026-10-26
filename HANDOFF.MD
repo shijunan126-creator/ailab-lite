@@ -638,3 +638,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 同一个管理tab重复不只是重复按钮，还要检查面板是否重复挂载/请求。
 - 部署Dockerfile的COPY源路径不要带每次变化的版本号；固定源码相对路径、依赖在源码前，部署tag独立。Portal-only可复用后端/Office并仅重建Portal；standalone运行包需带.next/static，未来public目录也须复制。不要把首次构建/缓存命中时间当作CI或完整发布耗时。
 - 虚拟Markdown的overscan会在实际可见前挂载；手机正文实测高度大于占位估计。E2E滚底不能看到DOM节点就停止，须验证尾部在滚动容器内且高度稳定，再点击，不能放宽侧栏结果断言。
+
+## 2026-10-26 Crawl4AI 真实包核验
+
+- Crawl4AI 0.7.4 的 `CrawlResult.success` 只表示爬取流程完成，HTTP 403/404/5xx 仍可为 true；返回正文前另查 `status_code`，否则代理拒绝页会冒充文章。配置构造器必须针对安装的真实包验，不能靠 stub 接受 kwargs。
+- crawler 的页面请求经代理，但 `http://platform-egress` 服务名仍需集群 DNS；NetworkPolicy 不能把代理地址解析也封死。原生代理契约不等于容器或 k3s 隔离验收。
+- 0.7.4 wheel 的 LICENSE 在 Apache-2.0 后追加必需署名要求；保留完整许可证、NOTICE 和 README 署名，不能只写成可选请求。详见[记录](docs/progress/updates/2026-10-26-crawl4ai-reader.md)。

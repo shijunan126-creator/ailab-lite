@@ -1,5 +1,11 @@
 # 当前工作
 
+## 2026-10-26 PR #94 合并前核验（已授权推送及合并，不部署）
+
+本轮覆盖下方“未验证”历史状态。独立 worktree `/private/tmp/ailab-crawl4ai`，分支 `feat/crawl4ai-reader`，原 head `5dbe7bf` 八项 CI 成功，已同步 `origin/main@ddaf756`。真实安装 Crawl4AI 0.7.4 + aiohttp 3.12.15 后两个配置构造器可用；真实 Chromium/代理验出 HTTP 错误页误作成功正文，已修复并加镜像内单测。补代理 Service 所需 DNS 规则、TLS 校验、许可证与必需署名。
+
+本地：提取/弱页降级/代理/部署专项39通过，真实 crawler+proxy 契约5通过，包 API/响应单测4通过，Ruff check/format通过。原服务器运行新单测红灯（HTTP错误页/TLS），修复后绿。尚未构建 Linux 镜像或部署 k3s；资源数字仍是估计，未做目标机容量验收。下一步：推送后等待精确 head 八项 CI、无阻塞评审且 MERGEABLE 时 squash 合并；不接触个人生产部署。详见[本轮记录](updates/2026-10-26-crawl4ai-reader.md)。
+
 ## 2026-10-26 read_url 两级读取：Trafilatura 优先，弱结果才 Crawl4AI（已提PR，未验证未部署）
 
 用户要求：常规页 httpx+Trafilatura 出 Markdown，正文过短/应用壳/被拦时才走 Crawl4AI；删除无用代码。分支 `feat/crawl4ai-reader`，base `main@2233870`；决定见 [ADR 0021](../architecture/adr/0021-isolated-browser-rendering-for-read-url.md)。按用户要求未跑测试/构建，CI 为首次验证。下一步：CI 结果；部署前个人 Compose 需加 crawler/egress 两容器（不加也能用 Trafilatura 一级）。详见[记录](updates/2026-10-26-crawl4ai-reader.md)。

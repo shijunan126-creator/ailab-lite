@@ -24,7 +24,11 @@ def _read(url: str, token: str = TOKEN) -> httpx.Response:
 def test_public_page_comes_back_as_markdown():
     r = _read("https://example.com/")
     assert r.status_code == 200, r.text
-    assert "Example Domain" in r.json()["markdown"]
+    page = r.json()
+    # Pruning may omit the heading; metadata and the retained article link identify this page.
+    assert page["title"] == "Example Domain"
+    assert page["status"] == 200 and page["url"] == "https://example.com/"
+    assert "https://iana.org/help/example-domains" in page["markdown"]
 
 
 def test_requests_without_the_token_are_refused():

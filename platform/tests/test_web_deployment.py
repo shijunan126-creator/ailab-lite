@@ -56,7 +56,16 @@ def test_crawler_is_reachable_only_from_the_agent_and_leaves_only_through_the_eg
         {"from": [{"podSelector": {"matchLabels": {"app": "platform-agent"}}}], "ports": [{"protocol": "TCP", "port": 8090}]}
     ]
     assert policy["egress"] == [
-        {"to": [{"podSelector": {"matchLabels": {"app": "platform-egress"}}}], "ports": [{"protocol": "TCP", "port": 4750}]}
+        {"to": [{"podSelector": {"matchLabels": {"app": "platform-egress"}}}], "ports": [{"protocol": "TCP", "port": 4750}]},
+        {
+            "to": [
+                {
+                    "namespaceSelector": {"matchLabels": {"kubernetes.io/metadata.name": "kube-system"}},
+                    "podSelector": {"matchLabels": {"k8s-app": "kube-dns"}},
+                }
+            ],
+            "ports": [{"protocol": "UDP", "port": 53}, {"protocol": "TCP", "port": 53}],
+        },
     ]
 
     egress = documents["NetworkPolicy", "platform-egress"]["spec"]

@@ -99,3 +99,9 @@ CI 分层与执行范围见 [.github/CI.md](.github/CI.md)。
 - `images/sbx-office/`：沙箱镜像与通用技能（pptx / xlsx）
 - `deploy.sh`：k3s 一键部署；`k3s/`：k3s 与 gVisor 运行时配置；`tests/`：基座与组件测试脚本
 - `docs/architecture/`：目标架构冻结副本、ADR、设计与能力矩阵；`docs/progress/`：当前工作、路线图与每轮记录；`docs/reviews/`：验收证据
+
+## 第三方软件署名
+
+This product includes software developed by UncleCode (https://x.com/unclecode) as part of the Crawl4AI project (https://github.com/unclecode/crawl4ai).
+
+Crawl4AI 0.7.4 的许可证为 Apache-2.0 加附加署名要求，原文见 [许可证](images/crawler/Crawl4AI-LICENSE)。

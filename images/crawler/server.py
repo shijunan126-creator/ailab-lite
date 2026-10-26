@@ -31,6 +31,8 @@ slots = asyncio.Semaphore(MAX_PAGES)
 def browser_config() -> BrowserConfig:
     return BrowserConfig(
         headless=True,
+        verbose=False,
+        ignore_https_errors=False,
         proxy_config={"server": PROXY},
         java_script_enabled=True,
         accept_downloads=False,
@@ -85,7 +87,8 @@ async def read(request: web.Request) -> web.Response:
             return web.json_response({"error": "page did not finish loading"}, status=504)
         except Exception as exc:  # a broken page must not take the server down
             return web.json_response({"error": f"render failed: {type(exc).__name__}"}, status=502)
-    if not result.success:
+    # Crawl4AI success means the browser ran, including HTTP error pages from the proxy.
+    if not result.success or (result.status_code or 0) >= 400:
         return web.json_response({"error": (result.error_message or "render failed")[:300], "status": result.status_code}, status=502)
     headers = {k.lower(): v for k, v in (result.response_headers or {}).items()}
     ctype = (headers.get("content-type") or "text/html").split(";")[0].strip().lower()
