@@ -39,7 +39,6 @@ from .settings import dream_settings, local_window
 
 log = logging.getLogger("ailab.memory_dream")
 
-ACTIVE = set(RunStatus.ACTIVE)
 TERMINAL = set(RunStatus.TERMINAL)
 DREAM_SYSTEM = """你是 AILab 的记忆整理器，只做一件事：把最近对话中稳定、可复用、已确认的信息，合并进用户的长期记忆。
 
@@ -172,8 +171,9 @@ def claim_due(now: datetime | None = None) -> list[str]:
             minutes = local.hour * 60 + local.minute
             if not start <= minutes < end:
                 continue
-            # Never write while the user is in the middle of a turn.
-            if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.in_(ACTIVE)).limit(1)):
+            # Never write while the user is in the middle of a turn, including a question
+            # waiting for their answer.
+            if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(TERMINAL)).limit(1)):
                 continue
             last = _last_success(db, user.id)
             runs = _new_runs(db, user.id, last, now)
