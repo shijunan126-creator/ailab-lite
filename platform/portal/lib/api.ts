@@ -399,9 +399,14 @@ export function errorCode(err: unknown): string | null {
 export type ReaderBlock = { type: string; text?: string; src?: string; alt?: string; ordered?: boolean };
 export type ReaderPage = { url: string; title: string; blocks: ReaderBlock[]; truncated: boolean };
 
-/** One public page's main content as reader blocks, fetched server-side for the side pane's 网页 view. */
+/** One public page's main content as reader blocks, fetched server-side for the side pane's 正文 view. */
 export function reader(url: string, signal?: AbortSignal): Promise<ReaderPage> {
   return api<ReaderPage>(`/v1/reader?url=${encodeURIComponent(url)}`, { signal });
+}
+
+/** The same-origin render proxy: the original page, re-served so the sandboxed iframe can show it. */
+export function readerRenderUrl(url: string): string {
+  return `${API_BASE}/v1/reader/render?url=${encodeURIComponent(url)}`;
 }
 
 export function downloadUrl(path: string): string {
