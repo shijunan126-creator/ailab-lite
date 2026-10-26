@@ -56,6 +56,25 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     return out
 
 
+def pdf_document(src: Path, out: Path) -> dict:
+    if src.suffix.lower() == ".pdf":
+        target = out / "document.pdf"
+        shutil.copyfile(src, target)
+    else:
+        converted = soffice(src, "pdf", out)
+        target = out / "document.pdf"
+        if converted != target:
+            converted.replace(target)
+    count = None
+    try:
+        info = subprocess.run(["pdfinfo", str(target)], capture_output=True, text=True, timeout=15, check=True)
+        match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
+        count = int(match[1]) if match else None
+    except Exception:
+        pass
+    return {"kind": "pdf", "pdf": "document.pdf", "page_count": count}
+
+
 def pages(src: Path, out: Path) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
@@ -220,7 +239,14 @@ def main() -> int:
     ext = src.suffix.lower()
     try:
         check_archive(src)
-        if ext in PAGES:
+        if "--pdf" in sys.argv[3:]:
+            if ext in PAGES:
+                result = pdf_document(src, out)
+            elif ext in SHEETS:
+                result = sheets(src, out)
+            else:
+                result = {"error": f"no PDF preview for {ext} files"}
+        elif ext in PAGES:
             result = pages(src, out)
             if "--template-thumbnail" in sys.argv[3:]:
                 template_thumbnail(out, result)

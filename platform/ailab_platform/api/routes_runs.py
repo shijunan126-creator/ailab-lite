@@ -244,7 +244,7 @@ def event_history(
     return list_events(db, run_id, after, limit)
 
 
-PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json)$")
+PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json|document\.pdf)$")
 
 
 @router.get("/runs/{run_id}/previews/{name:path}")
@@ -257,7 +257,7 @@ def get_preview(run_id: str, name: str, user: User = Depends(current_user), db: 
         data = get_storage().get_bytes(f"previews/{run_id}/{name}")
     except Exception as exc:
         raise HTTPException(status_code=404, detail="no such preview") from exc
-    media = "image/jpeg" if name.endswith(".jpg") else "application/json"
+    media = "image/jpeg" if name.endswith(".jpg") else "application/pdf" if name.endswith(".pdf") else "application/json"
     # immutable: every render gets a new number
     return Response(content=data, media_type=media, headers={"Cache-Control": "private, max-age=86400, immutable"})
 

@@ -426,8 +426,8 @@ def test_previews_render_after_file_changes_and_land_in_the_result() -> None:
         async def refresh_previews(self, lease_id):
             self.preview_calls += 1
             if self.preview_calls == 1:
-                return [{"filename": "deck.pptx", "kind": "pages", "pages": ["1/p-01.jpg"], "version": 1}]
-            return []
+                return []
+            return [{"filename": "deck.pptx", "kind": "pages", "pages": ["1/p-01.jpg"], "version": 1}]
 
     broker = PreviewBroker()
     build = ToolCall(id="c1", name="exec", arguments={"cmd": "python build.py"})
