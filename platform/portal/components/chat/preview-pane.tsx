@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import { Preview, previewUrl } from "../../lib/api";
-import { IconDownload, IconX } from "../icons";
+import { IconArrowLeft, IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
 import type { Source } from "../../lib/work-process";
+import RunDetails from "./run-details";
 import { SourcesList } from "./sources";
 
 function Pages({ preview }: { preview: Preview }) {
@@ -26,6 +27,10 @@ export default function PreviewPane({
   sourcesOn,
   onSourcesTab,
   onCloseSources,
+  detailRun,
+  detailsOn,
+  onDetailsTab,
+  onCloseDetails,
   onClose,
   live,
   downloads,
@@ -38,6 +43,10 @@ export default function PreviewPane({
   sourcesOn: boolean;
   onSourcesTab: () => void;
   onCloseSources: () => void;
+  detailRun: string | null;
+  detailsOn: boolean;
+  onDetailsTab: () => void;
+  onCloseDetails: () => void;
   onClose: () => void;
   live: boolean;
   downloads: Record<string, string>;
@@ -62,33 +71,36 @@ export default function PreviewPane({
       }
     };
     if (mobile) window.addEventListener("popstate", pop);
-    pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus();
+    pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus({ preventScroll: true });
     window.addEventListener("keydown", key);
     return () => {
       window.removeEventListener("keydown", key);
       window.removeEventListener("popstate", pop);
       if (mobile && window.history.state?.ailabPreview === marker) window.history.back();
-      if (opener?.isConnected) opener.focus();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
-  const showSources = !!sources && (sourcesOn || !current);
-  if (!current && !sources) return null;
+  const showDetails = !!detailRun && (detailsOn || (!current && !sources));
+  const showSources = !showDetails && !!sources && (sourcesOn || !current);
+  if (!current && !sources && !detailRun) return null;
   const tab = (key: string, label: string, on: boolean, select: () => void, close: () => void) => (
     <div key={key} className={`pane-tab ${on ? "on" : ""}`}>
-      <button type="button" className="pane-tab-name" onClick={select} title={label}>{label}</button>
+      <button type="button" role="tab" aria-selected={on} className="pane-tab-name" onClick={select} title={label}>{label}</button>
       <button type="button" className="pane-tab-x" onClick={close} aria-label={`关闭 ${label}`}><IconX size={13} /></button>
     </div>
   );
   return (
     <aside ref={pane} className="preview-pane" aria-label="侧栏">
       <div className="preview-head">
+        <button type="button" className="icon-btn" aria-label="返回对话" onClick={onClose}><IconArrowLeft size={16} /></button>
         <div className="preview-tabs" role="tablist">
-          {previews.map((p) => tab(p.filename, p.filename, !showSources && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
+          {previews.map((p) => tab(p.filename, p.filename, !showSources && !showDetails && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
+          {detailRun ? tab("details", "详情", showDetails, onDetailsTab, onCloseDetails) : null}
           {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
         </div>
         <span className="spacer" />
-        {!showSources && current ? (
+        {!showSources && !showDetails && current ? (
           <>
             {live ? <span className="live on">实时</span> : null}
             {downloads[current.filename] ? (
@@ -99,7 +111,9 @@ export default function PreviewPane({
           </>
         ) : null}
       </div>
-      {showSources ? (
+      {showDetails ? (
+        <div className="preview-body details-body" key={`details-${detailRun}`}><RunDetails key={detailRun} id={detailRun!} /></div>
+      ) : showSources ? (
         <div className="preview-body sources-body" key={`sources-${sources!.runId}`}>
           <SourcesList sources={sources!.sources} answer={sources!.answer} />
         </div>

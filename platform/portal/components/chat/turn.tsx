@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
@@ -177,6 +176,7 @@ export default function Turn({
   projectId,
   sourcesOpen,
   onSources,
+  onDetails,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -197,6 +197,7 @@ export default function Turn({
   projectId?: string | null; // where this conversation's files are kept
   sourcesOpen?: boolean;
   onSources?: (run: Run, sources: Source[], answer: string) => void;
+  onDetails: (run: Run) => void;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -383,7 +384,7 @@ export default function Turn({
               {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
               <span className="meta-text">{modelName(run.model)}</span>
               {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
-              <Link className="meta-text" href={`/runs/${run.id}`}>详情</Link>
+              <button type="button" className="link meta-text" onClick={() => onDetails(run)}>详情</button>
             </div>
           ) : null}
         </div>

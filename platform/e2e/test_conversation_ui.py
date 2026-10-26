@@ -228,3 +228,65 @@ def test_failed_delete_keeps_conversation_and_reports_failure(page, stack):
     page.get_by_role("alert").filter(has_text="删除失败，请重试").wait_for()
     assert page.url.endswith("/c/" + conv["id"])
     assert row.count() == 1
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+def test_details_tab_starts_at_top_and_returns_to_same_conversation_position(page, stack, mobile):
+    if mobile:
+        page.set_viewport_size({"width": 390, "height": 844})
+    conv = seed(stack, count=3, active=False)
+    # A long real persisted timeline makes accidental scroll-to-end visible.
+    code = """
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import Run, RunEvent
+with SessionLocal() as db:
+    run = db.get(Run, RUN)
+    run.result = {"previews": [{"filename": "first.xlsx", "kind": "sheets", "data": "1/sheets.json"}]}
+    for seq in range(1, 61):
+        db.add(RunEvent(run_id=RUN, seq=seq, type="agent.message", payload={"content": f"过程步骤 {seq}"}))
+    db.commit()
+""".replace("RUN", repr(conv["run"]))
+    subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, check=True)
+    login(page, stack, path="/c/" + conv["id"])
+    page.locator(".turn-meta").last.wait_for()
+    page.locator(".turn-meta").last.get_by_role("button", name="详情", exact=True).scroll_into_view_if_needed()
+    before = page.locator(".messages").evaluate("el => el.scrollTop")
+    url = page.url
+    page.locator(".turn-meta").last.get_by_role("button", name="详情", exact=True).click()
+    page.get_by_role("tab", name="详情", selected=True).wait_for()
+    page.locator(".details-body .event").last.wait_for()
+    page.wait_for_function("document.querySelectorAll('.details-body .event').length === 60")
+    assert page.url == url
+    page.get_by_role("tab", name="first.xlsx").click()
+    page.locator(".sheet-grid td").first.wait_for()
+    page.get_by_role("tab", name="详情", exact=True).click()
+    page.locator(".details-body .event").last.wait_for()
+    page.get_by_role("button", name="关闭 first.xlsx", exact=True).click()
+    assert page.get_by_role("tab", name="详情").get_attribute("aria-selected") == "true"
+    assert page.locator(".details-body").evaluate("el => el.scrollTop") == 0
+    assert page.locator(".details-body").evaluate("el => el.scrollHeight > el.clientHeight")
+    pane = page.locator(".preview-pane").bounding_box()
+    if not mobile:
+        chat = page.locator(".chat-main").bounding_box()
+        assert pane["x"] >= chat["x"] + chat["width"] - 1
+        assert pane["width"] < page.viewport_size["width"] * 0.75
+    page.locator(".details-body").hover()
+    page.mouse.wheel(0, 500)
+    page.wait_for_function("document.querySelector('.details-body').scrollTop > 0")
+    page.locator(".details-body").evaluate("el => el.scrollTop = 0")
+    page.screenshot(path=str(stack.log_dir / f"details-{'mobile' if mobile else 'desktop'}.png"))
+    page.get_by_role("button", name="返回对话", exact=True).click()
+    page.locator(".preview-pane").wait_for(state="detached")
+    assert page.url == url
+    assert abs(page.locator(".messages").evaluate("el => el.scrollTop") - before) < 2
+    # Reopening resets the details to its beginning; browser Back on mobile closes only the pane.
+    page.locator(".turn-meta").last.get_by_role("button", name="详情", exact=True).click()
+    page.locator(".details-body .event").last.wait_for()
+    assert page.locator(".details-body").evaluate("el => el.scrollTop") == 0
+    if mobile:
+        page.go_back()
+    else:
+        page.keyboard.press("Escape")
+    page.locator(".preview-pane").wait_for(state="detached")
+    assert page.url == url
+    assert abs(page.locator(".messages").evaluate("el => el.scrollTop") - before) < 2

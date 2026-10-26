@@ -69,7 +69,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [selected, setSelected] = useState<string | null>(null);
   const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
   const [paneSources, setPaneSources] = useState<PaneSources | null>(null); // a turn's sources: a pane tab on wide screens
-  const [sourcesOn, setSourcesOn] = useState(false); // that tab is the one shown
+  const [paneTab, setPaneTab] = useState<"file" | "sources" | "details">("file");
+  const [detailRun, setDetailRun] = useState<string | null>(null);
+  const detailsReturn = useRef<{ top: number; stick: boolean } | null>(null);
   const [sheetSources, setSheetSources] = useState<PaneSources | null>(null); // the same on a phone, as a bottom sheet
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -265,29 +267,42 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   function showFile(filename: string) {
     setClosedFiles((closed) => closed.filter((f) => f !== filename));
     setSelected(filename);
-    setSourcesOn(false);
+    setPaneTab("file");
     setPaneOpen(true);
   }
   function closeFile(filename: string) {
     const rest = openFiles.filter((p) => p.filename !== filename);
     setClosedFiles((closed) => [...closed, filename]);
-    if (!rest.length && !paneSources) return setPaneOpen(false);
-    if (!rest.length) setSourcesOn(true);
-    else if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
+    if (!rest.length && !paneSources && !detailRun) return setPaneOpen(false);
+    if (!rest.length) {
+      if (paneTab === "file") setPaneTab(paneSources ? "sources" : "details");
+      setSelected(null);
+    } else if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
   }
   function showSources(run: Run, sources: PaneSources["sources"], answer: string) {
     const next = { runId: run.id, sources, answer };
     if (!window.matchMedia("(min-width: 761px)").matches) return setSheetSources(next);
     // the same turn's sources, already shown: the button closes them again
-    if (paneOpen && sourcesOn && paneSources?.runId === run.id) return closeSources();
+    if (paneOpen && (paneTab === "sources") && paneSources?.runId === run.id) return closeSources();
     setPaneSources(next);
-    setSourcesOn(true);
+    setPaneTab("sources");
     setPaneOpen(true);
   }
   function closeSources() {
     setPaneSources(null);
-    setSourcesOn(false);
-    if (!openFiles.length) setPaneOpen(false);
+    if (paneTab === "sources") setPaneTab(detailRun ? "details" : "file");
+    if (!openFiles.length && !detailRun) setPaneOpen(false);
+  }
+  function showDetails(run: Run) {
+    if (!paneOpen && scroller.current) detailsReturn.current = { top: scroller.current.scrollTop, stick: stick.current };
+    setDetailRun(run.id);
+    setPaneTab("details");
+    setPaneOpen(true);
+  }
+  function closeDetails() {
+    setDetailRun(null);
+    if (paneTab === "details") setPaneTab(paneSources ? "sources" : "file");
+    if (!openFiles.length && !paneSources) setPaneOpen(false);
   }
   const ext = (name: string) => name.split(".").pop()?.toLowerCase() || "";
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
@@ -541,7 +556,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail();
   }
 
-  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources);
+  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources || !!detailRun);
+  useLayoutEffect(() => {
+    // The desktop pane changes line wrapping. Restore after it closes, when the chat has its original width.
+    if (!showPane && detailsReturn.current && scroller.current) {
+      scroller.current.scrollTop = detailsReturn.current.top;
+      stick.current = detailsReturn.current.stick;
+      detailsReturn.current = null;
+    }
+  }, [showPane]);
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />
@@ -630,8 +653,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     forkModes={forkModes[i]}
                     onFork={fork}
                     projectId={projectId}
-                    sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
+                    sourcesOpen={showPane && (paneTab === "sources") && paneSources?.runId === t.id}
                     onSources={showSources}
+                    onDetails={showDetails}
                   />
                 ))}
               </div>
@@ -642,7 +666,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                 <button className="preview-reopen" aria-label={`打开预览（${previews.length}）`} onClick={() => {
                   setClosedFiles([]);
                   setSelected((value) => value || previews[previews.length - 1]?.filename || null);
-                  setSourcesOn(false);
+                  setPaneTab("file");
                   setPaneOpen(true);
                 }}>
                   <IconSlides size={14} /> <span>预览</span> <span className="count">{previews.length}</span>
@@ -667,13 +691,17 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         <PreviewPane
           previews={openFiles}
           selected={selected}
-          onSelect={(f) => { setSelected(f); setSourcesOn(false); }}
+          onSelect={(f) => { setSelected(f); setPaneTab("file"); }}
           onCloseFile={closeFile}
           sources={paneSources}
-          sourcesOn={sourcesOn}
-          onSourcesTab={() => setSourcesOn(true)}
+          sourcesOn={paneTab === "sources"}
+          onSourcesTab={() => setPaneTab("sources")}
           onCloseSources={closeSources}
-          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); }}
+          detailRun={detailRun}
+          detailsOn={paneTab === "details"}
+          onDetailsTab={() => setPaneTab("details")}
+          onCloseDetails={closeDetails}
+          onClose={() => { setPaneOpen(false); setDetailRun(null); setPaneSources(null); setPaneTab("file"); }}
           live={!!streaming && running}
           downloads={downloads}
         />

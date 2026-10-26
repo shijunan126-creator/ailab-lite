@@ -236,8 +236,10 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
     _wait_for_turns(page, 1)
     _open_all_steps(page)
     assert "运行命令" in page.inner_text(".steps")
-    with page.expect_navigation():
-        page.click(".turn-meta a:has-text('详情')")
+    conversation_url = page.url
+    page.locator(".turn-meta").get_by_role("button", name="详情", exact=True).click()
+    page.get_by_role("tab", name="详情", exact=True).wait_for()
+    assert page.url == conversation_url
     page.wait_for_function("() => document.body.innerText.includes('run.completed')", timeout=30000)
     page.wait_for_selector(".chip:has-text('model: test-fast')")  # the run itself loads separately from its events
     body = page.inner_text("body")
@@ -246,23 +248,23 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
         assert event in body, f"{event} missing from the timeline"
 
 
-def test_a_spreadsheet_opens_in_the_preview_once_it_is_done_and_can_be_revised(logged_in) -> None:
+def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     page = logged_in
     _start_conversation(page, "做一个 Excel 表格")
     _wait_for_turns(page, 1)
-    # the finished file opens by itself, once, after the turn: never on the intermediate renders
-    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
-    grid = page.inner_text(".preview-pane .sheet-grid")
+    assert page.locator(".preview-pane, .viewer").count() == 0
+    page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+    page.wait_for_selector(".viewer .sheet-grid td", timeout=60000)
+    grid = page.inner_text(".viewer .sheet-grid")
     assert "华东" in grid and "合计" in grid
-    assert page.inner_text(".pane-tab.on .pane-tab-name") == "sales.xlsx"
-    page.get_by_role("button", name="关闭 sales.xlsx", exact=True).click()
-    assert page.locator(".preview-pane").count() == 0
-    page.click(".file-card button:has-text('预览')")
-    page.wait_for_selector(".preview-pane .sheet-grid")
-
-    _send(page, "表格再改一下")  # the second turn rebuilds the same file from the restored workspace
+    page.get_by_role("button", name="关闭预览", exact=True).click()
+    page.locator(".viewer").wait_for(state="detached")
+    page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+    page.wait_for_selector(".viewer .sheet-grid")
+    page.get_by_role("button", name="关闭预览", exact=True).click()
+    _send(page, "表格再改一下")
     _wait_for_turns(page, 2)
-    assert page.locator(".file-card").count() == 2  # one delivery per turn, same file name
+    assert page.locator(".file-card").count() == 2
 
 
 def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
@@ -275,7 +277,8 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     assert "读取技能 pptx" in steps and "交付文件" in steps
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
-        page.wait_for_selector(".preview-pane img", timeout=15000)  # opened once the deck was done
+        page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+        page.wait_for_selector(".viewer img", timeout=15000)
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 
