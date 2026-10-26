@@ -668,3 +668,5 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - async with的__aenter__超时不执行__aexit__，必须finally清理已部分启动的browser/driver并限制清理时间；持续真实render需同时测/proc僵尸、cgroup pids和内存。批量测试用独立限额容器，不能向业务Agent的256MiB cgroup塞额外Python。
 
 - 1GiB crawler双React短测通过仍会在多样复杂页双并发下杀Chrome子进程，且容器PID1不一定OOMKilled。验收必须查cgroup memory.events的oom/oom_kill；默认并发1，忙时明确503，不以提高内存或忽略子进程OOM作通过依据。
+
+- Crawl4AI async_playwright.start在返回handle前被取消会留下活Node driver；finally close加tini仍不足。每次render使用被外部deadline监督的worker，worker设Linux child subreaper；冻结/杀子树并wait之后再释放槽，不能靠库返回句柄才能清理。30ms连续真实启动故障必须检查活进程、重启次数和cgroup memory.events，不能只看最后一次重启后的健康。

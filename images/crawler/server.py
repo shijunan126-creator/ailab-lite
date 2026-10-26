@@ -1,93 +1,107 @@
-"""POST /read {url, max_chars} -> the page's main content as Markdown, rendered by Crawl4AI.
-
-The caller (the Agent) has already checked that the URL is public and came from a legitimate
-source. This process only renders: it holds no platform credentials and every connection the
-browser makes goes through the egress proxy, which refuses non-public addresses. A fresh browser
-per request keeps no cookies or storage between pages and returns its memory when done.
-"""
+"""Authenticated browser supervisor; each request gets a disposable process tree."""
 
 import asyncio
+import contextlib
 import hmac
+import json
 import os
-import re
-import time
+import signal
+import sys
 from pathlib import Path
 
 from aiohttp import web
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
-from crawl4ai.content_filter_strategy import PruningContentFilter
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
 TOKEN = os.environ.get("AILAB_CRAWLER_TOKEN", "")
 PROXY = os.environ.get("AILAB_CRAWLER_PROXY", "")
 PORT = int(os.environ.get("AILAB_CRAWLER_PORT", "8090"))
-PAGE_TIMEOUT_MS = int(os.environ.get("AILAB_CRAWLER_PAGE_TIMEOUT_MS", "20000"))
-READ_TIMEOUT_SECONDS = PAGE_TIMEOUT_MS / 1000 + 10
+READ_TIMEOUT_SECONDS = int(os.environ.get("AILAB_CRAWLER_PAGE_TIMEOUT_MS", "20000")) / 1000 + 10
 MAX_PAGES = int(os.environ.get("AILAB_CRAWLER_MAX_PAGES", "1"))
 MAX_CHARS = 60_000
-MAX_LINKS = 50
-CHALLENGE = re.compile(
-    r"^(?:just a moment[.!…]*|attention required[!！]?(?:\s*\|\s*cloudflare)?|access denied|verify (?:that )?you are human)[.!…\s]*$",
-    re.I,
-)
-TEXT_TYPES = (
-    "text/html",
-    "application/xhtml+xml",
-    "text/plain",
-    "text/markdown",
-    "application/json",
-    "application/xml",
-    "text/xml",
-)
-
 slots = asyncio.Semaphore(MAX_PAGES)
 
 
-def browser_config() -> BrowserConfig:
-    return BrowserConfig(
-        headless=True,
-        verbose=False,
-        ignore_https_errors=False,
-        proxy_config={"server": PROXY},
-        java_script_enabled=True,
-        accept_downloads=False,
-        text_mode=False,
-        extra_args=[
-            "--disable-gpu",
-            "--no-first-run",
-            "--disable-dev-shm-usage",
-            "--disable-features=ServiceWorker",
-        ],
+def worker_command():
+    return [sys.executable, str(Path(__file__).with_name("render.py"))]
+
+
+def descendants(pid):
+    parents = {}
+    for path in Path("/proc").iterdir():
+        if path.name.isdigit():
+            try:
+                parents[int(path.name)] = int((path / "stat").read_text().rsplit(")", 1)[1].split()[1])
+            except (OSError, ValueError, IndexError):
+                continue
+    found = {pid}
+    while True:
+        extra = {child for child, parent in parents.items() if parent in found} - found
+        if not extra:
+            return found
+        found.update(extra)
+
+
+def send(pid, sig):
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, sig)
+
+
+async def stop_worker(process):
+    # Freeze the root first, then its descendants until none can fork or reparent.
+    # The worker is a subreaper, so detached Chromium/crashpad children stay here.
+    send(process.pid, signal.SIGSTOP)
+    frozen = set()
+    for _ in range(256):
+        current = descendants(process.pid)
+        for pid in current - frozen:
+            send(pid, signal.SIGSTOP)
+        if current <= frozen:
+            break
+        frozen.update(current)
+    for pid in frozen - {process.pid}:
+        send(pid, signal.SIGKILL)
+    send(process.pid, signal.SIGKILL)
+    # Also catch a driver inheriting the session if the worker exited unexpectedly.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGKILL)
+    await process.wait()
+
+
+async def render_page(url, limit):
+    process = None
+    launch = asyncio.create_task(
+        asyncio.create_subprocess_exec(
+            *worker_command(),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+            start_new_session=True,
+            limit=1024 * 1024,
+        )
     )
+    try:
+        async with asyncio.timeout(READ_TIMEOUT_SECONDS):
+            # Cancellation must not lose a process created before its handle arrives.
+            process = await asyncio.shield(launch)
+            process.stdin.write(json.dumps({"url": url, "max_chars": limit}).encode() + b"\n")
+            await process.stdin.drain()
+            line = await process.stdout.readline()
+            if not line:
+                raise RuntimeError("render worker exited without a result")
+            result = json.loads(line)
+            return web.json_response(result["body"], status=result["status"])
+    finally:
+        async with asyncio.timeout(5):
+            if process is None:
+                process = await asyncio.shield(launch)
+            cleanup = asyncio.create_task(stop_worker(process))
+            try:
+                await asyncio.shield(cleanup)
+            except asyncio.CancelledError:
+                await cleanup
+                raise
 
 
-def run_config() -> CrawlerRunConfig:
-    return CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
-        markdown_generator=DefaultMarkdownGenerator(content_filter=PruningContentFilter(threshold=0.48, threshold_type="fixed")),
-        excluded_tags=["nav", "footer", "aside", "form", "script", "style", "noscript"],
-        remove_overlay_elements=True,
-        exclude_social_media_links=True,
-        wait_until="domcontentloaded",
-        delay_before_return_html=1.0,
-        page_timeout=PAGE_TIMEOUT_MS,
-        verbose=False,
-    )
-
-
-def links_of(result) -> list[str]:
-    out: list[str] = []
-    for group in ("internal", "external"):
-        for link in (result.links or {}).get(group, []):
-            href = str(link.get("href") or "").split("#")[0]
-            if href.startswith(("http://", "https://")) and len(href) <= 2000 and href not in out:
-                out.append(href)
-            if len(out) >= MAX_LINKS:
-                return out
-    return out
-
-
-async def read(request: web.Request) -> web.Response:
+async def read(request):
     if not TOKEN or not hmac.compare_digest(request.headers.get("Authorization", ""), f"Bearer {TOKEN}"):
         return web.json_response({"error": "unauthorized"}, status=401)
     try:
@@ -99,64 +113,12 @@ async def read(request: web.Request) -> web.Response:
     if slots.locked():
         return web.json_response({"error": "crawler is busy"}, status=503)
     async with slots:
-        started = time.monotonic()
-        crawler = AsyncWebCrawler(config=browser_config())
         try:
-            try:
-                async with asyncio.timeout(READ_TIMEOUT_SECONDS):
-                    await crawler.__aenter__()
-                    result = await crawler.arun(url, config=run_config())
-            finally:
-                # __aexit__ is never called when __aenter__ times out. Even a partially
-                # started Playwright driver must be closed, before releasing the slot.
-                async with asyncio.timeout(5):
-                    await crawler.__aexit__(None, None, None)
+            return await render_page(url, limit)
         except TimeoutError:
             return web.json_response({"error": "page did not finish loading"}, status=504)
-        except Exception as exc:  # a broken page must not take the server down
+        except Exception as exc:
             return web.json_response({"error": f"render failed: {type(exc).__name__}"}, status=502)
-    # Crawl4AI success means the browser ran, including HTTP error pages from the proxy.
-    if not result.success or (result.status_code or 0) >= 400:
-        return web.json_response(
-            {
-                "error": (result.error_message or "render failed")[:300],
-                "status": result.status_code,
-            },
-            status=502,
-        )
-    headers = {k.lower(): v for k, v in (result.response_headers or {}).items()}
-    ctype = (headers.get("content-type") or "text/html").split(";")[0].strip().lower()
-    if ctype not in TEXT_TYPES:
-        return web.json_response(
-            {"error": f"unsupported content type: {ctype}; use download_url for files"},
-            status=415,
-        )
-    markdown = result.markdown
-    # The pruned view drops navigation and boilerplate; a page it empties (short or unusual layout) keeps the full text.
-    text = (getattr(markdown, "fit_markdown", "") or "").strip() or (
-        getattr(markdown, "raw_markdown", "") or (markdown if isinstance(markdown, str) else "")
-    ).strip()
-    title = str((result.metadata or {}).get("title") or "")[:300]
-    if not text or CHALLENGE.fullmatch(title.strip()) or CHALLENGE.fullmatch(text.strip()):
-        return web.json_response(
-            {"error": "page returned an access challenge or no readable text"},
-            status=502,
-        )
-    truncated = len(text) > limit
-    if truncated:
-        text = text[:limit].rstrip()
-    return web.json_response(
-        {
-            "url": result.redirected_url or result.url,
-            "title": title,
-            "status": result.status_code,
-            "content_type": ctype,
-            "markdown": text,
-            "truncated": truncated,
-            "links": links_of(result),
-            "seconds": round(time.monotonic() - started, 2),
-        }
-    )
 
 
 async def health(_: web.Request) -> web.Response:

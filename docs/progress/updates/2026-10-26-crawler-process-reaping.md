@@ -20,3 +20,9 @@
 ## 容量缺陷补修
 
 候选54fbbbf在目标VM独立Compose通过12项TCP正反探测、真实静态/JS两级读取、令牌/私网拒绝和双React读取，双短测cgroup峰值约761MiB。随后1568样本双并发阶段触发两次浏览器子进程OOM（容器PID1仍活），证明短页双并发不代表任意网页容量。默认MAX_PAGES从2降为1，保留1GiB/PID256/CPU1预算；同时请求应明确503忙，不为通过验收提高限额。中间受OOM污染样本独立保留，不作为最终成功率；最终镜像重新开始全量与持续测试。
+
+## 真实启动取消发现的第二根因
+
+对3f05320候选反复把startup总预算缩至30ms，复现活Node driver堆积、内存/PID压力，原finally close仍不足：Crawl4AI在async_playwright.start尚未返回句柄时被取消，外层拿不到需关闭的driver。中间候选不合并、不部署；故障容器停止，证据独立保留。
+
+改为每次render独立worker，worker以Linux PR_SET_CHILD_SUBREAPER收养Chrome双fork后代；父server持有整次deadline，清理时冻结整个子树防继续fork，杀掉全部子进程并wait worker，tini回收最终孤儿。worker输出后保持存活，确保父进程仍能确定其后代；错误/超时也经过同一清理路径。额外Python解释器只在browser路径启动，需重新测资源和连续请求。新增真OS进程树回归（无driver句柄且子进程自建session）通过，不再只测mock close。
