@@ -3,16 +3,36 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
-from ..contracts.memory import MAX_CHARS, MAX_ENTRIES, MemoryEntryInput, MemoryOperation, MemoryUpdate
+from ..contracts.memory import (
+    MAX_CHARS,
+    MAX_ENTRIES,
+    MemoryDreamRunOut,
+    MemoryDreamSettings,
+    MemoryEntryInput,
+    MemoryOperation,
+    MemoryUpdate,
+)
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..models import RunDelivery, RunStatus, User, new_id
+from ..models import MemoryDreamRun, RunDelivery, RunStatus, User, new_id
 from ..service_auth import require_scope
 
 router = APIRouter(tags=["memory"])
+
+
+def _entry(entry: dict) -> dict:
+    """Return a stored entry with Phase 2 fields filled for older records."""
+    out = dict(entry)
+    out.setdefault("confidence", 1.0)
+    out.setdefault("evidence_run_ids", [])
+    out.setdefault("valid_from", entry.get("updated_at"))
+    out.setdefault("superseded_by", None)
+    out.setdefault("last_used_at", None)
+    return out
 
 
 def memory_for(user: User, *, for_model: bool = False) -> dict:
@@ -26,8 +46,14 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         "limit_chars": MAX_CHARS,
         "limit_entries": MAX_ENTRIES,
     }
-    if for_model and not result["enabled"]:
-        result["entries"] = []
+    result["entries"] = [_entry(e) for e in result.get("entries") or []]
+    if for_model:
+        if not result["enabled"]:
+            result["entries"] = []
+        else:
+            # A superseded fact stays visible to the user for audit, but the model must never
+            # act on it again.
+            result["entries"] = [e for e in result["entries"] if not e.get("superseded_by")]
     return result
 
 
@@ -36,23 +62,42 @@ def write_memory(db, user, body, source):
     if previous["revision"] != body.expected_revision:
         raise HTTPException(422, "记忆已更新，请重新读取后再保存")
     old = {e["id"]: e for e in previous["entries"]}
+    now = datetime.now(UTC)
     entries = []
     for entry in body.entries:
         if entry.id and entry.id not in old:
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
-        unchanged = prior and prior["content"] == entry.content and prior["kind"] == entry.kind
-        entries.append(
-            prior
-            if unchanged
-            else {
-                "id": entry.id or new_id("mem"),
-                "kind": entry.kind,
-                "content": entry.content,
-                "source": source,
-                "updated_at": datetime.now(UTC).isoformat(),
-            }
-        )
+        if prior is None:
+            entries.append(
+                {
+                    "id": entry.id or new_id("mem"),
+                    "kind": entry.kind,
+                    "content": entry.content,
+                    "source": source,
+                    "updated_at": now.isoformat(),
+                    "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
+                    "evidence_run_ids": list(entry.evidence_run_ids or []),
+                    "valid_from": (entry.valid_from or now).isoformat(),
+                    "superseded_by": entry.superseded_by,
+                    "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
+                }
+            )
+            continue
+        merged = dict(prior)
+        changed = prior["content"] != entry.content or prior["kind"] != entry.kind
+        for field in ("confidence", "evidence_run_ids", "valid_from", "superseded_by", "last_used_at"):
+            value = getattr(entry, field)
+            if value is not None:
+                merged[field] = value.isoformat() if field in {"valid_from", "last_used_at"} else value
+        if merged["evidence_run_ids"]:
+            merged["evidence_run_ids"] = list(dict.fromkeys(merged["evidence_run_ids"]))
+        if changed:
+            merged["content"] = entry.content
+            merged["kind"] = entry.kind
+            merged["updated_at"] = now.isoformat()
+            merged["source"] = source
+        entries.append(merged)
     value = {"revision": previous["revision"] + 1, "enabled": body.enabled, "auto_save": body.auto_save, "entries": entries}
     user.settings = {**(user.settings or {}), "memory": value}
     # Content never goes into audit logs or public events.
@@ -62,7 +107,9 @@ def write_memory(db, user, body, source):
 
 @router.get("/v1/memory")
 def get_memory(user: User = Depends(current_user)):
-    return memory_for(user)
+    from ..memory_dream.settings import dream_settings
+
+    return {**memory_for(user), "dream": dream_settings(user).model_dump(mode="json")}
 
 
 @router.put("/v1/memory")
@@ -72,6 +119,92 @@ def update_memory(body: MemoryUpdate, user: User = Depends(current_user), db: Se
         result = write_memory(db, user, body, "user")
         db.commit()
     return result
+
+
+@router.patch("/v1/memory/dream")
+def update_dream_settings(body: MemoryDreamSettings, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..memory_dream.settings import save_dream_settings
+
+    with user_critical_section(db, user.id):
+        db.refresh(user)
+        saved = save_dream_settings(db, user, body)
+        record_audit(db, "memory.dream_settings", "user", user.id, actor_id=user.id, detail={"enabled": body.enabled})
+        db.commit()
+    return saved.model_dump(mode="json")
+
+
+@router.get("/v1/memory/dreams", response_model=list[MemoryDreamRunOut])
+def list_dream_runs(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..memory_dream.service import list_runs
+
+    return list_runs(db, user.id)
+
+
+@router.get("/v1/memory/dreams/metrics")
+def dream_metrics(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..memory_dream.service import metrics
+
+    return metrics(db, user.id)
+
+
+@router.get("/v1/memory/dreams/{run_id}")
+def get_dream_run(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..memory_dream.service import _run_out
+
+    run = db.get(MemoryDreamRun, run_id)
+    if not run or run.user_id != user.id:
+        raise HTTPException(404, "dream run not found")
+    out = _run_out(run).model_dump(mode="json")
+    out["before"] = (run.before_memory or {}).get("entries") or []
+    out["after"] = (run.after_memory or {}).get("entries") or []
+    return out
+
+
+@router.post("/v1/memory/dreams/{run_id}/revert")
+def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..memory_dream.service import _run_out
+
+    with user_critical_section(db, user.id):
+        db.refresh(user)
+        run = db.get(MemoryDreamRun, run_id)
+        if not run or run.user_id != user.id:
+            raise HTTPException(404, "dream run not found")
+        if run.status != "applied":
+            raise HTTPException(409, "only an applied dream can be reverted")
+        before = run.before_memory or {}
+        entries = []
+        for raw in before.get("entries") or []:
+            try:
+                entries.append(
+                    MemoryEntryInput(
+                        id=raw["id"],
+                        kind=raw["kind"],
+                        content=raw["content"],
+                        confidence=raw.get("confidence"),
+                        evidence_run_ids=raw.get("evidence_run_ids"),
+                        valid_from=raw.get("valid_from"),
+                        superseded_by=raw.get("superseded_by"),
+                        last_used_at=raw.get("last_used_at"),
+                    )
+                )
+            except (KeyError, ValueError):
+                raise HTTPException(409, "dream snapshot is not restorable")
+        current = memory_for(user)
+        result = write_memory(
+            db,
+            user,
+            MemoryUpdate(
+                expected_revision=current["revision"],
+                enabled=before.get("enabled", current["enabled"]),
+                auto_save=before.get("auto_save", current["auto_save"]),
+                entries=entries,
+            ),
+            "user",
+        )
+        run.status = "reverted"
+        run.after_memory = result
+        db.commit()
+    return _run_out(run).model_dump(mode="json")
 
 
 @router.post("/internal/runs/{run_id}/memory", dependencies=[Depends(require_scope("memory:write_for_run"))])
