@@ -1029,6 +1029,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .dream-runs { border-top: 1px solid var(--border); margin-top: 4px; }
 .dream-run + .dream-run { border-top: 1px solid var(--border); }
 .dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--text); text-align: left; cursor: pointer; font-size: 13px; }
+.dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
 .dream-run-head:hover { background: var(--surface-2); }
 .dream-status { font-size: 11px; padding: 2px 7px; border-radius: 999px; background: var(--surface-2); color: var(--muted); }
 .dream-status.applied { color: var(--ok, #22863a); }
