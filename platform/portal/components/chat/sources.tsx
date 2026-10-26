@@ -22,15 +22,13 @@ export function SourcesButton({ sources, open, onOpen }: { sources: Source[]; op
   );
 }
 
-function Item({ source, onRead }: { source: Source; onRead?: (source: Source) => void }) {
+function Item({ source }: { source: Source }) {
   return (
     <a
       className="src-item"
       href={source.url}
       target="_blank"
       rel="noreferrer noopener"
-      title={onRead ? "在侧栏打开" : undefined}
-      onClick={onRead ? (e) => { e.preventDefault(); onRead(source); } : undefined}
     >
       <span className="src-site"><Mark source={source} />{site(source)}</span>
       <span className="src-title">{source.title || source.url}</span>
@@ -39,13 +37,13 @@ function Item({ source, onRead }: { source: Source; onRead?: (source: Source) =>
 }
 
 /** The pages the answer cites, in its order, then the others the turn read or found. */
-export function SourcesList({ sources, answer, onRead, onScroll }: { sources: Source[]; answer: string; onRead?: (source: Source) => void; onScroll?: (top: number) => void }) {
+export function SourcesList({ sources, answer, onScroll }: { sources: Source[]; answer: string; onScroll?: (top: number) => void }) {
   const { cited, more } = splitSources(sources, answer);
   return (
     <div className="src-list" onScroll={onScroll ? (e) => onScroll(e.currentTarget.scrollTop) : undefined}>
-      {cited.map((s) => <Item key={s.url} source={s} onRead={onRead} />)}
+      {cited.map((s) => <Item key={s.url} source={s} />)}
       {cited.length && more.length ? <div className="src-group">更多</div> : null}
-      {more.map((s) => <Item key={s.url} source={s} onRead={onRead} />)}
+      {more.map((s) => <Item key={s.url} source={s} />)}
     </div>
   );
 }

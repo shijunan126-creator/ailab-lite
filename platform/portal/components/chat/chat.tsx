@@ -15,7 +15,6 @@ import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane, { type PaneSources } from "./preview-pane";
 import { SourcesSheet } from "./sources";
-import type { PaneReader } from "./preview-pane";
 import QueueStrip from "./queue-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
@@ -71,8 +70,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
   const [paneSources, setPaneSources] = useState<PaneSources | null>(null); // a turn's sources: a pane tab on wide screens
   const [sourcesOn, setSourcesOn] = useState(false); // that tab is the one shown
-  const [paneReader, setPaneReader] = useState<PaneReader | null>(null); // a web page a source opened into: one tab
-  const [readerOn, setReaderOn] = useState(false);
   const [sheetSources, setSheetSources] = useState<PaneSources | null>(null); // the same on a phone, as a bottom sheet
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -291,7 +288,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       setClosedFiles((closed) => closed.filter((f) => f !== last.filename));
       setSelected(last.filename);
       setSourcesOn(false);
-      setReaderOn(false);
       setPaneOpen(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -310,7 +306,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setClosedFiles((closed) => closed.filter((f) => f !== filename));
     setSelected(filename);
     setSourcesOn(false);
-    setReaderOn(false);
     setPaneOpen(true);
   }
   function closeFile(filename: string) {
@@ -327,24 +322,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     if (paneOpen && sourcesOn && paneSources?.runId === run.id) return closeSources();
     setPaneSources(next);
     setSourcesOn(true);
-    setReaderOn(false);
     setPaneOpen(true);
   }
   function closeSources() {
     setPaneSources(null);
     setSourcesOn(false);
-    if (!openFiles.length && !paneReader) setPaneOpen(false);
-  }
-  function openReader(source: { url: string; title: string }) {
-    setPaneReader({ url: source.url, title: source.title });
-    setReaderOn(true);
-    setSourcesOn(false);
-    setPaneOpen(true);
-  }
-  function closeReader() {
-    setPaneReader(null);
-    setReaderOn(false);
-    if (!openFiles.length && !paneSources) setPaneOpen(false);
+    if (!openFiles.length) setPaneOpen(false);
   }
   const ext = (name: string) => name.split(".").pop()?.toLowerCase() || "";
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
@@ -598,7 +581,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail();
   }
 
-  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources || !!paneReader);
+  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources);
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />
@@ -689,7 +672,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     projectId={projectId}
                     sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
                     onSources={showSources}
-                    onOpenLink={(url, title) => openReader({ url, title })}
                   />
                 ))}
               </div>
@@ -721,22 +703,17 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         )}
       </section>
 
-      {showPane || paneReader ? (
+      {showPane ? (
         <PreviewPane
           previews={openFiles}
           selected={selected}
-          onSelect={(f) => { setSelected(f); setSourcesOn(false); setReaderOn(false); }}
+          onSelect={(f) => { setSelected(f); setSourcesOn(false); }}
           onCloseFile={closeFile}
           sources={paneSources}
-          sourcesOn={sourcesOn && !readerOn}
-          onSourcesTab={() => { setSourcesOn(true); setReaderOn(false); }}
+          sourcesOn={sourcesOn}
+          onSourcesTab={() => setSourcesOn(true)}
           onCloseSources={closeSources}
-          reader={paneReader}
-          readerOn={readerOn}
-          onReaderTab={() => { setReaderOn(true); setSourcesOn(false); }}
-          onCloseReader={closeReader}
-          onRead={openReader}
-          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); setPaneReader(null); setReaderOn(false); }}
+          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); }}
           live={!!streaming && running}
           downloads={downloads}
         />

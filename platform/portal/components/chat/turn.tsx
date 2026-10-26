@@ -177,7 +177,6 @@ export default function Turn({
   projectId,
   sourcesOpen,
   onSources,
-  onOpenLink,
 }: {
   run: Run;
   items: Item[] | undefined;
@@ -198,7 +197,6 @@ export default function Turn({
   projectId?: string | null; // where this conversation's files are kept
   sourcesOpen?: boolean;
   onSources?: (run: Run, sources: Source[], answer: string) => void;
-  onOpenLink?: (url: string, title: string) => void;
 }) {
   const [history, setHistory] = useState<Item[] | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(false);
@@ -304,7 +302,7 @@ export default function Turn({
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
-          {answer ? <Markdown text={answer} streaming={live && !terminal} sources={sources} onOpenLink={onOpenLink} /> : null}
+          {answer ? <Markdown text={answer} streaming={live && !terminal} sources={sources} /> : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{runError(run.error)}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">

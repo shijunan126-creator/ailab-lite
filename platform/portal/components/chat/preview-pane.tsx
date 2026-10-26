@@ -1,7 +1,7 @@
 "use client";
 
-import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, readerRenderUrl, ReaderBlock, ReaderPage } from "../../lib/api";
+import { useEffect, useMemo, useRef } from "react";
+import { downloadUrl, Preview, previewUrl } from "../../lib/api";
 import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
@@ -17,7 +17,6 @@ function Pages({ preview }: { preview: Preview }) {
 }
 
 export type PaneSources = { runId: string; sources: Source[]; answer: string };
-export type PaneReader = { url: string; title: string };
 
 /** A delivered HTML deck, rendered beside the conversation: the newest delivery wins, and a
  * regenerated file (new file id) refetches by itself. */
@@ -37,114 +36,6 @@ function PdfPane({ preview }: { preview: Preview }) {
   return <PdfDocument url={previewUrl(preview.run_id, preview.pdf)} title={preview.filename} />;
 }
 
-/** The extracted page as blocks: headings, list runs, images and code — the shape the reader API
- * returns, so chrome the extractor dropped never reaches the pane. */
-function BlocksView({ blocks }: { blocks: ReaderBlock[] }) {
-  const out: ReactNode[] = [];
-  let list: { key: string; ordered: boolean; items: ReaderBlock[] } | null = null;
-  const flush = () => {
-    if (!list) return;
-    const items = list.items.map((b, i) => <li key={i}>{b.text}</li>);
-    out.push(list.ordered ? <ol key={list.key} className="reader-list">{items}</ol> : <ul key={list.key} className="reader-list">{items}</ul>);
-    list = null;
-  };
-  blocks.forEach((b, i) => {
-    const key = `b${i}`;
-    if (b.type === "li") {
-      if (!list || list.ordered !== !!b.ordered) {
-        flush();
-        list = { key, ordered: !!b.ordered, items: [] };
-      }
-      list.items.push(b);
-      return;
-    }
-    flush();
-    if (b.type === "img") {
-      out.push(<img key={key} className="reader-img" src={b.src} alt={b.alt || ""} loading="lazy" referrerPolicy="no-referrer" />);
-    } else if (b.type === "pre") {
-      out.push(<pre key={key} className="reader-pre">{b.text}</pre>);
-    } else if (b.type.startsWith("h")) {
-      // the page title is the pane's h2: document headings render two levels down from their own
-      const rank = Math.min((Number(b.type.slice(1)) || 1) + 2, 5);
-      out.push(createElement(`h${rank}`, { key, className: "reader-h" }, b.text));
-    } else {
-      out.push(<p key={key}>{b.text}</p>);
-    }
-  });
-  flush();
-  return <>{out}</>;
-}
-
-/** The 正文 view: the server-extracted article, fetched on first open. */
-function ReaderText({ url }: { url: string }) {
-  const [page, setPage] = useState<ReaderPage | null>(null);
-  const [error, setError] = useState("");
-  useEffect(() => {
-    setPage(null);
-    setError("");
-    const ctl = new AbortController();
-    fetchReader(url, ctl.signal)
-      .then((p) => !ctl.signal.aborted && setPage(p))
-      .catch((e) => !ctl.signal.aborted && setError(errorMessage(e)));
-    return () => ctl.abort();
-  }, [url]);
-  if (error)
-    return (
-      <div className="reader">
-        <div className="hint">{error}</div>
-        <a className="viewer-more" href={url} target="_blank" rel="noreferrer noopener">在新标签打开原文</a>
-      </div>
-    );
-  if (!page)
-    return (
-      <div className="viewer-state">
-        <span className="viewer-spinner" aria-label="正在提取正文" />
-      </div>
-    );
-  return (
-    <article className="reader">
-      <h2 className="reader-title">{page.title}</h2>
-      <a className="reader-url" href={page.url} target="_blank" rel="noreferrer noopener">{page.url}</a>
-      {page.blocks.length ? (
-        <div className="reader-text">
-          <BlocksView blocks={page.blocks} />
-        </div>
-      ) : (
-        <div className="hint">未能提取正文（页面可能是脚本渲染）；<a href={page.url} target="_blank" rel="noreferrer noopener">打开原文</a></div>
-      )}
-      {page.truncated ? (
-        <div className="hint">内容较长，已截断；<a href={page.url} target="_blank" rel="noreferrer noopener">打开原文</a></div>
-      ) : null}
-    </article>
-  );
-}
-
-/** The 网页 view: the original page through the render proxy by default, the extracted article one
- * tab away for pages the proxy shows poorly. Mode resets per URL (the wrapper remounts us). */
-function ReaderView({ url, title }: { url: string; title: string }) {
-  const [mode, setMode] = useState<"page" | "text">("page");
-  return (
-    <div className="reader-wrap">
-      <div className="reader-modes" role="tablist" aria-label="查看方式">
-        <button type="button" role="tab" aria-selected={mode === "page"} className={`viewer-mode ${mode === "page" ? "on" : ""}`} onClick={() => setMode("page")}>
-          原版
-        </button>
-        <button type="button" role="tab" aria-selected={mode === "text"} className={`viewer-mode ${mode === "text" ? "on" : ""}`} onClick={() => setMode("text")}>
-          正文
-        </button>
-        <a className="reader-open" href={url} target="_blank" rel="noreferrer noopener" title="在新标签打开原文">↗</a>
-      </div>
-      {mode === "page" ? (
-        <iframe className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-scripts allow-popups allow-modals" title={title || url} />
-      ) : (
-        <div className="reader-scroll">
-          <ReaderText url={url} />
-        </div>
-      )}
-    </div>
-  );
-}
-
 /** The side pane: one tab per previewed file and one for a turn's sources, each closed on its own. */
 export default function PreviewPane({
   previews,
@@ -155,11 +46,6 @@ export default function PreviewPane({
   sourcesOn,
   onSourcesTab,
   onCloseSources,
-  reader,
-  readerOn,
-  onReaderTab,
-  onCloseReader,
-  onRead,
   onClose,
   live,
   downloads,
@@ -172,11 +58,6 @@ export default function PreviewPane({
   sourcesOn: boolean;
   onSourcesTab: () => void;
   onCloseSources: () => void;
-  reader: PaneReader | null;
-  readerOn: boolean;
-  onReaderTab: () => void;
-  onCloseReader: () => void;
-  onRead: (source: Source) => void;
   onClose: () => void;
   live: boolean;
   downloads: Record<string, string>;
@@ -211,9 +92,8 @@ export default function PreviewPane({
     };
   }, []);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
-  const showReader = !!reader && readerOn;
-  const showSources = !!sources && !showReader && (sourcesOn || !current);
-  if (!current && !sources && !reader) return null;
+  const showSources = !!sources && (sourcesOn || !current);
+  if (!current && !sources) return null;
   const tab = (key: string, label: string, on: boolean, select: () => void, close: () => void) => (
     <div key={key} className={`pane-tab ${on ? "on" : ""}`}>
       <button type="button" className="pane-tab-name" onClick={select} title={label}>{label}</button>
@@ -226,7 +106,6 @@ export default function PreviewPane({
         <div className="preview-tabs" role="tablist">
           {previews.map((p) => tab(p.filename, p.filename, !showSources && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
           {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
-          {reader ? tab(`reader-${reader.url}`, "网页", showReader, onReaderTab, onCloseReader) : null}
         </div>
         <span className="spacer" />
         {!showSources && current ? (
@@ -240,13 +119,9 @@ export default function PreviewPane({
           </>
         ) : null}
       </div>
-      {showReader ? (
-        <div className="preview-body reader-body" key={`reader-${reader!.url}`}>
-          <ReaderView url={reader!.url} title={reader!.title} />
-        </div>
-      ) : showSources ? (
+      {showSources ? (
         <div className="preview-body sources-body" key={`sources-${sources!.runId}`}>
-          <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
+          <SourcesList sources={sources!.sources} answer={sources!.answer} />
         </div>
       ) : current ? (
         <div className="preview-body" key={`${current.filename}:${current.file_id || ""}`}>
