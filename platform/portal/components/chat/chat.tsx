@@ -598,7 +598,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail();
   }
 
-  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources);
+  const showPane = paneOpen && (openFiles.length > 0 || !!paneSources || !!paneReader);
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />

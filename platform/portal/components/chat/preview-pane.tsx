@@ -1,7 +1,7 @@
 "use client";
 
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, ReaderBlock, ReaderPage } from "../../lib/api";
+import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, readerRenderUrl, ReaderBlock, ReaderPage } from "../../lib/api";
 import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
@@ -68,7 +68,8 @@ function BlocksView({ blocks }: { blocks: ReaderBlock[] }) {
   return <>{out}</>;
 }
 
-function ReaderView({ url }: { url: string }) {
+/** The 正文 view: the server-extracted article, fetched on first open. */
+function ReaderText({ url }: { url: string }) {
   const [page, setPage] = useState<ReaderPage | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -90,7 +91,7 @@ function ReaderView({ url }: { url: string }) {
   if (!page)
     return (
       <div className="viewer-state">
-        <span className="viewer-spinner" aria-label="正在抓取网页" />
+        <span className="viewer-spinner" aria-label="正在提取正文" />
       </div>
     );
   return (
@@ -108,6 +109,32 @@ function ReaderView({ url }: { url: string }) {
         <div className="hint">内容较长，已截断；<a href={page.url} target="_blank" rel="noreferrer noopener">打开原文</a></div>
       ) : null}
     </article>
+  );
+}
+
+/** The 网页 view: the original page through the render proxy by default, the extracted article one
+ * tab away for pages the proxy shows poorly. Mode resets per URL (the wrapper remounts us). */
+function ReaderView({ url, title }: { url: string; title: string }) {
+  const [mode, setMode] = useState<"page" | "text">("page");
+  return (
+    <div className="reader-wrap">
+      <div className="reader-modes" role="tablist" aria-label="查看方式">
+        <button type="button" role="tab" aria-selected={mode === "page"} className={`viewer-mode ${mode === "page" ? "on" : ""}`} onClick={() => setMode("page")}>
+          原版
+        </button>
+        <button type="button" role="tab" aria-selected={mode === "text"} className={`viewer-mode ${mode === "text" ? "on" : ""}`} onClick={() => setMode("text")}>
+          正文
+        </button>
+        <a className="reader-open" href={url} target="_blank" rel="noreferrer noopener" title="在新标签打开原文">↗</a>
+      </div>
+      {mode === "page" ? (
+        <iframe className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-scripts allow-popups allow-modals" title={title || url} />
+      ) : (
+        <div className="reader-scroll">
+          <ReaderText url={url} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -208,7 +235,7 @@ export default function PreviewPane({
       </div>
       {showReader ? (
         <div className="preview-body reader-body" key={`reader-${reader!.url}`}>
-          <ReaderView url={reader!.url} />
+          <ReaderView url={reader!.url} title={reader!.title} />
         </div>
       ) : showSources ? (
         <div className="preview-body sources-body" key={`sources-${sources!.runId}`}>

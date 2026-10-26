@@ -98,6 +98,55 @@ def test_reader_is_off_when_web_access_is_off(api, fake_page, monkeypatch):
     assert api.get("/v1/reader", params={"url": "https://example.com/a"}).status_code == 404
 
 
+@pytest.fixture
+def fake_html(monkeypatch):
+    async def fetch(url):
+        return {
+            "url": url,
+            "title": "T",
+            "text": "<html><head><title>T</title></head><body><p>hello</p></body></html>",
+            "content_type": "text/html",
+            "truncated": False,
+        }
+
+    monkeypatch.setattr("ailab_platform.web.fetch_html", fetch)
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+
+
+def test_reader_render_serves_the_original_page(api, fake_html):
+    r = api.get("/v1/reader/render", params={"url": "https://example.com/a"})
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("text/html")
+    assert '<base href="https://example.com/a">' in r.text
+    assert "hello" in r.text
+
+
+def test_reader_render_refuses_non_html_pages(api, monkeypatch):
+    async def fetch(url):
+        return {"url": url, "title": "", "text": "just text", "content_type": "text/plain", "truncated": False}
+
+    monkeypatch.setattr("ailab_platform.web.fetch_html", fetch)
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+    assert api.get("/v1/reader/render", params={"url": "https://example.com/a"}).status_code == 415
+
+
+def test_reader_render_maps_fetch_failures_to_502(api, monkeypatch):
+    async def fetch(url):
+        raise web.WebError("HTTP 404 from https://example.com/gone")
+
+    monkeypatch.setattr("ailab_platform.web.fetch_html", fetch)
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+    r = api.get("/v1/reader/render", params={"url": "https://example.com/gone"})
+    assert r.status_code == 502
+    assert "404" in r.json()["detail"]
+
+
+def test_reader_render_needs_a_session(api, fake_html):
+    assert (
+        api.get("/v1/reader/render", params={"url": "https://example.com/a"}, headers={"Authorization": "Bearer nope"}).status_code == 401
+    )
+
+
 def test_extract_blocks_drops_chrome_and_keeps_the_article():
     blocks = extract_blocks(CHROME_PAGE, "https://www.huawei.com/cn/news/2025/9/hc-xu-keynote-speech")
     joined = "\n".join(b.get("text", "") for b in blocks)
