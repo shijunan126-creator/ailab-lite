@@ -1,5 +1,13 @@
 # 当前工作
 
+## 2026-10-26 弹性沙箱额度与闲置回收（本地实现，待完整测试与PR）
+
+用户授权：每人沙箱数随池子余量弹性、用户到上限时回收自己最久无操作的、池满且占用≥95%时才跨用户回收，回收前先保存工作区。分支 `feat/sandbox-lru`，base `origin/main@93b94b3`（含记忆功能PR #82）。决定与边界见 [ADR 0020](../architecture/adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)。
+
+已实现：`AdmissionPolicy.effective_user_limit`（首个沙箱不受水位限制，第2个起放行后占用须≤80%，硬上限3）；Broker 进程内记录“最后操作”（续租/状态不算，进行中的操作不可回收）、排队请求每2秒找可让出的沙箱，保护期300秒；被选中的租约先置 `releasing`/`evicted_idle` 再打快照写入 `eviction_snapshot` 后删除；Agent 收到410后取回该快照写入检查点并自动续跑（`evicted` 独立计数，最多3次）。测试：`tests/test_sandbox_reclaim.py`（9）、`test_runtime_resume.py`（+2）、`test_runtime_protocol.py`（+2）。
+
+未做/未验：真实 Docker/OpenSandbox 下的回收与快照、多Run并发端到端、按角色的上限、部门份额与软/硬水位分级；后台命令随沙箱终止。本机池仅1个工作槽位，部署后行为与此前相同；未部署。下一步：完整测试通过后提PR，不自动部署。
+
 ## 2026-10-26 管理文件去重、恢复思考折叠与增量部署（本地验证完成，待CI）
 
 最新授权：删除重复管理文件入口，恢复Chat/Work点击才展开完整思考，保留此前性能优化并减少部署冗余。独立分支`fix/admin-thinking-deploy`，base`origin/main@7abee90`，产品`c0af4db`；主目录存储交接与.DS_Store未改。管理标签/面板源头去重；思考默认折叠、展开状态留在Turn、全文按需挂载；部署仅Portal使用稳定COPY/依赖层及standalone。SQLite1270通过/132跳过、Portal41/build/TypeScript、Ruff通过；目标机候选传输+冷构建34.16秒/同源码缓存1.83秒，镜像224→105MB，隔离候选9静态资源/登录/代理HTTP200。最终浏览器组15/15通过，旧手机长文链接测试改为等可见且实测高度稳定；详见[本轮记录](updates/2026-10-26-admin-thinking-deploy.md)。下一步：提PR，CI全绿再合并并按前端独立流程发布；现有部署未切换。不重启后端、不触及业务库、不做付费调用。

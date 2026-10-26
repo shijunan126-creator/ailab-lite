@@ -144,11 +144,15 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
     return {"step": step}
 
 
+MAX_EVICT_RESUMES = 3
+
+
 class PauseIn(BaseModel):
     status: str
     question: dict | None = None
     error: str = Field(default="", max_length=2000)
     auto_resume: bool = False
+    evicted: bool = False  # the sandbox was reclaimed for another run, not a fault: resumes on its own budget
     summary: str | None = Field(default=None, max_length=200000)
     result: dict | None = None
 
@@ -219,9 +223,13 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             .where(RunAttempt.id == x_run_attempt, RunAttempt.ended_at.is_(None))
             .values(ended_at=datetime.now(UTC), outcome=body.status)
         )
-        if body.auto_resume and body.status == RunStatus.INTERRUPTED and meta.get("auto_resumes", 0) < 1:
-            run.runtime_meta = {**meta, "auto_resumes": 1}
-            queue_continuation(db, run)
+        if body.auto_resume and body.status == RunStatus.INTERRUPTED:
+            if body.evicted and meta.get("evict_resumes", 0) < MAX_EVICT_RESUMES:
+                run.runtime_meta = {**meta, "evict_resumes": meta.get("evict_resumes", 0) + 1}
+                queue_continuation(db, run)
+            elif not body.evicted and meta.get("auto_resumes", 0) < 1:
+                run.runtime_meta = {**meta, "auto_resumes": 1}
+                queue_continuation(db, run)
         db.commit()
     return {"status": run.status}
 
@@ -269,7 +277,12 @@ def answer_run(run_id: str, body: AnswerIn, user: User = Depends(current_user), 
             raise HTTPException(422, "answer must be an offered option")
         _admit_continuation(db, run)
         # The answer names its question, so the Agent can never apply it to a different one.
-        run.runtime_meta = {**meta, "answer": {"question_id": body.question_id, "answer": body.answer}, "auto_resumes": 0}
+        run.runtime_meta = {
+            **meta,
+            "answer": {"question_id": body.question_id, "answer": body.answer},
+            "auto_resumes": 0,
+            "evict_resumes": 0,
+        }
         append_event(db, run.id, "agent.ask_answered", body.model_dump(), commit=False)
         queue_continuation(db, run)
         db.commit()
@@ -286,7 +299,7 @@ def resume_run(run_id: str, user: User = Depends(current_user), db: Session = De
             raise HTTPException(409, "run_not_resumable")
         _admit_continuation(db, run)
         # A person deciding to continue renews the one automatic continuation a lease loss gets.
-        run.runtime_meta = {**meta, "auto_resumes": 0}
+        run.runtime_meta = {**meta, "auto_resumes": 0, "evict_resumes": 0}
         queue_continuation(db, run, new_window=(run.result or {}).get("pause", {}).get("kind") in {"budget", "quota"})
         db.commit()
     return run_dict(db, run, detail=True)

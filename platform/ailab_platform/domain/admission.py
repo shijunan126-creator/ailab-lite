@@ -46,15 +46,43 @@ class AdmissionPolicy:
         user_limit: Callable[[], int],
         queue_limit: Callable[[], int],
         render_ttl: Callable[[], int],
+        burst_watermark: Callable[[], float] = lambda: 1.0,
     ) -> None:
         self.capacity_provider, self.leases = capacity, leases
         self.user_limit, self.queue_limit, self.render_ttl = user_limit, queue_limit, render_ttl
+        self.burst_watermark = burst_watermark
         self.queue: OrderedDict[str, _Ticket] = OrderedDict()
+
+    def utilization(self, live: list[dict]) -> float:
+        """How full the general (non-render) pool is, by slots or memory, whichever is tighter."""
+        cap = self.capacity_provider.capacity()
+        slots, memory = cap.sandboxes - cap.render_slots, cap.memory - cap.render_memory
+        work = [x for x in live if x["spec"]["profile"] != "render"]
+        if slots <= 0 or memory <= 0:
+            return 1.0
+        return max(len(work) / slots, sum(x["spec"]["memory"] for x in work) / memory)
+
+    def effective_user_limit(self, spec: SandboxSpec, live: list[dict]) -> int:
+        """Everyone may hold a first sandbox; more only while the general pool stays under the watermark.
+
+        Judged as if the extra sandbox were already running, so a user cannot push the pool past it. The
+        limit shrinks back to one as the pool fills, without touching sandboxes that already exist.
+        """
+        hard = self.user_limit()
+        cap = self.capacity_provider.capacity()
+        slots, memory = cap.sandboxes - cap.render_slots, cap.memory - cap.render_memory
+        work = [x for x in live if x["spec"]["profile"] != "render"]
+        mark = self.burst_watermark()
+        if hard <= 1 or slots <= 0 or memory <= 0:
+            return 1
+        if (len(work) + 1) / slots > mark or (sum(x["spec"]["memory"] for x in work) + spec.memory) / memory > mark:
+            return 1
+        return hard
 
     def _reason(self, ticket: _Ticket, live: list[dict]) -> str | None:
         p, spec, cap = ticket.principal, ticket.spec, self.capacity_provider.capacity()
         render = spec.profile == "render"
-        if not render and sum(x["user_id"] == p.user_id for x in live) >= self.user_limit():
+        if not render and sum(x["user_id"] == p.user_id for x in live) >= self.effective_user_limit(spec, live):
             return "user_limit"
         same = [x for x in live if (x["spec"]["profile"] == "render") == render]
         slots = cap.render_slots if render else cap.sandboxes - cap.render_slots
