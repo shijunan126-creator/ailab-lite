@@ -40,3 +40,5 @@ User explicitly authorized both PRs to be pushed, made green and squash-merged; 
 - Residual: no Linux image build, Kubernetes rollout/NetworkPolicy enforcement or target 2-vCPU/8-GB resource measurement. Dependencies beneath the two top-level pins remain unpinned. Native contract success is not container isolation proof. Two concurrent browsers are not proven to fit 1 GiB; the ADR no longer claims they do. No production deployment or personal configuration was changed.
 
 Next: exact-head eight-check CI, blocking-review and mergeability checks, then `gh pr merge 94 --squash --match-head-commit <head>`.
+
+CI setup follow-up: run 40314377906 passed both DB suites and storage, but Chromium system dependencies consumed nearly 12 minutes before browser tests could start. PR93 attempt 2 logs confirm Azure Ubuntu HTTP mirror throughput of 40KB/s (25.9MB in 10m49s). Both branches now replace that mirror entry with the official Ubuntu HTTPS archive. No test/skip/deadline changes; the new exact-head CI must pass all eight checks.

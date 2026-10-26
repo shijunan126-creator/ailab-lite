@@ -253,7 +253,12 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: Chromium
         working-directory: platform
-        run: playwright install --with-deps chromium
+        run: |
+          # The Azure HTTP mirror can consume the job budget before browser tests start.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
+          fi
+          playwright install --with-deps chromium
       - name: Browser tests (includes Portal tests/build)
         working-directory: platform
         run: pytest e2e -ra --durations=10 --junitxml=test-results/e2e.xml
