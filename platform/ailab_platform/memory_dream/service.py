@@ -196,10 +196,7 @@ def _digest(run: Run, limit: int = 6000) -> str:
 
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
     """Create immutable episode rows once; reuse them on a retry."""
-    existing = {
-        e.content_hash: e
-        for e in db.scalars(select(MemoryEpisode).where(MemoryEpisode.user_id == user.id)).all()
-    }
+    existing = {e.content_hash: e for e in db.scalars(select(MemoryEpisode).where(MemoryEpisode.user_id == user.id)).all()}
     out: list[MemoryEpisode] = []
     for run in runs:
         digest = _digest(run)
