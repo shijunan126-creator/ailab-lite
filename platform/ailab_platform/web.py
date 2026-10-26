@@ -339,6 +339,57 @@ def _weakness(html: str, text: str) -> str | None:
     return None
 
 
+async def search(query: str, count: int | None = None) -> list[dict]:
+    query = query.strip()[:300]
+    if not query:
+        raise WebError("query is required")
+    n = max(1, min(int(count or settings.web_max_results), 8))
+    provider = settings.web_search_provider
+    if provider == "mock":
+        return [
+            {
+                "title": f"{query} — result {i + 1}",
+                "url": f"https://example.com/{i + 1}",
+                "snippet": f"Mock result for {query}",
+                "engine": "mock",
+            }
+            for i in range(n)
+        ]
+    if provider != "searxng":
+        raise WebError("web search is not configured")
+
+    base = settings.searxng_url.rstrip("/")
+    params = {"q": query, "format": "json", "language": "zh-CN", "safesearch": "1"}
+    try:
+        async with httpx.AsyncClient(
+            timeout=settings.web_search_timeout_seconds,
+            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
+            trust_env=False,
+        ) as client:
+            resp = await client.get(f"{base}/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+    except Exception as exc:
+        raise WebError(f"search service unavailable: {type(exc).__name__}: {exc}") from exc
+
+    out: list[dict] = []
+    for item in data.get("results") or []:
+        url = str(item.get("url") or "").strip()
+        if not url.startswith(("http://", "https://")):
+            continue
+        out.append(
+            {
+                "title": str(item.get("title") or url)[:300],
+                "url": url[:2000],
+                "snippet": str(item.get("content") or "")[:500],
+                "engine": str(item.get("engine") or "")[:50],
+            }
+        )
+        if len(out) >= n:
+            break
+    return out
+
+
 GITHUB_ISSUE = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(?:issues|pull)/(\d+)/?$")
 GITHUB_API_BYTES = 4 * 1024 * 1024
 GITHUB_HEADERS = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}

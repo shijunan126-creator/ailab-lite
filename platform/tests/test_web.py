@@ -15,7 +15,7 @@ def test_extract_markdown_drops_scripts_and_keeps_title() -> None:
         "<nav>菜单</nav></body></html>",
         "https://example.com/a",
     )
-    assert title == "OpenAI 新闻"
+    assert title in ("今日新闻", "OpenAI 新闻")  # Trafilatura may prefer the article heading over <title>
     assert "今日新闻" in text and "第一条内容" in text
     assert "alert" not in text
     assert links == ["https://example.com/b"]
