@@ -31,9 +31,9 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     out["history"] = []
     out["input_files"] = _attachment_texts(db, run)
     owner = db.get(User, run.user_id)
-    from .routes_memory import memory_for
+    from .routes_memory import memory_for_run
 
-    out["memory"] = memory_for(owner, for_model=True) if owner else {}
+    out["memory"] = memory_for_run(owner, run)
     from .brand import workspace_input
 
     out.update(workspace_input(db, run))

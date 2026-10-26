@@ -25,7 +25,9 @@ from ailab_platform.memory_dream.service import (
     _last_success,
     _memory_view,
     _new_runs,
+    _screen,
 )
+from ailab_platform.memory_recall.tombstones import tombstones_of
 from ailab_platform.models import User
 
 
@@ -45,6 +47,7 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
 
             settings.memory_dream_model = model
         facts, usage, used_model = await _extract(episodes, active, user)
+        facts = _screen(facts, tombstones_of(user))  # what the nightly job would also drop
         verdicts, judge_usage = await _judge(facts, active, user, used_model) if facts else ({}, {})
         return {
             "user": user.id,

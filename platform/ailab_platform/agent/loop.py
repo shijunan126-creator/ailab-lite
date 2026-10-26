@@ -49,7 +49,7 @@ from .prompts import (
     workspace_prompt,
 )
 from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
-from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
+from .tools import MEMORY_TOOLS, SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
 
 log = logging.getLogger("ailab.agent")
 
@@ -1236,6 +1236,9 @@ class AgentLoop:
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
             offered = [] if spec is not None and not spec.supports({"tools"}) else tools_for_chat() if mode == "chat" else None
+            if (run.get("memory") or {}).get("temporary") and offered != []:
+                # a temporary chat does not see the memory tools at all (the API refuses them too)
+                offered = [t for t in (tools_for_turn() if offered is None else offered) if t["function"]["name"] not in MEMORY_TOOLS]
             # A call to a tool not offered this turn is answered, never run: chat offers save_skill, and a write_file the
             # model sends anyway must not start a sandbox. "finish" is the legacy end marker some prompts still use.
             turn.allowed_tools = {t["function"]["name"] for t in (tools_for_turn() if offered is None else offered)} | {"finish"}

@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 MAX_CHARS = 12000
 MAX_ENTRIES = 100
+MAX_TOMBSTONES = 200
 DREAM_MAX_CHANGES = 5
 DREAM_INPUT_CHARS = 8000
 DREAM_MAX_OUTPUT_TOKENS = 2000
@@ -45,6 +46,8 @@ class MemoryEntryInput(BaseModel):
     invalid_at: datetime | None = None
     superseded_by: str | None = Field(default=None, max_length=40)
     last_used_at: datetime | None = None
+    # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
+    suppressed: bool | None = None
 
     @field_validator("content")
     @classmethod
@@ -94,6 +97,22 @@ class MemoryOperation(BaseModel):
         if self.action in {"add", "replace"} and (not self.content.strip() or "\x00" in self.content):
             raise ValueError("memory content is required without NUL")
         return self
+
+
+class RecallRequest(BaseModel):
+    """Search the user's own past conversations."""
+
+    model_config = ConfigDict(extra="forbid")
+    query: str = Field(min_length=1, max_length=300)
+    limit: int = Field(default=5, ge=1, le=10)
+    days: int | None = Field(default=None, ge=1, le=3650)
+
+    @field_validator("query")
+    @classmethod
+    def nonblank(cls, value):
+        if not value.strip() or "\x00" in value:
+            raise ValueError("query must contain text without NUL")
+        return value.strip()
 
 
 class MemoryDreamSettings(BaseModel):

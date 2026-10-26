@@ -11,14 +11,20 @@ from ..audit import record_audit
 from ..contracts.memory import (
     MAX_CHARS,
     MAX_ENTRIES,
+    MAX_TOMBSTONES,
     MemoryDreamRunOut,
     MemoryDreamSettings,
     MemoryEntryInput,
     MemoryOperation,
     MemoryUpdate,
+    RecallRequest,
 )
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
+from ..memory_recall import guard
+from ..memory_recall.search import excluded_from_memory, search_history
+from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
+from ..metrics import MEMORY_GUARD_REJECTED, MEMORY_RECALL
 from ..models import MemoryDreamRun, Run, RunDelivery, RunStatus, User, new_id
 from ..service_auth import require_scope
 
@@ -37,6 +43,8 @@ def _entry(entry: dict) -> dict:
     out.setdefault("invalid_at", None)
     out.setdefault("superseded_by", None)
     out.setdefault("last_used_at", None)
+    out.setdefault("suppressed", False)
+    out.setdefault("evidence_deleted", False)
     return out
 
 
@@ -51,6 +59,7 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         "limit_chars": MAX_CHARS,
         "limit_entries": MAX_ENTRIES,
     }
+    result.pop("tombstones", None)
     result["entries"] = [_entry(e) for e in result.get("entries") or []]
     if for_model:
         if not result["enabled"]:
@@ -58,22 +67,52 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         else:
             # A superseded fact stays visible to the user for audit, but the model must never
             # act on it again.
-            result["entries"] = [e for e in result["entries"] if not e.get("superseded_by") and not e.get("invalid_at")]
+            result["entries"] = [
+                e for e in result["entries"] if not e.get("superseded_by") and not e.get("invalid_at") and not e.get("suppressed")
+            ]
     return result
 
 
-def write_memory(db, user, body, source):
+def memory_for_run(owner: User | None, run: Run) -> dict:
+    """What a run may know about memory. A temporary chat sees none and is told so."""
+    if owner is None:
+        return {}
+    if excluded_from_memory(run.options):
+        return {"enabled": False, "temporary": True, "revision": 0, "auto_save": False, "entries": []}
+    return memory_for(owner, for_model=True)
+
+
+def _refuse_unsafe(content: str, source: str) -> None:
+    """Credentials never become memory; text shaped like an instruction never does unless the user typed it."""
+    reason = guard.reject_reason(content, untrusted=source != "user")
+    if reason:
+        MEMORY_GUARD_REJECTED.labels(reason, source).inc()
+        said = "这条内容看起来包含密钥或口令" if reason == guard.SECRET else "这条内容像是对助手的指令"
+        raise HTTPException(422, f"{said}，不能保存为记忆")
+
+
+def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True):
+    """Replace the memory document. ``explicit``: the user asked for the new entries by name.
+
+    ``tombstone_removed``: entries that disappear are remembered as deleted (hash and evidence ids
+    only) so a later dream does not quietly bring them back. Housekeeping writes pass False.
+    """
     previous = memory_for(user)
     if previous["revision"] != body.expected_revision:
         raise HTTPException(422, "记忆已更新，请重新读取后再保存")
     old = {e["id"]: e for e in previous["entries"]}
     now = datetime.now(UTC)
+    tombstones = tombstones_of(user)
     entries = []
     for entry in body.entries:
         if entry.id and entry.id not in old and not entry.id.startswith("mem_"):
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
+        if prior is None or prior["content"] != entry.content:
+            _refuse_unsafe(entry.content, source)
         if prior is None:
+            if source == "user" or explicit:
+                tombstones = [t for t in tombstones if t.get("hash") != fact_hash(entry.content)]
             entries.append(
                 {
                     "id": entry.id or new_id("mem"),
@@ -90,6 +129,7 @@ def write_memory(db, user, body, source):
                     "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
                     "superseded_by": entry.superseded_by,
                     "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
+                    "suppressed": bool(entry.suppressed),
                 }
             )
             continue
@@ -105,6 +145,7 @@ def write_memory(db, user, body, source):
             "invalid_at",
             "superseded_by",
             "last_used_at",
+            "suppressed",
         ):
             value = getattr(entry, field)
             if value is not None:
@@ -124,7 +165,17 @@ def write_memory(db, user, body, source):
             if entry.evidence_episode_ids is None:
                 merged["evidence_episode_ids"] = []
         entries.append(merged)
-    value = {"revision": previous["revision"] + 1, "enabled": body.enabled, "auto_save": body.auto_save, "entries": entries}
+    if tombstone_removed:
+        kept = {e["id"] for e in entries}
+        for gone in (e for i, e in old.items() if i not in kept):
+            tombstones.append({"hash": fact_hash(gone["content"]), "run_ids": gone.get("evidence_run_ids") or [], "at": now.isoformat()})
+    value = {
+        "revision": previous["revision"] + 1,
+        "enabled": body.enabled,
+        "auto_save": body.auto_save,
+        "entries": entries,
+        "tombstones": tombstones[-MAX_TOMBSTONES:],
+    }
     user.settings = {**(user.settings or {}), "memory": value}
     # Content never goes into audit logs or public events.
     record_audit(db, "memory.updated", "user", user.id, actor_id=user.id, detail={"revision": value["revision"], "source": source})
@@ -266,6 +317,7 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
                 entries=entries,
             ),
             "user",
+            tombstone_removed=False,
         )
         run.status = "reverted"
         run.after_memory = result
@@ -290,6 +342,8 @@ def run_memory(
         fence_attempt(db, run.id, x_run_attempt)
         if run.status != RunStatus.RUNNING:
             raise HTTPException(409, "run is not running")
+        if excluded_from_memory(run.options):
+            raise HTTPException(422, "这是临时对话：不读取也不写入长期记忆")
         user = db.get(User, run.user_id, populate_existing=True)
         current = memory_for(user)
         if body.action == "list":
@@ -303,7 +357,10 @@ def run_memory(
             raise HTTPException(422, "用户已关闭自动记忆；只在用户明确要求时操作记忆，关闭记忆时不能操作")
         entries = [MemoryEntryInput(**{k: e[k] for k in ("id", "kind", "content")}) for e in current["entries"]]
         if body.action == "add":
-            item = MemoryEntryInput(kind=body.kind, content=body.content)
+            # the run is the evidence, so deleting the conversation can later find and redact this fact
+            item = MemoryEntryInput(kind=body.kind, content=body.content, evidence_run_ids=[run.id])
+            if not body.explicit and blocked_by_tombstone(tombstones_of(user), item.content):
+                raise HTTPException(422, "用户之前删除过这条记忆；除非用户明确要求，不要再次保存")
             if not any(e.kind == item.kind and e.content == item.content for e in entries):
                 entries.append(item)
         else:
@@ -322,7 +379,25 @@ def run_memory(
             )
         except ValueError as exc:
             raise HTTPException(422, "记忆内容为空或超出容量，请整理后重试") from exc
-        result = write_memory(db, user, update, "agent")
+        result = write_memory(db, user, update, "agent", explicit=body.explicit)
         db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
         db.commit()
         return result
+
+
+@router.post("/internal/runs/{run_id}/recall", dependencies=[Depends(require_scope("memory:recall_for_run"))])
+def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
+    """Search the run owner's earlier conversations. Read-only, so no attempt fence or delivery id."""
+    from .routes_internal import _run_or_404
+
+    run = _run_or_404(db, run_id)
+    if excluded_from_memory(run.options):
+        MEMORY_RECALL.labels("temporary").inc()
+        raise HTTPException(422, "这是临时对话：不读取也不写入长期记忆")
+    user = db.get(User, run.user_id)
+    if user is None or not memory_for(user)["enabled"]:
+        MEMORY_RECALL.labels("disabled").inc()
+        raise HTTPException(422, "用户已关闭记忆，不能查询历史对话")
+    out = search_history(db, user, body.query, limit=body.limit, days=body.days, exclude_conversation_id=run.conversation_id)
+    MEMORY_RECALL.labels("hit" if out["results"] else "abstain").inc()
+    return out
