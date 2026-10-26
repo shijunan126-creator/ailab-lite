@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createElement, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, readerRenderUrl, ReaderBlock, ReaderPage } from "../../lib/api";
 import { IconArrowLeft, IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
@@ -193,15 +193,21 @@ export default function PreviewPane({
   const pane = useRef<HTMLElement | null>(null);
   const close = useRef(onClose);
   close.current = onClose;
-  useEffect(() => {
+  const historyGeneration = useRef(0);
+  useLayoutEffect(() => {
+    const generation = ++historyGeneration.current;
     const opener = document.activeElement as HTMLElement | null;
     const mobile = window.matchMedia("(max-width: 760px)").matches;
-    const marker = `preview-${Date.now()}`;
+    const marker = `preview-${generation}-${Date.now()}`;
     const pop = () => close.current();
-    const push = mobile ? setTimeout(() => {
-      window.history.pushState({ ...window.history.state, ailabPreview: marker }, "");
+    // Install before paint: once the pane is interactive, browser Back must close it.
+    // Strict Mode replays layout effects; reuse that entry instead of traversing history.
+    if (mobile) {
+      const state = { ...window.history.state, ailabPreview: marker };
+      if (window.history.state?.ailabPreview) window.history.replaceState(state, "");
+      else window.history.pushState(state, "");
       window.addEventListener("popstate", pop);
-    }) : undefined;
+    }
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); close.current(); }
       if (mobile && e.key === "Tab") {
@@ -215,10 +221,12 @@ export default function PreviewPane({
     pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus({ preventScroll: true });
     window.addEventListener("keydown", key);
     return () => {
-      clearTimeout(push);
       window.removeEventListener("keydown", key);
       window.removeEventListener("popstate", pop);
-      if (mobile && window.history.state?.ailabPreview === marker) window.history.back();
+      queueMicrotask(() => {
+        if (historyGeneration.current !== generation) return;
+        if (mobile && window.history.state?.ailabPreview === marker) window.history.back();
+      });
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);

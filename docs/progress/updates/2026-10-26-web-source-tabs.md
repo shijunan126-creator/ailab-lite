@@ -28,3 +28,12 @@
 - 未跑PostgreSQL/外部存储/OpenSandbox/付费模型/真实手机/目标2vCPU整栈容量；没有SQL/迁移/Agent工具行为变化。未运行整套所有浏览器场景；仅相关4项，本次没有扩大为全站验收。
 - 专用五服务由夹具停止；核对PID42284为本轮16471 Redis后shutdown nosave，13470/18470–18473/16471均无监听。无产品后台进程残留，原部署未动。
 - 下一步：本地实现/验证/交接完成，等待用户明确发布授权；不push/PR/merge/deploy，不启动其他路线项。
+
+
+## PR83 首轮失败与CI复查
+
+用户随后授权推送、PR、合并和部署。同步主线93b94b3后PR83 head e9fc23f触发run40287501480：SQLite/PostgreSQL/quality/storage/shell成功；E2E108通过/1跳过/1失败，总门禁跟随失败。失败为手机预览打开→Esc→重开→立即浏览器Back退到about:blank。相同代码本机2场景中桌面通过、手机失败，证明是产品时序回归。修复使用layout effect在交互前同步push历史，generation与microtask清理支持Strict Mode重放；不加测试sleep、不降断言、不重跑当修复。
+
+修复后相关6浏览器场景（原桌面/手机预览返回、网页多tab、长回答链接）通过；Portal42测试/生产build/TypeScript随五服务fixture验证。仅Portal生命周期变化，不重复上一轮不受影响的Python全套；最终集成以PR和main完整CI为门禁。
+
+CI只读复查：PR取完整base...head范围并fetch全历史，main/manual全套；matrix fail-fast=false；每job独立服务、临时DB/临时Portal构建、每测试独立浏览器context；E2E未配置自动重试；失败always保留日志/trace；CI gate always执行且拒绝应跑却skipped/failed/cancelled任务。门禁/范围/JUnit验证28项单测本机通过。CI失败信息正确，不需要workflow改动。现有边界：该E2E使用生产build，开发模式Strict Mode不属于这6项验收；不把配置检查等同全部CI永远无缺陷。
