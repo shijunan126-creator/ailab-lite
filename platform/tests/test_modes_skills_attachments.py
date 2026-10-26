@@ -106,7 +106,7 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     llm = _Recording([LLMResponse(content="只用文字回答")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
-        ["memory", "search_library", "read_library_file", "load_skill", "save_skill"]
+        ["memory", "recall_history", "search_library", "read_library_file", "load_skill", "save_skill"]
     ] and broker.leases == 0
     system = llm.seen_messages[0][0]["content"]
     assert "代码、SQL、命令和文档草稿可以直接在回复中提供" in system

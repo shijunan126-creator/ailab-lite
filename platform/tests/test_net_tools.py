@@ -281,7 +281,7 @@ def test_the_run_budget_caps_requests_and_bytes(monkeypatch) -> None:
 def test_tools_offered_per_mode(monkeypatch) -> None:
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     chat = {t["function"]["name"] for t in tools.tools_for_chat()}
-    assert chat == {"web_search", "read_url", "save_skill", "load_skill", "memory", "search_library", "read_library_file"}
+    assert chat == {"web_search", "read_url", "save_skill", "load_skill", "memory", "recall_history", "search_library", "read_library_file"}
     work = {t["function"]["name"] for t in tools.tools_for_turn()}
     assert {"download_url", "fetch_repo", "fetch_packages", "save_skill"} <= work
     monkeypatch.setattr(web.settings, "web_search_provider", "none")

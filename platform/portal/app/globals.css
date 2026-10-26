@@ -1013,6 +1013,9 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .memory-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px 6px 8px; }
 .memory-row + .memory-row { border-top: 1px solid var(--border); }
 .memory-row.superseded .memory-text { opacity: .55; text-decoration: line-through; }
+.memory-row.paused .memory-text { opacity: .55; }
+.memory-tag { align-self: center; flex: none; white-space: nowrap; }
+.memory-pause { flex: none; margin-top: 2px; }
 .memory-text { flex: 1; min-width: 0; field-sizing: content; min-height: 36px; max-height: 320px; resize: none; border-color: transparent; background: transparent; padding: 7px 10px; font-size: 14px; }
 .memory-text:hover { border-color: var(--border); }
 .memory-text:focus { border-color: var(--accent); background: var(--surface); }
@@ -1024,6 +1027,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 @media (hover: hover) {
   .memory-remove { opacity: 0; }
   .memory-row:hover .memory-remove, .memory-row:focus-within .memory-remove { opacity: 1; }
+  .memory-row.paused .memory-pause { opacity: 1; }
 }
 .dream-panel { margin-bottom: 28px; padding-bottom: 8px; }
 .dream-window, .dream-stats { padding: 0 16px 8px; }
