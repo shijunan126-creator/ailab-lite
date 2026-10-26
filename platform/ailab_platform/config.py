@@ -172,7 +172,14 @@ class Settings(BaseSettings):
     sandbox_memory_bytes: int = Field(default=1536 * 1024**2, ge=1)
     sandbox_disk_bytes: int = Field(default=4 * 1024**3, ge=1)
     sandbox_total_memory_bytes: int = Field(default=3 * 1024**3, ge=1)
-    sandbox_max_per_user: int = Field(default=1, ge=1)
+    # Hard ceiling per user. Everything above the first sandbox is a burst that is only admitted while the
+    # general pool stays under sandbox_burst_watermark; a busy pool lets each user hold one.
+    sandbox_max_per_user: int = Field(default=3, ge=1)
+    sandbox_burst_watermark: float = Field(default=0.8, gt=0, le=1)
+    # A sandbox may be reclaimed (workspace saved first) only after this long without an operation on it.
+    sandbox_evict_idle_seconds: int = Field(default=300, ge=1)
+    # Reclaiming another user's sandbox additionally requires the general pool to be at least this full.
+    sandbox_preempt_utilization: float = Field(default=0.95, gt=0, le=1)
     sandbox_queue_limit: int = Field(default=32, ge=1)
     sandbox_render_reserved_slots: int = Field(default=1, ge=0)
     sandbox_render_memory_bytes: int = Field(default=768 * 1024**2, ge=0)

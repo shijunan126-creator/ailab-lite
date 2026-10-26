@@ -298,3 +298,52 @@ def test_an_unchanged_snapshot_is_not_reported_as_lagging_after_a_model_crash():
     resumed = ScriptedLLM([LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=resumed).process("run_1", attempt=2, attempt_id="next"))
     assert not any(message.get("content") == WORKSPACE_LAG_NOTE for message in resumed.seen_messages[0])
+
+
+def test_a_reclaimed_sandbox_hands_its_saved_workspace_to_the_checkpoint(monkeypatch):
+    monkeypatch.setattr(settings, "runtime_heartbeat_seconds", 0.01)
+    monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
+
+    class Reclaimed(FakeBroker):
+        async def renew(self, lease_id):
+            raise ClientError("POST", "/renew", 410, '{"detail":"lease_lost"}')
+
+        async def lease_status(self, lease_id):
+            return {
+                "state": "releasing",
+                "reason": "evicted_idle",
+                "eviction_done": True,
+                "eviction_snapshot": {"key": "workspaces/run_1/reclaimed.tgz", "size": 42},
+            }
+
+        async def exec(self, lease_id, cmd, timeout=None):
+            await asyncio.sleep(5)
+
+    platform = FakePlatform()
+    llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=Reclaimed(), llm=llm).process("run_1", attempt_id="att_1"))
+
+    assert platform.paused["status"] == "interrupted" and platform.paused["auto_resume"] is True and platform.paused["evicted"] is True
+    state = platform.checkpoint["state"]
+    assert state["workspace"]["key"] == "workspaces/run_1/reclaimed.tgz" and state["workspace_dirty"] is False
+    assert any(m.get("role") == "system" and "回收" in m["content"] for m in state["messages"])
+
+
+def test_an_ordinary_lost_lease_is_not_mistaken_for_a_reclaim(monkeypatch):
+    monkeypatch.setattr(settings, "runtime_heartbeat_seconds", 0.01)
+    monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
+
+    class Lost(FakeBroker):
+        async def renew(self, lease_id):
+            raise ClientError("POST", "/renew", 410, '{"detail":"lease_lost"}')
+
+        async def lease_status(self, lease_id):
+            return {"state": "failed", "reason": "lease_lost"}
+
+        async def exec(self, lease_id, cmd, timeout=None):
+            await asyncio.sleep(5)
+
+    platform = FakePlatform()
+    llm = ScriptedLLM([LLMResponse(content="run", tool_calls=[EXEC]), LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=Lost(), llm=llm).process("run_1", attempt_id="att_1"))
+    assert platform.paused["evicted"] is False

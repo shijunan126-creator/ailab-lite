@@ -376,7 +376,7 @@ ConfigMap/Secret。PVC 用 initContainer 把 `/data` chown 给 10001；镜像里
 - **沙箱最小权限**：Docker provider 用 `--network none`、1 CPU / 1.5 GiB、非 root（10001）、
   `--cap-drop ALL`、`no-new-privileges`、`/tmp` tmpfs；OpenSandbox provider 用 `NetworkPolicy(default deny)`
   和 `resource={cpu:1, memory:1536M}`（已实测 DNS/出网失败）。沙箱存活时间 = 租约 TTL（默认 4 小时）+ 5 分钟，
-  Broker 先回收，provider 自带过期兜底；单沙箱配额（`AILAB_MAX_SANDBOXES=1`），满了就排队（最多 `AILAB_SANDBOX_WAIT_SECONDS`）。
+  Broker 先回收，provider 自带过期兜底；全机上限 `AILAB_MAX_SANDBOXES`，每人第一个沙箱照常放行，更多的只在池子不到 80% 时放行（上限 `AILAB_SANDBOX_MAX_PER_USER`）；满了就排队（最多 `AILAB_SANDBOX_WAIT_SECONDS`），排队时可回收闲置超过 5 分钟的沙箱（先保存工作区，见 ADR 0020）。
 - **Broker 是唯一沙箱持有者，且自己执法**：Agent 只拿 `lease_id`。路径统一经 `paths.normalize_path` 规范化，
   只允许 `/workspace` 之内；只有 `/workspace/outputs` 能交付；读/写/交付各有大小上限；
   注入哪些输入文件由 Broker 向 API 查（不信调用方传的 `file_id`），重名输入自动改名（`a (2).txt`）。

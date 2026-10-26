@@ -68,6 +68,11 @@ FILE_TOOLS = frozenset(
 )  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
+WORKSPACE_RECLAIMED_NOTE = (
+    "（平台提示：沙箱因长时间没有操作，被平台回收给其他任务。回收时已保存工作区，其中运行的后台命令已终止；"
+    "请先检查工作区，需要的后台命令请重新启动。）"
+)
+RECLAIM_WAIT_SECONDS = 240  # the Broker packs the workspace before deleting the sandbox
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
 
 
@@ -1090,6 +1095,37 @@ class AgentLoop:
             state["workspace_dirty"] = True
         state["background_jobs"] = []
 
+    async def _take_reclaimed_workspace(self, run_id: str, turn: _Turn) -> bool:
+        """When the Broker took this sandbox back for another run, make the workspace it saved the checkpoint's.
+
+        The saved archive is newer than the debounced snapshot, so resuming from it loses nothing; without it
+        the resume falls back to the last snapshot and says so.
+        """
+        if not turn.lease_id:
+            return False
+        try:
+            deadline = time.monotonic() + RECLAIM_WAIT_SECONDS
+            while True:
+                lease = await self.broker.lease_status(turn.lease_id)
+                if lease.get("reason") != "evicted_idle":
+                    return False
+                if lease.get("eviction_done") or lease.get("state") in {"released", "failed"} or time.monotonic() >= deadline:
+                    break
+                await asyncio.sleep(2)
+            state = self._states[run_id]
+            state["background_jobs"] = []  # they died with the sandbox
+            state["messages"].append({"role": "system", "content": WORKSPACE_RECLAIMED_NOTE})
+            saved = lease.get("eviction_snapshot")
+            if saved:
+                await self._record_workspace(run_id, turn, {"key": saved["key"], "size": saved["size"]})
+            else:
+                state["workspace_dirty"] = True
+                await self._checkpoint(run_id, turn)
+            return True
+        except Exception:
+            log.warning("could not take over the workspace saved on reclaim run=%s", run_id, exc_info=True)
+            return False
+
     async def _budget_pause(self, run_id, turn, reason, *, pause=None):
         budget = self._budgets[run_id]
         budget.update()
@@ -1451,6 +1487,7 @@ class AgentLoop:
         except LeaseInterrupted as exc:
             # The most recent durable checkpoint remains authoritative. Do not
             # snapshot a lost lease or pretend an empty replacement restored it.
+            reclaimed = await self._take_reclaimed_workspace(run_id, turn)
             try:
                 await self._release_turn(turn)
             except Exception:
@@ -1459,8 +1496,9 @@ class AgentLoop:
                 run_id,
                 {
                     "status": RunStatus.INTERRUPTED,
-                    "error": f"工作区租约中断：{exc}",
+                    "error": "沙箱长时间没有操作，已被回收给其他任务；工作区已保存，将自动继续" if reclaimed else f"工作区租约中断：{exc}",
                     "auto_resume": True,
+                    "evicted": reclaimed,
                     "result": {"sources": state["sources"]},
                 },
             )
