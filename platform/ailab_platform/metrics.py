@@ -33,6 +33,12 @@ RUNS = Counter("ailab_runs_total", "Runs that entered a status", ["status"])
 CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes and fallback causes", ["outcome", "reason"])
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)
 MODEL_TOKENS = Counter("ailab_model_tokens_total", "Model tokens as reported by the upstream", ["model", "kind"])
+WEB_READ_SECONDS = Histogram(
+    "ailab_web_read_seconds",
+    "read_url time by path (static, rendered, static_fallback) and outcome",
+    ["path", "outcome"],
+    buckets=(0.25, 0.5, 1, 2.5, 5, 10, 20, 40),
+)
 MEMORY_RECALL = Counter("ailab_memory_recall_total", "History recall calls by outcome", ["outcome"])
 MEMORY_EMBEDDING = Counter("ailab_memory_embedding_total", "Embedding endpoint calls by outcome", ["outcome"])
 MEMORY_GUARD_REJECTED = Counter("ailab_memory_guard_rejected_total", "Memory writes refused by the safety guard", ["reason", "source"])
@@ -206,3 +212,7 @@ def register_once(key: str, collector: Collector) -> None:
     if key not in _registered:
         REGISTRY.register(collector)
         _registered.add(key)
+
+
+def observe_web_read(path: str, outcome: str, seconds: float) -> None:
+    WEB_READ_SECONDS.labels(path if path in ("static", "rendered", "static_fallback") else "other", outcome).observe(seconds)

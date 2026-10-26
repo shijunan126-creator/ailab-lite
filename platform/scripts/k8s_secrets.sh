@@ -46,6 +46,10 @@ case "${1:-create}" in
       digest=$(printf %s "$token" | openssl dgst -sha256 | awk '{print $NF}')
       verifiers+=("\"$service\":\"sha256:$digest\"")
     done
+    # Shared only by the Agent and the crawler it calls; kept across runs like the service identities.
+    if [ -n "${DRY_RUN:-}" ] || ! $KUBECTL -n "$NS" get secret platform-crawler-token >/dev/null 2>&1; then
+      apply_secret platform-crawler-token --from-literal=AILAB_CRAWLER_TOKEN="$(openssl rand -hex 32)"
+    fi
     registry=$(IFS=,; printf '{%s}' "${verifiers[*]}")
     apply_secret platform-service-verifiers --from-literal=AILAB_SERVICE_CREDENTIALS="$registry"
     # API needs keys to advertise available models; Agent needs keys to call them. No other pod receives them.

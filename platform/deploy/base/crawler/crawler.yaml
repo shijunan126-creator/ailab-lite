@@ -1,0 +1,93 @@
+# read_url renderer (ADR 0021): headless Chromium running untrusted pages. No platform
+# credentials; reachable only from the Agent; its only egress is platform-egress.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-crawler
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: platform-crawler}
+  template:
+    metadata:
+      labels: {app: platform-crawler}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10002
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: crawler
+          image: ailab-crawler:lite
+          imagePullPolicy: Never
+          env:
+            - name: AILAB_CRAWLER_PROXY
+              value: http://platform-egress:4750
+            - name: AILAB_CRAWLER_TOKEN
+              valueFrom:
+                secretKeyRef: {name: platform-crawler-token, key: AILAB_CRAWLER_TOKEN}
+          ports: [{containerPort: 8090}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+            - {name: shm, mountPath: /dev/shm}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi}
+            limits: {cpu: "1", memory: 1Gi}
+          readinessProbe:
+            httpGet: {path: /healthz, port: 8090}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: tmp
+          emptyDir: {sizeLimit: 512Mi}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 256Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-crawler
+  namespace: platform
+spec:
+  selector: {app: platform-crawler}
+  ports:
+    - name: http
+      port: 8090
+      targetPort: 8090
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-crawler
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels: {app: platform-crawler}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: platform-agent}
+      ports:
+        - {protocol: TCP, port: 8090}
+  # DNS resolves the proxy Service; page connections still have only the proxy route.
+  egress:
+    - to:
+        - podSelector:
+            matchLabels: {app: platform-egress}
+      ports:
+        - {protocol: TCP, port: 4750}
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
