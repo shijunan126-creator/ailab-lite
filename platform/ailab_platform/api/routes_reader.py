@@ -1,10 +1,9 @@
-"""Server-side reader for the Portal side pane: a public page's original look or extracted blocks.
+"""Server-side view of a public page for the Portal side pane: its original look.
 
 The side pane cannot iframe external sites directly (most send X-Frame-Options), so /reader/render
 re-serves the fetched HTML with the frame-blocking headers gone and a <base> pointed at the site —
-the sandboxed iframe then shows the original page. /reader is the fallback: the same fetch run
-through ailab_platform.reader, which picks the article out of the page (chrome dropped, structure
-kept). Both share the Agent's public-only client, caps and deadlines; one bounded fetch per call.
+the sandboxed iframe then shows the original page. It uses the Agent's public-only client, caps and
+deadlines; one bounded fetch per call.
 """
 
 import asyncio
@@ -32,19 +31,6 @@ def _check_url(url: str) -> None:
         raise HTTPException(status_code=400, detail="invalid url")
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise HTTPException(status_code=400, detail="only http(s) links can be opened in the reader")
-
-
-@router.get("/reader")
-async def reader(url: str = Query(min_length=1, max_length=2000), _: User = Depends(current_user)) -> dict:
-    """The readable blocks of one public web page, for the side pane's 正文 view."""
-    _check_url(url)
-    try:
-        page = await asyncio.wait_for(web.read_page(url), timeout=READ_TIMEOUT_SECONDS)
-    except TimeoutError:
-        raise HTTPException(status_code=504, detail=f"page did not finish loading within {READ_TIMEOUT_SECONDS}s")
-    except web.WebError as exc:
-        raise HTTPException(status_code=502, detail=str(exc))
-    return {"url": page["url"], "title": page["title"], "blocks": page["blocks"], "truncated": page["truncated"]}
 
 
 class _FrameMarkup(HTMLParser):
@@ -106,7 +92,7 @@ async def reader_render(url: str = Query(min_length=1, max_length=2000), _: User
     except web.WebError as exc:
         raise HTTPException(status_code=502, detail=str(exc))
     if page["content_type"] not in ("text/html", "application/xhtml+xml"):
-        raise HTTPException(status_code=415, detail="not an HTML page; use the extracted view")
+        raise HTTPException(status_code=415, detail="not an HTML page")
     html = _FrameMarkup(page["text"]).render(page["url"])
     # Preserve HTML/CSS while blocking scripts, subframes and form submission. Site hydration and
     # redirects otherwise escape the fetched snapshot or replace its article with a consent page.

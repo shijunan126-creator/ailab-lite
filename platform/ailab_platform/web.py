@@ -2,8 +2,9 @@
 
 The sandbox has no egress. This module runs in the Agent process (outside the
 sandbox): it searches with a private SearXNG instance and turns public pages
-into plain text. The model only sees the text and source URLs; the sandbox
-never gets a network route.
+into text, either by its own bounded fetch (web_read_provider=static) or by
+asking the isolated crawler to render them (crawl4ai, ADR 0021). The model only
+sees the text and source URLs; the sandbox never gets a network route.
 
 Security rules:
 * only http(s), default ports 80/443, no credentials in URLs;
@@ -38,7 +39,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 import httpcore
 import httpx
 
-from . import reader
+from . import metrics
 from .config import settings
 
 USER_AGENT = "AILab-lite/0.1 (safe web research; https://github.com/shijunan126-creator/ailab-lite)"
@@ -436,7 +437,7 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
 
 async def fetch_html(url: str) -> dict:
     """One bounded public fetch of a text-like page: raw decoded text, nothing extracted. The
-    Agent's read_url and the Portal's reader share it — same caps, one fetch per click."""
+    Agent's static read_url and the Portal's original-page view share it — same caps, one fetch per click."""
     current = _validate_url(url)
     headers = {
         "Accept": "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.1",
@@ -474,6 +475,76 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
     issue = GITHUB_ISSUE.match(current)
     if issue:
         return await read_github_issue(*issue.groups(), limit)
+    provider = settings.web_read_provider
+    started = time.monotonic()
+    outcome = "error"
+    try:
+        if provider == "crawl4ai":
+            page = await _read_rendered(current, limit)
+        elif provider == "static":
+            page = await _read_static(current, limit)
+        else:
+            raise WebError(f"unknown web_read_provider: {provider}")
+        outcome = "ok"
+        return page
+    finally:
+        metrics.observe_web_read(provider, outcome, time.monotonic() - started)
+
+
+def _crawler_client() -> httpx.AsyncClient:
+    """Internal service call: no environment proxy, no redirects, bounded connect and total time."""
+    return httpx.AsyncClient(timeout=httpx.Timeout(settings.crawler_timeout_seconds, connect=3), trust_env=False, follow_redirects=False)
+
+
+async def _read_rendered(url: str, limit: int) -> dict:
+    """The page as the isolated crawler renders it: main content as Markdown. The URL is checked here
+    first (scheme, port, every DNS answer public); what the page loads afterwards is held to the same
+    rule by the egress proxy the crawler must use."""
+    parsed = urlsplit(url)
+    await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
+    if not settings.crawler_url:
+        raise WebError("page reader is not configured")
+    try:
+        async with _crawler_client() as client:
+            resp = await client.post(
+                settings.crawler_url.rstrip("/") + "/read",
+                json={"url": url, "max_chars": limit},
+                headers={"Authorization": f"Bearer {settings.crawler_token}"},
+            )
+            try:
+                data = resp.json()
+            except ValueError:
+                data = {}
+    except httpx.TimeoutException as exc:
+        raise WebError("page reader timed out; try again later or use another source") from exc
+    except httpx.HTTPError as exc:
+        raise WebError(f"page reader unavailable: {type(exc).__name__}") from exc
+    if resp.status_code == 503:
+        raise WebError("page reader is busy; try again shortly")
+    if resp.status_code >= 400:
+        raise WebError(str(data.get("error") or f"page reader returned HTTP {resp.status_code}")[:300])
+    final = str(data.get("url") or url)
+    # Markdown: keep indentation and table spacing, which _clean would flatten.
+    text = re.sub(r"\n{3,}", "\n\n", str(data.get("markdown") or "").replace("\xa0", " ")).strip()
+    if not text:
+        raise WebError("page had no readable text")
+    truncated = bool(data.get("truncated"))
+    if len(text) > limit:
+        text, truncated = text[:limit].rstrip(), True
+    if truncated:
+        text += "\n...[truncated]"
+    links = [str(link) for link in data.get("links") or [] if str(link).startswith(("http://", "https://"))][:MAX_LINKS]
+    return {
+        "url": final,
+        "title": str(data.get("title") or "")[:300] or urlsplit(final).netloc,
+        "text": text,
+        "content_type": str(data.get("content_type") or "text/html"),
+        "truncated": truncated,
+        "links": links,
+    }
+
+
+async def _read_static(current: str, limit: int) -> dict:
     page = await fetch_html(current)
     final, ctype, text, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
     title, links = page["title"], []
@@ -497,36 +568,4 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
         "content_type": ctype,
         "truncated": truncated,
         "links": links,
-    }
-
-
-async def read_page(url: str) -> dict:
-    """The side-pane reader's view of one public page: the main content as structured blocks
-    (see ailab_platform.reader) — the article without the site chrome around it."""
-    current = _validate_url(url)
-    if issue := GITHUB_ISSUE.match(current):
-        page = await read_github_issue(*issue.groups(), 20_000)
-        return {
-            "url": page["url"],
-            "title": page["title"],
-            "blocks": reader.markdown_to_blocks(page["text"]),
-            "truncated": page["truncated"],
-        }
-    page = await fetch_html(current)
-    ctype, raw = page["content_type"], page["text"]
-    if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
-        blocks, limited = reader.extract_article(raw, page["url"])
-        page["truncated"] = page["truncated"] or limited
-    elif ctype == "application/json":
-        try:
-            blocks = [{"type": "pre", "text": json.dumps(json.loads(raw), ensure_ascii=False, indent=1)[:20_000], "lt": 0}]
-        except ValueError:
-            blocks = [{"type": "pre", "text": raw[:20_000], "lt": 0}]
-    else:
-        blocks = reader.markdown_to_blocks(raw)
-    return {
-        "url": page["url"],
-        "title": page["title"] or urlsplit(page["url"]).netloc,
-        "blocks": blocks,
-        "truncated": page["truncated"],
     }
