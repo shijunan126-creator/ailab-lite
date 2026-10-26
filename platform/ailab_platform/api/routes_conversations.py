@@ -206,6 +206,10 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
             .values(state="canceled", updated_at=utcnow())
         )
         conv.deleted_at = utcnow()
+        # what the memory system kept of this conversation (episode copies, source quotes) goes with it
+        from ..memory_recall.lineage import forget_conversation
+
+        forget_conversation(db, user, conv.id)
         db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
@@ -214,7 +218,16 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
 def send_message(conversation_id: str, body: MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     conv = _owned(db, conversation_id, user)
     run = start_run(
-        db, user, body.prompt, body.model, body.file_ids, conversation=conv, mode=body.mode, skill=body.skill, template=body.template
+        db,
+        user,
+        body.prompt,
+        body.model,
+        body.file_ids,
+        conversation=conv,
+        mode=body.mode,
+        skill=body.skill,
+        template=body.template,
+        memory=body.memory,
     )
     return run_dict(db, run, detail=True)
 

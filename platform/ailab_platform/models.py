@@ -20,6 +20,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     Numeric,
     String,
     Text,
@@ -636,6 +637,27 @@ class MemoryEpisode(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     digest: Mapped[str] = mapped_column(Text)
     token_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MemoryEmbedding(Base):
+    """A normalized float32 vector of one finished turn, for the dense channel of history recall.
+
+    Derived data: it is rebuilt from ``runs`` and removed with the turn (conversation delete, purge).
+    """
+
+    __tablename__ = "memory_embeddings"
+    __table_args__ = (
+        UniqueConstraint("run_id", "model", name="uq_memory_embedding_run_model"),
+        Index("ix_memory_embedding_user_model", "user_id", "model"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("emb"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    run_id: Mapped[str] = mapped_column(String(40), index=True)
+    model: Mapped[str] = mapped_column(String(120))
+    dim: Mapped[int] = mapped_column(Integer)
+    vector: Mapped[bytes] = mapped_column(LargeBinary)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

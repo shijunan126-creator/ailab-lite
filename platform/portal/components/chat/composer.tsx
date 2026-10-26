@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {FileItem, ModelInfo, Skill, TemplateRef, api, errorMessage, filesByIds, uploadFile} from "../../lib/api";
 import { fileStatusText } from "../../lib/format";
 import { usePopover } from "../../lib/use-popover";
-import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
+import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconShield, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
 import ModelMenu from "./model-menu";
@@ -12,7 +12,7 @@ import TemplatePicker, { TemplateChoice } from "./template-picker";
 
 export type Attachment = { id: string; filename: string; status: string };
 export type Mode = "chat" | "work";
-export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef };
+export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef; memory?: "off" };
 
 type SkillButton = {
   key: string;
@@ -51,6 +51,8 @@ export default function Composer({
   projectId,
   initialFiles,
   context,
+  newChat,
+  temporary,
 }: {
   models: ModelInfo[];
   model: string;
@@ -66,6 +68,8 @@ export default function Composer({
   projectId?: string | null; // uploads from here go into this project
   initialFiles?: Attachment[]; // e.g. "talk about these" from the library
   context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
+  newChat?: boolean; // no conversation yet: the user may still make it a temporary one
+  temporary?: boolean; // this conversation is temporary; it stays so
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -78,6 +82,7 @@ export default function Composer({
   const [mode, setModeState] = useState<Mode>("work");
   const [picked, setPickedState] = useState<SkillButton | null>(null);
   const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
+  const [forgetful, setForgetful] = useState(false); // 临时对话: this new conversation neither reads nor writes memory
   const more = usePopover();
   const area = useRef<HTMLTextAreaElement | null>(null);
 
@@ -97,6 +102,10 @@ export default function Composer({
       })
       .catch(() => setEnabled(null));
   }, []);
+
+  useEffect(() => {
+    if (!newChat) setForgetful(false); // the toggle belongs to the blank page; it must not carry over to the next one
+  }, [newChat]);
 
   function setPicked(next: SkillButton | null) {
     setPickedState(next);
@@ -215,7 +224,9 @@ export default function Composer({
   async function send(steer = false) {
     if (queueing ? !canQueue : !canSend) return;
     const ready = files.filter((f) => f.status === "ready").map((f) => f.id);
-    const options: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
+    const base: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
+    // an existing temporary conversation is kept temporary by the server; only a new one needs to ask
+    const options: SendOptions = newChat && forgetful ? { ...base, memory: "off" } : base;
     const ok = queueing ? await onQueue!(text.trim(), ready, options, steer) : await onSend(text.trim(), ready, options);
     if (ok) {
       setText("");
@@ -364,6 +375,17 @@ export default function Composer({
             </button>
           ))}
         </div>
+        {newChat || temporary ? (
+          <button
+            className={`skill-chip ${forgetful || temporary ? "on" : ""}`}
+            onClick={() => newChat && setForgetful(!forgetful)}
+            aria-pressed={forgetful || !!temporary}
+            disabled={!newChat}
+            title={temporary ? "临时对话：不使用也不保存记忆，也不会被之后的对话查到" : "开启后，这个对话不使用也不保存记忆，也不会被之后的对话查到"}
+          >
+            <IconShield size={14} /> <span className="chip-label">临时对话</span>
+          </button>
+        ) : null}
         {mode === "work"
           ? shown.map((s) => (
               <button
