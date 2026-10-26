@@ -1,5 +1,11 @@
 # 当前工作
 
+## 2026-10-26 网页来源多标签、渲染与提取修复（本地验证完成）
+
+本轮授权仅为用户反馈的网页来源问题审核/修复/本地验证。原主目录停在旧分支且有存储交接文档与.DS_Store，已保留；独立工作树 `/private/tmp/ailab-web-source-tabs`，分支 `fix/web-source-tabs`，base `origin/main@412168d`，产品/回归提交 `eb506d9`，最后元数据容错提交 `e6cfe60`。按URL保留多网页与标题，最近4个文档保留模式/加载内容，修复hover、文件/来源关闭回退与普通链接标题；原版静态隔离跳转，正文修复header/hidden/异常闭合/字符限额与评分成本。
+
+Portal42项与生产build/TypeScript通过，五服务浏览器4/4通过、网页Python专项25/25；SQLite+独立Redis全套在 `eb506d9` 通过1317项/95跳过，后续 `e6cfe60` 仅异常元数据/换行容错由25项专项覆盖。专用五服务/Redis已停，六测试端口无监听。下一步：本地修复交付完成，等待用户明确发布授权；不push/PR/merge/deploy，不改个人部署。JS动态站点、真实BBC URL与目标机资源容量边界见[本轮审核及验收](updates/2026-10-26-web-source-tabs.md)。
+
 ## 2026-10-26 管理文件去重、恢复思考折叠与增量部署（本地验证完成，待CI）
 
 最新授权：删除重复管理文件入口，恢复Chat/Work点击才展开完整思考，保留此前性能优化并减少部署冗余。独立分支`fix/admin-thinking-deploy`，base`origin/main@7abee90`，产品`c0af4db`；主目录存储交接与.DS_Store未改。管理标签/面板源头去重；思考默认折叠、展开状态留在Turn、全文按需挂载；部署仅Portal使用稳定COPY/依赖层及standalone。SQLite1270通过/132跳过、Portal41/build/TypeScript、Ruff通过；目标机候选传输+冷构建34.16秒/同源码缓存1.83秒，镜像224→105MB，隔离候选9静态资源/登录/代理HTTP200。最终浏览器组15/15通过，旧手机长文链接测试改为等可见且实测高度稳定；详见[本轮记录](updates/2026-10-26-admin-thinking-deploy.md)。下一步：提PR，CI全绿再合并并按前端独立流程发布；现有部署未切换。不重启后端、不触及业务库、不做付费调用。
