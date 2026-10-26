@@ -660,3 +660,9 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - Turbopack不编译项目根外的node_modules符号链接；隔离worktree使用自己的npm ci或根内硬链接副本。全套Python从platform/运行，Ruff配置/第一方import根也依赖正确目录；不要因此重排全库imports。
 
 - Compose容器entrypoint可先以root安装namespace nft后降权；验收docker exec默认仍用Config.User=root，在cap_drop ALL下不再具有DAC绕过权限，会漏读服务UID所有的0700目录。源码完整性检查必须显式使用实际service UID，不能把这种漏读误当镜像缺源码；本轮190文件以UID10001核对通过。
+
+
+## 2026-10-26 持续browser进程回收
+
+- Python作为容器PID1不会回收Chrome/crashpad孤儿僵尸；短测和healthz200不能证明浏览器仍能启动。使用tini入口；个人Compose自定义网络ENTRYPOINT会覆盖基础镜像入口，必须降权后显式执行tini。不要靠提高pids_limit或周期重启掩盖泄漏。
+- async with的__aenter__超时不执行__aexit__，必须finally清理已部分启动的browser/driver并限制清理时间；持续真实render需同时测/proc僵尸、cgroup pids和内存。批量测试用独立限额容器，不能向业务Agent的256MiB cgroup塞额外Python。

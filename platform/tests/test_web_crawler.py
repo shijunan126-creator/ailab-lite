@@ -84,7 +84,7 @@ def test_an_app_shell_is_rendered_by_the_crawler(site):
     assert page["title"] == "渲染后标题" and page["links"] == ["https://example.com/b"]
 
 
-@pytest.mark.parametrize("status", [403, 429, 503])
+@pytest.mark.parametrize("status", [403, 408, 412, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524])
 def test_a_bot_wall_is_rendered_by_the_crawler(site, status):
     site["fetch_error"] = web.WebStatusError(status, f"HTTP {status} from https://example.com/a")
     assert read()["title"] == "渲染后标题"
@@ -99,11 +99,33 @@ def test_a_missing_page_is_an_error_without_rendering(site):
 
 
 def test_a_failed_render_returns_the_static_text_marked_partial(site):
-    site["html"] = "<html><body><p>只有一句话的页面。</p></body></html>"
+    site["html"] = '<html><body><p>只有一句话的页面。</p><script src="/app.js"></script></body></html>'
     site["crawler"] = {"status": 504, "json": {"error": "page did not finish loading"}}
     page = read()
     assert "只有一句话的页面" in page["text"]
     assert "渲染失败" in page["note"]
+
+
+def test_short_static_pages_without_scripts_do_not_need_rendering(site):
+    site["html"] = "<html><body><p>只有一句话的页面。</p></body></html>"
+    assert "只有一句话的页面" in read()["text"]
+    assert site["calls"] == []
+
+
+def test_transport_failure_tries_one_browser_connection(site):
+    site["fetch_error"] = web.WebFetchError("connection reset")
+    assert read()["title"] == "渲染后标题"
+    assert len(site["calls"]) == 1
+
+
+@pytest.mark.parametrize(
+    "error", ["TLS certificate verification failed", "unsupported content type: application/pdf", "refusing non-public address"]
+)
+def test_permanent_or_unsafe_failures_do_not_start_a_browser(site, error):
+    site["fetch_error"] = web.WebError(error)
+    with pytest.raises(web.WebError, match=error):
+        read()
+    assert site["calls"] == []
 
 
 @pytest.mark.parametrize(

@@ -28,6 +28,7 @@ import ipaddress
 import json
 import re
 import socket
+import ssl
 import tempfile
 import time
 from collections.abc import AsyncIterator
@@ -65,6 +66,10 @@ class WebStatusError(WebError):
     def __init__(self, status: int, message: str) -> None:
         super().__init__(message)
         self.status = status
+
+
+class WebFetchError(WebError):
+    """A transport failure that a separate browser connection may recover from."""
 
 
 def enabled() -> bool:
@@ -158,7 +163,12 @@ async def open_public(client: httpx.AsyncClient, url: str, headers: dict[str, st
         except WebError:
             raise
         except httpx.HTTPError as exc:
-            raise WebError(f"could not fetch {current}: {type(exc).__name__}: {exc}") from exc
+            cause = exc
+            while cause is not None:
+                if isinstance(cause, ssl.SSLCertVerificationError):
+                    raise WebError(f"TLS certificate verification failed for {current}") from exc
+                cause = cause.__cause__ or cause.__context__
+            raise WebFetchError(f"could not fetch {current}: {type(exc).__name__}: {exc}") from exc
     raise WebError("too many redirects")
 
 
@@ -328,11 +338,11 @@ SCRIPT_SHELL = re.compile(
     r"cf-chl|challenge-platform|just a moment\.\.\.",
     re.I,
 )
-RENDER_STATUSES = {403, 429, 503}
+RENDER_STATUSES = {403, 408, 412, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
 
 
 def _weakness(html: str, text: str) -> str | None:
-    if len(text) < MIN_TEXT:
+    if not text or (len(text) < MIN_TEXT and re.search(r"<script\b", html, re.I)):
         return "short"
     if len(text) < 1500 and SCRIPT_SHELL.search(html):
         return "script"
@@ -484,6 +494,10 @@ async def read_url(url: str, max_chars: int | None = None) -> dict:
             if exc.status not in RENDER_STATUSES or not settings.crawler_url:
                 raise
             page, weak = None, "blocked"
+        except WebFetchError:
+            if not settings.crawler_url:
+                raise
+            page, weak = None, "transport"
         if weak is None or not settings.crawler_url:
             if page is None or not page["text"]:
                 raise WebError("page had no readable text")

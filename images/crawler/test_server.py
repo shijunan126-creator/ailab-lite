@@ -29,7 +29,10 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
             status_code=200,
             error_message=None,
             response_headers={"Content-Type": "text/html"},
-            markdown=SimpleNamespace(fit_markdown="rendered article", raw_markdown="navigation and rendered article"),
+            markdown=SimpleNamespace(
+                fit_markdown="rendered article",
+                raw_markdown="navigation and rendered article",
+            ),
             redirected_url=None,
             url="https://example.com/",
             metadata={"title": "Title"},
@@ -50,7 +53,10 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
             async def arun(self, *args, **kwargs):
                 return result
 
-        self.patches = [patch.object(server, "AsyncWebCrawler", Crawler), patch.object(server, "TOKEN", "test-token")]
+        self.patches = [
+            patch.object(server, "AsyncWebCrawler", Crawler),
+            patch.object(server, "TOKEN", "test-token"),
+        ]
         for item in self.patches:
             item.start()
             self.addCleanup(item.stop)
@@ -61,7 +67,11 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
         self.addAsyncCleanup(self.client.close)
 
     async def read(self):
-        return await self.client.post("/read", json={"url": "https://example.com/"}, headers={"Authorization": "Bearer test-token"})
+        return await self.client.post(
+            "/read",
+            json={"url": "https://example.com/"},
+            headers={"Authorization": "Bearer test-token"},
+        )
 
     async def test_http_errors_are_not_returned_as_readable_articles(self):
         for status in (403, 404, 429, 500, 503):
@@ -81,6 +91,8 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 401)
 
     async def test_deadline_includes_browser_startup(self):
+        closed = []
+
         class SlowStartup:
             def __init__(self, **kwargs):
                 pass
@@ -90,16 +102,43 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
                 return self
 
             async def __aexit__(self, *args):
-                pass
+                closed.append(True)
 
             async def arun(self, *args, **kwargs):
                 return self_result
 
         self_result = self.result
         # The tiny total budget keeps this deterministic without a real browser.
-        with patch.object(server, "AsyncWebCrawler", SlowStartup), patch.object(server, "READ_TIMEOUT_SECONDS", 0.03, create=True):
+        with (
+            patch.object(server, "AsyncWebCrawler", SlowStartup),
+            patch.object(server, "READ_TIMEOUT_SECONDS", 0.03, create=True),
+        ):
             response = await asyncio.wait_for(self.read(), 0.5)
         self.assertEqual(response.status, 504)
+        self.assertEqual(closed, [True])
+
+    async def test_challenge_and_empty_pages_are_not_articles(self):
+        for title, text in (
+            ("Just a moment...", "Checking your browser"),
+            ("Title", ""),
+        ):
+            self.result.metadata = {"title": title}
+            self.result.markdown = SimpleNamespace(fit_markdown=text, raw_markdown=text)
+            response = await self.read()
+            self.assertEqual(response.status, 502)
+
+    async def test_article_about_captcha_is_preserved(self):
+        self.result.metadata = {"title": "CAPTCHA and access denied explained"}
+        response = await self.read()
+        self.assertEqual(response.status, 200)
+
+    async def test_health_refuses_exhausted_process_budget(self):
+        def read_counter(path):
+            return "256" if str(path).endswith("pids.max") else "257"
+
+        with patch.object(server.Path, "read_text", read_counter):
+            response = await server.health(None)
+        self.assertEqual(response.status, 503)
 
 
 if __name__ == "__main__":

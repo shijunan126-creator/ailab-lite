@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 crawler持续调用故障修复（已授权合并部署，进行中）
+
+用户明确要求修复1568页测试发现的问题，并延续修复/合并/部署授权。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/crawler-process-reaping`，base `origin/main@cc247a2`；主目录脏文件保持。统计工具提交已撤回，临时脚本/URL明细不入Git。修复PID1孤儿Chrome回收、启动超时清理、可恢复传输失败的单次browser降级、短静态页避免无效渲染及挑战页误作成功。当前未发布，线上仍cc247a2且重启仅恢复服务。下一步：隔离候选持续真实渲染跨越旧107次失败点，重测405条browser样本及原静态错误，完整回归/CI后合并固定main并部署。证据与边界见[本轮记录](updates/2026-10-26-crawler-process-reaping.md)。
+
 ## 2026-10-26 reader 修复已合并并部署（完成）
 
 用户授权全部本轮修复提交/merge、最后测试清理并部署最新。PR95 head`658bcd9`八检查成功后squash合入`main@cc247a2f4b92b609f5fccba2b74ee9462a9ba06c`；合并main CI40325349760八job全部success。完整双库、存储及浏览器CI均通过；固定main已部署，个人Compose加入crawler/egress并验收真实网络隔离。SQLite0033不变、原账号/六表ID/个人配置与11ready文件SHA保留，完整备份实际解包/独立内盘副本验证通过。
