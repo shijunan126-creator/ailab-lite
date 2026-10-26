@@ -1,5 +1,11 @@
 # 当前工作
 
+## 2026-10-26 RFI正文与标签首字（本地验证完成）
+
+用户反馈rfi.fr正文为空及tab从标题中间显示，已在独立分支 `fix/rfi-reader-title-start` 修复；base `origin/main@438bd63`，产品提交 `f2f1059`，原主目录修改保留。真实RFI响应423681B包含正文，body全局header类被误判导致整页丢弃；改为根容器不使用噪音class判断，显式hidden/ARIA及子树噪音仍生效。标签改block/left对齐、尾部省略并按tab起点定位。
+
+网页专项26项、相关6浏览器/Portal42及生产build/TypeScript通过；真实截图RFI页23块、12段主要正文12/12保留，另两条cn/tw链接各29块。Ruff382文件通过，SQLite+独立Redis全套1362通过/95跳过；临时五服务与专用Redis已停，六测试端口无监听。下一步：本地修复与交接完成，等待后续发布授权；本次修复尚未推送/部署，不改变现有438bd63线上。详见[本轮记录](updates/2026-10-26-rfi-reader-title-start.md)。
+
 ## 2026-10-26 网页来源发布（已合并并部署）
 
 [PR83](https://github.com/shijunan126-creator/ailab-lite/pull/83) head `a9d41f9` 八检查成功后squash合入 `main@438bd6370bc9dc521ac8a0cdfcf9050cddea3744`；[合并后mainCI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40289691930)八job全成功，SQLite1356通过/100跳过、PostgreSQL1404/52、浏览器109/1、存储15/1。首轮手机history回归已本机红绿修复，未改CI/放宽断言，28项CI脚本单测通过。

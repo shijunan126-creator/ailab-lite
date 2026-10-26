@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-26 RFI正文与标签首字
+
+- 噪音类名是容器启发式，不能据html/body上的全站布局类（RFI `u-header-sticky`、`u-header-with-tag-list`）丢弃整份文档；仍保留hidden/ARIA等显式隐藏规则以及header/nav/footer子树过滤。真实页面服务端已有正文，先比较原HTML与提取输出，不能把空提取一概归为脚本渲染。截图对应页修复前0块，修复后23块、12段主要正文全部保留。
+- 全局button是inline-flex且justify-content:center，长标签文字作为匿名flex项溢出时会裁掉标题开头，text-overflow单独存在并不能修复。`.pane-tab-name`用block/left对齐，尾部ellipsis；选中标签滚动时按整个tab的起点定位，重置名称内部scrollLeft。用Range测量首字是否实际在按钮及tab条可视范围内，不能只断言DOM文字或title属性。
+
 ## 2026-10-26 手机侧栏历史必须在可交互前安装
 
 - PR83在手机快速重开预览并返回时退到about:blank，本机同用例可复现；根因为setTimeout延后pushState，不能改测试加sleep掩盖。用layout effect在绘制前同步安装历史；Strict Mode重放复用当前标记，清理回退放microtask并检查effect generation，避免重放触发额外back。桌面/手机既有预览返回用例和网页来源合并回归6项通过。CI总门禁正确阻止失败，非CI平台故障。
