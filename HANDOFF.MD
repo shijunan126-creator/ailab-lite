@@ -666,3 +666,5 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - Python作为容器PID1不会回收Chrome/crashpad孤儿僵尸；短测和healthz200不能证明浏览器仍能启动。使用tini入口；个人Compose自定义网络ENTRYPOINT会覆盖基础镜像入口，必须降权后显式执行tini。不要靠提高pids_limit或周期重启掩盖泄漏。
 - async with的__aenter__超时不执行__aexit__，必须finally清理已部分启动的browser/driver并限制清理时间；持续真实render需同时测/proc僵尸、cgroup pids和内存。批量测试用独立限额容器，不能向业务Agent的256MiB cgroup塞额外Python。
+
+- 1GiB crawler双React短测通过仍会在多样复杂页双并发下杀Chrome子进程，且容器PID1不一定OOMKilled。验收必须查cgroup memory.events的oom/oom_kill；默认并发1，忙时明确503，不以提高内存或忽略子进程OOM作通过依据。

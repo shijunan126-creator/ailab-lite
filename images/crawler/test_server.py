@@ -11,6 +11,9 @@ from aiohttp.test_utils import TestClient, TestServer
 
 
 class ConfigurationTests(unittest.TestCase):
+    def test_default_concurrency_fits_the_one_gib_deployment(self):
+        self.assertEqual(server.MAX_PAGES, 1)
+
     def test_actual_package_accepts_the_browser_and_run_settings(self):
         with patch.object(server, "PROXY", "http://proxy.test:4750"):
             browser = server.browser_config()
