@@ -853,24 +853,6 @@ a.project-row:hover, .project-row:hover { background: var(--surface-2); color: v
 .viewer-mode { border: 1px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 3px 14px; font-size: 12.5px; cursor: pointer; }
 .viewer-mode.on { background: var(--surface-2); border-color: var(--surface-2); font-weight: 600; }
 .viewer-frame { flex: 1; width: 100%; border: 0; border-radius: 10px; background: #fff; }
-.reader-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.reader-modes { flex: none; display: flex; align-items: center; gap: 6px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
-.reader-open { margin-left: auto; color: var(--muted); font-size: 15px; text-decoration: none; padding: 2px 6px; border-radius: 6px; }
-.reader-open:hover { background: var(--surface-2); color: var(--text); }
-.reader-frame { flex: 1; width: 100%; border: 0; background: #fff; }
-.reader-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.reader { width: min(100% - 32px, 720px); margin: 0 auto 24px; display: flex; flex-direction: column; gap: 12px; }
-.reader-title { margin: 8px 0 0; font-size: 18px; line-height: 1.4; }
-.reader-url { font-size: 12px; color: var(--text-2, var(--text)); word-break: break-all; }
-.reader-text { font-size: 14px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
-.reader-text p { margin: 0 0 12px; }
-.reader-text h3, .reader-text h4, .reader-text h5 { margin: 18px 0 0; line-height: 1.4; }
-.reader-text h3 { font-size: 16.5px; }
-.reader-text h4 { font-size: 15px; }
-.reader-text h5 { font-size: 14px; color: var(--text-2, var(--text)); }
-.reader-list { margin: 0 0 12px; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; }
-.reader-img { display: block; max-width: 100%; height: auto; margin: 2px 0 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
-.reader-pre { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); font-size: 12.5px; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; word-break: break-word; }
 .viewer-code > span { counter-increment: line; }
 .viewer-code > span::before { content: counter(line); display: inline-block; width: 3.5em; margin-right: 1em; text-align: right; color: var(--faint); user-select: none; }
 
