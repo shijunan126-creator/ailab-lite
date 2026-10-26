@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import ssl
 
 import httpx
 import pytest
@@ -116,6 +117,32 @@ def test_transport_failure_tries_one_browser_connection(site):
     site["fetch_error"] = web.WebFetchError("connection reset")
     assert read()["title"] == "渲染后标题"
     assert len(site["calls"]) == 1
+
+
+def test_static_challenge_is_not_returned_as_partial_content(site):
+    site["html"] = "<html><head><title>Just a moment...</title></head><body>Checking your browser<script></script></body></html>"
+    site["crawler"] = {"status": 502, "json": {"error": "access challenge"}}
+    with pytest.raises(web.WebError, match="access challenge"):
+        read()
+
+
+@pytest.mark.parametrize("certificate_error", [False, True])
+def test_fetch_transport_classification_preserves_tls_verification(monkeypatch, certificate_error):
+    async def broken(request):
+        if certificate_error:
+            raise httpx.ConnectError("TLS failed") from ssl.SSLCertVerificationError("invalid certificate")
+        raise httpx.RemoteProtocolError("peer closed connection")
+
+    async def run():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(broken)) as client:
+            async with web.open_public(client, "https://example.com/"):
+                pytest.fail("unexpected response")
+
+    expected = web.WebError if certificate_error else web.WebFetchError
+    with pytest.raises(expected) as error:
+        asyncio.run(run())
+    if certificate_error:
+        assert not isinstance(error.value, web.WebFetchError)
 
 
 @pytest.mark.parametrize(

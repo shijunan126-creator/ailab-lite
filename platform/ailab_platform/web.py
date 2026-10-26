@@ -179,7 +179,7 @@ async def _read_bounded(resp: httpx.Response, limit: int, deadline: float | None
         if deadline is not None and time.monotonic() >= deadline:
             # The read timeout only bounds silence between chunks; a peer trickling bytes
             # forever needs a wall-clock budget too (the same trap the internal download closes).
-            raise WebError("response did not finish within the transfer deadline")
+            raise WebFetchError("response did not finish within the transfer deadline")
         if total + len(chunk) >= limit:
             chunks.append(chunk[: limit - total])
             return b"".join(chunks), True
@@ -339,6 +339,10 @@ SCRIPT_SHELL = re.compile(
     re.I,
 )
 RENDER_STATUSES = {403, 408, 412, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
+CHALLENGE_TITLE = re.compile(
+    r"^(?:just a moment[.!…]*|attention required[!！]?(?:\s*\|\s*cloudflare)?|access denied|verify (?:that )?you are human)[.!…\s]*$",
+    re.I,
+)
 
 
 def _weakness(html: str, text: str) -> str | None:
@@ -527,6 +531,9 @@ async def _read_static(current: str, limit: int) -> tuple[dict, str | None]:
     if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
         title, text, links = await asyncio.to_thread(extract_markdown, raw, final)
         weak = _weakness(raw, text)
+        if CHALLENGE_TITLE.fullmatch(title.strip()) or CHALLENGE_TITLE.fullmatch(text.strip()):
+            # An access wall is not useful partial article content if rendering fails.
+            text, weak = "", "challenge"
     else:
         title, links, text = page["title"], [], raw
         if ctype == "application/json":
