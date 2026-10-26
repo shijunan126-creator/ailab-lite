@@ -43,6 +43,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 PLATFORM=$ROOT/platform
 NS=platform
 PLATFORM_IMAGE=ailab-platform:lite
+CRAWLER_IMAGE=ailab-crawler:lite
 SANDBOX_IMAGE=${AILAB_SANDBOX_IMAGE:-harbor.ailab.local/sandbox/sbx-office:lite}
 API_URL=http://127.0.0.1:30080
 BROKER_URL=http://127.0.0.1:8081
@@ -265,12 +266,13 @@ build_images() {
   step "platform image ($PLATFORM_IMAGE) -> k3s containerd"
   if [ "$SKIP_BUILD" = 1 ]; then ok "skipped (--skip-build)"; return; fi
   run nice -n 19 docker build -q -f "$PLATFORM/deploy/Dockerfile" -t "$PLATFORM_IMAGE" "$ROOT" >/dev/null
+  run nice -n 19 docker build -q -t "$CRAWLER_IMAGE" "$ROOT/images/crawler" >/dev/null
   [ "$DRY" = 1 ] && return
-  docker save "$PLATFORM_IMAGE" "$SANDBOX_IMAGE" | nice -n 19 k3s ctr -n k8s.io images import - >/dev/null
+  docker save "$PLATFORM_IMAGE" "$SANDBOX_IMAGE" "$CRAWLER_IMAGE" | nice -n 19 k3s ctr -n k8s.io images import - >/dev/null
   # Classic Docker exposes the config digest; its containerd store exposes the
   # index/manifest digest. Verify each imported image against either exact ID.
   local image id config_id listed ref
-  for image in "$PLATFORM_IMAGE" "$SANDBOX_IMAGE"; do
+  for image in "$PLATFORM_IMAGE" "$SANDBOX_IMAGE" "$CRAWLER_IMAGE"; do
     id=$(docker image inspect "$image" --format '{{.Id}}'); id=${id#sha256:}
     config_id=$(k3s crictl inspecti "$image" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["status"]["id"])' 2>/dev/null || true)
     ref=$image

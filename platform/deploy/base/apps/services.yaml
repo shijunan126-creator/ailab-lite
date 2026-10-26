@@ -262,6 +262,8 @@ spec:
             name: platform-service-verifiers
         - secretRef:
             name: platform-model-secrets
+        - secretRef:
+            name: platform-crawler-token
         ports:
         - containerPort: 8082
         volumeMounts:

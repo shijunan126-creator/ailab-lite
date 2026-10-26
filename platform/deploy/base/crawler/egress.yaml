@@ -1,0 +1,84 @@
+# The crawler's egress proxy (ailab_platform/egress.py): public addresses on 80/443 only, every
+# DNS answer checked, connection pinned to the checked address. Platform image, no credentials.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: platform-egress
+  namespace: platform
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: platform-egress}
+  template:
+    metadata:
+      labels: {app: platform-egress}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: egress
+          image: ailab-platform:lite
+          imagePullPolicy: Never
+          command: [python, -m, ailab_platform.egress]
+          env:
+            - {name: AILAB_EGRESS_PORT, value: "4750"}
+          ports: [{containerPort: 4750}]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          resources:
+            requests: {cpu: 20m, memory: 48Mi}
+            limits: {cpu: 300m, memory: 128Mi}
+          readinessProbe:
+            tcpSocket: {port: 4750}
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: platform-egress
+  namespace: platform
+spec:
+  selector: {app: platform-egress}
+  ports:
+    - name: proxy
+      port: 4750
+      targetPort: 4750
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: platform-egress
+  namespace: platform
+spec:
+  podSelector:
+    matchLabels: {app: platform-egress}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels: {app: platform-crawler}
+      ports:
+        - {protocol: TCP, port: 4750}
+  # The proxy checks every address itself; this is the second layer, so a bug there still cannot
+  # reach the cluster, the node or cloud metadata.
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: {kubernetes.io/metadata.name: kube-system}
+          podSelector:
+            matchLabels: {k8s-app: kube-dns}
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16]
+      ports:
+        - {protocol: TCP, port: 80}
+        - {protocol: TCP, port: 443}
