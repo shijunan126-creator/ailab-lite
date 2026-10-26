@@ -195,7 +195,9 @@ class _Blocks(HTMLParser):
                 dropping = True
             else:
                 named = f"{a.get('class', '')} {a.get('id', '')}"
-                if article_header:
+                # Root document classes often describe site-wide chrome (e.g. u-header-sticky).
+                # They cannot classify the whole document as navigation.
+                if article_header or tag in {"html", "body"}:
                     named = ""
                 dropping = bool(
                     NOISE_HINT.search(named) or a.get("role", "").lower() in ROLE_DROP or a.get("aria-hidden") == "true" or "hidden" in a
