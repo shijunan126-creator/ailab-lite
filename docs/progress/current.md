@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 首页对话/工作开关上移（本地验证，PR 待合并）
+
+用户要求：新对话首页把对话/工作开关放到“有什么我能帮你的吗？”下面（参考豆包），技能按钮与模型同一行。分支 `feat/home-mode-under-heading`（叠在 `chore/remove-temporary-chat` 之上）：模式状态提到 `useChatMode`/`ModeToggle`，首页（无项目）开关在标题下，输入框不再重复；对话页和项目首页开关仍在输入框内。首页桌面/窄屏/390px 手机实测加号、技能、模型、发送同一行（手机截断模型名）；对话页桌面同一行但技能只剩图标，手机仍两行。真实浏览器用 Playwright 截图，未部署。
+
 ## 2026-10-26 移除“临时对话”（本地完成，未提交）
 
 用户不需要该功能，分支 `chore/remove-temporary-chat`（base `main@5218577`）整体移除：输入框开关与 `SendOptions.memory`、请求体 `memory` 字段、`run.options.memory="off"` 的写入/继承、`scope.excluded_from_memory` 及检索/索引/dream/记忆接口里的排除、提示词与工具隐藏分支、`MEMORY_TOOLS`；dream 回到每次最多取40轮。已按该标记写入的旧轮次不再被排除（本机只有测试数据）。ADR 0019 已改。未部署。
