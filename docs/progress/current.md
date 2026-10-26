@@ -1,5 +1,18 @@
 # 当前工作
 
+## 2026-10-26 reader 修复发布（已授权，进行中）
+
+用户现已明确授权提交全部本轮修复、CI通过后合并、最终测试和清理、部署最新main。分支`fix/merged-reader-validation`，base`c6ff8f9`，产品`fa562ab`、验收文档`2d54f5f`。此前“不发布”边界仅对应上一轮。本轮下一步：PR精确head检查通过后squash合并，核对合并main完整CI；准备个人Compose的crawler/egress隔离接线并实测，完整备份/解包校验后切换固定main及部署后验收。保留原主目录未提交修改和全部个人数据/配置；仅清理逐项核实的本轮临时资源，私有运维材料不入Git。[已有验证及本轮发布记录](updates/2026-10-26-merged-reader-validation.md)。
+
+## 2026-10-26 已合并PR92/93/94补测与超时修复（本地完成，不发布）
+
+最新用户授权仅为按交接测试并修复问题，不沿用旧发布授权。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/merged-reader-validation`，base `origin/main@c6ff8f9`，产品/回归 `fa562ab`；原主目录旧分支与未提交修改保留。三PR合并后main CI本轮均核实成功；旧`af2f98b`/`371798f`仅历史本地交接，不是缺失产品代码。
+
+已补Linux镜像与真实k3s16项网络正反探测、7项crawler/proxy契约、JS正文及Agent链路、2vCPU/8GiB组件采样；修复DNS/持续trickle/浏览器启动不在整次调用预算内。最终SQLite+Redis1394通过/102跳过、PG环境相关42通过、镜像内5测试、Ruff通过。main基线PG+Redis全套1439/52、真实五服务浏览器115/0、Portal42/build通过；完整PG未在修复后重跑，不冒充最终全套。crawler短测采样最高684.1MiB、结束96.21MiB；非线上整栈/长期容量。
+
+下一步：用户审阅本地修复/交接；未push/PR/merge/deploy，不自动发布或开启其他路线。个人Compose仍需crawler+独占出口proxy接线及隔离验收，另行授权后才能上线。测试环境清理结果、红绿与失败历史见[完整记录](updates/2026-10-26-merged-reader-validation.md)。下方为历史阶段，不能覆盖本节。
+
+
 ## 2026-10-26 PR #94 合并前核验（已授权推送及合并，不部署）
 
 本轮覆盖下方“未验证”历史状态。独立 worktree `/private/tmp/ailab-crawl4ai`，分支 `feat/crawl4ai-reader`，原 head `5dbe7bf` 八项 CI 成功，已同步 `origin/main@ddaf756`。真实安装 Crawl4AI 0.7.4 + aiohttp 3.12.15 后两个配置构造器可用；真实 Chromium/代理验出 HTTP 错误页误作成功正文，已修复并加镜像内单测。补代理 Service 所需 DNS 规则、TLS 校验、许可证与必需署名。

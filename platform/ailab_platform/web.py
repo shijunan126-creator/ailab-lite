@@ -541,10 +541,12 @@ async def _read_rendered(url: str, limit: int) -> dict:
     """The page as the isolated crawler renders it: main content as Markdown. The URL is checked here
     first (scheme, port, every DNS answer public); what the page loads afterwards is held to the same
     rule by the egress proxy the crawler must use."""
-    parsed = urlsplit(url)
-    await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
     try:
-        async with _crawler_client() as client:
+        # HTTPX's read timeout bounds silence between chunks, not the whole response.
+        # Include DNS so a stalled resolver cannot keep the Agent's tool slot forever.
+        async with asyncio.timeout(settings.crawler_timeout_seconds), _crawler_client() as client:
+            parsed = urlsplit(url)
+            await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
             resp = await client.post(
                 settings.crawler_url.rstrip("/") + "/read",
                 json={"url": url, "max_chars": limit},
@@ -554,7 +556,7 @@ async def _read_rendered(url: str, limit: int) -> dict:
                 data = resp.json()
             except ValueError:
                 data = {}
-    except httpx.TimeoutException as exc:
+    except (TimeoutError, httpx.TimeoutException) as exc:
         raise WebError("page reader timed out; try again later or use another source") from exc
     except httpx.HTTPError as exc:
         raise WebError(f"page reader unavailable: {type(exc).__name__}") from exc

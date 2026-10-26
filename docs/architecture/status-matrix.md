@@ -1,6 +1,6 @@
-2026-10-26 PR #94：Trafilatura 静态优先/弱页 Crawl4AI 已本地通过39专项、真实原生 crawler+proxy 5契约及4包API/响应测试；修复HTTP错误页误作正文与代理DNS规则。尚待新head CI和合并，未构建Linux镜像/部署/验目标机资源。见[记录](../progress/updates/2026-10-26-crawl4ai-reader.md)。
-
 # 单机能力状态
+
+2026-10-26 PR92/93/94合并后main CI均成功；reader补齐Linux/ARM64镜像、真实k3s双向网络隔离、7项browser/proxy契约及2vCPU/8GiB组件短测。另本地修复整次调用超时缺口，产品提交`fa562ab`，尚未push/合并/部署；个人Compose未接入、线上整栈及长期容量未验，详见[当前验证](../progress/updates/2026-10-26-merged-reader-validation.md)。
 
 2026-10-26 网页来源侧栏：PR83已合main `438bd63` 并部署；多网页标题/独立关闭、最近4文档保留、原版静态隔离与正文提取边缘缺陷修复，合并main八job成功与部署后真实登录/桌面手机两标签/CSP/数据保留验收通过；验证与动态站点边界见[本轮记录](../progress/updates/2026-10-26-web-source-tabs.md)。
 

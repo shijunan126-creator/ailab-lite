@@ -20,6 +20,7 @@ TOKEN = os.environ.get("AILAB_CRAWLER_TOKEN", "")
 PROXY = os.environ.get("AILAB_CRAWLER_PROXY", "")
 PORT = int(os.environ.get("AILAB_CRAWLER_PORT", "8090"))
 PAGE_TIMEOUT_MS = int(os.environ.get("AILAB_CRAWLER_PAGE_TIMEOUT_MS", "20000"))
+READ_TIMEOUT_SECONDS = PAGE_TIMEOUT_MS / 1000 + 10
 MAX_PAGES = int(os.environ.get("AILAB_CRAWLER_MAX_PAGES", "2"))
 MAX_CHARS = 60_000
 MAX_LINKS = 50
@@ -81,8 +82,9 @@ async def read(request: web.Request) -> web.Response:
     async with slots:
         started = time.monotonic()
         try:
-            async with AsyncWebCrawler(config=browser_config()) as crawler:
-                result = await asyncio.wait_for(crawler.arun(url, config=run_config()), timeout=PAGE_TIMEOUT_MS / 1000 + 10)
+            # Browser launch and teardown are part of the same budget as navigation.
+            async with asyncio.timeout(READ_TIMEOUT_SECONDS), AsyncWebCrawler(config=browser_config()) as crawler:
+                result = await crawler.arun(url, config=run_config())
         except TimeoutError:
             return web.json_response({"error": "page did not finish loading"}, status=504)
         except Exception as exc:  # a broken page must not take the server down

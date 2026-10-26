@@ -35,7 +35,17 @@ def test_requests_without_the_token_are_refused():
     assert _read("https://example.com/", token="wrong").status_code == 401
 
 
-@pytest.mark.parametrize("target", ["http://127.0.0.1/", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/"])
+def test_javascript_generated_article_is_readable():
+    response = _read("https://quotes.toscrape.com/js/")
+    assert response.status_code == 200, response.text
+    page = response.json()
+    assert page["title"] == "Quotes to Scrape"
+    assert "Albert Einstein" in page["markdown"]
+
+
+@pytest.mark.parametrize(
+    "target", ["http://127.0.0.1/", "http://127.0.0.1:8090/healthz", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/"]
+)
 def test_private_destinations_are_unreachable_even_when_asked_directly(target):
     # The Agent never sends these; the proxy must stop them anyway, because a page can redirect or load them.
     r = _read(target)

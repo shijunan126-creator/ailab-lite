@@ -176,3 +176,35 @@ def test_secure_profile_requires_a_real_crawler_token_only_when_rendering_is_on(
 
 def test_crawler_token_is_redacted():
     assert Settings(crawler_token="x" * 32).redacted()["crawler_token"] == "<redacted>"
+
+
+def test_crawler_deadline_includes_a_trickling_response_and_closes_it(site, monkeypatch):
+    closed = []
+
+    class Trickle(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            for part in (b'{"markdown": "article",', b'"title": "Title",', b'"links": [],', b'"status": 200}'):
+                await asyncio.sleep(0.03)
+                yield part
+
+        async def aclose(self):
+            closed.append(True)
+
+    monkeypatch.setattr(web.settings, "crawler_timeout_seconds", 0.07)
+    monkeypatch.setattr(
+        web, "_crawler_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=Trickle())))
+    )
+    with pytest.raises(web.WebError, match="timed out"):
+        asyncio.run(web._read_rendered("https://example.com/", 4000))
+    assert closed
+
+
+def test_crawler_deadline_also_bounds_dns(site, monkeypatch):
+    async def slow_dns(host, port):
+        await asyncio.sleep(0.15)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(web, "public_addresses", slow_dns)
+    monkeypatch.setattr(web.settings, "crawler_timeout_seconds", 0.03)
+    with pytest.raises(web.WebError, match="timed out"):
+        asyncio.run(web._read_rendered("https://example.com/", 4000))

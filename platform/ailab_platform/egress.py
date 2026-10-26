@@ -54,15 +54,20 @@ def _target(host: str, port: int, allowed_port: int) -> tuple[str, int]:
 
 async def _open(host: str, port: int) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     try:
-        addresses = await public_addresses(host, port)
+        # One connect budget covers DNS and all candidate addresses, rather than
+        # allowing an unresponsive resolver to occupy every proxy slot indefinitely.
+        async with asyncio.timeout(CONNECT_TIMEOUT):
+            addresses = await public_addresses(host, port)
+            last: Exception | None = None
+            for address in addresses:
+                try:
+                    return await _connect(address, port)
+                except OSError as exc:
+                    last = exc
     except WebError as exc:
         raise Refused(403, str(exc)) from exc
-    last: Exception | None = None
-    for address in addresses:
-        try:
-            return await asyncio.wait_for(_connect(address, port), CONNECT_TIMEOUT)
-        except (OSError, TimeoutError) as exc:
-            last = exc
+    except TimeoutError as exc:
+        raise Refused(502, "connection timed out") from exc
     raise Refused(502, f"cannot connect: {type(last).__name__ if last else 'no address'}")
 
 

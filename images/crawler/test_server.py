@@ -1,5 +1,6 @@
 """Contracts against the installed Crawl4AI API; no browser or external network required."""
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -78,6 +79,27 @@ class ResponseTests(unittest.IsolatedAsyncioTestCase):
     async def test_missing_bearer_is_refused_before_rendering(self):
         response = await self.client.post("/read", json={"url": "https://example.com/"})
         self.assertEqual(response.status, 401)
+
+    async def test_deadline_includes_browser_startup(self):
+        class SlowStartup:
+            def __init__(self, **kwargs):
+                pass
+
+            async def __aenter__(self):
+                await asyncio.Event().wait()
+                return self
+
+            async def __aexit__(self, *args):
+                pass
+
+            async def arun(self, *args, **kwargs):
+                return self_result
+
+        self_result = self.result
+        # The tiny total budget keeps this deterministic without a real browser.
+        with patch.object(server, "AsyncWebCrawler", SlowStartup), patch.object(server, "READ_TIMEOUT_SECONDS", 0.03, create=True):
+            response = await asyncio.wait_for(self.read(), 0.5)
+        self.assertEqual(response.status, 504)
 
 
 if __name__ == "__main__":
