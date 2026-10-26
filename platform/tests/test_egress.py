@@ -86,3 +86,23 @@ def test_plain_http_is_forwarded_to_the_checked_address_without_proxy_headers(dn
     assert seen["address"] == ("93.184.216.34", 80)
     assert seen["head"].startswith(b"GET /p?q=1 HTTP/1.1\r\n")
     assert b"Proxy-Authorization" not in seen["head"] and b"Connection: close" in seen["head"]
+
+
+def test_proxy_connect_deadline_includes_dns(monkeypatch):
+    async def slow_dns(host, port):
+        await asyncio.sleep(0.15)
+        return ["93.184.216.34"]
+
+    monkeypatch.setattr(egress, "public_addresses", slow_dns)
+    monkeypatch.setattr(egress, "CONNECT_TIMEOUT", 0.03)
+
+    async def connected(*args):
+        return None, None
+
+    monkeypatch.setattr(egress, "_connect", connected)
+
+    async def check():
+        with pytest.raises(egress.Refused, match="timed out"):
+            await egress._open("example.com", 443)
+
+    asyncio.run(check())
