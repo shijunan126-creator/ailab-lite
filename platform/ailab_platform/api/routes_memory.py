@@ -19,7 +19,7 @@ from ..contracts.memory import (
 )
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..models import MemoryDreamRun, RunDelivery, RunStatus, User, new_id
+from ..models import MemoryDreamRun, Run, RunDelivery, RunStatus, User, new_id
 from ..service_auth import require_scope
 
 router = APIRouter(tags=["memory"])
@@ -147,6 +147,8 @@ def run_dream_now(background: BackgroundTasks, user: User = Depends(current_user
     local_date = datetime.now(UTC).astimezone(ZoneInfo(zone_name)).date().isoformat()
     with user_critical_section(db, user.id):
         db.refresh(user)
+        if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(RunStatus.TERMINAL)).limit(1)):
+            raise HTTPException(409, "wait for the current turn to finish")
         if db.scalar(
             select(MemoryDreamRun.id).where(
                 MemoryDreamRun.user_id == user.id,
