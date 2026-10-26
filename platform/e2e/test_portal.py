@@ -56,6 +56,9 @@ def _open_all_steps(page) -> None:
     closed = page.locator(".steps-head[aria-expanded='false']")
     while closed.count():  # re-query each time: an opened head no longer matches
         closed.first.click()
+    page.wait_for_function("!document.querySelector('.steps .pr-loading')")
+    # IntersectionObserver mounts nearby rows after layout; wait for paint rather than reading placeholders.
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))")
 
 
 def _wait_for_turns(page, count: int, seconds: int = 90) -> None:

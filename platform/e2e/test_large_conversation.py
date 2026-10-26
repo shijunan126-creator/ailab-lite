@@ -45,6 +45,10 @@ with SessionLocal() as db:
     page.get_by_text("段落001开头。", exact=False).wait_for()
     assert page.locator(".pr-thought-body .collapse").count() == 0
     assert page.locator(".work-timeline").evaluate("el => el.scrollTop") == 0
+    page.locator(".work-timeline").hover()
+    page.mouse.wheel(0, 500)
+    page.wait_for_function("document.querySelector('.work-timeline').scrollTop > 0")
+    page.locator(".work-timeline").evaluate("el => el.scrollTop = 0")
     # Traverse placeholders naturally. This loads the next event page when its sentinel approaches the viewport.
     for _ in range(14):
         page.locator(".work-timeline").evaluate("el => el.scrollTop = el.scrollHeight")
