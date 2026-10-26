@@ -1,8 +1,12 @@
 # 当前工作
 
-## 2026-10-26 网页来源发布（已授权，进行中）
+## 2026-10-26 网页来源发布（已合并并部署）
 
-用户现已明确授权推送并部署；按既定发布流程推进PR、绿后合并、固定main部署与数据保留验证。独立分支 `fix/web-source-tabs`，原base `412168d`，已同步最新 `origin/main@93b94b3`（含主线既有0033迁移）。本轮不扩展实现范围；后续以PR和合并后CI为部署门禁，备份保留账号/配置/文件。PR83首轮e9fc23f的E2E 108通过/1跳过/1失败，手机预览重开后Back退到about:blank；本机复现并修复绘制前历史安装与Strict Mode清理，相关6浏览器通过。CI流程审查与28项门禁单测通过，不改workflow/不放宽测试。下一步：推送修正、更新Portal候选，CI绿后合并并等待main完整CI，再备份部署；个人细节仅记本机HANDOFF。
+[PR83](https://github.com/shijunan126-creator/ailab-lite/pull/83) head `a9d41f9` 八检查成功后squash合入 `main@438bd6370bc9dc521ac8a0cdfcf9050cddea3744`；[合并后mainCI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40289691930)八job全成功，SQLite1356通过/100跳过、PostgreSQL1404/52、浏览器109/1、存储15/1。首轮手机history回归已本机红绿修复，未改CI/放宽断言，28项CI脚本单测通过。
+
+已部署固定 `438bd63`，候选运行源码与合并提交等值，数据库0032→0033。完整卷备份实际解包与独立副本核验通过，原ID/账号/个人配置与11份ready文件SHA保留；9容器running、五应用healthy、0OOM/0restart。191后端源码匹配；真实登录/原3会话读取、桌面及390×844来源两网页标题/模式切换、真实公网原版/正文/CSP透传、32静态资源HTTP200，pageerror0。无付费调用。独立工作树 `/private/tmp/ailab-web-source-tabs`，分支 `fix/web-source-tabs`；原主目录已有修改未动。
+
+下一步：本轮推送/合并/部署/验收完成，无待部署项，不启动其他路线。保留JS动态站点、精确BBC URL/真实手机/目标机长期容量与USB物理稳定性边界；[实现、CI失败和发布记录](updates/2026-10-26-web-source-tabs.md)。本节覆盖下方历史阶段“未部署/待授权”。
 
 ## 2026-10-26 网页来源多标签、渲染与提取修复（本地验证完成）
 

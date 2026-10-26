@@ -37,3 +37,16 @@
 修复后相关6浏览器场景（原桌面/手机预览返回、网页多tab、长回答链接）通过；Portal42测试/生产build/TypeScript随五服务fixture验证。仅Portal生命周期变化，不重复上一轮不受影响的Python全套；最终集成以PR和main完整CI为门禁。
 
 CI只读复查：PR取完整base...head范围并fetch全历史，main/manual全套；matrix fail-fast=false；每job独立服务、临时DB/临时Portal构建、每测试独立浏览器context；E2E未配置自动重试；失败always保留日志/trace；CI gate always执行且拒绝应跑却skipped/failed/cancelled任务。门禁/范围/JUnit验证28项单测本机通过。CI失败信息正确，不需要workflow改动。现有边界：该E2E使用生产build，开发模式Strict Mode不属于这6项验收；不把配置检查等同全部CI永远无缺陷。
+
+
+## 合并、固定main部署与最终验收
+
+用户明确“推送并部署”，原仅本地限制由此授权取代。PR83最终head `a9d41f978141428bdeb9eb1903f2ffa4a2fe3010` 8项检查成功且无阻塞审查/冲突后squash合入 `438bd6370bc9dc521ac8a0cdfcf9050cddea3744`；等该合并SHA的[main完整CI40289691930](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40289691930)8job全部成功才切换。SQLite1356通过/100跳过，PG1404/52，E2E109/1（Office工具用例跳过），存储15/1。跳过的外部组合不冒充覆盖。
+
+候选构建固定head源码，后续Portal历史修复仅刷新Portal，后端image复用；运行源码与合并提交等值后retag固定main，未重复重建相同源码。两组件均部署release-438bd63；主线既有记忆更新带来0032→0033迁移，本轮未增加其他功能。停5业务写入者前确认active Run0，完整卷备份26327040B、实际解包SQLite0032/quick_check正常/FK0且独立内盘副本SHA一致；旧镜像/配置/备份保留。个人路径、备份SHA与原始证据仅存本机HANDOFF，不提交业务数据。
+
+最终0033/quick_check正常/FK0，原六表ID/账号摘要/个人配置字节保留，11份ready文件SHA正确。9容器running、五应用healthy/0OOM/0restart，191后端Python源码与固定main匹配；Portal归档与候选/实际imageID核对。真实登录/3个原会话详情HTTP200；桌面和390×844从现有来源打开两个带标题网页并切换模式，URL保持当前会话；公网example.com原版/正文均200、CSP经Portal传达，32静态资源响应HTTP200，pageerror0，无付费调用/新造业务。
+
+性能：两组件首次传输+构建53.31秒，Portal修正刷新17.70秒；平台/Portal镜像约130.1/105.6MB。部署后稳定单次采样五应用RSS约53.34–124.2MiB/CPU0–1.65%，仅为本次验收点，非目标机长期容量证据。原版仍为静态HTML/CSS，动态JS站点/精确BBC URL/真实手机/USB物理链路长期稳定性未验；未启用付费模型验收或清理旧部署。
+
+本轮实现、验证、推送、PR、合并、部署完成；PR已取消watch，原主工作目录已有修改原样保留。交接最终仅本地文档提交，不为重复记录触发CI。下一步无待部署项，不自动开始其他路线。
