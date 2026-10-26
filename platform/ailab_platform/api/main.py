@@ -39,6 +39,7 @@ from .routes_model_context import router as model_context_router
 from .routes_ocr import router as ocr_router
 from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
+from .routes_reader import router as reader_router
 from .routes_runs import router as runs_router
 from .routes_runtime import router as runtime_router
 from .routes_schedules import router as schedules_router
@@ -147,6 +148,7 @@ app.include_router(library_tools_router)
 app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)
+app.include_router(reader_router)
 app.include_router(internal_router)
 app.include_router(ocr_router)
 app.include_router(vision_router)
