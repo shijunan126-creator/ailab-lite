@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
 import { fileStatusText, formatBytes, timeAgo } from "../lib/format";
-import { projectsChanged } from "../lib/projects";
+import { deleteProject, renameProject } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
 import { IconDownload, IconFolder, IconMore, IconPencil, IconTrash } from "./icons";
 import ConversationMenu from "./conversation-menu";
@@ -13,7 +13,6 @@ import ProjectBrief from "./project-brief";
 import FileTile from "./library/file-tile";
 import FileViewer from "./preview/file-viewer";
 import { useLibrary } from "./library/use-library";
-import { confirmDialog } from "../lib/dialog";
 
 /** A project's front page: start a chat in it, and see what is already in it. */
 export default function ProjectHome({ project, composer, error }: { project: Project; composer: React.ReactNode; error: string }) {
@@ -50,17 +49,12 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
     setRenaming(false);
     const value = name.trim();
     if (!value || value === project.name) return setName(project.name);
-    await api(`/v1/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ name: value }) }).catch(() => setName(project.name));
-    projectsChanged();
+    await renameProject(project.id, value).catch(() => setName(project.name));
   }
 
   async function remove() {
     setMenu(false);
-    const lost = project.conversations ? `其中的 ${project.conversations} 个对话会一起删除。` : "";
-    const kept = project.files ? `${project.files} 个文件会移到回收站。` : "";
-    if (!(await confirmDialog({ title: `删除项目「${project.name}」？`, body: `${lost}${kept}` || undefined, action: "删除", danger: true }))) return;
-    await api(`/v1/projects/${project.id}`, { method: "DELETE" });
-    projectsChanged();
+    if (!(await deleteProject(project))) return;
     conversationsChanged();
     router.push("/");
   }

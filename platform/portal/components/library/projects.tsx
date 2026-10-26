@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {Project, errorMessage} from "../../lib/api";
-import { createProject, useProjects } from "../../lib/projects";
+import { createProject, renameProject, useProjects } from "../../lib/projects";
 import { IconCheck, IconFolder, IconFolderPlus, IconX } from "../icons";
 import Modal from "./modal";
 
@@ -49,6 +49,52 @@ export function NewProjectInput({ onCreated, onCancel }: { onCreated: (p: Projec
       <button className="icon-btn" onMouseDown={(e) => e.preventDefault()} onClick={onCancel} aria-label="取消">
         <IconX size={14} />
       </button>
+    </div>
+  );
+}
+
+/** The same field over an existing project's row: Enter or leaving it saves, Escape keeps the old name. */
+export function RenameProjectInput({ project, onDone }: { project: Project; onDone: () => void }) {
+  const [name, setName] = useState(project.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    const value = name.trim();
+    if (busy) return;
+    if (!value || value === project.name) return onDone();
+    setBusy(true);
+    try {
+      await renameProject(project.id, value);
+      onDone();
+    } catch (err: any) {
+      setError(errorMessage(err));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="new-project">
+      <span className="new-project-icon">
+        <IconFolder size={16} />
+      </span>
+      <input
+        type="text"
+        autoFocus
+        onFocus={(e) => e.currentTarget.select()}
+        maxLength={120}
+        aria-label="项目名称"
+        value={name}
+        disabled={busy}
+        title={error || undefined}
+        className={error ? "invalid" : ""}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+          if (e.key === "Escape") onDone();
+        }}
+        onBlur={() => !error && submit()}
+      />
     </div>
   );
 }

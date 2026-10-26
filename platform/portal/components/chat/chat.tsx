@@ -105,15 +105,24 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }, [id, detail?.title]);
   useEffect(() => () => { document.title = "AILab"; }, []);
 
-  const loadDetail = useCallback(async () => {
+  // A read started before a confirmed write can still contain the old queue or turn.
+  const detailWriteVersion = useRef(0);
+  function markDetailWrite() {
+    ++detailWriteVersion.current;
+  }
+
+  const loadDetail = useCallback(async (): Promise<ConversationDetail | null> => {
     if (!id) return null;
     detailController.current?.abort();
     const controller = new AbortController();
     detailController.current = controller;
     const seq = ++loadSeq.current;
+    const version = detailWriteVersion.current;
     try {
       const d = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20`, { signal: controller.signal });
       if (seq !== loadSeq.current) return null;
+      // Keep the caller's refresh/follow continuation, but obtain a snapshot after the write.
+      if (version !== detailWriteVersion.current) return loadDetail();
       setDetail((previous) => refreshConversation(previous, d));
       return d;
     } catch (err: any) {
@@ -437,6 +446,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         else router.replace(`/c/${convId}`);
         return true;
       }
+      markDetailWrite();
       setDetail((d) => (d ? { ...d, turns: [...d.turns, run] } : d));
       stick.current = true;
       follow(run);
@@ -461,6 +471,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         signal: actionController.current.signal,
         body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, steer, ...options }),
       });
+      markDetailWrite();
       setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== item.id), item] } : d));
       return true;
     } catch (err) {
@@ -482,9 +493,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       if (body) {
         const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue/${qid}`, { method: "PATCH", body: JSON.stringify(body) });
+        markDetailWrite();
         setDetail((d) => (d ? { ...d, queue: (d.queue || []).map((q) => (q.id === qid ? item : q)) } : d));
       } else {
         await api(`/v1/conversations/${id}/queue/${qid}`, { method: "DELETE" });
+        markDetailWrite();
         setDetail((d) => (d ? { ...d, queue: (d.queue || []).filter((q) => q.id !== qid) } : d));
       }
       return true;
@@ -516,6 +529,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       method: "POST", signal: actionController.current.signal,
       body: JSON.stringify({ question_id: questionId, answer: value }),
     });
+    markDetailWrite();
     setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
     follow(resumed);
   }
@@ -524,6 +538,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setError("");
     try {
       const resumed = await api<Run>(`/v1/runs/${run.id}/resume`, { method: "POST", signal: actionController.current.signal });
+      markDetailWrite();
       setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
       stick.current = true;
       follow(resumed);

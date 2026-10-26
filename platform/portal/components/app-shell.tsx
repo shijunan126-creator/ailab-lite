@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { api, Conversation, Me, Usage } from "../lib/api";
+import { api, API_BASE, Conversation, Me, Usage, redirectIfUnauthorized } from "../lib/api";
 import { formatTokens, timeAgo } from "../lib/format";
 import { useProjects } from "../lib/projects";
 import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
@@ -12,7 +12,8 @@ import SearchDialog, { OPEN_SEARCH } from "./search";
 import Inbox, { InboxButton, useNotices } from "./inbox";
 import { OPEN_FILE } from "./file-cite";
 import { useFileViewer } from "./preview/file-viewer";
-import { NewProjectInput } from "./library/projects";
+import { NewProjectInput, RenameProjectInput } from "./library/projects";
+import ProjectMenu from "./project-menu";
 
 /** Pages tell the sidebar that the conversation list changed (a new one, a title, a finished answer). */
 export const CONVERSATIONS_CHANGED = "ailab:conversations";
@@ -161,6 +162,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => cancelAnimationFrame(frame);
   }, []);
   const [addingProject, setAddingProject] = useState(false);
+  const [renamingProject, setRenamingProject] = useState<string | null>(null);
   const projects = useProjects();
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
@@ -285,11 +287,34 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onCancel={() => setAddingProject(false)}
             />
           ) : null}
-          {(projects || []).map((p) => (
-            <Link key={p.id} href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
-              <IconFolder size={16} /> <span className="conv-title">{p.name}</span>
-            </Link>
-          ))}
+          {(projects || []).map((p) =>
+            p.id === renamingProject ? (
+              <RenameProjectInput key={p.id} project={p} onDone={() => setRenamingProject(null)} />
+            ) : (
+              <div key={p.id} className="project-item">
+                <Link href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
+                  <IconFolder size={16} /> <span className="conv-title">{p.name}</span>
+                </Link>
+                <ProjectMenu
+                  project={p}
+                  onRename={() => setRenamingProject(p.id)}
+                  onBrief={() => router.push(`/p/${p.id}`)}
+                  onDeleted={async () => {
+                    conversationsChanged();
+                    if (p.id === currentProject) return router.push("/");
+                    if (!current) return;
+                    // The sidebar lists unassigned conversations only, so it cannot tell whether this one was deleted.
+                    const response = await fetch(`${API_BASE}/v1/conversations/${current}?limit=1`, {
+                      cache: "no-store", signal: AbortSignal.timeout(10000),
+                    });
+                    redirectIfUnauthorized(response);
+                    await response.body?.cancel();
+                    if (response.status === 404 && window.location.pathname === pathname) router.replace("/");
+                  }}
+                />
+              </div>
+            )
+          )}
         </nav>
         {pinned.length ? (
           <>

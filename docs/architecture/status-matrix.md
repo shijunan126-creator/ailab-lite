@@ -192,3 +192,5 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 状态仅为**已实现并本地验证**，未合入main/未部署本轮功能，远端CI与父任务人工视觉验收待完成；生产sbx-office需重建，旧品牌资产GC仍缺、SVG拒绝。不得据此升级其他目标能力或长期容量的状态。
 
 2026-10-24 工作区功能（项目说明、品牌套件、通知收件箱、排队/插话、内部只读分享、资料库摘要/OCR选页/就文件提问、移入项目带文件）经 [PR #44](https://github.com/shijunan126-creator/ailab-lite/pull/44) 合入 main `2e64da5`：本地双库/五服务E2E/有限真实模型验收见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)。**未部署**；品牌 PPT 需重建发布 `sbx-office`。
+
+2026-10-26 PR #93 项目菜单：桌面/手机新增重命名、说明编辑和删除入口；本地回归修复旧详情覆盖确认写入及删除项目后当前会话判断。实现/验证/精确head CI与合并边界见[记录](../progress/updates/2026-10-26-sidebar-project-menu.md)，不代表部署完成。

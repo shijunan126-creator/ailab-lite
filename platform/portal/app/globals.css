@@ -471,10 +471,12 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
 .conv-item.on a { background: var(--surface); box-shadow: var(--shadow-sm); }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13.5px; animation: fade var(--t-slow) var(--ease); }
 .conv-time { font-size: 11px; color: var(--faint); }
-.conv-item .conv-more { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; padding: 4px; display: grid; }
-.conv-item:hover .conv-more, .conv-more:focus-visible, .conv-more.open { opacity: 1; }
+.conv-item .conv-more, .project-item .conv-more { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; padding: 4px; display: grid; }
+.conv-item:hover .conv-more, .project-item:hover .conv-more, .conv-more:focus-visible, .conv-more.open { opacity: 1; }
+.project-item { position: relative; }
+.project-item .side-link.project { padding-right: 30px; }
 .conv-more.open { background: var(--border); color: var(--text); }
-@media (hover: none) { .conv-item .conv-more { opacity: 1; } }
+@media (hover: none) { .conv-item .conv-more, .project-item .conv-more { opacity: 1; } }
 
 .user-menu { position: relative; border-top: 1px solid var(--border); padding-top: 8px; }
 .user-menu .user-chip { width: 100%; justify-content: flex-start; background: none; border: 0; padding: 6px 8px; border-radius: 8px; color: var(--text); font-weight: 500; }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Project } from "./api";
+import { confirmDialog } from "./dialog";
 
 /** Pages tell each other (and the sidebar) that projects changed: created, renamed, deleted, files moved. */
 export const PROJECTS_CHANGED = "ailab:projects";
@@ -58,4 +59,32 @@ export async function createProject(name: string): Promise<Project> {
   listeners.forEach((fn) => fn(cache!));
   projectsChanged();
   return project;
+}
+
+export async function renameProject(id: string, name: string): Promise<void> {
+  await api(`/v1/projects/${id}`, { method: "PATCH", body: JSON.stringify({ name }) });
+  projectsChanged();
+}
+
+/** Ask first, then delete: false when the user declines. Callers also refresh the conversation list. */
+export async function deleteProject(project: Project): Promise<boolean> {
+  const lost = project.conversations ? `其中的 ${project.conversations} 个对话会一起删除。` : "";
+  const kept = project.files ? `${project.files} 个文件会移到回收站。` : "";
+  if (!(await confirmDialog({ title: `删除项目「${project.name}」？`, body: `${lost}${kept}` || undefined, action: "删除", danger: true }))) return false;
+  await api(`/v1/projects/${project.id}`, { method: "DELETE" });
+  projectsChanged();
+  return true;
+}
+
+// The sidebar's "项目说明" opens the brief editor on the project page, which may mount after the click.
+export const EDIT_BRIEF = "ailab:edit-brief";
+let briefRequest: string | null = null;
+export function requestBriefEdit(projectId: string): void {
+  briefRequest = projectId;
+  window.dispatchEvent(new CustomEvent(EDIT_BRIEF, { detail: projectId }));
+}
+export function takeBriefEdit(projectId: string): boolean {
+  if (briefRequest !== projectId) return false;
+  briefRequest = null;
+  return true;
 }
