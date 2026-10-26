@@ -147,7 +147,7 @@ export default function SchedulesPage() {
   const load = useCallback(() => api<Schedule[]>("/v1/schedules").then(setList).catch((err) => setError(errorMessage(err))), []);
   useEffect(() => {
     load();
-    api<Skill[]>("/v1/skills").then((all) => setSkills(all.filter((s) => s.enabled))).catch(() => undefined);
+    api<Skill[]>("/v1/skills").then((all) => setSkills(all.filter((s) => s.enabled && !s.implicit))).catch(() => undefined);
   }, [load]);
   // a task that is running now: its status settles on its own
   useEffect(() => {

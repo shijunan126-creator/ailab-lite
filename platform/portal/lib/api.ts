@@ -73,6 +73,7 @@ export type Skill = {
   title: string;
   description: string;
   builtin: boolean;
+  implicit?: boolean; // driven by another entry (e.g. the conversation menu): not offered as a skill of its own
   enabled: boolean;
   scope: "builtin" | "personal";
   file_id?: string; // personal skills: the file in the library that defines it

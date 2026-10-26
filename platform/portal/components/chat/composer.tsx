@@ -98,7 +98,7 @@ export default function Composer({
       .then((list) => {
         setEnabled(new Set(list.filter((s) => s.enabled).map((s) => s.name)));
         setMine(list.filter((s) => s.scope === "personal" && s.enabled));
-        setBuiltin(list.filter((s) => s.scope === "builtin" && s.enabled));
+        setBuiltin(list.filter((s) => s.scope === "builtin" && s.enabled && !s.implicit));
       })
       .catch(() => setEnabled(null));
   }, []);

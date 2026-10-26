@@ -112,7 +112,7 @@ export default function SkillsPage() {
     api<{used_bytes: number; limit_bytes: number; available_bytes: number}>("/v1/skills/storage")
       .then((value) => { if (active()) setStorage(value); }).catch(() => undefined);
     return api<Skill[]>("/v1/skills")
-      .then((value) => { if (active()) setSkills(value); })
+      .then((value) => { if (active()) setSkills(value.filter((s) => !s.implicit)); })
       .catch((e) => { if (active()) setError(String(e?.message || e)); });
   }, []);
   useEffect(() => {
