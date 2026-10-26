@@ -97,7 +97,7 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         command = [
             sys.executable,
             "-c",
-            'import sys,json;sys.stdin.readline();'
+            "import sys,json;sys.stdin.readline();"
             'print(json.dumps({"status":200,"body":{"markdown":"article"}}),flush=True);sys.stdin.read()',
         ]
         with patch.object(server, "worker_command", lambda: command):
@@ -106,15 +106,19 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await response.json())["markdown"], "article")
 
     @unittest.skipUnless(sys.platform == "linux", "Linux process tree supervisor")
-    async def test_timeout_kills_child_even_when_no_browser_handle_exists(self):
+    async def test_timeout_kills_detached_orphan_without_browser_handle(self):
         with tempfile.TemporaryDirectory() as directory:
             marker = Path(directory) / "child-pid"
+            orphan = (
+                "import os,time;from pathlib import Path;\n"
+                "if os.fork(): os._exit(0)\n"
+                f"os.setsid();Path({str(marker)!r}).write_text(str(os.getpid()));time.sleep(60)"
+            )
             command = [
                 sys.executable,
                 "-c",
-                'import subprocess,time;from pathlib import Path;'
-                'p=subprocess.Popen(["sleep","60"],start_new_session=True);'
-                f'Path({str(marker)!r}).write_text(str(p.pid));time.sleep(60)',
+                "import ctypes,subprocess,sys,time;ctypes.CDLL(None).prctl(36,1,0,0,0);"
+                f"subprocess.run([sys.executable,'-c',{orphan!r}]);time.sleep(60)",
             ]
             with patch.object(server, "worker_command", lambda: command), patch.object(server, "READ_TIMEOUT_SECONDS", 0.3):
                 response = await asyncio.wait_for(self.read(), 3)
@@ -127,6 +131,27 @@ class SupervisorTests(unittest.IsolatedAsyncioTestCase):
                     break
                 await asyncio.sleep(0.01)
             self.assertFalse(Path(f"/proc/{child}").exists(), f"child {child} leaked")
+
+    @unittest.skipUnless(sys.platform == "linux", "Linux process tree supervisor")
+    async def test_cancelled_request_reaps_its_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            marker = Path(directory) / "worker-pid"
+            command = [
+                sys.executable,
+                "-c",
+                f"import os,time;from pathlib import Path;Path({str(marker)!r}).write_text(str(os.getpid()));time.sleep(60)",
+            ]
+            with patch.object(server, "worker_command", lambda: command):
+                task = asyncio.create_task(server.render_page("https://example.com/", 4000))
+                for _ in range(100):
+                    if marker.exists():
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertTrue(marker.exists())
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await asyncio.wait_for(task, 3)
+            self.assertFalse(Path(f"/proc/{int(marker.read_text())}").exists())
 
     async def test_health_refuses_exhausted_process_budget(self):
         def read_counter(path):

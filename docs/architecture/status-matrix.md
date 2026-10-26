@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-26 持续reader测试暴露crawler孤儿进程回收缺陷（约107次browser后耗尽PID），已恢复服务但根因尚未部署修复；当前开发tini/启动超时清理与可恢复抓取降级，状态见[本轮验证](../progress/updates/2026-10-26-crawler-process-reaping.md)。此前短测不代表长期可靠性。
+2026-10-26 持续reader发现PID1孤儿回收及启动取消活driver泄漏，PR96已实现tini/独立进程树监督/1GiB单页准入。最终候选166/166正常读取、两组50次启动故障及隔离探测通过，无OOM/僵尸；按用户要求停止全量复测并交付PR，不合并部署。线上仍cc247a2，任意网页容量与新全样本成功率未验，见[初步证据](../progress/updates/2026-10-26-crawler-process-reaping.md)。
 
 2026-10-26 PR92/93/94合并后main CI均成功；reader补齐Linux/ARM64镜像、真实k3s双向网络隔离、7项browser/proxy契约及2vCPU/8GiB组件短测。整次调用超时修复已经PR95合并main`cc247a2`并部署；个人Compose已接入并通过隔离/真实Agent及桌面手机验收，目标VM短测完成，长期容量仍未验，详见[当前验证](../progress/updates/2026-10-26-merged-reader-validation.md)。
 

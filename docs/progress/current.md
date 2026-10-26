@@ -1,8 +1,10 @@
 # 当前工作
 
-## 2026-10-26 crawler持续调用故障修复（已授权合并部署，进行中）
+## 2026-10-26 crawler持续调用故障修复（提交PR，不合并部署）
 
-用户明确要求修复1568页测试发现的问题，并延续修复/合并/部署授权。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/crawler-process-reaping`，base `origin/main@cc247a2`；主目录脏文件保持。统计工具提交已撤回，临时脚本/URL明细不入Git。修复PID1孤儿Chrome回收、启动超时清理、可恢复传输失败的单次browser降级、短静态页避免无效渲染及挑战页误作成功。当前未发布，线上仍cc247a2且重启仅恢复服务。下一步：隔离候选持续真实渲染跨越旧107次失败点，重测405条browser样本及原静态错误，完整回归/CI后合并固定main并部署。证据与边界见[本轮记录](updates/2026-10-26-crawler-process-reaping.md)。
+最新用户要求“先别复测这么多，有个初步结论即可。然后提交PR”，覆盖之前合并/部署授权。已停止大批量测试，最终候选429abd2持续正文166/166成功、两组各50次启动故障已验，无僵尸/OOM/重启；最终样本复测尚未开始，不宣称1568页成功率。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/crawler-process-reaping`，base `origin/main@cc247a2`，PR96待评审；补充真实取消/双fork孤儿回归仅测试变化。已修PID1回收、每次render进程树监督、单页内存准入和可恢复静态抓取降级。统计脚本/URL明细不入Git；原主目录脏文件未动。
+
+下一步：交付PR96及初步证据，由用户决定评审后的合并/发布；本轮不继续全量复测、不merge/deploy。线上仍cc247a2。详见[本轮记录](updates/2026-10-26-crawler-process-reaping.md)。
 
 ## 2026-10-26 reader 修复已合并并部署（完成）
 
