@@ -2,8 +2,8 @@
 
 The sandbox has no egress. This module runs in the Agent process (outside the
 sandbox): it searches with a private SearXNG instance and turns public pages
-into text, either by its own bounded fetch (web_read_provider=static) or by
-asking the isolated crawler to render them (crawl4ai, ADR 0021). The model only
+into Markdown: its own bounded fetch + Trafilatura, and only when that comes
+back weak, the isolated crawler's browser rendering (ADR 0021). The model only
 sees the text and source URLs; the sandbox never gets a network route.
 
 Security rules:
@@ -38,6 +38,7 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpcore
 import httpx
+import trafilatura
 
 from . import metrics
 from .config import settings
@@ -54,31 +55,16 @@ TEXT_TYPES = {
     "application/xml",
     "text/xml",
 }
-SKIP_TAGS = {"script", "style", "noscript", "svg", "iframe", "canvas", "template", "form", "nav", "footer", "aside", "button"}
-BLOCK_TAGS = {
-    "p",
-    "div",
-    "section",
-    "article",
-    "header",
-    "footer",
-    "main",
-    "li",
-    "tr",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "br",
-    "blockquote",
-    "pre",
-}
 
 
 class WebError(RuntimeError):
     pass
+
+
+class WebStatusError(WebError):
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
 
 
 def enabled() -> bool:
@@ -166,7 +152,7 @@ async def open_public(client: httpx.AsyncClient, url: str, headers: dict[str, st
                     current = _validate_url(urljoin(current, location))
                     continue
                 if resp.status_code >= 400:
-                    raise WebError(f"HTTP {resp.status_code} from {current}")
+                    raise WebStatusError(resp.status_code, f"HTTP {resp.status_code} from {current}")
                 yield resp
                 return
         except WebError:
@@ -279,116 +265,78 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-class _Extractor(HTMLParser):
+class _Links(HTMLParser):
+    """The page's outgoing links: read_url returns them so the model may follow one (net_tools provenance)."""
+
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.skip = 0
-        self.in_title = False
-        self.title: list[str] = []
-        self.body: list[str] = []
         self.links: list[str] = []
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        tag = tag.lower()
-        if tag in ("a", "img") and len(self.links) < MAX_LINKS * 4:
-            href = dict(attrs).get("href" if tag == "a" else "src")
-            if href:
-                self.links.append(href)
-        if tag in SKIP_TAGS:
-            self.skip += 1
-            return
-        if tag == "title":
-            self.in_title = True
-        if tag in BLOCK_TAGS and not self.skip:
-            self.body.append("\n")
-
-    def handle_endtag(self, tag: str) -> None:
-        tag = tag.lower()
-        if tag in SKIP_TAGS:
-            self.skip = max(0, self.skip - 1)
-            return
-        if tag == "title":
-            self.in_title = False
-        if tag in BLOCK_TAGS and not self.skip:
-            self.body.append("\n")
-
-    def handle_data(self, data: str) -> None:
-        if self.skip:
-            return
-        if self.in_title:
-            self.title.append(data)
-        else:
-            self.body.append(data)
+        if tag.lower() == "a" and len(self.links) < MAX_LINKS * 4 and (href := dict(attrs).get("href")):
+            self.links.append(href)
 
 
-def extract_html(html: str, base: str = "") -> tuple[str, str, list[str]]:
-    parser = _Extractor()
-    try:
+def _links(html: str, base: str) -> list[str]:
+    parser = _Links()
+    with contextlib.suppress(Exception):  # malformed HTML only costs the links
         parser.feed(html)
-        parser.close()
-    except Exception as exc:  # malformed HTML must not fail the whole tool
-        raise WebError(f"could not parse HTML: {exc}") from exc
-    title = _clean(" ".join(parser.title))[:300]
-    body = _clean("".join(parser.body))
-    links: list[str] = []
+    out: list[str] = []
     for href in parser.links:
-        url = urljoin(base, href.strip()).split("#")[0] if base else href.strip()
-        if url.startswith(("http://", "https://")) and len(url) <= 2000 and url not in links:
-            links.append(url)
-        if len(links) >= MAX_LINKS:
-            break
-    return title, body, links
-
-
-async def search(query: str, count: int | None = None) -> list[dict]:
-    query = query.strip()[:300]
-    if not query:
-        raise WebError("query is required")
-    n = max(1, min(int(count or settings.web_max_results), 8))
-    provider = settings.web_search_provider
-    if provider == "mock":
-        return [
-            {
-                "title": f"{query} — result {i + 1}",
-                "url": f"https://example.com/{i + 1}",
-                "snippet": f"Mock result for {query}",
-                "engine": "mock",
-            }
-            for i in range(n)
-        ]
-    if provider != "searxng":
-        raise WebError("web search is not configured")
-
-    base = settings.searxng_url.rstrip("/")
-    params = {"q": query, "format": "json", "language": "zh-CN", "safesearch": "1"}
-    try:
-        async with httpx.AsyncClient(
-            timeout=settings.web_search_timeout_seconds,
-            headers={"User-Agent": USER_AGENT, "Accept": "application/json"},
-            trust_env=False,
-        ) as client:
-            resp = await client.get(f"{base}/search", params=params)
-            resp.raise_for_status()
-            data = resp.json()
-    except Exception as exc:
-        raise WebError(f"search service unavailable: {type(exc).__name__}: {exc}") from exc
-
-    out: list[dict] = []
-    for item in data.get("results") or []:
-        url = str(item.get("url") or "").strip()
-        if not url.startswith(("http://", "https://")):
-            continue
-        out.append(
-            {
-                "title": str(item.get("title") or url)[:300],
-                "url": url[:2000],
-                "snippet": str(item.get("content") or "")[:500],
-                "engine": str(item.get("engine") or "")[:50],
-            }
-        )
-        if len(out) >= n:
+        url = urljoin(base, href.strip()).split("#")[0]
+        if url.startswith(("http://", "https://")) and len(url) <= 2000 and url not in out:
+            out.append(url)
+        if len(out) >= MAX_LINKS:
             break
     return out
+
+
+def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str]]:
+    """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura) and links.
+    CPU-bound: callers run it in a thread."""
+    try:
+        text = trafilatura.extract(
+            html,
+            url=base or None,
+            output_format="markdown",
+            include_tables=True,
+            include_formatting=True,
+            include_links=False,
+            include_images=False,
+            include_comments=False,
+            favor_recall=True,
+        )
+        meta = trafilatura.extract_metadata(html, default_url=base or None)
+    except Exception as exc:  # malformed HTML must not fail the whole tool
+        raise WebError(f"could not parse HTML: {type(exc).__name__}") from exc
+    title = (meta.title if meta and meta.title else "") or ""
+    if not title and (m := re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)):
+        title = unescape(m[1])
+    return _clean(title)[:300], _markdown(text or ""), _links(html, base)
+
+
+def _markdown(text: str) -> str:
+    # Keep indentation and table spacing, which _clean would flatten.
+    return re.sub(r"\n{3,}", "\n\n", text.replace("\xa0", " ").replace("\u200b", "")).strip()
+
+
+# A static fetch is good enough for most pages. These signs mean the content needs a browser: too
+# little text, an app shell waiting for its scripts, or a bot wall answering instead of the site.
+MIN_TEXT = 200
+SCRIPT_SHELL = re.compile(
+    r"<div[^>]+id=[\"'](?:root|app|__next|__nuxt|q-app)[\"'][^>]*>\s*</div>|enable javascript|启用\s*javascript|"
+    r"cf-chl|challenge-platform|just a moment\.\.\.",
+    re.I,
+)
+RENDER_STATUSES = {403, 429, 503}
+
+
+def _weakness(html: str, text: str) -> str | None:
+    if len(text) < MIN_TEXT:
+        return "short"
+    if len(text) < 1500 and SCRIPT_SHELL.search(html):
+        return "script"
+    return None
 
 
 GITHUB_ISSUE = re.compile(r"^https://github\.com/([A-Za-z0-9_.-]+)/([A-Za-z0-9_.-]+)/(?:issues|pull)/(\d+)/?$")
@@ -437,7 +385,7 @@ async def read_github_issue(owner: str, repo: str, number: str, limit: int) -> d
 
 async def fetch_html(url: str) -> dict:
     """One bounded public fetch of a text-like page: raw decoded text, nothing extracted. The
-    Agent's static read_url and the Portal's original-page view share it — same caps, one fetch per click."""
+    Agent's read_url and the Portal's original-page view share it — same caps, one fetch per click."""
     current = _validate_url(url)
     headers = {
         "Accept": "text/html,application/xhtml+xml,text/plain,application/json;q=0.9,*/*;q=0.1",
@@ -470,25 +418,67 @@ async def fetch_html(url: str) -> dict:
 
 
 async def read_url(url: str, max_chars: int | None = None) -> dict:
+    """httpx + Trafilatura first; a weak result (or a bot wall) is rendered by the isolated crawler (ADR 0021)."""
     current = _validate_url(url)
     limit = max(1000, min(int(max_chars or settings.web_max_chars), 60_000))
     issue = GITHUB_ISSUE.match(current)
     if issue:
         return await read_github_issue(*issue.groups(), limit)
-    provider = settings.web_read_provider
     started = time.monotonic()
-    outcome = "error"
+    path, outcome = "static", "error"
     try:
-        if provider == "crawl4ai":
-            page = await _read_rendered(current, limit)
-        elif provider == "static":
-            page = await _read_static(current, limit)
-        else:
-            raise WebError(f"unknown web_read_provider: {provider}")
+        try:
+            page, weak = await _read_static(current, limit)
+        except WebStatusError as exc:
+            if exc.status not in RENDER_STATUSES or not settings.crawler_url:
+                raise
+            page, weak = None, "blocked"
+        if weak is None or not settings.crawler_url:
+            if page is None or not page["text"]:
+                raise WebError("page had no readable text")
+            outcome = "ok"
+            return page
+        path = "rendered"
+        try:
+            rendered = await _read_rendered(current, limit)
+        except WebError:
+            if page is None or not page["text"]:
+                raise
+            # The browser could not help; what the plain fetch found is still worth returning, marked as partial.
+            path = "static_fallback"
+            outcome = "ok"
+            return {**page, "note": "这页需要浏览器渲染但渲染失败，以下是未运行脚本时取到的内容，可能不完整"}
         outcome = "ok"
-        return page
+        return rendered
     finally:
-        metrics.observe_web_read(provider, outcome, time.monotonic() - started)
+        metrics.observe_web_read(path, outcome, time.monotonic() - started)
+
+
+async def _read_static(current: str, limit: int) -> tuple[dict, str | None]:
+    """The page and, for HTML, why it may need a browser (None when the static text is good)."""
+    page = await fetch_html(current)
+    final, ctype, raw, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
+    weak = None
+    if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
+        title, text, links = await asyncio.to_thread(extract_markdown, raw, final)
+        weak = _weakness(raw, text)
+    else:
+        title, links, text = page["title"], [], raw
+        if ctype == "application/json":
+            with contextlib.suppress(ValueError):
+                text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
+        text = _markdown(text)
+    if len(text) > limit:
+        text, truncated = text[:limit].rstrip() + "\n...[truncated]", True
+    page = {
+        "url": final,
+        "title": title or urlsplit(final).netloc,
+        "text": text,
+        "content_type": ctype,
+        "truncated": truncated,
+        "links": links,
+    }
+    return page, weak
 
 
 def _crawler_client() -> httpx.AsyncClient:
@@ -502,8 +492,6 @@ async def _read_rendered(url: str, limit: int) -> dict:
     rule by the egress proxy the crawler must use."""
     parsed = urlsplit(url)
     await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
-    if not settings.crawler_url:
-        raise WebError("page reader is not configured")
     try:
         async with _crawler_client() as client:
             resp = await client.post(
@@ -524,8 +512,7 @@ async def _read_rendered(url: str, limit: int) -> dict:
     if resp.status_code >= 400:
         raise WebError(str(data.get("error") or f"page reader returned HTTP {resp.status_code}")[:300])
     final = str(data.get("url") or url)
-    # Markdown: keep indentation and table spacing, which _clean would flatten.
-    text = re.sub(r"\n{3,}", "\n\n", str(data.get("markdown") or "").replace("\xa0", " ")).strip()
+    text = _markdown(str(data.get("markdown") or ""))
     if not text:
         raise WebError("page had no readable text")
     truncated = bool(data.get("truncated"))
@@ -539,33 +526,6 @@ async def _read_rendered(url: str, limit: int) -> dict:
         "title": str(data.get("title") or "")[:300] or urlsplit(final).netloc,
         "text": text,
         "content_type": str(data.get("content_type") or "text/html"),
-        "truncated": truncated,
-        "links": links,
-    }
-
-
-async def _read_static(current: str, limit: int) -> dict:
-    page = await fetch_html(current)
-    final, ctype, text, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
-    title, links = page["title"], []
-    if ctype in ("text/html", "application/xhtml+xml") or text.lstrip().startswith("<"):
-        title, text, links = extract_html(text, final)
-    elif ctype == "application/json":
-        try:
-            text = json.dumps(json.loads(text), ensure_ascii=False, indent=1)
-        except ValueError:
-            pass
-    text = _clean(text)
-    if not text:
-        raise WebError("page had no readable text")
-    if len(text) > limit:
-        text = text[:limit].rstrip() + "\n...[truncated]"
-        truncated = True
-    return {
-        "url": final,
-        "title": title or urlsplit(final).netloc,
-        "text": text,
-        "content_type": ctype,
         "truncated": truncated,
         "links": links,
     }

@@ -1,8 +1,8 @@
 # 当前工作
 
-## 2026-10-26 read_url 改用 Crawl4AI（已提PR，未验证未部署）
+## 2026-10-26 read_url 两级读取：Trafilatura 优先，弱结果才 Crawl4AI（已提PR，未验证未部署）
 
-用户要求用 Crawl4AI 替换网页读取。分支 `feat/crawl4ai-reader`，base `main@2233870`。隔离 crawler 容器 + egress 代理，决定见 [ADR 0021](../architecture/adr/0021-isolated-browser-rendering-for-read-url.md)。按用户要求未跑测试/构建，CI 为首次验证；Crawl4AI 版本与参数名需首次构建时确认。下一步：PR CI 结果；部署前需给个人 Compose 增加 crawler/egress 两个容器。详见[记录](updates/2026-10-26-crawl4ai-reader.md)。
+用户要求：常规页 httpx+Trafilatura 出 Markdown，正文过短/应用壳/被拦时才走 Crawl4AI；删除无用代码。分支 `feat/crawl4ai-reader`，base `main@2233870`；决定见 [ADR 0021](../architecture/adr/0021-isolated-browser-rendering-for-read-url.md)。按用户要求未跑测试/构建，CI 为首次验证。下一步：CI 结果；部署前个人 Compose 需加 crawler/egress 两容器（不加也能用 Trafilatura 一级）。详见[记录](updates/2026-10-26-crawl4ai-reader.md)。
 
 ## 2026-10-26 首页对话/工作开关上移（本地验证，PR 待合并）
 

@@ -227,9 +227,8 @@ class Settings(BaseSettings):
     web_max_bytes: int = 2 * 1024 * 1024
     web_max_chars: int = 20_000
     web_max_results: int = 5
-    # read_url: static = bounded httpx fetch + text extraction in the Agent; crawl4ai = rendered by the isolated
-    # crawler (images/crawler, ADR 0021). A crawler failure is a tool error, never a silent switch to static.
-    web_read_provider: Literal["static", "crawl4ai"] = "static"
+    # read_url renders a page in the isolated crawler (images/crawler, ADR 0021) only when the plain fetch +
+    # Trafilatura comes back weak. Empty = never render: weak pages return what the plain fetch found.
     crawler_url: str = ""
     crawler_token: str = ""
     crawler_timeout_seconds: int = Field(default=40, gt=0)  # whole read: the crawler's own page timeout is 20s plus a fresh browser
@@ -456,11 +455,8 @@ class Settings(BaseSettings):
             problems.append("mock sandbox is forbidden")
         if self.sandbox_provider == "opensandbox" and self.osb_network_mode == "kubernetes" and not self.osb_kubernetes_isolation_verified:
             problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
-        if self.web_read_provider == "crawl4ai" and service in (None, "agent"):
-            if not self.crawler_url:
-                problems.append("AILAB_CRAWLER_URL is required for web_read_provider=crawl4ai")
-            if len(self.crawler_token) < 24:
-                problems.append("AILAB_CRAWLER_TOKEN must be at least 24 characters for web_read_provider=crawl4ai")
+        if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent"):
+            problems.append("AILAB_CRAWLER_TOKEN must be at least 24 characters when AILAB_CRAWLER_URL is set")
         if self.scanner_backend == "stub":
             problems.append("stub scanner is forbidden")
         if self.service_token:

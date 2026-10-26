@@ -34,7 +34,10 @@ CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)
 MODEL_TOKENS = Counter("ailab_model_tokens_total", "Model tokens as reported by the upstream", ["model", "kind"])
 WEB_READ_SECONDS = Histogram(
-    "ailab_web_read_seconds", "read_url time by provider and outcome", ["provider", "outcome"], buckets=(0.25, 0.5, 1, 2.5, 5, 10, 20, 40)
+    "ailab_web_read_seconds",
+    "read_url time by path (static, rendered, static_fallback) and outcome",
+    ["path", "outcome"],
+    buckets=(0.25, 0.5, 1, 2.5, 5, 10, 20, 40),
 )
 MEMORY_RECALL = Counter("ailab_memory_recall_total", "History recall calls by outcome", ["outcome"])
 MEMORY_EMBEDDING = Counter("ailab_memory_embedding_total", "Embedding endpoint calls by outcome", ["outcome"])
@@ -211,5 +214,5 @@ def register_once(key: str, collector: Collector) -> None:
         _registered.add(key)
 
 
-def observe_web_read(provider: str, outcome: str, seconds: float) -> None:
-    WEB_READ_SECONDS.labels(provider if provider in ("static", "crawl4ai") else "other", outcome).observe(seconds)
+def observe_web_read(path: str, outcome: str, seconds: float) -> None:
+    WEB_READ_SECONDS.labels(path if path in ("static", "rendered", "static_fallback") else "other", outcome).observe(seconds)

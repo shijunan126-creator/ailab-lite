@@ -40,7 +40,6 @@ def test_crawler_is_reachable_only_from_the_agent_and_leaves_only_through_the_eg
     base = Path(__file__).resolve().parents[1] / "deploy/base"
     documents = {(doc["kind"], doc["metadata"]["name"]): doc for doc in _resources(base)}
     config = documents["ConfigMap", "platform-config"]["data"]
-    assert config["AILAB_WEB_READ_PROVIDER"] == "crawl4ai"
     url = urlsplit(config["AILAB_CRAWLER_URL"])
     assert documents["Service", url.hostname]["spec"]["ports"][0]["port"] == url.port
     pod = documents["Deployment", url.hostname]["spec"]["template"]["spec"]
