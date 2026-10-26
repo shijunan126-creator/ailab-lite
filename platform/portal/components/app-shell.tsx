@@ -12,7 +12,8 @@ import SearchDialog, { OPEN_SEARCH } from "./search";
 import Inbox, { InboxButton, useNotices } from "./inbox";
 import { OPEN_FILE } from "./file-cite";
 import { useFileViewer } from "./preview/file-viewer";
-import { NewProjectInput } from "./library/projects";
+import { NewProjectInput, RenameProjectInput } from "./library/projects";
+import ProjectMenu from "./project-menu";
 
 /** Pages tell the sidebar that the conversation list changed (a new one, a title, a finished answer). */
 export const CONVERSATIONS_CHANGED = "ailab:conversations";
@@ -161,6 +162,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => cancelAnimationFrame(frame);
   }, []);
   const [addingProject, setAddingProject] = useState(false);
+  const [renamingProject, setRenamingProject] = useState<string | null>(null);
   const projects = useProjects();
   const current = pathname.startsWith("/c/") ? pathname.slice(3) : null;
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
@@ -285,11 +287,27 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
               onCancel={() => setAddingProject(false)}
             />
           ) : null}
-          {(projects || []).map((p) => (
-            <Link key={p.id} href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
-              <IconFolder size={16} /> <span className="conv-title">{p.name}</span>
-            </Link>
-          ))}
+          {(projects || []).map((p) =>
+            p.id === renamingProject ? (
+              <RenameProjectInput key={p.id} project={p} onDone={() => setRenamingProject(null)} />
+            ) : (
+              <div key={p.id} className="project-item">
+                <Link href={`/p/${p.id}`} className={`side-link project ${p.id === currentProject ? "on" : ""}`} title={p.name}>
+                  <IconFolder size={16} /> <span className="conv-title">{p.name}</span>
+                </Link>
+                <ProjectMenu
+                  project={p}
+                  onRename={() => setRenamingProject(p.id)}
+                  onBrief={() => router.push(`/p/${p.id}`)}
+                  onDeleted={() => {
+                    conversationsChanged();
+                    // its conversations went with it: leave a page that no longer exists
+                    if (p.id === currentProject || conversations?.find((c) => c.id === current)?.project_id === p.id) router.push("/");
+                  }}
+                />
+              </div>
+            )
+          )}
         </nav>
         {pinned.length ? (
           <>
