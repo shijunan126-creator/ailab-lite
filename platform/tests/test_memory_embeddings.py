@@ -151,7 +151,6 @@ def test_the_indexer_skips_what_memory_must_not_use(fake) -> None:
         me = _user(c)
         uid = _uid(c, me)
         kept = _seed(uid, "周报写法", "先结论", days_ago=1)
-        _seed(uid, "临时的周报", "ok", days_ago=1, options={"mode": "chat", "memory": "off"})
         gone = _conversation(uid)
         _seed(uid, "已删除对话里的周报", "ok", days_ago=1, conversation_id=gone)
         old = _seed(uid, "旧版周报", "ok", days_ago=1)
@@ -162,7 +161,7 @@ def test_the_indexer_skips_what_memory_must_not_use(fake) -> None:
         assert embeddings.index_pending(user_id=uid) == 1
         assert _stored(uid) == {kept} and embeddings.index_pending(user_id=uid) == 0  # and it is done once
         sent = json.dumps(fake.calls, ensure_ascii=False)
-        assert "临时的周报" not in sent and "已删除对话" not in sent and "旧版周报" not in sent
+        assert "已删除对话" not in sent and "旧版周报" not in sent
         # a user who turned memory off is not sent to the endpoint at all
         off = _user(c)
         off_uid = _uid(c, off)

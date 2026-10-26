@@ -279,9 +279,6 @@ RECALL = {
 }
 
 
-MEMORY_TOOLS = frozenset({"memory", "recall_history"})
-
-
 def _library_tool(name, description, properties, required):
     return {
         "type": "function",

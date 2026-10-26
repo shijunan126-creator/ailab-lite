@@ -27,7 +27,6 @@ from ..config import settings
 from ..contracts.jobs import RunStatus
 from ..models import Conversation, Run, User
 from . import embeddings, text
-from .scope import excluded_from_memory
 
 MAX_DOCS = 400  # newest runs scanned per query
 FIELD_CHARS = 2000
@@ -66,7 +65,6 @@ def _rows(db: Session, user_id: str, since: datetime | None, exclude_conversatio
             Run.id,
             Run.conversation_id,
             Run.created_at,
-            Run.options,
             func.substr(Run.prompt, 1, FIELD_CHARS),
             func.substr(Run.summary, 1, FIELD_CHARS),
             Conversation.title,
@@ -109,9 +107,7 @@ def search_history(
     seen: set[str] = set()
     docs: list[text.Doc] = []
     by_key: dict[str, tuple] = {}
-    for run_id, conv_id, created_at, options, prompt, summary, title in _rows(db, user.id, since, exclude_conversation_id):
-        if excluded_from_memory(options):
-            continue
+    for run_id, conv_id, created_at, prompt, summary, title in _rows(db, user.id, since, exclude_conversation_id):
         fingerprint = f"{(prompt or '').strip()}\x00{(summary or '').strip()}"
         if fingerprint in seen:  # a forked conversation repeats its parent's turns
             continue

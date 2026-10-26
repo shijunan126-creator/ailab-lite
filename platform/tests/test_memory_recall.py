@@ -1,4 +1,4 @@
-"""History recall, the write guard, tombstones, temporary chats and deletion lineage.
+"""History recall, the write guard, tombstones and deletion lineage.
 
 The scenarios follow the golden categories of the memory architecture (§22): direct and exact
 recall, abstention, scope isolation, assistant self-contamination, prompt-injection persistence,
@@ -120,20 +120,19 @@ def test_recall_abstains_instead_of_returning_the_nearest_noise() -> None:
             assert out["results"] == [] and out["note"] == NO_RELEVANT_MEMORY, query
 
 
-def test_recall_never_crosses_users_or_reads_deleted_and_temporary_chats() -> None:
+def test_recall_never_crosses_users_or_reads_deleted_chats() -> None:
     with TestClient(app) as c:
         me, other = _uid(c, _user(c)), _uid(c, _user(c))
         _seed(other, "我的项目代号是 Bluefin", "记下了", days_ago=2)
         _seed(me, "项目代号 Greenfin", "好的", days_ago=2)
         gone = _conversation(me)
         _seed(me, "项目代号 Redfin 机密", "ok", days_ago=2, conversation_id=gone)
-        _seed(me, "项目代号 Purplefin 临时", "ok", days_ago=2, options={"mode": "chat", "memory": "off"})
         with SessionLocal() as db:
             db.get(Conversation, gone).deleted_at = datetime.now(UTC)
             db.commit()
         out = json.dumps(_recall(me, "项目代号是什么"), ensure_ascii=False)
         assert "Greenfin" in out
-        assert not any(word in out for word in ("Bluefin", "Redfin", "Purplefin"))
+        assert not any(word in out for word in ("Bluefin", "Redfin"))
 
 
 def test_recall_skips_the_current_conversation_and_repeated_fork_turns() -> None:
@@ -161,7 +160,7 @@ def test_recall_window_and_recency_order() -> None:
 # --------------------------------------------------------------------------- internal recall tool
 
 
-def test_recall_route_is_scoped_to_the_run_owner_and_refuses_temporary_chats() -> None:
+def test_recall_route_is_scoped_to_the_run_owner_and_refuses_when_memory_is_off() -> None:
     with TestClient(app) as c:
         me = _user(c)
         uid = _uid(c, me)
@@ -176,39 +175,6 @@ def test_recall_route_is_scoped_to_the_run_owner_and_refuses_temporary_chats() -
         assert miss["note"] == NO_RELEVANT_MEMORY
         c.put("/v1/memory", headers=me, json={"expected_revision": 0, "enabled": False, "auto_save": True, "entries": []})
         assert c.post(url, headers=SERVICE, json={"query": "ERR_9001"}).status_code == 422
-
-
-def test_temporary_chat_is_sticky_and_neither_reads_nor_writes_memory() -> None:
-    with TestClient(app) as c:
-        me = _user(c)
-        c.put(
-            "/v1/memory",
-            headers=me,
-            json={"expected_revision": 0, "enabled": True, "auto_save": True, "entries": [{"content": "喜欢简洁中文"}]},
-        )
-        conv = c.post("/v1/conversations", headers=me, json={}).json()["id"]
-        first = c.post(
-            f"/v1/conversations/{conv}/messages", headers=me, json={"prompt": "临时问题", "mode": "chat", "memory": "off"}
-        ).json()
-        assert first["options"]["memory"] == "off"
-        c.post(f"/internal/runs/{first['id']}/transition", headers=attempt_headers(c, first["id"]), json={"status": "running"})
-        context = c.get(f"/internal/runs/{first['id']}/model-input", headers=SERVICE).json()["memory"]
-        assert context["temporary"] is True and context["entries"] == []
-        assert "临时对话" in memory_prompt(context) and "喜欢简洁中文" not in memory_prompt(context)
-        headers = {**attempt_headers(c, first["id"]), "X-Delivery-Id": f"{first['id']}:d1"}
-        write = c.post(
-            f"/internal/runs/{first['id']}/memory", headers=headers, json={"action": "add", "content": "x", "expected_revision": 1}
-        )
-        assert write.status_code == 422
-        assert c.post(f"/internal/runs/{first['id']}/recall", headers=SERVICE, json={"query": "临时"}).status_code == 422
-        c.post(
-            f"/internal/runs/{first['id']}/transition",
-            headers=attempt_headers(c, first["id"]),
-            json={"status": "succeeded", "summary": "ok"},
-        )
-        # the client forgets the flag on the next turn: the conversation stays temporary
-        second = c.post(f"/v1/conversations/{conv}/messages", headers=me, json={"prompt": "接着问", "mode": "chat"}).json()
-        assert second["options"]["memory"] == "off"
 
 
 # --------------------------------------------------------------------------- write guard
@@ -319,13 +285,12 @@ def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None
 # --------------------------------------------------------------------------- dream evidence rules
 
 
-def test_dream_ignores_deleted_temporary_and_rewritten_turns() -> None:
+def test_dream_ignores_deleted_and_rewritten_turns() -> None:
     with TestClient(app) as c:
         uid = _uid(c, _user(c))
         kept = _seed(uid, "以后周报先结论后风险", "好", days_ago=0)
         gone = _conversation(uid)
         _seed(uid, "我家狗叫 Momo", "好", days_ago=0, conversation_id=gone)
-        _seed(uid, "临时：我的假期计划", "好", days_ago=0, options={"mode": "chat", "memory": "off"})
         old = _seed(uid, "旧版本的问题", "好", days_ago=0)
         _seed(uid, "新版本的问题", "好", days_ago=0)
         with SessionLocal() as db:
@@ -335,7 +300,7 @@ def test_dream_ignores_deleted_temporary_and_rewritten_turns() -> None:
             ids = [r.id for r in service._new_runs(db, uid, None, datetime.now(UTC))]
             prompts = [db.get(Run, i).prompt for i in ids]
         assert kept in ids and "新版本的问题" in prompts
-        assert not {"我家狗叫 Momo", "临时：我的假期计划", "旧版本的问题"} & set(prompts)
+        assert not {"我家狗叫 Momo", "旧版本的问题"} & set(prompts)
 
 
 def test_a_quote_only_the_assistant_said_cannot_support_a_fact(monkeypatch) -> None:
@@ -475,37 +440,6 @@ def test_memory_prompt_is_compact_and_tells_the_model_how_to_use_history() -> No
     assert "喜欢简洁中文" in prompt and '"since": "2026-10-20"' in prompt and '"confidence": 0.7' in prompt
     assert "不要出现在提示词里的原话" not in prompt and "run_secret" not in prompt
     assert "recall_history" in prompt and "NO_RELEVANT_MEMORY" in prompt
-    assert "临时对话" in memory_prompt({"enabled": False, "temporary": True, "entries": []})
-
-
-def test_a_temporary_chat_is_not_offered_the_memory_tools() -> None:
-    offered: list[list[str]] = []
-
-    class Platform(FakePlatform):
-        async def get_run(self, run_id):
-            memory = {"enabled": False, "temporary": True, "entries": []}
-            return {**await super().get_run(run_id), "options": {"mode": "work"}, "memory": memory}
-
-    class Llm(ScriptedLLM):
-        async def chat(self, messages, tools, *args, **kwargs):
-            offered.append([t["function"]["name"] for t in tools])
-            return await super().chat(messages, tools, *args, **kwargs)
-
-    asyncio.run(
-        AgentLoop(platform=Platform(), broker=FakeBroker(), llm=Llm([LLMResponse(content="好")])).process("run_1", attempt_id="att_1")
-    )
-    assert offered and "write_file" in offered[0]
-    assert not {"memory", "recall_history"} & set(offered[0])
-
-
-def test_a_long_run_of_temporary_chats_does_not_hide_later_turns_from_the_dream() -> None:
-    with TestClient(app) as c:
-        uid = _uid(c, _user(c))
-        for _ in range(45):
-            _seed(uid, "临时", "ok", days_ago=0, options={"mode": "chat", "memory": "off"})
-        kept = _seed(uid, "以后周报先结论后风险", "好", days_ago=0)
-        with SessionLocal() as db:
-            assert [r.id for r in service._new_runs(db, uid, None, datetime.now(UTC))] == [kept]
 
 
 def test_a_long_prompt_cannot_turn_assistant_text_into_user_evidence() -> None:

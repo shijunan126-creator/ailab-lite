@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 移除“临时对话”（本地完成，未提交）
+
+用户不需要该功能，分支 `chore/remove-temporary-chat`（base `main@5218577`）整体移除：输入框开关与 `SendOptions.memory`、请求体 `memory` 字段、`run.options.memory="off"` 的写入/继承、`scope.excluded_from_memory` 及检索/索引/dream/记忆接口里的排除、提示词与工具隐藏分支、`MEMORY_TOOLS`；dream 回到每次最多取40轮。已按该标记写入的旧轮次不再被排除（本机只有测试数据）。ADR 0019 已改。未部署。
+
 ## 2026-10-26 RFI正文与标签首字（已授权发布，进行中）
 
 用户反馈rfi.fr正文为空及tab从标题中间显示，已在独立分支 `fix/rfi-reader-title-start` 修复；base `origin/main@438bd63`，产品提交 `f2f1059`，原主目录修改保留。真实RFI响应423681B包含正文，body全局header类被误判导致整页丢弃；改为根容器不使用噪音class判断，显式hidden/ARIA及子树噪音仍生效。标签改block/left对齐、尾部省略并按tab起点定位。

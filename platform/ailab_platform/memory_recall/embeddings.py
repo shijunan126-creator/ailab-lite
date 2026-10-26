@@ -21,12 +21,11 @@ from ..contracts.jobs import RunStatus
 from ..db import SessionLocal
 from ..metrics import MEMORY_EMBEDDING
 from ..models import Conversation, MemoryEmbedding, Run, User
-from .scope import excluded_from_memory
 
 log = logging.getLogger("ailab.memory_recall.embeddings")
 
 TEXT_CHARS = 1500  # of the prompt, and again of the reply, that a turn's vector is computed from
-SCAN_ROWS = 500  # unindexed turns looked at per tick (some are skipped: temporary chats, memory switched off)
+SCAN_ROWS = 500  # unindexed turns looked at per tick (some are skipped: memory switched off)
 
 
 def enabled() -> bool:
@@ -132,7 +131,6 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
             select(
                 Run.id,
                 Run.user_id,
-                Run.options,
                 func.substr(Run.prompt, 1, TEXT_CHARS),
                 func.substr(Run.summary, 1, TEXT_CHARS),
                 User.settings,
@@ -151,10 +149,10 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
             .limit(SCAN_ROWS)
         ).all()
         todo = []
-        for run_id, user_id, options, prompt, summary, user_settings in rows:
+        for run_id, user_id, prompt, summary, user_settings in rows:
             memory = (user_settings or {}).get("memory") or {}
-            if excluded_from_memory(options) or memory.get("enabled") is False:
-                continue  # a temporary chat, or a user who turned memory off, is never sent to the endpoint
+            if memory.get("enabled") is False:
+                continue  # a user who turned memory off is never sent to the endpoint
             todo.append((run_id, user_id, turn_text(prompt, summary)))
             if len(todo) == limit:
                 break

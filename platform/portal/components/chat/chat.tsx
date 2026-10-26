@@ -647,8 +647,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       projectId={projectId}
       initialFiles={initialFiles}
       context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
-      newChat={!id}
-      temporary={!!id && turns.some((t) => t.options?.memory === "off")}
     />
     </>
   );
