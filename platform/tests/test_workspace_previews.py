@@ -133,6 +133,7 @@ def test_preview_cache_update_preserves_concurrent_heartbeat(tmp_path, monkeypat
     assert manager.refresh_previews(lid)[0]["version"] == 1
     assert manager.get(lid)["expires_at"] == renewed_expiry[0]
 
+
 def test_office_previews_are_kept_as_a_pdf_for_pdfjs(tmp_path) -> None:
     from pypdf import PdfWriter
 
