@@ -422,10 +422,35 @@ async def process_dream(run_id: str) -> None:
                 _finish(db, run, "failed", error=f"{type(exc).__name__}: {exc}"[:1000])
 
 
+def recover_pending(now: datetime | None = None) -> list[str]:
+    """Pick up a night a previous API process claimed but did not finish."""
+    now = _aware(now)
+    stale = now - timedelta(minutes=10)
+    with SessionLocal() as db:
+        rows = list(
+            db.scalars(
+                select(MemoryDreamRun).where(
+                    MemoryDreamRun.status.in_(("pending", "running")),
+                    MemoryDreamRun.created_at < stale,
+                )
+            )
+        )
+        for row in rows:
+            row.status = "pending"
+            db.add(row)
+        db.commit()
+        return [row.id for row in rows]
+
+
 async def dream_forever() -> None:
     if not settings.memory_dream_enabled or settings.env == "test":
         return
     log.info("memory dream scheduler started")
+    try:
+        for run_id in await asyncio.to_thread(recover_pending):
+            await process_dream(run_id)
+    except Exception:
+        log.exception("memory dream recovery failed")
     while True:
         try:
             claimed = await asyncio.to_thread(claim_due)
