@@ -10,7 +10,7 @@ import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged, conversationTitled } from "../app-shell";
 import { CONVERSATION_MOVED } from "../conversation-menu";
-import { IconBranch, IconChevronRight, IconFolder, IconSlides } from "../icons";
+import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import PreviewPane, { type PaneSources } from "./preview-pane";
@@ -629,6 +629,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
 
   const showPane = paneOpen && (openFiles.length > 0 || !!paneSources || !!paneReader);
+  const reopenCount = !showPane ? previews.length + (paneSources ? 1 : 0) + readers.length : !openFiles.length ? previews.length : 0;
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />
@@ -728,14 +729,18 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
-              {(!showPane || !openFiles.length) && previews.length ? (
-                <button className="preview-reopen" aria-label={`打开预览（${previews.length}）`} onClick={() => {
+              {reopenCount ? (
+                <button className="preview-reopen" aria-label={`打开预览（${reopenCount}）`} onClick={() => {
                   setClosedFiles([]);
-                  setSelected((value) => value || previews[previews.length - 1]?.filename || null);
-                  setSourcesOn(false);
+                  // a collapsed pane comes back as it was; an open one without files switches to them
+                  if (showPane || (!paneSources && !readers.length)) {
+                    setSelected((value) => value || previews[previews.length - 1]?.filename || null);
+                    setSourcesOn(false);
+                    setReaderOn(false);
+                  }
                   setPaneOpen(true);
                 }}>
-                  <IconSlides size={14} /> <span>预览</span> <span className="count">{previews.length}</span>
+                  <IconPanelRight size={14} /> <span>预览</span> <span className="count">{reopenCount}</span>
                 </button>
               ) : null}
               <QueueStrip
@@ -769,7 +774,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           onReaderTab={(url) => { setReaderUrl(url); setReaderOn(true); setSourcesOn(false); }}
           onCloseReader={closeReader}
           onRead={openReader}
-          onClose={() => { setPaneOpen(false); setPaneSources(null); setSourcesOn(false); setReaders([]); setReaderUrl(null); setReaderOn(false); }}
+          onClose={() => setPaneOpen(false)}
           live={!!streaming && running}
           downloads={downloads}
         />
