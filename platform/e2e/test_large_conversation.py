@@ -124,3 +124,47 @@ with SessionLocal() as db:
     assert page.locator(".viewport-block").count() == 0
     assert "导出段落000。" in page.locator(".print-a").inner_text()
     assert "导出段落299。" in page.locator(".print-a").inner_text()
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+def test_virtual_long_answer_preserves_web_link_side_pane_after_main_merge(page, stack, mobile):
+    if mobile:
+        page.set_viewport_size({"width": 390, "height": 844})
+    conv = seed(stack, active=False)
+    code = """
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import Run
+with SessionLocal() as db:
+    run = db.get(Run, RUN)
+    run.summary = ("分析正文。" * 400 + "\\n\\n") * 10 + "[合并验收网页](https://example.com/merge-check)"
+    db.commit()
+""".replace("RUN", repr(conv["run"]))
+    subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, check=True)
+    page.route("**/api/v1/reader/render?**", lambda route: route.fulfill(content_type="text/html", body="<p>原版页面验收</p>"))
+    page.route(
+        "**/api/v1/reader?**",
+        lambda route: route.fulfill(
+            json={
+                "url": "https://example.com/merge-check",
+                "title": "网页验收",
+                "blocks": [{"type": "p", "text": "提取正文验收"}],
+                "truncated": False,
+            }
+        ),
+    )
+    login(page, stack, path="/c/" + conv["id"])
+    url = page.url
+    for _ in range(8):
+        page.locator(".messages").evaluate("el => el.scrollTop = el.scrollHeight")
+        page.wait_for_timeout(50)
+        if page.get_by_role("link", name="合并验收网页", exact=True).count():
+            break
+    page.get_by_role("link", name="合并验收网页", exact=True).click()
+    page.get_by_role("tab", name="网页", exact=True).wait_for()
+    assert page.get_by_role("tab", name="网页", exact=True).get_attribute("aria-selected") == "true"
+    assert page.locator(".reader-frame").get_attribute("src").startswith("/api/v1/reader/render?")
+    page.get_by_role("tab", name="正文", exact=True).click()
+    page.get_by_text("提取正文验收", exact=True).wait_for()
+    assert page.url == url
+    if not mobile:
+        assert page.locator(".preview-pane").bounding_box()["x"] > page.locator(".chat-main").bounding_box()["x"]
