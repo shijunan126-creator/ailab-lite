@@ -46,7 +46,11 @@ def embed(texts: list[str], *, timeout: float) -> list[list[float]]:
     """One normalized vector per text. Raises on any transport, status or shape problem."""
     url = settings.memory_embedding_base_url.rstrip("/") + "/embeddings"
     try:
-        response = httpx.post(url, json={"model": settings.memory_embedding_model, "input": texts}, headers=_headers(), timeout=timeout)
+        # trust_env=False: the endpoint is configured infrastructure and the body carries the API key
+        # plus user conversation text — an ambient HTTP_PROXY must never see either.
+        response = httpx.post(
+            url, json={"model": settings.memory_embedding_model, "input": texts}, headers=_headers(), timeout=timeout, trust_env=False
+        )
         response.raise_for_status()
         rows = sorted(response.json()["data"], key=lambda r: r["index"])
         vectors = [_normalize([float(x) for x in row["embedding"]]) for row in rows]

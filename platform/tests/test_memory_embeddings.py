@@ -229,3 +229,22 @@ def test_the_dense_channel_stays_off_until_a_model_name_is_set(monkeypatch) -> N
     monkeypatch.setattr(settings, "memory_embedding_base_url", "http://127.0.0.1:9/v1")
     monkeypatch.setattr(settings, "memory_embedding_model", "")
     assert not embeddings.enabled() and embeddings.embed_query("x") is None and embeddings.index_pending() == 0
+
+
+def test_embed_requests_bypass_the_environment_proxy(monkeypatch) -> None:
+    captured: dict = {}
+
+    class FakeResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return {"data": [{"index": 0, "embedding": [1.0, 0.0]}]}
+
+    def fake_post(url, **kwargs):
+        captured.update(kwargs)
+        return FakeResponse()
+
+    monkeypatch.setattr(embeddings.httpx, "post", fake_post)
+    assert embeddings.embed(["正文"], timeout=1) == [[1.0, 0.0]]
+    assert captured["trust_env"] is False

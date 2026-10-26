@@ -132,8 +132,9 @@ def _unique_name(name: str, used: set[str]) -> str:
 def _operation(method):
     """Calls an agent makes on a lease count as activity, and an in-flight one makes it unreclaimable.
 
-    Renewals, status reads and releases are deliberately not wrapped: the Agent's heartbeat would otherwise
-    keep every sandbox looking busy.
+    Renewals, status reads and releases are deliberately not wrapped: renewals must not reset the idle
+    clock (a long final answer would never look idle), but they are recorded separately — their freshness
+    extends the reclaim floor for a lease whose run is still mid-turn (see _evict_floor).
     """
 
     @functools.wraps(method)
@@ -199,6 +200,10 @@ class LeaseManager:
         # a fresh idle period, so nothing is reclaimed on stale evidence.
         self._activity: dict[str, float] = {}
         self._operations: dict[str, int] = {}
+        # Last renewal per lease, same lifetime as _activity. The agent heartbeats only while its turn is
+        # in flight, so a fresh renewal means the run is mid-turn — silent because it is thinking or
+        # reading, not because it died — and gets a longer idle floor before it may be reclaimed.
+        self._renewed: dict[str, float] = {}
         self._activity_lock = threading.Lock()
 
     def _operation_started(self, lease_id: str) -> None:
@@ -213,7 +218,8 @@ class LeaseManager:
                 self._operations[lease_id] = left
             else:
                 self._operations.pop(lease_id, None)
-            self._activity[lease_id] = time.monotonic()
+            if lease_id in self._activity:  # never seed bookkeeping for an unknown lease id
+                self._activity[lease_id] = time.monotonic()
 
     def touch(self, lease_id: str) -> None:
         with self._activity_lock:
@@ -632,6 +638,8 @@ class LeaseManager:
             lease["expires_at"] = until.isoformat()
             self._provider_call("update_metadata", lease["provider_ref"], self._metadata(lease))
             self._save(lease)
+            with self._activity_lock:
+                self._renewed[lease_id] = time.monotonic()
             return lease
 
     @_operation
@@ -791,6 +799,7 @@ class LeaseManager:
         self._save(lease)
         with self._activity_lock:
             self._activity.pop(lease["lease_id"], None)
+            self._renewed.pop(lease["lease_id"], None)
             self._operations.pop(lease["lease_id"], None)
         with self._condition:
             self._notify()
@@ -951,9 +960,11 @@ class LeaseManager:
     def _pick_victim(self, principal: LeasePrincipal, why: str, live: list[dict]) -> dict | None:
         """The sandbox to give up for a waiting request, or None when nobody may be asked to.
 
-        A sandbox is only ever reclaimed after sandbox_evict_idle_seconds without any operation, so a
-        reclaimed workspace is never one that is being worked in, and two busy runs cannot trade places
-        forever. Under the user's own cap only their own sandboxes qualify; for pool capacity everyone's do,
+        A sandbox is only ever reclaimed after sandbox_evict_idle_seconds without any operation, so two
+        busy runs cannot trade places forever. A lease whose agent is still heartbeating is mid-turn —
+        silent because it is thinking or reading, not dead — and gets a 3x floor before it may be asked;
+        a heartbeat that stops (crashed agent, cut connection) leaves it reclaimable on the base floor.
+        Under the user's own cap only their own sandboxes qualify; for pool capacity everyone's do,
         but only once the pool is almost full, and the user holding the most sandboxes gives one up first.
         """
         work = [x for x in live if x["spec"]["profile"] != "render"]
@@ -965,13 +976,23 @@ class LeaseManager:
             return None
         held = Counter(x["user_id"] for x in work)
         idle = {x["lease_id"]: self.idle_seconds(x) for x in scope}
-        floor = settings.sandbox_evict_idle_seconds
         candidates = [
             x
             for x in scope
-            if x["state"] == "active" and x["run_id"] != principal.run_id and not _expired(x) and idle[x["lease_id"]] >= floor
+            if x["state"] == "active"
+            and x["run_id"] != principal.run_id
+            and not _expired(x)
+            and idle[x["lease_id"]] >= self._evict_floor(x["lease_id"])
         ]
         return max(candidates, key=lambda x: (held[x["user_id"]], idle[x["lease_id"]]), default=None)
+
+    def _renew_fresh(self, lease_id: str) -> bool:
+        with self._activity_lock:
+            last = self._renewed.get(lease_id)
+        return last is not None and (time.monotonic() - last) <= 3 * settings.runtime_heartbeat_seconds
+
+    def _evict_floor(self, lease_id: str) -> float:
+        return settings.sandbox_evict_idle_seconds * (3 if self._renew_fresh(lease_id) else 1)
 
     def _reclaim_for(self, principal: LeasePrincipal, spec: SandboxSpec, why: str) -> bool:
         """Start giving up one idle sandbox. Never called with the admission condition held."""
@@ -984,7 +1005,7 @@ class LeaseManager:
             lease_id = victim["lease_id"]
             with self._stripe(lease_id):
                 lease = self.store.get(lease_id)
-                if not lease or lease["state"] != "active" or self.idle_seconds(lease) < settings.sandbox_evict_idle_seconds:
+                if not lease or lease["state"] != "active" or self.idle_seconds(lease) < self._evict_floor(lease_id):
                     return False
                 # releasing first: every call on it now answers 410, and reconciliation leaves it alone while it is saved
                 lease.update(state="releasing", reason=EVICT_REASON, retry_at=time.time() + EVICT_SAVE_SECONDS)
@@ -1088,6 +1109,7 @@ class LeaseManager:
 
     def cleanup_once(self) -> None:
         self._assert_owner()
+        seen_ids: set[str] = set()
         with self._reconcile_lock:
             resources = self._provider_call("list_owned", self.owner)
             by_id = {r.provider_ref: r for r in resources}
@@ -1143,6 +1165,7 @@ class LeaseManager:
                             self._save(orphan)
             for candidate in self.store.all():
                 lease_id = candidate["lease_id"]
+                seen_ids.add(lease_id)
                 with self._stripe(lease_id):
                     lease = self.store.get(lease_id)
                     if not lease:
@@ -1197,6 +1220,12 @@ class LeaseManager:
                             self.release(lease_id, reason="creation_interrupted")
                     elif lease["state"] == "releasing" and lease.get("retry_at", 0) <= time.time():
                         self._delete_resource(lease)
+            # Bookkeeping is per process and keyed by lease id; drop what no store row remembers any more
+            # (call attempts on unknown ids would otherwise accumulate until restart).
+            with self._activity_lock:
+                for bookkeeping in (self._activity, self._renewed, self._operations):
+                    for stale in [key for key in bookkeeping if key not in seen_ids]:
+                        bookkeeping.pop(stale, None)
             with self._condition:
                 self._notify()
 

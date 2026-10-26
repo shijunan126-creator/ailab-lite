@@ -4,7 +4,7 @@ import json
 import os
 import sys
 
-SELECTED = {"quality": "code", "shell": "code", "python": "backend", "storage-contracts": "backend", "e2e": "e2e"}
+SELECTED = {"quality": "code", "shell": "code", "crawler": "code", "python": "backend", "storage-contracts": "backend", "e2e": "e2e"}
 FLAGS = {"code", "backend", "e2e"}
 RESULTS = {"success", "failure", "cancelled", "skipped"}
 
@@ -12,7 +12,7 @@ RESULTS = {"success", "failure", "cancelled", "skipped"}
 def validate(jobs):
     """Raise ValueError on malformed inputs or an incomplete/failed selection."""
     if not isinstance(jobs, dict) or set(jobs) != {"changes", *SELECTED}:
-        raise ValueError("Invalid CI jobs: expected changes, quality, shell, python, storage-contracts, e2e")
+        raise ValueError("Invalid CI jobs: expected changes, quality, shell, crawler, python, storage-contracts, e2e")
     for name, job in jobs.items():
         if not isinstance(job, dict) or not isinstance(job.get("result"), str) or job["result"] not in RESULTS:
             raise ValueError(f"Invalid job result: {name}")

@@ -23,10 +23,10 @@ def jobs_for(code="true", backend="true", e2e="true"):
 
 class GateTests(unittest.TestCase):
     def test_every_suite_result_combination_for_each_valid_scope(self):
-        # Exhaust all 4**5 terminal result combinations for full, Portal and docs PRs.
+        # Exhaust all 4**len(SELECTED) terminal result combinations for full, Portal and docs PRs.
         for flags in [("true", "true", "true"), ("true", "false", "true"), ("false", "false", "false")]:
             baseline = jobs_for(*flags)
-            for results in itertools.product(("success", "failure", "cancelled", "skipped"), repeat=5):
+            for results in itertools.product(("success", "failure", "cancelled", "skipped"), repeat=len(module.SELECTED)):
                 jobs = copy.deepcopy(baseline)
                 expected = True
                 for (name, flag), result in zip(module.SELECTED.items(), results, strict=True):

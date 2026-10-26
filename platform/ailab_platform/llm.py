@@ -76,7 +76,9 @@ TextSink = Callable[[str], Awaitable[None]]
 
 
 class LLMClient:
-    async def chat(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None) -> LLMResponse:
+    async def chat(
+        self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
+    ) -> LLMResponse:
         raise NotImplementedError
 
     async def chat_stream(
@@ -270,7 +272,9 @@ _XLSX = [
 class MockLLM(LLMClient):
     """Deterministic tool-calling policy used by tests and the dev demo."""
 
-    async def chat(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None) -> LLMResponse:
+    async def chat(
+        self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
+    ) -> LLMResponse:
         prompt = _user_prompt(messages)
         step = _assistant_steps(messages)
         usage = {"prompt_tokens": max(1, len(json.dumps(messages, ensure_ascii=False)) // 4), "completion_tokens": 20}

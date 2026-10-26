@@ -148,11 +148,26 @@ def _candidate_users(db: Session, now: datetime) -> list[User]:
     return list(db.scalars(select(User).where(User.disabled_at.is_(None))).all())
 
 
+def reclaim_failed(db: Session, row: MemoryDreamRun, *, trigger: str) -> MemoryDreamRun:
+    """A failed night is retryable the same day: reuse the row (the date is unique) and start over."""
+    row.status = "pending"
+    row.trigger = trigger
+    row.error = ""
+    row.journal = ""
+    row.plan = {}
+    row.started_at = None
+    row.finished_at = None
+    db.add(row)
+    return row
+
+
 def claim_due(now: datetime | None = None) -> list[str]:
     now = _aware(now)
     claimed: list[str] = []
     with SessionLocal() as db:
         for user in _candidate_users(db, now):
+            if len(claimed) >= settings.memory_dream_max_users:
+                break
             ds = dream_settings(user)
             if not ds.enabled:
                 continue
@@ -162,7 +177,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
             except Exception:
                 zone = ZoneInfo(settings.memory_dream_default_timezone)
             local = now.astimezone(zone)
-            start, end = local_window(ds, zone_name)
+            start, end = local_window(ds)
             if not start <= local.hour * 60 + local.minute < end:
                 continue
             if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(TERMINAL)).limit(1)):
@@ -171,26 +186,32 @@ def claim_due(now: datetime | None = None) -> list[str]:
             if len(runs) < settings.memory_dream_min_runs:
                 continue
             local_date = local.date().isoformat()
-            if db.scalar(
-                select(MemoryDreamRun.id).where(
+            existing = db.scalar(
+                select(MemoryDreamRun).where(
                     MemoryDreamRun.user_id == user.id,
                     MemoryDreamRun.local_date == local_date,
                 )
-            ):
-                continue
-            row = MemoryDreamRun(
-                id=new_id("dream"),
-                user_id=user.id,
-                local_date=local_date,
-                timezone=zone_name,
-                status="pending",
-                trigger="cron",
-                input_run_ids=[r.id for r in runs],
-                before_memory={},
-                after_memory={},
-                token_usage={},
             )
-            db.add(row)
+            if existing is not None:
+                if existing.status != "failed":
+                    continue
+                # Last night's attempt failed: retry it in this window instead of losing the day.
+                row = reclaim_failed(db, existing, trigger="cron")
+                row.input_run_ids = [r.id for r in runs]
+            else:
+                row = MemoryDreamRun(
+                    id=new_id("dream"),
+                    user_id=user.id,
+                    local_date=local_date,
+                    timezone=zone_name,
+                    status="pending",
+                    trigger="cron",
+                    input_run_ids=[r.id for r in runs],
+                    before_memory={},
+                    after_memory={},
+                    token_usage={},
+                )
+                db.add(row)
             try:
                 db.commit()
                 claimed.append(row.id)
@@ -256,6 +277,15 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
     )
 
 
+def _fit_episodes(episodes: list[MemoryEpisode], budget: int) -> list[MemoryEpisode]:
+    """The extract prompt is bounded: the newest episodes win, the oldest are left for the next night."""
+    kept, payload = episodes, _episode_payload(episodes)
+    while len(payload) > budget and len(kept) > 1:
+        kept = kept[1:]
+        payload = _episode_payload(kept)
+    return kept
+
+
 def _quote_supported(quote: str, episodes: list[MemoryEpisode]) -> bool:
     """A quote counts only if the *user* said it: assistant text is context, never evidence (doc §7.2)."""
     q = _normalize(quote)
@@ -265,7 +295,7 @@ def _quote_supported(quote: str, episodes: list[MemoryEpisode]) -> bool:
 async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict]:
     timeout = settings.llm_total_timeout_seconds or settings.llm_timeout_seconds
     async with asyncio.timeout(timeout):
-        response = await llm_for(model).chat(messages, [], model, user_id=user.id)
+        response = await llm_for(model).chat(messages, [], model, user_id=user.id, max_tokens=settings.memory_dream_max_tokens)
     if response.tool_calls or not response.content.strip():
         raise DreamError("dream model returned no final JSON")
     return response.content, dict(response.usage or {})
@@ -289,11 +319,12 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     if not get_catalog().get(model):
         raise DreamError(f"dream model not found: {model}")
     existing = [{"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")} for e in active]
+    payload = _episode_payload(_fit_episodes(episodes, settings.memory_dream_input_chars))
     user_prompt = (
         "已有事实（用于避免重复；不要从这些事实里再抽取）：\n"
         + json.dumps(existing, ensure_ascii=False)
         + "\n\n新 episodes：\n"
-        + _episode_payload(episodes)
+        + payload
         + "\n\n只返回符合要求的 JSON。"
     )
     raw, usage = await _chat(
