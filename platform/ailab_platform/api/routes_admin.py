@@ -737,10 +737,7 @@ def admin_memory_dream(user: User = Depends(current_user), db: Session = Depends
     _require(db, user, "usage.list")
     rows = list(db.scalars(select(MemoryDreamRun)).all())
     applied = [r for r in rows if r.status == "applied"]
-    tokens = sum(
-        int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0))
-        for r in rows
-    )
+    tokens = sum(int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0)) for r in rows)
     return {
         "runs": len(rows),
         "applied": len(applied),

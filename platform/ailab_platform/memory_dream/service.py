@@ -266,6 +266,7 @@ def _parse_plan(text: str) -> DreamPlan:
 
 def _validate(plan: DreamPlan, memory: dict, input_ids: set[str]) -> DreamPlan:
     active = {e["id"]: e for e in memory.get("entries") or [] if not e.get("superseded_by")}
+    seen: set[tuple[str, str]] = {(e["kind"], e["content"].strip()) for e in active.values()}
     kept: list[DreamChange] = []
     for change in plan.changes:
         if change.op == "noop":
@@ -277,9 +278,10 @@ def _validate(plan: DreamPlan, memory: dict, input_ids: set[str]) -> DreamPlan:
         if any(rid not in input_ids for rid in change.evidence_run_ids):
             continue
         if change.op == "add":
-            duplicate = any(e["kind"] == change.kind and e["content"].strip() == change.content.strip() for e in active.values())
-            if duplicate:
+            key = (change.kind, change.content.strip())
+            if key in seen:
                 continue
+            seen.add(key)
         kept.append(change)
         if len(kept) >= DREAM_MAX_CHANGES:
             break
@@ -344,9 +346,7 @@ def _apply(db: Session, user: User, plan: DreamPlan, input_ids: set[str]) -> dic
                 continue
             existing.content = change.content
             existing.confidence = max(float(existing.confidence or 0), change.confidence)
-            existing.evidence_run_ids = list(
-                dict.fromkeys([*(existing.evidence_run_ids or []), *change.evidence_run_ids])
-            )
+            existing.evidence_run_ids = list(dict.fromkeys([*(existing.evidence_run_ids or []), *change.evidence_run_ids]))
             applied += 1
         if applied == 0:
             return current
@@ -402,7 +402,6 @@ async def process_dream(run_id: str) -> None:
             plan = _validate(plan, memory, input_ids)
             before = memory
             after = _apply(db, user, plan, input_ids) if plan.changes else memory
-            db.refresh(user)
             _finish(
                 db,
                 run,
@@ -439,10 +438,7 @@ async def dream_forever() -> None:
 
 def list_runs(db: Session, user_id: str, limit: int = 30) -> list[MemoryDreamRunOut]:
     rows = db.scalars(
-        select(MemoryDreamRun)
-        .where(MemoryDreamRun.user_id == user_id)
-        .order_by(MemoryDreamRun.created_at.desc())
-        .limit(limit)
+        select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).order_by(MemoryDreamRun.created_at.desc()).limit(limit)
     )
     return [_run_out(r) for r in rows]
 

@@ -3,7 +3,6 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
