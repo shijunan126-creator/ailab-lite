@@ -297,6 +297,19 @@ class Settings(BaseSettings):
     memory_dream_target_ratio: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_max_tokens: int = Field(default=2000, ge=200, le=20_000)
     memory_dream_default_timezone: str = "Asia/Shanghai"
+    # Dense channel of the history recall. Any OpenAI-compatible /embeddings endpoint (TEI, vLLM, Ollama, a hosted API);
+    # empty URL = lexical search only. Vectors of another model are ignored until the indexer has redone them.
+    memory_embedding_base_url: str = ""  # the URL before /embeddings, e.g. http://platform-embed/v1
+    memory_embedding_model: str = ""  # the name the endpoint serves; required for the dense channel
+    memory_embedding_api_key: str = ""
+    memory_embedding_query_prefix: str = ""  # an instruction some models want before a query (bge-*-zh: see deploy.sh)
+    memory_embedding_doc_prefix: str = ""
+    # Cosine similarity a turn needs to count as a match on meaning alone. Model-specific: bge-base-zh puts related text at
+    # 0.4-0.6 and unrelated at 0.2-0.37; e5-style models sit at 0.8+ for everything and need a much higher value.
+    memory_embedding_min_similarity: float = Field(default=0.40, ge=0, le=1)
+    memory_embedding_query_timeout_seconds: float = Field(default=3.0, ge=0.2, le=60)
+    memory_embedding_batch: int = Field(default=16, ge=1, le=64)
+    memory_embedding_interval_seconds: int = Field(default=30, ge=5, le=3600)
     reaper_interval_seconds: int = Field(default=60, gt=0)
     reaper_grace_seconds: int = Field(default=120, ge=0)  # don't touch work younger than this
 

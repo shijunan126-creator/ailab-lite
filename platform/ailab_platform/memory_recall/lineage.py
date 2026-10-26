@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 
 from ..audit import record_audit
 from ..models import MemoryEpisode, Run, User, utcnow
+from . import embeddings
 
 FORGET_DERIVED_FACTS = False  # True: also drop facts whose only evidence was the deleted conversation
 
@@ -31,6 +32,7 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
     if not conversation_ids:
         return {"episodes": 0, "facts": 0, "dropped": 0}
     run_ids = set(db.scalars(select(Run.id).where(Run.conversation_id.in_(conversation_ids), Run.user_id == user.id)))
+    embeddings.delete_for_runs(db, list(run_ids))
     match = [MemoryEpisode.conversation_id.in_(conversation_ids)]
     if run_ids:
         match.append(MemoryEpisode.run_id.in_(run_ids))
@@ -79,5 +81,6 @@ def purge_episodes_for_runs(db: Session, run_ids: list[str]) -> int:
     """Backstop for the hard purge of a conversation: no episode may outlive its run."""
     if not run_ids:
         return 0
+    embeddings.delete_for_runs(db, run_ids)
     result = db.execute(delete(MemoryEpisode).where(MemoryEpisode.run_id.in_(run_ids)))
     return result.rowcount or 0

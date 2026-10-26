@@ -19,6 +19,15 @@
 #   Sign-up:
 #   --registration MODE    open (anyone who can reach the Portal), invite (needs --invite-code) or closed
 #   --invite-code CODE     the code new users must enter in invite mode
+#   Memory recall by meaning (optional; without it history recall matches words only). The platform only calls an
+#   OpenAI-compatible embeddings endpoint (TEI, vLLM, Ollama, a hosted API); it does not run one:
+#   --embedding URL        the endpoint, the part before /embeddings (e.g. http://10.0.0.8:8080/v1), or `off`.
+#                          Omitted = leave unchanged. Conversation text is sent to that endpoint!
+#   --embedding-model NAME   the model name the endpoint expects (required with a URL)
+#   --embedding-key KEY      its API key, if it needs one
+#   --embedding-min-similarity X   cosine a turn needs to match on meaning alone (default 0.40, tuned to bge-base-zh;
+#                          calibrate for any other model: platform/scripts/calibrate_embedding.py)
+#   --embedding-query-prefix TEXT  instruction put before queries ("" for models without one; bge-*-zh gets its own)
 #   --skip-build       reuse the images already built/imported (config-only redeploy)
 #   --no-portal        do not build/start the Portal (needs node/npm otherwise)
 #   --listen ADDR      Portal bind address (default 127.0.0.1; 0.0.0.0 exposes it on the network - plain HTTP!)
@@ -43,6 +52,7 @@ PORTAL_PORT=3000
 CMD=up MODEL_KEY='' SKIP_BUILD=0 WITH_PORTAL=1 LISTEN=127.0.0.1 SMOKE_REAL=0 DRY=0 YES=0
 MODEL_BASE_URL='' MODEL_NAME='' MODEL_LABEL='' MODEL_NO_TOOLS=0 MODELS_FILE='' REGISTRATION='' INVITE_CODE=''
 CATALOG='' KEY_ENV='' DEFAULT_MODEL=''
+EMBEDDING='' EMBEDDING_MODEL='' EMBEDDING_KEY='' EMBEDDING_MIN_SIM='' EMBEDDING_QUERY_PREFIX='' EMBEDDING_PREFIX_SET=0
 while [ $# -gt 0 ]; do
   case "$1" in
     up|status|down) CMD=$1 ;;
@@ -61,6 +71,16 @@ while [ $# -gt 0 ]; do
     --registration=*) REGISTRATION=${1#*=} ;;
     --invite-code) INVITE_CODE=${2:?--invite-code needs a value}; shift ;;
     --invite-code=*) INVITE_CODE=${1#*=} ;;
+    --embedding) EMBEDDING=${2:?--embedding needs a URL or off}; shift ;;
+    --embedding=*) EMBEDDING=${1#*=} ;;
+    --embedding-model) EMBEDDING_MODEL=${2:?--embedding-model needs a value}; shift ;;
+    --embedding-model=*) EMBEDDING_MODEL=${1#*=} ;;
+    --embedding-key) EMBEDDING_KEY=${2:?--embedding-key needs a value}; shift ;;
+    --embedding-key=*) EMBEDDING_KEY=${1#*=} ;;
+    --embedding-min-similarity) EMBEDDING_MIN_SIM=${2:?--embedding-min-similarity needs a value}; shift ;;
+    --embedding-min-similarity=*) EMBEDDING_MIN_SIM=${1#*=} ;;
+    --embedding-query-prefix) EMBEDDING_QUERY_PREFIX=${2-}; EMBEDDING_PREFIX_SET=1; shift ;;
+    --embedding-query-prefix=*) EMBEDDING_QUERY_PREFIX=${1#*=}; EMBEDDING_PREFIX_SET=1 ;;
     --skip-build) SKIP_BUILD=1 ;;
     --no-portal) WITH_PORTAL=0 ;;
     --listen) LISTEN=${2:?--listen needs an address}; shift ;;
@@ -308,6 +328,9 @@ deploy_platform() {
     ok "registration: $(k get configmap platform-auth -o jsonpath='{.data.AILAB_REGISTRATION}' 2>/dev/null || echo open) (unchanged; --registration to change)"
   fi
 
+  step "embedding (history recall by meaning)"
+  embedding_config
+
   step "deploying to k3s"
   local was_deployed=0; k get deploy platform-api >/dev/null 2>&1 && was_deployed=1
   local applied; applied=$(run $KUBECTL apply -k "$PLATFORM/deploy/overlays/lite") || die "could not apply the platform manifest"
@@ -333,6 +356,35 @@ deploy_platform() {
   fi
   wait_http "$API_URL/readyz" 90 "Platform API (:30080)" || die "API not ready"
   wait_http "$BROKER_URL/readyz" 60 "Sandbox Broker (:8081)" || die "Broker not ready"
+}
+
+embedding_secret_exists() { k get secret platform-embedding >/dev/null 2>&1; }
+
+# Writes the platform-embedding Secret the API reads (envFrom, optional). Only what was asked for changes.
+embedding_config() {
+  case "$EMBEDDING" in
+    "") ok "$(if embedding_secret_exists; then echo "unchanged: $(k get secret platform-embedding -o jsonpath='{.data.AILAB_MEMORY_EMBEDDING_BASE_URL}' | base64 -d) (--embedding URL|off to change)"; else echo "not configured: history recall matches words only (--embedding URL --embedding-model NAME to add meaning)"; fi)"
+       [ -z "$EMBEDDING_MODEL$EMBEDDING_KEY$EMBEDDING_MIN_SIM" ] && [ "$EMBEDDING_PREFIX_SET" = 0 ] || warn "--embedding-* options need --embedding; ignored" ;;
+    off)
+      run sh -c "$KUBECTL -n $NS delete secret platform-embedding --ignore-not-found >/dev/null"
+      ok "off: history recall matches words only" ;;
+    http://*|https://*)
+      local url model prefix
+      [ -n "$EMBEDDING_MODEL" ] || die "--embedding URL needs --embedding-model (the name that endpoint serves)"
+      model=$EMBEDDING_MODEL
+      url=${EMBEDDING%/}
+      # bge models want a retrieval instruction in front of the query; others (e5, OpenAI) do not
+      prefix=$EMBEDDING_QUERY_PREFIX
+      if [ "$EMBEDDING_PREFIX_SET" = 0 ]; then case "$model" in *bge-m3*) prefix="" ;; *bge*) prefix="为这个句子生成表示以用于检索相关文章：" ;; *) prefix="" ;; esac; fi
+      local args=(--from-literal=AILAB_MEMORY_EMBEDDING_BASE_URL="$url" --from-literal=AILAB_MEMORY_EMBEDDING_MODEL="$model"
+        --from-literal=AILAB_MEMORY_EMBEDDING_QUERY_PREFIX="$prefix")
+      [ -z "$EMBEDDING_KEY" ] || args+=(--from-literal=AILAB_MEMORY_EMBEDDING_API_KEY="$EMBEDDING_KEY")
+      [ -z "$EMBEDDING_MIN_SIM" ] || args+=(--from-literal=AILAB_MEMORY_EMBEDDING_MIN_SIMILARITY="$EMBEDDING_MIN_SIM")
+      run sh -c "$KUBECTL -n $NS create secret generic platform-embedding \"\$@\" --dry-run=client -o yaml | $KUBECTL apply -f - >/dev/null" sh "${args[@]}"
+      ok "$model at $url"
+      warn "conversation text is sent to $url to be embedded" ;;
+    *) die "--embedding must be off or an http(s) URL" ;;
+  esac
 }
 
 start_portal() {

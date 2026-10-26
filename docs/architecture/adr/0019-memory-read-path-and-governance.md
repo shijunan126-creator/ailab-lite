@@ -32,8 +32,8 @@
 
 | 架构文档 | 本部署 | 原因 |
 |---|---|---|
-| PostgreSQL + Qdrant、稠密向量、sparse 向量 | 沿用现有双库（SQLite/PG），词法检索在应用内 | 没有 embedding 模型；词法检索接口 `memory_recall.search` 是接入稠密通道的位置 |
-| RRF 多通道融合、cross-encoder 重排 | 单通道 BM25 + 覆盖度阈值 | 只有一个通道，融合无对象；重排无模型 |
+| PostgreSQL + Qdrant、sparse 向量 | 沿用现有双库（SQLite/PG），词法检索在应用内 | 没有必要引入向量库，见下方“稠密通道” |
+| cross-encoder 重排 | 未做 | 没有重排模型；两路各有绝对阈值 |
 | `events/episodes/memories/memory_sources/relations/entities` 表 | 事实留在 JSON 文档，episode 沿用 PR #80 的 `memory_episodes` | 容量上限 100 条，文档形态已够；建表迁移成本高于收益。事实超出上限时再迁移 |
 | contested / quarantined 状态 | 只有 invalid / superseded / suppressed；可疑内容直接拒收并计数 | 没有人工复核流；`ailab_memory_guard_rejected_total` 可观测 |
 | 事务 outbox、异步索引 | 无 | 没有派生索引，不需要 |
@@ -52,3 +52,17 @@
 - 项目级作用域与“仅限本项目的记忆”。
 - 稠密通道：有 embedding 模型后接入 `search_history`，用 RRF 融合。
 - 基于真实对话的离线评测（记忆 vs 无记忆基线，memory-hurt 率）；现有 `scripts/evaluate_memory_dream.py` 只评抽取与裁决。
+
+## 追加：稠密通道（embedding，2026-10-26）
+
+历史检索现在有两路相互独立的候选，用 RRF（k=60）合并（§10.3–10.4）：词法 BM25（覆盖度闸门）和稠密余弦相似度（绝对阈值）。两路各自弃权，所以无关问题仍返回 `NO_RELEVANT_MEMORY`。
+
+- **接口**：任意 OpenAI 兼容的 `/embeddings`（TEI、vLLM、Ollama、托管 API）。`AILAB_MEMORY_EMBEDDING_BASE_URL` 为空即关闭，检索退回纯词法；调用失败时当次退回词法（§24），返回里 `dense` 为 `off | on | unavailable`。
+- **存储**：表 `memory_embeddings`（迁移 0033）：每个已完成轮次一个 L2 归一化的 float32 向量，键为 (run_id, model)。向量是派生数据——随对话删除、清理一起删除；换模型后旧向量被忽略，由后台索引重新计算。余弦在应用内计算（`math.sumprod`，每次最多 400 条），不需要向量库。
+- **索引**：API 进程里的后台循环，每 30 秒把还没有向量的轮次分批嵌入，最新的先做。临时对话、已删除对话、被改写的轮次、关闭了记忆的用户不会被发送给 embedding 服务。
+- **模型由部署方提供**：平台只负责调用，不运行 embedding 模型（计划在专业计算卡上部署更强的模型）。必须同时配置 `AILAB_MEMORY_EMBEDDING_BASE_URL` 和 `AILAB_MEMORY_EMBEDDING_MODEL`，缺一个就保持关闭。需要查询指令的模型（如 bge-*-zh）再设 `AILAB_MEMORY_EMBEDDING_QUERY_PREFIX`。
+- **阈值必须按模型标定**：余弦相似度的分布因模型而异——本机实测 `bge-base-zh-v1.5` 相关 0.4–0.6、无关 ≤0.37，`multilingual-e5-small` 全部挤在 0.82–0.90 无法区分。默认 0.40 只适用于 bge-base-zh；换模型后用 `platform/scripts/calibrate_embedding.py` 量一遍（可传入自己的 `--pairs`），再设 `AILAB_MEMORY_EMBEDDING_MIN_SIMILARITY`。
+- **实测**（10 轮语料，真实 bge-base-zh）：9 个问题里 7 个命中预期的那一轮，其中 4 个（汇报文档、季度业绩、表结构变更、镜像打包）与原文几乎没有共同词，纯词法找不到；“沙箱网络隔离”命中的是相关的 Kubernetes 那一轮而不是 gVisor 那一轮；“容器编排那件事”（相似度仅 0.29）漏掉。5 个无关问题全部正确弃权。样本很小，只说明方向，不是评测结论。
+- **隐私**：配置了外部端点后，轮次文本（提示词与回答各前 1500 字）会发送给它；`deploy.sh` 会提示。放在自己的计算卡上则不出内网。
+- **部署**：`./deploy.sh --embedding URL --embedding-model NAME [--embedding-key KEY] [--embedding-min-similarity X]`，`--embedding off` 关闭。只写入 Secret `platform-embedding`（API 以 envFrom 可选读取），不部署任何模型服务。
+- **仍未做**：事实去重和事实检索仍用 rapidfuzz，没有用向量。
