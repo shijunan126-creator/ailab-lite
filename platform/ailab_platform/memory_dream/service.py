@@ -447,8 +447,7 @@ def metrics(db: Session, user_id: str) -> dict:
     rows = list(db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id)).all())
     applied = [r for r in rows if r.status == "applied"]
     tokens = sum(
-        int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0))
-        for r in applied
+        int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0)) for r in applied
     )
     changes = sum(len((r.plan or {}).get("changes") or []) for r in applied)
     return {

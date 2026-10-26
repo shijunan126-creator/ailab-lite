@@ -1,8 +1,10 @@
 """Account memory: one bounded settings document, serialized with other account writes."""
 
 from datetime import UTC, datetime
+from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
@@ -130,6 +132,44 @@ def update_dream_settings(body: MemoryDreamSettings, user: User = Depends(curren
         record_audit(db, "memory.dream_settings", "user", user.id, actor_id=user.id, detail={"enabled": body.enabled})
         db.commit()
     return saved.model_dump(mode="json")
+
+
+@router.post("/v1/memory/dream/run")
+def run_dream_now(background: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Manual trigger for QA and for a user who does not want to wait for the quiet window."""
+    from ..memory_dream.service import process_dream
+    from ..memory_dream.settings import dream_settings
+
+    ds = dream_settings(user)
+    if not ds.enabled:
+        raise HTTPException(409, "nightly dream is disabled")
+    zone_name = ds.timezone or "Asia/Shanghai"
+    local_date = datetime.now(UTC).astimezone(ZoneInfo(zone_name)).date().isoformat()
+    with user_critical_section(db, user.id):
+        db.refresh(user)
+        if db.scalar(
+            select(MemoryDreamRun.id).where(
+                MemoryDreamRun.user_id == user.id,
+                MemoryDreamRun.local_date == local_date,
+            )
+        ):
+            raise HTTPException(409, "dream already ran today")
+        run = MemoryDreamRun(
+            id=new_id("dream"),
+            user_id=user.id,
+            local_date=local_date,
+            timezone=zone_name,
+            status="pending",
+            trigger="manual",
+            input_run_ids=[],
+            before_memory={},
+            after_memory={},
+            token_usage={},
+        )
+        db.add(run)
+        db.commit()
+    background.add_task(process_dream, run.id)
+    return {"id": run.id}
 
 
 @router.get("/v1/memory/dreams", response_model=list[MemoryDreamRunOut])
