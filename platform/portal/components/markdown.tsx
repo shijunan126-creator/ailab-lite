@@ -1,6 +1,10 @@
 // A small Markdown renderer for model answers: headings, paragraphs, lists, quotes, code, tables, links,
 // bold / italic / inline code. It builds React elements (no HTML strings), so model output cannot inject markup.
-import { Fragment, ReactNode } from "react";
+"use client";
+
+import { Fragment, memo, ReactNode, useMemo } from "react";
+import ViewportBlock from "./viewport-block";
+import { markdownChunks } from "../lib/markdown-chunks";
 import CopyButton from "./copy-button";
 import FileCite from "./file-cite";
 import { urlKey, type Source } from "../lib/work-process";
@@ -86,17 +90,8 @@ function cells(row: string): string[] {
   return row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
 }
 
-export default function Markdown({
-  text,
-  streaming,
-  sources,
-  onOpenLink,
-}: {
-  text: string;
-  streaming?: boolean;
-  sources?: Source[];
-  onOpenLink?: (url: string, title: string) => void;
-}) {
+type Props = { text: string; streaming?: boolean; sources?: Source[]; virtual?: boolean; onOpenLink?: LinkOpener };
+const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, onOpenLink }: Props) {
   const cites: Cites = sources?.length ? new Map(sources.map((s) => [urlKey(s.url), s])) : undefined;
   const lines = text.replace(/\r\n/g, "\n").split("\n");
   const blocks: ReactNode[] = [];
@@ -202,4 +197,14 @@ export default function Markdown({
     );
   }
   return <div className={`md ${streaming ? "streaming" : ""}`}>{blocks}</div>;
-}
+});
+
+export default memo(function Markdown({ text, streaming, sources, virtual = false, onOpenLink }: Props) {
+  const chunks = useMemo(() => virtual && text.length > 12000 ? markdownChunks(text) : [text], [text, virtual]);
+  if (chunks.length < 2) return <MarkdownBlock text={text} streaming={streaming} sources={sources} onOpenLink={onOpenLink} />;
+  return <div className="md md-chunks">{chunks.map((chunk, i) => (
+    <ViewportBlock key={i} estimate={Math.max(100, chunk.length / 45 * 23)}>
+      <MarkdownBlock text={chunk} streaming={streaming && i === chunks.length - 1} sources={sources} onOpenLink={onOpenLink} />
+    </ViewportBlock>
+  ))}</div>;
+});

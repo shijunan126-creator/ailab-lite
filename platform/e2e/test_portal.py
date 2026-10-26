@@ -56,6 +56,9 @@ def _open_all_steps(page) -> None:
     closed = page.locator(".steps-head[aria-expanded='false']")
     while closed.count():  # re-query each time: an opened head no longer matches
         closed.first.click()
+    page.wait_for_function("!document.querySelector('.steps .pr-loading')")
+    # IntersectionObserver mounts nearby rows after layout; wait for paint rather than reading placeholders.
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))")
 
 
 def _wait_for_turns(page, count: int, seconds: int = 90) -> None:
@@ -236,33 +239,31 @@ def test_a_task_runs_to_completion_and_its_timeline_streams_in(logged_in) -> Non
     _wait_for_turns(page, 1)
     _open_all_steps(page)
     assert "运行命令" in page.inner_text(".steps")
-    with page.expect_navigation():
-        page.click(".turn-meta a:has-text('详情')")
-    page.wait_for_function("() => document.body.innerText.includes('run.completed')", timeout=30000)
-    page.wait_for_selector(".chip:has-text('model: test-fast')")  # the run itself loads separately from its events
-    body = page.inner_text("body")
-    assert "model: test-fast" in body  # the chip next to the title
-    for event in ("run.created", "agent.started", "agent.tool_call", "run.completed"):
-        assert event in body, f"{event} missing from the timeline"
+    assert page.locator(".turn-meta").get_by_text("详情", exact=True).count() == 0
 
 
-def test_a_spreadsheet_opens_in_the_preview_once_it_is_done_and_can_be_revised(logged_in) -> None:
+def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     page = logged_in
     _start_conversation(page, "做一个 Excel 表格")
     _wait_for_turns(page, 1)
-    # the finished file opens by itself, once, after the turn: never on the intermediate renders
-    page.wait_for_selector(".preview-pane .sheet-grid td", timeout=60000)
-    grid = page.inner_text(".preview-pane .sheet-grid")
+    assert page.locator(".preview-pane, .viewer").count() == 0
+    page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+    # A renderer-backed Run opens its live sheet tab; otherwise the delivered file opens in the viewer.
+    surface = page.locator(".preview-pane, .viewer")
+    surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
+    assert surface.count() == 1
+    grid = surface.locator(".sheet-grid").inner_text()
     assert "华东" in grid and "合计" in grid
-    assert page.inner_text(".pane-tab.on .pane-tab-name") == "sales.xlsx"
-    page.get_by_role("button", name="关闭 sales.xlsx", exact=True).click()
-    assert page.locator(".preview-pane").count() == 0
-    page.click(".file-card button:has-text('预览')")
-    page.wait_for_selector(".preview-pane .sheet-grid")
-
-    _send(page, "表格再改一下")  # the second turn rebuilds the same file from the restored workspace
+    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    page.get_by_role("button", name=close, exact=True).click()
+    surface.wait_for(state="detached")
+    page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+    surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
+    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    page.get_by_role("button", name=close, exact=True).click()
+    _send(page, "表格再改一下")
     _wait_for_turns(page, 2)
-    assert page.locator(".file-card").count() == 2  # one delivery per turn, same file name
+    assert page.locator(".file-card").count() == 2
 
 
 def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
@@ -275,7 +276,8 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     assert "读取技能 pptx" in steps and "交付文件" in steps
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
-        page.wait_for_selector(".preview-pane img", timeout=15000)  # opened once the deck was done
+        page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
+        page.wait_for_selector(".viewer img", timeout=15000)
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
 
@@ -407,7 +409,7 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_work_process_outlines_the_reasoning_and_survives_reload(logged_in):
+def test_work_process_shows_full_reasoning_after_one_click_and_survives_reload(logged_in):
     from playwright.sync_api import expect
 
     page = logged_in
@@ -419,18 +421,17 @@ def test_work_process_outlines_the_reasoning_and_survives_reload(logged_in):
     expect(head).to_contain_text("工作总时长：")
     assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    # the outline names the reasoning by its first sentence; the rest opens on request
-    thought = process.locator(".pr-thought").first
-    expect(thought.locator(".pr-label")).to_have_text("用户说：「你好呀」")
-    expect(thought.locator(".pr-thought-body")).to_be_hidden()
-    thought.locator("button").click()
-    expect(thought.locator(".pr-thought-body")).to_contain_text("这是离线演示模型")
+    # One expansion shows the actual text, without a second outline-only fold.
+    thought = process.locator(".pr-thought-body").first
+    expect(thought).to_contain_text("用户说：「你好呀」")
+    expect(thought).to_contain_text("这是离线演示模型")
+    assert process.locator(".pr-thought .collapse").count() == 0
     duration = head.locator("span").nth(1).inner_text()
     page.reload()
     page.locator(".turn-meta").wait_for()
     expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
     page.locator(".steps-head").click()
-    expect(page.get_by_role("region", name="工作过程").locator(".pr-label").first).to_have_text("用户说：「你好呀」")
+    expect(page.get_by_role("region", name="工作过程").locator(".pr-thought-body").first).to_contain_text("用户说：「你好呀」")
 
 
 def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
@@ -476,6 +477,7 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
     _wait_for_turns(page, 1, seconds=120)
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "已加载技能" in steps and "交付文件" in steps
     filename = page.locator(".file-card .name").inner_text()
@@ -496,6 +498,7 @@ def test_an_attachment_is_read_without_a_sandbox(logged_in, tmp_path) -> None:
     _wait_for_turns(page, 1)
     assert "我读到了 1 个附件的内容" in page.inner_text(".assistant-body > .md")
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已读取附件").wait_for()
     assert "已读取附件" in page.inner_text(".steps") and "会议纪要.txt" in page.inner_text(".steps")
 
 
@@ -577,6 +580,7 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     _wait_for_turns(page, 1)
     assert page.inner_text(".msg.user .attach-chip") == "周报助手"
     _open_all_steps(page)
+    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
     assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file

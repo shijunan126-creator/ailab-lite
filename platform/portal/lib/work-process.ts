@@ -84,6 +84,14 @@ function lastSteps(items: Item[]): Step[] {
 /** Fold one event of a run into its display items: the model's reasoning, its text, and groups of tool steps, in order. */
 export function reduceEvent(items: Item[], event: EventItem): Item[] {
   const p = event.payload || {};
+  // Token deltas change only the tail. Preserve earlier identities so memoized Markdown stays asleep.
+  const tail = items[items.length - 1];
+  if (event.type === "agent.thinking" && tail?.kind === "thinking" && tail.step === p.step && !tail.done) {
+    return [...items.slice(0, -1), { ...tail, text: tail.text + (p.text || ""), seconds: p.seconds ?? tail.seconds }];
+  }
+  if (event.type === "agent.delta" && tail?.kind === "text" && tail.step === p.step) {
+    return [...items.slice(0, -1), { ...tail, text: tail.text + (p.text || "") }];
+  }
   const next = items.map((it) => (it.kind === "steps" ? { kind: "steps" as const, steps: it.steps.map((s) => ({ ...s })) } : { ...it }));
   // anything else the model does means it has stopped thinking
   if (event.type !== "agent.thinking") for (const it of next) if (it.kind === "thinking") it.done = true;

@@ -125,7 +125,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const controller = new AbortController();
       streamController.current = controller;
       setStreaming(run.id);
-      setItems((prev) => ({ ...prev, [run.id]: prev[run.id] || [] }));
+      setItems((prev) => ({ [run.id]: prev[run.id] || [] }));
       streamRun(
         run.id,
         (event) => {
@@ -236,6 +236,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     };
     window.addEventListener(CONVERSATION_MOVED, moved);
     return () => window.removeEventListener(CONVERSATION_MOVED, moved);
+  }, [id]);
+
+  useEffect(() => {
+    const el = scroller.current;
+    const inner = el?.querySelector(".messages-inner");
+    if (!el || !inner) return;
+    const resize = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
+    resize.observe(inner);
+    return () => resize.disconnect();
   }, [id]);
 
   // keep the newest message in view while it streams, unless the user scrolled up to read

@@ -2,7 +2,7 @@
 
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, readerRenderUrl, ReaderBlock, ReaderPage } from "../../lib/api";
-import { IconDownload, IconX } from "../icons";
+import { IconArrowLeft, IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
 import { HtmlDocView } from "../preview/html-doc";
@@ -194,13 +194,13 @@ export default function PreviewPane({
       }
     };
     if (mobile) window.addEventListener("popstate", pop);
-    pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus();
+    pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus({ preventScroll: true });
     window.addEventListener("keydown", key);
     return () => {
       window.removeEventListener("keydown", key);
       window.removeEventListener("popstate", pop);
       if (mobile && window.history.state?.ailabPreview === marker) window.history.back();
-      if (opener?.isConnected) opener.focus();
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
@@ -209,20 +209,21 @@ export default function PreviewPane({
   if (!current && !sources && !reader) return null;
   const tab = (key: string, label: string, on: boolean, select: () => void, close: () => void) => (
     <div key={key} className={`pane-tab ${on ? "on" : ""}`}>
-      <button type="button" className="pane-tab-name" onClick={select} title={label}>{label}</button>
+      <button type="button" role="tab" aria-selected={on} className="pane-tab-name" onClick={select} title={label}>{label}</button>
       <button type="button" className="pane-tab-x" onClick={close} aria-label={`关闭 ${label}`}><IconX size={13} /></button>
     </div>
   );
   return (
     <aside ref={pane} className="preview-pane" aria-label="侧栏">
       <div className="preview-head">
+        <button type="button" className="icon-btn" aria-label="返回对话" onClick={onClose}><IconArrowLeft size={16} /></button>
         <div className="preview-tabs" role="tablist">
-          {previews.map((p) => tab(p.filename, p.filename, !showSources && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
+          {previews.map((p) => tab(p.filename, p.filename, !showSources && !showReader && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
           {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
           {reader ? tab(`reader-${reader.url}`, "网页", showReader, onReaderTab, onCloseReader) : null}
         </div>
         <span className="spacer" />
-        {!showSources && current ? (
+        {!showSources && !showReader && current ? (
           <>
             {live ? <span className="live on">实时</span> : null}
             {downloads[current.filename] ? (

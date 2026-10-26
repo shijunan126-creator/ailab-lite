@@ -375,8 +375,12 @@ button.attach-chip.open:hover { background: var(--surface); color: var(--text); 
 .pane-tab-name { min-width: 0; padding: 5px 2px 5px 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane-tab-x { flex: none; display: grid; place-items: center; width: 22px; height: 22px; margin-right: 3px; padding: 0; border-radius: 6px; opacity: .55; }
 .pane-tab .pane-tab-x:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
+.run-details { padding: 20px; overflow-wrap: anywhere; }
+.run-details .page-head-row > :first-child { min-width: 0; }
+.run-details h1 { font-size: 20px; }
 .sources-body { background: var(--surface); }
 .preview-body { flex: 1; min-height: 0; overflow: hidden; display: flex; flex-direction: column; }
+.preview-body.details-body { overflow: auto; display: block; background: var(--surface); }
 .preview-body > .hint, .preview-body > .alert { margin: 16px; }
 
 .document-pages { position: relative; flex: 1; min-height: 0; min-width: 0; width: 100%; display: flex; flex-direction: column; }
@@ -1081,7 +1085,7 @@ input[type="number"]:focus { outline: none; border-color: var(--accent); box-sha
 .work-process .dot.failed { background: var(--danger); }
 .work-process .dot.spin { width: 14px; height: 14px; background: none; border: 2px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: spin .9s linear infinite; }
 
-.work-timeline { max-height: min(340px, 44vh); overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); padding: 8px 10px 10px; scroll-behavior: smooth;
+.work-timeline { max-height: min(340px, 44vh); overflow-y: auto; overscroll-behavior: contain; border-top: 1px solid var(--border); padding: 8px 10px 10px; scroll-behavior: auto;
   mask-image: linear-gradient(to bottom, transparent 0, #000 10px, #000 calc(100% - 6px), transparent 100%); }
 .work-entry { animation: rise-in var(--t) var(--ease) both; }
 .work-entry + .work-entry { margin-top: 2px; }
@@ -1237,7 +1241,7 @@ button.pr-row:active { transform: none; }
   .msg.user .bubble { max-width: 88%; }
   .work-timeline { max-height: 38vh; }
   .chat-crumb, .shell.collapsed .chat-crumb { padding-top: 0; padding-left: 12px; }
-  .turn-meta .meta-text:nth-of-type(n+2) { display: none; }
+  .turn-meta span.meta-text:nth-of-type(n+2) { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

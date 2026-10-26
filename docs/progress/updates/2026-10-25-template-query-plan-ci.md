@@ -15,3 +15,9 @@
 - 本地完整 SQLite 与 PostgreSQL16+Redis 套件均退出0，外部 OpenSandbox/Docker/Office/OTEL 等未配置项按既有条件跳过。两套完整运行使用固定数据/正常优化器的修复版本；随后去掉索引反射告警并增加非空结果检查，最终双库专项再通过。Ruff check/format365文件、Portal production build成功。
 - 反向验证：临时 `DROP INDEX ix_files_slides` 后最终专项在两种数据库都失败，恢复代码后两种数据库都通过。没有通过删断言、放开全部索引或重跑旧失败冒充修复。
 - 未调用付费模型、未改生产数据库；手机交互和文件摘要竞态不属于本轮修复。PR及合并后main检查待远端结果。
+
+## PR 与合并后验收
+
+- [PR #73](https://github.com/shijunan126-creator/ailab-lite/pull/73) head `80cb51c17e336aa640bba08a9eae7afa185836a8` 的8项检查全部成功；远端 SQLite1288通过/100跳过、PostgreSQL1336通过/52跳过、浏览器E2E97通过/1跳过、S3存储15通过/1跳过。未配置外部组件及可选项的跳过不等于已验。
+- squash 合并为 `137d9a3274d89a32057300aa8c1f48a63699d0e7`；已核对合并树与测试head完全相同。[main完整CI 40195893591](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40195893591) 8项检查全部成功，已独立确认合并后的完整CI，不以PR通过替代其结果。
+- 一次性PostgreSQL/Redis已正常停止；既有`.DS_Store`未改，未修改或重新部署个人运行环境。
