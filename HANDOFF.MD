@@ -651,3 +651,10 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - Crawl4AI 0.7.4 的 `CrawlResult.success` 只表示爬取流程完成，HTTP 403/404/5xx 仍可为 true；返回正文前另查 `status_code`，否则代理拒绝页会冒充文章。配置构造器必须针对安装的真实包验，不能靠 stub 接受 kwargs。
 - crawler 的页面请求经代理，但 `http://platform-egress` 服务名仍需集群 DNS；NetworkPolicy 不能把代理地址解析也封死。原生代理契约不等于容器或 k3s 隔离验收。
 - 0.7.4 wheel 的 LICENSE 在 Apache-2.0 后追加必需署名要求；保留完整许可证、NOTICE 和 README 署名，不能只写成可选请求。详见[记录](docs/progress/updates/2026-10-26-crawl4ai-reader.md)。
+
+
+## 2026-10-26 crawler/proxy 的整次调用截止时间
+
+- HTTPX read timeout 仅限制相邻块之间的静默，不能当 total timeout；DNS、浏览器 launch/close 也不能放在 navigation deadline 外。Agent renderer 用一个外层 asyncio.timeout 包住 DNS/请求/读响应，proxy 一个 connect预算覆盖DNS及所有候选地址，crawler同一预算覆盖浏览器上下文生命周期。持续 trickle、慢DNS、永不就绪startup均有原代码红灯证据，见[本轮记录](docs/progress/updates/2026-10-26-merged-reader-validation.md)。
+- k3s隔离验收要先证明普通Pod能到达同一公网/私网目标，再测受限Pod拒绝。不能把代理拒绝页当文章，也不能把NetworkPolicy的静态检查/原生浏览器通过当Linux容器隔离证明。Compose没有k3s NetworkPolicy，上线前须独立实现并验收只有代理出口的网络。
+- Turbopack不编译项目根外的node_modules符号链接；隔离worktree使用自己的npm ci或根内硬链接副本。全套Python从platform/运行，Ruff配置/第一方import根也依赖正确目录；不要因此重排全库imports。
