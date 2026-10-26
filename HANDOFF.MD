@@ -19,6 +19,7 @@
 
 ## 2026-10-26 会话写入与旧详情响应
 
+- E2E 超时先看各 step 时长：PR93第二次并非测试挂死，Azure apt HTTP镜像25.9MB传输耗10m49s（40KB/s），仅剩不到3分钟跑套件。CI对该镜像替换为Ubuntu官方HTTPS源，不应加测试skip或放宽15分钟deadline。
 - 请求内的读取序号只能避免“旧读覆盖新读”，不能避免“旧读覆盖确认写入”。PR93 CI 中 queue POST 201 与旧空队列详情 GET 交错，导致队列刚出现就消失；本地确认发送/队列增删改/恢复要递增写版本。旧读发现版本变化后重新取快照，并保留流结束跟随下一轮的 continuation，不能只 abort 后把后续跟随一起丢掉。用持有真实旧响应直到写入已可见再放行的浏览器用例复现。
 - 侧栏 GET /conversations 默认 project_id=None，只含无项目会话；不能从该列表推断当前项目会话归属或删除后是否仍存在。项目删除后使用一次有界存在性读取，晚回包不得改动已切换的路由。
 - PPT 成功渲染也可能走实时预览侧栏；同表格一样验证唯一实际面板及可见、完成加载且 naturalWidth/Height>0 的图片或有非空白像素的 PDF canvas，不能只等 `.viewer img`。详见[记录](docs/progress/updates/2026-10-26-sidebar-project-menu.md)。

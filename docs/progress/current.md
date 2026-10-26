@@ -8,7 +8,7 @@
 
 独立 worktree `/private/tmp/ailab-reader-original`，分支 `feat/project-menu`，原 head `4743fcd`，已同步 `origin/main@ddaf756`；主目录未提交文档保持不动。用户授权两 PR 绿后 squash 合并，不部署。#93 首次失败根因是既有会话详情 GET 的旧空队列覆盖已成功的 queue POST，相关 Chat 代码与 main 逐字相同；可控旧响应回归已复现红灯。现在对本地确认写入记版本，过期详情改读新快照，保留流结束后跟随下一轮的 continuation；队列增删改及发送/恢复共用该规则。
 
-菜单回归还捕获 #93 新缺陷：侧栏会话列表只含无项目会话，不能据此判断项目删除是否删掉当前会话。改为删除后一次有截止时间的 limit=1 存在性读取，404 才离开且忽略切页后的结果。桌面/390px 手机覆盖重命名、说明、删除与导航。PPT 旧 E2E 也须按真实实时侧栏/通用 viewer 验图片，不能固定只等 viewer。
+菜单回归还捕获 #93 新缺陷：侧栏会话列表只含无项目会话，不能据此判断项目删除是否删掉当前会话。改为删除后一次有截止时间的 limit=1 存在性读取，404 才离开且忽略切页后的结果。桌面/390px 手机覆盖重命名、说明、删除与导航。PPT 旧 E2E 按真实实时侧栏/通用 viewer 的图片或 PDF canvas 验内容。第二次 CI 超时已定位为 Azure apt 镜像40KB/s，系统包下载耗10m49s挤占测试时间；E2E改官方Ubuntu HTTPS源，不延长deadline。
 
 最终分组浏览器13/13通过（含完整workspace模块与PPT），Portal42及production build/TypeScript、Ruff通过。验证/失败历史见[记录](updates/2026-10-26-sidebar-project-menu.md)。本轮只交付该 PR；完整精确 head 双库、存储与 Portal/E2E 由 PR CI 验收，合并状态/mergeCommit 以 [PR #93](https://github.com/shijunan126-creator/ailab-lite/pull/93) 为准。下一具体动作仅为核对八检查、无阻塞评审及 MERGEABLE 后匹配 head squash 合并；不启动其他路线，不改个人部署。
 
