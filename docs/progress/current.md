@@ -1,12 +1,22 @@
 # 当前工作
 
-## 2026-10-26 弹性沙箱额度与闲置回收（本地实现，待完整测试与PR）
+## 2026-10-26 弹性沙箱额度与闲置回收（已提 PR #84，待合并）
 
 用户授权：每人沙箱数随池子余量弹性、用户到上限时回收自己最久无操作的、池满且占用≥95%时才跨用户回收，回收前先保存工作区。分支 `feat/sandbox-lru`，base `origin/main@93b94b3`（含记忆功能PR #82）。决定与边界见 [ADR 0020](../architecture/adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)。
 
 已实现：`AdmissionPolicy.effective_user_limit`（首个沙箱不受水位限制，第2个起放行后占用须≤80%，硬上限3）；Broker 进程内记录“最后操作”（续租/状态不算，进行中的操作不可回收）、排队请求每2秒找可让出的沙箱，保护期300秒；被选中的租约先置 `releasing`/`evicted_idle` 再打快照写入 `eviction_snapshot` 后删除；Agent 收到410后取回该快照写入检查点并自动续跑（`evicted` 独立计数，最多3次）。测试：`tests/test_sandbox_reclaim.py`（9）、`test_runtime_resume.py`（+2）、`test_runtime_protocol.py`（+2）。
 
-未做/未验：真实 Docker/OpenSandbox 下的回收与快照、多Run并发端到端、按角色的上限、部门份额与软/硬水位分级；后台命令随沙箱终止。本机池仅1个工作槽位，部署后行为与此前相同；未部署。下一步：完整测试通过后提PR，不自动部署。
+未做/未验：真实 Docker/OpenSandbox 下的回收与快照、多Run并发端到端、按角色的上限、部门份额与软/硬水位分级；后台命令随沙箱终止。本机池仅1个工作槽位，部署后行为与此前相同；未部署。本地完整SQLite仅剩main上原有的6个失败（5个OCR与`test_runtime_dependencies`）。下一步：CI全绿后合并，不自动部署。
+
+## 2026-10-26 网页来源发布（已授权，进行中）
+
+用户现已明确授权推送并部署；按既定发布流程推进PR、绿后合并、固定main部署与数据保留验证。独立分支 `fix/web-source-tabs`，原base `412168d`，已同步最新 `origin/main@93b94b3`（含主线既有0033迁移）。本轮不扩展实现范围；后续以PR和合并后CI为部署门禁，备份保留账号/配置/文件。PR83首轮e9fc23f的E2E 108通过/1跳过/1失败，手机预览重开后Back退到about:blank；本机复现并修复绘制前历史安装与Strict Mode清理，相关6浏览器通过。CI流程审查与28项门禁单测通过，不改workflow/不放宽测试。下一步：推送修正、更新Portal候选，CI绿后合并并等待main完整CI，再备份部署；个人细节仅记本机HANDOFF。
+
+## 2026-10-26 网页来源多标签、渲染与提取修复（本地验证完成）
+
+本轮授权仅为用户反馈的网页来源问题审核/修复/本地验证。原主目录停在旧分支且有存储交接文档与.DS_Store，已保留；独立工作树 `/private/tmp/ailab-web-source-tabs`，分支 `fix/web-source-tabs`，base `origin/main@412168d`，产品/回归提交 `eb506d9`，最后元数据容错提交 `e6cfe60`。按URL保留多网页与标题，最近4个文档保留模式/加载内容，修复hover、文件/来源关闭回退与普通链接标题；原版静态隔离跳转，正文修复header/hidden/异常闭合/字符限额与评分成本。
+
+Portal42项与生产build/TypeScript通过，五服务浏览器4/4通过、网页Python专项25/25；SQLite+独立Redis全套在 `eb506d9` 通过1317项/95跳过，后续 `e6cfe60` 仅异常元数据/换行容错由25项专项覆盖。专用五服务/Redis已停，六测试端口无监听。下一步：本地修复交付完成，等待用户明确发布授权；不push/PR/merge/deploy，不改个人部署。JS动态站点、真实BBC URL与目标机资源容量边界见[本轮审核及验收](updates/2026-10-26-web-source-tabs.md)。
 
 ## 2026-10-26 管理文件去重、恢复思考折叠与增量部署（本地验证完成，待CI）
 

@@ -1625,3 +1625,8 @@ label.field button.select { width: 100%; }
 .select-option .grow { text-align: left; }
 .time-select { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .time-select button.select { min-width: 64px; padding: 6px 8px 6px 12px; font-variant-numeric: tabular-nums; }
+
+/* Explicitly override global button hover and flex display for hidden reader panels. */
+.viewer-mode:hover, .viewer-mode.on:hover { background: var(--surface-2); color: var(--text); border-color: var(--border-strong); }
+.reader-body[hidden], .reader-frame[hidden], .reader-scroll[hidden] { display: none; }
+.reader-frame { min-height: 0; }

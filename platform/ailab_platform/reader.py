@@ -41,7 +41,6 @@ DROP_TAGS = {
     "embed",
     "dialog",
     "nav",
-    "header",
     "footer",
     "aside",
     "title",
@@ -118,6 +117,7 @@ class _Blocks(HTMLParser):
         self.blocks: list[dict] = []
         self.spans: list[tuple[int, int, str, bool]] = []
         self.chars = 0
+        self.truncated = False
         self.seen = 0
         self.skip = 0
         self.link_depth = 0
@@ -134,7 +134,12 @@ class _Blocks(HTMLParser):
 
     def _emit(self, block: dict) -> None:
         if len(self.blocks) >= MAX_BLOCKS or self.chars >= MAX_CHARS:
+            self.truncated = True
             return
+        if len(block.get("text", "")) > MAX_CHARS - self.chars:
+            self.truncated = True
+        if block.get("text"):
+            block["text"] = block["text"][: MAX_CHARS - self.chars]
         self.blocks.append(block)
         self.chars += len(block.get("text") or "")
 
@@ -168,6 +173,7 @@ class _Blocks(HTMLParser):
             return
         cells = [b["text"] for b in self.blocks[self.row_start :] if b.get("text")]
         self.blocks = self.blocks[: self.row_start]
+        self.chars -= sum(len(text) for text in cells)
         # Spans opened inside the row point at merged-away blocks; spans still open (recorded only
         # at close) keep valid indices because the merged row lands exactly at row_start.
         self.spans = [s for s in self.spans if s[0] < self.row_start]
@@ -184,15 +190,15 @@ class _Blocks(HTMLParser):
         a = dict(attrs)
         dropping = self.skip > 0
         if not dropping:
-            if tag in DROP_TAGS:
+            article_header = tag == "header" and any(t in {"article", "main"} and not drop for t, drop, _ in self.open)
+            if tag in DROP_TAGS or (tag == "header" and not article_header):
                 dropping = True
             else:
                 named = f"{a.get('class', '')} {a.get('id', '')}"
+                if article_header:
+                    named = ""
                 dropping = bool(
-                    NOISE_HINT.search(named)
-                    or a.get("role", "").lower() in ROLE_DROP
-                    or a.get("aria-hidden") == "true"
-                    or a.get("hidden") is not None
+                    NOISE_HINT.search(named) or a.get("role", "").lower() in ROLE_DROP or a.get("aria-hidden") == "true" or "hidden" in a
                 )
         if dropping:
             self.skip += 1
@@ -230,7 +236,7 @@ class _Blocks(HTMLParser):
             self.handle_endtag(tag)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag in VOID_TAGS or not self.open:
+        if tag in VOID_TAGS or not any(t == tag for t, _, _ in self.open):
             return
         # Pop to this tag, closing everything implied-closed along the way (<li> without </li>...).
         while self.open:
@@ -259,6 +265,7 @@ class _Blocks(HTMLParser):
             return
         self.seen += len(data)
         if self.seen > 3 * MAX_CHARS:  # emitted text is capped by _emit; this bounds one never-closed tag's buffer
+            self.truncated = True
             return
         top = self._top()
         top["buf"].append(data)
@@ -287,12 +294,15 @@ class _Blocks(HTMLParser):
 
 def _pick_region(blocks: list[dict], spans: list[tuple[int, int, str, bool]]) -> tuple[int, int] | None:
     """The highest-text article-ish container, if it plausibly is the article and not a wrapper."""
-    total = sum(len(b.get("text", "")) for b in blocks)
+    prefix = [0]
+    for block in blocks:
+        prefix.append(prefix[-1] + len(block.get("text", "")))
+    total = prefix[-1]
     best: tuple[int, int, int] | None = None  # (size, start, end)
     for start, end, _tag, hinted in spans:
         if end <= start or not hinted:
             continue
-        size = sum(len(b.get("text", "")) for b in blocks[start:end])
+        size = prefix[end] - prefix[start]
         if size < MIN_REGION:
             continue
         if best is None or size > best[0]:
@@ -303,13 +313,18 @@ def _pick_region(blocks: list[dict], spans: list[tuple[int, int, str, bool]]) ->
 
 
 def extract_blocks(html: str, base: str = "") -> list[dict]:
-    """A page as reader blocks: headings, paragraphs, list items, images and code, chrome dropped."""
+    """A page as reader blocks, with compatibility for callers needing only content."""
+    return extract_article(html, base)[0]
+
+
+def extract_article(html: str, base: str = "") -> tuple[list[dict], bool]:
+    """Extract content and report when parser output limits omit article text."""
     parser = _Blocks(base)
     try:
         parser.feed(html)
         parser.close()
     except Exception:  # malformed HTML must not fail the whole reader
-        return []
+        return [], False
     parser._close_row()
     parser._flush_root()
     while parser.stack:
@@ -335,7 +350,7 @@ def extract_blocks(html: str, base: str = "") -> list[dict]:
         if out and text and out[-1].get("text") == text and b["type"] != "img":
             continue  # menus repeated across the page
         out.append(b)
-    return out
+    return out, parser.truncated
 
 
 def markdown_to_blocks(text: str) -> list[dict]:

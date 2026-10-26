@@ -30,7 +30,10 @@ function Item({ source, onRead }: { source: Source; onRead?: (source: Source) =>
       target="_blank"
       rel="noreferrer noopener"
       title={onRead ? "在侧栏打开" : undefined}
-      onClick={onRead ? (e) => { e.preventDefault(); onRead(source); } : undefined}
+      onClick={onRead ? (e) => {
+        if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+        e.preventDefault(); onRead(source);
+      } : undefined}
     >
       <span className="src-site"><Mark source={source} />{site(source)}</span>
       <span className="src-title">{source.title || source.url}</span>
