@@ -127,9 +127,12 @@ def test_previews_are_served_to_the_owner_only() -> None:
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "做个 PPT"}).json()
         storage.put_bytes(f"previews/{run['id']}/1/p-01.jpg", b"\xff\xd8jpeg")
         storage.put_bytes(f"previews/{run['id']}/1/sheets.json", b'{"sheets": []}')
+        storage.put_bytes(f"previews/{run['id']}/1/document.pdf", b"%PDF-1.4")
         page = c.get(f"/v1/runs/{run['id']}/previews/1/p-01.jpg", headers=AUTH)
         assert page.status_code == 200 and page.headers["content-type"] == "image/jpeg" and page.content == b"\xff\xd8jpeg"
         assert c.get(f"/v1/runs/{run['id']}/previews/1/sheets.json", headers=AUTH).json() == {"sheets": []}
+        pdf = c.get(f"/v1/runs/{run['id']}/previews/1/document.pdf", headers=AUTH)
+        assert pdf.status_code == 200 and pdf.headers["content-type"] == "application/pdf" and pdf.content == b"%PDF-1.4"
         for bad in ("1/../../workspaces/x.tgz", "1/p-01.png", "x/p-01.jpg", "1/secret.json"):
             assert c.get(f"/v1/runs/{run['id']}/previews/{bad}", headers=AUTH).status_code == 404, bad
         assert c.get(f"/v1/runs/{run['id']}/previews/2/p-01.jpg", headers=AUTH).status_code == 404

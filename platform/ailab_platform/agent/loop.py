@@ -1395,6 +1395,7 @@ class AgentLoop:
                 await self._stop_background(run_id, turn)
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
+                result["previews"] = list(turn.previews.values())
                 await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
                 # Nothing changed since the last snapshot: that archive still describes the sandbox exactly.
                 saved = state.get("workspace")
