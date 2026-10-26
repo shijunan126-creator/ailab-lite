@@ -2,13 +2,32 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconPlus, IconTrash } from "../../../components/icons";
+import DreamPanel from "../../../components/memory/dream-panel";
 import Switch from "../../../components/switch";
 import { api } from "../../../lib/api";
 import { timeAgo } from "../../../lib/format";
 
 type Kind = "user" | "memory";
-type Entry = { id: string; kind: Kind; content: string; source: "user" | "agent"; updated_at: string };
-type MemoryDoc = { revision: number; enabled: boolean; auto_save: boolean; entries: Entry[]; limit_chars: number; limit_entries: number };
+type Entry = {
+  id: string;
+  kind: Kind;
+  content: string;
+  source: "user" | "agent" | "nightly";
+  updated_at: string;
+  confidence?: number;
+  invalid_at?: string | null;
+  superseded_by?: string | null;
+};
+type DreamSettings = { enabled: boolean; timezone: string | null; window_start: string; window_end: string };
+type MemoryDoc = {
+  revision: number;
+  enabled: boolean;
+  auto_save: boolean;
+  entries: Entry[];
+  limit_chars: number;
+  limit_entries: number;
+  dream?: DreamSettings;
+};
 /** An entry as edited on this page; `key` is local, `id` is absent until the API has stored it. */
 type Draft = { key: string; id?: string; kind: Kind; content: string };
 
@@ -236,6 +255,8 @@ export default function MemoryPage() {
             </div>
           </section>
 
+          <DreamPanel initial={stored.dream} />
+
           {GROUPS.map((g) => {
             const rows = draft.filter((d) => d.kind === g.kind);
             return (
@@ -253,7 +274,7 @@ export default function MemoryPage() {
                   {rows.map((d) => {
                     const prior = d.id ? byId.get(d.id) : undefined;
                     return (
-                      <div key={d.key} className="memory-row">
+                      <div key={d.key} className={`memory-row ${prior?.superseded_by || prior?.invalid_at ? "superseded" : ""}`}>
                         <textarea
                           className="memory-text"
                           value={d.content}
@@ -262,7 +283,7 @@ export default function MemoryPage() {
                           readOnly={saving}
                           autoFocus={d.key === focusKey}
                           aria-label={g.title}
-                          title={prior ? `${prior.source === "agent" ? "AI 记录" : "手动"} · ${timeAgo(prior.updated_at)}` : undefined}
+                          title={prior ? `${prior.source === "agent" ? "AI 记录" : prior.source === "nightly" ? "夜间整理" : "手动"} · ${timeAgo(prior.updated_at)}${prior.confidence != null && prior.confidence < 0.95 ? ` · 置信度 ${Math.round(prior.confidence * 100)}%` : ""}${prior.superseded_by || prior.invalid_at ? " · 已失效" : ""}` : undefined}
                           onChange={(e) => edit(d.key, e.target.value)}
                         />
                         {d.content.length > ENTRY_CHARS * 0.9 ? <span className="hint memory-count">{d.content.length}/{ENTRY_CHARS}</span> : null}

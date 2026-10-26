@@ -15,6 +15,7 @@ from ..catalog import get_catalog
 from ..config import settings
 from ..db import SessionLocal, init_db
 from ..deps import current_user, metrics_auth
+from ..memory_dream.service import dream_forever
 from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
@@ -92,7 +93,9 @@ async def lifespan(_: FastAPI):
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
     schedules = asyncio.create_task(schedules_forever(), name="schedules")
+    memory_dream = asyncio.create_task(dream_forever(), name="memory-dream")
     yield
+    memory_dream.cancel()
     schedules.cancel()
     lifecycle_cleanup.cancel()
     preview_dispatch.cancel()

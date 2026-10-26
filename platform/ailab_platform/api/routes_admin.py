@@ -21,7 +21,7 @@ from ..contracts.identity import ROLES, Principal
 from ..deps import current_user, get_db
 from ..domain.authorization import Target, policy
 from ..domain.ledger import MILLI
-from ..models import AuditLog, Department, FileObject, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
+from ..models import AuditLog, Department, FileObject, MemoryDreamRun, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
 from ..quota import quota_windows
 from ..schemas import ContextSettings, UTCModel
 
@@ -729,6 +729,25 @@ def admin_usage(
     }
     _commit(db, user, "usage.list", "usage", detail={"group_by": group_by})
     return result
+
+
+@router.get("/memory-dream")
+def admin_memory_dream(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Aggregate the nightly background job without exposing memory content."""
+    _require(db, user, "usage.list")
+    rows = list(db.scalars(select(MemoryDreamRun)).all())
+    applied = [r for r in rows if r.status == "applied"]
+    tokens = sum(int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0)) for r in rows)
+    return {
+        "runs": len(rows),
+        "applied": len(applied),
+        "failed": sum(1 for r in rows if r.status == "failed"),
+        "skipped": sum(1 for r in rows if r.status == "skipped"),
+        "reverted": sum(1 for r in rows if r.status == "reverted"),
+        "users": len({r.user_id for r in rows}),
+        "changes": sum(len((r.plan or {}).get("changes") or []) for r in applied),
+        "tokens": tokens,
+    }
 
 
 def _context_admin(user):
