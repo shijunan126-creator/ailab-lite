@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 reader 修复发布（已授权，进行中）
+
+用户现已明确授权提交全部本轮修复、CI通过后合并、最终测试和清理、部署最新main。分支`fix/merged-reader-validation`，base`c6ff8f9`，产品`fa562ab`、验收文档`2d54f5f`。此前“不发布”边界仅对应上一轮。本轮下一步：PR精确head检查通过后squash合并，核对合并main完整CI；准备个人Compose的crawler/egress隔离接线并实测，完整备份/解包校验后切换固定main及部署后验收。保留原主目录未提交修改和全部个人数据/配置；仅清理逐项核实的本轮临时资源，私有运维材料不入Git。[已有验证及本轮发布记录](updates/2026-10-26-merged-reader-validation.md)。
+
 ## 2026-10-26 已合并PR92/93/94补测与超时修复（本地完成，不发布）
 
 最新用户授权仅为按交接测试并修复问题，不沿用旧发布授权。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/merged-reader-validation`，base `origin/main@c6ff8f9`，产品/回归 `fa562ab`；原主目录旧分支与未提交修改保留。三PR合并后main CI本轮均核实成功；旧`af2f98b`/`371798f`仅历史本地交接，不是缺失产品代码。

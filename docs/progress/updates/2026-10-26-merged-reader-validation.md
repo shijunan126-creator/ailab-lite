@@ -45,3 +45,7 @@
 专用readercheck VM及其容器/卷/镜像已删除；PID核对后关闭专用Redis66555及端口转发。26389/25432/46443/48090、38180–38183/33100无监听，Docker context仍default；原主目录git状态与进入本轮一致。生产VM/数据/个人配置未改动。
 
 本轮未 push/PR/merge/deploy。个人 Compose 仍未接入 crawler/egress；上线前需单独授权，准备两容器、内部独占代理网络、Agent专用token/地址及资源限制，再做备份、固定合并SHA发布和线上整栈验收。不能把 k3s NetworkPolicy 直接当作 Compose 已有隔离，也不能只给两个容器加普通共享 bridge 网络就声称隔离完成。Transitive crawler 依赖尚未全锁定，首次实际构建验证不保证未来重建版本相同。当前交付下一步仅为用户审阅本地修复/记录；不自动发布或开始其他路线。
+
+## 后续发布授权
+
+用户已授权本轮修复全部提交/merge、最后测试清理并部署最新版。上一节“不发布”是历史阶段；当前执行顺序为PR CI→固定head squash→合并main完整CI→个人Compose隔离接线验收→备份/切换/线上验证。发布进度由current.md和本节后续更新接续，个人配置/原始数据仅留本机。
