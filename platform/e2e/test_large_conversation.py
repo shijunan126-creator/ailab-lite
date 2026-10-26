@@ -42,6 +42,11 @@ with SessionLocal() as db:
     assert page.locator(".turn-meta").get_by_text("详情", exact=True).count() == 0
     assert page.locator(".pr-thought-body").count() == 0
     head.click()
+    thought_head = page.locator(".pr-thought > button").first
+    thought_head.wait_for()
+    assert thought_head.get_attribute("aria-expanded") == "false"
+    assert page.locator(".pr-thought-body").count() == 0
+    thought_head.click()
     page.get_by_text("段落001开头。", exact=False).wait_for()
     assert page.locator(".pr-thought-body .collapse").count() == 0
     assert page.locator(".work-timeline").evaluate("el => el.scrollTop") == 0
@@ -66,6 +71,10 @@ with SessionLocal() as db:
     page.locator(".work-timeline").evaluate("el => el.scrollTop = 0")
     page.get_by_text("段落001开头。", exact=False).wait_for()
     page.screenshot(path=str(stack.log_dir / f"thought-{mode}-{'mobile' if mobile else 'desktop'}.png"))
+    thought_head.click()
+    assert page.locator(".pr-thought-body").count() == 0
+    thought_head.click()
+    page.get_by_text("段落001开头。", exact=False).wait_for()
     start = time.perf_counter()
     head.click()
     page.wait_for_function("!document.querySelector('.pr-thought-body')")
@@ -154,11 +163,23 @@ with SessionLocal() as db:
     )
     login(page, stack, path="/c/" + conv["id"])
     url = page.url
-    for _ in range(8):
-        page.locator(".messages").evaluate("el => el.scrollTop = el.scrollHeight")
-        page.wait_for_timeout(50)
-        if page.get_by_role("link", name="合并验收网页", exact=True).count():
+    # Mounting estimated chunks changes scrollHeight, especially at phone width.
+    # Reach a measured, visible tail before clicking; DOM presence includes overscan.
+    stable = 0
+    previous_height = 0
+    for _ in range(40):
+        metrics = page.locator(".messages").evaluate("el => { el.scrollTop = el.scrollHeight; return el.scrollHeight; }")
+        page.wait_for_timeout(100)
+        link = page.get_by_role("link", name="合并验收网页", exact=True)
+        in_view = link.count() and link.evaluate(
+            "el => { const r = el.getBoundingClientRect(); "
+            "const p = el.closest('.messages').getBoundingClientRect(); return r.top >= p.top && r.bottom <= p.bottom; }"
+        )
+        stable = stable + 1 if metrics == previous_height and in_view else 0
+        previous_height = metrics
+        if stable >= 2:
             break
+    assert stable >= 2, "long answer tail did not stabilize in the scroll viewport"
     page.get_by_role("link", name="合并验收网页", exact=True).click()
     page.get_by_role("tab", name="网页", exact=True).wait_for()
     assert page.get_by_role("tab", name="网页", exact=True).get_attribute("aria-selected") == "true"

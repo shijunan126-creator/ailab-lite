@@ -409,7 +409,7 @@ def test_a_visitor_can_sign_up_and_lands_logged_in(page, context, stack) -> None
         other.close()
 
 
-def test_work_process_shows_full_reasoning_after_one_click_and_survives_reload(logged_in):
+def test_work_process_keeps_thought_folded_until_clicked_and_survives_reload(logged_in):
     from playwright.sync_api import expect
 
     page = logged_in
@@ -421,7 +421,8 @@ def test_work_process_shows_full_reasoning_after_one_click_and_survives_reload(l
     expect(head).to_contain_text("工作总时长：")
     assert head.get_attribute("aria-expanded") == "false"
     head.click()
-    # One expansion shows the actual text, without a second outline-only fold.
+    assert process.locator(".pr-thought-body").count() == 0
+    process.locator(".pr-thought > button").first.click()
     thought = process.locator(".pr-thought-body").first
     expect(thought).to_contain_text("用户说：「你好呀」")
     expect(thought).to_contain_text("这是离线演示模型")
@@ -431,6 +432,8 @@ def test_work_process_shows_full_reasoning_after_one_click_and_survives_reload(l
     page.locator(".turn-meta").wait_for()
     expect(page.locator(".steps-head > span").nth(1)).to_have_text(duration)
     page.locator(".steps-head").click()
+    assert page.locator(".pr-thought-body").count() == 0
+    page.locator(".pr-thought > button").first.click()
     expect(page.get_by_role("region", name="工作过程").locator(".pr-thought-body").first).to_contain_text("用户说：「你好呀」")
 
 

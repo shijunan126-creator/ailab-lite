@@ -3,7 +3,7 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import type { Run } from "../../lib/api";
 import { type Item, type PlanStep, type Step, siteOf, thoughtOutline, workHeading } from "../../lib/work-process";
-import { IconBook, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX, IconCornerDownRight } from "../icons";
+import { IconBulb, IconBook, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX, IconCornerDownRight } from "../icons";
 import { useViewport } from "../viewport-block";
 import Markdown from "../markdown";
 
@@ -26,8 +26,21 @@ function Status({ status }: { status: Step["status"] }) {
   return null;
 }
 
-function Thinking({ item, live }: { live: boolean; item: Extract<Item, { kind: "thinking" }> }) {
-  return <div className="pr-thought-body" data-thinking-step={item.step}><Markdown virtual text={item.text} streaming={live && !item.done} /></div>;
+function Thinking({ item, live, expanded, onToggle, label }: {
+  live: boolean; item: Extract<Item, { kind: "thinking" }>; expanded: boolean; onToggle: () => void; label: string;
+}) {
+  const thinkingNow = live && !item.done;
+  // Only the header needs a short preview; the body always receives the original text.
+  const title = thoughtOutline(item.text.slice(0, 500))[0]?.title || label;
+  return <div className={`pr-thought ${expanded ? "open" : ""}`} data-thinking-step={item.step}>
+    <button className={`pr-row pr-think ${thinkingNow ? "now" : ""}`} aria-expanded={expanded} onClick={onToggle}>
+      <span className="pr-icon"><IconBulb size={14} /></span>
+      <span className={`pr-label ${thinkingNow ? "shimmer" : ""}`}>{title}</span>
+      {item.seconds >= 1 ? <span className="pr-time">{Math.round(item.seconds)} 秒</span> : null}
+      <span className="pr-chev"><IconChevronDown size={13} /></span>
+    </button>
+    {expanded ? <div className="pr-thought-body"><Markdown virtual text={item.text} streaming={thinkingNow} /></div> : null}
+  </div>;
 }
 
 function StepRow({ step, active, label }: { step: Step; active: boolean; label: string }) {
@@ -63,7 +76,9 @@ function current(items: Item[] | null | undefined, thinking: string): string {
   return "";
 }
 
-export default function WorkProcess({ run, items, live, loading, error, more, onLoad, renderAsk, expanded, onExpanded }: {
+export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, items, live, loading, error, more, onLoad, renderAsk, expanded, onExpanded }: {
+  thoughtsExpanded: Set<number>;
+  onToggleThought: (step: number) => void;
   expanded: boolean | null;
   onExpanded: (value: boolean) => void;
   run: Run;
@@ -116,7 +131,7 @@ export default function WorkProcess({ run, items, live, loading, error, more, on
         }}>
           {open ? items?.map((item, i) => <div key={i} className={`work-entry process-${item.kind}`}>
             {item.kind === "text" ? (item.text.trim() ? <div className="pr-narration"><Markdown virtual text={item.text} /></div> : null)
-              : item.kind === "thinking" ? <Thinking item={item} live={live} />
+              : item.kind === "thinking" ? <Thinking item={item} live={live} label={thinking} expanded={thoughtsExpanded.has(item.step)} onToggle={() => onToggleThought(item.step)} />
               : item.kind === "ask" ? renderAsk(item)
               : item.kind === "steer" ? <div className="pr-steer"><IconCornerDownRight size={13} /> 收到补充</div>
               : item.kind === "plan" ? <ol className="steps-list" aria-label="计划">{item.steps.map((step) => <li key={step.id} className={`step plan-step ${MARK[step.status]}`}>

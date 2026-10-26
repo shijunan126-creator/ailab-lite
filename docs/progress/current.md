@@ -1,5 +1,9 @@
 # 当前工作
 
+## 2026-10-26 管理文件去重、恢复思考折叠与增量部署（本地验证完成，待CI）
+
+最新授权：删除重复管理文件入口，恢复Chat/Work点击才展开完整思考，保留此前性能优化并减少部署冗余。独立分支`fix/admin-thinking-deploy`，base`origin/main@7abee90`，产品`c0af4db`；主目录存储交接与.DS_Store未改。管理标签/面板源头去重；思考默认折叠、展开状态留在Turn、全文按需挂载；部署仅Portal使用稳定COPY/依赖层及standalone。SQLite1270通过/132跳过、Portal41/build/TypeScript、Ruff通过；目标机候选传输+冷构建34.16秒/同源码缓存1.83秒，镜像224→105MB，隔离候选9静态资源/登录/代理HTTP200。最终浏览器组15/15通过，旧手机长文链接测试改为等可见且实测高度稳定；详见[本轮记录](updates/2026-10-26-admin-thinking-deploy.md)。下一步：提PR，CI全绿再合并并按前端独立流程发布；现有部署未切换。不重启后端、不触及业务库、不做付费调用。
+
 ## 2026-10-26 完整思考 PR、合并与数据保留部署（已授权，进行中）
 
 用户明确授权提PR、检查通过后合并并部署。本轮发布工作树 `/private/tmp/ailab-full-thinking-release`，分支 `fix/full-thinking-release`；起点 `ab0e8d9`，已合并最新 `origin/main@f878ce1`（合并 `7859825`），保留网页/HTML侧栏并将网页打开回调传入长Markdown分块；新增桌面/手机真实点击回归 `41c71a2`。原主工作区未提交存储文档与`.DS_Store`未动。
