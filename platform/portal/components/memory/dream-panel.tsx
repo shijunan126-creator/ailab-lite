@@ -147,7 +147,7 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
             : "还没有整理记录"}
         </span>
         <button className="secondary sm" onClick={runNow} disabled={busy || !settings?.enabled}>
-          立即整理一次
+          立即整理
         </button>
       </div>
       {runs.length ? (

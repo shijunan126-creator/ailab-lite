@@ -16,6 +16,7 @@ from ..config import settings
 from ..db import SessionLocal, init_db
 from ..deps import current_user, metrics_auth
 from ..memory_dream.service import dream_forever
+from ..memory_recall.embeddings import embed_forever
 from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
@@ -94,7 +95,9 @@ async def lifespan(_: FastAPI):
     lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
     schedules = asyncio.create_task(schedules_forever(), name="schedules")
     memory_dream = asyncio.create_task(dream_forever(), name="memory-dream")
+    memory_embeddings = asyncio.create_task(embed_forever(), name="memory-embeddings")
     yield
+    memory_embeddings.cancel()
     memory_dream.cancel()
     schedules.cancel()
     lifecycle_cleanup.cancel()

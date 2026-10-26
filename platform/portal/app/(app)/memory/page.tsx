@@ -17,6 +17,8 @@ type Entry = {
   confidence?: number;
   invalid_at?: string | null;
   superseded_by?: string | null;
+  suppressed?: boolean; // paused: kept here, never shown to the model
+  evidence_deleted?: boolean; // the conversation it was learned from has been deleted
 };
 type DreamSettings = { enabled: boolean; timezone: string | null; window_start: string; window_end: string };
 type MemoryDoc = {
@@ -29,7 +31,7 @@ type MemoryDoc = {
   dream?: DreamSettings;
 };
 /** An entry as edited on this page; `key` is local, `id` is absent until the API has stored it. */
-type Draft = { key: string; id?: string; kind: Kind; content: string };
+type Draft = { key: string; id?: string; kind: Kind; content: string; suppressed?: boolean };
 
 const ENTRY_CHARS = 1000; // the API's per-entry limit
 const GROUPS: { kind: Kind; title: string }[] = [
@@ -38,16 +40,21 @@ const GROUPS: { kind: Kind; title: string }[] = [
 ];
 
 let keys = 0;
-const draftOf = (e: Entry): Draft => ({ key: `k${++keys}`, id: e.id, kind: e.kind, content: e.content });
+const draftOf = (e: Entry): Draft => ({ key: `k${++keys}`, id: e.id, kind: e.kind, content: e.content, suppressed: !!e.suppressed });
 
 /** What a save would send: blank entries are deletions, text is stored trimmed. */
 function payload(draft: Draft[]) {
-  return draft.filter((d) => d.content.trim()).map((d) => ({ ...(d.id ? { id: d.id } : {}), kind: d.kind, content: d.content.trim() }));
+  return draft
+    .filter((d) => d.content.trim())
+    .map((d) => ({ ...(d.id ? { id: d.id } : {}), kind: d.kind, content: d.content.trim(), suppressed: !!d.suppressed }));
 }
 
 function sameAsStored(draft: Draft[], stored: Entry[]): boolean {
   const next = payload(draft);
-  return next.length === stored.length && next.every((d, i) => d.id === stored[i].id && d.kind === stored[i].kind && d.content === stored[i].content);
+  return (
+    next.length === stored.length &&
+    next.every((d, i) => d.id === stored[i].id && d.kind === stored[i].kind && d.content === stored[i].content && d.suppressed === !!stored[i].suppressed)
+  );
 }
 
 /**
@@ -61,10 +68,10 @@ function rebase(base: Entry[], draft: Draft[], latest: Entry[]): Draft[] {
   const out: Draft[] = [];
   for (const d of draft) {
     const prior = d.id ? before.get(d.id) : undefined;
-    const edited = !prior || prior.kind !== d.kind || prior.content !== d.content;
+    const edited = !prior || prior.kind !== d.kind || prior.content !== d.content || !!prior.suppressed !== !!d.suppressed;
     const now = d.id ? after.get(d.id) : undefined;
     if (!d.id || (now && edited)) out.push(d);
-    else if (now) out.push({ ...d, kind: now.kind, content: now.content });
+    else if (now) out.push({ ...d, kind: now.kind, content: now.content, suppressed: !!now.suppressed });
     else if (edited) out.push({ ...d, id: undefined });
   }
   for (const e of latest) if (!before.has(e.id)) out.push(draftOf(e));
@@ -214,6 +221,7 @@ export default function MemoryPage() {
 
   const edit = (key: string, content: string) => setDraft((list) => list.map((d) => (d.key === key ? { ...d, content } : d)));
   const remove = (key: string) => setDraft((list) => list.filter((d) => d.key !== key));
+  const pause = (key: string) => setDraft((list) => list.map((d) => (d.key === key ? { ...d, suppressed: !d.suppressed } : d)));
 
   const byId = new Map((stored?.entries || []).map((e) => [e.id, e]));
 
@@ -274,7 +282,7 @@ export default function MemoryPage() {
                   {rows.map((d) => {
                     const prior = d.id ? byId.get(d.id) : undefined;
                     return (
-                      <div key={d.key} className={`memory-row ${prior?.superseded_by || prior?.invalid_at ? "superseded" : ""}`}>
+                      <div key={d.key} className={`memory-row ${prior?.superseded_by || prior?.invalid_at ? "superseded" : ""} ${d.suppressed ? "paused" : ""}`}>
                         <textarea
                           className="memory-text"
                           value={d.content}
@@ -287,6 +295,16 @@ export default function MemoryPage() {
                           onChange={(e) => edit(d.key, e.target.value)}
                         />
                         {d.content.length > ENTRY_CHARS * 0.9 ? <span className="hint memory-count">{d.content.length}/{ENTRY_CHARS}</span> : null}
+                        {d.suppressed ? <span className="hint memory-tag">已暂停</span> : null}
+                        {prior?.evidence_deleted ? <span className="hint memory-tag" title="来源对话已删除，原话和引用已清除；这条记忆仍然保留，可在此删除">来源已删除</span> : null}
+                        <button
+                          className="secondary sm memory-pause memory-remove"
+                          onClick={() => pause(d.key)}
+                          disabled={saving}
+                          title={d.suppressed ? "恢复后 AI 会重新参考这条" : "暂停后保留在这里，但 AI 不会参考"}
+                        >
+                          {d.suppressed ? "恢复" : "暂停"}
+                        </button>
                         <button className="icon-btn danger-hover memory-remove" onClick={() => remove(d.key)} disabled={saving} aria-label="删除" title="删除">
                           <IconTrash size={16} />
                         </button>

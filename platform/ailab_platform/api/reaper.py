@@ -339,6 +339,9 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 _schedule_delete(db, f"checkpoints/{run_id}/", "conversation", prefix=True)
                 _schedule_delete(db, f"previews/{run_id}/", "conversation", prefix=True)
             if ids:
+                from ..memory_recall.lineage import purge_episodes_for_runs
+
+                purge_episodes_for_runs(db, ids)
                 # the usage ledger stays: what these runs cost still counts
                 for model in (RunEvent, Artifact):
                     db.execute(delete(model).where(model.run_id.in_(ids)))

@@ -47,6 +47,9 @@ spec:
             name: platform-auth
             optional: true
         - secretRef:
+            name: platform-embedding
+            optional: true
+        - secretRef:
             name: platform-api-identity
         - secretRef:
             name: platform-service-verifiers

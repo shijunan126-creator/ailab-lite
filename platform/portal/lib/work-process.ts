@@ -66,6 +66,8 @@ function describeTool(name: string, args: any): { label: string; detail?: string
       return { label: "复制到工作区", detail: args?.path || args?.filename || args?.file_id };
     case "memory":
       return { label: "更新记忆" };
+    case "recall_history":
+      return { label: "回忆历史对话", detail: args?.query };
     case "update_plan":
       return { label: "更新计划" };
     default:

@@ -110,6 +110,9 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
             .where(QueuedMessage.conversation_id.in_(conversation_ids), QueuedMessage.state == "queued")
             .values(state="canceled", updated_at=utcnow())
         )
+        from ..memory_recall.lineage import forget_conversations
+
+        forget_conversations(db, user, list(db.scalars(conversation_ids)))
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
         while lineages := list(

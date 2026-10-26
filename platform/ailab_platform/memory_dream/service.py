@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from rapidfuzz import fuzz
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -42,13 +42,18 @@ from ..contracts.memory import (
 from ..db import SessionLocal
 from ..llm import llm_for
 from ..locks import user_critical_section
-from ..models import MemoryDreamRun, MemoryEpisode, Run, RunStatus, User, new_id, utcnow
+from ..memory_recall import guard
+from ..memory_recall.search import excluded_from_memory
+from ..memory_recall.tombstones import blocked_by_tombstone, tombstones_of
+from ..metrics import MEMORY_GUARD_REJECTED
+from ..models import Conversation, MemoryDreamRun, MemoryEpisode, Run, RunStatus, User, new_id, utcnow
 from .prompts import EXTRACT_SYSTEM, JUDGE_SYSTEM
 from .settings import dream_settings, local_window
 
 log = logging.getLogger("ailab.memory_dream")
 
 TERMINAL = set(RunStatus.TERMINAL)
+NEW_RUN_SCAN = 400
 
 
 class DreamError(RuntimeError):
@@ -124,14 +129,22 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
     if last:
         cursor = db.get(Run, last.cursor_run_id) if last.cursor_run_id else None
         since = _aware(cursor.created_at) if cursor else _aware(last.finished_at or last.created_at)
-    return list(
-        db.scalars(
-            select(Run)
-            .where(Run.user_id == user_id, Run.status.in_(TERMINAL), Run.created_at > since)
-            .order_by(Run.created_at, Run.id)
-            .limit(40)
+    rows = db.scalars(
+        select(Run)
+        .outerjoin(Conversation, Conversation.id == Run.conversation_id)
+        .where(
+            Run.user_id == user_id,
+            Run.status.in_(TERMINAL),
+            Run.created_at > since,
+            Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
+            or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
         )
+        .order_by(Run.created_at, Run.id)
+        .limit(NEW_RUN_SCAN)
     )
+    # A temporary chat is never learned from. Its flag lives in JSON, so it is filtered here, after a scan wide enough
+    # that a long stretch of temporary chats cannot hide the turns behind it.
+    return [r for r in rows if not excluded_from_memory(r.options)][:40]
 
 
 def _candidate_users(db: Session, now: datetime) -> list[User]:
@@ -189,9 +202,18 @@ def claim_due(now: datetime | None = None) -> list[str]:
         return claimed
 
 
-def _digest(run: Run, limit: int = 6000) -> str:
-    text = f"用户：{(run.prompt or '').strip()}\n\n助手：{(run.summary or '').strip()}"
-    return text[:limit]
+ASSISTANT_MARK = "\n\n助手："
+
+
+def _digest(run: Run, user_limit: int = 4000, assistant_limit: int = 2000) -> str:
+    # cut each side on its own, so a long prompt cannot push the marker out and turn assistant text into "user_said"
+    return f"用户：{(run.prompt or '').strip()[:user_limit]}{ASSISTANT_MARK}{(run.summary or '').strip()[:assistant_limit]}"
+
+
+def _user_part(digest: str) -> str:
+    """What the user wrote. Split on the *first* marker, so text the user pasted can only shrink this."""
+    head = digest.split(ASSISTANT_MARK, 1)[0]
+    return head.removeprefix("用户：")
 
 
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
@@ -228,7 +250,8 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
                 "id": e.id,
                 "run_id": e.run_id,
                 "observed_at": _aware(e.observed_at).isoformat(),
-                "content": e.digest,
+                "user_said": _user_part(e.digest),
+                "assistant_replied": e.digest.split(ASSISTANT_MARK, 1)[1] if ASSISTANT_MARK in e.digest else "",
             }
             for e in episodes
         ],
@@ -237,8 +260,9 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
 
 
 def _quote_supported(quote: str, episodes: list[MemoryEpisode]) -> bool:
+    """A quote counts only if the *user* said it: assistant text is context, never evidence (doc §7.2)."""
     q = _normalize(quote)
-    return bool(q) and any(q in _normalize(e.digest) for e in episodes)
+    return bool(q) and any(q in _normalize(_user_part(e.digest)) for e in episodes)
 
 
 async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict]:
@@ -323,6 +347,18 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
             }
         )
     return out, usage, model
+
+
+def _screen(facts: list[dict], tombstones: list[dict]) -> list[dict]:
+    """Drop what must not be stored however well it was quoted: credentials, instructions, deleted facts."""
+    kept = []
+    for fact in facts:
+        reason = guard.reject_reason(fact["text"])
+        if reason:
+            MEMORY_GUARD_REJECTED.labels(reason, "nightly").inc()
+        elif not blocked_by_tombstone(tombstones, fact["text"], fact.get("evidence_run_ids")):
+            kept.append(fact)
+    return kept
 
 
 def _candidates(fact: dict, active: list[dict]) -> list[dict]:
@@ -469,6 +505,7 @@ def _apply(db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, M
                 entries=entries,
             ),
             "nightly",
+            tombstone_removed=False,  # trimming old invalid history is housekeeping, not the user deleting a fact
         )
         return result
 
@@ -507,6 +544,7 @@ async def process_dream(run_id: str) -> None:
             episodes = _episodes(db, user, runs)
             active = _active(memory["entries"])
             facts, usage, model = await _extract(episodes, active, user)
+            facts = _screen(facts, tombstones_of(user))
             verdicts, judge_usage = await _judge(facts, active, user, model) if facts else ({}, {})
             usage = {
                 key: int(usage.get(key, 0)) + int(judge_usage.get(key, 0))
