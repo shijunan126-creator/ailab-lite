@@ -22,7 +22,7 @@ from ..contracts.memory import (
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
 from ..memory_recall import guard
-from ..memory_recall.search import excluded_from_memory, search_history
+from ..memory_recall.search import search_history
 from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
 from ..metrics import MEMORY_GUARD_REJECTED, MEMORY_RECALL
 from ..models import MemoryDreamRun, Run, RunDelivery, RunStatus, User, new_id
@@ -74,11 +74,9 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
 
 
 def memory_for_run(owner: User | None, run: Run) -> dict:
-    """What a run may know about memory. A temporary chat sees none and is told so."""
+    """What a run may know about memory."""
     if owner is None:
         return {}
-    if excluded_from_memory(run.options):
-        return {"enabled": False, "temporary": True, "revision": 0, "auto_save": False, "entries": []}
     return memory_for(owner, for_model=True)
 
 
@@ -342,8 +340,6 @@ def run_memory(
         fence_attempt(db, run.id, x_run_attempt)
         if run.status != RunStatus.RUNNING:
             raise HTTPException(409, "run is not running")
-        if excluded_from_memory(run.options):
-            raise HTTPException(422, "这是临时对话：不读取也不写入长期记忆")
         user = db.get(User, run.user_id, populate_existing=True)
         current = memory_for(user)
         if body.action == "list":
@@ -391,9 +387,6 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
     from .routes_internal import _run_or_404
 
     run = _run_or_404(db, run_id)
-    if excluded_from_memory(run.options):
-        MEMORY_RECALL.labels("temporary").inc()
-        raise HTTPException(422, "这是临时对话：不读取也不写入长期记忆")
     user = db.get(User, run.user_id)
     if user is None or not memory_for(user)["enabled"]:
         MEMORY_RECALL.labels("disabled").inc()

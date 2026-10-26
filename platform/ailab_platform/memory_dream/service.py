@@ -43,7 +43,6 @@ from ..db import SessionLocal
 from ..llm import llm_for
 from ..locks import user_critical_section
 from ..memory_recall import guard
-from ..memory_recall.search import excluded_from_memory
 from ..memory_recall.tombstones import blocked_by_tombstone, tombstones_of
 from ..metrics import MEMORY_GUARD_REJECTED
 from ..models import Conversation, MemoryDreamRun, MemoryEpisode, Run, RunStatus, User, new_id, utcnow
@@ -53,7 +52,6 @@ from .settings import dream_settings, local_window
 log = logging.getLogger("ailab.memory_dream")
 
 TERMINAL = set(RunStatus.TERMINAL)
-NEW_RUN_SCAN = 400
 
 
 class DreamError(RuntimeError):
@@ -129,22 +127,21 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
     if last:
         cursor = db.get(Run, last.cursor_run_id) if last.cursor_run_id else None
         since = _aware(cursor.created_at) if cursor else _aware(last.finished_at or last.created_at)
-    rows = db.scalars(
-        select(Run)
-        .outerjoin(Conversation, Conversation.id == Run.conversation_id)
-        .where(
-            Run.user_id == user_id,
-            Run.status.in_(TERMINAL),
-            Run.created_at > since,
-            Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
-            or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
+    return list(
+        db.scalars(
+            select(Run)
+            .outerjoin(Conversation, Conversation.id == Run.conversation_id)
+            .where(
+                Run.user_id == user_id,
+                Run.status.in_(TERMINAL),
+                Run.created_at > since,
+                Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
+                or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
+            )
+            .order_by(Run.created_at, Run.id)
+            .limit(40)
         )
-        .order_by(Run.created_at, Run.id)
-        .limit(NEW_RUN_SCAN)
     )
-    # A temporary chat is never learned from. Its flag lives in JSON, so it is filtered here, after a scan wide enough
-    # that a long stretch of temporary chats cannot hide the turns behind it.
-    return [r for r in rows if not excluded_from_memory(r.options)][:40]
 
 
 def _candidate_users(db: Session, now: datetime) -> list[User]:

@@ -37,7 +37,7 @@ export type Run = {
   work_ms?: number | null;
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string }[];
-  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; memory?: "off" };
+  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
     previews?: Preview[];

@@ -228,8 +228,6 @@ def history_messages(history: list[dict] | None) -> list[dict]:
 def memory_prompt(memory: dict) -> str:
     if not memory:
         return ""
-    if memory.get("temporary"):
-        return "\n# 用户记忆\n这是临时对话：不读取、不写入长期记忆，不查询历史对话，也不要承诺“记住”任何内容。"
     if not memory.get("enabled", True):
         return "\n# 用户记忆\n用户已关闭记忆，不读取、不写入长期记忆。"
 

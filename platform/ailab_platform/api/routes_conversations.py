@@ -227,7 +227,6 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         mode=body.mode,
         skill=body.skill,
         template=body.template,
-        memory=body.memory,
     )
     return run_dict(db, run, detail=True)
 
