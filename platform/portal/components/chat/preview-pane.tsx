@@ -5,6 +5,7 @@ import { downloadUrl, errorMessage, Preview, previewUrl, reader as fetchReader, 
 import { IconDownload, IconX } from "../icons";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
+import PdfDocument from "../preview/pdf";
 import { HtmlDocView } from "../preview/html-doc";
 import type { Source } from "../../lib/work-process";
 import { SourcesList } from "./sources";
@@ -28,6 +29,12 @@ function HtmlPane({ preview }: { preview: Preview }) {
       renderError={(reason) => <div className="hint" style={{ margin: 16 }}>无法加载文件：{reason}</div>}
     />
   );
+}
+
+/** Word, PowerPoint and PDF arrive as one PDF: PDF.js keeps the text layer and zoom that JPEG pages lose. */
+function PdfPane({ preview }: { preview: Preview }) {
+  if (!preview.run_id || !preview.pdf) return <div className="hint">没有可显示的文档</div>;
+  return <PdfDocument url={previewUrl(preview.run_id, preview.pdf)} title={preview.filename} />;
 }
 
 /** The extracted page as blocks: headings, list runs, images and code — the shape the reader API
@@ -243,7 +250,7 @@ export default function PreviewPane({
         </div>
       ) : current ? (
         <div className="preview-body" key={`${current.filename}:${current.file_id || ""}`}>
-          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
+          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
         </div>
       ) : null}
     </aside>

@@ -392,6 +392,14 @@ button.attach-chip.open:hover { background: var(--surface); color: var(--text); 
 .thumb img { display: block; width: 104px; height: 58px; object-fit: contain; border-radius: 4px; }
 .thumb span { position: absolute; left: 4px; bottom: 3px; font-size: 10px; color: #fff; background: rgb(0 0 0 / 55%); border-radius: 4px; padding: 0 4px; }
 
+.pdf-preview { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface-2); }
+.pdf-toolbar { flex: none; display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-bottom: 1px solid var(--border); background: var(--surface); }
+.pdf-toolbar .link { font-size: 16px; line-height: 1; padding: 3px 8px; }
+.pdf-zoom { min-width: 44px; text-align: center; font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.pdf-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.pdf-page { display: block; background: #fff; box-shadow: 0 6px 24px -8px rgb(0 0 0 / 35%); border-radius: 2px; overflow: hidden; }
+.pdf-page canvas { display: block; }
+.pdf-page .react-pdf__Page__textContent { user-select: text; }
 .sheets { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .sheets > .alert { margin: 10px 12px 0; }
 .sheet-grid { flex: 1; min-height: 0; overflow: auto; background: var(--surface); }

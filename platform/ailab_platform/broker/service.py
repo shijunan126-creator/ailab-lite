@@ -654,7 +654,7 @@ class LeaseManager:
             outdir = f"{TOOL_DIR}/preview/{seq}"
             filename = Path(path).name
             started = time.perf_counter()
-            res = self._provider_call("exec", sandbox_id, f"python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir}", 300)
+            res = self._provider_call("exec", sandbox_id, f"python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir} --pdf", 300)
             try:
                 result = json.loads((res.stdout.strip().splitlines() or ["{}"])[-1])
             except json.JSONDecodeError:
@@ -693,6 +693,15 @@ class LeaseManager:
                         settings.max_sandbox_read_bytes,
                     )
                     manifest.update(kind="sheets", data=f"{seq}/sheets.json", errors=result.get("errors", []))
+                elif result.get("kind") == "pdf" and result.get("pdf") == "document.pdf":
+                    size, _ = self.store_file(
+                        lease,
+                        f"{outdir}/document.pdf",
+                        f"previews/{run_id}/{seq}/document.pdf",
+                        "application/pdf",
+                        min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024),
+                    )
+                    manifest.update(kind="pdf", pdf=f"{seq}/document.pdf", page_count=result.get("page_count"))
                 else:
                     manifest["error"] = "renderer returned nothing usable"
             except Exception as exc:

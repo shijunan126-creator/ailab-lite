@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "next": "^16.4.2",
+    "pdfjs-dist": "^4.8.69",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "react-pdf": "^9.2.1"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

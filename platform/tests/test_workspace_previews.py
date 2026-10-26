@@ -132,3 +132,17 @@ def test_preview_cache_update_preserves_concurrent_heartbeat(tmp_path, monkeypat
     monkeypatch.setattr(manager, "_fingerprints", heartbeat_during_render)
     assert manager.refresh_previews(lid)[0]["version"] == 1
     assert manager.get(lid)["expires_at"] == renewed_expiry[0]
+
+def test_office_previews_are_kept_as_a_pdf_for_pdfjs(tmp_path) -> None:
+    from pypdf import PdfWriter
+
+    manager, _, storage = _manager(tmp_path)
+    lease = manager.create("run_pdf")["lease_id"]
+    writer = PdfWriter()
+    writer.add_blank_page(width=200, height=200)
+    payload = io.BytesIO()
+    writer.write(payload)
+    manager.put_file(lease, "/workspace/outputs/report.pdf", payload.getvalue())
+    [preview] = manager.refresh_previews(lease)
+    assert preview["kind"] == "pdf" and preview["pdf"].endswith("/document.pdf")
+    assert storage.get_bytes(f"previews/run_pdf/{preview['pdf']}").startswith(b"%PDF")
