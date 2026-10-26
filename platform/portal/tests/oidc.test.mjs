@@ -79,3 +79,10 @@ test("proxy preserves the array-list keyset cursor header", async (t) => {
   const res = await proxy.GET(new next.NextRequest("https://portal.example/api/v1/admin/departments", { headers: { cookie: "ailab_token=session" } }), { params: Promise.resolve({ path: ["admin", "departments"] }) });
   assert.equal(res.headers.get("x-next-cursor"), "cursor");
 });
+
+test("proxy preserves the reader snapshot security headers", async (t) => {
+  const headers = { "content-security-policy": "sandbox allow-popups; script-src 'none'", "referrer-policy": "no-referrer" };
+  t.mock.method(globalThis, "fetch", async () => new Response("<p>article</p>", { headers }));
+  const res = await proxy.GET(new next.NextRequest("https://portal.example/api/v1/reader/render?url=https://example.com", { headers: { cookie: "ailab_token=session" } }), { params: Promise.resolve({ path: ["reader", "render"] }) });
+  for (const [key, value] of Object.entries(headers)) assert.equal(res.headers.get(key), value);
+});

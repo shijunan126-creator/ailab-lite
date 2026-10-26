@@ -181,8 +181,8 @@ with SessionLocal() as db:
             break
     assert stable >= 2, "long answer tail did not stabilize in the scroll viewport"
     page.get_by_role("link", name="合并验收网页", exact=True).click()
-    page.get_by_role("tab", name="网页", exact=True).wait_for()
-    assert page.get_by_role("tab", name="网页", exact=True).get_attribute("aria-selected") == "true"
+    page.get_by_role("tab", name="合并验收网页", exact=True).wait_for()
+    assert page.get_by_role("tab", name="合并验收网页", exact=True).get_attribute("aria-selected") == "true"
     assert page.locator(".reader-frame").get_attribute("src").startswith("/api/v1/reader/render?")
     page.get_by_role("tab", name="正文", exact=True).click()
     page.get_by_text("提取正文验收", exact=True).wait_for()

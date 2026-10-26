@@ -8,6 +8,8 @@ kept). Both share the Agent's public-only client, caps and deadlines; one bounde
 """
 
 import asyncio
+from html import escape
+from html.parser import HTMLParser
 from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -45,12 +47,51 @@ async def reader(url: str = Query(min_length=1, max_length=2000), _: User = Depe
     return {"url": page["url"], "title": page["title"], "blocks": page["blocks"], "truncated": page["truncated"]}
 
 
-# Clicks inside the frame open a new tab instead of navigating the frame into a site that would
-# refuse to be framed; capture phase runs before the page's own handlers.
-_LINK_OUT = (
-    "<script>document.addEventListener('click',function(e){var t=e.target;"
-    "var a=t&&t.closest?t.closest('a[href]'):null;if(a)a.target='_blank'},true)</script>"
-)
+class _FrameMarkup(HTMLParser):
+    """Remove document-controlled base/refresh tags without parsing or rebuilding page content."""
+
+    def __init__(self, html: str) -> None:
+        super().__init__(convert_charrefs=False)
+        self.html = html
+        self.offsets = [0]
+        for line in html.splitlines(keepends=True):
+            self.offsets.append(self.offsets[-1] + len(line))
+        self.removals: list[tuple[int, int]] = []
+        self.head_end: int | None = None
+        self.document_start = 0
+
+    def handle_starttag(self, tag, attrs):
+        line, col = self.getpos()
+        start = self.offsets[line - 1] + col
+        end = start + len(self.get_starttag_text())
+        if tag == "head" and self.head_end is None:
+            self.head_end = end
+        elif tag == "html":
+            self.document_start = end
+        if tag == "base" or (tag == "meta" and dict(attrs).get("http-equiv", "").lower() == "refresh"):
+            self.removals.append((start, end))
+
+    handle_startendtag = handle_starttag
+
+    def handle_decl(self, decl):
+        if decl.lower().startswith("doctype"):
+            line, col = self.getpos()
+            self.document_start = self.offsets[line - 1] + col + len(decl) + 3
+
+    def render(self, url: str) -> str:
+        self.feed(self.html)
+        html = self.html
+        base = f'<base href="{escape(url, quote=True)}" target="_blank">'
+        position = self.head_end if self.head_end is not None else self.document_start
+        edits = [(start, end, "") for start, end in self.removals]
+        edits.append((position, position, base))
+        parts: list[str] = []
+        cursor = 0
+        for start, end, value in sorted(edits):
+            parts.extend((html[cursor:start], value))
+            cursor = end
+        parts.append(html[cursor:])
+        return "".join(parts)
 
 
 @router.get("/reader/render")
@@ -66,12 +107,15 @@ async def reader_render(url: str = Query(min_length=1, max_length=2000), _: User
         raise HTTPException(status_code=502, detail=str(exc))
     if page["content_type"] not in ("text/html", "application/xhtml+xml"):
         raise HTTPException(status_code=415, detail="not an HTML page; use the extracted view")
-    html = page["text"]
-    base = f'<base href="{page["url"]}">{_LINK_OUT}'
-    if "<head" in html.lower():
-        head = html.lower().index("<head")
-        gt = html.index(">", head) + 1
-        html = html[:gt] + base + html[gt:]
-    else:
-        html = base + html
-    return Response(content=html, media_type="text/html; charset=utf-8")
+    html = _FrameMarkup(page["text"]).render(page["url"])
+    # Preserve HTML/CSS while blocking scripts, subframes and form submission. Site hydration and
+    # redirects otherwise escape the fetched snapshot or replace its article with a consent page.
+    return Response(
+        content=html,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Security-Policy": "sandbox allow-popups; script-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'",
+            "Cache-Control": "private, no-store",
+            "Referrer-Policy": "no-referrer",
+        },
+    )

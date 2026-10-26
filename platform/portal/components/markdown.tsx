@@ -69,7 +69,7 @@ function inline(text: string, key = "i", cites?: Cites, open?: LinkOpener): Reac
           </a>
         );
       } else out.push(
-        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]} onClick={click?.(m[5])}>
+        <a key={k} href={m[5]} target="_blank" rel="noreferrer noopener" className={cite ? "md-cite" : "md-link"} title={m[5]} onClick={click?.(m[5], source?.title || (cite ? m[5] : label))}>
           {cite ? label.replace(/[[\]]/g, "") : inline(label, k, cites, open)}
         </a>
       );

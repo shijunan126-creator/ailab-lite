@@ -121,7 +121,10 @@ function ReaderText({ url }: { url: string }) {
 
 /** The 网页 view: the original page through the render proxy by default, the extracted article one
  * tab away for pages the proxy shows poorly. Mode resets per URL (the wrapper remounts us). */
-function ReaderView({ url, title }: { url: string; title: string }) {
+function ReaderView({ url, title, active }: { url: string; title: string; active: boolean }) {
+  const [opened, setOpened] = useState(false);
+  const [textOpened, setTextOpened] = useState(false);
+  useEffect(() => { if (active) setOpened(true); }, [active]);
   const [mode, setMode] = useState<"page" | "text">("page");
   return (
     <div className="reader-wrap">
@@ -129,18 +132,17 @@ function ReaderView({ url, title }: { url: string; title: string }) {
         <button type="button" role="tab" aria-selected={mode === "page"} className={`viewer-mode ${mode === "page" ? "on" : ""}`} onClick={() => setMode("page")}>
           原版
         </button>
-        <button type="button" role="tab" aria-selected={mode === "text"} className={`viewer-mode ${mode === "text" ? "on" : ""}`} onClick={() => setMode("text")}>
+        <button type="button" role="tab" aria-selected={mode === "text"} className={`viewer-mode ${mode === "text" ? "on" : ""}`} onClick={() => { setTextOpened(true); setMode("text"); }}>
           正文
         </button>
         <a className="reader-open" href={url} target="_blank" rel="noreferrer noopener" title="在新标签打开原文">↗</a>
       </div>
-      {mode === "page" ? (
-        <iframe className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-scripts allow-popups allow-modals" title={title || url} />
-      ) : (
-        <div className="reader-scroll">
+      {opened ? <iframe hidden={mode !== "page"} className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-popups" referrerPolicy="no-referrer" title={title || url} /> : null}
+      {textOpened ? (
+        <div className="reader-scroll" hidden={mode !== "text"}>
           <ReaderText url={url} />
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
@@ -155,7 +157,8 @@ export default function PreviewPane({
   sourcesOn,
   onSourcesTab,
   onCloseSources,
-  reader,
+  readers,
+  readerUrl,
   readerOn,
   onReaderTab,
   onCloseReader,
@@ -172,15 +175,21 @@ export default function PreviewPane({
   sourcesOn: boolean;
   onSourcesTab: () => void;
   onCloseSources: () => void;
-  reader: PaneReader | null;
+  readers: PaneReader[];
+  readerUrl: string | null;
   readerOn: boolean;
-  onReaderTab: () => void;
-  onCloseReader: () => void;
+  onReaderTab: (url: string) => void;
+  onCloseReader: (url: string) => void;
   onRead: (source: Source) => void;
   onClose: () => void;
   live: boolean;
   downloads: Record<string, string>;
 }) {
+  // Keep recent documents mounted for instant switches, bound third-party DOM/frame memory.
+  const [recentReaders, setRecentReaders] = useState<string[]>([]);
+  useEffect(() => {
+    if (readerOn && readerUrl) setRecentReaders((prev) => [...prev.filter((url) => url !== readerUrl), readerUrl].slice(-4));
+  }, [readerOn, readerUrl]);
   const pane = useRef<HTMLElement | null>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -188,29 +197,41 @@ export default function PreviewPane({
     const opener = document.activeElement as HTMLElement | null;
     const mobile = window.matchMedia("(max-width: 760px)").matches;
     const marker = `preview-${Date.now()}`;
-    if (mobile) window.history.pushState({ ...window.history.state, ailabPreview: marker }, "");
     const pop = () => close.current();
+    const push = mobile ? setTimeout(() => {
+      window.history.pushState({ ...window.history.state, ailabPreview: marker }, "");
+      window.addEventListener("popstate", pop);
+    }) : undefined;
     const key = (e: KeyboardEvent) => {
       if (e.key === "Escape") { e.preventDefault(); close.current(); }
       if (mobile && e.key === "Tab") {
-        const controls = pane.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], select, [tabindex="0"]');
+        const controls = Array.from(pane.current?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], select, [tabindex="0"]') || []).filter((el) => el.getClientRects().length > 0);
         if (!controls?.length) return;
         const first = controls[0], last = controls[controls.length - 1];
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     };
-    if (mobile) window.addEventListener("popstate", pop);
     pane.current?.querySelector<HTMLButtonElement>(".pane-tab.on button")?.focus({ preventScroll: true });
     window.addEventListener("keydown", key);
     return () => {
+      clearTimeout(push);
       window.removeEventListener("keydown", key);
       window.removeEventListener("popstate", pop);
       if (mobile && window.history.state?.ailabPreview === marker) window.history.back();
       if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
   }, []);
+  useEffect(() => {
+    const tabs = pane.current?.querySelector<HTMLElement>(".preview-tabs");
+    const active = tabs?.querySelector<HTMLElement>('[aria-selected="true"]');
+    if (!tabs || !active) return;
+    const rect = active.getBoundingClientRect(), box = tabs.getBoundingClientRect();
+    if (rect.left < box.left) tabs.scrollLeft += rect.left - box.left;
+    else if (rect.right > box.right) tabs.scrollLeft += rect.right - box.right;
+  }, [readerUrl, readerOn, selected, sourcesOn]);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
+  const reader = readers.find((r) => r.url === readerUrl);
   const showReader = !!reader && readerOn;
   const showSources = !!sources && !showReader && (sourcesOn || !current);
   if (!current && !sources && !reader) return null;
@@ -227,7 +248,7 @@ export default function PreviewPane({
         <div className="preview-tabs" role="tablist">
           {previews.map((p) => tab(p.filename, p.filename, !showSources && !showReader && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
           {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
-          {reader ? tab(`reader-${reader.url}`, "网页", showReader, onReaderTab, onCloseReader) : null}
+          {readers.map((r) => tab(`reader-${r.url}`, r.title || r.url, showReader && r.url === readerUrl, () => onReaderTab(r.url), () => onCloseReader(r.url)))}
         </div>
         <span className="spacer" />
         {!showSources && !showReader && current ? (
@@ -241,11 +262,12 @@ export default function PreviewPane({
           </>
         ) : null}
       </div>
-      {showReader ? (
-        <div className="preview-body reader-body" key={`reader-${reader!.url}`}>
-          <ReaderView url={reader!.url} title={reader!.title} />
+      {readers.filter((r) => r.url === readerUrl || recentReaders.includes(r.url)).map((r) => (
+        <div className="preview-body reader-body" key={`reader-${r.url}`} hidden={!showReader || r.url !== readerUrl}>
+          <ReaderView url={r.url} title={r.title} active={showReader && r.url === readerUrl} />
         </div>
-      ) : showSources ? (
+      ))}
+      {showReader ? null : showSources ? (
         <div className="preview-body sources-body" key={`sources-${sources!.runId}`}>
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>

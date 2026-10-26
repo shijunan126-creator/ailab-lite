@@ -515,7 +515,8 @@ async def read_page(url: str) -> dict:
     page = await fetch_html(current)
     ctype, raw = page["content_type"], page["text"]
     if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
-        blocks = reader.extract_blocks(raw, page["url"])
+        blocks, limited = reader.extract_article(raw, page["url"])
+        page["truncated"] = page["truncated"] or limited
     elif ctype == "application/json":
         try:
             blocks = [{"type": "pre", "text": json.dumps(json.loads(raw), ensure_ascii=False, indent=1)[:20_000], "lt": 0}]

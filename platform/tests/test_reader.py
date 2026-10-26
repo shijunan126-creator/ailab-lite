@@ -117,7 +117,7 @@ def test_reader_render_serves_the_original_page(api, fake_html):
     r = api.get("/v1/reader/render", params={"url": "https://example.com/a"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/html")
-    assert '<base href="https://example.com/a">' in r.text
+    assert '<base href="https://example.com/a" target="_blank">' in r.text
     assert "hello" in r.text
 
 
@@ -185,3 +185,51 @@ def test_markdown_to_blocks():
     assert {"type": "li", "text": "项目一", "lt": 0} in blocks
     assert {"type": "li", "text": "有序一", "lt": 0, "ordered": True} in blocks
     assert blocks[-1] == {"type": "pre", "text": "code()", "lt": 0}
+
+
+def test_article_header_hidden_and_unmatched_end_tags():
+    blocks = extract_blocks(
+        '<header><p>站点页眉</p></header><article><header class="article-header"><h1>文章标题</h1></header>'
+        "<div hidden><p>隐藏内容</p></div><p>开头</bogus>结尾</p></article>"
+    )
+    text = "\n".join(b.get("text", "") for b in blocks)
+    assert "文章标题" in text
+    assert "站点页眉" not in text
+    assert "隐藏内容" not in text
+    assert "开头结尾" in text
+
+
+def test_extractor_caps_a_single_large_block():
+    from ailab_platform.reader import MAX_CHARS, extract_article
+
+    blocks, truncated = extract_article("<article><p>" + "大" * (MAX_CHARS + 500) + "</p></article>")
+    assert truncated
+    assert sum(len(b.get("text", "")) for b in blocks) <= MAX_CHARS
+
+
+def test_render_snapshot_blocks_navigation_and_escapes_base(api, monkeypatch):
+    async def fetch(url):
+        return {
+            "url": 'https://example.com/?q="x"&a=1',
+            "content_type": "text/html",
+            "text": '<html><head><BASE href="https://wrong.test"><meta HTTP-EQUIV="Refresh" content="0;url=/jump">'
+            '</head><body><p>文章</p><script>location="/jump"</script></body></html>',
+        }
+
+    monkeypatch.setattr(web, "fetch_html", fetch)
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+    response = api.get("/v1/reader/render", params={"url": "https://example.com/"})
+    assert response.status_code == 200
+    assert "wrong.test" not in response.text and "HTTP-EQUIV" not in response.text
+    assert 'href="https://example.com/?q=&quot;x&quot;&amp;a=1"' in response.text
+    assert "script-src 'none'" in response.headers["content-security-policy"]
+    assert "文章" in response.text
+
+
+def test_render_preserves_doctype_and_its_standards_mode():
+    from ailab_platform.api.routes_reader import _FrameMarkup
+
+    for html in ("<!doctype html><html><head><title>T</title></head><body>正文</body></html>", "<!doctype html><p>正文</p>"):
+        rendered = _FrameMarkup(html).render("https://example.com/")
+        assert rendered.startswith("<!doctype html>")
+        assert rendered.count("<base ") == 1
