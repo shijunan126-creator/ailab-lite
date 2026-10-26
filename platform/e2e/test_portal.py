@@ -248,14 +248,19 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     _wait_for_turns(page, 1)
     assert page.locator(".preview-pane, .viewer").count() == 0
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
-    page.wait_for_selector(".viewer .sheet-grid td", timeout=60000)
-    grid = page.inner_text(".viewer .sheet-grid")
+    # A renderer-backed Run opens its live sheet tab; otherwise the delivered file opens in the viewer.
+    surface = page.locator(".preview-pane, .viewer")
+    surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
+    assert surface.count() == 1
+    grid = surface.locator(".sheet-grid").inner_text()
     assert "华东" in grid and "合计" in grid
-    page.get_by_role("button", name="关闭预览", exact=True).click()
-    page.locator(".viewer").wait_for(state="detached")
+    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    page.get_by_role("button", name=close, exact=True).click()
+    surface.wait_for(state="detached")
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
-    page.wait_for_selector(".viewer .sheet-grid")
-    page.get_by_role("button", name="关闭预览", exact=True).click()
+    surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
+    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    page.get_by_role("button", name=close, exact=True).click()
     _send(page, "表格再改一下")
     _wait_for_turns(page, 2)
     assert page.locator(".file-card").count() == 2
