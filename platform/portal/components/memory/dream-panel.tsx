@@ -89,6 +89,21 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
     }
   }
 
+  async function runNow() {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api("/v1/memory/dream/run", { method: "POST" });
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function revert(run: Run) {
     if (!window.confirm(`撤销 ${run.local_date} 的记忆整理？恢复到整理前的内容。`)) return;
     setBusy(true);
@@ -121,11 +136,16 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
         </div>
       ) : null}
       {error ? <div className="alert error">{error}</div> : null}
-      {metrics && metrics.runs > 0 ? (
-        <div className="hint dream-stats">
-          已整理 {metrics.applied} 次 · 变更 {metrics.changes} 条 · 使用 {metrics.tokens.toLocaleString()} tokens
-        </div>
-      ) : null}
+      <div className="dream-actions">
+        <span className="hint grow">
+          {metrics && metrics.runs > 0
+            ? `已整理 ${metrics.applied} 次 · 变更 ${metrics.changes} 条 · 使用 ${metrics.tokens.toLocaleString()} tokens`
+            : "还没有整理记录"}
+        </span>
+        <button className="secondary sm" onClick={runNow} disabled={busy || !settings?.enabled}>
+          立即整理一次
+        </button>
+      </div>
       {runs.length ? (
         <div className="dream-runs">
           {runs.map((run) => (
