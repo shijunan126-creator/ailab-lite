@@ -63,6 +63,13 @@ export const IconPanel = (p: Props) => (
   </Svg>
 );
 
+export const IconPanelRight = (p: Props) => (
+  <Svg {...p}>
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M15 3v18" />
+  </Svg>
+);
+
 export const IconLogOut = (p: Props) => (
   <Svg {...p}>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

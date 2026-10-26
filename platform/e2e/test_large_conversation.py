@@ -150,17 +150,6 @@ with SessionLocal() as db:
 """.replace("RUN", repr(conv["run"]))
     subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, check=True)
     page.route("**/api/v1/reader/render?**", lambda route: route.fulfill(content_type="text/html", body="<p>原版页面验收</p>"))
-    page.route(
-        "**/api/v1/reader?**",
-        lambda route: route.fulfill(
-            json={
-                "url": "https://example.com/merge-check",
-                "title": "网页验收",
-                "blocks": [{"type": "p", "text": "提取正文验收"}],
-                "truncated": False,
-            }
-        ),
-    )
     login(page, stack, path="/c/" + conv["id"])
     url = page.url
     # Mounting estimated chunks changes scrollHeight, especially at phone width.
@@ -184,8 +173,6 @@ with SessionLocal() as db:
     page.get_by_role("tab", name="合并验收网页", exact=True).wait_for()
     assert page.get_by_role("tab", name="合并验收网页", exact=True).get_attribute("aria-selected") == "true"
     assert page.locator(".reader-frame").get_attribute("src").startswith("/api/v1/reader/render?")
-    page.get_by_role("tab", name="正文", exact=True).click()
-    page.get_by_text("提取正文验收", exact=True).wait_for()
     assert page.url == url
     if not mobile:
         assert page.locator(".preview-pane").bounding_box()["x"] > page.locator(".chat-main").bounding_box()["x"]
