@@ -42,6 +42,11 @@ with SessionLocal() as db:
     assert page.locator(".turn-meta").get_by_text("详情", exact=True).count() == 0
     assert page.locator(".pr-thought-body").count() == 0
     head.click()
+    thought_head = page.locator(".pr-thought > button").first
+    thought_head.wait_for()
+    assert thought_head.get_attribute("aria-expanded") == "false"
+    assert page.locator(".pr-thought-body").count() == 0
+    thought_head.click()
     page.get_by_text("段落001开头。", exact=False).wait_for()
     assert page.locator(".pr-thought-body .collapse").count() == 0
     assert page.locator(".work-timeline").evaluate("el => el.scrollTop") == 0
@@ -66,6 +71,10 @@ with SessionLocal() as db:
     page.locator(".work-timeline").evaluate("el => el.scrollTop = 0")
     page.get_by_text("段落001开头。", exact=False).wait_for()
     page.screenshot(path=str(stack.log_dir / f"thought-{mode}-{'mobile' if mobile else 'desktop'}.png"))
+    thought_head.click()
+    assert page.locator(".pr-thought-body").count() == 0
+    thought_head.click()
+    page.get_by_text("段落001开头。", exact=False).wait_for()
     start = time.perf_counter()
     head.click()
     page.wait_for_function("!document.querySelector('.pr-thought-body')")

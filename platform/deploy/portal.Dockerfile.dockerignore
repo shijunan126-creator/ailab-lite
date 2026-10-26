@@ -1,0 +1,6 @@
+*
+!platform/portal
+platform/portal/node_modules
+platform/portal/.next
+platform/portal/tests
+platform/portal/*.tsbuildinfo

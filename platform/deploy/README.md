@@ -47,3 +47,20 @@ For manual setup, copy `k3s/opensandbox.example.toml` into a private config, inj
 Set Broker `AILAB_OSB_NETWORK_MODE=kubernetes` (lite overlay does this). In this explicit mode, OSB receives **no sidecar policy**, because Server 1.1.1 rejects gVisor's unsupported NAT combination. Namespace default-deny plus the node ICMP rule provide isolation. The default remains `sidecar`; a failed create is never retried without policy. In `secure`, Kubernetes mode additionally requires operator acceptance `AILAB_OSB_KUBERNETES_ISOLATION_VERIFIED=true` after running the real transfer/network contracts. This flag records external infrastructure acceptance; it cannot enforce or continuously attest CNI policy. Removing policy/rules after acceptance invalidates the contract. Set `AILAB_OSB_USE_SERVER_PROXY=true` only when the Broker cannot directly route to Pod endpoints (e.g. the Mac test client).
 
 Acceptance and bounded performance evidence: [controlled-network review](../../docs/reviews/2026-10-24-controlled-network.md). The current Mac Compose deployment remains independent of this path.
+
+### Incremental Portal releases
+
+Build from a clean fixed-commit export at a stable path, with the tag passed only
+as an output name: `docker build -f platform/deploy/portal.Dockerfile -t ailab-portal:COMMIT .`.
+The Dockerfile installs dependencies before copying source and exports only the
+Next.js standalone runtime plus static assets. Normal local builds retain `next start`.
+If a `public/` directory is introduced, copy it into the runtime stage too.
+
+Compare against the actual deployed commit before selecting components. A Portal-only
+change can reuse the existing platform and Office images and recreate only Portal;
+verify image IDs, fixed source, effective configuration and HTTP/static assets.
+Backend/configuration/migration changes require the full preservation/backup and
+service lifecycle. Documentation/test-only changes need no runtime rollout. Do not
+invalidate caches using versioned COPY paths, rebuild unchanged images, restart
+unchanged services, or rerun an already accepted identical source tree. Keep CI and
+recovery evidence; reducing redundant work does not remove release gates.

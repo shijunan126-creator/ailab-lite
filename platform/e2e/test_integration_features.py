@@ -38,6 +38,8 @@ def test_full_reasoning_and_early_title_while_answer_streams(logged_in, stack):
     try:
         expect(page.locator(".assistant-body > .md")).to_have_text(FEATURE_ANSWER, timeout=15000)
         expect(page.locator(".turn-meta")).to_have_count(0)
+        assert page.locator(".pr-thought-body").count() == 0
+        page.locator(".pr-thought > button").first.click()
         body = page.locator(".pr-thought-body")
         expect(body).to_be_visible()
         expect(body).to_contain_text("分析问题")

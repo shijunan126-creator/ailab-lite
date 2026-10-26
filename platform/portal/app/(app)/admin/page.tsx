@@ -20,7 +20,6 @@ const TABS: [Tab, string][] = [
   ["policies", "额度"],
   ["usage", "用量"],
   ["files", "文件"],
-  ["files", "文件"],
   ["audit", "审计"],
   ["skills", "技能"],
   ["brand", "品牌"],
@@ -71,7 +70,6 @@ function Admin() {
       {tab === "departments" ? <DepartmentsSection /> : null}
       {tab === "policies" ? <PoliciesSection /> : null}
       {tab === "usage" ? <UsageSection /> : null}
-      {tab === "files" ? <FilesSection /> : null}
       {tab === "files" ? <FilesSection /> : null}
       {tab === "audit" ? <AuditSection /> : null}
       {tab === "skills" ? <SkillsSection /> : null}
