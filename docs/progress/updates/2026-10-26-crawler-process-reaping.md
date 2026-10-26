@@ -1,0 +1,38 @@
+# crawler持续调用与读取降级修复
+
+## 目标与基线
+
+用户授权修复、验证、合并部署。基线main cc247a2；1568页临时样本暴露204个PPid1僵尸，cgroup257/256 PID，第约107次browser开始BlockingIOError。旧browser结果被基础设施故障污染。统计脚本撤回，不入Git；本轮证据留本机临时目录。
+
+## 实现与验收计划
+
+- 镜像使用tini作PID1回收孤儿进程；个人Compose网络入口覆盖ENTRYPOINT，需要在降权后显式执行tini，不能只改基础镜像。k3s沿用镜像入口。
+- 浏览器启动也可能超时，显式finally关闭部分启动的crawler，单独5秒清理预算，清理完成前不释放并发槽。
+- 网络传输错误与可恢复HTTP错误尝试一次browser；证书失败/私网/DNS失败/文件类型/404/401不绕过原限制。
+- 有正文且无script的短静态页直接返回；浏览器空正文或明确挑战标题不算成功文章。healthz对cgroup PID耗尽返回503。
+
+当前为实现阶段，不声称已通过持续容量验收/合并/部署。下一步真实Linux候选、持续browser/超时及原405样本验证、完整回归。临时测试必须单独cgroup，不在256MiB生产Agent内运行批处理。
+
+## 初步回归
+
+产品基线b79b8b3：本地完整SQLite+专用Redis1412通过/102跳过，网页/部署专项48项通过，Portal42及生产build通过。旧crawler镜像运行新测试，启动清理/挑战页及PID健康检查出现预期红灯；修复源码在同一真实Crawl4AI包下8项通过。Linux最终镜像与持续实测仍待完成。
+
+## 容量缺陷补修
+
+候选54fbbbf在目标VM独立Compose通过12项TCP正反探测、真实静态/JS两级读取、令牌/私网拒绝和双React读取，双短测cgroup峰值约761MiB。随后1568样本双并发阶段触发两次浏览器子进程OOM（容器PID1仍活），证明短页双并发不代表任意网页容量。默认MAX_PAGES从2降为1，保留1GiB/PID256/CPU1预算；同时请求应明确503忙，不为通过验收提高限额。中间受OOM污染样本独立保留，不作为最终成功率；最终镜像重新开始全量与持续测试。
+
+## 真实启动取消发现的第二根因
+
+对3f05320候选反复把startup总预算缩至30ms，复现活Node driver堆积、内存/PID压力，原finally close仍不足：Crawl4AI在async_playwright.start尚未返回句柄时被取消，外层拿不到需关闭的driver。中间候选不合并、不部署；故障容器停止，证据独立保留。
+
+改为每次render独立worker，worker以Linux PR_SET_CHILD_SUBREAPER收养Chrome双fork后代；父server持有整次deadline，清理时冻结整个子树防继续fork，杀掉全部子进程并wait worker，tini回收最终孤儿。worker输出后保持存活，确保父进程仍能确定其后代；错误/超时也经过同一清理路径。额外Python解释器只在browser路径启动，需重新测资源和连续请求。新增真OS进程树回归（无driver句柄且子进程自建session）通过，不再只测mock close。
+
+## 初步结论与用户收敛范围
+
+最新用户要求停止大批量复测并提交PR，不再沿用之前merge/deploy授权。最终产品候选429abd2：Linux镜像构建及11项镜像内测试通过；补充真实取消和双fork孤儿测试后12/12通过（仅测试变化）。12项网络正反探测、真实Agent静态/JS、令牌/私网拒绝、单页准入并发一200一503通过。
+
+真实故障：50次外层30ms startup deadline均504；50次库内30ms启动取消加1.5s外层监督均按预算结束，最终PID3/256、僵尸0、OOM0、restart0。第二故障阶段cgroup峰值约202MiB。该外层监督保证即使库内清理挂住也结束。
+
+正常持续读取在用户停止时166/166取得已知预期正文，跨过旧约107次失败点。最终空闲PID3/256、僵尸0、内存69.9MiB、cgroup峰值434.9MiB、memory.events oom/oom_kill均0、restart0。测试覆盖example.com和真实JS quotes页面，不能推导任意网站容量或浏览器全网成功率。最终1568样本阶段尚未开始，旧/中间候选受PID/OOM污染的数据不混入结论。
+
+完整本地SQLite+专用Redis1412/102skip、Portal42/build及网页专项48通过是此前平台产品基线b79b8b3证据；后续产品只改crawler及文档，crawler镜像/进程故障回归单独完成。PR精确head完整CI以GitHub为准。个人生产配置未改，线上仍cc247a2；测试脚本/URL/原始日志仅本机临时目录，未提交。停止临时benchmark与monitor，清理专用Compose容器/网络和Redis，保留候选镜像/本轮证据供评审；不清业务、备份或旧镜像。

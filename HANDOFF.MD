@@ -658,3 +658,15 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - HTTPX read timeout 仅限制相邻块之间的静默，不能当 total timeout；DNS、浏览器 launch/close 也不能放在 navigation deadline 外。Agent renderer 用一个外层 asyncio.timeout 包住 DNS/请求/读响应，proxy 一个 connect预算覆盖DNS及所有候选地址，crawler同一预算覆盖浏览器上下文生命周期。持续 trickle、慢DNS、永不就绪startup均有原代码红灯证据，见[本轮记录](docs/progress/updates/2026-10-26-merged-reader-validation.md)。
 - k3s隔离验收要先证明普通Pod能到达同一公网/私网目标，再测受限Pod拒绝。不能把代理拒绝页当文章，也不能把NetworkPolicy的静态检查/原生浏览器通过当Linux容器隔离证明。Compose没有k3s NetworkPolicy，上线前须独立实现并验收只有代理出口的网络。
 - Turbopack不编译项目根外的node_modules符号链接；隔离worktree使用自己的npm ci或根内硬链接副本。全套Python从platform/运行，Ruff配置/第一方import根也依赖正确目录；不要因此重排全库imports。
+
+- Compose容器entrypoint可先以root安装namespace nft后降权；验收docker exec默认仍用Config.User=root，在cap_drop ALL下不再具有DAC绕过权限，会漏读服务UID所有的0700目录。源码完整性检查必须显式使用实际service UID，不能把这种漏读误当镜像缺源码；本轮190文件以UID10001核对通过。
+
+
+## 2026-10-26 持续browser进程回收
+
+- Python作为容器PID1不会回收Chrome/crashpad孤儿僵尸；短测和healthz200不能证明浏览器仍能启动。使用tini入口；个人Compose自定义网络ENTRYPOINT会覆盖基础镜像入口，必须降权后显式执行tini。不要靠提高pids_limit或周期重启掩盖泄漏。
+- async with的__aenter__超时不执行__aexit__，必须finally清理已部分启动的browser/driver并限制清理时间；持续真实render需同时测/proc僵尸、cgroup pids和内存。批量测试用独立限额容器，不能向业务Agent的256MiB cgroup塞额外Python。
+
+- 1GiB crawler双React短测通过仍会在多样复杂页双并发下杀Chrome子进程，且容器PID1不一定OOMKilled。验收必须查cgroup memory.events的oom/oom_kill；默认并发1，忙时明确503，不以提高内存或忽略子进程OOM作通过依据。
+
+- Crawl4AI async_playwright.start在返回handle前被取消会留下活Node driver；finally close加tini仍不足。每次render使用被外部deadline监督的worker，worker设Linux child subreaper；冻结/杀子树并wait之后再释放槽，不能靠库返回句柄才能清理。30ms连续真实启动故障必须检查活进程、重启次数和cgroup memory.events，不能只看最后一次重启后的健康。
