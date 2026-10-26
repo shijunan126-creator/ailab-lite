@@ -18,9 +18,7 @@ from .test_skill_settings import _user
 
 
 def test_dream_plan_is_append_only_and_requires_an_invalidation_target() -> None:
-    plan = DreamPlan.model_validate(
-        {"changes": [{"op": "invalidate", "id": "mem_a", "reason": "explicit replacement"}]}
-    )
+    plan = DreamPlan.model_validate({"changes": [{"op": "invalidate", "id": "mem_a", "reason": "explicit replacement"}]})
     assert plan.changes[0].op == "invalidate"
     with pytest.raises(ValueError):
         DreamPlan.model_validate({"changes": [{"op": "invalidate", "reason": "missing id"}]})
@@ -115,17 +113,21 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
 
         async def fake_extract(episodes, active, user):
             episode = episodes[0]
-            return [
-                {
-                    "text": "周报先结论后风险",
-                    "kind": "user",
-                    "entities": ["周报"],
-                    "evidence_run_ids": [episode.run_id],
-                    "evidence_episode_ids": [episode.id],
-                    "source_quote": "以后周报先结论后风险",
-                    "confidence": 0.95,
-                }
-            ], {"prompt_tokens": 20, "completion_tokens": 5}, "fake"
+            return (
+                [
+                    {
+                        "text": "周报先结论后风险",
+                        "kind": "user",
+                        "entities": ["周报"],
+                        "evidence_run_ids": [episode.run_id],
+                        "evidence_episode_ids": [episode.id],
+                        "source_quote": "以后周报先结论后风险",
+                        "confidence": 0.95,
+                    }
+                ],
+                {"prompt_tokens": 20, "completion_tokens": 5},
+                "fake",
+            )
 
         async def fake_judge(facts, active, user, model):
             return {}, {"prompt_tokens": 0, "completion_tokens": 0}

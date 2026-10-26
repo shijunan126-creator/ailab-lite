@@ -269,10 +269,7 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     model = settings.memory_dream_model or get_catalog().default_id()
     if not get_catalog().get(model):
         raise DreamError(f"dream model not found: {model}")
-    existing = [
-        {"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")}
-        for e in active
-    ]
+    existing = [{"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")} for e in active]
     user_prompt = (
         "已有事实（用于避免重复；不要从这些事实里再抽取）：\n"
         + json.dumps(existing, ensure_ascii=False)
@@ -353,10 +350,7 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
             {
                 "index": index,
                 "new": {"text": fact["text"], "source_quote": fact["source_quote"]},
-                "existing": [
-                    {"id": c["id"], "text": c["content"], "valid_from": c.get("valid_from")}
-                    for c in candidates
-                ],
+                "existing": [{"id": c["id"], "text": c["content"], "valid_from": c.get("valid_from")} for c in candidates],
             }
         )
     if not work:
@@ -401,7 +395,6 @@ def _fit(entries: list[MemoryEntryInput]) -> list[MemoryEntryInput]:
         [e for e in entries if e.invalid_at or e.superseded_by],
         key=lambda e: e.invalid_at or datetime.min.replace(tzinfo=UTC),
     )
-    active = [e for e in entries if not (e.invalid_at or e.superseded_by)]
     for item in invalid:
         if total <= int(MAX_CHARS * DREAM_TARGET_RATIO):
             break
