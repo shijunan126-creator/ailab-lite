@@ -60,13 +60,24 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
         }
 
 
+async def compare(username: str | None, user_id: str | None, baseline: str | None, candidate: str) -> dict:
+    first = await evaluate(username, user_id, baseline)
+    second = await evaluate(username, user_id, candidate)
+    return {"baseline": first, "candidate": second}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--username", default="admin")
     parser.add_argument("--user-id")
     parser.add_argument("--model")
+    parser.add_argument("--compare-model", help="run the same input through a second model for an offline A/B")
     args = parser.parse_args()
-    print(json.dumps(asyncio.run(evaluate(args.username, args.user_id, args.model)), ensure_ascii=False, indent=2))
+    if args.compare_model:
+        result = asyncio.run(compare(args.username, args.user_id, args.model, args.compare_model))
+    else:
+        result = asyncio.run(evaluate(args.username, args.user_id, args.model))
+    print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

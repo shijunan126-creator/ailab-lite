@@ -273,7 +273,7 @@ export default function MemoryPage() {
                   {rows.map((d) => {
                     const prior = d.id ? byId.get(d.id) : undefined;
                     return (
-                      <div key={d.key} className="memory-row">
+                      <div key={d.key} className={`memory-row ${prior?.superseded_by ? "superseded" : ""}`}>
                         <textarea
                           className="memory-text"
                           value={d.content}
@@ -282,7 +282,7 @@ export default function MemoryPage() {
                           readOnly={saving}
                           autoFocus={d.key === focusKey}
                           aria-label={g.title}
-                          title={prior ? `${prior.source === "agent" ? "AI 记录" : prior.source === "nightly" ? "夜间整理" : "手动"} · ${timeAgo(prior.updated_at)}` : undefined}
+                          title={prior ? `${prior.source === "agent" ? "AI 记录" : prior.source === "nightly" ? "夜间整理" : "手动"} · ${timeAgo(prior.updated_at)}${prior.confidence != null && prior.confidence < 0.95 ? ` · 置信度 ${Math.round(prior.confidence * 100)}%` : ""}${prior.superseded_by ? " · 已被新记忆替代" : ""}` : undefined}
                           onChange={(e) => edit(d.key, e.target.value)}
                         />
                         {d.content.length > ENTRY_CHARS * 0.9 ? <span className="hint memory-count">{d.content.length}/{ENTRY_CHARS}</span> : null}
