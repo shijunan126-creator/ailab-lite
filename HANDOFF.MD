@@ -613,3 +613,11 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 
 - 文档 PR 的范围选择器会跳过产品套件，但 main push 会跑完整套件；PR 总门禁成功不能表述成完整套件已成功，也不能代替合并后固定 SHA 的检查。
 - 在共享、稀疏表上查询不存在用户，并关闭 PostgreSQL 顺序扫描后强制断言特定索引，结果会随历史数据/统计变化。计划回归应在独立迁移库内建立固定规模数据、ANALYZE 并使用默认优化器；独立检查专用索引存在，避免索引名子串匹配掩盖缺失。SQLite 文件夹聚合可合理选择已有 `ix_files_folder_listing`，不能因此认定性能退化。详见[本轮记录](docs/progress/updates/2026-10-25-template-query-plan-ci.md)。
+
+
+## 2026-10-26 思考折叠与Portal增量构建
+
+- 完整思考不等于默认全展开；标题只读短预览，点击时挂载完整原文。展开状态放Turn，避免外层过程关闭/虚拟卸载后丢失；折叠态不挂载Markdown。
+- 同一个管理tab重复不只是重复按钮，还要检查面板是否重复挂载/请求。
+- 部署Dockerfile的COPY源路径不要带每次变化的版本号；固定源码相对路径、依赖在源码前，部署tag独立。Portal-only可复用后端/Office并仅重建Portal；standalone运行包需带.next/static，未来public目录也须复制。不要把首次构建/缓存命中时间当作CI或完整发布耗时。
+- 虚拟Markdown的overscan会在实际可见前挂载；手机正文实测高度大于占位估计。E2E滚底不能看到DOM节点就停止，须验证尾部在滚动容器内且高度稳定，再点击，不能放宽侧栏结果断言。

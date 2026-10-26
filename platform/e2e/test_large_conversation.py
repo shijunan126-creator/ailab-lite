@@ -163,11 +163,23 @@ with SessionLocal() as db:
     )
     login(page, stack, path="/c/" + conv["id"])
     url = page.url
-    for _ in range(8):
-        page.locator(".messages").evaluate("el => el.scrollTop = el.scrollHeight")
-        page.wait_for_timeout(50)
-        if page.get_by_role("link", name="合并验收网页", exact=True).count():
+    # Mounting estimated chunks changes scrollHeight, especially at phone width.
+    # Reach a measured, visible tail before clicking; DOM presence includes overscan.
+    stable = 0
+    previous_height = 0
+    for _ in range(40):
+        metrics = page.locator(".messages").evaluate("el => { el.scrollTop = el.scrollHeight; return el.scrollHeight; }")
+        page.wait_for_timeout(100)
+        link = page.get_by_role("link", name="合并验收网页", exact=True)
+        in_view = link.count() and link.evaluate(
+            "el => { const r = el.getBoundingClientRect(); "
+            "const p = el.closest('.messages').getBoundingClientRect(); return r.top >= p.top && r.bottom <= p.bottom; }"
+        )
+        stable = stable + 1 if metrics == previous_height and in_view else 0
+        previous_height = metrics
+        if stable >= 2:
             break
+    assert stable >= 2, "long answer tail did not stabilize in the scroll viewport"
     page.get_by_role("link", name="合并验收网页", exact=True).click()
     page.get_by_role("tab", name="网页", exact=True).wait_for()
     assert page.get_by_role("tab", name="网页", exact=True).get_attribute("aria-selected") == "true"
