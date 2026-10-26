@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from ailab_platform.api.main import app
-from ailab_platform.contracts.memory import DreamPlan
+from ailab_platform.contracts.memory import DreamChange, DreamPlan
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.models import MemoryDreamRun, Run, RunEvent, User
@@ -74,6 +74,35 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
         reverted = c.post(f"/v1/memory/dreams/{run_id}/revert", headers=me)
         assert reverted.status_code == 200 and reverted.json()["status"] == "reverted"
         assert c.get("/v1/memory", headers=me).json()["entries"][0]["content"] == "旧记忆"
+
+
+def test_invalidate_keeps_history_and_hides_the_old_fact() -> None:
+    with TestClient(app) as c:
+        me = _user(c)
+        me_doc = c.get("/v1/me", headers=me).json()
+        old = c.put(
+            "/v1/memory",
+            headers=me,
+            json={"expected_revision": 0, "enabled": True, "auto_save": True, "entries": [{"kind": "user", "content": "用户用 Neovim"}]},
+        ).json()["entries"][0]
+        with SessionLocal() as db:
+            user = db.get(User, me_doc["id"])
+            service._apply(
+                db,
+                user,
+                DreamPlan(
+                    changes=[
+                        DreamChange(op="add", kind="user", content="用户现在用 VS Code", confidence=0.95),
+                        DreamChange(op="invalidate", id=old["id"], reason="explicit replacement"),
+                    ]
+                ),
+                {},
+            )
+            db.commit()
+        entries = c.get("/v1/memory", headers=me).json()["entries"]
+        assert len(entries) == 2
+        assert next(e for e in entries if e["id"] == old["id"])["invalid_at"]
+        assert next(e for e in entries if e["content"] == "用户现在用 VS Code")["invalid_at"] is None
 
 
 def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:

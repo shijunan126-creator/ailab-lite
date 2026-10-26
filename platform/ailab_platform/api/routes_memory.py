@@ -117,6 +117,12 @@ def write_memory(db, user, body, source):
             merged["kind"] = entry.kind
             merged["updated_at"] = now.isoformat()
             merged["source"] = source
+            # An in-place edit invalidates the old quote/episode evidence. The dream applies
+            # append-only facts; this path is for explicit user/agent edits.
+            if entry.source_quote is None:
+                merged["source_quote"] = ""
+            if entry.evidence_episode_ids is None:
+                merged["evidence_episode_ids"] = []
         entries.append(merged)
     value = {"revision": previous["revision"] + 1, "enabled": body.enabled, "auto_save": body.auto_save, "entries": entries}
     user.settings = {**(user.settings or {}), "memory": value}
