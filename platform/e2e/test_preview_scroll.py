@@ -111,7 +111,7 @@ with SessionLocal() as db:
 """
     subprocess.run([sys.executable, "-c", script, rid], env=stack.env, check=True, timeout=15)
     page.reload()
-    page.locator(".composer-dock .preview-reopen").click()
+    page.locator(".pane-reopen").click()
     pane = page.get_by_role("complementary", name="侧栏")
     scroll = pane.locator(".document-scroll")
     expect(scroll.locator("img")).to_have_count(3)

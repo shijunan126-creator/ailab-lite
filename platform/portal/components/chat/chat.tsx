@@ -676,6 +676,21 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           </>
         ) : (
           <>
+            {reopenCount ? (
+              <button className="icon-btn pane-reopen" aria-label={`打开预览（${reopenCount}）`} title="展开预览" onClick={() => {
+                setClosedFiles([]);
+                // a collapsed pane comes back as it was; an open one without files switches to them
+                if (showPane || (!paneSources && !readers.length)) {
+                  setSelected((value) => value || previews[previews.length - 1]?.filename || null);
+                  setSourcesOn(false);
+                  setReaderOn(false);
+                }
+                setPaneOpen(true);
+              }}>
+                <IconPanelRight size={18} />
+                <span className="count">{reopenCount}</span>
+              </button>
+            ) : null}
             {crumb || detail?.forked_from ? (
               <div className="chat-crumb">
                 {crumb ? (
@@ -735,20 +750,6 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}
-              {reopenCount ? (
-                <button className="preview-reopen" aria-label={`打开预览（${reopenCount}）`} onClick={() => {
-                  setClosedFiles([]);
-                  // a collapsed pane comes back as it was; an open one without files switches to them
-                  if (showPane || (!paneSources && !readers.length)) {
-                    setSelected((value) => value || previews[previews.length - 1]?.filename || null);
-                    setSourcesOn(false);
-                    setReaderOn(false);
-                  }
-                  setPaneOpen(true);
-                }}>
-                  <IconPanelRight size={14} /> <span>预览</span> <span className="count">{reopenCount}</span>
-                </button>
-              ) : null}
               <QueueStrip
                 queue={detail?.queue || []}
                 paused={!!detail?.queue_paused}
