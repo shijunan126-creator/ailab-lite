@@ -54,8 +54,8 @@ class _FrameMarkup(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.html = html
         self.offsets = [0]
-        for line in html.splitlines(keepends=True):
-            self.offsets.append(self.offsets[-1] + len(line))
+        for line in html.split("\n"):
+            self.offsets.append(self.offsets[-1] + len(line) + 1)
         self.removals: list[tuple[int, int]] = []
         self.head_end: int | None = None
         self.document_start = 0
@@ -68,7 +68,7 @@ class _FrameMarkup(HTMLParser):
             self.head_end = end
         elif tag == "html":
             self.document_start = end
-        if tag == "base" or (tag == "meta" and dict(attrs).get("http-equiv", "").lower() == "refresh"):
+        if tag == "base" or (tag == "meta" and (dict(attrs).get("http-equiv") or "").lower() == "refresh"):
             self.removals.append((start, end))
 
     handle_startendtag = handle_starttag

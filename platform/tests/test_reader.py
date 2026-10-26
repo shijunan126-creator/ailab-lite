@@ -233,3 +233,14 @@ def test_render_preserves_doctype_and_its_standards_mode():
         rendered = _FrameMarkup(html).render("https://example.com/")
         assert rendered.startswith("<!doctype html>")
         assert rendered.count("<base ") == 1
+
+
+def test_render_handles_carriage_returns_and_valueless_meta_attributes():
+    from ailab_platform.api.routes_reader import _FrameMarkup
+
+    html = '<!doctype html>\r<html><head><meta http-equiv><base href="https://wrong.test"></head><body>正文</body></html>'
+    rendered = _FrameMarkup(html).render("https://example.com/")
+    assert rendered.startswith("<!doctype html>")
+    assert "wrong.test" not in rendered
+    assert rendered.count("<base ") == 1
+    assert "正文" in rendered
