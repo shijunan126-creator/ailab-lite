@@ -28,6 +28,11 @@ class SkillToggle(BaseModel):
     enabled: bool
 
 
+# Built-in skills that other entries drive (the conversation menu's "提取为技能" runs auto-skill). They stay
+# in the catalogue, the admin policy and the prompt, but the Portal does not offer them as a skill to pick.
+IMPLICIT_SKILLS = frozenset({"auto-skill"})
+
+
 def disabled_skills(user: User) -> list[str]:
     return list((user.settings or {}).get("disabled_skills") or [])
 
@@ -125,6 +130,7 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
             "description": m["description"],
             "scope": "builtin",
             "builtin": True,
+            "implicit": n in IMPLICIT_SKILLS,
             "enabled": n not in off,
             **{k: m[k] for k in ("version", "sha256", "license", "requires", "roles")},
         }

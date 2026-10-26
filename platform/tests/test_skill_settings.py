@@ -38,6 +38,7 @@ def test_skills_are_listed_on_by_default_and_switch_per_user() -> None:
             ("pptx", "演示文稿（PPT）", True),
             ("xlsx", "表格（Excel）", True),
         ]
+        assert {s["name"] for s in listed if s["implicit"]} == {"auto-skill"}  # the Portal does not offer it as a skill to pick
         off = c.put("/v1/skills/pptx", headers=me, json={"enabled": False})
         assert off.status_code == 200 and off.json()["enabled"] is False
         assert {s["name"]: s["enabled"] for s in c.get("/v1/skills", headers=me).json()} == {
