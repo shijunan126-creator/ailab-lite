@@ -1,5 +1,7 @@
 """The side pane's original-page view: authenticated, public-web-only, bounded, error-mapped, script-free."""
 
+import asyncio
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -63,6 +65,26 @@ def test_reader_render_needs_a_session(api, fake_html):
     assert (
         api.get("/v1/reader/render", params={"url": "https://example.com/a"}, headers={"Authorization": "Bearer nope"}).status_code == 401
     )
+
+
+def test_reader_render_refuses_non_http_schemes(api, fake_html):
+    for url in ("ftp://example.com/a", "file:///etc/passwd", "javascript:alert(1)"):
+        assert api.get("/v1/reader/render", params={"url": url}).status_code == 400
+
+
+def test_reader_render_maps_a_stuck_page_to_504(api, monkeypatch):
+    async def fetch(url):
+        await asyncio.sleep(120)
+
+    monkeypatch.setattr("ailab_platform.web.fetch_html", fetch)
+    monkeypatch.setattr(web.settings, "web_search_provider", "mock")
+    monkeypatch.setattr("ailab_platform.api.routes_reader.READ_TIMEOUT_SECONDS", 0.05)
+    assert api.get("/v1/reader/render", params={"url": "https://example.com/slow"}).status_code == 504
+
+
+def test_reader_render_is_off_when_web_access_is_off(api, fake_html, monkeypatch):
+    monkeypatch.setattr(web.settings, "web_search_provider", "none")
+    assert api.get("/v1/reader/render", params={"url": "https://example.com/a"}).status_code == 404
 
 
 def test_render_snapshot_blocks_navigation_and_escapes_base(api, monkeypatch):

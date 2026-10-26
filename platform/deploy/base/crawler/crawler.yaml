@@ -43,6 +43,13 @@ spec:
             httpGet: {path: /healthz, port: 8090}
             initialDelaySeconds: 5
             periodSeconds: 10
+          # Chromium wedges on its own occasionally; the health endpoint only proves the loop runs,
+          # so the probe restarts the container instead of serving 503s until a redeploy.
+          livenessProbe:
+            httpGet: {path: /healthz, port: 8090}
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3
       volumes:
         - name: tmp
           emptyDir: {sizeLimit: 512Mi}

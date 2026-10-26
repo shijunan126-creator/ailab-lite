@@ -21,7 +21,7 @@ def save_dream_settings(db, user, settings: MemoryDreamSettings) -> MemoryDreamS
     return settings
 
 
-def local_window(settings: MemoryDreamSettings, timezone: str) -> tuple[int, int]:
+def local_window(settings: MemoryDreamSettings) -> tuple[int, int]:
     start_h, start_m = (int(part) for part in settings.window_start.split(":"))
     end_h, end_m = (int(part) for part in settings.window_end.split(":"))
     return start_h * 60 + start_m, end_h * 60 + end_m

@@ -155,3 +155,27 @@ def test_a_sandbox_being_saved_is_not_deleted_by_a_release_from_its_run(pool):
     pool._save(stored)
     pool.release(lease["lease_id"])
     assert pool.provider.released == []
+
+
+def test_a_mid_turn_heartbeat_shields_a_sandbox_past_the_base_floor(pool):
+    first, second = take(pool, "user_a", "a0"), take(pool, "user_a", "a1")
+    age(pool, first, 100)  # past the 60s base floor, inside the 3x mid-turn floor
+    age(pool, second, 100)
+    pool.renew(first["lease_id"])  # its run is mid-turn: silent, thinking, not dead
+    victim = pool._pick_victim(LeasePrincipal("user_a", "a2"), "user_limit", pool.active_leases())
+    assert victim["lease_id"] == second["lease_id"]
+
+
+def test_a_stopped_heartbeat_leaves_the_base_floor(pool):
+    lease = take(pool, "user_a", "a0")
+    age(pool, lease, 100)
+    pool.renew(lease["lease_id"])
+    pool._renewed[lease["lease_id"]] -= 10 * settings.runtime_heartbeat_seconds  # the agent died
+    assert pool._pick_victim(LeasePrincipal("user_a", "a1"), "user_limit", pool.active_leases())["lease_id"] == lease["lease_id"]
+
+
+def test_a_fresh_heartbeat_is_still_reclaimed_after_three_floors(pool):
+    lease = take(pool, "user_a", "a0")
+    age(pool, lease, 4 * 60 * settings.runtime_heartbeat_seconds)
+    pool.renew(lease["lease_id"])
+    assert pool._pick_victim(LeasePrincipal("user_a", "a1"), "user_limit", pool.active_leases())["lease_id"] == lease["lease_id"]

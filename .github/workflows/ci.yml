@@ -217,6 +217,23 @@ jobs:
             bash -n "$script"
           done < <(git ls-files -z '*.sh')
 
+  crawler:
+    # The sidecar renders untrusted pages; its contract tests must run in CI, not only at image build.
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: images/crawler/requirements.txt
+      - run: pip install -r images/crawler/requirements.txt
+      - working-directory: images/crawler
+        run: python -m unittest discover -v
+
   e2e:
     # The fixture owns Portal Node tests + an isolated production build, avoiding a duplicate build job.
     needs: changes
@@ -274,7 +291,7 @@ jobs:
   ci:
     # Keep one stable required check, including documentation-only PRs and failed dependency jobs.
     name: CI
-    needs: [changes, quality, python, storage-contracts, shell, e2e]
+    needs: [changes, quality, python, storage-contracts, shell, crawler, e2e]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 2

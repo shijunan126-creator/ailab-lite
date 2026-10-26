@@ -89,11 +89,13 @@ def _refuse_unsafe(content: str, source: str) -> None:
         raise HTTPException(422, f"{said}，不能保存为记忆")
 
 
-def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True):
+def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True, restore: bool = False):
     """Replace the memory document. ``explicit``: the user asked for the new entries by name.
 
     ``tombstone_removed``: entries that disappear are remembered as deleted (hash and evidence ids
     only) so a later dream does not quietly bring them back. Housekeeping writes pass False.
+    ``restore``: the body is a full snapshot to restore verbatim (a dream revert) — a None optional
+    field clears what is stored instead of keeping it, so an invalidated fact becomes visible again.
     """
     previous = memory_for(user)
     if previous["revision"] != body.expected_revision:
@@ -111,57 +113,43 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
         if prior is None:
             if source == "user" or explicit:
                 tombstones = [t for t in tombstones if t.get("hash") != fact_hash(entry.content)]
-            entries.append(
-                {
-                    "id": entry.id or new_id("mem"),
-                    "kind": entry.kind,
-                    "content": entry.content,
-                    "source": source,
-                    "updated_at": now.isoformat(),
-                    "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
-                    "evidence_run_ids": list(entry.evidence_run_ids or []),
-                    "evidence_episode_ids": list(entry.evidence_episode_ids or []),
-                    "entities": list(entry.entities or []),
-                    "source_quote": entry.source_quote or "",
-                    "valid_from": (entry.valid_from or now).isoformat(),
-                    "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
-                    "superseded_by": entry.superseded_by,
-                    "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
-                    "suppressed": bool(entry.suppressed),
-                }
-            )
+            entries.append(_stored_entry(entry, source, now))
             continue
-        merged = dict(prior)
-        changed = prior["content"] != entry.content or prior["kind"] != entry.kind
-        for field in (
-            "confidence",
-            "evidence_run_ids",
-            "evidence_episode_ids",
-            "entities",
-            "source_quote",
-            "valid_from",
-            "invalid_at",
-            "superseded_by",
-            "last_used_at",
-            "suppressed",
-        ):
-            value = getattr(entry, field)
-            if value is not None:
-                merged[field] = value.isoformat() if field in {"valid_from", "invalid_at", "last_used_at"} else value
-        for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
-            if merged.get(field):
-                merged[field] = list(dict.fromkeys(merged[field]))
-        if changed:
-            merged["content"] = entry.content
-            merged["kind"] = entry.kind
-            merged["updated_at"] = now.isoformat()
-            merged["source"] = source
-            # An in-place edit invalidates the old quote/episode evidence. The dream applies
-            # append-only facts; this path is for explicit user/agent edits.
-            if entry.source_quote is None:
-                merged["source_quote"] = ""
-            if entry.evidence_episode_ids is None:
-                merged["evidence_episode_ids"] = []
+        if restore:
+            merged = _stored_entry(entry, source, now)
+            merged["id"] = entry.id
+        else:
+            merged = dict(prior)
+            changed = prior["content"] != entry.content or prior["kind"] != entry.kind
+            for field in (
+                "confidence",
+                "evidence_run_ids",
+                "evidence_episode_ids",
+                "entities",
+                "source_quote",
+                "valid_from",
+                "invalid_at",
+                "superseded_by",
+                "last_used_at",
+                "suppressed",
+            ):
+                value = getattr(entry, field)
+                if value is not None:
+                    merged[field] = value.isoformat() if field in {"valid_from", "invalid_at", "last_used_at"} else value
+            for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
+                if merged.get(field):
+                    merged[field] = list(dict.fromkeys(merged[field]))
+            if changed:
+                merged["content"] = entry.content
+                merged["kind"] = entry.kind
+                merged["updated_at"] = now.isoformat()
+                merged["source"] = source
+                # An in-place edit invalidates the old quote/episode evidence. The dream applies
+                # append-only facts; this path is for explicit user/agent edits.
+                if entry.source_quote is None:
+                    merged["source_quote"] = ""
+                if entry.evidence_episode_ids is None:
+                    merged["evidence_episode_ids"] = []
         entries.append(merged)
     if tombstone_removed:
         kept = {e["id"] for e in entries}
@@ -178,6 +166,27 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
     # Content never goes into audit logs or public events.
     record_audit(db, "memory.updated", "user", user.id, actor_id=user.id, detail={"revision": value["revision"], "source": source})
     return memory_for(user)
+
+
+def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
+    """The stored form of one entry: every field taken from the input as given (None stays None)."""
+    return {
+        "id": entry.id or new_id("mem"),
+        "kind": entry.kind,
+        "content": entry.content,
+        "source": source,
+        "updated_at": now.isoformat(),
+        "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
+        "evidence_run_ids": list(entry.evidence_run_ids or []),
+        "evidence_episode_ids": list(entry.evidence_episode_ids or []),
+        "entities": list(entry.entities or []),
+        "source_quote": entry.source_quote or "",
+        "valid_from": (entry.valid_from or now).isoformat(),
+        "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
+        "superseded_by": entry.superseded_by,
+        "last_used_at": entry.last_used_at.isoformat() if entry.last_used_at else None,
+        "suppressed": bool(entry.suppressed),
+    }
 
 
 @router.get("/v1/memory")
@@ -211,7 +220,7 @@ def update_dream_settings(body: MemoryDreamSettings, user: User = Depends(curren
 @router.post("/v1/memory/dream/run")
 def run_dream_now(background: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """Manual trigger for QA and for a user who does not want to wait for the quiet window."""
-    from ..memory_dream.service import process_dream
+    from ..memory_dream.service import process_dream, reclaim_failed
     from ..memory_dream.settings import dream_settings
 
     ds = dream_settings(user)
@@ -223,26 +232,31 @@ def run_dream_now(background: BackgroundTasks, user: User = Depends(current_user
         db.refresh(user)
         if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(RunStatus.TERMINAL)).limit(1)):
             raise HTTPException(409, "wait for the current turn to finish")
-        if db.scalar(
-            select(MemoryDreamRun.id).where(
+        existing = db.scalar(
+            select(MemoryDreamRun).where(
                 MemoryDreamRun.user_id == user.id,
                 MemoryDreamRun.local_date == local_date,
             )
-        ):
-            raise HTTPException(409, "dream already ran today")
-        run = MemoryDreamRun(
-            id=new_id("dream"),
-            user_id=user.id,
-            local_date=local_date,
-            timezone=zone_name,
-            status="pending",
-            trigger="manual",
-            input_run_ids=[],
-            before_memory={},
-            after_memory={},
-            token_usage={},
         )
-        db.add(run)
+        if existing and existing.status != "failed":
+            raise HTTPException(409, "dream already ran today")
+        if existing:
+            # A failed night must be retryable the same day, not lost until tomorrow.
+            run = reclaim_failed(db, existing, trigger="manual")
+        else:
+            run = MemoryDreamRun(
+                id=new_id("dream"),
+                user_id=user.id,
+                local_date=local_date,
+                timezone=zone_name,
+                status="pending",
+                trigger="manual",
+                input_run_ids=[],
+                before_memory={},
+                after_memory={},
+                token_usage={},
+            )
+            db.add(run)
         db.commit()
     background.add_task(process_dream, run.id)
     return {"id": run.id}
@@ -287,9 +301,16 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
         if run.status != "applied":
             raise HTTPException(409, "only an applied dream can be reverted")
         before = run.before_memory or {}
+
+        def stamped(raw: dict, key: str) -> datetime | None:
+            value = raw.get(key)
+            return datetime.fromisoformat(value) if value else None
+
         entries = []
         for raw in before.get("entries") or []:
             try:
+                # The snapshot is restored verbatim: invalid_at/suppressed included, so a fact the
+                # dream invalidated becomes visible again instead of staying hidden after a revert.
                 entries.append(
                     MemoryEntryInput(
                         id=raw["id"],
@@ -297,12 +318,17 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
                         content=raw["content"],
                         confidence=raw.get("confidence"),
                         evidence_run_ids=raw.get("evidence_run_ids"),
-                        valid_from=raw.get("valid_from"),
+                        evidence_episode_ids=raw.get("evidence_episode_ids"),
+                        entities=raw.get("entities"),
+                        source_quote=raw.get("source_quote"),
+                        valid_from=stamped(raw, "valid_from"),
+                        invalid_at=stamped(raw, "invalid_at"),
                         superseded_by=raw.get("superseded_by"),
-                        last_used_at=raw.get("last_used_at"),
+                        last_used_at=stamped(raw, "last_used_at"),
+                        suppressed=raw.get("suppressed"),
                     )
                 )
-            except (KeyError, ValueError):
+            except (KeyError, TypeError, ValueError):
                 raise HTTPException(409, "dream snapshot is not restorable")
         current = memory_for(user)
         result = write_memory(
@@ -316,6 +342,7 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
             ),
             "user",
             tombstone_removed=False,
+            restore=True,
         )
         run.status = "reverted"
         run.after_memory = result

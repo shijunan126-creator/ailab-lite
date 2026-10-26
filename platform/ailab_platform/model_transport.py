@@ -85,7 +85,9 @@ class ModelTransport(LLMClient):
             await asyncio.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover
 
-    def _request(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None, stream: bool) -> tuple[dict, dict]:
+    def _request(
+        self, messages: list[dict], tools: list[dict], model: str, user_id: str | None, stream: bool, max_tokens: int | None = None
+    ) -> tuple[dict, dict]:
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -108,6 +110,9 @@ class ModelTransport(LLMClient):
                 headers["x-run-id"] = call.run_id
             headers["x-call-id"] = call.call_id
             call.actual_backend = self.upstream_model or model
+        elif max_tokens:
+            # Unmetered callers (the memory dream) bound their own output.
+            payload["max_tokens"] = max_tokens
         if stream:
             payload["stream_options"] = {"include_usage": True}
         if tools:
@@ -214,20 +219,24 @@ class ModelTransport(LLMClient):
             await asyncio.sleep(delay)
         raise AssertionError("unreachable")  # pragma: no cover
 
-    async def chat(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None) -> LLMResponse:
+    async def chat(
+        self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
+    ) -> LLMResponse:
         try:
             async with asyncio.timeout(settings.llm_total_timeout_seconds or settings.llm_timeout_seconds):
-                return await self._chat(messages, tools, model, user_id)
+                return await self._chat(messages, tools, model, user_id, max_tokens=max_tokens)
         except TimeoutError as exc:
             raise LLMError("model total deadline exceeded", retryable=True) from exc
 
-    async def _chat(self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None) -> LLMResponse:
+    async def _chat(
+        self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
+    ) -> LLMResponse:
         try:
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False))
+            data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
         except LLMError as exc:
             if not self._asks_for_reasoning(exc) or model_call.get() is not None:
                 raise
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False))
+            data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
 
         call = model_call.get()
         if call is not None:

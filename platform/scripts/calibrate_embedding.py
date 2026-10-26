@@ -57,7 +57,13 @@ def embed(url: str, model: str, key: str, texts: list[str]) -> list[list[float]]
     headers = {"Authorization": f"Bearer {key}"} if key else {}
     out: list[list[float]] = []
     for i in range(0, len(texts), 16):
-        r = httpx.post(url.rstrip("/") + "/embeddings", json={"model": model, "input": texts[i : i + 16]}, headers=headers, timeout=120)
+        r = httpx.post(
+            url.rstrip("/") + "/embeddings",
+            json={"model": model, "input": texts[i : i + 16]},
+            headers=headers,
+            timeout=120,
+            trust_env=False,
+        )
         r.raise_for_status()
         out += [row["embedding"] for row in sorted(r.json()["data"], key=lambda row: row["index"])]
     return out

@@ -16,9 +16,25 @@ export function withResizeGuard(html: string): string {
 }
 
 // Rendered documents are kept across pane opens and render/source tab switches: a deck is one
-// large fetch, and the frame is torn down on every unmount. A few entries, insertion-ordered LRU.
+// large fetch, and the frame is torn down on every unmount. Insertion-ordered LRU bounded by both
+// entry count and total bytes — a few multi-megabyte decks must not be able to pin the tab.
 const DOC_CACHE = new Map<string, string>();
 const DOC_CACHE_MAX = 8;
+const DOC_CACHE_BYTES = 24 * 1024 * 1024;
+let docCacheBytes = 0;
+
+function cacheDoc(url: string, html: string) {
+  const prior = DOC_CACHE.get(url);
+  if (prior !== undefined) docCacheBytes -= prior.length;
+  DOC_CACHE.set(url, html);
+  docCacheBytes += html.length;
+  while (DOC_CACHE.size > 1 && (DOC_CACHE.size > DOC_CACHE_MAX || docCacheBytes > DOC_CACHE_BYTES)) {
+    const oldest = DOC_CACHE.keys().next();
+    if (oldest.done || oldest.value === url) break;
+    docCacheBytes -= (DOC_CACHE.get(oldest.value) || "").length;
+    DOC_CACHE.delete(oldest.value);
+  }
+}
 
 /** Fetches a same-origin document URL (the session cookie authorizes it) for iframe rendering. */
 export function useDocText(url: string): { html: string | null; error: string } {
@@ -38,9 +54,7 @@ export function useDocText(url: string): { html: string | null; error: string } 
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((h) => {
         if (stale) return;
-        DOC_CACHE.set(url, h);
-        const oldest = DOC_CACHE.keys().next();
-        if (DOC_CACHE.size > DOC_CACHE_MAX && !oldest.done && oldest.value !== url) DOC_CACHE.delete(oldest.value);
+        cacheDoc(url, h);
         setHtml(h);
       })
       .catch((e) => !stale && setError(String(e?.message || e)));

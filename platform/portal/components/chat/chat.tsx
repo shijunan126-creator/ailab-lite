@@ -366,7 +366,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       else setPaneOpen(false);
     }
   }
-  function openReader(source: { url: string; title: string }) {
+  // Stable identity: it is handed to memoized Markdown as onOpenLink, and a fresh literal would
+  // re-render every answered turn on each stream event.
+  const openReader = useCallback((source: { url: string; title: string }) => {
     let url: URL;
     try { url = new URL(source.url); } catch { return; }
     if (!["http:", "https:"].includes(url.protocol)) return;
@@ -376,7 +378,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setReaderOn(true);
     setSourcesOn(false);
     setPaneOpen(true);
-  }
+  }, []);
   function closeReader(url: string) {
     const rest = readers.filter((r) => r.url !== url);
     setReaders(rest);

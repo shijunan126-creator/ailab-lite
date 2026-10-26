@@ -12,9 +12,6 @@ MAX_CHARS = 12000
 MAX_ENTRIES = 100
 MAX_TOMBSTONES = 200
 DREAM_MAX_CHANGES = 5
-DREAM_INPUT_CHARS = 8000
-DREAM_MAX_OUTPUT_TOKENS = 2000
-DREAM_MIN_CONFIDENCE = 0.8
 DREAM_TARGET_RATIO = 0.8
 DREAM_WINDOW_START = "02:00"
 DREAM_WINDOW_END = "05:00"
@@ -155,7 +152,7 @@ class DreamChange(BaseModel):
     """
 
     model_config = ConfigDict(extra="forbid")
-    op: Literal["add", "invalidate", "noop"]
+    op: Literal["add", "invalidate"]
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory"] = "memory"
     content: str = Field(default="", max_length=1000)

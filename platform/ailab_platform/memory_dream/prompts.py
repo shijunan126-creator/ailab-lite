@@ -77,11 +77,3 @@ Return JSON only:
   {"index": 0, "duplicate_ids": ["mem_..."], "contradicted_ids": ["mem_..."]}
 ]}
 """
-
-REVIEW_SYSTEM = """You are reviewing a proposed memory change before it is applied.
-
-Reject a change if its source_quote does not support it, if the fact is a temporary task detail,
-if it contains a secret, or if it contradicts an existing fact without explicit evidence.
-Do not add new facts. Return the same JSON shape with only the changes you would keep:
-{"changes": [...]}
-"""

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,8 +12,9 @@ from fastapi.testclient import TestClient
 from ailab_platform.api.main import app
 from ailab_platform.contracts.memory import DreamChange, DreamPlan
 from ailab_platform.db import SessionLocal
+from ailab_platform.llm import LLMResponse
 from ailab_platform.memory_dream import service
-from ailab_platform.models import MemoryDreamRun, Run, RunEvent, User
+from ailab_platform.models import MemoryDreamRun, MemoryEpisode, Run, RunEvent, User
 
 from .test_skill_settings import _user
 
@@ -170,3 +172,160 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
             assert run.status == "applied"
             assert db.query(RunEvent).filter(RunEvent.run_id.like("run_dream_%")).count() == 0
         assert any(e["content"] == "周报先结论后风险" for e in c.get("/v1/memory", headers=me).json()["entries"])
+
+
+def test_dream_chat_bounds_its_output_tokens(monkeypatch) -> None:
+    captured: dict = {}
+
+    class Stub:
+        async def chat(self, messages, tools, model, user_id=None, *, max_tokens=None):
+            captured["max_tokens"] = max_tokens
+            return LLMResponse(content='{"facts": []}', usage={})
+
+    monkeypatch.setattr(service, "llm_for", lambda model: Stub())
+    asyncio.run(service._chat([{"role": "user", "content": "x"}], "stub", User(id="u_dream")))
+    assert captured["max_tokens"] == service.settings.memory_dream_max_tokens
+
+
+def test_extract_prompt_drops_the_oldest_episodes_to_fit_the_budget() -> None:
+    episodes = [
+        MemoryEpisode(
+            id=f"epi_{i}",
+            run_id=f"run_{i}",
+            observed_at=datetime.now(UTC) - timedelta(minutes=10 - i),
+            content_hash=f"h{i}",
+            digest="x" * 400,
+            token_count=100,
+        )
+        for i in range(6)
+    ]
+    kept = service._fit_episodes(episodes, 1200)
+    assert kept and kept[0].id != episodes[0].id  # the oldest episode was dropped
+    assert kept[-1].id == episodes[-1].id  # the newest is always kept
+    assert len(service._episode_payload(kept)) <= 1200
+
+
+def test_reverting_a_dream_makes_the_invalidated_fact_visible_again() -> None:
+    with TestClient(app) as c:
+        me = _user(c)
+        me_doc = c.get("/v1/me", headers=me).json()
+        old = c.put(
+            "/v1/memory",
+            headers=me,
+            json={"expected_revision": 0, "enabled": True, "auto_save": True, "entries": [{"kind": "user", "content": "用户用 Neovim"}]},
+        ).json()["entries"][0]
+        before = c.get("/v1/memory", headers=me).json()
+        with SessionLocal() as db:
+            user = db.get(User, me_doc["id"])
+            service._apply(
+                db,
+                user,
+                DreamPlan(
+                    changes=[
+                        DreamChange(op="add", kind="user", content="用户现在用 VS Code", confidence=0.95),
+                        DreamChange(op="invalidate", id=old["id"], reason="explicit replacement"),
+                    ]
+                ),
+                {},
+            )
+            db.add(
+                MemoryDreamRun(
+                    id="dream_revert",
+                    user_id=user.id,
+                    local_date="2026-10-26",
+                    timezone="Asia/Shanghai",
+                    status="applied",
+                    trigger="cron",
+                    input_run_ids=[],
+                    plan={},
+                    journal="",
+                    before_memory={"entries": before["entries"], "enabled": before["enabled"], "auto_save": before["auto_save"]},
+                    after_memory={},
+                    token_usage={},
+                    created_at=datetime.now(UTC),
+                )
+            )
+            db.commit()
+        assert c.post("/v1/memory/dreams/dream_revert/revert", headers=me).status_code == 200
+        entries = c.get("/v1/memory", headers=me).json()["entries"]
+        assert next(e for e in entries if e["content"] == "用户用 Neovim")["invalid_at"] is None
+        assert all(e["content"] != "用户现在用 VS Code" for e in entries)
+
+
+def test_a_failed_dream_is_retried_the_same_day() -> None:
+    with TestClient(app) as c:
+        me = _user(c)
+        me_doc = c.get("/v1/me", headers=me).json()
+        with SessionLocal() as db:
+            user = db.get(User, me_doc["id"])
+            for index in range(2):
+                db.add(
+                    Run(
+                        id=f"run_retry_{index}_{user.id}",
+                        user_id=user.id,
+                        title="t",
+                        prompt="p",
+                        status="succeeded",
+                        summary="s",
+                        created_at=datetime.now(UTC) - timedelta(minutes=30 - index),
+                    )
+                )
+            db.add(
+                MemoryDreamRun(
+                    id="dream_failed",
+                    user_id=user.id,
+                    local_date="2026-10-26",
+                    timezone="Asia/Shanghai",
+                    status="failed",
+                    trigger="cron",
+                    input_run_ids=[],
+                    before_memory={},
+                    after_memory={},
+                    token_usage={},
+                    error="boom",
+                    created_at=datetime.now(UTC) - timedelta(hours=1),
+                )
+            )
+            db.commit()
+        # 19:00 UTC is 03:00 in Shanghai on 2026-10-26: inside the default quiet window.
+        now = datetime(2026, 10, 25, 19, 0, tzinfo=UTC)
+        assert "dream_failed" in service.claim_due(now=now)
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, "dream_failed")
+            assert row.status == "pending" and row.trigger == "cron" and row.error == ""
+            assert len(row.input_run_ids) == 2  # the retry also picks up runs since the failure
+            row.status = "applied"
+            db.commit()
+        assert "dream_failed" not in service.claim_due(now=now)
+
+
+def test_manual_trigger_retries_a_failed_night_and_refuses_an_applied_one() -> None:
+    today = datetime.now(UTC).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
+    with TestClient(app) as c:
+        me = _user(c)
+        me_doc = c.get("/v1/me", headers=me).json()
+        with SessionLocal() as db:
+            db.add(
+                MemoryDreamRun(
+                    id="dream_manual",
+                    user_id=me_doc["id"],
+                    local_date=today,
+                    timezone="Asia/Shanghai",
+                    status="failed",
+                    trigger="manual",
+                    input_run_ids=[],
+                    before_memory={},
+                    after_memory={},
+                    token_usage={},
+                    error="x",
+                    created_at=datetime.now(UTC),
+                )
+            )
+            db.commit()
+        retried = c.post("/v1/memory/dream/run", headers=me)
+        assert retried.status_code == 200 and retried.json()["id"] == "dream_manual"
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, "dream_manual")
+            row.status = "applied"
+            db.commit()
+        assert c.post("/v1/memory/dream/run", headers=me).status_code == 409
