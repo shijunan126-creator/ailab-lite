@@ -56,6 +56,7 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
     setSettings(document.dream);
     setRuns(nextRuns);
     setMetrics(nextMetrics);
+    return nextRuns;
   }, []);
 
   useEffect(() => {
@@ -95,8 +96,11 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
     setError("");
     try {
       await api("/v1/memory/dream/run", { method: "POST" });
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      await load();
+      for (let i = 0; i < 15; i++) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const next = await load();
+        if (!next.some((run) => run.status === "pending" || run.status === "running")) break;
+      }
     } catch (e) {
       setError(errorMessage(e));
     } finally {
