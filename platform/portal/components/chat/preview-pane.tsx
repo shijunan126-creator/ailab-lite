@@ -234,9 +234,10 @@ export default function PreviewPane({
     const tabs = pane.current?.querySelector<HTMLElement>(".preview-tabs");
     const active = tabs?.querySelector<HTMLElement>('[aria-selected="true"]');
     if (!tabs || !active) return;
-    const rect = active.getBoundingClientRect(), box = tabs.getBoundingClientRect();
-    if (rect.left < box.left) tabs.scrollLeft += rect.left - box.left;
-    else if (rect.right > box.right) tabs.scrollLeft += rect.right - box.right;
+    active.scrollLeft = 0;
+    const rect = active.closest(".pane-tab")!.getBoundingClientRect(), box = tabs.getBoundingClientRect();
+    // Reveal the start even when the selected tab is wider than the available strip.
+    if (rect.left < box.left || rect.right > box.right) tabs.scrollLeft += rect.left - box.left;
   }, [readerUrl, readerOn, selected, sourcesOn]);
   const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
   const reader = readers.find((r) => r.url === readerUrl);

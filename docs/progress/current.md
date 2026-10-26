@@ -1,16 +1,27 @@
 # 当前工作
 
-## 2026-10-26 弹性沙箱额度与闲置回收（已提 PR #84，待合并）
+## 2026-10-26 RFI正文与标签首字（已授权发布，进行中）
+
+用户反馈rfi.fr正文为空及tab从标题中间显示，已在独立分支 `fix/rfi-reader-title-start` 修复；base `origin/main@438bd63`，产品提交 `f2f1059`，原主目录修改保留。真实RFI响应423681B包含正文，body全局header类被误判导致整页丢弃；改为根容器不使用噪音class判断，显式hidden/ARIA及子树噪音仍生效。标签改block/left对齐、尾部省略并按tab起点定位。
+
+网页专项26项、相关6浏览器/Portal42及生产build/TypeScript通过；真实截图RFI页23块、12段主要正文12/12保留，另两条cn/tw链接各29块。Ruff382文件通过，SQLite+独立Redis全套1362通过/95跳过；临时五服务与专用Redis已停，六测试端口无监听。用户现已明确授权“推送及部署”。下一步：推送本分支/PR、绿后合并，核对固定main检查后备份部署并验证真实RFI及长标题首字；当前438bd63线上尚未切换。已同步main53eff6e（PR84沙箱额度/闲置回收）；冲突仅交接文档，产品代码无冲突，新增主线范围由合并后CI验证。详见[本轮记录](updates/2026-10-26-rfi-reader-title-start.md)。
+
+## 2026-10-26 弹性沙箱额度与闲置回收（已合入main，保留原验收边界）
 
 用户授权：每人沙箱数随池子余量弹性、用户到上限时回收自己最久无操作的、池满且占用≥95%时才跨用户回收，回收前先保存工作区。分支 `feat/sandbox-lru`，base `origin/main@93b94b3`（含记忆功能PR #82）。决定与边界见 [ADR 0020](../architecture/adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)。
 
 已实现：`AdmissionPolicy.effective_user_limit`（首个沙箱不受水位限制，第2个起放行后占用须≤80%，硬上限3）；Broker 进程内记录“最后操作”（续租/状态不算，进行中的操作不可回收）、排队请求每2秒找可让出的沙箱，保护期300秒；被选中的租约先置 `releasing`/`evicted_idle` 再打快照写入 `eviction_snapshot` 后删除；Agent 收到410后取回该快照写入检查点并自动续跑（`evicted` 独立计数，最多3次）。测试：`tests/test_sandbox_reclaim.py`（9）、`test_runtime_resume.py`（+2）、`test_runtime_protocol.py`（+2）。
 
-未做/未验：真实 Docker/OpenSandbox 下的回收与快照、多Run并发端到端、按角色的上限、部门份额与软/硬水位分级；后台命令随沙箱终止。本机池仅1个工作槽位，部署后行为与此前相同；未部署。本地完整SQLite仅剩main上原有的6个失败（5个OCR与`test_runtime_dependencies`）。下一步：CI全绿后合并，不自动部署。
+未做/未验：真实 Docker/OpenSandbox 下的回收与快照、多Run并发端到端、按角色的上限、部门份额与软/硬水位分级；后台命令随沙箱终止。本机池仅1个工作槽位，部署后行为与此前相同；未部署。本地完整SQLite仅剩main上原有的6个失败（5个OCR与`test_runtime_dependencies`）。PR84现已合入main53eff6e；下述历史测试与未验边界仍保留，本轮网页修复不扩展沙箱实现/验收。
 
-## 2026-10-26 网页来源发布（已授权，进行中）
 
-用户现已明确授权推送并部署；按既定发布流程推进PR、绿后合并、固定main部署与数据保留验证。独立分支 `fix/web-source-tabs`，原base `412168d`，已同步最新 `origin/main@93b94b3`（含主线既有0033迁移）。本轮不扩展实现范围；后续以PR和合并后CI为部署门禁，备份保留账号/配置/文件。PR83首轮e9fc23f的E2E 108通过/1跳过/1失败，手机预览重开后Back退到about:blank；本机复现并修复绘制前历史安装与Strict Mode清理，相关6浏览器通过。CI流程审查与28项门禁单测通过，不改workflow/不放宽测试。下一步：推送修正、更新Portal候选，CI绿后合并并等待main完整CI，再备份部署；个人细节仅记本机HANDOFF。
+## 2026-10-26 网页来源发布（已合并并部署）
+
+[PR83](https://github.com/shijunan126-creator/ailab-lite/pull/83) head `a9d41f9` 八检查成功后squash合入 `main@438bd6370bc9dc521ac8a0cdfcf9050cddea3744`；[合并后mainCI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/40289691930)八job全成功，SQLite1356通过/100跳过、PostgreSQL1404/52、浏览器109/1、存储15/1。首轮手机history回归已本机红绿修复，未改CI/放宽断言，28项CI脚本单测通过。
+
+已部署固定 `438bd63`，候选运行源码与合并提交等值，数据库0032→0033。完整卷备份实际解包与独立副本核验通过，原ID/账号/个人配置与11份ready文件SHA保留；9容器running、五应用healthy、0OOM/0restart。191后端源码匹配；真实登录/原3会话读取、桌面及390×844来源两网页标题/模式切换、真实公网原版/正文/CSP透传、32静态资源HTTP200，pageerror0。无付费调用。独立工作树 `/private/tmp/ailab-web-source-tabs`，分支 `fix/web-source-tabs`；原主目录已有修改未动。
+
+下一步：本轮推送/合并/部署/验收完成，无待部署项，不启动其他路线。保留JS动态站点、精确BBC URL/真实手机/目标机长期容量与USB物理稳定性边界；[实现、CI失败和发布记录](updates/2026-10-26-web-source-tabs.md)。本节覆盖下方历史阶段“未部署/待授权”。
 
 ## 2026-10-26 网页来源多标签、渲染与提取修复（本地验证完成）
 

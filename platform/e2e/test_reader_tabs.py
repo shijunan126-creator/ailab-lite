@@ -83,3 +83,41 @@ with SessionLocal() as db:
     assert len(calls) == 3, calls  # original one + extracted one + original two
     assert page.locator(".reader-frame").first.get_attribute("sandbox") == "allow-popups"
     page.screenshot(path=str(stack.log_dir / f"reader-tabs-{mobile}.png"))
+
+
+@pytest.mark.parametrize("mobile", [False, True])
+def test_long_reader_tab_displays_title_from_first_character(page, stack, mobile):
+    conv = seed(stack, active=False)
+    title = "法国社会动员：马克龙收紧对示威活动的管制与相关报道详情" * 3
+    code = """
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import Run
+with SessionLocal() as db:
+    run = db.get(Run, RUN)
+    run.result = {"sources": [{"title": TITLE + str(i), "url": "https://example.com/article-" + str(i), "site": "example.com"}
+                              for i in range(5)]}
+    db.commit()
+""".replace("RUN", repr(conv["run"])).replace("TITLE", repr(title))
+    subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, check=True)
+    page.route("**/api/v1/reader/render?**", lambda route: route.fulfill(content_type="text/html; charset=utf-8", body="<p>静态预览</p>"))
+    login(page, stack, path="/c/" + conv["id"])
+    page.get_by_role("button", name="来源（5）", exact=True).click()
+    for i in range(5):
+        if i:
+            page.locator(".preview-tabs").get_by_role("tab", name="来源", exact=True).click()
+        page.locator(".src-item").filter(has_text=title + str(i)).click()
+    if mobile:
+        page.get_by_role("button", name="收起侧栏", exact=True).click()
+        page.set_viewport_size({"width": 390, "height": 844})
+    for i in (0, 4, 1):
+        tab = page.locator(".preview-tabs").get_by_role("tab", name=title + str(i), exact=True)
+        tab.click()
+        assert tab.evaluate("""el => {
+            const first = document.createRange();
+            first.setStart(el.firstChild, 0); first.setEnd(el.firstChild, 1);
+            const glyph = first.getBoundingClientRect(), box = el.getBoundingClientRect();
+            const strip = el.closest('.preview-tabs').getBoundingClientRect();
+            return glyph.left >= Math.max(box.left, strip.left) && glyph.right <= Math.min(box.right, strip.right)
+                && getComputedStyle(el).textAlign === 'left' && el.scrollLeft === 0;
+        }""")
+    page.screenshot(path=str(stack.log_dir / f"reader-title-start-{mobile}.png"))

@@ -244,3 +244,19 @@ def test_render_handles_carriage_returns_and_valueless_meta_attributes():
     assert "wrong.test" not in rendered
     assert rendered.count("<base ") == 1
     assert "正文" in rendered
+
+
+def test_document_chrome_classes_do_not_discard_rfi_style_article():
+    markup = """<html class="site-header-enabled"><head><title>标题</title></head>
+    <body class="u-header-sticky u-header-with-tag-list u-playlist-enabled">
+      <header class="site-header"><p>导航广告</p></header>
+      <main role="main"><div id="main-content" class="t-content t-content--article">
+        <article class="t-content__article-wrapper" data-article-content>
+          <div class="t-content__body u-clearfix"><p>文章开头及核心正文内容。</p><p>文章结尾。</p></div>
+        </article>
+      </div></main><footer><p>站点页脚</p></footer>
+    </body></html>"""
+    blocks = extract_blocks(markup, "https://www.rfi.fr/cn/example")
+    text = "\n".join(b.get("text", "") for b in blocks)
+    assert "文章开头及核心正文内容。" in text and "文章结尾。" in text
+    assert "导航广告" not in text and "站点页脚" not in text
