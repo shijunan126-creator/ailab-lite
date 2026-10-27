@@ -1,5 +1,9 @@
 # 单机能力状态
 
+2026-10-28 记忆完善已本地实现（`feat/memory-system-hardening@ac7e6cc`，base`0659101`，尚未合并）：统一模型视图/作用域、持久分段进度与claim、短事务/每调用账本、完整副本删除、追加纠正/时间状态及记忆来源管理已接线；0034双库迁移。完整组测SQLite1451/102跳过、PG1499/54、浏览器118/0跳过、Portal42/build通过，最后局部锁/缓存修改另做双库专项，精确head仍由PR CI验证。真实答案质量/付费模型/GPU embedding、目标机并发不冒充已验。见[实施及边界](../reviews/2026-10-28-memory-system-hardening.md)。下方9类审查缺陷是修复前基线。
+
+2026-10-28 记忆架构审查（固定main `0659101`）：工作上下文、账号事实、BM25/可选向量历史检索与nightly框架已存在，附件完整DoD未满足；项目作用域、事实context compiler、完整删除谱系与质量基线仍缺。既有65项记忆测试通过，13个合同探针12失败/1对照通过，归并9类缺陷（7 P1/2 P2），包括可见性/写入资格、游标、来源、冲突原子性和SQLite模型等待写锁。仅审查未修复，不据此声称生产就绪；真实模型/PG并发/整栈容量未验。[审查与证据](../reviews/2026-10-28-memory-architecture-review.md)。下方“PR96待评审”等旧状态已由实际main合并代码取代，本轮不推断个人部署。
+
 2026-10-26 持续reader发现PID1孤儿回收及启动取消活driver泄漏，PR96已实现tini/独立进程树监督/1GiB单页准入。最终候选166/166正常读取、两组50次启动故障及隔离探测通过，无OOM/僵尸；按用户要求停止全量复测并交付PR，不合并部署。线上仍cc247a2，任意网页容量与新全样本成功率未验，见[初步证据](../progress/updates/2026-10-26-crawler-process-reaping.md)。
 
 2026-10-26 PR92/93/94合并后main CI均成功；reader补齐Linux/ARM64镜像、真实k3s双向网络隔离、7项browser/proxy契约及2vCPU/8GiB组件短测。整次调用超时修复已经PR95合并main`cc247a2`并部署；个人Compose已接入并通过隔离/真实Agent及桌面手机验收，目标VM短测完成，长期容量仍未验，详见[当前验证](../progress/updates/2026-10-26-merged-reader-validation.md)。

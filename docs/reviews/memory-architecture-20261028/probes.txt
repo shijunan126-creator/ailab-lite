@@ -1,0 +1,108 @@
+FFFFFFFFFFF.F                                                            [100%]
+=================================== FAILURES ===================================
+__________ test_paused_memory_is_not_disclosed_by_the_agent_list_tool __________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:99: in test_paused_memory_is_not_disclosed_by_the_agent_list_tool
+    assert "暂停后不应给模型的事实" not in out.text
+E   assert '暂停后不应给模型的事实' not in '{"revision"...ntries":100}'
+E
+E     '暂停后不应给模型的事实' is contained here:
+E       content":"暂停后不应给模型的事实","source":"user","updated_at":"2026-10-27T16:19:57.039787+00:00","confidence":1.0,"evidence_run_ids":[],"evidence_episode_ids":[],"entities":[],"source_quote":"","valid_from":"2026-10-27T16:19:57.039787+00:00","invalid_at":null,"superseded_by":null,"last_used_at":null,"suppressed":true,"evidence_deleted":false}],"limit_chars":12000,"limit_entries":100}
+E     ?           +++++++++++
+_________________ test_nightly_extraction_obeys_auto_save_off __________________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:115: in test_nightly_extraction_obeys_auto_save_off
+    assert c.get("/v1/memory", headers=me).json()["entries"] == []
+E   AssertionError: assert [{'id': 'mem_...ightly', ...}] == []
+E
+E     Left contains one more item: {'id': 'mem_86f485d510f54c60adcb', 'kind': 'user', 'content': '用户喜欢蓝色主题', 'source': 'nightly', ...}
+E     Use -v to get more diff
+____________ test_budget_trimmed_episodes_remain_eligible_next_time ____________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:139: in test_budget_trimmed_episodes_remain_eligible_next_time
+    assert set(ids) <= set(seen) | eligible, {
+E   AssertionError: {'seen': ['run_c6e663706619'], 'eligible': [], 'all': ['run_784ae20aa82b', 'run_5b7b3ccf90f7', 'run_c6e663706619']}
+E   assert {'run_5b7b3cc...c6e663706619'} <= {'run_c6e663706619'}
+E
+E     Extra items in the left set:
+E     'run_784ae20aa82b'
+E     'run_5b7b3ccf90f7'
+______________ test_deleting_source_redacts_dream_snapshot_quotes ______________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:174: in test_deleting_source_redacts_dream_snapshot_quotes
+    assert "UNIQUE_SOURCE_QUOTE" not in detail.text
+E   assert 'UNIQUE_SOURCE_QUOTE' not in '{"id":"drea...ed":false}]}'
+E
+E     'UNIQUE_SOURCE_QUOTE' is contained here:
+E       e_quote":"UNIQUE_SOURCE_QUOTE","valid_from":"2026-10-27T16:19:57.457567+00:00","invalid_at":null,"superseded_by":null,"last_used_at":null,"suppressed":false,"evidence_deleted":false}],"after":[{"id":"mem_2a3a10d2f8b04c62a1da","kind":"memory","content":"用户偏好蓝色","source":"user","updated_at":"2026-10-27T16:19:57.457567+00:00","confidence":1.0,"evidence_run_ids":["run_732795e81551"],"evidence_episode_ids":[],"entities":[],"source_quote":"UNIQUE_SOURCE_QUOTE","valid_from":"2026-10-27T16:19:57.457567+00:00","invalid_at":null,"superseded_by":...
+E
+E     ...Full output truncated (2 lines hidden), use '-vv' to show
+_____________ test_inflight_dream_cannot_resurrect_a_deleted_fact ______________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:196: in test_inflight_dream_cannot_resurrect_a_deleted_fact
+    assert c.get("/v1/memory", headers=me).json()["entries"] == [], doc["revision"]
+E   AssertionError: 1
+E   assert [{'id': 'mem_...ightly', ...}] == []
+E
+E     Left contains one more item: {'id': 'mem_b9941d6c8d7a4e40ba8c', 'kind': 'memory', 'content': '用户喜欢蓝色主题', 'source': 'nightly', ...}
+E     Use -v to get more diff
+_____________ test_extract_quote_must_belong_to_the_claimed_source _____________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:235: in test_extract_quote_must_belong_to_the_claimed_source
+    assert not out or (
+E   AssertionError: [{'text': '用户喜欢蓝色', 'kind': 'memory', 'entities': [], 'evidence_run_ids': ['run_b'], ...}]
+E   assert (not [{'text': '用户喜欢蓝色', 'kind': 'memory', 'entities': [], 'evidence_run_ids': ['run_b'], ...}] or (['run_b'] == ['run_a']
+E
+E     At index 0 diff: 'run_b' != 'run_a'
+E     Use -v to get more diff))
+__________ test_agent_replace_rebinds_evidence_to_the_correction_run ___________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:259: in test_agent_replace_rebinds_evidence_to_the_correction_run
+    assert out.json()["entries"][0]["evidence_run_ids"] == [rid]
+E   AssertionError: assert ['run_a166da89ca8f'] == ['run_a6ef336e26d64be6916f']
+E
+E     At index 0 diff: 'run_a166da89ca8f' != 'run_a6ef336e26d64be6916f'
+E     Use -v to get more diff
+__________ test_late_finished_run_is_not_skipped_by_created_at_cursor __________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:280: in test_late_finished_run_is_not_skipped_by_created_at_cursor
+    assert old in eligible
+E   AssertionError: assert 'run_7f383d99962d' in []
+___________ test_disabled_accounts_do_not_starve_embedding_backfill ____________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:325: in test_disabled_accounts_do_not_starve_embedding_backfill
+    assert embeddings.index_pending() > 0
+E   assert 0 > 0
+E    +  where 0 = <function index_pending at 0x104dce2a0>()
+E    +    where <function index_pending at 0x104dce2a0> = embeddings.index_pending
+_____________ test_paused_fact_is_excluded_from_dream_model_inputs _____________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:330: in test_paused_fact_is_excluded_from_dream_model_inputs
+    assert service._active([paused]) == []
+E   AssertionError: assert [{'id': 'mem_...essed': True}] == []
+E
+E     Left contains one more item: {'id': 'mem_pause', 'content': '不应被后台模型参考', 'suppressed': True}
+E     Use -v to get more diff
+_______ test_conflict_replacement_and_invalidation_are_an_atomic_change ________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:373: in test_conflict_replacement_and_invalidation_are_an_atomic_change
+    assert not ({f"项目{i}旧状态", f"项目{i}新状态"} <= active), active
+E   AssertionError: {'项目0新状态', '项目1新状态', '项目2新状态', '项目2旧状态'}
+E   assert not {'项目2新状态', '项目2旧状态'} <= {'项目0新状态', '项目1新状态', '项目2新状态', '项目2旧状态'}
+___________ test_dream_does_not_hold_sqlite_writer_during_model_wait ___________
+../docs/reviews/memory-architecture-20261028/test_review_contracts.py:424: in test_dream_does_not_hold_sqlite_writer_during_model_wait
+    assert not observed_errors, observed_errors
+E   AssertionError: ["(sqlite3.OperationalError) database is locked
+E     [SQL: UPDATE users SET display_name = ? WHERE id = ?]
+E     [parameters: ('unrelated account', 'usr_1e374a663bb94c3ebd19')]
+E     (Background on this error at: https://sqlalche.me/e/21/e3q8)"]
+E   assert not ["(sqlite3.OperationalError) database is locked\n[SQL: UPDATE users SET display_name = ? WHERE id = ?]\n[parameters: ('unrelated account', 'usr_1e374a663bb94c3ebd19')]\n(Background on this error at: https://sqlalche.me/e/21/e3q8)"]
+=============================== warnings summary ===============================
+../../ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /private/tmp/ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_paused_memory_is_not_disclosed_by_the_agent_list_tool
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_nightly_extraction_obeys_auto_save_off
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_budget_trimmed_episodes_remain_eligible_next_time
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_deleting_source_redacts_dream_snapshot_quotes
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_inflight_dream_cannot_resurrect_a_deleted_fact
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_extract_quote_must_belong_to_the_claimed_source
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_agent_replace_rebinds_evidence_to_the_correction_run
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_late_finished_run_is_not_skipped_by_created_at_cursor
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_disabled_accounts_do_not_starve_embedding_backfill
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_paused_fact_is_excluded_from_dream_model_inputs
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_conflict_replacement_and_invalidation_are_an_atomic_change
+FAILED ../docs/reviews/memory-architecture-20261028/test_review_contracts.py::test_dream_does_not_hold_sqlite_writer_during_model_wait
+12 failed, 1 passed, 1 warning in 2.18s

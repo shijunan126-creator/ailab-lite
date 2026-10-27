@@ -1,5 +1,23 @@
 # 当前工作
 
+## 2026-10-28 记忆系统完善（本地验收完成，准备PR）
+
+最新用户授权全部缺陷/架构/体验改进，验证后直接提PR并修复直到能merge；不包含部署，不恢复已取消的临时对话入口。工作树`/private/tmp/ailab-memory-review-20261028`，分支`feat/memory-system-hardening`，base`origin/main@0659101`，产品`ac7e6cc`；原主目录`fix/full-thinking-rendering@ab0e8d9`及脏修改保留。
+
+已修9类问题，补齐统一可见性/项目作用域、短事务/持久候选和段落进度/claim、来源删除与撤销、原子时间状态/追加纠正、每调用账本、按需事实/历史续查及原文读取、来源/确认/暂停与对话开关。迁移0034，未新增运行时依赖。原13项红探针全部转绿，正式回归包含额外并发/计费/长插话/历史状态。
+
+完整组测SQLite1451通过/102跳过、PG1499/54，浏览器118/0跳过、Portal42/build、Ruff/导入/技能/锁/CI脚本28项通过。最后锁/缓存/评估计费收紧另有PG74/1跳过与SQLite专项；精确最终head全套由PR CI重验。4万轮本机合成读取p95 SQLite97.83ms/PG163.10ms；不是目标机整栈容量。真实付费模型/GPU embedding及未配置外部组件不冒充已验。
+
+下一步：推送本分支、提PR，精确head检查全绿且无阻塞评审/冲突后merge；有问题继续修，不部署。[设计](../architecture/adr/0022-memory-consistency-and-scoped-recall.md)、[完整实施与验收](../reviews/2026-10-28-memory-system-hardening.md)。下方为历史审查/发布状态，不覆盖本节。
+
+## 2026-10-28 记忆架构与逻辑审查（仅审查，未修复）
+
+本轮授权拉取最新 main 并对照用户附件审查记忆系统，不自动实施或发布。已 fetch `origin/main@0659101142d972e7b28b6b282ec4a2d21aee37fc`，独立工作树 `/private/tmp/ailab-memory-review-20261028`、分支 `review/memory-architecture-20261028`；原目录 `fix/full-thinking-rendering@ab0e8d9` 的未提交文档与 `.DS_Store` 保留。
+
+已有主要记忆层次，但附件 DoD 未满足。确认9类缺陷（7 P1/2 P2）：暂停信息经工具/dream暴露、关闭自动记忆仍写入、处理游标漏历史、删除遗漏快照、旧plan提交复活已删事实、来源绑定错误、embedding回填饿死、冲突操作被拆开、模型等待持有SQLite全库写锁。既有65项记忆测试通过，审查探针12失败/1对照通过；仅隔离SQLite/API/纯函数和模型替身，不冒充PG并发、真实模型、全量测试或目标机容量验收。产品源码未改。
+
+下一步：交用户审阅，决定修复范围；优先统一模型可见性/自动写资格/短事务，再处理工作进度与删除谱系。不自动扩展项目作用域或恢复已取消的临时会话，不commit/push/PR/merge/deploy。旧“PR96待评审”已被实际main的`7ad25a1`取代，`0659101`含PR97；个人部署状态本轮未查。详见[完整审查](../reviews/2026-10-28-memory-architecture-review.md)及[验证交接](updates/2026-10-28-memory-architecture-review.md)。下方均为历史记录。
+
 ## 2026-10-26 crawler持续调用故障修复（提交PR，不合并部署）
 
 最新用户要求“先别复测这么多，有个初步结论即可。然后提交PR”，覆盖之前合并/部署授权。已停止大批量测试，最终候选429abd2持续正文166/166成功、两组各50次启动故障已验，无僵尸/OOM/重启；最终样本复测尚未开始，不宣称1568页成功率。独立worktree `/private/tmp/ailab-reader-validation`，分支 `fix/crawler-process-reaping`，base `origin/main@cc247a2`，PR96待评审；补充真实取消/双fork孤儿回归仅测试变化。已修PID1回收、每次render进程树监督、单页内存准入和可恢复静态抓取降级。统计脚本/URL明细不入Git；原主目录脏文件未动。
