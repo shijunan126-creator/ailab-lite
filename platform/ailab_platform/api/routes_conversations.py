@@ -37,6 +37,7 @@ def _owned(db: Session, conversation_id: str, user: User) -> Conversation:
 
 def conversation_out(conv: Conversation, last_status: str | None = None) -> dict:
     return {
+        "memory_policy": conv.memory_policy or {},
         "id": conv.id,
         "pinned_at": conv.pinned_at,
         "active_run_id": conv.active_run_id,
@@ -183,6 +184,8 @@ def rename_conversation(
             conv.project_id = body.project_id
         if "pinned" in body.model_fields_set:
             conv.pinned_at = utcnow() if body.pinned else None
+        if body.memory_policy is not None:
+            conv.memory_policy = body.memory_policy.model_dump()
         if "title" in body.model_fields_set:
             conv.title = body.title.strip()[:200]
         conv.updated_at = utcnow()
@@ -270,6 +273,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             conv = Conversation(
                 user_id=user.id,
                 project_id=source.project_id,
+                memory_policy=dict(source.memory_policy or {}),
                 title=f"{title} · 分支"[:200] if title else "",
                 model=source.model,
                 forked_from={"conversation_id": source.id, "run_id": target.id, "mode": body.mode},

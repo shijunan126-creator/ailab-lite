@@ -8,6 +8,7 @@ Vectors are derived data: they are keyed by turn and model, removed with the tur
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 from array import array
@@ -19,8 +20,10 @@ from sqlalchemy.orm import Session
 from ..config import settings
 from ..contracts.jobs import RunStatus
 from ..db import SessionLocal
+from ..locks import user_critical_section
 from ..metrics import MEMORY_EMBEDDING
 from ..models import Conversation, MemoryEmbedding, Run, User
+from .policy import run_permissions
 
 log = logging.getLogger("ailab.memory_recall.embeddings")
 
@@ -30,6 +33,13 @@ SCAN_ROWS = 500  # unindexed turns looked at per tick (some are skipped: memory 
 
 def enabled() -> bool:
     return bool(settings.memory_embedding_base_url.strip() and settings.memory_embedding_model.strip())
+
+
+def index_model() -> str:
+    fingerprint = hashlib.sha256(
+        (settings.memory_embedding_model + "\n" + settings.memory_embedding_version + "\n" + settings.memory_embedding_doc_prefix).encode()
+    ).hexdigest()[:24]
+    return settings.memory_embedding_model[:80] + ":" + fingerprint
 
 
 def _headers() -> dict:
@@ -56,8 +66,13 @@ def embed(texts: list[str], *, timeout: float) -> list[list[float]]:
         vectors = [_normalize([float(x) for x in row["embedding"]]) for row in rows]
     except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
         MEMORY_EMBEDDING.labels("error").inc()
-        raise EmbeddingError(f"{type(exc).__name__}: {exc}"[:300]) from exc
-    if len(vectors) != len(texts) or len({len(v) for v in vectors}) != 1:
+        raise EmbeddingError(f"embedding endpoint failure: {type(exc).__name__}") from exc
+    if (
+        len(vectors) != len(texts)
+        or len({len(v) for v in vectors}) != 1
+        or any(not v or len(v) > 8192 or any(not math.isfinite(x) for x in v) for v in vectors)
+        or [row["index"] for row in rows] != list(range(len(texts)))
+    ):
         MEMORY_EMBEDDING.labels("error").inc()
         raise EmbeddingError("embedding endpoint returned an unexpected number or size of vectors")
     MEMORY_EMBEDDING.labels("ok").inc()
@@ -102,7 +117,7 @@ def vectors_for(db: Session, user_id: str, run_ids: list[str]) -> dict[str, arra
     rows = db.execute(
         select(MemoryEmbedding.run_id, MemoryEmbedding.vector).where(
             MemoryEmbedding.user_id == user_id,
-            MemoryEmbedding.model == settings.memory_embedding_model,
+            MemoryEmbedding.model == index_model(),
             MemoryEmbedding.run_id.in_(run_ids),
         )
     ).all()
@@ -125,11 +140,7 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
         return 0
     limit = limit or settings.memory_embedding_batch
     with SessionLocal() as db:
-        stored = (
-            select(MemoryEmbedding.run_id)
-            .where(MemoryEmbedding.run_id == Run.id, MemoryEmbedding.model == settings.memory_embedding_model)
-            .exists()
-        )
+        stored = select(MemoryEmbedding.run_id).where(MemoryEmbedding.run_id == Run.id, MemoryEmbedding.model == index_model()).exists()
         scope = [Run.user_id == user_id] if user_id else []
         rows = db.execute(
             select(
@@ -143,8 +154,12 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
             .outerjoin(Conversation, Conversation.id == Run.conversation_id)
             .where(
                 Run.status == RunStatus.SUCCEEDED,
+                Conversation.memory_policy["write"].as_boolean().is_not(False),
+                Run.options["memory_policy"]["write"].as_boolean().is_not(False),
                 Run.superseded_by_run_id.is_(None),
                 User.disabled_at.is_(None),
+                User.settings["memory"]["enabled"].as_boolean().is_not(False),
+                User.settings["memory"]["reference_history"].as_boolean().is_not(False),
                 or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),
                 ~stored,
                 *scope,
@@ -162,12 +177,32 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
                 break
         if not todo:
             return 0
+        db.commit()
         vectors = embed([t for _, _, t in todo], timeout=60)
         for (run_id, user_id, _), vector in zip(todo, vectors, strict=True):
-            db.add(
-                MemoryEmbedding(user_id=user_id, run_id=run_id, model=settings.memory_embedding_model, dim=len(vector), vector=pack(vector))
-            )
-        db.commit()
+            with user_critical_section(db, user_id):
+                owner = db.get(User, user_id, populate_existing=True)
+                source = db.get(Run, run_id, populate_existing=True)
+                conversation = (
+                    db.get(Conversation, source.conversation_id, populate_existing=True) if source and source.conversation_id else None
+                )
+                memory = (owner.settings or {}).get("memory") or {} if owner else {}
+                if not owner or owner.disabled_at or memory.get("enabled") is False or memory.get("reference_history") is False:
+                    db.commit()
+                    continue
+                if (
+                    not source
+                    or source.superseded_by_run_id
+                    or (conversation and conversation.deleted_at)
+                    or not run_permissions(db, source)["write"]
+                ):
+                    db.commit()
+                    continue
+                if db.scalar(select(MemoryEmbedding.id).where(MemoryEmbedding.run_id == run_id, MemoryEmbedding.model == index_model())):
+                    db.commit()
+                    continue
+                db.add(MemoryEmbedding(user_id=user_id, run_id=run_id, model=index_model(), dim=len(vector), vector=pack(vector)))
+                db.commit()
         return len(todo)
 
 

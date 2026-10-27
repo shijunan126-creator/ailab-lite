@@ -163,6 +163,8 @@ def start_run(
             if conversation.project_id is not None:
                 owned_project(db, conversation.project_id, user).updated_at = utcnow()
 
+        if conversation is not None and conversation.memory_policy:
+            options = {**options, "memory_policy": dict(conversation.memory_policy or {})}
         run = Run(
             user_id=user.id,
             conversation_id=conversation.id if conversation is not None else None,

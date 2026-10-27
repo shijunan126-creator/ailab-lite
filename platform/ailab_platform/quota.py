@@ -17,7 +17,7 @@ from .contracts.usage import ReserveUsageIn, SettleUsageIn, UsageErrorCode, Usag
 from .domain.ledger import MILLI, POLICY_VERSION, reserved_amount, snapshot_weight, weighted_amount
 from .domain.quota_policy import Limits, limits_for
 from .locks import user_critical_section
-from .models import FileObject, FileStatus, ModelUsage, Run, RunStatus, Template, UsageReservation, User
+from .models import FileObject, FileStatus, MemoryDreamRun, ModelUsage, Run, RunStatus, Template, UsageReservation, User
 
 
 def _error(status: int, code: UsageErrorCode, **detail):
@@ -111,7 +111,13 @@ def enforce_token_quota(db: Session, user_id: str, incoming_milli: int = 0) -> N
 
 
 def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
-    owner = db.get(Run, body.run_id) if body.subject == "run" else db.get(FileObject, body.file_id)
+    owner = (
+        db.get(Run, body.run_id)
+        if body.subject == "run"
+        else db.get(MemoryDreamRun, body.job_id)
+        if body.subject == "memory_job"
+        else db.get(FileObject, body.file_id)
+    )
     if owner is None:
         raise HTTPException(404, "usage subject not found")
     try:
@@ -134,6 +140,9 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
                     raise _error(409, UsageErrorCode.RUN_NOT_ACTIVE)
                 if body.mode != (owner.options or {}).get("mode", "work"):
                     raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
+            elif body.subject == "memory_job":
+                if owner.status != "running" or owner.claim_token != body.attempt_id:
+                    raise HTTPException(409, "memory job claim lost")
             elif owner.status != FileStatus.READY or owner.deleted_at or owner.purged_at:
                 raise HTTPException(409, "file is not ready for OCR")
             spec = get_catalog().get(body.alias)
@@ -186,6 +195,7 @@ def _write_usage(db: Session, reservation: UsageReservation, body: SettleUsageIn
             run_id=reservation.run_id,
             subject=reservation.subject,
             file_id=reservation.file_id,
+            job_id=reservation.job_id,
             user_id=reservation.user_id,
             dept_id=reservation.dept_id,
             attempt_id=reservation.attempt_id,

@@ -1642,3 +1642,26 @@ label.field button.select { width: 100%; }
   .composer-box:not(.has-mode) .composer-right { gap: 4px; min-width: 0; }
   .composer-box .model-btn { max-width: 96px; }
 }
+
+.memory-filters { display: flex; gap: 8px; align-items: center; margin: 20px 0; flex-wrap: wrap; }
+.memory-filters input { flex: 1; min-width: 160px; }
+.memory-filters select { max-width: 180px; }
+.memory-entry-meta { color: var(--muted); font-size: 12px; display: flex; gap: 6px; flex-wrap: wrap; }
+.memory-source { flex-basis: 100%; overflow-wrap: anywhere; }
+.memory-source blockquote { margin: 4px 0; padding-left: 8px; border-left: 2px solid var(--border); }
+.memory-source a { margin-right: 8px; }
+
+/* Memory content owns a complete row, so controls never squeeze CJK into one-character columns. */
+.memory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: start; padding: 12px; }
+.memory-row .memory-text { grid-column: 1 / -1; width: 100%; min-width: 0; }
+.memory-entry-meta { min-width: 0; align-items: center; }
+.memory-entry-meta select { max-width: 180px; width: 100%; min-width: 0; }
+.memory-filters input { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); padding: 10px 12px; font: inherit; }
+.memory-foot { z-index: 1; padding: 10px 12px; border-radius: 8px; box-shadow: 0 -1px 0 var(--border); }
+.memory-list { margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .memory-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+  .memory-entry-meta { grid-column: 1 / -1; }
+  .memory-filters input { flex-basis: 100%; width: 100%; }
+  .memory-entry-meta select { max-width: 100%; width: auto; }
+}

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -45,6 +45,8 @@ class MemoryEntryInput(BaseModel):
     last_used_at: datetime | None = None
     # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
     suppressed: bool | None = None
+    project_id: str | None = Field(default=None, max_length=40)
+    status: Literal["active", "review"] | None = None
 
     @field_validator("content")
     @classmethod
@@ -68,6 +70,8 @@ class MemoryUpdate(BaseModel):
     expected_revision: int = Field(ge=0)
     enabled: bool = True
     auto_save: bool = True
+    reference_history: bool | None = None
+    project_only: bool | None = None
     entries: list[MemoryEntryInput] = Field(max_length=MAX_ENTRIES)
 
     @model_validator(mode="after")
@@ -82,7 +86,9 @@ class MemoryUpdate(BaseModel):
 
 class MemoryOperation(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    action: Literal["list", "add", "replace", "remove"]
+    action: Literal["list", "search", "add", "replace", "remove"]
+    query: str = Field(default="", max_length=300)
+    as_of: datetime | None = None
     expected_revision: int | None = Field(default=None, ge=0)
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory"] = "memory"
@@ -100,9 +106,18 @@ class RecallRequest(BaseModel):
     """Search the user's own past conversations."""
 
     model_config = ConfigDict(extra="forbid")
-    query: str = Field(min_length=1, max_length=300)
+    query: str = Field(default="", max_length=300)
+    run_id: str | None = Field(default=None, max_length=40)
+    cursor: str | None = Field(default=None, max_length=40)
     limit: int = Field(default=5, ge=1, le=10)
     days: int | None = Field(default=None, ge=1, le=3650)
+    before: datetime | None = None
+    after: datetime | None = None
+
+    @field_validator("before", "after")
+    @classmethod
+    def utc_range(cls, value):
+        return value.replace(tzinfo=UTC) if value and value.tzinfo is None else value
 
     @field_validator("query")
     @classmethod
@@ -110,6 +125,14 @@ class RecallRequest(BaseModel):
         if not value.strip() or "\x00" in value:
             raise ValueError("query must contain text without NUL")
         return value.strip()
+
+    @model_validator(mode="after")
+    def valid_request(self):
+        if not self.query and not self.run_id:
+            raise ValueError("query or run_id is required")
+        if self.before and self.after and self.before <= self.after:
+            raise ValueError("before must follow after")
+        return self
 
 
 class MemoryDreamSettings(BaseModel):
@@ -162,6 +185,8 @@ class DreamChange(BaseModel):
     entities: list[str] = Field(default_factory=list, max_length=20)
     source_quote: str = Field(default="", max_length=1000)
     reason: str = Field(default="", max_length=300)
+    project_id: str | None = Field(default=None, max_length=40)
+    supersedes: list[str] = Field(default_factory=list, max_length=100)
 
     @model_validator(mode="after")
     def valid(self):
@@ -174,7 +199,7 @@ class DreamChange(BaseModel):
 
 class DreamPlan(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    changes: list[DreamChange] = Field(default_factory=list, max_length=DREAM_MAX_CHANGES)
+    changes: list[DreamChange] = Field(default_factory=list, max_length=MAX_ENTRIES + DREAM_MAX_CHANGES)
     journal: str = Field(default="", max_length=2000)
 
 

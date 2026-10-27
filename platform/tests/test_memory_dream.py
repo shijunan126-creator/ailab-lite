@@ -187,7 +187,7 @@ def test_dream_chat_bounds_its_output_tokens(monkeypatch) -> None:
     assert captured["max_tokens"] == service.settings.memory_dream_max_tokens
 
 
-def test_extract_prompt_drops_the_oldest_episodes_to_fit_the_budget() -> None:
+def test_extract_prompt_keeps_an_oldest_prefix_to_fit_the_budget() -> None:
     episodes = [
         MemoryEpisode(
             id=f"epi_{i}",
@@ -200,8 +200,8 @@ def test_extract_prompt_drops_the_oldest_episodes_to_fit_the_budget() -> None:
         for i in range(6)
     ]
     kept = service._fit_episodes(episodes, 1200)
-    assert kept and kept[0].id != episodes[0].id  # the oldest episode was dropped
-    assert kept[-1].id == episodes[-1].id  # the newest is always kept
+    assert kept and kept[0].id == episodes[0].id
+    assert kept[-1].id != episodes[-1].id  # newer work remains eligible, never skipped by a cursor
     assert len(service._episode_payload(kept)) <= 1200
 
 
@@ -252,10 +252,11 @@ def test_reverting_a_dream_makes_the_invalidated_fact_visible_again() -> None:
         assert all(e["content"] != "用户现在用 VS Code" for e in entries)
 
 
-def test_a_failed_dream_is_retried_the_same_day() -> None:
+def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
     with TestClient(app) as c:
         me = _user(c)
         me_doc = c.get("/v1/me", headers=me).json()
+        monkeypatch.setattr(service, "_candidate_users", lambda db, now: [db.get(User, me_doc["id"])])
         with SessionLocal() as db:
             user = db.get(User, me_doc["id"])
             for index in range(2):

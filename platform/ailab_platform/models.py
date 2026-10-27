@@ -219,6 +219,7 @@ class Conversation(Base):
     """A chat thread. Each user message starts one Run (a turn); turns share history and a sandbox workspace."""
 
     __tablename__ = "conversations"
+    memory_policy: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     __table_args__ = (
         Index("ix_conversations_user_updated", "user_id", "updated_at"),
         Index("ix_conversations_user_pinned", "user_id", "pinned_at", "updated_at"),
@@ -263,6 +264,8 @@ class Run(Base):
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
         Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
         Index("ix_runs_user_created", "user_id", "created_at"),
+        Index("ix_runs_memory_history", "user_id", "created_at", "id"),
+        Index("ix_runs_memory_index", "status", "created_at", "id"),
         Index("ix_runs_waiting", "status", "waiting_since", "id"),
         Index("ix_runs_status_id", "status", "id"),
         Index("ix_runs_finished", "status", "finished_at", "id"),
@@ -461,6 +464,7 @@ class ModelUsage(Base):
     quiet: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
     file_id: Mapped[str | None] = mapped_column(String(40))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     call_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
     user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -508,6 +512,7 @@ class UsageReservation(Base):
     quiet: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     subject: Mapped[str] = mapped_column(String(20), default="run", server_default="run")
     file_id: Mapped[str | None] = mapped_column(String(40))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     user_id: Mapped[str] = mapped_column(String(40))
     dept_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     attempt_id: Mapped[str] = mapped_column(String(80))
@@ -640,6 +645,20 @@ class MemoryEpisode(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class MemoryWorkItem(Base):
+    """Durable extraction progress, independent of run creation time or prompt budgets."""
+
+    __tablename__ = "memory_work_items"
+    __table_args__ = (Index("ix_memory_work_user_state_run", "user_id", "state", "run_id"),)
+    run_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    state: Mapped[str] = mapped_column(String(20), default="pending")
+    candidates: Mapped[list] = mapped_column(JSON, default=list)
+    source_offset: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    source_end: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class MemoryEmbedding(Base):
     """A normalized float32 vector of one finished turn, for the dense channel of history recall.
 
@@ -688,6 +707,8 @@ class MemoryDreamRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claim_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 Index(

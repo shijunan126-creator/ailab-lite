@@ -86,8 +86,11 @@ def test_agent_memory_replay_conflict_and_fence():
         entry = added.json()["entries"][0]
         assert entry["source"] == "agent"
         assert _tool(c, _running(c, other), action="remove", id=entry["id"]).status_code == 422
-        assert _tool(c, run, action="replace", revision=1, delivery="m2", id=entry["id"], content="改用 TypeScript").status_code == 200
-        assert _tool(c, run, action="remove", revision=2, delivery="m3", id=entry["id"]).json()["entries"] == []
+        corrected = _tool(c, run, action="replace", revision=1, delivery="m2", id=entry["id"], content="改用 TypeScript")
+        assert corrected.status_code == 200
+        current_id = corrected.json()["entries"][0]["id"]
+        assert current_id != entry["id"]
+        assert _tool(c, run, action="remove", revision=2, delivery="m3", id=current_id).json()["entries"] == []
         assert c.post(f"/internal/runs/{run}/memory", headers=me, json={"action": "list"}).status_code == 403
         assert (
             c.post(
@@ -108,7 +111,9 @@ def test_memory_controls_and_next_run_snapshot():
         assert _tool(c, run, revision=1).status_code == 422
         assert _tool(c, run, revision=1, explicit=True).status_code == 200
         snapshot = c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]
-        assert len(snapshot["entries"]) == 2 and snapshot["auto_save"] is False
+        assert [e["content"] for e in snapshot["entries"]] == ["喜欢简洁中文"] and snapshot["auto_save"] is False
+        # Unrelated facts remain available on demand rather than consuming every prompt.
+        assert len(_tool(c, run, action="list").json()["entries"]) == 2
         _put(c, me, 2, enabled=False)
         assert _tool(c, run, revision=3, delivery="disabled", explicit=True).status_code == 422
         assert _tool(c, run, action="list").json()["entries"] == []

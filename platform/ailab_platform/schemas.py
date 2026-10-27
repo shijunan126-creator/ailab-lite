@@ -176,7 +176,14 @@ class ConversationCreate(BaseModel):
     model: str | None = Field(default=None, max_length=120)
 
 
+class ConversationMemoryPolicy(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    read: bool = True
+    write: bool = True
+
+
 class ConversationPatch(BaseModel):
+    memory_policy: ConversationMemoryPolicy | None = None
     move_files: bool = False
     pinned: bool | None = None
     title: str = Field(default=None, min_length=1, max_length=200)
@@ -204,6 +211,7 @@ class MessageCreate(PromptRequest):
 
 
 class ConversationOut(UTCModel):
+    memory_policy: dict = Field(default_factory=dict)
     moved_files: int | None = None
     active_run_id: str | None = None
     pinned_at: datetime | None = None
