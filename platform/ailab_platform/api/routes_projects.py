@@ -113,6 +113,24 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
         from ..memory_recall.lineage import forget_conversations
 
         forget_conversations(db, user, list(db.scalars(conversation_ids)))
+        from ..contracts.memory import MemoryEntryInput, MemoryUpdate
+        from .routes_memory import memory_for, write_memory
+
+        current = memory_for(user)
+        kept = [
+            MemoryEntryInput.model_validate({k: v for k, v in e.items() if k in MemoryEntryInput.model_fields})
+            for e in current["entries"]
+            if e.get("project_id") != project.id
+        ]
+        if len(kept) != len(current["entries"]):
+            write_memory(
+                db,
+                user,
+                MemoryUpdate(
+                    expected_revision=current["revision"], enabled=current["enabled"], auto_save=current["auto_save"], entries=kept
+                ),
+                "user",
+            )
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
         while lineages := list(

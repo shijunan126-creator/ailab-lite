@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage } from "../../lib/api";
 import Switch from "../switch";
 
@@ -15,7 +15,7 @@ type Change = {
 };
 type Run = {
   id: string;
-  status: "pending" | "running" | "applied" | "skipped" | "failed" | "reverted";
+  status: "pending" | "running" | "applied" | "skipped" | "failed" | "reverted" | "evaluated";
   local_date: string;
   input_run_ids: string[];
   changes: Change[];
@@ -35,10 +35,11 @@ const STATUS: Record<string, string> = {
   skipped: "本轮跳过",
   failed: "整理失败",
   reverted: "已撤销",
+  evaluated: "已评估",
 };
 
 /** The user never gets a notification for a dream; this is the audit surface they can open. */
-export default function DreamPanel({ initial }: { initial?: DreamSettings | null }) {
+export default function DreamPanel({ initial, onChanged }: { initial?: DreamSettings | null; onChanged?: () => void }) {
   const [settings, setSettings] = useState<DreamSettings | null>(initial || null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [metrics, setMetrics] = useState<{ runs: number; applied: number; changes: number; tokens: number } | null>(null);
@@ -46,13 +47,20 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [confirmRevert, setConfirmRevert] = useState<Run | null>(null);
 
+  const mounted = useRef(true);
+  const loads = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
+    loads.current?.abort();
+    const controller = new AbortController();
+    loads.current = controller;
     const [document, nextRuns, nextMetrics] = await Promise.all([
-      api<{ dream: DreamSettings }>("/v1/memory"),
-      api<Run[]>("/v1/memory/dreams"),
-      api<{ runs: number; applied: number; changes: number; tokens: number }>("/v1/memory/dreams/metrics"),
+      api<{ dream: DreamSettings }>("/v1/memory", { signal: controller.signal }),
+      api<Run[]>("/v1/memory/dreams", { signal: controller.signal }),
+      api<{ runs: number; applied: number; changes: number; tokens: number }>("/v1/memory/dreams/metrics", { signal: controller.signal }),
     ]);
+    if (!mounted.current || controller.signal.aborted) return nextRuns;
     setSettings(document.dream);
     setRuns(nextRuns);
     setMetrics(nextMetrics);
@@ -60,7 +68,9 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
   }, []);
 
   useEffect(() => {
-    load().catch((e) => setError(errorMessage(e)));
+    mounted.current = true;
+    load().catch((e) => { if (mounted.current && !loads.current?.signal.aborted) setError(errorMessage(e)); });
+    return () => { mounted.current = false; loads.current?.abort(); detailLoad.current?.abort(); };
   }, [load]);
 
   async function toggle(enabled: boolean) {
@@ -80,11 +90,15 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
     }
   }
 
+  const detailLoad = useRef<AbortController | null>(null);
   async function inspect(run: Run) {
+    detailLoad.current?.abort();
+    const controller = new AbortController();
+    detailLoad.current = controller;
     setError("");
     try {
-      setDetail(await api<Detail>(`/v1/memory/dreams/${run.id}`));
-      setOpen(run.id);
+      const value = await api<Detail>(`/v1/memory/dreams/${run.id}`, { signal: controller.signal });
+      if (!controller.signal.aborted && mounted.current) { setDetail(value); setOpen(run.id); }
     } catch (e) {
       setError(errorMessage(e));
     }
@@ -98,8 +112,9 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
       await api("/v1/memory/dream/run", { method: "POST" });
       for (let i = 0; i < 15; i++) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
+        if (!mounted.current) break;
         const next = await load();
-        if (!next.some((run) => run.status === "pending" || run.status === "running")) break;
+        if (!next.some((run) => run.status === "pending" || run.status === "running")) { onChanged?.(); break; }
       }
     } catch (e) {
       setError(errorMessage(e));
@@ -109,7 +124,7 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
   }
 
   async function revert(run: Run) {
-    if (!window.confirm(`撤销 ${run.local_date} 的记忆整理？恢复到整理前的内容。`)) return;
+    setConfirmRevert(null);
     setBusy(true);
     setError("");
     try {
@@ -117,6 +132,7 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
       setOpen(null);
       setDetail(null);
       await load();
+      onChanged?.();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -150,11 +166,16 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
           立即整理
         </button>
       </div>
+      {confirmRevert ? <div role="alertdialog" aria-label="撤销记忆整理" className="alert">
+        <span className="grow">撤销 {confirmRevert.local_date} 的整理？</span>
+        <button className="secondary sm" onClick={() => setConfirmRevert(null)}>取消</button>
+        <button className="sm" onClick={() => revert(confirmRevert)} disabled={busy}>确认撤销</button>
+      </div> : null}
       {runs.length ? (
         <div className="dream-runs">
           {runs.map((run) => (
             <div key={run.id} className="dream-run">
-              <button className="dream-run-head" onClick={() => (open === run.id ? (setOpen(null), setDetail(null)) : inspect(run))}>
+              <button className="dream-run-head" onClick={() => (open === run.id ? (detailLoad.current?.abort(), setOpen(null), setDetail(null)) : inspect(run))}>
                 <span>{run.local_date}</span>
                 <span className={`dream-status ${run.status}`}>{STATUS[run.status] || run.status}</span>
                 <span className="spacer" />
@@ -171,14 +192,14 @@ export default function DreamPanel({ initial }: { initial?: DreamSettings | null
                   )) : <div className="hint">这次没有需要保留的新内容。</div>}
                   {detail.journal ? <p className="hint dream-journal">{detail.journal}</p> : null}
                   {detail.status === "applied" ? (
-                    <button className="secondary sm" onClick={() => revert(detail)} disabled={busy}>撤销这次整理</button>
+                    <button className="secondary sm" onClick={() => setConfirmRevert(detail)} disabled={busy}>撤销这次整理</button>
                   ) : null}
                 </div>
               ) : null}
             </div>
           ))}
         </div>
-      ) : <div className="hint dream-empty">还没有夜间整理记录。</div>}
+      ) : null}
     </section>
   );
 }

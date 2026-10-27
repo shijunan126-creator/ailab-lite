@@ -1,0 +1,48 @@
+{
+  "backend": "postgresql",
+  "total_runs": 40000,
+  "user_runs": 10000,
+  "iterations": 50,
+  "history_scanned": 400,
+  "history_results": 5,
+  "combined_read_p95_ms": 163.0974169993351,
+  "combined_read_max_ms": 214.41624999988562,
+  "cpu_seconds": 0.373043,
+  "process_maxrss_platform_units": 133005312,
+  "plans": [
+    [
+      "('Limit  (cost=8883.57..8883.60 rows=12 width=603)',)",
+      "('  ->  Sort  (cost=8883.57..8883.60 rows=12 width=603)',)",
+      "('        Sort Key: runs.created_at DESC, runs.id DESC',)",
+      "('        ->  Nested Loop Left Join  (cost=112.08..8883.35 rows=12 width=603)',)",
+      "('              Join Filter: ((conversations.id)::text = (runs.conversation_id)::text)',)",
+      "(\"              Filter: (((runs.conversation_id IS NULL) OR (conversations.deleted_at IS NULL)) AND (conversations.project_id IS NULL) AND (((conversations.memory_policy ->> 'write'::text))::boolean IS NOT FALSE))\",)",
+      "('              ->  Bitmap Heap Scan on runs  (cost=112.08..8783.89 rows=4970 width=1609)',)",
+      "(\"                    Recheck Cond: ((user_id)::text = 'usr_bench_0'::text)\",)",
+      "(\"                    Filter: ((superseded_by_run_id IS NULL) AND ((status)::text = 'succeeded'::text) AND ((((options -> 'memory_policy'::text) ->> 'write'::text))::boolean IS NOT FALSE))\",)",
+      "('                    ->  Bitmap Index Scan on ix_runs_user_id  (cost=0.00..110.84 rows=9940 width=0)',)",
+      "(\"                          Index Cond: ((user_id)::text = 'usr_bench_0'::text)\",)",
+      "('              ->  Seq Scan on conversations  (cost=0.00..0.00 rows=1 width=654)',)"
+    ],
+    [
+      "('Limit  (cost=10004.46..10004.52 rows=25 width=2090)',)",
+      "('  ->  Sort  (cost=10004.46..10004.52 rows=25 width=2090)',)",
+      "('        Sort Key: runs.created_at, runs.id',)",
+      "('        ->  Hash Right Anti Join  (cost=8926.78..10003.88 rows=25 width=2090)',)",
+      "('              Hash Cond: ((memory_work_items.run_id)::text = (runs.id)::text)',)",
+      "('              ->  Seq Scan on memory_work_items  (cost=0.00..904.00 rows=39600 width=15)',)",
+      "(\"                    Filter: ((state)::text = ANY ('{done,skipped}'::text[]))\",)",
+      "('              ->  Hash  (cost=8895.72..8895.72 rows=2485 width=2090)',)",
+      "('                    ->  Nested Loop Left Join  (cost=112.08..8895.72 rows=2485 width=2090)',)",
+      "('                          Join Filter: ((conversations.id)::text = (runs.conversation_id)::text)',)",
+      "(\"                          Filter: (((runs.conversation_id IS NULL) OR (conversations.deleted_at IS NULL)) AND (((conversations.memory_policy ->> 'write'::text))::boolean IS NOT FALSE))\",)",
+      "('                          ->  Bitmap Heap Scan on runs  (cost=112.08..8796.32 rows=4970 width=2090)',)",
+      "(\"                                Recheck Cond: ((user_id)::text = 'usr_bench_0'::text)\",)",
+      "(\"                                Filter: ((superseded_by_run_id IS NULL) AND ((status)::text = ANY ('{failed,canceled,succeeded}'::text[])) AND ((((options -> 'memory_policy'::text) ->> 'write'::text))::boolean IS NOT FALSE))\",)",
+      "('                                ->  Bitmap Index Scan on ix_runs_user_id  (cost=0.00..110.84 rows=9940 width=0)',)",
+      "(\"                                      Index Cond: ((user_id)::text = 'usr_bench_0'::text)\",)",
+      "('                          ->  Seq Scan on conversations  (cost=0.00..0.00 rows=1 width=138)',)"
+    ]
+  ],
+  "limits": "Mac local synthetic data; no embedding/model call, no target-machine capacity claim"
+}

@@ -54,7 +54,11 @@ Return JSON only:
 
 JUDGE_SYSTEM = """You are a fact deduplication and contradiction judge.
 
-You receive one NEW FACT and candidate EXISTING FACTS. Decide only two things:
+You receive NEW FACTS with exact user quotes and candidate EXISTING FACTS.
+First verify supported=true only if the quote explicitly supports the fact, including subject,
+negation, numbers, qualifiers and dates. Quoted third-party text, hypothetical examples, a question,
+or an assistant proposal is not a confirmed user fact. If unsure supported=false.
+Then decide two things:
 1. duplicate_ids: existing facts that state identical information.
 2. contradicted_ids: existing facts that the new fact explicitly makes false.
 
@@ -74,6 +78,6 @@ Rules:
 
 Return JSON only:
 {"results": [
-  {"index": 0, "duplicate_ids": ["mem_..."], "contradicted_ids": ["mem_..."]}
+  {"index": 0, "supported": true, "duplicate_ids": ["mem_..."], "contradicted_ids": ["mem_..."]}
 ]}
 """

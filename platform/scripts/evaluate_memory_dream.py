@@ -12,7 +12,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -21,14 +21,16 @@ from ailab_platform.memory_dream.service import (
     _active,
     _episodes,
     _extract,
+    _finish,
     _judge,
     _last_success,
     _memory_view,
     _new_runs,
     _screen,
+    dream_call,
 )
 from ailab_platform.memory_recall.tombstones import tombstones_of
-from ailab_platform.models import User
+from ailab_platform.models import MemoryDreamRun, User, new_id
 
 
 async def evaluate(username: str | None, user_id: str | None, model: str | None) -> dict:
@@ -46,9 +48,32 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
             from ailab_platform.config import settings
 
             settings.memory_dream_model = model
-        facts, usage, used_model = await _extract(episodes, active, user)
-        facts = _screen(facts, tombstones_of(user))  # what the nightly job would also drop
-        verdicts, judge_usage = await _judge(facts, active, user, used_model) if facts else ({}, {})
+        claim = new_id("claim")
+        job = MemoryDreamRun(
+            user_id=user.id,
+            local_date="eval-" + new_id("eval")[-5:],
+            timezone="UTC",
+            trigger="evaluation",
+            status="running",
+            claim_token=claim,
+            claimed_until=datetime.now(UTC) + timedelta(minutes=10),
+        )
+        db.add(job)
+        db.commit()  # Evaluation has the same short-transaction and per-call billing contract.
+        context = dream_call.set((job.id, claim))
+        try:
+            facts, usage, used_model = await _extract(episodes, active, user)
+            db.refresh(user)
+            facts = _screen(facts, tombstones_of(user))
+            db.commit()
+            verdicts, judge_usage = await _judge(facts, active, user, used_model) if facts else ({}, {})
+            _finish(db, job, "evaluated", journal="离线评估：未写入用户记忆")
+        except BaseException:
+            db.rollback()
+            _finish(db, job, "failed", error="离线评估未完成")
+            raise
+        finally:
+            dream_call.reset(context)
         return {
             "user": user.id,
             "model": used_model,

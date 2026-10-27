@@ -19,11 +19,12 @@ import hashlib
 import json
 import logging
 import re
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from rapidfuzz import fuzz
-from sqlalchemy import or_, select
+from sqlalchemy import or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -31,7 +32,6 @@ from ..catalog import get_catalog
 from ..config import settings
 from ..contracts.memory import (
     DREAM_MAX_CHANGES,
-    DREAM_TARGET_RATIO,
     MAX_CHARS,
     DreamChange,
     DreamPlan,
@@ -43,15 +43,17 @@ from ..db import SessionLocal
 from ..llm import llm_for
 from ..locks import user_critical_section
 from ..memory_recall import guard
+from ..memory_recall.policy import run_permissions, run_project, visible
 from ..memory_recall.tombstones import blocked_by_tombstone, tombstones_of
 from ..metrics import MEMORY_GUARD_REJECTED
-from ..models import Conversation, MemoryDreamRun, MemoryEpisode, Run, RunStatus, User, new_id, utcnow
+from ..models import Conversation, MemoryDreamRun, MemoryEpisode, MemoryWorkItem, PlatformSetting, Run, RunStatus, User, new_id, utcnow
 from .prompts import EXTRACT_SYSTEM, JUDGE_SYSTEM
 from .settings import dream_settings, local_window
 
 log = logging.getLogger("ailab.memory_dream")
 
 TERMINAL = set(RunStatus.TERMINAL)
+dream_call: ContextVar[tuple[str, str] | None] = ContextVar("dream_call", default=None)
 
 
 class DreamError(RuntimeError):
@@ -85,7 +87,7 @@ def _memory_view(user: User) -> dict:
 
 
 def _active(entries: list[dict]) -> list[dict]:
-    return [e for e in entries if not e.get("superseded_by") and not e.get("invalid_at")]
+    return [e for e in entries if visible(e, e.get("project_id"))]
 
 
 def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
@@ -108,8 +110,8 @@ def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
         journal=run.journal or "",
         token_usage=run.token_usage or {},
         error=run.error or "",
-        created_at=run.created_at,
-        finished_at=run.finished_at,
+        created_at=_aware(run.created_at) if run.created_at else None,
+        finished_at=_aware(run.finished_at) if run.finished_at else None,
     )
 
 
@@ -123,10 +125,11 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
 
 
 def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime) -> list[Run]:
-    since = now - timedelta(hours=24)
-    if last:
-        cursor = db.get(Run, last.cursor_run_id) if last.cursor_run_id else None
-        since = _aware(cursor.created_at) if cursor else _aware(last.finished_at or last.created_at)
+    processed = (
+        select(MemoryWorkItem.run_id)
+        .where(MemoryWorkItem.run_id == Run.id, MemoryWorkItem.user_id == user_id, MemoryWorkItem.state.in_(("done", "skipped")))
+        .exists()
+    )
     return list(
         db.scalars(
             select(Run)
@@ -134,7 +137,9 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
             .where(
                 Run.user_id == user_id,
                 Run.status.in_(TERMINAL),
-                Run.created_at > since,
+                ~processed,
+                Conversation.memory_policy["write"].as_boolean().is_not(False),
+                Run.options["memory_policy"]["write"].as_boolean().is_not(False),
                 Run.superseded_by_run_id.is_(None),  # the user rewrote this turn; what they replaced is not what they meant
                 or_(Run.conversation_id.is_(None), Conversation.deleted_at.is_(None)),  # a deleted conversation is not evidence
             )
@@ -145,7 +150,16 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
 
 
 def _candidate_users(db: Session, now: datetime) -> list[User]:
-    return list(db.scalars(select(User).where(User.disabled_at.is_(None))).all())
+    cursor = db.get(PlatformSetting, "memory_dream_cursor")
+    after = (cursor.value or {}).get("after", "") if cursor else ""
+    users = list(db.scalars(select(User).where(User.disabled_at.is_(None), User.id > after).order_by(User.id).limit(200)))
+    value = {"after": users[-1].id if len(users) == 200 else ""}
+    if cursor:
+        cursor.value = value
+    else:
+        db.add(PlatformSetting(key="memory_dream_cursor", value=value))
+    db.commit()
+    return users
 
 
 def reclaim_failed(db: Session, row: MemoryDreamRun, *, trigger: str) -> MemoryDreamRun:
@@ -155,6 +169,8 @@ def reclaim_failed(db: Session, row: MemoryDreamRun, *, trigger: str) -> MemoryD
     row.error = ""
     row.journal = ""
     row.plan = {}
+    row.claim_token = None
+    row.claimed_until = None
     row.started_at = None
     row.finished_at = None
     db.add(row)
@@ -167,9 +183,13 @@ def claim_due(now: datetime | None = None) -> list[str]:
     with SessionLocal() as db:
         for user in _candidate_users(db, now):
             if len(claimed) >= settings.memory_dream_max_users:
+                cursor = db.get(PlatformSetting, "memory_dream_cursor")
+                cursor.value = {"after": user.id}
+                db.commit()
                 break
             ds = dream_settings(user)
-            if not ds.enabled:
+            document = _memory_view(user)
+            if not ds.enabled or not document["enabled"] or not document["auto_save"]:
                 continue
             zone_name = ds.timezone or settings.memory_dream_default_timezone
             try:
@@ -183,7 +203,7 @@ def claim_due(now: datetime | None = None) -> list[str]:
             if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(TERMINAL)).limit(1)):
                 continue
             runs = _new_runs(db, user.id, _last_success(db, user.id), now)
-            if len(runs) < settings.memory_dream_min_runs:
+            if not runs:
                 continue
             local_date = local.date().isoformat()
             existing = db.scalar(
@@ -230,17 +250,51 @@ def _digest(run: Run, user_limit: int = 4000, assistant_limit: int = 2000) -> st
 
 def _user_part(digest: str) -> str:
     """What the user wrote. Split on the *first* marker, so text the user pasted can only shrink this."""
+    if digest.startswith('{"user_said":'):
+        return json.loads(digest)["user_said"]
     head = digest.split(ASSISTANT_MARK, 1)[0]
     return head.removeprefix("用户：")
 
 
+def _source_text(db: Session, run: Run) -> str:
+    from ..models import QueuedMessage
+
+    ids = (run.runtime_meta or {}).get("steer_ids") or []
+    steers = (
+        dict(
+            db.execute(
+                select(QueuedMessage.id, QueuedMessage.prompt).where(
+                    QueuedMessage.run_id == run.id, QueuedMessage.state == "steered", QueuedMessage.id.in_(ids)
+                )
+            ).all()
+        )
+        if ids
+        else {}
+    )
+    return "\n\n".join([run.prompt or "", *(steers[i] for i in ids if i in steers)])
+
+
 def _episodes(db: Session, user: User, runs: list[Run]) -> list[MemoryEpisode]:
     """Create immutable episode rows once; reuse them on a retry."""
-    existing = {e.content_hash: e for e in db.scalars(select(MemoryEpisode).where(MemoryEpisode.user_id == user.id)).all()}
+    existing = {
+        e.content_hash: e
+        for e in db.scalars(select(MemoryEpisode).where(MemoryEpisode.user_id == user.id, MemoryEpisode.run_id.in_([r.id for r in runs])))
+    }
     out: list[MemoryEpisode] = []
     for run in runs:
-        digest = _digest(run)
-        content_hash = _hash(digest)
+        item = db.get(MemoryWorkItem, run.id)
+        offset = item.source_offset if item else 0
+        source = _source_text(db, run)
+        chunk_chars = max(100, min(4000, (settings.memory_dream_input_chars - 500) // 3))
+        digest = json.dumps(
+            {
+                "user_said": source[offset : offset + chunk_chars],
+                "assistant_replied": (run.summary or "")[: min(1500, chunk_chars)],
+                "source_end": min(offset + chunk_chars, len(source)),
+            },
+            ensure_ascii=False,
+        )
+        content_hash = _hash(run.id + "\n" + str(offset) + "\n" + digest)
         episode = existing.get(content_hash)
         if episode is None:
             episode = MemoryEpisode(
@@ -269,7 +323,13 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
                 "run_id": e.run_id,
                 "observed_at": _aware(e.observed_at).isoformat(),
                 "user_said": _user_part(e.digest),
-                "assistant_replied": e.digest.split(ASSISTANT_MARK, 1)[1] if ASSISTANT_MARK in e.digest else "",
+                "assistant_replied": (
+                    json.loads(e.digest).get("assistant_replied", "")
+                    if e.digest.startswith('{"user_said":')
+                    else e.digest.split(ASSISTANT_MARK, 1)[1]
+                    if ASSISTANT_MARK in e.digest
+                    else ""
+                ),
             }
             for e in episodes
         ],
@@ -278,10 +338,10 @@ def _episode_payload(episodes: list[MemoryEpisode]) -> str:
 
 
 def _fit_episodes(episodes: list[MemoryEpisode], budget: int) -> list[MemoryEpisode]:
-    """The extract prompt is bounded: the newest episodes win, the oldest are left for the next night."""
+    """Fit a complete oldest prefix; unprocessed episodes remain eligible for the next batch."""
     kept, payload = episodes, _episode_payload(episodes)
     while len(payload) > budget and len(kept) > 1:
-        kept = kept[1:]
+        kept = kept[:-1]
         payload = _episode_payload(kept)
     return kept
 
@@ -293,9 +353,67 @@ def _quote_supported(quote: str, episodes: list[MemoryEpisode]) -> bool:
 
 
 async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict]:
-    timeout = settings.llm_total_timeout_seconds or settings.llm_timeout_seconds
-    async with asyncio.timeout(timeout):
-        response = await llm_for(model).chat(messages, [], model, user_id=user.id, max_tokens=settings.memory_dream_max_tokens)
+    from uuid import uuid4
+
+    from ..contracts.usage import ReserveUsageIn, SettleUsageIn
+    from ..llm import ModelCall, model_call
+    from ..model_policy import estimator
+    from ..quota import reserve_usage, settle_usage
+
+    timeout = min(240, settings.llm_total_timeout_seconds or settings.llm_timeout_seconds)
+    identity = dream_call.get()
+    call = ModelCall(uuid4().hex, "", settings.memory_dream_max_tokens, actual_backend=model, quiet=True)
+    estimate = estimator.estimate(model, {"messages": messages, "tools": []})
+    from ..model_policy import ModelPolicy
+
+    spec = get_catalog().get(model)
+    if spec is not None and estimate > ModelPolicy(get_catalog()).input_budget(spec):
+        raise DreamError("记忆整理输入超出模型上下文预算")
+    if identity:
+        with SessionLocal() as db:
+            reserve_usage(
+                db,
+                ReserveUsageIn(
+                    call_id=call.call_id,
+                    subject="memory_job",
+                    job_id=identity[0],
+                    attempt_id=identity[1],
+                    alias=model,
+                    mode="memory",
+                    quiet=True,
+                    max_output_tokens=call.max_output_tokens,
+                    estimated_input_tokens=estimate,
+                ),
+            )
+    elif settings.env != "test":
+        raise DreamError("模型抽取必须通过有计费身份的后台任务运行")
+    token = model_call.set(call)
+    response = None
+    try:
+        async with asyncio.timeout(timeout):
+            response = await llm_for(model).chat(messages, [], model, user_id=user.id, max_tokens=call.max_output_tokens)
+        call.reached_model = True
+        call.usage = response.usage or {}
+        call.output_bytes = len((response.content + response.reasoning_content).encode())
+    finally:
+        model_call.reset(token)
+        if identity:
+            usage = call.usage
+            status = "settled" if usage else "estimated" if call.reached_model else "released"
+            with SessionLocal() as db:
+                settle_usage(
+                    db,
+                    SettleUsageIn(
+                        call_id=call.call_id,
+                        attempt_id=identity[1],
+                        actual_backend=call.actual_backend,
+                        input_tokens=usage.get("prompt_tokens", estimate if call.reached_model else 0),
+                        output_tokens=usage.get("completion_tokens", (call.output_bytes + 3) // 4 if call.reached_model else 0),
+                        cached_tokens=usage.get("cached_tokens", 0),
+                        reasoning_tokens=usage.get("reasoning_tokens", 0),
+                        status=status,
+                    ),
+                )
     if response.tool_calls or not response.content.strip():
         raise DreamError("dream model returned no final JSON")
     return response.content, dict(response.usage or {})
@@ -336,31 +454,23 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
     facts = payload.get("facts")
     if not isinstance(facts, list):
         raise DreamError("extract response has no facts list")
-    episode_ids = {e.id for e in episodes}
-    run_ids = {e.run_id for e in episodes if e.run_id}
+    episodes = _fit_episodes(episodes, settings.memory_dream_input_chars)
     out: list[dict] = []
-    for item in facts[: DREAM_MAX_CHANGES * 2]:
+    for item in facts[:100]:
         if not isinstance(item, dict):
             continue
         text = str(item.get("text") or "").strip()
         quote = str(item.get("source_quote") or "").strip()
-        evidence = {str(x) for x in item.get("evidence_run_ids") or [] if str(x) in run_ids}
-        episode_evidence = {str(x) for x in item.get("evidence_episode_ids") or [] if str(x) in episode_ids}
-        if not text or not quote or not _quote_supported(quote, episodes):
+        supported = [e for e in episodes if _quote_supported(quote, [e])]
+        if not text or not supported or len(text) > 1000 or len(quote) > 1000:
             continue
-        if len(text) > 1000 or len(quote) > 1000:
-            continue
-        if evidence and not (evidence <= run_ids):
-            continue
-        if not evidence:
-            evidence = {e.run_id for e in episodes if e.run_id and _quote_supported(quote, [e])}
-        if not episode_evidence:
-            episode_evidence = {e.id for e in episodes if _quote_supported(quote, [e])}
+        evidence = {e.run_id for e in supported if e.run_id}
+        episode_evidence = {e.id for e in supported}
         try:
             confidence = float(item.get("confidence", 0))
         except (TypeError, ValueError):
             confidence = 0
-        if confidence < settings.memory_dream_confidence:
+        if not 0 <= confidence <= 1 or confidence < settings.memory_dream_confidence:
             continue
         entities = [str(x).strip()[:120] for x in item.get("entities") or [] if str(x).strip()][:20]
         out.append(
@@ -405,9 +515,9 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
     """Return per-fact {"duplicate_ids": [...], "contradicted_ids": [...]} using a strict judge."""
     work = []
     for index, fact in enumerate(facts):
+        if len(work) >= DREAM_MAX_CHANGES:
+            break
         candidates = _candidates(fact, active)
-        if not candidates:
-            continue
         work.append(
             {
                 "index": index,
@@ -415,6 +525,8 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
                 "existing": [{"id": c["id"], "text": c["content"], "valid_from": c.get("valid_from")} for c in candidates],
             }
         )
+        while len(json.dumps(work[-1], ensure_ascii=False)) > settings.memory_dream_input_chars and work[-1]["existing"]:
+            work[-1]["existing"].pop()
     if not work:
         return {}, {}
     payload = json.dumps(work, ensure_ascii=False)
@@ -431,8 +543,11 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
     if not isinstance(results, list):
         raise DreamError("judge response has no results list")
     by_index = {int(item["index"]): item for item in work if "index" in item}
-    out: dict[int, dict] = {}
+    out: dict[int, dict] = {index: {"deferred": True} for index in range(len(facts)) if index not in by_index}
+    out.update({index: {"supported": False, "duplicate_ids": [], "contradicted_ids": []} for index in by_index})
     for item in results:
+        if not isinstance(item, dict):
+            continue
         try:
             index = int(item.get("index"))
         except (TypeError, ValueError):
@@ -441,6 +556,7 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
             continue
         valid_ids = {c["id"] for c in by_index[index]["existing"]}
         out[index] = {
+            "supported": item.get("supported") is True,
             "duplicate_ids": [x for x in item.get("duplicate_ids") or [] if x in valid_ids],
             "contradicted_ids": [x for x in item.get("contradicted_ids") or [] if x in valid_ids],
         }
@@ -450,31 +566,23 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
 def _fit(entries: list[MemoryEntryInput]) -> list[MemoryEntryInput]:
     """Keep active facts and recent invalid history inside the JSON budget."""
     total = sum(len(e.content) for e in entries)
-    if total <= int(MAX_CHARS * DREAM_TARGET_RATIO):
+    if total <= MAX_CHARS and len(entries) <= 100:
         return entries
-    # Drop the oldest invalidated facts first; active facts are never silently dropped.
-    invalid = sorted(
-        [e for e in entries if e.invalid_at or e.superseded_by],
-        key=lambda e: e.invalid_at or datetime.min.replace(tzinfo=UTC),
-    )
-    for item in invalid:
-        if total <= int(MAX_CHARS * DREAM_TARGET_RATIO):
-            break
-        total -= len(item.content)
-        entries = [e for e in entries if e is not item]
-    if total > int(MAX_CHARS * DREAM_TARGET_RATIO):
-        raise DreamError("active memory exceeds the dream budget target")
-    return entries
+    raise DreamError("记忆容量已满，请删除不再需要的内容后继续整理")
 
 
-def _apply(db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, MemoryEpisode]) -> dict:
+def _apply(
+    db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, MemoryEpisode], *, expected_revision: int | None = None
+) -> dict:
     from ..api.routes_memory import memory_for, write_memory
 
     with user_critical_section(db, user.id):
         db.refresh(user)
         current = memory_for(user)
-        if not current["enabled"]:
-            raise DreamError("memory disabled")
+        if not current["enabled"] or not current["auto_save"] or not dream_settings(user).enabled or user.disabled_at:
+            raise DreamError("自动记忆已关闭")
+        if expected_revision is not None and current["revision"] != expected_revision:
+            raise DreamError("记忆已更新，稍后基于最新内容重试")
         entries = [
             MemoryEntryInput(
                 id=e["id"],
@@ -489,6 +597,9 @@ def _apply(db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, M
                 invalid_at=e.get("invalid_at"),
                 superseded_by=e.get("superseded_by"),
                 last_used_at=e.get("last_used_at"),
+                suppressed=e.get("suppressed"),
+                project_id=e.get("project_id"),
+                status=e.get("status"),
             )
             for e in current["entries"]
         ]
@@ -497,6 +608,19 @@ def _apply(db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, M
         now = utcnow()
         for change in plan.changes:
             if change.op == "add":
+                if blocked_by_tombstone(tombstones_of(user), change.content, change.evidence_run_ids):
+                    raise DreamError("候选记忆已被用户删除")
+                for rid in change.evidence_run_ids:
+                    source = db.get(Run, rid, populate_existing=True)
+                    conv = (
+                        db.get(Conversation, source.conversation_id, populate_existing=True) if source and source.conversation_id else None
+                    )
+                    if not source or source.user_id != user.id or source.superseded_by_run_id or (conv and conv.deleted_at):
+                        raise DreamError("候选记忆来源已不可用")
+                    if not run_permissions(db, source)["write"]:
+                        raise DreamError("来源对话关闭了记忆写入")
+                    if run_project(db, source) != change.project_id:
+                        raise DreamError("候选记忆来源范围已改变")
                 episode = next(
                     (episode_by_run[rid] for rid in change.evidence_run_ids if rid in episode_by_run),
                     None,
@@ -512,8 +636,20 @@ def _apply(db: Session, user: User, plan: DreamPlan, episode_by_run: dict[str, M
                         entities=change.entities,
                         source_quote=change.source_quote,
                         valid_from=(episode.observed_at if episode else now),
+                        project_id=change.project_id,
                     )
                 )
+                for old_id in change.supersedes:
+                    if old_id in by_id:
+                        target = by_id[old_id]
+                        observed = _aware(entries[-1].valid_from)
+                        if target.valid_from and observed < _aware(target.valid_from):
+                            # A late backfill must not replace a newer confirmed state.
+                            entries[-1].invalid_at = target.valid_from
+                            entries[-1].superseded_by = target.id
+                        else:
+                            target.invalid_at = observed
+                            target.superseded_by = entries[-1].id
                 added += 1
             elif change.op == "invalidate" and change.id in by_id:
                 target = by_id[change.id]
@@ -543,51 +679,103 @@ def _finish(db: Session, run: MemoryDreamRun, status: str, **fields) -> None:
     for key, value in fields.items():
         setattr(run, key, value)
     run.finished_at = utcnow()
+    run.claimed_until = None
     db.add(run)
     db.commit()
 
 
 async def process_dream(run_id: str) -> None:
+    """Read/claim and persist input, await models without a transaction, then fenced short commit."""
+    token = new_id("claim")
     with SessionLocal() as db:
-        run = db.get(MemoryDreamRun, run_id, populate_existing=True)
-        if not run or run.status not in {"pending", "running"}:
-            return
-        user = db.get(User, run.user_id, populate_existing=True)
-        if not user:
-            _finish(db, run, "failed", error="user not found")
-            return
-        run.status = "running"
-        run.started_at = utcnow()
+        now = utcnow()
+        changed = db.execute(
+            update(MemoryDreamRun)
+            .where(
+                MemoryDreamRun.id == run_id,
+                MemoryDreamRun.status.in_(("pending", "running")),
+                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
+            )
+            .values(status="running", claim_token=token, claimed_until=now + timedelta(minutes=10), started_at=now)
+        ).rowcount
         db.commit()
+        if not changed:
+            return
+    try:
+        with SessionLocal() as db:
+            run = db.get(MemoryDreamRun, run_id)
+            user = db.get(User, run.user_id)
+            if not user or user.disabled_at:
+                raise DreamError("账号不可用")
+            with user_critical_section(db, user.id):
+                db.refresh(user)
+                memory = _memory_view(user)
+                if not memory["enabled"] or not memory["auto_save"] or not dream_settings(user).enabled:
+                    _finish(db, run, "skipped", journal="自动记忆已关闭")
+                    return
+                runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow())
+                if not runs:
+                    _finish(db, run, "skipped", journal="没有新的对话")
+                    return
+                # A batch never combines evidence from different projects.
+                project_id = run_project(db, runs[0])
+                runs = [r for r in runs if run_project(db, r) == project_id]
+                pending = [r for r in runs if (item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "pending"]
+                if pending:
+                    runs = pending
+                episodes = _fit_episodes(_episodes(db, user, runs), settings.memory_dream_input_chars)
+                selected = {e.run_id for e in episodes}
+                runs = [r for r in runs if r.id in selected]
+                work = {r.id: db.get(MemoryWorkItem, r.id) for r in runs}
+                cached = all(w is not None and w.state == "pending" for w in work.values())
+                facts = [f for w in work.values() if w for f in w.candidates or []] if cached else None
+                active = [e for e in _active(memory["entries"]) if e.get("project_id") == project_id]
+                before = memory
+                uid = user.id
+                db.commit()  # Crucial: no SQL writer or user lock crosses either model await.
+
+        usage = {}
+        model = settings.memory_dream_model or get_catalog().default_id()
+        context = dream_call.set((run_id, token))
         try:
-            last = _last_success(db, user.id)
-            runs = _new_runs(db, user.id, last, utcnow())
-            if len(runs) < settings.memory_dream_min_runs:
-                _finish(db, run, "skipped", journal="没有足够的新对话")
-                return
-            memory = _memory_view(user)
-            if not memory["enabled"]:
-                _finish(db, run, "skipped", journal="用户关闭了记忆")
-                return
-            episodes = _episodes(db, user, runs)
-            active = _active(memory["entries"])
-            facts, usage, model = await _extract(episodes, active, user)
-            facts = _screen(facts, tombstones_of(user))
+            if facts is None:
+                facts, usage, model = await _extract(episodes, active, user)
+                for fact in facts:
+                    fact["project_id"] = project_id
+                with SessionLocal() as db:
+                    with user_critical_section(db, uid):
+                        owner = db.get(User, uid, populate_existing=True)
+                        _validate_sources(db, owner, runs, project_id)
+                        facts = _screen(facts, tombstones_of(owner))
+                        _check_claim(db, run_id, token)
+                        for source in runs:
+                            item = db.get(MemoryWorkItem, source.id)
+                            if item is None:
+                                item = MemoryWorkItem(run_id=source.id, user_id=uid)
+                            item.candidates = [f for f in facts if source.id in f.get("evidence_run_ids", [])]
+                            item.state = "pending"
+                            episode = next(e for e in episodes if e.run_id == source.id)
+                            item.source_end = (
+                                json.loads(episode.digest).get("source_end", 0)
+                                if episode.digest.startswith('{"user_said":')
+                                else len(source.prompt)
+                            )
+                            db.add(item)
+                        db.commit()
             verdicts, judge_usage = await _judge(facts, active, user, model) if facts else ({}, {})
-            usage = {
-                key: int(usage.get(key, 0)) + int(judge_usage.get(key, 0))
-                for key in ("prompt_tokens", "completion_tokens", "cached_tokens")
-            }
-            changes: list[DreamChange] = []
-            episode_by_run = {e.run_id: e for e in episodes if e.run_id}
-            seen_text = {_hash(e["content"]) for e in active}
-            for index, fact in enumerate(facts):
-                verdict = verdicts.get(index, {})
-                if verdict.get("duplicate_ids"):
-                    continue
-                if _hash(fact["text"]) in seen_text:
-                    continue
-                seen_text.add(_hash(fact["text"]))
+        finally:
+            dream_call.reset(context)
+        usage = {k: int(usage.get(k, 0)) + int(judge_usage.get(k, 0)) for k in ("prompt_tokens", "completion_tokens", "cached_tokens")}
+        changes, consumed = [], []
+        seen = {_hash(e["content"]) for e in active}
+        for index, fact in enumerate(facts):
+            verdict = verdicts.get(index, {})
+            if verdict.get("deferred"):
+                break
+            if verdict.get("supported") is False:
+                consumed.append(_hash(fact["text"]))
+                continue
+            if not verdict.get("duplicate_ids") and _hash(fact["text"]) not in seen:
                 changes.append(
                     DreamChange(
                         op="add",
@@ -598,34 +786,82 @@ async def process_dream(run_id: str) -> None:
                         evidence_episode_ids=fact["evidence_episode_ids"],
                         entities=fact["entities"],
                         source_quote=fact["source_quote"],
-                        reason="extracted from episode",
+                        project_id=project_id,
+                        supersedes=verdict.get("contradicted_ids", []),
+                        reason="extracted from user evidence",
                     )
                 )
-                for old_id in verdict.get("contradicted_ids", []):
-                    changes.append(DreamChange(op="invalidate", id=old_id, reason="contradicted by new fact"))
-                if len(changes) >= DREAM_MAX_CHANGES:
-                    break
-            plan = DreamPlan(changes=changes[:DREAM_MAX_CHANGES], journal=f"抽取 {len(facts)} 条候选，保留 {len(changes)} 条变更")
-            before = memory
-            after = _apply(db, user, plan, episode_by_run) if plan.changes else memory
-            _finish(
-                db,
-                run,
-                "applied",
-                cursor_run_id=runs[-1].id,
-                input_run_ids=[r.id for r in runs],
-                plan=plan.model_dump(mode="json"),
-                journal=plan.journal,
-                before_memory=before,
-                after_memory=after,
-                token_usage=usage,
-            )
-        except Exception as exc:
-            log.warning("memory dream failed run=%s: %s", run.id, exc)
-            db.rollback()
-            run = db.get(MemoryDreamRun, run_id, populate_existing=True)
-            if run:
-                _finish(db, run, "failed", error=f"{type(exc).__name__}: {exc}"[:1000])
+                seen.add(_hash(fact["text"]))
+            consumed.append(_hash(fact["text"]))
+            if len(changes) >= DREAM_MAX_CHANGES:
+                break
+        plan = DreamPlan(changes=changes, journal=f"保留 {len(changes)} 组变更")
+        with SessionLocal() as db:
+            with user_critical_section(db, uid):
+                run = _check_claim(db, run_id, token)
+                owner = db.get(User, uid, populate_existing=True)
+                _validate_sources(db, owner, runs, project_id)
+                if _memory_view(owner)["revision"] != before["revision"]:
+                    raise DreamError("记忆已更新，稍后重试")
+                after = (
+                    _apply(db, owner, plan, {e.run_id: e for e in episodes}, expected_revision=before["revision"])
+                    if changes
+                    else _memory_view(owner)
+                )
+                for source in runs:
+                    item = db.get(MemoryWorkItem, source.id)
+                    if item is None:
+                        item = MemoryWorkItem(run_id=source.id, user_id=uid)
+                    item.candidates = [f for f in (item.candidates or []) if _hash(f["text"]) not in consumed]
+                    if item.candidates:
+                        item.state = "pending"
+                    else:
+                        item.source_offset = item.source_end or len(source.prompt)
+                        item.state = "done" if item.source_offset >= len(_source_text(db, source)) else "ready"
+                    item.updated_at = utcnow()
+                    db.add(item)
+                _finish(
+                    db,
+                    run,
+                    "applied",
+                    cursor_run_id=runs[-1].id,
+                    input_run_ids=[r.id for r in runs],
+                    plan=plan.model_dump(mode="json"),
+                    journal=plan.journal,
+                    before_memory=before,
+                    after_memory=after,
+                    token_usage=usage,
+                )
+    except Exception as exc:
+        log.warning("memory dream stopped run=%s type=%s", run_id, type(exc).__name__)
+        with SessionLocal() as db:
+            run = db.get(MemoryDreamRun, run_id)
+            if run and run.claim_token == token:
+                _finish(db, run, "failed", error="记忆整理未完成，请稍后重试" if not isinstance(exc, DreamError) else str(exc)[:300])
+
+
+def _validate_sources(db: Session, owner: User, runs: list[Run], project_id: str | None) -> None:
+    document = _memory_view(owner)
+    if owner.disabled_at or not document["enabled"] or not document["auto_save"] or not dream_settings(owner).enabled:
+        raise DreamError("自动记忆已关闭")
+    for old in runs:
+        source = db.get(Run, old.id, populate_existing=True)
+        conv = db.get(Conversation, source.conversation_id, populate_existing=True) if source and source.conversation_id else None
+        if (
+            not source
+            or source.superseded_by_run_id
+            or (conv and conv.deleted_at)
+            or not run_permissions(db, source)["write"]
+            or run_project(db, source) != project_id
+        ):
+            raise DreamError("来源对话或范围已改变")
+
+
+def _check_claim(db: Session, run_id: str, token: str) -> MemoryDreamRun:
+    run = db.get(MemoryDreamRun, run_id, populate_existing=True)
+    if not run or run.claim_token != token or run.status != "running" or _aware(run.claimed_until) < utcnow():
+        raise DreamError("整理任务已由其他进程接手")
+    return run
 
 
 def recover_pending(now: datetime | None = None) -> list[str]:
@@ -634,14 +870,21 @@ def recover_pending(now: datetime | None = None) -> list[str]:
     with SessionLocal() as db:
         rows = list(
             db.scalars(
-                select(MemoryDreamRun).where(
+                select(MemoryDreamRun)
+                .where(
                     MemoryDreamRun.status.in_(("pending", "running")),
                     MemoryDreamRun.created_at < stale,
+                    or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
                 )
+                .order_by(MemoryDreamRun.created_at, MemoryDreamRun.id)
+                .limit(100)
             )
         )
         for row in rows:
+            if row.claimed_until and _aware(row.claimed_until) >= now:
+                continue
             row.status = "pending"
+            row.claimed_until = None
             db.add(row)
         db.commit()
         return [row.id for row in rows]
@@ -658,8 +901,9 @@ async def dream_forever() -> None:
         log.exception("memory dream recovery failed")
     while True:
         try:
+            recovered = await asyncio.to_thread(recover_pending)
             claimed = await asyncio.to_thread(claim_due)
-            for run_id in claimed:
+            for run_id in dict.fromkeys([*recovered, *claimed]):
                 await process_dream(run_id)
         except Exception:
             log.exception("memory dream dispatch failed")
@@ -674,7 +918,9 @@ def list_runs(db: Session, user_id: str, limit: int = 30) -> list[MemoryDreamRun
 
 
 def metrics(db: Session, user_id: str) -> dict:
-    rows = list(db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id)).all())
+    rows = list(
+        db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).order_by(MemoryDreamRun.created_at.desc()).limit(365))
+    )
     applied = [r for r in rows if r.status == "applied"]
     tokens = sum(
         int((r.token_usage or {}).get("prompt_tokens", 0)) + int((r.token_usage or {}).get("completion_tokens", 0)) for r in applied

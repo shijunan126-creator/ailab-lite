@@ -388,6 +388,9 @@ class AsyncPlatformClient(_PlatformApi):
     async def recall(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/recall", json=payload))).json()
 
+    async def get_memory_context(self, run_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/memory-context"))).json()
+
     async def save_skill(
         self, run_id: str, name: str, mode: str, filename: str, data: bytes, *, expected_file_id: str | None = None
     ) -> dict:

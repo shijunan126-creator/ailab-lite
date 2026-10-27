@@ -1,0 +1,128 @@
+sssssssss.....sssssssssss........s........................s......sss.ss. [  4%]
+ss.sssss.ss.ss.ss.s.s.s.s.s.s.s.s....................................... [  9%]
+........................................ss......s....................... [ 13%]
+........................................................................ [ 18%]
+........................................................................ [ 23%]
+........................................................................ [ 27%]
+........................................................................ [ 32%]
+........................................................................ [ 37%]
+........................................................................ [ 41%]
+........................................................................ [ 46%]
+........................................................................ [ 50%]
+.s...................................................................... [ 55%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+..........................ss............................................ [ 69%]
+........................................................................ [ 74%]
+........................................................................ [ 78%]
+........................................................................ [ 83%]
+........................................................................ [ 88%]
+........................................................................ [ 92%]
+........................................................................ [ 97%]
+.........................................                                [100%]
+=============================== warnings summary ===============================
+../../ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /private/tmp/ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_conversation_tree_migration.py::test_tree_backfill_and_roundtrip[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_conversation_tree_migration.py:47: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_conversation_tree_migration.py::test_tree_backfill_and_roundtrip[sqlite]
+tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup[sqlite]
+tests/test_migrations.py::test_migrations_and_models_do_not_drift[sqlite]
+tests/test_migrations.py::test_projects_upgrade_and_downgrade_preserve_referenced_rows
+tests/test_migrations.py::test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows[sqlite]
+tests/test_migrations.py::test_identity_roundtrip_preserves_existing_users_and_references[sqlite]
+tests/test_migrations.py::test_inbox_queue_upgrade_downgrade_upgrade[sqlite]
+tests/test_shares_migration.py::test_shares_up_down_up[sqlite]
+tests/test_templates_migration.py::test_template_migration_promotes_brand_and_roundtrips[sqlite]
+  /private/tmp/ailab-memory-review-venv/lib/python3.12/site-packages/alembic/ddl/impl.py:850: UserWarning: autogenerate skipping metadata-specified expression-based index 'uq_files_folder_name'; dialect 'sqlite' under SQLAlchemy 2.1.5 can't reflect these indexes so they can't be compared
+    util.warn(
+
+tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_integration_migrations.py:61: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_migrations_and_models_do_not_drift[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:78: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
+
+tests/test_migrations.py::test_projects_upgrade_and_downgrade_preserve_referenced_rows
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:277: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:315: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_identity_roundtrip_preserves_existing_users_and_references[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:378: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_inbox_queue_upgrade_downgrade_upgrade[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:591: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_shares_migration.py::test_shares_up_down_up[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_shares_migration.py:31: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_templates_migration.py::test_template_migration_promotes_brand_and_roundtrips[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_templates_migration.py:35: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+SKIPPED [1] tests/contracts/test_background_exec.py:21: requires a real Linux PID namespace; host helper coverage is in test_background_exec
+SKIPPED [1] tests/contracts/test_background_exec.py:15: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_background_exec.py:15: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_background_exec.py:74: requires real Linux process isolation
+SKIPPED [1] tests/contracts/test_background_exec.py:68: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_background_exec.py:68: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_background_exec.py:166: requires real sandbox commands and snapshot tar
+SKIPPED [1] tests/contracts/test_background_exec.py:156: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_background_exec.py:156: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_clamd.py:11: AILAB_TEST_CLAMD unset
+SKIPPED [1] tests/contracts/test_controlled_fetch.py:27: set AILAB_TEST_PUBLIC_FETCH=1 with disposable real backends
+SKIPPED [1] tests/contracts/test_controlled_fetch.py:25: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_controlled_fetch.py:25: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_crawler.py:24: AILAB_TEST_CRAWLER_URL / AILAB_TEST_CRAWLER_TOKEN not set
+SKIPPED [1] tests/contracts/test_crawler.py:34: AILAB_TEST_CRAWLER_URL / AILAB_TEST_CRAWLER_TOKEN not set
+SKIPPED [1] tests/contracts/test_crawler.py:38: AILAB_TEST_CRAWLER_URL / AILAB_TEST_CRAWLER_TOKEN not set
+SKIPPED [4] tests/contracts/test_crawler.py:46: AILAB_TEST_CRAWLER_URL / AILAB_TEST_CRAWLER_TOKEN not set
+SKIPPED [1] tests/contracts/test_keycloak_identity.py:58: AILAB_TEST_OIDC_ISSUER not set (disposable Keycloak realm)
+SKIPPED [1] tests/contracts/test_queue.py:58: Redis scan cursor contract
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:47: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:47: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:90: AILAB_TEST_DOCKER=1 required
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:110: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:110: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:175: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:175: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:196: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_lifecycle.py:196: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_network.py:18: set TCP_TARGETS and UDP_TARGET to known live disposable endpoints
+SKIPPED [1] tests/contracts/test_sandbox_network.py:14: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_network.py:14: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_transfer.py:17: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_transfer.py:17: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_sandbox_transfer.py:44: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_sandbox_transfer.py:44: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_skill_sandbox.py:14: set AILAB_TEST_DOCKER=1 with a disposable Docker runtime and sandbox image
+SKIPPED [1] tests/contracts/test_skill_sandbox.py:14: set AILAB_TEST_OSB_URL for a disposable OpenSandbox server
+SKIPPED [1] tests/contracts/test_storage.py:45: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:57: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:68: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:89: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:119: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:131: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:141: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/contracts/test_storage.py:163: AILAB_TEST_S3_URL / ACCESS_KEY / SECRET_KEY not set
+SKIPPED [1] tests/faults/test_real_broker_recovery.py:26: AILAB_TEST_DOCKER=1 required
+SKIPPED [1] tests/faults/test_real_broker_recovery.py:31: AILAB_TEST_OSB_URL required
+SKIPPED [1] tests/faults/test_transactional_jobs.py:204: PG dispatcher FOR UPDATE prevents the concurrent claim until commit
+SKIPPED [1] tests/test_memory_hardening.py:374: SQLite writer contract; PostgreSQL concurrency is tested separately
+SKIPPED [2] tests/test_osb_transfer.py:49: could not import 'opensandbox': No module named 'opensandbox'
+1499 passed, 54 skipped, 19 warnings in 242.49s (0:04:02)

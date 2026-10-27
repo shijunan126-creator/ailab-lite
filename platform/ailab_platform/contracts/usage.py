@@ -29,16 +29,23 @@ class ReserveUsageIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     call_id: str = Field(min_length=1, max_length=80)
     run_id: str | None = Field(default=None, min_length=1, max_length=40)
-    subject: Literal["run", "file_job"] = "run"
+    subject: Literal["run", "file_job", "memory_job"] = "run"
+    job_id: str | None = Field(default=None, min_length=1, max_length=40)
     file_id: str | None = Field(default=None, min_length=1, max_length=40)
     attempt_id: str = Field(min_length=1, max_length=80)
     alias: str = Field(min_length=1, max_length=120)
-    mode: Literal["chat", "work", "ocr", "summary"]
+    mode: Literal["chat", "work", "ocr", "summary", "memory"]
     max_output_tokens: int = Field(gt=0, le=10_000_000)
     estimated_input_tokens: int = Field(ge=0, le=10_000_000)
 
     @model_validator(mode="after")
     def valid_subject(self):
+        if self.subject == "memory_job":
+            if not self.job_id or self.run_id or self.file_id or self.mode != "memory":
+                raise ValueError("memory_job requires job_id and memory mode")
+            return self
+        if self.job_id:
+            raise ValueError("job_id only applies to memory jobs")
         if self.subject == "run":
             if not self.run_id or self.file_id or self.mode in {"ocr", "summary"}:
                 raise ValueError("run subject requires run_id and chat/work mode")

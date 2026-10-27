@@ -312,6 +312,7 @@ class Settings(BaseSettings):
     # Dense channel of the history recall. Any OpenAI-compatible /embeddings endpoint (TEI, vLLM, Ollama, a hosted API);
     # empty URL = lexical search only. Vectors of another model are ignored until the indexer has redone them.
     memory_embedding_base_url: str = ""  # the URL before /embeddings, e.g. http://platform-embed/v1
+    memory_embedding_version: str = "1"
     memory_embedding_model: str = ""  # the name the endpoint serves; required for the dense channel
     memory_embedding_api_key: str = ""
     memory_embedding_query_prefix: str = ""  # an instruction some models want before a query (bge-*-zh: see deploy.sh)

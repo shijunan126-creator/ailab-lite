@@ -14,7 +14,7 @@ import { confirmDialog } from "../lib/dialog";
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
 
 const MENU_W = 176;
-const MENU_H = 244;
+const MENU_H = 324;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
 export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
@@ -27,6 +27,9 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
   const [moving, setMoving] = useState(false);
   const [withFiles, setWithFiles] = useState(true);
   const [sharing, setSharing] = useState(false);
+  const [policy, setPolicy] = useState(conv.memory_policy || {});
+  const [policyBusy, setPolicyBusy] = useState(false);
+  useEffect(() => setPolicy(conv.memory_policy || {}), [conv.memory_policy]);
   const [error, setError] = useState("");
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -54,7 +57,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
     setError("");
     const r = button.current!.getBoundingClientRect();
     const below = r.bottom + 4 + MENU_H < window.innerHeight;
-    setAt({ top: below ? r.bottom + 4 : r.top - 4 - MENU_H, left: Math.max(8, r.right - MENU_W) });
+    setAt({ top: Math.max(8, below ? r.bottom + 4 : r.top - 4 - MENU_H), left: Math.max(8, r.right - MENU_W) });
   }
 
   async function move(projectId: string | null) {
@@ -106,6 +109,18 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
     } catch {
       setError("提取技能失败，请稍后重试");
     }
+  }
+
+  async function toggleMemory(key: "read" | "write") {
+    if (policyBusy) return;
+    setPolicyBusy(true);
+    try {
+      const next = { read: policy.read !== false, write: policy.write !== false, [key]: policy[key] === false };
+      const saved = await api<Conversation>(`/v1/conversations/${conv.id}`, { method: "PATCH", body: JSON.stringify({ memory_policy: next }) });
+      setPolicy(saved.memory_policy || {});
+      conversationsChanged();
+    } catch (e) { setError(errorMessage(e)); }
+    finally { setPolicyBusy(false); }
   }
 
   async function remove() {
@@ -168,6 +183,12 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
             }}
           >
             <IconShare size={15} /> 分享
+          </button>
+          <button className="menu-item" role="menuitemcheckbox" aria-checked={policy.read !== false} disabled={policyBusy} onClick={() => toggleMemory("read")}>
+            <IconSparkles size={15} /> 使用已有记忆 {policy.read !== false ? "✓" : ""}
+          </button>
+          <button className="menu-item" role="menuitemcheckbox" aria-checked={policy.write !== false} disabled={policyBusy} onClick={() => toggleMemory("write")}>
+            <IconSparkles size={15} /> 允许记住本对话 {policy.write !== false ? "✓" : ""}
           </button>
           <button className="menu-item danger" role="menuitem" onClick={remove}>
             <IconTrash size={15} /> 删除

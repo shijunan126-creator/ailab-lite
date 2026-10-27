@@ -269,7 +269,7 @@ def test_suppressed_memory_stays_visible_to_the_user_but_not_the_model() -> None
                 "expected_revision": 0,
                 "enabled": True,
                 "auto_save": True,
-                "entries": [{"content": "喜欢简洁中文"}, {"content": "用 Neovim"}],
+                "entries": [{"kind": "user", "content": "喜欢简洁中文"}, {"content": "用 Neovim"}],
             },
         ).json()
         entries = [{"id": e["id"], "kind": e["kind"], "content": e["content"]} for e in saved["entries"]]

@@ -84,6 +84,7 @@ export type Skill = {
 };
 
 export type Conversation = {
+  memory_policy?: { read?: boolean; write?: boolean };
   id: string;
   title: string;
   model: string;

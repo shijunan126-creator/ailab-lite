@@ -1,0 +1,24 @@
+{
+  "entries": [
+    {"id":"mem_style","kind":"user","content":"用户偏好中文回答"},
+    {"id":"mem_old","kind":"memory","content":"用户使用 npm 管理依赖","valid_from":"2026-01-01T00:00:00+00:00","invalid_at":"2026-06-01T00:00:00+00:00","superseded_by":"mem_new"},
+    {"id":"mem_new","kind":"memory","content":"用户使用 pnpm 管理依赖","valid_from":"2026-06-01T00:00:00+00:00"},
+    {"id":"mem_project","kind":"memory","content":"BLUEFIN 项目部署 Kubernetes","project_id":"prj_a"},
+    {"id":"mem_other","kind":"memory","content":"BLUEFIN 项目部署 Docker","project_id":"prj_b"},
+    {"id":"mem_paused","kind":"memory","content":"用户住在上海","suppressed":true},
+    {"id":"mem_review","kind":"memory","content":"用户患有慢性病","status":"review"},
+    {"id":"mem_code","kind":"memory","content":"ERR_4521 通过扩容 PVC 解决"}
+  ],
+  "cases": [
+    {"name":"current state","query":"依赖管理 pnpm npm","required":["mem_new"],"forbidden":["mem_old"]},
+    {"name":"historical state","query":"依赖管理 npm","as_of":"2026-03-01T00:00:00+00:00","required":["mem_old"],"forbidden":["mem_new"]},
+    {"name":"project isolation","query":"BLUEFIN Kubernetes","project_id":"prj_a","required":["mem_project"],"forbidden":["mem_other"]},
+    {"name":"global isolation","query":"BLUEFIN Kubernetes","forbidden":["mem_project","mem_other"]},
+    {"name":"exact identifier","query":"ERR_4521","required":["mem_code"]},
+    {"name":"suppression","query":"住在上海","forbidden":["mem_paused"]},
+    {"name":"sensitive inference","query":"慢性病","forbidden":["mem_review"]},
+    {"name":"irrelevance","query":"量子力学","forbidden":["mem_old","mem_new","mem_project","mem_other","mem_code"]},
+    {"name":"strict project","query":"中文回答 BLUEFIN","project_id":"prj_a","project_only":true,"required":["mem_project"],"forbidden":["mem_style","mem_other"]},
+    {"name":"disabled","query":"依赖 pnpm","enabled":false,"forbidden":["mem_new","mem_style"]}
+  ]
+}

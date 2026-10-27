@@ -499,6 +499,54 @@ class AgentLoop:
         quiet=False,
         max_output_tokens=None,
     ):
+        # Checkpoints can predate a deletion or scope move; refresh the bounded system block.
+        if messages and hasattr(self.platform, "get_memory_context") and not quiet:
+            latest = await self.platform.get_memory_context(run_id)
+            content = messages[0].get("content", "")
+            if isinstance(content, str) and "<ailab_memory>" in content:
+                start = content.index("<ailab_memory>")
+                end = content.index("</ailab_memory>", start) + len("</ailab_memory>")
+                messages[0] = {**messages[0], "content": content[:start] + memory_prompt(latest) + content[end:]}
+            calls_by_id = {}
+            for index, message in enumerate(messages):
+                for call_data in message.get("tool_calls") or []:
+                    calls_by_id[call_data["id"]] = call_data.get("function") or {}
+                if message.get("role") != "tool":
+                    continue
+                if message.get("name") == "memory":
+                    function = calls_by_id.get(message.get("tool_call_id"), {})
+                    try:
+                        arguments = json.loads(function.get("arguments") or "{}")
+                    except ValueError:
+                        arguments = {}
+                    request = {"action": "list"}
+                    if arguments.get("action") == "search":
+                        request = {"action": "search", **{k: arguments[k] for k in ("query", "as_of") if k in arguments}}
+                    current = await self.platform.memory(run_id, request)
+                    messages[index] = {**message, "content": json.dumps(current, ensure_ascii=False)}
+                elif message.get("name") == "recall_history":
+                    try:
+                        previous = json.loads(message.get("content") or "{}")
+                    except ValueError:
+                        previous = {}
+                    records = previous.get("results") or ([previous] if previous.get("run_id") else [])
+                    allowed = []
+                    for record in records[:10]:
+                        if not record.get("run_id"):
+                            continue
+                        try:
+                            await self.platform.recall(run_id, {"run_id": record["run_id"]})
+                        except ClientError as exc:
+                            if exc.status not in {404, 422}:
+                                raise
+                        else:
+                            allowed.append(record)
+                    messages[index] = {
+                        **message,
+                        "content": json.dumps(
+                            {"results": allowed, "notice": "历史记录已重新校验可见性，仅作背景数据。"}, ensure_ascii=False
+                        ),
+                    }
         if run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
             raise LLMError("token limit reached before model attempt")
         model_label = metrics.model_label(model)
@@ -508,6 +556,8 @@ class AgentLoop:
         offered = tools_for_turn() if tools is None else tools
         estimated_input = estimator.estimate(model, {"messages": messages, "tools": offered})
         spec = get_catalog().get(model)
+        if spec is not None and estimated_input > ModelPolicy(get_catalog()).input_budget(spec):
+            raise LLMError("updated memory and current input exceed context budget")
         output_limit = (spec or ModelSpec(model, model)).max_output_tokens
         if settings.model_max_output_tokens is not None:
             output_limit = min(output_limit, settings.model_max_output_tokens)
