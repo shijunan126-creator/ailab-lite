@@ -122,3 +122,9 @@ Tests build their own isolated settings (`tests/conftest.py`). Never point a tes
 - Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`).
 - Maintain the continuity records in section 0 with every meaningful change. Add reusable traps to `HANDOFF.MD`, update `docs/architecture/status-matrix.md` when a capability changes state, and record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`. A handoff is incomplete if only the chat response contains its outcome or next step.
 - Before saying "done": lint, full Python suite, Portal build, and for UI changes a real browser check (see HANDOFF for the Playwright route).
+
+## 用户测试环境约定（2026-10-29）
+
+- 仅在用户当次明确要求时部署，不把之前的部署授权延续到后续代码修复。
+- 未明确要求，不备份，不在部署阶段另跑测试、浏览器或真模型验收，不重复 PR 已完成的检查。默认只更新必要组件、启动并记录命令结果；CI 按仓库既定流程执行。
+- 本机是可重建的测试环境，允许失败；不得擅自套用生产备份、回滚和全面验收流程。部署优先复用当前镜像和未变化的依赖，只对变化部分增量构建。

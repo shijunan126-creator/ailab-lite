@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-29 测试部署与历史备份
+
+- 测试环境仅明确要求才部署、备份或执行部署后验收；具体规则以 AGENTS.md 的用户测试环境约定为准。不要重复 PR 已做的检查或默认全量重建 Chromium/OCR。
+- main@5eef026 已重新部署，后续功能验收按用户要求取消；历史备份及内盘副本已删除，下方旧恢复路径不再有效。运行数据和配置保留，个人细节仍只在 AILab-local。见[部署与清理记录](docs/progress/updates/2026-10-29-main-redeploy-cleanup.md)。
+
 ## 2026-10-29 fork必须迁移程序状态
 
 - fork不能只复制正文和input_file_ids。必须迁移已确认插话及其AppliedMessagePosition/MessageFileRef、agent_read依赖、顺序/来源快照及invalidated_epoch；合并runtime_meta不能抹掉source_invalidated。历史model-context也须包含插话文件句柄。
