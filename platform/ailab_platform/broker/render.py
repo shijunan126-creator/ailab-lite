@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..config import settings
-from ..contracts.file_preview import PAGES, SANDBOX_SHEETS
+from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS
 from ..contracts.sandbox import SandboxSpec
 from ..domain.admission import LeasePrincipal
 from .service import LeaseError, LeaseManager
@@ -43,12 +43,14 @@ class LibraryRenderer:
             raise LeaseError("preview job is not pending for this file")
         suffix = Path(file["filename"]).suffix.lower()
         pdf_mime = file.get("content_type", "").split(";")[0] == "application/pdf"
-        if suffix not in PAGES | SANDBOX_SHEETS and not pdf_mime:
+        if suffix not in PAGES | SANDBOX_SHEETS | LOCAL_SHEETS and not pdf_mime:
             raise LeaseError("unsupported sandbox preview type")
         source = "/workspace/inputs/input" + suffix
         template = meta.get("template_kind") == "pptx"
         thumbnail_option = " --template-thumbnail" if template else ""
         selected = meta.get("ocr_render_pages") if meta.get("ocr_render_job_id") == job_id else None
+        if meta.get("ocr_render_job_id") == job_id and suffix in SANDBOX_SHEETS | LOCAL_SHEETS:
+            thumbnail_option += " --visual-pages"
         if selected:
             if (
                 not isinstance(selected, list)

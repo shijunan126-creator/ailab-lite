@@ -174,14 +174,16 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
             except IsolationError as exc:
                 platform.patch_file(file_id, meta={"scan": scan, "brand_error": str(exc), "processing": "rejected"}, status="rejected")
                 return {"file_id": file_id, "rejected": str(exc)}
+        cached = {}
         if hasattr(platform, "reuse_document"):
             from .office import copy_cache
 
             candidate = platform.reuse_document(file_id, scan)
             if candidate.get("reused"):
                 cached = copy_cache(file_id, candidate["source"], storage, platform)
-                platform.patch_file(file_id, meta={**cached, "scan": scan}, status="ready")
-                return {"file_id": file_id, "cache": "private_copy"}
+                if not candidate["source"].get("needs_native"):
+                    platform.patch_file(file_id, meta={**cached, "scan": scan}, status="ready")
+                    return {"file_id": file_id, "cache": "private_copy"}
         thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
         if source.stat().st_size > settings.max_parse_bytes:
             info = {"kind": "too_large", "chars": 0, "bytes": source.stat().st_size, "truncated": True}
@@ -227,13 +229,16 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         storage.put_bytes(key, json.dumps(derived, ensure_ascii=False).encode(), "application/json")
         # Upload does not imply OCR intent. Dedicated extraction is requested separately.
         ocr = (
-            {"ocr": "unavailable", "ocr_reason": "extraction_not_requested"}
+            {"ocr": cached["ocr"], "ocr_text_key": cached["ocr_text_key"]}
+            if cached.get("ocr") == "done" and cached.get("ocr_text_key")
+            else {"ocr": "unavailable", "ocr_reason": "extraction_not_requested"}
             if (info.get("kind") == "pdf" or (meta.get("content_type") or "").startswith("image/"))
             else {}
         )
         platform.patch_file(
             file_id,
             meta={
+                **cached,
                 "processing": "done",
                 **ocr,
                 "scan": scan,

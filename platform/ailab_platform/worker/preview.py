@@ -43,7 +43,8 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             storage = get_storage()
             assets = {}
             try:
-                if Path(file["filename"]).suffix.lower() in LOCAL_SHEETS or manifest.get("kind") in {"image", "text"}:
+                visual_job = meta.get("ocr_render_job_id") == job_id
+                if (Path(file["filename"]).suffix.lower() in LOCAL_SHEETS and not visual_job) or manifest.get("kind") in {"image", "text"}:
                     with tempfile.TemporaryDirectory(prefix="ailab-preview-") as tmp:
                         source = Path(tmp) / ("input" + Path(file["filename"]).suffix.lower())
                         download(platform, file_id, source, settings.max_upload_bytes, job="preview")

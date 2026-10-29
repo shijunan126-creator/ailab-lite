@@ -135,3 +135,8 @@ test('budget events, run-scope compaction and background commands read plainly',
  assert.equal(run[0].steps[0].output,'building…');
  assert.equal(run[0].steps[0].status,'note');
 });
+
+test('platform file preparation is automatic and distinct from a manual pause',()=>{
+ assert.equal(workHeading({status:'interrupted',result:{file_wait:{action:'extract-text'}}}),'正在准备附件…');
+ assert.equal(workHeading({status:'interrupted',result:{}}),'已暂停');
+});

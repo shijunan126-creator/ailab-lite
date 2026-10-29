@@ -20,9 +20,9 @@ export function fileStatusText(file: { status: string; meta?: Record<string, any
   return null;
 }
 
-/** Nothing more will happen to the run by itself. An interrupted run rests until someone continues it. */
-export function isTerminal(status: string): boolean {
-  return status === "succeeded" || status === "failed" || status === "canceled" || status === "interrupted";
+/** A file dependency resumes automatically; other interruptions need user action. */
+export function isTerminal(status: string, fileWait = false): boolean {
+  return status === "succeeded" || status === "failed" || status === "canceled" || status === "interrupted" && !fileWait;
 }
 
 export function formatDate(value: string): string {

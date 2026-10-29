@@ -1,5 +1,7 @@
 # 开发路线图
 
+2026-10-29 用户体验反馈转为办公内容/OCR/等待集中修复，授权仅本地修复与验证；本轮范围、结果与下一步见[当前交接](current.md)及[记录](updates/2026-10-29-document-reading-reliability.md)，不自动部署或开启视觉重构。
+
 2026-10-29 已授权并完成本机体验部署：固定dirty快照、保留数据0033→0036、实际四格式/OCR/DeepSeek/浏览器通过；不等同远端合并或目标NPU/数百人验收。[当前部署边界](updates/2026-10-29-file-context-local-deployment.md)。
 
 

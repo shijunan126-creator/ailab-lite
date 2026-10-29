@@ -281,15 +281,14 @@ def read_document_blocks(db, file, body):
 
     ocr_pages = ocr_records(db, file, [block.unit_number - 1 for block in blocks])
     text, coverage, next_cursor = "", [], None
+    from .document_content import unit_text, visual_info
+
     for block in blocks[:100]:
         key = block.text_key
         method = "native"
         content = get_storage().get_bytes(key).decode("utf-8")
         ocr_available = block.anchor.startswith("page:") and str(block.unit_number - 1) in ocr_pages
-        if ocr_available and not content.strip():
-            key = ocr_pages[str(block.unit_number - 1)]["text_key"]
-            method = "ocr"
-            content = get_storage().get_bytes(key).decode("utf-8")
+        content, method = unit_text(db, file, {"anchor": block.anchor, "unit_number": block.unit_number}, content.encode(), ocr_pages)
         digest = hashlib.sha256(content.encode()).hexdigest()
         if body.query and body.query.casefold() not in content.casefold():
             continue
@@ -332,6 +331,8 @@ def read_document_blocks(db, file, body):
         "next_offset": next_cursor["offset"] if next_cursor else None,
         "pages": [],
         "scope": "selected" if body.pages or body.anchor or body.query else "document",
+        "visual": visual_info(file),
+        "visual_note": "原生正文/OCR不包含图片、图表、连线和布局语义；需要时用view_attachment，非视觉模型须明确未理解图形。",
     }
 
 
@@ -405,25 +406,48 @@ def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
                 {"id": file.id, "file_id": file.id, "filename": file.filename, "content_type": file.content_type, "version": file.version}
             ]
         }
-    if not body.pages:
-        raise HTTPException(422, "文档请显式选择需要查看的页面")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        return document_images(db, file, body.pages)
+
+
+def document_images(db, file, selected, *, prepare=True):
     from ..models import RenderedPage
+    from .document_content import visual_pages
+    from .routes_ocr import request_page_render
 
-    pages = db.scalars(
-        select(RenderedPage).where(
-            RenderedPage.file_id == file.id, RenderedPage.page.in_(body.pages), RenderedPage.version == "poppler-1280-v1"
-        )
-    ).all()
+    meta = file.meta or {}
+    if selected is None:
+        selected = visual_pages(file)
+        if selected == []:
+            return {"files": []}
+    preview = meta.get("ocr_preview") or {}
+    if preview.get("status") == "failed":
+        return {"error": "文档视觉页面生成失败，请稍后重试或换用可读取文件", "reason": preview.get("reason")}
+    all_pages = selected is None
+    if all_pages and preview.get("status") == "ready" and preview.get("page_count"):
+        selected = list(range(1, min(preview["page_count"], 20) + 1))
+    pages = (
+        db.scalars(
+            select(RenderedPage)
+            .where(RenderedPage.file_id == file.id, RenderedPage.version == "poppler-1280-v1")
+            .order_by(RenderedPage.page)
+            .limit(21)
+        ).all()
+        if selected is None
+        else db.scalars(
+            select(RenderedPage).where(
+                RenderedPage.file_id == file.id, RenderedPage.page.in_(selected[:20]), RenderedPage.version == "poppler-1280-v1"
+            )
+        ).all()
+    )
     by_page = {p.page: p for p in pages}
-    missing = [p for p in body.pages if p not in by_page]
-    if missing:
-        from .routes_ocr import request_page_render
-
-        with user_critical_section(db, file.user_id):
-            db.refresh(file)
-            request_page_render(db, file, missing)
+    missing = [p for p in (selected or [])[:20] if p not in by_page]
+    if selected is None or missing:
+        if prepare:
+            request_page_render(db, file, None if selected is None else missing)
             db.commit()
-        return {"pending": True, "pages": missing, "retry_after": 2}
+        return {"pending": True, "pages": missing, "retry_after": 1}
     return {
         "files": [
             {
@@ -435,8 +459,11 @@ def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
                 "page": p,
                 "digest": by_page[p].digest,
             }
-            for p in body.pages
-        ]
+            for p in selected[:20]
+        ],
+        "truncated": len(selected) > 20 or (all_pages and preview.get("page_count", 0) > 20),
+        "page_count": preview.get("page_count"),
+        "location_kind": "rendered_page",
     }
 
 
@@ -449,4 +476,6 @@ def extract_for_run(run_id: str, body: Read, db: Session = Depends(get_db)):
         db.refresh(file)
         result = request_extraction(db, file, body.pages)
         db.commit()
+    if result.get("ocr") == "done":
+        result["content"] = read_library(run_id, body, db)
     return result

@@ -97,7 +97,7 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
   const scroller = useRef<HTMLDivElement | null>(null);
   const stick = useRef(false);
   const sentinel = useRef<HTMLDivElement | null>(null);
-  const running = run.status === "running" || run.status === "queued";
+  const running = run.status === "running" || run.status === "queued" || !!run.result?.file_wait;
 
   // follow the newest step while the run works, unless the user scrolled up to read
   useLayoutEffect(() => {

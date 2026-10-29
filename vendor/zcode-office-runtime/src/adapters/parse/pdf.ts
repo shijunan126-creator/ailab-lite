@@ -40,7 +40,7 @@ export async function parsePdf(
   label: string,
   assets: PdfAssets,
 ): Promise<ParsedDocument> {
-  const { getDocument } = await loadPdfJs();
+  const { getDocument, OPS } = await loadPdfJs();
   let doc;
   try {
     doc = await getDocument({
@@ -63,6 +63,7 @@ export async function parsePdf(
   }
   try {
     const pages: string[] = [];
+    const visuals: boolean[] = [];
     for (let n = 1; n <= Math.min(doc.numPages, MAX_PAGES_INDEXED); n++) {
       const page = await doc.getPage(n);
       const content = await page.getTextContent();
@@ -72,6 +73,8 @@ export async function parsePdf(
         text += item.str + (item.hasEOL ? "\n" : "");
       }
       pages.push(normalizeCjkCompat(text.replace(/[ \t]+\n/g, "\n").trim()));
+      const operators = await page.getOperatorList();
+      visuals.push(operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.constructPath, OPS.shadingFill].includes(op)));
       page.cleanup();
     }
 
@@ -117,6 +120,7 @@ export async function parsePdf(
 
     return {
       kind: "pdf",
+      contentInfo(anchor) { const n = Number(anchor.split(":")[1]) - 1; return {has_text: !!pages[n]?.trim(), visual: !!visuals[n]}; },
       title: info?.Title?.trim() || null,
       units: numPages,
       outline,

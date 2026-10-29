@@ -35,6 +35,7 @@ from . import discovery, net_tools
 from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
+from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
     WORKSPACE_EXPIRED_NOTE,
@@ -980,12 +981,16 @@ class AgentLoop:
     async def _user_content(self, run_id, run, model):
         files = run.get("input_files") or []
         images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
-        if not images:
+        document_pages = [page for file in files for page in file.get("visual_pages", [])]
+        if not images and not document_pages:
             return user_prompt(run["prompt"], files)
         parts = [{"type": "text", "text": user_prompt(run["prompt"], [file for file in files if file not in images])}]
         spec = get_catalog().get(model)
-        for file in images:
-            parts.extend(await self._image_content(run_id, run, file, spec))
+        for file in [*images, *document_pages]:
+            image_parts = await self._image_content(run_id, run, file, spec)
+            if file in document_pages and not any(part.get("type") == "image_url" for part in image_parts):
+                raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
+            parts.extend(image_parts)
         return parts
 
     async def _image_content(self, run_id, run, file, spec):
@@ -1035,20 +1040,38 @@ class AgentLoop:
                 turn.personal = {s["name"]: s for s in latest.get("personal_skills") or []}
             if wanted and not wanted.startswith("platform.") and wanted in turn.disabled_skills:
                 raise ToolError(f"技能 {wanted} 已被用户关闭，不能使用；用沙箱里的 Python 库自己完成")
+            if call.name in {"view_attachment", "extract_text"}:
+                from .stuck import fingerprint
+
+                state = self._states[run_id]
+                key = fingerprint({"name": call.name, "arguments": call.arguments})
+                waits = state.setdefault("file_wait_deadlines", {})
+                deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
+                if time.time() >= deadline:
+                    raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
             if call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
                 if not spec or not spec.supports({"vision"}):
-                    raise ToolError("此模型不支持直接看图，请使用平台OCR文字")
-                binding = await self.platform.library(run_id, "image-reference", call.arguments)
+                    raise ToolError("当前模型不支持图像理解；OCR只能读字，不能理解架构图、照片或布局，请告知用户改用视觉模型")
+                binding = await self._interruptible(run_id, self.platform.library(run_id, "image-reference", call.arguments))
                 if binding.get("pending"):
-                    result = {"ok": True, **binding}
+                    raise FileDependencyPending(call.arguments["file_id"], "image-reference", call.arguments.get("pages"), deadline)
+                if binding.get("error"):
+                    raise ToolError(binding["error"])
                 else:
                     for file in binding["files"]:
                         parts = await self._image_content(run_id, turn.run, file, spec)
                         if not any(p.get("type") == "image_url" for p in parts):
                             raise ToolError("图片当前不可读取")
                         self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
-                    result = {"ok": True, "files": binding["files"], "input": "image"}
+                    result = {**binding, "ok": True, "input": "image"}
+            elif call.name == "extract_text":
+                result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))
+                if result.get("ocr") in {"pending", "running"}:
+                    raise FileDependencyPending(call.arguments["file_id"], "extract-text", call.arguments.get("pages"), deadline)
+                result = {"ok": result.get("ocr") == "done", **result}
+                if not result["ok"]:
+                    result["error"] = "文字提取失败：" + str(result.get("reason") or result.get("ocr")) + "；不得反复提取或sleep等待"
             elif call.name == "search_capabilities":
                 state = self._states[run_id]
                 mode = (turn.run.get("options") or {}).get("mode", "work")
@@ -1094,12 +1117,12 @@ class AgentLoop:
                 )
                 with span("agent.tool", tool=tool):
                     result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
-        except (RunCanceled, LeaseInterrupted, BudgetPause):
+        except (RunCanceled, LeaseInterrupted, BudgetPause, FileDependencyPending):
             raise
         except ClientError as exc:
             if exc.status == 410:
                 raise LeaseInterrupted() from exc
-            if exc.status == 409:
+            if exc.status == 409 and call.name not in {"extract_text", "read_library_file", "view_attachment"}:
                 raise
             result = {"ok": False, "error": str(exc)}
         except ToolError as exc:
@@ -1129,6 +1152,11 @@ class AgentLoop:
                 ),
                 "stderr": (result.get("stderr") or "")[:2000],
                 "error": result.get("error"),
+                **(
+                    {k: result[k] for k in ("ocr", "completed_pages", "text_only", "reason") if k in result}
+                    if call.name == "extract_text"
+                    else {}
+                ),
                 **({"sources": web_sources(result)} if call.name in {"web_search", "read_url"} else {}),
                 **({"images": [i["path"] for i in result.get("images", [])]} if call.name == "search_images" else {}),
             },
@@ -1506,6 +1534,8 @@ class AgentLoop:
             if checkpoint and not state.get("capability_catalog_revision"):
                 discovery.activate(state, [p["name"] for p in state.get("pending", [])], catalog)
             state.setdefault("active_tools", [])
+            if deferred and mode == "work" and run.get("input_files"):
+                discovery.activate(state, ["read_library_file", "extract_text", "view_attachment"], catalog)
             state.setdefault("internal_skill_versions", {})
             for internal_name, version in state["internal_skill_versions"].items():
                 internal_skills.load(internal_name, version)
@@ -1736,6 +1766,16 @@ class AgentLoop:
                 result={"sources": state["sources"], "artifacts": turn.artifacts, "plan": state["plan"]},
             )
             outcome = "failed"
+        except FileDependencyPending as exc:
+            await self._stop_background(run_id, turn)
+            await self._workspace_checkpoint(run_id, turn, force=True)
+            await self._checkpoint(run_id, turn)
+            await self._release_turn(turn)
+            await self._event(run_id, "agent.file_wait", {"file_id": exc.dependency["file_id"], "action": exc.dependency["action"]})
+            await self.platform.pause_run(
+                run_id, {"status": RunStatus.INTERRUPTED, "error": "正在准备附件", "file_dependency": exc.dependency}
+            )
+            outcome = "interrupted"
         except BudgetPause as exc:
             await self._budget_pause(run_id, turn, exc.reason, pause=getattr(exc, "pause", None))
             outcome = "interrupted"

@@ -1,6 +1,8 @@
 import ExcelJS from "exceljs";
+import JSZip from "jszip";
 import { OfficeError, type OutlineItem } from "#office/contract.ts";
 import {
+  parseLocator,
   columnName,
   formatCell,
   formatLocator,
@@ -109,11 +111,24 @@ function renderRange(sheet: ExcelJS.Worksheet, bounds: Bounds, intro: string): s
 }
 
 export async function parseXlsx(bytes: Uint8Array, label: string): Promise<ParsedDocument> {
-  await openPackage(bytes, label); // zip-bomb guard before ExcelJS inflates everything
+  const pkg = await openPackage(bytes, label); // zip-bomb guard before ExcelJS inflates everything
+  const packageVisuals = pkg.paths().some(p => /^xl\/(drawings|charts|media)\//.test(p));
+  // Read cells independently of drawing interoperability. For example, openpyxl
+  // emits an unprefixed wsDr that ExcelJS 4.4 cannot reconcile. Originals remain
+  // unchanged and the system visual renderer consumes their full package.
+  let textBytes = bytes;
+  if (packageVisuals) {
+    const textPackage = await JSZip.loadAsync(bytes);
+    for (const path of pkg.paths()) if (/^xl\/(drawings|charts|media)\//.test(path)) textPackage.remove(path);
+    textBytes = await textPackage.generateAsync({type:"uint8array", compression:"DEFLATE"});
+  }
   const workbook = new ExcelJS.Workbook();
   try {
     await workbook.xlsx.load(
-      bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+      textBytes.buffer.slice(textBytes.byteOffset, textBytes.byteOffset + textBytes.byteLength) as ArrayBuffer,
+      // Drawing relationships from other producers are not consistently supported by
+      // ExcelJS. Preserve them as visual coverage, never feed them to its text reader.
+      {ignoreNodes: ["drawing"]},
     );
   } catch (error) {
     throw new OfficeError(
@@ -122,6 +137,7 @@ export async function parseXlsx(bytes: Uint8Array, label: string): Promise<Parse
     );
   }
   const sheets = workbook.worksheets;
+  const parseSheetAnchor = (anchor: string) => { const loc = parseLocator("xlsx", anchor); if (loc.kind !== "xlsx") throw new Error("invalid sheet"); return loc.sheet; };
   const merges = (sheet: ExcelJS.Worksheet) => (sheet.model as { merges?: string[] }).merges ?? [];
 
   const sheetLabel = (sheet: ExcelJS.Worksheet) => {
@@ -193,6 +209,11 @@ export async function parseXlsx(bytes: Uint8Array, label: string): Promise<Parse
 
   return {
     kind: "xlsx",
+    contentInfo(anchor) {
+      const locator = parseSheetAnchor(anchor);
+      const sheet = findSheet(locator);
+      return {has_text: !!usedBounds(sheet), visual: sheet.getImages().length > 0 || packageVisuals};
+    },
     title: workbook.title || null,
     units: sheets.length,
     outline,

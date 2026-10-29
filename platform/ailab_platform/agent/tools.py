@@ -302,14 +302,14 @@ def _library_tool(name, description, properties, required):
 
 VIEW_ATTACHMENT = _library_tool(
     "view_attachment",
-    "查看原图或选定文档页，按预算分批；pending表示渲染未完成。",
+    "视觉模型查看图片、PDF、Word、PPT或Excel渲染页；图表/架构图/照片用本工具，OCR不提供图形语义。pages可选；平台自动等待，不要sleep。",
     {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20}},
     ["file_id"],
 )
 
 EXTRACT_TEXT = _library_tool(
     "extract_text",
-    "通过平台OCR提取独立图片或选定PDF页的文字，不调用视觉LLM。",
+    "只提取图片或选定PDF页里的文字；不理解图形、架构关系或照片。复用缓存，平台自动等待并返回正文；失败即停止，不要sleep或反复请求。",
     {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 20}},
     ["file_id"],
 )
@@ -423,7 +423,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     if name == "extract_text":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "extract-text", args)}
     if name == "resolve_attachment":
-        return await ctx.platform.library(ctx.run_id, "resolve", args)
+        return {"ok": True, **await ctx.platform.library(ctx.run_id, "resolve", args)}
     if name == "read_library_file":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
     if name == "copy_library_file":

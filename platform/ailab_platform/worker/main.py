@@ -105,7 +105,6 @@ def _obsolete_job(exc: Exception) -> bool:
         return json.loads(exc.body).get("detail") in {
             "file not found",
             "file is not eligible for this processing job",
-            "OCR requires a clean, ready file",
         }
     except (ValueError, AttributeError):
         return False

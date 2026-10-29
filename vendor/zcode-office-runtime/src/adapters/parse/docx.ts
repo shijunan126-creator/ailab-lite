@@ -139,6 +139,7 @@ export async function parseDocx(bytes: Uint8Array, label: string): Promise<Parse
   const styles = await readStyles(await pkg.text("word/styles.xml"));
   const body = find(parseXml(xml), "w:body");
   const blocks: Block[] = [];
+  const visuals = new Set<string>();
   const paragraphs: Paragraph[] = [];
   const tables: Table[] = [];
 
@@ -161,6 +162,7 @@ export async function parseDocx(bytes: Uint8Array, label: string): Promise<Parse
           ),
           list: Boolean(pPr && child(pPr, "w:numPr")) || /^list/i.test(style ?? ""),
         };
+        if (["w:drawing", "w:pict", "w:object"].some(tag => find(kids(node), tag))) visuals.add(paragraph.at);
         paragraphs.push(paragraph);
         blocks.push(paragraph);
       } else if (tag === "w:tbl") {
@@ -168,6 +170,7 @@ export async function parseDocx(bytes: Uint8Array, label: string): Promise<Parse
           findAll(kids(row), "w:tc").map(cellText),
         );
         const table: Table = { type: "table", at: `t:${tables.length + 1}`, rows };
+        if (["w:drawing", "w:pict", "w:object"].some(tag => find(kids(node), tag))) visuals.add(table.at);
         tables.push(table);
         blocks.push(table);
       } else if (tag === "w:sdt") {
@@ -223,8 +226,11 @@ export async function parseDocx(bytes: Uint8Array, label: string): Promise<Parse
     ];
   }
 
+  const byAnchor = new Map(blocks.map(block => [block.at, block]));
   return {
     kind: "docx",
+    hasVisuals: pkg.paths().some(p => /^word\/(media|charts|diagrams)\//.test(p)),
+    contentInfo(anchor) { const block = byAnchor.get(anchor); return {has_text: !!block && !!blockText(block).trim(), visual: visuals.has(anchor)}; },
     title,
     units: blocks.length,
     outline,

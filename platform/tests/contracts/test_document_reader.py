@@ -111,6 +111,7 @@ def test_real_reader_formats_and_two_concurrent_users(tmp_path, monkeypatch):
                 "file": fid,
                 "end_to_end_seconds": time.monotonic() - started,
                 "sandbox_seconds": runtime_metrics[fid]["sandbox_seconds"],
+                "phases": runtime_metrics[fid].get("phases", {}),
                 "chars": manifest["chars"],
                 "units": manifest["total_units"],
                 "sha256": hashlib.sha256(text.encode()).hexdigest(),

@@ -60,12 +60,29 @@ def update(db, file, **fields):
     with user_critical_section(db, file.user_id):
         file = eligible(db, file.id)
         file.meta = {**(file.meta or {}), **fields}
+        from .file_dependencies import wake_file
+
+        wake_file(db, file)
         db.commit()
     return fields
 
 
 @router.post("/{file_id}/ocr/prepare")
 def prepare(file_id: str, db: Session = Depends(get_db)):
+    file = db.get(FileObject, file_id)
+    if (
+        file
+        and not file.deleted_at
+        and not file.purged_at
+        and file.status == FileStatus.READY
+        and ((file.meta or {}).get("scan") or {}).get("verdict") != "clean"
+    ):
+        with user_critical_section(db, file.user_id):
+            db.refresh(file)
+            if ((file.meta or {}).get("scan") or {}).get("verdict") != "clean":
+                file.meta = {**(file.meta or {}), "ocr": "failed", "ocr_reason": "scan_required"}
+                db.commit()
+                return {"ocr": "failed", "reason": "scan_required"}
     file = eligible(db, file_id)
     with user_critical_section(db, file.user_id):
         file = eligible(db, file_id)
@@ -77,6 +94,8 @@ def prepare(file_id: str, db: Session = Depends(get_db)):
             db.commit()
             return fields
 
+        if meta.get("ocr") in {"pending", "running"} and now - meta.get("ocr_requested_at", now) > settings.ocr_deadline_seconds:
+            return finish(ocr="failed", ocr_reason="deadline")
         if meta.get("ocr") == "running":
             if now - meta.get("ocr_started_at", 0) > settings.ocr_executor_timeout_seconds + 30:
                 return finish(ocr="pending", ocr_reason="resuming")
@@ -279,6 +298,9 @@ def _run_ocr(file_id: str, db: Session):
             get_storage().put_bytes(text_key, "\n".join(texts).encode(), "text/plain; charset=utf-8")
             # OCR extraction never schedules a file-summary LLM call.
             file.meta = {**file.meta, "ocr": "done", "ocr_text_key": text_key}
+            from .file_dependencies import wake_file
+
+            wake_file(db, file)
             db.commit()
         return {"ocr": "done", "pages": len(targets), "chars": sum(map(len, texts))}
     except Exception as exc:
@@ -298,6 +320,9 @@ def _run_ocr(file_id: str, db: Session):
                 "ocr": state,
                 "ocr_reason": "dependency_unavailable" if retryable else (str(exc) if isinstance(exc, ValueError) else "ocr_failed"),
             }
+            from .file_dependencies import wake_file
+
+            wake_file(db, file)
             db.commit()
         return {"ocr": state}
 
@@ -305,28 +330,61 @@ def _run_ocr(file_id: str, db: Session):
 extraction_router = APIRouter(prefix="/v1/files", tags=["text-extraction"])
 
 
-def request_extraction(db, file, pages=None):
+def extraction_result(db, file, pages=None):
+    from .document_sources import ocr_records
+
+    meta = file.meta or {}
+    selected = sorted(set(pages or [1]))
+    records = ocr_records(db, file, [p - 1 for p in selected])
+    complete = all(str(p - 1) in records for p in selected)
+    return {
+        "ocr": "done" if complete else (meta.get("ocr", "unavailable") if meta.get("ocr") != "done" else "unavailable"),
+        "file_id": file.id,
+        "pages": selected,
+        "completed_pages": [p for p in selected if str(p - 1) in records],
+        "reason": meta.get("ocr_reason"),
+        "retry_after": 1,
+        "text_only": True,
+        "visual_note": "OCR只提取文字，不理解图片内容、图形关系或布局；无文字图片需要视觉模型。",
+    }
+
+
+def request_extraction(db, file, pages=None, *, retry=False):
+    pdf = file.content_type == "application/pdf" or file.filename.lower().endswith(".pdf")
+    if pdf and not pages:
+        raise HTTPException(422, "请选择需要提取的PDF页范围")
+    if not pdf and not file.content_type.startswith("image/"):
+        raise HTTPException(422, "图表或嵌图请用view_attachment；文字请读取原生文档")
+    selected = sorted(set(pages or [1]))
+    if not 1 <= len(selected) <= 20 or any(type(p) is not int or not 1 <= p <= 100000 for p in selected):
+        raise HTTPException(422, "无效页码")
+    if not pdf and selected != [1]:
+        raise HTTPException(422, "独立图片只支持第1页")
+    units = ((file.meta or {}).get("extract") or {}).get("units")
+    if pdf and units and max(selected) > units:
+        raise HTTPException(422, "所选页超出文档范围")
+    result = extraction_result(db, file, selected)
+    if result["ocr"] == "done":
+        return result
+    meta = dict(file.meta or {})
+    if meta.get("ocr") == "failed" and not retry:
+        return {**result, "ocr": "failed"}
     if not settings.ocr_executor_url:
         raise HTTPException(503, {"code": "ocr_executor_unavailable", "message": "文字识别服务尚未配置"})
-    meta = dict(file.meta or {})
     if meta.get("ocr") in {"pending", "running"}:
-        return {"ocr": meta["ocr"]}
-    if file.content_type == "application/pdf" or file.filename.lower().endswith(".pdf"):
-        if not pages:
-            raise HTTPException(422, "请选择需要提取的PDF页范围")
-        meta["ocr_pdf"] = {"low_text_pages": [p - 1 for p in pages]}
+        # A different page selection waits for the current job rather than replacing
+        # its generation. The next call can start missing pages after it finishes.
+        return {**result, "ocr": meta["ocr"]}
+    if (meta.get("scan") or {}).get("verdict") != "clean":
+        raise HTTPException(409, "OCR requires a clean, ready file")
+    if pdf:
+        missing = [p for p in selected if p not in result["completed_pages"]]
+        meta["ocr_pdf"] = {"low_text_pages": [p - 1 for p in missing]}
         meta.pop("ocr_preview", None)
-    elif not file.content_type.startswith("image/"):
-        raise HTTPException(422, "此文件请读取原生文档文字")
-    elif meta.get("ocr") == "done" and (
-        not settings.ocr_engine_fingerprint
-        or all(p.get("fingerprint") == settings.ocr_engine_fingerprint for p in (meta.get("ocr_pages") or {}).values())
-    ):
-        return {"ocr": "done"}
-    meta["ocr"] = "pending"
+    meta.update(ocr="pending", ocr_reason=None)
     file.meta = meta
     request_ocr(db, file)
-    return {"ocr": "pending"}
+    return {**result, "ocr": "pending"}
 
 
 class ExtractionRequest(BaseModel):
@@ -342,7 +400,7 @@ def extract_text(file_id: str, body: ExtractionRequest, user: User = Depends(cur
     with user_critical_section(db, user.id):
         file = _owned_file(db, file_id, user)
         eligible(db, file_id)
-        result = request_extraction(db, file, body.pages)
+        result = request_extraction(db, file, body.pages, retry=True)
         db.commit()
     return result
 

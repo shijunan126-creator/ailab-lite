@@ -83,6 +83,7 @@ def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: boo
         "error": run.error,
         "result": {**(run.result or {}), **{k: v for k, v in (run.runtime_meta or {}).items() if k in {"plan", "question"}}},
         "resumable": not source_invalid
+        and not (run.runtime_meta or {}).get("file_dependency")
         and run.status == "interrupted"
         and run.checkpoint_step > 0
         and not ((run.runtime_meta or {}).get("question") and not (run.runtime_meta or {}).get("answer")),
@@ -91,6 +92,8 @@ def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: boo
         "finished_at": run.finished_at,
         "work_ms": run.work_ms,
     }
+    if (run.runtime_meta or {}).get("file_dependency") and run.status == "interrupted":
+        out["result"] = {**out["result"], "file_wait": {"action": run.runtime_meta["file_dependency"]["action"]}}
     if source_invalid:
         out["result"] = {
             key: value for key, value in (run.result or {}).items() if key in {"artifacts", "forked_usage", "forked_from_run_id"}

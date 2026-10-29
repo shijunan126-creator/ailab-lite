@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from ..models import FileObject
 
-PARSER_VERSION = "zcode-3c5b227-ailab1"
+PARSER_VERSION = "zcode-3c5b227-ailab2"
 
 
 def reuse(db, file):
@@ -41,10 +41,13 @@ def reuse(db, file):
             .limit(1)
         )
     )
-    if not native and not ((file.content_type or "").startswith("image/") and ocr):
+    image = (file.content_type or "").startswith("image/")
+    pdf = file.content_type == "application/pdf" or file.filename.lower().endswith(".pdf")
+    if not native and not ((image or pdf) and ocr):
         return None
     return {
         "source_file_id": candidate.id,
+        "needs_native": not native and pdf,
         "manifest_key": source.get("document_manifest_key") if native else None,
         "text_key": source.get("text_key"),
         "extract": source.get("extract") or {},
