@@ -57,3 +57,13 @@ def test_history_becomes_user_and_assistant_messages() -> None:
     msgs = prompts.history_messages([{"prompt": "q", "reply": "", "files": ["a.xlsx"]}])
     assert msgs[0] == {"role": "user", "content": "q"}
     assert msgs[1]["role"] == "assistant" and "a.xlsx" in msgs[1]["content"]
+
+
+def test_work_office_reader_is_discoverable_without_loading_a_library_skill():
+    # New workspace documents have no library attachment to trigger a viewer skill.
+    text = prompts.system_prompt(deferred=True)
+    assert "office-read SOURCE NEW_OUTPUT_DIRECTORY" in text
+    assert "不存在的新输出目录" in text
+    assert "LibreOffice/Poppler" in text
+    assert "工作区读取结果不能作为平台file_id引用" in text
+    assert "office-read" not in prompts.CHAT_MODE_NOTE

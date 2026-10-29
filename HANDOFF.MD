@@ -776,3 +776,5 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 images/sbx-office 会遗漏 parser/锁文件更新。office-read 输出目录必须新建或为空，修改后换目录；Work 输出不是平台索引。V8 heap ceiling 不是进程 RSS 上限，不可用它推导并发容量。见 [ADR 0025](docs/architecture/adr/0025-work-office-reader.md)。
 
 - 本机 Docker 默认 `/var/run/docker.sock` 不存在不代表 daemon 停机。AILab 使用专用 DOCKER_CONFIG/DOCKER_HOST，先通过 `bash /Users/michael/Documents/AILab-local/bin/docker.sh info` 验证；脚本无执行位时用 bash，不要改默认 context 或另启动 VM。
+
+- office-read必须在Work主提示词可见，不能仅靠附件触发的skill。输出目录用mkdir原子占有，已存在即拒绝；文档内工具指导不应强迫已有工作区路径走file_id附件解析。真实模型验证脚本必须提供可恢复skill错误及交付终止语义，缺接口造成的循环不能误判产品失败。

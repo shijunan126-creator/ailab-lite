@@ -4,7 +4,7 @@
 
 Chat/上传/资料库索引不能依赖 Work 租约；它们继续由 Broker 系统任务产生经过校验的派生结果。Work 则需要读取尚未交付或刚修改的工作区文件，因此镜像预装 Node24 与固定 ZCode parser，通过 `office-read SOURCE NEW_OUTPUT_DIRECTORY` 按需启动，不保留后台 Node 服务。它只读取原生文本和结构；编辑生成仍用现有办公库，转换渲染用 LibreOffice/Poppler，OCR 用平台执行器。
 
-Work 结果不是可信平台索引，不能替代 file_id/授权/删除/版本合同。修改后用新目录检查；旧输出目录拒绝复用，避免旧块或 manifest 混入新结果。manifest 的 coverage/status 和编号文本块供按需检查，原生提取不能证明布局/图表正确。
+Work 结果不是可信平台索引，不能替代 file_id/授权/删除/版本合同。修改后用新目录检查；原子创建输出目录，已存在的目录拒绝复用，避免旧块或 manifest 混入新结果。manifest 的 coverage/status 和编号文本块供按需检查，原生提取不能证明布局/图表正确。
 
 成本：镜像增加 Node 与生产解析依赖，单机镜像层共享；无新增常驻进程。执行按 60 秒截止、160 MiB V8 heap ceiling；heap 不等于 RSS，解析器仍可能全量加载，CPU/RSS/磁盘最终由 Work 容器边界限制。同一 Work 内并行命令仍共享该资源限额。镜像体积、真实容器峰值和数百人吞吐未实测，不作容量承诺。
 

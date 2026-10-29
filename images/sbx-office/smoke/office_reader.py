@@ -50,6 +50,25 @@ with tempfile.TemporaryDirectory(prefix="office-reader-", dir="/workspace") as f
         manifest = json.loads((output / "manifest.json").read_text())
         assert manifest["status"] == "ready", manifest
         assert expected in (output / "text.txt").read_text(), kind
+    empty = root / "already-empty"
+    empty.mkdir()
+    assert (
+        subprocess.run(
+            ["office-read", str(root / "sample.docx"), str(empty)], check=False
+        ).returncode
+        == 2
+    )
+    racers = [
+        subprocess.Popen(
+            ["office-read", str(root / "sample.docx"), str(root / "race")],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for _ in range(2)
+    ]
+    for process in racers:
+        process.communicate(timeout=70)
+    assert sorted(process.returncode for process in racers) == [0, 2]
     document.paragraphs[0].text = "reader-after"
     document.save(root / "sample.docx")
     subprocess.run(
