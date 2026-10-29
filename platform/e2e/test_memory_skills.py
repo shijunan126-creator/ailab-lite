@@ -1,5 +1,6 @@
 """Production UI + API + Worker + Agent: editable skills and account memory."""
 
+import re
 import time
 import uuid
 
@@ -41,7 +42,7 @@ def test_memory_edit_reload_conflict_and_controls(page, stack):
     page.get_by_role("button", name="新建", exact=True).first.click()
     page.get_by_role("textbox", name="个人偏好", exact=True).fill("常用简洁中文")
     page.get_by_role("button", name="保存", exact=True).click()
-    expect(page.get_by_role("button", name="保存", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name=re.compile(r"^保存(?:中…)?$"))).to_have_count(0)
     page.reload()
     expect(page.get_by_role("textbox", name="个人偏好", exact=True)).to_have_value("常用简洁中文")
     page.get_by_role("textbox", name="个人偏好", exact=True).fill("本页未保存草稿")
@@ -59,7 +60,7 @@ def test_memory_edit_reload_conflict_and_controls(page, stack):
     page.get_by_role("button", name="重新加载", exact=True).click()
     expect(page.get_by_role("textbox", name="个人偏好", exact=True)).to_have_value("本页未保存草稿")
     page.get_by_role("button", name="保存", exact=True).click()
-    expect(page.get_by_role("button", name="保存", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name=re.compile(r"^保存(?:中…)?$"))).to_have_count(0)
     page.get_by_role("switch", name="自动记忆", exact=True).click()
     expect(page.get_by_role("switch", name="自动记忆", exact=True)).to_have_attribute("aria-checked", "false")
     page.set_viewport_size({"width": 390, "height": 844})
@@ -160,10 +161,10 @@ def test_memory_scope_sources_review_pause_and_history_controls(page, stack, wid
     expect(page.get_by_role("textbox", name="个人偏好", exact=True)).to_have_count(0)
     page.get_by_role("button", name="确认使用", exact=True).click()
     page.get_by_role("button", name="保存", exact=True).click()
-    expect(page.get_by_role("button", name="保存", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name=re.compile(r"^保存(?:中…)?$"))).to_have_count(0)
     page.get_by_role("button", name="暂停", exact=True).click()
     page.get_by_role("button", name="保存", exact=True).click()
-    expect(page.get_by_role("button", name="保存", exact=True)).to_have_count(0)
+    expect(page.get_by_role("button", name=re.compile(r"^保存(?:中…)?$"))).to_have_count(0)
     page.reload()
     expect(page.get_by_role("button", name="恢复", exact=True)).to_be_visible()
     page.get_by_role("switch", name="引用历史对话", exact=True).click()

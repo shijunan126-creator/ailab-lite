@@ -1,5 +1,11 @@
 # HANDOFF
 
+## 2026-10-29 E2E 保存完成与登录重写
+
+- “保存”按钮开始请求即改为“保存中…”，精确“保存”消失不能证明落库成功；刷新/后续操作前须等两种状态的按钮都消失，失败仍须保留断言。#102 的记忆暂停 E2E 因此提前刷新。
+- Next 16 默认将 loopback URL 规范化为 localhost，`NextResponse.rewrite(new URL('/login', req.url))` 在监听 127.0.0.1 时可能被 router 判成外部代理，#103 曾出现 socket hang up/HTTP 500。保留 `skipProxyUrlNormalize: true`，用实际 NextRequest 与 router 的 origin 比较回归锁定内部重写；不能靠登录重试掩盖问题。见[修复与验证](docs/progress/updates/2026-10-29-main-ci-fix.md)。
+- macOS 后台进程回收测试的 `killpg(pid, 0)` 曾短暂返回 EPERM，单独重跑通过。测试在原截止内继续探测，仍只接受 ESRCH/ProcessLookupError 证明进程组消失；不能将 EPERM 当成功，也不能放宽 Linux 的回收要求。
+
 ## 2026-10-29 测试部署与历史备份
 
 - 测试环境仅明确要求才部署、备份或执行部署后验收；具体规则以 AGENTS.md 的用户测试环境约定为准。不要重复 PR 已做的检查或默认全量重建 Chromium/OCR。
