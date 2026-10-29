@@ -2,7 +2,7 @@
 
 ## 2026-10-29 提交PR并合并已授权
 
-用户现授权本批文件/上下文/Office Runtime及后续预览、网页恢复、85%压缩和fork修复push/PR/merge，覆盖下方历史限制。实际main仍为`e71a60f`，与工作基线一致；保留主目录前端HLD/视觉设计及旧Memory原始证据，不纳入本PR。已补CI的Node24固定Office reader构建与上游测试、Docker忽略本机目录；上游15项、CI脚本28项、Ruff427/服务导入/skills一致性通过，既有集中验收链接保留。下一步提交固定源并创建PR，按CI结果修复再合并；本机部署仍是此前dirty快照，不自动声称等于合并版本。[本轮记录](updates/2026-10-29-file-context-pr.md)。
+用户现授权本批文件/上下文/Office Runtime及后续预览、网页恢复、85%压缩和fork修复push/PR/merge，覆盖下方历史限制。实际main仍为`e71a60f`，与工作基线一致；保留主目录前端HLD/视觉设计及旧Memory原始证据，不纳入本PR。已补CI的Node24固定Office reader构建与上游测试、Docker忽略本机目录；上游15项、CI脚本28项、Ruff427/服务导入/skills一致性通过，既有集中验收链接保留。固定实现提交`e0b8ef5`已推送，[PR #102](https://github.com/shijunan126-creator/ailab-lite/pull/102)已创建。gh已完成workflow权限授权；正在等待提交源的完整CI与review，全部通过后合并，不提前宣称完成；本机部署仍是此前dirty快照，不自动声称等于合并版本。[本轮记录](updates/2026-10-29-file-context-pr.md)。
 
 ## 2026-10-29 文件/上下文交叉链路审查与fork修复
 

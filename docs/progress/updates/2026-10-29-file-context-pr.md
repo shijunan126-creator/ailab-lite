@@ -9,3 +9,7 @@ PR包含文件/附件身份与生命周期、固定ZCode Office reader和内部s
 本轮新检查：上游15项、CI脚本28项、Ruff427文件、服务导入与skills manifest一致性通过。此前集中267核心与重叠57最终回归、7真实浏览器和Portal42/build作为历史证据；PR的CI将针对提交后源运行完整门禁。真实NPU、500轮10代/满窗质量及数百人吞吐依然未验。
 
 后续PR地址、检查与合并状态由current记录，远端门禁未完成前不宣称已合并。本机已有体验版不自动重建成合并版本。
+
+提交`e0b8ef5`已生成，但首次推送被GitHub拒绝：当前gh OAuth无workflow scope；现有SSH公钥也未获准。已运行gh auth refresh请求补充workflow授权，等待用户在GitHub完成。尚无远端分支/PR/merge，不为绕过权限删除CI构建步骤。一次性设备代码不写入项目记录。
+
+GitHub授权已完成，使用gh推送`e0b8ef5`并创建[PR #102](https://github.com/shijunan126-creator/ailab-lite/pull/102)。当前完整CI/review待完成；按本PR最终head重新核实后合并。旧Memory原始证据与生成next-env仍保持在工作区，不纳入提交。
