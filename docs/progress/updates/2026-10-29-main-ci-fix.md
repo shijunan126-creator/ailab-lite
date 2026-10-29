@@ -19,4 +19,4 @@
 
 修复前新增 origin 回归稳定失败：实际 `http://localhost:13000/login`，预期内部 `/login`。修复后 Portal 单测 44/44、Office reader 15/15、CI 门禁 28/28、Ruff check/format（427 文件）、生产构建与五服务浏览器 E2E 126/126 通过；浏览器运行约 362 秒，Portal 日志未见原 socket hang up。完整 Python 首轮为 1480 passed / 104 skipped / 1 failed（上述 macOS 探针），单项复核 1 passed；修正后完整重验 1481 passed / 104 skipped（214.49 秒）；跳过为未配置的外部组件/PG/OTel 等环境用例，由本 PR 远端 CI 补双库与真实契约。原始输出只放仓库外临时目录。
 
-用户后续明确授权直接修复、push、PR、merge，无需再确认。下一步完成最终 Python 检查并提交 PR，等该 head 的 CI 通过后合并并同步本地 main；不部署。修复后远端固定 SHA 的 CI 尚未运行；双库远端旧检查不等于本修复的双库验收。
+用户后续明确授权直接修复、push、PR、merge，无需再确认。修复已推送并创建 [PR #105](https://github.com/shijunan126-creator/ailab-lite/pull/105)；最终 head 的完整 CI 进行中，通过后合并并同步本地 main，不部署。双库远端旧检查不等于本修复的双库验收。
