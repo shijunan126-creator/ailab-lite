@@ -13,6 +13,6 @@ Work 镜像增加与系统 reader 相同的 Node24/固定解析核心，只复�
 - 本机实际 CLI 四格式样本解析通过，manifest ready/非空块、旧输出及不支持格式拒绝通过；仅将 CLI 的 `/opt/ailab-office/runner.mjs` 替换为本机 bundle 路径，未冒充镜像测试。单次墙钟约 0.21–0.56 秒，不作性能比较或容量结论。
 - Portal `npm test && npm run build`：44 项通过、build 成功；无 UI 变更，不做浏览器。
 - 完整 Python 套件 `PATH=GNU工具优先 .venv/bin/pytest tests -q`：退出码0，1441通过/144跳过；外部组件未配置而跳过，保留既有SQLite表达式索引反射警告。
-- 部署决策测试 6 项、CI 范围选择器15项通过。默认 Docker socket 不存在，未启动或借用个人测试部署；真实镜像构建、断网/非 root 容器四格式与编辑后重读合同、双架构、镜像增量和 CPU/RSS 峰值未验。未跑 PostgreSQL/Redis 外部组合、真实模型或数百人压测。
+- 部署决策测试 6 项、CI 范围选择器15项通过。先前仅检查默认 socket，错误判断 Docker 不可用。后续通过 `bash /Users/michael/Documents/AILab-local/bin/docker.sh info` 确认专用 daemon 29.5.2 正常、12个容器运行；未改动部署。真实镜像构建、断网/非 root 容器四格式与编辑后重读合同、双架构、镜像增量和 CPU/RSS 峰值未验。未跑 PostgreSQL/Redis 外部组合、真实模型或数百人压测。
 
 下一步：在可用的隔离 Docker 环境运行镜像合同。现有本机部署不会自动获得本改动，后续部署须当次明确授权。
