@@ -255,6 +255,11 @@ def test_killed_supervisor_reaper_stops_orphaned_process_group(tmp_path, monkeyp
                 os.killpg(meta["pid"], 0)
             except ProcessLookupError:
                 break
+            except PermissionError:
+                # macOS can deny the probe while the killed group is being
+                # reaped. Keep waiting for ESRCH; EPERM is not proof of cleanup.
+                if sys.platform != "darwin":
+                    raise
             await asyncio.sleep(0.05)
         else:
             pytest.fail("reaper left the killed supervisor's process group alive")
