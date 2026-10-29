@@ -8,7 +8,7 @@
 
 设计仍在`docs/architecture/design/file-context-ocr/`；证据规范为`docs/reviews/file-context-2026-10-29/`，旧引用已更新。旧Memory资料保留其原有分类，不把本轮新证据塞入Memory目录。旧全套测试日志中的当时绝对路径保留历史原貌。
 
-本轮源清单为[followup-source.json](../../reviews/file-context-2026-10-29/followup-source.json)，814文件，内容摘要`7879116fb5078d37d4f287c68960ed14a6e9691094c976c6cb3e921341eadecb`；是dirty工作树清单，不冒充提交。前轮完整SQLite/PG/浏览器结果仅代表其历史基线。
+本轮源清单为followup-source.json（原始输出已清理，结论见本文），814文件，内容摘要`7879116fb5078d37d4f287c68960ed14a6e9691094c976c6cb3e921341eadecb`；是dirty工作树清单，不冒充提交。前轮完整SQLite/PG/浏览器结果仅代表其历史基线。
 
 ## 本轮完成的缺口
 
@@ -22,23 +22,23 @@
 
 复用本机已配置的模型目录与独立密钥文件，只在独立验证进程读取；没有复制或打印密钥，没有使用用户真实聊天/文件。通过AILab真实OpenAI兼容transport、API usage reserve/settle、summary CAS和checkpoint调用，沙箱自由执行未启用。
 
-[实测JSON](../../reviews/file-context-2026-10-29/deepseek-compaction.json)：5次成功调用，实际后端回报`deepseek-flash`，prompt_tokens14329、completion_tokens2742。包含2次跨轮合并、2次本轮工具记录压缩，以及1次针对权威交付状态的追加压缩；保留AL-219、XLSX/不发邮件约束、更正日期2031-06-18、工具输出中部ZX-7419，恢复checkpoint后已确认副作用/交付身份仍在。第2次跨轮只传旧摘要和未覆盖新turn，未重新消费前批turn。
+实测JSON（原始输出已清理，结论见本文）：5次成功调用，实际后端回报`deepseek-flash`，prompt_tokens14329、completion_tokens2742。包含2次跨轮合并、2次本轮工具记录压缩，以及1次针对权威交付状态的追加压缩；保留AL-219、XLSX/不发邮件约束、更正日期2031-06-18、工具输出中部ZX-7419，恢复checkpoint后已确认副作用/交付身份仍在。第2次跨轮只传旧摘要和未覆盖新turn，未重新消费前批turn。
 
-首次schema失败另有1次已入账调用，见[失败记录](../../reviews/file-context-2026-10-29/deepseek-initial-schema-rejection.json)；总共6次真实模型调用，不藏掉失败成本。测试脚本曾误断言tool_log保留完整exit_code，实际合同保存compacted bookkeeping；已改正确断言并离线回查持久结果，没有为此重复前4次模型调用。最后追加1次模型调用核对确认交付状态，输出明确保留confirmed.xlsx及其已交付属性。
+首次schema失败另有1次已入账调用，见失败记录（原始输出已清理，结论见本文）；总共6次真实模型调用，不藏掉失败成本。测试脚本曾误断言tool_log保留完整exit_code，实际合同保存compacted bookkeeping；已改正确断言并离线回查持久结果，没有为此重复前4次模型调用。最后追加1次模型调用核对确认交付状态，输出明确保留confirmed.xlsx及其已交付属性。
 
 这是有限合成样本的功能/语义核查，不是500轮10代或任意复杂任务保真率。首代合成摘要未包含旧截止日，本轮确证的是更正日期进入后继摘要，不把它扩写为所有旧约束覆盖场景已验。复现入口`platform/scripts/verify_file_context_model.py --execute ...`；`--audit-existing`仅回查已有合成结果，不发起模型请求。
 
 ## 实际RapidOCR核心证据
 
-独立本机OCR测试环境，固定RapidOCR`80b427d69bfc5b91a12913394875910296c6f315`，实际ONNX Runtime CPU执行器，三个session均为CPUExecutionProvider；显式`OCR_REQUIRED_BACKEND=cpu`，不是CANN失败回落。模型在执行器启动前预置，来自固定版本模型清单并逐个SHA256校验，Det/Cls/Rec约31.7MB；[模型来源与hash](../../reviews/file-context-2026-10-29/rapidocr-models.json)。没有在用户沙箱安装OCR权重，默认CANN策略未改。
+独立本机OCR测试环境，固定RapidOCR`80b427d69bfc5b91a12913394875910296c6f315`，实际ONNX Runtime CPU执行器，三个session均为CPUExecutionProvider；显式`OCR_REQUIRED_BACKEND=cpu`，不是CANN失败回落。模型在执行器启动前预置，来自固定版本模型清单并逐个SHA256校验，Det/Cls/Rec约31.7MB；模型来源与hash（原始输出已清理，结论见本文）。没有在用户沙箱安装OCR权重，默认CANN策略未改。
 
-[真实识别JSON](../../reviews/file-context-2026-10-29/rapidocr-core.json)：一张人工合成中文图，经真实Worker归一化→API OCR→HTTP executor识别→按页缓存/文字导出。合同编号AL-219、金额12345.67、日期2031-06-18精确读出；单页推理约1.03s。再次上传相同bytes复用私有缓存，副本推理计时0、无LLM调用，删除原文件不影响副本下载。另验证本机缺CANN时required-provider readiness立即失败，不继续CPU推理。
+真实识别JSON（原始输出已清理，结论见本文）：一张人工合成中文图，经真实Worker归一化→API OCR→HTTP executor识别→按页缓存/文字导出。合同编号AL-219、金额12345.67、日期2031-06-18精确读出；单页推理约1.03s。再次上传相同bytes复用私有缓存，副本推理计时0、无LLM调用，删除原文件不影响副本下载。另验证本机缺CANN时required-provider readiness立即失败，不继续CPU推理。
 
 处理后Mac进程RSS快照约686MiB（不是峰值或NPU预算），不能由31.7MB模型权重推导运行时很小，也不能宣称能装进256–384MiB Worker。执行器已停，释放常驻内存；OCR仍不计积分、不限制累计用量，保留执行槽位和资源隔离。只验证1张清晰中文合成图，未冒充CER/WER、歪斜/低清/复杂表格准确率、NPU节点profile或30分钟稳定性。
 
 ## 集中回归与清理
 
-本轮[核心回归](../../reviews/file-context-2026-10-29/core-regression.txt)84通过、21跳过，约16秒；覆盖文件/摘要来源、持久校准cursor、OCR分页私有缓存、恢复墓碑、长任务/压缩及SQLite迁移。跳过主要是未配置PG等外部条件。最后补齐只有OCR文字、没有原生text_key时的来源回查，相关文件整组17项通过（与上述84项重叠，不相加冒充101项）。Ruff422文件与服务导入检查通过。一次新测试将永久删除期望写成404，实际既有合同为410，已修正确断言。
+本轮核心回归（原始输出已清理，结论见本文）84通过、21跳过，约16秒；覆盖文件/摘要来源、持久校准cursor、OCR分页私有缓存、恢复墓碑、长任务/压缩及SQLite迁移。跳过主要是未配置PG等外部条件。最后补齐只有OCR文字、没有原生text_key时的来源回查，相关文件整组17项通过（与上述84项重叠，不相加冒充101项）。Ruff422文件与服务导入检查通过。一次新测试将永久删除期望写成404，实际既有合同为410，已修正确断言。
 
 用户明确缩小验证范围，本轮未重跑全量SQLite/PG、Portal build/浏览器、Office性能基准或容量测试；无新增UI改动，前轮UI证据按历史保留。真实OCR执行器已按PID、命令与cwd核对后停止，28784无监听；未启动/更改个人部署、PG、Redis或容器。模型、虚拟环境与合成验证库仅留在项目本地ignored目录，方便复用；密钥仍只在原个人配置文件。
 

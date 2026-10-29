@@ -22,4 +22,4 @@
 
 本轮未新增模型调用、扫描/OCR执行、常驻服务或依赖。fork附加关系查询按单分支最多500轮受既有上限约束；不宣称百人吞吐、峰值RSS或长窗口容量通过。已存在分支中此前真正丢失的关系不会凭空恢复，需重新fork原分支；本轮保留的数据不会被删除。
 
-本机API/Portal已更新为`fork-review-d723ee6ef12a`，其它服务、网络、卷、DNS及85%设置逐项确认保留；DB0036无迁移。部署后实际fork两种模式并检查附件及1440/390刷新恢复/手动切换，临时分支已清理；源hash一致，均健康且无OOM/重启。空闲RSS约API126.9MiB/Portal66.62MiB，不是并发峰值。最终状态见[current](../current.md)。摘要证据：[review.json](../../reviews/file-context-2026-10-29/fork-review/review.json)。原始浏览器trace/测试夹具日志仅在ignored本地目录，避免把会话凭据写入仓库。
+本机API/Portal已更新为`fork-review-d723ee6ef12a`，其它服务、网络、卷、DNS及85%设置逐项确认保留；DB0036无迁移。部署后实际fork两种模式并检查附件及1440/390刷新恢复/手动切换，临时分支已清理；源hash一致，均健康且无OOM/重启。空闲RSS约API126.9MiB/Portal66.62MiB，不是并发峰值。最终状态见[current](../current.md)。摘要证据：review.json（原始输出已清理，结论见本文）。原始浏览器trace/测试夹具日志仅在ignored本地目录，避免把会话凭据写入仓库。

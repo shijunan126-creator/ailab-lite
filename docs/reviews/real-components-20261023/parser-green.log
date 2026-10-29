@@ -1,8 +1,0 @@
-..                                                                       [100%]
-=============================== warnings summary ===============================
-../../usr/local/lib/python3.12/site-packages/_pytest/cacheprovider.py:469
-  /usr/local/lib/python3.12/site-packages/_pytest/cacheprovider.py:469: PytestCacheWarning: cache could not write path /repo/platform/.pytest_cache/v/cache/nodeids: [Errno 30] Read-only file system: '/repo/platform/.pytest_cache/v/cache/nodeids'
-    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-2 passed, 1 warning in 0.73s

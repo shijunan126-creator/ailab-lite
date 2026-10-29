@@ -77,8 +77,8 @@ API 每请求扫描有界，允许空页带续查游标。Portal 只自动续查
 本机 macOS 探针，不是 2 vCPU/8 GiB 目标机的容量验收：
 
 - 20 轮详情读取由 86 次到 9 次，减少约 89.5% 往返；500 轮详情首屏 p95：SQLite **20.13ms**、PG16 **20.91ms**，各 25 次采样。不同运行的绝对耗时不用于声称等比例的延迟收益。
-- 两个延迟 Work + 100 Chat 的调度替身测试：总活跃峰值 3，Chat 排队 p95 **33.66ms**，10.01 秒墙钟/0.75 秒 CPU；进程 RSS 高水位从 86.36 到 93.38 MiB。模型/沙箱并非真实负载，只验证调度及客户端开销；[数字](single-node-review-20261025/scheduler.json)。
-- 0029 在隔离 SQLite 的 100,000 预留/50,000 历史账本上执行 **0.532 秒**，DB 41,676,800 → 44,093,440 字节；整段进程 RSS 高水位 **76.66 MiB**（包含导入与造数，非迁移独立增量）。历史查找使用 `ix_model_usage_call_id`；[数字](single-node-review-20261025/migration-100k.json)。PG 升降级已验证，未单独量测十万行 PG 迁移耗时。
+- 两个延迟 Work + 100 Chat 的调度替身测试：总活跃峰值 3，Chat 排队 p95 **33.66ms**，10.01 秒墙钟/0.75 秒 CPU；进程 RSS 高水位从 86.36 到 93.38 MiB。模型/沙箱并非真实负载，只验证调度及客户端开销。
+- 0029 在隔离 SQLite 的 100,000 预留/50,000 历史账本上执行 **0.532 秒**，DB 41,676,800 → 44,093,440 字节；整段进程 RSS 高水位 **76.66 MiB**（包含导入与造数，非迁移独立增量）。历史查找使用 `ix_model_usage_call_id`。PG 升降级已验证，未单独量测十万行 PG 迁移耗时。
 - 无新增运行时依赖、服务、常驻后台任务或索引；新部门快照是每预留一列 nullable String(40)。迁移更新已有匹配行，会占用写事务；正式部署应按已有停写/备份流程另行验收。
 - 搜索每交互最多六请求；扫描轮询每个可见视图最多一份在途请求，完成后间隔两秒；SSE 连续无进展最多八次。未用提高并发/内存上限掩盖问题。
 
@@ -102,7 +102,7 @@ API 每请求扫描有界，允许空页带续查游标。Portal 只自动续查
 
 内置 preview 两次 snapshot 超时（原文 `Preview automation snapshot timed out after 15000ms.`），浏览器回归与视觉检查使用项目 Playwright 路线。个人配置、凭据、运行数据、日志及三份 `.DS_Store` 均不提交；E2E五服务及浏览器、内置preview tab、专用PG/Redis已停止，七个本轮端口无监听。Redis停止前核对pidfile与INFO process_id一致；没有停止已有服务。
 
-结构化验收结果见[validation.json](single-node-review-20261025/validation.json)。PR、精确检查 head、合并 SHA 与最终清理见[本轮交付](../progress/updates/2026-10-25-single-node-review.md)。合并不等于部署，运行环境仍需后续单独发布。
+验收结果保留在本文摘要，原始 JSON 已清理。PR、精确检查 head、合并 SHA 与最终清理见[本轮交付](../progress/updates/2026-10-25-single-node-review.md)。合并不等于部署，运行环境仍需后续单独发布。
 
 视觉证据：[桌面续查](single-node-review-20261025/review-search-desktop.png)、[手机续查](single-node-review-20261025/review-search-mobile.png)、[保留版本引用](single-node-review-20261025/review-historical-citation.png)。截图来自隔离测试数据；验证布局、入口和原文展示，不代表真机键盘验收。
 

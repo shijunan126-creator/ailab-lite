@@ -46,7 +46,7 @@
 
 ## 性能及验证边界
 
-没有新增后台循环。流程过期清理仅登录开始时按 expires_at 索引执行；审计每次操作新增一行。用户全局/部门 keyset 与审计全局/actor/action/target/request keyset 都有索引。1 万用户、100 部门、1 万角色、2 万审计的 SQLite/PostgreSQL EXPLAIN 和 30 次热查询均值保存在 [query plans](2026-10-23-identity-query-plans.json)；这些是合成索引探针，不是整栈或 2 vCPU 生产容量承诺。含 q 的任意子串搜索仍需扫描候选用户。
+没有新增后台循环。流程过期清理仅登录开始时按 expires_at 索引执行；审计每次操作新增一行。用户全局/部门 keyset 与审计全局/actor/action/target/request keyset 都有索引。1 万用户、100 部门、1 万角色、2 万审计的 SQLite/PostgreSQL EXPLAIN 和 30 次热查询均值见下表；这些是合成索引探针，不是整栈或 2 vCPU 生产容量承诺。含 q 的任意子串搜索仍需扫描候选用户。
 
 本机独立进程 import API 三次：基线 RSS 93.27–95.67 MiB / CPU 0.520–0.525 s；身份分支 103.94–104.27 MiB / CPU 0.584–0.668 s。新增约 10 MiB 常驻导入开销（主要为 OIDC/crypto 依赖和路由）；不等同服务运行峰值。原有会话列表 3 次 SQL 的回归门槛保持通过。
 
@@ -55,3 +55,18 @@
 浏览器真实回归使用独立临时 API+SQLite、生产 Portal、本地 fake IdP；IdP 用 localhost，Portal 用 127.0.0.1，验证跨站回跳、Strict httpOnly 平台 Cookie、Lax 流程 Cookie 清理、document.cookie 为空、注销后 401。修复前 Next 将回跳主机改成 localhost 而丢会话，修复后相对 Location 保持访问者主机；Portal Node 回归固定这个契约。内置 preview snapshot 连续两次超时后才改用仓库 Playwright 流程。
 
 最终验证（本分支同一实现，macOS Python 3.12，GNU 工具在 PATH；真实服务仅 Redis 16470、PG16 15470）：SQLite + Redis **463 passed / 10 skipped**；PG + Redis **472 passed / 1 skipped**；其中 Keycloak 未配置占 1 skip，其余 SQLite 轮次为 PG 专用项。完整浏览器 E2E **34 passed**；Portal Node **9 passed**，生产构建通过；Ruff check / format、diff check、依赖锁一致性通过。迁移与双库各含 identity 往返，额外开启 SQLite 外键及部门父子关系的定向往返 **2 passed**。既存 Starlette/httpx 弃用警告保留。临时服务已停止；没有连接开发者 .env / var 数据库。
+
+## 历史索引探针摘要（2026-10-23，非本轮重测）
+
+| 查询 | SQLite 均值 ms | PostgreSQL 均值 ms |
+|---|---:|---:|
+| `users_global` | 0.107 | 0.168 |
+| `users_dept` | 0.152 | 0.230 |
+| `audit_global` | 0.128 | 0.195 |
+| `audit_actor` | 0.036 | 0.119 |
+| `audit_action` | 0.138 | 0.231 |
+| `audit_target` | 0.048 | 0.164 |
+| `audit_failure` | 0.039 | 0.107 |
+| `user_roles` | 0.034 | 0.084 |
+
+SQLite 均使用对应覆盖索引（request 查询为普通索引）；PostgreSQL 部门页使用复合 Bitmap Index Scan 后排序，action 页使用时间索引后过滤，其余使用对应普通/覆盖索引。这些是历史合成结果，原始 JSON 已按精简约定移除。

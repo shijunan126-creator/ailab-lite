@@ -4,7 +4,7 @@
 
 本地接入与冻结基线集中验证完成；完整设计不能仅凭合同测试标记全部完成。分支`docs/file-context-ocr-design-20261029`，HEAD/base`e71a60f8b4e0ea139b12be80d14cb38a627a2db7`加未提交实现；原设计、源审计及旧记忆证据保留。用户授权实施，不授权push/PR/merge/部署。本轮没有提交或远端写操作，迁移只在隔离测试库执行。
 
-产品/测试/镜像源文件的固定基线见[tested-source.json](../../reviews/file-context-2026-10-29/tested-source.json)，811个文件的摘要为`4d987f559f75fdccf5ee0437e19b8cd40d9b1723a6026a42071cfe45c6147eaa`。这是含dirty实现的源清单，不冒充Git提交SHA或构建发布签名。
+产品/测试/镜像源文件的固定基线见tested-source.json（原始输出已清理，结论见本文），811个文件的摘要为`4d987f559f75fdccf5ee0437e19b8cd40d9b1723a6026a42071cfe45c6147eaa`。这是含dirty实现的源清单，不冒充Git提交SHA或构建发布签名。
 
 ## 实现范围
 
@@ -20,13 +20,13 @@
 
 ## 验证与证据
 
-逐项覆盖及缺口见[07矩阵验收记录](../../reviews/file-context-2026-10-29/acceptance.md)。最终冻结基线SQLite1450通过/103跳过、0失败；[日志](../../reviews/file-context-2026-10-29/sqlite.txt)。PostgreSQL1498通过/55跳过、0失败；[日志](../../reviews/file-context-2026-10-29/postgres.txt)。五服务真实浏览器120通过、0失败/跳过；[日志](../../reviews/file-context-2026-10-29/browser.txt)。Ruff419文件、服务导入、技能清单/hash、结构golden通过；依赖锁检查通过且本轮Python依赖未变。上游15项通过，production npm audit当前0条；[真实reader](../../reviews/file-context-2026-10-29/real-reader-tests.txt)四格式/两并发合同通过，核对断网、cap_drop、no-new-privileges与1CPU/320MiB限制，租约释放后无残留容器。
+逐项覆盖及缺口见[07矩阵验收记录](../../reviews/file-context-2026-10-29/acceptance.md)。最终冻结基线SQLite1450通过/103跳过、0失败；日志（原始输出已清理，结论见本文）。PostgreSQL1498通过/55跳过、0失败；日志（原始输出已清理，结论见本文）。五服务真实浏览器120通过、0失败/跳过；日志（原始输出已清理，结论见本文）。Ruff419文件、服务导入、技能清单/hash、结构golden通过；依赖锁检查通过且本轮Python依赖未变。上游15项通过，production npm audit当前0条；真实reader（原始输出已清理，结论见本文）四格式/两并发合同通过，核对断网、cap_drop、no-new-privileges与1CPU/320MiB限制，租约释放后无残留容器。
 
-最终浏览器包含最新删除栅栏，Portal42项与生产构建通过（[测试](../../reviews/file-context-2026-10-29/portal-tests.txt)、[构建](../../reviews/file-context-2026-10-29/portal-build.txt)）。[桌面](../../reviews/file-context-2026-10-29/file-extraction-1280.png)/[390px](../../reviews/file-context-2026-10-29/file-extraction-390.png)截图已逐一检查，无横向溢出。浏览器使用真实Portal/API/Worker/Agent/Broker进程和Playwright；模型、沙箱和OCR服务未替代真实硬件质量验收。
+最终浏览器包含最新删除栅栏，Portal42项与生产构建通过（测试（原始输出已清理，结论见本文）、构建（原始输出已清理，结论见本文））。[桌面](../../reviews/file-context-2026-10-29/file-extraction-1280.png)/[390px](../../reviews/file-context-2026-10-29/file-extraction-390.png)截图已逐一检查，无横向溢出。浏览器使用真实Portal/API/Worker/Agent/Broker进程和Playwright；模型、沙箱和OCR服务未替代真实硬件质量验收。
 
 ## 性能与成本
 
-[同范围冷/热/缓存对照](../../reviews/file-context-2026-10-29/performance.md)及[原始JSON](../../reviews/2026-10-29-office-performance.json)。当前小样本Office冷启动约189–371ms，旧Python约121–207ms；Mac冷RSS约82–160MiB，旧约32–35MiB。没有更快的结论。新读取器输出更多结构、公式/备注，词项对照只是排查明显遗漏，不是正确率/布局保真。
+[同范围冷/热/缓存对照](../../reviews/file-context-2026-10-29/performance.md)及原始JSON（原始输出已清理，结论见本文）。当前小样本Office冷启动约189–371ms，旧Python约121–207ms；Mac冷RSS约82–160MiB，旧约32–35MiB。没有更快的结论。新读取器输出更多结构、公式/备注，词项对照只是排查明显遗漏，不是正确率/布局保真。
 
 真实Linux系统容器小fixture全路径约1.67–2.23s/份，cgroup内存峰值约38–76MiB，CPU累计约0.41–0.89秒；有Barrier与采样成本，不是纯解析。专用镜像逻辑Size约114.9MiB，业务镜像不增加Node。持久缓存样本是本地对象文件读取，不能称API/S3延迟；没有拿旧前20页和新全文作速度比较。
 
@@ -43,4 +43,4 @@
 - 面向数百人架构依赖PostgreSQL、持久队列/claim、共享对象存储与有界执行器；未做数百人容量/Chat排队TTFT/目标2vCPU8GiB整栈压测。Broker组内有限并发已验，完整跨节点Broker调度/路由未在本轮实现或验收。
 - 旧备份恢复须在开放服务前应用删除墓碑；尚无跨备份自动应用器，不承诺删除已经送达浏览器/外部模型的数据。真实S3/OSB/ClamAV组合和生产保留政策未验。
 
-本轮专属Colima虚拟机/磁盘/镜像、测试PG/Redis及五服务均已停止或删除，最终端口检查见[环境清理](../../reviews/file-context-2026-10-29/cleanup.txt)。最终源清单逐文件复核无变化。个人部署、现有用户数据和主目录工作树未操作。下一步应先完成上述设计缺口及目标环境/真实模型验收，再另行决定发布；无本轮远端发布授权。
+本轮专属Colima虚拟机/磁盘/镜像、测试PG/Redis及五服务均已停止或删除，最终端口检查见环境清理（原始输出已清理，结论见本文）。最终源清单逐文件复核无变化。个人部署、现有用户数据和主目录工作树未操作。下一步应先完成上述设计缺口及目标环境/真实模型验收，再另行决定发布；无本轮远端发布授权。

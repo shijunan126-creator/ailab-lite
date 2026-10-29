@@ -755,3 +755,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 - 1GiB crawler双React短测通过仍会在多样复杂页双并发下杀Chrome子进程，且容器PID1不一定OOMKilled。验收必须查cgroup memory.events的oom/oom_kill；默认并发1，忙时明确503，不以提高内存或忽略子进程OOM作通过依据。
 
 - Crawl4AI async_playwright.start在返回handle前被取消会留下活Node driver；finally close加tini仍不足。每次render使用被外部deadline监督的worker，worker设Linux child subreaper；冻结/杀子树并wait之后再释放槽，不能靠库返回句柄才能清理。30ms连续真实启动故障必须检查活进程、重启次数和cgroup memory.events，不能只看最后一次重启后的健康。
+
+## 2026-10-29 文档留存
+
+- 验收可复查不等于保存所有运行输出。仓库只保留结论、版本、复现入口、关键数值与未测边界；原始 JSON/日志/采样放仓库外或 CI artifact，调试结束清理。删输出时先补唯一有用结论并修正引用；保留必要 fixture/脚本/代表截图。详见 AGENTS.md“文档与测试证据精简”。

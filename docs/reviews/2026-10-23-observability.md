@@ -14,7 +14,7 @@ W3C traceparent经过HTTP中间件、内部client与durable job信封，Agent/Wo
 
 F8资源数据见 [Broker报告](2026-10-23-broker-streaming.md)，覆盖50MiB输入/100MiB输出和双路压力。
 
-本轮新增专用2CPU/8GiB VM内Agent调度探针，进程容器限1CPU/256MiB；两条60秒慢Work替身和100条连续Chat，真实调度器与HTTPclient pool、memory队列，runtime替身不发付费模型/工具请求。最大活动任务3，Chat排队P95 **74.77ms**，RSS **76.85→84.10MiB（+7.25MiB）**，wall60.14s、CPU4.15s。这是调度/client开销，不能当作真实三个模型上下文峰值。[原始结果](broker-streaming-20261023/agent-scheduler-linux.json)，脚本 [agent_scheduler.py](../../platform/tests/load/agent_scheduler.py)。
+本轮新增专用2CPU/8GiB VM内Agent调度探针，进程容器限1CPU/256MiB；两条60秒慢Work替身和100条连续Chat，真实调度器与HTTPclient pool、memory队列，runtime替身不发付费模型/工具请求。最大活动任务3，Chat排队P95 **74.77ms**，RSS **76.85→84.10MiB（+7.25MiB）**，wall60.14s、CPU4.15s。这是调度/client开销，不能当作真实三个模型上下文峰值。历史测量摘要（见本节；原始输出已清理），脚本 [agent_scheduler.py](../../platform/tests/load/agent_scheduler.py)。
 
 修复该负载脚本的一个陷阱：必须先导入隔离的tests.conftest再导入service/config；否则配置会先读取开发.env。通过isort分段保留顺序。
 

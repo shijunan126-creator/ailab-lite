@@ -35,7 +35,7 @@
 | N01 | 三个session required EP、disable_fallback、strict CPU EP配置；错误不上报NPU成功 | 实际CPU三session与CANN缺失拒绝已验；目标ORT-CANN兼容、节点profile/显存不足未验 |
 | I01 | 输入框5张不进入provider通用路径；view_attachment文档页按预算传媒体 | 合同；超过5图及全篇视觉真实模型容量未验 |
 | B01 | 固定ZCode源码/许可证/patch列表、原viewer保留；私有registry不进用户skills且加载优先 | 合同与真实reader；用户技能功能独立 |
-| B02 | 同文件同范围冷/热/持久缓存[原始数据](../2026-10-29-office-performance.json)，真实系统容器资源[证据](real-reader.json) | 已实测小fixture；新Runtime未提速，非目标机容量 |
+| B02 | 同文件同范围冷/热/持久缓存原始数据（原始输出已清理，结论见本文），真实系统容器资源证据（原始输出已清理，结论见本文） | 已实测小fixture；新Runtime未提速，非目标机容量 |
 | U02 | catalog vision icon可访问，Composer切换时abort准备请求，非vision提示一次 | 合同+完整Portal浏览器回归；未作实际模型视觉质量 |
 
 候选资源数字只是当前开发配置，不是目标硬件已验参数。系统reader使用独立镜像、每任务租约和文件命名空间；当前Broker组内有界并发，不等于完整多节点调度器已实现。所有mock/HTTP替身仅验证流程、权限、恢复与协议。

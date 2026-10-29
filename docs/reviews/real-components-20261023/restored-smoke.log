@@ -1,4 +1,0 @@
-RESTORED_ARTIFACT 104857600 sha256 matched seconds 0.562
-RESTORED_PREVIEW 29924 bytes
-RESTORED_RUN succeeded
-RESTORED_READYZ {'ok': True, 'degraded': False, 'checks': {'db': True, 'queue': True, 'storage': True}}

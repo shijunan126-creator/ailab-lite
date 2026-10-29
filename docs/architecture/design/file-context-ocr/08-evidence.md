@@ -10,7 +10,7 @@
 
 以下是本轮静态代码核对，不代表部署环境或付费模型质量验收。
 
-[源证据清单](../../../reviews/2026-10-29-file-context-source-audit.json)记录本地文件SHA256、关键函数行号和第三方固定提交/源码hash。可从清单定位核对下表；未将第三方代码复制进仓库。
+源证据清单（原始输出已清理，结论见本文）记录本地文件SHA256、关键函数行号和第三方固定提交/源码hash。可从清单定位核对下表；未将第三方代码复制进仓库。
 
 | 事实 | 当前代码依据 | 含义 |
 | --- | --- | --- |
@@ -76,4 +76,4 @@ RapidOCR的[引擎文档](https://rapidai.github.io/RapidOCRDocs/main/install_us
 
 ## ZCode与内置技能的直接复用研究
 
-新增的具体上游文件、许可差异、Office Runtime能力/内存边界及接入路径统一维护在[09上游复用计划](09-upstream-reuse.md)。[本轮源证据](../../../reviews/2026-10-29-builtin-skills-source-audit.json)记录ZCode `3c5b227`、Claude Code `58d6da1`及MiniMax `60aaae5`实际下载源码hash和完整tree元数据。仅研究/改plan，没有导入第三方产品代码或安装运行依赖。
+新增的具体上游文件、许可差异、Office Runtime能力/内存边界及接入路径统一维护在[09上游复用计划](09-upstream-reuse.md)。本轮源证据（原始输出已清理，结论见本文）记录ZCode `3c5b227`、Claude Code `58d6da1`及MiniMax `60aaae5`实际下载源码hash和完整tree元数据。仅研究/改plan，没有导入第三方产品代码或安装运行依赖。

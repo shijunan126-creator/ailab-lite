@@ -1,6 +1,6 @@
 # Office读取同范围性能与覆盖（2026-10-29）
 
-环境为本机macOS ARM64、Node24.11.1、Python3.12。每格式同一上游fixture、同一完整原生范围；fixture均未超过旧实现20页/200行/40列门槛。下表单次样本不是统计分布或目标机容量。完整数值/文件SHA见[原始JSON](../2026-10-29-office-performance.json)，复现入口`platform/scripts/bench_office.py`。
+环境为本机macOS ARM64、Node24.11.1、Python3.12。每格式同一上游fixture、同一完整原生范围；fixture均未超过旧实现20页/200行/40列门槛。下表单次样本不是统计分布或目标机容量。完整数值/文件SHA见原始JSON（原始输出已清理，结论见本文），复现入口`platform/scripts/bench_office.py`。
 
 | 格式 | 冷进程总墙钟ms 旧/Office | 同进程第二次解析ms 旧/Office | 冷峰值RSS MiB 旧/Office | 冷CPU秒 旧/Office | 持久本地对象读取ms |
 | --- | --- | --- | --- | --- | --- |
@@ -11,9 +11,9 @@
 
 当前小样本Office冷启动更慢、RSS更高，热解析也没有普遍优势。冷CPU是进程累计user+system；热解析单独计CPU在JSON内。Office提供结构anchor、公式/备注等额外输出，字符数不应直接当准确率。持久对象读取只是本地派生文本文件，不是API/S3、数据库索引或Chat首答延迟。热解析指新建文档对象再解析，不是返回已解析对象的内存缓存；产品当前每任务短生命周期，不部署共享热文档缓存。
 
-[内容对照](content-comparison.json)保留相同范围的词项差异：PDF/DOCX/XLSX旧文本的全部词项都在新结果中；PPT旧专用标记`page`被`slide`替代，Office新增表格、形状与备注。词项集合只能排查明显遗漏，不能证明顺序、排版、公式正确性。上游15项包含中文、Word表格单元格、Excel公式、PPT备注；本地新增连续超大单元/宽表回归。120页PDF第85页与第120页另有平台索引合同，未拿旧前20页做性能分母。
+内容对照（原始输出已清理，结论见本文）保留相同范围的词项差异：PDF/DOCX/XLSX旧文本的全部词项都在新结果中；PPT旧专用标记`page`被`slide`替代，Office新增表格、形状与备注。词项集合只能排查明显遗漏，不能证明顺序、排版、公式正确性。上游15项包含中文、Word表格单元格、Excel公式、PPT备注；本地新增连续超大单元/宽表回归。120页PDF第85页与第120页另有平台索引合同，未拿旧前20页做性能分母。
 
-真实系统容器在专属Colima2CPU/4GiB、runc、无网络、每容器1CPU/320MiB上测试四种格式，强制两份租约同时就绪后执行；[原始资源与结果](real-reader.json)。最近一次全路径约1.67–2.23秒/文件（含获取租约、注入、读取、打包、下载、写对象和释放）；其中获取租约之后的sandbox_seconds约0.82–1.17秒。并行测试含Barrier等待和一次额外cgroup采样，不是纯解析延迟，也没有HTTP/真实扫描器/远端存储。容器生命周期cgroup memory.peak约38–76MiB、cpu.stat累计约0.41–0.89CPU秒；这是Linux cgroup内存统计，不能与Mac进程RSS作同口径比较。样本极小，不涵盖大工作簿/压缩炸弹峰值。
+真实系统容器在专属Colima2CPU/4GiB、runc、无网络、每容器1CPU/320MiB上测试四种格式，强制两份租约同时就绪后执行；原始资源与结果（原始输出已清理，结论见本文）。最近一次全路径约1.67–2.23秒/文件（含获取租约、注入、读取、打包、下载、写对象和释放）；其中获取租约之后的sandbox_seconds约0.82–1.17秒。并行测试含Barrier等待和一次额外cgroup采样，不是纯解析延迟，也没有HTTP/真实扫描器/远端存储。容器生命周期cgroup memory.peak约38–76MiB、cpu.stat累计约0.41–0.89CPU秒；这是Linux cgroup内存统计，不能与Mac进程RSS作同口径比较。样本极小，不涵盖大工作簿/压缩炸弹峰值。
 
 专用`ailab-document-reader:verify-20261029`镜像ID`sha256:15809459f3d562b97d27ee9428048992aba5f2a79c36845bfc640b8ddd8ed985`，Docker inspect逻辑Size120531286字节（约114.9MiB，非压缩下载体积/唯一增量磁盘）。业务服务镜像没有引入Node；reader镜像仅Node、最小解析依赖和现有Python沙箱监督器，不带桌面、测试开发依赖或OCR权重。生产依赖npm audit在本轮检查时0条；不代表未来没有漏洞。
 

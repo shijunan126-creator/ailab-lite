@@ -1,3 +1,0 @@
-LOGIN {"id": "usr_a392e186d69947f298cd", "username": null, "display_name": "Verify QA", "email": "usr_a392e186d69947f298cd@oidc.ailab.local", "roles": ["auditor", "dept_admin", "user"], "dept": {"id": "verify-dept", "name": "验收部门"}, "can_admin": true} httpOnly True sameSite Strict
-LOGOUT platform session revoked
-DISABLED refused at Portal callback and /me=401

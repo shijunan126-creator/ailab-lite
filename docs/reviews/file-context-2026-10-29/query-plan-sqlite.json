@@ -1,4 +1,0 @@
-{
-  "blocks": 100000,
-  "plan": "(8, 0, 60, 'SEARCH document_blocks USING INDEX ix_document_blocks_unit (derivation_id=? AND unit_number=?)')"
-}

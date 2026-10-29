@@ -14,3 +14,14 @@ demo-output/
 tests/local.sh
 vendor/zcode-office-runtime/runner.mjs
 vendor/zcode-office-runtime/bench.mjs
+
+# Review runs keep summaries and minimal reproductions, not raw output.
+/docs/reviews/**/*.json
+/docs/reviews/**/*.jsonl
+/docs/reviews/**/*.csv
+/docs/reviews/**/*.txt
+/docs/reviews/**/output/
+/docs/reviews/**/outputs/
+/docs/reviews/**/artifacts/
+/docs/reviews/**/test-results/
+/docs/reviews/**/playwright-report/

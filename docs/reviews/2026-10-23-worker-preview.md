@@ -33,11 +33,11 @@ GET manifest 只读 DB meta；首次请求与 outbox 同事务，便捷派发失
 
 ## 性能与资源
 
-本机 macOS 15.8.2 arm64，Python 3.12；合成固定样本，不代表 2 vCPU Linux 容器验收。原始数据见同目录 worker-preview-measurements.json；复现脚本为 platform/tests/measure_worker_preview.py（用 `python -m tests.measure_worker_preview`，并明确设置不存在的 AILAB_ENV_FILE）。
+本机 macOS 15.8.2 arm64，Python 3.12；合成固定样本，不代表 2 vCPU Linux 容器验收。历史测量摘要见下列数值；复现脚本为 platform/tests/measure_worker_preview.py（用 `python -m tests.measure_worker_preview`，并明确设置不存在的 AILAB_ENV_FILE）。
 
 - 20 MiB PPTX 子进程峰值93.9 MiB、父80.3 MiB（和174.3 MiB为保守预算），耗时1.122秒、子CPU0.122秒。含一张约 19 MiB 不可压缩 PNG，解析子进程峰值与父进程峰值分开记录；二者峰值和为保守预算，并不宣称同时发生。完整启动/解析时延包含 Worker import。
 - 10 MiB XLSX 子进程峰值34.6 MiB、父79.5 MiB（和114.2 MiB），耗时4.096秒、子CPU2.736秒。为 12,000×10 随机字符串，read_only 读取；覆盖缺失维度信息的文件，避免把 max_row=None 当损坏。样本含少量补齐尺寸的 ZIP_STORED padding。
-- 单页 DOCX 2.625秒、输出23,437字节、结束后0租约。mock provider 运行真实 LibreOffice→PDF→pdftoppm，包括租约/注入/存储/释放；输出与释放状态在 JSON 中记录。
+- 单页 DOCX 2.625秒、输出23,437字节、结束后0租约。mock provider 运行真实 LibreOffice→PDF→pdftoppm，包括租约/注入/存储/释放；输出与释放状态见本节摘要。
 - Worker 限额提升至 384 MiB，覆盖父进程加 192 MiB 子进程与临时缓冲；本地样本并未触及上限。临时磁盘最多一个受上传上限约束的输入加 16 MiB 子进程输出；Broker 输出最多32 MiB，缓存永久直到删除。
 - ClamAV 单 Deployment，共享一份签名，预算约 1 GiB 常驻；request 1.5 GiB、limit 2 GiB，100m request/500m limit CPU，签名 PVC 1 GiB。此 RSS 是部署预算，未在本机启动真实 clamd 实测。
 

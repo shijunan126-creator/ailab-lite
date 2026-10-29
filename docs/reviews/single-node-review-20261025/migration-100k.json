@@ -1,1 +1,0 @@
-{"rows": 100000, "historical_ledgers": 50000, "migration_seconds": 0.5316851249663159, "database_before_bytes": 41676800, "database_after_bytes": 44093440, "peak_process_rss_mib": 76.65625, "lookup_plan": [[3, 0, 39, "SEARCH model_usage USING INDEX ix_model_usage_call_id (call_id=?)"]]}

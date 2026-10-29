@@ -12,7 +12,7 @@
 
 主要补齐：稳定消息身份和附件顺序/分支歧义；Chat准备包与超限拒绝；Work大文件分批/选页/图像预算；动态工具schema和skill正文；RapidOCR CANN/required backend及现有OCR NPU卡位差异；同ID复用/重复上传私有缓存复制；回收站与彻底删除、DB/派生对象/摘要/checkpoint/sandbox快照谱系。
 
-[源码证据清单](../../reviews/2026-10-29-file-context-source-audit.json)包含20个本地文件与26份固定提交外部源码记录。新增核对RapidOCR `80b427d`、PydanticAI `a70042d`、OpenHands `47bbc5e`、MiniMax skills `60aaae5`，并核对各自许可证；Anthropic公开文档技能独立许可证为Proprietary，不作为可直接移植的开源脚本。未将第三方源码、模型或临时下载路径写入项目。
+源码证据清单（原始输出已清理，结论见本文）包含20个本地文件与26份固定提交外部源码记录。新增核对RapidOCR `80b427d`、PydanticAI `a70042d`、OpenHands `47bbc5e`、MiniMax skills `60aaae5`，并核对各自许可证；Anthropic公开文档技能独立许可证为Proprietary，不作为可直接移植的开源脚本。未将第三方源码、模型或临时下载路径写入项目。
 
 现状核对：有滚动摘要/图片checkpoint、skills正文按需、同file派生读取与持久对象删除重试，但工具schema仍整批注入；普通删除为回收站；重新上传新建FileObject/job；API已有capabilities而前端未接；无新设计的完整消息定位/专用OCR/清理合同。源码“有能力”与真实运行成功分开。
 
@@ -40,4 +40,4 @@
 
 新增[09复用plan](../../architecture/design/file-context-ocr/09-upstream-reuse.md)：ZCode Office Runtime（MIT）定位/读取/搜索核心和viewer技能为优先，MiniMax MIT办公编辑规范为补充，逐文件说明路径/依赖/许可。ZCode部分生成技能frontmatter与Apache LICENSE不一致，按实际范围记录；Claude Code官方tree不是完整办公运行时来源且商业许可，不从泄露源挪用。明确Node24/全量解析/缓存的性能边界，未来先同范围测量，再做薄适配，未预设更快。
 
-[新增源码证据](../../reviews/2026-10-29-builtin-skills-source-audit.json)固定ZCode `3c5b227`、Claude Code `58d6da1`、MiniMax `60aaae5`，共40份已读文件及未截断tree元数据。没有把上游源码复制到产品仓库。当前实施状态仍为未实施，下一步由用户讨论定版plan。
+新增源码证据（原始输出已清理，结论见本文）固定ZCode `3c5b227`、Claude Code `58d6da1`、MiniMax `60aaae5`，共40份已读文件及未截断tree元数据。没有把上游源码复制到产品仓库。当前实施状态仍为未实施，下一步由用户讨论定版plan。
