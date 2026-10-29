@@ -26,3 +26,11 @@ Work 镜像增加与系统 reader 相同的 Node24/固定解析核心，只复�
 - 验证入口 `platform/scripts/verify_work_office_model.py --execute --key-env PRIVATE_ENV --catalog PRIVATE_CATALOG --docker-wrapper PRIVATE_WRAPPER --container DISPOSABLE_CONTAINER`，使用产品Work提示词、工具schema和发现逻辑，经真实API执行容器工具；未经过产品AgentLoop/Broker/API账本，不宣称五服务E2E/真实资料库交付通过。凭据仅在宿主读取，不进入容器或仓库。模型有多次不必要的XML检查，故仅证明功能，不作调用效率承诺。
 - Python全套1442通过/144跳过，最终提示词6通过；Ruff421文件、ShellCheck、Portal build和diff检查通过。此前Portal44和Runtime15测试结果沿用，未改对应代码。
 - 本轮专用容器/镜像清理，现有部署未更新。真实模型调用产生提供商费用，但隔离脚本不写业务用量账本；未将私有调用或原始日志提交仓库。下一步需要完整产品链路验收时，在隔离五服务环境验证新镜像与交付合同；不自动部署或push。
+
+## Chat 与格式集中复查（2026-10-29）
+
+发现内部文档skill同时在Chat/Work加载，Work命令泄露到Chat指导；已根据run mode生成说明，Chat只使用平台读取，Work保留本地读取及复制编辑流程。四种skill均有双模式回归。
+
+当前代码系统reader真实Docker/runc合同四格式、两任务并发通过；Work此前runsc四格式解析和DOCX编辑重读通过。真实模型此前只在Chat验证DOCX问答，在Work验证DOCX/XLSX编辑重读；PDF/PPTX真实模型问答、复杂文档及五服务端到端未在本轮验证，不能把格式解析合同当作模型质量证明。原Chat专项和完整Python、Portal构建见本轮结果。
+
+本轮完整SQLite Python 1442通过/144跳过，新增AgentLoop Chat加载回归单独通过；Portal build、Ruff、diff检查通过。隔离reader镜像与容器已清理。

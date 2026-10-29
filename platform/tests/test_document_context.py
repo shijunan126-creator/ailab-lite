@@ -87,6 +87,9 @@ def test_internal_skills_and_constant_initial_schema():
     hit = discovery.search("pdf", "skill", 3, catalog)[0]
     assert hit["name"] == "platform.pdf.read" and hit["version"] == VERSION
     assert "next_cursor" in load("platform.pdf.read")
+    for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):
+        assert "office-read" not in load(name, mode="chat")
+        assert "office-read" in load(name, mode="work")
     with pytest.raises(ValueError):
         load("platform.pdf.read", "wrong")
     with TestClient(app) as c:
