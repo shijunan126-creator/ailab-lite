@@ -92,6 +92,9 @@ def _rows(
         .order_by(Run.created_at.desc(), Run.id.desc())
         .limit(MAX_DOCS)
     )
+    from ..api.source_lifecycle import invalid_sources_query
+
+    stmt = stmt.where(Run.id.not_in(invalid_sources_query(user_id)))
     if since is not None:
         stmt = stmt.where(Run.created_at >= since)
     if before is not None:

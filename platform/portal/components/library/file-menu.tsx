@@ -7,10 +7,11 @@ import { api, errorMessage, filesByIds } from "../../lib/api";
 import { projectsChanged } from "../../lib/projects";
 import { IconAsk, IconFolderInput, IconMore, IconShare } from "../icons";
 import ShareDialog from "../share-dialog";
+import TextExtraction from "./text-extraction";
 import { MoveDialog } from "./projects";
 
 const MENU_W = 168;
-const MENU_H = 128;
+const MENU_H = 168;
 
 export function askHref(fileId: string, projectId?: string | null): string {
   return projectId ? `/p/${projectId}?files=${fileId}` : `/?files=${fileId}`;
@@ -24,7 +25,7 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
   onMoved?: (projectId: string | null) => void;
 }) {
   const [at, setAt] = useState<{ top: number; left: number } | null>(null);
-  const [dialog, setDialog] = useState<"move" | "share" | null>(null);
+  const [dialog, setDialog] = useState<"move" | "share" | "extract" | null>(null);
   const [error, setError] = useState("");
   // where the file is now: it may have moved since the page was drawn (here, in the library, with its conversation)
   const [where, setWhere] = useState<string | null | undefined>(undefined);
@@ -106,6 +107,8 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
               >
                 <IconAsk size={15} /> 提问
               </button>
+              {/\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|avif)$/i.test(filename) ?
+                <button className="menu-item" role="menuitem" onClick={() => (setAt(null), setDialog("extract"))}>提取文字</button> : null}
               <button className="menu-item" role="menuitem" onClick={() => (setAt(null), setDialog("move"))}>
                 <IconFolderInput size={15} /> 移到项目
               </button>
@@ -116,6 +119,7 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
             document.body
           )
         : null}
+      {dialog === "extract" ? <TextExtraction fileId={fileId} filename={filename} onClose={() => setDialog(null)} /> : null}
       {dialog === "move" ? (
         <MoveDialog title={`移动「${filename}」`} current={where === undefined ? projectId || null : where} onPick={move} onClose={() => setDialog(null)} />
       ) : null}

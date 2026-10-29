@@ -80,7 +80,23 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 commit=False,
                 frozen_template=row.options.get("template"),
             )
+            db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()
+            from sqlalchemy import update
+
+            from ..models import AppliedMessagePosition, MessageFileRef
+
+            db.execute(
+                update(MessageFileRef)
+                .where(MessageFileRef.message_kind == "queued_message", MessageFileRef.message_id == row.id)
+                .values(run_id=run.id)
+            )
+            position = db.scalar(
+                select(AppliedMessagePosition).where(
+                    AppliedMessagePosition.message_kind == "run_prompt", AppliedMessagePosition.message_id == run.id
+                )
+            )
+            position.message_kind, position.message_id, position.alias_run_prompt_id = "queued_message", row.id, run.id
             db.flush()
         return row
     except HTTPException:
@@ -148,7 +164,32 @@ def acknowledge_steers(db, run, state):
     for qid in supplied:
         if qid not in previous:
             row = claimed[qid]
-            if {"role": "user", "content": row.prompt} not in state.get("messages", []):
+
+            def includes_prompt(message):
+                content = message.get("content")
+                return message.get("role") == "user" and (
+                    (isinstance(content, str) and content.startswith(row.prompt))
+                    or (
+                        isinstance(content, list)
+                        and any(p.get("type") == "text" and p.get("text", "").startswith(row.prompt) for p in content)
+                    )
+                )
+
+            if not any(includes_prompt(message) for message in state.get("messages", [])):
                 raise HTTPException(422, "steer message missing")
+            from sqlalchemy import update
+
+            from ..models import AppliedMessagePosition, MessageFileRef
+
+            db.execute(
+                update(MessageFileRef)
+                .where(MessageFileRef.message_kind == "queued_message", MessageFileRef.message_id == qid)
+                .values(run_id=run.id)
+            )
+            db.add(
+                AppliedMessagePosition(
+                    run_id=run.id, message_kind="queued_message", message_id=qid, application_seq=supplied.index(qid) + 1
+                )
+            )
             append_event(db, run.id, "agent.steered", {"queued_id": qid, "prompt": row.prompt}, commit=False)
     return supplied

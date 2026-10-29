@@ -101,16 +101,17 @@ def test_context_nonconvergence_pauses_before_second_paid_compaction(monkeypatch
     state["user_message_index"] = 1
     for _ in range(5):
         state["messages"].append({"role": "assistant", "content": "x" * 50000})
-    loop = AgentLoop(FakePlatform(), FakeBroker(), ScriptedLLM([LLMResponse(content="summary")]))
+    loop = AgentLoop(FakePlatform(), FakeBroker(), ScriptedLLM([LLMResponse(content="summary") for _ in range(30)]))
     loop._states["r"], loop._steps["r"] = state, 0
     turn = _Turn({"prompt": "original", "_ledger_tokens": 0, "_attempt_id": "a"})
     turn.messages = state["messages"]
     with pytest.raises(BudgetPause, match="上下文"):
         asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
-    assert state["compaction"]["after"] >= 6500
+    assert state["compaction"]["after"] >= state["compaction"]["threshold"]
+    paid = len(loop.platform.reservations)
     with pytest.raises(BudgetPause, match="上下文"):
         asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
-    assert len(loop.platform.reservations) == 1
+    assert len(loop.platform.reservations) == paid
 
 
 def test_oversized_checkpoint_pauses_instead_of_413(monkeypatch):

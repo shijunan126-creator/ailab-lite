@@ -43,6 +43,16 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
         outside = list(db.scalars(select(FileObject.filename).where(FileObject.parent_id.in_(ids), FileObject.id.not_in(ids))))
         if outside:
             raise HTTPException(status_code=409, detail=f"file has newer versions; delete those first: {', '.join(outside)}")
+    from .api.source_lifecycle import invalidate
+    from .models import DocumentBlock, FileDerivation, MessageFileRef, OcrPageResult, RenderedPage
+
+    invalidate(db, files[0].user_id, ids)
+    db.execute(update(MessageFileRef).where(MessageFileRef.file_id.in_(ids)).values(filename_snapshot=None, upload_id=None))
+    db.execute(delete(RenderedPage).where(RenderedPage.file_id.in_(ids)))
+    db.execute(delete(OcrPageResult).where(OcrPageResult.file_id.in_(ids)))
+    derivations = select(FileDerivation.id).where(FileDerivation.file_id.in_(ids))
+    db.execute(delete(DocumentBlock).where(DocumentBlock.derivation_id.in_(derivations)))
+    db.execute(delete(FileDerivation).where(FileDerivation.file_id.in_(ids)))
     keys = []
     for file in files:
         meta = file.meta or {}
@@ -54,7 +64,7 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
     for key in dict.fromkeys(keys):
         schedule_object_deletion(db, key, "file", prefix=key.endswith("/"))
     if tombstone:
-        db.execute(update(FileObject).where(FileObject.id.in_(ids)).values(purged_at=utcnow(), is_head=0))
+        db.execute(update(FileObject).where(FileObject.id.in_(ids)).values(purged_at=utcnow(), is_head=0, meta={}, filename="文件已删除"))
         return keys
     # Clear links within the selection too, so FK enforcement does not depend on delete order.
     db.execute(update(FileObject).where(FileObject.parent_id.in_(ids)).values(parent_id=None))
@@ -163,6 +173,16 @@ def trim_file_versions(db: Session, file: FileObject) -> list[str]:
 
 
 def trash_lineages(db: Session, user_id: str, lineage_ids: list[str], *, project_id: str | None = None) -> None:
+    from .api.source_lifecycle import invalidate
+
+    file_ids = list(
+        db.scalars(
+            select(FileObject.id).where(
+                FileObject.user_id == user_id, FileObject.lineage_id.in_(lineage_ids), FileObject.deleted_at.is_(None)
+            )
+        )
+    )
+    invalidate(db, user_id, file_ids)
     now = utcnow()
     values = {"deleted_at": now, "purge_at": now + timedelta(days=settings.trash_days)}
     if project_id is not None:

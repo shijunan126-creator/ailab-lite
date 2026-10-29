@@ -81,6 +81,8 @@ spec:
     - from:
         - podSelector:
             matchLabels: {app: platform-agent}
+        - podSelector:
+            matchLabels: {app: platform-api}
       ports:
         - {protocol: TCP, port: 8090}
   # DNS resolves the proxy Service; page connections still have only the proxy route.

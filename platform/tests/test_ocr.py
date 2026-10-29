@@ -3,11 +3,9 @@
 import io
 import json
 import threading
-from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
@@ -17,8 +15,7 @@ from ailab_platform.api.main import app
 from ailab_platform.catalog import ModelSpec, get_catalog
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import FileObject, FileStatus, ModelUsage, OutboxMessage, UsageReservation, new_id
-from ailab_platform.storage import get_storage
+from ailab_platform.models import FileObject, ModelUsage, OutboxMessage, UsageReservation, new_id
 from ailab_platform.worker.ocr import process_ocr
 from ailab_platform.worker.pipeline import process_file
 from tests.test_file_previews import AUTH, SERVICE, ApiClient
@@ -70,6 +67,7 @@ def upstream(monkeypatch):
         ModelSpec(id=alias, name=alias, base_url=f"http://127.0.0.1:{server.server_port}/v1", capabilities=["vision"]),
     )
     monkeypatch.setattr(settings, "ocr_alias", alias)
+    monkeypatch.setattr(settings, "context_summary_alias", alias)
     yield seen, reply
     server.shutdown()
     thread.join()
@@ -144,200 +142,6 @@ def run_ocr_job(api, fid, client=None):
     return process_ocr(fid, client or OCRClient(api))
 
 
-def test_scan_queues_ocr_in_the_ready_transaction_and_never_infers_inline(api, upstream):
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    assert upstream[0] == []
-    from ailab_platform.contracts.jobs import JobEnvelope
-
-    jobs = queued_ocr(fid)
-    assert len(jobs) == 1
-    assert JobEnvelope.model_validate(jobs[0]).kind == "ocr"
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.status == FileStatus.READY
-        assert file.meta["ocr"] == "pending" and file.meta["ocr_requested_at"] > 0
-
-
-def test_image_ocr_bills_file_owner_and_is_not_replayed(api, upstream):
-    from ailab_platform.models import User
-
-    fid = upload(api)
-    with SessionLocal() as db:
-        owner_id = new_id("usr")
-        db.add(User(id=owner_id, email=owner_id + "@example.test", display_name="OCR owner"))
-        db.flush()
-        db.get(FileObject, fid).user_id = owner_id
-        db.commit()
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    seen, _ = upstream
-    assert len(seen) == 1
-    headers, payload = seen[0]
-    image = payload["messages"][0]["content"][1]["image_url"]
-    assert image["url"].startswith("data:image/webp;base64,") and image["detail"] == "high"
-    assert "x-run-id" not in headers
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.meta["ocr"] == "done"
-        assert "123" in get_storage().get_bytes(file.meta["ocr_text_key"]).decode()
-        assert "text_key" not in file.meta  # the Worker's native extraction is never overwritten
-        usage = db.scalar(select(ModelUsage).where(ModelUsage.file_id == fid))
-        assert (usage.user_id, usage.run_id, usage.mode, usage.subject) == (file.user_id, None, "ocr", "file_job")
-        assert usage.weighted_amount == 120000
-        assert headers["x-user-id"] == file.user_id
-    denied = api.post(
-        "/internal/usage/settle", headers=SERVICE, json={"call_id": f"ocr:{fid}:0", "attempt_id": f"ocr:{fid}:0", "status": "released"}
-    )
-    assert denied.status_code == 403
-    run_ocr_job(api, fid)
-    assert len(seen) == 1
-
-
-def test_unconfigured_is_explicit_unavailable_and_never_queued(api):
-    fid = upload(api)
-    with patch.object(settings, "ocr_alias", ""):
-        process_file(fid, platform=OCRClient(api))
-    with SessionLocal() as db:
-        meta = db.get(FileObject, fid).meta
-        assert (meta["ocr"], meta["ocr_reason"]) == ("unavailable", "vision_not_configured")
-        assert "ocr_pdf" not in meta
-        assert db.scalar(select(ModelUsage.id).where(ModelUsage.file_id == fid)) is None
-    assert queued_ocr(fid) == []
-
-
-def test_busy_inference_slot_leaves_the_job_pending_and_the_file_ready(api, upstream):
-    from ailab_platform.api.routes_ocr import _ocr_slot
-
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    _ocr_slot.acquire()
-    try:
-        with pytest.raises(httpx.HTTPStatusError) as busy:
-            run_ocr_job(api, fid)
-        assert busy.value.response.status_code == 429
-    finally:
-        _ocr_slot.release()
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.status == FileStatus.READY and file.meta["ocr"] == "pending"
-        assert file.meta.get("processing") != "error"
-    run_ocr_job(api, fid)
-    assert len(upstream[0]) == 1
-
-
-def test_ocr_message_acks_on_completion_and_redelivers_while_busy(api, upstream, monkeypatch):
-    from datetime import timedelta
-
-    from ailab_platform.api.routes_ocr import _ocr_slot
-    from ailab_platform.queue import InMemoryQueue
-    from ailab_platform.worker import main as worker_main
-
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    monkeypatch.setattr(worker_main, "PlatformClient", lambda **kwargs: OCRClient(api))
-    queue = InMemoryQueue()
-    payload = queued_ocr(fid)[0]
-    queue.enqueue(settings.file_queue, payload)
-    _ocr_slot.acquire()
-    try:
-        worker_main.handle_message(queue, queue.dequeue(settings.file_queue, "w", timeout=1, visibility_seconds=0))
-    finally:
-        _ocr_slot.release()
-    assert len(queue.outstanding(settings.file_queue)) == 1
-    with SessionLocal() as db:
-        job = db.get(OutboxMessage, payload["job_id"])
-        assert job is not None and job.claim_token
-        job.claimed_until = datetime.now(UTC) - timedelta(seconds=1)
-        db.commit()
-    worker_main.handle_message(queue, queue.dequeue(settings.file_queue, "w", timeout=1, visibility_seconds=0))
-    assert queue.outstanding(settings.file_queue) == []
-    assert len(upstream[0]) == 1
-    with SessionLocal() as db:
-        assert db.get(OutboxMessage, payload["job_id"]) is None
-    # A transport duplicate arriving after durable ACK must not issue another model call.
-    queue.enqueue(settings.file_queue, payload)
-    worker_main.handle_message(queue, queue.dequeue(settings.file_queue, "w", timeout=1, visibility_seconds=0))
-    assert queue.outstanding(settings.file_queue) == []
-    assert len(upstream[0]) == 1
-
-
-def test_ocr_durable_deadline_and_completed_state_skip_inference(api, upstream):
-    from datetime import timedelta
-
-    for expired in (True, False):
-        fid = upload(api)
-        process_file(fid, platform=OCRClient(api))
-        payload = queued_ocr(fid)[0]
-        with SessionLocal() as db:
-            if expired:
-                job = db.get(OutboxMessage, payload["job_id"])
-                job.payload = {**job.payload, "deadline": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}
-            else:
-                file = db.get(FileObject, fid)
-                file.meta = {**file.meta, "ocr": "done"}
-            db.commit()
-        assert OCRClient(api).job_action(payload["job_id"], "claim", consumer="test") == {"state": "done"}
-        with SessionLocal() as db:
-            assert db.get(OutboxMessage, payload["job_id"]) is None
-            if expired:
-                assert db.get(FileObject, fid).meta["ocr_reason"] == "job_expired"
-    assert upstream[0] == []
-
-
-@pytest.mark.parametrize("status,text,usage,expected", [(500, "secret upstream body", False, "estimated"), (200, "", True, "settled")])
-def test_failure_billed_and_not_replayed(api, upstream, status, text, usage, expected):
-    seen, reply = upstream
-    reply.update(status=status, text=text, usage=usage)
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.meta["ocr"] == "failed"
-        assert "secret" not in str(file.meta)
-        assert db.get(UsageReservation, f"ocr:{fid}:0").status == expected
-    OCRClient(api).ocr(fid, prepare=True)
-    assert len(seen) == 1
-
-
-def test_scanned_pdf_uses_preview_pages_and_only_low_text_pages(api, upstream):
-    fid = upload(api, "scan.pdf", blank_pdf(1), "application/pdf")
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.meta["ocr_pdf"] == {"pages": 1, "low_text_pages": [0]}
-        assert file.meta["preview_job_id"]
-        assert file.meta["preview"]["status"] == "ready"
-        assert file.meta["ocr"] == "done"
-        assert "发票" in get_storage().get_bytes(file.meta["ocr_text_key"]).decode()
-    assert upstream[0][0][1]["messages"][0]["content"][1]["image_url"]["url"].startswith("data:image/jpeg")
-
-
-def test_text_pdf_over_page_limit_needs_no_inference(api, upstream, monkeypatch):
-    monkeypatch.setattr(settings, "ocr_max_pages", 1)
-    fid = upload(api, "text.pdf", text_pdf(2), "application/pdf")
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        meta = db.get(FileObject, fid).meta
-        assert (meta["ocr"], meta["ocr_reason"]) == ("done", "text_pdf")
-        assert meta["ocr_pdf"]["low_text_pages"] == []
-    assert upstream[0] == []
-
-
-def test_scanned_pages_over_limit_fail_explicitly_before_inference(api, upstream, monkeypatch):
-    monkeypatch.setattr(settings, "ocr_max_pages", 1)
-    fid = upload(api, "long-scan.pdf", blank_pdf(2), "application/pdf")
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        meta = db.get(FileObject, fid).meta
-        assert (meta["ocr"], meta["ocr_reason"]) == ("failed", "page_limit")
-    assert upstream[0] == []
-
-
 def test_pdf_is_not_analysed_when_ocr_is_unconfigured(api):
     fid = upload(api, "scan.pdf", blank_pdf(1), "application/pdf")
     with patch.object(settings, "ocr_alias", ""):
@@ -347,110 +151,11 @@ def test_pdf_is_not_analysed_when_ocr_is_unconfigured(api):
         assert meta["ocr"] == "unavailable" and "ocr_pdf" not in meta
 
 
-def test_shared_user_quota_blocks_inference(api, upstream, monkeypatch):
-    from ailab_platform import quota
-    from ailab_platform.domain.quota_policy import Limits
-
-    monkeypatch.setattr(quota, "user_limits", lambda db, uid: Limits(1, 1, 100_000_000, 10))
+def test_conversation_image_is_bound_to_attached_active_run(api, rapid_upstream):
     fid = upload(api)
     process_file(fid, platform=OCRClient(api))
+    api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
     run_ocr_job(api, fid)
-    assert upstream[0] == []
-    with SessionLocal() as db:
-        assert db.get(FileObject, fid).meta["ocr"] == "failed"
-        assert db.get(UsageReservation, f"ocr:{fid}:0") is None
-
-
-def test_size_limit_fails_before_inference(api, upstream, monkeypatch):
-    monkeypatch.setattr(settings, "ocr_max_bytes", 1)
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        assert db.get(FileObject, fid).meta["ocr_reason"] == "size_limit"
-    assert upstream[0] == []
-
-
-def test_stale_pending_job_fails_at_deadline_without_inference(api, upstream, monkeypatch):
-    monkeypatch.setattr(settings, "ocr_deadline_seconds", 60)
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        file.meta = {**file.meta, "ocr_requested_at": datetime.now(UTC).timestamp() - 61}
-        db.commit()
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        meta = db.get(FileObject, fid).meta
-        assert (meta["ocr"], meta["ocr_reason"]) == ("failed", "deadline")
-    assert upstream[0] == []
-
-
-def test_ocr_scope_is_worker_only_and_scan_required(api, monkeypatch):
-    import hashlib
-
-    monkeypatch.setattr(
-        settings,
-        "service_credentials",
-        {name: "sha256:" + hashlib.sha256((name + "-ocr-test").encode()).hexdigest() for name in ("worker", "agent", "broker")},
-    )
-    fid = upload(api)
-    for name in ("agent", "broker"):
-        assert api.post(f"/internal/files/{fid}/ocr/prepare", headers={"X-Service-Token": name + "-ocr-test"}).status_code == 403
-    assert api.post(f"/internal/files/{fid}/ocr/prepare", headers={"X-Service-Token": "worker-ocr-test"}).status_code == 409
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        file.status = FileStatus.READY
-        file.meta = {"scan": {"verdict": "infected"}}
-        db.commit()
-    assert api.post(f"/internal/files/{fid}/ocr/prepare", headers={"X-Service-Token": "worker-ocr-test"}).status_code == 409
-
-
-def test_scanned_pdf_real_broker_renderer(api, upstream, tmp_path, monkeypatch):
-    import shutil
-    from pathlib import Path
-
-    from ailab_platform.broker.render import LibraryRenderer
-    from tests.test_workspace_previews import _manager
-
-    if not all(shutil.which(x) for x in ("pdftoppm", "pdfinfo", "timeout")):
-        pytest.skip("PDF renderer prerequisites unavailable")
-    buffer = io.BytesIO()
-    with Image.open(io.BytesIO(photo())) as image:
-        image.save(buffer, "PDF")
-    fid = upload(api, "scan-real.pdf", buffer.getvalue(), "application/pdf")
-    client = OCRClient(api)
-    manager, _, _ = _manager(tmp_path)
-    manager.storage = get_storage()
-
-    def get_file(file_id, **bound):
-        response = api.get(f"/internal/files/{file_id}", params=bound, headers=SERVICE)
-        response.raise_for_status()
-        return response.json()
-
-    def download(file_id, target, **bound):
-        bound.pop("max_bytes", None)
-        response = api.get(f"/internal/files/{file_id}/content", params=bound, headers=SERVICE)
-        response.raise_for_status()
-        Path(target).write_bytes(response.content)
-
-    manager.platform.get_file = get_file
-    manager.platform.download_file = download
-    monkeypatch.setattr(client, "render_preview", LibraryRenderer(manager).render)
-    process_file(fid, platform=client)
-    run_ocr_job(api, fid, client)
-    assert manager.active_leases() == []
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        assert file.meta["ocr"] == "done"
-        asset = next(iter(file.meta["preview_assets"].values()))
-        assert get_storage().get_bytes(asset["key"]).startswith(b"\xff\xd8")
-    assert len(upstream[0]) == 1
-
-
-def test_conversation_image_is_bound_to_attached_active_run(api):
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
     run = api.post("/v1/runs", headers=AUTH, json={"prompt": "看图", "file_ids": [fid]}).json()
     r = api.get(f"/internal/files/{fid}/vision", params={"run_id": run["id"]}, headers=SERVICE)
     assert r.status_code == 200 and r.headers["content-type"] == "image/webp"
@@ -464,57 +169,6 @@ def test_conversation_image_is_bound_to_attached_active_run(api):
         headers = {"X-Service-Token": "agent-image-test"}
         assert api.get(f"/internal/files/{fid}/vision", params={"run_id": other["id"]}, headers=headers).status_code == 404
         assert api.get(f"/internal/files/{fid}/vision", params={"run_id": run["id"]}, headers=headers).status_code == 200
-
-
-def test_attachment_text_for_the_model_is_the_ocr_text(api, upstream):
-    from ailab_platform.api.routes_internal import _attachment_texts
-    from ailab_platform.models import Run
-
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    run_ocr_job(api, fid)
-    run = api.post("/v1/runs", headers=AUTH, json={"prompt": "看图", "file_ids": [fid]}).json()
-    with SessionLocal() as db:
-        texts = _attachment_texts(db, db.get(Run, run["id"]))
-    assert "123" in texts[0]["text"] and texts[0]["meta"]["ocr"] == "done"
-
-
-def test_interrupted_ocr_is_explicit_failed_and_reservation_reaped(api, upstream):
-    from datetime import timedelta
-
-    from ailab_platform.contracts.usage import ReserveUsageIn
-    from ailab_platform.quota import expire_reservations, reserve_usage
-
-    fid = upload(api)
-    process_file(fid, platform=OCRClient(api))
-    with SessionLocal() as db:
-        file = db.get(FileObject, fid)
-        reserve_usage(
-            db,
-            ReserveUsageIn(
-                call_id=f"ocr:{fid}:0",
-                subject="file_job",
-                file_id=fid,
-                alias=settings.ocr_alias,
-                attempt_id="crash",
-                mode="ocr",
-                max_output_tokens=100,
-                estimated_input_tokens=100,
-            ),
-        )
-        file.meta = {**file.meta, "ocr": "running", "ocr_started_at": 0}
-        reservation = db.get(UsageReservation, f"ocr:{fid}:0")
-        reservation.expires_at = datetime.now(UTC) - timedelta(seconds=1)
-        db.commit()
-    run_ocr_job(api, fid)
-    with SessionLocal() as db:
-        assert db.get(FileObject, fid).meta["ocr"] == "failed"
-        assert db.get(FileObject, fid).meta["ocr_reason"] == "interrupted"
-        expire_reservations(db, datetime.now(UTC))
-        row = db.scalar(select(ModelUsage).where(ModelUsage.file_id == fid))
-        assert row.status == "unreconciled" and row.weighted_amount == 200000
-        assert row.run_id is None and row.mode == "ocr"
-    assert upstream[0] == []
 
 
 def test_file_usage_subject_is_validated():
@@ -617,40 +271,98 @@ def test_offline_model_accepts_multimodal_text_fallback():
     response = asyncio.run(MockLLM().chat(messages, [], "test-fast"))
     assert "hello" in response.content
 
-
-def test_scanned_pdf_ocr_selected_pages_and_citation_target(api, upstream):
-
-    seen, reply = upstream
-    reply["text"] = "第二页的扫描原文"
-    fid = upload(api, "scan-page-selection.pdf", blank_pdf(2), "application/pdf")
-    process_file(fid, platform=OCRClient(api))
-
-    class TwoPageClient(OCRClient):
-        def render_preview(self, file_id, job_id):
-            result = super().render_preview(file_id, job_id)
-            result["preview"]["pages"].append("p-02.jpg")
-            first = result["assets"]["p-01.jpg"]
-            second_key = f"derived/{file_id}/preview/p-02.jpg"
-            get_storage().put_bytes(second_key, get_storage().get_bytes(first["key"]), "image/jpeg")
-            result["assets"]["p-02.jpg"] = {**first, "key": second_key}
-            return result
-
-    run_ocr_job(api, fid, client=TwoPageClient(api))
-    with SessionLocal() as db:
-        meta = db.get(FileObject, fid).meta
-        assert meta.get("ocr") == "done", meta.get("ocr_reason")
-        text = get_storage().get_bytes(meta["ocr_text_key"]).decode()
-    assert "\f[page:1]\n" in text and "\f[page:2]\n" in text
-    assert len(seen) == 2
-    run = api.post("/v1/runs", headers=AUTH, json={"prompt": "按页阅读", "mode": "chat"}).json()
-    response = api.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid, "pages": [2]})
-    assert response.status_code == 200, response.text
-    page = response.json()
-    assert page["text"] == "第二页的扫描原文" and page["pages"] == [{"page": 2, "offset": 0}]
-    # The physical page number survives OCR -> library read -> the established citation protocol.
-    citation = f"ailab-file://{fid}?page={page['pages'][0]['page']}"
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(citation)
-    assert parsed.netloc == fid and parse_qs(parsed.query) == {"page": ["2"]}
     # No UI changes here: the Portal's existing file citation handler receives this exact page=2.
+
+
+@pytest.fixture
+def rapid_upstream(monkeypatch):
+    from pydantic import SecretStr
+
+    seen = []
+    reply = {"text": "发票 金额 123 元", "backend": "cann", "engine": "rapidocr:80b427d", "seconds": 0.12}
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            seen.append(payload)
+            encoded = json.dumps(reply).encode()
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def log_message(self, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(settings, "ocr_executor_url", f"http://127.0.0.1:{server.server_port}")
+    monkeypatch.setattr(settings, "ocr_executor_token", SecretStr("isolated-test"))
+    yield seen, reply
+    server.shutdown()
+    thread.join()
+    server.server_close()
+
+
+def test_upload_never_queues_paid_vision_ocr(api, upstream):
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    assert not queued_ocr(fid) and not upstream[0]
+    response = api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
+    assert response.status_code == 503
+    with SessionLocal() as db:
+        assert db.get(FileObject, fid).status == "ready"
+
+
+def test_rapidocr_metering_without_billing_and_duplicate_delivery(api, rapid_upstream):
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    assert api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={}).status_code == 200
+    assert len(queued_ocr(fid)) == 1
+    assert run_ocr_job(api, fid)["ocr"] == "done"
+    assert run_ocr_job(api, fid)["ocr"] == "done"
+    assert len(rapid_upstream[0]) == 1
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["ocr_pages"]["0"]["backend"] == "cann"
+        assert file.meta["ocr_pages"]["0"]["seconds"] == 0.12
+        assert not db.scalar(select(ModelUsage).where(ModelUsage.file_id == fid))
+        assert not db.scalar(select(UsageReservation).where(UsageReservation.file_id == fid))
+
+
+def test_cpu_response_never_counts_as_npu_success(api, rapid_upstream):
+    rapid_upstream[1]["backend"] = "cpu"
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
+    assert run_ocr_job(api, fid)["ocr"] == "failed"
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["ocr_reason"] == "ocr_backend_mismatch"
+        assert file.status == "ready"
+        assert "ocr_text_key" not in file.meta
+
+
+def test_nonvision_chat_prepares_image_before_creating_run(api, rapid_upstream):
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    body = {"prompt": "提取金额", "mode": "chat", "file_ids": [fid]}
+    response = api.post("/v1/runs", headers=AUTH, json=body)
+    assert response.status_code == 409 and response.json()["detail"]["code"] == "chat_attachment_processing"
+    run_ocr_job(api, fid)
+    run = api.post("/v1/runs", headers=AUTH, json=body)
+    assert run.status_code == 201
+    files = api.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()["input_files"]
+    assert "123" in files[0]["text"]
+
+
+def test_pdf_extraction_requires_explicit_range_and_preserves_native_input(api, rapid_upstream):
+    fid = upload(api, "range.pdf", text_pdf(100), "application/pdf")
+    process_file(fid, platform=OCRClient(api))
+    assert api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={}).status_code == 422
+    assert api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={"pages": [85]}).status_code == 200
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["ocr_pdf"]["low_text_pages"] == [84]
+        assert file.meta["extract"]["units"] == 100

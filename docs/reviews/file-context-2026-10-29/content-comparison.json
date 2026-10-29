@@ -1,0 +1,98 @@
+[
+  {
+    "file": "paper.pdf",
+    "legacy_chars": 243,
+    "office_chars": 245,
+    "legacy_token_count": 46,
+    "legacy_tokens_found": 46,
+    "legacy_only": [],
+    "office_only": [],
+    "scope": "all native content of small fixture; lexical set overlap is diagnostic, not layout or semantic fidelity"
+  },
+  {
+    "file": "report.docx",
+    "legacy_chars": 406,
+    "office_chars": 566,
+    "legacy_token_count": 56,
+    "legacy_tokens_found": 56,
+    "legacy_only": [],
+    "office_only": [
+      "10",
+      "11",
+      "13",
+      "4",
+      "5",
+      "6",
+      "7",
+      "8",
+      "9",
+      "empty",
+      "p",
+      "t"
+    ],
+    "scope": "all native content of small fixture; lexical set overlap is diagnostic, not layout or semantic fidelity"
+  },
+  {
+    "file": "budget.xlsx",
+    "legacy_chars": 486,
+    "office_chars": 746,
+    "legacy_token_count": 31,
+    "legacy_tokens_found": 31,
+    "legacy_only": [],
+    "office_only": [
+      "4",
+      "5",
+      "6",
+      "7",
+      "a",
+      "b",
+      "c",
+      "calculated",
+      "d",
+      "e",
+      "file",
+      "formulas",
+      "not",
+      "rows",
+      "sum"
+    ],
+    "scope": "all native content of small fixture; lexical set overlap is diagnostic, not layout or semantic fidelity"
+  },
+  {
+    "file": "launch.pptx",
+    "legacy_chars": 139,
+    "office_chars": 518,
+    "legacy_token_count": 23,
+    "legacy_tokens_found": 22,
+    "legacy_only": [
+      "page"
+    ],
+    "office_only": [
+      "25",
+      "4",
+      "40",
+      "ads",
+      "content",
+      "cost",
+      "events",
+      "feedback",
+      "item",
+      "k",
+      "kim",
+      "lee",
+      "mention",
+      "notes",
+      "numbers",
+      "placeholder",
+      "shape",
+      "slide",
+      "speaker",
+      "subtitle",
+      "table",
+      "text",
+      "textbox",
+      "title"
+    ],
+    "scope": "all native content of small fixture; lexical set overlap is diagnostic, not layout or semantic fidelity"
+  }
+]

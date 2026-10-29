@@ -47,7 +47,7 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
         statements = []
 
         def capture(conn, cursor, sql, params, context, many):
-            if sql.lstrip().upper().startswith("SELECT") and "runs" in sql:
+            if sql.lstrip().upper().startswith(("SELECT", "WITH RECURSIVE")) and "runs" in sql:
                 statements.append((sql, params))
 
         event.listen(engine, "before_cursor_execute", capture)

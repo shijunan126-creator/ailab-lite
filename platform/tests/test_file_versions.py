@@ -440,7 +440,10 @@ def test_purge_with_storage_down_leaves_durable_intents_that_the_lifecycle_finis
         assert db.scalar(select(LifecycleDeletion).where(LifecycleDeletion.key == key)) is not None
     monkeypatch.setattr(type(storage), "delete", original)
     with SessionLocal() as db:
-        for _ in range(5):
+        # Shared suite data can include hundreds of document-page objects ahead of this intent.
+        for _ in range(200):
             drain_object_deletions(db, storage)
+            if db.scalar(select(LifecycleDeletion).where(LifecycleDeletion.key == key)) is None:
+                break
         assert db.scalar(select(LifecycleDeletion).where(LifecycleDeletion.key == key)) is None
     assert not storage.exists(key)

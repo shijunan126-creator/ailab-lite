@@ -63,6 +63,8 @@ async def run():
     owned = await platform.job_action(rid, "claim", consumer="killed-agent")
     attempt_id_var.set(owned["token"])
     llm = ScriptedLLM([LLMResponse(tool_calls=[
+        ToolCall("find-deliver","search_capabilities",{"query":"deliver_file","kind":"tool","limit":1}),
+        ToolCall("find-exec","search_capabilities",{"query":"exec","kind":"tool","limit":1})]),LLMResponse(tool_calls=[
         ToolCall("deliver", "deliver_file", {"path": "/workspace/outputs/a.txt"}),
         ToolCall("start", "exec", {"cmd": "slow build", "background": True})])])
     await AgentLoop(platform, Broker(), llm).process(rid, attempt_id=owned["token"])
@@ -113,7 +115,7 @@ asyncio.run(run())
     with SessionLocal() as db:
         assert db.get(Run, rid).status == "succeeded"
     checkpoint = api.get(f"/internal/runs/{rid}/checkpoint", headers=SERVICE).json()
-    assert checkpoint["state"]["tool_log"]["0:1"]["result"]["interrupted"] is True
+    assert checkpoint["state"]["tool_log"]["1:1"]["result"]["interrupted"] is True
     assert len(checkpoint["state"]["artifacts"]) == 1
     assert Path(marker).read_text().splitlines() == ["delivered", "background_started"]
 

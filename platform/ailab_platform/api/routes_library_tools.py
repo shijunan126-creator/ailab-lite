@@ -28,6 +28,11 @@ class Search(BaseModel):
 class Read(BaseModel):
     file_id: str = Field(max_length=40)
     offset: int = Field(default=0, ge=0, le=10_000_000)
+    derivation_id: str | None = Field(default=None, max_length=40)
+    content_revision: str | None = Field(default=None, max_length=64)
+    anchor: str | None = Field(default=None, max_length=300)
+    block_offset: int = Field(default=0, ge=0)
+    query: str = Field(default="", max_length=200)
     pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
 
     @field_validator("pages")
@@ -50,6 +55,31 @@ def _ready(db, run_id, file_id):
         or file.purged_at
     ):
         raise HTTPException(404, "资料不存在或不可用")
+    from ..models import MessageFileRef
+
+    with user_critical_section(db, run.user_id):
+        existing = db.scalar(
+            select(MessageFileRef.id).where(
+                MessageFileRef.run_id == run.id,
+                MessageFileRef.message_kind == "run_prompt",
+                MessageFileRef.message_id == run.id,
+                MessageFileRef.file_id == file.id,
+                MessageFileRef.role == "agent_read",
+            )
+        )
+        if not existing:
+            db.add(
+                MessageFileRef(
+                    run_id=run.id,
+                    message_kind="run_prompt",
+                    message_id=run.id,
+                    file_id=file.id,
+                    role="agent_read",
+                    ordinal=0,
+                    reference_origin="agent_read",
+                )
+            )
+        db.commit()
     return run, file
 
 
@@ -99,6 +129,8 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
 def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
     _, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
+    if meta.get("document_manifest_key"):
+        return read_document_blocks(db, file, body)
     keys = list(filter(None, [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]))
     if body.pages is not None:
         return read_selected_pages(file, keys, body)
@@ -217,3 +249,204 @@ def read_selected_pages(file, keys, body):
         "truncated": len(keep) > 30000,
         "next_offset": body.offset + 30000 if len(keep) > 30000 else None,
     }
+
+
+def read_document_blocks(db, file, body):
+    from ..models import DocumentBlock, FileDerivation
+
+    derivation = db.scalar(
+        select(FileDerivation)
+        .where(FileDerivation.file_id == file.id, FileDerivation.kind == "native")
+        .order_by(FileDerivation.created_at.desc(), FileDerivation.id.desc())
+        .limit(1)
+    )
+    if not derivation:
+        raise HTTPException(409, {"code": "document_index_pending", "message": "文档索引尚未完成"})
+    import hashlib
+
+    revision = str((file.meta or {}).get("ocr_cache_revision", 0))
+    if body.content_revision and body.content_revision != revision:
+        raise HTTPException(409, {"code": "cursor_stale", "message": "可读文字版本已变化，请重新读取"})
+    if body.derivation_id and body.derivation_id != derivation.id:
+        raise HTTPException(409, {"code": "cursor_stale", "message": "文档版本已变化，请重新读取"})
+    q = select(DocumentBlock).where(DocumentBlock.derivation_id == derivation.id, DocumentBlock.ordinal >= body.offset)
+    if body.pages:
+        if (file.meta.get("extract") or {}).get("kind") not in {"pdf", "pptx"}:
+            raise HTTPException(422, "此格式请按结构anchor读取，不能使用物理页码")
+        q = q.where(DocumentBlock.unit_number.in_(body.pages))
+    if body.anchor:
+        q = q.where(DocumentBlock.anchor == body.anchor)
+    blocks = db.scalars(q.order_by(DocumentBlock.ordinal).limit(101)).all()
+    from .document_sources import ocr_records
+
+    ocr_pages = ocr_records(db, file, [block.unit_number - 1 for block in blocks])
+    text, coverage, next_cursor = "", [], None
+    for block in blocks[:100]:
+        key = block.text_key
+        method = "native"
+        content = get_storage().get_bytes(key).decode("utf-8")
+        ocr_available = block.anchor.startswith("page:") and str(block.unit_number - 1) in ocr_pages
+        if ocr_available and not content.strip():
+            key = ocr_pages[str(block.unit_number - 1)]["text_key"]
+            method = "ocr"
+            content = get_storage().get_bytes(key).decode("utf-8")
+        digest = hashlib.sha256(content.encode()).hexdigest()
+        if body.query and body.query.casefold() not in content.casefold():
+            continue
+        start = body.block_offset if block.ordinal == body.offset else 0
+        piece = content[start : start + max(0, 8000 - len(text))]
+        if piece:
+            text += piece
+            coverage.append(
+                {
+                    "block_id": block.id,
+                    "anchor": block.anchor,
+                    "part_start": start,
+                    "part_end": start + len(piece),
+                    "digest": digest,
+                    "method": method,
+                    "ocr_available": bool(ocr_available),
+                }
+            )
+        if start + len(piece) < len(content):
+            next_cursor = {"offset": block.ordinal, "block_offset": start + len(piece)}
+            break
+        if len(text) >= 8000:
+            next_cursor = {"offset": block.ordinal + 1, "block_offset": 0}
+            break
+    if next_cursor is None and len(blocks) > 100:
+        next_cursor = {"offset": blocks[100].ordinal, "block_offset": 0}
+    if next_cursor:
+        next_cursor["derivation_id"] = derivation.id
+        next_cursor["content_revision"] = revision
+    return {
+        "file_id": file.id,
+        "filename": file.filename,
+        "text": text,
+        "coverage": coverage,
+        "derivation_id": derivation.id,
+        "content_revision": revision,
+        "status": derivation.status,
+        "next_cursor": next_cursor,
+        "truncated": next_cursor is not None,
+        "next_offset": next_cursor["offset"] if next_cursor else None,
+        "pages": [],
+        "scope": "selected" if body.pages or body.anchor or body.query else "document",
+    }
+
+
+class Resolve(BaseModel):
+    message_id: str | None = Field(default=None, max_length=40)
+    relative: str | None = Field(default=None, pattern="^(current|previous)$")
+    kind: str | None = Field(default=None, pattern="^(image|file)$")
+    ordinal: int | None = Field(default=None, ge=1, le=50)
+    filename: str | None = Field(default=None, max_length=200)
+
+
+@router.post("/{run_id}/library/resolve", dependencies=[Depends(require_scope("files:read_for_run"))])
+def resolve_attachment(run_id: str, body: Resolve, db: Session = Depends(get_db)):
+    from ..conversation_tree import ancestor_query
+    from ..models import Run
+    from .document_sources import attachment_manifest
+
+    run = _run_or_404(db, run_id)
+    if body.relative == "current":
+        candidates = [run]
+    else:
+        path = ancestor_query(run.conversation_id, run.parent_run_id)
+        q = select(Run).join(path, Run.id == path.c.id).where(Run.user_id == run.user_id)
+        if body.message_id:
+            q = q.where(Run.id == body.message_id)
+        candidates = list(db.scalars(q.order_by(path.c.depth).limit(1 if body.relative == "previous" else 5)))
+        if not body.relative and (not body.message_id or body.message_id == run.id):
+            candidates = [run, *candidates][:5]
+    from ..models import AppliedMessagePosition, QueuedMessage
+
+    refs = []
+    if body.relative == "previous":
+        candidates = [run, *candidates]
+    messages = []
+    for message in candidates:
+        positions = db.scalars(
+            select(AppliedMessagePosition)
+            .where(AppliedMessagePosition.run_id == message.id)
+            .order_by(AppliedMessagePosition.application_seq.desc())
+            .limit(6)
+        ).all()
+        if not positions:
+            messages.append((message, "run_prompt", message.id, None))
+        for position in positions:
+            if body.relative == "previous" and message.id == run.id and position.message_kind == "run_prompt":
+                continue
+            if body.message_id and body.message_id not in {position.message_id, position.alias_run_prompt_id}:
+                continue
+            queued = db.get(QueuedMessage, position.message_id) if position.message_kind == "queued_message" else None
+            messages.append((message, position.message_kind, position.message_id, queued.file_ids if queued else []))
+    if body.relative == "previous":
+        messages = messages[:1]
+    for message, kind, message_id, file_ids in messages:
+        items = attachment_manifest(db, message, file_ids=file_ids, message_kind=kind, message_id=message_id)
+        if body.kind == "image":
+            items = [r for r in items if (r["content_type"] or "").startswith("image/")]
+        if body.ordinal:
+            items = items[body.ordinal - 1 : body.ordinal]
+        if body.filename:
+            items = [r for r in items if body.filename in r["filename"]]
+        refs.extend(items)
+    return {"status": "resolved" if len(refs) == 1 else "ambiguous" if refs else "unavailable", "candidates": refs[:5]}
+
+
+@router.post("/{run_id}/library/image-reference", dependencies=[Depends(require_scope("files:read_for_run"))])
+def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
+    _, file = _ready(db, run_id, body.file_id)
+    if file.content_type.startswith("image/"):
+        return {
+            "files": [
+                {"id": file.id, "file_id": file.id, "filename": file.filename, "content_type": file.content_type, "version": file.version}
+            ]
+        }
+    if not body.pages:
+        raise HTTPException(422, "文档请显式选择需要查看的页面")
+    from ..models import RenderedPage
+
+    pages = db.scalars(
+        select(RenderedPage).where(
+            RenderedPage.file_id == file.id, RenderedPage.page.in_(body.pages), RenderedPage.version == "poppler-1280-v1"
+        )
+    ).all()
+    by_page = {p.page: p for p in pages}
+    missing = [p for p in body.pages if p not in by_page]
+    if missing:
+        from .routes_ocr import request_page_render
+
+        with user_critical_section(db, file.user_id):
+            db.refresh(file)
+            request_page_render(db, file, missing)
+            db.commit()
+        return {"pending": True, "pages": missing, "retry_after": 2}
+    return {
+        "files": [
+            {
+                "id": file.id,
+                "file_id": file.id,
+                "filename": file.filename,
+                "content_type": "image/jpeg",
+                "version": file.version,
+                "page": p,
+                "digest": by_page[p].digest,
+            }
+            for p in body.pages
+        ]
+    }
+
+
+@router.post("/{run_id}/library/extract-text", dependencies=[Depends(require_scope("files:read_for_run"))])
+def extract_for_run(run_id: str, body: Read, db: Session = Depends(get_db)):
+    run, file = _ready(db, run_id, body.file_id)
+    from .routes_ocr import request_extraction
+
+    with user_critical_section(db, run.user_id):
+        db.refresh(file)
+        result = request_extraction(db, file, body.pages)
+        db.commit()
+    return result

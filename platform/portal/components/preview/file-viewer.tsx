@@ -158,7 +158,7 @@ function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
   );
 }
 
-function Body({ file, page }: { file: FileItem; page?: number }) {
+export function FilePreviewBody({ file, page }: { file: FileItem; page?: number }) {
   const source = useContext(FileSourceContext);
   const preview = usePreview(file);
   if (file.status !== "ready") return <Unavailable file={file} />;
@@ -339,7 +339,7 @@ export default function FileViewer({
       </header>
       {sharing ? <ShareDialog target={{ kind: "file", fileId: file.id }} title={file.filename} onClose={() => setSharing(false)} /> : null}
       <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <Body key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
+        <FilePreviewBody key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
         {prev ? (
           <button className="viewer-nav prev" onClick={() => onOpen(prev)} aria-label="上一个文件">
             <IconChevronRight size={22} />

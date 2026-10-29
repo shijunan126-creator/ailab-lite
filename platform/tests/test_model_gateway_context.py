@@ -230,13 +230,16 @@ def test_all_failed_and_capability_filter(monkeypatch):
 
 
 def test_200_round_budget_and_incremental_summary(monkeypatch):
-    from ailab_platform.llm import LLMClient
+    from ailab_platform.llm import LLMClient, model_call
     from ailab_platform.model_policy import ModelPolicy, estimator
     from tests.test_agent_loop import FakePlatform
 
     class SummaryLLM(LLMClient):
         async def chat(self, messages, tools, model, user_id=None):
-            assert estimator.estimate(model, {"messages": messages, "tools": tools}) <= 2000
+            call = model_call.get()
+            spec = cat.get(model)
+            assert call.max_output_tokens == min(2048, spec.max_output_tokens)
+            assert estimator.estimate(model, {"messages": messages, "tools": tools}) + call.max_output_tokens <= spec.context_tokens
             return LLMResponse(content="记住用户要求与已交付文件。", usage={"prompt_tokens": 50, "completion_tokens": 15})
 
     class Context(FakePlatform):
@@ -336,11 +339,16 @@ def test_context_api_keyset_and_summary_compare_and_set():
         assert first["history"][0]["prompt"] == "history-0"
         summary_url = f"/internal/runs/{current['id']}/model-summary"
         owner = attempt_headers(c, current["id"])
-        body = {"expected_through_run_id": None, "through_run_id": first["history"][-1]["id"], "summary": "important decisions"}
+        body = {
+            "expected_through_run_id": None,
+            "through_run_id": first["history"][-1]["id"],
+            "summary": '{"schema_version":1,"objective":"important decisions"}',
+            "source_epoch": first.get("source_epoch", 0),
+        }
         assert c.put(summary_url, headers=owner, json=body).status_code == 200
         assert c.put(summary_url, headers=owner, json=body).status_code == 422
         next_page = c.get(url, headers=SERVICE).json()
-        assert next_page["summary"] == "important decisions"
+        assert "important decisions" in next_page["summary"]
         assert next_page["history"] == second["history"]
         body.update(expected_through_run_id=body["through_run_id"], through_run_id=current["id"])
         assert c.put(summary_url, headers=owner, json=body).status_code == 422
@@ -464,3 +472,42 @@ def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
             assert "thinking" not in model._request([], [], "m", None, True)[0]
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+@pytest.mark.parametrize("input_tokens,expected_output", [(500, 8000), (8000, 2000)])
+def test_output_request_and_real_ledger_reservation_use_remaining_window(monkeypatch, mode, input_tokens, expected_output):
+    async def exercise(c):
+        seen = []
+        async with upstream("ok", seen) as url:
+            cat = install_catalog(monkeypatch, url, url)
+            spec = cat.get("primary")
+            object.__setattr__(spec, "context_tokens", 10000)
+            object.__setattr__(spec, "max_output_tokens", 8000)
+            monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: input_tokens)
+            run = c.post("/v1/runs", headers=AUTH, json={"prompt": "hi", "model": "primary", "mode": mode}).json()
+            owner = attempt_headers(c, run["id"])
+            c.post(f"/internal/runs/{run['id']}/status", headers=owner, json={"status": "running"}).raise_for_status()
+
+            class Bridge(LedgerBridge):
+                async def reserve_usage(self, payload):
+                    self.reservation = payload
+                    return await super().reserve_usage(payload)
+
+            bridge = Bridge(c)
+            await AgentLoop(platform=bridge)._call_model(
+                OpenAICompatibleClient(url),
+                run["id"],
+                {**run, "_attempt_id": owner["X-Run-Attempt"]},
+                "primary",
+                [{"role": "user", "content": "hi"}],
+                0,
+                tools=[],
+            )
+            assert len(seen) == 1
+            assert seen[0][1]["max_tokens"] == bridge.reservation["max_output_tokens"] == expected_output
+            assert bridge.reservation["estimated_input_tokens"] == input_tokens
+            assert input_tokens + expected_output <= spec.context_tokens
+
+    with TestClient(app) as c:
+        asyncio.run(exercise(c))

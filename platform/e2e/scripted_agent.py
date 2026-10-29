@@ -80,6 +80,16 @@ class QuestionThenAnswer(LLMClient):
         return LLMResponse(content=STREAM_TEXT, usage={"prompt_tokens": 20, "completion_tokens": 50})
 
     async def chat(self, messages, tools, model, user_id=None):
+        response = await self._chat(messages, tools, model, user_id)
+        offered = {t["function"]["name"] for t in tools or []}
+        missing = next((c.name for c in response.tool_calls if c.name not in offered), None)
+        if missing and "search_capabilities" in offered:
+            return LLMResponse(
+                tool_calls=[ToolCall("discover_" + missing, "search_capabilities", {"query": missing, "kind": "tool", "limit": 1})]
+            )
+        return response
+
+    async def _chat(self, messages, tools, model, user_id=None):
         prompt = _last_user_text(messages)
         original = next(
             (
@@ -100,7 +110,14 @@ class QuestionThenAnswer(LLMClient):
             return LLMResponse(tool_calls=[ToolCall("template_probe", "exec", {"cmd": cmd})])
         if original:
             workspace_seen[original] = messages
-            if original.startswith("工作区保持") and not any(m.get("role") == "tool" for m in messages):
+            if original.startswith("工作区保持") and not any(
+                m.get("role") == "tool" and m.get("name") != "search_capabilities" for m in messages
+            ):
+                offered = {t["function"]["name"] for t in tools or []}
+                if "exec" not in offered and "search_capabilities" in offered:
+                    return LLMResponse(
+                        tool_calls=[ToolCall("discover_exec", "search_capabilities", {"query": "exec", "kind": "tool", "limit": 1})]
+                    )
                 workspace_release.clear()
                 await asyncio.wait_for(workspace_release.wait(), timeout=45)
                 return LLMResponse(

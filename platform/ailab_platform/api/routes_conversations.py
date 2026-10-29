@@ -10,6 +10,7 @@ from ..conversation_tree import path_ids, path_runs, require_idle
 from ..deps import current_user, get_db
 from ..library import move_lineage, owned_project
 from ..locks import user_critical_section
+from ..model_policy import ModelPolicy
 from ..models import Artifact, Conversation, FileObject, Run, RunStatus, User, utcnow
 from ..run_state import transition_run
 from ..schemas import (
@@ -126,7 +127,7 @@ def get_conversation(
         out["result"] = {
             key: value
             for key, value in out["result"].items()
-            if key in {"previews", "thinking", "plan", "question", "resumable", "sources"}
+            if key in {"previews", "thinking", "plan", "question", "resumable", "sources", "forked_from_run_id"}
         }
     from .inbox import pending_query, queue_output
 
@@ -291,6 +292,10 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 copied_keys.append(dst)
                 storage.copy(src, dst)
 
+            from .fork_context import copy_message_sources, copy_summary
+            from .source_lifecycle import invalid_history
+
+            invalid_sources = invalid_history(db, [turn.id for turn in turns])
             previous_created = None
             for old in turns:
                 check_deadline()
@@ -307,6 +312,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 previous_created = created
                 new = Run(
                     user_id=user.id,
+                    context_source_epoch=old.context_source_epoch,
                     conversation_id=conv.id,
                     parent_run_id=mapping[old.parent_run_id].id if old.parent_run_id in mapping else None,
                     title=old.title,
@@ -326,6 +332,8 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 db.add(new)
                 db.flush()
                 mapping[old.id] = new
+                if old.id in invalid_sources:
+                    new.runtime_meta = {**(new.runtime_meta or {}), "source_invalidated": True}
                 from ..models import QueuedMessage
                 from .inbox import steers_for_run
 
@@ -352,7 +360,11 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                         db.add(copied)
                         db.flush()
                         copied_steers[row.id] = copied.id
-                    new.runtime_meta = {"steer_ids": [copied_steers[qid] for qid in applied if qid in copied_steers]}
+                    new.runtime_meta = {
+                        **(new.runtime_meta or {}),
+                        "steer_ids": [copied_steers[qid] for qid in applied if qid in copied_steers],
+                    }
+                copy_message_sources(db, old, new, copied_steers)
                 for artifact in db.scalars(select(Artifact).where(Artifact.run_id == old.id)):
                     db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role))
                 # Copy events in pages to bound memory; the source can subsequently be purged independently.
@@ -385,12 +397,12 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     if cursor is None:
                         break
             conv.active_run_id = mapping[target.id].id
-            if source.summary_through_run_id in mapping:
-                conv.summary = source.summary
-                conv.summary_through_run_id = mapping[source.summary_through_run_id].id
+            copy_summary(db, source, conv, mapping, invalid_sources)
             if body.mode == "work":
                 newest = next((r for r in reversed(turns) if workspace_data(r) or "workspace_saved" in (r.result or {})), None)
                 if newest:
+                    if newest.id in invalid_sources:
+                        raise HTTPException(422, "分叉点工作区包含已失效来源")
                     if not workspace_data(newest):
                         raise HTTPException(422, "分叉点工作区已过期或不可用")
                     key = workspace_data(newest).get("key") or workspace_key(newest.id)
@@ -439,7 +451,7 @@ def conversation_context(db, leaf):
     return {
         "used_tokens": usage.prompt_tokens if usage else None,
         "model": model,
-        "compact_at_tokens": int(spec.context_tokens * config["threshold_ratio"]) if spec and config["auto_compact"] else None,
+        "compact_at_tokens": ModelPolicy.compaction_threshold(spec, config) if spec and config["auto_compact"] else None,
     }
 
 

@@ -38,8 +38,8 @@ from .routes_library_tools import router as library_tools_router
 from .routes_market import router as market_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
+from .routes_ocr import extraction_router, preparation_router, vision_router
 from .routes_ocr import router as ocr_router
-from .routes_ocr import vision_router
 from .routes_projects import router as projects_router
 from .routes_reader import router as reader_router
 from .routes_runs import router as runs_router
@@ -157,6 +157,8 @@ app.include_router(projects_router)
 app.include_router(reader_router)
 app.include_router(internal_router)
 app.include_router(ocr_router)
+app.include_router(extraction_router)
+app.include_router(preparation_router)
 app.include_router(vision_router)
 app.include_router(model_context_router)
 app.include_router(jobs_router)

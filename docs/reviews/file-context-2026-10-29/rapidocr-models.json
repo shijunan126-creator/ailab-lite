@@ -1,0 +1,25 @@
+{
+  "models": {
+    "Det": {
+      "sha256": "090f04abcd9d9a7498bc4ebf677e4cb9bdce1fe4197ddb7e529f1ef44e1ff94f",
+      "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/det/PP-OCRv6_det_small.onnx",
+      "license": "Apache-2.0 (RapidAI/RapidOCR and PaddleOCR model lineage)"
+    },
+    "Rec": {
+      "sha256": "6f327246b50388f3c176ae304bd95767ea6dc0c9ae92153ef8cbe210b3c14884",
+      "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv6/rec/PP-OCRv6_rec_small.onnx",
+      "license": "Apache-2.0 (RapidAI/RapidOCR and PaddleOCR model lineage)"
+    },
+    "Cls": {
+      "sha256": "e47acedf663230f8863ff1ab0e64dd2d82b838fceb5957146dab185a89d6215c",
+      "source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+      "license": "Apache-2.0 (RapidAI/RapidOCR and PaddleOCR model lineage)"
+    }
+  },
+  "rapidocr_commit": "80b427d69bfc5b91a12913394875910296c6f315",
+  "backend": "explicit CPU development validation",
+  "onnxruntime_version": "1.31.1",
+  "model_license": "Apache License 2.0, declared in the model-hosting repository card",
+  "model_license_source": "https://www.modelscope.cn/models/RapidAI/RapidOCR/resolve/v3.10.0/README.md",
+  "runtime_license_source": "https://raw.githubusercontent.com/RapidAI/RapidOCR/80b427d69bfc5b91a12913394875910296c6f315/LICENSE"
+}

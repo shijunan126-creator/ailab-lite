@@ -174,24 +174,41 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
             except IsolationError as exc:
                 platform.patch_file(file_id, meta={"scan": scan, "brand_error": str(exc), "processing": "rejected"}, status="rejected")
                 return {"file_id": file_id, "rejected": str(exc)}
+        if hasattr(platform, "reuse_document"):
+            from .office import copy_cache
+
+            candidate = platform.reuse_document(file_id, scan)
+            if candidate.get("reused"):
+                cached = copy_cache(file_id, candidate["source"], storage, platform)
+                platform.patch_file(file_id, meta={**cached, "scan": scan}, status="ready")
+                return {"file_id": file_id, "cache": "private_copy"}
         thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
         if source.stat().st_size > settings.max_parse_bytes:
             info = {"kind": "too_large", "chars": 0, "bytes": source.stat().st_size, "truncated": True}
         else:
             try:
-                info = execute(
-                    "extract", source, Path(tmp) / "extract", filename=meta["filename"], content_type=meta.get("content_type") or ""
-                )
+                from . import office
+
+                if source.suffix.lower() in office.KINDS:
+                    office_output = Path(tmp) / "office"
+                    manifest = office.read(file_id, platform, storage, office_output, scan)
+                    prefix = manifest.pop("_object_prefix")
+                    info = {
+                        "kind": manifest["kind"],
+                        "chars": manifest["chars"],
+                        "truncated": manifest["status"] != "ready",
+                        "coverage": manifest["status"],
+                        "parser": manifest["parser"],
+                        "units": manifest["total_units"],
+                        "document_manifest_key": prefix + "manifest.json",
+                        "prewritten_text": True,
+                    }
+                else:
+                    info = execute(
+                        "extract", source, Path(tmp) / "extract", filename=meta["filename"], content_type=meta.get("content_type") or ""
+                    )
             except IsolationError as exc:
                 info = {"kind": "error", "error": str(exc), "chars": 0}
-        ocr_pdf = None
-        if info.get("kind") == "pdf" and settings.ocr_alias:  # no OCR configured means no page analysis cost
-            from .ocr import analyze_pdf
-
-            try:
-                ocr_pdf = analyze_pdf(source, Path(tmp) / "ocr-pdf")
-            except IsolationError:
-                ocr_pdf = {"error": "pdf_analysis_failed"}
         text = info.pop("text", "")
         skill = {k: info.pop(k) for k in ("skill", "skill_error") if k in info}
         derived = {
@@ -202,18 +219,18 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
             "excerpt": text[:1000],
         }
         key = f"derived/{file_id}/meta.json"
-        if text or info.get("kind") == "text":
+        if info.pop("prewritten_text", False):
+            derived["text_key"] = f"derived/{file_id}/text.txt"
+        elif text or info.get("kind") == "text":
             derived["text_key"] = f"derived/{file_id}/text.txt"
             storage.put_bytes(derived["text_key"], text.encode("utf-8"), "text/plain; charset=utf-8")
         storage.put_bytes(key, json.dumps(derived, ensure_ascii=False).encode(), "application/json")
-        # READY and the OCR state commit together; the API queues the OCR job in that same transaction.
-        ocr_candidate = info.get("kind") == "pdf" or (meta.get("content_type") or "").startswith("image/")
-        if not ocr_candidate:
-            ocr = {}
-        elif settings.ocr_alias:
-            ocr = {"ocr": "pending", **({"ocr_pdf": ocr_pdf} if ocr_pdf is not None else {})}
-        else:
-            ocr = {"ocr": "unavailable", "ocr_reason": "vision_not_configured"}
+        # Upload does not imply OCR intent. Dedicated extraction is requested separately.
+        ocr = (
+            {"ocr": "unavailable", "ocr_reason": "extraction_not_requested"}
+            if (info.get("kind") == "pdf" or (meta.get("content_type") or "").startswith("image/"))
+            else {}
+        )
         platform.patch_file(
             file_id,
             meta={
@@ -221,6 +238,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                 **ocr,
                 "scan": scan,
                 "extract": info,
+                **({"document_manifest_key": info["document_manifest_key"]} if "document_manifest_key" in info else {}),
                 "derived_key": key,
                 **({"text_key": derived["text_key"]} if "text_key" in derived else {}),
                 "excerpt": text[:300],

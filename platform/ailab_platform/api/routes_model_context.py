@@ -34,6 +34,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .routes_memory import memory_for_run
 
     out["memory"] = memory_for_run(owner, run)
+    out["source_epoch"] = owner.context_source_epoch
     from .brand import workspace_input
 
     out.update(workspace_input(db, run))
@@ -50,7 +51,10 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
         if run.conversation_id and run.parent_run_id
         else None
     )
-    alive = newest is not None and workspace_alive(newest, datetime.now(UTC))
+    from .source_lifecycle import invalid_history
+
+    invalid = invalid_history(db, path_ids(db, run.conversation_id, run.parent_run_id)) if run.conversation_id else set()
+    alive = newest is not None and newest.id not in invalid and workspace_alive(newest, datetime.now(UTC))
     own = (run.runtime_meta or {}).get("workspace")
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
     out["workspace_expired"] = newest is not None and not alive
@@ -65,6 +69,11 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         return {"summary": "", "through_run_id": None, "history": [], "has_more": False}
     ids = path_ids(db, conversation.id, run.parent_run_id)
     through = conversation.summary_through_run_id if conversation.summary_through_run_id in ids else None
+    from .source_lifecycle import invalid_history
+
+    invalid = invalid_history(db, ids)
+    if through and through in invalid:
+        through = None
     cursor_id = after or through
     start = 0
     if cursor_id:
@@ -77,14 +86,20 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         for r in db.execute(
             select(
                 Run.id,
-                func.substr(Run.prompt, 1, 16000).label("prompt"),
+                Run.user_id,
+                Run.input_file_ids,
+                Run.prompt.label("prompt"),
                 func.substr(Run.summary, 1, 16000).label("summary"),
                 Run.status,
                 Run.runtime_meta["steer_ids"].label("steer_ids"),
+                Run.runtime_meta["source_invalidated"].label("source_invalidated"),
                 func.substr(Run.error, 1, 16000).label("error"),
             ).where(Run.conversation_id == conversation.id, Run.id.in_(page))
         )
     }
+    from .document_sources import history_manifests
+
+    manifests = history_manifests(db, list(rows.values()))
     history, chars = [], 0
     for id_ in page:
         row = rows[id_]
@@ -99,7 +114,22 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
             else {}
         )
         steers = [prompts[qid] for qid in applied if qid in prompts]
-        item = {"id": id_, "prompt": row.prompt, "reply": row.summary or row.error or "", "status": row.status}
+        item = {
+            "id": id_,
+            "prompt": row.prompt,
+            "reply": "（文件来源已失效，需重新读取）" if row.source_invalidated or id_ in invalid else row.summary or row.error or "",
+            "status": row.status,
+        }
+        item["attachments"] = manifests.get(id_, [])
+        if applied:
+            from .document_sources import attachment_manifest
+
+            for qid in applied:
+                queued = db.get(QueuedMessage, qid)
+                if queued and queued.run_id == id_ and queued.state == "steered":
+                    item["attachments"].extend(
+                        attachment_manifest(db, row, file_ids=queued.file_ids, message_id=qid, message_kind="queued_message")
+                    )
         if steers:
             item["steers"] = steers
         size = len(item["prompt"]) + len(item["reply"]) + sum(map(len, steers))
@@ -109,8 +139,16 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
             break
         history.append(item)
         chars += size
+    from ..models import ContextSummaryFrame
+    from .summary_evidence import evidence
+
+    frame = db.get(ContextSummaryFrame, conversation.summary_frame_id) if through and conversation.summary_frame_id else None
+    revalidation = evidence(db, frame, run.user_id, set(ids) - invalid) if after is None else []
     return {
+        "summary_evidence": revalidation,
+        "summary_revision": frame.revision if frame else 0,
         "summary": (conversation.summary or "") if through else "",
+        "source_epoch": db.get(User, run.user_id).context_source_epoch,
         "through_run_id": through,
         "history": history,
         "has_more": len(ids) > start + len(history),
@@ -121,7 +159,15 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
 def save_model_summary(
     run_id: str, body: SummaryUpdate, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
 ) -> dict:
+    from ..locks import user_critical_section
+
     run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        return _save_model_summary(db, run, body, x_run_attempt)
+
+
+def _save_model_summary(db, run, body, x_run_attempt):
+    run_id = run.id
     from .runtime_fence import fence_attempt
 
     fence_attempt(db, run_id, x_run_attempt)
@@ -133,6 +179,9 @@ def save_model_summary(
     ):
         raise HTTPException(422, "summary boundary must advance")
     conversation = db.get(Conversation, run.conversation_id, populate_existing=True)
+    owner = db.get(User, run.user_id, populate_existing=True)
+    if body.source_epoch != owner.context_source_epoch:
+        raise HTTPException(409, "context_source_changed")
     actual = conversation.summary_through_run_id
     effective = actual if actual in ids else None
     if effective != body.expected_through_run_id:
@@ -147,5 +196,84 @@ def save_model_summary(
     ).rowcount
     if not changed:
         raise HTTPException(422, "summary changed concurrently")
+    import hashlib
+
+    from ..models import ContextSummaryFrame, ContextSummarySource, MessageFileRef
+
+    previous = db.get(ContextSummaryFrame, conversation.summary_frame_id) if conversation.summary_frame_id else None
+    from .summary_evidence import advance
+
+    try:
+        revalidation = advance(db, previous, run.user_id, set(ids), body.revalidation_ids)
+    except ValueError as exc:
+        raise HTTPException(409, "revalidation_cursor_stale") from exc
+    frame = ContextSummaryFrame(
+        revalidation_state=revalidation,
+        conversation_id=conversation.id,
+        branch_anchor=run.parent_run_id,
+        previous_id=previous.id if previous else None,
+        revision=(previous.revision + 1) if previous else 1,
+        from_run_id=body.expected_through_run_id,
+        through_run_id=body.through_run_id,
+        source_epoch=body.source_epoch,
+        input_digest=hashlib.sha256((str(body.expected_through_run_id) + body.through_run_id).encode()).hexdigest(),
+        summary=body.summary,
+        status="active",
+    )
+    db.add(frame)
+    db.flush()
+    conversation.summary_frame_id = frame.id
+    covered = ids[: ids.index(body.through_run_id) + 1]
+    sources = set()
+    if (run.options or {}).get("capability_discovery") == 1:
+        from ..contracts.context_summary import ContextSummary
+        from ..models import DocumentBlock, FileDerivation, FileObject
+
+        try:
+            semantic = ContextSummary.model_validate_json(body.summary)
+        except ValueError as exc:
+            raise HTTPException(422, "invalid summary schema") from exc
+        allowed = set(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
+        for source in semantic.sources():
+            if source.run_id and source.run_id not in covered:
+                raise HTTPException(422, "invalid summary run source")
+            if source.file_id:
+                if source.file_id not in allowed:
+                    raise HTTPException(422, "invalid summary file source")
+                file = db.get(FileObject, source.file_id, populate_existing=True)
+                if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at:
+                    raise HTTPException(409, "summary source unavailable")
+                sources.add(source.file_id)
+            if source.block_id:
+                fid = db.scalar(
+                    select(FileDerivation.file_id)
+                    .join(DocumentBlock, DocumentBlock.derivation_id == FileDerivation.id)
+                    .where(DocumentBlock.id == source.block_id)
+                )
+                if not fid or fid not in allowed or (source.file_id and fid != source.file_id):
+                    raise HTTPException(422, "invalid summary block source")
+                sources.add(fid)
+            if source.run_id:
+                sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id == source.run_id)))
+    else:
+        sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
+        for legacy in db.scalars(select(Run.input_file_ids).where(Run.id.in_(covered))):
+            sources.update(legacy or [])
+    for file_id in sources:
+        db.add(ContextSummarySource(frame_id=frame.id, file_id=file_id))
+    from sqlalchemy import delete
+
+    stale = list(
+        db.scalars(
+            select(ContextSummaryFrame.id)
+            .where(ContextSummaryFrame.conversation_id == conversation.id)
+            .order_by(ContextSummaryFrame.created_at.desc(), ContextSummaryFrame.id.desc())
+            .offset(20)
+            .limit(100)
+        )
+    )
+    if stale:
+        db.execute(delete(ContextSummarySource).where(ContextSummarySource.frame_id.in_(stale)))
+        db.execute(delete(ContextSummaryFrame).where(ContextSummaryFrame.id.in_(stale)))
     db.commit()
     return {"ok": True}

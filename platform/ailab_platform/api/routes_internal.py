@@ -93,40 +93,9 @@ ATTACHMENTS_CHARS = 60_000  # of all of a run's attachments together
 
 
 def _attachment_texts(db: Session, run: Run) -> list[dict]:
-    """The run's input files, each with the text the Worker extracted (so the model can read it without a sandbox)."""
-    storage = get_storage()
-    out, budget = [], ATTACHMENTS_CHARS
-    for file_id in run.input_file_ids or []:
-        f = db.get(FileObject, file_id)
-        if f is None or f.deleted_at is not None or f.purged_at is not None:
-            continue
-        meta = f.meta or {}
-        keys = [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]
-        text = ""
-        for key in filter(None, keys):  # native extraction and OCR text of scanned pages sit side by side
-            try:
-                text = "\n".join(filter(None, [text, storage.get_bytes(key).decode("utf-8", "replace")]))
-            except Exception:
-                log.warning("attachment text missing for %s", file_id, exc_info=True)
-        total = len(text) or int((meta.get("extract") or {}).get("chars") or 0)
-        if not text and meta.get("excerpt"):  # processed before full texts were kept: the excerpt is all there is
-            text = meta["excerpt"]
-        keep = text[: max(0, min(ATTACHMENT_CHARS, budget))]
-        budget -= len(keep)
-        out.append(
-            {
-                "file_id": f.id,
-                "id": f.id,
-                "content_type": f.content_type,
-                "meta": {"ocr": meta.get("ocr", "unavailable")},
-                "filename": f.filename,
-                "kind": (meta.get("extract") or {}).get("kind", ""),
-                "chars": total,
-                "text": keep,
-                "truncated": len(keep) < total,
-            }
-        )
-    return out
+    from .attachment_input import input_files
+
+    return input_files(db, run)
 
 
 HISTORY_TURNS = 12
@@ -177,9 +146,12 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     out = run_dict(db, run, detail=True)
     out["budget_window_id"] = (run.runtime_meta or {}).get("budget_window_id", (run.runtime_meta or {}).get("job_id", run.id))
     earlier = _earlier_turns(db, run)
+    from .source_lifecycle import invalid_history
+
+    invalid = invalid_history(db, [turn.id for turn in earlier] + [run.id])
     history = []
     for turn in earlier[-HISTORY_TURNS:]:
-        reply = turn.summary or (f"（这一轮失败了：{turn.error}）" if turn.error else "")
+        reply = "（文件来源已失效）" if turn.id in invalid else turn.summary or (f"（这一轮失败了：{turn.error}）" if turn.error else "")
         if turn.status == RunStatus.CANCELED:
             reply = (reply + "\n" if reply else "") + "（用户中止了这一轮）"
         files = [
@@ -232,8 +204,8 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     out.update(skill_input_for(db, owner))
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if workspace_data(t)), None)
-    alive = newest is not None and workspace_alive(newest, now)
-    own = (run.runtime_meta or {}).get("workspace")
+    alive = newest is not None and newest.id not in invalid and workspace_alive(newest, now)
+    own = (run.runtime_meta or {}).get("workspace") if run.id not in invalid else None
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
     # the last turn left files, but they are past the retention window: tell the model instead of letting it hunt
     out["workspace_expired"] = newest is not None and not alive
@@ -714,6 +686,17 @@ def _bound_file(
         raise HTTPException(status_code=410, detail="version purged")
     if principal.service == "legacy":
         return file  # explicit dev/test compatibility, never enabled in secure
+    if job == "document" and principal.service == "broker":
+        meta = file.meta or {}
+        if (
+            "files:read_for_document" not in principal.scopes
+            or file.status != FileStatus.PENDING
+            or meta.get("document_job_id") != preview_job
+            or not preview_job
+            or (meta.get("scan") or {}).get("verdict") != "clean"
+        ):
+            raise HTTPException(403, "no authorized document job")
+        return file
     if job == "preview" and principal.service == "broker":
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
         meta = file.meta or {}
@@ -764,6 +747,23 @@ def _bound_file(
     if file.user_id != context.user_id or file.status != FileStatus.READY:
         raise HTTPException(status_code=404, detail="file not found for run")
     attached = file.id in (run.input_file_ids or [])
+    if not attached:
+        attached = bool(
+            db.scalar(select(QueuedMessage.id).where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered").limit(1))
+        ) and any(
+            file.id in (q.file_ids or [])
+            for q in db.scalars(select(QueuedMessage).where(QueuedMessage.run_id == run.id, QueuedMessage.state == "steered").limit(5))
+        )
+    if not attached:
+        from ..models import MessageFileRef
+
+        attached = bool(
+            db.scalar(
+                select(MessageFileRef.id)
+                .where(MessageFileRef.run_id == run.id, MessageFileRef.file_id == file.id, MessageFileRef.role == "agent_read")
+                .limit(1)
+            )
+        )
     if principal.service == "broker" and file.purpose == "library" and file.id in ((run.runtime_meta or {}).get("library_file_ids") or []):
         attached = True
     if not attached and run.conversation_id:
@@ -811,8 +811,8 @@ def _bound_file(
     return file
 
 
-FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview")
-FileJob = Literal["processing", "thumbnail", "preview", "brand", "template"]
+FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview", "files:read_for_document")
+FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document"]
 
 
 @router.get("/files/{file_id}", response_model=FileOut)
@@ -874,6 +874,8 @@ def internal_patch_file(
 
 
 def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal: ServicePrincipal, job: str) -> dict:
+    if file.deleted_at or file.purged_at:
+        raise HTTPException(409, "file_source_unavailable")
     if principal.service != "legacy" and job != "processing":
         allowed = {"thumb_key", "display_key"} if job == "thumbnail" else set()  # previews complete via /preview
         if body.status is not None or not set(body.meta or {}) <= allowed:
@@ -884,6 +886,18 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             ):
                 raise HTTPException(status_code=403, detail="derived key must belong to this file")
     if body.meta is not None:
+        source_id = body.meta.get("cache_source_id")
+        if source_id:
+            source = db.get(FileObject, source_id, populate_existing=True)
+            if (
+                not source
+                or source.user_id != file.user_id
+                or source.sha256 != file.sha256
+                or source.deleted_at
+                or source.purged_at
+                or source.status != FileStatus.READY
+            ):
+                raise HTTPException(409, "cache_source_unavailable")
         merged = dict(file.meta or {})
         merged.update(body.meta)
         claim = merged.get("skill_claim")
@@ -901,6 +915,21 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
                 .where(FileObject.lineage_id == file.lineage_id)
                 .values(purpose="skill", project_id=None, filename=head.filename, name_key=head.name_key)
             )
+    if (body.meta or {}).get("document_manifest_key"):
+        from ..runtime_context import attempt_id_var
+
+        token = attempt_id_var.get()
+        if token:
+            from ..models import OutboxMessage
+
+            claimed = db.scalar(
+                select(OutboxMessage).where(OutboxMessage.claim_token == token, OutboxMessage.claimed_until > datetime.now(UTC)).limit(1)
+            )
+            if not claimed or claimed.payload.get("file_id") != file.id:
+                raise HTTPException(409, "stale_file_attempt")
+        from .document_sources import index_document
+
+        index_document(db, file, body.meta["document_manifest_key"])
     if body.status is not None:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
@@ -971,6 +1000,24 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if preview.image == "display.webp":
             meta["display_key"] = f"derived/{file_id}/display.webp"
             meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+        if meta.get("ocr_render_job_id") == body.job_id:
+            from ..models import RenderedPage
+
+            for name, asset in assets.items():
+                page = int(name[2:-4])
+                existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
+                if existing:
+                    existing.key, existing.digest = asset["key"], asset["sha256"]
+                else:
+                    db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
+            meta["ocr_preview"] = meta["preview"]
+            meta["ocr_preview_assets"] = assets
+            before = meta.pop("preview_before_ocr", {})
+            for key in ("preview", "preview_assets", "preview_job_id"):
+                if key in before:
+                    meta[key] = before[key]
+                else:
+                    meta.pop(key, None)
         file.meta = meta
         db.commit()
         return {"ok": True}
@@ -1003,3 +1050,183 @@ def set_conversation_title(
             append_event(db, run.id, "conversation.titled", {"conversation_id": run.conversation_id, "title": title}, commit=False)
         db.commit()
         return {"ok": bool(changed)}
+
+
+@router.post("/files/{file_id}/reuse-document", dependencies=[Depends(require_scope("files:patch_processing"))])
+def reuse_document(
+    file_id: str, body: dict, principal: ServicePrincipal = Depends(require_scope("files:patch_processing")), db: Session = Depends(get_db)
+):
+    file = _bound_file(db, file_id, principal, None, "processing")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        if file.deleted_at or file.purged_at or file.status != FileStatus.PENDING:
+            raise HTTPException(409, "file_source_changed")
+        if body.get("scan", {}).get("verdict") != "clean":
+            raise HTTPException(409, "clean scan required")
+        from .document_cache import reuse
+
+        cached = reuse(db, file)
+        db.commit()
+        return {"reused": bool(cached), "source": cached}
+
+
+@router.post("/files/{file_id}/prepare-document", dependencies=[Depends(require_scope("files:patch_processing"))])
+def prepare_document(file_id: str, body: dict, db: Session = Depends(get_db)):
+    from uuid import uuid4
+
+    file = db.get(FileObject, file_id)
+    if not file:
+        raise HTTPException(404, "file not found")
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        if file.deleted_at or file.purged_at or file.status != FileStatus.PENDING:
+            raise HTTPException(409, "file_source_changed")
+        if body.get("scan", {}).get("verdict") != "clean":
+            raise HTTPException(409, "clean scan required")
+        from ..runtime_context import attempt_id_var
+
+        token = attempt_id_var.get()
+        if token:
+            from ..models import OutboxMessage
+
+            claimed = db.scalar(
+                select(OutboxMessage).where(OutboxMessage.claim_token == token, OutboxMessage.claimed_until > datetime.now(UTC)).limit(1)
+            )
+            if not claimed or claimed.payload.get("file_id") != file.id:
+                raise HTTPException(409, "stale_file_attempt")
+        job_id = token or (file.meta or {}).get("document_job_id") or uuid4().hex
+        file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id}
+        db.commit()
+    return {"job_id": job_id}
+
+
+@router.get("/files/{file_id}/document-cache-pages", dependencies=[Depends(require_scope("files:patch_processing"))])
+def document_cache_pages(file_id: str, source_id: str, after: int = Query(default=-1, ge=-1), db: Session = Depends(get_db)):
+    from ..models import OcrPageResult
+    from .document_cache import pair
+
+    pair(db, file_id, source_id)
+    rows = (
+        list(
+            db.scalars(
+                select(OcrPageResult)
+                .where(
+                    OcrPageResult.file_id == source_id,
+                    OcrPageResult.page > after,
+                    OcrPageResult.fingerprint == settings.ocr_engine_fingerprint,
+                )
+                .order_by(OcrPageResult.page)
+                .limit(101)
+            )
+        )
+        if settings.ocr_engine_fingerprint
+        else []
+    )
+    return {
+        "pages": [
+            {"page": row.page, "generation": row.generation, "fingerprint": row.fingerprint, "text_key": row.text_key} for row in rows[:100]
+        ],
+        "next_after": rows[99].page if len(rows) > 100 else None,
+    }
+
+
+@router.post("/files/{file_id}/document-cache-pages", dependencies=[Depends(require_scope("files:patch_processing"))])
+def publish_cache_pages(file_id: str, body: dict, db: Session = Depends(get_db)):
+    from ..models import OcrPageResult
+    from .document_cache import pair
+
+    target, source = pair(db, file_id, body.get("source_id"))
+    with user_critical_section(db, target.user_id):
+        target, source = pair(db, file_id, source.id)
+        pages = body.get("pages")
+        if not isinstance(pages, list) or not 1 <= len(pages) <= 100:
+            raise HTTPException(422, "cache page batch limit")
+        for item in pages:
+            old = db.get(OcrPageResult, (source.id, item.get("page"), settings.ocr_engine_fingerprint))
+            key, generation = item.get("text_key", ""), item.get("generation", "")
+            if (
+                not old
+                or old.generation != item.get("source_generation")
+                or not generation
+                or key != f"derived/{file_id}/ocr-cache/{generation}/{old.page}.txt"
+                or not re.fullmatch(r"[a-f0-9]{32}", generation)
+            ):
+                raise HTTPException(409, "cache_page_changed")
+            row = db.get(OcrPageResult, (file_id, old.page, old.fingerprint))
+            if row is None:
+                row = OcrPageResult(file_id=file_id, page=old.page, fingerprint=old.fingerprint)
+                db.add(row)
+            row.generation, row.text_key, row.engine, row.backend, row.seconds = generation, key, old.engine, old.backend, 0
+        meta = dict(target.meta or {})
+        meta["ocr_cache_revision"] = int(meta.get("ocr_cache_revision", 0)) + 1
+        meta["ocr_copied_pages"] = int(meta.get("ocr_copied_pages", 0)) + len(pages)
+        target.meta = meta
+        db.commit()
+    return {"copied_pages": len(pages)}
+
+
+@router.get("/file-source-tombstones", dependencies=[Depends(require_scope("files:restore_tombstones"))])
+def export_file_tombstones(after: str = Query(default="", max_length=40), db: Session = Depends(get_db)):
+    from ..models import FileSourceInvalidation
+
+    rows = list(
+        db.scalars(
+            select(FileSourceInvalidation).where(FileSourceInvalidation.file_id > after).order_by(FileSourceInvalidation.file_id).limit(101)
+        )
+    )
+    files = {file.id: file for file in db.scalars(select(FileObject).where(FileObject.id.in_([row.file_id for row in rows[:100]])))}
+    return {
+        "schema_version": 1,
+        "items": [
+            {"file_id": row.file_id, "user_id": row.user_id, "purged": row.file_id not in files or files[row.file_id].purged_at is not None}
+            for row in rows[:100]
+        ],
+        "next_after": rows[99].file_id if len(rows) > 100 else None,
+    }
+
+
+@router.post("/file-source-tombstones", dependencies=[Depends(require_scope("files:restore_tombstones"))])
+def restore_file_tombstones(body: dict, db: Session = Depends(get_db)):
+    from ..models import FileSourceInvalidation
+    from .source_lifecycle import invalidate
+
+    items = body.get("items")
+    if body.get("schema_version") != 1 or not isinstance(items, list) or not 1 <= len(items) <= 100:
+        raise HTTPException(422, "invalid tombstone manifest batch")
+    applied = 0
+    for item in items:
+        if not isinstance(item, dict):
+            raise HTTPException(422, "invalid tombstone identity")
+        fid, uid = item.get("file_id"), item.get("user_id")
+        if (
+            not isinstance(fid, str)
+            or not isinstance(uid, str)
+            or not fid
+            or not uid
+            or len(fid) > 40
+            or len(uid) > 40
+            or not db.get(User, uid)
+        ):
+            raise HTTPException(422, "invalid tombstone identity")
+        with user_critical_section(db, uid):
+            file = db.get(FileObject, fid, populate_existing=True)
+            old = db.get(FileSourceInvalidation, fid, populate_existing=True)
+            if (file and file.user_id != uid) or (old and old.user_id != uid):
+                raise HTTPException(409, "tombstone owner mismatch")
+            purged = item.get("purged", False)
+            if type(purged) is not bool:
+                raise HTTPException(422, "invalid tombstone deletion kind")
+            if old and (not file or file.purged_at or (file.deleted_at and not purged)):
+                db.commit()
+                continue
+            if file:
+                file.deleted_at = datetime.now(UTC)
+            if purged and file:
+                from ..library import delete_file_rows
+
+                delete_file_rows(db, [file], tombstone=True)
+            else:
+                invalidate(db, uid, [fid])
+            db.commit()
+            applied += 1
+    return {"applied": applied, "schema_version": 1}

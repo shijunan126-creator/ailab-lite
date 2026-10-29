@@ -1,0 +1,28 @@
+{
+  "name": "ailab-office-reader",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "vitest run src/domain/anchor.test.ts src/domain/cjk.test.ts src/adapters/parse/parse.test.ts src/domain/ailab.test.ts",
+    "build": "esbuild runner.ts --bundle --platform=node --format=esm --packages=external --outfile=runner.mjs"
+  },
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "fast-xml-parser": "5.11.2",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "5.4.296"
+  },
+  "devDependencies": {
+    "esbuild": "0.25.12",
+    "vitest": "4.1.5"
+  },
+  "imports": {
+    "#office/*": "./src/*"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

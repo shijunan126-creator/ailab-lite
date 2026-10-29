@@ -1665,3 +1665,11 @@ label.field button.select { width: 100%; }
   .memory-filters input { flex-basis: 100%; width: 100%; }
   .memory-entry-meta select { max-width: 100%; width: auto; }
 }
+
+/* Library content shares the chat pane, with no fullscreen viewer gutters. */
+.library-pane { align-items: stretch; }
+.library-pane > .viewer-sheet, .library-pane > .viewer-paper, .library-pane > .viewer-html { width: 100%; margin: 0; border-radius: 0; min-height: 0; flex: 1; }
+.library-pane > .viewer-image { min-height: 0; overflow: auto; padding: 16px; }
+.library-pane .viewer-image img { max-height: 100%; }
+.library-pane > .viewer-state { margin: auto; }
+.library-pane .viewer-spinner { border-color: var(--border); border-top-color: var(--text); }

@@ -168,7 +168,7 @@ LOAD_SKILL = {
     "function": {
         "name": "load_skill",
         "description": "读取一个技能（如 pptx、xlsx）的完整说明。做对应任务前先读。",
-        "parameters": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+        "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "version": {"type": "string"}}, "required": ["name"]},
     },
 }
 
@@ -300,7 +300,34 @@ def _library_tool(name, description, properties, required):
     }
 
 
+VIEW_ATTACHMENT = _library_tool(
+    "view_attachment",
+    "查看原图或选定文档页，按预算分批；pending表示渲染未完成。",
+    {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20}},
+    ["file_id"],
+)
+
+EXTRACT_TEXT = _library_tool(
+    "extract_text",
+    "通过平台OCR提取独立图片或选定PDF页的文字，不调用视觉LLM。",
+    {"file_id": {"type": "string"}, "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "maxItems": 20}},
+    ["file_id"],
+)
+
 LIBRARY_TOOLS = [
+    EXTRACT_TEXT,
+    _library_tool(
+        "resolve_attachment",
+        "定位当前或历史消息附件；歧义返回候选，不猜文件。",
+        {
+            "message_id": {"type": "string"},
+            "relative": {"type": "string", "enum": ["current", "previous"]},
+            "kind": {"type": "string", "enum": ["image", "file"]},
+            "ordinal": {"type": "integer", "minimum": 1},
+            "filename": {"type": "string"},
+        },
+        [],
+    ),
     _library_tool(
         "search_library",
         "搜索资料库",
@@ -314,6 +341,11 @@ LIBRARY_TOOLS = [
         {
             "file_id": {"type": "string"},
             "offset": {"type": "integer", "default": 0, "minimum": 0},
+            "block_offset": {"type": "integer", "minimum": 0},
+            "derivation_id": {"type": "string"},
+            "content_revision": {"type": "string"},
+            "anchor": {"type": "string"},
+            "query": {"type": "string"},
             "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 20},
         },
         ["file_id"],
@@ -329,6 +361,7 @@ def tools_for_turn() -> list[dict]:
         MEMORY,
         RECALL,
         *LIBRARY_TOOLS,
+        VIEW_ATTACHMENT,
         COPY_LIBRARY,
         ASK_USER,
         UPDATE_PLAN,
@@ -342,7 +375,7 @@ def tools_for_turn() -> list[dict]:
 
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
-    return [MEMORY, RECALL, *LIBRARY_TOOLS, LOAD_SKILL, *(WEB_TOOLS if web.enabled() else []), net_tools.SAVE_SKILL]
+    return [MEMORY, RECALL, *LIBRARY_TOOLS, VIEW_ATTACHMENT, LOAD_SKILL, *(WEB_TOOLS if web.enabled() else []), net_tools.SAVE_SKILL]
 
 
 class ToolContext:
@@ -387,6 +420,10 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     ctx = ctx or ToolContext()
     if name == "search_library":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
+    if name == "extract_text":
+        return {"ok": True, **await ctx.platform.library(ctx.run_id, "extract-text", args)}
+    if name == "resolve_attachment":
+        return await ctx.platform.library(ctx.run_id, "resolve", args)
     if name == "read_library_file":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
     if name == "copy_library_file":

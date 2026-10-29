@@ -69,7 +69,7 @@ def _pdf(data: Path) -> dict:
     reader = PdfReader(data)
     pages = len(reader.pages)
     text = "".join(f"\f[page:{index + 1}]\n{page.extract_text() or ''}" for index, page in enumerate(reader.pages[:20]))
-    return {"kind": "pdf", "pages": pages, "chars": len(text), "truncated": len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
+    return {"kind": "pdf", "pages": pages, "chars": len(text), "truncated": pages > 20 or len(text) > MAX_TEXT, "text": text[:MAX_TEXT]}
 
 
 def _docx(data: Path) -> dict:

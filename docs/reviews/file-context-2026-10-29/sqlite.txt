@@ -1,0 +1,81 @@
+sssssssss....ssssssssssss.s.s.s.ssss.s.s.s.s.s.s.s.s.s.....s......sss.ss [  4%]
+.ss.sssss.ss.ss.ss.s.s.s.s.s.s.s.s...................................... [  9%]
+.........................................ss............................. [ 13%]
+........................................................................ [ 18%]
+........................................................................ [ 23%]
+........................................................................ [ 27%]
+...........................s.s.......................................... [ 32%]
+................................................................s....... [ 37%]
+........................................................................ [ 41%]
+....................s................................................... [ 46%]
+........................................................................ [ 50%]
+............................s..............................s.s.s.s.s.s.s [ 55%]
+.s.....s.s.s.s.s.s.s.s.s.s.s.s.s.s...................................... [ 60%]
+........................................................................ [ 64%]
+...s......................ss............................................ [ 69%]
+....s....................s.............................................. [ 74%]
+........................................................................ [ 78%]
+........................................................s............... [ 83%]
+.........................................s..s........................... [ 88%]
+.........................................s................s............. [ 92%]
+........................................................................ [ 97%]
+.........................................                                [100%]
+=============================== warnings summary ===============================
+../ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /private/tmp/ailab-memory-review-venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_conversation_tree_migration.py::test_tree_backfill_and_roundtrip[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_conversation_tree_migration.py:47: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_conversation_tree_migration.py::test_tree_backfill_and_roundtrip[sqlite]
+tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup[sqlite]
+tests/test_migrations.py::test_migrations_and_models_do_not_drift[sqlite]
+tests/test_migrations.py::test_projects_upgrade_and_downgrade_preserve_referenced_rows
+tests/test_migrations.py::test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows[sqlite]
+tests/test_migrations.py::test_identity_roundtrip_preserves_existing_users_and_references[sqlite]
+tests/test_migrations.py::test_inbox_queue_upgrade_downgrade_upgrade[sqlite]
+tests/test_shares_migration.py::test_shares_up_down_up[sqlite]
+tests/test_templates_migration.py::test_template_migration_promotes_brand_and_roundtrips[sqlite]
+  /private/tmp/ailab-memory-review-venv/lib/python3.12/site-packages/alembic/ddl/impl.py:850: UserWarning: autogenerate skipping metadata-specified expression-based index 'uq_files_folder_name'; dialect 'sqlite' under SQLAlchemy 2.1.5 can't reflect these indexes so they can't be compared
+    util.warn(
+
+tests/test_indexes.py::test_performance_indexes_are_created
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_indexes.py:13: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    names = {index["name"] for table in ("runs", "files", "conversations", "model_usage") for index in inspector.get_indexes(table)}
+
+tests/test_integration_migrations.py::test_integrated_feature_chain_up_down_reup[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_integration_migrations.py:63: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_migrations_and_models_do_not_drift[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:78: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    diff = compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata)
+
+tests/test_migrations.py::test_projects_upgrade_and_downgrade_preserve_referenced_rows
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:277: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_ledger_migration_freezes_legacy_price_and_preserves_referenced_rows[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:315: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_identity_roundtrip_preserves_existing_users_and_references[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:378: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_migrations.py::test_inbox_queue_upgrade_downgrade_upgrade[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_migrations.py:591: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_shares_migration.py::test_shares_up_down_up[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_shares_migration.py:31: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+tests/test_templates_migration.py::test_template_migration_promotes_brand_and_roundtrips[sqlite]
+  /private/tmp/ailab-memory-review-20261028/platform/tests/test_templates_migration.py:35: SAWarning: Skipped unsupported reflection of expression-based index uq_files_folder_name
+    assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1450 passed, 103 skipped, 20 warnings in 244.16s (0:04:04)

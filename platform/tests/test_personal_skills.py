@@ -90,7 +90,7 @@ def test_a_skill_in_the_library_is_listed_switchable_and_usable_by_its_owner_onl
         assert [s for s in c.get("/v1/skills", headers=other).json() if s["scope"] == "personal"] == []
 
         run = c.post("/v1/runs", headers=me, json={"prompt": "写周报", "skill": name}).json()
-        assert run["options"] == {"mode": "work", "skill": name, "skill_title": "周报助手"}
+        assert run["options"] == {"mode": "work", "capability_discovery": 1, "skill": name, "skill_title": "周报助手"}
         personal = c.get(f"/internal/runs/{run['id']}", headers=SERVICE).json()["personal_skills"]
         assert personal == [
             {"name": name, "title": "周报助手", "description": "按团队模板写周报", "file_id": file_id, "filename": "SKILL.md", "kind": "md"}

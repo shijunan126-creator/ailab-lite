@@ -17,6 +17,7 @@ from tests.run_claims import SERVICE
 from tests.test_conversations import _finish, _other_user
 from tests.test_migrations import engine as engine
 from tests.test_ocr import api as api
+from tests.test_ocr import rapid_upstream as rapid_upstream
 from tests.test_ocr import upstream as upstream
 
 
@@ -265,15 +266,16 @@ def test_schedule_checks_quota_capacity_and_current_skill_state(monkeypatch):
             assert db.get(ScheduledTask, task["id"]).last_error == "额度或并发任务已达上限"
 
 
-def test_ocr_text_preserves_original_pdf_page_numbers(api, upstream):
+def test_ocr_text_preserves_original_pdf_page_numbers(api, rapid_upstream):
     from ailab_platform.worker.ocr import process_ocr
     from ailab_platform.worker.pipeline import process_file
 
     # Image OCR represents the sole preview page, not an invented PDF sequence.
-    from tests.test_ocr import OCRClient, photo, upload
+    from tests.test_ocr import AUTH, OCRClient, photo, upload
 
     fid = upload(api, name="page.png", data=photo(), mime="image/png")
     process_file(fid, platform=OCRClient(api))
+    api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
     process_ocr(fid, OCRClient(api))
     with SessionLocal() as db:
         key = db.get(FileObject, fid).meta["ocr_text_key"]

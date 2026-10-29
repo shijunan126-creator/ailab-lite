@@ -21,6 +21,10 @@ def fenced_run(db: Session, run: Run, attempt_id: str | None) -> Iterator[Run]:
     with user_critical_section(db, run.user_id):
         fence_attempt(db, run.id, attempt_id)
         db.refresh(run)
+        from ..memory_recall.policy import source_available
+
+        if not source_available(db, run):
+            raise HTTPException(409, "run_source_unavailable")
         yield run
 
 

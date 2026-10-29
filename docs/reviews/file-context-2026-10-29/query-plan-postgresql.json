@@ -1,0 +1,4 @@
+{
+  "blocks": 100000,
+  "plan": "('Limit  (cost=0.16..8.18 rows=1 width=102)',) ('  ->  Index Scan using ix_document_blocks_unit on document_blocks  (cost=0.16..8.18 rows=1 width=102)',) (\"        Index Cond: (((derivation_id)::text = 'drv_e41885683c99406db77e'::text) AND (unit_number = 85000))\",)"
+}

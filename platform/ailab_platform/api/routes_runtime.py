@@ -36,6 +36,12 @@ class CheckpointIn(BaseModel):
 
 
 def read_checkpoint(db, run):
+    from ..conversation_tree import path_ids
+    from .source_lifecycle import invalid_history
+
+    ids = [*path_ids(db, run.conversation_id, run.parent_run_id), run.id] if run.conversation_id else [run.id]
+    if run.id in invalid_history(db, ids):
+        raise HTTPException(409, "checkpoint_source_unavailable")
     row = db.get(RunCheckpoint, (run.id, run.checkpoint_step))
     if row is None:
         if run.checkpoint_step:
@@ -91,6 +97,20 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         ).rowcount
         if not won:
             raise HTTPException(409, "stale_step")
+        frame = body.state.get("run_summary_frame")
+        if frame:
+            from ..contracts.context_summary import ContextSummary
+
+            try:
+                semantic = ContextSummary.model_validate(frame["summary"])
+                if (
+                    frame.get("scope") != "run"
+                    or frame.get("run_id") != run_id
+                    or any(source.run_id != run_id or source.file_id or source.block_id for source in semantic.sources())
+                ):
+                    raise ValueError("invalid run summary source")
+            except (ValueError, KeyError) as exc:
+                raise HTTPException(422, "invalid run summary frame") from exc
         # Register the immutable object first. Failed transactions leave a bounded
         # orphan, collected after the grace period; never overwrite a winning CAS.
         storage.put_bytes(key, gzip.compress(raw), "application/gzip")

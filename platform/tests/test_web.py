@@ -67,6 +67,9 @@ def test_chat_mode_offers_only_read_only_web_tools(monkeypatch) -> None:
         "recall_history",
         "search_library",
         "read_library_file",
+        "extract_text",
+        "resolve_attachment",
+        "view_attachment",
     }
     work_names = {tool["function"]["name"] for tool in tools.tools_for_turn()}
     assert {"web_search", "read_url"} <= work_names

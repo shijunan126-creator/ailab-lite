@@ -401,8 +401,8 @@ class RunRetry(BaseModel):
 
 
 class ContextSettings(BaseModel):
-    auto_compact: bool = False
-    threshold_ratio: float = Field(default=0.5, ge=0.2, le=0.95)
+    auto_compact: bool = True
+    threshold_ratio: float = Field(default=0.85, ge=0.2, le=0.95)
 
 
 class ConversationTitle(BaseModel):

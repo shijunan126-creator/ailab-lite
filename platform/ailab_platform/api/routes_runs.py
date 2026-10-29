@@ -80,14 +80,21 @@ def list_models(_: User = Depends(current_user)) -> dict:
 def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
-    options: dict = {"mode": mode}
+    options: dict = {"mode": mode, "capability_discovery": 1}
     if skill:
         if skill in run_disabled_skills(db, user):
             raise HTTPException(status_code=400, detail=f"技能「{skill}」已关闭，可在侧栏「技能」里打开")
         known = skills().get(skill) or usable_personal(db, user).get(skill)
         if not known:
             raise HTTPException(status_code=400, detail=f"unknown skill: {skill}")
-        options = {"mode": "work", "skill": skill, "skill_title": known.get("title") or skill}  # a skill is work by definition
+        options = {
+            "mode": "work",
+            "capability_discovery": 1,
+            "skill": skill,
+            "skill_title": known.get("title") or skill,
+        }  # a skill is work by definition
+
+    mode = options["mode"]
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -96,6 +103,7 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
         raise HTTPException(status_code=400, detail=f"model not available: {model_id}")
 
     inputs: list[str] = []
+    image_count = 0
     for file_id in file_ids:
         file = db.get(FileObject, file_id, populate_existing=True)
         if (
@@ -111,7 +119,24 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
                 status_code=409,
                 detail={"code": "file_not_ready", "message": f"文件还没检查完（{file.status}），稍候再发送"},
             )
-        inputs.append(file.id)
+        if (file.content_type or "").startswith("image/"):
+            image_count += 1
+            if image_count > 5:
+                raise HTTPException(422, {"code": "attachment_image_limit", "message": "每轮最多附加5张图片"})
+        if file.id not in inputs:
+            inputs.append(file.id)
+    if mode == "work" and inputs and not spec.supports({"tools"}):
+        raise HTTPException(422, {"code": "work_model_requires_tools", "message": "请选择支持工具的模型，或切换对话模式读取文件"})
+    if mode == "work" and inputs and not spec.supports({"vision"}):
+        images = [fid for fid in inputs if (db.get(FileObject, fid).content_type or "").startswith("image/")]
+        if images:
+            from .attachment_input import validate_chat_files
+
+            validate_chat_files(db, images, model_id, "")
+    if mode == "chat" and inputs:
+        from .attachment_input import validate_chat_files
+
+        validate_chat_files(db, inputs, model_id, prompt)
     from .templates import freeze_template
 
     if template is not None:
@@ -167,6 +192,7 @@ def start_run(
             options = {**options, "memory_policy": dict(conversation.memory_policy or {})}
         run = Run(
             user_id=user.id,
+            context_source_epoch=db.scalar(select(User.context_source_epoch).where(User.id == user.id)),
             conversation_id=conversation.id if conversation is not None else None,
             parent_run_id=sibling_of.parent_run_id if sibling_of else expected_active,
             title=(title or prompt.strip().splitlines()[0])[:200],
@@ -180,6 +206,12 @@ def start_run(
             conversation.model = model_id
             conversation.updated_at = utcnow()
         db.flush()
+        from .document_sources import bind_refs
+
+        bind_refs(db, "run_prompt", run.id, inputs, run.id)
+        from ..models import AppliedMessagePosition
+
+        db.add(AppliedMessagePosition(run_id=run.id, message_kind="run_prompt", message_id=run.id, application_seq=0))
         if conversation is not None:
             changed = db.execute(
                 update(Conversation)
@@ -252,8 +284,10 @@ def event_history(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[RunEvent]:
-    _get_owned_run(db, run_id, user)
-    return list_events(db, run_id, after, limit)
+    run = _get_owned_run(db, run_id, user)
+    from ..memory_recall.policy import source_available
+
+    return list_events(db, run_id, after, limit) if source_available(db, run) else []
 
 
 PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json|document\.pdf)$")
@@ -262,7 +296,11 @@ PREVIEW_NAME = re.compile(r"^[0-9]{1,4}/(p-[0-9]{1,3}\.jpg|sheets\.json|document
 @router.get("/runs/{run_id}/previews/{name:path}")
 def get_preview(run_id: str, name: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
     """A rendered page (JPEG) or sheet data (JSON) of a file the run produced. Written by the Broker."""
-    _get_owned_run(db, run_id, user)
+    run = _get_owned_run(db, run_id, user)
+    from ..memory_recall.policy import source_available
+
+    if not source_available(db, run):
+        raise HTTPException(404, "preview source unavailable")
     if not PREVIEW_NAME.match(name):
         raise HTTPException(status_code=404, detail="no such preview")
     try:
@@ -313,6 +351,10 @@ def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], 
                 )
         # Read events last: a title that cleared the pending check committed its event
         # in the same transaction, so it must be drained before stream.end.
+        from ..memory_recall.policy import source_available
+
+        if run and not source_available(db, run):
+            return [], status, False
         rows = db.scalars(select(RunEvent).where(RunEvent.run_id == run_id, RunEvent.seq > after).order_by(RunEvent.seq).limit(200)).all()
         return [(e.seq, e.type, e.payload or {}) for e in rows], status, pending_title
 

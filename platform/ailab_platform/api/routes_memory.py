@@ -66,6 +66,14 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
     }
     result.pop("tombstones", None)
     result["entries"] = [_entry(e) for e in result.get("entries") or []]
+    if user.context_source_epoch:
+        from sqlalchemy.orm import object_session
+
+        from .source_lifecycle import visible_memory_entries
+
+        db = object_session(user)
+        if db:
+            result["entries"] = visible_memory_entries(db, user.id, result["entries"])
     if for_model:
         result = model_view(result)
     return result
@@ -135,7 +143,12 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                     )
                 )
             )
-            if allowed != set(entry.evidence_run_ids):
+            from .source_lifecycle import invalid_sources_query
+
+            forbidden = set(
+                db.scalars(select(Run.id).where(Run.id.in_(entry.evidence_run_ids), Run.id.in_(invalid_sources_query(user.id))))
+            )
+            if allowed != set(entry.evidence_run_ids) or forbidden:
                 raise HTTPException(422, "记忆来源已删除或不可访问")
         if prior is None or prior["content"] != entry.content:
             _refuse_unsafe(entry.content, source)
@@ -330,8 +343,10 @@ def get_dream_run(run_id: str, user: User = Depends(current_user), db: Session =
     if not run or run.user_id != user.id:
         raise HTTPException(404, "dream run not found")
     out = _run_out(run).model_dump(mode="json")
-    out["before"] = (run.before_memory or {}).get("entries") or []
-    out["after"] = (run.after_memory or {}).get("entries") or []
+    from .source_lifecycle import visible_memory_entries
+
+    out["before"] = visible_memory_entries(db, user.id, (run.before_memory or {}).get("entries") or [])
+    out["after"] = visible_memory_entries(db, user.id, (run.after_memory or {}).get("entries") or [])
     return out
 
 
@@ -355,8 +370,10 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
             value = raw.get(key)
             return datetime.fromisoformat(value) if value else None
 
+        from .source_lifecycle import visible_memory_entries
+
         entries = []
-        for raw in before.get("entries") or []:
+        for raw in visible_memory_entries(db, user.id, before.get("entries") or []):
             try:
                 # The snapshot is restored verbatim: invalid_at/suppressed included, so a fact the
                 # dream invalidated becomes visible again instead of staying hidden after a revert.
@@ -426,8 +443,8 @@ def run_memory(
             raise HTTPException(422, "stable delivery identity required")
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
         if prior:
-            allowed = {e["id"] for e in model_view(current, project_id)["entries"]}
-            return {**prior.result, "entries": [e for e in prior.result.get("entries", []) if e["id"] in allowed]}
+            allowed = {e["id"]: e for e in model_view(current, project_id)["entries"]}
+            return {**prior.result, "entries": [allowed[e["id"]] for e in prior.result.get("entries", []) if e["id"] in allowed]}
         if not current["enabled"] or not permissions["write"] or (not current["auto_save"] and not body.explicit):
             raise HTTPException(422, "用户已关闭自动记忆；只在用户明确要求时操作记忆，关闭记忆时不能操作")
         entries = [
@@ -527,6 +544,7 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
             or source.status != RunStatus.SUCCEEDED
             or source.superseded_by_run_id
             or (conv and conv.deleted_at)
+            or not run_permissions(db, source)["read"]
             or run_project(db, source) != run_project(db, run)
         ):
             raise HTTPException(404, "历史记录不存在")

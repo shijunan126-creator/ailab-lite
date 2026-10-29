@@ -47,4 +47,14 @@ def checkpoint_state(state, image_files):
             ]
             message = {**message, "content": content}
         messages.append(message)
-    return {**state, "messages": messages}
+    pending = []
+    for parts in state.get("pending_image_inputs", []):
+        pending.append(
+            [
+                {"type": "ailab_image", "file": image_files[p["image_url"]["url"]]}
+                if p.get("type") == "image_url" and p["image_url"]["url"] in image_files
+                else p
+                for p in parts
+            ]
+        )
+    return {**state, "messages": messages, **({"pending_image_inputs": pending} if pending else {})}

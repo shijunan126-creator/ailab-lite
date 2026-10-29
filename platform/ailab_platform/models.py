@@ -62,6 +62,7 @@ class User(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("usr"))
+    context_source_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(120), default="")
     # Password login. A user without them can only be reached with an API token.
@@ -250,6 +251,7 @@ class Conversation(Base):
     forked_from: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary_through_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    summary_frame_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="")
     model: Mapped[str] = mapped_column(String(120), default="")  # the last model picked here
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -272,6 +274,7 @@ class Run(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
+    context_source_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), index=True, nullable=True)
     superseded_by_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
@@ -323,6 +326,7 @@ class FileObject(Base):
     __tablename__ = "files"
     __table_args__ = (
         Index("ix_files_user_created", "user_id", "created_at"),
+        Index("ix_files_user_sha", "user_id", "sha256", "status", "deleted_at", "purged_at"),
         Index("ix_files_status_created", "status", "created_at", "id"),
         Index("ix_files_parent_id", "parent_id"),
         Index("uq_files_lineage_version", "lineage_id", "version", unique=True),
@@ -890,3 +894,124 @@ for name, columns in [
             "(lower(filename) LIKE '%.pptx' OR lower(filename) LIKE '%.potx')"
         ),
     )
+
+
+class MessageFileRef(Base):
+    __tablename__ = "message_file_refs"
+    __table_args__ = (
+        UniqueConstraint("message_kind", "message_id", "file_id", "role", name="uq_message_file_ref"),
+        Index("ix_message_refs_order", "run_id", "message_kind", "message_id", "ordinal", "file_id"),
+        Index("ix_message_refs_file", "file_id", "run_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ref"))
+    run_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"))
+    message_kind: Mapped[str] = mapped_column(String(24))
+    message_id: Mapped[str] = mapped_column(String(40))
+    file_id: Mapped[str] = mapped_column(String(40))  # tombstone identity survives physical file removal
+    role: Mapped[str] = mapped_column(String(16), default="input")
+    ordinal: Mapped[int] = mapped_column(Integer)
+    reference_origin: Mapped[str] = mapped_column(String(24), default="unknown_legacy")
+    filename_snapshot: Mapped[str | None] = mapped_column(String(255))
+    upload_id: Mapped[str | None] = mapped_column(String(40))
+    invalidated_epoch: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class FileDerivation(Base):
+    __tablename__ = "file_derivations"
+    __table_args__ = (UniqueConstraint("file_id", "kind", "fingerprint", name="uq_file_derivation"),)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("drv"))
+    file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"))
+    kind: Mapped[str] = mapped_column(String(24))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    parser_version: Mapped[str] = mapped_column(String(80))
+    status: Mapped[str] = mapped_column(String(20))
+    manifest_key: Mapped[str] = mapped_column(String(600))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class DocumentBlock(Base):
+    __tablename__ = "document_blocks"
+    __table_args__ = (
+        UniqueConstraint("derivation_id", "ordinal", name="uq_document_block_ordinal"),
+        Index("ix_document_blocks_unit", "derivation_id", "unit_number", "ordinal"),
+        Index("ix_document_blocks_anchor", "derivation_id", "anchor", "ordinal"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("blk"))
+    derivation_id: Mapped[str] = mapped_column(String(40), ForeignKey("file_derivations.id", ondelete="CASCADE"))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    unit_number: Mapped[int] = mapped_column(Integer)
+    anchor: Mapped[str] = mapped_column(String(300))
+    text_key: Mapped[str] = mapped_column(String(600))
+    digest: Mapped[str] = mapped_column(String(64))
+    chars: Mapped[int] = mapped_column(Integer)
+
+
+class AppliedMessagePosition(Base):
+    __tablename__ = "applied_message_positions"
+    __table_args__ = (
+        UniqueConstraint("message_kind", "message_id", name="uq_applied_message_identity"),
+        Index("ix_applied_message_order", "run_id", "application_seq", "message_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("pos"))
+    run_id: Mapped[str] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"))
+    message_kind: Mapped[str] = mapped_column(String(24))
+    message_id: Mapped[str] = mapped_column(String(40))
+    application_seq: Mapped[int] = mapped_column(Integer)
+    alias_run_prompt_id: Mapped[str | None] = mapped_column(String(40))
+
+
+class ContextSummaryFrame(Base):
+    __tablename__ = "context_summary_frames"
+    __table_args__ = (Index("ix_context_frames_branch", "conversation_id", "branch_anchor", "revision"),)
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ctx"))
+    conversation_id: Mapped[str] = mapped_column(String(40), ForeignKey("conversations.id", ondelete="CASCADE"))
+    branch_anchor: Mapped[str] = mapped_column(String(40))
+    previous_id: Mapped[str | None] = mapped_column(String(40))
+    revision: Mapped[int] = mapped_column(Integer)
+    from_run_id: Mapped[str | None] = mapped_column(String(40))
+    through_run_id: Mapped[str] = mapped_column(String(40))
+    source_epoch: Mapped[int] = mapped_column(Integer)
+    input_digest: Mapped[str] = mapped_column(String(64))
+    revalidation_state: Mapped[dict] = mapped_column(JSON, default=dict)
+    summary: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ContextSummarySource(Base):
+    __tablename__ = "context_summary_sources"
+    __table_args__ = (Index("ix_context_sources_file", "file_id", "frame_id"),)
+    frame_id: Mapped[str] = mapped_column(String(40), ForeignKey("context_summary_frames.id", ondelete="CASCADE"), primary_key=True)
+    file_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+
+
+class RenderedPage(Base):
+    __tablename__ = "rendered_pages"
+    file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    version: Mapped[str] = mapped_column(String(40), primary_key=True)
+    key: Mapped[str] = mapped_column(String(600))
+    digest: Mapped[str] = mapped_column(String(64))
+
+
+class FileSourceInvalidation(Base):
+    __tablename__ = "file_source_invalidations"
+    __table_args__ = (Index("ix_file_invalidation_state", "state", "file_id"), Index("ix_file_invalidations_user", "user_id", "file_id"))
+    file_id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(40))
+    cursor: Mapped[str] = mapped_column(String(256), default="")
+    state: Mapped[str] = mapped_column(String(20), default="pending")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class OcrPageResult(Base):
+    __tablename__ = "ocr_page_results"
+    file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
+    page: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
+    generation: Mapped[str] = mapped_column(String(80))
+    text_key: Mapped[str] = mapped_column(String(600))
+    engine: Mapped[str] = mapped_column(String(80))
+    backend: Mapped[str] = mapped_column(String(16))
+    seconds: Mapped[float] = mapped_column(Float)

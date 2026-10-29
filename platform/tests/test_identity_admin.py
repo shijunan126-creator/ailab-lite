@@ -379,7 +379,7 @@ def test_context_settings_platform_admin_only_and_audited(env):
                 db.delete(row)
                 db.commit()
         initial = c.get("/v1/admin/settings/context", headers=admin).json()
-        assert initial["auto_compact"] is False and initial["threshold_ratio"] == 0.5
+        assert initial["auto_compact"] is True and initial["threshold_ratio"] == 0.85
         assert all(set(m) == {"id", "name", "context_tokens"} for m in initial["models"])
         for ratio in (0.19, 0.96):
             assert (

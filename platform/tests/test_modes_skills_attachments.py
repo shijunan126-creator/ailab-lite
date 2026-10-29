@@ -25,17 +25,22 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat"}
+        assert chat["options"] == {"mode": "chat", "capability_discovery": 1}
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         deck = c.post(
             f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "PPT", "mode": "chat", "skill": "pptx"}
         ).json()
-        assert deck["options"] == {"mode": "work", "skill": "pptx", "skill_title": "演示文稿（PPT）"}  # a skill is work by definition
+        assert deck["options"] == {
+            "mode": "work",
+            "capability_discovery": 1,
+            "skill": "pptx",
+            "skill_title": "演示文稿（PPT）",
+        }  # a skill is work by definition
         c.post(f"/v1/runs/{deck['id']}/cancel", headers=AUTH)
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "skill": "nope"}).status_code == 400
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "mode": "other"}).status_code == 422
         default = c.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).json()
-        assert default["options"] == {"mode": "work"}
+        assert default["options"] == {"mode": "work", "capability_discovery": 1}
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
@@ -49,10 +54,10 @@ def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
             process_file(up["id"], platform=_ApiClient(c), storage=get_storage())
             ids.append(up["id"])
             names.append(up["filename"])
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "总结附件", "file_ids": ids}).json()
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "总结附件", "mode": "chat", "file_ids": ids}).json()
         files = c.get(f"/internal/runs/{run['id']}", headers=SERVICE).json()["input_files"]
         assert [(f["filename"], f["chars"], len(f["text"]), f["truncated"]) for f in files] == [
-            (names[0], 80, 50, True),
+            (names[0], 80, 80, False),
             (names[1], 5, 5, False),
         ]
         assert "text" not in c.get(f"/v1/runs/{run['id']}", headers=AUTH).json()["input_files"][0]  # only the agent gets it
@@ -106,7 +111,17 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     llm = _Recording([LLMResponse(content="只用文字回答")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
-        ["memory", "recall_history", "search_library", "read_library_file", "load_skill", "save_skill"]
+        [
+            "memory",
+            "recall_history",
+            "extract_text",
+            "resolve_attachment",
+            "search_library",
+            "read_library_file",
+            "view_attachment",
+            "load_skill",
+            "save_skill",
+        ]
     ] and broker.leases == 0
     system = llm.seen_messages[0][0]["content"]
     assert "代码、SQL、命令和文档草稿可以直接在回复中提供" in system

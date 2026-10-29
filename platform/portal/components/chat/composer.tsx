@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import {FileItem, ModelInfo, Skill, TemplateRef, api, errorMessage, filesByIds, uploadFile} from "../../lib/api";
+import {FileItem, ModelInfo, Skill, TemplateRef, api, errorCode, errorMessage, filesByIds, uploadFile} from "../../lib/api";
 import { fileStatusText } from "../../lib/format";
 import { usePopover } from "../../lib/use-popover";
 import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
@@ -11,7 +11,7 @@ import ModeToggle, { Mode } from "./mode-toggle";
 import ModelMenu from "./model-menu";
 import TemplatePicker, { TemplateChoice } from "./template-picker";
 
-export type Attachment = { id: string; filename: string; status: string };
+export type Attachment = { id: string; filename: string; status: string; content_type?: string };
 export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef };
 
 type SkillButton = {
@@ -75,6 +75,9 @@ export default function Composer({
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [preparing,setPreparing] = useState(false);
+  const preparation=useRef<AbortController | null>(null);
+  useEffect(()=>()=>preparation.current?.abort(),[model,mode,files]);
   const [dragging, setDragging] = useState(false);
   const [picked, setPickedState] = useState<SkillButton | null>(null);
   const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
@@ -148,14 +151,23 @@ export default function Composer({
     };
   }, [files]);
 
+  const isImage = (file: Attachment) => file.content_type?.startsWith("image/") ?? /\.(png|jpe?g|webp|gif|bmp|tiff?|avif)$/i.test(file.filename);
+  const imageCount = files.filter(isImage).length;
+  const overImages = imageCount > 5;
+  const selectedModel = models.find((m) => m.id === model);
+
   async function upload(list: FileList | File[]) {
     setError("");
+    if (imageCount + Array.from(list).filter((f) => f.type.startsWith("image/")).length > 5) {
+      setError("每轮最多附加5张图片");
+      return;
+    }
     setUploading(true);
     try {
       for (const file of Array.from(list)) {
         try {
           const item = await uploadFile(file, projectId);
-          setFiles((prev) => [...prev, { id: item.id, filename: item.filename, status: item.status }]);
+          setFiles((prev) => [...prev, { id: item.id, filename: item.filename, status: item.status, content_type: item.content_type }]);
         } catch (err: any) {
           setError(errorMessage(err));
         }
@@ -170,9 +182,9 @@ export default function Composer({
 
   const waiting = files.some((f) => f.status === "pending");
   const templateWaiting = !!template?.pending;
-  const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !templateWaiting && !!model;
+  const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !preparing && !templateWaiting && !!model;
   const queueing = running && !!onQueue;
-  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !templateWaiting && !!model;
+  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !preparing && !templateWaiting && !!model;
 
   // "/" at the start of an empty message lists the skills; picking one fills in what it needs
   const buttons: SkillButton[] = [
@@ -211,8 +223,39 @@ export default function Composer({
 
   async function send(steer = false) {
     if (queueing ? !canQueue : !canSend) return;
+    if (overImages) { setError("每轮最多附加5张图片"); return; }
     const ready = files.filter((f) => f.status === "ready").map((f) => f.id);
     const base: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
+    if (ready.length && (mode==="chat" || imageCount > 0 && !selectedModel?.capabilities?.includes("vision"))) {
+      preparation.current?.abort();
+      const current=new AbortController();
+      preparation.current=current;
+      setPreparing(true);setError("");
+      try {
+        const deadline=Date.now()+120000;
+        while (true) {
+          try {
+            await api("/v1/chat/prepare",{method:"POST",signal:current.signal,
+              body:JSON.stringify({file_ids:ready,model,mode,prompt:text.trim()})});
+            break;
+          } catch (err: any) {
+            if (current.signal.aborted) return;
+            if (errorCode(err)!=="chat_attachment_processing" || Date.now()>=deadline) throw err;
+          }
+          await new Promise<void>((resolve)=>{
+            const done=()=>{clearTimeout(timer);current.signal.removeEventListener("abort",done);resolve();};
+            const timer=setTimeout(done,1500);current.signal.addEventListener("abort",done,{once:true});
+          });
+          if (current.signal.aborted) return;
+        }
+        if (current.signal.aborted) return;
+      } catch(err) {
+        if (!current.signal.aborted) setError(errorMessage(err));
+        return;
+      } finally {
+        if (preparation.current===current) setPreparing(false);
+      }
+    }
     const ok = queueing ? await onQueue!(text.trim(), ready, base, steer) : await onSend(text.trim(), ready, base);
     if (ok) {
       setText("");
@@ -409,7 +452,7 @@ export default function Composer({
             onClose={() => setLibrary(false)}
             onPick={(picked: FileItem[]) => {
               setLibrary(false);
-              setFiles((prev) => [...prev, ...picked.filter((f) => !prev.some((x) => x.id === f.id)).map((f) => ({ id: f.id, filename: f.filename, status: f.status }))]);
+              setFiles((prev) => [...prev, ...picked.filter((f) => !prev.some((x) => x.id === f.id)).map((f) => ({ id: f.id, filename: f.filename, status: f.status, content_type: f.content_type }))]);
             }}
           />
         ) : null}
@@ -421,6 +464,8 @@ export default function Composer({
           return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
         })()}
         <ModelMenu models={models} value={model} onChange={onModel} />
+        {preparing ? <span className="hint">附件处理中…</span> : null}
+        {imageCount > 0 && !selectedModel?.capabilities?.includes("vision") ? <span className="hint">当前模型将通过 OCR 读取图片文字</span> : null}
         {error ? <span className="error hint">{error}</span> : null}
         {queueing && text.trim() ? (
           <button className="send-btn queue" onClick={() => send(false)} disabled={!canQueue} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">

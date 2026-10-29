@@ -1,5 +1,19 @@
 # 单机能力状态
 
+2026-10-29 fork交叉链路已修复并更新本机API/Portal：消息/附件消费位置、工具读取删除依赖、摘要来源和校准游标随分支迁移，重新打开恢复正确模式，用户切换保持独立。267核心及7真实浏览器通过；旧分支已丢失关系需重fork，完整容量/NPU边界不变。[审查记录](../progress/updates/2026-10-29-fork-context-review.md)。
+
+2026-10-29 上下文策略已统一：Chat/Work历史和Work执行使用完整模型窗口85%触发，输出按当前剩余空间计算且请求/账本一致；本机API/Agent更新、管理配置和浏览器通过，168核心回归通过。满窗口真实模型/数百人容量未验。[策略/证据](../progress/updates/2026-10-29-context-85.md)。
+
+2026-10-29 来源预览与读取恢复对齐：静态可恢复失败时使用已有隔离浏览器HTML快照，失败显示中文HTML；精确授权API/Agent、CSP/public-only边界保留。力扣真实正文通过，知乎两个样本仍受原站拒绝，未宣称全网或数百人容量。[记录](../progress/updates/2026-10-29-reader-preview-403.md)。
+
+2026-10-29 已授权并完成本机体验部署：固定dirty快照、保留数据0033→0036、实际四格式/OCR/DeepSeek/浏览器通过；不等同远端合并或目标NPU/数百人验收。[当前部署边界](../progress/updates/2026-10-29-file-context-local-deployment.md)。
+
+
+2026-10-29 核心后续：工作树已迁入项目`.worktrees/file-context-ocr`；真实DeepSeek5次成功压缩（另1次schema拒绝已计量）、实际RapidOCR CPU识别与重复上传缓存/独立删除通过。已补跨frame校准持久队列、OCR私有页复制和API墓碑恢复应用器；核心84/21跳过、Ruff/导入通过，未重复前轮全套。真实NPU/代表性质量及数百人容量未验。详见[最新记录](../progress/updates/2026-10-29-file-context-core-validation.md)，不据下方历史未完成表判断当前状态。
+
+
+2026-10-29 文件上下文/平台办公能力核心接入已本地实现/验证：固定ZCode核心和私有viewer工作流、Broker系统reader、原生块索引/附件身份、Chat准入/Work按需、tool/skill发现与恢复、摘要来源栅栏和RapidOCR专用执行接口已接线。迁移0035/0036仅在隔离库验证，未部署。OCR只计量、不计费；真实NPU/CANN、OCR质量、真实模型多代保真、数百人容量和跨节点Broker调度未验，不把实现合同等同生产验收。逐项缺口与证据见[验收记录](../reviews/file-context-2026-10-29/acceptance.md)及[实施记录](../progress/updates/2026-10-29-file-context-ocr-implementation.md)。下文历史阶段记录不覆盖本节或推断部署。
+
 2026-10-28 记忆完善已本地实现（`feat/memory-system-hardening@ac7e6cc`，base`0659101`，尚未合并）：统一模型视图/作用域、持久分段进度与claim、短事务/每调用账本、完整副本删除、追加纠正/时间状态及记忆来源管理已接线；0034双库迁移。完整组测SQLite1451/102跳过、PG1499/54、浏览器118/0跳过、Portal42/build通过，最后局部锁/缓存修改另做双库专项，精确head仍由PR CI验证。真实答案质量/付费模型/GPU embedding、目标机并发不冒充已验。见[实施及边界](../reviews/2026-10-28-memory-system-hardening.md)。下方9类审查缺陷是修复前基线。
 
 2026-10-28 记忆架构审查（固定main `0659101`）：工作上下文、账号事实、BM25/可选向量历史检索与nightly框架已存在，附件完整DoD未满足；项目作用域、事实context compiler、完整删除谱系与质量基线仍缺。既有65项记忆测试通过，13个合同探针12失败/1对照通过，归并9类缺陷（7 P1/2 P2），包括可见性/写入资格、游标、来源、冲突原子性和SQLite模型等待写锁。仅审查未修复，不据此声称生产就绪；真实模型/PG并发/整栈容量未验。[审查与证据](../reviews/2026-10-28-memory-architecture-review.md)。下方“PR96待评审”等旧状态已由实际main合并代码取代，本轮不推断个人部署。
@@ -105,6 +119,7 @@
 | 扫描（T04） | Scanner 端口；ClamAV TCP/Unix INSTREAM；扫描器不可用时文件保持 pending、退避重试、最终标记，绝不当作干净 | 2026-10-23 原生 ARM64 ClamAV 1.5.4：契约 1 passed、EICAR rejected/clean ready、故障 30.03 s fail closed / 36.86 s 恢复；容器空闲 RSS 1045.9 MiB；冷启动签名重载峰值未验 |
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
 | 资料库预览 | 首次打开时生成并永久缓存：PDF/Word/PPT 页面、Excel/CSV 表格、图片（≤2048 px 显示图）、文本/Markdown/代码。Office/PDF 在 Broker 的 render 保留槽沙箱中渲染，xlsx/csv 在 Worker 受限进程中处理；ETag/304/CSP；删除时清理 | 2026-10-23 k3s→OSB render 保留槽 DOCX 8.12 s ready，中文 DOCX/PPTX JPEG 已看图；真实 OSB+S3 联合部署未验 |
+| 对话发送附件预览 | 复用资料库渲染内容，以file_id建立侧栏标签；同名文件独立、切换/关闭/下载；手机保留带标签整屏侧栏 | 2026-10-29 本机Portal独立更新，真实DOCX/表格/图片及1440/390浏览器通过；[记录](../progress/updates/2026-10-29-chat-attachment-tabs.md)，非全站E2E重验 |
 | 版本与回收站（T18） | 版本为不可变行（lineage + version 唯一）；旧版恢复 = 新建 head；每链最多 10 版，超出的旧版留 tombstone（内容 410）；删除整链进回收站 30 天并计入空间额度；项目删除把文件移入回收站；对象删除在同一事务写持久删除意图，失败由 lifecycle 重试 | 真实 S3 全套行为已验；生产规模历史版本 copy/RSS/延迟仍未验 |
 
 ## 身份

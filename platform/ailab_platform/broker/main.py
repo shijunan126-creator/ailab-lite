@@ -67,6 +67,15 @@ async def lease_error_response(_: Request, exc: LeaseError) -> JSONResponse:
     return JSONResponse(status_code=410 if isinstance(exc, LeaseLostError) else 503, content={"detail": exc.detail()})
 
 
+@router.post("/read-document", dependencies=[Depends(require_scope("sandbox:render"))])
+def read_document(body: dict):
+    if set(body) != {"file_id", "job_id"} or not all(isinstance(v, str) and 1 <= len(v) <= 100 for v in body.values()):
+        raise HTTPException(422, "file_id and job_id required")
+    from .documents import DocumentReader
+
+    return DocumentReader(get_manager()).read(body["file_id"], body["job_id"])
+
+
 @router.post("/render", dependencies=[Depends(require_scope("sandbox:render"))])
 def render_library_file(body: dict) -> dict:
     if set(body) != {"file_id", "job_id"} or not all(isinstance(v, str) and 1 <= len(v) <= 100 for v in body.values()):

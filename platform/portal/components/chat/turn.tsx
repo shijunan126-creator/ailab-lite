@@ -166,6 +166,7 @@ export default function Turn({
   modelName,
   previewKey,
   onPreview,
+  onPreviewFile,
   onResume,
   onAnswer,
   onRetry,
@@ -187,6 +188,7 @@ export default function Turn({
   modelName: (id: string) => string;
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
+  onPreviewFile: (file: { file_id: string; filename: string }) => void;
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
   onRetry?: (run: Run) => Promise<void>;
@@ -282,8 +284,8 @@ export default function Turn({
         ) : null}
         {run.input_files?.length ? (
           <div className="attach-row">
-            {run.input_files.map((f, _, all) => (
-              <button key={f.file_id} className="attach-chip open" onClick={() => files.open(all.map((x) => x.file_id), f.file_id)}>
+            {run.input_files.map((f) => (
+              <button key={f.file_id} className="attach-chip open" onClick={() => onPreviewFile(f)}>
                 <IconFile size={13} /> {f.filename}
               </button>
             ))}

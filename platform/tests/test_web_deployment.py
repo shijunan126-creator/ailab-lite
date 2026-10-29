@@ -36,7 +36,7 @@ def test_agent_search_reaches_a_private_service_through_the_base_policy():
     ]
 
 
-def test_crawler_is_reachable_only_from_the_agent_and_leaves_only_through_the_egress_proxy():
+def test_crawler_is_reachable_only_from_agent_and_api_and_leaves_only_through_the_egress_proxy():
     base = Path(__file__).resolve().parents[1] / "deploy/base"
     documents = {(doc["kind"], doc["metadata"]["name"]): doc for doc in _resources(base)}
     config = documents["ConfigMap", "platform-config"]["data"]
@@ -53,7 +53,13 @@ def test_crawler_is_reachable_only_from_the_agent_and_leaves_only_through_the_eg
     policy = documents["NetworkPolicy", "platform-crawler"]["spec"]
     assert set(policy["policyTypes"]) == {"Ingress", "Egress"}
     assert policy["ingress"] == [
-        {"from": [{"podSelector": {"matchLabels": {"app": "platform-agent"}}}], "ports": [{"protocol": "TCP", "port": 8090}]}
+        {
+            "from": [
+                {"podSelector": {"matchLabels": {"app": "platform-agent"}}},
+                {"podSelector": {"matchLabels": {"app": "platform-api"}}},
+            ],
+            "ports": [{"protocol": "TCP", "port": 8090}],
+        }
     ]
     assert policy["egress"] == [
         {"to": [{"podSelector": {"matchLabels": {"app": "platform-egress"}}}], "ports": [{"protocol": "TCP", "port": 4750}]},
@@ -80,3 +86,6 @@ def test_crawler_is_reachable_only_from_the_agent_and_leaves_only_through_the_eg
 
     agent = documents["Deployment", "platform-agent"]["spec"]["template"]["spec"]["containers"][0]
     assert {"secretRef": {"name": "platform-crawler-token"}} in agent["envFrom"]
+
+    api = documents["Deployment", "platform-api"]["spec"]["template"]["spec"]["containers"][0]
+    assert {"secretRef": {"name": "platform-crawler-token", "optional": True}} in api["envFrom"]

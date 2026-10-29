@@ -67,6 +67,14 @@ class ResponseTests(unittest.TestCase):
         self.result.metadata = {"title": "CAPTCHA and access denied explained"}
         self.assertEqual(self.extract()["status"], 200)
 
+    def test_html_is_opt_in_and_bounded_without_truncating_a_snapshot(self):
+        self.result.html = "<h1>正文</h1>"
+        self.assertNotIn("html", self.extract()["body"])
+        result = render.extract_result(self.result, 4000, time.monotonic(), include_html=True)
+        self.assertEqual(result["body"]["html"], self.result.html)
+        with patch.object(render, "MAX_SNAPSHOT_BYTES", 10):
+            self.assertEqual(render.extract_result(self.result, 4000, time.monotonic(), include_html=True)["status"], 502)
+
 
 class SupervisorTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

@@ -14,7 +14,7 @@ import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../ico
 import ProjectHome from "../project-home";
 import Composer, { Attachment, SendOptions } from "./composer";
 import ModeToggle, { useChatMode } from "./mode-toggle";
-import PreviewPane, { type PaneSources } from "./preview-pane";
+import PreviewPane, { previewTabKey, type PanePreview, type PaneSources } from "./preview-pane";
 import { SourcesSheet } from "./sources";
 import type { PaneReader } from "./preview-pane";
 import QueueStrip from "./queue-strip";
@@ -66,8 +66,22 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const { models, model, setModel } = useModels();
   // a conversation opened before in this tab shows at once; the fresh copy replaces it when it arrives
   const [detail, setDetail] = useState<ConversationDetail | null>(() => (id ? cachedConversation(id) : null));
+  const modeInitialized = useRef(false);
+  function chooseMode(next: "chat" | "work") {
+    modeInitialized.current = true;
+    setMode(next);
+  }
+  useEffect(() => {
+    if (!detail || modeInitialized.current) return;
+    modeInitialized.current = true;
+    // Copied turns retain their original mode; the fork choice governs until its first new turn.
+    const ownTurn = [...detail.turns].reverse().find((turn) => !turn.result?.forked_from_run_id);
+    const saved = ownTurn?.options?.mode || detail.forked_from?.mode || detail.turns.at(-1)?.options?.mode;
+    if (saved === "chat" || saved === "work") setMode(saved);
+  }, [detail, setMode]);
   const [items, setItems] = useState<Record<string, Item[]>>({}); // run id -> live items (runs streamed in this page)
   const [livePreviews, setLivePreviews] = useState<Preview[]>([]);
+  const [libraryPreviews, setLibraryPreviews] = useState<PanePreview[]>([]);
   const [paneOpen, setPaneOpen] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [closedFiles, setClosedFiles] = useState<string[]>([]); // preview tabs closed one by one
@@ -269,7 +283,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     } else if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [items, detail]);
 
-  const previews = useMemo(() => {
+  const previews = useMemo<PanePreview[]>(() => {
     const byFile = new Map<string, Preview>();
     for (const p of [...(detail?.previews || []), ...livePreviews]) {
       byFile.delete(p.filename);
@@ -287,8 +301,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         byFile.set(a.filename, { filename: a.filename, version, run_id: t.id, kind: "html", file_id: a.file_id });
       }
     }
-    return [...byFile.values()].filter((p) => p.kind);
-  }, [detail, livePreviews]);
+    return [...[...byFile.values()].filter((p) => p.kind), ...libraryPreviews];
+  }, [detail, livePreviews, libraryPreviews]);
 
   // A newly delivered (or regenerated) HTML deck opens in the pane by itself, so the next
   // prompt can be written while looking at the result. The first pass over a loaded conversation
@@ -322,12 +336,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const downloads = useMemo(() => {
     const out: Record<string, string> = {};
     for (const t of detail?.turns || []) for (const a of t.artifacts || []) out[a.filename] = downloadUrl(a.download_url);
+    for (const p of libraryPreviews) out[previewTabKey(p)] = downloadUrl(`/v1/files/${p.libraryFileId}/content`);
     return out;
-  }, [detail]);
+  }, [detail, libraryPreviews]);
 
   const modelName = (m: string) => models.find((x) => x.id === m)?.name || m;
 
-  const openFiles = previews.filter((p) => !closedFiles.includes(p.filename));
+  const openFiles = previews.filter((p) => !closedFiles.includes(previewTabKey(p)));
   function showFile(filename: string) {
     setClosedFiles((closed) => closed.filter((f) => f !== filename));
     setSelected(filename);
@@ -335,8 +350,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     setReaderOn(false);
     setPaneOpen(true);
   }
+  function showLibraryFile(file: { file_id: string; filename: string }) {
+    const preview = { filename: file.filename, version: 1, libraryFileId: file.file_id };
+    setLibraryPreviews((previous) => previous.some((p) => p.libraryFileId === file.file_id) ? previous : [...previous, preview]);
+    showFile(previewTabKey(preview));
+  }
   function closeFile(filename: string) {
-    const rest = openFiles.filter((p) => p.filename !== filename);
+    const rest = openFiles.filter((p) => previewTabKey(p) !== filename);
     setClosedFiles((closed) => [...closed, filename]);
     if (!rest.length && !paneSources && !readers.length) return setPaneOpen(false);
     if (!rest.length) {
@@ -346,7 +366,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       }
       return;
     }
-    if (selected === filename || !rest.some((p) => p.filename === selected)) setSelected(rest[rest.length - 1].filename);
+    if (selected === filename || !rest.some((p) => previewTabKey(p) === selected)) setSelected(previewTabKey(rest[rest.length - 1]));
   }
   function showSources(run: Run, sources: PaneSources["sources"], answer: string) {
     const next = { runId: run.id, sources, answer };
@@ -393,9 +413,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   // Previews are keyed by the file's name in the sandbox; deliver_file may have given it another name.
   // Then the one preview of the same kind that this turn rendered is the delivered file's.
   const previewKey = (run: Run, filename: string): string | null => {
-    if (previews.some((p) => p.filename === filename)) return filename;
+    if (previews.some((p) => !p.libraryFileId && p.filename === filename)) return filename;
     const own = (run.result?.previews || []).filter((p) => ext(p.filename) === ext(filename));
-    return own.length === 1 && previews.some((p) => p.filename === own[0].filename) ? own[0].filename : null;
+    return own.length === 1 && previews.some((p) => !p.libraryFileId && p.filename === own[0].filename) ? own[0].filename : null;
   };
   const turns = detail?.turns || [];
   // turns already there when the conversation opened appear with it; only turns that arrive afterwards animate in
@@ -555,6 +575,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     olderController.current = null;
     setLoadingOlder(false);
     setLivePreviews([]);
+    setLibraryPreviews([]);
     setDetail((d) => {
       if (!d) return d;
       const at = d.turns.findIndex((t) => t.id === old.id);
@@ -617,6 +638,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       olderController.current = null;
       setLoadingOlder(false);
       setLivePreviews([]);
+      setLibraryPreviews([]);
       setDetail((d) => (d && d.id === page.id ? { ...page, turns: page.turns } : page));
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
@@ -654,7 +676,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     <QuotaBanner refresh={streaming} />
     <Composer
       mode={mode}
-      onMode={setMode}
+      onMode={chooseMode}
       modeBelow={!id && !project}
       models={models}
       model={model}
@@ -683,7 +705,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             <div className="chat-home">
               <div className="home-hero">
                 <h1>有什么我能帮你的吗？</h1>
-                <ModeToggle mode={mode} onChange={setMode} />
+                <ModeToggle mode={mode} onChange={chooseMode} />
               </div>
             </div>
             <div className="composer-dock">
@@ -698,7 +720,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                 setClosedFiles([]);
                 // a collapsed pane comes back as it was; an open one without files switches to them
                 if (showPane || (!paneSources && !readers.length)) {
-                  setSelected((value) => value || previews[previews.length - 1]?.filename || null);
+                  setSelected((value) => value || (previews.length ? previewTabKey(previews[previews.length - 1]) : null));
                   setSourcesOn(false);
                   setReaderOn(false);
                 }
@@ -749,6 +771,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     modelName={modelName}
                     previewKey={previewKey}
                     onPreview={showFile}
+                    onPreviewFile={showLibraryFile}
                     onResume={resume}
                     onAnswer={answer}
                     onRetry={running ? undefined : retry}

@@ -1,28 +1,19 @@
-"""File-bound OCR: only the API resolves credentials and writes usage/files.
-
-The Worker queues one job per file in the READY transaction (request_ocr) and drives it through
-prepare -> preview -> run. file.meta.ocr moves pending -> running -> done|failed; unavailable comes
-only from configuration. Each page is one usage call (ocr:<file>:<page>) billed to the file owner.
-"""
+"""Explicit file-bound RapidOCR jobs. API owns unbilled page/engine/time records; Worker drives durable progress."""
 
 import asyncio
 import threading
 import uuid
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from ..agent.multimodal import image_part
-from ..catalog import get_catalog
 from ..config import settings
-from ..contracts.usage import ReserveUsageIn, SettleUsageIn
-from ..deps import get_db
-from ..llm import ModelCall, llm_for, model_call
+from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..model_policy import ModelPolicy, estimator
-from ..models import FileObject, FileStatus, UsageReservation
-from ..quota import reserve_usage, settle_usage
+from ..models import FileObject, FileStatus, User
 from ..service_auth import require_scope
 from ..storage import get_storage
 
@@ -39,7 +30,6 @@ _EXPLICIT_REASONS = {
     "call_already_dispatched",
     "text_limit",
 }
-_PROMPT = "请逐字识别图片中的文字，保留段落与表格。只返回识别文本；无法辨认请明确说明。"
 
 router = APIRouter(prefix="/internal/files", dependencies=[Depends(require_scope("files:ocr"))])
 
@@ -53,16 +43,11 @@ def eligible(db, file_id):
     return file
 
 
-def available():
-    spec = get_catalog().get(settings.ocr_alias)
-    return spec if spec and spec.available and spec.supports({"vision"}) else None
-
-
 def request_ocr(db: Session, file: FileObject) -> None:
     """Runs in the READY patch's transaction, so the job exists exactly when OCR is pending."""
     from .jobs import stage_job
 
-    file.meta = {**(file.meta or {}), "ocr_requested_at": datetime.now(UTC).timestamp()}
+    file.meta = {**(file.meta or {}), "ocr_requested_at": datetime.now(UTC).timestamp(), "ocr_generation": uuid.uuid4().hex}
     # A durable job like any other: claimed, ACKed by the Worker, and only then removed from the outbox.
     stage_job(db, "ocr", file_id=file.id)
 
@@ -93,16 +78,16 @@ def prepare(file_id: str, db: Session = Depends(get_db)):
             return fields
 
         if meta.get("ocr") == "running":
-            if now - meta.get("ocr_started_at", 0) > _total_timeout() + 30:
-                return finish(ocr="failed", ocr_reason="interrupted")
+            if now - meta.get("ocr_started_at", 0) > settings.ocr_executor_timeout_seconds + 30:
+                return finish(ocr="pending", ocr_reason="resuming")
             return {"ocr": "running"}
         if meta.get("ocr") != "pending":
             return {"ocr": meta.get("ocr", "unavailable")}
         if now - meta.get("ocr_requested_at", now) > settings.ocr_deadline_seconds:
             return finish(ocr="failed", ocr_reason="deadline")
-        if not available():
-            return finish(ocr="unavailable", ocr_reason="vision_not_configured")
-        if file.size > settings.ocr_max_bytes:
+        if not settings.ocr_executor_url:
+            return finish(ocr="unavailable", ocr_reason="ocr_executor_unavailable")
+        if meta.get("ocr_pdf") is None and file.size > settings.ocr_max_bytes:
             return finish(ocr="failed", ocr_reason="size_limit")
         pdf = meta.get("ocr_pdf")
         if pdf is None:  # image: the normalized display derivative is the only input the model sees
@@ -113,19 +98,23 @@ def prepare(file_id: str, db: Session = Depends(get_db)):
             return finish(ocr="failed", ocr_reason="pdf_analysis_unavailable")
         if not pdf["low_text_pages"]:
             return finish(ocr="done", ocr_reason="text_pdf")
-        if len(pdf["low_text_pages"]) > settings.ocr_max_pages:
-            return finish(ocr="failed", ocr_reason="page_limit")
-        preview = meta.get("preview") or {}
-        if preview.get("status") not in {"ready", "pending"}:
-            job_id = uuid.uuid4().hex
-            meta.update(preview={"status": "pending", "kind": "pages"}, preview_job_id=job_id, preview_requested_at=now)
-            from .jobs import stage_job
 
-            stage_job(db, "preview", file_id=file.id, job_id=job_id)
-        file.meta = dict(meta)
+        preview = meta.get("ocr_preview") or {}
+        if preview.get("status") == "ready":
+            return {"ocr": "pending"}
+        if meta.get("ocr_render_job_id") and (meta.get("preview") or {}).get("status") == "pending":
+            return {"ocr": "pending", "preview_job_id": meta["ocr_render_job_id"]}
+        job_id = uuid.uuid4().hex
+        meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
+        meta.update(
+            preview={"status": "pending", "kind": "pages"},
+            preview_job_id=job_id,
+            ocr_render_job_id=job_id,
+            ocr_render_pages=[p + 1 for p in pdf["low_text_pages"]],
+        )
+        file.meta = meta
         db.commit()
-        pending = (meta.get("preview") or {}).get("status") == "pending"
-        return {"ocr": "pending", "preview_job_id": meta["preview_job_id"] if pending else None}
+        return {"ocr": "pending", "preview_job_id": job_id}
 
 
 def bounded_image(key, file_id):
@@ -140,85 +129,6 @@ def bounded_image(key, file_id):
                 raise ValueError("image_size_limit")
             chunks.append(chunk)
     return b"".join(chunks)
-
-
-async def recognize(db, file, spec):
-    meta = file.meta or {}
-    pdf = meta.get("ocr_pdf")
-    if pdf is None:
-        targets = [(0, meta["display_key"], "image/webp")]
-    else:
-        preview = meta.get("preview") or {}
-        names = preview.get("pages") or []
-        if preview.get("status") != "ready":
-            raise ValueError("preview_unavailable")
-        if max(pdf["low_text_pages"]) >= len(names):  # the preview renders a bounded prefix of the document
-            raise ValueError("page_limit")
-        assets = meta.get("preview_assets") or {}
-        targets = []
-        for page in pdf["low_text_pages"]:
-            asset = assets.get(names[page]) or {}
-            if not asset.get("key"):
-                raise ValueError("preview_unavailable")
-            targets.append((page, asset["key"], "image/jpeg"))
-    results = {}
-    for page, key, mime in targets:
-        messages = [{"role": "user", "content": [{"type": "text", "text": _PROMPT}, image_part(bounded_image(key, file.id), mime)]}]
-        estimate = estimator.estimate(spec.id, messages)
-        output = min(spec.max_output_tokens, settings.ocr_max_output_tokens)
-        if estimate > ModelPolicy.input_budget(spec) or estimate + output > spec.context_tokens:
-            raise ValueError("context_limit")
-        call_id = f"ocr:{file.id}:{page}"
-        # A redelivered job must not issue a second inference for a page that already has a call.
-        if db.get(UsageReservation, call_id):
-            raise ValueError("call_already_dispatched")
-        reserve_usage(
-            db,
-            ReserveUsageIn(
-                call_id=call_id,
-                subject="file_job",
-                file_id=file.id,
-                attempt_id=call_id,
-                alias=spec.id,
-                mode="ocr",
-                max_output_tokens=output,
-                estimated_input_tokens=estimate,
-            ),
-        )
-        call = ModelCall(call_id, "", output)
-        token = model_call.set(call)
-        response = None
-        try:
-            response = await llm_for(spec.id).chat(messages, [], spec.id, user_id=file.user_id)
-            if not response.content.strip() or response.tool_calls or response.finish_reason != "stop":
-                raise ValueError("invalid_ocr_response")
-            estimator.calibrate(spec.id, messages, response.usage.get("prompt_tokens", 0))
-            results[page] = response.content.strip()
-        finally:
-            model_call.reset(token)
-            usage = response.usage if response is not None else call.usage
-            status = "settled" if usage else "estimated" if call.reached_model else "released"
-            settle_usage(
-                db,
-                SettleUsageIn(
-                    call_id=call_id,
-                    attempt_id=call_id,
-                    status=status,
-                    actual_backend=call.actual_backend,
-                    input_tokens=usage.get("prompt_tokens", estimate if status == "estimated" else 0),
-                    cached_tokens=usage.get("cached_tokens", 0),
-                    output_tokens=usage.get("completion_tokens", output if status == "estimated" else 0),
-                    reasoning_tokens=usage.get("reasoning_tokens", 0),
-                ),
-            )
-        if sum(len(text) for text in results.values()) > 200_000:
-            raise ValueError("text_limit")
-    text = "\f[page:1]\n" + results[0] if pdf is None else "\n".join(f"\f[page:{page + 1}]\n{results[page]}" for page in sorted(results))
-    if len(text) > 200_000:
-        raise ValueError("text_limit")
-    if not text.strip():
-        raise ValueError("empty_ocr_text")
-    return text
 
 
 def _reason(exc: Exception) -> str:
@@ -241,40 +151,6 @@ def run_ocr(file_id: str, db: Session = Depends(get_db)):
         _ocr_slot.release()
 
 
-def _run_ocr(file_id: str, db: Session):
-    file = eligible(db, file_id)
-    spec = available()
-    if spec is None:
-        return update(db, file, ocr="unavailable", ocr_reason="vision_not_configured")
-    with user_critical_section(db, file.user_id):
-        file = eligible(db, file_id)
-        if (file.meta or {}).get("ocr") != "pending":
-            return {"ocr": (file.meta or {}).get("ocr", "unavailable")}
-        file.meta = {**file.meta, "ocr": "running", "ocr_started_at": datetime.now(UTC).timestamp()}
-        db.commit()
-    try:
-
-        async def invoke():
-            async with asyncio.timeout(_total_timeout()):
-                return await recognize(db, file, spec)
-
-        text = asyncio.run(invoke())
-        key = f"derived/{file_id}/ocr.txt"
-        # Recheck deletion before writing derived objects, under the owner lock. The native text key is untouched.
-        with user_critical_section(db, file.user_id):
-            file = eligible(db, file_id)
-            get_storage().put_bytes(key, text.encode(), "text/plain; charset=utf-8")
-            file.meta = {**file.meta, "ocr": "done", "ocr_text_key": key}
-            from .routes_library_summary import request_summary
-
-            request_summary(db, file)
-            db.commit()
-        return {"ocr": "done", "chars": len(text)}
-    except Exception as exc:
-        db.rollback()
-        return update(db, file, ocr="failed", ocr_reason=_reason(exc))
-
-
 # Conversation image reads use the existing active-run attachment authorization,
 # not Worker OCR permission. The only exposed image is a normalized derivative.
 vision_router = APIRouter(prefix="/internal/files")
@@ -284,6 +160,7 @@ vision_router = APIRouter(prefix="/internal/files")
 def vision_image(
     file_id: str,
     run_id: str,
+    page: int | None = None,
     principal=Depends(require_scope("files:read_for_run")),
     db: Session = Depends(get_db),
 ):
@@ -291,9 +168,245 @@ def vision_image(
 
     file = _bound_file(db, file_id, principal, run_id, "processing")
     key = (file.meta or {}).get("display_key")
+    mime = "image/webp"
+    if page is not None:
+        from ..models import RenderedPage
+
+        rendered = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
+        if not rendered:
+            raise HTTPException(409, "page image unavailable")
+        key, mime = rendered.key, "image/jpeg"
     if not key:
         raise HTTPException(409, "normalized image unavailable")
     try:
-        return Response(bounded_image(key, file_id), media_type="image/webp")
+        return Response(bounded_image(key, file_id), media_type=mime)
     except ValueError:
         raise HTTPException(413, "image size limit") from None
+
+
+def _run_ocr(file_id: str, db: Session):
+    from ..ocr_backend import recognize as remote_recognize
+
+    file = eligible(db, file_id)
+    if not settings.ocr_executor_url:
+        return update(db, file, ocr="unavailable", ocr_reason="ocr_executor_unavailable")
+    with user_critical_section(db, file.user_id):
+        file = eligible(db, file_id)
+        meta = dict(file.meta or {})
+        if meta.get("ocr") != "pending":
+            return {"ocr": meta.get("ocr", "unavailable")}
+        generation = str(meta.get("ocr_generation") or meta.get("ocr_requested_at"))
+        requested_at = meta.get("ocr_requested_at", 0)
+        targets = []
+        if meta.get("ocr_pdf") is None:
+            targets = [(0, meta.get("display_key"))]
+        else:
+            names = (meta.get("ocr_preview") or {}).get("pages") or []
+            assets = meta.get("ocr_preview_assets") or {}
+            for page in meta["ocr_pdf"]["low_text_pages"]:
+                name = next((n for n in names if int(n[2:-4]) == page + 1), None)
+                if name is None:
+                    raise HTTPException(422, "OCR page render unavailable")
+                targets.append((page, (assets.get(name) or {}).get("key")))
+        file.meta = {**meta, "ocr": "running", "ocr_started_at": datetime.now(UTC).timestamp()}
+        db.commit()
+    try:
+        texts = []
+        for page, key in targets:
+            if datetime.now(UTC).timestamp() - requested_at > settings.ocr_deadline_seconds:
+                raise ValueError("deadline")
+            if not key:
+                raise ValueError("preview_unavailable")
+            file = eligible(db, file_id)
+            from .document_sources import ocr_records
+
+            done = ocr_records(db, file, [p for p, _ in targets])
+            record = done.get(str(page))
+            db.rollback()  # no DB transaction or owner lock across remote inference
+            if record and (
+                record.get("generation") == generation
+                or (settings.ocr_engine_fingerprint and record.get("fingerprint") == settings.ocr_engine_fingerprint)
+            ):
+                text = get_storage().get_bytes(record["text_key"]).decode()
+            else:
+                result = asyncio.run(remote_recognize(bounded_image(key, file_id)))
+                text = result["text"]
+                with user_critical_section(db, file.user_id):
+                    file = eligible(db, file_id)
+                    if (
+                        str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation
+                        or file.meta.get("ocr") != "running"
+                    ):
+                        raise HTTPException(409, "OCR source changed")
+                    text_key = f"derived/{file_id}/ocr/{generation}/{page}.txt"
+                    get_storage().put_bytes(text_key, text.encode(), "text/plain; charset=utf-8")
+                    pages = dict(done)
+                    from ..models import OcrPageResult
+
+                    fingerprint = settings.ocr_engine_fingerprint or generation
+                    page_row = db.get(OcrPageResult, (file.id, page, fingerprint))
+                    if page_row is None:
+                        page_row = OcrPageResult(file_id=file.id, page=page, fingerprint=fingerprint)
+                        db.add(page_row)
+                    page_row.generation, page_row.text_key = generation, text_key
+                    page_row.engine, page_row.backend = result["engine"], result["backend"]
+                    page_row.seconds = result.get("seconds", 0)
+                    pages[str(page)] = {
+                        "generation": generation,
+                        "text_key": text_key,
+                        "engine": result["engine"],
+                        "fingerprint": result.get("fingerprint"),
+                        "backend": result["backend"],
+                        "seconds": result.get("seconds", 0),
+                        "pages": 1,
+                    }
+                    more = any(str(p) not in pages or pages[str(p)].get("generation") != generation for p, _ in targets)
+                    file.meta = {
+                        **file.meta,
+                        "ocr_pages": dict(list(pages.items())[-20:]),
+                        "ocr_cache_revision": int(file.meta.get("ocr_cache_revision", 0)) + 1,
+                        "ocr": "pending" if more else "running",
+                    }
+                    db.commit()
+                    if more:
+                        return {"ocr": "pending", "completed_page": page + 1}
+            texts.append(f"\f[page:{page + 1}]\n{text}")
+        with user_critical_section(db, file.user_id):
+            file = eligible(db, file_id)
+            if str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation:
+                raise HTTPException(409, "OCR source changed")
+            text_key = f"derived/{file_id}/ocr.txt"
+            get_storage().put_bytes(text_key, "\n".join(texts).encode(), "text/plain; charset=utf-8")
+            # OCR extraction never schedules a file-summary LLM call.
+            file.meta = {**file.meta, "ocr": "done", "ocr_text_key": text_key}
+            db.commit()
+        return {"ocr": "done", "pages": len(targets), "chars": sum(map(len, texts))}
+    except Exception as exc:
+        db.rollback()
+        with user_critical_section(db, file.user_id):
+            file = eligible(db, file_id)
+            if str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation:
+                return {"ocr": "canceled", "reason": "superseded"}
+            import httpx
+
+            retryable = isinstance(exc, (httpx.TransportError, TimeoutError)) or (
+                isinstance(exc, httpx.HTTPStatusError) and (exc.response.status_code == 429 or exc.response.status_code >= 500)
+            )
+            state = "pending" if retryable else "failed"
+            file.meta = {
+                **file.meta,
+                "ocr": state,
+                "ocr_reason": "dependency_unavailable" if retryable else (str(exc) if isinstance(exc, ValueError) else "ocr_failed"),
+            }
+            db.commit()
+        return {"ocr": state}
+
+
+extraction_router = APIRouter(prefix="/v1/files", tags=["text-extraction"])
+
+
+def request_extraction(db, file, pages=None):
+    if not settings.ocr_executor_url:
+        raise HTTPException(503, {"code": "ocr_executor_unavailable", "message": "文字识别服务尚未配置"})
+    meta = dict(file.meta or {})
+    if meta.get("ocr") in {"pending", "running"}:
+        return {"ocr": meta["ocr"]}
+    if file.content_type == "application/pdf" or file.filename.lower().endswith(".pdf"):
+        if not pages:
+            raise HTTPException(422, "请选择需要提取的PDF页范围")
+        meta["ocr_pdf"] = {"low_text_pages": [p - 1 for p in pages]}
+        meta.pop("ocr_preview", None)
+    elif not file.content_type.startswith("image/"):
+        raise HTTPException(422, "此文件请读取原生文档文字")
+    elif meta.get("ocr") == "done" and (
+        not settings.ocr_engine_fingerprint
+        or all(p.get("fingerprint") == settings.ocr_engine_fingerprint for p in (meta.get("ocr_pages") or {}).values())
+    ):
+        return {"ocr": "done"}
+    meta["ocr"] = "pending"
+    file.meta = meta
+    request_ocr(db, file)
+    return {"ocr": "pending"}
+
+
+class ExtractionRequest(BaseModel):
+    pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
+
+
+@extraction_router.post("/{file_id}/extract-text")
+def extract_text(file_id: str, body: ExtractionRequest, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .routes_files import _owned_file
+
+    if body.pages and any(type(p) is not int or not 1 <= p <= 100000 for p in body.pages):
+        raise HTTPException(422, "无效页码")
+    with user_critical_section(db, user.id):
+        file = _owned_file(db, file_id, user)
+        eligible(db, file_id)
+        result = request_extraction(db, file, body.pages)
+        db.commit()
+    return result
+
+
+def request_page_render(db, file, pages):
+    from .jobs import stage_job
+
+    meta = dict(file.meta or {})
+    if (meta.get("preview") or {}).get("status") == "pending":
+        return
+    job_id = uuid.uuid4().hex
+    meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
+    meta.update(preview={"status": "pending", "kind": "pages"}, preview_job_id=job_id, ocr_render_job_id=job_id, ocr_render_pages=pages)
+    file.meta = meta
+    stage_job(db, "preview", file_id=file.id, job_id=job_id)
+
+
+@extraction_router.get("/{file_id}/extract-text")
+def extraction_status(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .routes_files import _owned_file
+
+    file = _owned_file(db, file_id, user)
+    eligible(db, file_id)
+    meta = file.meta or {}
+    return {
+        "status": meta.get("ocr", "unavailable"),
+        "reason": meta.get("ocr_reason"),
+        "pages": sorted(int(p) + 1 for p in (meta.get("ocr_pages") or {})),
+        "download_url": f"/v1/files/{file.id}/extracted-text" if meta.get("ocr_text_key") else None,
+    }
+
+
+@extraction_router.get("/{file_id}/extracted-text")
+def extraction_download(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from fastapi.responses import StreamingResponse
+
+    from .routes_files import _owned_file, content_disposition
+
+    file = _owned_file(db, file_id, user)
+    eligible(db, file_id)
+    meta = file.meta or {}
+    if not meta.get("ocr_text_key") or meta.get("ocr") != "done":
+        raise HTTPException(409, "文字提取尚未完成")
+    return StreamingResponse(
+        get_storage().stream(meta["ocr_text_key"]),
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": content_disposition(file.filename + ".txt")},
+    )
+
+
+class ChatPreparation(BaseModel):
+    mode: Literal["chat", "work"] = "chat"
+    file_ids: list[str] = Field(max_length=50)
+    model: str = Field(max_length=120)
+    prompt: str = Field(default="", max_length=8000)
+
+
+preparation_router = APIRouter(prefix="/v1/chat")
+
+
+@preparation_router.post("/prepare")
+def prepare_chat(body: ChatPreparation, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .routes_runs import validate_run_input
+
+    with user_critical_section(db, user.id):
+        validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode)
+    return {"status": "ready"}
