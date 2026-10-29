@@ -1,13 +1,11 @@
 # 当前工作
 
-## 2026-10-29 文档精简
+## 2026-10-29 测试环境部署约定合入 main
 
-用户授权本轮文档清理提交 PR 并直接合并，无需等待 CI。分支 `docs/prune-review-outputs`，基线 `origin/main@5eef026`（已包含 #102）；只改文档/原始输出和忽略规则，未部署。删除内容与检查见[精简记录](updates/2026-10-29-docs-cleanup.md)。后续按 AGENTS.md 保留最小必要证据；本轮无待实现产品项。
+用户要求将后续约定合入 main。本轮分支 `docs/test-deployment-policy`，基线 `origin/main@9b7449d`，保留 #103 的文档精简规则；仅补充 AGENTS.md、HANDOFF 和部署交接，不改产品或部署配置。新规则为：当次明确要求才部署，未要求不备份、不另做部署后验收，复用依赖并按变化范围增量构建。
 
-## 文件上下文与 Office Runtime
+main@5eef026 已在上一轮重新部署，旧版及备份已清理；后续功能验收按用户要求取消。本次不重新部署，也不运行产品测试，只检查文档差异和引用。[部署与约定记录](updates/2026-10-29-main-redeploy-cleanup.md)。
 
-实现已随 [PR #102](https://github.com/shijunan126-creator/ailab-lite/pull/102) 合入上述 main；实现/验收与部署是不同基线，本轮没有更新部署。[交付记录](updates/2026-10-29-file-context-pr.md)、[fork 审查与边界](updates/2026-10-29-fork-context-review.md)、[动态压缩](updates/2026-10-29-context-85.md)。原已丢失关系的旧分支需重新 fork；NPU、真实多代满窗与数百人容量仍未验，不自动扩展测试/部署。
+文件上下文功能已随 [PR #102](https://github.com/shijunan126-creator/ailab-lite/pull/102) 合并；NPU、真实多代满窗与数百人容量仍未验。原已丢失关系的旧分支需重新 fork。[交付记录](updates/2026-10-29-file-context-pr.md)。
 
-## 其他范围与历史
-
-主目录前端 HLD/视觉设计仍为本地设计工作，不在本次 PR 范围，不据此授权实施。历史交付见 [updates/](updates/)，能力与验收边界见[状态矩阵](../architecture/status-matrix.md)，目标及启动条件见[路线图](roadmap.md)。历史记录中的待合并/未部署与授权只描述各自当时状态，不覆盖最新用户指令。
+主目录前端 HLD/视觉设计仍为本地设计，不授权实施。文档证据按 [#103 精简记录](updates/2026-10-29-docs-cleanup.md) 保留最小必要内容。下一步合并本次文档后等待用户继续指示，不自动扩展实施、测试或部署。
