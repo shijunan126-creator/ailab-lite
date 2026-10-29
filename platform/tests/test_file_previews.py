@@ -27,13 +27,15 @@ class ApiClient:
         self.api = api
         self.renders = 0
 
-    def get_file(self, fid, job="processing"):
-        response = self.api.get(f"/internal/files/{fid}", headers=SERVICE, params={"job": job})
+    def get_file(self, fid, job="processing", **binding):
+        response = self.api.get(f"/internal/files/{fid}", headers=SERVICE, params={"job": job, **binding})
         response.raise_for_status()
         return response.json()
 
     def download_file(self, fid, target, job="processing", **kwargs):
-        response = self.api.get(f"/internal/files/{fid}/content", headers=SERVICE, params={"job": job})
+        response = self.api.get(
+            f"/internal/files/{fid}/content", headers=SERVICE, params={"job": job, **{k: v for k, v in kwargs.items() if k != "max_bytes"}}
+        )
         response.raise_for_status()
         assert len(response.content) <= kwargs["max_bytes"]
         target.write_bytes(response.content)
@@ -48,6 +50,31 @@ class ApiClient:
             f"/internal/files/{fid}/preview", headers=SERVICE, json={"job_id": job_id, "preview": preview, "assets": assets}
         )
         response.raise_for_status()
+
+    def prepare_document(self, fid, scan):
+        response = self.api.post(f"/internal/files/{fid}/prepare-document", headers=SERVICE, json={"scan": scan})
+        response.raise_for_status()
+        return response.json()
+
+    def read_document(self, fid, job_id):
+        from ailab_platform.adapters.lease_store_memory import MemoryLeaseStore
+        from ailab_platform.broker.documents import DocumentReader
+        from ailab_platform.broker.service import LeaseManager
+        from ailab_platform.sandbox.mock import MockSandbox
+        from tests.fakes import FakeRedis
+
+        manager = LeaseManager(
+            provider=MockSandbox(),
+            platform=self,
+            storage=get_storage(),
+            redis_client=FakeRedis(),
+            store=MemoryLeaseStore(),
+            start_background=False,
+        )
+        try:
+            return DocumentReader(manager).read(fid, job_id)
+        finally:
+            manager.close()
 
     def render_preview(self, fid, job_id):
         self.renders += 1

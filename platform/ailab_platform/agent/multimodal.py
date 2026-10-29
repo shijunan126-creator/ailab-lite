@@ -52,7 +52,13 @@ async def input_content(platform, run_id: str, file: dict, spec, *, text: str = 
         from ..clients import ClientError
 
         try:
-            image = await platform.get_file_image(file["id"], run_id)
+            image = (
+                (await platform.get_file_page_image(file["id"], run_id, file["page"]))
+                if file.get("page")
+                else (await platform.get_file_image(file["id"], run_id))
+            )
         except (ClientError, ValueError):
             pass
-    return attachment_content(file, vision=spec.supports({"vision"}), image=image, text=text)
+    return attachment_content(
+        file, vision=spec.supports({"vision"}), image=image, content_type="image/jpeg" if file.get("page") else "image/webp", text=text
+    )

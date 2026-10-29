@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { downloadUrl, Preview, previewUrl, readerRenderUrl } from "../../lib/api";
+import { api, downloadUrl, errorMessage, FileItem, Preview, previewUrl, readerRenderUrl } from "../../lib/api";
 import { IconDownload, IconPanelRight, IconX } from "../icons";
+import { FilePreviewBody } from "../preview/file-viewer";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
 import PdfDocument from "../preview/pdf";
@@ -14,6 +15,26 @@ function Pages({ preview }: { preview: Preview }) {
   const pages = preview.pages || [];
   if (!pages.length || !preview.run_id) return <div className="hint">没有可显示的页面</div>;
   return <DocumentPages pages={pages} src={(name) => previewUrl(preview.run_id!, name)} documentKey={`${preview.run_id}:${preview.filename}`} thumbnails />;
+}
+
+export type PanePreview = Preview & { libraryFileId?: string };
+export const previewTabKey = (preview: PanePreview) => preview.libraryFileId ? `file:${preview.libraryFileId}` : preview.filename;
+
+/** Reuse library rendering without its fullscreen shell; cancel superseded file loads. */
+function LibraryPane({ fileId }: { fileId: string }) {
+  const [file, setFile] = useState<FileItem | null>(null);
+  const [error, setError] = useState("");
+  useEffect(() => {
+    const controller = new AbortController();
+    setFile(null);
+    setError("");
+    api<FileItem>(`/v1/files/${fileId}`, { signal: controller.signal })
+      .then((value) => { if (!controller.signal.aborted) setFile(value); })
+      .catch((reason) => { if (!controller.signal.aborted) setError(errorMessage(reason)); });
+    return () => controller.abort();
+  }, [fileId]);
+  if (error) return <div className="alert error">{error}</div>;
+  return file ? <FilePreviewBody file={file} /> : <div className="hint" role="status">正在加载</div>;
 }
 
 export type PaneSources = { runId: string; sources: Source[]; answer: string };
@@ -64,7 +85,7 @@ export default function PreviewPane({
   live,
   downloads,
 }: {
-  previews: Preview[];
+  previews: PanePreview[];
   selected: string | null;
   onSelect: (filename: string) => void;
   onCloseFile: (filename: string) => void;
@@ -136,7 +157,7 @@ export default function PreviewPane({
     // Reveal the start even when the selected tab is wider than the available strip.
     if (rect.left < box.left || rect.right > box.right) tabs.scrollLeft += rect.left - box.left;
   }, [readerUrl, readerOn, selected, sourcesOn]);
-  const current = useMemo(() => previews.find((p) => p.filename === selected) || previews[previews.length - 1], [previews, selected]);
+  const current = useMemo(() => previews.find((p) => previewTabKey(p) === selected) || previews[previews.length - 1], [previews, selected]);
   const reader = readers.find((r) => r.url === readerUrl);
   const showReader = !!reader && readerOn;
   const showSources = !!sources && !showReader && (sourcesOn || !current);
@@ -152,16 +173,16 @@ export default function PreviewPane({
       <div className="preview-head">
         <button type="button" className="icon-btn" aria-label="收起预览" onClick={onClose}><IconPanelRight size={16} /></button>
         <div className="preview-tabs" role="tablist">
-          {previews.map((p) => tab(p.filename, p.filename, !showSources && !showReader && p.filename === current?.filename, () => onSelect(p.filename), () => onCloseFile(p.filename)))}
+          {previews.map((p) => tab(previewTabKey(p), p.filename, !showSources && !showReader && previewTabKey(p) === (current && previewTabKey(current)), () => onSelect(previewTabKey(p)), () => onCloseFile(previewTabKey(p))))}
           {sources ? tab("sources", "来源", showSources, onSourcesTab, onCloseSources) : null}
           {readers.map((r) => tab(`reader-${r.url}`, r.title || r.url, showReader && r.url === readerUrl, () => onReaderTab(r.url), () => onCloseReader(r.url)))}
         </div>
         <span className="spacer" />
         {!showSources && !showReader && current ? (
           <>
-            {live ? <span className="live on">实时</span> : null}
-            {downloads[current.filename] ? (
-              <a className="btn secondary sm" href={downloads[current.filename]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`}>
+            {live && !current.libraryFileId ? <span className="live on">实时</span> : null}
+            {downloads[previewTabKey(current)] ? (
+              <a className="btn secondary sm" href={downloads[previewTabKey(current)]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`}>
                 <IconDownload size={15} />
               </a>
             ) : null}
@@ -180,8 +201,8 @@ export default function PreviewPane({
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>
       ) : current ? (
-        <div className="preview-body" key={`${current.filename}:${current.file_id || ""}`}>
-          {current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
+        <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}`} key={previewTabKey(current) + (current.file_id || "")}>
+          {current.libraryFileId ? <LibraryPane fileId={current.libraryFileId} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
         </div>
       ) : null}
     </aside>

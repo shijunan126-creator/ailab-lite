@@ -1,5 +1,74 @@
 # HANDOFF
 
+## 2026-10-29 fork必须迁移程序状态
+
+- fork不能只复制正文和input_file_ids。必须迁移已确认插话及其AppliedMessagePosition/MessageFileRef、agent_read依赖、顺序/来源快照及invalidated_epoch；合并runtime_meta不能抹掉source_invalidated。历史model-context也须包含插话文件句柄。
+- 结构化摘要内的run_id随分支映射，frame/source表和待校准offset另存新身份；再次压缩只能引用本分支祖先。异常来源从保留原文重建。不是复制原frame_id或仅替换摘要边界。
+- 复制轮次保留历史mode，分支初始mode取forked_from.mode；有新轮次后按最新自有轮次恢复。详情白名单、来源失效序列化和清理必须保留forked_from_run_id，否则前端刷新后会误判。用户主动切换后轮询不覆盖。技能强制Work时附件/模型/模板准入也要使用有效mode。
+- 隔离旧源码做红回归时pytest默认prepend会先加载现工作树，须固定importlib和完整资源路径；不要把错误导入后的全绿当作证明。手机测试从桌面登录后切窄视口要重载以符合首次手机打开状态，不能force点击穿透侧栏。
+- 本轮验证/部署和边界见[集中审查](docs/progress/updates/2026-10-29-fork-context-review.md)。此前已真正丢失关系的旧分支不凭空修复，重新fork原会话；个人部署记录只在AILab-local。
+
+
+## 2026-10-29 模型窗口85%与输出预算
+
+- 用户已选完整catalog上下文85%触发，允许动态缩减本次输出；不要再按70%输入预算或Work65%计算。Chat/Work历史和Work执行共用ModelPolicy阈值，API显示同源；已有显式管理员设置需通过API变更，本机已开启/0.85。
+- 去掉按“模型最大输出”固定预留后，必须同时按剩余窗口计算ModelCall输出、reservation和provider max_tokens。摘要打包仍须为实际摘要输出留空间，不能挤到只剩1token。
+- 阈值按校准估算与配置窗口计算，不冒称供应商满窗容量已验；不自动压缩新附件冒充全文。旧checkpoint非收敛比较要包含threshold，模型/阈值变化不沿用旧65%结论。见[记录](docs/progress/updates/2026-10-29-context-85.md)。
+
+## 2026-10-29 网页403要区分读取与预览
+
+- HTTP403是上游拒绝，不能和non-public/DNS混为一谈；同URL分别核实静态抓取和隔离浏览器。模型read_url已有恢复不代表Portal iframe也接入了；`reader/render`现在只对可恢复失败调用有界HTML快照。
+- iframe错误返回可读HTML并保持失败状态；网站仍拒绝时不能以浏览器success或200验证码页冒充文章成功。示例：力扣浏览器可读，而两个知乎样本仍403。
+- API调用crawler需独立配置crawler token、网络入口来源和secure校验；不可为预览开放浏览器直连网络或给crawler业务身份。原脚本禁用CSP保留；见[记录](docs/progress/updates/2026-10-29-reader-preview-403.md)。
+
+## 2026-10-29 对话附件必须走侧栏标签
+
+Turn里的用户附件不能直接调用useFileViewer全屏shell；由Chat用file_id建立标签并交给PreviewPane，复用FilePreviewBody。文件名只能显示，不能作为上传附件唯一身份。原生提取、点击预览、OCR和模型输入分别验收；旧DOC/PPT/XLS可预览不等于全文已入索引。浏览器截图必须等待图片decode并禁用动画，避免把白页占位/动画透明阶段当实际显示证据。见[本轮记录](docs/progress/updates/2026-10-29-chat-attachment-tabs.md)。
+
+## 2026-10-29 VPN fake-IP与本机网页读取
+
+- 全域refusing non-public且DNS落198.18.*时先查宿主VPN→Colima→容器解析，不要直接放行fake-IP或禁用SSRF。公网检查旧版与新版一致。当前本机相关服务已指定真实DNS，详见[记录](docs/progress/updates/2026-10-29-reader-dns-local-fix.md)。
+- reader-egress有namespace nft白名单，Docker自定义DNS在该namespace转发也需要精确放行指定服务器UDP/TCP53；不能只改compose dns后忽略出口规则。Mac VPN/全局DNS不需修改，用户系统与AILab执行环境分开配置。
+
+
+## 2026-10-29 本机体验部署后的边界
+
+- 用户已明确授权当前文件/上下文改造部署，覆盖下方历史“不部署”限制；不push/PR/merge。实际dirty快照与必要验收见[本机部署](docs/progress/updates/2026-10-29-file-context-local-deployment.md)。个人部署仍只从AILab-local运行，不从repo同名bin调用。
+- 当前本机DB0036，旧API0033镜像不能直接连新库回滚；保留新写入，完整迁移前备份恢复到新空volume后再切旧镜像。不要覆盖用户验收后新增数据。个人备份/凭据与原始浏览器证据留本机，不复制进Git。
+- CPU OCR已显式部署到独立内网容器用于本机体验，不是CANN成功或产品默认变更。冷模型权重预置且hash验证，API/Worker无OCR解析器。资料库根视图不显示项目文件，网页验收要进入正确项目文件夹，别把分类选错当文件消失。
+
+
+## 2026-10-29 核心实测后续规则
+
+- 文件/Office/OCR任务在项目内`.worktrees/file-context-ocr`、`feat/file-context-office-runtime`，证据目录统一`docs/reviews/file-context-2026-10-29`；不要再放回旧Memory命名临时目录。主目录另有视觉设计脏修改，不能覆盖。
+- DeepSeek已配置，缺真实模型条件的旧结论已被覆盖；本机凭据仍按个人AILab-local交接从原文件读取，不复制进仓库。有限合成实测不能冒充500轮10代保真。
+- JSON摘要必须提供实际schema并计预算。next_actions/uncertainties是字符串数组，不能只说“四组条目”让模型猜类型。压缩要同时带程序确认的交付状态，避免旧摘要/pending输出误写未交付；恢复仍只认程序账本。
+- 校准只确认实际发送片段的evidence_id前缀，待处理handle/offset跨frame保存。OCR副本是新file私有对象，seconds=0/copied_pages表示缓存，不能算新推理。恢复墓碑通过ops内部API应用，脚本不写业务DB，永久删除保持410合同。
+- 实际CPU OCR清晰中文单图约1.03秒，但warm RSS快照约686MiB；权重大小不代表进程内存，保持独立执行器。NPU缺provider须明确失败，不能把CPU实测写成CANN验收。
+
+
+## 2026-10-29 文件实现与集中验收陷阱
+
+- 当前用户已授权文件方案实施，覆盖下节“只设计”历史限制；不push/PR/merge/部署。Office Runtime平台持有，在Broker系统沙箱执行，禁止装进API/Worker业务进程或用户可切换skill目录。OCR只计量、不计费，不设累计用户用量上限；资源槽位仍须有界。
+- 上游pagination会截掉超大单元中部，宽表默认列数也有限。要核对连续cursor及全部行列，不能只测小fixture。固定源码hash与本地patch列表分开；同范围冷/热/缓存性能要分别测，现有小样本Office冷启动/RSS高于旧Python。
+- 每次解析输出使用file/job独立命名空间，Worker尝试claim和API提交二次检查；不同进程加载旧路径协议会产生假失败。最终组测必须冻结代码并重启五服务。Mac tar设置COPYFILE_DISABLE=1，拒绝AppleDouble/软链，不放宽归档校验。
+- macOS mock沙箱测试需GNU stat；使用coreutils/findutils路径。队列promotion在autoflush=False下必须flush新增消息位置。发现工具会增加模型轮次，测试释放信号不能在能力搜索后再次clear造成伪超时。
+- OCR全量页缓存放按file/page/fingerprint索引表，File.meta只留最近页状态；不能把最近20页当全文缓存。删除在线epoch栅栏必须贯通原文、dream、向量回填和回放，后台清理还包括候选、undo快照和副本。
+
+## 2026-10-29 文件与多代压缩的设计陷阱（历史设计阶段）
+
+- 本次办公skills是平台内部能力，用户不可管理，不得注册到用户可切换技能目录后只藏UI。优先按[复用plan](docs/architecture/design/file-context-ocr/09-upstream-reuse.md)接ZCode Office Runtime/viewer；上游分页不等于流式解析，必须同范围比较冷/热耗时和RSS。ZCode部分生成skill frontmatter与同目录LICENSE有冲突，runtime/viewer和MiniMax许可分别记录，不笼统套仓库根许可。用户明确只改plan，不能从“建议直接用、弄过来”推断本轮实施授权。
+
+- 用户的5张图仅指输入框每轮附加独立图片；后续轮次可继续，不得扩大为模型请求/历史/文档页的5张上限。“不默认整份渲染后一次回灌”不等于禁止全篇分批审阅或全篇逐页转换缓存，处理范围与模型输入范围必须分开。
+
+- 新产品分工以[模块总览](docs/architecture/design/file-context-ocr/README.md)为准：Chat预处理/超限准入，Work自主按需；RapidOCR＋昇腾NPU优先。上游CANN不可用会回落CPU，required-backend/readiness和真实节点执行证据缺一不可。冻结架构已有OCR卡位但原模型不同，不能自动重分卡。
+- skills正文按需加载不等于tool-search：当前整批schema与目录仍进prompt。消息附件顺序按用户提交ordinal，不按上传完成时间；自然语言歧义要返回候选。普通删除是回收站，彻底删目录也不证明DB索引/摘要/工作区副本已清。
+
+- 历史摘要已经会合并旧摘要与新增轮次，不要为此再造一套摘要。但`model_context`当前不传输入附件清单；文件在存储中不等于模型能识别来源/版本并重读。检查跨轮、checkpoint、工具读取三条路径，不只看本轮图片可见。
+- 本轮整理排除image_url、保留原始输入，二次整理能包含旧摘要；头尾截取不能当连续消费。后续实现必须只推进真正被处理的part/event游标，配对工具与非重放围栏由程序保存，不靠摘要复述。
+- CPU OCR模型权重小不代表运行时RSS低；Paddle官方轻量CPU benchmark仍有约2GB主存及多核开销。不得塞进256–384MiB Worker或把官方速度套到2vCPU；独立执行器同机/远端以实测准入。
+- 本轮是[设计讨论稿](docs/architecture/design/2026-10-29-file-context-ocr.md)，不是已实现合同。原文件版本、类型化图片输入、来源删除、全文覆盖与费用必须整体验收；URL字符串不等于看过图片，摘要不等于原文。
+
 ## 2026-10-28 记忆完善后的合同
 
 - 模型视图统一在`memory_recall/policy.py`，管理页完整文档不可直接进入模型。项目作用域、suppressed/invalid/review、读写策略贯穿bootstrap、工具返回/重放、历史原文、dream及checkpoint续跑；更新别只修一个入口。

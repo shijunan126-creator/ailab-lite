@@ -258,6 +258,7 @@ export type ModelInfo = {
   description: string;
   weight: number;
   tools: boolean;
+  capabilities?: string[];
   default: boolean;
   context_tokens?: number;
   input_budget_tokens?: number;

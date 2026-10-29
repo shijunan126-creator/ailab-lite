@@ -31,3 +31,12 @@ The JSON `GET /v1/reader` (extracted blocks for the old 正文 view, unused by t
 ## Dependency verification (2026-10-26)
 
 The actual PyPI wheel `crawl4ai==0.7.4` installs with `aiohttp==3.12.15`; both `BrowserConfig` and `CrawlerRunConfig` construct successfully with this server's arguments. Its packaged [license](../../../images/crawler/Crawl4AI-LICENSE) contains Apache-2.0 **plus an Attribution Requirement**, not just an optional credit request. The required credit is in the root README and the image's `/app/NOTICE`; `/app/Crawl4AI-LICENSE` retains the full text. Transitive dependencies are not fully pinned.
+
+
+## 2026-10-29 extension: source preview shares the isolated renderer
+
+The original-page preview no longer stops at a recoverable static HTTP/transport failure while `read_url` can recover the same page. `GET /v1/reader/render` keeps its static fast path, retries eligible failures once through the existing crawler with `include_html: true`, and re-serves the rendered DOM under the existing script-free CSP. It does not render every click or bypass URL/TLS/private-address refusals. The model's Markdown response contract is unchanged; HTML is opt-in, capped at 2 MiB without silent truncation, and shares the existing single-page semaphore, process cleanup and timeouts. The API's whole request deadline remains 45 seconds.
+
+Only the API and Agent receive the crawler credential and ingress permission; the crawler receives no platform/model identity and still has only its public-only egress proxy. Secure startup requires a valid crawler token for the API as well as the Agent when the crawler URL is configured. The API performs no browser execution. Public pages that continue to deny access remain failures; the iframe receives readable Chinese HTML with a prompt to use its original-site button, never a JSON blob or a fabricated article. This is not a logged-in browsing/session feature and does not guarantee access through site challenges.
+
+Actual source/preview/security and performance evidence: [2026-10-29 report](../../progress/updates/2026-10-29-reader-preview-403.md). This extension does not claim hundreds-user browser capacity or complete handling of HTTP-200 script-only shells.

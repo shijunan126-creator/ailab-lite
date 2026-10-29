@@ -1,8 +1,7 @@
-"""Worker side of file OCR: PDF page analysis in the limited parser, then the API job.
+"""Drive authorized RapidOCR jobs; API alone writes progress and unbilled page metering.
 
-No model credential and no business database access here. Inference and billing live in the
-API (api/routes_ocr.py). Every transient failure raises, which leaves the queue message unacked;
-the API keeps the job pending, so redelivery resumes it and never repeats a finished page.
+Transient failures leave the queue message unacknowledged so a later delivery resumes
+committed pages. No model credential or business database access belongs to the Worker.
 """
 
 from ..config import settings
@@ -24,10 +23,19 @@ def process_ocr(file_id, platform):
         meta = platform.get_file(file_id, job="preview").get("meta") or {}
         if (meta.get("preview") or {}).get("status") == "pending":
             raise RuntimeError("OCR preview is still rendering")
-    result = platform.ocr(file_id)
-    if result["ocr"] == "running":
-        raise RuntimeError("OCR is already running for this file")
-    return result
+    import time
+
+    deadline = time.monotonic() + min(540, settings.ocr_deadline_seconds)
+    for _ in range(21):
+        if time.monotonic() >= deadline:
+            raise RuntimeError("OCR progress saved; continue on redelivery")
+        result = platform.ocr(file_id)
+        if result["ocr"] == "pending" and result.get("completed_page"):
+            continue
+        if result["ocr"] in {"running", "pending"}:
+            raise RuntimeError("OCR is still processing")
+        return result
+    raise RuntimeError("OCR batch progress saved")
 
 
 def low_text_pages(source, output, *, max_pages, min_chars):

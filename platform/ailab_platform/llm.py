@@ -280,9 +280,19 @@ class MockLLM(LLMClient):
         usage = {"prompt_tokens": max(1, len(json.dumps(messages, ensure_ascii=False)) // 4), "completion_tokens": 20}
 
         script, closing = None, ""
+        offered = {t.get("function", {}).get("name") for t in tools or []}
+        deferred = "search_capabilities" in offered
+        if deferred:
+            last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=0)
+            step = sum(
+                1
+                for m in messages[last_user:]
+                if m.get("role") == "assistant"
+                and any(c.get("function", {}).get("name") != "search_capabilities" for c in m.get("tool_calls", []))
+            )
         system = str(messages[0].get("content") or "") if messages else ""
         picked = next((k for k in ("pptx", "xlsx") if f"本轮已选技能：{k}" in system), "")
-        if "exec" not in {t.get("function", {}).get("name") for t in tools or []}:  # no sandbox offered (chat): words only
+        if "exec" not in offered and not (deferred and "本轮没有沙箱执行" not in system):  # no sandbox offered (chat): words only
             pass
         elif picked == "pptx" or _wants_ppt(prompt):
             script, closing = _PPT, "已完成：演示文稿已生成并交付到资料库，右侧可以预览。想调整哪一页、换什么配色，直接告诉我。"
@@ -312,6 +322,10 @@ class MockLLM(LLMClient):
             return LLMResponse(content=text, usage=usage, reasoning_content=thinking)
         if step < len(script):
             name, arguments = script[step]
+            if deferred and name not in offered:
+                response = _call(step, "search_capabilities", {"query": name, "kind": "tool", "limit": 1})
+                response.usage = usage
+                return response
             response = _call(step, name, arguments)
             response.usage = usage
             return response

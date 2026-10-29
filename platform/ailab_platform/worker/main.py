@@ -72,7 +72,13 @@ def handle_message(queue, msg) -> None:
                     self.completed = True
 
             completion = Completion()
-            _handle(completion, msg, file_id)
+            from ..runtime_context import attempt_id_var
+
+            identity = attempt_id_var.set(token)
+            try:
+                _handle(completion, msg, file_id)
+            finally:
+                attempt_id_var.reset(identity)
             if completion.completed:
                 client.job_action(envelope.job_id, "ack", token=token)
                 queue.ack(settings.file_queue, msg)

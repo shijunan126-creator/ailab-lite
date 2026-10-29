@@ -66,7 +66,7 @@ async def stop_worker(process):
     await process.wait()
 
 
-async def render_page(url, limit):
+async def render_page(url, limit, include_html=False):
     process = None
     launch = asyncio.create_task(
         asyncio.create_subprocess_exec(
@@ -75,14 +75,14 @@ async def render_page(url, limit):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=True,
-            limit=1024 * 1024,
+            limit=4 * 1024 * 1024,
         )
     )
     try:
         async with asyncio.timeout(READ_TIMEOUT_SECONDS):
             # Cancellation must not lose a process created before its handle arrives.
             process = await asyncio.shield(launch)
-            process.stdin.write(json.dumps({"url": url, "max_chars": limit}).encode() + b"\n")
+            process.stdin.write(json.dumps({"url": url, "max_chars": limit, "include_html": include_html}).encode() + b"\n")
             await process.stdin.drain()
             line = await process.stdout.readline()
             if not line:
@@ -114,7 +114,7 @@ async def read(request):
         return web.json_response({"error": "crawler is busy"}, status=503)
     async with slots:
         try:
-            return await render_page(url, limit)
+            return await render_page(url, limit, body.get("include_html") is True)
         except TimeoutError:
             return web.json_response({"error": "page did not finish loading"}, status=504)
         except Exception as exc:

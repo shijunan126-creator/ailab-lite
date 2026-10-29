@@ -172,6 +172,9 @@ def index_pending(limit: int | None = None, *, user_id: str | None = None) -> in
             memory = (user_settings or {}).get("memory") or {}
             if memory.get("enabled") is False:
                 continue  # a user who turned memory off is never sent to the endpoint
+            source = db.get(Run, run_id)
+            if not run_permissions(db, source)["write"]:
+                continue
             todo.append((run_id, user_id, turn_text(prompt, summary)))
             if len(todo) == limit:
                 break

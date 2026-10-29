@@ -119,6 +119,7 @@ class MockSandbox(SandboxProvider):
         translated = translated.replace("/tmp/ailab-background", str(root / "background"))
         translated = translated.replace("/workspace", str(root / "workspace"))
         translated = translated.replace("/opt/skills", str(SKILLS))
+        translated = translated.replace("/opt/ailab-office", str(BASE_DIR.parent / "vendor" / "zcode-office-runtime"))
         return translated.replace("/opt/ailab-tools", str(TOOLS))
 
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:

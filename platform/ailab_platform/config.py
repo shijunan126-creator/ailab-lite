@@ -274,6 +274,33 @@ class Settings(BaseSettings):
     # Worker: scanning and the limited parser process (the scanner is selected above, with the secure checks)
     clamd_address: str = "tcp://platform-clamav:3310"
     scan_timeout_seconds: float = Field(default=30, gt=0, le=120)
+
+    @model_validator(mode="after")
+    def validate_ocr_executor(self):
+        if self.ocr_executor_url:
+            target = urlsplit(self.ocr_executor_url)
+            if (
+                target.scheme not in {"http", "https"}
+                or not target.hostname
+                or target.username
+                or target.password
+                or target.query
+                or target.fragment
+                or not self.ocr_executor_token.get_secret_value()
+                or not self.ocr_engine_fingerprint
+            ):
+                raise ValueError("OCR executor requires a service URL and credential")
+        return self
+
+    context_summary_alias: str = ""
+    ocr_engine_fingerprint: str = ""
+    ocr_executor_url: str = ""
+    ocr_executor_token: SecretStr = SecretStr("")
+    ocr_required_backend: Literal["cann", "cpu"] = "cann"
+    ocr_executor_timeout_seconds: float = Field(default=90, gt=0, le=120)
+    document_sandbox_image: str = "sbx-document-reader:lite"
+    office_memory_mb: int = Field(default=256, ge=128, le=512)
+    office_timeout_seconds: float = Field(default=60, gt=0, le=120)
     parse_memory_mb: int = Field(default=192, ge=96, le=256)
     parse_cpu_seconds: int = Field(default=45, ge=1, le=90)
     parse_timeout_seconds: float = Field(default=60, gt=0, le=120)
@@ -456,7 +483,7 @@ class Settings(BaseSettings):
             problems.append("mock sandbox is forbidden")
         if self.sandbox_provider == "opensandbox" and self.osb_network_mode == "kubernetes" and not self.osb_kubernetes_isolation_verified:
             problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
-        if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent"):
+        if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent", "api"):
             problems.append("AILAB_CRAWLER_TOKEN must be at least 24 characters when AILAB_CRAWLER_URL is set")
         if self.scanner_backend == "stub":
             problems.append("stub scanner is forbidden")

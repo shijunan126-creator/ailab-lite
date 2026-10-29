@@ -558,6 +558,39 @@ def _crawler_client() -> httpx.AsyncClient:
     return httpx.AsyncClient(timeout=httpx.Timeout(settings.crawler_timeout_seconds, connect=3), trust_env=False, follow_redirects=False)
 
 
+async def fetch_rendered_html(url: str) -> dict:
+    """A bounded HTML snapshot from the same proxy-confined, disposable browser as read_url."""
+    current = _validate_url(url)
+    if not settings.crawler_url:
+        raise WebError("page reader is not configured")
+    try:
+        async with asyncio.timeout(settings.crawler_timeout_seconds), _crawler_client() as client:
+            parsed = urlsplit(current)
+            await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
+            resp = await client.post(
+                settings.crawler_url.rstrip("/") + "/read",
+                json={"url": current, "max_chars": 1000, "include_html": True},
+                headers={"Authorization": f"Bearer {settings.crawler_token}"},
+            )
+            data = resp.json()
+    except (TimeoutError, httpx.TimeoutException) as exc:
+        raise WebError("page reader timed out") from exc
+    except (httpx.HTTPError, ValueError) as exc:
+        raise WebError("page reader unavailable") from exc
+    if resp.status_code >= 400:
+        raise WebError(str(data.get("error") or "page reader unavailable")[:300])
+    html = str(data.get("html") or "")
+    if not html or len(html.encode("utf-8")) > min(settings.web_max_bytes, 2 * 1024 * 1024):
+        raise WebError("rendered HTML is empty or exceeds the snapshot limit")
+    final = _validate_url(str(data.get("url") or current))
+    parsed = urlsplit(final)
+    await public_addresses(parsed.hostname or "", parsed.port or (443 if parsed.scheme == "https" else 80))
+    ctype = str(data.get("content_type") or "text/html")
+    if ctype not in {"text/html", "application/xhtml+xml"}:
+        raise WebError("not an HTML page")
+    return {"url": final, "text": html, "content_type": ctype, "title": str(data.get("title") or "")[:300]}
+
+
 async def _read_rendered(url: str, limit: int) -> dict:
     """The page as the isolated crawler renders it: main content as Markdown. The URL is checked here
     first (scheme, port, every DNS answer public); what the page loads afterwards is held to the same

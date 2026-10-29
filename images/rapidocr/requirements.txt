@@ -1,0 +1,6 @@
+# The ORT-CANN wheel is provisioned separately for the target CANN/driver combination.
+# It must be pinned and checksum-verified in that environment's deployment manifest.
+rapidocr @ git+https://github.com/RapidAI/RapidOCR.git@80b427d69bfc5b91a12913394875910296c6f315#subdirectory=python
+fastapi==0.156.4
+uvicorn==0.54.0
+pillow==13.0.0

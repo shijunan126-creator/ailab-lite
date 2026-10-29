@@ -135,6 +135,7 @@ async def upload_file(
                         purpose=purpose,
                         meta={
                             "processing": "queued",
+                            "upload_provenance": {"id": new_id("upl")},
                             **(
                                 {"skill_claim": (parent.meta or {}).get("skill", {}).get("name")}
                                 if parent is not None and parent.purpose == "skill"

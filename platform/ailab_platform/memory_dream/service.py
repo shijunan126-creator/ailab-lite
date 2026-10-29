@@ -93,7 +93,15 @@ def _active(entries: list[dict]) -> list[dict]:
 def _run_out(run: MemoryDreamRun) -> MemoryDreamRunOut:
     plan = run.plan or {}
     changes = []
-    for item in plan.get("changes") or []:
+    from sqlalchemy.orm import object_session
+
+    from ..api.source_lifecycle import visible_memory_entries
+
+    db = object_session(run)
+    items = plan.get("changes") or []
+    if db:
+        items = visible_memory_entries(db, run.user_id, items)
+    for item in items:
         try:
             changes.append(DreamChange.model_validate(item))
         except ValueError:
@@ -125,6 +133,8 @@ def _last_success(db: Session, user_id: str) -> MemoryDreamRun | None:
 
 
 def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datetime) -> list[Run]:
+    from ..api.source_lifecycle import invalid_sources_query
+
     processed = (
         select(MemoryWorkItem.run_id)
         .where(MemoryWorkItem.run_id == Run.id, MemoryWorkItem.user_id == user_id, MemoryWorkItem.state.in_(("done", "skipped")))
@@ -136,6 +146,7 @@ def _new_runs(db: Session, user_id: str, last: MemoryDreamRun | None, now: datet
             .outerjoin(Conversation, Conversation.id == Run.conversation_id)
             .where(
                 Run.user_id == user_id,
+                Run.id.not_in(invalid_sources_query(user_id)),
                 Run.status.in_(TERMINAL),
                 ~processed,
                 Conversation.memory_policy["write"].as_boolean().is_not(False),

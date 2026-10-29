@@ -66,6 +66,8 @@ def run_permissions(db, run) -> dict:
     from ..models import Conversation
 
     conv = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
+    if not source_available(db, run):
+        return {"read": False, "write": False}
     current = (conv.memory_policy or {}) if conv else {}
     frozen = (run.options or {}).get("memory_policy") or {}
     return {key: current.get(key, True) and frozen.get(key, True) for key in ("read", "write")}
@@ -78,3 +80,15 @@ def review_required(content: str) -> bool:
     return bool(
         re.search(r"诊断|患有|病史|宗教信仰|政治倾向|性取向|身份证|银行卡|diagnosed|medical condition|sexual orientation", content, re.I)
     )
+
+
+def source_available(db, run) -> bool:
+    from sqlalchemy import select
+
+    from ..api.source_lifecycle import invalid_sources_query
+    from ..models import Run, User
+
+    owner = db.get(User, run.user_id, populate_existing=True)
+    if owner is None or not owner.context_source_epoch:
+        return owner is not None
+    return db.scalar(select(Run.id).where(Run.id == run.id, Run.id.in_(invalid_sources_query(run.user_id)))) is None

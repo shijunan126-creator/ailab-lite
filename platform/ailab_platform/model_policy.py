@@ -70,11 +70,11 @@ class ModelPolicy:
         return result
 
     def summary_model(self) -> ModelSpec:
-        available = self.catalog.available()
-        choices = [s for s in available if s.provider != "mock"] or available
-        if not choices:
-            raise LLMError("no summary model available")
-        return min(choices, key=lambda s: (s.weight, s.id))
+        alias = settings.context_summary_alias or self.catalog.default_id()
+        spec = self.catalog.get(alias)
+        if not spec or not spec.available:
+            raise LLMError("configured summary model unavailable")
+        return spec
 
     @staticmethod
     def retryable(exc: LLMError) -> bool:
@@ -82,4 +82,17 @@ class ModelPolicy:
 
     @staticmethod
     def input_budget(spec: ModelSpec) -> int:
-        return min(int(spec.context_tokens * 0.7), spec.context_tokens - spec.max_output_tokens)
+        # Output is allocated per call from the remaining window, not reserved at its catalog maximum.
+        return spec.context_tokens - 1
+
+    @staticmethod
+    def output_budget(spec: ModelSpec, input_tokens: int) -> int:
+        return max(0, min(spec.max_output_tokens, spec.context_tokens - input_tokens))
+
+    @staticmethod
+    def compaction_threshold(spec: ModelSpec, config: dict | None = None) -> int:
+        config = config or {}
+        budget = ModelPolicy.input_budget(spec)
+        if not config.get("auto_compact", True):
+            return budget
+        return min(budget, int(spec.context_tokens * config.get("threshold_ratio", 0.85)))

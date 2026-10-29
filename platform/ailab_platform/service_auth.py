@@ -30,11 +30,13 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
             "memory:recall_for_run",
         }
     ),
-    "broker": frozenset({"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "artifacts:commit_for_run"}),
+    "broker": frozenset(
+        {"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "files:read_for_document", "artifacts:commit_for_run"}
+    ),
     "worker": frozenset(
         {"jobs:file", "files:read_pending", "files:patch_processing", "files:preview_write", "files:ocr", "sandbox:render"}
     ),
-    "ops": frozenset({"metrics:read", "sandbox:inspect"}),
+    "ops": frozenset({"metrics:read", "sandbox:inspect", "files:restore_tombstones"}),
 }
 ALL_SCOPES = frozenset().union(*SERVICE_SCOPES.values())
 

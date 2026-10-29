@@ -1,0 +1,54 @@
+
+> ailab-portal@0.1.0 test
+> node --test tests/*.test.mjs
+
+✔ a successful 204 DELETE has no JSON body (10.401083ms)
+✔ SSE reader releases its lock on stream.end (2.013417ms)
+✔ continuing a paused run starts after the events already displayed (0.69075ms)
+✔ filesByIds asks for all ids in one request, and none for an empty list (0.881958ms)
+✔ archiveUrl repeats and encodes ids (0.085875ms)
+✔ a dropped event stream resumes after the last event, without repeats (3.066125ms)
+✔ the stream gives up after repeated failures, and stops at once when aborted (15.7755ms)
+✔ empty successful SSE responses also exhaust the reconnect budget and release abort listeners (6.04975ms)
+✔ a used-up quota says how long until it resets (0.306167ms)
+✔ refresh preserves older pages and pagination boundary, but updates a running turn (13.851708ms)
+✔ equal timestamps have a stable id tie breaker without duplicate turns (0.123084ms)
+✔ microsecond timestamps sort chronologically even when whole seconds omit their fraction (2.464708ms)
+✔ a turn the latest page no longer lists was replaced by a retry and disappears (0.262667ms)
+✔ a refresh replaces the complete path preview manifest, discarding abandoned branch files (0.205084ms)
+✔ every animation the styles use has its keyframes (1.261583ms)
+✔ OIDC start keeps binding material in an httpOnly Lax cookie (6.632375ms)
+✔ OIDC start rejects cross-site requests without contacting upstream (0.882667ms)
+✔ OIDC callback exchanges on the server, sets the existing platform cookie and redirects without tokens (1.426666ms)
+✔ missing binding and refused OIDC callback clear the flow and never set a platform token (2.273458ms)
+✔ proxy preserves the array-list keyset cursor header (0.532333ms)
+✔ proxy preserves the reader snapshot security headers (0.323708ms)
+✔ 400k characters remain byte-for-byte intact across deferred Markdown chunks (25.954208ms)
+✔ streaming a long thought preserves earlier references and all 400k characters without mutating state (1.07625ms)
+✔ cache retains one page and cursor semantics and evicts by aggregate size (2.593667ms)
+✔ waits until the new version leaves pending and survives a transient failure (5.03325ms)
+✔ gives up at the deadline instead of polling forever (3.340792ms)
+✔ unmounting aborts the wait and no further request is made (0.5005ms)
+✔ a head being scanned cannot be edited or replaced again (0.09925ms)
+✔ scan outcomes and save failures read as words (0.219417ms)
+✔ front matter name decides which skill is saved (0.366667ms)
+✔ typing estimate: Chinese about 0.7 per character, other text about 4 characters per token (0.493375ms)
+✔ reasoning, narrative, plan updates and tools retain their order; reasoning text streams into its block (1.303084ms)
+✔ a new model step starts a new reasoning block (0.125ms)
+✔ late tool result cannot finish a later call with the same name (0.081333ms)
+✔ status header uses the persisted clock, never browser wall time or a legacy estimate (0.1375ms)
+✔ chat mode only thinks: its heading never reports work time (0.128ms)
+✔ network and skill tools read as their actions, with the source they used (0.114ms)
+✔ the answer is the text after the last action; trailing platform notes do not pull it into the process (0.301834ms)
+✔ reasoning outline: bold lines name the parts, else the first sentence (0.385708ms)
+✔ a message added while the answer runs is kept once and ends the text before it as process, not answer (0.127959ms)
+✔ sources the answer links to come first in its order; the rest are more (0.313375ms)
+✔ budget events, run-scope compaction and background commands read plainly (0.165958ms)
+ℹ tests 42
+ℹ suites 0
+ℹ pass 42
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 785.74125

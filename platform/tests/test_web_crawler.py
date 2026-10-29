@@ -213,12 +213,13 @@ def test_github_issues_keep_their_api_path(site, monkeypatch):
     assert site["calls"] == []
 
 
-def test_secure_profile_requires_a_real_crawler_token_only_when_rendering_is_on():
+@pytest.mark.parametrize("service", ["agent", "api"])
+def test_secure_profile_requires_a_real_crawler_token_only_when_rendering_is_on(service):
     problems = []
     for url in ("http://platform-crawler:8090", ""):
-        settings = Settings(profile="secure", service_name="agent", crawler_url=url, crawler_token="short")
+        settings = Settings(profile="secure", service_name=service, crawler_url=url, crawler_token="short")
         with pytest.raises(RuntimeError) as info:
-            settings.validate_secrets("agent")
+            settings.validate_secrets(service)
         problems.append("AILAB_CRAWLER_TOKEN" in str(info.value))
     assert problems == [True, False]
 
@@ -257,3 +258,23 @@ def test_crawler_deadline_also_bounds_dns(site, monkeypatch):
     monkeypatch.setattr(web.settings, "crawler_timeout_seconds", 0.03)
     with pytest.raises(web.WebError, match="timed out"):
         asyncio.run(web._read_rendered("https://example.com/", 4000))
+
+
+def test_html_snapshot_uses_same_authenticated_crawler_and_checks_final_destination(site):
+    site["crawler"]["json"] = {**RENDERED, "html": "<h1>浏览器快照</h1>"}
+    result = asyncio.run(web.fetch_rendered_html("https://example.com/a"))
+    assert result["text"] == "<h1>浏览器快照</h1>"
+    assert site["calls"][0]["body"]["include_html"] is True
+    assert site["calls"][0]["auth"] == "Bearer " + "t" * 32
+    site["crawler"]["json"]["url"] = "http://internal.test/"
+    with pytest.raises(web.WebError, match="refusing"):
+        asyncio.run(web.fetch_rendered_html("https://example.com/a"))
+
+
+def test_html_snapshot_rejects_missing_and_oversized_html(site, monkeypatch):
+    with pytest.raises(web.WebError, match="snapshot limit"):
+        asyncio.run(web.fetch_rendered_html("https://example.com/a"))
+    site["crawler"]["json"] = {**RENDERED, "html": "文" * 10}
+    monkeypatch.setattr(web.settings, "web_max_bytes", 20)
+    with pytest.raises(web.WebError, match="snapshot limit"):
+        asyncio.run(web.fetch_rendered_html("https://example.com/a"))

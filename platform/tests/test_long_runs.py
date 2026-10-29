@@ -183,7 +183,7 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
     monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     platform = FakePlatform()
-    model = ScriptedLLM([LLMResponse(content="已执行前三步，后台句柄abc；保留文件 /workspace/a")])
+    model = ScriptedLLM([LLMResponse(content="已执行前三步，后台句柄abc；保留文件 /workspace/a") for _ in range(10)])
     loop = AgentLoop(platform, FakeBroker(), model)
     state = fresh_state()
     state["messages"] = [{"role": "system", "content": "rules"}, {"role": "user", "content": "original constraints"}]

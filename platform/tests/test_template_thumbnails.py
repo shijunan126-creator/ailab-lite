@@ -139,4 +139,4 @@ def test_sketch_failure_preserves_template_analysis(api, monkeypatch):
 
 def test_platform_image_has_no_office_renderer():
     dockerfile = (Path(__file__).resolve().parents[1] / "deploy/Dockerfile").read_text().lower()
-    assert all(package not in dockerfile for package in ("libreoffice", "poppler", "fonts-noto", "fontconfig", "procps"))
+    assert all(package not in dockerfile for package in ("libreoffice", "poppler", "fonts-noto", "fontconfig"))

@@ -48,6 +48,15 @@ class LibraryRenderer:
         source = "/workspace/inputs/input" + suffix
         template = meta.get("template_kind") == "pptx"
         thumbnail_option = " --template-thumbnail" if template else ""
+        selected = meta.get("ocr_render_pages") if meta.get("ocr_render_job_id") == job_id else None
+        if selected:
+            if (
+                not isinstance(selected, list)
+                or not 1 <= len(selected) <= 20
+                or any(type(n) is not int or not 1 <= n <= 100000 for n in selected)
+            ):
+                raise LeaseError("invalid_page_selection")
+            thumbnail_option += " --pages " + ",".join(map(str, selected))
 
         def prepare(lease: dict) -> None:
             self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)

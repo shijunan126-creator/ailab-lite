@@ -1,0 +1,8 @@
+{
+  "calls": 1,
+  "prompt_tokens": 733,
+  "completion_tokens": 672,
+  "failure": "next_actions/uncertainties incorrectly emitted as objects under ambiguous instructions",
+  "cursor_advanced": false,
+  "fix": "shared actual JSON schema, string-array guidance and authoritative program delivery state"
+}

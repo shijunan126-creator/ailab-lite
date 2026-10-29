@@ -75,18 +75,35 @@ def pdf_document(src: Path, out: Path) -> dict:
     return {"kind": "pdf", "pdf": "document.pdf", "page_count": count}
 
 
-def pages(src: Path, out: Path) -> dict:
+def pages(src: Path, out: Path, selected: list[int] | None = None) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
-        subprocess.run(
-            ["pdftoppm", "-jpeg", "-jpegopt", "quality=82", "-scale-to", "1280", "-l", str(MAX_PAGES), str(pdf), str(out / "p")],
-            check=True,
-            capture_output=True,
-            timeout=90,
-        )
+        ranges = [(n, n) for n in selected] if selected else [(1, MAX_PAGES)]
+        for first, last in ranges:
+            if count is not None and first > count:
+                raise ValueError("page_out_of_range")
+            subprocess.run(
+                [
+                    "pdftoppm",
+                    "-jpeg",
+                    "-jpegopt",
+                    "quality=82",
+                    "-scale-to",
+                    "1280",
+                    "-f",
+                    str(first),
+                    "-l",
+                    str(last),
+                    str(pdf),
+                    str(out / "p"),
+                ],
+                check=True,
+                capture_output=True,
+                timeout=90,
+            )
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
     return {"kind": "pages", "pages": names, "page_count": count}
 
@@ -247,7 +264,12 @@ def main() -> int:
             else:
                 result = {"error": f"no PDF preview for {ext} files"}
         elif ext in PAGES:
-            result = pages(src, out)
+            selected = None
+            if "--pages" in sys.argv[3:]:
+                selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]
+                if not 1 <= len(selected) <= 20 or any(n < 1 or n > 100000 for n in selected):
+                    raise ValueError("invalid_page_selection")
+            result = pages(src, out, selected)
             if "--template-thumbnail" in sys.argv[3:]:
                 template_thumbnail(out, result)
                 result["thumbnail"] = "template-thumbnail.jpg"

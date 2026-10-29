@@ -99,7 +99,16 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             raise HTTPException(422, "最多排队5条消息")
         if body.template is not None and body.steer:
             raise HTTPException(400, "模板只能用于新一轮，不能插话")
-        model, options, files = validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode, body.skill, body.template)
+        model, options, files = validate_run_input(
+            db,
+            user,
+            body.prompt,
+            leaf.model if body.steer else body.model,
+            body.file_ids,
+            (leaf.options or {}).get("mode", "work") if body.steer else body.mode,
+            None if body.steer else body.skill,
+            body.template,
+        )
         row = QueuedMessage(
             conversation_id=conv.id,
             user_id=user.id,
@@ -111,6 +120,10 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             after_run_id=leaf.id,
         )
         db.add(row)
+        db.flush()
+        from .document_sources import bind_refs
+
+        bind_refs(db, "queued_message", row.id, files)
         db.commit()
         return queue_output(row)
 
@@ -186,6 +199,12 @@ def claim_steers(run_id: str, x_run_attempt: str | None = Header(default=None), 
                     .values(state="steered", run_id=run.id, updated_at=utcnow())
                 )
         applied = (run.runtime_meta or {}).get("steer_ids", [])
-        rows = [queue_output(row) for row in steers_for_run(db, run, exclude=applied)]
+        from .attachment_input import input_files
+
+        rows = []
+        for row in steers_for_run(db, run, exclude=applied):
+            item = queue_output(row)
+            item["input_files"] = input_files(db, run, file_ids=row.file_ids, message_id=row.id, message_kind="queued_message")
+            rows.append(item)
         db.commit()
         return {"items": rows}

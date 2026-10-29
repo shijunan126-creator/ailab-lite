@@ -365,8 +365,11 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
 def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> dict[str, int]:
     storage = storage or get_storage()
     now = now or datetime.now(UTC)
+    from .source_lifecycle import drain_invalidations
+
     stats = {}
     for kind, job in (
+        ("file_sources", lambda: drain_invalidations(db)),
         ("presign", lambda: purge_expired_presigns(db, storage, now)),
         ("orphan", lambda: purge_orphan_objects(db, storage, now)),
         ("checkpoint", lambda: purge_checkpoints(db, storage, now)),

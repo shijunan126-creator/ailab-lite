@@ -57,9 +57,13 @@ def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
     }
 
 
-def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
+def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: bool | None = None) -> dict:
     if detail:
         return run_dicts(db, [run])[0]
+    if source_invalid is None:
+        from ..memory_recall.policy import source_available
+
+        source_invalid = not source_available(db, run)
     out = {
         "id": run.id,
         "retry_of": run.retry_of,
@@ -75,10 +79,11 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "input_file_ids": run.input_file_ids or [],
         "options": run.options or {},
         "template": {k: run.options["template"][k] for k in ("name", "source")} if (run.options or {}).get("template") else None,
-        "summary": run.summary,
+        "summary": "（文件来源已失效）" if source_invalid else run.summary,
         "error": run.error,
         "result": {**(run.result or {}), **{k: v for k, v in (run.runtime_meta or {}).items() if k in {"plan", "question"}}},
-        "resumable": run.status == "interrupted"
+        "resumable": not source_invalid
+        and run.status == "interrupted"
         and run.checkpoint_step > 0
         and not ((run.runtime_meta or {}).get("question") and not (run.runtime_meta or {}).get("answer")),
         "created_at": run.created_at,
@@ -86,6 +91,11 @@ def run_dict(db: Session, run: Run, detail: bool = False) -> dict:
         "finished_at": run.finished_at,
         "work_ms": run.work_ms,
     }
+    if source_invalid:
+        out["result"] = {
+            key: value for key, value in (run.result or {}).items() if key in {"artifacts", "forked_usage", "forked_from_run_id"}
+        }
+        out["result"]["workspace_saved"] = False
     return out
 
 
@@ -124,9 +134,17 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
             .group_by(ModelUsage.run_id)
         )
     }
+    from ..models import User
+    from .source_lifecycle import invalid_sources_query
+
+    invalid = set()
+    for uid in {run.user_id for run in runs}:
+        owner = db.get(User, uid)
+        if owner and owner.context_source_epoch:
+            invalid.update(db.scalars(select(Run.id).where(Run.id.in_(ids), Run.id.in_(invalid_sources_query(uid)))))
     result = []
     for run in runs:
-        out = run_dict(db, run)
+        out = run_dict(db, run, source_invalid=run.id in invalid)
         out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
         out["artifacts"] = artifacts.get(run.id, [])
         out["input_files"] = [{"file_id": fid, "filename": files[fid]} for fid in run.input_file_ids or [] if fid in files]

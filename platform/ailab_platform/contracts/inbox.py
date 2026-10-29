@@ -81,6 +81,7 @@ class QueuePatch(BaseModel):
 
 
 class QueuedMessageOut(InboxUTC):
+    input_files: list[dict] = Field(default_factory=list)
     template: dict | None = None
     id: str
     prompt: str

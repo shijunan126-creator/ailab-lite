@@ -91,11 +91,14 @@ def load_skill(name: str) -> str:
 
 
 @lru_cache
-def system_prompt(disabled: frozenset[str] = frozenset()) -> str:
+def system_prompt(disabled: frozenset[str] = frozenset(), deferred: bool = False) -> str:
     """The base prompt with the index of the skills the user has switched on. A missing skills directory fails
     loudly instead of silently producing an agent that cannot build decks."""
-    index = "\n".join(f"- {name}：{s['description']}" for name, s in skills().items() if name not in disabled)
-    return BASE_PROMPT.replace("{skills}", index or "（用户关闭了所有技能：需要做文件时，用沙箱里的 Python 库自己完成）")
+    if not deferred:
+        index = "\n".join(f"- {name}：{s['description']}" for name, s in skills().items() if name not in disabled)
+        return BASE_PROMPT.replace("{skills}", index or "（用户关闭了所有技能）")
+    skills()  # verify the fixed user-skill index without injecting it
+    return BASE_PROMPT.replace("{skills}", "需要工具或技能时先search_capabilities按关键词发现，再load_skill读取说明。")
 
 
 WORKSPACE_EXPIRED_NOTE = """
@@ -161,9 +164,10 @@ def system_prompt_for(
     disabled: frozenset[str] = frozenset(),
     personal: list[dict] | None = None,
     picked_text: str | None = None,
+    deferred: bool = False,
 ) -> str:
     """Describe the actual capabilities; preload a picked skill and omit disabled skill names."""
-    base = CHAT_MODE_NOTE if mode == "chat" else system_prompt(frozenset(disabled))
+    base = CHAT_MODE_NOTE if mode == "chat" else system_prompt(frozenset(disabled), deferred)
     base += (
         "\n引用已实际 read_library_file 阅读的资料时用 Markdown 链接 [《文件名》第N页](ailab-file://<file_id>?page=N)；"
         "页码未知时用 [《文件名》](ailab-file://<file_id>)。不得引用未读文件或猜页码。"
@@ -173,14 +177,16 @@ def system_prompt_for(
     )
     if web.enabled():
         base += WEB_NOTE
-    if mode == "chat":
-        index = [f"- {name}：{s['description']}" for name, s in skills().items() if name not in disabled]
-        index.extend(f"- {s['name']}：{s.get('description', '')}" for s in personal or [] if s["name"] not in disabled)
-        return base + "\n# 可读取的技能\n" + ("\n".join(index) or "（没有已启用的技能）")
-    if personal:
-        base += PERSONAL_NOTE.format(
-            index="\n".join(f"- {s['name']}：{s.get('title') or s['name']}。{s.get('description', '')}" for s in personal)
-        )
+    base += "\n需要能力时search_capabilities；文件/网页/计算/办公技能均按需发现，不猜未激活工具。"
+    if not deferred:
+        if mode == "chat":
+            index = [f"- {name}：{s['description']}" for name, s in skills().items() if name not in disabled]
+            index.extend(f"- {s['name']}：{s.get('description', '')}" for s in personal or [] if s["name"] not in disabled)
+            return base + "\n# 可读取的技能\n" + "\n".join(index)
+        if personal:
+            base += PERSONAL_NOTE.format(
+                index="\n".join(f"- {s['name']}：{s.get('title') or s['name']}。{s.get('description', '')}" for s in personal)
+            )
     if picked_text is not None:
         return base + SKILL_NOTE.format(name=skill, text=picked_text)
     if skill and skill not in disabled and skill in skills():
@@ -197,6 +203,13 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
         name = f.get("filename") or f.get("file_id")
         text = (f.get("text") or "").strip()
         lines.append("")
+        if f.get("input_strategy") == "reference":
+            lines.append(
+                f"（附件《{name}》：file_id={f['file_id']}，版本={f.get('version')}，"
+                f"类型={f.get('content_type')}，处理={f.get('processing')}；正文按需发现并调用read_library_file，"
+                f"原文件在 /workspace/inputs/{f.get('sandbox_filename') or name}）"
+            )
+            continue
         if text:
             cut = f"，以下是前 {len(text)} 字" if f.get("truncated") else ""
             lines += [
@@ -216,7 +229,12 @@ def history_messages(history: list[dict] | None) -> list[dict]:
     """Earlier turns of the conversation as plain user/assistant messages (tool traffic is not replayed)."""
     out: list[dict] = []
     for turn in history or []:
-        out.append({"role": "user", "content": turn.get("prompt") or ""})
+        prompt = turn.get("prompt") or ""
+        if turn.get("attachments"):
+            import json
+
+            prompt += "\n附件引用（需回查原文件，不代表已读正文）：" + json.dumps(turn["attachments"], ensure_ascii=False)
+        out.append({"role": "user", "content": prompt})
         out.extend({"role": "user", "content": prompt} for prompt in turn.get("steers", []))
         reply = turn.get("reply") or "（没有回复）"
         if turn.get("files"):

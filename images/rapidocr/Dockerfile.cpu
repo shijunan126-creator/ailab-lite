@@ -1,0 +1,23 @@
+# Explicit CPU development/backup executor; the general executor still requires CANN by default.
+FROM python:3.12-slim-bookworm AS wheels
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+ && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY images/rapidocr/requirements.txt ./
+RUN pip wheel --wheel-dir /wheels -r requirements.txt onnxruntime==1.31.1
+
+FROM python:3.12-slim-bookworm
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 OCR_REQUIRED_BACKEND=cpu
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=wheels /wheels /wheels
+RUN pip install --no-cache-dir --no-index --find-links=/wheels rapidocr fastapi==0.156.4 uvicorn==0.54.0 pillow==13.0.0 onnxruntime==1.31.1 \
+ && rm -rf /wheels \
+ && useradd -u 10001 -m appuser
+WORKDIR /opt/ailab-ocr
+COPY --chown=10001:10001 images/rapidocr/executor.py ./
+USER 10001
+EXPOSE 8084
+HEALTHCHECK --interval=10s --timeout=4s --start-period=30s --retries=6 \
+ CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8084/ready', timeout=3)"
+CMD ["uvicorn", "executor:app", "--host", "0.0.0.0", "--port", "8084", "--workers", "1"]

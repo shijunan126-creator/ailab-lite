@@ -99,6 +99,14 @@ jobs:
           cache: pip
           cache-dependency-path: platform/constraints.txt
       - run: pip install -c constraints.txt -e '.[dev,postgres]'
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24.11.1"
+          cache: npm
+          cache-dependency-path: vendor/zcode-office-runtime/package-lock.json
+      - name: Build and verify the pinned Office reader
+        working-directory: vendor/zcode-office-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm test
       - name: PostgreSQL client and migration database
         if: matrix.database == 'postgres'
         run: |
@@ -259,7 +267,7 @@ jobs:
           cache-dependency-path: platform/constraints.txt
       - uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: "24.11.1"
           cache: npm
           cache-dependency-path: platform/portal/package-lock.json
       - name: Install
@@ -268,6 +276,9 @@ jobs:
       - name: Portal dependencies
         working-directory: platform/portal
         run: npm ci --no-audit --no-fund
+      - name: Office reader for isolated browser fixtures
+        working-directory: vendor/zcode-office-runtime
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
       - name: Chromium
         working-directory: platform
         run: |

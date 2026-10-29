@@ -22,6 +22,7 @@ import {
 } from "../../../components/icons";
 import FileTile, { thumbUrl } from "../../../components/library/file-tile";
 import { MoveDialog, NewProjectInput } from "../../../components/library/projects";
+import TextExtraction from "../../../components/library/text-extraction";
 import FileViewer from "../../../components/preview/file-viewer";
 import ShareDialog from "../../../components/share-dialog";
 import { Category, useLibrary } from "../../../components/library/use-library";
@@ -70,6 +71,7 @@ function Library() {
   const [search, setSearch] = useState("");
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [extracting,setExtracting] = useState<FileItem | null>(null);
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [moving, setMoving] = useState<FileItem[] | null>(null);
   const [sharing, setSharing] = useState<FileItem | null>(null);
@@ -261,6 +263,8 @@ function Library() {
         </button>
         {menuFor === f.id ? (
           <div className="pop-menu right" role="menu">
+            {f.status==="ready" && /\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|avif)$/i.test(f.filename) ?
+              <button className="menu-item" role="menuitem" onClick={()=>{setMenuFor(null);setExtracting(f);}}>提取文字</button> : null}
             <button
               className="menu-item"
               role="menuitem"
@@ -596,6 +600,7 @@ function Library() {
         </div>
       ) : null}
 
+      {extracting ? <TextExtraction fileId={extracting.id} filename={extracting.filename} onClose={()=>setExtracting(null)} /> : null}
       {sharing ? <ShareDialog target={{ kind: "file", fileId: sharing.id }} title={sharing.filename} onClose={() => setSharing(null)} /> : null}
       {moving ? (
         <MoveDialog

@@ -1,5 +1,74 @@
 # 当前工作
 
+## 2026-10-29 提交PR并合并已授权
+
+用户现授权本批文件/上下文/Office Runtime及后续预览、网页恢复、85%压缩和fork修复push/PR/merge，覆盖下方历史限制。实际main仍为`e71a60f`，与工作基线一致；保留主目录前端HLD/视觉设计及旧Memory原始证据，不纳入本PR。已补CI的Node24固定Office reader构建与上游测试、Docker忽略本机目录；上游15项、CI脚本28项、Ruff427/服务导入/skills一致性通过，既有集中验收链接保留。固定实现提交`e0b8ef5`已推送，[PR #102](https://github.com/shijunan126-creator/ailab-lite/pull/102)已创建。gh已完成workflow权限授权；正在等待提交源的完整CI与review，全部通过后合并，不提前宣称完成；本机部署仍是此前dirty快照，不自动声称等于合并版本。[本轮记录](updates/2026-10-29-file-context-pr.md)。
+
+## 2026-10-29 文件/上下文交叉链路审查与fork修复
+
+已集中审查前面文件、OCR、压缩、预览和模式链路，修复fork丢失插话附件位置/工具读取依赖/失效epoch、摘要来源run_id与校准frame/offset未迁移、历史插话附件句柄缺失、技能实际Work却按Chat准入，以及重新打开分支未恢复模式。详情/删除清理保留fork标识；模式按最新自有轮次或初始fork恢复，用户仍可主动切换。
+
+`feat/file-context-office-runtime`、HEAD/base`e71a60f8b4e0ea139b12be80d14cb38a627a2db7`加dirty，既有全部修改保留。267核心与重叠57最终回归、Portal42/build、Ruff427、7真实浏览器通过；冻结旧模块5条新增回归均复现预期失败。API/Portal本机版本`fork-review-d723ee6ef12a`已更新，部署后真实两模式fork及1440/390刷新/主动切换通过，原附件/85%配置/其它服务和网络保留，临时验收分支已清理，无付费模型调用/DB迁移。
+
+下一步用户刷新体验；原已丢失关系的旧分支需重新fork，不自动改写历史。NPU/真实多代满窗/数百人容量仍未验，不按测试数宣称完整生产验收。前端HLD仍仅设计，不push/PR/merge。[本轮记录](updates/2026-10-29-fork-context-review.md)、[证据摘要](../reviews/file-context-2026-10-29/fork-review/review.json)。
+
+
+## 2026-10-29 Chat/Work动态85%压缩已生效
+
+用户明确选择完整模型窗口85%触发，并随剩余空间动态缩减本次输出。已统一会话历史和Work执行压缩，去除70%输入/65%Work旧规则，摘要独立预留输出；调用/账本同值。分支`feat/file-context-office-runtime`、HEAD/base`e71a60f`加dirty，168核心回归与全Ruff通过；本机API/Agent`context-85-725e3108d1b3`已更新，管理API保存开启/0.85，真实浏览器/现有对话元数据/运行源码一致性通过，无付费调用/迁移。Portal等其它服务及原修复保留，前端HLD仍仅设计。实际满窗/数百人容量未验；当前需求完成，下一步用户继续体验，不自动压测或push/PR/merge。[本轮记录](updates/2026-10-29-context-85.md)、[策略ADR](../architecture/adr/0024-model-window-compaction-and-adaptive-output.md)。
+
+## 2026-10-29 来源网页403预览修复
+
+已确认静态抓取403与旧DNS拒绝不同：预览只走静态请求，Agent已有浏览器恢复。现已对预览接入同一隔离crawler的有界HTML快照，失败改中文页面并保留原站入口；本机API/crawler增量版本`reader-403-dd094497c120`已更新，Portal标签版/后端其他服务/数据/DNS保留。分支`feat/file-context-office-runtime`、HEAD/base`e71a60f`加dirty。真实力扣正文成功，两个知乎仍被原站拒绝，不承诺绕过；核心读取/精确网络策略/镜像回收检查通过，无模型调用。下一步用户刷新来源重试；原站限制和数百人容量边界保留。[本轮记录](updates/2026-10-29-reader-preview-403.md)。
+
+## 2026-10-29 对话附件标签预览已修复
+
+已梳理上传正文提取、Chat准入、Work按需读取、预览渲染与OCR的不同触发；旧格式“可预览”不等于“Chat可读全文”。发送附件改走PreviewPane标签，以file_id区分同名附件，复用原文件渲染组件；本机只更新Portal `portal-tabs-95597ef79719`，保留后端/数据/DNS修复。分支`feat/file-context-office-runtime`、HEAD/base`e71a60f`加dirty改动。Portal测试/build、真实DOCX及1440/390同名标签/切换/关闭/图片解码浏览器通过；未重复全套、不调用模型。用户可刷新体验，下一步由用户试用反馈决定；旧格式全文、NPU/并发等原边界保留。[本轮记录](updates/2026-10-29-chat-attachment-tabs.md)。
+
+## 2026-10-29 网页预览DNS故障已修复
+
+用户反馈多个来源网页被198.18.*拦截。根因是Mac VPN fake-IP DNS经Colima进入容器；已在本机相关外网服务指定真实DNS，出口只放行指定DNS的53端口，SSRF私网限制不变。头条/Python/example预览HTTP200、实际浏览器和隔离渲染通过，私网/元数据/fake-IP直连仍拒绝；无DB/账号/文件改动、无模型调用。配置已持久化，等用户刷新后复试。[修复记录](updates/2026-10-29-reader-dns-local-fix.md)。
+
+## 2026-10-29 本机体验部署完成
+
+用户已授权部署当前文件/上下文/Office改造，覆盖此前“不部署”限制；仍无push/PR/merge。固定dirty快照`file-context-35168e7e6c95`（815文件/摘要`35168e7e6c95242d2cf934d1bd65a43acc0e11e8f7484af6d28da883b73d2abf`）、base`e71a60f`已部署。保留账号/数据，迁移0033→0036，迁移前完整备份及内盘独立副本已验证；独立Office reader系统沙箱与显式CPU OCR已接入，默认CANN政策未改。
+
+真实登录、四格式实际扫描/预处理、中文OCR导出、DeepSeek文档Chat、桌面/390浏览器通过；4原账号摘要/原ID/原11文件SHA保留，最终16文件SHA与DB完整性正常。12容器运行，业务/OCR健康无重启/OOM。已保留体验验收项目及样本，用户可直接继续试。详细结果和回滚边界见[部署记录](updates/2026-10-29-file-context-local-deployment.md)；个人配置/备份/网页截图仅留本机运行HANDOFF。
+
+当前分支`feat/file-context-office-runtime`、HEAD`e71a60f8b4e0ea139b12be80d14cb38a627a2db7`加未提交实现；主目录视觉设计与旧Memory资料保留。下一步等待用户实际反馈；不自动push/PR/merge、不继续容量压测。NPU/代表质量/数百人等未验边界见记录。
+
+## 2026-10-29 核心补完、真实DeepSeek/RapidOCR与工作目录迁移
+
+用户要求迁回AILab lite、规范命名，使用已配置DeepSeek和实际RapidOCR，只做核心压缩与必要回归，继续补本机可做的缺口。完整工作树已迁入`/Users/michael/Developer/ailab-lite/.worktrees/file-context-ocr`，分支`feat/file-context-office-runtime`、HEAD/base`e71a60f8b4e0ea139b12be80d14cb38a627a2db7`；主目录旧分支/视觉设计/个人修改与旧Memory资料保留，不push/PR/merge/部署。
+
+已补跨frame校准队列/精确片段确认、同owner重复上传的OCR页私有复制、ops通过API执行的备份墓碑导出/应用器。真实模型发现schema提示含混及摘要误写已交付状态，已统一实际JSON schema并把程序交付清单作为权威状态输入。5次成功DeepSeek压缩＋1次首次失败调用均独立入账；实际RapidOCR CPU经Worker/API/HTTP/缓存/导出，编号/金额/日期正确，重复上传不再推理，删除原件不损坏副本。核心84通过/21跳过、Ruff422文件/服务导入通过；按用户要求不重复全量测试。OCR测试进程已停，权重/环境/合成库留本地ignored目录；没有更改个人部署。
+
+本轮源清单814文件摘要`7879116fb5078d37d4f287c68960ed14a6e9691094c976c6cb3e921341eadecb`。详细证据与复现、失败成本、有限样本边界见[本轮记录](updates/2026-10-29-file-context-core-validation.md)；规范证据目录为`docs/reviews/file-context-2026-10-29/`。真实Ascend/CANN、代表性OCR质量、500轮10代保真与数百人/多节点容量仍未验；保守整frame失效保留，不虚称精细重建已做。下一步在目标环境补这些验收后再决定发布，不把下方历史未完成列表当当前状态。
+
+## 历史：前轮核心接入与全套验收
+
+## 2026-10-29 文件上下文与平台办公能力（本地核心接入与验证完成，完整方案仍有缺口）
+
+用户已明确授权实施全部方案，覆盖此前仅设计限制；不push/PR/merge/部署。当前分支`feat/file-context-office-runtime`、HEAD/base`e71a60f8b4e0ea139b12be80d14cb38a627a2db7`，工作树`/Users/michael/Developer/ailab-lite/.worktrees/file-context-ocr`；原未提交设计、源证据及旧记忆验收文件保留。
+
+最新产品决定：OCR只计量，不计费、不设用户累计配额；运行时的资源隔离保留。架构面向数百人、可横向扩容，当前机器不做数百人容量结论。Office Runtime作为平台公共能力，在Broker专用系统沙箱执行，和用户Work沙箱分离；详见[ADR 0023](../architecture/adr/0023-system-document-reader-and-concurrent-capabilities.md)。早期Worker本地Node原型已撤出产品执行路径。
+
+已接入固定ZCode读取核心与私有skills、Broker独立系统reader、精确消息附件关系/块索引、Chat准入与Work按需、动态能力发现/恢复、连续压缩与跨轮来源重校准、RapidOCR执行器合同、私有原生缓存及有界删除清理；迁移0035/0036仅在隔离测试库验收。冻结dirty源清单811文件、摘要`4d987f559f75fdccf5ee0437e19b8cd40d9b1723a6026a42071cfe45c6147eaa`。最终SQLite1450通过/103跳过、PG1498/55跳过，均0失败；Ruff419文件、导入/技能/golden与依赖锁、上游15项和真实Docker四格式/两并发通过；完整五服务浏览器120通过/0失败/0跳过、Portal42项与build通过。Office小样本冷启动/RSS高于旧Python，不能宣称提速。
+
+完整设计尚不能标为全部完成：真实NPU/CANN/质量/30分钟负载、真实模型多代保真及数百人容量未验；跨frame未校准来源持久队列、不同file_id的OCR复制、跨备份墓碑自动应用器和完整多Broker路由尚未实现。保守整frame失效保证不泄露，未做精细条目重建。逐项合同/边界、性能、测试基线与清理见[实施记录](updates/2026-10-29-file-context-ocr-implementation.md)和[矩阵](../reviews/file-context-2026-10-29/acceptance.md)。下一步先处理上述内部设计缺口与目标环境/真实模型验收，再另行决定发布；不得自动push/PR/merge/部署。本轮专属Colima/磁盘已删除，独立PG/Redis和五服务均停止；原工作树及个人部署未操作。
+
+## 历史：2026-10-29 文件、OCR与上下文设计阶段（授权已被页首覆盖）
+
+当前授权只做详细设计/开源研究和文档整理，不实施产品、不执行迁移、不调用付费模型、不推送/PR/部署。用户最新明确Chat预处理、Work自主使用工具/skills、图片按模型vision分流、输入框每轮最多附加5张独立图片（后续轮次可继续；不限制模型请求/文档页数量）、能力搜索加载、缓存复用与完整删除；指定RapidOCR，并纠正为**昇腾NPU优先**，不是CPU或CUDA GPU优先。
+
+工作树`/private/tmp/ailab-memory-review-20261028`，文档分支`docs/file-context-ocr-design-20261029`，base为已fetch的`main@e71a60f8b4e0ea139b12be80d14cb38a627a2db7`。原`docs/memory-system-merged@148ce40`、原主目录和未跟踪旧证据保留。旧页首PR98“准备PR/尚未合并”与实际main合并提交不符，已在状态页注明历史边界；本轮未复查线上/远端CI，也不继承旧发布授权。
+
+[设计总览](../architecture/design/file-context-ocr/README.md)下分消息定位、Chat/Work、能力发现/文档skills、压缩、RapidOCR/CANN、缓存删除、验收和证据及上游复用9模块；旧单篇稿改为入口，无第二份冗长副本。新增消息稳定身份/附件ordinal/歧义规则、Chat超限拒绝与Work分段、文档内图像请求预算、重复上传安全复用、回收站/彻底删除及sandbox快照谱系。RapidOCR源码确有CANN且缺provider时会回CPU，设计补required-backend与真NPU验收；冻结架构原有OCR卡位/重型模型计划仅引用，未重分卡或改写。
+
+最新要求：平台办公skills为内置、用户不可管理；优先复用ZCode Office Runtime读取核心和viewer skills。[具体路径与接入plan](../architecture/design/file-context-ocr/09-upstream-reuse.md)已补齐，40份上游文件核对见[新增源证据](../reviews/2026-10-29-builtin-skills-source-audit.json)。用户再次明确只改plan，未授权实施；短暂误建的空feat分支已撤回，产品代码/依赖未改。
+
+当前只做静态源证据/文档检查；[本轮交付与边界](updates/2026-10-29-file-context-ocr-design.md)、[20份本地文件及26份外部固定源码记录](../reviews/2026-10-29-file-context-source-audit.json)。所有新能力未实现，质量、token节约与NPU性能未实测。下一步：用户讨论模块化方案、大小门槛/OCR积分/目标卡配置，定版并明确实施范围后再开工。下方历史任务授权不覆盖本轮。
+
 ## 2026-10-28 记忆系统完善（本地验收完成，准备PR）
 
 最新用户授权全部缺陷/架构/体验改进，验证后直接提PR并修复直到能merge；不包含部署，不恢复已取消的临时对话入口。工作树`/private/tmp/ailab-memory-review-20261028`，分支`feat/memory-system-hardening`，base`origin/main@0659101`，产品`ac7e6cc`；原主目录`fix/full-thinking-rendering@ab0e8d9`及脏修改保留。

@@ -275,9 +275,27 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
         ).json()
 
+    def prepare_document(self, file_id, scan):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
+
+    def read_document(self, file_id, job_id):
+        req = self._req("POST", "/internal/read-document", timeout=150, json={"file_id": file_id, "job_id": job_id})
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/read-document")).json()
+
     def render_preview(self, file_id: str, job_id: str) -> dict:
         req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()
+
+    def document_cache_pages(self, file_id, source_id, after=-1):
+        return self._send(
+            self._req("GET", f"/internal/files/{file_id}/document-cache-pages", params={"source_id": source_id, "after": after})
+        ).json()
+
+    def publish_cache_pages(self, file_id, payload):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/document-cache-pages", json=payload)).json()
+
+    def reuse_document(self, file_id, scan):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/reuse-document", json={"scan": scan})).json()
 
     def patch_file(self, file_id: str, meta: dict | None = None, status: str | None = None, *, job: str = "processing") -> dict:
         return self._send(self._patch_file(file_id, meta, status, job)).json()
@@ -307,6 +325,12 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def __aexit__(self, *exc) -> None:
         await self.aclose()
+
+    async def get_file_page_image(self, file_id, run_id, page):
+        response = await self._send(self._req("GET", f"/internal/files/{file_id}/vision", params={"run_id": run_id, "page": page}))
+        if len(response.content) > settings.ocr_page_max_bytes:
+            raise ValueError("image_size_limit")
+        return response.content
 
     async def get_file_image(self, file_id: str, run_id: str) -> bytes:
         response = await self._send(self._req("GET", f"/internal/files/{file_id}/vision", params={"run_id": run_id}))

@@ -1,0 +1,239 @@
+{
+  "repo": "https://github.com/zai-org/ZCode",
+  "commit": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+  "files": [
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/LICENSE",
+      "local": "vendor/zcode-office-runtime/LICENSE",
+      "sha256": "e5c04526c473c044ed897a169d4185089a36b787944710bef1e74bb7d7d11176"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/package.json",
+      "local": "vendor/zcode-office-runtime/package.json",
+      "sha256": "c51046c5646a0670e554ac4b5949c70cc029c1ba94a5ee3b277b26208e2b4063"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/CONTRACT.md",
+      "local": "vendor/zcode-office-runtime/src/CONTRACT.md",
+      "sha256": "9f22a641bdee7a578c8459078e81ae1b2c32ac92495b455c2ab2c3cff10edf08"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/assets.test.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/assets.test.ts",
+      "sha256": "11b0a25789b7f3d81467113374e3ccc0695093b23d4731aeacd7e9479597485c"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/assets.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/assets.ts",
+      "sha256": "300b78d1e959b21ef3301a4c330903a26912fd46d5ae70a973c7512030afa140"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/files.test.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/files.test.ts",
+      "sha256": "874c0321c3a4a8766f68270e97b19a2370bcfb5363dd8f007f9efef4ed30dce9"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/files.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/files.ts",
+      "sha256": "44cfca327db0c4d605915c81a6e939f259f007474fd7a7896c76b4e0c16f2d39"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/main.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/main.ts",
+      "sha256": "c423f6915ea153c2000f467f942a7dbfc5af90de9fa04a0eace65d92ba4714d8"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/docx.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/docx.ts",
+      "sha256": "6c3cc9cc508f0a016593129755c6781509c8260f142a98398352458dd046d9e7"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/dommatrix.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/dommatrix.ts",
+      "sha256": "9f83e55baf80edb89c18ca00879a9ce98cba6ccd5ed39e3702c9f4cea90105bb"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/ooxml.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/ooxml.ts",
+      "sha256": "a8760a9c373852b63f6ee955ceedfd7f1009439addd3124364dfc55e22ed792b"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/parse.test.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/parse.test.ts",
+      "sha256": "d9c748dcd379220e3c1b6cd398fb2d8e650ec3dafbd7f69a01ea5ab946117912"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/pdf.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/pdf.ts",
+      "sha256": "fc35f2ebebbd7a8b936e536cf27cec7c937227f74348f23bab956a0e928c1130"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/pptx.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/pptx.ts",
+      "sha256": "c0b6e331468264f2ae6e271d0b557e431464dbf2c9222a9ba1fcbc3e33731bad"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parse/xlsx.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parse/xlsx.ts",
+      "sha256": "60435b5599e75eb84f97930a4c8d0ba112d385c393172bfe95aa896bd02ee331"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/parsers.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/parsers.ts",
+      "sha256": "190de205a41f67d8a6054c9df0c61b90e644cda33993931d75745a8ad9eff22e"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/adapters/server.ts",
+      "local": "vendor/zcode-office-runtime/src/adapters/server.ts",
+      "sha256": "d2718bf43221c29b750fa45e9a7f3386d08bd2c90032ffcf851375dd1af51a7c"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/app/documents.ts",
+      "local": "vendor/zcode-office-runtime/src/app/documents.ts",
+      "sha256": "7610ff6e441030be7c2c4a0d4f78c142beaebc618fd5b134216880cdd9153584"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/app/views.test.ts",
+      "local": "vendor/zcode-office-runtime/src/app/views.test.ts",
+      "sha256": "94f0c956c3c55a0be589927863e720bc2448bf19f5239a22f9c459d7a623fcd9"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/contract.ts",
+      "local": "vendor/zcode-office-runtime/src/contract.ts",
+      "sha256": "59fee4f042e52b3e4da9bda0007fc21c92868fbee46314eb011311d9275b5302"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/anchor.test.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/anchor.test.ts",
+      "sha256": "9d29abfc3f8b711fbb81caa65d058af6b5bc1225567e70d7c14ed9e2c6cc8352"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/anchor.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/anchor.ts",
+      "sha256": "e9bd40bb077b1004371a73bdd9a05bb60727d5ef55581af5670025d3c598600e"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/cjk.test.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/cjk.test.ts",
+      "sha256": "43984ac47fca0e78fcf3757b646c5f7ef687f424e8d37075498036e7be3555cd"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/cjk.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/cjk.ts",
+      "sha256": "ed11514220e82b01efd4913fe628d6051b025ab023c269500a811b0f1d77d92e"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/model.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/model.ts",
+      "sha256": "15a77f7bc6108e045e5b58c873385ec18135ee8d656a1d04357ff966ebaf0511"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/text.test.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/text.test.ts",
+      "sha256": "cb296adbe69435c6d75b839fc80cb2e4a44916fea7c0780de43bdd80d701f82c"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/domain/text.ts",
+      "local": "vendor/zcode-office-runtime/src/domain/text.ts",
+      "sha256": "af1d480491bd64bdf1ac75a6c61d320181ff639bb92d7923421d35040c280ac1"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/kinds.ts",
+      "local": "vendor/zcode-office-runtime/src/kinds.ts",
+      "sha256": "35721b084f9612d2771ecdf2906461676e1c18c37938a755564af515a8caf17b"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/profile.ts",
+      "local": "vendor/zcode-office-runtime/src/profile.ts",
+      "sha256": "b25846c7d2a5782c7ea8da073f63f77625e43b0e06aa09146874b4b5957b5323"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/types.d.ts",
+      "local": "vendor/zcode-office-runtime/src/types.d.ts",
+      "sha256": "6e14e93ecccea7cfa24efca91e30a154a3941752a2d2ff8e735b74cc8f1b8e00"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/src/wording.ts",
+      "local": "vendor/zcode-office-runtime/src/wording.ts",
+      "sha256": "c6a24a3ed502eceba7fa14f5490530dfdfe5bab20ce115c6bbe3726bebdd2e26"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/tsconfig.json",
+      "local": "vendor/zcode-office-runtime/tsconfig.json",
+      "sha256": "609a06096dd8a86061605bd7dcf3ca1a44b219ecddf29d77010efc7c6bd63317"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/vitest.config.ts",
+      "local": "vendor/zcode-office-runtime/vitest.config.ts",
+      "sha256": "6ca269d29e62f475fb1a3c4464122d80a00ac983b87918c0e4f46c22546c122d"
+    },
+    {
+      "path": "LICENSE",
+      "local": "vendor/zcode-office-runtime/APACHE-2.0",
+      "sha256": "606c36baf38b973227273df12a74930e4b4137280eea835c5cd623aa4553c13b"
+    },
+    {
+      "path": "apps/zcode-cli/packages/documents-plugin/skills/docx-viewer/SKILL.md",
+      "local": "vendor/zcode-office-runtime/skills/docx-viewer/SKILL.md",
+      "sha256": "82353e9fd5a877169cbbf2b67d3ebca965a0d2d2104d648dffed80dc7a451d2f"
+    },
+    {
+      "path": "apps/zcode-cli/packages/pdf-plugin/skills/pdf-viewer/SKILL.md",
+      "local": "vendor/zcode-office-runtime/skills/pdf-viewer/SKILL.md",
+      "sha256": "8af11087f41dd83c05755d19713db8799c544d17ab26bd3d4d102ac136fd6ecb"
+    },
+    {
+      "path": "apps/zcode-cli/packages/spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
+      "local": "vendor/zcode-office-runtime/skills/xlsx-viewer/SKILL.md",
+      "sha256": "92664d0a0fa41482c8a5973fc06866655cc1c13854a353563cbeb2276c122dea"
+    },
+    {
+      "path": "apps/zcode-cli/packages/presentations-plugin/skills/pptx-viewer/SKILL.md",
+      "local": "vendor/zcode-office-runtime/skills/pptx-viewer/SKILL.md",
+      "sha256": "100ba4f9a11e8cd42f401df3a5a6a54bfbb2af3dce6e352fa5d1dc0fcc5319fd"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/budget.xlsx",
+      "local": "vendor/zcode-office-runtime/fixtures/budget.xlsx",
+      "sha256": "b5afc9b2dd4057681e2a7404e7a520004b9f699ae3bd7219d37b042b5061c8d6"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/cjk.pdf",
+      "local": "vendor/zcode-office-runtime/fixtures/cjk.pdf",
+      "sha256": "22d6a10c8c938edce2fdfad247abf8f5bf1cb17385bdc24d59c71a98acb2a2c0"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/generate.py",
+      "local": "vendor/zcode-office-runtime/fixtures/generate.py",
+      "sha256": "f86048b986b8920838d233f506e8f5ce54812a9fbd7e40214f1de5b441b68a96"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/generate_cjk.py",
+      "local": "vendor/zcode-office-runtime/fixtures/generate_cjk.py",
+      "sha256": "3214ca2625f700f1bca77baa0955600a2495712a7d9efcfe7bf3c7e45a2ff855"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/launch.pptx",
+      "local": "vendor/zcode-office-runtime/fixtures/launch.pptx",
+      "sha256": "851fa7c77eb468520ee91d1809b0adfb96e61e9f8fb5e8130da23116e7e831ea"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/paper.pdf",
+      "local": "vendor/zcode-office-runtime/fixtures/paper.pdf",
+      "sha256": "8af44540bfa51852259d8747db68e2a72dc4891e4b12fe6987b6a3d1717b32ad"
+    },
+    {
+      "path": "apps/zcode-cli/packages/office-runtime/fixtures/report.docx",
+      "local": "vendor/zcode-office-runtime/fixtures/report.docx",
+      "sha256": "1249abfaddef4513a7c66468578e1ee466c75b63f849c3d031064e2c2f96f6a4"
+    }
+  ],
+  "patches": [
+    "package.json: parser-only runtime dependencies and test/build entrypoints; original retained as upstream-package.json",
+    "src/domain/model.ts: preserve every character of oversized units with continuous chunk cursor",
+    "src/adapters/parse/xlsx.ts: traverse horizontal column batches instead of omitting columns beyond 60",
+    "runner.ts: AILab explicit per-unit/native-text export with coverage, quality and measurement; no desktop integration",
+    "src/domain/ailab.test.ts: regression tests for oversized units and wide sheets",
+    "package.json overrides uuid to 11.1.1; compatible ExcelJS API, production npm audit has no advisories at verification time"
+  ]
+}

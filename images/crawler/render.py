@@ -17,6 +17,7 @@ with contextlib.redirect_stdout(sys.stderr):
 PROXY = os.environ.get("AILAB_CRAWLER_PROXY", "")
 PAGE_TIMEOUT_MS = int(os.environ.get("AILAB_CRAWLER_PAGE_TIMEOUT_MS", "20000"))
 MAX_LINKS = 50
+MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024
 CHALLENGE = re.compile(
     r"^(?:just a moment[.!…]*|attention required[!！]?(?:\s*\|\s*cloudflare)?|access denied|verify (?:that )?you are human)[.!…\s]*$",
     re.I,
@@ -72,7 +73,7 @@ def links_of(result) -> list[str]:
     return out
 
 
-async def render_page(url, limit):
+async def render_page(url, limit, include_html=False):
     started = time.monotonic()
     crawler = AsyncWebCrawler(config=browser_config())
     try:
@@ -80,15 +81,15 @@ async def render_page(url, limit):
         result = await crawler.arun(url, config=run_config())
     finally:
         await crawler.__aexit__(None, None, None)
-    return extract_result(result, limit, started)
+    return extract_result(result, limit, started, include_html)
 
 
-def extract_result(result, limit, started):
+def extract_result(result, limit, started, include_html=False):
     # Crawl4AI success means the browser ran, including HTTP error pages from the proxy.
     if not result.success or (result.status_code or 0) >= 400:
         return reply(
             {
-                "error": (result.error_message or "render failed")[:300],
+                "error": (result.error_message or f"HTTP {result.status_code} from {result.url}")[:300],
                 "status": result.status_code,
             },
             status=502,
@@ -111,6 +112,12 @@ def extract_result(result, limit, started):
             {"error": "page returned an access challenge or no readable text"},
             status=502,
         )
+    snapshot = {}
+    if include_html:
+        html = str(getattr(result, "html", "") or "")
+        if not html or len(html.encode("utf-8")) > MAX_SNAPSHOT_BYTES:
+            return reply({"error": "rendered HTML is empty or exceeds the snapshot limit"}, status=502)
+        snapshot = {"html": html}
     truncated = len(text) > limit
     if truncated:
         text = text[:limit].rstrip()
@@ -124,6 +131,7 @@ def extract_result(result, limit, started):
             "truncated": truncated,
             "links": links_of(result),
             "seconds": round(time.monotonic() - started, 2),
+            **snapshot,
         }
     )
 
@@ -136,7 +144,7 @@ def main():
     body = json.loads(sys.stdin.readline())
     with contextlib.redirect_stdout(sys.stderr):
         try:
-            result = asyncio.run(render_page(body["url"], body["max_chars"]))
+            result = asyncio.run(render_page(body["url"], body["max_chars"], body.get("include_html", False)))
         except Exception as exc:
             result = reply({"error": f"render failed: {type(exc).__name__}"}, status=502)
     print(json.dumps(result, ensure_ascii=False), flush=True)

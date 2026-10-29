@@ -84,9 +84,14 @@ def test_summary_cache_boundary_never_leaks_and_recomputes_after_switch():
         assert c.get(url + "/model-context", headers=SERVICE, params={"after": old}).status_code == 422
         invalid = {"summary": "bad", "through_run_id": old}
         assert c.put(url + "/model-summary", headers=headers, json=invalid).status_code == 422
-        valid = {"summary": "valid new path", "through_run_id": edited["id"], "expected_through_run_id": None}
+        valid = {
+            "summary": '{"schema_version":1,"objective":"valid new path"}',
+            "source_epoch": context["source_epoch"],
+            "through_run_id": edited["id"],
+            "expected_through_run_id": None,
+        }
         assert c.put(url + "/model-summary", headers=headers, json=valid).status_code == 200
-        assert c.get(url + "/model-context", headers=SERVICE).json()["summary"] == "valid new path"
+        assert "valid new path" in c.get(url + "/model-context", headers=SERVICE).json()["summary"]
         assert c.put(url + "/model-summary", headers=headers, json=valid).status_code == 422
 
 

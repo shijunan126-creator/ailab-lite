@@ -12,3 +12,5 @@ node_modules/
 logs/
 demo-output/
 tests/local.sh
+vendor/zcode-office-runtime/runner.mjs
+vendor/zcode-office-runtime/bench.mjs

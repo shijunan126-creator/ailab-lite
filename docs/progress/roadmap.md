@@ -1,5 +1,15 @@
 # 开发路线图
 
+2026-10-29 已授权并完成本机体验部署：固定dirty快照、保留数据0033→0036、实际四格式/OCR/DeepSeek/浏览器通过；不等同远端合并或目标NPU/数百人验收。[当前部署边界](updates/2026-10-29-file-context-local-deployment.md)。
+
+
+2026-10-29 核心后续：已完成本机可做的校准队列、OCR副本复用和备份墓碑应用，使用现有DeepSeek与真实RapidOCR验核心链路；当前剩余目标NPU/质量/容量等验收以[最新记录](updates/2026-10-29-file-context-core-validation.md)为准。当前工作树在项目`.worktrees/file-context-ocr`，不再沿用Memory临时目录命名。
+
+
+## 2026-10-29 文件上下文与OCR（本地核心接入已验，完整方案仍有缺口）
+
+实施顺序按[07模块](../architecture/design/file-context-ocr/07-delivery.md)的文件关系→共享派生物→上下文→OCR→联合验收推进。用户最新授权覆盖设计阶段限制，不授权push/PR/merge/部署。平台内部办公能力在Broker系统沙箱执行，与用户技能/Work沙箱独立；架构以数百人扩展为目标，本机不做容量承诺。OCR只计量、不计费、不设累计用户配额。代码与验证、外部条件及尚未实现的设计项统一见[实施记录](updates/2026-10-29-file-context-ocr-implementation.md)；当前下一步以[current](current.md)为准。
+
 ## 2026-10-28 记忆系统完善
 
 用户授权对前轮记忆审查的全部缺陷及架构/体验缺口自主实施，完成验证后提PR并修复直到merge，不包含部署。保持五服务/双库和已取消临时对话的决定；0034持久工作进度、统一可见性/作用域、来源/删除/时间合同和每调用计费已经实现，本地组测完成，精确状态与下一步见[current](current.md)，设计见[ADR0022](../architecture/adr/0022-memory-consistency-and-scoped-recall.md)，验收见[报告](../reviews/2026-10-28-memory-system-hardening.md)。不据旧路线自动发布其他功能。
