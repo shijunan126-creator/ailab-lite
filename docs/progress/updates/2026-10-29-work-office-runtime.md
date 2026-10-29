@@ -34,3 +34,7 @@ Work 镜像增加与系统 reader 相同的 Node24/固定解析核心，只复�
 当前代码系统reader真实Docker/runc合同四格式、两任务并发通过；Work此前runsc四格式解析和DOCX编辑重读通过。真实模型此前只在Chat验证DOCX问答，在Work验证DOCX/XLSX编辑重读；PDF/PPTX真实模型问答、复杂文档及五服务端到端未在本轮验证，不能把格式解析合同当作模型质量证明。原Chat专项和完整Python、Portal构建见本轮结果。
 
 本轮完整SQLite Python 1442通过/144跳过，新增AgentLoop Chat加载回归单独通过；Portal build、Ruff、diff检查通过。隔离reader镜像与容器已清理。
+
+## 本机部署与PR（2026-10-29）
+
+用户授权部署及PR/合并。PR #106以main@09a28e8为base；产品提交467971b已部署。Agent基于已部署平台镜像只覆盖三个改动文件，Work沙箱镜像从固定源码构建；Broker配置引用新镜像。部署前无运行中或排队Run，compose仅重建Broker/Agent，命令报告Broker healthy、Agent started。未做备份、额外部署后功能验证或真模型调用，按用户测试环境约定执行。个人配置和镜像记录仅保留在AILab-local。CI/合并待完成，不把本机部署描述为合并或五服务验收。
