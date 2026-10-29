@@ -6,6 +6,7 @@ echo "== whoami: $(id -u)"
 python -c "import pptx, docx, openpyxl, matplotlib, pandas, pypdf; print('py libs OK')"
 fc-match "微软雅黑" | grep -q "Noto Sans CJK" || { echo "font map FAILED"; exit 1; }
 echo "font map OK"
+python /opt/ailab-tools/smoke/office_reader.py
 
 mkdir -p /workspace/work
 python /opt/skills/pptx/scripts/build.py --example > /workspace/work/deck.json

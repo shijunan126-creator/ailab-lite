@@ -28,6 +28,10 @@ Adapted from zai-org/ZCode {upstream}, commit 3c5b227649371507ddc4eb46ac5133afe6
 3. 每次返回coverage及next_cursor；把next_cursor全部字段传回续读。空next_cursor仅代表所选范围结束。
 4. 全篇任务从头连续遍历并核对status=ready；query命中、部分页或旧版excerpt不能冒充全文。
 5. 工作模式需要编辑时copy_library_file复制原文件到工作区，再用现有办公库操作并交付新版本。
+   Work沙箱预装office-read：office-read SOURCE NEW_OUTPUT_DIRECTORY，支持docx/xlsx/pptx/pdf。
+   修改后用新输出目录重新读取；先看manifest.json的status/coverage/outline，再按需读取编号文本块，不默认cat全文。
+   这是工作区检查结果，不是平台file_id索引或可信来源；需要平台引用须交付新文件后重新读取。
+   仅原生文字与结构，不能据此确认版式/图表/嵌图；渲染用现有LibreOffice/Poppler，OCR用平台能力。
 6. 不默认print全文、渲染整份文档后一次送模型。任务需要时可分批读完全文、逐页转换并缓存。
 7. 文档页与历史图片不受输入框每轮5张独立图片限制，按模型能力及真实预算分批。
 8. 原生文字不含嵌图语义；需要OCR用平台提取能力，不在用户沙箱安装OCR权重。

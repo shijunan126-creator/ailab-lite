@@ -770,3 +770,7 @@ macOS 的 mock 沙箱使用宿主 shell，需 GNU coreutils/findutils（stat -c�
 ## 2026-10-29 文档留存
 
 - 验收可复查不等于保存所有运行输出。仓库只保留结论、版本、复现入口、关键数值与未测边界；原始 JSON/日志/采样放仓库外或 CI artifact，调试结束清理。删输出时先补唯一有用结论并修正引用；保留必要 fixture/脚本/代表截图。详见 AGENTS.md“文档与测试证据精简”。
+
+## Work Office reader 构建边界（2026-10-29）
+
+Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 images/sbx-office 会遗漏 parser/锁文件更新。office-read 输出目录必须新建或为空，修改后换目录；Work 输出不是平台索引。V8 heap ceiling 不是进程 RSS 上限，不可用它推导并发容量。见 [ADR 0025](docs/architecture/adr/0025-work-office-reader.md)。

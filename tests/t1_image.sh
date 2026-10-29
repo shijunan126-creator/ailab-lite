@@ -6,7 +6,7 @@ IMG=harbor.ailab.local/sandbox/sbx-office:lite   # 与大集群同名，靠预�
 guard_busy_window
 
 log "1/4 构建（amd64；arm64 需 QEMU 模拟，较慢，放到 T1b 单独做）"
-docker build -t "$IMG" "$ROOT/images/sbx-office" 2>&1 | tail -5
+docker build -t "$IMG" -f "$ROOT/images/sbx-office/Dockerfile" "$ROOT" 2>&1 | tail -5
 echo "  $(docker image inspect "$IMG" --format '{{.Architecture}} {{.Size}}' | awk '{printf "%s %.0fMB", $1, $2/1048576}')"
 
 log "2/4 docker（runc）内冒烟"
