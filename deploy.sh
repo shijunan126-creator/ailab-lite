@@ -248,9 +248,9 @@ resolve_models() {
 
 build_images() {
   step "sandbox image ($SANDBOX_IMAGE)"
-  # The image carries a hash of images/sbx-office (Dockerfile, skills, smoke test): rebuild when the skills change.
+  # Hash both the Office image and the pinned reader; ignore local dependency/build artifacts.
   local want have
-  want=$(cd "$ROOT/images/sbx-office" && find . -type f -not -path '*/__pycache__/*' -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+  want=$(cd "$ROOT" && find images/sbx-office vendor/zcode-office-runtime -type f -not -path '*/__pycache__/*' -not -path '*/node_modules/*' -not -name runner.mjs -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
   have=$(docker image inspect --format '{{index .Config.Labels "ailab.content-hash"}}' "$SANDBOX_IMAGE" 2>/dev/null || true)
   if [ "$have" = "$want" ]; then ok "up to date ($want)"
   elif [ "$SKIP_BUILD" = 1 ]; then
@@ -259,7 +259,7 @@ build_images() {
   else
     if docker image inspect "$SANDBOX_IMAGE" >/dev/null 2>&1; then ok "skills or Dockerfile changed: rebuilding (cached layers make this quick)"
     else warn "not found: building it (a few minutes, needs network for apt/pip)"; fi
-    run nice -n 19 docker build -q --label "ailab.content-hash=$want" -t "$SANDBOX_IMAGE" "$ROOT/images/sbx-office" >/dev/null
+    run nice -n 19 docker build -q --label "ailab.content-hash=$want" -t "$SANDBOX_IMAGE" -f "$ROOT/images/sbx-office/Dockerfile" "$ROOT" >/dev/null
     ok "built ($want)"
   fi
 

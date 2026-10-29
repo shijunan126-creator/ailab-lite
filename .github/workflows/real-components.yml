@@ -8,6 +8,7 @@ on:
       - .github/fixtures/**
       - platform/scripts/ci_wait_component.py
       - images/sbx-office/**
+      - vendor/zcode-office-runtime/**
   schedule:
     - cron: "41 4 * * 2"
   workflow_dispatch:
@@ -52,7 +53,7 @@ jobs:
         if: matrix.component == 'docker' || matrix.component == 'office'
         run: |
           if [ "$COMPONENT" = office ]; then
-            docker build -t ailab-contract:ci ../images/sbx-office
+            docker build -t ailab-contract:ci -f ../images/sbx-office/Dockerfile ..
             mkdir -p test-results
             timeout 600s docker run --name ci-office --network none --memory 2g --memory-swap 2g \
               --cpus 1 --pids-limit 256 --cap-drop ALL --security-opt no-new-privileges \

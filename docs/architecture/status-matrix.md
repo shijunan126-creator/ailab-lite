@@ -118,6 +118,7 @@
 |---|---|---|
 | 扫描（T04） | Scanner 端口；ClamAV TCP/Unix INSTREAM；扫描器不可用时文件保持 pending、退避重试、最终标记，绝不当作干净 | 2026-10-23 原生 ARM64 ClamAV 1.5.4：契约 1 passed、EICAR rejected/clean ready、故障 30.03 s fail closed / 36.86 s 恢复；容器空闲 RSS 1045.9 MiB；冷启动签名重载峰值未验 |
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
+| Work 本地 Office 读取 | 镜像预装固定 Node/ZCode reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |
 | 资料库预览 | 首次打开时生成并永久缓存：PDF/Word/PPT 页面、Excel/CSV 表格、图片（≤2048 px 显示图）、文本/Markdown/代码。Office/PDF 在 Broker 的 render 保留槽沙箱中渲染，xlsx/csv 在 Worker 受限进程中处理；ETag/304/CSP；删除时清理 | 2026-10-23 k3s→OSB render 保留槽 DOCX 8.12 s ready，中文 DOCX/PPTX JPEG 已看图；真实 OSB+S3 联合部署未验 |
 | 对话发送附件预览 | 复用资料库渲染内容，以file_id建立侧栏标签；同名文件独立、切换/关闭/下载；手机保留带标签整屏侧栏 | 2026-10-29 本机Portal独立更新，真实DOCX/表格/图片及1440/390浏览器通过；[记录](../progress/updates/2026-10-29-chat-attachment-tabs.md)，非全站E2E重验 |
 | 版本与回收站（T18） | 版本为不可变行（lineage + version 唯一）；旧版恢复 = 新建 head；每链最多 10 版，超出的旧版留 tombstone（内容 410）；删除整链进回收站 30 天并计入空间额度；项目删除把文件移入回收站；对象删除在同一事务写持久删除意图，失败由 lifecycle 重试 | 真实 S3 全套行为已验；生产规模历史版本 copy/RSS/延迟仍未验 |

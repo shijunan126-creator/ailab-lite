@@ -1064,7 +1064,7 @@ class AgentLoop:
                 discovery.activate(state, [h["name"] for h in hits if h["kind"] == "tool"], catalog)
                 result = {"ok": True, "capabilities": hits}
             elif wanted and wanted.startswith("platform."):
-                text = internal_skills.load(wanted, call.arguments.get("version"))
+                text = internal_skills.load(wanted, call.arguments.get("version"), mode=(turn.run.get("options") or {}).get("mode", "work"))
                 state = self._states[run_id]
                 state.setdefault("internal_skill_versions", {})[wanted] = internal_skills.VERSION
                 discovery.activate(

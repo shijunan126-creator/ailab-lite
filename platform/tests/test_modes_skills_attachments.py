@@ -219,3 +219,14 @@ def test_chat_can_search_read_sources_and_return_a_script_without_sandbox(monkey
     assert len(results) == 2 and all(r["ok"] for r in results)
     assert broker.leases == 0
     assert platform.statuses[-1][0] == "succeeded"
+
+
+def test_chat_loading_document_skill_does_not_offer_work_sandbox_instructions():
+    call = ToolCall(id="c1", name="load_skill", arguments={"name": "platform.document.read"})
+    llm = _Recording([LLMResponse(tool_calls=[call]), LLMResponse(content="完成")])
+    broker = _run(llm, _Platform(options={"mode": "chat"}))
+    tool_response = llm.seen_messages[1][-1]["content"]
+    assert "read_library_file" in tool_response
+    assert "office-read" not in tool_response
+    assert "copy_library_file" not in tool_response
+    assert broker.leases == 0

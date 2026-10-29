@@ -1,0 +1,20 @@
+#!/bin/sh
+# Read workspace documents without starting a persistent service.
+set -eu
+if [ "$#" -ne 2 ]; then
+  echo 'usage: office-read SOURCE OUTPUT_DIRECTORY (directory must not exist)' >&2
+  exit 2
+fi
+case "$1" in
+  *.[dD][oO][cC][xX]) kind=docx ;;
+  *.[xX][lL][sS][xX]) kind=xlsx ;;
+  *.[pP][pP][tT][xX]) kind=pptx ;;
+  *.[pP][dD][fF]) kind=pdf ;;
+  *) echo 'unsupported document format' >&2; exit 2 ;;
+esac
+# Avoid stale manifests or blocks after editing a source file.
+if ! mkdir -- "$2"; then
+  echo 'output directory must not exist; create its parent first' >&2
+  exit 2
+fi
+exec timeout -k 2 60s node --max-old-space-size=160 /opt/ailab-office/runner.mjs "$1" "$2" "$kind"
