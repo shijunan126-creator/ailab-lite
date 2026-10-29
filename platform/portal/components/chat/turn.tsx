@@ -221,7 +221,7 @@ export default function Turn({
   useEffect(() => () => historyRequest.current?.abort(), []);
   const files = useFileViewer();
   const shown = items ?? history;
-  const terminal = isTerminal(run.status);
+  const terminal = isTerminal(run.status, !!run.result?.file_wait);
   const chat = run.options?.mode === "chat";
 
   async function loadHistory() {

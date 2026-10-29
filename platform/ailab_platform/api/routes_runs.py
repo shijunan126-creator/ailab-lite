@@ -330,7 +330,8 @@ def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], 
     with SessionLocal() as db:
         run = db.get(Run, run_id)
         status = run.status if run else RunStatus.FAILED
-        pending_title = False
+        # Automatic file waits keep SSE alive across suspension/continuation.
+        pending_title = bool(run and status == RunStatus.INTERRUPTED and (run.runtime_meta or {}).get("file_dependency"))
         if run and status in {RunStatus.SUCCEEDED, RunStatus.FAILED} and run.finished_at:
             finished = run.finished_at.replace(tzinfo=UTC) if run.finished_at.tzinfo is None else run.finished_at
             if datetime.now(UTC) < finished + timedelta(seconds=10):

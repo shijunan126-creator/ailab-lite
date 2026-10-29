@@ -263,7 +263,7 @@ def main() -> int:
                 result = sheets(src, out)
             else:
                 result = {"error": f"no PDF preview for {ext} files"}
-        elif ext in PAGES:
+        elif ext in PAGES or (ext in SHEETS and ("--pages" in sys.argv[3:] or "--visual-pages" in sys.argv[3:])):
             selected = None
             if "--pages" in sys.argv[3:]:
                 selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]

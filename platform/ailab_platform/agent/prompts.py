@@ -208,6 +208,18 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
         name = f.get("filename") or f.get("file_id")
         text = (f.get("text") or "").strip()
         lines.append("")
+        lines.append(f"（附件身份：file_id={f.get('file_id') or f.get('id')}，版本={f.get('version', 1)}）")
+        visual = f.get("visual") or {}
+        if visual.get("status") in {"present", "unknown"}:
+            lines.append(
+                "（视觉覆盖：正文/OCR只提供文字，不包含图片、图表、连线或布局语义。"
+                + (
+                    "本轮已附视觉页面。"
+                    if f.get("visual_pages")
+                    else "需要图形理解时发现并调用view_attachment；非视觉模型须说明未理解图形，不能根据OCR猜测。"
+                )
+                + "）"
+            )
         if f.get("input_strategy") == "reference":
             lines.append(
                 f"（附件《{name}》：file_id={f['file_id']}，版本={f.get('version')}，"

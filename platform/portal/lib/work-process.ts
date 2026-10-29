@@ -211,7 +211,8 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
   return next;
 }
 
-export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" | "options">): string {
+export function workHeading(run: Pick<Run, "status" | "work_ms" | "started_at" | "options" | "result">): string {
+  if (run.status === "interrupted" && run.result?.file_wait) return "正在准备附件…";
   const ms = typeof run.work_ms === "number" ? run.work_ms : null;
   if (run.options?.mode === "chat") {
     // chat only answers: its time is thinking, not work

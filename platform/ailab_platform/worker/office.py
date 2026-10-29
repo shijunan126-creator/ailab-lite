@@ -7,7 +7,7 @@ import tarfile
 
 from .isolate import IsolationError
 
-PARSER_VERSION = "zcode-3c5b227-ailab1"
+PARSER_VERSION = "zcode-3c5b227-ailab2"
 KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx"}
 
 

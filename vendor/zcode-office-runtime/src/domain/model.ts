@@ -33,6 +33,9 @@ export interface ParsedDocument {
   check(locator: Locator): Locator;
   /** docx only: body block keys the panel uses to map rendered elements back to locators. */
   blocks?: DocxBlockKey[];
+  /** AILab: source content facts, independent of model-facing headings/placeholders. */
+  hasVisuals?: boolean;
+  contentInfo?(anchor: string): { has_text: boolean; visual: boolean };
 }
 
 export const normalise = (text: string) => text.replace(/\s+/g, " ").trim();

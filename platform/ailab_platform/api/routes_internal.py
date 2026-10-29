@@ -1019,6 +1019,9 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
                 else:
                     meta.pop(key, None)
         file.meta = meta
+        from .file_dependencies import wake_file
+
+        wake_file(db, file)
         db.commit()
         return {"ok": True}
 

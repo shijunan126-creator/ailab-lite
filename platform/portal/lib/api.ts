@@ -40,6 +40,7 @@ export type Run = {
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
+    file_wait?: { action: "extract-text" | "image-reference" };
     previews?: Preview[];
     sources?: { title: string; url: string; site: string }[];
     pause?: { kind: "quota"; window: "daily_tokens" | "monthly_tokens"; resets_at: string }; // why an interrupted run rests

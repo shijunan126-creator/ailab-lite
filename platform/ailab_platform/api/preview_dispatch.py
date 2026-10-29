@@ -106,6 +106,9 @@ def _dispatch_batch(queue, job_id, now):
 async def dispatch_forever() -> None:
     while True:
         try:
+            from .file_dependencies import reconcile
+
+            await asyncio.to_thread(reconcile)
             await asyncio.to_thread(dispatch_preview_jobs)
         except Exception:
             log.exception("outbox dispatch failed")

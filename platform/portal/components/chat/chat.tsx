@@ -181,7 +181,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             delete updatedPreview.current[run.id];
             // a message queued behind this answer has started on its own: follow it like one sent from here
             const next = d?.turns[d.turns.length - 1];
-            if (next && next.id !== run.id && !isTerminal(next.status) && !controller.signal.aborted) {
+            if (next && next.id !== run.id && !isTerminal(next.status, !!next.result?.file_wait) && !controller.signal.aborted) {
               stick.current = true;
               follow(next);
             }
@@ -220,7 +220,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail().then(async (d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
-      if (last && (!isTerminal(last.status) || last.status === "interrupted")) controller = follow(last);
+      if (last && (!isTerminal(last.status, !!last.result?.file_wait) || last.status === "interrupted")) controller = follow(last);
       else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target);
       if (target && !disposed) requestAnimationFrame(() => reveal(target));
     });
@@ -433,7 +433,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }, [turns, forkedAsWork]);
   const projectId = id ? detail?.project_id || null : project?.id || null;
   const crumb = id && projectId ? projects?.find((p) => p.id === projectId) : null;
-  const running = turns.some((t) => !isTerminal(t.status));
+  const running = turns.some((t) => !isTerminal(t.status, !!t.result?.file_wait));
   // a question the agent is waiting on: the composer answers it instead of starting a new turn
   const waiting = turns.find((t) => t.status === "waiting_user" || t.status === "interrupted");
   const question = waiting
@@ -536,7 +536,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       await api<QueuedMessage>(`/v1/conversations/${id}/queue/resume`, { method: "POST" });
       const d = await loadDetail();
       const started = d?.turns[d.turns.length - 1];
-      if (started && !isTerminal(started.status)) {
+      if (started && !isTerminal(started.status, !!started.result?.file_wait)) {
         stick.current = true;
         follow(started);
       }
@@ -664,7 +664,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
 
   async function stop() {
-    const active = turns.find((t) => !isTerminal(t.status));
+    const active = turns.find((t) => !isTerminal(t.status, !!t.result?.file_wait));
     if (active) await api(`/v1/runs/${active.id}/cancel`, { method: "POST" }).catch(() => undefined);
     loadDetail();
   }

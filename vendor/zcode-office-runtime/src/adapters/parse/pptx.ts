@@ -214,6 +214,11 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
 
   return {
     kind: "pptx",
+    contentInfo(anchor) {
+      const slide = slides[Number(anchor.split(":")[1])-1];
+      return {has_text: !!slide && (!!slide.notes.trim() || slide.shapes.some(s => s.kind === "text" && !!s.text.trim() || s.kind === "table" && !!s.rows?.flat().join("").trim())),
+        visual: !!slide?.shapes.length};
+    },
     title: (await coreTitle(pkg)) ?? slides[0]?.title ?? null,
     units: slides.length,
     outline,

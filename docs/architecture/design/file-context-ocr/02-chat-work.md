@@ -1,5 +1,7 @@
 # Chat预处理、Work自主操作与输入预算
 
+2026-10-29 实施补充：正文/OCR/视觉覆盖与自动文件等待的最新合同见[ADR 0026](../../adr/0026-document-visual-coverage-and-file-waits.md)，本轮验收见[修复记录](../../../progress/updates/2026-10-29-document-reading-reliability.md)；下方旧状态为历史设计。
+
 > 实施状态（2026-10-29）：用户已授权本方案实施，覆盖下文历史“只设计”限制；不授权push/PR/merge/部署。OCR只计量、不计费、不设用户累计配额，资源隔离仍保留。当前实现、验收及剩余缺口以[实施记录](../../../progress/updates/2026-10-29-file-context-core-validation.md)和[验收逐项记录](../../../reviews/file-context-2026-10-29/acceptance.md)为准。本文其余历史状态不代表当前完成度。
 
 状态：设计修订稿，未实施。基线 `main@e71a60f`。本轮明确Chat预处理、Work自主操作、图片按视觉能力分流、RapidOCR与昇腾NPU优先；正文中的资源与大小数值均为待验收候选。

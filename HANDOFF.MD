@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-29 办公视觉覆盖与文件等待
+
+- 原生文字质量须来自结构化事实，不能把页标题、empty/image占位当正文；新parser ailab2，旧PDF占位只做版本受限兼容。OCR缓存按文件内容/引擎独立于原生parser升级复制，旧技能版本/付费pending工具须可恢复。
+- OCR只读字，不能推导图片、架构图和布局语义；Chat视觉页面准备必须在模型调用前完成，Work返回视觉覆盖/截断。含图Excel应将单元格读取与绘图互操作隔离，原文件保持完整供视觉渲染。
+- 自动文件等待复用interrupted+file_dependency，但SSE和Portal必须识别自动继续，不能终止流、允许新发送或要求手动继续；写等待事件必须先于结束attempt。恢复仍须重查额度/并发/来源/终态。PG不能DISTINCT含JSON的整行，用file引用半连接。
+- 详见[ADR 0026](docs/architecture/adr/0026-document-visual-coverage-and-file-waits.md)与[验证记录](docs/progress/updates/2026-10-29-document-reading-reliability.md)。
+
 ## 2026-10-29 E2E 保存完成与登录重写
 
 - “保存”按钮开始请求即改为“保存中…”，精确“保存”消失不能证明落库成功；刷新/后续操作前须等两种状态的按钮都消失，失败仍须保留断言。#102 的记忆暂停 E2E 因此提前刷新。

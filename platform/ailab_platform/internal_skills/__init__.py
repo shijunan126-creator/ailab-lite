@@ -1,6 +1,6 @@
 """Private platform capabilities. Deliberately independent of the user skill catalog."""
 
-VERSION = "zcode-3c5b227-ailab1"
+VERSION = "zcode-3c5b227-ailab2"
 TOOLS = ["resolve_attachment", "search_library", "read_library_file", "copy_library_file", "view_attachment", "extract_text"]
 FORMATS = {
     "platform.document.read": ("Word文档读取 docx 段落 表格", "p:N 或 t:N；不能伪造Word物理页码", "docx-viewer"),
@@ -15,7 +15,9 @@ def metadata():
 
 
 def load(name, version=None, *, mode="work"):
-    if name not in FORMATS or version not in {None, VERSION}:
+    # Existing checkpoints may pin the previous adapter revision. Its tools and
+    # authorization are compatible; corrected reading/waiting rules apply on resume.
+    if name not in FORMATS or version not in {None, VERSION, "zcode-3c5b227-ailab1"}:
         raise ValueError("internal_skill_version_unavailable")
     description, anchors, upstream = FORMATS[name]
     work_instructions = (
@@ -37,10 +39,11 @@ Adapted from zai-org/ZCode {upstream}, commit 3c5b227649371507ddc4eb46ac5133afe6
 2. read_library_file先读取一批结构正文；query作文件内检索，anchor选择工具返回的结构位置。
 3. 每次返回coverage及next_cursor；把next_cursor全部字段传回续读。空next_cursor仅代表所选范围结束。
 4. 全篇任务从头连续遍历并核对status=ready；query命中、部分页或旧版excerpt不能冒充全文。
-5. 原生文字不包含布局、图表和嵌图语义，需要时使用平台视觉或OCR能力。{work_instructions}
+5. 原生文字不包含布局、图表和嵌图语义：发现visual=present/unknown时按任务调用view_attachment，视觉模型直接读取渲染页。
+OCR只读字，不理解架构图、纯图片或图形关系。非视觉模型须告知图形未理解、建议选择视觉模型，不得靠OCR猜测。{work_instructions}
 6. 不默认print全文、渲染整份文档后一次送模型。任务需要时可分批读完全文、逐页转换并缓存。
 7. 文档页与历史图片不受输入框每轮5张独立图片限制，按模型能力及真实预算分批。
-8. 原生文字不含嵌图语义；需要OCR用平台提取能力，不在用户沙箱安装OCR权重。
+8. extract_text/view_attachment由平台管理等待；不要启动沙箱sleep、循环重复提取或交付中间图片来绕路，不在用户沙箱安装OCR权重。
 ## References from the user
 精确file_id和anchor优先；自然语言歧义返回候选。引用必须来自实际读到的coverage。
 ## Notes

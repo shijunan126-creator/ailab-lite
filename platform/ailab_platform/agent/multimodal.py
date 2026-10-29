@@ -29,11 +29,12 @@ def has_image_part(messages: list[dict]) -> bool:
 def attachment_content(
     file: dict, *, vision: bool, image: bytes | None = None, content_type: str = "image/webp", text: str = ""
 ) -> list[dict]:
-    label = f"附件《{file['filename']}》"
+    label = f"附件《{file['filename']}》" + (f"渲染第{file['page']}页" if file.get("page") else "")
     if vision and image is not None:
         return [{"type": "text", "text": label}, image_part(image, content_type)]
     if text.strip():
-        return [{"type": "text", "text": f"{label}\n{text}"}]
+        limitation = "（仅文字提取，尚未理解图片内容、图形关系或布局）" if (file.get("content_type") or "").startswith("image/") else ""
+        return [{"type": "text", "text": f"{label}{limitation}\n{text}"}]
     if (file.get("content_type") or "").startswith("image/"):
         ocr = (file.get("meta") or {}).get("ocr", "unavailable")
         return [{"type": "text", "text": f"{label}：图片未能读取（OCR {ocr}）。"}]

@@ -4,6 +4,7 @@ import gzip
 import io
 import json
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -167,11 +168,19 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
 MAX_EVICT_RESUMES = 3
 
 
+class FileDependencyIn(BaseModel):
+    file_id: str = Field(min_length=1, max_length=40)
+    action: Literal["extract-text", "image-reference"]
+    pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
+    deadline: float = Field(ge=0, allow_inf_nan=False)
+
+
 class PauseIn(BaseModel):
     status: str
     question: dict | None = None
     error: str = Field(default="", max_length=2000)
     auto_resume: bool = False
+    file_dependency: FileDependencyIn | None = None
     evicted: bool = False  # the sandbox was reclaimed for another run, not a fault: resumes on its own budget
     summary: str | None = Field(default=None, max_length=200000)
     result: dict | None = None
@@ -181,6 +190,7 @@ def queue_continuation(db, run, *, new_window=False):
     # A continuation is a new unit of work. An old ACK can only delete its old job.
     job_id = uuid4().hex
     meta = dict(run.runtime_meta or {})
+    meta.pop("file_dependency", None)
     meta["budget_window_id"] = job_id if new_window else meta.get("budget_window_id", meta.get("job_id", run.id))
     meta["job_id"] = job_id
     run.runtime_meta = meta
@@ -215,6 +225,25 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
                 raise HTTPException(422, "question required")
             meta.update(question={**q, "created_at": datetime.now(UTC).isoformat()}, answer=None)
             append_event(db, run.id, "agent.ask_user", q, commit=False)
+        if body.file_dependency:
+            from ..models import FileObject, MessageFileRef
+
+            dep = body.file_dependency.model_dump()
+            file = db.get(FileObject, dep.get("file_id"))
+            if (
+                body.status != RunStatus.INTERRUPTED
+                or not file
+                or file.user_id != run.user_id
+                or dep["deadline"] > datetime.now(UTC).timestamp() + settings.ocr_deadline_seconds + 150
+                or any(type(p) is not int or not 1 <= p <= 100000 for p in dep.get("pages") or [])
+                or dep.get("action") not in {"extract-text", "image-reference"}
+                or not isinstance(dep.get("deadline"), (float, int))
+                or not db.scalar(
+                    select(MessageFileRef.id).where(MessageFileRef.run_id == run.id, MessageFileRef.file_id == file.id).limit(1)
+                )
+            ):
+                raise HTTPException(422, "invalid file dependency")
+            meta["file_dependency"] = dep
         run.runtime_meta = meta
         result = {**(run.result or {}), **(body.result or {})}
         # Pause metadata describes this pause only, unlike retained previews and sources.
