@@ -1,4 +1,0 @@
-.............s..                                                         [100%]
-=========================== short test summary info ============================
-SKIPPED [1] tests/contracts/test_storage.py:143: local inode replacement interleaving
-15 passed, 1 skipped in 2.29s

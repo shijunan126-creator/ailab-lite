@@ -67,6 +67,6 @@ RSS 为 Pod 主容器 cgroup 内所有进程的 VmRSS 之和，含解析子进�
 
 ## 可复查证据
 
-命令入口和原样脚本见 [commands.md](real-components-20261023/commands.md)。绿色测试日志、故障红绿、网络/Secret 名称、资源 JSON、备份结果及中文 JPEG 均在 [real-components-20261023](real-components-20261023/)。不包含生成的服务 token、OIDC 授权码、Cookie、数据库备份或大文件。完整本轮临时材料保留在 `/Users/michael/.cache/ailab-real-verify-20261023`，私密 token 文件仅位于任务临时目录，清理时删除。
+命令入口和原样脚本见 [commands.md](real-components-20261023/commands.md)。关键结果、故障红绿与资源/备份摘要见本文；复现脚本及必要中文 JPEG 保留在 [real-components-20261023](real-components-20261023/)。不包含生成的服务 token、OIDC 授权码、Cookie、数据库备份或大文件。完整本轮临时材料保留在 `/Users/michael/.cache/ailab-real-verify-20261023`，私密 token 文件仅位于任务临时目录，清理时删除。
 
 清理已完成（2026-10-23 15:26 +08:00）：删除专用 `platform` namespace/PVC、本轮测试容器及卷、全部本轮自建镜像与无引用构建层；仅保留上游基础镜像和 profile。OSB 后台进程、宿主 Portal/API 与端口转发均停止，私密 token/kubeconfig 临时副本删除。`colima list` 显示 `ailab-verify Stopped`；没有本轮服务留在运行。

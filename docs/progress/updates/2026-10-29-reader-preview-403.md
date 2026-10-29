@@ -24,7 +24,7 @@
 
 本机以固定六文件dirty增量快照 `reader-403-dd094497c120` 派生API/crawler镜像，API基于现有文件方案镜像、crawler基于现有受限镜像；镜像内源哈希逐文件核对。Portal仍为附件标签版本，其余服务、DNS、egress镜像和数据保持。Compose/build/sync均持久化候选路径及回滚前配置，个人材料只留本机部署目录。
 
-真实登录后的Portal同源reader接口、Chromium正文/错误页截图：力扣显示正文；知乎两篇仍拒绝，显示明确中文错误而非JSON。普通公共页和loopback/metadata/fake-IP直连一并回归；详细最终状态和资源样本见[脱敏证据](../../reviews/file-context-2026-10-29/reader-preview-403.json)。control第一次断言错把Example Domain标题当正文，实际HTTP200正文是documentation examples说明；修正内容断言后只重跑control/安全部分，未以该断言失败改产品网络代码。
+真实登录后的Portal同源reader接口、Chromium正文/错误页截图：力扣显示正文；知乎两篇仍拒绝，显示明确中文错误而非JSON。普通公共页和loopback/metadata/fake-IP直连一并回归；详细最终状态和资源样本见脱敏证据（原始输出已清理，结论见本文）。control第一次断言错把Example Domain标题当正文，实际HTTP200正文是documentation examples说明；修正内容断言后只重跑control/安全部分，未以该断言失败改产品网络代码。
 
 ## 性能与残余边界
 

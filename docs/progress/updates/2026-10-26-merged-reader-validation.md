@@ -38,7 +38,7 @@
 - 最终约2秒间隔9次 Docker stats 采样，crawler **89.16→最高684.1→96.21 MiB**，CPU最高100.81%；egress **40.75–40.84 MiB**、CPU最高2.07%。单JS请求阶段同时有一次Agent链路读取，React双并发阶段无其他读取；因此只宣称观测上限，不宣称精确RSS峰值。较早把真实契约与负载并行导致一次合法503 busy，该组不作为双并发耗时，已单独重验。所有测试 Pod 重启0，crawler OOMKilled=false。
 - 资源为相同规格隔离 VM 的组件短测，不是线上整栈容量：未测任意超大/恶意页面、长期并发或真实手机；不保证两浏览器对所有网站都能容纳在1GiB。新截止时间无新增依赖/后台任务，仍每请求新浏览器，slots上限2；DNS/慢响应超时会更早释放槽位。
 
-[可检查的网络/资源证据](../../reviews/2026-10-26-reader-validation.json)。原始日志在本机 `/private/tmp/ailab-reader-{image-build,image-fixed,platform-build,platform-fixed,deadline-red,server-red,targeted,pg-tests,pg-targeted,e2e,sqlite-final,real-contract,network-final,load-final-isolated}.log`；仅为本机临时原始证据，不依赖其长期保留作能力声明。
+可检查的网络/资源证据（原始输出已清理，结论见本文）。原始日志在本机 `/private/tmp/ailab-reader-{image-build,image-fixed,platform-build,platform-fixed,deadline-red,server-red,targeted,pg-tests,pg-targeted,e2e,sqlite-final,real-contract,network-final,load-final-isolated}.log`；仅为本机临时原始证据，不依赖其长期保留作能力声明。
 
 ## 收尾与下一步
 

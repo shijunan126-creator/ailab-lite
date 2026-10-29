@@ -1,5 +1,0 @@
-upload50 {"seconds": 3.6, "bytes": 52428800, "extract": {"kind": "too_large", "chars": 0, "bytes": 52428800, "truncated": true}}
-parse20 {"seconds": 27.906, "bytes": 20971520, "extract": {"kind": "pptx", "slides": 1, "chars": 0, "truncated": false}}
-docx-render {"seconds": 9.057, "preview": {"status": "ready", "kind": "pages", "pages": ["p-1.jpg"], "page_count": 1}}
-inject50 {"seconds": 3.57, "bytes": 52428800}
-artifact100 {"seconds": 3.02, "bytes": 104857600}

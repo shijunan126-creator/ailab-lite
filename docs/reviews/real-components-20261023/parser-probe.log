@@ -1,5 +1,0 @@
-outer: AssertionError Regex pattern did not match.
-  Expected regex: 'memory_limit|resource_limit'
-  Actual message: 'corrupt'
-XMLSyntaxError XMLSyntaxError('unknown error')
-<string>:0:0:FATAL:PARSER:ERR_NO_MEMORY: unknown error

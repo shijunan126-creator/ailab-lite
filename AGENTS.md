@@ -11,6 +11,14 @@ Rules for anyone (human or agent) changing this repository. Start with this file
 - A plan is not permission to implement it. Preserve explicit pauses and pending product decisions across sessions; do not start the next roadmap item automatically. “Implemented”, “locally verified”, “externally accepted” and “merged to main” are separate claims. Portal-only support does not complete the backend contract.
 - Do not mark a task done from test counts alone. Check its acceptance criteria, record untested boundaries, and leave the next session a usable next step. No timestamp-only updates or duplicate status files.
 
+## 文档与测试证据精简
+
+- 只保留有决策或复现价值的设计、结论、必要测试和关键证据；每个事实只维护一处，其他文档链接引用。`current.md` 覆盖当前交接，历史结论留在原 dated update，不逐轮累积整份旧状态。
+- 默认不向仓库保存原始 JSON/JSONL、stdout/stderr、完整测试日志、逐帧/逐点采样、trace、中间值、生成 output 或多份相同截图。放入仓库外临时目录或 CI artifact；调试结束即清理，不复制到另一目录或改扩展名留存。
+- 验收记录只写基线、必要命令、结果摘要、关键指标、失败根因、跳过/未测边界与下一步。已有摘要足够时直接引用；纯文档小改不新增一整套重复验收报告。
+- 必要的最小回归 fixture、独有复现脚本和能证明 UI 问题的代表截图可以保留；新增时说明用途并删去重复材料。机器可读契约/配置不属于运行输出，不能按 JSON 扩展名误删。不要为证明测试通过提交几万或几十万行输出。
+- 纯文档/证据清理只检查差异、引用和留存内容；未改产品/测试/配置时，不重跑 Python 全套、Portal build 或浏览器。代码变更仍遵守下方验证要求。
+
 ## 1. What we are building
 
 AILab lite is the single-machine base of the AILab platform. Target architecture: `docs/architecture/` (frozen copy, see its README for the source version). Current state versus target: `docs/architecture/status-matrix.md`.

@@ -38,7 +38,7 @@ Docker 继续使用原有 exec 通路，stdin/stdout 直接连接本地文件描
 
 采样20ms；CPU数字包括本进程HTTP源与采样器，未扣除。吞吐/耗时包含SDK控制调用、创建、注入、copy、存储和释放；不能与旧整栈3.57s注入直接比较。磁盘spool最多每并发请求一份文件，Local/S3写入还可能有原子提交/multipart磁盘暂存；按部署PVC容量另计持久对象和沙箱文件。无新运行时依赖、无新增后台线程（采样仅测试）。
 
-原始数据与曲线：[RSS图](broker-streaming-20261023/rss.svg)、[CSV](broker-streaming-20261023/rss.csv)、[原始JSON目录](broker-streaming-20261023/)。可复跑脚本：[broker_transfer.py](../../platform/tests/load/broker_transfer.py)。容器安装依赖沿用 `platform/deploy/Dockerfile`；通过只读源码挂载验证上述提交，不使用开发.env。
+历史指标保留在上表，逐点采样与派生曲线已清理。可复跑脚本：[broker_transfer.py](../../platform/tests/load/broker_transfer.py)。容器安装依赖沿用 `platform/deploy/Dockerfile`；通过只读源码挂载验证上述提交，不使用开发.env。
 
 ## 仍需区分的边界
 

@@ -1,8 +1,0 @@
-NAME                               READY   STATUS    RESTARTS      AGE
-platform-agent-7cf7686667-gpxzs    1/1     Running   0             9m23s
-platform-api-6898764456-6x8vq      1/1     Running   0             9m26s
-platform-broker-597cd99566-kqn8m   1/1     Running   0             19m
-platform-clamav-f668c5c97-qxfmp    1/1     Running   0             20m
-platform-public-795459d65d-qm29v   1/1     Running   1 (31m ago)   62m
-platform-redis-c8dc8c985-7gv5x     1/1     Running   1 (31m ago)   62m
-platform-worker-57977f7db4-jkwvg   1/1     Running   0             9m25s

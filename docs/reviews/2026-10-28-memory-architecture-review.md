@@ -137,7 +137,7 @@
 环境：隔离 Python 3.12.11 venv，按 `platform/constraints.txt` 安装项目 dev/postgres 依赖；测试使用 `tests/conftest.py` 的临时 SQLite/storage、memory queue、mock sandbox。没有读取个人 `.env`，没有调用付费模型、外部 embedding、个人部署或业务数据库。
 
 - 既有 `test_user_memory.py / test_memory_dream.py / test_memory_recall.py / test_memory_embeddings.py`：**65 项通过**。包含原有权限、CAS、幂等、检索、来源与 bootstrap 覆盖。
-- [审查合同探针](memory-architecture-20261028/test_review_contracts.py)：**12 失败 / 1 通过**，归并上述 9 类问题。最终输出：[probes.txt](memory-architecture-20261028/probes.txt)。此前的 10、11 失败阶段是逐步补齐探针的中间结果，以最终输出为准。
+- [审查合同探针](memory-architecture-20261028/test_review_contracts.py)：**12 失败 / 1 通过**，归并上述 9 类问题。最终输出：probes.txt（原始输出已清理，结论见本文）。此前的 10、11 失败阶段是逐步补齐探针的中间结果，以最终输出为准。
 - 探针和产品源码 Ruff check/format、diff 检查见本轮交接。失败探针放在 review evidence 下，不加入默认产品 tests，也未改成 xfail 掩盖问题。
 - **未执行**全量 Python、PostgreSQL/Redis 合同、Portal build/E2E、真实模型/embedding/浏览器、故障重启与目标机容量测试。本轮仅审查，无产品修复，不把局部通过表述为全产品逻辑正确或已修复。
 

@@ -123,4 +123,4 @@ sampler 与 workload 分别运行；pod-map.json 由该 context 的 docker inspe
 
 ## 清理
 
-仅清理专用 profile 内本轮 namespace、测试容器、匿名/指定签名卷与本轮自建镜像，保留上游基础镜像；停止 `colima stop ailab-verify`，不删除 profile。具体执行结果见 cleanup.log。本地证据/备份保留供 lead 复查；私密 token/kubeconfig 临时副本在结束时删除。
+仅清理专用 profile 内本轮 namespace、测试容器、匿名/指定签名卷与本轮自建镜像，保留上游基础镜像；停止 `colima stop ailab-verify`，不删除 profile。清理结论见上级验收报告。本地证据/备份保留供 lead 复查；私密 token/kubeconfig 临时副本在结束时删除。

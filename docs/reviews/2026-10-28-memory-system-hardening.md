@@ -37,8 +37,8 @@
 - 原始审查13项全部转绿；正式 `test_memory_hardening.py` 额外覆盖范围、敏感确认、撤销、长文本/插话、账本、额度拒绝、并发claim和时间状态。
 - 本地完整浏览器：**118通过、0失败、0跳过**，包括新增桌面/390px的范围、来源、确认、暂停和对话开关；已人工检查最终两种宽度截图。Portal Node **42项通过**，production build/TypeScript通过。
 - SQLite完整套件首个稳定版本 **1448通过/101跳过**；PostgreSQL完整首轮1494通过/54跳过，唯一失败是新查询计划测试在单用户稀疏夹具上强绑索引名。已改为独立双库、4万行多用户语料，验证真实优化器允许的索引路径及新增索引存在，双库2/2通过；不关闭优化器、不改产品正确性断言。
-- 最终完整组测：SQLite **1451通过/102跳过**、PostgreSQL+Redis **1499通过/54跳过**，0失败；原始输出：[SQLite](memory-architecture-20261028/accepted-sqlite.txt)、[PG](memory-architecture-20261028/accepted-postgres.txt)。组测后最后复核又收紧输入固化/向量跳过时的锁边界、清除删除缓存、离线评估的计费身份；最终产品提交的相关PG **74通过/1跳过**、SQLite **36通过**，未将之前全套冒充最后几行调整后的全套；精确PR head由CI再次全量验证。Ruff check/format、导入/技能/依赖锁检查、CI脚本28项、diff检查通过。
-- [上下文golden](../../platform/tests/golden/memory.json)覆盖当前/历史、项目、精确ID、暂停、敏感推断、无关查询、关闭及strict scope；CI由 `test_memory_golden.py` 执行。[离线结果](memory-architecture-20261028/golden-context.json) required recall=1、context-hurt=0，空记忆基线recall=0。**这是上下文契约质量，不是假装测得真实模型答案准确率或端到端memory-hurt。**
+- 最终完整组测：SQLite **1451通过/102跳过**、PostgreSQL+Redis **1499通过/54跳过**，0失败；原始输出：SQLite（原始输出已清理，结论见本文）、PG（原始输出已清理，结论见本文）。组测后最后复核又收紧输入固化/向量跳过时的锁边界、清除删除缓存、离线评估的计费身份；最终产品提交的相关PG **74通过/1跳过**、SQLite **36通过**，未将之前全套冒充最后几行调整后的全套；精确PR head由CI再次全量验证。Ruff check/format、导入/技能/依赖锁检查、CI脚本28项、diff检查通过。
+- [上下文golden](../../platform/tests/golden/memory.json)覆盖当前/历史、项目、精确ID、暂停、敏感推断、无关查询、关闭及strict scope；CI由 `test_memory_golden.py` 执行。离线结果（原始输出已清理，结论见本文） required recall=1、context-hurt=0，空记忆基线recall=0。**这是上下文契约质量，不是假装测得真实模型答案准确率或端到端memory-hurt。**
 
 ### 性能
 
@@ -49,7 +49,7 @@
 | SQLite | 97.83ms | 141.15ms | 2.96s | 约119MiB |
 | PostgreSQL | 163.10ms | 214.42ms | 0.37s | 约127MiB |
 
-原始query plans和测量：[SQLite](memory-architecture-20261028/benchmark-sqlite.json)、[PostgreSQL](memory-architecture-20261028/benchmark-postgres.json)，复现[脚本](memory-architecture-20261028/benchmark.py)。添加(user,created,id)、(status,created,id)及工作项(user,state,run)索引；查询计划允许优化器使用已有user索引。后台用户扫描分200人、任务恢复分100个，metrics只读取最近365次，删除副本流式分100行。
+原始query plans和测量：SQLite（原始输出已清理，结论见本文）、PostgreSQL（原始输出已清理，结论见本文），复现[脚本](memory-architecture-20261028/benchmark.py)。添加(user,created,id)、(status,created,id)及工作项(user,state,run)索引；查询计划允许优化器使用已有user索引。后台用户扫描分200人、任务恢复分100个，metrics只读取最近365次，删除副本流式分100行。
 
 这些是Mac本机合成语料、关闭真实embedding下的测量；不宣称目标2CPU/8GiB整栈并发已验。新索引有写入/磁盘成本，每次模型调用也有独立额度预留；没有新增常驻模型进程或重型依赖。
 

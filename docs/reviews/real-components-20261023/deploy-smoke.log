@@ -1,4 +1,0 @@
-smoke test
-PASS the published default token is rejected
-PASS selectable models: ailab-demo
-PASS task on ailab-demo succeeded (8s)
