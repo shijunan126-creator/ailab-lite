@@ -86,6 +86,14 @@ def invalidate(db, user_id, file_ids):
         .where(MessageFileRef.file_id.in_(file_ids), MessageFileRef.invalidated_epoch.is_(None))
         .values(invalidated_epoch=epoch)
     )
+    from ..skill_drafts.service import invalidate_drafts
+
+    affected = descendants(user_id, file_ids)
+    conversation_ids = list(
+        db.scalars(select(Run.conversation_id).where(Run.id.in_(select(affected.c.id)), Run.conversation_id.is_not(None)).distinct())
+    )
+    if conversation_ids:
+        invalidate_drafts(db, user_id, conversation_ids)
     for fid in file_ids:
         item = db.get(FileSourceInvalidation, fid)
         if item:
