@@ -82,6 +82,8 @@ WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保
 
 def _tools_for_run(run):
     catalog = tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()
+    if not settings.client_js_enabled or (run.get("options") or {}).get("client") != "portal":
+        catalog = [t for t in catalog if t["function"]["name"] != "run_js"]
     spec = get_catalog().get(run.get("model"))
     if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
         catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
@@ -1338,6 +1340,41 @@ class AgentLoop:
                     run_id, {"status": RunStatus.WAITING_USER, "question": q, "result": {"sources": state["sources"]}}
                 )
                 raise RunPaused()
+        elif call.name == "run_js":
+            if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
+                return {"ok": False, "error": {"type": "unavailable", "message": "当前运行没有可用的浏览器执行环境"}}
+            args = call.arguments
+            code, timeout = args.get("code"), args.get("timeout_ms", 2000)
+            try:
+                valid = (
+                    isinstance(code, str)
+                    and len(code.encode()) <= settings.client_js_code_max_bytes
+                    and len(json.dumps(args.get("input"), ensure_ascii=False, allow_nan=False).encode())
+                    <= settings.client_js_input_max_bytes
+                    and isinstance(timeout, int)
+                    and not isinstance(timeout, bool)
+                    and 100 <= timeout <= settings.client_js_max_timeout_ms
+                )
+            except (ValueError, TypeError):
+                valid = False
+            if not valid:
+                return {"ok": False, "error": {"type": "runtime", "message": "代码、输入或超时参数超出限制"}}
+            call_id = f"{run_id}:{invocation}"
+
+            async def wait_for_client():
+                call_state = await self.platform.create_client_call(
+                    run_id, {"call_id": call_id, "kind": "js", "payload": {"code": code, "input": args.get("input"), "timeout_ms": timeout}}
+                )
+                deadline = time.monotonic() + timeout / 1000 + 12
+                while call_state["status"] in {"pending", "claimed"} and time.monotonic() < deadline:
+                    await asyncio.sleep(0.25)
+                    call_state = await self.platform.get_client_call(run_id, call_id)
+                return call_state.get("result") or {
+                    "ok": False,
+                    "error": {"type": "unavailable", "message": "浏览器执行等待超时，请告知用户或使用其他方法"},
+                }
+
+            result = await self._interruptible(run_id, wait_for_client())
         elif call.name == "update_plan":
             steps = call.arguments.get("steps")
             if (
