@@ -1,5 +1,12 @@
 # HANDOFF
 
+## 2026-10-30 Skills / memory 集成
+
+- 恢复个人技能的冻结版本必须以当前 Run 的 checkpoint 精确绑定并重新核对用户、删除和审核策略；仅依赖当前技能 head 会在更新后卡住沙箱。读取和解包必须有大小上限，失效时警告并继续。
+- `0042` 降级前按用户和本地日期确定性保留一条记录；同日多批是正常数据。当前没有外键引用 `memory_dream_runs`。
+- Prompt 稳定系统段与动态项目/记忆段分别位于首两个消息；测试历史、恢复图片和摘要时不能继续假设用户消息紧接第一段系统提示。`client_calls` 测试清理须先于 runs。
+- Portal Skill `kind` 是 `base|builtin|personal`，个人文件格式是 `kind_file`；旧 Skills 页面按 `kind == md|zip` 比较会使生产构建失败。E2E 的 composer 是 contenteditable，技能 chip 不能用 fill 覆盖。
+
 ## 2026-10-30 收起侧栏与手机字号
 
 - 收起 Grid 侧栏必须将列宽变量 `--side-w` 设为 0；只隐藏侧栏不会归还列宽。

@@ -1,5 +1,11 @@
 # 当前工作
 
+## Skills / memory 集成 I1（2026-10-30）
+
+`feat/sm-integration`，基线 `efa99a1`（`feat/skills-memory` 四包合并）；本轮用户授权后端修复、验证和本地提交，不 push、不部署，不修改 Portal。后端修复及实际验证见 [I1 记录](updates/2026-10-30-skills-memory-integration-i1.md)。旧章节中的分支和发布授权不适用于本任务。
+
+下一步：Claude 修复 Portal SkillKind 编译错误并完成相关页面后，重新运行整套 E2E；对最终代码基线按需要重新运行完整后端套件。当前 E2E 无法启动，不能标为集成完成。
+
 ## 菜单、收起侧栏与手机字号修复（2026-10-30）
 
 `fix/sidebar-menu-motion`，base `origin/main@e586ff6`，[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109)。用户本轮明确授权提交、push、仅 Portal 增量部署，以及最终 head CI 全绿后 squash 合并。Claude 完成 UI 修复、验证并担任最终审阅；Codex 维护记录与发布。
