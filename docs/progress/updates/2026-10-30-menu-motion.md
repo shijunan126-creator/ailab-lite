@@ -25,8 +25,8 @@
 - 新增 `test_collapsed_sidebar_gives_back_its_column_and_phone_fields_never_zoom`：收起时主列 x=0、按钮组 x≤12px，390px 文件页全部文本字段 16px；记忆 E2E 同步驱动 Select 的 button → listbox → option。
 - Codex 扩展改动提交前复核：Ruff check/format（464 文件）与 Portal 19 文件 / 96 项通过。未重复 Claude 浏览器/定向 E2E；完整套件和 build 由 PR CI 执行。
 - 未测：真实 iOS/Android 设备（仅 Chromium 390px 视口）、新手机字号下 GenUI 组件截图。
-- 本轮已授权增量部署，结果待执行后补充。P6、目录扩展与多块付费评测不在本轮范围。
+- 部署 `ui-fix-1865bd458cbb`（源 `be68280` 固定产品树）：仅重建 Portal，npm 依赖层缓存复用，其他镜像沿用。sync/build-portal/up/health/portal-http/migration 全部 exit 0；12 服务 running，配置健康检查均 healthy，Portal HTTP 200，Alembic head/database 均 0039。无备份、部署后浏览器/模型或其他测试。个人状态与命令日志仅留本机部署目录。P6、目录扩展与多块付费评测不在本轮范围。
 
 ## PR 跟进
 
-[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109)：既有菜单修复 `b6b42b6`；本轮扩展修复、记录与部署提交后等待最终 head CI，全绿即 squash 合并。
+[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109)：既有菜单修复 `b6b42b6`；扩展修复 `dbedb90`、记录 `be68280`，部署记录提交后等待最终 head CI，全绿即 squash 合并。

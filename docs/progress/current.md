@@ -6,9 +6,9 @@
 
 范围：菜单按压跳动/锚定、收起侧栏归还列宽、手机统一字号及字段防缩放、记忆页共享 Select 与控件高度。根因、检查与未测边界见[本轮记录](updates/2026-10-30-menu-motion.md)。Codex Ruff check/format 与 Portal 96 项通过；完整检查交给 PR CI。
 
-**部署**：待执行本轮 Portal-only 增量部署，其他镜像复用；无备份、部署后浏览器/模型或其他测试。
+**部署**：`ui-fix-1865bd458cbb`，源 `be68280` 的固定产品树；只重建 Portal、复用其他镜像。sync/build-portal/up/health/portal-http/migration 均 exit 0；12 服务 running、配置健康检查均 healthy，Portal HTTP 200，Alembic head/database 0039。无备份、部署后浏览器/模型或其他测试。
 
-**下一步**：部署并记录 tag，push 后等待最终 head CI 全绿并 squash 合并。P6 与组件目录扩展仍待用户决定，多块穿插尚未付费评测，不自动推进。
+**下一步**：部署记录已提交后等待最终 head CI 全绿并 squash 合并。P6 与组件目录扩展仍待用户决定，多块穿插尚未付费评测，不自动推进。
 
 ## GenUI 组件目录 v2 与按需披露（2026-10-30）
 
