@@ -336,6 +336,8 @@ class Settings(BaseSettings):
     memory_dream_interval_seconds: int = Field(default=300, ge=30, le=3600)
     memory_dream_model: str = ""  # empty -> catalog default
     memory_dream_max_users: int = Field(default=5, ge=1, le=100)
+    memory_dream_manual_batches: int = Field(default=3, ge=1, le=100)
+    memory_dream_auto_batches: int = Field(default=6, ge=1, le=100)
     memory_dream_min_runs: int = Field(default=2, ge=1, le=100)
     memory_dream_input_chars: int = Field(default=8000, ge=1000, le=100_000)
     memory_dream_confidence: float = Field(default=0.8, ge=0.5, le=1)

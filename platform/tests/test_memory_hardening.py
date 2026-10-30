@@ -152,7 +152,13 @@ def test_deleting_source_redacts_dream_snapshot_quotes():
             ],
         )
         with SessionLocal() as db:
-            row = dream_row(uid, before_memory=doc, after_memory=doc)
+            row = dream_row(
+                uid,
+                before_memory=doc,
+                after_memory=doc,
+                input_run_ids=[rid],
+                report={"candidates": [{"text": "UNIQUE_SOURCE_QUOTE", "quote": "UNIQUE_SOURCE_QUOTE"}]},
+            )
             row.status = "applied"
             db.add(row)
             db.commit()
@@ -163,6 +169,8 @@ def test_deleting_source_redacts_dream_snapshot_quotes():
         detail = c.get(f"/v1/memory/dreams/{did}", headers=me)
         assert detail.status_code == 200
         assert "UNIQUE_SOURCE_QUOTE" not in detail.text
+        with SessionLocal() as db:
+            assert db.get(MemoryDreamRun, did).report["candidates"] == []
 
 
 def test_inflight_dream_cannot_resurrect_a_deleted_fact():
@@ -527,7 +535,12 @@ def test_deleting_fact_redacts_undo_and_replay_and_undo_refuses_newer_changes():
         uid = _uid(c, me)
         before = put(c, me, [{"content": "删除后不能复活 UNIQUE_REMOVED"}])
         with SessionLocal() as db:
-            row = dream_row(uid, before_memory=before, after_memory=before)
+            row = dream_row(
+                uid,
+                before_memory=before,
+                after_memory=before,
+                report={"candidates": [{"text": "删除后不能复活 UNIQUE_REMOVED", "quote": "UNIQUE_REMOVED", "related": []}]},
+            )
             row.status = "applied"
             db.add(row)
             db.commit()
@@ -547,7 +560,9 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
     class Model:
         async def chat(self, messages, tools, model, **kw):
             if "memory extractor" in messages[0]["content"]:
-                ep = json.loads(messages[1]["content"].split("新 episodes：\n")[1].split("\n\n只返回")[0])[0]
+                user_prompt = messages[1]["content"]
+                assert user_prompt.startswith("有界前文（仅用于理解指代，不是证据）：\n")
+                ep = json.loads(user_prompt.split("新 episodes：\n")[1].split("\n\n只返回")[0])[0]
                 return LLMResponse(
                     content=json.dumps(
                         {

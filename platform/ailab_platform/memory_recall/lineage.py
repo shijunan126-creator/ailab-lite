@@ -60,6 +60,9 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
         return entry
 
     _rewrite_copies(db, user.id, redact)
+    for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id).execution_options(yield_per=100)):
+        if set(dream.input_run_ids or []) & run_ids:
+            dream.report = {**(dream.report or {}), "candidates": []}
 
     stored = (user.settings or {}).get("memory") or {}
     entries, changed, dropped = [], 0, 0
@@ -120,6 +123,14 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
         dream.before_memory = document(dream.before_memory or {})
         dream.after_memory = document(dream.after_memory or {})
+        candidates = []
+        for entry in (dream.report or {}).get("candidates", []):
+            next_ = rewrite(entry)
+            if next_ is not None:
+                candidates.append(
+                    {**next_, "related": [item for related in next_.get("related", []) if (item := rewrite(related)) is not None]}
+                )
+        dream.report = {**(dream.report or {}), "candidates": candidates}
         dream.plan = {
             **(dream.plan or {}),
             "changes": [next_ for entry in (dream.plan or {}).get("changes", []) if (next_ := rewrite(entry)) is not None],

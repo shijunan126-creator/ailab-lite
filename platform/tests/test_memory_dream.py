@@ -290,17 +290,16 @@ def test_a_failed_dream_is_retried_the_same_day(monkeypatch) -> None:
             db.commit()
         # 19:00 UTC is 03:00 in Shanghai on 2026-10-26: inside the default quiet window.
         now = datetime(2026, 10, 25, 19, 0, tzinfo=UTC)
-        assert "dream_failed" in service.claim_due(now=now)
+        claimed = service.claim_due(now=now)
+        assert len(claimed) == 1 and claimed[0] != "dream_failed"
         with SessionLocal() as db:
-            row = db.get(MemoryDreamRun, "dream_failed")
-            assert row.status == "pending" and row.trigger == "cron" and row.error == ""
-            assert len(row.input_run_ids) == 2  # the retry also picks up runs since the failure
-            row.status = "applied"
-            db.commit()
-        assert "dream_failed" not in service.claim_due(now=now)
+            row = db.get(MemoryDreamRun, claimed[0])
+            assert row.status == "pending" and row.trigger == "cron"
+            assert len(row.input_run_ids) == 2
+        assert service.claim_due(now=now) == []
 
 
-def test_manual_trigger_retries_a_failed_night_and_refuses_an_applied_one() -> None:
+def test_manual_trigger_allows_new_batches_same_day() -> None:
     today = datetime.now(UTC).astimezone(ZoneInfo("Asia/Shanghai")).date().isoformat()
     with TestClient(app) as c:
         me = _user(c)
@@ -323,10 +322,116 @@ def test_manual_trigger_retries_a_failed_night_and_refuses_an_applied_one() -> N
                 )
             )
             db.commit()
-        retried = c.post("/v1/memory/dream/run", headers=me)
-        assert retried.status_code == 200 and retried.json()["id"] == "dream_manual"
+        empty = c.post("/v1/memory/dream/run", headers=me)
+        assert empty.status_code == 200 and empty.json() == {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
         with SessionLocal() as db:
-            row = db.get(MemoryDreamRun, "dream_manual")
+            db.add(Run(id="run_manual_pending", user_id=me_doc["id"], title="t", prompt="p", status="succeeded", summary="s"))
+            db.commit()
+        started = c.post("/v1/memory/dream/run", headers=me)
+        assert started.status_code == 202 and started.json()["id"] != "dream_manual"
+        assert started.json()["pending_runs"] == 1
+
+
+def test_status_and_manual_reuse_active_even_with_unfinished_turn() -> None:
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = c.get("/v1/me", headers=me).json()["id"]
+        with SessionLocal() as db:
+            db.add(Run(id="run_status_pending", user_id=uid, title="t", prompt="p", status="succeeded", summary="s"))
+            db.add(Run(id="run_status_active", user_id=uid, title="t", prompt="p", status="waiting_user", summary="s"))
+            db.add(
+                MemoryDreamRun(
+                    id="dream_active_status",
+                    user_id=uid,
+                    local_date="2026-10-30",
+                    timezone="Asia/Shanghai",
+                    status="pending",
+                    trigger="manual",
+                )
+            )
+            db.commit()
+        response = c.post("/v1/memory/dream/run", headers=me)
+        assert response.status_code == 200
+        assert response.json() == {"id": "dream_active_status", "status": "pending", "reused": True, "pending_runs": 1}
+        status = c.get("/v1/memory/dream/status", headers=me).json()
+        assert status["pending_runs"] == 1
+        assert status["active"] == {"id": "dream_active_status", "status": "pending", "trigger": "manual"}
+        assert status["manual_batches_limit"] == service.settings.memory_dream_manual_batches
+
+
+def test_extractor_reports_rejected_candidates_and_does_not_send_existing_facts(monkeypatch):
+    import json
+
+    captured = []
+
+    async def chat(messages, model, user):
+        captured.extend(messages)
+        return json.dumps(
+            {
+                "facts": [
+                    {"text": "用户喜欢蓝色", "source_quote": "我喜欢蓝色", "confidence": 0.1},
+                    {"text": "用户喜欢红色", "source_quote": "不存在", "confidence": 0.99},
+                ]
+            }
+        ), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    episode = MemoryEpisode(
+        id="epi_test",
+        user_id="u",
+        run_id="r",
+        observed_at=datetime.now(UTC),
+        content_hash="x",
+        digest=json.dumps({"user_said": "我喜欢蓝色", "assistant_replied": ""}, ensure_ascii=False),
+        token_count=1,
+    )
+    rejected = []
+    token = service.dream_rejected.set(rejected)
+    try:
+        facts, _, _ = asyncio.run(service._extract([episode], [{"id": "m", "content": "PRIVATE EXISTING FACT"}], User(id="u")))
+    finally:
+        service.dream_rejected.reset(token)
+    assert facts == []
+    assert [r["outcome"] for r in rejected] == ["low_confidence", "quote_mismatch"]
+    assert "PRIVATE EXISTING FACT" not in captured[1]["content"]
+    assert "仅用于理解指代，不是证据" in captured[1]["content"]
+
+
+def test_manual_chain_respects_limit_after_recovery(monkeypatch):
+    from ailab_platform.models import MemoryWorkItem
+
+    monkeypatch.setattr(service.settings, "memory_dream_manual_batches", 3)
+    calls = []
+
+    async def finish_one(run_id):
+        calls.append(run_id)
+        with SessionLocal() as db:
+            row = db.get(MemoryDreamRun, run_id)
+            pending = service._new_runs(db, row.user_id, None, datetime.now(UTC), limit=1)
+            if pending:
+                db.add(MemoryWorkItem(run_id=pending[0].id, user_id=row.user_id, state="done", candidates=[]))
             row.status = "applied"
             db.commit()
-        assert c.post("/v1/memory/dream/run", headers=me).status_code == 409
+
+    monkeypatch.setattr(service, "process_dream", finish_one)
+    with TestClient(app) as c:
+        uid = c.get("/v1/me", headers=_user(c)).json()["id"]
+        with SessionLocal() as db:
+            for index in range(4):
+                db.add(Run(id=f"run_chain_{index}", user_id=uid, title="t", prompt="p", status="succeeded"))
+            db.add(
+                MemoryDreamRun(
+                    id="dream_chain_resume",
+                    user_id=uid,
+                    local_date="2026-10-30",
+                    timezone="Asia/Shanghai",
+                    status="pending",
+                    trigger="manual",
+                    batch_index=2,
+                )
+            )
+            db.commit()
+        asyncio.run(service.process_dream_chain("dream_chain_resume"))
+        assert len(calls) == 2
+        with SessionLocal() as db:
+            assert len(service._new_runs(db, uid, None, datetime.now(UTC))) == 2
