@@ -8,6 +8,7 @@ import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMes
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
 import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
+import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
@@ -766,6 +767,17 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const turnResume = useStable(resume);
   const turnAnswer = useStable(answer);
   const turnRetry = useStable(retry);
+  const turnExtract = useStable(async () => {
+    if (!id) return false;
+    setError("");
+    try {
+      await extractSkill(id);
+      return true;
+    } catch (err) {
+      setError(errorMessage(err));
+      return false;
+    }
+  });
   const turnEdit = useStable(edit);
   const turnSwitch = useStable(switchTo);
   const turnFork = useStable(fork);
@@ -909,6 +921,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     onResume={turnResume}
                     onAnswer={turnAnswer}
                     onRetry={running ? undefined : turnRetry}
+                    onExtract={turnExtract}
                     onEdit={turnEdit}
                     onSwitch={turnSwitch}
                     locked={running}

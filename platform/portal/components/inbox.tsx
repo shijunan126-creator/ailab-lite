@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { api, Notice, NotificationKind } from "../lib/api";
 import { timeAgo } from "../lib/format";
-import { IconAsk, IconBell, IconCheck, IconClock, IconShare, IconX } from "./icons";
+import { IconAsk, IconBell, IconCheck, IconClock, IconShare, IconSparkles, IconX } from "./icons";
 
 const POLL_MS = 30_000;
 const POP_W = 340;
@@ -17,10 +17,13 @@ const KIND: Record<NotificationKind, { label: string; icon: React.ReactNode; ton
   "schedule.succeeded": { label: "定时任务已完成", icon: <IconClock size={15} />, tone: "ok" },
   "schedule.failed": { label: "定时任务未完成", icon: <IconClock size={15} />, tone: "danger" },
   "share.received": { label: "分享给你", icon: <IconShare size={15} />, tone: "info" },
+  "skill_draft.ready": { label: "技能草稿待确认", icon: <IconSparkles size={15} />, tone: "ok" },
+  "skill_draft.failed": { label: "技能提取失败", icon: <IconSparkles size={15} />, tone: "danger" },
 };
 
 export function noticeHref(n: Notice): string {
   if (n.kind === "share.received" && n.share_id) return `/s/${n.share_id}`;
+  if (n.kind.startsWith("skill_draft.")) return "/skills";
   if (!n.conversation_id) return "/";
   return `/c/${n.conversation_id}${n.run_id ? `?run=${n.run_id}` : ""}`;
 }

@@ -11,7 +11,7 @@ import { fromPayload, plainText, sentSkills, toPayload, type Part, type SkillPic
 import MessageText from "./message-text";
 import RichInput, { type RichInputHandle } from "./rich-input";
 import CopyButton from "../copy-button";
-import { IconBranch, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconTemplate } from "../icons";
+import { IconBranch, IconCheck, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconSparkles, IconTemplate } from "../icons";
 import { ExtTile } from "../library/file-tile";
 import FileMenu from "../library/file-menu";
 import Answer from "./answer";
@@ -175,6 +175,7 @@ export default memo(function Turn({
   onResume,
   onAnswer,
   onRetry,
+  onExtract,
   onEdit,
   onSwitch,
   locked,
@@ -197,6 +198,7 @@ export default memo(function Turn({
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
   onRetry?: (run: Run) => Promise<void>;
+  onExtract?: () => Promise<boolean>;
   onEdit?: (run: Run, prompt: string, skills: SkillPick[]) => Promise<boolean>;
   onSwitch?: (runId: string) => Promise<void>;
   locked?: boolean; // an answer is being written: versions and edits wait for it
@@ -398,6 +400,7 @@ export default memo(function Turn({
                   <IconRetry size={15} />
                 </button>
               ) : null}
+              {last && done && onExtract ? <ExtractButton onExtract={onExtract} /> : null}
               {done && onFork && forkModes?.length ? <ForkButton modes={forkModes} onFork={(mode) => onFork(run, mode)} /> : null}
               {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
               <span className="meta-text">{modelLabel}</span>
@@ -411,6 +414,26 @@ export default memo(function Turn({
     </div>
   );
 });
+
+/** Turn what this conversation worked out into a skill draft; it is made in the background (the sidebar shows progress). */
+function ExtractButton({ onExtract }: { onExtract: () => Promise<boolean> }) {
+  const [state, setState] = useState<"idle" | "busy" | "started">("idle");
+  useEffect(() => {
+    if (state !== "started") return;
+    const t = setTimeout(() => setState("idle"), 2400);
+    return () => clearTimeout(t);
+  }, [state]);
+  const label = state === "started" ? "已开始提取技能" : "提取技能";
+  return (
+    <button type="button" className={`icon-btn act ${state === "busy" ? "busy" : ""}`} aria-label={label} title={label} disabled={state !== "idle"}
+      onClick={async () => {
+        setState("busy");
+        setState((await onExtract()) ? "started" : "idle");
+      }}>
+      {state === "started" ? <IconCheck size={15} /> : <IconSparkles size={15} />}
+    </button>
+  );
+}
 
 /** Editing a sent message in place, chips and all: Enter sends it as a new version, Escape keeps the old one. */
 function EditBox({ initial, onCancel, onSubmit }: { initial: Part[]; onCancel: () => void; onSubmit: (parts: Part[]) => Promise<void> }) {

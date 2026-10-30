@@ -4,14 +4,14 @@ import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Switch from "../../../components/switch";
-import { IconChart, IconDownload, IconPlus, IconSheet, IconSlides, IconSparkles, IconUpload } from "../../../components/icons";
+import { IconDownload, IconPlus, IconSparkles, IconUpload } from "../../../components/icons";
+import { skillIcon } from "../../../components/chat/composer";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
-import MarketPanel from "../../../components/skills/market";
+import DraftEditor from "../../../components/skills/draft-editor";
 import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
-import { API_BASE, api, FileItem, redirectIfUnauthorized, Skill } from "../../../lib/api";
+import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, Skill, SkillDraft, skillKind } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
-
-const ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = { pptx: IconSlides, xlsx: IconSheet, data: IconChart };
+import { draftLabel, draftsChanged, useActiveDrafts, working } from "../../../lib/skill-drafts";
 
 const TEMPLATE = `---
 name: weekly-report
@@ -47,6 +47,7 @@ function SkillRow({
   locked,
   onToggle,
   onOpen,
+  onCustomize,
   onDelete,
 }: {
   s: Skill;
@@ -54,53 +55,84 @@ function SkillRow({
   locked?: boolean;
   onToggle: (on: boolean) => void;
   onOpen: () => void;
+  onCustomize?: () => void;
   onDelete?: () => void;
 }) {
-  const Icon = ICONS[s.name] || IconSparkles;
-  const action = s.scope === "personal" && s.kind === "zip" ? "更新" : s.scope === "personal" && s.kind === "md" ? "编辑" : "查看";
+  const Icon = skillIcon(s.name);
+  const kind = skillKind(s);
+  const toggleable = s.toggleable ?? kind !== "base";
   return (
-    <div className={`skill-row ${s.enabled ? "" : "off"} ${s.error ? "broken" : ""}`}>
+    <div className={`skill-row ${s.enabled || !toggleable ? "" : "off"} ${s.error ? "broken" : ""}`}>
       <span className="skill-icon">
         <Icon size={20} />
       </span>
       <div className="grow">
         <div className="skill-title">
           {s.title}
-          {s.name ? <span className="chip mono">{s.name}</span> : null}
-          {s.scope === "personal" ? <span className="chip">{s.kind === "zip" ? `压缩包 · ${s.files} 个文件` : "SKILL.md"}</span> : <span className="chip">内置</span>}
+          {kind === "personal" && s.kind_file === "zip" ? <span className="chip">{s.files} 个文件</span> : null}
         </div>
         {s.description ? <div className="skill-desc">{s.description}</div> : null}
-        {s.scope === "personal" ? (
-          <div className="skill-file hint">
-            技能文件：{s.filename}
-            {s.error ? <span className="error">　无法使用：{s.error}</span> : null}
-          </div>
-        ) : null}
+        {s.error ? <div className="skill-file hint"><span className="error">无法使用：{s.error}</span></div> : null}
       </div>
       <div className="skill-editor-actions">
-        <button className="link" onClick={onOpen} disabled={locked} aria-label={`${action} ${s.title}`}>
-          {action}
+        <button className="link" onClick={onOpen} disabled={locked} aria-label={`${kind === "personal" ? "编辑" : "查看"} ${s.title}`}>
+          {kind === "personal" ? "编辑" : "查看"}
         </button>
+        {onCustomize ? (
+          <button className="link" onClick={onCustomize} aria-label={`另存 ${s.title} 为个人技能`}>
+            另存
+          </button>
+        ) : null}
+        {kind === "personal" && s.kind_file === "zip" && s.file_id ? (
+          <a className="link" href={downloadUrl(`/v1/files/${s.file_id}/content`)} download={s.filename} aria-label={`下载 ${s.title}`}>
+            下载
+          </a>
+        ) : null}
         {onDelete ? (
-          <button className="link danger-text" onClick={onDelete} title="删除这个技能">
+          <button className="link danger-text" onClick={onDelete} aria-label={`删除 ${s.title}`}>
             删除
           </button>
         ) : null}
       </div>
-      <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
+      {toggleable ? (
+        <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
+      ) : (
+        <span className="switch-slot" />
+      )}
+    </div>
+  );
+}
+
+function DraftRow({ d, onOpen, onDiscard }: { d: SkillDraft; onOpen: () => void; onDiscard: () => void }) {
+  const title = d.title || d.name || (d.base ? d.base.name : d.conversation_title ? `「${d.conversation_title}」` : "技能草稿");
+  return (
+    <div className={`skill-row draft-row ${d.status}`}>
+      <span className="skill-icon">{working(d) ? <span className="draft-spin" /> : <IconSparkles size={20} />}</span>
+      <button className="grow draft-open" onClick={onOpen}>
+        <div className="skill-title">
+          {title}
+          <span className={`chip draft-state ${d.status}`}>{draftLabel(d)}</span>
+        </div>
+        {d.status === "failed" && d.error ? <div className="skill-desc error">{d.error}</div> : d.summary ? <div className="skill-desc">{d.summary}</div> : null}
+      </button>
+      <div className="skill-editor-actions">
+        <button className="link" onClick={onOpen}>{d.status === "ready" ? "查看" : d.status === "failed" ? "重试" : "打开"}</button>
+        <button className="link danger-text" onClick={onDiscard} aria-label={`丢弃 ${title}`}>丢弃</button>
+      </div>
     </div>
   );
 }
 
 export default function SkillsPage() {
-  const [storage, setStorage] = useState<{used_bytes: number; limit_bytes: number; available_bytes: number} | null>(null);
+  const [storage, setStorage] = useState<{ used_bytes: number; limit_bytes: number; available_bytes: number } | null>(null);
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<"mine" | "market">("mine");
   const [editing, setEditing] = useState<EditorTarget | null>(null);
+  const [draft, setDraft] = useState<string | null>(null);
   const [scanning, setScanning] = useState<ReadonlySet<string>>(new Set()); // new versions not yet scanned
+  const drafts = useActiveDrafts();
   const scans = useRef<AbortController | null>(null);
   const picker = useRef<HTMLInputElement | null>(null);
   const generation = useRef(0);
@@ -109,16 +141,20 @@ export default function SkillsPage() {
   const load = useCallback(() => {
     const current = ++generation.current;
     const active = () => !disposed.current && generation.current === current;
-    api<{used_bytes: number; limit_bytes: number; available_bytes: number}>("/v1/skills/storage")
-      .then((value) => { if (active()) setStorage(value); }).catch(() => undefined);
+    api<{ used_bytes: number; limit_bytes: number; available_bytes: number }>("/v1/skills/storage")
+      .then((value) => { if (active()) setStorage(value); })
+      .catch(() => undefined);
     return api<Skill[]>("/v1/skills")
       .then((value) => { if (active()) setSkills(value.filter((s) => !s.implicit)); })
-      .catch((e) => { if (active()) setError(String(e?.message || e)); });
+      .catch((e) => { if (active()) setError(errorMessage(e)); });
   }, []);
   useEffect(() => {
     disposed.current = false;
     scans.current = new AbortController();
     load();
+    // a link from a notification or another page: /skills?draft=sd_…
+    const wanted = new URLSearchParams(window.location.search).get("draft");
+    if (wanted) setDraft(wanted);
     return () => { disposed.current = true; generation.current++; scans.current?.abort(); };
   }, [load]);
 
@@ -145,35 +181,40 @@ export default function SkillsPage() {
     else if (file && scanProblem(file)) setError(`${label}：${scanProblem(file)}`);
   }
 
-  function installed(fileId: string, title: string) {
-    setTab("mine");
-    settle(fileId, `安装 ${title}`);
-  }
-
   function saved(fileId: string, label: string) {
     setEditing(null);
+    setDraft(null);
     setError("");
     settle(fileId, label);
   }
 
-  async function replace(s: Skill, file: File) {
+  /** Edit a personal skill, or start a personal copy of a platform one, as a draft. An open draft of the same skill is reused. */
+  async function openDraft(s: Skill) {
     setEditing(null);
     setError("");
-    const form = new FormData();
-    form.append("upload", file);
-    const head = s.file_id!;
-    setScanning((ids) => new Set(ids).add(head)); // no second replacement while this one uploads
-    // a new version of the same file lineage: the package is replaced whole, scripts included
-    const resp = await fetch(`${API_BASE}/v1/files?purpose=skill&parent_id=${encodeURIComponent(head)}`, { method: "POST", body: form }).finally(() =>
-      setScanning((ids) => { const next = new Set(ids); next.delete(head); return next; })
-    );
-    redirectIfUnauthorized(resp);
-    if (!resp.ok) {
-      setError(`${file.name}：上传失败（${resp.status}）`);
-      return;
+    const kind = skillKind(s);
+    const existing = drafts?.find((d) => d.origin === "skill" && d.base?.name === s.name && (kind !== "personal" || d.base?.file_id === s.file_id));
+    if (existing) return setDraft(existing.id);
+    setBusy(s.name);
+    try {
+      const created = await api<SkillDraft>(`/v1/skills/${encodeURIComponent(s.name)}/drafts`, { method: "POST", body: "{}" });
+      draftsChanged();
+      setDraft(created.id);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
     }
-    const item: FileItem = await resp.json();
-    settle(item.id, s.title);
+  }
+
+  async function discard(d: SkillDraft) {
+    if (!(await confirmDialog({ title: "丢弃这个草稿？", body: "已有的技能不受影响。", action: "丢弃", danger: true }))) return;
+    try {
+      await api(`/v1/skill-drafts/${d.id}?expected_revision=${d.revision}`, { method: "DELETE" });
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+    draftsChanged();
   }
 
   async function toggle(s: Skill, enabled: boolean) {
@@ -182,8 +223,8 @@ export default function SkillsPage() {
     setSkills((list) => list?.map((x) => (x.name === s.name && x.scope === s.scope ? { ...x, enabled } : x)) || list); // optimistic
     try {
       await api(`/v1/skills/${s.name}`, { method: "PUT", body: JSON.stringify({ enabled }) });
-    } catch (e: any) {
-      setError(`没能保存：${e?.message || e}`);
+    } catch (e) {
+      setError(`没能保存：${errorMessage(e)}`);
       load();
     } finally {
       setBusy(null);
@@ -229,52 +270,59 @@ export default function SkillsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const builtin = (skills || []).filter((s) => s.scope === "builtin");
-  const personal = (skills || []).filter((s) => s.scope === "personal");
+  const platform = (skills || []).filter((s) => skillKind(s) !== "personal");
+  const personal = (skills || []).filter((s) => skillKind(s) === "personal");
+  const openDrafts = (drafts || []).filter((d) => d.status !== "confirmed" && d.status !== "discarded");
 
   return (
     <main className="page page-narrow">
       <div className="page-head">
         <h1>技能</h1>
-        <p>技能是 AI 做特定工作时照着做的说明和工具。开启的技能会在需要时自动使用，也可以在输入框里直接点选；关闭后 AI 不会再用它。</p>
       </div>
       {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-        <button className={tab === "mine" ? "primary sm" : "secondary sm"} onClick={() => setTab("mine")}>
-          我的技能
-        </button>
-        <button className={tab === "market" ? "primary sm" : "secondary sm"} onClick={() => setTab("market")}>
-          技能市场
-        </button>
-      </div>
-
-      {tab === "market" ? (
-        <MarketPanel onInstalled={installed} />
-      ) : (
-      <>
-      <h2 className="section-title">通用技能</h2>
-      <p className="hint section-hint">平台提供，所有人都可以用。</p>
+      <h2 className="section-title">平台技能</h2>
       <section className="card skill-list">
-        {skills === null ? <div className="empty">加载中…</div> : builtin.map((s) => <SkillRow key={s.name} s={s} busy={busy === s.name} onToggle={(on) => toggle(s, on)} onOpen={() => setEditing({ mode: "open", skill: s })} />)}
+        {skills === null ? (
+          <div className="empty">加载中…</div>
+        ) : (
+          platform.map((s) => (
+            <SkillRow
+              key={s.name}
+              s={s}
+              busy={busy === s.name}
+              onToggle={(on) => toggle(s, on)}
+              onOpen={() => setEditing({ mode: "view", skill: s })}
+              onCustomize={() => openDraft(s)}
+            />
+          ))
+        )}
       </section>
+
+      {openDrafts.length ? (
+        <>
+          <h2 className="section-title" style={{ marginTop: 32 }}>草稿</h2>
+          <section className="card skill-list" aria-label="技能草稿">
+            {openDrafts.map((d) => <DraftRow key={d.id} d={d} onOpen={() => setDraft(d.id)} onDiscard={() => discard(d)} />)}
+          </section>
+        </>
+      ) : null}
 
       <div className="section-title skill-editor-head" style={{ marginTop: 32 }}>
         个人技能
         {storage ? <span className="hint">已用 {formatBytes(storage.used_bytes)} · 剩余 {formatBytes(storage.available_bytes)}</span> : null}
         <span className="spacer" />
         <button className="link" onClick={downloadTemplate}>
-          <IconDownload size={15} /> 下载模板
+          <IconDownload size={15} /> 模板
         </button>
         <button className="secondary sm" onClick={() => setEditing({ mode: "create", content: TEMPLATE })}>
           <IconPlus size={15} /> 新建
         </button>
         <button className="secondary sm" onClick={() => picker.current?.click()}>
-          <IconUpload size={15} /> 上传技能
+          <IconUpload size={15} /> 上传
         </button>
         <input ref={picker} type="file" accept=".md,.zip" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
       </div>
-      <p className="hint section-hint">支持 SKILL.md 或包含脚本与素材的 ZIP。</p>
       <section className="card skill-list">
         {uploading.map((n) => (
           <div key={n} className="skill-row off">
@@ -287,7 +335,7 @@ export default function SkillsPage() {
         {skills !== null && personal.length === 0 && uploading.length === 0 ? (
           <div className="empty">
             <strong>还没有个人技能</strong>
-            把你常用的做法写成 SKILL.md 上传，AI 就会按你的方式做事。不知道怎么写可以先下载模板。
+            上传 SKILL.md 或 ZIP，或在对话里提取技能。
           </div>
         ) : null}
         {personal.map((s) => (
@@ -295,25 +343,17 @@ export default function SkillsPage() {
             key={s.file_id}
             s={s}
             busy={busy === s.name}
-            locked={isLocked(s, scanning)}
+            locked={isLocked(s, scanning) || busy === s.name}
             onToggle={(on) => toggle(s, on)}
-            onOpen={() => setEditing({ mode: "open", skill: s })}
+            onOpen={() => openDraft(s)}
             onDelete={() => remove(s)}
           />
         ))}
       </section>
-      </>
-      )}
       {editing ? (
-        <SkillEditor
-          target={editing}
-          locked={editing.mode === "open" && editing.skill.scope === "personal" && isLocked(editing.skill, scanning)}
-          onClose={() => setEditing(null)}
-          onSaved={saved}
-          onReplace={replace}
-        />
+        <SkillEditor target={editing} onClose={() => setEditing(null)} onSaved={saved} onCustomize={(s) => openDraft(s)} />
       ) : null}
-      <p className="hint" style={{ marginTop: 14 }}>开关对你的账号生效，换设备也一样。</p>
+      {draft ? <DraftEditor key={draft} draftId={draft} onClose={() => setDraft(null)} onConfirmed={saved} /> : null}
     </main>
   );
 }

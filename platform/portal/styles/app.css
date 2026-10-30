@@ -426,3 +426,61 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
   .dream-cand { flex-wrap: wrap; }
   .dream-reason { max-width: none; flex-basis: 100%; text-align: left; padding-left: calc(4.5em + 18px); }
 }
+
+/* Sidebar: a skill draft is being made (spinner) or waits for the user (count) */
+.side-badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--primary-foreground, #fff); font-size: var(--text-2xs); font-weight: 600; line-height: 18px; text-align: center; }
+.side-badge.busy { min-width: 14px; width: 14px; height: 14px; padding: 0; background: none; border: 2px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .side-badge.busy { animation-duration: 2.4s; } }
+
+/* Skills page: a base skill has no switch; the slot keeps the rows aligned */
+.switch-slot { flex: none; width: 42px; }
+.draft-row .draft-open { display: block; min-width: 0; padding: 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.draft-row .skill-desc { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.draft-state { font-weight: 450; }
+.draft-state.ready { color: var(--primary); }
+.draft-state.failed { color: var(--destructive); }
+.draft-spin { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--primary) 22%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
+
+/* Draft editor: the skill as a folder, tree on the left, the open file on the right */
+.modal.draft-editor { max-width: 1040px; width: calc(100vw - 48px); height: min(820px, calc(100dvh - 48px)); max-height: none; }
+.draft-editor .modal-body { gap: 10px; min-height: 0; }
+.draft-summary { margin: 0; font-size: var(--text-sm); line-height: 1.6; color: var(--muted-foreground); white-space: pre-wrap; }
+.draft-wait { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1; color: var(--muted-foreground); font-size: var(--text-sm); }
+.draft-body { display: flex; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.draft-side { display: flex; flex-direction: column; width: 260px; flex: none; border-right: 1px solid var(--border); background: var(--subtle); min-height: 0; }
+.draft-tools { display: flex; align-items: center; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); }
+.draft-target { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); }
+.draft-tree { flex: 1; overflow: auto; padding: 4px 0; }
+.draft-node { display: flex; align-items: center; gap: 6px; min-height: 30px; padding-right: 6px; font-size: var(--text-sm); cursor: pointer; user-select: none; color: var(--foreground); }
+.draft-node svg { flex: none; color: var(--muted-foreground); }
+.draft-node:hover { background: var(--nav-hover); }
+.draft-node.on { background: var(--nav-selected); }
+.draft-node:focus-visible { outline: 2px solid var(--ring, var(--primary)); outline-offset: -2px; }
+.draft-node.gone { cursor: default; color: var(--muted-foreground); }
+.draft-node.gone .draft-name { text-decoration: line-through; }
+.draft-caret { width: 12px; flex: none; transition: transform var(--t-fast); }
+.draft-caret.open { transform: rotate(90deg); }
+.draft-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-change { flex: none; font-size: var(--text-2xs); padding: 0 5px; border-radius: 4px; line-height: 16px; }
+.draft-change.added { color: var(--ok, #22863a); background: color-mix(in srgb, var(--ok, #22863a) 12%, transparent); }
+.draft-change.modified { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.draft-change.deleted { color: var(--destructive); background: var(--destructive-soft); }
+.draft-node-actions { display: none; flex: none; gap: 0; }
+.draft-node:hover .draft-node-actions, .draft-node:focus-within .draft-node-actions, .draft-node.on .draft-node-actions { display: flex; }
+.draft-node-actions .icon-btn { width: 24px; height: 24px; }
+.draft-node.naming input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; font-size: var(--text-sm); }
+.draft-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.draft-main .empty { margin: auto; }
+.draft-text { border: 0; border-radius: 0; height: 100%; }
+.draft-binary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 20px; overflow: auto; word-break: break-all; text-align: center; }
+.draft-binary img { max-width: 100%; max-height: 60%; object-fit: contain; border-radius: var(--radius-sm); background: repeating-conic-gradient(var(--subtle) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.draft-binary-actions { display: flex; gap: 8px; margin-top: 4px; }
+@media (hover: none) { .draft-node-actions { display: flex; } }
+@media (max-width: 640px) {
+  .modal-scrim:has(.draft-editor) { padding: 0; }
+  .modal.draft-editor { width: 100vw; max-width: none; height: 100dvh; border-radius: 0; border: 0; }
+  .draft-body { flex-direction: column; }
+  .draft-side { width: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border); }
+  .draft-main { min-height: 50%; }
+  .draft-text { font-size: 16px; }
+}

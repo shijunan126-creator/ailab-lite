@@ -14,6 +14,7 @@ import { OPEN_FILE } from "./file-cite";
 import { useFileViewer } from "./preview/file-viewer";
 import { NewProjectInput, RenameProjectInput } from "./library/projects";
 import ProjectMenu from "./project-menu";
+import { useActiveDrafts, working } from "../lib/skill-drafts";
 
 /** Pages tell the sidebar that the conversation list changed (a new one, a title, a finished answer). */
 export const CONVERSATIONS_CHANGED = "ailab:conversations";
@@ -168,6 +169,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const currentProject = pathname.startsWith("/p/") ? pathname.slice(3) : null;
   const listController = useRef<AbortController | null>(null);
   const notices = useNotices(current);
+  const drafts = useActiveDrafts();
+  const draftsWorking = !!drafts?.some(working);
+  const draftsWaiting = drafts?.filter((d) => !working(d)).length || 0;
   const [inboxAt, setInboxAt] = useState<HTMLElement | null>(null);
   useVisibleViewport();
 
@@ -261,7 +265,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <IconLibrary size={17} /> 资料库
           </Link>
           <Link href="/skills" className={`side-link ${pathname.startsWith("/skills") ? "on" : ""}`}>
-            <IconSparkles size={17} /> 技能
+            <IconSparkles size={17} /> <span className="grow">技能</span>
+            {draftsWorking ? <span className="side-badge busy" aria-label="正在提取技能" /> : draftsWaiting ? <span className="side-badge" aria-label={`${draftsWaiting} 个技能草稿`}>{draftsWaiting}</span> : null}
           </Link>
           <Link href="/memory" className={`side-link ${pathname.startsWith("/memory") ? "on" : ""}`}>
             <IconHistory size={17} /> 记忆

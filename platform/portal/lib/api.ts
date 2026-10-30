@@ -95,6 +95,30 @@ export type Skill = {
   error?: string | null; // why a personal skill file cannot be used
 };
 
+export type DraftStatus = "queued" | "running" | "preparing" | "ready" | "failed" | "confirmed" | "discarded";
+export type DraftFile = { path: string; size: number; kind: "text" | "image" | "binary"; change: "added" | "modified" | "deleted" | "unchanged" };
+/** A skill being drafted or edited before it becomes a real skill (contract §3). */
+export type SkillDraft = {
+  id: string;
+  status: DraftStatus;
+  stage?: "reading" | "drafting" | "unpacking" | null;
+  origin: "conversation" | "skill";
+  conversation_id?: string | null;
+  conversation_title?: string | null;
+  action: "create" | "update";
+  base?: { name: string; kind: SkillKind; file_id?: string | null } | null;
+  name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  summary?: string | null;
+  error?: string | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  files?: DraftFile[];
+  result?: { file_id: string; name: string; version?: number } | null;
+};
+
 export const skillKind = (s: Pick<Skill, "kind" | "scope" | "name">): SkillKind =>
   s.kind ?? (s.scope === "personal" ? "personal" : s.name.startsWith("platform.") ? "base" : "builtin");
 
@@ -136,7 +160,8 @@ export type QueuedMessage = {
   created_at: string;
 };
 
-export type NotificationKind = "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received";
+export type NotificationKind =
+  | "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received" | "skill_draft.ready" | "skill_draft.failed";
 export type Notice = {
   id: string;
   kind: NotificationKind;
