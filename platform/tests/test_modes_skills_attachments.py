@@ -25,23 +25,19 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat", "capability_discovery": 1}
+        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": []}
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
             f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "PPT", "mode": "chat", "skill": "pptx"}
         ).json()
-        assert deck["options"] == {
-            "mode": "work",
-            "capability_discovery": 1,
-            "skill": "pptx",
-            "skill_title": "演示文稿（PPT）",
-        }  # a skill is work by definition
+        assert deck["options"]["mode"] == "chat"
+        assert deck["options"]["skills"] == [{"name": "pptx", "title": "PPT 设计", "kind": "builtin", "at": None}]
         c.post(f"/v1/runs/{deck['id']}/cancel", headers=AUTH)
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "skill": "nope"}).status_code == 400
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "mode": "other"}).status_code == 422
         default = c.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).json()
-        assert default["options"] == {"mode": "work", "capability_discovery": 1}
+        assert default["options"] == {"mode": "work", "capability_discovery": 1, "skills": []}
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
@@ -150,9 +146,12 @@ def test_a_picked_skill_comes_preloaded() -> None:
     platform = _Platform(options={"mode": "work", "skill": "pptx"})
     _run(llm, platform)
     system = llm.seen_messages[0][0]["content"]
-    assert "本轮已选技能：pptx" in system and "/opt/skills/pptx/scripts/build.py" in system
+    assert "本轮已选技能" not in system
+    assert any(m["role"] == "tool" and "演示设计" in m["content"] for m in llm.seen_messages[0])
     assert llm.offered[0]  # work mode: tools offered
-    assert ("agent.skill", {"name": "pptx", "title": "演示文稿（PPT）"}) in platform.events
+    assert any(
+        t == "agent.skill" and p["name"] == "pptx" and p["status"] == "loaded" and p["reason"] == "picked" for t, p in platform.events
+    )
 
 
 def test_attachment_text_is_in_the_message() -> None:
@@ -188,7 +187,7 @@ def test_chat_prompt_offers_enabled_personal_skills_without_workspace_instructio
             {"name": "off", "description": "不应出现的技能"},
         ],
     )
-    assert "- weekly：整理周报" in prompt
+    assert "- weekly：整理周报" not in prompt
     assert "- pptx：" not in prompt and "- off：" not in prompt
     assert "# 沙箱约定" not in prompt
     assert "写出代码与实际执行代码" in prompt
@@ -226,7 +225,7 @@ def test_chat_loading_document_skill_does_not_offer_work_sandbox_instructions():
     call = ToolCall(id="c1", name="load_skill", arguments={"name": "platform.document.read"})
     llm = _Recording([LLMResponse(tool_calls=[call]), LLMResponse(content="完成")])
     broker = _run(llm, _Platform(options={"mode": "chat"}))
-    tool_response = llm.seen_messages[1][-1]["content"]
+    tool_response = next(m["content"] for m in llm.seen_messages[1] if m["role"] == "tool" and "read_library_file" in m["content"])
     assert "read_library_file" in tool_response
     assert "office-read" not in tool_response
     assert "copy_library_file" not in tool_response

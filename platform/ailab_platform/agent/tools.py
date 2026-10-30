@@ -168,7 +168,11 @@ LOAD_SKILL = {
     "function": {
         "name": "load_skill",
         "description": "读取一个技能（如 pptx、xlsx）的完整说明。做对应任务前先读。",
-        "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "version": {"type": "string"}}, "required": ["name"]},
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "maxLength": 64}, "version": {"type": "string"}},
+            "required": ["name"],
+        },
     },
 }
 

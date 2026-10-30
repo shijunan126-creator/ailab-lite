@@ -133,9 +133,9 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             leaf.model if body.steer else body.model,
             body.file_ids,
             (leaf.options or {}).get("mode", "work") if body.steer else body.mode if "mode" in body.model_fields_set else None,
-            None if body.steer else body.skill,
+            body.skill,
             body.template,
-            selections=None if body.steer else body.skills,
+            selections=body.skills,
             conversation=conv,
             turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
         )

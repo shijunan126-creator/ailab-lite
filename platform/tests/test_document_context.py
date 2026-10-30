@@ -8,7 +8,7 @@ from ailab_platform.agent import discovery
 from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
-from ailab_platform.internal_skills import VERSION, load
+from ailab_platform.internal_skills import load
 from ailab_platform.models import DocumentBlock, FileDerivation, MessageFileRef, Run
 from ailab_platform.worker.pipeline import process_file
 from tests.test_file_previews import AUTH, SERVICE, ApiClient
@@ -84,8 +84,10 @@ def test_internal_skills_and_constant_initial_schema():
         {"type": "function", "function": {"name": f"unused{i}", "description": "unrelated", "parameters": {}}} for i in range(500)
     ]
     assert discovery.offered(catalog, []) == discovery.offered(massive, [])
-    hit = discovery.search("pdf", "skill", 3, catalog)[0]
-    assert hit["name"] == "platform.pdf.read" and hit["version"] == VERSION
+    from ailab_platform.agent.prompts import skills
+
+    hit = discovery.search("pdf", "skill", 3, catalog, list(skills().values()))[0]
+    assert hit["name"] == "platform.pdf"
     assert "next_cursor" in load("platform.pdf.read")
     for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):
         assert "office-read" not in load(name, mode="chat")
@@ -93,8 +95,8 @@ def test_internal_skills_and_constant_initial_schema():
     with pytest.raises(ValueError):
         load("platform.pdf.read", "wrong")
     with TestClient(app) as c:
-        assert not any(s["name"].startswith("platform.") for s in c.get("/v1/skills", headers=AUTH).json())
-        assert c.post("/v1/runs", headers=AUTH, json={"prompt": "x", "skill": "platform.pdf.read"}).status_code == 400
+        assert any(s["name"] == "platform.pdf" for s in c.get("/v1/skills", headers=AUTH).json())
+        assert c.post("/v1/runs", headers=AUTH, json={"prompt": "x", "skill": "platform.pdf.read"}).status_code == 201
 
 
 def test_discovered_tool_activation_survives_checkpoint():

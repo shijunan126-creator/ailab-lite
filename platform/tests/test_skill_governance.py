@@ -72,12 +72,12 @@ def test_hash_detects_scripts_and_assets_and_symlinks(tmp_path):
     root = tmp_path / "skills"
     shutil.copytree(settings.skills_path, root)
     original = checked_index(root)
-    target = root / "xlsx" / "scripts" / "build_xlsx.py"
+    target = root / "platform.xlsx" / "scripts" / "build_xlsx.py"
     target.write_bytes(target.read_bytes() + b"\n# drift\n")
     assert build_index(root) != original
     with pytest.raises(ValueError, match="mismatch"):
         checked_index(root)
-    (root / "xlsx" / "link").symlink_to("/etc/passwd")
+    (root / "platform.xlsx" / "link").symlink_to("/etc/passwd")
     with pytest.raises(ValueError, match="symlink"):
         build_index(root)
 
@@ -85,8 +85,8 @@ def test_hash_detects_scripts_and_assets_and_symlinks(tmp_path):
 def test_manifest_requires_exact_directory_and_fields(tmp_path):
     root = tmp_path / "skills"
     shutil.copytree(settings.skills_path, root)
-    manifest = root / "xlsx" / "skill.toml"
-    manifest.write_text(manifest.read_text().replace('name = "xlsx"', 'name = "other"'))
+    manifest = root / "platform.xlsx" / "skill.toml"
+    manifest.write_text(manifest.read_text().replace('name = "platform.xlsx"', 'name = "other"'))
     with pytest.raises(ValueError, match="name"):
         build_index(root)
 
@@ -98,11 +98,11 @@ def test_index_tool_exit_codes_separate_drift_from_an_invalid_manifest(skills_co
         return subprocess.run([sys.executable, str(script), str(skills_copy), *args], capture_output=True, text=True).returncode
 
     assert run("--check") == 0
-    target = skills_copy / "xlsx" / "scripts" / "build_xlsx.py"
+    target = skills_copy / "platform.xlsx" / "scripts" / "build_xlsx.py"
     target.write_bytes(target.read_bytes() + b"\n# drift\n")
     assert run("--check") == 3
-    manifest = skills_copy / "xlsx" / "skill.toml"
-    manifest.write_text(manifest.read_text().replace('name = "xlsx"', 'name = "other"'))
+    manifest = skills_copy / "platform.xlsx" / "skill.toml"
+    manifest.write_text(manifest.read_text().replace('name = "platform.xlsx"', 'name = "other"'))
     assert run("--check") == 2
 
 
@@ -148,7 +148,7 @@ def test_mock_sandbox_attests_the_host_directory_it_serves(attestations, monkeyp
     assert result["verified"] and result["image_ref"] == "host-checkout" and calls == []
     drifted = tmp_path / "skills"
     shutil.copytree(settings.skills_path, drifted)
-    target = drifted / "xlsx" / "scripts" / "build_xlsx.py"
+    target = drifted / "platform.xlsx" / "scripts" / "build_xlsx.py"
     target.write_bytes(target.read_bytes() + b"\n# drift\n")
     monkeypatch.setattr(broker_skills, "MOCK_SKILLS", drifted)
     broker_skills._attested.clear()

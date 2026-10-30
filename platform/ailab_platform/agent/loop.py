@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import random
+import re
 import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime
@@ -32,6 +33,7 @@ from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, ToolCal
 from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
 from ..runtime_context import attempt_id_var, delivery_id_var
+from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
 from . import discovery, net_tools
@@ -47,11 +49,13 @@ from .prompts import (
     memory_prompt,
     personal_header,
     project_library_prompt,
+    render_skill_mentions,
     skills,
     system_prompt_for,
     user_prompt,
     workspace_prompt,
 )
+from .skill_verification import verify_sandbox_skills
 from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
 from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn, ui_components
 
@@ -123,12 +127,32 @@ class RunCanceled(Exception):
     pass
 
 
+def _office_skills(value, *, keywords=False):
+    text = json.dumps(value, ensure_ascii=False).lower()
+    result = []
+    formats = {
+        "platform.pdf": (r"\.pdf\b|application/pdf", r"pdf"),
+        "platform.docx": (r"\.docx?\b|application/(?:msword|vnd\.openxmlformats-officedocument\.wordprocessingml)", r"word|docx"),
+        "platform.xlsx": (r"\.xlsx?\b|application/(?:vnd\.ms-excel|vnd\.openxmlformats-officedocument\.spreadsheetml)", r"excel|xlsx"),
+        "platform.pptx": (
+            r"\.pptx?\b|application/(?:vnd\.ms-powerpoint|vnd\.openxmlformats-officedocument\.presentationml)",
+            r"pptx?|幻灯片|演示文稿",
+        ),
+    }
+    for name, (files, words) in formats.items():
+        if re.search(files + ("|" + words if keywords else ""), text):
+            result.append(name)
+    return result
+
+
 class _Turn:
     """Mutable state of one run while the loop works on it."""
 
     def __init__(self, run: dict) -> None:
         self.run = run
         self.lease_id: str | None = None
+        self.skills_attested = False
+        self.lease_ready = False
         self.artifacts: list[dict] = []
         self.delivered: dict[str, int] = {}  # sandbox path -> size at delivery (or at restore)
         self.previews: dict[str, dict] = {}  # filename -> latest preview manifest
@@ -384,16 +408,31 @@ class AgentLoop:
             )
 
     async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False) -> str:
-        if turn.lease_id:
+        if turn.lease_id and turn.lease_ready:
+            loaded = self._states[run_id].get("loaded_skills", [])
+            if not turn.skills_attested and any(item.get("kind") in {"base", "builtin"} for item in loaded):
+                await verify_sandbox_skills(self.broker, turn.lease_id)
+                turn.skills_attested = True
             return turn.lease_id
-        lease = await self._acquire_lease(run_id)
+        lease = await self._acquire_lease(run_id) if not turn.lease_id else {"lease_id": turn.lease_id}
         turn.lease_id = lease["lease_id"]
         await self._event(run_id, "agent.sandbox", {"lease_id": turn.lease_id, "provider": lease.get("provider")})
         if lease.get("restored") is False and lease.get("restore_error"):
             if required:  # a checkpoint that counts on these files must not continue without them
                 raise LeaseInterrupted(f"工作区恢复失败：{lease['restore_error']}")
             await self._event(run_id, "agent.warning", {"message": f"上一轮的工作区没能恢复：{lease['restore_error']}"})
-        for name in turn.skill_files:  # personal skills read before the sandbox existed
+        loaded = self._states[run_id].get("loaded_skills", [])
+        if any(item.get("kind") in {"base", "builtin"} for item in loaded):
+            await verify_sandbox_skills(self.broker, turn.lease_id)
+            turn.skills_attested = True
+        existing = set(turn.skill_files)
+        for item in loaded:
+            if item.get("kind") == "personal" and item["name"] not in turn.skill_files:
+                current = turn.personal.get(item["name"])
+                if not current or current.get("file_id") != item.get("file_id"):
+                    raise ToolError(f"技能 {item['name']} 已不可用")
+                await self._read_personal(turn, run_id, item["name"])
+        for name in existing:  # personal skills read before the sandbox existed
             await self._install_skill(turn, name)
         # Files already in outputs (restored from the last turn) are not this turn's work: never auto-deliver them unchanged.
         try:
@@ -401,6 +440,7 @@ class AgentLoop:
                 turn.delivered.setdefault(f["path"], f.get("size", 0))
         except Exception:
             log.warning("could not list outputs after leasing for %s", run_id, exc_info=True)
+        turn.lease_ready = True
         return turn.lease_id
 
     # ---- personal skills: read from the user's library, their files copied into the sandbox
@@ -1010,8 +1050,16 @@ class AgentLoop:
         images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
         if not images and not document_pages:
-            return user_prompt(run["prompt"], files)
-        parts = [{"type": "text", "text": user_prompt(run["prompt"], [file for file in files if file not in images])}]
+            return user_prompt(render_skill_mentions(run["prompt"], (run.get("options") or {}).get("skills")), files)
+        parts = [
+            {
+                "type": "text",
+                "text": user_prompt(
+                    render_skill_mentions(run["prompt"], (run.get("options") or {}).get("skills")),
+                    [file for file in files if file not in images],
+                ),
+            }
+        ]
         spec = get_catalog().get(model)
         for file in [*images, *document_pages]:
             image_parts = await self._image_content(run_id, run, file, spec)
@@ -1048,10 +1096,35 @@ class AgentLoop:
         if pending:
             state["pending_image_inputs"] = [message["content"] for message in pending]
 
+    async def _ensure_skill(self, turn, run_id, name, reason, file_id=None):
+        name = resolve_name(name)
+        state = self._states[run_id]
+        attempted = state.setdefault("attempted_skills", [])
+        if name in attempted or any(item["name"] == name for item in state.get("loaded_skills", [])):
+            return
+        call_id = "skill_" + uuid4().hex
+        call = ToolCall(call_id, "load_skill", {"name": name})
+        call.skill_reason = reason
+        call.expected_file_id = file_id
+        state["messages"].append(
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {"id": call_id, "type": "function", "function": {"name": "load_skill", "arguments": _arguments_json(call.arguments)}}
+                ],
+            }
+        )
+        result = await self._run_tool(turn, run_id, call, self._steps[run_id])
+        state["messages"].append(tool_result_message(call_id, "load_skill", result))
+        attempted.append(name)
+        await self._checkpoint(run_id, turn)
+
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
+        wanted = None
         try:
             current_catalog = _tools_for_run(turn.run)
             if call.name not in {t["function"]["name"] for t in current_catalog} | {"search_capabilities", "finish"}:
@@ -1067,7 +1140,7 @@ class AgentLoop:
                 turn.allowed_tools.add(call.name)
             if (turn.run.get("options") or {}).get("mode") == "chat" and call.name == "save_skill" and call.arguments.get("path"):
                 raise ToolError("对话模式保存技能请传 content；压缩包/脚本修改请切换工作模式")
-            wanted = call.arguments.get("name") if call.name == "load_skill" else None
+            wanted = resolve_name(call.arguments.get("name")) if call.name == "load_skill" and call.arguments.get("name") else None
             if (wanted and not wanted.startswith("platform.")) or call.name == "search_capabilities":
                 latest = await self.platform.get_run(run_id)
                 turn.disabled_skills = frozenset(latest.get("disabled_skills") or [])
@@ -1083,7 +1156,9 @@ class AgentLoop:
                 deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
                 if time.time() >= deadline:
                     raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
-            if call.name == "view_attachment":
+            if wanted and any(item["name"] == wanted for item in self._states[run_id].get("loaded_skills", [])):
+                result = {"ok": True, "name": wanted, "already_loaded": True}
+            elif call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
                 if not spec or not spec.supports({"vision"}):
                     raise ToolError("当前模型不支持图像理解；OCR只能读字，不能理解架构图、照片或布局，请告知用户改用视觉模型")
@@ -1114,33 +1189,28 @@ class AgentLoop:
                 user_skills = [
                     {"name": name, "description": entry.get("description", "")[:160]}
                     for name, entry in {**skills(), **turn.personal}.items()
-                    if name not in turn.disabled_skills and not name.startswith("platform.")
+                    if name not in turn.disabled_skills
                 ]
                 hits = discovery.search(
                     call.arguments.get("query", ""), call.arguments.get("kind", "any"), call.arguments.get("limit", 3), catalog, user_skills
                 )
                 discovery.activate(state, [h["name"] for h in hits if h["kind"] == "tool"], catalog)
                 result = {"ok": True, "capabilities": hits}
-            elif wanted and wanted.startswith("platform."):
-                text = internal_skills.load(wanted, call.arguments.get("version"), mode=(turn.run.get("options") or {}).get("mode", "work"))
-                state = self._states[run_id]
-                state.setdefault("internal_skill_versions", {})[wanted] = internal_skills.VERSION
-                discovery.activate(
-                    state,
-                    internal_skills.TOOLS,
-                    _tools_for_run(turn.run),
-                )
-                result = {"ok": True, "skill": text, "version": internal_skills.VERSION}
+            elif wanted and wanted in skills():
+                mode = (turn.run.get("options") or {}).get("mode", "work")
+                result = {"ok": True, "skill": load_skill(wanted, mode=mode), "version": skills()[wanted]["version"]}
+                if wanted in BASE_SKILLS:
+                    discovery.activate(self._states[run_id], internal_skills.TOOLS, _tools_for_run(turn.run))
             elif wanted in turn.personal:
+                if getattr(call, "expected_file_id", None) and turn.personal[wanted]["file_id"] != call.expected_file_id:
+                    raise ToolError(f"技能 {wanted} 的版本已失效")
                 with span("agent.tool", tool=tool):
-                    result = {
-                        "ok": True,
-                        "file_id": turn.personal[wanted]["file_id"],
-                        "skill": await self._interruptible(run_id, self._read_personal(turn, run_id, wanted)),
-                        "name": wanted,
-                    }
-            elif wanted and (turn.run.get("options") or {}).get("mode") == "chat":
-                result = {"ok": True, "skill": load_skill(wanted)}
+                    text = await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))
+                    if (turn.run.get("options") or {}).get("mode") == "chat":
+                        text += "\n当前对话没有沙箱，技能中的脚本步骤无法执行。"
+                    result = {"ok": True, "file_id": turn.personal[wanted]["file_id"], "skill": text, "name": wanted}
+            elif call.name == "load_skill":
+                raise ToolError(f"技能 {wanted or ''} 不存在或已不可用")
             else:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
@@ -1165,6 +1235,29 @@ class AgentLoop:
         except Exception as exc:  # broker / sandbox failures stay in the loop
             log.exception("tool %s failed", call.name)
             result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+        if call.name == "load_skill" and wanted and not result.get("already_loaded"):
+            state = self._states[run_id]
+            if result.get("ok"):
+                entry = {"name": wanted, "kind": "base" if wanted in BASE_SKILLS else "personal" if wanted in turn.personal else "builtin"}
+                if result.get("file_id"):
+                    entry["file_id"] = result["file_id"]
+                if result.get("version"):
+                    entry["version"] = result["version"]
+                loaded = state.setdefault("loaded_skills", [])
+                if not any(item["name"] == wanted for item in loaded):
+                    loaded.append(entry)
+            title = (turn.personal.get(wanted) or skills().get(wanted) or {}).get("title") or wanted
+            await self._event(
+                run_id,
+                "agent.skill",
+                {
+                    "name": wanted,
+                    "title": title,
+                    "status": "loaded" if result.get("ok") else "failed",
+                    "reason": getattr(call, "skill_reason", "model"),
+                    **({"error": result.get("error")} if not result.get("ok") else {}),
+                },
+            )
         metrics.TOOL_SECONDS.labels(tool).observe(time.perf_counter() - tool_started)
         metrics.TOOL_CALLS.labels(tool, str(bool(result.get("ok"))).lower()).inc()
         shown = result.get("skill")
@@ -1206,26 +1299,41 @@ class AgentLoop:
         return result
 
     async def _apply_steers(self, run_id: str, turn: _Turn, *, pending: bool | None = None) -> None:
+        state = self._states[run_id]
         if pending is None:
             pending = (await self.platform.get_run_state(run_id)).get("steer_pending", False)
-        if not pending:
-            return
-        claimed = await self.platform.claim_steers(run_id)
-        self._steer_pending.discard(run_id)
-        state = self._states[run_id]
-        applied = state.setdefault("steer_ids", [])
-        changed = False
-        for row in claimed["items"]:
-            if row["id"] not in applied:
-                message_run = {**turn.run, "prompt": row["prompt"], "input_files": row.get("input_files") or []}
+        if pending:
+            claimed = await self.platform.claim_steers(run_id)
+            self._steer_pending.discard(run_id)
+            applied = state.setdefault("steer_ids", [])
+            for row in claimed["items"]:
+                if row["id"] in applied:
+                    continue
+                selections = row.get("skills")
+                if selections is None:
+                    selections = [{"name": row["skill"]}] if row.get("skill") else []
+                message_run = {
+                    **turn.run,
+                    "prompt": row["prompt"],
+                    "input_files": row.get("input_files") or [],
+                    "options": {**(turn.run.get("options") or {}), "skills": selections},
+                }
                 content = await self._user_content(run_id, message_run, turn.run.get("model"))
                 turn.run.setdefault("_image_files", {}).update(message_run.get("_image_files") or {})
                 state["messages"].append({"role": "user", "content": content})
                 applied.append(row["id"])
-                changed = True
-        if changed:
-            state["loop_start"] = len(state["tool_log"])
-            state.pop("loop_nudge", None)
+                required = [(item["name"], "picked", item.get("file_id")) for item in selections]
+                required.extend((name, "office", None) for name in _office_skills(row.get("input_files") or []))
+                if (turn.run.get("options") or {}).get("mode") == "work":
+                    required.extend((name, "office", None) for name in _office_skills(row["prompt"], keywords=True))
+                state.setdefault("pending_steer_skills", []).extend(required)
+                state["loop_start"] = len(state["tool_log"])
+                state.pop("loop_nudge", None)
+                await self._checkpoint(run_id, turn)
+        for name, reason, file_id in state.get("pending_steer_skills", []):
+            await self._ensure_skill(turn, run_id, name, reason, file_id)
+        if state.get("pending_steer_skills"):
+            state["pending_steer_skills"] = []
             await self._checkpoint(run_id, turn)
 
     async def _checkpoint(self, run_id: str, turn: _Turn) -> None:
@@ -1484,6 +1592,8 @@ class AgentLoop:
         window = run.get("budget_window_id") or run_id
         budget = self._budgets[run_id] = WorkBudget(state, window)
         turn = _Turn(run)
+        turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
+        turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
         turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
         title_task = None
         heartbeat = asyncio.create_task(self._heartbeat(run_id, turn))
@@ -1526,10 +1636,7 @@ class AgentLoop:
             if state.get("checkpoint_capacity_exceeded"):
                 raise BudgetPause(CAPACITY_NOTE)
             if not state["messages"]:  # the first pass only: the prompt becomes part of the checkpoint from here on
-                picked_text = await self._read_personal(turn, run_id, skill) if skill in turn.personal else None
-                if skill:
-                    title = (turn.personal.get(skill) or skills().get(skill) or {}).get("title") or skill
-                    await self._event(run_id, "agent.skill", {"name": skill, "title": title})
+                picked_text = None
                 attached = [f for f in run.get("input_files") or [] if f.get("text")]
                 if attached:
                     files = [{"filename": f["filename"], "chars": f.get("chars"), "truncated": f.get("truncated")} for f in attached]
@@ -1562,6 +1669,18 @@ class AgentLoop:
                 await self._checkpoint(run_id, turn)
             messages = state["messages"]
             turn.messages = messages
+            if not state.get("skill_initialization_done"):
+                selected = options.get("skills")
+                if selected is None:
+                    selected = [{"name": skill, "title": options.get("skill_title") or skill}] if skill else []
+                required = [(item["name"], "picked", item.get("file_id")) for item in selected]
+                required.extend((name, "office", None) for name in _office_skills(run.get("input_files") or []))
+                if mode == "work":
+                    required.extend((name, "office", None) for name in _office_skills(run.get("prompt") or "", keywords=True))
+                for name, reason, file_id in required:
+                    await self._ensure_skill(turn, run_id, name, reason, file_id)
+                state["skill_initialization_done"] = True
+                await self._checkpoint(run_id, turn)
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
             catalog = _tools_for_run(turn.run)
@@ -1617,6 +1736,11 @@ class AgentLoop:
                 # Enforce the budget before either executing those tools or dispatching another call.
                 if run["_ledger_tokens"] >= settings.run_max_tokens:
                     raise TokenLimit(_token_limit_error(run))
+                if not state["pending"] and state.get("pending_office_skills"):
+                    for office_name in state["pending_office_skills"]:
+                        await self._ensure_skill(turn, run_id, office_name, "office")
+                    state["pending_office_skills"] = []
+                    await self._checkpoint(run_id, turn)
                 if not state["pending"]:
                     for parts in state.pop("pending_image_inputs", []):
                         messages.append({"role": "user", "content": parts})
@@ -1697,6 +1821,9 @@ class AgentLoop:
                             if source["url"] not in seen and len(state["sources"]) < 50:
                                 state["sources"].append(source)
                                 seen.add(source["url"])
+                    state["pending_office_skills"] = sorted(
+                        set(state.get("pending_office_skills", [])) | set(_office_skills([call.arguments, result]))
+                    )
                     state["tool_log"][invocation] = observation(call.name, call.arguments, result)
                     messages.append(tool_result_message(call.id, call.name, result))
                     state["pending"].pop(0)
@@ -1722,6 +1849,9 @@ class AgentLoop:
                     await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)
+                for office_name in state.get("pending_office_skills", []):
+                    await self._ensure_skill(turn, run_id, office_name, "office")
+                state["pending_office_skills"] = []
                 state["next_step"] += 1
                 await self._checkpoint(run_id, turn)
             budget.update()

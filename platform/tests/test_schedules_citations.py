@@ -242,9 +242,10 @@ def test_schedule_checks_quota_capacity_and_current_skill_state(monkeypatch):
 
     with TestClient(app) as c:
         auth = _other_user(c)
-        skill = next(iter(skills()))
+        skill = "pptx"
+        assert skill in skills()
         task = c.post("/v1/schedules", headers=auth, json=body(skill=skill, mode="chat")).json()
-        assert task["mode"] == "work"
+        assert task["mode"] == "chat"
         with SessionLocal() as db:
             user = db.get(User, task["user_id"])
             user.settings = {**(user.settings or {}), "disabled_skills": [skill]}

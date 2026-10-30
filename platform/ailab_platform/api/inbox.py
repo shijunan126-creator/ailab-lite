@@ -166,14 +166,18 @@ def acknowledge_steers(db, run, state):
     for qid in supplied:
         if qid not in previous:
             row = claimed[qid]
+            from ..agent.prompts import render_skill_mentions
+
+            selections = row.options.get("skills") or ([{"name": row.options["skill"]}] if row.options.get("skill") else [])
+            rendered = render_skill_mentions(row.prompt, selections)
 
             def includes_prompt(message):
                 content = message.get("content")
                 return message.get("role") == "user" and (
-                    (isinstance(content, str) and content.startswith(row.prompt))
+                    (isinstance(content, str) and content.startswith(rendered))
                     or (
                         isinstance(content, list)
-                        and any(p.get("type") == "text" and p.get("text", "").startswith(row.prompt) for p in content)
+                        and any(p.get("type") == "text" and p.get("text", "").startswith(rendered) for p in content)
                     )
                 )
 

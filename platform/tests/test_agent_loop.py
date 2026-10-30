@@ -404,12 +404,12 @@ def test_load_skill_requires_attested_sandbox() -> None:
             )
 
     broker = AttestedBroker()
-    read = ToolCall(id="c1", name="load_skill", arguments={"name": "pptx"})
-    llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(content="ok")])
+    read = ToolCall(id="c1", name="load_skill", arguments={"name": "platform.pptx"})
+    execute = ToolCall(id="c2", name="exec", arguments={"cmd": "true"})
+    llm = ScriptedLLM([LLMResponse(tool_calls=[read]), LLMResponse(tool_calls=[execute]), LLMResponse(content="ok")])
     _run(llm, broker=broker)
     assert broker.leases == 1
-    tool_msg = llm.seen_messages[1][-1]
-    assert tool_msg["role"] == "tool" and "build.py" in tool_msg["content"]
+    assert any(m["role"] == "tool" and "build.py" in m["content"] for m in llm.seen_messages[1])
 
 
 def test_earlier_turns_are_given_to_the_model() -> None:

@@ -107,12 +107,17 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
     for id_ in page:
         row = rows[id_]
         applied = row.steer_ids or []
+        from ..agent.prompts import render_skill_mentions
+
         prompts = (
-            dict(
-                db.execute(
-                    select(QueuedMessage.id, QueuedMessage.prompt).where(QueuedMessage.run_id == id_, QueuedMessage.state == "steered")
-                ).all()
-            )
+            {
+                item.id: render_skill_mentions(item.prompt, (item.options or {}).get("skills"))
+                for item in db.execute(
+                    select(QueuedMessage.id, QueuedMessage.prompt, QueuedMessage.options).where(
+                        QueuedMessage.run_id == id_, QueuedMessage.state == "steered"
+                    )
+                )
+            }
             if applied
             else {}
         )

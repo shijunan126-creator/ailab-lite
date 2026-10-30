@@ -26,7 +26,20 @@ from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, FileStatus, OutboxMessage, QueuedMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
+from ..models import (
+    Conversation,
+    FileObject,
+    FileStatus,
+    OutboxMessage,
+    QueuedMessage,
+    Run,
+    RunAttempt,
+    RunEvent,
+    RunStatus,
+    SkillApproval,
+    User,
+    utcnow,
+)
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunEdit, RunOut, RunRetry
@@ -120,7 +133,7 @@ def validate_run_input(
             name = candidate["name"]
         else:
             candidate = next((s for s in personal if s["name"] == name), None)
-        platform = skills().get(name)
+        platform = None if item.get("file_id") else skills().get(name)
         known = platform or candidate
         title = (known or {}).get("title") or item["name"]
         if not known:
@@ -130,9 +143,14 @@ def validate_run_input(
         if name in denied or (candidate and not platform and personal_policy == "disabled"):
             raise HTTPException(400, f"技能「{title}」已被管理员停用")
         if candidate and not platform and name not in allowed:
+            approval = db.get(SkillApproval, candidate["file_id"])
             error = candidate.get("error") or "未通过审核"
-            if error == "安全扫描中":
+            if approval and approval.state == "disabled":
+                error = "已被管理员停用"
+            elif error == "安全扫描中":
                 error = "还在安全扫描"
+            elif error == "未通过安全扫描":
+                error = "未通过审核"
             raise HTTPException(400, f"技能「{title}」{error}")
         identity = ("personal", candidate["file_id"]) if candidate and not platform else ("platform", name)
         if identity in seen:
@@ -583,7 +601,13 @@ def _new_version(db, user, run_id, body, editing=False):
                 if options.get("skills") is None and not (editing and body.skills is not None)
                 else None
             ),
-            selections=(body.skills if editing and body.skills is not None else options.get("skills")),
+            selections=(
+                body.skills
+                if editing and body.skills is not None
+                else None
+                if editing and body.skill is not None
+                else options.get("skills")
+            ),
             locked=True,
             commit=False,
             sibling_of=old,
