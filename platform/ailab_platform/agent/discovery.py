@@ -2,8 +2,6 @@
 
 import re
 
-from ..internal_skills import metadata
-
 SEARCH = {
     "type": "function",
     "function": {
@@ -51,7 +49,7 @@ def search(query, kind, limit, catalog, user_skills=()):
             for t in catalog
         ]
     if kind in {"any", "skill"}:
-        entries += [{"kind": "skill", **m} for m in [*metadata(), *user_skills]]
+        entries += [{"kind": "skill", **m} for m in user_skills]
 
     def score(entry):
         text = (entry["name"] + " " + entry["description"]).lower()

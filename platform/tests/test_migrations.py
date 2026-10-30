@@ -698,3 +698,28 @@ def test_ui_state_upgrade_downgrade_preserves_run(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT ui_state FROM runs WHERE id='r1'")) is None
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_base_skill_migration_removes_only_xlsx_disables(engine):
+    import json
+
+    _upgrade_to(engine, "0039")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text("UPDATE users SET settings = :settings WHERE id = 'u1'"),
+            {"settings": json.dumps({"disabled_skills": ["xlsx", "pptx"], "other": 1})},
+        )
+        conn.execute(
+            text("INSERT INTO skill_policies (scope, name, state) VALUES ('global', 'xlsx', 'disabled'), ('global', 'pptx', 'disabled')")
+        )
+    _upgrade_to(engine, "0040")
+    with engine.connect() as conn:
+        settings = conn.scalar(text("SELECT settings FROM users WHERE id = 'u1'"))
+        if isinstance(settings, str):
+            settings = json.loads(settings)
+        assert settings == {"disabled_skills": ["pptx"], "other": 1}
+        assert list(conn.execute(text("SELECT name FROM skill_policies"))) == [("pptx",)]
+    _downgrade_to(engine, "0039")
+    with engine.connect() as conn:
+        assert list(conn.execute(text("SELECT name FROM skill_policies"))) == [("pptx",)]

@@ -29,7 +29,7 @@ def test_lease_attests_current_skills_and_restores_its_checkpoint_workspace(prov
         assert proof["provider_ref"] == first["provider_ref"]
         if provider.name != "mock":
             # The runtime user must not be able to change what the cached proof describes.
-            result = manager.exec(first["lease_id"], "printf tampered >> /opt/skills/xlsx/SKILL.md", 10)
+            result = manager.exec(first["lease_id"], "printf tampered >> /opt/skills/platform.xlsx/SKILL.md", 10)
             assert result.exit_code != 0
         manager.put_file(first["lease_id"], "/workspace/outputs/kept.txt", b"checkpoint workspace")
         snapshot = manager.snapshot(first["lease_id"])

@@ -41,7 +41,7 @@ def test_omitted_mode_inherits_chat(api):  # noqa: F811
     assert response.json()["options"]["mode"] == "chat"
 
 
-@pytest.mark.parametrize("values", [{"skill": "pptx"}, {"template": {"id": "unused"}}])
+@pytest.mark.parametrize("values", [{"template": {"id": "unused"}}])
 def test_work_inputs_cannot_switch_chat(api, values):  # noqa: F811
     conv, run = conversation(api, "chat")
     _finish(api, run["id"], "done")
@@ -54,7 +54,9 @@ def test_queue_mode_is_fixed(api, mode, other):  # noqa: F811
     url = f"/v1/conversations/{conv}/queue"
     conflict(api.post(url, headers=AUTH, json={"prompt": "queued", "mode": other}))
     if mode == "chat":
-        conflict(api.post(url, headers=AUTH, json={"prompt": "queued", "skill": "pptx"}))
+        selected = api.post(url, headers=AUTH, json={"prompt": "queued", "skill": "pptx"})
+        assert selected.status_code == 201
+        api.delete(f"{url}/{selected.json()['id']}", headers=AUTH)
     queued = api.post(url, headers=AUTH, json={"prompt": "queued"})
     assert queued.status_code == 201, queued.text
     assert queued.json()["mode"] == mode
@@ -148,3 +150,17 @@ def test_schedule_conversation_uses_configured_mode_then_is_fixed(api, mode, oth
         assert api.get(f"/v1/runs/{second['run_id']}", headers=AUTH).json()["options"]["mode"] == other
     finally:
         api.delete(f"/v1/schedules/{task['id']}", headers=AUTH)
+
+
+def test_edit_can_replace_or_clear_selected_skills(api):  # noqa: F811
+    conv, run = conversation(api, "chat")
+    _finish(api, run["id"], "done")
+    selected = send(api, conv, skills=[{"name": "pptx", "at": 0}]).json()
+    _finish(api, selected["id"], "done")
+    edited = api.post(f"/v1/runs/{selected['id']}/edit", headers=AUTH, json={"prompt": "new", "skill": "xlsx"})
+    assert edited.status_code == 201, edited.text
+    assert [s["name"] for s in edited.json()["options"]["skills"]] == ["platform.xlsx"]
+    _finish(api, edited.json()["id"], "done")
+    cleared = api.post(f"/v1/runs/{edited.json()['id']}/edit", headers=AUTH, json={"prompt": "new", "skills": []})
+    assert cleared.status_code == 201, cleared.text
+    assert cleared.json()["options"]["skills"] == []

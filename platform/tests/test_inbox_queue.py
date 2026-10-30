@@ -334,3 +334,21 @@ def test_active_switch_pauses_queue(api):  # noqa: F811
         db.commit()
     response = api.post(f"/v1/conversations/{conv}/active", headers=AUTH, json={"run_id": run})
     assert response.status_code == 200 and response.json()["queue_paused"] is True
+
+
+def test_steer_skills_survive_checkpoint_and_history(api):  # noqa: F811
+    from ailab_platform.adapters.runtime import fresh_state
+
+    conv, run, headers = conversation(api)
+    queued = enqueue(api, conv, steer=True, prompt="甲乙", skills=[{"name": "pptx", "at": 1}])
+    assert queued.status_code == 201, queued.text
+    qid = queued.json()["id"]
+    claimed = api.post(f"/internal/runs/{run}/steer/claim", headers=headers).json()["items"][0]
+    assert claimed["skills"][0]["title"] == "PPT 设计"
+    state = fresh_state()
+    state.update(messages=[{"role": "user", "content": "甲[技能：PPT 设计]乙"}], steer_ids=[qid])
+    assert save(api, run, headers, state=state).status_code == 200
+    finish(api, run, headers)
+    new = api.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "later", "mode": "chat"}).json()["id"]
+    history = api.get(f"/internal/runs/{new}/model-context", headers=SERVICE).json()["history"]
+    assert history[-1]["steers"] == ["甲[技能：PPT 设计]乙"]

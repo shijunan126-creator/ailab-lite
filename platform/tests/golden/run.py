@@ -48,7 +48,10 @@ def check_outputs(directory: Path):
 
 
 def self_test(directory: Path):
-    for name, script, suffix in [("deck-basic", "pptx/scripts/build.py", "pptx"), ("workbook-basic", "xlsx/scripts/build_xlsx.py", "xlsx")]:
+    for name, script, suffix in [
+        ("deck-basic", "platform.pptx/scripts/build.py", "pptx"),
+        ("workbook-basic", "platform.xlsx/scripts/build_xlsx.py", "xlsx"),
+    ]:
         subprocess.run(
             [
                 sys.executable,

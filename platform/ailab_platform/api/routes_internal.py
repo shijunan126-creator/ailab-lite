@@ -162,11 +162,19 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         from .inbox import steers_for_run
 
         applied = (turn.runtime_meta or {}).get("steer_ids", [])
-        steers = [row.prompt for row in steers_for_run(db, turn) if row.id in applied]
+        from ..agent.prompts import render_skill_mentions
+
+        steers = [render_skill_mentions(row.prompt, row.options.get("skills")) for row in steers_for_run(db, turn) if row.id in applied]
         history.append(
             {
                 **({"steers": steers} if steers else {}),
                 "prompt": turn.prompt,
+                "skills": (turn.options or {}).get("skills")
+                or (
+                    [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]
+                    if (turn.options or {}).get("skill")
+                    else []
+                ),
                 "reply": for_history(reply, keep_ui=turn.id == earlier[-1].id, limit=HISTORY_CHARS),
                 "status": turn.status,
                 "files": files,

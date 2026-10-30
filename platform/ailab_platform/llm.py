@@ -256,15 +256,21 @@ def _call(step: int, tool: str, arguments: dict) -> LLMResponse:
 
 # Each scripted task: the tool calls in order, then the closing message.
 _PPT = [
-    ("load_skill", {"name": "pptx"}),
-    ("exec", {"cmd": "mkdir -p /workspace/work && python /opt/skills/pptx/scripts/build.py --example > /workspace/work/deck.json"}),
-    ("exec", {"cmd": "python /opt/skills/pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
+    ("load_skill", {"name": "platform.pptx"}),
+    (
+        "exec",
+        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json"},
+    ),
+    ("exec", {"cmd": "python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/ailab-demo.pptx"}),
     ("deliver_file", {"path": "/workspace/outputs/ailab-demo.pptx", "filename": "ailab-demo.pptx"}),
 ]
 _XLSX = [
-    ("load_skill", {"name": "xlsx"}),
-    ("exec", {"cmd": "mkdir -p /workspace/work && python /opt/skills/xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"}),
-    ("exec", {"cmd": "python /opt/skills/xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
+    ("load_skill", {"name": "platform.xlsx"}),
+    (
+        "exec",
+        {"cmd": "mkdir -p /workspace/work && python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json"},
+    ),
+    ("exec", {"cmd": "python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/sales.xlsx"}),
     ("deliver_file", {"path": "/workspace/outputs/sales.xlsx", "filename": "sales.xlsx"}),
 ]
 

@@ -17,13 +17,13 @@ def _fresh_cache():
 
 def test_the_system_prompt_lists_the_skills_but_does_not_inline_them() -> None:
     text = prompts.system_prompt()
-    assert "- pptx：" in text and "- xlsx：" in text
+    assert "platform.*" in text and "- pptx：" not in text
     assert "build.py" not in text  # the full instructions come from load_skill
 
 
 def test_load_skill_returns_the_whole_skill() -> None:
-    assert "/opt/skills/pptx/scripts/build.py" in prompts.load_skill("pptx")
-    with pytest.raises(KeyError, match="available: auto-skill, pptx, xlsx"):
+    assert "/opt/skills/platform.pptx/scripts/build.py" in prompts.load_skill("platform.pptx")
+    with pytest.raises(KeyError, match="unknown skill"):
         prompts.load_skill("nope")
 
 
@@ -49,7 +49,7 @@ def test_skills_dir_override(monkeypatch, tmp_path) -> None:
 
     (tmp_path / "index.json").write_text(json.dumps(build_index(tmp_path)))
     monkeypatch.setattr(settings, "skills_dir", tmp_path)
-    assert "- custom：CUSTOM SKILL" in prompts.system_prompt()
+    assert "- custom：CUSTOM SKILL" not in prompts.system_prompt()
     assert prompts.load_skill("custom").endswith("body")
 
 
