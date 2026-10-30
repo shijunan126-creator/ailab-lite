@@ -14,7 +14,7 @@ from ..config import settings
 from ..contracts.jobs import JobEnvelope
 from ..deps import get_db
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunStatus
+from ..models import FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunStatus, SkillDraft
 from ..obs import NO_REQUEST, request_id_var
 from ..ports.service_auth import ServicePrincipal
 from ..service_auth import require_scope
@@ -22,12 +22,13 @@ from ..service_auth import require_scope
 router = APIRouter(prefix="/internal/jobs", tags=["internal-jobs"])
 
 
-def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, mode="work", job_id=None) -> OutboxMessage:
+def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=None, mode="work", job_id=None) -> OutboxMessage:
     envelope = JobEnvelope(
         job_id=job_id or run_id or (f"thumb_{file_id}" if kind == "thumbnail" else uuid4().hex),
         kind=kind,
         run_id=run_id,
         file_id=file_id,
+        draft_id=draft_id,
         mode=mode,
         deadline=datetime.now(UTC) + timedelta(seconds=settings.job_deadline_seconds),
         enqueued_at=datetime.now(UTC),
@@ -68,7 +69,13 @@ def claim_job(
     if job is None:
         return {"state": "done"}
     envelope = JobEnvelope.model_validate(job.payload)
-    resource = db.get(Run, envelope.run_id) if envelope.kind == "run" else db.get(FileObject, envelope.file_id)
+    resource = (
+        db.get(Run, envelope.run_id)
+        if envelope.kind == "run"
+        else db.get(SkillDraft, envelope.draft_id)
+        if envelope.kind == "skill_unpack"
+        else db.get(FileObject, envelope.file_id)
+    )
     guard = user_critical_section(db, resource.user_id) if resource is not None else nullcontext()
     with guard:
         # A concurrent file patch may have committed while this request waited for the user lock.
@@ -125,6 +132,19 @@ def _claim_locked(db, job, body):
                 db.scalar(select(RunAttempt.number).where(RunAttempt.run_id == run.id).order_by(RunAttempt.number.desc()).limit(1)) or 0
             ) + 1
             db.add(RunAttempt(id=token, run_id=run.id, number=number, agent_instance=body.consumer))
+    elif envelope.kind == "skill_unpack":
+        draft = db.get(SkillDraft, envelope.draft_id)
+        file = db.get(FileObject, draft.base_file_id) if draft else None
+        done = (
+            not draft
+            or draft.status != "preparing"
+            or draft.claim_token != job_id
+            or not file
+            or file.user_id != draft.user_id
+            or file.deleted_at is not None
+            or file.purged_at is not None
+            or not file.is_head
+        )
     else:
         file = db.get(FileObject, envelope.file_id)
         done = file is None or file.deleted_at is not None or file.purged_at is not None
@@ -153,6 +173,9 @@ def _claim_locked(db, job, body):
 
         transition_run(db, envelope.run_id, RunStatus.FAILED, error="job deadline exceeded", commit=False)
     if expired or done:
+        if envelope.kind == "skill_unpack" and draft and draft.status == "preparing" and draft.claim_token == job_id:
+            draft.status, draft.stage, draft.error = "failed", None, "技能文件已失效或解包超时，请重试"
+            draft.claim_token = None
         if expired and envelope.kind == "run" and not done:
             db.flush()
             attempt = db.get(RunAttempt, token)

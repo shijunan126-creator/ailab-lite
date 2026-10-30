@@ -689,7 +689,10 @@ class MemoryEmbedding(Base):
 
 class SkillDraft(Base):
     __tablename__ = "skill_drafts"
-    __table_args__ = (Index("ix_skill_drafts_user_status_updated", "user_id", "status", "updated_at"),)
+    __table_args__ = (
+        Index("ix_skill_drafts_user_status_updated", "user_id", "status", "updated_at"),
+        Index("ix_skill_drafts_status_created", "status", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sd"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))

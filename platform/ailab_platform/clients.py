@@ -199,6 +199,9 @@ class PlatformClient(_PlatformApi):
     def job_action(self, job_id, action, **body) -> dict:
         return self._send(self._job_action(job_id, action, **body)).json()
 
+    def skill_draft_action(self, draft_id: str, action: str, **body) -> dict:
+        return self._send(self._req("POST", f"/internal/skill-drafts/{draft_id}/{action}", json=body)).json()
+
     def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return self._send(self._set_run_status(run_id, status, summary, error, result)).json()
 

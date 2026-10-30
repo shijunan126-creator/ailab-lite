@@ -35,8 +35,10 @@ def upgrade():
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_skill_drafts_user_status_updated", "skill_drafts", ["user_id", "status", "updated_at"])
+    op.create_index("ix_skill_drafts_status_created", "skill_drafts", ["status", "created_at"])
 
 
 def downgrade():
+    op.drop_index("ix_skill_drafts_status_created", table_name="skill_drafts")
     op.drop_index("ix_skill_drafts_user_status_updated", table_name="skill_drafts")
     op.drop_table("skill_drafts")
