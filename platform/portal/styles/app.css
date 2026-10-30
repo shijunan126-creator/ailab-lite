@@ -222,6 +222,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .send-failed .link { font-size: var(--text-sm); font-weight: 600; padding: 0; }
 .send-failed .link.muted { color: var(--muted-foreground); font-weight: 500; }
 
+/* back to the newest message: shown only after the reader scrolls up, floating just above the composer */
+.to-bottom {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 2; width: 36px; height: 36px; min-height: 0; margin: 0 auto; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--popover) 78%, transparent); color: var(--muted-foreground);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4); backdrop-filter: blur(8px) saturate(1.4); box-shadow: var(--shadow-sm);
+  opacity: 0; scale: .85; pointer-events: none; transition: opacity var(--t) var(--ease), scale var(--t) var(--ease), color var(--t-fast);
+}
+.to-bottom.shown { opacity: 1; scale: 1; pointer-events: auto; }
+.to-bottom:hover { background: var(--popover); color: var(--foreground); }
+@media (pointer: coarse) { .to-bottom { width: 40px; height: 40px; } }
+
 /* ---------- composer: one line when empty, grows to four, then scrolls inside (HLD §16.5) ---------- */
 .composer-dock { padding: 6px 24px max(16px, env(safe-area-inset-bottom)); max-width: 832px; gap: 8px; z-index: 1; }
 .composer-box {

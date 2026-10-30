@@ -14,7 +14,7 @@ import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged, conversationTitled } from "../app-shell";
 import { CONVERSATION_MOVED } from "../conversation-menu";
-import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
+import { IconArrowDown, IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
 import PendingMessage from "./pending-message";
@@ -113,6 +113,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const scroller = useRef<HTMLDivElement | null>(null);
   const tail = useFollow(scroller, { slack: 80 });
   const stick = tail.following;
+  // the reader went up into the history: offer the way back, never pull them down
+  const [away, setAway] = useState(false);
+  useEffect(() => setAway(false), [id]);
   const loadSeq = useRef(0);
   const detailController = useRef<AbortController | null>(null);
   const olderController = useRef<AbortController | null>(null);
@@ -861,7 +864,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               ref={scroller}
               onScroll={(e) => {
                 tail.onScroll(e);
-                if (e.currentTarget.scrollTop < 80) void loadOlder();
+                const el = e.currentTarget;
+                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > Math.max(160, el.clientHeight * 0.35));
+                if (el.scrollTop < 80) void loadOlder();
               }}
             >
               <GenUIHostProvider value={genuiHost}>
@@ -917,6 +922,13 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               </GenUIHostProvider>
             </div>
             <div className="composer-dock">
+              <button type="button" className={`to-bottom ${away ? "shown" : ""}`} aria-label="回到底部" title="回到底部" tabIndex={away ? 0 : -1} aria-hidden={!away}
+                onClick={() => {
+                  tail.toBottom();
+                  setAway(false);
+                }}>
+                <IconArrowDown size={18} />
+              </button>
               {error ? <div className="alert error">{error}</div> : null}
               <QueueStrip
                 queue={detail?.queue || []}

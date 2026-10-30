@@ -15,6 +15,8 @@ export type Follow = {
   following: React.RefObject<boolean>;
   /** Brings the bottom into view now when following: animated if near, instantly if far. */
   settle: (instant?: boolean) => void;
+  /** The reader asked for the newest content: glide there (a far one lands a screen short first) and follow again. */
+  toBottom: () => void;
   onScroll: (e: React.UIEvent<HTMLElement>) => void;
   /** Ref for the element whose growth is followed (it may be swapped for another; the new one is observed). */
   content: (node: HTMLElement | null) => void;
@@ -65,6 +67,20 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
     frame.current = requestAnimationFrame(step);
   }, [scroller]);
 
+  const toBottom = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    following.current = true;
+    const bottom = el.scrollHeight - el.clientHeight;
+    const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reduced && bottom - el.scrollTop > el.clientHeight * JUMP_SCREENS) {
+      stop();
+      el.scrollTop = bottom - el.clientHeight;
+      placed.current = el.scrollTop;
+    }
+    settle(reduced);
+  }, [scroller, settle]);
+
   const onScroll = useCallback((e: React.UIEvent<HTMLElement>) => {
     const el = e.currentTarget;
     // a scroll this hook made reports the position it wrote (browsers round it)
@@ -87,5 +103,5 @@ export function useFollow(scroller: React.RefObject<HTMLElement | null>, { slack
     stop();
   }, []);
 
-  return useMemo(() => ({ following, settle, onScroll, content }), [settle, onScroll, content]);
+  return useMemo(() => ({ following, settle, toBottom, onScroll, content }), [settle, toBottom, onScroll, content]);
 }
