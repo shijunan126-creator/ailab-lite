@@ -10,10 +10,11 @@
   - 旧规则压过重建组件的个别情况，改回重建值或并入 `app.css`，例如侧栏链接。
   - 原来只靠旧文件内先后顺序成立的覆盖，改为显式复合选择器，例如 `.modal.search-dialog`。
   - preflight 去掉而 Portal 依赖的浏览器默认（列表标记、行内图标、标题粗体、各类输入框外观）在 `base.css` 顶部补回。
-- **CSP**：`proxy.ts` 为每个页面生成 nonce：`script-src 'self' 'nonce-…' 'strict-dynamic'`、`object-src 'none'`、`frame-ancestors 'none'`、`frame-src 'self' blob:`、`connect-src 'self'`；`style-src` 允许 inline（React 的 style 属性）。root layout 读取 nonce 后所有页面动态渲染：页面原本就依赖会话 cookie，增加的只是每次整页请求一次 layout 渲染（毫秒级）。生成页面与交付的 HTML 文件不再用 srcdoc（会继承父页 CSP），由 `app/frame/[kind]` 下发各自的策略（ADR 0028）。PDF.js 关闭 `isEvalSupported`。
+- **CSP**：`proxy.ts` 为每个页面生成 nonce：`script-src 'self' 'nonce-…' 'strict-dynamic'`、`object-src 'none'`、`frame-ancestors 'none'`、`frame-src 'self' blob:`、`connect-src 'self'`；`style-src` 允许 inline（React 的 style 属性）。root layout 读取 nonce 后所有页面动态渲染：页面原本就依赖会话 cookie，增加的只是每次整页请求一次 layout 渲染（毫秒级）。生成页面与交付的 HTML 文件不再用 srcdoc（会继承父页 CSP），由 `app/frame/[kind]` 下发各自的策略（ADR 0028）。PDF.js 关闭 `isEvalSupported`。浏览器端 JavaScript（`run_js`）需要 WebAssembly，`script-src` 另加 `'wasm-unsafe-eval'`（只放行 Wasm 编译，不放行 `eval`）。
 - **图标**：`components/icons.tsx` 改为 lucide 门面，导出名不变；只从这里引图标。
 - **状态**：zustand 只用于跨路由存活的发送队列和上传状态（`lib/outbox.ts`、`lib/uploads.ts`）。会话详情、SSE、翻页锚定保持原有 abort + seq 逻辑。
 - **测试**：`npm test` 改为 Vitest；旧 `node:test` 用例通过 `tests/node-test-compat.mjs` 原样迁移，组件测试按文件声明 jsdom。
+- **浏览器 JavaScript**：`quickjs-emscripten-core` + `@jitl/quickjs-wasmfile-release-sync`（0.32.0，精确锁定）。用途：模型请求的小计算在用户浏览器的 Web Worker 里跑，不占服务端 CPU；首次使用才加载约 0.5 MB Wasm。内存上限靠传入固定 `maximum` 的 `WebAssembly.Memory`（该构建的 `setMemoryLimit` 不生效），超时靠中断处理器加 Worker `terminate()`。
 - **不采用 assistant-ui**：其消息/runtime 模型与以 Run 为中心的版本、过程、排队、插话、ask_user 和 500 轮卸载机制冲突。
 
 本轮**未引入**（没有使用点就不加依赖）：Streamdown（自研 Markdown 已满足 40 万字分块、`ailab-file://`、来源 pill；替换需先做 HLD Spike A 对比）、Recharts（GenUI 图表用自绘 SVG，见 ADR 0028）、Motion、shadcn/Base UI 组件、TanStack Query。各自在对应屏幕重建且有具体行为需要时再引入。
