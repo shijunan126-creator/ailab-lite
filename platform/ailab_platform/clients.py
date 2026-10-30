@@ -341,6 +341,12 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
 
+    async def create_client_call(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/client-calls", timeout=5, json=payload))).json()
+
+    async def get_client_call(self, run_id: str, call_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/client-calls/{call_id}", timeout=5))).json()
+
     async def get_checkpoint(self, run_id: str) -> dict | None:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
 

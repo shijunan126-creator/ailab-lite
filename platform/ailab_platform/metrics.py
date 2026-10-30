@@ -29,6 +29,9 @@ _SLOW = (1, 2.5, 5, 10, 20, 40, 60, 120, 300, 600, 900)
 HTTP_REQUESTS = Counter("ailab_http_requests_total", "HTTP requests", ["service", "method", "route", "status"])
 HTTP_SECONDS = Histogram("ailab_http_request_seconds", "Time to first response byte", ["service", "route"], buckets=_FAST)
 
+CLIENT_CALLS = Counter("ailab_client_calls_total", "Browser call outcomes", ["kind", "outcome"])
+CLIENT_CALL_SECONDS = Histogram("ailab_client_call_seconds", "Browser call latency", ["kind", "outcome"], buckets=_SLOW)
+
 RUNS = Counter("ailab_runs_total", "Runs that entered a status", ["status"])
 CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes and fallback causes", ["outcome", "reason"])
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)

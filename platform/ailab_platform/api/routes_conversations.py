@@ -232,6 +232,7 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         skill=body.skill,
         template=body.template,
         client_send_id=body.client_send_id,
+        client="portal",
     )
     return run_dict(db, run, detail=True)
 
@@ -384,6 +385,8 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     if total_events > 100000:
                         raise HTTPException(422, "分叉过程记录超过100000条上限")
                     for event in events:
+                        if event.type in {"client.call", "client.result"}:
+                            continue
                         payload = deepcopy(event.payload)
                         if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
                             payload["queued_id"] = copied_steers[payload["queued_id"]]
