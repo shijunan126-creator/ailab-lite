@@ -1,5 +1,9 @@
 # 单机能力状态
 
+2026-10-30 队列发送补齐0038持久ID与唯一索引，派发/插话/取消后同请求重放201，跨请求/会话/直接入口复用409；旧JSON不回填，未改响应schema。[验证与边界](../progress/updates/2026-10-30-queue-send-idempotency.md)。
+
+2026-10-29 首次预览后台预热与发送幂等已本地实施：文件 ready/已扫描产物交付在原事务预排不超过20MiB的办公/PDF预览，完整OCR页可复用，`client_send_id`用户级唯一索引防重复Run/派发；保持文件库旧预览合同。成本、冷/缓存边界和验证见[记录](../progress/updates/2026-10-29-preview-send-idempotency.md)，未部署。
+
 2026-10-29 办公内容/OCR与等待修复已在独立分支实施，覆盖PDF/DOCX/PPTX/XLSX的文字与视觉事实、缓存/任务复用、持久等待、自动恢复及Chat/Work分流；本地最终验证见[本轮记录](../progress/updates/2026-10-29-document-reading-reliability.md)。未据此声明已部署、视觉模型质量/NPU或数百人验收。
 
 2026-10-29 fork交叉链路已修复并更新本机API/Portal：消息/附件消费位置、工具读取删除依赖、摘要来源和校准游标随分支迁移，重新打开恢复正确模式，用户切换保持独立。267核心及7真实浏览器通过；旧分支已丢失关系需重fork，完整容量/NPU边界不变。[审查记录](../progress/updates/2026-10-29-fork-context-review.md)。
@@ -221,3 +225,43 @@ main `951ec16` 的 SearXNG 联网检索已集成；检索部署迁入 `base/sear
 2026-10-24 工作区功能（项目说明、品牌套件、通知收件箱、排队/插话、内部只读分享、资料库摘要/OCR选页/就文件提问、移入项目带文件）经 [PR #44](https://github.com/shijunan126-creator/ailab-lite/pull/44) 合入 main `2e64da5`：本地双库/五服务E2E/有限真实模型验收见[集成记录](../progress/updates/2026-10-24-workspace-features-integration.md)。**未部署**；品牌 PPT 需重建发布 `sbx-office`。
 
 2026-10-26 PR #93 项目菜单：桌面/手机新增重命名、说明编辑和删除入口；本地回归修复旧详情覆盖确认写入及删除项目后当前会话判断。实现/验证/精确head CI与合并边界见[记录](../progress/updates/2026-10-26-sidebar-project-menu.md)，不代表部署完成。
+
+## Portal / GenUI（2026-10-29，未提交）
+
+结构化后端/Portal、聊天流式与非阻塞发送、预览前移已集成，本地浏览器134项、Portal68项/build、PG1610项通过；SQLite初次全套单个恢复时序失败后单项通过。范围、最后补丁验证及成本见[集成记录](../progress/updates/2026-10-29-frontend-genui-integration.md)。尚未完成完整HLD：GenUI chunk超60KB目标，严格性能闸门、全站组件/数据迁移/CSP、HtmlArtifact与真实模型评测未完成。用户随后要求全局和所有现有模型默认启用结构化GenUI，已本机部署、未提交/push；未做真实模型质量评测，不标记全站重构完成。
+
+## GenUI 交互与前端重设计（2026-10-30，未提交）
+
+GenUI 支持页内控件与表达式重算、图表读数、表格排序；全站 token/字号/强调色与 Composer 重做，Portal 已执行固定模式。状态不跨刷新，chunk 超预算，性能闸门/全站迁移/真实模型评测未完成。[记录](../progress/updates/2026-10-30-frontend-redesign-genui-interactive.md)。
+
+更新（2026-10-30 P5 收尾）：
+- 控件状态跨刷新保留，分享页和打印页可见（迁移 0039）。
+- HtmlArtifact 已实现：同源 frame 路由运行，无网络。
+- legacy.css 已并入各区域样式文件，启用 preflight，加 nonce CSP。
+- 性能闸门除 GenUI chunk 85.7 KB（用户接受）外全部通过。
+- PostgreSQL 全套通过。
+- 仍未提交、未合并。[记录](../progress/updates/2026-10-30-p5-ui-state-html-artifact.md)。
+
+## 对话固定模式（2026-10-30）
+
+API新消息与排队统一执行开始后不可切换的合同；省略继承，技能/模板隐含Work，编辑/重试保留原轮次模式。fork新会话选择与每次新建会话的定时任务语义不变，无迁移/历史重写。当前为未提交本地实现；专项与完整验证、Portal/E2E边界见[记录](../progress/updates/2026-10-30-conversation-mode-fixed.md)。
+
+## GenUI 目录 v2 与按需披露（2026-10-30，本地实施，未提交）
+
+- 目录由 21 个组件扩到 57 个。派生值（最值、变化率、排名、最优、累计、转化、占比、差值）改由组件计算。
+- GenUI 说明改为按需披露：系统提示只放索引，指南和组件文档通过 `ui_components` 按需读取。Chat 系统提示由 5.6k 降到 1.4k token，Work 由 6.3k 降到 2.2k。
+- 本地检查：浏览器在 1280/375 宽、浅色/深色下逐个检查了全部组件，Portal 测试、Python 全套和 Ruff 均已跑过。
+- P6 第五轮结果见[评测报告](../progress/updates/2026-10-30-genui-real-model-eval.md)。
+- 决定见 [ADR 0029](adr/0029-genui-registry-v2.md)。
+
+## GenUI P6 真实模型质量（2026-10-30，未达标）
+
+- 门槛已由用户改为“整份回答没有错误陈述”；在块外复述数字只作诊断。
+- 两轮提示词迭代：
+  - v6 在两种模式的基础提示里加了一条通用的数据陈述规则，严格项 20/23（v5 为 15/23），错误陈述从 33 条降到 12 条。
+  - v7 再加一条“只描述自己确实实现的功能”，严格项 16/23，错误陈述 18 条。新增的失败与这条规则无关，单次运行之间的波动约为 ±4/23。
+- 采用 v6 的提示词，v7 那条已撤回，停止迭代。
+- 遗留问题：
+  - 缓存解释在 v6 和 v7 中都无条件给出延迟数量级。
+  - 偶发的计数和排名笔误。
+- 详见[评测报告](../progress/updates/2026-10-30-genui-real-model-eval.md#迭代-v7)。

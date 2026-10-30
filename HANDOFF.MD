@@ -1,5 +1,102 @@
 # HANDOFF
 
+## 2026-10-30 P6 无错误陈述门槛
+
+- **23 项的单次运行，波动约 ±4 项。** v6 和 v7 只差一条提示规则，严格项却从 20 降到 16，新增的失败都与改动无关。所以单轮结果不能证明某条规则有效或有害。要看错误陈述总数这类跨轮趋势；要判断一条规则是否有效，同一份提示至少跑两次。
+- v7发现checker命名空间豁免漏了HTML `xmlns`，不要把标准SVG URI当联网；保留原check，复核只清除这条误报并记录差异。`items.cost / items.cap`数组算术会求值成0；名为top5的变量不等于截取了前5，必须核对求值行数。见[迭代v7](docs/progress/updates/2026-10-30-genui-real-model-eval.md#迭代-v7)。
+
+- 通用数据核对提示词也要逐条比较no_ui，不以“没拒答/没过度保留”推定无副作用；生成物的合计、主题颜色、播放状态等说明必须与实际代码对齐。v6暴露“说有合计但只渲染表”和fallback颜色不符，见[迭代v6](docs/progress/updates/2026-10-30-genui-real-model-eval.md#迭代-v6)。
+
+- P6已由用户改为“整份回答没有错误陈述”；正确手写数字、块外复述/排名及表达式来源仅诊断。不要再把`conclusion_compliant=false`或`expression_provenance=false`直接汇总成strict失败；也不能只看数值，必须读hint/Callout/HTML fallback。明确标记的推测与调查建议不冒充事实错误，缺语义审核不可计通过。
+- 旧`v5-check.jsonl`有历史root/引号/sum兼容性判定；本次离线重判固定使用43条`v5-recheck.jsonl`与26条`v5-retry-check.jsonl`，避免把运行时兼容性变化当成模型采样变化。原始答案保留在`/tmp/ailab-genui-eval/`，不要清理。计数和引文只维护在[评测记录](docs/progress/updates/2026-10-30-genui-real-model-eval.md#新门槛重判)及两份judgments。
+
+## 2026-10-30 GenUI 目录 v2 与按需披露
+
+- **OpenUI Lang 只有位置参数。** `Metric("营收", 5, unit: "亿")` 这类命名参数会让整句解析失败。v2 把可选项放进末尾的 `opts` 对象字面量：对象里写错的键会被单独丢弃，其余数据不会错位。新组件的主数据不超过 4 个位置参数，其余一律放 opts。
+- **按需披露只能延后“怎么写”，不能延后“什么算对”。** 第五轮把“结论只出现在界面里”“不做未要求的统计”从系统提示移进了工具返回的指南，严格一致性从 11/23 掉到 5/23，失败几乎都是在块外写数字或比较。决定回答对错的规则留在索引（系统提示）里；指南只放语法、内置函数和组件用法。
+- **模型会在中文字符串里用 ASCII 引号引词。** 例如 `Callout("更像"积压订单"")`。词法器会在第二个引号处截断字符串，后面的内容溢出成多余参数被丢弃。`toProgram` 的规则是：引号后面紧跟运算符、右括号、逗号、冒号或行尾时才算字符串结束，否则当作文字转义。代码字符串里的 `\"` 仍要照写，否则 `print("hi")` 中的 `")` 会被当成结束。
+- **字面量形状错误在解析时就被丢弃，不会走到 Malformed。** 例如 `Timeline("x")`。要测试“数据格式有误”这条路径，得用 `@Each` 之类的表达式在运行时造出错误形状，见 `tests/genui-components.test.tsx`。
+- **CSS 自定义属性会继承。** Grid 的 `--cols: 3` 曾渗进卡片里的 KeyValue，使字段竖着挤成一字一行。凡是用 `var(--x)` 排版的元素，都要在自身规则里声明默认值，不能依赖 `var(--x, 默认)` 的回退。
+- **`textWidth` 估算的中文宽度偏窄。** SVG 标签列在估算值上要多留 16px，否则 Sankey 的“注册”会被截成“注…”。
+- **贝塞尔曲线不会经过控制点。** Flow 的回边曾用三次曲线绕行，结果仍穿过同层的其它节点。现在按层间空隙走正交折线（`route`），绕到所跨各层全部节点之外。
+- **指南每个 Run 只发一次。** 标记 `genui_guide_sent` 存在 Run 状态里，上下文压缩时清除。以后新增任何会丢弃历史工具结果的路径，都要同时清除这个标记，否则模型手里没有语法说明。
+- **HtmlArtifact 的规则只写在它的组件文档里。** 关闭页面功能时，Agent 会删掉索引和指南中提到 HtmlArtifact 的行；指南里一旦出现这个词，删行后上下文就不完整了。契约测试会检查这一点。
+- **组件可视检查的做法**：临时建一个页面渲染 `<Answer text=…/>`，覆盖全部组件，然后用 `next start` 起服务。Playwright 带任意值的 `ailab_token` cookie 访问（proxy 只检查 cookie 是否存在），分别截 1280/375 宽、浅色/深色。检查完删掉临时页面。
+
+## 2026-10-30 P5 收尾：样式并层、CSP、HtmlArtifact 与 ui-state
+
+- **去掉 legacy 层会改变胜负，不只是搬文件。**
+  - 以前 components 层整体压过 legacy；同层后改由特异性和先后决定。
+  - 三类回归都真实出现过：
+    - 更具体的旧规则反超重建组件，例如 `button.side-link{font:inherit}` 盖掉 `.side-link` 的字重。
+    - 旧文件拆成多个区域文件后先后颠倒，例如 `.search-dialog` 失去对 `.modal` 的覆盖。
+    - 模板拼出的类名被当成死类删掉，例如 `tone-${kind}`。
+  - 静态推断要么漏（`:last-child`、简写与全写属性），要么误报上万条。
+  - 可靠的做法是同一份代码出两份构建：一份用迁移前的样式，一份用迁移后的。在同一 DOM 上逐元素比较计算样式，并强制 `:hover`/`:focus-visible`、打开菜单和弹窗。脚本思路见本轮更新记录，临时脚本不入库。
+- **preflight 会去掉浏览器默认样式**，包括标题粗体与字号、段落外边距、列表标记、`svg` 的 block 显示、输入框边框。Portal 依赖的部分已在 `styles/base.css` 顶部补回。新增的元素不要假设有浏览器默认样式。
+- **srcdoc 会继承父页 CSP。** 父页启用 nonce 后，srcdoc 里的内联脚本全部失效。生成页面和交付的 HTML 一律走 `app/frame/[kind]`，由它下发自己的 CSP，文档用 postMessage 投递。
+- **`document.open/write/close` 会让 iframe 再触发一次 load。** 检测“页面跳走”时，run/doc 类型要预期 2 次 load，只有第 3 次才算离开；preview 用 innerHTML，只有 1 次。
+- **父页 `frame-src 'self' blob:` 会拦住 iframe 跳到外部地址**，Chrome 显示错误页并触发 load。宿主据此停止页面，不需要 `allow-top-navigation` 之类的放宽。
+- **FastAPI 路由里做同步 DB 提交必须写成 `def`**（线程池执行）。写成 `async def` 会阻塞事件循环（ui-state PUT 曾经如此）。
+- **离线夹具**：
+  - `[[genui-html]]`：可运行的抛硬币页，会探测 fetch 和 localStorage，并写 `body[data-ran]`。
+  - `[[genui-html-escape]]`：300ms 后尝试跳转。
+  - `[[genui-html-cut]]`：围栏不闭合。
+  - `[[genui-interactive]]`：滑块会触发 ui-state 保存，E2E 等待 PUT 返回 204。
+- **不要用 `git rm --cached` 或任何会改动暂存区的命令整理文件。** 曾经出现过一条来源不明的 `D app/globals.css` 暂存，已用 `git restore --staged` 恢复。删除文件就直接删工作区文件。
+- **视觉对比用的服务栈要作为后台任务常驻运行。** 普通 shell 退出时会回收它启动的 uvicorn 子进程，Portal 随后会一直卡在登录。
+- **Chrome 里 `white-space` 是简写**（`white-space-collapse` + `text-wrap-mode`）。后面的 `text-wrap: balance` 会重置 text-wrap-mode，迁移前写了 `nowrap` 的标题其实一直会换行。比较“迁移前后”要比实际计算值，不要比声明。
+- **grid 的自动轨道按子项的 min-content 定宽。** `.modal{width:100%}` 放进 `display:grid` 的遮罩后，一个不换行的长标题会把对话框撑出手机屏幕。遮罩上写 `grid-template-columns: minmax(0, 1fr)`，轨道等于内边距内的空间，不要在每个弹窗上补 max-width。
+- **OpenUI 解析出的树里，表达式还是 AST**（`@Each`、`@Sum`、`$变量`）。任何读组件参数的地方（复制、打印纯文本）都要先 `evaluateRoot`，按 Renderer 的方式给 store 播种：`$` 键交给 `initialize` 作 persisted，其它键用 `set`。求值后控件的 value 仍是 `{__reactive, target}` 绑定，要用 store 读当前值。直接读解析树曾让表达式算出的表格在复制时抛 `rows.slice is not a function`。
+- **语法合法的程序也会算出错误的形状**：`rows + [total]` 得到数字 0，一行里可以嵌套多行。Table 和图表收到的数据用 `tableRows` 和 `chartData`（`catalog/schema.ts`）检查，形状不对就显示“数据格式有误，无法显示”，复制时省略该部分。书写中不提示，因为值可能暂时缺失。不要过滤成空表或错位的图。
+- **Portal 启用 CSP 后，Playwright 的字符串谓词会被拦截。** `wait_for_function("window.x === true")` 这种裸表达式在页面里走 eval，会报 `EvalError … 'unsafe-eval'`。E2E 一律写成函数形式：`"() => window.x === true"`，或 `"(n) => …"` 加 `arg=`。不要为了测试给 CSP 加 `unsafe-eval` 或 `bypass_csp`。
+- **性能代理“历史轮次 mutations”要分来源看。** 流式期间历史轮次的变化全部发生在 `.turn` 元素本身（`childList`、`style`、`data-mounted`），是有界渲染把滚出视口的轮次换成占位，不是内容重渲染。`probe.js` 按记录目标区分：内容变化预算为 0；挂载/卸载和最后一个 delta 之后的完成态变化只作信息列出。
+
+## 2026-10-30 前端重设计与可交互 GenUI
+
+- GenUI“不能用鼠标交互”不是 OpenUI 的限制：之前提示词 `bindings:false, builtinFunctions:false`、目录只有 Button/Tabs、图表没有指针处理。OpenUI 本身支持 `$变量`、reactive prop、表达式与内置函数。控件 prop 要在 zod schema 上 `markReactive`，渲染侧用 `useStateField(name, value)`；只改 TS 不重新 `npm run genui:prompt` 会让模型看不到新语法。
+- Tailwind v4 `text-[var(--text-sm)]` 被当作颜色，不设字号，是之前字号混乱的根因之一；字号只用 `--text-*` token（CSS 中）或 `text-(length:--text-sm)`。
+- SVG 图表不要靠 viewBox 随列宽缩放：文字会跟着变大变小。用 ResizeObserver 量宽度后按像素绘制，轴文字固定 12px。
+- 全局元素规则（`a{color}`、`button{min-height;padding}`）会压坏具体控件（侧栏标题、`.switch`、勾选按钮）。全局元素规则只放 font/radius，尺寸交给具体类。
+- 文字溢出修法：flex/grid 子项 `min-width:0` + `overflow-wrap:anywhere`；表格数字列 `nowrap`、表格横向滚动；GenUI 网格列按容器查询（`.genui-block` 是 container）而不是视口；超 8 位的 Metric 用中文紧凑记数，原值在 title。不要用 overflow:hidden 遮。
+- Mock `[[genui-*]]` 夹具会被自动标题请求复用：`_genui_answer` 对 `{"question":` 开头的标题提示返回 None，否则会话标题是 openui 源码。
+- Playwright 点 dev 服务器页面会被 `nextjs-portal` 遮罩拦截，dev 截图脚本加 init 样式隐藏；E2E 用生产构建不受影响。
+- 对话开始后模式固定（API 返回 409 `conversation_mode_fixed`），Composer 不再显示模式切换；改模式只能“从这里分支为对话/工作”。技能只在可用 Work 时出现在 + 菜单。
+
+## 2026-10-29 Portal 前端栈与 GenUI 集成
+
+- 用户随后明确要求所有现有模型默认启用结构化GenUI：Settings默认true，随仓库与本机模型目录均包含genui。提示词准入仍同时检查全局开关和模型capability；部署渲染代码却保留两处关闭，会让用户只得到普通HTML代码块。不要再沿用旧“默认关闭/P6前不启用”结论；自由HTML执行仍未实现。
+- Composer 内菜单不能放在带 overflow-x 的滚动工具栏中，否则纵向弹出也会被裁掉；停靠区需有正确层叠，窄屏模式控件不可收缩。删旧 CSS 时检查孤立选择器，曾残留 `.shell.collapsed` 使下一条项目首页规则只在侧栏收起时生效。
+- 平滑文字要按固定起止时间释放并在追上后停 rAF；按“剩余量×dt”指数递减既不保证120ms完成又会空转。GenUI复制应点击时转换，首次 render 早于懒加载完成，不能提前固定成源码。
+- 围栏感知历史裁剪只禁止切开 UI；普通 Markdown 超限仍保留前缀，不能因整个 md part 大于预算而返回空历史。
+- 非阻塞 outbox 需处理同毫秒排序、首页准备中后续消息归并及上传对象释放；队列持久去重已补齐（0038），边界见下方“首次预览与发送幂等”。验收/未达标预算见[集成记录](docs/progress/updates/2026-10-29-frontend-genui-integration.md)。
+- OpenUI `library.prompt()` 的 inlineMode 要求 `openui-lang` 围栏和“只输出变化语句”，与本项目协议冲突；其 Action 段固定宣传 @OpenUrl 并带示例。`catalog/prompt.ts` 去掉这两段换成自己的；改目录后 `npm run genui:prompt`，漂移测试逐字节比对。
+- `@openuidev/*` 在 Node 端（生成提示词时）默认向 PostHog 上报，脚本已带 `OPENUI_TELEMETRY_DISABLED=1`；不要在别处直接 `node` 调用目录。
+- 围栏拆分以 Python 与共享夹具为准：原文逐字保留（CRLF、空白 md 段、UI 末尾换行），只认反引号 + 小写 `openui`。两侧都只按 `\n` 分行（Python `splitlines` 会在 U+2028 等处断行，JS 不会）。
+- OpenUI 词法器会无报错地吃掉两类模型自然写法，任何解析 OpenUI 的地方（渲染、复制、评测 `evals/genui/check.ts`）都先过 `catalog/program.ts` 的 `toProgram`：① 名字只认 `[A-Za-z_][A-Za-z0-9_]*`，`表 = Table(...)` 的中文名被跳过，整块渲染为空（对话模式“可视化没出来”的根因）；② 单引号字符串解码 `\"`→`"`、`\n`→换行、`\d`→`d`，HtmlArtifact 页面里的 `html+="<div class=\"row\">"` 变成坏 JS（`Unexpected identifier 'row'`）。`toProgram` 把单引号串当原文，只有 `\'` 是转义；双引号串仍是 JSON。提示词同步要求反斜杠只写一个，不要再让模型手工双重转义。
+- 工具流量不回放进后续轮次的历史：若历史里没有上一轮读过的来源，模型会否认自己引用过的数字。`history_sources` 把来源标题和 URL 附在历史回复后。
+- `capability_discovery` 只是把未用工具的 schema 挤出提示词，不是权限：模式允许的工具按名字直接调用（search 后 read_url）要执行并激活，不能报 `not available in this turn`。
+- 滚动跟随统一用 `lib/use-follow.ts`：ResizeObserver 驱动、指数缓动、远距离直接跳；用 `placed` 区分自己写的 scrollTop 和读者滚动，否则缓动本身会被当成“用户上滚”而停止跟随。
+- `npm test` 是 Vitest：旧 `node:test` 用例经 `tests/node-test-compat.mjs` 提供 `t.mock/t.after`；React.lazy 会缓存失败的 import，重试必须新建 lazy。
+- 旧 `.chat-main{padding-top:48px}` 已删：浮动按钮不占行，靠 `.messages-inner` 顶部留白；E2E 依赖的类名/中文标签见 `platform/portal/AGENTS.md`。
+- 懒加载会被常量导入悄悄打破：从 `catalog/schema.ts` 取一个数字就会把 zod + lang-core（约 65 KB gzip）拉进对话页首包。聊天侧只从 `catalog/limits.ts` 取常量；验收看 `.next/server/app/(app)/c/[id]/page_client-reference-manifest.js` 的 entryJSFiles 不含 `createLibrary`。
+- E2E 只复制 conftest 列出的 Portal 目录/文件；新增顶层目录或配置（如 `styles/`、`postcss.config.mjs`）要同步加入，否则构建失败或 Tailwind 静默无输出。
+- 发送不再等附件：E2E 不能再断言“上传中发送按钮禁用”，改断言待发送消息出现且附件就绪前无会话/消息 POST。队列 POST 也带 `client_send_id`；不能仅在 pending 的 ≤5 条中去重，须按用户查询持久列。
+
+## 2026-10-29 首次预览与发送幂等
+
+- 2026-10-30 修复：队列0038持久列/用户唯一索引及请求摘要跨 queued/started/steered/canceled 重放，均返回201；不同请求/会话或与直接发送跨入口复用ID返回409。直接入口也须检查队列，派发自身不携带ID创建Run。fork仅复制历史，不复制发送ID；取消保留身份，reaper随已删除会话清理。旧JSON不回填（可能重复且无原始请求摘要）；修复仅保证新入库身份。验证见[记录](docs/progress/updates/2026-10-30-queue-send-idempotency.md)。
+
+- 文件库 FilePreview 与 Run 工作区预览是两个合同：只有后者已有 kind=pdf；不要只改 Broker 输出 PDF，API 完成校验仍会拒绝。
+- ready 后预渲染只在原事务写 outbox，不同步调沙箱；20MiB 默认阈值、原渲染槽和 pending/终态幂等必须一起保留。产物创建时 ORM 默认 purpose 尚可能未落地，需 flush 后判断 library。
+- OCR 选页不能当全文预览缓存；仅复用页数已知且完整覆盖前 min(40,总页数)、资产属于同 file 的清单。
+- client_send_id 按用户唯一，重试须先于附件/额度/会话忙碌检查；参数化测试共用数据库，同用户不同发送必须使用不同 ID。Docker 默认 socket 不存在时复用个人 shim；Mac 未共享路径的 bind 会在 VM 变空目录，基准脚本/合成文件改用 stdin 注入。
+- 新worktree跑文档/OCR测试前先在vendor/zcode-office-runtime执行npm ci --ignore-scripts与npm run build；缺runner.mjs会让整组原生文档索引/覆盖测试失败，不能误判为业务逻辑回归。
+
+## 2026-10-29 GenUI 历史与摘要
+
+- UI 围栏必须在 SQL substr、JSON 序列化和压缩分片之前处理；只替换 Python 的字符切片仍会保存半截源码。历史保留的是整条祖先链的最近一轮，不是每页最后一轮；摘要输入须独立转占位，不能复用最近轮源码。共享 CRLF 夹具按 bytes 解码读取，避免 universal-newline 改写合同。
+
 ## 2026-10-29 办公视觉覆盖与文件等待
 
 - 原生文字质量须来自结构化事实，不能把页标题、empty/image占位当正文；新parser ailab2，旧PDF占位只做版本受限兼容。OCR缓存按文件内容/引擎独立于原生parser升级复制，旧技能版本/付费pending工具须可恢复。
@@ -787,3 +884,29 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - office-read必须在Work主提示词可见，不能仅靠附件触发的skill。输出目录用mkdir原子占有，已存在即拒绝；文档内工具指导不应强迫已有工作区路径走file_id附件解析。真实模型验证脚本必须提供可恢复skill错误及交付终止语义，缺接口造成的循环不能误判产品失败。
 
 - 内部文档skill同时供Chat和Work加载，按run mode生成指导；Chat不能出现Work沙箱命令，Work编辑平台文件仍先复制。验证不能用四格式解析通过冒充各格式真实模型问答。
+
+## 2026-10-30 对话固定模式
+
+- 固定模式不能取活动叶节点：历史可能混用模式，fork复制轮次也保留原模式。按首个没有 `result.forked_from_run_id` 的自有Run确定，否则取 `Conversation.forked_from.mode`；编辑/重试保留原轮次模式。请求省略mode需用 `model_fields_set` 区分schema默认work；否则旧Chat会话会被误判切换。队列入队与出队共享准入，幂等重放仍先返回已有身份。详见[记录](docs/progress/updates/2026-10-30-conversation-mode-fixed.md)。
+
+## 2026-10-30 GenUI 状态后端
+
+- `ui_state` 必须独立于 Agent 写入的 `result`，Run/Share 的 response model 也须声明字段，否则 FastAPI 会过滤；fork 的显式 Run 列复制故意不复制 UI 状态。状态更新不受 Run 终态限制。
+- Pydantic 校验错误会带原始 input；含 NaN/Infinity 的错误再经 JSONResponse 序列化会抛 500。UI 状态先校验可序列化有限 JSON 与 UTF-8 大小，返回不含原始输入的 422。详见[后端记录](docs/progress/updates/2026-10-30-genui-ui-state-html-backend.md)。
+
+## 2026-10-30 GenUI 真实模型评测
+
+- 仅parser合法会漏掉派生值硬写、表头与行错位、delta相对变化与绝对差混用、正文比较方向错误；P6需独立人工语义核对，不能以100%合法率声称质量通过。记录见[评测报告](docs/progress/updates/2026-10-30-genui-real-model-eval.md)。
+- OpenUI store.initialize不会覆盖已有dirty状态；独立控件探针应显式恢复每个声明初值后再改一个变量，否则后续探针受前次状态污染。SVG命名空间HTTP字面量应按要求报告，但不等同实际网络请求。
+
+
+## 2026-10-30 真模型浏览器验收边界
+
+- 图表必须按 `#turn-${run_id}` 统计；整页统计会把上一轮 SVG 算到本轮，漏掉模型追问改用 HtmlArtifact/CSS 图表的情况。HtmlArtifact 控件在 iframe 内，不能用 Portal 父页 input 数量判断计算器不可交互。
+- 内外滚动容器三阶段验收分别用独立浏览器视图观察同一活跃 Run，避免父区上滚让内区离开可视范围、鼠标滚轮落到另一容器。记录 scrollTop/scrollHeight/clientHeight 和真实增长；不要把测试操作互相干扰判为产品失败。当前六例结果见[本轮记录](docs/progress/updates/2026-10-30-genui-chat-render-follow.md#codex-本机部署与真模型验收)。
+
+## 2026-10-30 GenUI catalog v2 评测陷阱
+
+- 合法交互不限Select/Slider/Toggle：Tabs也能满足原地切换，不能被评分器当成缺控件。SVG命名空间URI仅是标识符；字面量告警保留，但要与资源URL/联网分开。
+- 组件/表达式接手计算仍会有语义错误：先核对比较的主客体，再判断多/少；HTML测周期需累计模拟时间，不能相减不同帧内的局部时间。parser通过不代表HTML实现正确。
+- 本次用户要求保留`/tmp/ailab-genui-eval/`原始回答供审阅，不能沿用旧轮“结束清理”流程。证据只链接[第五轮](docs/progress/updates/2026-10-30-genui-real-model-eval.md#第五轮catalog-v2)，不复制原始输出进仓库。
