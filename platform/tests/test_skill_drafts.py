@@ -109,7 +109,8 @@ def test_extract_create_and_deletion_fence(monkeypatch):
             notification = db.scalar(select(Notification).where(Notification.conversation_id == conv))
             assert notification.kind == "skill_draft.ready" and notification.title == (draft["title"] or "技能草稿")
         c.delete(f"/v1/conversations/{conv}", headers=me)
-        assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "discarded"
+        discarded = c.get(f"/v1/skill-drafts/{did}", headers=me).json()
+        assert discarded["status"] == "discarded" and discarded["name"] is None
 
 
 def test_invalid_model_output_can_retry(monkeypatch):

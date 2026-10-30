@@ -391,4 +391,5 @@ def invalidate_drafts(db, user_id, conversation_ids=None):
     for draft in db.scalars(query):
         draft.status, draft.stage, draft.error = "discarded", None, "对话或文件来源已删除"
         draft.files, draft.claim_token, draft.claimed_until = [], None, None
+        draft.name, draft.title, draft.description = None, None, None
         schedule_object_deletion(db, f"skill-drafts/{user_id}/{draft.id}/", "skill_draft", prefix=True)

@@ -253,6 +253,7 @@ def discard(draft_id: str, expected_revision: int, user: User = Depends(current_
         if row.status not in ACTIVE or row.revision != expected_revision:
             raise HTTPException(409, "草稿状态或版本已改变，请刷新后重试")
         row.status, row.stage, row.claim_token, row.files = "discarded", None, None, []
+        row.name, row.title, row.description = None, None, None
         row.revision += 1
         prefix = f"skill-drafts/{user.id}/{row.id}/"
         schedule_object_deletion(db, prefix, "skill_draft", prefix=True)
