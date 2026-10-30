@@ -1,0 +1,32 @@
+[
+  {
+    "kind": "md",
+    "text": "之前\n",
+    "closed": true,
+    "index": 0
+  },
+  {
+    "kind": "ui",
+    "text": "root = Metric(\"a\", 1)\n",
+    "closed": true,
+    "index": 1
+  },
+  {
+    "kind": "md",
+    "text": "中间\n",
+    "closed": true,
+    "index": 2
+  },
+  {
+    "kind": "ui",
+    "text": "root = Text(\"b\")\n",
+    "closed": true,
+    "index": 3
+  },
+  {
+    "kind": "md",
+    "text": "之后\n",
+    "closed": true,
+    "index": 4
+  }
+]

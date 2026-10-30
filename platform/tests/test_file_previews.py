@@ -111,6 +111,10 @@ def upload(api, name, data=b"hello", mime="application/octet-stream", *, process
     fid = r.json()["id"]
     if process:
         process_file(fid, platform=ApiClient(api))
+        # Simulate the asynchronous dispatcher; readiness now stages office/PDF jobs eagerly.
+        from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
+
+        dispatch_preview_jobs()
     return fid
 
 
@@ -278,6 +282,7 @@ def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
     from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
     from ailab_platform.models import OutboxMessage
 
+    monkeypatch.setattr(settings, "preview_eager_max_bytes", 0)
     fid = upload(api, "outbox.pdf")
     q = get_queue()
     enqueue = q.enqueue

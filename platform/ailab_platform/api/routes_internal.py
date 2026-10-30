@@ -28,6 +28,7 @@ from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, Usa
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
 from ..deps import get_db
+from ..domain.answer_parts import for_history, history_sources
 from ..events import append_event
 from ..library import assign_file_version, delete_storage_objects, reserve_filename, thumbnail_candidate, trim_file_versions
 from ..locks import user_critical_section
@@ -166,9 +167,10 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             {
                 **({"steers": steers} if steers else {}),
                 "prompt": turn.prompt,
-                "reply": reply[:HISTORY_CHARS],
+                "reply": for_history(reply, keep_ui=turn.id == earlier[-1].id, limit=HISTORY_CHARS),
                 "status": turn.status,
                 "files": files,
+                "sources": history_sources((turn.result or {}).get("sources")),
             }
         )
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None

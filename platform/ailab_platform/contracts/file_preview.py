@@ -92,6 +92,23 @@ def preview_kind(filename: str, content_type: str) -> str | None:
     return None
 
 
+def cached_page_preview(file_id: str, meta: dict) -> tuple[dict, dict] | None:
+    """OCR selections are partial: reuse only a complete first-40-page preview, with private assets."""
+    try:
+        preview = FilePreview.model_validate(meta.get("ocr_preview") or {})
+        if preview.status != "ready" or preview.kind != "pages" or not preview.page_count:
+            return None
+        names = preview.pages or []
+        if [int(name[2:-4]) for name in names] != list(range(1, min(40, preview.page_count) + 1)):
+            return None
+        assets = {name: PreviewAsset.model_validate(meta["ocr_preview_assets"][name]).model_dump() for name in names}
+        if any(a["key"] != f"derived/{file_id}/preview/{name}" or a["content_type"] != "image/jpeg" for name, a in assets.items()):
+            return None
+        return preview.model_dump(exclude_none=True), assets
+    except (ValueError, KeyError, TypeError):
+        return None
+
+
 def text_manifest(filename: str, meta: dict) -> dict:
     suffix = PurePath(filename).suffix.lower()
     language = LANGUAGES.get(suffix)

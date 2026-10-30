@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import shlex
 import time
@@ -16,6 +17,7 @@ from ..domain.admission import LeasePrincipal
 from .service import LeaseError, LeaseManager
 
 SCRIPT = Path(__file__).resolve().parents[1] / "sandbox_tools" / "render_preview.py"
+log = logging.getLogger("ailab.broker.render")
 
 
 class LibraryRenderer:
@@ -36,6 +38,7 @@ class LibraryRenderer:
 
     def render(self, file_id: str, job_id: str) -> dict:
         started = time.monotonic()
+        phases = {}
         platform = self.manager.platform
         file = platform.get_file(file_id, job="preview", preview_job=job_id)
         meta = file.get("meta") or {}
@@ -61,11 +64,15 @@ class LibraryRenderer:
             thumbnail_option += " --pages " + ",".join(map(str, selected))
 
         def prepare(lease: dict) -> None:
+            injection_started = time.monotonic()
             self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)
             self.manager.put_input(lease, "/workspace/.ailab/render_preview.py", SCRIPT.read_bytes())
+            phases["inject_seconds"] = time.monotonic() - injection_started
 
         principal = LeasePrincipal(user_id="system:preview", run_id=f"preview:{job_id}", system=True)
+        acquire_started = time.monotonic()
         handle = self.manager.acquire(self._spec(), principal, wait_seconds=30, prepare=prepare)
+        phases["acquire_seconds"] = time.monotonic() - acquire_started
         lease_id = handle.lease_id
         try:
             if pdf_mime and suffix != ".pdf":
@@ -74,12 +81,14 @@ class LibraryRenderer:
             if time.monotonic() - started >= 120:
                 raise LeaseError("render_timeout")
             remaining = max(1, int(120 - (time.monotonic() - started)))
+            exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
                 f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
             )
+            phases["exec_seconds"] = time.monotonic() - exec_started
             if time.monotonic() - started >= 120 or result.exit_code != 0:
                 raise LeaseError("render_timeout" if time.monotonic() - started >= 120 else "render_failed")
             try:
@@ -107,6 +116,7 @@ class LibraryRenderer:
             else:
                 raise LeaseError("invalid_render_output")
             assets, total = {}, 0
+            export_started = time.monotonic()
             # Manager enforces a per-object read cap; additionally bound the complete preview.
             for name in names:
                 if time.monotonic() - started >= 120:
@@ -121,6 +131,11 @@ class LibraryRenderer:
                 )
                 total += size
                 assets[name] = {"key": key, "content_type": mime, "sha256": digest}
+            phases["export_seconds"] = time.monotonic() - export_started
             return {"preview": preview, "assets": assets}
         finally:
+            release_started = time.monotonic()
             self.manager.release(handle, reason="preview_complete")
+            phases["release_seconds"] = time.monotonic() - release_started
+            phases["total_seconds"] = time.monotonic() - started
+            log.info("library render phases=%s", {k: round(v, 3) for k, v in phases.items()})

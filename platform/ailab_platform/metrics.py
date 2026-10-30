@@ -216,3 +216,34 @@ def register_once(key: str, collector: Collector) -> None:
 
 def observe_web_read(path: str, outcome: str, seconds: float) -> None:
     WEB_READ_SECONDS.labels(path if path in ("static", "rendered", "static_fallback") else "other", outcome).observe(seconds)
+
+
+GENUI_BLOCKS = Counter("ailab_genui_blocks_total", "OpenUI blocks by completion outcome", ["mode", "outcome"])
+GENUI_COMPONENTS = Counter("ailab_genui_components_total", "OpenUI component occurrences", ["component"])
+GENUI_ANSWERS = Counter("ailab_genui_answers_total", "Agent step answers with and without UI", ["mode", "has_ui"])
+GENUI_CLIENT = Counter("ailab_genui_client_total", "Client rendering and action outcomes", ["outcome"])
+GENUI_FIRST_RENDER_SECONDS = Histogram(
+    "ailab_genui_first_render_seconds", "Client time to first UI render", buckets=(0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10)
+)
+
+
+def record_genui(text: str, mode: str, *, max_blocks: int = 8, max_block_chars: int = 32000) -> dict:
+    from .domain.answer_parts import inspect, split
+
+    mode = "chat" if mode == "chat" else "work"
+    report = inspect(text, max_block_chars=max_block_chars)
+    GENUI_ANSWERS.labels(mode, "true" if report["blocks"] else "false").inc()
+    for index, block in enumerate(part for part in split(text) if part["kind"] == "ui"):
+        outcome = (
+            "over_limit"
+            if index >= max_blocks
+            else "oversize"
+            if len(block["text"]) > max_block_chars
+            else "closed"
+            if block["closed"]
+            else "unclosed"
+        )
+        GENUI_BLOCKS.labels(mode, outcome).inc()
+    for component, count in report["components"].items():
+        GENUI_COMPONENTS.labels(component).inc(count)
+    return report

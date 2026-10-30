@@ -97,6 +97,15 @@ def test_wait_queue_and_notification(api):  # noqa: F811
         )
 
 
+def test_queue_retry_with_the_same_send_id_finds_the_queued_message(api):  # noqa: F811
+    conv, _, _ = conversation(api)
+    first = enqueue(api, conv, client_send_id="queued-once")
+    assert first.status_code == 201, first.text
+    assert enqueue(api, conv, client_send_id="queued-once").json()["id"] == first.json()["id"]
+    assert len(detail(api, conv)["queue"]) == 1
+    assert enqueue(api, conv, client_send_id="another").json()["id"] != first.json()["id"]
+
+
 def test_queue_limits_edit_cancel_delete(api, monkeypatch):  # noqa: F811
     conv, _, _ = conversation(api)
     for values in [{"model": "missing"}, {"file_ids": ["other"]}, {"skill": "missing"}]:

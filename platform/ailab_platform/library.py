@@ -160,7 +160,11 @@ def move_lineage(db: Session, file: FileObject, project_id: str | None) -> None:
 
 def trim_file_versions(db: Session, file: FileObject) -> list[str]:
     """Keep history rows and references; remove excess objects only after commit."""
+    # Artifact delivery enters the library already scanned/ready, bypassing the upload completion hook.
+    from .api.preview_requests import request_ready_preview
+
     db.flush()
+    request_ready_preview(db, file)
     oldest = list(
         db.scalars(
             select(FileObject)

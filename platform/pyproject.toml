@@ -63,3 +63,6 @@ source = ["ailab_platform"]
 [tool.coverage.report]
 show_missing = true
 fail_under = 80
+
+[tool.setuptools.package-data]
+"ailab_platform.contracts.genui" = ["*.md", "*.json"]

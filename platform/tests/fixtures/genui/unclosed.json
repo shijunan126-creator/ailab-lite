@@ -1,0 +1,14 @@
+[
+  {
+    "kind": "md",
+    "text": "文字\n",
+    "closed": true,
+    "index": 0
+  },
+  {
+    "kind": "ui",
+    "text": "root = Text(\"partial\")",
+    "closed": false,
+    "index": 1
+  }
+]

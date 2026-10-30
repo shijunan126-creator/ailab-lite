@@ -677,3 +677,24 @@ def test_template_and_slides_queries_use_indexes(engine):
             plan = str(db.execute(text(prefix + sql)).all()).lower()
             assert expected in plan or (expected == "ix_files_slides_folders" and "ix_files_folder_listing" in plan), plan
             print(f"{engine.dialect.name} {expected}: {plan}")
+
+
+def test_ui_state_upgrade_downgrade_preserves_run(engine):
+    _upgrade_to(engine, "0038")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0039")
+    with engine.begin() as conn:
+        assert conn.scalar(text("SELECT ui_state FROM runs WHERE id='r1'")) is None
+        from sqlalchemy import JSON, column, table, update
+
+        runs = table("runs", column("id"), column("ui_state", JSON))
+        conn.execute(update(runs).where(runs.c.id == "r1").values(ui_state={"v": 1, "blocks": {"0": {"tab": 1}}}))
+    _downgrade_to(engine, "0038")
+    with engine.connect() as conn:
+        assert "ui_state" not in {c["name"] for c in inspect(conn).get_columns("runs")}
+        assert conn.scalar(text("SELECT prompt FROM runs WHERE id='r1'")) == "p"
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT ui_state FROM runs WHERE id='r1'")) is None
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

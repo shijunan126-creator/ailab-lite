@@ -161,7 +161,7 @@ async def login(body: LoginRequest, request: Request, db: Session = Depends(get_
 
 @router.get("/me")
 def me(user: User = Depends(current_user)) -> dict:
-    return _user_out(user)
+    return {**_user_out(user), "features": {"genui_html": settings.genui_html_enabled and settings.genui_enabled}}
 
 
 @router.post("/logout")

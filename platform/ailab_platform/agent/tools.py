@@ -1,7 +1,6 @@
 """Agent tools exposed to the model.
 
-Every tool is executed through the Broker; the Agent never owns a sandbox
-handle or a container runtime socket.
+Sandbox tools execute through the Broker; local capability readers need no sandbox.
 """
 
 from __future__ import annotations
@@ -12,6 +11,7 @@ from typing import Any
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
+from ..contracts.genui import component_names, docs_for, guide_for
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools
@@ -171,6 +171,36 @@ LOAD_SKILL = {
         "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "version": {"type": "string"}}, "required": ["name"]},
     },
 }
+
+UI_COMPONENTS = {
+    "type": "function",
+    "function": {
+        "name": "ui_components",
+        "description": "写 openui 界面块之前读取所选组件的签名、参数和示例；names 填打算使用的组件名。",
+        "parameters": {
+            "type": "object",
+            "properties": {"names": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 16}},
+            "required": ["names"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
+def ui_components(args: dict, state: dict, *, html_enabled: bool) -> dict:
+    """Read local docs; the caller persists the guide marker with its tool result."""
+    names = args.get("names")
+    if set(args) != {"names"} or not isinstance(names, list) or not 1 <= len(names) <= 16 or not all(isinstance(n, str) for n in names):
+        raise ToolError("ui_components requires names: 1–16 strings and no other parameters")
+    text, unknown = docs_for(names, html_enabled)
+    result = {"ok": True, "components": text, "unknown": unknown}
+    if not state.get("genui_guide_sent"):
+        result["guide"] = guide_for(html_enabled)
+        state["genui_guide_sent"] = True
+    if unknown:
+        result["available"] = sorted(n for n in component_names() if html_enabled or n != "HtmlArtifact")
+    return result
+
 
 SEARCH_IMAGES = {
     "type": "function",
@@ -367,6 +397,7 @@ def tools_for_turn() -> list[dict]:
         UPDATE_PLAN,
         *TOOLS,
         LOAD_SKILL,
+        UI_COMPONENTS,
         net_tools.SAVE_SKILL,
         *([SEARCH_IMAGES] if images.enabled() else []),
         *([*WEB_TOOLS, *net_tools.TOOLS] if web.enabled() else []),
@@ -375,7 +406,16 @@ def tools_for_turn() -> list[dict]:
 
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
-    return [MEMORY, RECALL, *LIBRARY_TOOLS, VIEW_ATTACHMENT, LOAD_SKILL, *(WEB_TOOLS if web.enabled() else []), net_tools.SAVE_SKILL]
+    return [
+        MEMORY,
+        RECALL,
+        *LIBRARY_TOOLS,
+        VIEW_ATTACHMENT,
+        LOAD_SKILL,
+        UI_COMPONENTS,
+        *(WEB_TOOLS if web.enabled() else []),
+        net_tools.SAVE_SKILL,
+    ]
 
 
 class ToolContext:

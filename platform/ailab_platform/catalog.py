@@ -145,7 +145,7 @@ def parse_catalog(data: dict) -> Catalog:
             raise CatalogError(f"{where}: fallback must be an alias list")
         if spec.capabilities is not None and (
             not isinstance(spec.capabilities, list)
-            or any(not isinstance(c, str) or c not in {"tools", "vision"} for c in spec.capabilities)
+            or any(not isinstance(c, str) or c not in {"tools", "vision", "genui"} for c in spec.capabilities)
         ):
             raise CatalogError(f"{where}: invalid capabilities")
         if (

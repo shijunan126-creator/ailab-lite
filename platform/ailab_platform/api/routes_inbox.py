@@ -1,11 +1,13 @@
 """User-owned bounded inbox and queued messages."""
 
 import base64
+import hashlib
 import json
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from sqlalchemy import func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..contracts.inbox import (
@@ -89,13 +91,35 @@ def mark_read(body: NotificationRead, user: User = Depends(current_user), db: Se
 
 @router.post("/v1/conversations/{conversation_id}/queue", response_model=QueuedMessageOut, status_code=201)
 def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    # Freeze the validated request, not mutable queue content or the current active run/model.
+    digest = hashlib.sha256(body.model_dump_json(exclude={"client_send_id"}).encode()).hexdigest()
+
+    def replay():
+        if body.client_send_id is None:
+            return None
+        prior = db.scalar(
+            select(QueuedMessage).where(QueuedMessage.user_id == user.id, QueuedMessage.client_send_id == body.client_send_id)
+        )
+        if prior is not None:
+            if prior.conversation_id != conversation_id or prior.options.get("client_send_digest") != digest:
+                raise HTTPException(409, "client_send_id already used for a different message")
+            # Like direct sends, replays return 201 and current state, including cancellation.
+            return queue_output(prior)
+        # Queue and Run outputs are different contracts; crossing endpoints is a conflict.
+        if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.client_send_id == body.client_send_id)) is not None:
+            raise HTTPException(409, "client_send_id already used for a direct send")
+        return None
+
     with user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
         db.refresh(conv)
+        if (prior := replay()) is not None:
+            return prior
+        pending = db.scalars(pending_query(conv.id).limit(5)).all()
         leaf = db.get(Run, conv.active_run_id, populate_existing=True) if conv.active_run_id else None
         if not leaf or leaf.status not in {RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_USER}:
             raise HTTPException(409, {"code": "conversation_idle", "message": "对话空闲，请直接发送"})
-        if len(db.scalars(pending_query(conv.id).limit(5)).all()) >= 5:
+        if len(pending) >= 5:
             raise HTTPException(422, "最多排队5条消息")
         if body.template is not None and body.steer:
             raise HTTPException(400, "模板只能用于新一轮，不能插话")
@@ -105,26 +129,35 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             body.prompt,
             leaf.model if body.steer else body.model,
             body.file_ids,
-            (leaf.options or {}).get("mode", "work") if body.steer else body.mode,
+            (leaf.options or {}).get("mode", "work") if body.steer else body.mode if "mode" in body.model_fields_set else None,
             None if body.steer else body.skill,
             body.template,
+            conversation=conv,
+            turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
         )
         row = QueuedMessage(
             conversation_id=conv.id,
             user_id=user.id,
+            client_send_id=body.client_send_id,
             prompt=body.prompt,
             model=model,
-            options=options,
+            options={**options, "client_send_digest": digest} if body.client_send_id else options,
             file_ids=files,
             steer=body.steer,
             after_run_id=leaf.id,
         )
-        db.add(row)
-        db.flush()
-        from .document_sources import bind_refs
+        try:
+            db.add(row)
+            db.flush()
+            from .document_sources import bind_refs
 
-        bind_refs(db, "queued_message", row.id, files)
-        db.commit()
+            bind_refs(db, "queued_message", row.id, files)
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            if (prior := replay()) is not None:
+                return prior
+            raise
         return queue_output(row)
 
 

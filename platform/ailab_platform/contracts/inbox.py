@@ -58,6 +58,7 @@ class QueueCreate(BaseModel):
     mode: Literal["chat", "work"] = "work"
     skill: str | None = Field(default=None, max_length=40)
     steer: bool = False
+    client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("prompt")
     @classmethod

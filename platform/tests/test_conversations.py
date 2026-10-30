@@ -67,7 +67,13 @@ def test_a_conversation_collects_turns_and_gets_a_title() -> None:
 
         internal = c.get(f"/internal/runs/{second['id']}", headers=SERVICE).json()
         assert internal["history"] == [
-            {"prompt": "帮我做一个关于城市更新的 PPT\n细节…", "reply": "# 城市更新演示方案\n做好了", "status": "succeeded", "files": []}
+            {
+                "prompt": "帮我做一个关于城市更新的 PPT\n细节…",
+                "reply": "# 城市更新演示方案\n做好了",
+                "status": "succeeded",
+                "files": [],
+                "sources": [],
+            }
         ]
         assert internal["workspace_restore_key"] is None  # the first turn saved none
         public = c.get(f"/v1/runs/{second['id']}", headers=AUTH).json()

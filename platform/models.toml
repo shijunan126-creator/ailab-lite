@@ -19,7 +19,7 @@
 #   context_tokens  model context window; input assembly uses at most 70 percent
 #   max_output_tokens per-call output capacity, including reasoning; also used for the usage reservation
 #   AILAB_MODEL_MAX_OUTPUT_TOKENS can optionally impose a smaller operator ceiling.
-#   capabilities    tools and/or vision; omitted preserves the legacy tools flag
+#   capabilities    tools, vision and/or genui; omitted preserves the legacy tools flag
 #   default         the model preselected for new runs (exactly one, or the first one is used)
 
 [[models]]
@@ -35,7 +35,7 @@ fallback = []
 # DeepSeek Flash limits: https://api-docs.deepseek.com/quick_start/pricing/
 context_tokens = 1048576
 max_output_tokens = 393216
-capabilities = ["tools", "vision"]
+capabilities = ["tools", "vision", "genui"]
 echo_reasoning = true
 disable_reasoning_for_quiet = true
 default = true
@@ -49,4 +49,4 @@ weight = 0.1
 fallback = []
 context_tokens = 32768
 max_output_tokens = 8192
-capabilities = ["tools"]
+capabilities = ["tools", "genui"]

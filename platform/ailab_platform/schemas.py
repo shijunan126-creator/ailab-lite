@@ -71,6 +71,7 @@ class PromptRequest(BaseModel):
 
 
 class RunCreate(PromptRequest):
+    client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
     title: str | None = Field(default=None, max_length=200)
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
@@ -104,6 +105,7 @@ class RunOut(ORMModel):
     summary: str
     error: str
     result: dict
+    ui_state: dict | None = None
     resumable: bool = False
     created_at: datetime
     started_at: datetime | None
@@ -203,6 +205,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
+    client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
