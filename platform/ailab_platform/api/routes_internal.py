@@ -756,6 +756,33 @@ def _bound_file(
         raise HTTPException(404, "not a brand asset")
     if file.user_id != context.user_id or file.status != FileStatus.READY:
         raise HTTPException(status_code=404, detail="file not found for run")
+    attached = False
+    if job == "skill":
+        if principal.service != "agent" or file.purpose != "skill" or not (file.meta or {}).get("skill"):
+            raise HTTPException(404, "skill unavailable")
+        owner = db.get(User, run.user_id)
+        if owner:
+            from ..models import SkillApproval
+            from ..skill_policy import effective_policy, run_disabled_skills
+            from .routes_runtime import read_checkpoint
+
+            name = (file.meta or {})["skill"].get("name")
+            _, policy = effective_policy(db, owner)
+            approval = db.get(SkillApproval, file.id)
+            state = approval.state if approval else None
+            if (
+                name
+                and name not in run_disabled_skills(db, owner)
+                and policy != "disabled"
+                and state != "disabled"
+                and (policy == "allowed" or state == "allowed")
+            ):
+                checkpoint = read_checkpoint(db, run)
+                loaded = (checkpoint or {}).get("state", {}).get("loaded_skills", [])
+                attached = any(s.get("kind") == "personal" and s.get("name") == name and s.get("file_id") == file.id for s in loaded)
+        if not attached:
+            raise HTTPException(404, "skill unavailable")
+        return file
     attached = file.id in (run.input_file_ids or [])
     if not attached:
         attached = bool(
@@ -822,7 +849,7 @@ def _bound_file(
 
 
 FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview", "files:read_for_document")
-FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document"]
+FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill"]
 
 
 @router.get("/files/{file_id}", response_model=FileOut)

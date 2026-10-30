@@ -147,6 +147,54 @@ def _office_skills(value, *, keywords=False):
     return result
 
 
+_FILE_TOOLS = {
+    "list_files",
+    "read_file",
+    "write_file",
+    "exec",
+    "exec_wait",
+    "exec_kill",
+    "deliver_file",
+    "download_url",
+    "copy_library_file",
+    "read_library_file",
+    "search_library",
+    "resolve_attachment",
+    "view_attachment",
+    "extract_text",
+}
+
+
+def _tool_office_skills(name, arguments, result):
+    if name not in _FILE_TOOLS:
+        return []
+
+    def file_fields(value, in_collection=False):
+        if isinstance(value, dict):
+            return [
+                v
+                for k, item in value.items()
+                for v in (
+                    [item]
+                    if k in {"filename", "path", "content_type", "sandbox_filename"} and isinstance(item, str)
+                    else file_fields(item, True)
+                    if k in {"files", "artifacts", "outputs"}
+                    else file_fields(item, in_collection)
+                    if isinstance(item, (dict, list))
+                    else []
+                )
+            ]
+        if isinstance(value, list):
+            return [
+                v
+                for item in value
+                for v in (file_fields(item, in_collection) if not isinstance(item, str) else [item] if in_collection else [])
+            ]
+        return []
+
+    return _office_skills(file_fields([arguments, result]))
+
+
 class _Turn:
     """Mutable state of one run while the loop works on it."""
 
@@ -431,9 +479,19 @@ class AgentLoop:
         for item in loaded:
             if item.get("kind") == "personal" and item["name"] not in turn.skill_files:
                 current = turn.personal.get(item["name"])
-                if not current or current.get("file_id") != item.get("file_id"):
-                    raise ToolError(f"技能 {item['name']} 已不可用")
-                await self._read_personal(turn, run_id, item["name"])
+                try:
+                    data = await self.platform.get_file_bytes(item["file_id"], run_id=run_id, job="skill", max_bytes=skillfiles.MAX_ZIP)
+                    filename = item.get("filename")
+                    if not filename and current and current.get("file_id") == item["file_id"]:
+                        filename = current.get("filename")
+                    if not filename:
+                        filename = "skill.zip" if data.startswith(b"PK\x03\x04") else "SKILL.md"
+                    _, files = skillfiles.unpack(data, filename)
+                    turn.skill_files[item["name"]] = files
+                    await self._install_skill(turn, item["name"])
+                except Exception:
+                    title = item.get("title") or (current or {}).get("title") or item["name"]
+                    await self._event(run_id, "agent.warning", {"message": f"技能「{title}」已不可用，本轮不再使用它的附带文件"})
         for name in existing:  # personal skills read before the sandbox existed
             await self._install_skill(turn, name)
         # Files already in outputs (restored from the last turn) are not this turn's work: never auto-deliver them unchanged.
@@ -1259,6 +1317,8 @@ class AgentLoop:
                 entry = {"name": wanted, "kind": "base" if wanted in BASE_SKILLS else "personal" if wanted in turn.personal else "builtin"}
                 if result.get("file_id"):
                     entry["file_id"] = result["file_id"]
+                    entry["filename"] = turn.personal[wanted]["filename"]
+                    entry["title"] = turn.personal[wanted].get("title") or wanted
                 if result.get("version"):
                     entry["version"] = result["version"]
                 loaded = state.setdefault("loaded_skills", [])
@@ -1878,7 +1938,7 @@ class AgentLoop:
                                 state["sources"].append(source)
                                 seen.add(source["url"])
                     state["pending_office_skills"] = sorted(
-                        set(state.get("pending_office_skills", [])) | set(_office_skills([call.arguments, result]))
+                        set(state.get("pending_office_skills", [])) | set(_tool_office_skills(call.name, call.arguments, result))
                     )
                     state["tool_log"][invocation] = observation(call.name, call.arguments, result)
                     messages.append(tool_result_message(call.id, call.name, result))

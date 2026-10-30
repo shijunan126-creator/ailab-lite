@@ -62,13 +62,38 @@ def test_picked_and_attached_skills_are_loaded_before_model_without_sandbox():
     assert broker.leases == 0
 
 
+def test_first_model_system_message_is_stable_across_users_and_contexts():
+    calls = []
+    for suffix, picked in [("alpha", "pptx"), ("beta", "platform.pdf")]:
+
+        class Platform(FakePlatform):
+            async def get_run(self, run_id):
+                return {
+                    **await super().get_run(run_id),
+                    "user_id": suffix,
+                    "project_instructions": "project-" + suffix,
+                    "memory": {"revision": 12345, "entries": [{"id": suffix, "content": "memory-" + suffix, "valid_from": "2026-10-30"}]},
+                    "options": {"mode": "chat", "skills": [{"name": picked, "title": picked, "at": 0}]},
+                }
+
+        llm = ScriptedLLM([LLMResponse(content="done")])
+        asyncio.run(AgentLoop(platform=Platform(), broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
+        calls.append(llm.seen_messages[0])
+    assert calls[0][0] == calls[1][0]
+    for messages, suffix in zip(calls, ("alpha", "beta"), strict=True):
+        first = messages[0]["content"]
+        assert all(value not in first for value in ("project-", "memory-", "12345", "2026-10-30", "next_cursor"))
+        assert "project-" + suffix in str(messages[1:]) and "memory-" + suffix in str(messages[1:])
+        assert any(m["role"] == "tool" and "skill" in m["content"] for m in messages[1:])
+
+
 def test_resume_reinstalls_personal_files_when_lease_is_acquired():
     from ailab_platform.agent.loop import _Turn
 
     from .test_personal_skills import SKILL, ZIP
 
     class Platform(FakePlatform):
-        async def get_file_bytes(self, file_id, run_id=None):
+        async def get_file_bytes(self, file_id, run_id=None, job="processing", max_bytes=None):
             assert file_id == "f1"
             return ZIP
 
@@ -85,6 +110,45 @@ def test_resume_reinstalls_personal_files_when_lease_is_acquired():
         assert broker.leases == 1
 
     asyncio.run(exercise())
+
+
+def test_resume_frozen_skill_and_unavailable_skill_do_not_wedge_lease():
+    from ailab_platform.agent.loop import _Turn
+
+    from .test_personal_skills import SKILL, ZIP
+
+    class Platform(FakePlatform):
+        async def get_file_bytes(self, file_id, run_id=None, job="processing", max_bytes=None):
+            if file_id == "gone":
+                raise ValueError("unavailable")
+            return ZIP
+
+    async def exercise():
+        platform, broker = Platform(), FakeBroker()
+        loop = AgentLoop(platform=platform, broker=broker)
+        turn = _Turn({"options": {"mode": "work"}})
+        turn.personal = {"weekly": {**SKILL, "file_id": "new"}}
+        loop._states["run_1"] = {
+            "loaded_skills": [
+                {"name": "weekly", "kind": "personal", "file_id": "old", "filename": SKILL["filename"]},
+                {"name": "gone", "kind": "personal", "file_id": "gone", "title": "旧技能"},
+            ]
+        }
+        await loop._ensure_lease(turn, "run_1")
+        await loop._ensure_lease(turn, "run_1")
+        assert any("weekly/scripts/fill.py" in path for path, _ in broker.put_calls)
+        assert [p["message"] for t, p in platform.events if t == "agent.warning"] == ["技能「旧技能」已不可用，本轮不再使用它的附带文件"]
+
+    asyncio.run(exercise())
+
+
+def test_office_detection_only_uses_file_fields_of_file_tools():
+    from ailab_platform.agent.loop import _tool_office_skills
+
+    assert _tool_office_skills("web_search", {}, {"results": [{"filename": "report.pdf"}]}) == []
+    assert _tool_office_skills("read_library_file", {}, {"text": "report.pdf"}) == []
+    assert _tool_office_skills("list_files", {}, {"files": [{"path": "/workspace/report.pdf"}]}) == ["platform.pdf"]
+    assert _tool_office_skills("deliver_file", {"path": "report.docx"}, {}) == ["platform.docx"]
 
 
 def test_platform_skill_refuses_unverified_lease():
@@ -130,3 +194,19 @@ def test_resume_loads_office_detected_before_checkpoint():
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     assert any(m["role"] == "tool" and "next_cursor" in m["content"] for m in llm.seen_messages[0])
     assert any(t == "agent.skill" and p["name"] == "platform.pdf" and p["reason"] == "office" for t, p in platform.events)
+
+
+def test_resume_does_not_reemit_loaded_skill():
+    from ailab_platform.adapters.runtime import fresh_state
+
+    state = fresh_state()
+    state.update(
+        messages=[{"role": "system", "content": "system"}, {"role": "user", "content": "inspect"}],
+        loaded_skills=[{"name": "platform.pdf", "kind": "base"}],
+        skill_initialization_done=True,
+    )
+    platform = FakePlatform()
+    platform.checkpoint = {"step": 1, "state": state}
+    llm = ScriptedLLM([LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
+    assert not any(t == "agent.skill" or (t == "agent.tool_call" and p.get("name") == "load_skill") for t, p in platform.events)

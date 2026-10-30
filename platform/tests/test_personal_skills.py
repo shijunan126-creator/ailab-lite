@@ -80,6 +80,43 @@ def _upload(c: TestClient, headers: dict, filename: str, data: bytes) -> str:
     return up["id"]
 
 
+def test_frozen_skill_read_requires_checkpoint_owner_and_current_policy(monkeypatch):
+    from fastapi import HTTPException
+
+    from ailab_platform.api.routes_internal import _bound_file
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import FileObject, SkillApproval, User
+    from ailab_platform.service_auth import SERVICE_SCOPES, ServicePrincipal
+
+    with TestClient(app) as c:
+        me, other = _user(c), _user(c)
+        file_id = _upload(c, me, "SKILL.md", SKILL_MD.format(name="frozen-weekly").encode())
+        run = c.post("/v1/runs", headers=me, json={"prompt": "test"}).json()
+        other_run = c.post("/v1/runs", headers=other, json={"prompt": "test"}).json()
+        monkeypatch.setattr(
+            "ailab_platform.api.routes_runtime.read_checkpoint",
+            lambda db, run: {"state": {"loaded_skills": [{"name": "frozen-weekly", "file_id": file_id, "kind": "personal"}]}},
+        )
+        principal = ServicePrincipal("agent", SERVICE_SCOPES["agent"])
+        with SessionLocal() as db:
+            file = db.get(FileObject, file_id)
+            file.is_head = 0
+            db.commit()
+            assert _bound_file(db, file_id, principal, run["id"], "skill").id == file_id
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, other_run["id"], "skill")
+            db.add(SkillApproval(file_id=file_id, state="disabled"))
+            db.commit()
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, run["id"], "skill")
+            db.delete(db.get(SkillApproval, file_id))
+            user = db.get(User, file.user_id)
+            user.settings = {**(user.settings or {}), "disabled_skills": ["frozen-weekly"]}
+            db.commit()
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, run["id"], "skill")
+
+
 def test_a_skill_in_the_library_is_listed_switchable_and_usable_by_its_owner_only() -> None:
     name = f"weekly-{uuid.uuid4().hex[:6]}"
     with TestClient(app) as c:
