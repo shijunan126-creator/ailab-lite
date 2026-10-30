@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from . import metrics
 from .events import append_event
-from .models import Run, RunCheckpoint, RunStatus
+from .models import ClientCall, Run, RunCheckpoint, RunStatus
 
 ALLOWED: dict[str, set[str]] = {
     RunStatus.QUEUED: {RunStatus.RUNNING, RunStatus.FAILED, RunStatus.CANCELED},
@@ -75,6 +75,9 @@ def _transition_run(
         return run, False  # someone else moved it first; theirs stands
 
     if new_status in RunStatus.TERMINAL:
+        db.execute(
+            update(ClientCall).where(ClientCall.run_id == run_id, ClientCall.status.in_(["pending", "claimed"])).values(status="canceled")
+        )
         # At most two rows per run. A frozen deadline makes lifecycle an indexed
         # range scan instead of joining/sorting every historical checkpoint.
         db.execute(update(RunCheckpoint).where(RunCheckpoint.run_id == run_id).values(expires_at=now + timedelta(days=7)))
