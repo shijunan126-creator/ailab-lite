@@ -16,7 +16,7 @@ pytestmark = pytest.mark.e2e
 def _ask(page, prompt: str) -> None:
     wait_models(page)
     select_model(page, "test-fast")
-    page.fill("textarea", prompt)
+    page.get_by_role("textbox", name="消息", exact=True).fill(prompt)
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
     page.wait_for_function("() => document.querySelectorAll('.turn-meta').length >= 1", timeout=90000)
@@ -94,7 +94,7 @@ def _csp(response) -> dict[str, str]:
 def test_portal_pages_and_the_frame_route_send_their_csp(logged_in, stack) -> None:
     page = logged_in
     main = _csp(page.request.get(stack.portal + "/"))
-    assert re.fullmatch(r"'self' 'nonce-[\w+/=]+' 'strict-dynamic'", main["script-src"]), main
+    assert re.fullmatch(r"'self' 'nonce-[\w+/=]+' 'strict-dynamic' 'wasm-unsafe-eval'", main["script-src"]), main
     assert main["object-src"] == "'none'" and main["frame-ancestors"] == "'none'"
     run = _csp(page.request.get(stack.portal + "/frame/genui-run"))
     assert run["default-src"] == "'none'" and "connect-src" not in run and run["frame-ancestors"] == "'self'"

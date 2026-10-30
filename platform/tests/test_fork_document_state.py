@@ -161,10 +161,13 @@ def test_fork_remaps_summary_sources_and_pending_revalidation():
         assert response.status_code == 200, response.text
 
 
-def test_skill_forces_work_attachment_admission_and_input_strategy():
+def test_picked_skill_keeps_mode_for_attachment_admission():
     with TestClient(app) as c:
         fid = upload(c, "partial.txt", ("字" * 200010).encode(), "text/plain")
         response = c.post("/v1/runs", headers=AUTH, json={"prompt": "read ranges", "mode": "chat", "skill": "pptx", "file_ids": [fid]})
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "chat_attachment_too_large"
+        response = c.post("/v1/runs", headers=AUTH, json={"prompt": "read ranges", "mode": "work", "skill": "pptx", "file_ids": [fid]})
         assert response.status_code == 201, response.text
         run = response.json()
         assert run["options"]["mode"] == "work"

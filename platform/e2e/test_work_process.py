@@ -15,7 +15,7 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
     page = logged_in
     wait_models(page)
     select_model(page, "test-fast")
-    page.fill("textarea", "验证流式衔接")
+    page.get_by_role("textbox", name="消息", exact=True).fill("验证流式衔接")
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
     region = page.get_by_role("region", name="工作过程")
@@ -44,7 +44,7 @@ def test_one_chronological_region_stops_and_reloads_without_raw_reasoning(logged
 def test_failure_keeps_one_header_and_persisted_duration(logged_in):
     page = logged_in
     wait_models(page)
-    page.fill("textarea", "验证失败状态")
+    page.get_by_role("textbox", name="消息", exact=True).fill("验证失败状态")
     page.keyboard.press("Enter")
     region = page.get_by_role("region", name="工作过程")
     expect(region.locator(".steps-head")).to_contain_text("执行失败", timeout=20000)

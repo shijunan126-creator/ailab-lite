@@ -10,6 +10,7 @@ from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal, init_db
 from ailab_platform.models import (
     Artifact,
+    ClientCall,
     FileObject,
     FileStatus,
     ModelUsage,
@@ -29,7 +30,7 @@ def db():
     init_db()
     with SessionLocal() as session:
         # other test modules leave runs/files behind in the shared test database
-        for model in (RunEvent, ModelUsage, UsageReservation, Artifact, Run, Template, FileObject):
+        for model in (ClientCall, RunEvent, ModelUsage, UsageReservation, Artifact, Run, Template, FileObject):
             session.execute(delete(model))
         session.commit()
         yield session

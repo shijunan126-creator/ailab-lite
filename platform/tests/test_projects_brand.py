@@ -123,14 +123,14 @@ def test_project_instructions_and_brand_are_frozen_in_checkpoint():
     platform = Platform()
     llm = ScriptedLLM([LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
-    frozen = platform.checkpoint["state"]["messages"][0]["content"]
+    frozen = platform.checkpoint["state"]["messages"][1]["content"]
     assert "first instruction" in frozen and '"version": 3' in frozen
-    assert frozen.index("项目说明（用户") < frozen.index("revision=")
+    assert "revision=" not in frozen
     platform.checkpoint["state"]["finished"] = False
     platform.instruction = "changed instruction"
     llm = ScriptedLLM([LLMResponse(content="done again")])
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_2"))
-    assert llm.seen_messages[0][0]["content"] == frozen
+    assert llm.seen_messages[0][1]["content"] == frozen
 
 
 def test_brand_settings_validation_and_permissions(api):
@@ -288,7 +288,7 @@ def test_brand_broker_injects_only_frozen_assets_with_limits(monkeypatch):
 
 
 def test_generator_applies_brand_and_template_and_opt_out(tmp_path, monkeypatch):
-    path = Path(__file__).resolve().parents[2] / "images/sbx-office/skills/pptx/scripts/build.py"
+    path = Path(__file__).resolve().parents[2] / "images/sbx-office/skills/platform.pptx/scripts/build.py"
     local_script = tmp_path / "build.py"
     local_script.write_bytes(path.read_bytes())
     spec = importlib.util.spec_from_file_location("brand_ppt_builder", local_script)

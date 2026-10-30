@@ -56,7 +56,7 @@ def test_portal_performance(browser, stack, conversations, cpu, repeat):
         page.get_by_text("历史消息 499", exact=True).wait_for()
         page.wait_for_timeout(1000)
         dom = page.locator("*").count()
-        page.locator("textarea").focus()
+        page.get_by_role("textbox", name="消息", exact=True).focus()
         # One key at a time ensures >= 60 distinct rendering opportunities, with 5 warmups.
         for index in range(70):
             page.keyboard.press("a")
@@ -66,10 +66,10 @@ def test_portal_performance(browser, stack, conversations, cpu, repeat):
         page.locator(".turn").first.wait_for()
         page.locator(".messages").evaluate("el => el.scrollTop = el.scrollHeight")
         page.wait_for_timeout(1000)
-        page.locator("textarea").fill(TRIGGER)
+        page.get_by_role("textbox", name="消息", exact=True).fill(TRIGGER)
         previous_last = page.locator(".turn").last.get_attribute("id")
         page.evaluate("window.perfProbe.begin()")
-        page.locator("textarea").press("Enter")
+        page.get_by_role("textbox", name="消息", exact=True).press("Enter")
         # Last answer must have the full model text, not a summary or a partial delta.
         page.wait_for_function(
             "([text, previous]) => { const turn = [...document.querySelectorAll('.turn')].at(-1); "

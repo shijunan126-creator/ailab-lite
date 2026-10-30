@@ -416,9 +416,9 @@ def test_earlier_turns_are_given_to_the_model() -> None:
     history = [{"prompt": "做个 PPT", "reply": "做好了", "files": ["a.pptx"], "status": "succeeded"}]
     llm = ScriptedLLM([LLMResponse(content="ok")])
     _run(llm, platform=ConversationPlatform(history))
-    roles = [(m["role"], m["content"][:6]) for m in llm.seen_messages[0][1:]]
+    roles = [(m["role"], m["content"][:6]) for m in llm.seen_messages[0][2:]]
     assert roles == [("user", "做个 PPT"), ("assistant", "做好了\n\n（"), ("user", "and no")]
-    assert "a.pptx" in llm.seen_messages[0][2]["content"]
+    assert "a.pptx" in llm.seen_messages[0][3]["content"]
 
 
 def test_previews_render_after_file_changes_and_land_in_the_result() -> None:
@@ -566,7 +566,7 @@ def test_the_model_is_told_when_the_last_workspace_expired() -> None:
 
     llm = ScriptedLLM([LLMResponse(content="ok")])
     _run(llm, platform=Expired())
-    assert "上一轮的工作区已过期" in llm.seen_messages[0][0]["content"]
+    assert "上一轮的工作区已过期" in llm.seen_messages[0][1]["content"]
 
 
 def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):

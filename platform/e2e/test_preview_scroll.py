@@ -89,7 +89,7 @@ def test_chat_preview_uses_the_same_continuous_pages(logged_in, stack):
     page = logged_in
     wait_models(page)
     select_model(page, "test-fast")
-    page.fill("textarea", "你好")
+    page.get_by_role("textbox", name="消息", exact=True).fill("你好")
     page.keyboard.press("Enter")
     page.locator(".turn-meta").wait_for(timeout=30000)
     cid = page.url.rsplit("/", 1)[-1]

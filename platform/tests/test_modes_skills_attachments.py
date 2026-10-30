@@ -25,7 +25,7 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": []}
+        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": [], "client": "portal"}
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
@@ -37,7 +37,7 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "skill": "nope"}).status_code == 400
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "mode": "other"}).status_code == 422
         default = c.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).json()
-        assert default["options"] == {"mode": "work", "capability_discovery": 1, "skills": []}
+        assert default["options"] == {"mode": "work", "capability_discovery": 1, "skills": [], "client": "portal"}
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:

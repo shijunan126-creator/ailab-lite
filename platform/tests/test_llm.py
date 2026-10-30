@@ -19,7 +19,7 @@ def test_mock_ppt_sequence() -> None:
     ]
     first = _call(messages, "帮我做一个 PPT")
     assert first.tool_calls and first.tool_calls[0].name == "load_skill"
-    assert first.tool_calls[0].arguments == {"name": "pptx"}
+    assert first.tool_calls[0].arguments == {"name": "platform.pptx"}
 
     messages.append(
         {
