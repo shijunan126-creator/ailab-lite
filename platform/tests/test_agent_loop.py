@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from ailab_platform.agent.loop import AgentLoop
+from ailab_platform.agent.loop import AgentLoop, _Turn
 from ailab_platform.config import settings
 from ailab_platform.llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMResponse, ToolCall
 from tests.runtime_fakes import CheckpointFake, background_request
@@ -95,6 +95,44 @@ class ScriptedLLM(LLMClient):
         self.user_ids.append(user_id)
         self.seen_messages.append([dict(m) for m in messages])
         return self.responses.pop(0)
+
+
+def test_workspace_and_delivery_failures_hide_internal_details(caplog):
+    secret = "POST http://127.0.0.1:18181/internal/leases/lease_private"
+
+    class BrokenBroker(FakeBroker):
+        async def snapshot(self, lease_id):
+            raise RuntimeError(secret)
+
+        async def list_files(self, lease_id, path):
+            return [{"path": "/workspace/outputs/result.txt", "size": 1}]
+
+        async def commit(self, lease_id, path):
+            raise RuntimeError(secret)
+
+        async def refresh_previews(self, lease_id):
+            return [{"filename": "result.pdf", "error": secret}]
+
+    async def exercise():
+        platform = FakePlatform()
+        loop = AgentLoop(platform=platform, broker=BrokenBroker(), llm=ScriptedLLM([]))
+        turn = _Turn({})
+        turn.lease_id = "lease_private"
+        assert await loop._snapshot(turn, "run_1") is None
+        await loop._deliver_leftovers("run_1", turn.lease_id, {}, [])
+        await loop._render_previews(turn, "run_1")
+        return platform.events
+
+    events = asyncio.run(exercise())
+    assert [payload["message"] for kind, payload in events if kind == "agent.warning"] == [
+        "工作区没能保存，下一轮需要重新生成文件",
+        "有文件未能自动交付",
+    ]
+    assert next(payload for kind, payload in events if kind == "preview.failed") == {
+        "filename": "result.pdf",
+        "error": "预览生成失败",
+    }
+    assert secret in caplog.text
 
 
 def _run(llm, platform=None, broker=None, attempt_id="att_1"):
@@ -353,7 +391,7 @@ def test_run_for_a_model_that_left_the_catalog_fails_cleanly() -> None:
     platform, broker = P(), RichBroker()
     asyncio.run(AgentLoop(platform=platform, broker=broker).process("run_1", attempt_id="att_1"))
     status, kw = platform.statuses[-1][0], platform.statuses[-1][1]
-    assert status == "failed" and "not available" in kw["error"]
+    assert status == "failed" and kw["error"] == "运行失败"
     assert broker.released == 0  # failed before a sandbox was leased
 
 

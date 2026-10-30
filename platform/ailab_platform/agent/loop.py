@@ -415,7 +415,7 @@ class AgentLoop:
                 if exc.status != 429:
                     raise
             if waited >= settings.sandbox_wait_seconds:
-                raise RuntimeError(f"no sandbox became available within {settings.sandbox_wait_seconds}s")
+                raise ToolError(f"no sandbox became available within {settings.sandbox_wait_seconds}s")
             if not announced:
                 announced = True
                 await self._event(run_id, "agent.waiting_sandbox", {"reason": "sandbox capacity reached"})
@@ -444,8 +444,9 @@ class AgentLoop:
                     result = await self.broker.commit(lease_id, item["path"])
                 finally:
                     delivery_id_var.reset(identity)
-            except Exception as exc:
-                await self._event(run_id, "agent.warning", {"message": f"auto-deliver failed for {item['path']}: {exc}"})
+            except Exception:
+                log.warning("auto-deliver failed for %s run=%s", item["path"], run_id, exc_info=True)
+                await self._event(run_id, "agent.warning", {"message": "有文件未能自动交付"})
                 continue
             delivered[item["path"]] = item.get("size", 0)
             artifacts.append({**result, "auto": True})
@@ -468,9 +469,10 @@ class AgentLoop:
         turn.lease_id = lease["lease_id"]
         await self._event(run_id, "agent.sandbox", {"lease_id": turn.lease_id, "provider": lease.get("provider")})
         if lease.get("restored") is False and lease.get("restore_error"):
+            log.warning("workspace restore failed for %s: %s", run_id, lease["restore_error"])
             if required:  # a checkpoint that counts on these files must not continue without them
-                raise LeaseInterrupted(f"工作区恢复失败：{lease['restore_error']}")
-            await self._event(run_id, "agent.warning", {"message": f"上一轮的工作区没能恢复：{lease['restore_error']}"})
+                raise LeaseInterrupted("工作区恢复失败")
+            await self._event(run_id, "agent.warning", {"message": "上一轮的工作区没能恢复"})
         loaded = self._states[run_id].get("loaded_skills", [])
         if any(item.get("kind") in {"base", "builtin"} for item in loaded):
             await verify_sandbox_skills(self.broker, turn.lease_id)
@@ -534,13 +536,14 @@ class AgentLoop:
             turn.preview_again = False
             try:
                 manifests = await self.broker.refresh_previews(turn.lease_id)
-            except Exception as exc:
+            except Exception:
                 log.warning("preview refresh failed for %s", run_id, exc_info=True)
-                await self._event(run_id, "preview.failed", {"error": f"{type(exc).__name__}: {exc}"[:300]})
+                await self._event(run_id, "preview.failed", {"error": "预览生成失败"})
                 return
             for m in manifests:
                 if m.get("error"):
-                    await self._event(run_id, "preview.failed", m)
+                    log.warning("preview failed for %s: %s", run_id, m["error"])
+                    await self._event(run_id, "preview.failed", {**m, "error": "预览生成失败"})
                 else:
                     turn.previews[m["filename"]] = m
                     await self._event(run_id, "preview.updated", m)
@@ -558,9 +561,9 @@ class AgentLoop:
         and is never reported as saved; the next resume is told the snapshot lags the checkpoint."""
         try:
             return await self.broker.snapshot(turn.lease_id)
-        except Exception as exc:
+        except Exception:
             log.warning("workspace snapshot failed for %s", run_id, exc_info=True)
-            await self._event(run_id, "agent.warning", {"message": f"工作区没能保存，下一轮需要重新生成文件：{exc}"[:300]})
+            await self._event(run_id, "agent.warning", {"message": "工作区没能保存，下一轮需要重新生成文件"})
             return None
 
     async def _call_model(
@@ -1305,12 +1308,13 @@ class AgentLoop:
                 raise LeaseInterrupted() from exc
             if exc.status == 409 and call.name not in {"extract_text", "read_library_file", "view_attachment"}:
                 raise
-            result = {"ok": False, "error": str(exc)}
+            log.warning("tool %s client request failed", call.name, exc_info=True)
+            result = {"ok": False, "error": "工具请求失败"}
         except ToolError as exc:
             result = {"ok": False, "error": str(exc)}
-        except Exception as exc:  # broker / sandbox failures stay in the loop
+        except Exception:  # broker / sandbox failures stay in the loop
             log.exception("tool %s failed", call.name)
-            result = {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
+            result = {"ok": False, "error": "工具执行失败"}
         if call.name == "load_skill" and wanted and not result.get("already_loaded"):
             state = self._states[run_id]
             if result.get("ok"):
@@ -2076,7 +2080,7 @@ class AgentLoop:
             outcome = "interrupted"
         except RunPaused:
             outcome = "waiting_user"
-        except LeaseInterrupted as exc:
+        except LeaseInterrupted:
             # The most recent durable checkpoint remains authoritative. Do not
             # snapshot a lost lease or pretend an empty replacement restored it.
             reclaimed = await self._take_reclaimed_workspace(run_id, turn)
@@ -2088,7 +2092,9 @@ class AgentLoop:
                 run_id,
                 {
                     "status": RunStatus.INTERRUPTED,
-                    "error": "沙箱长时间没有操作，已被回收给其他任务；工作区已保存，将自动继续" if reclaimed else f"工作区租约中断：{exc}",
+                    "error": (
+                        "沙箱长时间没有操作，已被回收给其他任务；工作区已保存，将自动继续" if reclaimed else "工作区租约中断，将自动继续"
+                    ),
                     "auto_resume": True,
                     "evicted": reclaimed,
                     "result": {"sources": state["sources"]},
@@ -2104,13 +2110,12 @@ class AgentLoop:
             if exc.status == 409:
                 # Ownership was lost. No more business writes from this attempt.
                 raise
-            await self.platform.set_run_status(run_id, RunStatus.FAILED, error=str(exc)[:2000], result={"sources": state["sources"]})
-        except Exception as exc:
+            log.warning("agent run %s client request failed", run_id, exc_info=True)
+            await self.platform.set_run_status(run_id, RunStatus.FAILED, error="服务请求失败", result={"sources": state["sources"]})
+        except Exception:
             log.exception("agent run %s failed", run_id)
-            await self._event(run_id, "agent.error", {"error": f"{type(exc).__name__}: {exc}"})
-            await self.platform.set_run_status(
-                run_id, RunStatus.FAILED, error=f"{type(exc).__name__}: {exc}"[:2000], result={"sources": state["sources"]}
-            )
+            await self._event(run_id, "agent.error", {"error": "运行失败"})
+            await self.platform.set_run_status(run_id, RunStatus.FAILED, error="运行失败", result={"sources": state["sources"]})
         finally:
             try:
                 if title_task is not None:
