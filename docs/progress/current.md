@@ -2,9 +2,9 @@
 
 ## 记忆质量与 run_js（2026-10-31）
 
-`fix/memory-js-backend`，base `origin/main@995a5f6`；后端提交 `b7480ed`、`b57331e`，未 push。用户授权集成 Portal 分支后增量部署及轻量真模型验收，不合并 main。现有记忆未修改。线上错误来源、提示修订、20 例配置模型对照及当前检查见[记录](updates/2026-10-31-memory-js-backend.md)。
+`fix/memory-js-backend`，base `origin/main@995a5f6`；后端提交 `b7480ed`、`b57331e`，未 push。本轮收紧偏好规则，真实 episode 对照及三条指定记忆删除见[记录](updates/2026-10-31-memory-js-backend.md#p2a真实来源回放与删除)。
 
-**下一步**：等待 Portal 负责人确认分支就绪；完成 SQLite 检查，建立临时集成分支、部署并执行约 10 次真实模型验收，记录结果及未测边界。
+**下一步**：等待单独的集成包；本轮明确不集成、不部署、不做真实模型产品验收。完整检查由后续集成包负责。
 
 ## 技能、办公、记忆与轻量计算（2026-10-31）
 
