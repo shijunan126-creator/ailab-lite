@@ -595,6 +595,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
         page.goto(stack.portal + "/")
         page.get_by_role("button", name="添加附件", exact=True).click()
         menu = page.locator(".composer-menu")
+        page.get_by_role("menuitem", name="更多技能", exact=True).click()
         menu.get_by_role("menuitemcheckbox", name="Excel", exact=True).wait_for()
         # Default skills render before the asynchronous skill list arrives.
         menu.get_by_role("menuitemcheckbox", name="PPT 设计", exact=True).wait_for(state="detached", timeout=15000)
