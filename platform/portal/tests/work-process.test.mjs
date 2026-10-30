@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import test from 'node:test';
+import { test } from 'vitest';
 import ts from 'typescript';
 const source = await readFile(new URL('../lib/work-process.ts', import.meta.url), 'utf8');
 const compiled = ts.transpile(source, {module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022});
@@ -139,4 +139,22 @@ test('budget events, run-scope compaction and background commands read plainly',
 test('platform file preparation is automatic and distinct from a manual pause',()=>{
  assert.equal(workHeading({status:'interrupted',result:{file_wait:{action:'extract-text'}}}),'正在准备附件…');
  assert.equal(workHeading({status:'interrupted',result:{}}),'已暂停');
+});
+
+test('an event keeps the identity of every item and step it does not change',()=>{
+ let items=[];
+ items=reduceEvent(items,event('agent.message',{step:0,content:'先看看。'}));
+ items=reduceEvent(items,event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'ls'}}));
+ items=reduceEvent(items,event('agent.tool_call',{step:1,name:'read_file',arguments:{path:'a'}}));
+ items=reduceEvent(items,event('agent.message',{step:2,content:'再查一个。'}));
+ items=reduceEvent(items,event('agent.tool_call',{step:3,name:'web_search',arguments:{query:'x'}}));
+ const before=items;
+ const after=reduceEvent(items,event('agent.tool_result',{step:1,name:'exec',ok:true,stdout:'a b'}));
+ assert.equal(after[0],before[0],'untouched text keeps its identity');
+ assert.equal(after[2],before[2]);
+ assert.equal(after[3],before[3],'a later steps group is not copied');
+ assert.notEqual(after[1],before[1]);
+ assert.equal(after[1].steps[1],before[1].steps[1],'a sibling step keeps its identity');
+ assert.equal(after[1].steps[0].status,'ok');
+ assert.equal(before[1].steps[0].status,'running','the previous state is not mutated');
 });

@@ -52,7 +52,7 @@ with SessionLocal() as db:
     assert page.locator(".work-timeline").evaluate("el => el.scrollTop") == 0
     page.locator(".work-timeline").hover()
     page.mouse.wheel(0, 500)
-    page.wait_for_function("document.querySelector('.work-timeline').scrollTop > 0")
+    page.wait_for_function("() => document.querySelector('.work-timeline').scrollTop > 0")
     page.locator(".work-timeline").evaluate("el => el.scrollTop = 0")
     # Traverse placeholders naturally. This loads the next event page when its sentinel approaches the viewport.
     for _ in range(14):
@@ -77,7 +77,7 @@ with SessionLocal() as db:
     page.get_by_text("段落001开头。", exact=False).wait_for()
     start = time.perf_counter()
     head.click()
-    page.wait_for_function("!document.querySelector('.pr-thought-body')")
+    page.wait_for_function("() => !document.querySelector('.pr-thought-body')")
     collapse_ms = (time.perf_counter() - start) * 1000
     assert collapse_ms < 1000
     assert page.locator(".md-chunks .viewport-block").count() == 0
@@ -89,7 +89,7 @@ with SessionLocal() as db:
 def test_500_loaded_turns_keep_only_nearby_content_mounted_and_composer_responsive(page, stack):
     conv = seed(stack, count=500, active=False)
     login(page, stack, path="/c/" + conv["id"])
-    page.wait_for_function("document.querySelectorAll('.turn').length === 20")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length === 20")
     for expected in range(40, 501, 20):
         page.locator(".older-turns").evaluate("el => el.click()")
         page.wait_for_function("n => document.querySelectorAll('.turn').length >= n", arg=expected)
@@ -128,7 +128,7 @@ with SessionLocal() as db:
     context.add_init_script("window.print = () => { window.largeAnswerPrinted = true; }")
     login(page, stack, path="/c/" + conv["id"])
     page.goto(stack.portal + "/print/" + conv["id"])
-    page.wait_for_function("window.largeAnswerPrinted === true")
+    page.wait_for_function("() => window.largeAnswerPrinted === true")
     assert page.locator(".print-a p").count() == 300
     assert page.locator(".viewport-block").count() == 0
     assert "导出段落000。" in page.locator(".print-a").inner_text()

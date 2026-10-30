@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { memo, useEffect, useLayoutEffect, useRef } from "react";
 import type { Run } from "../../lib/api";
+import { useFollow } from "../../lib/use-follow";
 import { type Item, type PlanStep, type Step, siteOf, thoughtOutline, workHeading } from "../../lib/work-process";
 import { IconBulb, IconBook, IconCheck, IconChevronDown, IconFile, IconFilePen, IconGlobe, IconSearch, IconSparkles, IconTerminal, IconX, IconCornerDownRight } from "../icons";
 import { useViewport } from "../viewport-block";
 import Markdown from "../markdown";
+import Answer from "./answer";
 
 const MARK: Record<PlanStep["status"], string> = { pending: "pending", running: "running", done: "ok", skipped: "note", failed: "failed" };
 
@@ -43,7 +45,8 @@ function Thinking({ item, live, expanded, onToggle, label }: {
   </div>;
 }
 
-function StepRow({ step, active, label }: { step: Step; active: boolean; label: string }) {
+// steps keep their identity across events (structural sharing), so a new step does not re-render the others
+const StepRow = memo(function StepRow({ step, active, label }: { step: Step; active: boolean; label: string }) {
   const viewport = useViewport<HTMLLIElement>(step.status === "running" && active, 42);
   const status = step.status === "running" && !active ? "note" : step.status;
   const sources = step.sources || [];
@@ -62,7 +65,7 @@ function StepRow({ step, active, label }: { step: Step; active: boolean; label: 
     <Status status={status} />
     </> : null}
   </li>;
-}
+});
 
 /** What the agent is doing right now, for the folded header of a live run. */
 function current(items: Item[] | null | undefined, thinking: string): string {
@@ -95,15 +98,13 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
   const chat = run.options?.mode === "chat";
   const thinking = chat ? "思考" : "梳理任务";
   const scroller = useRef<HTMLDivElement | null>(null);
-  const stick = useRef(false);
   const sentinel = useRef<HTMLDivElement | null>(null);
   const running = run.status === "running" || run.status === "queued" || !!run.result?.file_wait;
-
-  // follow the newest step while the run works, unless the user scrolled up to read
+  // the newest step and the thought being written stay in view while the run works, unless the reader scrolls up
+  const follow = useFollow(scroller, { enabled: open && active });
   useLayoutEffect(() => {
-    const el = scroller.current;
-    if (el && open && active && stick.current) el.scrollTop = el.scrollHeight;
-  }, [items, open]);
+    if (open && active) follow.settle(true);
+  }, [open, active, follow]);
 
   useEffect(() => {
     if (!open || !more || loading || error || !sentinel.current) return;
@@ -125,12 +126,10 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
     </button>
     <div className="collapse" data-open={open} inert={!open}>
       <div>
-        <div className="work-timeline" ref={scroller} onScroll={(e) => {
-          const el = e.currentTarget;
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-        }}>
+        <div className="work-timeline" ref={scroller} onScroll={follow.onScroll}>
+          <div ref={follow.content}>
           {open ? items?.map((item, i) => <div key={i} className={`work-entry process-${item.kind}`}>
-            {item.kind === "text" ? (item.text.trim() ? <div className="pr-narration"><Markdown virtual text={item.text} /></div> : null)
+            {item.kind === "text" ? (item.text.trim() ? <div className="pr-narration"><Answer virtual text={item.text} streaming={live && i === items.length - 1} /></div> : null)
               : item.kind === "thinking" ? <Thinking item={item} live={live} label={thinking} expanded={thoughtsExpanded.has(item.step)} onToggle={() => onToggleThought(item.step)} />
               : item.kind === "ask" ? renderAsk(item)
               : item.kind === "steer" ? <div className="pr-steer"><IconCornerDownRight size={13} /> 收到补充</div>
@@ -143,6 +142,7 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
           {loading ? <div className="pr-loading"><span /><span /><span /></div> : null}
           {error ? <button className="link" onClick={onLoad}>加载失败，重试</button> : null}
           {more ? <div ref={sentinel} className="process-more">{!loading ? <button className="link" onClick={onLoad}>继续加载</button> : null}</div> : null}
+          </div>
         </div>
       </div>
     </div>

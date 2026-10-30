@@ -23,19 +23,12 @@ def test_fork_restores_its_mode_before_sending(logged_in, stack, mode, mobile):
     page.get_by_role("menuitem", name="分支为" + label, exact=True).click()
     page.wait_for_url(lambda url: "/c/" in url and not url.endswith(original))
     branch_url = page.url
-    expect(page.get_by_role("radio", name=label, exact=True)).to_have_attribute("aria-checked", "true")
+    # A conversation's mode is fixed: no switch in its composer; forking is the way to change it.
+    expect(page.get_by_role("radiogroup", name="模式")).to_have_count(0)
     # A different page/session overwrites the browser preference. Opening this branch must restore its own mode.
     page.evaluate("value => localStorage.setItem('ailab.mode', value)", "chat" if mode == "work" else "work")
     page.reload()
-    expect(page.get_by_role("radio", name=label, exact=True)).to_have_attribute("aria-checked", "true")
     _send(page, "继续此分支")
     _wait_for_turns(page, 2)
     detail = page.request.get(stack.portal + "/api/v1/conversations/" + branch_url.rsplit("/", 1)[1]).json()
     assert detail["turns"][-1]["options"]["mode"] == mode
-    # A deliberate switch remains possible and survives detail refreshes and reopening.
-    other = "对话" if mode == "work" else "工作"
-    page.get_by_role("radio", name=other, exact=True).click()
-    _send(page, "按选择的新模式继续")
-    _wait_for_turns(page, 3)
-    page.reload()
-    expect(page.get_by_role("radio", name=other, exact=True)).to_have_attribute("aria-checked", "true")

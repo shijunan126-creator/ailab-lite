@@ -92,8 +92,8 @@ def test_edit_first_turn_creates_path_and_switch_restores_descendants(logged_in)
     expect(page.locator(".msg.user .bubble")).to_have_text([first, second])
 
 
-def test_fork_first_turn_and_work_only_menu(logged_in):
-    """A turn branches as what the conversation was up to it: chat turns before any work offer both, from a work turn on only work."""
+def test_fork_first_turn_and_work_only_menu(logged_in, stack):
+    """A turn branches as what the conversation was up to it: chat turns offer both, a work conversation only work."""
     page = logged_in
     first = _prompt("分支")
     original = _start_conversation(page, first)
@@ -101,21 +101,19 @@ def test_fork_first_turn_and_work_only_menu(logged_in):
     _send(page, _prompt("后续"))
     _wait_for_turns(page, 2)
     page.get_by_role("button", name="从这里分支", exact=True).first.click()
+    expect(page.get_by_role("menuitem", name="分支为工作", exact=True)).to_be_visible()
     page.get_by_role("menuitem", name="分支为对话", exact=True).click()
     page.wait_for_url(lambda url: "/c/" in url and not url.endswith(original))
     expect(page.locator(".turn")).to_have_count(1)
     expect(page.locator(".msg.user .bubble")).to_have_text(first)
     expect(page.locator(".crumb-fork")).to_be_visible()
+    # a work conversation has worked in files: it branches only into work
+    page.goto(stack.portal + "/")
     page.get_by_role("radio", name="工作", exact=True).click()
-    _send(page, _prompt("工作"))
-    _wait_for_turns(page, 2)
+    _start_conversation(page, _prompt("工作"))
+    _wait_for_turns(page, 1)
     page.get_by_role("button", name="从这里分支", exact=True).last.click()
     expect(page.get_by_role("menuitem", name="分支为对话", exact=True)).to_have_count(0)
-    expect(page.get_by_role("menuitem", name="分支为工作", exact=True)).to_be_visible()
-    page.keyboard.press("Escape")
-    # the chat turn before the work turn still branches either way: nothing had worked in files yet
-    page.get_by_role("button", name="从这里分支", exact=True).first.click()
-    expect(page.get_by_role("menuitem", name="分支为对话", exact=True)).to_be_visible()
     expect(page.get_by_role("menuitem", name="分支为工作", exact=True)).to_be_visible()
 
 

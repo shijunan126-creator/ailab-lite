@@ -149,7 +149,7 @@ export default function RunDetails({ id }: { id: string }) {
 
         {run?.error ? (
           <section className="card card-pad">
-            <div className="card-title" style={{ color: "var(--danger)" }}>错误</div>
+            <div className="card-title" style={{ color: "var(--destructive)" }}>错误</div>
             <div className="alert error">{run.error}</div>
           </section>
         ) : null}

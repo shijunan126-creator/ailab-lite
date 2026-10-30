@@ -1,418 +1,73 @@
-// Small inline icons (stroke-based, inherit the text colour). No icon package: nothing to install or audit.
-type Props = { size?: number; filled?: boolean };
+// The one place icons come from: lucide, under the names the Portal already uses. Import icons from here only.
+import {
+  ArchiveRestore, ArrowLeft, CodeXml, ArrowUp, Bell, BookOpen, Check, ChevronDown, ChevronRight, Clock, Copy, CornerDownRight, Download, File, FilePen,
+  Folder, FolderInput, FolderPlus, GitBranch, Globe, History, Image, LayoutGrid, LayoutTemplate, Library, Lightbulb, Link, ListPlus, LogOut,
+  MessageCircleQuestion, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, PinOff, Plus, Presentation, Printer, RotateCcw,
+  Search, Send, Settings, Share2, Shield, Sheet, Sparkles, Square, SquarePen, Star, BarChart3, Terminal, Trash2, Upload, Users, X,
+  type LucideIcon,
+} from "lucide-react";
 
-function Svg({ size = 18, filled, children }: Props & { children: React.ReactNode }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {children}
-    </svg>
-  );
-}
+type Props = { size?: number; filled?: boolean; className?: string };
 
-export const IconUpload = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 16V4m0 0L7 9m5-5 5 5" />
-    <path d="M4 16v3a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-3" />
-  </Svg>
-);
+const icon = (Glyph: LucideIcon, strokeWidth = 1.8) =>
+  function Icon({ size = 18, filled, className }: Props) {
+    return <Glyph size={size} strokeWidth={strokeWidth} fill={filled ? "currentColor" : "none"} className={className} aria-hidden="true" />;
+  };
 
-export const IconFile = (p: Props) => (
-  <Svg {...p}>
-    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
-    <path d="M14 3v5h5" />
-  </Svg>
-);
-
-export const IconDownload = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 4v12m0 0 5-5m-5 5-5-5" />
-    <path d="M4 18v1a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1" />
-  </Svg>
-);
-
-export const IconArrowLeft = (p: Props) => (
-  <Svg {...p}>
-    <path d="M19 12H5m0 0 6-6m-6 6 6 6" />
-  </Svg>
-);
-
-export const IconSend = (p: Props) => (
-  <Svg {...p}>
-    <path d="m5 12 14-7-5 15-3-6z" />
-  </Svg>
-);
-
-// Lucide (ISC): square-pen, folder, panel-left, log-out, settings, message-square, more-horizontal
-export const IconNewChat = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-    <path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" />
-  </Svg>
-);
-
-export const IconFolder = (p: Props) => (
-  <Svg {...p}>
-    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-  </Svg>
-);
-
-export const IconPanel = (p: Props) => (
-  <Svg {...p}>
-    <rect width="18" height="18" x="3" y="3" rx="2" />
-    <path d="M9 3v18" />
-  </Svg>
-);
-
-export const IconPanelRight = (p: Props) => (
-  <Svg {...p}>
-    <rect width="18" height="18" x="3" y="3" rx="2" />
-    <path d="M15 3v18" />
-  </Svg>
-);
-
-export const IconLogOut = (p: Props) => (
-  <Svg {...p}>
-    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-    <path d="m16 17 5-5-5-5" />
-    <path d="M21 12H9" />
-  </Svg>
-);
-
-export const IconSettings = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-    <circle cx="12" cy="12" r="3" />
-  </Svg>
-);
-
-export const IconMore = (p: Props) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="1" />
-    <circle cx="19" cy="12" r="1" />
-    <circle cx="5" cy="12" r="1" />
-  </Svg>
-);
-
-// Lucide (ISC): presentation, sheet, chart-column
-export const IconSlides = (p: Props) => (
-  <Svg {...p}>
-    <path d="M2 3h20" />
-    <path d="M21 3v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V3" />
-    <path d="m7 21 5-5 5 5" />
-  </Svg>
-);
-
-export const IconSheet = (p: Props) => (
-  <Svg {...p}>
-    <rect width="18" height="18" x="3" y="3" rx="2" />
-    <path d="M3 9h18" />
-    <path d="M3 15h18" />
-    <path d="M9 9v12" />
-    <path d="M15 9v12" />
-  </Svg>
-);
-
-export const IconChart = (p: Props) => (
-  <Svg {...p}>
-    <path d="M3 3v16a2 2 0 0 0 2 2h16" />
-    <path d="M18 17V9" />
-    <path d="M13 17V5" />
-    <path d="M8 17v-3" />
-  </Svg>
-);
-
-// Lucide (ISC): sparkles
-export const IconSparkles = (p: Props) => (
-  <Svg {...p}>
-    <path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z" />
-    <path d="M20 3v4" />
-    <path d="M22 5h-4" />
-    <path d="M4 17v2" />
-    <path d="M5 18H3" />
-  </Svg>
-);
-
-// Lucide (ISC): library, star, message-square, search, trash-2, x, check, plus, image, folder-plus, folder-input, pencil, chevron-right
-export const IconLibrary = (p: Props) => (
-  <Svg {...p}>
-    <path d="m16 6 4 14" />
-    <path d="M12 6v14" />
-    <path d="M8 8v12" />
-    <path d="M4 4v16" />
-  </Svg>
-);
-
-export const IconStar = (p: Props) => (
-  <Svg {...p}>
-    <path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z" />
-  </Svg>
-);
-
-export const IconMessage = (p: Props) => (
-  <Svg {...p}>
-    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />
-  </Svg>
-);
-
-export const IconSearch = (p: Props) => (
-  <Svg {...p}>
-    <circle cx="11" cy="11" r="8" />
-    <path d="m21 21-4.3-4.3" />
-  </Svg>
-);
-
-export const IconTrash = (p: Props) => (
-  <Svg {...p}>
-    <path d="M3 6h18" />
-    <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
-    <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-  </Svg>
-);
-
-export const IconX = (p: Props) => (
-  <Svg {...p}>
-    <path d="M18 6 6 18" />
-    <path d="m6 6 12 12" />
-  </Svg>
-);
-
-export const IconCheck = (p: Props) => (
-  <Svg {...p}>
-    <path d="M20 6 9 17l-5-5" />
-  </Svg>
-);
-
-export const IconPlus = (p: Props) => (
-  <Svg {...p}>
-    <path d="M5 12h14" />
-    <path d="M12 5v14" />
-  </Svg>
-);
-
-export const IconImage = (p: Props) => (
-  <Svg {...p}>
-    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
-    <circle cx="9" cy="9" r="2" />
-    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
-  </Svg>
-);
-
-export const IconFolderPlus = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 10v6" />
-    <path d="M9 13h6" />
-    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
-  </Svg>
-);
-
-export const IconFolderInput = (p: Props) => (
-  <Svg {...p}>
-    <path d="M2 9V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H20a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1" />
-    <path d="M2 13h10" />
-    <path d="m9 16 3-3-3-3" />
-  </Svg>
-);
-
-export const IconPencil = (p: Props) => (
-  <Svg {...p}>
-    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
-  </Svg>
-);
-
-export const IconChevronRight = (p: Props) => (
-  <Svg {...p}>
-    <path d="m9 18 6-6-6-6" />
-  </Svg>
-);
-
-export const IconRestore = (p: Props) => (
-  <Svg {...p}>
-    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6" />
-    <path d="M4 4v4.6h4.6" />
-  </Svg>
-);
-
-export const IconHistory = (p: Props) => (
-  <Svg {...p}>
-    <path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6" />
-    <path d="M4 4v4.6h4.6" />
-    <path d="M12 8v4l3 2" />
-  </Svg>
-);
-
-export const IconShield = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 3 5 6v5c0 4.4 3 8.3 7 10 4-1.7 7-5.6 7-10V6z" />
-    <path d="m9 12 2 2 4-4" />
-  </Svg>
-);
-
-// Lucide (ISC): copy, rotate-ccw, git-branch, globe, terminal, lightbulb, arrow-up, square, chevron-down, book-open, file-pen
-export const IconCopy = (p: Props) => (
-  <Svg {...p}>
-    <rect x="8" y="8" width="13" height="13" rx="2" />
-    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
-  </Svg>
-);
-
-export const IconRetry = (p: Props) => (
-  <Svg {...p}>
-    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-    <path d="M3 3v5h5" />
-  </Svg>
-);
-
-export const IconBranch = (p: Props) => (
-  <Svg {...p}>
-    <path d="M6 3v12" />
-    <circle cx="18" cy="6" r="3" />
-    <circle cx="6" cy="18" r="3" />
-    <path d="M18 9a9 9 0 0 1-9 9" />
-  </Svg>
-);
-
-export const IconGlobe = (p: Props) => (
-  <Svg {...p}>
-    <circle cx="12" cy="12" r="10" />
-    <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20" />
-  </Svg>
-);
-
-export const IconTerminal = (p: Props) => (
-  <Svg {...p}>
-    <path d="m4 17 6-6-6-6M12 19h8" />
-  </Svg>
-);
-
-export const IconBulb = (p: Props) => (
-  <Svg {...p}>
-    <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5" />
-    <path d="M9 18h6M10 22h4" />
-  </Svg>
-);
-
-export const IconArrowUp = (p: Props) => (
-  <Svg {...p}>
-    <path d="m5 12 7-7 7 7M12 19V5" />
-  </Svg>
-);
-
-export const IconStop = (p: Props) => (
-  <Svg {...p} filled>
-    <rect x="6" y="6" width="12" height="12" rx="2" />
-  </Svg>
-);
-
-export const IconChevronDown = (p: Props) => (
-  <Svg {...p}>
-    <path d="m6 9 6 6 6-6" />
-  </Svg>
-);
-
-export const IconBook = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z" />
-  </Svg>
-);
-
-export const IconFilePen = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12.5 22H18a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v9.5" />
-    <path d="M14 2v4a2 2 0 0 0 2 2h4M13.38 12.62a1 1 0 0 1 3 3L11.36 20.64 8 21.5l.84-3.36z" />
-  </Svg>
-);
-
-// Lucide (ISC): alarm-clock, pin, pin-off, printer
-export const IconClock = (p: Props) => (
-  <Svg {...p}>
-    <circle cx="12" cy="13" r="8" />
-    <path d="M12 9v4l2 2M5 3 2 6M22 6l-3-3" />
-  </Svg>
-);
-
-export const IconPin = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-  </Svg>
-);
-
-export const IconPinOff = (p: Props) => (
-  <Svg {...p}>
-    <path d="M12 17v5M15 9.34V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H7.89M2 2l20 20M9 9v1.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h11" />
-  </Svg>
-);
-
-export const IconPrinter = (p: Props) => (
-  <Svg {...p}>
-    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 9V3a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v6" />
-    <rect x="6" y="14" width="12" height="8" rx="1" />
-  </Svg>
-);
-
-export const IconBell = (p: Props) => (
-  <Svg {...p}>
-    <path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-    <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-  </Svg>
-);
-
-export const IconShare = (p: Props) => (
-  <Svg {...p}>
-    <circle cx="18" cy="5" r="3" />
-    <circle cx="6" cy="12" r="3" />
-    <circle cx="18" cy="19" r="3" />
-    <path d="m8.6 13.5 6.8 4M15.4 6.5l-6.8 4" />
-  </Svg>
-);
-
-export const IconLink = (p: Props) => (
-  <Svg {...p}>
-    <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
-    <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
-  </Svg>
-);
-
-export const IconUsers = (p: Props) => (
-  <Svg {...p}>
-    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-    <circle cx="9" cy="7" r="4" />
-    <path d="M22 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8" />
-  </Svg>
-);
-
-export const IconQueue = (p: Props) => (
-  <Svg {...p}>
-    <path d="M3 6h13M3 12h9M3 18h9" />
-    <path d="m16 15 3 3 3-3M19 10v8" />
-  </Svg>
-);
-
-export const IconCornerDownRight = (p: Props) => (
-  <Svg {...p}>
-    <path d="m15 10 5 5-5 5" />
-    <path d="M4 4v7a4 4 0 0 0 4 4h12" />
-  </Svg>
-);
-
-export const IconAsk = (p: Props) => (
-  <Svg {...p}>
-    <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />
-    <path d="M9.6 9.5a2.5 2.5 0 0 1 4.8.8c0 1.7-2.4 2.2-2.4 3.2M12 16.5h.01" />
-  </Svg>
-);
-
-export const IconTemplate = (p: Props) => (
-  <Svg {...p}>
-    <rect x="3" y="4" width="18" height="16" rx="2" />
-    <path d="M3 9h18M9 9v11" />
-  </Svg>
-);
-
-export const IconGrid = (p: Props) => (
-  <Svg {...p}>
-    <rect x="4" y="4" width="6.5" height="6.5" rx="1.6" />
-    <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6" />
-    <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6" />
-    <rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6" />
-  </Svg>
-);
+export const IconUpload = icon(Upload);
+export const IconFile = icon(File);
+export const IconDownload = icon(Download);
+export const IconArrowLeft = icon(ArrowLeft);
+export const IconSend = icon(Send);
+export const IconNewChat = icon(SquarePen);
+export const IconFolder = icon(Folder);
+export const IconPanel = icon(PanelLeft);
+export const IconPanelRight = icon(PanelRight);
+export const IconLogOut = icon(LogOut);
+export const IconSettings = icon(Settings);
+export const IconMore = icon(MoreHorizontal);
+export const IconSlides = icon(Presentation);
+export const IconSheet = icon(Sheet);
+export const IconChart = icon(BarChart3);
+export const IconSparkles = icon(Sparkles);
+export const IconLibrary = icon(Library);
+export const IconStar = icon(Star);
+export const IconMessage = icon(MessageSquare);
+export const IconSearch = icon(Search);
+export const IconTrash = icon(Trash2);
+export const IconX = icon(X, 2);
+export const IconCheck = icon(Check, 2.2);
+export const IconPlus = icon(Plus, 2);
+export const IconImage = icon(Image);
+export const IconFolderPlus = icon(FolderPlus);
+export const IconFolderInput = icon(FolderInput);
+export const IconPencil = icon(Pencil);
+export const IconChevronRight = icon(ChevronRight, 2);
+export const IconRestore = icon(ArchiveRestore);
+export const IconHistory = icon(History);
+export const IconShield = icon(Shield);
+export const IconCopy = icon(Copy);
+export const IconRetry = icon(RotateCcw);
+export const IconCode = icon(CodeXml);
+export const IconBranch = icon(GitBranch);
+export const IconGlobe = icon(Globe);
+export const IconTerminal = icon(Terminal);
+export const IconBulb = icon(Lightbulb);
+export const IconArrowUp = icon(ArrowUp, 2.2);
+export const IconStop = ({ size = 14, className }: Props) => <Square size={size} fill="currentColor" strokeWidth={0} className={className} aria-hidden="true" />;
+export const IconChevronDown = icon(ChevronDown, 2);
+export const IconBook = icon(BookOpen);
+export const IconFilePen = icon(FilePen);
+export const IconClock = icon(Clock);
+export const IconPin = icon(Pin);
+export const IconPinOff = icon(PinOff);
+export const IconPrinter = icon(Printer);
+export const IconBell = icon(Bell);
+export const IconShare = icon(Share2);
+export const IconLink = icon(Link);
+export const IconUsers = icon(Users);
+export const IconQueue = icon(ListPlus);
+export const IconCornerDownRight = icon(CornerDownRight);
+export const IconAsk = icon(MessageCircleQuestion);
+export const IconTemplate = icon(LayoutTemplate);
+export const IconGrid = icon(LayoutGrid);

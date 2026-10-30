@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { SandboxFrame } from "../sandbox-frame";
 
 // Injected into the fetched document, before any script of its own: the pane resizes this frame
 // while it is open, and documents that rebuild their layout on every resize (fixed-canvas decks
@@ -66,8 +67,9 @@ export function useDocText(url: string): { html: string | null; error: string } 
 }
 
 /** The rendered document: origin-less and script-capable — the document's own page-turn JS runs,
- * but nothing in the frame can reach this app's cookies or storage. The frame scrolls its own
- * content; the resize guard keeps that content from growing on every pane resize. */
+ * but nothing in the frame can reach this app's cookies or storage. It loads through the frame route, not srcdoc,
+ * so it keeps its own policy rather than the Portal's strict one. The frame scrolls its own content; the resize
+ * guard keeps that content from growing on every pane resize. */
 export function HtmlDocView({ url, title, renderError }: { url: string; title: string; renderError?: (reason: string) => React.ReactNode }) {
   const { html, error } = useDocText(url);
   const doc = useMemo(() => (html ? withResizeGuard(html) : null), [html]);
@@ -78,5 +80,5 @@ export function HtmlDocView({ url, title, renderError }: { url: string; title: s
         <span className="viewer-spinner" aria-label="正在加载" />
       </div>
     );
-  return <iframe className="viewer-frame" sandbox="allow-scripts allow-popups allow-modals" srcDoc={doc} title={title} />;
+  return <SandboxFrame kind="doc" className="viewer-frame" sandbox="allow-scripts allow-popups allow-modals" html={doc} title={title} />;
 }

@@ -95,7 +95,7 @@ def _build_portal(workdir: Path) -> Path:
     dst = workdir / "portal"
     dst.mkdir()
     # "middleware.ts" was renamed "proxy.ts" in Next 16; copy whichever exists
-    names = ("app", "components", "lib", "middleware.ts", "proxy.ts", "next.config.mjs", "tsconfig.json")
+    names = ("app", "components", "lib", "styles", "middleware.ts", "proxy.ts", "next.config.mjs", "postcss.config.mjs", "tsconfig.json")
     for name in (*names, "package.json", "package-lock.json", "next-env.d.ts"):
         src = PORTAL_SRC / name
         if not src.exists():

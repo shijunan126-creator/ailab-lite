@@ -1,18 +1,25 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import {FileItem, ModelInfo, Skill, TemplateRef, api, errorCode, errorMessage, filesByIds, uploadFile} from "../../lib/api";
-import { fileStatusText } from "../../lib/format";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { FileItem, ModelInfo, Skill, api } from "../../lib/api";
+import type { SendOptions } from "../../lib/outbox";
+import { canRetry, existingUpload, forgetUpload, retryUpload, startUpload, useUploads } from "../../lib/uploads";
 import { usePopover } from "../../lib/use-popover";
-import { IconArrowUp, IconChart, IconFile, IconGrid, IconLibrary, IconPlus, IconQueue, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
+import AttachmentChip from "./attachment-chip";
+import { IconArrowUp, IconChart, IconChevronRight, IconLibrary, IconPlus, IconQueue, IconSearch, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload, IconX } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
-import ModeToggle, { Mode } from "./mode-toggle";
+import type { Mode } from "./mode-toggle";
 import ModelMenu from "./model-menu";
 import TemplatePicker, { TemplateChoice } from "./template-picker";
 
-export type Attachment = { id: string; filename: string; status: string; content_type?: string };
-export type SendOptions = { mode: Mode; skill?: string; template?: TemplateRef };
+export type Attachment = Pick<FileItem, "id" | "filename" | "status" | "content_type" | "size">;
+export type { SendOptions };
+/** What the composer hands over: the message, frozen at the moment of sending (HLD §16.2). */
+export type Outgoing = { prompt: string; attachments: string[]; options: SendOptions; steer: boolean };
+
+const LINE = 24; // px: the textarea's line height
+const MAX_LINES = 4; // then the text scrolls inside the box instead of pushing the answer away
 
 type SkillButton = {
   key: string;
@@ -30,19 +37,21 @@ const SKILLS: SkillButton[] = [
   { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表", template: "想分析的问题：\n关注的指标：" },
 ];
 
-const VISIBLE_SKILLS = 3; // the rest wait under "更多"
+const VISIBLE_SKILLS = 3; // in the + menu; the rest behind 更多技能, searchable once the list is long
+const SEARCH_FROM = 8;
+
 
 export default function Composer({
   models,
   mode,
   onMode,
-  modeBelow,
+  modeLocked,
   model,
   onModel,
   busy,
   running,
-  onSend,
-  onQueue,
+  queueable,
+  onSubmit,
   onStop,
   autoFocus,
   placeholder,
@@ -52,15 +61,17 @@ export default function Composer({
 }: {
   mode: Mode;
   onMode: (next: Mode) => void;
-  modeBelow?: boolean; // the page shows the toggle itself (under its heading), so it is not repeated here
+  // an existing conversation keeps the mode it started with (a fork is how it changes), so skills that need Work
+  // are offered only where they can run
+  modeLocked?: boolean;
   models: ModelInfo[];
   model: string;
   onModel: (id: string) => void;
   busy: boolean;
   running: boolean;
-  onSend: (prompt: string, fileIds: string[], options: SendOptions) => Promise<boolean>;
-  // while an answer runs: the message waits for it (steer: or goes into it at its next step)
-  onQueue?: (prompt: string, fileIds: string[], options: SendOptions, steer: boolean) => Promise<boolean>;
+  // while an answer runs the message waits for it (steer: or goes into it at its next step)
+  queueable?: boolean;
+  onSubmit: (message: Outgoing) => boolean | Promise<boolean>;
   onStop: () => void;
   autoFocus?: boolean;
   placeholder?: string;
@@ -69,19 +80,18 @@ export default function Composer({
   context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
 }) {
   const [text, setText] = useState("");
-  const [files, setFiles] = useState<Attachment[]>([]);
-  const [menu, setMenu] = useState(false);
+  const [files, setFiles] = useState<string[]>([]); // upload keys, in the order attached
+  const uploads = useUploads((st) => st.uploads);
+  const menu = usePopover();
+  const [menuView, setMenuView] = useState<"main" | "skills">("main");
+  const [skillQuery, setSkillQuery] = useState("");
   const [library, setLibrary] = useState(false);
-  const menuBox = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState("");
-  const [uploading, setUploading] = useState(false);
-  const [preparing,setPreparing] = useState(false);
-  const preparation=useRef<AbortController | null>(null);
-  useEffect(()=>()=>preparation.current?.abort(),[model,mode,files]);
+  const [expanded, setExpanded] = useState(false);
+  const expandedAt = useRef(0); // the text length that made the box grow: it shrinks again only well below it
   const [dragging, setDragging] = useState(false);
   const [picked, setPickedState] = useState<SkillButton | null>(null);
   const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
-  const more = usePopover();
   const area = useRef<HTMLTextAreaElement | null>(null);
 
   const [enabled, setEnabled] = useState<Set<string> | null>(null); // skills switched on in the 技能 page
@@ -100,115 +110,117 @@ export default function Composer({
       .catch(() => setEnabled(null));
   }, []);
 
+  // skills make files, which is Work: a new conversation switches to it, a Chat conversation does not offer them
+  const skillsOffered = !modeLocked || mode === "work";
+
   function setPicked(next: SkillButton | null) {
     setPickedState(next);
     if (next?.skill !== "pptx") setTemplate(null);
   }
 
   useEffect(() => {
-    if (mode === "chat") setPickedState(null); // a skill makes files: that is work
+    if (mode === "chat") setPickedState(null);
   }, [mode]);
 
+  useEffect(() => {
+    if (!menu.open) {
+      setMenuView("main");
+      setSkillQuery("");
+    }
+  }, [menu.open]);
+
   function pick(s: SkillButton) {
+    menu.setOpen(false);
     setPicked(picked?.key === s.key ? null : s);
-    if (mode === "chat") onMode("work");
+    if (mode === "chat" && !modeLocked) onMode("work");
     area.current?.focus();
   }
   const picker = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (initialFiles?.length) setFiles((prev) => [...prev, ...initialFiles.filter((f) => !prev.some((x) => x.id === f.id))]);
+    if (initialFiles?.length) attachExisting(initialFiles);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialFiles]);
 
-  useEffect(() => {
-    if (!menu) return;
-    const close = (e: MouseEvent) => menuBox.current && !menuBox.current.contains(e.target as Node) && setMenu(false);
-    document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
-  }, [menu]);
+  function attachExisting(list: Attachment[]) {
+    setFiles((prev) => [...prev, ...list.map((f) => `file:${f.id}`).filter((key) => !prev.includes(key))]);
+    for (const f of list) existingUpload(f);
+  }
 
-  // grow with the text, up to a limit
-  useEffect(() => {
+  // One line when empty; grows with the text up to MAX_LINES, then scrolls inside; shrinks as the text is deleted.
+  // Measured before paint, so the box never shows a frame at the wrong height.
+  useLayoutEffect(() => {
     const el = area.current;
     if (!el) return;
+    if (!text) {
+      el.style.height = "";
+      el.style.overflowY = "hidden";
+      if (expanded) setExpanded(false);
+      return;
+    }
     el.style.height = "auto";
-    el.style.height = `${Math.min(220, el.scrollHeight)}px`;
-  }, [text]);
+    const pad = el.offsetHeight - el.clientHeight + parseFloat(getComputedStyle(el).paddingTop) + parseFloat(getComputedStyle(el).paddingBottom);
+    const max = LINE * MAX_LINES + pad;
+    const full = el.scrollHeight + (el.offsetHeight - el.clientHeight);
+    el.style.height = `${Math.min(full, max)}px`;
+    el.style.overflowY = full > max ? "auto" : "hidden";
+    const wraps = text.includes("\n") || full > LINE * 1.5 + pad;
+    if (!expanded && wraps) {
+      expandedAt.current = text.length;
+      setExpanded(true);
+    } else if (expanded && !text.includes("\n") && text.length < expandedAt.current * 0.85 && full <= LINE * 1.5 + pad) setExpanded(false);
+  }, [text, expanded]);
 
-  // uploads are quarantined until the Worker has scanned them
-  useEffect(() => {
-    if (!files.some((f) => f.status === "pending")) return;
-    let stale = false;
-    const timer = setInterval(async () => {
-      const fresh: FileItem[] = await filesByIds(files.filter((f) => f.status === "pending").map((f) => f.id)).catch(() => []);
-      const status = new Map(fresh.map((x) => [x.id, x.status] as const));
-      // only update chips still on the message: a stale answer must not bring back one the user removed
-      if (!stale) setFiles((current) => current.map((f) => (status.has(f.id) ? { ...f, status: status.get(f.id)! } : f)));
-    }, 1500);
-    return () => {
-      stale = true;
-      clearInterval(timer);
-    };
-  }, [files]);
-
-  const isImage = (file: Attachment) => file.content_type?.startsWith("image/") ?? /\.(png|jpe?g|webp|gif|bmp|tiff?|avif)$/i.test(file.filename);
+  const isImage = (key: string) => {
+    const u = uploads[key];
+    return !!u && (u.contentType.startsWith("image/") || /\.(png|jpe?g|webp|gif|bmp|tiff?|avif)$/i.test(u.filename));
+  };
   const imageCount = files.filter(isImage).length;
   const overImages = imageCount > 5;
   const selectedModel = models.find((m) => m.id === model);
 
-  async function upload(list: FileList | File[]) {
+  function upload(list: FileList | File[]) {
     setError("");
-    if (imageCount + Array.from(list).filter((f) => f.type.startsWith("image/")).length > 5) {
+    const picked = Array.from(list);
+    if (imageCount + picked.filter((f) => f.type.startsWith("image/")).length > 5) {
       setError("每轮最多附加5张图片");
       return;
     }
-    setUploading(true);
-    try {
-      for (const file of Array.from(list)) {
-        try {
-          const item = await uploadFile(file, projectId);
-          setFiles((prev) => [...prev, { id: item.id, filename: item.filename, status: item.status, content_type: item.content_type }]);
-        } catch (err: any) {
-          setError(errorMessage(err));
-        }
-      }
-    } catch (err: any) {
-      setError(errorMessage(err));
-    } finally {
-      setUploading(false);
-      if (picker.current) picker.current.value = "";
-    }
+    // uploads start now and go on in the background; sending does not wait for them
+    const keys = picked.map((file) => startUpload(file, projectId));
+    setFiles((prev) => [...prev, ...keys]);
+    if (picker.current) picker.current.value = "";
   }
 
-  const waiting = files.some((f) => f.status === "pending");
-  const templateWaiting = !!template?.pending;
-  const canSend = !!text.trim() && !busy && !running && !waiting && !uploading && !preparing && !templateWaiting && !!model;
-  const queueing = running && !!onQueue;
-  const canQueue = queueing && !!text.trim() && !busy && !waiting && !uploading && !preparing && !templateWaiting && !!model;
+  function removeFile(key: string) {
+    setFiles((prev) => prev.filter((k) => k !== key));
+    forgetUpload(key);
+  }
 
+  const templateWaiting = !!template?.pending;
+  const canSend = !!text.trim() && !busy && !templateWaiting && !!model;
+  const queueing = running && !!queueable;
+
+  const skills: SkillButton[] = skillsOffered
+    ? [
+        ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
+        ...mine.map((m) => ({ key: `my-${m.name}`, skill: m.name, label: m.title, Icon: IconSparkles, placeholder: `说说要做什么，会按你的「${m.title}」技能来做` })),
+        ...builtin
+          .filter((b) => !SKILLS.some((s) => s.skill === b.name))
+          .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` })),
+      ]
+    : [];
+  const shown = skills.slice(0, VISIBLE_SKILLS);
+  const found = skillQuery.trim() ? skills.filter((s) => `${s.label} ${s.skill}`.toLowerCase().includes(skillQuery.trim().toLowerCase())) : skills;
   // "/" at the start of an empty message lists the skills; picking one fills in what it needs
-  const buttons: SkillButton[] = [
-    ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
-    ...mine.map((m) => ({ key: `my-${m.name}`, skill: m.name, label: m.title, Icon: IconSparkles, placeholder: `说说要做什么，会按你的「${m.title}」技能来做` })),
-  ];
-  const extraBuiltin: SkillButton[] = builtin
-    .filter((b) => !SKILLS.some((s) => s.skill === b.name))
-    .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` }));
-  const shown = buttons.slice(0, VISIBLE_SKILLS);
-  const overflow = [...buttons.slice(VISIBLE_SKILLS), ...extraBuiltin];
   const slashQuery = /^\/(\S*)$/.exec(text)?.[1];
   const slashItems: SkillButton[] =
-    slashQuery === undefined || slashClosed
-      ? []
-      : [
-          ...buttons,
-          ...extraBuiltin,
-        ].filter((b) => !slashQuery || `${b.label} ${b.skill}`.toLowerCase().includes(slashQuery.toLowerCase()));
+    slashQuery === undefined || slashClosed ? [] : skills.filter((b) => !slashQuery || `${b.label} ${b.skill}`.toLowerCase().includes(slashQuery.toLowerCase()));
   const slashIndex = Math.min(slashAt, Math.max(0, slashItems.length - 1));
 
   function choose(s: SkillButton) {
     setPicked(s);
-    if (mode === "chat") onMode("work");
+    if (mode === "chat" && !modeLocked) onMode("work");
     const template = s.template || "";
     setText(template);
     requestAnimationFrame(() => {
@@ -222,51 +234,29 @@ export default function Composer({
   }
 
   async function send(steer = false) {
-    if (queueing ? !canQueue : !canSend) return;
+    if (!canSend || (running && !queueable)) return;
     if (overImages) { setError("每轮最多附加5张图片"); return; }
-    const ready = files.filter((f) => f.status === "ready").map((f) => f.id);
-    const base: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
-    if (ready.length && (mode==="chat" || imageCount > 0 && !selectedModel?.capabilities?.includes("vision"))) {
-      preparation.current?.abort();
-      const current=new AbortController();
-      preparation.current=current;
-      setPreparing(true);setError("");
-      try {
-        const deadline=Date.now()+120000;
-        while (true) {
-          try {
-            await api("/v1/chat/prepare",{method:"POST",signal:current.signal,
-              body:JSON.stringify({file_ids:ready,model,mode,prompt:text.trim()})});
-            break;
-          } catch (err: any) {
-            if (current.signal.aborted) return;
-            if (errorCode(err)!=="chat_attachment_processing" || Date.now()>=deadline) throw err;
-          }
-          await new Promise<void>((resolve)=>{
-            const done=()=>{clearTimeout(timer);current.signal.removeEventListener("abort",done);resolve();};
-            const timer=setTimeout(done,1500);current.signal.addEventListener("abort",done,{once:true});
-          });
-          if (current.signal.aborted) return;
-        }
-        if (current.signal.aborted) return;
-      } catch(err) {
-        if (!current.signal.aborted) setError(errorMessage(err));
-        return;
-      } finally {
-        if (preparation.current===current) setPreparing(false);
-      }
-    }
-    const ok = queueing ? await onQueue!(text.trim(), ready, base, steer) : await onSend(text.trim(), ready, base);
+    const options: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
+    const message: Outgoing = { prompt: text.trim(), attachments: files, options, steer };
+    // the message is handed over and the box is free for the next one at once; its files go with it
+    const ok = await onSubmit(message);
     if (ok) {
       setText("");
       setFiles([]);
       setPicked(null); // a skill is for one message; the mode stays
+      setError("");
     }
   }
 
+  const skillItem = (s: SkillButton) => (
+    <button key={s.key} type="button" role="menuitemradio" aria-checked={picked?.key === s.key} className={`menu-item ${picked?.key === s.key ? "on" : ""}`} onClick={() => pick(s)}>
+      <s.Icon size={16} /> <span className="grow truncate">{s.label}</span>
+    </button>
+  );
+
   return (
     <div
-      className={`composer-box ${dragging ? "dragging" : ""} ${modeBelow ? "" : "has-mode"}`}
+      className={`composer-box ${dragging ? "dragging" : ""}`}
       onDragOver={(e) => {
         if (!e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -283,27 +273,18 @@ export default function Composer({
       }}
     >
       {files.length ? (
-        <div className="attach-row">
-          {files.map((f) => {
-            const state = fileStatusText(f);
-            return (
-              <span key={f.id} className={`attach-chip ${f.status}`}>
-                {f.status === "pending" ? <span className="chip-spin" aria-hidden="true" /> : <IconFile size={13} />} {f.filename}
-                {state ? <span className="chip-state">{state}</span> : null}
-                <button className="link" aria-label={`移除 ${f.filename}`} onClick={() => setFiles(files.filter((x) => x.id !== f.id))}>
-                  ✕
-                </button>
-              </span>
-            );
-          })}
+        <div className="attach-row composer-attachments">
+          {files.map((key) => (
+            <AttachmentChip key={key} uploadKey={key} onRemove={() => removeFile(key)} onRetry={canRetry(key) ? () => retryUpload(key, projectId) : undefined} />
+          ))}
         </div>
       ) : null}
       {picked ? (
         <div className="skill-tag-row">
           <span className="skill-tag">
-            <picked.Icon size={14} /> {picked.label}
-            <button className="link" aria-label={`取消 ${picked.label}`} onClick={() => setPicked(null)}>
-              ✕
+            <picked.Icon size={14} /> <span className="truncate">{picked.label}</span>
+            <button type="button" className="skill-tag-x" aria-label={`取消 ${picked.label}`} onClick={() => setPicked(null)}>
+              <IconX size={12} />
             </button>
           </span>
           {picked.skill === "pptx" ? <TemplatePicker value={template} onChange={setTemplate} projectId={projectId} /> : null}
@@ -320,167 +301,133 @@ export default function Composer({
           ))}
         </div>
       ) : null}
-      <textarea
-        ref={area}
-        rows={1}
-        autoFocus={autoFocus}
-        aria-label="消息"
-        placeholder={picked?.placeholder || placeholder || "输入消息，Enter 发送，Shift + Enter 换行"}
-        value={text}
-        onChange={(e) => {
-          setText(e.target.value);
-          setSlashAt(0);
-          if (!e.target.value.startsWith("/")) setSlashClosed(false);
-        }}
-        aria-expanded={slashItems.length > 0}
-        aria-controls={slashItems.length ? "slash-menu" : undefined}
-        onPaste={(e) => {
-          // a screenshot or a copied file goes in as an attachment, text pastes as usual
-          const pasted = Array.from(e.clipboardData.files);
-          if (!pasted.length) return;
-          e.preventDefault();
-          upload(pasted);
-        }}
-        onKeyDown={(e) => {
-          if (slashItems.length && !e.nativeEvent.isComposing) {
-            if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-              e.preventDefault();
-              setSlashAt((slashIndex + (e.key === "ArrowDown" ? 1 : slashItems.length - 1)) % slashItems.length);
-              return;
-            }
-            if (e.key === "Enter" || e.key === "Tab") {
-              e.preventDefault();
-              choose(slashItems[slashIndex]);
-              return;
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              setSlashClosed(true);
-              return;
-            }
-          }
-          // isComposing: Enter that confirms a Chinese IME candidate must not send the message
-          // Alt/Option+Enter while an answer runs: hand the message to that answer now
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            send(queueing && e.altKey && !template); // a message with a template starts its own answer
-          }
-        }}
-      />
-      <div className="composer-tools">
-        <div className="plus-menu" ref={menuBox}>
-          <button className="icon-btn plus" disabled={uploading} onClick={() => setMenu(!menu)} title="添加附件" aria-label="添加附件" aria-expanded={menu}>
-            <IconPlus size={16} />
+      <div className={`composer-main ${expanded ? "expanded" : ""}`}>
+        <div className="plus-menu" ref={menu.box}>
+          <button type="button" className="icon-btn plus" onClick={() => menu.setOpen(!menu.open)} title="添加" aria-label="添加附件" aria-haspopup="menu" aria-expanded={menu.open}>
+            <IconPlus size={18} />
           </button>
-          {menu ? (
-            <div className="pop-menu" role="menu">
-              <button
-                className="menu-item"
-                role="menuitem"
-                onClick={() => {
-                  setMenu(false);
-                  picker.current?.click();
-                }}
-              >
-                <IconUpload size={16} /> 上传文件
-              </button>
-              <button
-                className="menu-item"
-                role="menuitem"
-                onClick={() => {
-                  setMenu(false);
-                  setLibrary(true);
-                }}
-              >
-                <IconLibrary size={16} /> 从资料库选择
-              </button>
+          {menu.open ? (
+            <div className={`pop-menu composer-menu ${menuView}`} role="menu" aria-label={menuView === "skills" ? "全部技能" : "添加"}>
+              {menuView === "main" ? (
+                <>
+                  <button type="button" className="menu-item" role="menuitem" onClick={() => { menu.setOpen(false); picker.current?.click(); }}>
+                    <IconUpload size={16} /> <span className="grow">上传文件</span>
+                  </button>
+                  <button type="button" className="menu-item" role="menuitem" onClick={() => { menu.setOpen(false); setLibrary(true); }}>
+                    <IconLibrary size={16} /> <span className="grow">从资料库选择</span>
+                  </button>
+                  {shown.length ? <div className="menu-sep" role="separator" /> : null}
+                  {shown.map(skillItem)}
+                  {skills.length > shown.length ? (
+                    <button type="button" className="menu-item" role="menuitem" aria-label="更多技能" onClick={() => setMenuView("skills")}>
+                      <IconSparkles size={16} /> <span className="grow">更多技能</span>
+                      <span className="menu-count">{skills.length - shown.length}</span>
+                      <IconChevronRight size={14} />
+                    </button>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="menu-head">
+                    <button type="button" className="icon-btn sm" aria-label="返回" onClick={() => setMenuView("main")}>
+                      <span className="flip"><IconChevronRight size={14} /></span>
+                    </button>
+                    {skills.length >= SEARCH_FROM ? (
+                      <label className="menu-search">
+                        <IconSearch size={14} />
+                        <input type="text" autoFocus placeholder="搜索技能" aria-label="搜索技能" value={skillQuery} onChange={(e) => setSkillQuery(e.target.value)} />
+                      </label>
+                    ) : <span className="menu-title">技能</span>}
+                  </div>
+                  <div className="menu-scroll">
+                    {found.length ? found.map(skillItem) : <div className="menu-empty">没有匹配的技能</div>}
+                  </div>
+                </>
+              )}
             </div>
           ) : null}
         </div>
-        {modeBelow ? null : <ModeToggle mode={mode} onChange={onMode} />}
-        {mode === "work"
-          ? shown.map((s) => (
-              <button
-                key={s.key}
-                className={`skill-chip ${picked?.key === s.key ? "on" : ""}`}
-                onClick={() => pick(s)}
-                aria-pressed={picked?.key === s.key}
-                aria-label={s.label}
-                title={s.label}
-              >
-                <s.Icon size={14} /> <span className="chip-label">{s.label}</span>
-              </button>
-            ))
-          : null}
-        {mode === "work" && overflow.length ? (
-          <div className="skill-more" ref={more.box}>
-            <button
-              className={`skill-chip ${picked && overflow.some((s) => s.key === picked.key) ? "on" : ""}`}
-              onClick={() => more.setOpen(!more.open)}
-              aria-expanded={more.open}
-              aria-haspopup="menu"
-              aria-label="更多技能"
-              title="更多"
-            >
-              <IconGrid size={14} /> <span className="chip-label">更多</span>
-            </button>
-            {more.open ? (
-              <div className="pop-menu skill-more-menu" role="menu" aria-label="更多技能">
-                {overflow.map((s) => (
-                  <button
-                    key={s.key}
-                    role="menuitemradio"
-                    aria-checked={picked?.key === s.key}
-                    className={`menu-item ${picked?.key === s.key ? "on" : ""}`}
-                    onClick={() => {
-                      more.setOpen(false);
-                      pick(s);
-                    }}
-                  >
-                    <s.Icon size={15} /> <span className="grow">{s.label}</span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
         <input ref={picker} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
         {library ? (
           <LibraryPicker
             projectId={projectId}
-            attached={files.map((f) => f.id)}
+            attached={files.flatMap((key) => (uploads[key]?.fileId ? [uploads[key].fileId!] : []))}
             onClose={() => setLibrary(false)}
             onPick={(picked: FileItem[]) => {
               setLibrary(false);
-              setFiles((prev) => [...prev, ...picked.filter((f) => !prev.some((x) => x.id === f.id)).map((f) => ({ id: f.id, filename: f.filename, status: f.status, content_type: f.content_type }))]);
+              attachExisting(picked);
             }}
           />
         ) : null}
-        <span className="spacer" />
+        <textarea
+          ref={area}
+          rows={1}
+          autoFocus={autoFocus}
+          aria-label="消息"
+          placeholder={picked?.placeholder || placeholder || "发消息…"}
+          value={text}
+          onChange={(e) => {
+            setText(e.target.value);
+            setSlashAt(0);
+            if (!e.target.value.startsWith("/")) setSlashClosed(false);
+          }}
+          aria-expanded={slashItems.length > 0}
+          aria-controls={slashItems.length ? "slash-menu" : undefined}
+          onPaste={(e) => {
+            // a screenshot or a copied file goes in as an attachment, text pastes as usual
+            const pasted = Array.from(e.clipboardData.files);
+            if (!pasted.length) return;
+            e.preventDefault();
+            upload(pasted);
+          }}
+          onKeyDown={(e) => {
+            if (slashItems.length && !e.nativeEvent.isComposing) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setSlashAt((slashIndex + (e.key === "ArrowDown" ? 1 : slashItems.length - 1)) % slashItems.length);
+                return;
+              }
+              if (e.key === "Enter" || e.key === "Tab") {
+                e.preventDefault();
+                choose(slashItems[slashIndex]);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setSlashClosed(true);
+                return;
+              }
+            }
+            // isComposing: Enter that confirms a Chinese IME candidate must not send the message
+            // Alt/Option+Enter while an answer runs: hand the message to that answer now
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              send(queueing && e.altKey && !template); // a message with a template starts its own answer
+            }
+          }}
+        />
         <span className="composer-right">
-        {(() => {
-          const info = models.find((m) => m.id === model);
-          const limit = info?.input_budget_tokens || info?.context_tokens;
-          return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
-        })()}
-        <ModelMenu models={models} value={model} onChange={onModel} />
-        {preparing ? <span className="hint">附件处理中…</span> : null}
-        {imageCount > 0 && !selectedModel?.capabilities?.includes("vision") ? <span className="hint">当前模型将通过 OCR 读取图片文字</span> : null}
-        {error ? <span className="error hint">{error}</span> : null}
-        {queueing && text.trim() ? (
-          <button className="send-btn queue" onClick={() => send(false)} disabled={!canQueue} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">
-            <IconQueue size={16} />
-          </button>
-        ) : null}
-        {running ? (
-          <button className="send-btn stop" onClick={onStop} aria-label="停止" title="停止">
-            <IconStop size={14} />
-          </button>
-        ) : (
-          <button className="send-btn" onClick={() => send()} disabled={!canSend} aria-label="发送" title="发送">
-            {uploading ? <span className="chip-spin light" aria-hidden="true" /> : <IconArrowUp size={18} />}
-          </button>
-        )}
+          {imageCount > 0 && !selectedModel?.capabilities?.includes("vision") ? <span className="hint" title="当前模型将通过 OCR 读取图片文字">将用 OCR 读图</span> : null}
+          {error ? <span className="error hint" title={error}>{error}</span> : null}
+          {(() => {
+            const limit = selectedModel?.input_budget_tokens || selectedModel?.context_tokens;
+            return limit ? <ContextMeter used={context?.used ?? null} limit={limit} compactAt={context?.compactAt ?? null} draft={estimateTokens(text)} /> : null;
+          })()}
+          <ModelMenu models={models} value={model} onChange={onModel} />
+          {queueing && text.trim() ? (
+            <button type="button" className="send-btn queue" onClick={() => send(false)} disabled={!canSend} aria-label="排队发送" title="回答完成后发送（⌥↵ 立即插入）">
+              <IconQueue size={16} />
+            </button>
+          ) : null}
+          {running ? (
+            <button type="button" className="send-btn stop" onClick={onStop} aria-label="停止" title="停止">
+              <IconStop size={14} />
+            </button>
+          ) : (
+            <button type="button" className="send-btn" onClick={() => send()} disabled={!canSend} aria-label="发送" title="发送">
+              <IconArrowUp size={18} />
+            </button>
+          )}
         </span>
       </div>
     </div>

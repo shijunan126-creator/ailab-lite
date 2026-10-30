@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import test from 'node:test';
+import { test } from 'vitest';
 import ts from 'typescript';
 const source = await readFile(new URL('../components/skills/skill-save.ts', import.meta.url), 'utf8');
 const compiled = ts.transpile(source, {module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022});

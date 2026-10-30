@@ -75,18 +75,17 @@ function describeTool(name: string, args: any): { label: string; detail?: string
   }
 }
 
-function lastSteps(items: Item[]): Step[] {
-  const last = items[items.length - 1];
-  if (last && last.kind === "steps") return last.steps;
-  const group: Item = { kind: "steps", steps: [] };
-  items.push(group);
-  return group.steps;
+/** Appends a step to the trailing steps group, copying only that group (or starting a new one). */
+function pushStep(next: Item[], step: Step): void {
+  const last = next[next.length - 1];
+  if (last && last.kind === "steps") next[next.length - 1] = { kind: "steps", steps: [...last.steps, step] };
+  else next.push({ kind: "steps", steps: [step] });
 }
 
-/** Fold one event of a run into its display items: the model's reasoning, its text, and groups of tool steps, in order. */
+/** Fold one event of a run into its display items: the model's reasoning, its text, and groups of tool steps, in order.
+ * Items and steps the event does not touch keep their identity, so memoized rows and Markdown stay asleep. */
 export function reduceEvent(items: Item[], event: EventItem): Item[] {
   const p = event.payload || {};
-  // Token deltas change only the tail. Preserve earlier identities so memoized Markdown stays asleep.
   const tail = items[items.length - 1];
   if (event.type === "agent.thinking" && tail?.kind === "thinking" && tail.step === p.step && !tail.done) {
     return [...items.slice(0, -1), { ...tail, text: tail.text + (p.text || ""), seconds: p.seconds ?? tail.seconds }];
@@ -94,51 +93,54 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
   if (event.type === "agent.delta" && tail?.kind === "text" && tail.step === p.step) {
     return [...items.slice(0, -1), { ...tail, text: tail.text + (p.text || "") }];
   }
-  const next = items.map((it) => (it.kind === "steps" ? { kind: "steps" as const, steps: it.steps.map((s) => ({ ...s })) } : { ...it }));
+  const next = items.slice();
   // anything else the model does means it has stopped thinking
-  if (event.type !== "agent.thinking") for (const it of next) if (it.kind === "thinking") it.done = true;
-  const note = (label: string, detail?: string, status: Step["status"] = "note") => lastSteps(next).push({ name: event.type, label, detail, status });
+  if (event.type !== "agent.thinking")
+    for (let i = 0; i < next.length; i++) {
+      const it = next[i];
+      if (it.kind === "thinking" && !it.done) next[i] = { ...it, done: true };
+    }
+  const note = (label: string, detail?: string, status: Step["status"] = "note") => pushStep(next, { name: event.type, label, detail, status });
   switch (event.type) {
-    case "agent.thinking": {
-      const last = next[next.length - 1];
-      if (last && last.kind === "thinking" && last.step === p.step && !last.done) {
-        last.text += p.text || "";
-        last.seconds = p.seconds ?? last.seconds;
-      } else next.push({ kind: "thinking", step: p.step, text: p.text || "", seconds: p.seconds || 0, done: false });
+    case "agent.thinking":
+      next.push({ kind: "thinking", step: p.step, text: p.text || "", seconds: p.seconds || 0, done: false });
       break;
-    }
-    case "agent.delta": {
-      const last = next[next.length - 1];
-      if (last && last.kind === "text" && last.step === p.step) last.text += p.text || "";
-      else next.push({ kind: "text", step: p.step, text: p.text || "" });
+    case "agent.delta":
+      next.push({ kind: "text", step: p.step, text: p.text || "" });
       break;
-    }
     case "agent.message": {
-      const existing = [...next].reverse().find((it) => it.kind === "text" && it.step === p.step) as Extract<Item, { kind: "text" }> | undefined;
-      if (existing) existing.text = p.content || "";
+      let at = -1;
+      for (let i = next.length - 1; i >= 0; i--) {
+        const it = next[i];
+        if (it.kind === "text" && it.step === p.step) { at = i; break; }
+      }
+      if (at >= 0) next[at] = { ...(next[at] as Extract<Item, { kind: "text" }>), text: p.content || "" };
       else next.push({ kind: "text", step: p.step, text: p.content || "" });
       break;
     }
     case "agent.tool_call": {
       const d = describeTool(p.name, p.arguments);
-      lastSteps(next).push({ name: p.name, ...d, status: "running", modelStep: p.step });
+      pushStep(next, { name: p.name, ...d, status: "running", modelStep: p.step });
       break;
     }
     case "agent.tool_result": {
-      for (let i = next.length - 1; i >= 0; i--) {
+      search: for (let i = next.length - 1; i >= 0; i--) {
         const it = next[i];
         if (it.kind !== "steps") continue;
-        const step = [...it.steps].reverse().find((s) => s.name === p.name && s.status === "running" && (p.step === undefined || s.modelStep === p.step));
-        if (step) {
-          step.status = p.ok ? "ok" : "failed";
-          step.output = [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500);
+        for (let j = it.steps.length - 1; j >= 0; j--) {
+          const s = it.steps[j];
+          if (s.name !== p.name || s.status !== "running" || (p.step !== undefined && s.modelStep !== p.step)) continue;
+          const step: Step = { ...s, status: p.ok ? "ok" : "failed", output: [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500) };
           // a command still going after its first wait: the model comes back to it with exec_wait
           if (p.running) {
             step.label = `${step.label} · 仍在运行`;
             step.status = "note"; // not finished: no tick until a later look sees it end
           }
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
-          break;
+          const steps = it.steps.slice();
+          steps[j] = step;
+          next[i] = { kind: "steps", steps };
+          break search;
         }
       }
       break;
@@ -160,7 +162,10 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       if (!next.some((it) => it.kind === "steer" && it.id === p.queued_id)) next.push({ kind: "steer", id: String(p.queued_id || ""), prompt: String(p.prompt || "") });
       break;
     case "agent.ask_answered":
-      for (const it of next) if (it.kind === "ask" && it.id === p.question_id) it.answer = p.answer ?? "";
+      for (let i = 0; i < next.length; i++) {
+        const it = next[i];
+        if (it.kind === "ask" && it.id === p.question_id) next[i] = { ...it, answer: p.answer ?? "" };
+      }
       break;
     case "run.resumed":
       note("从中断处继续", undefined, "ok");

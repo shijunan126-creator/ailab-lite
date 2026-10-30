@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
+import { startingState } from "../../lib/ui-state";
 import { splitTurn, turnSources, type Source } from "../../lib/work-process";
 import CopyButton from "../copy-button";
 import { IconBranch, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconTemplate } from "../icons";
 import { ExtTile } from "../library/file-tile";
 import FileMenu from "../library/file-menu";
-import Markdown from "../markdown";
+import Answer from "./answer";
+import { answerForCopy } from "../genui/markdown-bridge";
+import { useSmoothText } from "../motion/smooth-text";
 import { useFileViewer } from "../preview/file-viewer";
 
 export { reduceEvent } from "../../lib/work-process";
@@ -157,13 +160,13 @@ function ForkButton({ modes, onFork }: { modes: ForkMode[]; onFork: (mode: ForkM
   );
 }
 
-export default function Turn({
+export default memo(function Turn({
   run,
   items,
   live,
   last,
   fresh,
-  modelName,
+  modelLabel,
   previewKey,
   onPreview,
   onPreviewFile,
@@ -185,7 +188,7 @@ export default function Turn({
   live: boolean;
   last?: boolean;
   fresh?: boolean;
-  modelName: (id: string) => string;
+  modelLabel: string;
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
   onPreviewFile: (file: { file_id: string; filename: string }) => void;
@@ -246,6 +249,7 @@ export default function Turn({
   const { process, answer: streamed } = useMemo(() => splitTurn(shown), [shown]);
   // the confirmed answer once the run is over; until then whatever the model has written after its last step
   const answer = (terminal && run.status !== "interrupted" ? run.summary?.trim() : "") || streamed;
+  const visibleAnswer = useSmoothText(answer, live && !terminal);
   // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);
   // kept on the run once it ends; from the stream (or loaded history) until then
@@ -316,7 +320,7 @@ export default function Turn({
             loading={loadingHistory} error={historyError} more={moreHistory} onLoad={loadHistory} renderAsk={(item) => <Ask item={item}
               live={(!terminal || run.status === "interrupted") && !!onAnswer}
               onAnswer={(value) => onAnswer!(run, item.id, value)} />} /> : null}
-          {answer ? <Markdown virtual text={answer} streaming={live && !terminal} sources={sources} onOpenLink={onOpenLink} /> : null}
+          {answer ? <Answer virtual text={visibleAnswer} streaming={live && !terminal} sources={sources} onOpenLink={onOpenLink} runId={run.id} uiState={run.ui_state} saveState /> : null}
           {run.status === "failed" && run.error ? <div className="alert error">出错了：{runError(run.error)}</div> : null}
           {run.resumable && onResume ? (
             <div className="resume">
@@ -379,7 +383,7 @@ export default function Turn({
                   </button>
                 </span>
               ) : null}
-              {answer ? <CopyButton text={answer} label="复制回答" /> : null}
+              {answer ? <CopyButton text={() => answerForCopy(answer, (i) => startingState(run.id, run.ui_state)?.blocks[String(i)])} label="复制回答" /> : null}
               {last && done && onRetry ? (
                 <button type="button" className={`icon-btn act ${retrying ? "busy" : ""}`} aria-label="重新生成" title="重新生成" disabled={retrying}
                   onClick={async () => {
@@ -395,7 +399,7 @@ export default function Turn({
               ) : null}
               {done && onFork && forkModes?.length ? <ForkButton modes={forkModes} onFork={(mode) => onFork(run, mode)} /> : null}
               {sources.length && onSources ? <SourcesButton sources={sources} open={sourcesOpen} onOpen={() => onSources(run, sources, answer)} /> : null}
-              <span className="meta-text">{modelName(run.model)}</span>
+              <span className="meta-text">{modelLabel}</span>
               {run.usage?.prompt_tokens ? <span className="meta-text">{(run.usage.prompt_tokens || 0) + (run.usage.completion_tokens || 0)} tokens</span> : null}
             </div>
           ) : null}
@@ -405,7 +409,7 @@ export default function Turn({
       </> : null}
     </div>
   );
-}
+});
 
 /** Editing a sent message in place: Enter sends it as a new version, Escape keeps the old one. */
 function EditBox({ value, onChange, onCancel, onSubmit }: { value: string; onChange: (v: string) => void; onCancel: () => void; onSubmit: () => Promise<void> }) {
