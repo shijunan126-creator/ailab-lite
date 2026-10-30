@@ -723,3 +723,22 @@ def test_base_skill_migration_removes_only_xlsx_disables(engine):
     _downgrade_to(engine, "0039")
     with engine.connect() as conn:
         assert list(conn.execute(text("SELECT name FROM skill_policies"))) == [("pptx",)]
+
+
+def test_client_calls_upgrade_and_downgrade(engine):
+    _upgrade_to(engine, "0042")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0043")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO client_calls (run_id, call_id, kind, status, claim_deadline, deadline, created_at) "
+                "VALUES ('r1', 'call', 'js', 'pending', '2026-01-01', '2026-01-01', '2026-01-01')"
+            )
+        )
+    _downgrade_to(engine, "0042")
+    assert "client_calls" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM runs WHERE id = 'r1'")).scalar() == 1
+    _upgrade_to(engine, "0043")

@@ -22,7 +22,11 @@ SEARCH = {
 CORE = {"ui_components", "search_capabilities", "load_skill", "recall_history", "ask_user", "update_plan"}
 ALIASES = {
     "执行": "exec",
-    "计算": "exec",
+    "计算": "run_js",
+    "json": "run_js",
+    "正则": "run_js",
+    "csv": "run_js",
+    "js": "run_js",
     "代码": "exec",
     "网页": "web",
     "搜索": "search",
@@ -41,7 +45,7 @@ def offered(catalog, active):
 
 def search(query, kind, limit, catalog, user_skills=()):
     query = str(query)[:200]
-    terms = [*re.findall(r"[\w.]+", query.lower()), *[v for k, v in ALIASES.items() if k in query]]
+    terms = [*re.findall(r"[\w.]+", query.lower()), *[v for k, v in ALIASES.items() if k.lower() in query.lower()]]
     entries = []
     if kind in {"any", "tool"}:
         entries += [

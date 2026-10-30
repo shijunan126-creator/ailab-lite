@@ -29,6 +29,7 @@ from .routes_admin import router as admin_router
 from .routes_auth import me
 from .routes_auth import router as auth_router
 from .routes_brand import router as brand_router
+from .routes_client_calls import router as client_calls_router
 from .routes_conversations import router as conversations_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
@@ -172,6 +173,7 @@ app.include_router(vision_router)
 app.include_router(model_context_router)
 app.include_router(jobs_router)
 app.include_router(runtime_router)
+app.include_router(client_calls_router)
 app.include_router(schedules_router)
 
 

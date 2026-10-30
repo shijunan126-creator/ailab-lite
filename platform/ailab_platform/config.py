@@ -40,6 +40,15 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
     )
 
+    client_js_enabled: bool = True
+    client_js_claim_timeout_seconds: float = Field(default=6, gt=0, le=60)
+    client_js_max_timeout_ms: int = Field(default=5000, ge=100, le=5000)
+    client_js_code_max_bytes: int = Field(default=32768, ge=1, le=32768)
+    client_js_input_max_bytes: int = Field(default=262144, ge=1, le=262144)
+    client_js_value_max_bytes: int = Field(default=65536, ge=1, le=65536)
+    client_js_logs_max_bytes: int = Field(default=8192, ge=1, le=8192)
+    client_js_error_max_bytes: int = Field(default=1024, ge=1, le=1024)
+
     genui_enabled: bool = True
     genui_html_enabled: bool = True
     genui_max_blocks: int = Field(default=8, ge=1, le=20)

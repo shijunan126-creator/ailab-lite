@@ -238,6 +238,7 @@ def start_run(
     template=None,
     frozen_template: dict | None = None,
     client_send_id: str | None = None,
+    client: str | None = None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -322,7 +323,7 @@ def start_run(
             prompt=prompt,
             model=model_id,
             input_file_ids=inputs,
-            options=options,
+            options={**options, **({"client": client} if client else {})},
         )
         db.add(run)
         if conversation is not None:
@@ -369,6 +370,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         selections=body.skills,
         template=body.template,
         client_send_id=body.client_send_id,
+        client="portal",
     )
     return run_dict(db, run, detail=True)
 
@@ -612,6 +614,7 @@ def _new_version(db, user, run_id, body, editing=False):
             commit=False,
             sibling_of=old,
             frozen_template=options.get("template"),
+            client="portal",
         )
         new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills"}}, **new.options}
         conv.queue_paused = True

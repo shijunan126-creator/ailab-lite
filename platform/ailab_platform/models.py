@@ -308,6 +308,21 @@ class Run(Base):
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="run")
 
 
+class ClientCall(Base):
+    __tablename__ = "client_calls"
+    __table_args__ = (Index("ix_client_calls_run_status", "run_id", "status"),)
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    call_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class RunEvent(Base):
     __tablename__ = "run_events"
     __table_args__ = (

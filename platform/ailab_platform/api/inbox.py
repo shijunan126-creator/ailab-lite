@@ -81,6 +81,7 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 locked=True,
                 commit=False,
                 frozen_template=row.options.get("template"),
+                client="portal",
             )
             db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()

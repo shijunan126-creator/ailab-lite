@@ -184,6 +184,9 @@ def drain_invalidations(db, limit=100):
         schedule_object_deletion(db, f"workspaces/{run.id}/", "file_source", prefix=True)
         for key in db.scalars(select(RunCheckpoint.state_key).where(RunCheckpoint.run_id == run.id)):
             schedule_object_deletion(db, key, "file_source")
+        from ..models import ClientCall
+
+        db.execute(delete(ClientCall).where(ClientCall.run_id == run.id))
         db.execute(delete(RunCheckpoint).where(RunCheckpoint.run_id == run.id))
         if run.conversation_id:
             db.execute(
