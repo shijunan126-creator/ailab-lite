@@ -41,6 +41,7 @@ WEB_READ_SECONDS = Histogram(
 )
 MEMORY_RECALL = Counter("ailab_memory_recall_total", "History recall calls by outcome", ["outcome"])
 MEMORY_EMBEDDING = Counter("ailab_memory_embedding_total", "Embedding endpoint calls by outcome", ["outcome"])
+SKILL_DRAFTS = Counter("ailab_skill_drafts_total", "Background skill draft outcomes", ["outcome"])
 MEMORY_GUARD_REJECTED = Counter("ailab_memory_guard_rejected_total", "Memory writes refused by the safety guard", ["reason", "source"])
 QUOTA_REJECTIONS = Counter("ailab_quota_rejections_total", "Requests refused by a quota", ["kind"])
 REAPER_ACTIONS = Counter("ailab_reaper_actions_total", "Things the reaper repaired", ["action"])

@@ -152,6 +152,29 @@ def extract_path(data: Path, filename: str, content_type: str) -> dict:
 
 def run(operation: str, source: Path, output: Path, options: dict) -> dict:
     filename = options.get("filename", source.name)
+    if operation == "skill_unpack":
+        import zipfile
+
+        from .. import skillfiles
+        from ..skill_drafts.files import checked_path
+
+        if source.stat().st_size > skillfiles.MAX_ZIP or not skillfiles.inspect(source.read_bytes(), filename):
+            raise ValueError("invalid skill")
+        with zipfile.ZipFile(source) as archive:
+            infos = skillfiles._members(archive)
+            root = skillfiles._skill_root(infos)
+            paths = [checked_path(i.filename[len(root) :]) for i in infos if i.filename.startswith(root)]
+            if len(paths) != len(infos) or len(paths) != len(set(paths)):
+                raise ValueError("invalid skill paths")
+            result = []
+            for index, (info, path) in enumerate(zip(infos, paths, strict=True)):
+                dest = output / f"entry-{index}"
+                with archive.open(info) as src, dest.open("wb") as dst:
+                    import shutil
+
+                    shutil.copyfileobj(src, dst, length=65536)
+                result.append({"path": path, "entry": dest.name})
+        return {"files": result}
     from ..sandbox_tools.render_preview import check_archive
 
     check_archive(source)

@@ -32,6 +32,9 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
     """Caller holds the user's critical section. Does not commit. One pass and one revision for any number of conversations."""
     if not conversation_ids:
         return {"episodes": 0, "facts": 0, "dropped": 0}
+    from ..skill_drafts.service import invalidate_drafts
+
+    invalidate_drafts(db, user.id, conversation_ids)
     from .search import _doc
 
     _doc.cache_clear()

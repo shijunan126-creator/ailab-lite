@@ -687,6 +687,36 @@ class MemoryEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SkillDraft(Base):
+    __tablename__ = "skill_drafts"
+    __table_args__ = (
+        Index("ix_skill_drafts_user_status_updated", "user_id", "status", "updated_at"),
+        Index("ix_skill_drafts_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sd"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    origin: Mapped[str] = mapped_column(String(20))
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    base_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    action: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    files: Mapped[list] = mapped_column(JSON, default=list)
+    claim_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    target: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class MemoryDreamRun(Base):
     """One user-night background consolidation. Never creates a visible Run or RunEvent."""
 

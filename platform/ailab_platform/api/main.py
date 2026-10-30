@@ -21,6 +21,7 @@ from ..metrics import ApiStateCollector, metrics_response, register_once
 from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
+from ..skill_drafts.service import draft_forever
 from .jobs import router as jobs_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
@@ -49,6 +50,8 @@ from .routes_schedules import router as schedules_router
 from .routes_schedules import schedules_forever
 from .routes_search import router as search_router
 from .routes_shares import router as shares_router
+from .routes_skill_drafts import router as skill_drafts_router
+from .routes_skill_drafts_internal import router as skill_drafts_internal_router
 from .routes_skills import router as skills_router
 from .routes_templates import router as templates_router
 
@@ -95,11 +98,13 @@ async def lifespan(_: FastAPI):
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
     lifecycle_cleanup = asyncio.create_task(lifecycle_cleanup_forever(), name="lifecycle-cleanup")
     schedules = asyncio.create_task(schedules_forever(), name="schedules")
+    skill_drafts = asyncio.create_task(draft_forever(), name="skill-drafts")
     memory_dream = asyncio.create_task(dream_forever(), name="memory-dream")
     memory_embeddings = asyncio.create_task(embed_forever(), name="memory-embeddings")
     yield
     memory_embeddings.cancel()
     memory_dream.cancel()
+    skill_drafts.cancel()
     schedules.cancel()
     lifecycle_cleanup.cancel()
     preview_dispatch.cancel()
@@ -149,6 +154,8 @@ app.add_api_route("/v1/me", me, methods=["GET"], tags=["auth"])
 app.include_router(runs_router)
 app.include_router(conversations_router)
 app.include_router(genui_router)
+app.include_router(skill_drafts_router)
+app.include_router(skill_drafts_internal_router)
 app.include_router(skills_router)
 app.include_router(market_router)
 app.include_router(memory_router)

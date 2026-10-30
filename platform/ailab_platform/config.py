@@ -341,6 +341,7 @@ class Settings(BaseSettings):
     memory_dream_confidence: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_target_ratio: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_max_tokens: int = Field(default=2000, ge=200, le=20_000)
+    skill_draft_input_chars: int = Field(default=24_000, ge=1000, le=100_000)
     memory_dream_default_timezone: str = "Asia/Shanghai"
     # Dense channel of the history recall. Any OpenAI-compatible /embeddings endpoint (TEI, vLLM, Ollama, a hosted API);
     # empty URL = lexical search only. Vectors of another model are ignored until the indexer has redone them.
