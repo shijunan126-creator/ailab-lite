@@ -599,7 +599,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
-  async function changeQueued(qid: string, body: { prompt?: string; steer?: boolean } | null): Promise<boolean> {
+  async function changeQueued(qid: string, body: { prompt?: string; steer?: boolean; skills?: { name: string; file_id?: string | null; at?: number | null }[] } | null): Promise<boolean> {
     if (!id) return false;
     try {
       if (body) {
@@ -951,7 +951,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                 paused={!!detail?.queue_paused}
                 running={running && !question}
                 onSteer={async (qid) => void (await changeQueued(qid, { steer: true }))}
-                onEdit={(qid, prompt) => changeQueued(qid, { prompt })}
+                onEdit={(qid, prompt) => {
+                  // the chips keep their place, or the end of the text if it got shorter
+                  const length = Array.from(prompt).length;
+                  const skills = (detail?.queue || []).find((q) => q.id === qid)?.skills?.map(({ name, file_id, at }) => ({ name, file_id, at: at == null ? at : Math.min(at, length) }));
+                  return changeQueued(qid, skills?.length ? { prompt, skills } : { prompt });
+                }}
                 onRemove={async (qid) => void (await changeQueued(qid, null))}
                 onResume={resumeQueue}
               />

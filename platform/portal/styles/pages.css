@@ -177,7 +177,7 @@ input[type="number"]:focus { outline: none; }
 .day { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--popover); color: var(--muted-foreground); font-weight: 550; }
 .day:hover { background: var(--subtle); color: var(--foreground); }
 .day.on, .day.on:hover { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
-.schedule-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.schedule-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .schedule-row select { width: 100%; }
 .schedule-editor .field > span { display: block; font-weight: 600; font-size: var(--text-sm); margin-bottom: 6px; }
 .schedule-editor div.field { margin-bottom: 14px; }
