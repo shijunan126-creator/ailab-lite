@@ -232,6 +232,8 @@ def _drain_memory_copies(db, item, path, limit):
         for row in rows:
             row.before_memory = document(row.before_memory or {})
             row.after_memory = document(row.after_memory or {})
+            if row.input_run_ids and db.scalar(select(Run.id).where(Run.id.in_(row.input_run_ids), Run.id.in_(select(path.c.id))).limit(1)):
+                row.report = {**(row.report or {}), "candidates": []}
             row.plan = {
                 **(row.plan or {}),
                 "changes": [clean for entry in (row.plan or {}).get("changes", []) if (clean := redact(entry)) is not None],
