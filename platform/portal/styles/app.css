@@ -394,7 +394,7 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
   .main-top, .pane-reopen { display: none; }
 }
 
-/* Memory consolidation panel: one row per batch, a report of every candidate under it */
+/* Memory consolidation panel: one row per day, a report of every candidate of that day's batches under it */
 .dream-panel { margin-bottom: 28px; padding-bottom: 8px; }
 .dream-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 10px; }
 .dream-state { font-size: var(--text-sm); color: var(--muted-foreground); }
@@ -403,10 +403,7 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 .dream-run + .dream-run { border-top: 1px solid var(--border); }
 .dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
 .dream-run-head:hover { background: var(--subtle); color: var(--foreground); }
-.dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
-.dream-status { font-size: var(--text-2xs); padding: 2px 7px; border-radius: 999px; background: var(--subtle); color: var(--muted-foreground); }
-.dream-status.applied { color: var(--ok, #22863a); }
-.dream-status.failed { color: var(--destructive); }
+.dream-run-head > span:first-child { white-space: nowrap; }
 .dream-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
 .dream-sum.failed { color: var(--destructive); }
 .dream-detail { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -419,6 +416,7 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 .dream-related { margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--border); font-size: var(--text-xs); color: var(--muted-foreground); }
 .dream-reason { flex: none; max-width: 40%; text-align: right; }
 .dream-revert { align-self: flex-start; }
+.dream-more { display: block; width: 100%; padding: 10px 16px 4px; border-top: 1px solid var(--border); text-align: left; font-size: var(--text-sm); }
 @media (max-width: 640px) {
   .dream-run-head { flex-wrap: wrap; row-gap: 2px; }
   .dream-run-head .spacer { display: none; }
