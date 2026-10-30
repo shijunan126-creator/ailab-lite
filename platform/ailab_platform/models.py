@@ -692,8 +692,15 @@ class MemoryDreamRun(Base):
 
     __tablename__ = "memory_dream_runs"
     __table_args__ = (
-        UniqueConstraint("user_id", "local_date", name="uq_memory_dream_user_date"),
+        Index(
+            "uq_memory_dream_user_active",
+            "user_id",
+            unique=True,
+            sqlite_where=text("status IN ('pending', 'running')"),
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
         Index("ix_memory_dream_user_finished", "user_id", "finished_at"),
+        Index("ix_memory_dream_user_date_trigger", "user_id", "local_date", "trigger"),
         Index("ix_memory_dream_status_created", "status", "created_at"),
     )
 
@@ -703,10 +710,12 @@ class MemoryDreamRun(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="cron")
+    batch_index: Mapped[int] = mapped_column(Integer, default=1)
     cursor_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     input_run_ids: Mapped[list] = mapped_column(JSON, default=list)
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     journal: Mapped[str] = mapped_column(Text, default="")
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
     before_memory: Mapped[dict] = mapped_column(JSON, default=dict)
     after_memory: Mapped[dict] = mapped_column(JSON, default=dict)
     token_usage: Mapped[dict] = mapped_column(JSON, default=dict)
