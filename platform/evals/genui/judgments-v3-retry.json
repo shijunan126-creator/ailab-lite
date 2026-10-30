@@ -1,0 +1,103 @@
+{
+  "trend-two:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "两序列与累计445/413和末期差40正确；UI增长/平稳方向硬写，块外又写2月附近交叉与持续拉开差距的结论，违反结论表达式及块内约束。"
+  },
+  "trend-energy:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "周五250/周日155/均207.1同源表达式；Text仍硬写周中较高、周末回落的比较结论。"
+  },
+  "part-budget:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "PieChart改为items.amount，结构修复；块外仍硬写研发近半和预备金十分之一。"
+  },
+  "compare-cost:1": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "同源Each单位成本正确；把cost/cap解释成每多服务一人付多少的边际/实际成本错误，最大容量名称也误取最低单位成本对象，当前碰巧同为丙；块外比较结论。"
+  },
+  "compare-notwhole:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "mid=@First(@Sort(...)[1])把对象当数组，mid.rate为空，求值B与A差为91个百分点而非9；仍误称B比例波动最大，标题硬写排序和统计牢靠性。"
+  },
+  "calc-discount:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "默认1750、九折1350、包邮1350和独立200件7000正确，公式消除72/53硬写；但块外又硬写35和1750及额外20件阈值比较。"
+  },
+  "calc-saving:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": true,
+    "conclusion_compliant": true,
+    "note": "默认12000/3000每月36000/24月24000，控件乘法与说明全由变量引用，无块外结论。"
+  },
+  "trend-sales:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "原数、Sum116/总增幅150%/均增3.6/三月-6.7%/四月50%等均表达式正确；结论里异常月份和比较方向硬写，且未经要求同时加主图与主表。"
+  },
+  "edit-pie:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "柱图原数正确，最大最小与总额表达式；块外仍重复合计100、四成与最大结论。"
+  },
+  "edit-pie:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": true,
+    "conclusion_compliant": true,
+    "note": "完整饼图使用items.amount、总额和最大最小名称占比均表达式，无外部数据结论，编辑成功。",
+    "edit_success": true
+  },
+  "edit-filter:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": true,
+    "conclusion_compliant": true,
+    "note": "四行甲乙丙丁及地区金额准确，合计400/华东210/华西190和最高华东甲120表达式。"
+  },
+  "edit-filter:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "data_consistent": true,
+    "conclusion_compliant": true,
+    "note": "Select/Filter/Each默认四行400、华西丙80丁110合190，最高对象与金额动态，编辑成功。",
+    "edit_success": true
+  },
+  "edit-unit:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "原数及最大/差8000/50%正确，块外硬写合计70000与趋势结论。"
+  },
+  "edit-unit:2": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "data_consistent": false,
+    "conclusion_compliant": false,
+    "note": "LineChart万元1.20/1.80/1.60/2.40及decimals=2编辑成功；Text拼接减法缺括号，实际整段求值只剩-1.6万元，丢失主体，正确差应0.8；块外再硬写换算序列。",
+    "edit_success": true
+  }
+}
