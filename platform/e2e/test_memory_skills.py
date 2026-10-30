@@ -122,7 +122,7 @@ def test_skill_create_edit_and_scanned_version(page, stack):
     row.get_by_role("button", name="编辑 浏览器验收技能", exact=True).click()
     expect(editor.get_by_role("textbox", name="SKILL.md")).to_have_value(content + "第二步校验结果。\n")
     page.screenshot(path=str(stack.log_dir / "skill-edit.png"), animations="disabled")
-    editor.get_by_role("button", name="关闭", exact=True).click()
+    editor.get_by_role("button", name="关闭", exact=True).filter(has_text="关闭").click()
     headers = auth(stack)
     skill = next(s for s in httpx.get(stack.api + "/v1/skills", headers=headers).json() if s["name"] == name)
     assert len(httpx.get(stack.api + f"/v1/files/{skill['file_id']}/versions", headers=headers).json()) == 2

@@ -505,9 +505,9 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
     _wait_for_turns(page, 1, seconds=120)
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").first.wait_for()
+    page.locator(".steps .step-label", has_text="读取技能").first.wait_for()
     steps = "\n".join(page.locator(".steps").all_inner_texts())
-    assert "已加载技能" in steps and "交付文件" in steps
+    assert "读取技能" in steps and "PPT 设计" in steps and "已加载技能" not in steps and "交付文件" in steps
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
     assert page.inner_text(".msg.user .skill-chip") == "PPT 设计"
@@ -634,8 +634,9 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     _wait_for_turns(page, 1)
     assert page.inner_text(".msg.user .skill-chip") == "周报助手"
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").first.wait_for()
-    assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
+    page.locator(".steps .step-label", has_text="读取技能").first.wait_for()
+    steps = "\n".join(page.locator(".steps").all_inner_texts())
+    assert "读取技能" in steps and "周报助手" in steps and "已加载技能" not in steps
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file
     page.locator(".skill-row", has_text="周报助手").locator("button:has-text('删除')").click()
