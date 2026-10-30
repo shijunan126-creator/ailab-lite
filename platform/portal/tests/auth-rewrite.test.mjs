@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
-import test from "node:test";
+import { test } from 'vitest';
+import { t } from './node-test-compat.mjs';
 import ts from "typescript";
 import config from "../next.config.mjs";
 
@@ -14,7 +15,7 @@ const compiled = ts.transpile(await readFile(new URL("../proxy.ts", import.meta.
 const module = { exports: {} };
 new Function("require", "module", "exports", compiled)(require, module, module.exports);
 
-test("anonymous login rewrites stay internal on each request origin", (t) => {
+test("anonymous login rewrites stay internal on each request origin", () => {
   // Match Next's build-time flag and router origin comparison: an external
   // rewrite makes a needless HTTP hop and can fail before the form is rendered.
   const flag = "__NEXT_NO_MIDDLEWARE_URL_NORMALIZE";

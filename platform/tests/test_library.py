@@ -21,7 +21,14 @@ from tests.test_projects import AUTH, SERVICE, project, upload
 
 
 @pytest.fixture()
-def api():
+def api(monkeypatch):
+    from ailab_platform.api import main as api_main
+
+    async def idle_dispatch():
+        await asyncio.Event().wait()
+
+    # These tests drive publication explicitly; background ticks see the suite's shared outbox.
+    monkeypatch.setattr(api_main, "dispatch_forever", idle_dispatch)
     with TestClient(app) as client:
         client.headers.update(_other_user(client))
         yield client

@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
-import test from "node:test";
+import { test } from 'vitest';
+import { t } from './node-test-compat.mjs';
 import ts from "typescript";
 
 const require = createRequire(import.meta.url);
@@ -21,7 +22,7 @@ const proxy = compile(await readFile(new URL("../app/api/v1/[...path]/route.ts",
   "next/server": next, "../../../../lib/server": server,
 });
 
-test("OIDC start keeps binding material in an httpOnly Lax cookie", async (t) => {
+test("OIDC start keeps binding material in an httpOnly Lax cookie", async () => {
   t.mock.method(globalThis, "fetch", async () => Response.json({ authorization_url: "https://idp.example/authorize?state=state", flow_token: "binding-secret", expires_in: 600 }));
   const res = await start.GET(new next.NextRequest("https://portal.example/api/auth/oidc/start"));
   assert.equal(res.status, 303);
@@ -35,7 +36,7 @@ test("OIDC start keeps binding material in an httpOnly Lax cookie", async (t) =>
   assert.equal(res.headers.get("cache-control"), "no-store");
 });
 
-test("OIDC start rejects cross-site requests without contacting upstream", async (t) => {
+test("OIDC start rejects cross-site requests without contacting upstream", async () => {
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({}); });
   const res = await start.GET(new next.NextRequest("https://portal.example/api/auth/oidc/start", { headers: { "sec-fetch-site": "cross-site" } }));
@@ -43,7 +44,7 @@ test("OIDC start rejects cross-site requests without contacting upstream", async
   assert.equal(calls, 0);
 });
 
-test("OIDC callback exchanges on the server, sets the existing platform cookie and redirects without tokens", async (t) => {
+test("OIDC callback exchanges on the server, sets the existing platform cookie and redirects without tokens", async () => {
   t.mock.method(globalThis, "fetch", async (_url, options) => {
     assert.deepEqual(JSON.parse(options.body), { state: "state", code: "code", error: null, flow_token: "binding-secret" });
     assert.equal(options.cache, "no-store");
@@ -62,7 +63,7 @@ test("OIDC callback exchanges on the server, sets the existing platform cookie a
   assert.equal(await res.text(), "");
 });
 
-test("missing binding and refused OIDC callback clear the flow and never set a platform token", async (t) => {
+test("missing binding and refused OIDC callback clear the flow and never set a platform token", async () => {
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => { calls++; return Response.json({ detail: "refused" }, { status: 401 }); });
   for (const cookie of ["", "ailab_oidc_flow=binding-secret"]) {
@@ -74,13 +75,13 @@ test("missing binding and refused OIDC callback clear the flow and never set a p
   assert.equal(calls, 1);
 });
 
-test("proxy preserves the array-list keyset cursor header", async (t) => {
+test("proxy preserves the array-list keyset cursor header", async () => {
   t.mock.method(globalThis, "fetch", async () => Response.json([], { headers: { "x-next-cursor": "cursor" } }));
   const res = await proxy.GET(new next.NextRequest("https://portal.example/api/v1/admin/departments", { headers: { cookie: "ailab_token=session" } }), { params: Promise.resolve({ path: ["admin", "departments"] }) });
   assert.equal(res.headers.get("x-next-cursor"), "cursor");
 });
 
-test("proxy preserves the reader snapshot security headers", async (t) => {
+test("proxy preserves the reader snapshot security headers", async () => {
   const headers = { "content-security-policy": "sandbox allow-popups; script-src 'none'", "referrer-policy": "no-referrer" };
   t.mock.method(globalThis, "fetch", async () => new Response("<p>article</p>", { headers }));
   const res = await proxy.GET(new next.NextRequest("https://portal.example/api/v1/reader/render?url=https://example.com", { headers: { cookie: "ailab_token=session" } }), { params: Promise.resolve({ path: ["reader", "render"] }) });

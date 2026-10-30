@@ -269,8 +269,109 @@ _XLSX = [
 ]
 
 
+# Scripted GenUI answers for browser tests: controls bound to $variables, and long unbroken text in every component.
+_GENUI_INTERACTIVE = [
+    "root = Stack([inputs, total, trend, ask])",
+    '$tier = "标准版"',
+    "$seats = 20",
+    "$yearly = false",
+    'inputs = Grid([Select("版本", ["标准版", "专业版"], $tier), Slider("人数", 5, 200, $seats, 5, "人"), '
+    'Toggle("按年付费（八五折）", $yearly)])',
+    'total = Metric("每月费用", @Round($seats * ($tier == "专业版" ? 99 : 49) * ($yearly ? 0.85 : 1)), "元")',
+    'trend = LineChart("近六个月活跃人数", ["5月", "6月", "7月", "8月", "9月", "10月"], '
+    '[Series("活跃", [12, 15, 18, 17, 22, 26]), Series("新增", [3, 4, 5, 2, 6, 7])])',
+    'ask = Button("按这个方案出报价单", @ToAssistant("按" + $tier + "、" + $seats + " 人出一份报价单"))',
+]
+_GENUI_LONG = "超长的指标名称用来检查换行而不是被截断看不见的情况" * 2
+_GENUI_URL = "https://example.com/a/very/long/path/without/breaks/abcdefghijklmnopqrstuvwxyz0123456789"
+_GENUI_STRESS = [
+    "root = Stack([g, c, t, b, tabs])",
+    'g = Grid([Metric("{long}", 1234567890123, "个单位非常长的单位名称"), Metric("比例", "99.99%"), '
+    f'Metric("x", 3, "次", -12), Metric("{_GENUI_URL}", 1)], 4)',
+    f'c = Callout("{{long}}{_GENUI_URL}", "warning", "注意")',
+    'b = Stack([Button("{long}", @ToAssistant("继续")), Badge("{long}", "success")], "row")',
+    't = Table(["名称", "很长很长很长的列标题用来检查表头", "数值"], '
+    '[["{long}", "abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz", 12.5], ["短", "b", 3]])',
+    'tabs = Tabs([Tab("{long}", [bars]), Tab("饼图", [pie])])',
+    'bars = BarChart("各个非常长的分类名称对比", ["第一个非常长的分类名称", "第二个分类", "第三个更长更长的分类名称"], '
+    '[Series("今年", [120, 340, 90]), Series("去年", [100, 280, 130])], true)',
+    'pie = PieChart("构成", ["一个特别长的组成部分名称", "其它"], [70, 30])',
+]
+
+
+# A generated page (HtmlArtifact): an interactive coin-flip experiment that also probes its sandbox, so browser tests
+# can check that it runs, that the network and storage are closed to it, and that it follows the host theme.
+_GENUI_PAGE = (
+    "<!doctype html><html><head><style>"
+    ".wrap{padding:16px;display:grid;gap:12px}"
+    "button{font:inherit;padding:6px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--fg)}"
+    ".track{height:10px;border-radius:5px;background:var(--surface)}.bar{height:10px;border-radius:5px;background:var(--accent);width:0}"
+    '</style></head><body><div class="wrap">'
+    '<div id="count">已抛 0 次</div><div class="track"><div class="bar" id="bar"></div></div>'
+    '<button id="go">抛 10 次</button><div id="net">net:pending</div><div id="store">store:pending</div>'
+    '<img src="https://example.com/x.png" alt="">'
+    "</div><script>"
+    'var n=0,h=0;document.body.dataset.ran="1";'
+    'document.getElementById("go").onclick=function(){for(var i=0;i<10;i++){n++;if(Math.random()<.5)h++}'
+    'document.getElementById("count").textContent="已抛 "+n+" 次，正面 "+h+" 次";'
+    'document.getElementById("bar").style.width=(h/n*100)+"%"};'
+    'fetch("/api/v1/auth/me").then(function(){document.getElementById("net").textContent="net:allowed"},'
+    'function(){document.getElementById("net").textContent="net:blocked"});'
+    'try{localStorage.setItem("x","1");document.getElementById("store").textContent="store:allowed"}'
+    'catch(e){document.getElementById("store").textContent="store:blocked"}'
+    "{escape}</script></body></html>"
+)
+
+
+def _genui_page(escape: bool = False, closed: bool = True) -> str:
+    page = _GENUI_PAGE.replace("{escape}", 'setTimeout(function(){location.href="https://example.com/"},300);' if escape else "")
+    block = f'root = Stack([page])\npage = HtmlArtifact("抛硬币实验", \'{page}\', "点击按钮抛硬币，正面比例会逐渐接近 50%。")\n'
+    return "下面是一个可以动手的小实验。\n```openui\n" + block + ("```\n以上为演示。" if closed else "")
+
+
+def _genui_answer(prompt: str) -> str | None:
+    if prompt.startswith('{"question":'):
+        return None  # the title request quotes the question; it gets a title, not the scripted answer
+    if "[[genui-bad]]" in prompt:
+        return '非法组件演示。\n```openui\nroot = UnregisteredWidget("test")\n```\n未闭合块：\n```openui\nroot = Metric("次数", 3)\n'
+    if "[[genui-inject]]" in prompt:
+        payload = '<script>alert(1)</script> <img onerror="alert(2)"> javascript:alert(3)'
+        return payload + "\n```openui\nroot = Text(" + json.dumps(payload) + ")\n```\n" + payload
+    if "[[genui-interactive]]" in prompt:
+        return "可以直接在下面调整方案，费用会跟着变。\n```openui\n" + "\n".join(_GENUI_INTERACTIVE) + "\n```\n以上为合成数据。"
+    if "[[genui-stress]]" in prompt:
+        return "压力测试。\n```openui\n" + "\n".join(line.replace("{long}", _GENUI_LONG) for line in _GENUI_STRESS) + "\n```\n"
+    if "[[genui-html]]" in prompt:
+        return _genui_page()
+    if "[[genui-html-escape]]" in prompt:
+        return _genui_page(escape=True)
+    if "[[genui-html-cut]]" in prompt:
+        return _genui_page(closed=False)
+    if "[[genui-demo]]" in prompt:
+        return (
+            '三个指标与图表。\n```openui\nroot = Grid([Metric("请求", 320, "次"), Metric("成功", 300, "次"), '
+            'Metric("失败", 20, "次")])\n```\n'
+            '成功请求占多数。\n```openui\nroot = BarChart("请求", ["成功", "失败"], [Series("次数", [300, 20])])\n```\n'
+            '可以继续按天查看。\n```openui\nroot = Stack([Button("按天拆分", @ToAssistant("把请求按天拆分"))])\n```\n以上为离线合成数据。'
+        )
+    return None
+
+
 class MockLLM(LLMClient):
     """Deterministic tool-calling policy used by tests and the dev demo."""
+
+    async def chat_stream(self, messages, tools, model, user_id=None, on_text=None, on_reasoning=None):
+        if _genui_answer(_user_prompt(messages)) is None:
+            return await super().chat_stream(messages, tools, model, user_id, on_text, on_reasoning)
+        call = model_call.get()
+        if call is not None:
+            call.reached_model = True
+        response = await self.chat(messages, tools, model, user_id=user_id)
+        _capture_response(response)
+        if on_text:
+            for index in range(0, len(response.content), 2):
+                await on_text(response.content[index : index + 2])
+        return response
 
     async def chat(
         self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
@@ -278,6 +379,9 @@ class MockLLM(LLMClient):
         prompt = _user_prompt(messages)
         step = _assistant_steps(messages)
         usage = {"prompt_tokens": max(1, len(json.dumps(messages, ensure_ascii=False)) // 4), "completion_tokens": 20}
+
+        if (answer := _genui_answer(prompt)) is not None:
+            return LLMResponse(content=answer, usage=usage)
 
         script, closing = None, ""
         offered = {t.get("function", {}).get("name") for t in tools or []}

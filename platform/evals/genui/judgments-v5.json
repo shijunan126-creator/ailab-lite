@@ -1,0 +1,614 @@
+{
+  "trend-sales:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原序列/环比公式正确；Callout中未转义双引号令参数溢出。块外把半年称全年，声称3月低基数回补而非需求增长，无订单依据；Callout硬写月份、跳升一半和半年最高，另造趋势线判断。",
+    "restraint": false,
+    "wrong_statements": [
+      "全年最弱的一段",
+      "并不是需求突然放大",
+      "明显低于整体上升趋势线",
+      "基本回落到趋势线上",
+      "高于趋势线",
+      "1–6 月的真实节奏更接近“3 月挖坑、4 月填坑”，而不是“4 月突然爆发”"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "counting",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference"
+    ],
+    "rejudgment_note": "只给半年，且3月14还高于1月12；不能断言全年最弱。；销售额不能排除需求变化。前面的“看起来”、后面的“更像/大概率/可能/如果”按推测豁免，只有无条件否定另记。；未定义或计算趋势线，不能把假设拟合线当已知基准。；未定义或计算趋势线；4月实际向上跳升。；未给出趋势线定义或计算。；将未经证实的订单回补解释说成真实节奏，数据无法识别原因。；“看起来主要”“更像”“大概率”“可能”“如果”明确表达猜测的部分豁免；不因4月50%这类正确手写结果失败。",
+    "strict_consistent": false
+  },
+  "trend-energy:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "210/205/240/230/250/160/155千瓦时正确；Highlights计算change/rise/drop。块外硬写周中峰值、工作日高于周末、周五峰值，未从组件或表达式产生。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "全周最高是周五250；“周中”可泛指非周末，未指明错误日次，不按歧义定错。原数据/Highlights与工作日高于周末均正确，核对减产安排是建议。",
+    "strict_consistent": true
+  },
+  "trend-two:1": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原两序列和线上Highlights正确；块外称2月起超过线下，但95<98，实际3月反超；并硬写逐月加速和比较方向。派生数字由Highlights算，来源诊断true，数值/结论仍false。",
+    "restraint": false,
+    "wrong_statements": [
+      "线上从 2 月起就超过了线下"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "counting"
+    ],
+    "rejudgment_note": "2月线上95小于线下98；首次反超是3月。；“逐月加速”可指绝对增量15/25/30增大，不因增长率末月回落另判错。",
+    "strict_consistent": false
+  },
+  "compare-cost:1": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "Compare原成本容量和逐项除法正确，better低/高合理；recommend硬写丙，块外称需求超过40人丙更合适，忽略41–50人甲也可容纳且总价更低，另硬写方案比较方向。",
+    "restraint": false,
+    "wrong_statements": [
+      "如果需求超过 40 人，或者以后还会扩到 70 人，那么丙虽然每月总支出更高，但按人数分摊的单人成本更低，此时丙更合适"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "unsupported_inference"
+    ],
+    "rejudgment_note": "把满容量单位成本冒充实际人数成本；41–50人甲能容纳且1200低于1430，不能据此断言丙更合适。",
+    "strict_consistent": false
+  },
+  "compare-delivery:1": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原发货时长与均值表达式正确；块外写天津最慢/杭州最快，并推断相同业务量时容量差异可能性小，无容量/人员/订单证据。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "rank-store:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原门店和销售正确，Ranking可自动排序南97中91东84北72西63；root却直接Ranking，违反Stack根合同。块外硬写领先/偏弱和约30万元差距（实际34），比较规模评价无基准。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "排名南/中/东/北/西正确；最高最低差34，“约30”是十万元级近似，不是算错。资源倾斜及调查客流转化是建议，不冒充已确认原因。",
+    "strict_consistent": true
+  },
+  "rank-defect:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原缺陷数与自动降序C11/E9/A7/D5/B2、Highlights最高/合计34/均值6.8正确；块外硬写C最多、E第二，不合结论来源规则。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "lookup-price:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "Table原价格库存准确；库存金额420/442/358.8、总1220.8和总件数2510由表达式/Highlights得到，无比较结论硬写。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "lookup-sla:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "只给Markdown表，原价/席位和除法近似数大体正确；硬写全部派生单席/差价/增量单价，称49÷5=9.8整除、专业版主推及定价意图无依据。额外两表、四项追问超出逐项核对需求。",
+    "restraint": false,
+    "wrong_statements": [
+      "49÷5=9.8 整除",
+      "定价策略是鼓励向上购买",
+      "说明专业版是主推档位"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "counting",
+      "unsupported_inference",
+      "unsupported_inference"
+    ],
+    "rejudgment_note": "商不是整数，不能称整除。；数据只给报价和席位，不给定价策略。；增量单价不能证明主推意图。",
+    "strict_consistent": false
+  },
+  "part-budget:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原45/25/20/10与组件占比/总100正确；Metric.hint硬写研发近一半，块外硬写营销+运营45%和预备金10%，ShareBar和Pie重复同一组数据。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "compare-notwhole:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原满意率与样本正确，未画饼图；参考82%合计为硬写加权派生量，另造满意人数、CI/p/显著性检验和Bonferroni阈值，未获用户请求。称甲乙CI大部分重叠与所列区间不符；所有统计值都硬写。",
+    "restraint": false,
+    "wrong_statements": [
+      "乙（91%）与甲（82%）之间的差距在统计上还说不准",
+      "真正站得住的结论只有一条：乙高于丙（76%）",
+      "它与甲之间的差距也不算显著",
+      "甲与乙的 95% 置信区间大部分重叠",
+      "\"74.5% – 89.5%\"",
+      "\"84.7% – 97.3%\"",
+      "\"68.4% – 84.4%\"",
+      "\"−0.8 ~ +18.8\", 0.072",
+      "\"−4.7 ~ +16.7\", 0.27",
+      "\"+5.1 ~ +24.9\", 0.003",
+      "做卡方检验，p≈0.026，在 5% 水平上显著",
+      "只有乙对丙的比较能经受多重比较校正",
+      "这些结果偏保守可用，但结论方向不变"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "multiples_wording",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference",
+      "unsupported_inference"
+    ],
+    "rejudgment_note": "缺抽样/独立性依据，不能直接下显著性结论。；混淆描述性排序与统计检验；不能排除其他正确描述性结论。；缺检验的抽样假设依据。；即使按它自己的区间，重叠84.7–89.5只有4.8个百分点，分别小于各自区间一半。；未给抽样方式，不能把推定正态独立抽样区间当事实。；同上；91%×80也不是精确整数人数。；同上，且区间中心76.4与给定76不一致。；甲乙差的区间与p值无充分抽样/检验依据。；甲丙差的区间与p值无充分抽样/检验依据。；乙丙差的区间与p值无充分抽样/检验依据。；数据未说明独立随机抽样，不能直接作总体检验结论。；Bonferroni阈值0.05/3本身正确；宣称实际检验通过无依据。；未验证小样本适用性及保守性。；合计参考82%=（82+72.8+91.2）/300正确，手写来源仅诊断；Bonferroni阈值0.0167正确，不计错。",
+    "strict_consistent": false
+  },
+  "calc-subscription:1": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": false,
+    "note": "默认标准20席980，专业1980，100席4900，年费表达式正确；Callout三元比较反向：默认显示专业1980比当前980少1000，切专业时又称标准980多1000。比较方向确由表达式产生，故来源/结论合规仍true，数值上下文false。",
+    "control_choice": true,
+    "restraint": false,
+    "wrong_statements": [
+      "monthly > other ? \"多\" : \"少\""
+    ],
+    "restated_outside": false,
+    "wrong_statement_kinds": [
+      "ui_expression"
+    ],
+    "rejudgment_note": "主语是另一个套餐，分支反向：默认专业1980应比当前980多1000。",
+    "strict_consistent": false
+  },
+  "calc-discount:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "默认1750，200件7000、九折1350、包邮1350，全部控件同源；块外硬写35→19、约92单追平等派生数，虽算对仍违反来源/结论规则。",
+    "control_choice": true,
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "calc-saving:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认12000，3000/月36000，24月24000；控件和说明同源，后文仅限制及未实现功能邀请，不计新增硬门槛。",
+    "control_choice": true,
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "filter-region:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "默认四店400、华西丙80丁110合190，Filter/Each正确；正文硬写两区合计并称华西单店均值更高，实际95<105。",
+    "control_choice": true,
+    "restraint": false,
+    "wrong_statements": [
+      "华西单店均值更高"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "counting"
+    ],
+    "rejudgment_note": "华西95小于华东105。",
+    "strict_consistent": false
+  },
+  "switch-view:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "Tabs首项折线、第二项Table，原10/14/12/18同源；最高/最新由marks标记。Tabs为合法内置切换，旧score漏计控件是d类，静态审阅，不声称真实点击验收。",
+    "control_choice": true,
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "calc-tax:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "HtmlArtifact静态公式120*q及6%正确，默认1200/1272、50件6000/6360；目录已有Slider/Toggle/Metric却用HTML，未满足内置控件选择。fallback及初始HTML硬写1200/72/1272/127.20等派生值，未执行JS。",
+    "control_choice": false,
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": false
+  },
+  "edit-pie:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原预算40/30/20/10与柱图及Highlights正确；块外硬写研发四成最大、储备一成。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-pie:2": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "完整PieChart保留40/30/20/10，图形修改成功；块外仍硬写储备一成及比较结论。",
+    "restraint": false,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-filter:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "四项原名和数值正确，Highlights总400/max120/min80；正文硬写华东高于华西的比较结论。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-filter:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "完整Select/Filter/Each，默认全部四行400、华西两行190，名称和万元保留；文本只解释操作。",
+    "control_choice": true,
+    "restraint": true,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-top5:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "七店原数据正确，Highlights总214及极值自动算；正文硬写合计214和己乙较高/戊低。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-top5:2": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "完整表格前五己51乙42丁36庚29丙25正确，编辑成功；直接手排并截断原数组，无Sort/Ranking表达式，正文硬写排除甲18/戊13。",
+    "restraint": false,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-theme:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "静态审阅300×160/r12/初80,80/步长20，超出圆心288回20，主题变量存在；未执行HTML。",
+    "html_success": true,
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-theme:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "完整HtmlArtifact，html/body/stage透明，正文--fg、圆点--accent，几何与移动规则保留；静态审阅，未执行。",
+    "html_success": true,
+    "restraint": true,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-unit:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "原12000/18000/16000/24000及LineChart正确；Highlights请求未定义的sum而非total，parser丢该fact；正文硬写3月回落、4月最高。只查LineChart即写未读Highlights，违反索引。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-unit:2": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "完整LineChart万元1.2/1.8/1.6/2.4及decimals:2正确，编辑成功；换算直接硬写数组且正文12000→1.20为硬写派生值，没有从元数据/10000的表达式。",
+    "restraint": true,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-toggle:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认5件312/20件1212/包邮300同源，初始即有Toggle；0元运费为规则而非额外统计结果，原始60/12文本重复仅作布局诊断。",
+    "control_choice": true,
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "edit-toggle:2": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": true,
+    "note": "完整Toggle默认关闭，原数量范围/金额正确，包邮运费0且其他不变，功能编辑成功；块外又硬写312与300两个派生总价。",
+    "control_choice": true,
+    "restraint": false,
+    "edit_success": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "existing-sufficient:1": {
+    "note": "一句回答乙18，无额外UI，符合已有展示不重复。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "fact-capital:1": {
+    "note": "巴黎正确，无UI；附带城市说明略多，不加新硬门槛。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "explain-cache:1": {
+    "note": "两句解释局部性与更快存储，无UI，符合要求。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "translate:1": {
+    "note": "只给英文译文，下周三15点准确，无UI。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "rewrite:1": {
+    "note": "无UI、礼貌改写有效，但给三版加说明，克制不足（诊断）。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "single-number:1": {
+    "note": "36支正确，仅答案，无UI。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "short-definition:1": {
+    "note": "一句中位数定义含偶数情形，无UI。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "missing-data:1": {
+    "note": "明确缺收入数据、不凑图；示例注明比如。末尾称目前年中没有上下文支持，追问较多，诊断不混入23项数据指标。",
+    "restraint": false,
+    "wrong_statements": [
+      "目前是年中"
+    ],
+    "restated_outside": false,
+    "wrong_statement_kinds": [
+      "unsupported_inference"
+    ],
+    "rejudgment_note": "用户未给当前月份；评测发生在10月。非数据场景仍按自身无UI门槛。",
+    "strict_consistent": true
+  },
+  "text-only:1": {
+    "note": "纯文字无表/UI；37合计、12.33均值、50%/-20%/净20%计算正确。纯文字场景不套UI表达式规则。",
+    "restraint": false,
+    "wrong_statements": [],
+    "restated_outside": true,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "greeting:1": {
+    "note": "简单一句回应，无UI。",
+    "restraint": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "html-probability:1": {
+    "note": "静态核对公平Math.random()*6、全零计数、单次/自动100次、频率计算及重置逻辑；未执行动画或验证随机分布。",
+    "restraint": true,
+    "html_success": true,
+    "wrong_statements": [],
+    "restated_outside": false,
+    "wrong_statement_kinds": [],
+    "rejudgment_note": "新门槛人工核对：未发现错误陈述；正确手写数字、排名、近似及明确推测不算错。旧note/来源/结论字段保留为历史诊断。",
+    "strict_consistent": true
+  },
+  "html-sort:1": {
+    "note": "静态核对初始数组、10比较6交换、排序2/3/5/7/9、播放暂停单步重置及CSS位移；未执行动画。",
+    "restraint": true,
+    "html_success": true,
+    "wrong_statements": [
+      "顶部有播放、暂停、单步和重置按钮"
+    ],
+    "restated_outside": false,
+    "wrong_statement_kinds": [
+      "counting"
+    ],
+    "rejudgment_note": "按钮位于动画下方，播放和暂停共用同一个按钮。",
+    "strict_consistent": true
+  },
+  "html-drag:1": {
+    "note": "静态发现draw只更新rect的x/y，text保持W/2,H/2+1，三节点标签重叠且不跟拖动；SVG namespace HTTP为d类误报，不是真联网。未执行拖拽。",
+    "restraint": true,
+    "html_success": false,
+    "wrong_statements": [
+      "十字线下方实时显示每个节点的当前坐标",
+      "右上角的读数"
+    ],
+    "restated_outside": false,
+    "wrong_statement_kinds": [
+      "counting",
+      "counting"
+    ],
+    "rejudgment_note": "页面没有十字线，读数在图上方。；readout是top容器首项，位于左侧，右侧是reset。",
+    "strict_consistent": false
+  },
+  "html-pendulum:1": {
+    "note": "静态发现zc=(dt-rest)+frac*h只是单帧内时间，measT=zc-lastZc不能得到跨帧周期；正文称曲线圆点向右下移动，实际L增大周期增大应右上。摆动RK4、初值和长度控件静态正确，未运行物理/性能。",
+    "restraint": false,
+    "html_success": false,
+    "wrong_statements": [
+      "zc = (dt - rest) + frac * h",
+      "圆点顺着曲线右下移动",
+      "“本次实测周期”是从摆动中实测的（连续两次经过最低点的时间差）"
+    ],
+    "restated_outside": true,
+    "wrong_statement_kinds": [
+      "ui_expression",
+      "counting",
+      "ui_expression"
+    ],
+    "rejudgment_note": "每帧局部时间相减无法测跨帧周期，缺累计模拟时间。；摆长加大时周期增大，在该坐标系应右上移动。；实际显示的是不同帧内的局部过零时刻差，不是真实周期。",
+    "strict_consistent": false
+  }
+}

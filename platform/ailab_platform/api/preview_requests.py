@@ -4,8 +4,25 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..contracts.file_preview import preview_kind, text_manifest
+from ..config import settings
+from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS, cached_page_preview, preview_kind, text_manifest
 from .jobs import stage_job
+
+
+def request_ready_preview(db, file):
+    """Speculate only on bounded library documents; the caller commits readiness and outbox together."""
+    if (
+        file.purpose != "library"
+        or file.status != "ready"
+        or file.deleted_at
+        or file.purged_at
+        or not settings.preview_eager_max_bytes
+        or file.size > settings.preview_eager_max_bytes
+    ):
+        return
+    suffix = Path(file.filename).suffix.lower()
+    if suffix in PAGES | LOCAL_SHEETS | SANDBOX_SHEETS or file.content_type.split(";")[0] == "application/pdf":
+        request_preview(db, file, retry_stale=False)
 
 
 def request_preview(db, file, *, retry_stale=True):
@@ -18,6 +35,11 @@ def request_preview(db, file, *, retry_stale=True):
     job_id = None
     kind = "image" if meta.get("display_key") else preview_kind(file.filename, file.content_type)
     suffix = Path(file.filename).suffix.lower()
+    reused = cached_page_preview(file.id, meta) if kind == "pages" and file.purpose != "template" else None
+    if reused:
+        manifest, assets = reused
+        file.meta = {**meta, "preview": manifest, "preview_assets": assets}
+        return manifest, None
     if kind is None:
         manifest = {"status": "unsupported", "kind": None}
     elif kind == "text":

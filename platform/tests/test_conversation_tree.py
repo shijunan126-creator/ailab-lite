@@ -22,7 +22,7 @@ def detail(c, conv, **params):
 
 def test_edit_earlier_path_versions_switch_restore_and_fork():
     with TestClient(app) as c:
-        conv, turns = create(c, ("work", "chat", "chat"))
+        conv, turns = create(c, ("work", "work", "work"))
         root, middle, leaf = [r["id"] for r in turns]
         with SessionLocal() as db:
             db.get(Run, root).result = {"workspace_saved": True, "previews": [{"filename": "base"}]}
@@ -53,7 +53,7 @@ def test_edit_earlier_path_versions_switch_restore_and_fork():
         # Switching root chooses the newest child at each level, hence the edited branch.
         selected = c.post(f"/v1/conversations/{conv['id']}/active", headers=AUTH, json={"run_id": root}).json()
         assert selected["active_run_id"] == edited["id"]
-        # Fork an inactive chat branch; the work ancestor requires work and retains parent mapping.
+        # Fork an inactive work branch and retain parent mapping.
         with SessionLocal() as db:
             db.get(Run, root).result = {}
             db.get(Run, middle).result = {}

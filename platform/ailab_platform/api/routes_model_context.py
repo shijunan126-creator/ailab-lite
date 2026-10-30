@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..contracts.model_context import SummaryUpdate
 from ..conversation_tree import ancestor_query, path_ids
 from ..deps import get_db
+from ..domain.answer_parts import for_history, history_sources
 from ..models import Conversation, QueuedMessage, Run, User
 from ..service_auth import require_scope
 from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_data, workspace_key
@@ -89,10 +90,11 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
                 Run.user_id,
                 Run.input_file_ids,
                 Run.prompt.label("prompt"),
-                func.substr(Run.summary, 1, 16000).label("summary"),
+                Run.summary.label("summary"),
                 Run.status,
                 Run.runtime_meta["steer_ids"].label("steer_ids"),
                 Run.runtime_meta["source_invalidated"].label("source_invalidated"),
+                Run.result["sources"].label("sources"),
                 func.substr(Run.error, 1, 16000).label("error"),
             ).where(Run.conversation_id == conversation.id, Run.id.in_(page))
         )
@@ -117,8 +119,11 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         item = {
             "id": id_,
             "prompt": row.prompt,
-            "reply": "（文件来源已失效，需重新读取）" if row.source_invalidated or id_ in invalid else row.summary or row.error or "",
+            "reply": "（文件来源已失效，需重新读取）"
+            if row.source_invalidated or id_ in invalid
+            else for_history(row.summary or row.error or "", keep_ui=id_ == ids[-1], limit=16000),
             "status": row.status,
+            "sources": history_sources(row.sources),
         }
         item["attachments"] = manifests.get(id_, [])
         if applied:

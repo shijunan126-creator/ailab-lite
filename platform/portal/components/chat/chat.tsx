@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
+import { createBatcher } from "../../lib/stream/batcher";
+import { useFollow } from "../../lib/use-follow";
+import { useStable } from "../../lib/use-stable";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
@@ -12,7 +15,10 @@ import { conversationsChanged, conversationTitled } from "../app-shell";
 import { CONVERSATION_MOVED } from "../conversation-menu";
 import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
-import Composer, { Attachment, SendOptions } from "./composer";
+import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
+import PendingMessage from "./pending-message";
+import { enqueue, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
+import { useShallow } from "zustand/react/shallow";
 import ModeToggle, { useChatMode } from "./mode-toggle";
 import PreviewPane, { previewTabKey, type PanePreview, type PaneSources } from "./preview-pane";
 import { SourcesSheet } from "./sources";
@@ -20,6 +26,11 @@ import type { PaneReader } from "./preview-pane";
 import QueueStrip from "./queue-strip";
 import QuotaBanner from "./quota-banner";
 import Turn, { ForkMode, Item, reduceEvent } from "./turn";
+import { GenUIHostProvider, type GenUIHost } from "../genui/host";
+
+// Shared, not rebuilt per render: Turn is memoised and a fresh array would re-render every turn on any refresh.
+const CHAT_OR_WORK: ForkMode[] = ["chat", "work"];
+const WORK_ONLY: ForkMode[] = ["work"];
 
 function useModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -52,7 +63,7 @@ function useInitialFiles(active: boolean): Attachment[] | undefined {
     url.searchParams.delete("files");
     window.history.replaceState(null, "", url.pathname + url.search); // a reload must not attach them again
     filesByIds(ids)
-      .then((list) => setFiles(list.filter((f) => f.status === "ready").map((f) => ({ id: f.id, filename: f.filename, status: f.status }))))
+      .then((list) => setFiles(list.filter((f) => f.status === "ready")))
       .catch(() => undefined);
   }, [active]);
   return files;
@@ -95,8 +106,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [streaming, setStreaming] = useState<string | null>(null);
+  // messages sent from this page that are not turns yet (files still uploading, or a failed send)
+  const pendingProject = id ? null : project?.id || null;
+  const pending = useOutbox(useShallow((st) => Object.values(st.pending).filter((p) => p.conversationId === id && (id || p.projectId === pendingProject)).sort((a, b) => a.created - b.created)));
   const scroller = useRef<HTMLDivElement | null>(null);
-  const stick = useRef(true);
+  const tail = useFollow(scroller, { slack: 80 });
+  const stick = tail.following;
   const loadSeq = useRef(0);
   const detailController = useRef<AbortController | null>(null);
   const olderController = useRef<AbortController | null>(null);
@@ -145,6 +160,32 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }, [id]);
 
+  // A status or artifact change mid-run refreshes that one turn, coalesced; the whole page reloads when the run ends.
+  const runRefresh = useRef<{ timer: ReturnType<typeof setTimeout> | null; controller: AbortController | null }>({ timer: null, controller: null });
+  const refreshRun = useCallback((runId: string) => {
+    const pending = runRefresh.current;
+    if (pending.timer) return;
+    pending.timer = setTimeout(async () => {
+      pending.timer = null;
+      pending.controller?.abort();
+      const controller = new AbortController();
+      pending.controller = controller;
+      const version = detailWriteVersion.current;
+      try {
+        const fresh = await api<Run>(`/v1/runs/${runId}`, { signal: controller.signal });
+        if (controller.signal.aborted || version !== detailWriteVersion.current) return;
+        // fields only the conversation view carries (versions, steered) stay as they were
+        setDetail((d) => (d && d.turns.some((t) => t.id === runId) ? { ...d, turns: d.turns.map((t) => (t.id === runId ? { ...t, ...fresh, versions: fresh.versions ?? t.versions, steered: fresh.steered ?? t.steered } : t)) } : d));
+      } catch {
+        // the end-of-run reload brings the same state
+      }
+    }, 300);
+  }, []);
+  useEffect(() => () => {
+    if (runRefresh.current.timer) clearTimeout(runRefresh.current.timer);
+    runRefresh.current.controller?.abort();
+  }, []);
+
   const follow = useCallback(
     (run: Run) => {
       if (actionController.current.signal.aborted) return new AbortController();
@@ -153,12 +194,18 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       streamController.current = controller;
       setStreaming(run.id);
       setItems((prev) => ({ [run.id]: prev[run.id] || [] }));
+      // every event of a frame folds into the items in one update
+      const batch = createBatcher<EventItem>((events) => {
+        if (controller.signal.aborted) return;
+        setItems((prev) => ({ ...prev, [run.id]: events.reduce(reduceEvent, prev[run.id] || []) }));
+      });
+      controller.signal.addEventListener("abort", () => batch.cancel(), { once: true });
       streamRun(
         run.id,
         (event) => {
           if (controller.signal.aborted) return;
           if (event.seq) eventCursors.current[run.id] = event.seq;
-          setItems((prev) => ({ ...prev, [run.id]: reduceEvent(prev[run.id] || [], event) }));
+          batch.push(event);
           if (event.type === "preview.updated") {
             const p: Preview = { ...event.payload, run_id: run.id };
             updatedPreview.current[run.id] = p.filename;
@@ -169,11 +216,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             setDetail((d) => (d && !d.title ? { ...d, title } : d));
             conversationTitled(String(event.payload.conversation_id || run.conversation_id || id || ""), title);
           }
-          if (["run.status", "artifact.created", "run.completed", "run.failed", "run.canceled"].includes(event.type)) loadDetail();
+          if (event.type === "run.status" || event.type === "artifact.created") refreshRun(run.id);
+          if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
+            batch.flush();
+            loadDetail();
+          }
         },
         controller.signal,
         () => {
           if (controller.signal.aborted) return;
+          batch.flush();
           setStreaming(null);
           loadDetail().then((d) => {
             // a file made or changed by this turn opens once the turn is done, not on every intermediate render
@@ -188,13 +240,14 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             const finished = d?.turns.find((t) => t.id === run.id);
             if (!file || finished?.status !== "succeeded" || controller.signal.aborted) return;
             if (!window.matchMedia("(min-width: 761px)").matches) return; // on a phone the pane covers the chat: the file card opens it
-            showFile(file);
+            showFileRef.current(file);
           });
           conversationsChanged();
         },
         eventCursors.current[run.id] || 0
       ).catch((err) => {
         if (!controller.signal.aborted) {
+          batch.flush();
           setStreaming(null);
           setError(errorMessage(err));
           loadDetail();
@@ -202,7 +255,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       });
       return controller;
     },
-    [loadDetail]
+    [loadDetail, refreshRun]
   );
 
   // open a conversation: load it, and follow its last turn if that is still being answered
@@ -265,23 +318,14 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     return () => window.removeEventListener(CONVERSATION_MOVED, moved);
   }, [id]);
 
-  useEffect(() => {
-    const el = scroller.current;
-    const inner = el?.querySelector(".messages-inner");
-    if (!el || !inner) return;
-    const resize = new ResizeObserver(() => { if (stick.current) el.scrollTop = el.scrollHeight; });
-    resize.observe(inner);
-    return () => resize.disconnect();
-  }, [id]);
-
   // keep the newest message in view while it streams, unless the user scrolled up to read
   useLayoutEffect(() => {
     const el = scroller.current;
     if (el && prependHeight.current !== null) {
       el.scrollTop = el.scrollHeight - prependHeight.current;
       prependHeight.current = null;
-    } else if (el && stick.current) el.scrollTop = el.scrollHeight;
-  }, [items, detail]);
+    } else tail.settle();
+  }, [items, detail, pending.length, tail]);
 
   const previews = useMemo<PanePreview[]>(() => {
     const byFile = new Map<string, Preview>();
@@ -418,6 +462,43 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     return own.length === 1 && previews.some((p) => !p.libraryFileId && p.filename === own[0].filename) ? own[0].filename : null;
   };
   const turns = detail?.turns || [];
+  const handledSends = useRef(new Set<string>());
+  useEffect(() => {
+    for (const p of pending) {
+      if (p.stage !== "sent" || handledSends.current.has(p.id)) continue;
+      handledSends.current.add(p.id);
+      takeSent(p);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pending]);
+
+  /** A message the outbox has sent: its run (or queue entry) takes the place of the pending message. */
+  function takeSent(p: Pending) {
+    const { run, queued, conversation } = p.sent || {};
+    removePending(p.id);
+    if (queued) {
+      markDetailWrite();
+      setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== queued.id), queued] } : d));
+      return;
+    }
+    if (!run) return;
+    if (!id && conversation) {
+      // the conversation page starts from what is already known: the question shows at once and its answer streams in
+      cacheConversation({ ...conversation, turns: [run], previews: [], has_more: false });
+      conversationsChanged();
+      if (p.projectId) projectsChanged();
+      // the blank new-chat page becomes this conversation, so Back leaves it rather than returning to an empty composer;
+      // a project's page is a page of its own and stays behind it
+      if (p.projectId) router.push(`/c/${conversation.id}`);
+      else router.replace(`/c/${conversation.id}`);
+      return;
+    }
+    markDetailWrite();
+    setDetail((d) => (d && !d.turns.some((t) => t.id === run.id) ? { ...d, turns: [...d.turns, run] } : d));
+    stick.current = true;
+    follow(run);
+    conversationsChanged();
+  }
   // turns already there when the conversation opened appear with it; only turns that arrive afterwards animate in
   const opened = useRef<Set<string> | null>(null);
   if (detail && opened.current === null) opened.current = new Set(detail.turns.map((t) => t.id));
@@ -428,7 +509,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     let worked = forkedAsWork;
     return turns.map((t) => {
       worked ||= t.options?.mode !== "chat";
-      return (worked ? ["work"] : ["chat", "work"]) as ForkMode[];
+      return worked ? WORK_ONLY : CHAT_OR_WORK;
     });
   }, [turns, forkedAsWork]);
   const projectId = id ? detail?.project_id || null : project?.id || null;
@@ -669,25 +750,59 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail();
   }
 
+  // Stable identities for what every turn receives: a stream event re-renders only the turn it belongs to.
+  const showFileRef = useRef(showFile);
+  showFileRef.current = showFile;
+  const turnPreview = useStable(showFile);
+  const turnPreviewFile = useStable(showLibraryFile);
+  const turnPreviewKey = useStable(previewKey);
+  const turnResume = useStable(resume);
+  const turnAnswer = useStable(answer);
+  const turnRetry = useStable(retry);
+  const turnEdit = useStable(edit);
+  const turnSwitch = useStable(switchTo);
+  const turnFork = useStable(fork);
+  const turnSources = useStable(showSources);
+  const turnOpenLink = useStable((url: string, title: string) => openReader({ url, title }));
+
+  /** The composer's message: answers a waiting question directly; anything else goes out through the outbox, which
+   * shows it at once and asks the model only when its files are ready. */
+  async function submit(message: Outgoing): Promise<boolean> {
+    if (waiting && question && !message.attachments.length) return send(message.prompt, [], message.options);
+    const info = models.find((m) => m.id === model);
+    enqueue({
+      conversationId: id, projectId: projectId, prompt: message.prompt, attachments: message.attachments, options: message.options,
+      model, vision: !!info?.capabilities?.includes("vision"), steer: message.steer, queued: running && !!id && !question,
+    });
+    stick.current = true;
+    return true;
+  }
+
+  // a generated button sends like the composer: as a new message, or queued behind the answer that is running
+  const genuiSend = useStable((text: string) => submit({ prompt: text, attachments: [], options: { mode }, steer: false }));
+  const genuiHost = useMemo<GenUIHost>(() => ({ readOnly: false, send: genuiSend }), [genuiSend]);
+
   const showPane = paneOpen && (openFiles.length > 0 || !!paneSources || !!paneReader);
   const reopenCount = !showPane ? previews.length + (paneSources ? 1 : 0) + readers.length : !openFiles.length ? previews.length : 0;
   const composer = (
     <>
     <QuotaBanner refresh={streaming} />
+    {/* a project's new conversation picks its mode here; the home page shows the choice under its heading */}
+    {!id && project ? <div className="composer-mode"><ModeToggle mode={mode} onChange={chooseMode} /></div> : null}
     <Composer
       mode={mode}
       onMode={chooseMode}
-      modeBelow={!id && !project}
+      modeLocked={!!id}
       models={models}
       model={model}
       onModel={setModel}
       busy={busy}
       running={running && !question}
-      onSend={send}
-      onQueue={id && !question ? queue : undefined}
+      queueable={!!id && !question}
+      onSubmit={submit}
       onStop={stop}
       autoFocus
-      placeholder={question ? "回答上面的问题" : running ? "补充或下一条消息" : id ? "继续对话，比如「第三页换成图表」「再加一列占比」" : project ? `在「${project.name}」里开始新对话` : undefined}
+      placeholder={question ? "回答上面的问题" : running ? "补充或下一条消息" : undefined}
       projectId={projectId}
       initialFiles={initialFiles}
       context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
@@ -698,8 +813,18 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   return (
     <div className={`chat-layout ${showPane ? "with-preview" : ""}`}>
       <section className="chat-main">
-        {!id && project ? (
+        {!id && project && !pending.length ? (
           <ProjectHome project={project} composer={composer} error={error} />
+        ) : !id && pending.length ? (
+          <>
+            <div className="messages">
+              <div className="messages-inner">{pending.map((p) => <PendingMessage key={p.id} message={p} />)}</div>
+            </div>
+            <div className="composer-dock">
+              {error ? <div className="alert error">{error}</div> : null}
+              {composer}
+            </div>
+          </>
         ) : !id ? (
           <>
             <div className="chat-home">
@@ -730,34 +855,34 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                 <span className="count">{reopenCount}</span>
               </button>
             ) : null}
-            {crumb || detail?.forked_from ? (
-              <div className="chat-crumb">
-                {crumb ? (
-                  <>
-                    <Link href={`/p/${crumb.id}`}>
-                      <IconFolder size={15} /> {crumb.name}
-                    </Link>
-                    <IconChevronRight size={14} />
-                  </>
-                ) : null}
-                <span className="crumb-title">{detail?.title || "新对话"}</span>
-                {detail?.forked_from ? (
-                  <Link className="crumb-fork" href={`/c/${detail.forked_from.conversation_id}`} title="打开原对话">
-                    <IconBranch size={13} /> 分支
-                  </Link>
-                ) : null}
-              </div>
-            ) : null}
             <div
               className="messages"
               ref={scroller}
               onScroll={(e) => {
-                const el = e.currentTarget;
-                stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-                if (el.scrollTop < 80) void loadOlder();
+                tail.onScroll(e);
+                if (e.currentTarget.scrollTop < 80) void loadOlder();
               }}
             >
-              <div className="messages-inner">
+              <GenUIHostProvider value={genuiHost}>
+              <div className="messages-inner" ref={tail.content}>
+                {crumb || detail?.forked_from ? (
+                  <div className="chat-crumb">
+                    {crumb ? (
+                      <>
+                        <Link href={`/p/${crumb.id}`}>
+                          <IconFolder size={15} /> {crumb.name}
+                        </Link>
+                        <IconChevronRight size={14} />
+                      </>
+                    ) : null}
+                    <span className="crumb-title">{detail?.title || "新对话"}</span>
+                    {detail?.forked_from ? (
+                      <Link className="crumb-fork" href={`/c/${detail.forked_from.conversation_id}`} title="打开原对话">
+                        <IconBranch size={13} /> 分支
+                      </Link>
+                    ) : null}
+                  </div>
+                ) : null}
                 {detail?.has_more ? <button className="link older-turns" disabled={loadingOlder} onClick={loadOlder}>{loadingOlder ? "加载中…" : "更早的消息"}</button> : null}
                 {detail === null && !error ? <TurnsSkeleton /> : null}
                 {turns.map((t, i) => (
@@ -768,25 +893,27 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     live={streaming === t.id}
                     last={i === turns.length - 1}
                     fresh={!opened.current?.has(t.id)}
-                    modelName={modelName}
-                    previewKey={previewKey}
-                    onPreview={showFile}
-                    onPreviewFile={showLibraryFile}
-                    onResume={resume}
-                    onAnswer={answer}
-                    onRetry={running ? undefined : retry}
-                    onEdit={edit}
-                    onSwitch={switchTo}
+                    modelLabel={modelName(t.model)}
+                    previewKey={turnPreviewKey}
+                    onPreview={turnPreview}
+                    onPreviewFile={turnPreviewFile}
+                    onResume={turnResume}
+                    onAnswer={turnAnswer}
+                    onRetry={running ? undefined : turnRetry}
+                    onEdit={turnEdit}
+                    onSwitch={turnSwitch}
                     locked={running}
                     forkModes={forkModes[i]}
-                    onFork={fork}
+                    onFork={turnFork}
                     projectId={projectId}
                     sourcesOpen={showPane && sourcesOn && paneSources?.runId === t.id}
-                    onSources={showSources}
-                    onOpenLink={(url, title) => openReader({ url, title })}
+                    onSources={turnSources}
+                    onOpenLink={turnOpenLink}
                   />
                 ))}
+                {pending.map((p) => <PendingMessage key={p.id} message={p} />)}
               </div>
+              </GenUIHostProvider>
             </div>
             <div className="composer-dock">
               {error ? <div className="alert error">{error}</div> : null}

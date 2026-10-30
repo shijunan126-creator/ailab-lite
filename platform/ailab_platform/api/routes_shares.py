@@ -66,6 +66,7 @@ class ShareTurn(UTCModel):
     id: str
     prompt: str
     answer: str
+    ui_state: dict | None = None
     created_at: datetime
     mode: str
     artifacts: list[ShareFile]
@@ -408,6 +409,7 @@ def view(
                 "id": r.id,
                 "prompt": r.prompt,
                 "answer": r.summary,
+                "ui_state": r.ui_state,
                 "created_at": r.created_at,
                 "mode": (r.options or {}).get("mode", "work"),
                 "artifacts": artifacts.get(r.id, []),

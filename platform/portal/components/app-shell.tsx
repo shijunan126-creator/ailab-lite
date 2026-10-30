@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { api, API_BASE, Conversation, Me, Usage, redirectIfUnauthorized } from "../lib/api";
-import { formatTokens, timeAgo } from "../lib/format";
+import { formatTokens } from "../lib/format";
 import { useProjects } from "../lib/projects";
 import { IconClock, IconPin, IconSearch, IconFolder, IconHistory, IconLibrary, IconLogOut, IconNewChat, IconPanel, IconPlus, IconSettings, IconShield, IconSparkles } from "./icons";
 import ConversationMenu from "./conversation-menu";
@@ -216,7 +216,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           {c.pinned_at ? <IconPin size={12} /> : null}
           {c.title || "新对话"}
         </span>
-        <span className="conv-time">{c.last_status === "running" || c.last_status === "queued" ? "回答中…" : timeAgo(c.updated_at)}</span>
+        {c.last_status === "running" || c.last_status === "queued" ? <span className="conv-live" role="status" aria-label="回答中" title="回答中" /> : null}
       </Link>
       <ConversationMenu conv={c} onPinned={(pinned_at) => {
         listController.current?.abort();

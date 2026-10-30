@@ -1,0 +1,63 @@
+{
+  "trend-sales:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "UI公式计算5月环比14.3%正确；正文明确写12.5%，与自身表格矛盾，并将节奏后移当作更可能原因而无额外证据。"
+  },
+  "trend-energy:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "原序列和日均207.1/峰谷差95表达式正确；正文称周二最低205忽略周日155，并称周末比工作日均值低约55，实际227-157.5=69.5。"
+  },
+  "trend-two:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "note": "正文称线上累计380，实际445；称4月第一次反超，实际3月；领先40的delta却用线上4月增量30（150-120），UI Text硬写70/10派生增量。"
+  },
+  "compare-cost:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "note": "表格/图表人均24/23.75/20.43正确；Callout的30/23.75/35.75为硬写派生数，而且只在恰40人时成立，不是40人以内均如此；未区分41至50人的甲更低总价。"
+  },
+  "lookup-price:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "金额420/442/358.8、合计1220.8/库存2510均由Each/Sum推导；正文M8最大、M10最小已正确。"
+  },
+  "lookup-sla:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "49/99/199及5/12/30匹配；均摊月9.8/8.25/6.63和年117.6/99/79.6均表达式，专业版便宜约32%正确，未重现错误叠加结论。"
+  },
+  "calc-discount:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "九折改为80*0.9，包邮成本45+8；默认1750、独立九折1350/200件7000/包邮1350，最差单件19均表达式；引言误称HTML但实际为组件块。"
+  },
+  "compare-notwhole:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "原满意度/样本量不变；加权82、简单平均83及差1正确，权重33.3/26.7/40和偏差0/9/-6由表达式，未重现无依据统计稳定性排序。"
+  },
+  "edit-filter:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "四行数值与合计400正确，但把门店标成产品，并在正文称四个产品，实体语义错误。"
+  },
+  "edit-filter:2": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "筛选功能恢复，默认四行400、华西两行190，编辑动作成功；表头及承接首轮仍为产品而非门店，实体语义未保留。",
+    "edit_success": true
+  }
+}

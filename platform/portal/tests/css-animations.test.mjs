@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import test from 'node:test';
+import { readdir, readFile } from 'node:fs/promises';
+import { test } from 'vitest';
 
-const css = await readFile(new URL('../app/globals.css', import.meta.url), 'utf8');
+// every Portal stylesheet: an animation in one file may use keyframes from another
+const dir = new URL('../styles/', import.meta.url);
+const css = (await Promise.all((await readdir(dir)).filter((f) => f.endsWith('.css')).map((f) => readFile(new URL(f, dir), 'utf8')))).join('\n');
 
 test('every animation the styles use has its keyframes', () => {
   const defined = new Set([...css.matchAll(/@keyframes\s+([\w-]+)/g)].map((m) => m[1]));

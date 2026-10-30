@@ -8,6 +8,7 @@ import pytest
 from pptx import Presentation
 
 from .conftest import PASSWORD, USERNAME
+from .test_portal import _pick_skill
 
 pytestmark = pytest.mark.e2e
 
@@ -106,7 +107,7 @@ def test_template_preview_updates_without_reopening(page, stack, scope, preview_
     if scope == "company":
         page.goto(stack.portal + "/admin?t=brand")
     else:
-        page.get_by_role("button", name="PPT 生成", exact=True).click()
+        _pick_skill(page, "PPT 生成")
         page.get_by_role("button", name="模板", exact=True).click()
     container = (
         page.locator(".brand-slot").filter(has_text="Delayed preview")

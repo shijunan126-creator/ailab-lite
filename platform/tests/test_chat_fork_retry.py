@@ -28,7 +28,7 @@ def create(c, modes=("chat",)):
 
 def test_fork_copies_history_artifacts_usage_summary_and_independent_objects():
     with TestClient(app) as c:
-        conv, turns = create(c, ("work", "chat"))
+        conv, turns = create(c, ("work", "work"))
         storage = get_storage()
         first = turns[0]["id"]
         storage.put_bytes(f"previews/{first}/1/p-01.jpg", b"jpeg")

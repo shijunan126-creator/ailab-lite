@@ -23,8 +23,11 @@ from ..adapters.runtime import NON_REPLAYABLE, UNCERTAIN_EXEC, checkpoint_state,
 from ..catalog import Catalog, ModelSpec, get_catalog
 from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
+from ..contracts.genui import CATALOG_VERSION, FORMAT
 from ..contracts.jobs import RunStatus
 from ..contracts.usage import UsageStatus
+from ..domain.answer_parts import for_history
+from ..domain.answer_parts import inspect as inspect_answer
 from ..llm import INVALID_ARGUMENTS_KEY, LLMClient, LLMError, ModelCall, ToolCall, llm_for, model_call
 from ..model_policy import ModelPolicy, estimator
 from ..paths import OUTPUTS
@@ -50,7 +53,7 @@ from .prompts import (
     workspace_prompt,
 )
 from .stuck import STUCK_ERROR, STUCK_NOTE, compact_log, detect_loop, observation
-from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn
+from .tools import SANDBOX_TOOLS, ToolContext, ToolError, execute_tool, tool_result_message, tools_for_chat, tools_for_turn, ui_components
 
 log = logging.getLogger("ailab.agent")
 
@@ -75,6 +78,14 @@ WORKSPACE_RECLAIMED_NOTE = (
 )
 RECLAIM_WAIT_SECONDS = 240  # the Broker packs the workspace before deleting the sandbox
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+
+
+def _tools_for_run(run):
+    catalog = tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()
+    spec = get_catalog().get(run.get("model"))
+    if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
+        catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
+    return catalog
 
 
 def web_sources(result: dict) -> list[dict]:
@@ -213,6 +224,17 @@ TITLE_TIMEOUT_SECONDS = 10
 
 class TokenLimit(Exception):
     pass
+
+
+def _summary_input(value):
+    """Strip UI before serializing or slicing any compaction evidence."""
+    if isinstance(value, str):
+        return for_history(value, keep_ui=False, limit=max(len(value), 16000))
+    if isinstance(value, list):
+        return [_summary_input(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _summary_input(item) for key, item in value.items()}
+    return value
 
 
 class AgentLoop:
@@ -679,7 +701,10 @@ class AgentLoop:
             {
                 "role": "user",
                 "content": json.dumps(
-                    {"question": run["prompt"][:1000], "files": [f.get("filename", "")[:200] for f in (run.get("input_files") or [])][:50]},
+                    {
+                        "question": for_history(run["prompt"], keep_ui=False, limit=max(len(run["prompt"]), 1000))[:1000],
+                        "files": [f.get("filename", "")[:200] for f in (run.get("input_files") or [])][:50],
+                    },
                     ensure_ascii=False,
                 ),
             },
@@ -734,14 +759,14 @@ class AgentLoop:
         config = run.get("context_settings") or {}
         threshold = policy.compaction_threshold(spec, config)
         fixed = [base[0], base[-1]]
-        context_tools = discovery.offered(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn(), [])
+        context_tools = discovery.offered(_tools_for_run(run), [])
         if not spec.supports({"tools"}):
             context_tools = []
         if estimator.estimate(model, {"messages": fixed, "tools": context_tools}) >= budget:
             raise LLMError("system, skills and current input exceed context budget")
         page = await self.platform.get_model_context(run_id)
-        summary, through = page["summary"], page["through_run_id"]
-        revalidation = list(page.get("summary_evidence") or [])
+        summary, through = _summary_input(page["summary"]), page["through_run_id"]
+        revalidation = _summary_input(list(page.get("summary_evidence") or []))
         pending = []
 
         def assemble():
@@ -773,6 +798,7 @@ class AgentLoop:
                     "revalidation为有界原文片段：核对旧条目，发现冲突保留uncertainties，不把片段当全文证据。"
                 )
             for turn in pending:
+                turn = _summary_input(turn)
                 candidate = [
                     instruction,
                     {
@@ -873,7 +899,7 @@ class AgentLoop:
             content = message.get("content")
             if isinstance(content, list):
                 message = {**message, "content": [part for part in content if part.get("type") != "image_url"]}
-            source_messages.append(message)
+            source_messages.append(_summary_input(message))
         import hashlib
 
         source = json.dumps(source_messages, ensure_ascii=False)
@@ -904,9 +930,9 @@ class AgentLoop:
                         "role": "user",
                         "content": json.dumps(
                             {
-                                "previous_summary": work["summary"],
+                                "previous_summary": _summary_input(work["summary"]),
                                 "pinned_state": {
-                                    "user_prompt": turn.run["prompt"],
+                                    "user_prompt": _summary_input(turn.run["prompt"]),
                                     "confirmed_deliveries": list(state.get("delivered", {}).items())[:64],
                                     "confirmed_deliveries_total": len(state.get("delivered", {})),
                                 },
@@ -971,6 +997,7 @@ class AgentLoop:
             "retained_latest": latest_user is not None and latest_user is not original,
         }
         state.pop("compaction_work", None)
+        state.pop("genui_guide_sent", None)
         await self._checkpoint(run_id, turn)
         await self._event(run_id, "agent.context_compacted", {"scope": "run", "messages": cut - 1})
         if after >= threshold:
@@ -1026,11 +1053,18 @@ class AgentLoop:
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
         try:
-            current_catalog = tools_for_chat() if (turn.run.get("options") or {}).get("mode") == "chat" else tools_for_turn()
+            current_catalog = _tools_for_run(turn.run)
             if call.name not in {t["function"]["name"] for t in current_catalog} | {"search_capabilities", "finish"}:
                 raise ToolError("tool is not available (disabled or unavailable)")
+            if call.name == "ui_components":
+                spec = get_catalog().get(turn.run.get("model"))
+                if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
+                    raise ToolError("ui_components is not available for this model")
             if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
-                raise ToolError(f"tool {call.name} is not available in this turn")
+                # Discovery only keeps unused schemas out of the prompt. A tool this mode allows, called by its exact
+                # name (read_url after web_search found only web_search), runs and stays offered from the next step.
+                discovery.activate(self._states[run_id], [call.name], current_catalog)
+                turn.allowed_tools.add(call.name)
             if (turn.run.get("options") or {}).get("mode") == "chat" and call.name == "save_skill" and call.arguments.get("path"):
                 raise ToolError("对话模式保存技能请传 content；压缩包/脚本修改请切换工作模式")
             wanted = call.arguments.get("name") if call.name == "load_skill" else None
@@ -1072,10 +1106,11 @@ class AgentLoop:
                 result = {"ok": result.get("ocr") == "done", **result}
                 if not result["ok"]:
                     result["error"] = "文字提取失败：" + str(result.get("reason") or result.get("ocr")) + "；不得反复提取或sleep等待"
+            elif call.name == "ui_components":
+                result = ui_components(call.arguments, self._states[run_id], html_enabled=settings.genui_html_enabled)
             elif call.name == "search_capabilities":
                 state = self._states[run_id]
-                mode = (turn.run.get("options") or {}).get("mode", "work")
-                catalog = tools_for_chat() if mode == "chat" else tools_for_turn()
+                catalog = _tools_for_run(turn.run)
                 user_skills = [
                     {"name": name, "description": entry.get("description", "")[:160]}
                     for name, entry in {**skills(), **turn.personal}.items()
@@ -1093,7 +1128,7 @@ class AgentLoop:
                 discovery.activate(
                     state,
                     internal_skills.TOOLS,
-                    tools_for_chat() if (turn.run.get("options") or {}).get("mode") == "chat" else tools_for_turn(),
+                    _tools_for_run(turn.run),
                 )
                 result = {"ok": True, "skill": text, "version": internal_skills.VERSION}
             elif wanted in turn.personal:
@@ -1509,6 +1544,8 @@ class AgentLoop:
                             list(turn.personal.values()),
                             picked_text,
                             deferred=options.get("capability_discovery") == 1,
+                            genui=bool(get_catalog().get(model) and get_catalog().get(model).supports({"genui"})),
+                            genui_tools=bool(get_catalog().get(model) and get_catalog().get(model).supports({"tools"})),
                         )
                         + workspace_prompt(
                             run.get("project_instructions") or "", run.get("brand") or {}, (run.get("options") or {}).get("template")
@@ -1527,7 +1564,7 @@ class AgentLoop:
             turn.messages = messages
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
-            catalog = tools_for_chat() if mode == "chat" else tools_for_turn()
+            catalog = _tools_for_run(turn.run)
             if spec and not spec.supports({"vision"}):
                 catalog = [t for t in catalog if t["function"]["name"] != "view_attachment"]
             deferred = options.get("capability_discovery") == 1
@@ -1626,6 +1663,9 @@ class AgentLoop:
                     if offered == [] and response.tool_calls:
                         log.warning("run %s: model asked for tools in a words-only turn; ignoring", run_id)
                     calls = response.tool_calls if offered != [] else []
+                    metrics.record_genui(
+                        response.content or "", mode, max_blocks=settings.genui_max_blocks, max_block_chars=settings.genui_max_block_chars
+                    )
                     assistant = {"role": "assistant", "content": response.content or ""}
                     if calls:
                         assistant["tool_calls"] = [
@@ -1704,6 +1744,12 @@ class AgentLoop:
                         response = await self._call_model(llm, run_id, run, model, messages, settings.max_agent_steps, tools=[])
                         messages.append({"role": "assistant", "content": response.content})
                         state["final_summary"] = response.content
+                        metrics.record_genui(
+                            response.content or "",
+                            mode,
+                            max_blocks=settings.genui_max_blocks,
+                            max_block_chars=settings.genui_max_block_chars,
+                        )
                         state["out_of_steps_done"] = True
                         await self._checkpoint(run_id, turn)
                         await self._event(run_id, "agent.message", {"step": settings.max_agent_steps, "content": response.content})
@@ -1717,6 +1763,9 @@ class AgentLoop:
                 "previews": list(turn.previews.values()),
                 "sources": state["sources"],
             }
+            genui_report = inspect_answer(state["final_summary"] or "", max_block_chars=settings.genui_max_block_chars)
+            if genui_report["blocks"]:
+                result["genui"] = {"format": FORMAT, "catalog": CATALOG_VERSION, "blocks": genui_report["blocks"]}
             if turn.lease_id:
                 await self._stop_background(run_id, turn)
                 # Whatever the outcome, don't lose finished work with the sandbox.

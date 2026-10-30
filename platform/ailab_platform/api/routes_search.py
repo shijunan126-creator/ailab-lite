@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select, tuple_
 from sqlalchemy.orm import Session, load_only
 
 from ..deps import current_user, get_db
+from ..domain.answer_parts import for_history
 from ..models import Conversation, Run, User
 from ..schemas import ConversationSearchResult
 
@@ -54,6 +55,7 @@ def search_match_query(window, q, dialect):
             prompt_hit.label("prompt_hit"),
             func.substr(text_column, left, 120).label("snippet"),
             (position - left).label("hit_start"),
+            case((window.c.summary.contains("```openui"), window.c.summary), else_=None).label("ui_summary"),
         )
         .where(prompt_hit | answer_hit)
         .order_by(window.c.created_at.desc(), window.c.id.desc())
@@ -123,8 +125,13 @@ def search_conversations(
                 work += RUN_BATCH
                 if row:
                     match, run_id = ("prompt" if row.prompt_hit else "answer"), row.id
-                    value, highlight = snippet(row.snippet, q)
-                    if not highlight:  # A query may exceed the 120-character snippet window.
+                    answer = (
+                        for_history(row.ui_summary, keep_ui=False, limit=len(row.ui_summary))
+                        if row.ui_summary and not row.prompt_hit
+                        else None
+                    )
+                    value, highlight = snippet(answer if answer is not None else row.snippet, q)
+                    if not highlight and answer is None:  # A query may exceed the 120-character snippet window.
                         start = max(0, row.hit_start)
                         highlight = [[start, min(len(value), start + len(q))]]
                     break

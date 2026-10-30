@@ -68,6 +68,9 @@ def patch_settings(body: LibrarySettings, user: User = Depends(current_user), db
 
 def request_summary(db, file):
     """Only stage metadata/outbox in the READY/OCR transaction. No storage read or inference here."""
+    from .preview_requests import request_ready_preview
+
+    request_ready_preview(db, file)
     if file.purpose != "library" or file.status != FileStatus.READY or file.deleted_at or file.purged_at:
         return
     meta = file.meta or {}

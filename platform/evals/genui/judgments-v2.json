@@ -1,0 +1,182 @@
+{
+  "trend-sales:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "UI合计116、季度82.9%和各月环比均由表达式算出；正文却称4月后增速回落到25%左右，漏掉5月14.3%，不能准确描述连续两月。"
+  },
+  "trend-energy:1": {
+    "data_consistent": false,
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "note": "原序列、周五250峰值/周日155谷值及合计1450正确；Metric使用表达式，但Callout里峰谷差95、周末315和工作日1135仍为硬写派生数。"
+  },
+  "trend-two:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "note": "线上/线下原序列、3月首次反超与差40正确；增量70的Metric挂了订单量相对1月变化87.5%的delta，指标口径不一致，且87.5硬写。"
+  },
+  "compare-cost:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "表格24/23.75/20.43及差值表达式正确；末段按实际人数给出乙、丙、甲固定人均排序缺依据，例如45人时甲1200低于丙1430，不能概括甲无优势。"
+  },
+  "compare-delivery:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "18/26/22/31小时原数正确，天津最慢；差13用Max-Min，正文倍数约1.7及比武汉多5正确。"
+  },
+  "rank-store:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "Sort得南97中91东84北72西63；合计407与头尾差34用Sum/Max-Min，正文一致。"
+  },
+  "rank-defect:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "Sort得C11E9A7D5B2；C占32.4%、C+E占58.8%均为表达式，正文接近六成正确。"
+  },
+  "lookup-price:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "表格420/442/358.8与合计1220.8均表达式正确；正文却称M6的420为库存金额最多，实际M8的442最大。"
+  },
+  "lookup-sla:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "原数与每席9.8/8.25/6.63正确；正文称99元标准版比叠加两个49元基础版更划算，实际98<99且两基础版只10席，未区分11至12席。"
+  },
+  "part-budget:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "45/25/20/10和占比均匹配，百分比用Sum/Each计算；研发与营销运营合计均45、研发营销70正确。"
+  },
+  "compare-notwhole:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "note": "加权82%表达式正确；hint合计300样本硬写。正文仅凭n断言B抽样波动最大、C最稳定及差距可靠性，给定比例的标准误约A3.84/B3.20/C3.90个百分点，顺序恰相反。"
+  },
+  "calc-subscription:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "默认标准20席980、年度11760；独立专业版1980、100席标准4900；费用及比较均表达式。"
+  },
+  "calc-discount:1": {
+    "data_consistent": false,
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "note": "默认1750、独立九折1350/200单7000/包邮1350，正文九折包邮950和26.4%正确；九折售价仍硬写72而非80*0.9。"
+  },
+  "calc-saving:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "默认12000，独立3000/月得36000、24月得24000；各表格总额和指标均乘法。"
+  },
+  "filter-region:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "全部400及四行正确；独立华西筛选丙80丁110小计190，Filter/Each/Sum重算。"
+  },
+  "switch-view:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "初值折线10/14/12/18，切表格同四行；合计54、均值13.5均表达式，无硬写环比。"
+  },
+  "calc-tax:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "默认1200，独立50件6000/含税1272税72；金额由qty和税率表达式重算。"
+  },
+  "edit-pie:2": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "完整PieChart替换柱图，预算原数40/30/20/10及标签不变。",
+    "edit_success": true
+  },
+  "edit-filter:2": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "使用filteredRows + [totalRow]，实际evaluator把Table.rows算成0，默认和华西探针均为0，无法显示筛选后的行；派生合计来源表达式。",
+    "edit_success": false
+  },
+  "edit-top5:2": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "前五己51乙42丁36庚29丙25，三列表头逐行三字段；183及85.5%表达式，排序截取正确。",
+    "edit_success": true
+  },
+  "edit-theme:2": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "完整HTML透明背景，正文var(--fg)、圆点var(--accent)，300x160/r12/(80,80)/步20/回20保留；静态审阅未执行。",
+    "edit_success": true
+  },
+  "edit-unit:2": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "万元序列由12000/10000等表达式算出1.2/1.8/1.6/2.4，LineChart第4参数2实现两位小数，标签单位正确；未用income引用属于冗余而非来源错误。",
+    "edit_success": true
+  },
+  "edit-toggle:2": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "完整块保持单价60/件数1至20/default5，包邮false默认312、打开300、改20件1212，表达式重算运费。",
+    "edit_success": true
+  },
+  "edit-pie:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "柱图预算原数40/30/20/10正确，正文70及70%正确；无UI派生数硬写。"
+  },
+  "edit-filter:1": {
+    "data_consistent": false,
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "note": "rows=[data,total]把四行data嵌成一个四单元格行，再接三单元格合计；实际三列表格结构错位，不能展示四店。合计400表达式正确。"
+  },
+  "edit-top5:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "七店原数及合计214表达式正确，均值约30.6正确；两者近4倍按最大/最小比值51/13约3.92理解，正文措辞应改为约3.9倍。"
+  },
+  "edit-theme:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "静态审阅尺寸300x160、初始80/80/r12、步20、超出回20匹配；未执行HTML。"
+  },
+  "edit-unit:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "折线12000/18000/16000/24000元原数、标签单位正确。"
+  },
+  "edit-toggle:1": {
+    "data_consistent": true,
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "note": "单价60、默认5件加12得312；1至20件和默认false正确，预先已有包邮开关；表达式驱动。"
+  }
+}

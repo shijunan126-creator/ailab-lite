@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import test from "node:test";
+import { test } from 'vitest';
+import { t } from './node-test-compat.mjs';
 import { getEventListeners } from "node:events";
 import ts from "typescript";
 
@@ -9,12 +10,12 @@ const source = await readFile(new URL("../lib/api.ts", import.meta.url), "utf8")
 const compiled = ts.transpile(source, { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 });
 const { api, streamRun, filesByIds, archiveUrl, untilReset, quotaMessage, errorMessage } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString("base64")}`);
 
-test("a successful 204 DELETE has no JSON body", async (t) => {
+test("a successful 204 DELETE has no JSON body", async () => {
   t.mock.method(globalThis, "fetch", async () => new Response(null, { status: 204 }));
   assert.equal(await api("/v1/conversations/c", { method: "DELETE" }), undefined);
 });
 
-test("SSE reader releases its lock on stream.end", async (t) => {
+test("SSE reader releases its lock on stream.end", async () => {
   const body = new ReadableStream({
     start(controller) {
       controller.enqueue(new TextEncoder().encode("event: stream.end\ndata: {}\n\n"));
@@ -28,7 +29,7 @@ test("SSE reader releases its lock on stream.end", async (t) => {
   assert.equal(body.locked, false);
 });
 
-test("continuing a paused run starts after the events already displayed", async (t) => {
+test("continuing a paused run starts after the events already displayed", async () => {
   const seen = [];
   t.mock.method(globalThis, "fetch", async (url) => {
     assert.match(String(url), /after=12$/);
@@ -38,7 +39,7 @@ test("continuing a paused run starts after the events already displayed", async 
   assert.deepEqual(seen, [13]);
 });
 
-test("filesByIds asks for all ids in one request, and none for an empty list", async (t) => {
+test("filesByIds asks for all ids in one request, and none for an empty list", async () => {
   const calls = [];
   t.mock.method(globalThis, "fetch", async (url) => {
     calls.push(String(url));
@@ -59,7 +60,7 @@ function sse(text) {
   return new Response(new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(text)); c.close(); } }));
 }
 
-test("a dropped event stream resumes after the last event, without repeats", async (t) => {
+test("a dropped event stream resumes after the last event, without repeats", async () => {
   const urls = [];
   const replies = [
     () => sse("id: 1\nevent: a\ndata: {}\n\nid: 2\nevent: a\ndata: {}\n\n"), // connection drops, no stream.end
@@ -84,7 +85,7 @@ test("a dropped event stream resumes after the last event, without repeats", asy
   assert.match(urls[1], /after=2$/);
 });
 
-test("the stream gives up after repeated failures, and stops at once when aborted", async (t) => {
+test("the stream gives up after repeated failures, and stops at once when aborted", async () => {
   let calls = 0;
   t.mock.method(globalThis, "fetch", async () => {
     calls++;
@@ -106,7 +107,7 @@ test("the stream gives up after repeated failures, and stops at once when aborte
   await stopped; // resolves quietly
 });
 
-test("empty successful SSE responses also exhaust the reconnect budget and release abort listeners", async (t) => {
+test("empty successful SSE responses also exhaust the reconnect budget and release abort listeners", async () => {
   let calls = 0;
   const controller = new AbortController();
   t.mock.method(globalThis, "fetch", async () => {

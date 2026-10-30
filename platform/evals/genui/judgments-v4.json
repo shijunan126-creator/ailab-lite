@@ -1,0 +1,211 @@
+{
+  "trend-sales:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原数、累计116、均值19.3及五次环比正确；称3月后连续3个月幅度放大不符（增量7/3/6、增速50/14.3/25）；还硬写回吐1与月份/走势，正常波动缺依据。"
+  },
+  "trend-energy:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "原序列及单位准确，Sort取峰周五250/谷周日155，差95/总1450均表达式，块外仅说明坐标单位。"
+  },
+  "trend-two:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "两序列及3月领先15、4月40、87.5%/10%正确；块内硬写线上反超方向及4月，块外写线上更陡/线下平稳比较结论。"
+  },
+  "compare-cost:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "月费/容量准确，满员人均24/23.75/20.43、最低月费乙/人均丙/最大容量丙及最高月费比较由表达式；额外图表及重复原数据为布局诊断。"
+  },
+  "compare-delivery:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "图及Sort天津31/杭州18/差13正确；围栏外硬写最慢最快及优先天津可最快改善整体，后者缺订单权重依据。"
+  },
+  "rank-store:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "Sort南97中91东84北72西63；最高最低标签及差34均表达式。"
+  },
+  "rank-defect:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "降序C11/E9/A7/D5/B2及前二/最低表达式正确；块外复述C优先E其次B最少，硬写排名比较。"
+  },
+  "lookup-price:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "原价/库存正确，金额420/442/358.8、总1220.8和库存2510由表达式，top M8正确。"
+  },
+  "lookup-sla:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原价席位及每席9.8/8.3/6.6正确；Text固定索引专业/基础并硬写最低最高，未由比较表达式选择。"
+  },
+  "part-budget:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "Pie签名/45/25/20/10有效；升序Sort再Last取45却称预备金（实际10），接近一半为硬写判断，块外合计100及无缺口。"
+  },
+  "compare-notwhole:1": {
+    "numeric_correct": false,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原三比例/样本及加权82%、均值83%正确；硬写最低C与76，擅加检验/CI/功效数字，B/C区间不重叠与随后彼此大幅交叠自相矛盾。"
+  },
+  "calc-subscription:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认标准20席980，专业1980、100席4900；独立控件及Text同源。"
+  },
+  "calc-discount:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "默认1750，九折1350、200件7000、包邮1350均表达式正确；块外45+8=53硬写派生单件成本，额外Button/指标为布局诊断。"
+  },
+  "calc-saving:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认12000，3000/月36000，24月24000；金额及说明均乘法同源。"
+  },
+  "filter-region:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "全部四店400，华西丙80丁110合190，Filter/Each/Sum；实体名与万元正确。"
+  },
+  "switch-view:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "折线/表格10/14/12/18同源，合计54均13.5最高4月18表达式；默认图切表。"
+  },
+  "calc-tax:1": {
+    "numeric_correct": true,
+    "expression_provenance": false,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "默认1200，50件6000，含税1272/税72表达式；块外1.06为派生税率因子，且多条说明超出一句引导/限制。"
+  },
+  "edit-pie:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "柱图40/30/20/10，Sum100、Sort取研发40/40%均表达式。"
+  },
+  "edit-pie:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "PieChart两个数组正确，40/30/20/10保留；Text硬写研发最大单项/储备名称，虽定义top却未使用，编辑显示成功。",
+    "edit_success": true
+  },
+  "edit-filter:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "华东甲120乙90/华西丙80丁110，Sum400及top华东甲120正确，无人员误称。"
+  },
+  "edit-filter:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认四项400，华西两项190/top华西丁110，Filter/Each/Sort正确，原名保留。",
+    "edit_success": true
+  },
+  "edit-top5:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "七店原数正确，合计214、数量7由表达式。"
+  },
+  "edit-top5:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "前五己51乙42丁36庚29丙25，合计183；块外硬写未入前五甲戊及18/13，排名结论未从表达式得出。",
+    "edit_success": true
+  },
+  "edit-theme:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "静态审阅300x160、r12、初80/80、step20，越界回20；未执行HTML。"
+  },
+  "edit-theme:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "完整HtmlArtifact，html/body及stage透明，正文--fg、圆点--accent，原几何与规则保留；静态判读未执行。",
+    "edit_success": true
+  },
+  "edit-unit:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "原序列及Sort最高4月24000、差8000正确；Text固定4月较3月增加的方向，未比较选取。"
+  },
+  "edit-unit:2": {
+    "numeric_correct": false,
+    "expression_provenance": true,
+    "conclusion_compliant": false,
+    "data_consistent": false,
+    "note": "除10000得1.2/1.8/1.6/2.4正确；LineChart误传false,2共五参，parser拒绝boolean decimals并丢弃第五参，无法保证两位小数，文字却声称已做到。",
+    "edit_success": false
+  },
+  "edit-toggle:1": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "默认5件312，20件1212，包邮300，条件运费及状态说明同源；初始即有Toggle。"
+  },
+  "edit-toggle:2": {
+    "numeric_correct": true,
+    "expression_provenance": true,
+    "conclusion_compliant": true,
+    "data_consistent": true,
+    "note": "完整界面保留范围/default false，5件312/包邮300/20件1212；确认既有Toggle并明确默认关闭，功能满足编辑。",
+    "edit_success": true
+  }
+}

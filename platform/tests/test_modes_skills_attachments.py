@@ -27,6 +27,7 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
         assert chat["options"] == {"mode": "chat", "capability_discovery": 1}
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
+        conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
             f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "PPT", "mode": "chat", "skill": "pptx"}
         ).json()

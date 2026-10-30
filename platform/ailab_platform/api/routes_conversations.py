@@ -127,7 +127,7 @@ def get_conversation(
         out["result"] = {
             key: value
             for key, value in out["result"].items()
-            if key in {"previews", "thinking", "plan", "question", "resumable", "sources", "forked_from_run_id"}
+            if key in {"previews", "thinking", "plan", "question", "resumable", "sources", "forked_from_run_id", "genui"}
         }
     from .inbox import pending_query, queue_output
 
@@ -228,9 +228,10 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         body.model,
         body.file_ids,
         conversation=conv,
-        mode=body.mode,
+        mode=body.mode if "mode" in body.model_fields_set else None,
         skill=body.skill,
         template=body.template,
+        client_send_id=body.client_send_id,
     )
     return run_dict(db, run, detail=True)
 
@@ -344,6 +345,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                         if row.id not in applied:
                             continue
                         copied = QueuedMessage(
+                            client_send_id=None,  # A fork copies history, never the original submission identity.
                             conversation_id=conv.id,
                             user_id=user.id,
                             prompt=row.prompt,

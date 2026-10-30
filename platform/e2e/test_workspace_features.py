@@ -181,7 +181,7 @@ def test_queue_mutation_survives_an_older_detail_response(logged_in, stack):
         response = route.fetch()
         snapshot = response.json()
         snapshots.append(snapshot)
-        if len(snapshots) == 1 or not hold_reads:
+        if not hold_reads:
             route.fulfill(response=response)
         else:
             held.append((route, snapshot))
@@ -192,7 +192,7 @@ def test_queue_mutation_survives_an_older_detail_response(logged_in, stack):
         deadline = time.monotonic() + 10
         while not held and time.monotonic() < deadline:
             page.wait_for_timeout(50)
-        assert held, "running status did not refresh the detail"
+        assert held, "initial conversation detail was not requested"
         assert all(not snapshot["queue"] for _, snapshot in held)
         _send(page, "工作区续发-keep-after-refresh")
         row = page.locator(".queue-row").filter(has_text="工作区续发-keep-after-refresh")

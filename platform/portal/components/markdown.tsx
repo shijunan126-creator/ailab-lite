@@ -112,6 +112,8 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
       while (i < lines.length && !lines[i].trimStart().startsWith("```")) body.push(lines[i++]);
       i++;
       const code = body.join("\n");
+      // a fence with nothing in it (a stray closing fence after a UI block reads as an unclosed one) shows nothing
+      if (!code.trim()) continue;
       blocks.push(
         <div key={k} className="md-codeblock">
           <div className="md-code-head">

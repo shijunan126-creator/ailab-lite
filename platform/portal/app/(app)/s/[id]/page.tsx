@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, API_BASE, downloadUrl, errorMessage, FileItem, ShareFile, ShareView } from "../../../../lib/api";
 import { formatBytes, formatDate } from "../../../../lib/format";
-import Markdown from "../../../../components/markdown";
+import Answer from "../../../../components/chat/answer";
 import { IconDownload, IconFile, IconShare } from "../../../../components/icons";
 import { ExtTile } from "../../../../components/library/file-tile";
 import FileViewer, { FileSource, FileSourceContext } from "../../../../components/preview/file-viewer";
@@ -121,7 +121,7 @@ export default function SharedPage() {
               <div className="msg assistant">
                 <div className="avatar-ai">A</div>
                 <div className="assistant-body">
-                  {t.answer.trim() ? <Markdown text={t.answer} /> : null}
+                  {t.answer.trim() ? <Answer text={t.answer} runId={t.id} uiState={t.ui_state} /> : null}
                   {t.artifacts.length ? (
                     <div className="files">
                       {t.artifacts.map((a) => (

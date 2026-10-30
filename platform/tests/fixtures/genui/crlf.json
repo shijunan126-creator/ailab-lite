@@ -1,0 +1,20 @@
+[
+  {
+    "kind": "md",
+    "text": "文字\r\n",
+    "closed": true,
+    "index": 0
+  },
+  {
+    "kind": "ui",
+    "text": "root = Text(\"CRLF\")\r\n",
+    "closed": true,
+    "index": 1
+  },
+  {
+    "kind": "md",
+    "text": "结尾\r\n",
+    "closed": true,
+    "index": 2
+  }
+]

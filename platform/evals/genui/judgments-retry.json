@@ -1,0 +1,15 @@
+{
+  "trend-sales:1": {"data_consistent": false, "numeric_correct": true, "expression_provenance": false, "note": "合计116、复合月增速20.1及季度增长82.9正确，但全部硬写派生UI数据。"},
+  "trend-energy:1": {"data_consistent": false, "numeric_correct": false, "expression_provenance": false, "note": "合计与均值改用表达式；峰值250却标周四，实际周五；说明文本内派生数仍硬写。"},
+  "trend-two:1": {"data_consistent": false, "numeric_correct": false, "expression_provenance": false, "note": "线上占比硬写44/49/53/58；开头称4月首次反超，后面又正确说3月首次反超。"},
+  "compare-cost:1": {"data_consistent": false, "numeric_correct": false, "expression_provenance": true, "note": "单位成本表达式正确，却再次称乙23.75最高，实际甲24最高。"},
+  "rank-store:1": {"data_consistent": false, "numeric_correct": false, "expression_provenance": false, "note": "总额均值改用表达式，备注仍硬写差值；称前三均超过84，实际东店恰为84。"},
+  "rank-defect:1": {"data_consistent": false, "numeric_correct": true, "expression_provenance": false, "note": "原值排序和占比数值正确，派生合计34、20及占比仍硬写。"},
+  "lookup-price:1": {"data_consistent": true, "numeric_correct": true, "expression_provenance": true, "note": "修复来源：金额@Round(r.price*r.stock,2)，库存/金额总计@Sum/@Each；原值正确。"},
+  "part-budget:1": {"data_consistent": true, "numeric_correct": true, "expression_provenance": true, "note": "移除了错误倍数，45/25/20/10及总额100保留。比例与本例原值相同，不存在新数值。"},
+  "calc-discount:1": {"data_consistent": true, "numeric_correct": true, "expression_provenance": true, "note": "九折改为80*0.9、成本45+8，默认1750/43.8%；删去错误的54%比较。"},
+  "switch-view:1": {"data_consistent": false, "numeric_correct": true, "expression_provenance": false, "note": "视图正常切换，但新增合计54硬写在Table。"},
+  "compare-notwhole:1": {"data_consistent": false, "numeric_correct": false, "expression_provenance": false, "note": "卡方更正为7.32，但称B/C Wilson区间不重叠，所给82.7–95.5与67.6–82.8实际重叠；又称A区间盖住B点91而A上界88.3。滥用HtmlArtifact画静态对照图。"},
+  "edit-top5:2": {"data_consistent": false, "numeric_correct": true, "expression_provenance": false, "edit_success": true, "note": "表头错位修复；降序5行正确，但Metric hint内214/85.5为派生硬写。"},
+  "edit-unit:2": {"data_consistent": false, "numeric_correct": true, "expression_provenance": false, "edit_success": false, "note": "仍硬写转换数据且不支持两位小数显示；总额Metric的delta50语义也与4月环比混用。"}
+}

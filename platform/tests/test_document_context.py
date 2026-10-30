@@ -494,3 +494,28 @@ def test_summary_revalidation_reads_completed_ocr_when_native_text_is_absent():
             summary = ContextSummary(facts=[SummaryEntry(id="f", text="编号", sources=[SummarySource(file_id=fid)])])
             frame = ContextSummaryFrame(revision=7, status="active", summary=summary.model_dump_json(), revalidation_state={})
             assert evidence(db, frame, file.user_id, set())[0]["text"] == "识别编号 AL-219"
+
+
+def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
+    """Discovery keeps unused schemas out of the prompt; it must not fail read_url after a search found web_search."""
+    import asyncio
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": "work", "capability_discovery": 1}}
+
+    platform, broker = Platform(), FakeBroker()
+    model = ScriptedLLM(
+        [
+            LLMResponse(tool_calls=[ToolCall("w", "write_file", {"path": "/workspace/a.txt", "content": "kept"})]),
+            LLMResponse(content="完成"),
+        ]
+    )
+    asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
+    result = next(payload for name, payload in platform.events if name == "agent.tool_result")
+    assert result["ok"] is True, result
+    assert "write_file" in platform.checkpoint["state"]["active_tools"]

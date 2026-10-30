@@ -45,6 +45,15 @@ def test_narrative_arrives_before_the_model_finishes(logged_in, stack):
     expect(page.get_by_text(text, exact=True)).to_have_count(1)
 
 
+def _pick_skill(page, label: str) -> None:
+    """Skills live in the composer's + menu: the first few at its top, the rest behind 更多技能."""
+    page.get_by_role("button", name="添加附件", exact=True).click()
+    item = page.get_by_role("menuitemradio", name=label, exact=True)
+    if not item.count():
+        page.get_by_role("menuitem", name="更多技能", exact=True).click()
+    item.click()
+
+
 def _start_conversation(page, prompt: str, model: str = "test-fast") -> str:
     _send(page, prompt, model)
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
@@ -472,20 +481,20 @@ def test_the_sidebar_collapses_and_remembers_it(logged_in, stack) -> None:
 def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     page = logged_in
     page.click(".mode-toggle button:has-text('对话')")
+    assert page.get_by_role("radio", name="对话", exact=True).get_attribute("title") == "问答、搜索、写作"
     _start_conversation(page, "在沙箱里执行一条命令")  # would use the sandbox in work mode
     _wait_for_turns(page, 1)
     assert "离线演示模型" in page.inner_text(".assistant-body > .md")
     assert page.locator(".work-entry.process-steps .step").count() == 0
     assert page.locator(".msg.user .attach-chip").count() == 0
     assert "只回答" not in page.locator(".composer-box textarea").get_attribute("placeholder")
-    assert page.get_by_role("radio", name="对话", exact=True).get_attribute("title") == "问答、搜索、写作"
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered
 
 
 def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     page = logged_in
-    page.click(".skill-chip:has-text('PPT 生成')")
+    _pick_skill(page, "PPT 生成")
     page.wait_for_selector(".skill-tag:has-text('PPT 生成')")
     assert "页数" in page.get_attribute("textarea", "placeholder")
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
@@ -516,30 +525,53 @@ def test_an_attachment_is_read_without_a_sandbox(logged_in, tmp_path) -> None:
     assert "已读取附件" in page.inner_text(".steps") and "会议纪要.txt" in page.inner_text(".steps")
 
 
-def test_attachment_upload_and_scan_responses_cannot_race_with_send_or_remove(logged_in, tmp_path) -> None:
+def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(logged_in, tmp_path) -> None:
+    """HLD §16: sending does not wait for uploads; the message shows at once and reaches the model only with its file."""
+    page = logged_in
+    held = {}
+    created = []
+    page.route("**/api/v1/files", lambda route: held.update(upload=route))
+    sends = re.compile(r"/api/v1/conversations(/[^/]+/messages)?$")
+    page.on("request", lambda r: r.method == "POST" and sends.search(r.url) and created.append(r.url))
+    note = tmp_path / "slow.txt"
+    note.write_text("还在上传", encoding="utf-8")
+    page.fill("textarea", "请读取附件")
+    page.set_input_files(".composer-box input[type=file]", str(note))
+    page.wait_for_timeout(100)
+    assert "upload" in held
+    send = page.get_by_role("button", name="发送", exact=True)
+    assert send.is_enabled()
+    send.click()
+    page.locator(".pending-turn", has_text="请读取附件").wait_for()
+    assert page.input_value("textarea") == ""  # the box is free for the next message
+    page.wait_for_timeout(300)
+    assert created == [], "no conversation or model call before the file is ready"
+    held["upload"].continue_()
+    page.unroute("**/api/v1/files")
+    page.wait_for_url(re.compile(r"/c/cnv_"), timeout=30000)
+    _wait_for_turns(page, 1)
+    assert page.locator(".msg.user .attach-chip", has_text="slow.txt").count() == 1
+
+
+def test_a_file_removed_while_it_is_checked_stays_removed(logged_in, tmp_path) -> None:
     page = logged_in
     pending = {}
     page.route("**/api/v1/files", lambda route: pending.update(upload=route))
     page.route(re.compile(r"/api/v1/files\?.*\bids=deferred-file(?:&|$)"), lambda route: pending.update(scan=route))
     note = tmp_path / "deferred.txt"
     note.write_text("still uploading", encoding="utf-8")
-    page.fill("textarea", "请读取附件")
     page.set_input_files(".composer-box input[type=file]", str(note))
     page.wait_for_timeout(100)
-    assert page.get_by_role("button", name="发送", exact=True).is_disabled()
     assert "upload" in pending
     pending["upload"].fulfill(json={"id": "deferred-file", "filename": note.name, "status": "pending"})
-    page.wait_for_selector(".composer-box .attach-chip")
     deadline = time.monotonic() + 10
     while "scan" not in pending and time.monotonic() < deadline:
         page.wait_for_timeout(50)
     assert "scan" in pending
-    assert page.get_by_role("button", name="发送", exact=True).is_disabled()
     page.get_by_role("button", name="移除 deferred.txt", exact=True).click()
     pending["scan"].fulfill(json=[{"id": "deferred-file", "filename": note.name, "status": "ready"}])
     page.wait_for_timeout(200)
     assert page.locator(".composer-box .attach-chip").count() == 0
-    assert page.get_by_role("button", name="发送", exact=True).is_enabled()
 
 
 def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) -> None:
@@ -556,9 +588,12 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
         page.reload()  # saved on the server, not just in the page
         page.wait_for_selector(".skill-row.off:has-text('演示文稿（PPT）')")
         page.goto(stack.portal + "/")
-        page.wait_for_selector(".skill-chip:has-text('Excel 表格')")
-        # Default chips render before the asynchronous skill list arrives.
-        page.locator(".skill-chip:has-text('PPT 生成')").wait_for(state="detached", timeout=15000)
+        page.get_by_role("button", name="添加附件", exact=True).click()
+        menu = page.locator(".composer-menu")
+        menu.get_by_role("menuitemradio", name="Excel 表格", exact=True).wait_for()
+        # Default skills render before the asynchronous skill list arrives.
+        menu.get_by_role("menuitemradio", name="PPT 生成", exact=True).wait_for(state="detached", timeout=15000)
+        page.keyboard.press("Escape")
     finally:
         page.goto(stack.portal + "/skills")
         page.wait_for_selector(".skill-row")
@@ -588,8 +623,7 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     assert not any(f["filename"] == "SKILL.md" for f in page.request.get(stack.portal + "/api/v1/files").json())
 
     page.goto(stack.portal + "/")
-    page.get_by_role("button", name="更多技能", exact=True).click()
-    page.get_by_role("menuitemradio", name="周报助手", exact=True).click()
+    _pick_skill(page, "周报助手")
     _start_conversation(page, "帮我写本周周报")
     _wait_for_turns(page, 1)
     assert page.inner_text(".msg.user .attach-chip") == "周报助手"

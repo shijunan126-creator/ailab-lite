@@ -81,6 +81,7 @@ def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: boo
         "template": {k: run.options["template"][k] for k in ("name", "source")} if (run.options or {}).get("template") else None,
         "summary": "（文件来源已失效）" if source_invalid else run.summary,
         "error": run.error,
+        "ui_state": run.ui_state,
         "result": {**(run.result or {}), **{k: v for k, v in (run.runtime_meta or {}).items() if k in {"plan", "question"}}},
         "resumable": not source_invalid
         and not (run.runtime_meta or {}).get("file_dependency")

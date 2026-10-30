@@ -95,7 +95,8 @@ Target machine: 2 vCPU / ~8 GB for the whole stack, with pod limits in `platform
 
 - Read `platform/portal/AGENTS.md` (Next.js version notes) before touching the Portal.
 - UI text is Chinese. Let the layout explain; avoid secondary labels and helper descriptions.
-- Reuse the tokens and classes in `app/globals.css`; no UI library. Icons come from `components/icons.tsx`.
+- Styles: tokens live only in `styles/tokens.css`. Every Portal stylesheet is in the components layer above Tailwind's preflight (`app/globals.css`); specificity and load order decide, so an override names the element it overrides (`.modal.search-dialog`), never relies on file order. Rebuilt UI uses Tailwind utilities or `styles/app.css`/`styles/genui.css`; when a part is rebuilt, delete the rules it replaces from `styles/base|shell|chat|library|pages.css`. Dependency choices are in ADR 0027; a new UI dependency needs a concrete use and a one-line reason there.
+- Icons come from `components/icons.tsx` (lucide facade). Only `components/genui/**` imports `@openuidev/*` (ADR 0028).
 - Modals and menus opened from the sticky sidebar must `createPortal` to `document.body`.
 - Every fetch that can be superseded (detail loads, streams, polling) must be cancelled or ignored when stale.
 - Types shared with the API live in `lib/api.ts` and mirror `ailab_platform/contracts`.

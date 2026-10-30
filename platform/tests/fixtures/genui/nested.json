@@ -1,0 +1,8 @@
+[
+  {
+    "kind": "md",
+    "text": "```md\n```openui\nroot = Text(\"example\")\n```\n```\n",
+    "closed": true,
+    "index": 0
+  }
+]

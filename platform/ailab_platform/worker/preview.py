@@ -3,19 +3,22 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from ..clients import ClientError, PlatformClient
 from ..config import settings
-from ..contracts.file_preview import LOCAL_SHEETS, text_manifest
+from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
 from ..queue import get_queue
 from ..storage import get_storage
 from .isolate import IsolationError, execute
 from .pipeline import _images, download
 
 _render_slot = threading.Lock()
+log = logging.getLogger("ailab.worker.preview")
 
 
 def process_preview(file_id: str, job_id: str, platform: PlatformClient | None = None) -> dict:
@@ -23,11 +26,14 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
         with PlatformClient(service="worker") as owned:
             return process_preview(file_id, job_id, owned)
     queue = get_queue()
+    started = time.monotonic()
     token = queue.acquire_lock(f"ailab:preview:{file_id}", 300)
     if token is None:
         return {"skipped": "in_flight"}
+    slot_seconds = 0.0
     try:
         with _render_slot:
+            slot_seconds = time.monotonic() - started
             try:
                 file = platform.get_file(file_id, job="preview")
             except ClientError as exc:
@@ -44,7 +50,13 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             assets = {}
             try:
                 visual_job = meta.get("ocr_render_job_id") == job_id
-                if (Path(file["filename"]).suffix.lower() in LOCAL_SHEETS and not visual_job) or manifest.get("kind") in {"image", "text"}:
+                reused = cached_page_preview(file_id, meta) if not visual_job and manifest.get("kind") == "pages" else None
+                if reused and file.get("purpose") != "template":
+                    manifest, assets = reused
+                elif (Path(file["filename"]).suffix.lower() in LOCAL_SHEETS and not visual_job) or manifest.get("kind") in {
+                    "image",
+                    "text",
+                }:
                     with tempfile.TemporaryDirectory(prefix="ailab-preview-") as tmp:
                         source = Path(tmp) / ("input" + Path(file["filename"]).suffix.lower())
                         download(platform, file_id, source, settings.max_upload_bytes, job="preview")
@@ -100,3 +112,4 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             return manifest
     finally:
         queue.release_lock(f"ailab:preview:{file_id}", token)
+        log.info("preview completed total_seconds=%.3f slot_wait_seconds=%.3f", time.monotonic() - started, slot_seconds)

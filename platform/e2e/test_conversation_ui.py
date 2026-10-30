@@ -122,18 +122,18 @@ def test_preview_updates_never_open_or_steal_selection_and_back_closes(page, sta
 def test_older_page_keeps_the_visible_turn_and_refresh_keeps_history(page, stack):
     conv = seed(stack, count=45, active=False)
     login(page, stack, path="/c/" + conv["id"])
-    page.wait_for_function("document.querySelectorAll('.turn').length===20")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length===20")
     # Keep the first visible turn as an anchor while new content is prepended.
     page.locator(".messages").evaluate("(el)=>el.scrollTop=100")
     anchor = page.locator(".turn").first
     before = anchor.bounding_box()["y"]
     page.get_by_role("button", name="更早的消息").evaluate("(el)=>el.click()")
-    page.wait_for_function("document.querySelectorAll('.turn').length===40")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length===40")
     # The formerly first turn is now the 21st; its screen coordinate must be stable.
     after = page.locator(".turn").nth(20).bounding_box()["y"]
     assert abs(after - before) < 3, (before, after)
     page.locator(".messages").evaluate("(el)=>el.scrollTop=0")
-    page.wait_for_function("document.querySelectorAll('.turn').length===45")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length===45")
     assert page.get_by_role("button", name="更早的消息").count() == 0
     page.screenshot(path=str(stack.log_dir / "history-desktop.png"))
 
@@ -142,7 +142,7 @@ def test_switching_conversation_cancels_an_older_page_response(page, stack):
     old = seed(stack, count=25, active=False)
     new = seed(stack, count=1, active=False)
     login(page, stack, path="/c/" + old["id"])
-    page.wait_for_function("document.querySelectorAll('.turn').length===20")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length===20")
     pending = []
 
     def hold(route):
@@ -154,7 +154,7 @@ def test_switching_conversation_cancels_an_older_page_response(page, stack):
     assert pending
     page.locator(f'a[href="/c/{new["id"]}"]').first.click()
     page.wait_for_url("**/c/" + new["id"])
-    page.wait_for_function("document.querySelectorAll('.turn').length===1")
+    page.wait_for_function("() => document.querySelectorAll('.turn').length===1")
     # A transport that delivers after cancellation must still be ignored by the component.
     pending[0].fulfill(
         status=200,

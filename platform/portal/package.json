@@ -3,22 +3,35 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "test": "node --test tests/*.test.mjs",
+    "test": "OPENUI_TELEMETRY_DISABLED=1 vitest run",
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "genui:prompt": "OPENUI_TELEMETRY_DISABLED=1 node scripts/genui-prompt.ts"
   },
   "dependencies": {
+    "@openuidev/lang-core": "1.0.2",
+    "@openuidev/react-lang": "1.0.2",
+    "@tailwindcss/postcss": "4.3.3",
+    "clsx": "2.1.1",
+    "lucide-react": "1.64.0",
     "next": "^16.4.2",
     "pdfjs-dist": "^4.8.69",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-pdf": "^9.2.1"
+    "react-pdf": "^9.2.1",
+    "tailwind-merge": "3.7.0",
+    "tailwindcss": "4.3.3",
+    "zod": "4.6.7",
+    "zustand": "5.0.16"
   },
   "devDependencies": {
+    "@testing-library/react": "16.3.3",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.6.0"
+    "jsdom": "30.1.3",
+    "typescript": "^5.6.0",
+    "vitest": "5.0.5"
   }
 }

@@ -40,6 +40,11 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
     )
 
+    genui_enabled: bool = True
+    genui_html_enabled: bool = True
+    genui_max_blocks: int = Field(default=8, ge=1, le=20)
+    genui_max_block_chars: int = Field(default=32000, ge=1000, le=64000)
+
     env: str = "dev"
     profile: Literal["dev", "test", "secure"] | None = None
     service_name: Literal["api", "agent", "broker", "worker", "ops"] = "api"
@@ -184,6 +189,7 @@ class Settings(BaseSettings):
     sandbox_render_reserved_slots: int = Field(default=1, ge=0)
     sandbox_render_memory_bytes: int = Field(default=768 * 1024**2, ge=0)
     sandbox_render_max_ttl_seconds: int = Field(default=120, ge=1)
+    preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file
     max_sandbox_read_bytes: int = Field(default=10 * 1024 * 1024, gt=0)  # read_file tool
@@ -474,6 +480,13 @@ class Settings(BaseSettings):
                 logging.getLogger("ailab.config").warning("legacy shared service token enabled in %s profile", self.profile)
             return
         problems = []
+        if self.genui_enabled:
+            from .contracts.genui import load_contract
+
+            try:
+                load_contract()
+            except (ValueError, OSError) as exc:
+                problems.append(str(exc))
         if service is not None and self.service_name != service:
             problems.append(f"service_name must match the running service ({service})")
         for name, default in DEFAULT_SECRETS.items():

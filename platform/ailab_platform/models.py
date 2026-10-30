@@ -262,6 +262,7 @@ class Conversation(Base):
 class Run(Base):
     __tablename__ = "runs"
     __table_args__ = (
+        Index("uq_runs_user_client_send", "user_id", "client_send_id", unique=True),
         Index("ix_runs_conversation_parent", "conversation_id", "parent_run_id", "created_at", "id"),
         Index("ix_runs_conversation_id_id", "conversation_id", "id"),
         Index("ix_runs_conversation_created_id", "conversation_id", "created_at", "id"),
@@ -274,6 +275,7 @@ class Run(Base):
     )
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("run"))
+    client_send_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     context_source_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     conversation_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id"), index=True, nullable=True)
@@ -292,6 +294,7 @@ class Run(Base):
     checkpoint_step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     runtime_meta: Mapped[dict] = mapped_column(JSON, default=dict, server_default="{}")
     result: Mapped[dict] = mapped_column(JSON, default=dict)
+    ui_state: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     summary: Mapped[str] = mapped_column(Text, default="")
     error: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -796,10 +799,12 @@ class QueuedMessage(Base):
     __table_args__ = (
         Index("ix_queued_messages_conversation_state", "conversation_id", "state", "created_at", "id"),
         Index("ix_queued_messages_run_state", "run_id", "state", "created_at", "id"),
+        Index("uq_queued_messages_user_client_send", "user_id", "client_send_id", unique=True),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("que"))
     conversation_id: Mapped[str] = mapped_column(ForeignKey("conversations.id"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    client_send_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     prompt: Mapped[str] = mapped_column(Text)
     file_ids: Mapped[list] = mapped_column(JSON, default=list)
     model: Mapped[str] = mapped_column(String(120))

@@ -1,6 +1,8 @@
 // The browser only ever talks to this Portal's own /api proxy (see app/api/v1). The access token
 // is an httpOnly cookie that the proxy turns into an Authorization header on the server, so no
 // token exists in this bundle, in URLs, or in anything JavaScript can read.
+import type { UIState } from "./ui-state";
+
 export const API_BASE = "/api";
 
 /** A 401 means the session is gone or the token was rotated: back to the login page. */
@@ -52,6 +54,7 @@ export type Run = {
   edited_from?: string | null; // the turn whose message was edited into this one
   versions?: { index: number; count: number; ids: string[] }; // the turns answering the same point of the conversation
   steered?: { id: string; prompt: string }[]; // messages the user added while it was running, in the order it took them
+  ui_state?: UIState | null; // what the reader set on the answer's generated UI (lib/ui-state)
 };
 
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
@@ -161,6 +164,7 @@ export type ShareView = {
     id: string;
     prompt: string;
     answer: string;
+    ui_state?: UIState | null;
     created_at: string;
     mode: "chat" | "work";
     artifacts: ShareFile[];

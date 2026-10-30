@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
@@ -16,6 +17,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from .. import metrics
+from ..accounts import LoginThrottle
 from ..agent.prompts import skills
 from ..catalog import get_catalog
 from ..config import settings
@@ -24,17 +26,20 @@ from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
+from ..models import Conversation, FileObject, FileStatus, OutboxMessage, QueuedMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunEdit, RunOut, RunRetry
 from ..skill_policy import run_disabled_skills
 from ..storage import get_storage
+from .conversation_mode import resolve_conversation_mode
 from .routes_skills import usable_personal
 from .serializers import run_dict
+from .ui_state import UIState
 
 router = APIRouter(prefix="/v1", tags=["runs"])
 log = logging.getLogger("ailab.api.runs")
+ui_state_throttle = LoginThrottle(120, 60)
 
 
 def _get_owned_run(db: Session, run_id: str, user: User) -> Run:
@@ -77,7 +82,7 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=None, template=None):
+def validate_run_input(db, user, prompt, model, file_ids, mode=None, skill=None, template=None, *, conversation=None, turn_mode=None):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode, "capability_discovery": 1}
@@ -94,7 +99,10 @@ def validate_run_input(db, user, prompt, model, file_ids, mode="work", skill=Non
             "skill_title": known.get("title") or skill,
         }  # a skill is work by definition
 
-    mode = options["mode"]
+    mode = resolve_conversation_mode(
+        db, conversation, mode, turn_mode=turn_mode, requires_work=bool(skill or (template is not None and conversation is not None))
+    )
+    options["mode"] = mode
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -153,20 +161,61 @@ def start_run(
     file_ids: list[str],
     title: str | None = None,
     conversation: Conversation | None = None,
-    mode: str = "work",
+    mode: str | None = None,
     skill: str | None = None,
     locked: bool = False,
     commit: bool = True,
     sibling_of: Run | None = None,
     template=None,
     frozen_template: dict | None = None,
+    client_send_id: str | None = None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
     with nullcontext() if locked else user_critical_section(db, user.id):
-        model_id, options, inputs = validate_run_input(db, user, prompt, model, file_ids, mode, skill, template)
+        send_digest = None
+        if client_send_id is not None:
+            # Both send endpoints share the user lock; a queued identity cannot become a second direct call.
+            if db.scalar(select(QueuedMessage.id).where(QueuedMessage.user_id == user.id, QueuedMessage.client_send_id == client_send_id)):
+                raise HTTPException(409, "client_send_id already used for a queue send")
+            send_digest = hashlib.sha256(
+                json.dumps(
+                    {
+                        "prompt": prompt,
+                        "model": model,
+                        "file_ids": file_ids,
+                        "title": title,
+                        "conversation_id": conversation.id if conversation else None,
+                        "mode": mode,
+                        "skill": skill,
+                        "template": template.model_dump(mode="json") if template is not None else None,
+                    },
+                    sort_keys=True,
+                    ensure_ascii=False,
+                ).encode()
+            ).hexdigest()
+            prior = db.scalar(select(Run).where(Run.user_id == user.id, Run.client_send_id == client_send_id))
+            if prior is not None:
+                if (prior.options or {}).get("client_send_digest") != send_digest:
+                    raise HTTPException(409, "client_send_id already used for a different message")
+                # Dedupe precedes readiness, quota and active-turn checks: a lost response must be retriable.
+                return prior
+        model_id, options, inputs = validate_run_input(
+            db,
+            user,
+            prompt,
+            model,
+            file_ids,
+            mode,
+            skill,
+            template,
+            conversation=conversation,
+            turn_mode=(sibling_of.options or {}).get("mode", "work") if sibling_of else None,
+        )
+        if send_digest is not None:
+            options["client_send_digest"] = send_digest
         if frozen_template:
-            if mode != "work":
+            if options["mode"] != "work":
                 raise HTTPException(400, "仅工作模式可使用模板")
             options["template"] = dict(frozen_template)
 
@@ -192,6 +241,7 @@ def start_run(
             options = {**options, "memory_policy": dict(conversation.memory_policy or {})}
         run = Run(
             user_id=user.id,
+            client_send_id=client_send_id,
             context_source_epoch=db.scalar(select(User.context_source_epoch).where(User.id == user.id)),
             conversation_id=conversation.id if conversation is not None else None,
             parent_run_id=sibling_of.parent_run_id if sibling_of else expected_active,
@@ -243,6 +293,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         mode=body.mode,
         skill=body.skill,
         template=body.template,
+        client_send_id=body.client_send_id,
     )
     return run_dict(db, run, detail=True)
 
@@ -262,6 +313,23 @@ def list_runs(
 def get_run(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     run = _get_owned_run(db, run_id, user)
     return run_dict(db, run, detail=True)
+
+
+@router.put("/runs/{run_id}/ui-state", status_code=204)
+def put_ui_state(run_id: str, body: UIState, user: User = Depends(current_user), db: Session = Depends(get_db)) -> Response:
+    run = _get_owned_run(db, run_id, user)
+    if run.conversation_id:
+        conversation = db.get(Conversation, run.conversation_id)
+        if conversation is None or conversation.deleted_at is not None:
+            raise HTTPException(404, "run not found")
+    # A sync route (the commit must not block the event loop). The in-memory throttle is per API process; two
+    # threads racing past it cost at most an extra write or two, it only exists to stop a broken client.
+    if wait := ui_state_throttle.retry_after(user.id):
+        raise HTTPException(429, "UI state rate limit", headers={"Retry-After": str(wait)})
+    ui_state_throttle.fail(user.id)
+    run.ui_state = body.model_dump() if body.blocks else None
+    db.commit()
+    return Response(status_code=204)
 
 
 @router.post("/runs/{run_id}/cancel", response_model=RunDetail)
