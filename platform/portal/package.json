@@ -16,7 +16,7 @@
     "@tailwindcss/postcss": "4.3.3",
     "clsx": "2.1.1",
     "lucide-react": "1.64.0",
-    "next": "^16.4.2",
+    "next": "^16.4.3",
     "pdfjs-dist": "^4.8.69",
     "quickjs-emscripten-core": "0.32.0",
     "react": "^19.0.0",
