@@ -405,3 +405,50 @@ def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch, fallb
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "问题", "mode": "chat"}).json()
         asyncio.run(scenario(c, run))
+
+
+def test_system_prefix_is_shared_and_memory_refresh_only_rewrites_context():
+    from ailab_platform.agent.prompts import memory_prompt
+    from tests.test_agent_loop import ScriptedLLM
+
+    class Platform(FakePlatform):
+        def __init__(self, uid, entry, project):
+            super().__init__()
+            self.uid, self.project = uid, project
+            self.current = {"enabled": True, "auto_save": True, "entries": [entry]}
+
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "user_id": self.uid,
+                "options": {"mode": "chat"},
+                "project_instructions": self.project,
+                "memory": self.current,
+            }
+
+        async def get_memory_context(self, run_id):
+            return self.current
+
+    async def exercise():
+        first = {"id": "m1", "kind": "user", "content": "中文"}
+        second = {"id": "m2", "kind": "user", "content": "简洁"}
+        p1, p2 = Platform("u1", first, "项目一"), Platform("u2", second, "项目二")
+        llm1, llm2 = ScriptedLLM([LLMResponse(content="ok")]), ScriptedLLM([LLMResponse(content="ok")])
+        await AgentLoop(platform=p1, broker=FakeBroker(), llm=llm1).process("r1", attempt_id="a")
+        await AgentLoop(platform=p2, broker=FakeBroker(), llm=llm2).process("r2", attempt_id="a")
+        left, right = llm1.seen_messages[0], llm2.seen_messages[0]
+        assert left[0] == right[0] and left[1] != right[1]
+        assert "项目一" in left[1]["content"] and "项目二" in right[1]["content"]
+        messages = [dict(m) for m in left]
+        original = [dict(m) for m in messages[:2]]
+        p1.current = {**p1.current, "entries": [first, second]}
+        loop = AgentLoop(platform=p1)
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
+        assert messages[:2] == original
+        p1.current = {**p1.current, "entries": [second]}
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
+        assert messages[0] == original[0] and messages[1] != original[1]
+        assert "中文" not in messages[1]["content"] and "简洁" in messages[1]["content"]
+        assert "revision=" not in memory_prompt(p1.current)
+
+    asyncio.run(exercise())

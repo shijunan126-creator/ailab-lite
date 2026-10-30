@@ -525,11 +525,27 @@ class AgentLoop:
         # Checkpoints can predate a deletion or scope move; refresh the bounded system block.
         if messages and hasattr(self.platform, "get_memory_context") and not quiet:
             latest = await self.platform.get_memory_context(run_id)
-            content = messages[0].get("content", "")
+            context_index = (
+                1
+                if len(messages) > 1 and messages[1].get("role") == "system" and "<ailab_memory>" in str(messages[1].get("content", ""))
+                else 0
+            )
+            content = messages[context_index].get("content", "")
             if isinstance(content, str) and "<ailab_memory>" in content:
                 start = content.index("<ailab_memory>")
                 end = content.index("</ailab_memory>", start) + len("</ailab_memory>")
-                messages[0] = {**messages[0], "content": content[:start] + memory_prompt(latest) + content[end:]}
+                old_block = content[start:end]
+                new_block = memory_prompt(latest).strip()
+                try:
+                    old_facts = json.loads(old_block.splitlines()[-2])
+                    new_facts = json.loads(new_block.splitlines()[-2])
+                    old_rules = "\n".join(old_block.splitlines()[:-2])
+                    new_rules = "\n".join(new_block.splitlines()[:-2])
+                    needs_refresh = old_rules != new_rules or any(fact not in new_facts for fact in old_facts)
+                except (ValueError, IndexError, TypeError):
+                    needs_refresh = old_block != new_block
+                if needs_refresh:
+                    messages[context_index] = {**messages[context_index], "content": content[:start] + new_block + content[end:]}
             calls_by_id = {}
             for index, message in enumerate(messages):
                 for call_data in message.get("tool_calls") or []:
@@ -758,7 +774,7 @@ class AgentLoop:
         budget = policy.input_budget(spec)
         config = run.get("context_settings") or {}
         threshold = policy.compaction_threshold(spec, config)
-        fixed = [base[0], base[-1]]
+        fixed = [*base[:2], base[-1]] if len(base) > 2 and base[1].get("role") == "system" else [base[0], base[-1]]
         context_tools = discovery.offered(_tools_for_run(run), [])
         if not spec.supports({"tools"}):
             context_tools = []
@@ -771,7 +787,7 @@ class AgentLoop:
 
         def assemble():
             memory = [{"role": "system", "content": "历史摘要（仅作背景）：\n" + summary}] if summary else []
-            return [fixed[0], *memory, *history_messages(pending), fixed[-1]]
+            return [*fixed[:-1], *memory, *history_messages(pending), fixed[-1]]
 
         async def compact():
             nonlocal summary, through, pending, revalidation
@@ -1546,8 +1562,11 @@ class AgentLoop:
                             deferred=options.get("capability_discovery") == 1,
                             genui=bool(get_catalog().get(model) and get_catalog().get(model).supports({"genui"})),
                             genui_tools=bool(get_catalog().get(model) and get_catalog().get(model).supports({"tools"})),
-                        )
-                        + workspace_prompt(
+                        ),
+                    },
+                    {
+                        "role": "system",
+                        "content": workspace_prompt(
                             run.get("project_instructions") or "", run.get("brand") or {}, (run.get("options") or {}).get("template")
                         )
                         + memory_prompt(run.get("memory") or {})
