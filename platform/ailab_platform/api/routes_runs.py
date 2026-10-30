@@ -142,7 +142,7 @@ def validate_run_input(
             raise HTTPException(400, f"技能「{title}」已关闭")
         if name in denied or (candidate and not platform and personal_policy == "disabled"):
             raise HTTPException(400, f"技能「{title}」已被管理员停用")
-        if candidate and not platform and name not in allowed:
+        if candidate and not platform and (name not in allowed or allowed[name]["file_id"] != candidate["file_id"]):
             approval = db.get(SkillApproval, candidate["file_id"])
             error = candidate.get("error") or "未通过审核"
             if approval and approval.state == "disabled":
