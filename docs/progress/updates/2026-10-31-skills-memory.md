@@ -1,6 +1,6 @@
 # 技能、办公、记忆与轻量计算（2026-10-31）
 
-需求见 [需求](../../architecture/design/2026-10-30-skills-memory-requirements.md)，合同见 [实施设计](../../architecture/design/2026-10-30-skills-memory-implementation.md)。分支 `feat/skills-memory`，base `main@b35ef6e`，未 push、未合并。后端由 Codex（gpt-6.1-terra high）实现、测试与部署，Portal 由 Claude 实现并做总审。分轮记录：[I1](2026-10-30-skills-memory-integration-i1.md)、[I2](2026-10-31-skills-memory-integration-i2.md)、[I3](2026-10-31-skills-memory-integration-i3.md)。
+需求见 [需求](../../architecture/design/2026-10-30-skills-memory-requirements.md)，合同见 [实施设计](../../architecture/design/2026-10-30-skills-memory-implementation.md)。分支 `feat/skills-memory`，base `main@b35ef6e`，已经 PR #110 合并（`8cd9792`）。后端由 Codex（gpt-6.1-terra high）实现、测试与部署，Portal 由 Claude 实现并做总审。分轮记录：[I1](2026-10-30-skills-memory-integration-i1.md)、[I2](2026-10-31-skills-memory-integration-i2.md)、[I3](2026-10-31-skills-memory-integration-i3.md)。
 
 ## 交付
 
