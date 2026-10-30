@@ -8,6 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
 from .contracts.inbox import QueuedMessageOut
+from .contracts.skills import SkillSelection
 from .contracts.templates import TemplateSelection
 
 
@@ -77,7 +78,8 @@ class RunCreate(PromptRequest):
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"  # chat: answer in words only, no tools, never a sandbox
-    skill: str | None = Field(default=None, max_length=40)  # a skill the user picked (implies work)
+    skill: str | None = Field(default=None, max_length=64)
+    skills: list[SkillSelection] | None = None
 
 
 class RunVersions(BaseModel):
@@ -210,7 +212,8 @@ class MessageCreate(PromptRequest):
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"
-    skill: str | None = Field(default=None, max_length=40)
+    skill: str | None = Field(default=None, max_length=64)
+    skills: list[SkillSelection] | None = None
 
 
 class ConversationOut(UTCModel):
@@ -239,6 +242,8 @@ class ConversationActive(BaseModel):
 
 
 class RunEdit(PromptRequest):
+    skill: str | None = Field(default=None, max_length=64)
+    skills: list[SkillSelection] | None = None
     file_ids: list[str] | None = Field(default=None, max_length=50)
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] | None = None

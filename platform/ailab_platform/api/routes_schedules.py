@@ -23,6 +23,7 @@ from ..locks import user_critical_section
 from ..models import Conversation, Run, ScheduledTask, User, utcnow
 from ..schemas import ORMModel
 from ..skill_policy import run_disabled_skills
+from ..skill_registry import resolve_name
 from .routes_runs import skills, start_run, usable_personal
 
 router = APIRouter(prefix="/v1/schedules", tags=["schedules"])
@@ -73,8 +74,6 @@ class TaskInput(NoTemplate):
             ZoneInfo(self.timezone)
         except (ZoneInfoNotFoundError, ValueError):
             raise ValueError("时区无效") from None
-        if self.skill:
-            self.mode = "work"
         return self
 
 
@@ -130,7 +129,8 @@ def validate_options(db, user, body):
     if not spec or not spec.available:
         raise HTTPException(422, "模型不可用")
     if body.skill and (
-        body.skill in run_disabled_skills(db, user) or not (skills().get(body.skill) or usable_personal(db, user).get(body.skill))
+        resolve_name(body.skill) in run_disabled_skills(db, user)
+        or not (skills().get(resolve_name(body.skill)) or usable_personal(db, user).get(body.skill))
     ):
         raise HTTPException(422, "技能不存在或已关闭")
 

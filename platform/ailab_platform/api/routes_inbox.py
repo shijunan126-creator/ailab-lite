@@ -92,6 +92,9 @@ def mark_read(body: NotificationRead, user: User = Depends(current_user), db: Se
 @router.post("/v1/conversations/{conversation_id}/queue", response_model=QueuedMessageOut, status_code=201)
 def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(current_user), db: Session = Depends(get_db)):
     # Freeze the validated request, not mutable queue content or the current active run/model.
+    from .routes_runs import reject_both_skill_fields
+
+    reject_both_skill_fields(body)
     digest = hashlib.sha256(body.model_dump_json(exclude={"client_send_id"}).encode()).hexdigest()
 
     def replay():
@@ -132,6 +135,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             (leaf.options or {}).get("mode", "work") if body.steer else body.mode if "mode" in body.model_fields_set else None,
             None if body.steer else body.skill,
             body.template,
+            selections=None if body.steer else body.skills,
             conversation=conv,
             turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
         )
@@ -173,11 +177,21 @@ def owned_queue(db, conversation_id, qid, user):
 
 @router.patch("/v1/conversations/{conversation_id}/queue/{qid}", response_model=QueuedMessageOut)
 def patch_queue(conversation_id: str, qid: str, body: QueuePatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from .routes_runs import reject_both_skill_fields
+
+    reject_both_skill_fields(body)
     with user_critical_section(db, user.id):
         row = owned_queue(db, conversation_id, qid, user)
-        if body.prompt is not None:
-            validate_run_input(db, user, body.prompt, row.model, row.file_ids, row.options.get("mode", "work"), row.options.get("skill"))
-            row.prompt = body.prompt
+        prompt = body.prompt if body.prompt is not None else row.prompt
+        selections = body.skills if body.skills is not None else None if body.skill is not None else row.options.get("skills")
+        skill = body.skill if body.skill is not None else row.options.get("skill") if selections is None else None
+        if body.skills is not None and body.skill is not None:
+            raise HTTPException(400, "不能同时指定 skill 和 skills")
+        _, options, _ = validate_run_input(
+            db, user, prompt, row.model, row.file_ids, row.options.get("mode", "work"), skill, selections=selections
+        )
+        row.options = {**{k: v for k, v in row.options.items() if k not in {"skill", "skill_title", "skills"}}, **options}
+        row.prompt = prompt
         if body.steer and row.options.get("template"):
             raise HTTPException(400, "模板只能用于新一轮，不能插话")
         if body.steer is not None:

@@ -4,6 +4,7 @@ from sqlalchemy import select
 
 from .agent.prompts import skills
 from .models import SkillPolicy
+from .skill_registry import BASE_SKILLS
 
 
 def effective_policy(db, user):
@@ -19,4 +20,4 @@ def effective_policy(db, user):
 
 def run_disabled_skills(db, user):
     denied, _ = effective_policy(db, user)
-    return sorted(denied | set((user.settings or {}).get("disabled_skills") or []))
+    return sorted((denied | set((user.settings or {}).get("disabled_skills") or [])) - set(BASE_SKILLS))

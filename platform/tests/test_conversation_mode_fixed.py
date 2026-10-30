@@ -41,7 +41,7 @@ def test_omitted_mode_inherits_chat(api):  # noqa: F811
     assert response.json()["options"]["mode"] == "chat"
 
 
-@pytest.mark.parametrize("values", [{"skill": "pptx"}, {"template": {"id": "unused"}}])
+@pytest.mark.parametrize("values", [{"template": {"id": "unused"}}])
 def test_work_inputs_cannot_switch_chat(api, values):  # noqa: F811
     conv, run = conversation(api, "chat")
     _finish(api, run["id"], "done")
@@ -54,7 +54,9 @@ def test_queue_mode_is_fixed(api, mode, other):  # noqa: F811
     url = f"/v1/conversations/{conv}/queue"
     conflict(api.post(url, headers=AUTH, json={"prompt": "queued", "mode": other}))
     if mode == "chat":
-        conflict(api.post(url, headers=AUTH, json={"prompt": "queued", "skill": "pptx"}))
+        selected = api.post(url, headers=AUTH, json={"prompt": "queued", "skill": "pptx"})
+        assert selected.status_code == 201
+        api.delete(f"{url}/{selected.json()['id']}", headers=AUTH)
     queued = api.post(url, headers=AUTH, json={"prompt": "queued"})
     assert queued.status_code == 201, queued.text
     assert queued.json()["mode"] == mode

@@ -167,6 +167,12 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
             {
                 **({"steers": steers} if steers else {}),
                 "prompt": turn.prompt,
+                "skills": (turn.options or {}).get("skills")
+                or (
+                    [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]
+                    if (turn.options or {}).get("skill")
+                    else []
+                ),
                 "reply": for_history(reply, keep_ui=turn.id == earlier[-1].id, limit=HISTORY_CHARS),
                 "status": turn.status,
                 "files": files,

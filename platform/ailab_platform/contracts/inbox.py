@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
+from .skills import SkillSelection
 from .templates import TemplateSelection
 
 
@@ -56,7 +57,8 @@ class QueueCreate(BaseModel):
     file_ids: list[str] = Field(default_factory=list, max_length=50)
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] = "work"
-    skill: str | None = Field(default=None, max_length=40)
+    skill: str | None = Field(default=None, max_length=64)
+    skills: list[SkillSelection] | None = Field(default=None)
     steer: bool = False
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
 
@@ -69,6 +71,8 @@ class QueueCreate(BaseModel):
 
 
 class QueuePatch(BaseModel):
+    skill: str | None = Field(default=None, max_length=64)
+    skills: list[SkillSelection] | None = Field(default=None)
     prompt: str | None = Field(default=None, min_length=1, max_length=8000)
     steer: bool | None = None
 
@@ -90,6 +94,7 @@ class QueuedMessageOut(InboxUTC):
     model: str
     mode: Literal["chat", "work"]
     skill: str | None
+    skills: list[dict] | None = None
     steer: bool
     state: Literal["queued", "steered", "started", "canceled"]
     created_at: datetime
