@@ -5,6 +5,10 @@
 - 恢复个人技能的冻结版本必须以当前 Run 的 checkpoint 精确绑定并重新核对用户、删除和审核策略；仅依赖当前技能 head 会在更新后卡住沙箱。读取和解包必须有大小上限，失效时警告并继续。
 - `0042` 降级前按用户和本地日期确定性保留一条记录；同日多批是正常数据。当前没有外键引用 `memory_dream_runs`。
 - Prompt 稳定系统段与动态项目/记忆段分别位于首两个消息；测试历史、恢复图片和摘要时不能继续假设用户消息紧接第一段系统提示。`client_calls` 测试清理须先于 runs。
+- 浏览器 QuickJS（`@jitl/quickjs-wasmfile-release-sync`）的 `runtime.setMemoryLimit` 不生效（该构建拿不到 `malloc_usable_size`），死循环分配能涨到数百 MB。硬上限要用 `newVariant(variant, { wasmMemory: new WebAssembly.Memory({ initial: 256, maximum: 256 + MB*16 }) })`；超限后丢弃整个模块重新加载。CSP 需 `'wasm-unsafe-eval'`。
+- Portal 里被 `tests/*.test.mjs`（node-test-compat）加载的文件只能单文件转译，不能有相对 import（如 `lib/work-process.ts`），否则报 `Failed to resolve module specifier`；共享常量放在被加载的文件里。
+- 用 `git hash-object -w` + `update-index --cacheinfo` 分批暂存同一文件的部分改动时，路径必须相对仓库根；在 `platform/portal` 下执行会在根目录生成错误的索引项。
+- Codex 委派：`--approve-for-me` 不能与 `-s` 同用；`codex exec resume` 没有该参数和 `-C`，用 `-c sandbox_mode=… -c approval_policy=…` 并在 worktree 目录里运行；需要写 `.git` 时加 `--add-dir <repo>/.git`。
 - Portal Skill `kind` 是 `base|builtin|personal`，个人文件格式是 `kind_file`；旧 Skills 页面按 `kind == md|zip` 比较会使生产构建失败。E2E 的 composer 是 contenteditable，技能 chip 不能用 fill 覆盖。
 
 ## 2026-10-30 收起侧栏与手机字号
