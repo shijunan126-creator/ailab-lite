@@ -43,7 +43,11 @@ def test_claim_result_and_replay(api):  # noqa: F811
     result = create(api, rid, headers).json()
     assert result["result"] == {"ok": True, "value": "2", "logs": "", "ms": 2, "source": "browser"}
     with SessionLocal() as db:
-        events = list(db.scalars(select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type.in_(["client.call", "client.result"]))))
+        events = list(
+            db.scalars(
+                select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type.in_(["client.call", "client.result"])).order_by(RunEvent.seq)
+            )
+        )
         assert [e.type for e in events] == ["client.call", "client.result"]
 
 
