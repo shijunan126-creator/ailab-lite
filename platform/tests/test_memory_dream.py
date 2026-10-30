@@ -209,7 +209,8 @@ def test_extraction_prompt_distinguishes_durable_memory_from_task_requests() -> 
     from ailab_platform.memory_dream.prompts import EXTRACT_SYSTEM
 
     assert "an unrelated new conversation weeks later" in EXTRACT_SYSTEM
-    assert "at least two different conversations" in EXTRACT_SYSTEM
+    assert "Never infer a preference from repeated behaviour" in EXTRACT_SYSTEM
+    assert "at least two different conversations" not in EXTRACT_SYSTEM
     assert "换个方式可视化" in EXTRACT_SYSTEM
     assert "empty facts list is normal" in EXTRACT_SYSTEM
 

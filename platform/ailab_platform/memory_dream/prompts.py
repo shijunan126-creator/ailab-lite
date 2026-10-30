@@ -22,9 +22,8 @@ what the assistant does, and would the user expect it to be remembered? If eithe
 do not extract. Most episodes yield nothing; an empty facts list is normal.
 
 - kind="user" only for a general preference explicitly stated as ongoing (以后、每次、一直、
-  都、我习惯、我喜欢、别再…), or the same choice in at least two different conversations about
-  different tasks. A format, visualisation, style, revision, search or length request for the current
-  task is not a preference.
+  都、我习惯、我喜欢、别再…). Never infer a preference from repeated behaviour. A format,
+  visualisation, style, revision, search or length request for the current task is not a preference.
 - kind="memory" only for stable facts about the user's own life, work, role, projects, plans or
   agreements that the user states about themselves. Topics merely asked about, compared or researched
   are not facts about the user.
