@@ -635,3 +635,18 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     page.locator(".skill-row", has_text="周报助手").locator("button:has-text('删除')").click()
     confirm_action(page)
     page.wait_for_function("() => !document.body.innerText.includes('周报助手')", timeout=15000)
+
+
+def test_collapsed_sidebar_gives_back_its_column_and_phone_fields_never_zoom(logged_in, stack):
+    page = logged_in
+    page.get_by_role("button", name="收起侧栏").click()
+    page.wait_for_function("() => document.querySelector('.main')?.getBoundingClientRect().left === 0")
+    box = page.locator(".main-top").bounding_box()
+    assert box["x"] <= 12 and box["y"] <= 12, box
+    page.get_by_role("button", name="展开侧栏").click()
+    page.set_viewport_size({"width": 390, "height": 780})
+    page.goto(stack.portal + "/files")
+    # iOS zooms into a field under 16px and leaves the page zoomed
+    fields = "input[type=text], input:not([type]), textarea"
+    sizes = page.evaluate("(q) => [...document.querySelectorAll(q)].map((e) => getComputedStyle(e).fontSize)", fields)
+    assert sizes and set(sizes) == {"16px"}, sizes

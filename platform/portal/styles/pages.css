@@ -270,13 +270,9 @@ input[type="number"]:focus { outline: none; }
 .memory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: start; padding: 12px; }
 .memory-row .memory-text { grid-column: 1 / -1; width: 100%; min-width: 0; }
 .memory-entry-meta { min-width: 0; align-items: center; }
-.memory-entry-meta select { max-width: 180px; width: 100%; min-width: 0; }
-.memory-filters input { border: 1px solid var(--border); border-radius: 8px; background: var(--popover); color: var(--foreground); padding: 10px 12px; font: inherit; }
 .memory-foot { z-index: 1; padding: 10px 12px; border-radius: 8px; box-shadow: 0 -1px 0 var(--border); }
 .memory-list { margin-bottom: 8px; }
 @media (max-width: 600px) {
   .memory-row { grid-template-columns: minmax(0, 1fr) auto auto; }
   .memory-entry-meta { grid-column: 1 / -1; }
-  .memory-filters input { flex-basis: 100%; width: 100%; }
-  .memory-entry-meta select { max-width: 100%; width: auto; }
 }

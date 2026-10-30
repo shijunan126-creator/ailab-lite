@@ -1,5 +1,15 @@
 # HANDOFF
 
+## 2026-10-30 收起侧栏与手机字号
+
+- 收起 Grid 侧栏必须将列宽变量 `--side-w` 设为 0；只隐藏侧栏不会归还列宽。
+- 手机文本字段必须至少 16px，避免 iOS 聚焦缩放；统一规则在 app.css，不要设置更小字段字号并期待它在手机生效。
+- 手机字号统一来自 tokens.css 的媒体块，不新增组件级手机字号。
+
+## 2026-10-30 按钮与固定菜单定位
+
+- 不要用 `transform` 定位按钮：全局 `button:not(:disabled):active { transform: none }` 会在按压时取消定位。改用 inset/margin，或独立的 `translate` 属性。固定菜单统一经 `placeMenu()` 定位，并保留 `.pop-menu.fixed { min-width: 0 }`：基础 `.pop-menu` 的 `min-width: 200px` 会覆盖较小的内联宽度，造成锚点偏移。根因与回归见[记录](docs/progress/updates/2026-10-30-menu-motion.md)。
+
 ## 2026-10-30 PR #108 CI 时序隔离
 
 - 共享测试数据库里的 outbox 会被 API lifespan dispatcher 扫描；只替换 `preview_dispatch.get_queue` 无法隔离缩略图测试，后台 tick 会发布其他测试遗留任务。需要显式控制 tick 的测试在启动 TestClient 前替换 `main.dispatch_forever`，保留严格队列断言；恢复/后台调度仍由其他合同测试覆盖。

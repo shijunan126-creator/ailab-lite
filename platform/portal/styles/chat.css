@@ -307,8 +307,6 @@ button.pr-row:active { transform: none; }
 .chip-spin.light { width: 14px; height: 14px; border-width: 2px; }
 /* ---------- phones ---------- */
 @media (max-width: 760px) {
-  /* 16px stops iOS from zooming into a field (and leaving the page zoomed and pannable after typing) */
-  input, textarea, select, .composer-box textarea { font-size: var(--text-md); }
   /* pinned to the visible viewport: the keyboard pushes nothing off screen and nothing stays pushed after it closes */
   .chat-layout { position: fixed; left: 0; right: 0; top: var(--app-top, 0px); height: var(--app-h, 100dvh); }
   /* the fixed layout is its own stacking layer under the floating sidebar/new/inbox buttons: keep a row free for them,
@@ -447,9 +445,6 @@ button.pr-row:active { transform: none; }
 .viewer-mode:hover, .viewer-mode.on:hover { background: var(--subtle); color: var(--foreground); border-color: var(--border-strong); }
 .reader-body[hidden] { display: none; }
 .reader-frame { min-height: 0; }
-.memory-filters { display: flex; gap: 8px; align-items: center; margin: 20px 0; flex-wrap: wrap; }
-.memory-filters input { flex: 1; min-width: 160px; }
-.memory-filters select { max-width: 180px; }
 .memory-entry-meta { color: var(--muted-foreground); font-size: var(--text-xs); display: flex; gap: 6px; flex-wrap: wrap; }
 .memory-source { flex-basis: 100%; overflow-wrap: anywhere; }
 .memory-source blockquote { margin: 4px 0; padding-left: 8px; border-left: 2px solid var(--border); }

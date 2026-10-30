@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconPlus, IconTrash } from "../../../components/icons";
 import DreamPanel from "../../../components/memory/dream-panel";
+import Select from "../../../components/select";
 import Switch from "../../../components/switch";
 import { api } from "../../../lib/api";
 import { timeAgo } from "../../../lib/format";
@@ -301,10 +302,8 @@ export default function MemoryPage() {
           <DreamPanel initial={stored.dream} onChanged={() => load()} />
           <div className="memory-filters">
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索记忆" aria-label="搜索记忆" />
-            <select value={scope} onChange={(e) => setScope(e.target.value)} aria-label="记忆范围">
-              <option value="all">全部范围</option><option value="global">账号</option>
-              {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
+            <Select value={scope} onChange={setScope} aria-label="记忆范围"
+              options={[{ value: "all", label: "全部范围" }, { value: "global", label: "账号" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]} />
             <button className="secondary sm" aria-pressed={showHistory} onClick={() => setShowHistory(!showHistory)}>{showHistory ? "收起历史" : "查看历史"}</button>
           </div>
 
@@ -341,10 +340,9 @@ export default function MemoryPage() {
                         />
                         {d.content.length > ENTRY_CHARS * 0.9 ? <span className="hint memory-count">{d.content.length}/{ENTRY_CHARS}</span> : null}
                         <div className="memory-entry-meta">
-                          <select aria-label="条目范围" value={d.project_id || ""} disabled={saving}
-                            onChange={(e) => setDraft((list) => list.map((v) => v.key === d.key ? { ...v, project_id: e.target.value || null } : v))}>
-                            <option value="">账号</option>{projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                          </select>
+                          <Select aria-label="条目范围" value={d.project_id || ""} disabled={saving}
+                            options={[{ value: "", label: "账号" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
+                            onChange={(value) => setDraft((list) => list.map((v) => v.key === d.key ? { ...v, project_id: value || null } : v))} />
                           {prior?.invalid_at ? <span>已失效</span> : null}
                           {d.status === "review" ? <button className="secondary sm" onClick={() => setDraft((list) => list.map((v) => v.key === d.key ? { ...v, status: "active" } : v))}>确认使用</button> : null}
                           {prior?.evidence_run_ids?.length ? <button className="secondary sm" onClick={() => inspectSource(prior.id)}>查看来源</button> : null}

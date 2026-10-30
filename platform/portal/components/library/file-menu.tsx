@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createPortal } from "react-dom";
 import { api, errorMessage, filesByIds } from "../../lib/api";
 import { projectsChanged } from "../../lib/projects";
+import { placeMenu } from "../../lib/menu-place";
 import { IconAsk, IconFolderInput, IconMore, IconShare } from "../icons";
 import ShareDialog from "../share-dialog";
 import TextExtraction from "./text-extraction";
@@ -24,7 +25,7 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
   projectId?: string | null;
   onMoved?: (projectId: string | null) => void;
 }) {
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [at, setAt] = useState<React.CSSProperties | null>(null);
   const [dialog, setDialog] = useState<"move" | "share" | "extract" | null>(null);
   const [error, setError] = useState("");
   // where the file is now: it may have moved since the page was drawn (here, in the library, with its conversation)
@@ -70,9 +71,7 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
     if (at) return setAt(null);
     setError("");
     current();
-    const r = button.current!.getBoundingClientRect();
-    const below = r.bottom + 4 + MENU_H < window.innerHeight;
-    setAt({ top: below ? r.bottom + 4 : r.top - 4 - MENU_H, left: Math.max(8, Math.min(window.innerWidth - MENU_W - 8, r.right - MENU_W)) });
+    setAt(placeMenu(button.current!.getBoundingClientRect(), MENU_W, MENU_H));
   }
 
   async function move(target: string | null) {
@@ -96,7 +95,7 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
       {error ? <span role="alert" className="alert error">{error}</span> : null}
       {at
         ? createPortal(
-            <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+            <div ref={menu} className="pop-menu fixed" role="menu" style={at}>
               <button
                 className="menu-item"
                 role="menuitem"

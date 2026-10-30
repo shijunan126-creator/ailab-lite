@@ -1,8 +1,18 @@
 # 当前工作
 
+## 菜单、收起侧栏与手机字号修复（2026-10-30）
+
+`fix/sidebar-menu-motion`，base `origin/main@e586ff6`，[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109)。用户本轮明确授权提交、push、仅 Portal 增量部署，以及最终 head CI 全绿后 squash 合并。Claude 完成 UI 修复、验证并担任最终审阅；Codex 维护记录与发布。
+
+范围：菜单按压跳动/锚定、收起侧栏归还列宽、手机统一字号及字段防缩放、记忆页共享 Select 与控件高度。根因、检查与未测边界见[本轮记录](updates/2026-10-30-menu-motion.md)。Codex Ruff check/format 与 Portal 96 项通过；完整检查交给 PR CI。
+
+**部署**：`ui-fix-1865bd458cbb`，源 `be68280` 的固定产品树；只重建 Portal、复用其他镜像。sync/build-portal/up/health/portal-http/migration 均 exit 0；12 服务 running、配置健康检查均 healthy，Portal HTTP 200，Alembic head/database 0039。无备份、部署后浏览器/模型或其他测试。
+
+**下一步**：部署记录已提交后等待最终 head CI 全绿并 squash 合并。P6 与组件目录扩展仍待用户决定，多块穿插尚未付费评测，不自动推进。
+
 ## GenUI 组件目录 v2 与按需披露（2026-10-30）
 
-`feat/frontend-genui`，base `origin/main@97793e6`，全部未提交。结果、修复与检查见[本轮记录](updates/2026-10-30-genui-registry-v2.md)，决定见 [ADR 0029](../architecture/adr/0029-genui-registry-v2.md)。
+`feat/frontend-genui` 已经 [PR #108](https://github.com/shijunan126-creator/ailab-lite/pull/108) squash 合并至 main，合并提交 `e586ff6`。结果、修复与检查见[本轮记录](updates/2026-10-30-genui-registry-v2.md)，决定见 [ADR 0029](../architecture/adr/0029-genui-registry-v2.md)。
 
 **已完成**
 - 目录由 21 个组件扩到 57 个，派生数字由组件计算。
@@ -22,10 +32,9 @@
 - 引文与判定见[评测报告](updates/2026-10-30-genui-real-model-eval.md#迭代-v7)。
 
 **发布进展**
-- 本轮用户明确授权部署、提交、push、PR、CI 修复及绿灯后 squash 合并；覆盖下方历史授权限制。
-- 已增量部署 `genui-v2-695dbf2d51d0`（多块穿插提示词及再生成契约）：migration-before、sync、build-backend、build-portal、up、migration-after、health 均 exit 0；12 服务 running，配置的健康检查全部 healthy，Portal HTTP 200，Alembic head/database 0039。只重建后端共享镜像和 Portal，未备份，未执行部署后浏览器/模型/其他测试。
-- 提交前 Ruff check/format 通过（464 文件），Portal `npm test` 96 项通过；全套交给 CI。已 fetch，`origin/main` 仍为 `97793e6`。
-- [PR #108](https://github.com/shijunan126-creator/ailab-lite/pull/108) 已创建并用于合并；首轮 CI 的 SQLite 队列隔离与 E2E hydration 竞态已定位并修复，详见[本轮发布记录](updates/2026-10-30-genui-registry-v2.md#pr-108-ci-发布跟进)。后续流程为 CI 全绿后 squash 合并，再由 Claude 审阅；最终 CI、合并状态与 SHA 以 PR 为准。本机无需再次部署。P6 20/23 与多块未付费评测的边界不变。
+- PR #108 已 squash 合并为 `e586ff6`，9 个 CI job 全绿：SQLite 1655、PostgreSQL 1706、E2E 142。
+- 已部署的 `genui-v2-695dbf2d51d0` 与该 main 基线的产品代码一致；后续 CI 修复只改测试与文档，无需为 #108 再次部署。历史部署结果见[发布记录](updates/2026-10-30-genui-registry-v2.md#多块穿插用户要求放宽)。菜单修复部署状态见上节。
+- P6 为 20/23，多块穿插未付费评测；下一步由用户决定 P6 与目录扩展。
 
 ## GenUI 对话模式空白块与 HtmlArtifact 坏 JS（2026-10-30）
 
@@ -46,7 +55,7 @@
   - Work 追问用 CSS 柱状条替代图表：模型遵循问题，与 P6 同类。
   - 趋势结论写错：模型遵循问题，与 P6 同类。
 
-**下一步**：用户决定 P6 的处理方式，以及是否扩充组件目录（偏差条、时间轴等）。提交和 PR 需要用户授权。
+**下一步**：用户决定 P6 的处理方式，以及是否扩充组件目录（偏差条、时间轴等）；多块穿插尚未付费评测。相关代码已随 PR #108 合并。
 
 ## P5 收尾、ui-state、HtmlArtifact 与 P6 根因修复（2026-10-30）
 
@@ -73,7 +82,7 @@
 
 **下一步**
 - 用户体验本机部署，决定 P6 的处理方式。
-- 提交、PR、合并需用户当次授权。
+- 相关代码已随 PR #108 合并；后续产品改动与部署需用户另行要求。
 
 ## GenUI P6 默认模型评测（2026-10-30）
 
