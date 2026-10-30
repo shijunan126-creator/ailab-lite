@@ -4,7 +4,7 @@
 
 `feat/sm-integration`，base `46abc67`；本轮不 push、不部署、不修改 Portal 产品代码。后端草稿通知、持久元数据和活动草稿复用已实现；检查、Portal 产品问题和截图缺口见 [I2 记录](updates/2026-10-31-skills-memory-integration-i2.md)。
 
-下一步：修正过期 E2E 后在最终提交以 GNU PATH 跑完整验证，交给 Claude 修复草稿直接保存的点击竞态和记忆批次悬停样式；完成剩余截图并清理本轮专用 PG/Redis。
+下一步：在最终交接提交以 GNU PATH 复跑全套以确认精确 SHA，并清理本轮专用 PG/Redis；交给 Claude 修复草稿直接保存的点击竞态和记忆批次悬停样式。
 
 ## Skills / memory 集成 I1（2026-10-30）
 

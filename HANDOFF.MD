@@ -936,3 +936,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 合法交互不限Select/Slider/Toggle：Tabs也能满足原地切换，不能被评分器当成缺控件。SVG命名空间URI仅是标识符；字面量告警保留，但要与资源URL/联网分开。
 - 组件/表达式接手计算仍会有语义错误：先核对比较的主客体，再判断多/少；HTML测周期需累计模拟时间，不能相减不同帧内的局部时间。parser通过不代表HTML实现正确。
 - 本次用户要求保留`/tmp/ailab-genui-eval/`原始回答供审阅，不能沿用旧轮“结束清理”流程。证据只链接[第五轮](docs/progress/updates/2026-10-30-genui-real-model-eval.md#第五轮catalog-v2)，不复制原始输出进仓库。
+
+## 2026-10-31 草稿编辑与测试
+
+- 草稿文本编辑后直接点击「保存新版本」会先触发 textarea blur 保存；blur 期间禁用按钮可能取消点击，未发 confirm。修复要保证一次点击等待已在途写入后继续确认，见 I2 记录的失败截图。通用 `button:hover` 色值也会覆盖记忆批次标题，浅色主题需检查悬停对比度。
+- PostgreSQL 不保证无 `ORDER BY` 的事件查询顺序；协议顺序用 `RunEvent.seq`。本机 mock 沙箱测试必须在 PATH 前置 GNU coreutils/findutils，macOS `stat` 不支持 `-c`。性能断言和 Portal 异步加载测试避免与其他整套检查并发。
