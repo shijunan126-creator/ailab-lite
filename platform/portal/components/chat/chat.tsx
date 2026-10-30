@@ -1,5 +1,6 @@
 "use client";
 
+import type { SkillPick } from "../../lib/message-parts";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -683,12 +684,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
 
   /** Send an earlier message again, changed; the conversation continues from there. */
-  async function edit(run: Run, prompt: string): Promise<boolean> {
+  async function edit(run: Run, prompt: string, skills: SkillPick[]): Promise<boolean> {
     setError("");
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/edit`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, file_ids: null, model: model || null, mode: null }),
+        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, mode: null }),
       });
       branchTo(run, fresh);
       return true;

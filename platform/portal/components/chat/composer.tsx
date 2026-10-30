@@ -1,16 +1,18 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import { FileItem, ModelInfo, Skill, api } from "../../lib/api";
+import { FileItem, ModelInfo, Skill, SkillKind, api, skillKind } from "../../lib/api";
+import { MAX_SKILLS, matchSkills, plainText, skillsOf, toPayload, type Part } from "../../lib/message-parts";
 import type { SendOptions } from "../../lib/outbox";
 import { canRetry, existingUpload, forgetUpload, retryUpload, startUpload, useUploads } from "../../lib/uploads";
 import { usePopover } from "../../lib/use-popover";
 import AttachmentChip from "./attachment-chip";
-import { IconArrowUp, IconChart, IconChevronRight, IconLibrary, IconPlus, IconQueue, IconSearch, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload, IconX } from "../icons";
+import { IconArrowUp, IconCheck, IconChevronRight, IconFileText, IconLibrary, IconPlus, IconQueue, IconSearch, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
 import type { Mode } from "./mode-toggle";
 import ModelMenu from "./model-menu";
+import RichInput, { skillTone, type RichInputHandle, type SlashState } from "./rich-input";
 import TemplatePicker, { TemplateChoice } from "./template-picker";
 
 export type Attachment = Pick<FileItem, "id" | "filename" | "status" | "content_type" | "size">;
@@ -18,34 +20,42 @@ export type { SendOptions };
 /** What the composer hands over: the message, frozen at the moment of sending (HLD §16.2). */
 export type Outgoing = { prompt: string; attachments: string[]; options: SendOptions; steer: boolean };
 
-const LINE = 24; // px: the textarea's line height
-const MAX_LINES = 4; // then the text scrolls inside the box instead of pushing the answer away
-
-type SkillButton = {
-  key: string;
-  skill: string;
-  label: string;
-  Icon: (p: { size?: number }) => React.ReactElement;
-  placeholder: string;
-  template?: string; // what "/" fills in: the questions this skill needs answered
-};
-
-// What the skill buttons ask for. `skill` is the platform skill that gets preloaded for the model.
-const SKILLS: SkillButton[] = [
-  { key: "ppt", skill: "pptx", label: "PPT 生成", Icon: IconSlides, placeholder: "说说主题、页数和给谁看，比如：给新员工介绍公司的 10 页 PPT", template: "主题：\n页数：\n给谁看：" },
-  { key: "excel", skill: "xlsx", label: "Excel 表格", Icon: IconSheet, placeholder: "说说表里要有什么，比如：三个区域 7～9 月销售额，带合计和柱状图", template: "表格内容：\n时间范围：\n需要的图表：" },
-  { key: "data", skill: "xlsx", label: "数据分析", Icon: IconChart, placeholder: "上传数据文件（Excel / CSV），说说想分析什么、要什么图表", template: "想分析的问题：\n关注的指标：" },
-];
-
+const LINE = 24; // px: the message box's line height
 const VISIBLE_SKILLS = 3; // in the + menu; the rest behind 更多技能, searchable once the list is long
 const SEARCH_FROM = 8;
 
+/** A skill as the composer offers it. */
+export type Offered = { name: string; title: string; kind: SkillKind; fileId: string | null; template: boolean };
+
+const ICONS: Record<string, (p: { size?: number }) => React.ReactElement> = {
+  "platform.pptx": IconSlides,
+  pptx: IconSlides,
+  "platform.xlsx": IconSheet,
+  "platform.docx": IconFileText,
+  "platform.pdf": IconFileText,
+};
+export const skillIcon = (name: string) => ICONS[name] || IconSparkles;
+
+// What the + menu shows first: the user's own and optional skills; the four office skills work without being picked
+const RANK: Record<SkillKind, number> = { builtin: 0, personal: 1, base: 2 };
+
+export function offeredSkills(list: Skill[]): Offered[] {
+  return list
+    .filter((s) => s.enabled && !s.implicit && !s.error)
+    .map((s) => ({
+      name: s.name,
+      title: s.title || s.name,
+      kind: skillKind(s),
+      fileId: skillKind(s) === "personal" ? s.file_id || null : null,
+      template: s.extras ? s.extras.includes("ppt_template") : s.name === "pptx" || s.name === "platform.pptx",
+    }));
+}
 
 export default function Composer({
   models,
   mode,
-  onMode,
-  modeLocked,
+  onMode: _onMode,
+  modeLocked: _modeLocked,
   model,
   onModel,
   busy,
@@ -61,8 +71,7 @@ export default function Composer({
 }: {
   mode: Mode;
   onMode: (next: Mode) => void;
-  // an existing conversation keeps the mode it started with (a fork is how it changes), so skills that need Work
-  // are offered only where they can run
+  // an existing conversation keeps the mode it started with (a fork is how it changes); skills work in both modes
   modeLocked?: boolean;
   models: ModelInfo[];
   model: string;
@@ -79,7 +88,7 @@ export default function Composer({
   initialFiles?: Attachment[]; // e.g. "talk about these" from the library
   context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
 }) {
-  const [text, setText] = useState("");
+  const [parts, setParts] = useState<Part[]>([]);
   const [files, setFiles] = useState<string[]>([]); // upload keys, in the order attached
   const uploads = useUploads((st) => st.uploads);
   const menu = usePopover();
@@ -88,39 +97,21 @@ export default function Composer({
   const [library, setLibrary] = useState(false);
   const [error, setError] = useState("");
   const [expanded, setExpanded] = useState(false);
-  const expandedAt = useRef(0); // the text length that made the box grow: it shrinks again only well below it
   const [dragging, setDragging] = useState(false);
-  const [picked, setPickedState] = useState<SkillButton | null>(null);
-  const [template, setTemplate] = useState<TemplateChoice | null>(null); // only with the PPT skill; none by default
-  const area = useRef<HTMLTextAreaElement | null>(null);
+  // the PPT template belongs to the chip it was chosen for: removing that chip drops it
+  const [template, setTemplateState] = useState<{ owner: string; choice: TemplateChoice } | null>(null);
+  const input = useRef<RichInputHandle | null>(null);
 
-  const [enabled, setEnabled] = useState<Set<string> | null>(null); // skills switched on in the 技能 page
-  const [mine, setMine] = useState<Skill[]>([]); // the user's own skills (personal, switched on)
-  const [builtin, setBuiltin] = useState<Skill[]>([]); // platform skills switched on
-  const [slashAt, setSlashAt] = useState(0); // highlighted entry of the "/" menu
-  const [slashClosed, setSlashClosed] = useState(false); // Escape: the "/" stays text
+  const [skills, setSkills] = useState<Offered[]>([]);
+  const [slash, setSlash] = useState<SlashState>(null);
+  const [slashAt, setSlashAt] = useState(0); // highlighted entry of the "/" list
+  const [slashClosed, setSlashClosed] = useState(false); // Escape: this "/" stays text
 
   useEffect(() => {
     api<Skill[]>("/v1/skills")
-      .then((list) => {
-        setEnabled(new Set(list.filter((s) => s.enabled).map((s) => s.name)));
-        setMine(list.filter((s) => s.scope === "personal" && s.enabled));
-        setBuiltin(list.filter((s) => s.scope === "builtin" && s.enabled && !s.implicit));
-      })
-      .catch(() => setEnabled(null));
+      .then((list) => setSkills(offeredSkills(list).sort((a, b) => RANK[a.kind] - RANK[b.kind])))
+      .catch(() => setSkills([]));
   }, []);
-
-  // skills make files, which is Work: a new conversation switches to it, a Chat conversation does not offer them
-  const skillsOffered = !modeLocked || mode === "work";
-
-  function setPicked(next: SkillButton | null) {
-    setPickedState(next);
-    if (next?.skill !== "pptx") setTemplate(null);
-  }
-
-  useEffect(() => {
-    if (mode === "chat") setPickedState(null);
-  }, [mode]);
 
   useEffect(() => {
     if (!menu.open) {
@@ -129,11 +120,37 @@ export default function Composer({
     }
   }, [menu.open]);
 
-  function pick(s: SkillButton) {
+  const text = plainText(parts);
+  const chips = skillsOf(parts);
+  const inMessage = new Set(chips.map((c) => c.name));
+  // the template goes with a PPT chip, and only Work can use a template file
+  const templateOwner = mode === "work" ? chips.find((c) => skills.find((s) => s.name === c.name)?.template)?.name ?? null : null;
+  const activeTemplate = template && template.owner === templateOwner ? template.choice : null;
+  useEffect(() => {
+    if (template && template.owner !== templateOwner) setTemplateState(null);
+  }, [template, templateOwner]);
+
+  function addSkill(s: Offered, fromSlash: boolean) {
+    setError("");
+    if (inMessage.has(s.name)) {
+      if (fromSlash) input.current?.completeSlash(null);
+      input.current?.flash(s.name);
+      return;
+    }
+    if (chips.length >= MAX_SKILLS) {
+      if (fromSlash) input.current?.completeSlash(null);
+      setError(`一条消息最多 ${MAX_SKILLS} 个技能`);
+      return;
+    }
+    const ref = { name: s.name, title: s.title, fileId: s.fileId };
+    if (fromSlash) input.current?.completeSlash(ref);
+    else input.current?.insertSkill(ref);
+  }
+
+  function toggleFromMenu(s: Offered) {
     menu.setOpen(false);
-    setPicked(picked?.key === s.key ? null : s);
-    if (mode === "chat" && !modeLocked) onMode("work");
-    area.current?.focus();
+    if (inMessage.has(s.name)) input.current?.removeSkill(s.name);
+    else addSkill(s, false);
   }
   const picker = useRef<HTMLInputElement | null>(null);
 
@@ -147,29 +164,23 @@ export default function Composer({
     for (const f of list) existingUpload(f);
   }
 
-  // One line when empty; grows with the text up to MAX_LINES, then scrolls inside; shrinks as the text is deleted.
-  // Measured before paint, so the box never shows a frame at the wrong height.
+  // One line when empty; past a line the text takes the whole first row and the controls move under it. The box
+  // itself grows to four lines and then scrolls (max-height in CSS); measured before paint.
+  const expandedAt = useRef(0); // the text length that made the box grow: it shrinks again only well below it
   useLayoutEffect(() => {
-    const el = area.current;
+    const el = input.current?.element();
     if (!el) return;
-    if (!text) {
-      el.style.height = "";
-      el.style.overflowY = "hidden";
+    if (!parts.length) {
       if (expanded) setExpanded(false);
       return;
     }
-    el.style.height = "auto";
-    const pad = el.offsetHeight - el.clientHeight + parseFloat(getComputedStyle(el).paddingTop) + parseFloat(getComputedStyle(el).paddingBottom);
-    const max = LINE * MAX_LINES + pad;
-    const full = el.scrollHeight + (el.offsetHeight - el.clientHeight);
-    el.style.height = `${Math.min(full, max)}px`;
-    el.style.overflowY = full > max ? "auto" : "hidden";
-    const wraps = text.includes("\n") || full > LINE * 1.5 + pad;
-    if (!expanded && wraps) {
-      expandedAt.current = text.length;
+    const oneLine = el.scrollHeight <= LINE * 1.5 + 12;
+    const size = text.length + chips.length * 6;
+    if (!expanded && (text.includes("\n") || !oneLine)) {
+      expandedAt.current = size;
       setExpanded(true);
-    } else if (expanded && !text.includes("\n") && text.length < expandedAt.current * 0.85 && full <= LINE * 1.5 + pad) setExpanded(false);
-  }, [text, expanded]);
+    } else if (expanded && !text.includes("\n") && size < expandedAt.current * 0.85 && oneLine) setExpanded(false);
+  }, [parts, text, chips.length, expanded]);
 
   const isImage = (key: string) => {
     const u = uploads[key];
@@ -197,62 +208,43 @@ export default function Composer({
     forgetUpload(key);
   }
 
-  const templateWaiting = !!template?.pending;
+  const templateWaiting = !!activeTemplate?.pending;
   const canSend = !!text.trim() && !busy && !templateWaiting && !!model;
   const queueing = running && !!queueable;
 
-  const skills: SkillButton[] = skillsOffered
-    ? [
-        ...SKILLS.filter((s) => !enabled || enabled.has(s.skill)),
-        ...mine.map((m) => ({ key: `my-${m.name}`, skill: m.name, label: m.title, Icon: IconSparkles, placeholder: `说说要做什么，会按你的「${m.title}」技能来做` })),
-        ...builtin
-          .filter((b) => !SKILLS.some((s) => s.skill === b.name))
-          .map((b) => ({ key: `skill-${b.name}`, skill: b.name, label: b.title, Icon: IconSparkles, placeholder: b.description || `说说要做什么，会按「${b.title}」技能来做` })),
-      ]
-    : [];
   const shown = skills.slice(0, VISIBLE_SKILLS);
-  const found = skillQuery.trim() ? skills.filter((s) => `${s.label} ${s.skill}`.toLowerCase().includes(skillQuery.trim().toLowerCase())) : skills;
-  // "/" at the start of an empty message lists the skills; picking one fills in what it needs
-  const slashQuery = /^\/(\S*)$/.exec(text)?.[1];
-  const slashItems: SkillButton[] =
-    slashQuery === undefined || slashClosed ? [] : skills.filter((b) => !slashQuery || `${b.label} ${b.skill}`.toLowerCase().includes(slashQuery.toLowerCase()));
+  const found = skillQuery.trim() ? matchSkills(skills, skillQuery) : skills;
+  // "/" at the start or after a space lists the skills; with no match the list says so and Enter sends as usual
+  const slashItems: Offered[] = slash && !slashClosed ? matchSkills(skills, slash.query) : [];
+  const slashOpen = !!slash && !slashClosed && (slashItems.length > 0 || !!slash.query);
   const slashIndex = Math.min(slashAt, Math.max(0, slashItems.length - 1));
-
-  function choose(s: SkillButton) {
-    setPicked(s);
-    if (mode === "chat" && !modeLocked) onMode("work");
-    const template = s.template || "";
-    setText(template);
-    requestAnimationFrame(() => {
-      const el = area.current;
-      if (!el) return;
-      el.focus();
-      const end = template.indexOf("\n");
-      const caret = end < 0 ? template.length : end;
-      el.setSelectionRange(caret, caret);
-    });
-  }
 
   async function send(steer = false) {
     if (!canSend || (running && !queueable)) return;
     if (overImages) { setError("每轮最多附加5张图片"); return; }
-    const options: SendOptions = picked ? { mode: "work", skill: picked.skill, ...(template ? { template: template.ref } : {}) } : { mode };
-    const message: Outgoing = { prompt: text.trim(), attachments: files, options, steer };
+    const { prompt, skills: picks } = toPayload(parts);
+    const options: SendOptions = { mode, ...(picks.length ? { skills: picks } : {}), ...(activeTemplate ? { template: activeTemplate.ref } : {}) };
+    const message: Outgoing = { prompt, attachments: files, options, steer };
     // the message is handed over and the box is free for the next one at once; its files go with it
     const ok = await onSubmit(message);
     if (ok) {
-      setText("");
+      input.current?.clear();
       setFiles([]);
-      setPicked(null); // a skill is for one message; the mode stays
+      setTemplateState(null); // skills and their template are for one message; the mode stays
       setError("");
     }
   }
 
-  const skillItem = (s: SkillButton) => (
-    <button key={s.key} type="button" role="menuitemradio" aria-checked={picked?.key === s.key} className={`menu-item ${picked?.key === s.key ? "on" : ""}`} onClick={() => pick(s)}>
-      <s.Icon size={16} /> <span className="grow truncate">{s.label}</span>
-    </button>
-  );
+  const skillItem = (s: Offered) => {
+    const Icon = skillIcon(s.name);
+    const on = inMessage.has(s.name);
+    return (
+      <button key={s.name} type="button" role="menuitemcheckbox" aria-checked={on} className={`menu-item ${on ? "on" : ""}`} onClick={() => toggleFromMenu(s)}>
+        <Icon size={16} /> <span className="grow skill-menu-name">{s.title}</span>
+        {on ? <IconCheck size={14} /> : null}
+      </button>
+    );
+  };
 
   return (
     <div
@@ -279,26 +271,28 @@ export default function Composer({
           ))}
         </div>
       ) : null}
-      {picked ? (
+      {templateOwner ? (
         <div className="skill-tag-row">
-          <span className="skill-tag">
-            <picked.Icon size={14} /> <span className="truncate">{picked.label}</span>
-            <button type="button" className="skill-tag-x" aria-label={`取消 ${picked.label}`} onClick={() => setPicked(null)}>
-              <IconX size={12} />
-            </button>
-          </span>
-          {picked.skill === "pptx" ? <TemplatePicker value={template} onChange={setTemplate} projectId={projectId} /> : null}
+          <TemplatePicker value={activeTemplate} onChange={(choice) => setTemplateState(choice ? { owner: templateOwner, choice } : null)} projectId={projectId} />
         </div>
       ) : null}
-      {slashItems.length ? (
+      {slashOpen ? (
         <div className="slash-menu" id="slash-menu" role="listbox" aria-label="技能">
-          {slashItems.map((s, i) => (
-            <button key={s.key} type="button" role="option" aria-selected={i === slashIndex} className={`slash-item ${i === slashIndex ? "on" : ""}`}
-              onMouseMove={() => setSlashAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => choose(s)}>
-              <span className="slash-icon"><s.Icon size={15} /></span>
-              <span className="slash-label">{s.label}</span>
-            </button>
-          ))}
+          {slashItems.length ? (
+            slashItems.map((s, i) => {
+              const Icon = skillIcon(s.name);
+              return (
+                <button key={s.name} type="button" role="option" aria-selected={i === slashIndex} className={`slash-item ${i === slashIndex ? "on" : ""} ${inMessage.has(s.name) ? "picked" : ""}`}
+                  onMouseMove={() => setSlashAt(i)} onMouseDown={(e) => e.preventDefault()} onClick={() => addSkill(s, true)}>
+                  <span className={`slash-icon tone-${skillTone(s.name)}`}><Icon size={15} /></span>
+                  <span className="slash-label">{s.title}</span>
+                  {inMessage.has(s.name) ? <IconCheck size={14} /> : null}
+                </button>
+              );
+            })
+          ) : (
+            <div className="menu-empty" role="presentation">没有匹配的技能</div>
+          )}
         </div>
       ) : null}
       <div className={`composer-main ${expanded ? "expanded" : ""}`}>
@@ -359,37 +353,34 @@ export default function Composer({
             }}
           />
         ) : null}
-        <textarea
-          ref={area}
-          rows={1}
+        <RichInput
+          ref={input}
+          className="composer-input"
+          ariaLabel="消息"
           autoFocus={autoFocus}
-          aria-label="消息"
-          placeholder={picked?.placeholder || placeholder || "发消息…"}
-          value={text}
-          onChange={(e) => {
-            setText(e.target.value);
+          placeholder={placeholder || "发消息…"}
+          onChange={(next) => {
+            setParts(next);
+            if (error) setError("");
+          }}
+          onSlash={(next) => {
+            setSlash(next);
             setSlashAt(0);
-            if (!e.target.value.startsWith("/")) setSlashClosed(false);
+            setSlashClosed(false);
           }}
-          aria-expanded={slashItems.length > 0}
-          aria-controls={slashItems.length ? "slash-menu" : undefined}
-          onPaste={(e) => {
-            // a screenshot or a copied file goes in as an attachment, text pastes as usual
-            const pasted = Array.from(e.clipboardData.files);
-            if (!pasted.length) return;
-            e.preventDefault();
-            upload(pasted);
-          }}
+          slashOpen={slashOpen}
+          controls={slashOpen ? "slash-menu" : undefined}
+          onPasteFiles={upload}
           onKeyDown={(e) => {
-            if (slashItems.length && !e.nativeEvent.isComposing) {
-              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            if (slashOpen && !e.nativeEvent.isComposing) {
+              if (slashItems.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
                 e.preventDefault();
                 setSlashAt((slashIndex + (e.key === "ArrowDown" ? 1 : slashItems.length - 1)) % slashItems.length);
                 return;
               }
-              if (e.key === "Enter" || e.key === "Tab") {
+              if (slashItems.length && (e.key === "Enter" || e.key === "Tab")) {
                 e.preventDefault();
-                choose(slashItems[slashIndex]);
+                addSkill(slashItems[slashIndex], true);
                 return;
               }
               if (e.key === "Escape") {
@@ -402,7 +393,7 @@ export default function Composer({
             // Alt/Option+Enter while an answer runs: hand the message to that answer now
             if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault();
-              send(queueing && e.altKey && !template); // a message with a template starts its own answer
+              send(queueing && e.altKey && !activeTemplate && !chips.length); // skills and templates start their own answer
             }
           }}
         />

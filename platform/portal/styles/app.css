@@ -233,15 +233,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .composer-box:focus-within { border-color: color-mix(in srgb, var(--ring) 55%, var(--border-strong)); }
 .composer-box.dragging { border-color: var(--primary); border-style: dashed; background: color-mix(in srgb, var(--selected) 60%, var(--popover)); }
 .composer-main { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
-.composer-main > textarea {
-  flex: 1 1 auto; align-self: center; min-width: 0; height: 36px; max-height: none; margin: 0; padding: 6px 4px; border: 0; border-radius: 0; resize: none;
-  background: transparent; box-shadow: none; font-size: var(--text-md); line-height: 24px; overflow-y: hidden; color: var(--foreground);
+.composer-main > .composer-input {
+  flex: 1 1 auto; align-self: center; min-width: 0; min-height: 36px; max-height: calc(24px * 4 + 12px); margin: 0; padding: 6px 4px;
+  font-size: var(--text-md); line-height: 24px; overflow-y: auto; overscroll-behavior: contain; color: var(--foreground);
 }
-.composer-main > textarea:focus { box-shadow: none; outline: none; }
-.composer-main > textarea::placeholder { color: var(--faint-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* more than a line: the text takes the whole first row, the controls sit under it */
 .composer-main.expanded { flex-wrap: wrap; }
-.composer-main.expanded > textarea { order: -1; flex-basis: 100%; padding: 4px 8px 2px; }
+.composer-main.expanded > .composer-input { order: -1; flex-basis: 100%; padding: 4px 8px 2px; }
 .composer-main.expanded .composer-right { margin-left: auto; }
 .composer-right { display: inline-flex; align-items: center; gap: 4px; margin-left: 0; flex: none; min-width: 0; }
 .composer-right .hint { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
@@ -277,16 +275,42 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .menu-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
 .menu-empty { padding: 16px 10px; color: var(--faint-foreground); font-size: var(--text-sm); text-align: center; }
 
-/* the chosen skill: one removable tag above the text */
+/* the message box: text with skill chips in it (components/chat/rich-input.tsx) */
+.rich-input { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; cursor: text; caret-color: var(--primary); }
+.rich-input.is-empty::before {
+  content: attr(data-placeholder); position: absolute; left: inherit; right: 4px; color: var(--faint-foreground); pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-chip {
+  --chip: var(--primary);
+  display: inline-flex; align-items: center; gap: 1px; max-width: 100%; height: 22px; margin: 0 1px; padding: 0 2px 0 8px; vertical-align: 1px;
+  border-radius: 999px; background: color-mix(in srgb, var(--chip) 13%, var(--popover)); color: color-mix(in srgb, var(--chip) 78%, var(--foreground));
+  font-size: var(--text-sm); font-weight: 600; line-height: 22px; white-space: nowrap; cursor: default; user-select: all; -webkit-user-select: all;
+}
+.skill-chip.tone-1 { --chip: var(--series-1); } .skill-chip.tone-2 { --chip: var(--series-2); } .skill-chip.tone-3 { --chip: var(--series-3); }
+.skill-chip.tone-4 { --chip: var(--series-4); } .skill-chip.tone-5 { --chip: var(--series-5); } .skill-chip.tone-6 { --chip: var(--series-6); }
+.skill-chip-label { min-width: 0; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
+.skill-chip.open { height: auto; min-height: 22px; white-space: normal; }
+.skill-chip.open .skill-chip-label { max-width: none; overflow-wrap: anywhere; }
+.skill-chip-x {
+  display: grid; place-items: center; flex: none; width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: inherit; opacity: .55;
+}
+.skill-chip-x:hover { opacity: 1; background: color-mix(in srgb, var(--chip) 18%, transparent); color: inherit; }
+span.skill-chip:not(:has(.skill-chip-x)) { padding-right: 8px; cursor: pointer; }
+.skill-chip.flash { animation: chip-flash .9s var(--ease); }
+@keyframes chip-flash { 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip) 35%, transparent); } }
+.composer-menu .skill-menu-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-menu .menu-item.on { color: var(--foreground); }
+/* above the text: what a chip brings with it (the PPT template) */
 .skill-tag-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 2px 4px 6px; min-width: 0; }
-.skill-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--selected); color: var(--selected-foreground); font-size: var(--text-sm); font-weight: 550; }
-.skill-tag svg { flex: none; }
-.skill-tag-x { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; }
-.skill-tag-x:hover { background: color-mix(in srgb, var(--primary) 16%, transparent); color: inherit; }
 .slash-menu { left: 6px; bottom: calc(100% + 10px); border-radius: var(--radius); box-shadow: var(--shadow-overlay); }
+.slash-menu .menu-empty { padding: 10px; }
 .slash-item { min-height: 38px; font-size: var(--text-ui); }
-.slash-icon { background: var(--subtle); color: var(--muted-foreground); }
-.slash-item.on .slash-icon { background: var(--selected); color: var(--primary); }
+.slash-icon { background: color-mix(in srgb, var(--chip, var(--muted-foreground)) 12%, var(--popover)); color: var(--chip, var(--muted-foreground)); }
+.slash-icon.tone-1 { --chip: var(--series-1); } .slash-icon.tone-2 { --chip: var(--series-2); } .slash-icon.tone-3 { --chip: var(--series-3); }
+.slash-icon.tone-4 { --chip: var(--series-4); } .slash-icon.tone-5 { --chip: var(--series-5); } .slash-icon.tone-6 { --chip: var(--series-6); }
+.slash-item.picked { color: var(--muted-foreground); }
 
 /* attachments: a bounded band above the text, each state in the tile's top-right corner (HLD §16.3) */
 .composer-attachments { max-height: 84px; overflow-y: auto; margin: 0 0 6px; padding: 2px; gap: 6px; }
@@ -339,7 +363,11 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 @media (max-width: 760px) {
   /* iOS zooms into any field under 16px and leaves the page zoomed, so every text field is 16px on phones whatever its own
      rule says; this invariant is the one place !important is right */
-  input:not([type="checkbox"], [type="radio"], [type="range"], .project-name-input), textarea, select { font-size: 1rem !important; }
+  input:not([type="checkbox"], [type="radio"], [type="range"], .project-name-input), textarea, select, .rich-input { font-size: 1rem !important; }
+  /* the phone list uses the width: a long skill name wraps instead of being cut */
+  .slash-menu { width: calc(100% - 12px); max-height: min(320px, 45dvh); }
+  .slash-label { white-space: normal; overflow-wrap: anywhere; }
+  .skill-chip-label { max-width: 9em; }
 }
 @media (pointer: coarse) {
   .composer-main .icon-btn.plus, .send-btn { width: 40px; height: 40px; }

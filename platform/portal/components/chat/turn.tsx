@@ -6,7 +6,10 @@ import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "..
 import { formatBytes, isTerminal } from "../../lib/format";
 import { placeMenu } from "../../lib/menu-place";
 import { startingState } from "../../lib/ui-state";
-import { splitTurn, turnSources, type Source } from "../../lib/work-process";
+import { SKILL_TITLES, splitTurn, turnSources, type Source } from "../../lib/work-process";
+import { fromPayload, plainText, sentSkills, toPayload, type Part, type SkillPick } from "../../lib/message-parts";
+import MessageText from "./message-text";
+import RichInput, { type RichInputHandle } from "./rich-input";
 import CopyButton from "../copy-button";
 import { IconBranch, IconChevronRight, IconCornerDownRight, IconDownload, IconFile, IconPencil, IconRetry, IconTemplate } from "../icons";
 import { ExtTile } from "../library/file-tile";
@@ -32,7 +35,8 @@ function runError(error: string): string {
 }
 
 const PREVIEWABLE = /\.(pptx|xlsx|docx|pdf|html?|xhtml)$/i;
-const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
+// skills of runs from before titles were frozen with the run
+const titleOf = (name: string) => SKILL_TITLES[name];
 
 export type ForkMode = "chat" | "work";
 
@@ -193,7 +197,7 @@ export default memo(function Turn({
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
   onRetry?: (run: Run) => Promise<void>;
-  onEdit?: (run: Run, prompt: string) => Promise<boolean>;
+  onEdit?: (run: Run, prompt: string, skills: SkillPick[]) => Promise<boolean>;
   onSwitch?: (runId: string) => Promise<void>;
   locked?: boolean; // an answer is being written: versions and edits wait for it
   forkModes?: ForkMode[];
@@ -215,7 +219,7 @@ export default memo(function Turn({
   const [historyError, setHistoryError] = useState("");
   const [moreHistory, setMoreHistory] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [editing, setEditing] = useState<string | null>(null);
+  const [editing, setEditing] = useState<true | null>(null);
   const [switching, setSwitching] = useState(false);
   const historyCursor = useRef(0);
   const historyRequest = useRef<AbortController | null>(null);
@@ -260,28 +264,27 @@ export default memo(function Turn({
   for (const it of shown || []) if (it.kind === "steer" && !steered.some((x) => x.id === it.id)) steered.push({ id: it.id, prompt: it.prompt });
 
   const viewport = useViewport(!terminal || editing !== null || !!files.viewer, 240);
+  const promptParts = useMemo(() => fromPayload(run.prompt, sentSkills(run.options), titleOf), [run.prompt, run.options]);
   return (
     <div ref={viewport.ref} style={viewport.style} data-mounted={viewport.visible} className={`turn ${fresh ? "fresh" : ""}`} id={`turn-${run.id}`}>
       {viewport.visible ? <>
       <div className={`msg user ${editing !== null ? "editing" : ""}`}>
         {editing !== null ? (
-          <EditBox value={editing} onChange={setEditing} onCancel={() => setEditing(null)} onSubmit={async () => {
-            const prompt = editing.trim();
+          <EditBox initial={promptParts} onCancel={() => setEditing(null)} onSubmit={async (next) => {
+            const { prompt, skills } = toPayload(next);
             if (!prompt || !onEdit) return;
-            if (prompt === run.prompt.trim()) return setEditing(null);
-            if (await onEdit(run, prompt)) setEditing(null);
+            const before = toPayload(promptParts);
+            if (prompt === before.prompt && JSON.stringify(skills) === JSON.stringify(before.skills)) return setEditing(null);
+            if (await onEdit(run, prompt, skills)) setEditing(null);
           }} />
         ) : (
-          <div className="bubble">{run.prompt}</div>
+          <div className="bubble"><MessageText parts={promptParts} /></div>
         )}
-        {run.options?.skill ? (
+        {run.template ? (
           <div className="attach-row">
-            <span className="attach-chip">{SKILL_LABEL[run.options.skill] || run.options.skill_title || run.options.skill}</span>
-            {run.template ? (
-              <span className="attach-chip" title={run.template.name}>
-                <IconTemplate size={13} /> {run.template.name}
-              </span>
-            ) : null}
+            <span className="attach-chip" title={run.template.name}>
+              <IconTemplate size={13} /> {run.template.name}
+            </span>
           </div>
         ) : null}
         {run.input_files?.length ? (
@@ -303,7 +306,7 @@ export default memo(function Turn({
           <div className="msg-actions">
             <CopyButton text={run.prompt} label="复制消息" />
             {onEdit && done && !locked ? (
-              <button type="button" className="icon-btn act" aria-label="编辑消息" title="编辑" onClick={() => setEditing(run.prompt)}>
+              <button type="button" className="icon-btn act" aria-label="编辑消息" title="编辑" onClick={() => setEditing(true)}>
                 <IconPencil size={15} />
               </button>
             ) : null}
@@ -409,34 +412,23 @@ export default memo(function Turn({
   );
 });
 
-/** Editing a sent message in place: Enter sends it as a new version, Escape keeps the old one. */
-function EditBox({ value, onChange, onCancel, onSubmit }: { value: string; onChange: (v: string) => void; onCancel: () => void; onSubmit: () => Promise<void> }) {
-  const area = useRef<HTMLTextAreaElement | null>(null);
+/** Editing a sent message in place, chips and all: Enter sends it as a new version, Escape keeps the old one. */
+function EditBox({ initial, onCancel, onSubmit }: { initial: Part[]; onCancel: () => void; onSubmit: (parts: Part[]) => Promise<void> }) {
+  const input = useRef<RichInputHandle | null>(null);
+  const [parts, setParts] = useState<Part[]>(initial);
   const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.focus();
-    el.setSelectionRange(el.value.length, el.value.length);
-  }, []);
-  useEffect(() => {
-    const el = area.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${Math.min(320, el.scrollHeight)}px`;
-  }, [value]);
   async function submit() {
     if (busy) return;
     setBusy(true);
     try {
-      await onSubmit();
+      await onSubmit(input.current?.parts() ?? parts);
     } finally {
       setBusy(false);
     }
   }
   return (
     <div className="edit-box">
-      <textarea ref={area} value={value} rows={1} aria-label="编辑消息" onChange={(e) => onChange(e.target.value)}
+      <RichInput ref={input} className="edit-input" ariaLabel="编辑消息" initial={initial} autoFocus onChange={setParts}
         onKeyDown={(e) => {
           if (e.key === "Escape") onCancel();
           if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -446,7 +438,7 @@ function EditBox({ value, onChange, onCancel, onSubmit }: { value: string; onCha
         }} />
       <div className="edit-actions">
         <button type="button" className="secondary sm" onClick={onCancel} disabled={busy}>取消</button>
-        <button type="button" className="sm" onClick={submit} disabled={busy || !value.trim()}>发送</button>
+        <button type="button" className="sm" onClick={submit} disabled={busy || !plainText(parts).trim()}>发送</button>
       </div>
     </div>
   );

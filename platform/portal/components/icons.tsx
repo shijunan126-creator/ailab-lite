@@ -1,9 +1,9 @@
 // The one place icons come from: lucide, under the names the Portal already uses. Import icons from here only.
 import {
   ArchiveRestore, ArrowLeft, CodeXml, ArrowUp, Bell, BookOpen, Check, ChevronDown, ChevronRight, Clock, Copy, CornerDownRight, Download, File, FilePen,
-  Folder, FolderInput, FolderPlus, GitBranch, Globe, History, Image, LayoutGrid, LayoutTemplate, Library, Lightbulb, Link, ListPlus, LogOut,
+  FileText, FilePlus, Folder, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, History, Image, LayoutGrid, LayoutTemplate, Library, Lightbulb, Link, ListPlus, LogOut,
   MessageCircleQuestion, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, PinOff, Plus, Presentation, Printer, RotateCcw,
-  Search, Send, Settings, Share2, Shield, Sheet, Sparkles, Square, SquarePen, Star, BarChart3, Terminal, Trash2, Upload, Users, X,
+  Search, Send, ImageUp, Settings, Share2, Shield, Sheet, Sparkles, Square, SquarePen, Star, BarChart3, Terminal, Trash2, Upload, Users, X,
   type LucideIcon,
 } from "lucide-react";
 
@@ -71,3 +71,7 @@ export const IconCornerDownRight = icon(CornerDownRight);
 export const IconAsk = icon(MessageCircleQuestion);
 export const IconTemplate = icon(LayoutTemplate);
 export const IconGrid = icon(LayoutGrid);
+export const IconFileText = icon(FileText);
+export const IconFilePlus = icon(FilePlus);
+export const IconFolderOpen = icon(FolderOpen);
+export const IconImageUp = icon(ImageUp);
