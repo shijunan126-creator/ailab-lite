@@ -19,7 +19,7 @@ SEARCH = {
         },
     },
 }
-CORE = {"ui_components", "search_capabilities", "load_skill", "recall_history", "ask_user", "update_plan"}
+CORE = {"ui_components", "search_capabilities", "load_skill", "recall_history", "ask_user", "update_plan", "run_js"}
 ALIASES = {
     "执行": "exec",
     "计算": "run_js",
