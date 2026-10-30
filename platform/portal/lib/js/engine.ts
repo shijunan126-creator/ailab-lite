@@ -1,7 +1,8 @@
 // Runs one small JavaScript program in QuickJS (WebAssembly): no network, no files, no DOM, no host objects — only
 // `input` and `console.log`. QuickJS itself stops the program at the deadline (interrupt handler), at the memory
-// limit and at the stack limit; the page terminates the worker this runs in if even that fails. The result is the
-// program's completion value (its last expression), as JSON.
+// limit and at the stack limit; the page terminates the worker this runs in if even that fails. The result is what
+// the code returns, as JSON: models write it as a function body (`return`, top-level `await`), which a script cannot
+// parse, so such code runs as the body of an async function; a plain script gives its last expression.
 
 import variant from "@jitl/quickjs-wasmfile-release-sync";
 import { newQuickJSWASMModuleFromVariant, newVariant, shouldInterruptAfterDeadline, type QuickJSContext, type QuickJSHandle, type QuickJSWASMModule } from "quickjs-emscripten-core";
@@ -66,7 +67,13 @@ export function run(engineModule: QuickJSWASMModule, job: JsJob): JsReply {
     raw.dispose();
     vm.unwrapResult(vm.evalCode("globalThis.input = JSON.parse(globalThis.__input); delete globalThis.__input;")).dispose();
 
-    const evaluated = vm.evalCode(job.code, "main.js");
+    let evaluated = vm.evalCode(job.code, "main.js");
+    if (failed(evaluated) && vm.dump(evaluated.error)?.name === "SyntaxError") {
+      // parsing fails before anything runs, so the second form cannot repeat a side effect; a function body accepts
+      // every script statement, so if it fails too its error is the one to report
+      evaluated.error.dispose();
+      evaluated = vm.evalCode(`(async () => {\n${job.code}\n})()`, "main.js");
+    }
     if (failed(evaluated)) {
       const err = vm.dump(evaluated.error);
       evaluated.error.dispose();
