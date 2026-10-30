@@ -1,5 +1,11 @@
 # 当前工作
 
+## Skills / memory 集成 I2（2026-10-31）
+
+`feat/sm-integration`，base `46abc67`；本轮不 push、不部署、不修改 Portal 产品代码。后端草稿通知、持久元数据和活动草稿复用已实现；检查、Portal 产品问题和截图缺口见 [I2 记录](updates/2026-10-31-skills-memory-integration-i2.md)。
+
+下一步：修正过期 E2E 后在最终提交以 GNU PATH 跑完整验证，交给 Claude 修复草稿直接保存的点击竞态和记忆批次悬停样式；完成剩余截图并清理本轮专用 PG/Redis。
+
 ## Skills / memory 集成 I1（2026-10-30）
 
 `feat/sm-integration`，基线 `efa99a1`（`feat/skills-memory` 四包合并）；本轮用户授权后端修复、验证和本地提交，不 push、不部署，不修改 Portal。后端修复及实际验证见 [I1 记录](updates/2026-10-30-skills-memory-integration-i1.md)。旧章节中的分支和发布授权不适用于本任务。

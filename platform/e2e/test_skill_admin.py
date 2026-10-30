@@ -7,7 +7,7 @@ from .conftest import login
 
 pytestmark = pytest.mark.e2e
 
-PPT = "演示文稿（PPT）"
+PPT = "PPT 设计"
 PERSONAL = "个人技能"
 STATE_LABEL = {"allowed": "允许", "review": "需审核", "disabled": "禁用"}
 

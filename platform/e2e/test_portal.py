@@ -290,7 +290,7 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     # the render runs in the background, so its note may land in a later group of steps: open them all
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
-    assert "读取技能 pptx" in steps and "交付文件" in steps
+    assert "读取技能" in steps and "PPT" in steps and "交付文件" in steps
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
@@ -505,7 +505,7 @@ def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
     _wait_for_turns(page, 1, seconds=120)
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
+    page.locator(".steps .step-label", has_text="已加载技能").first.wait_for()
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "已加载技能" in steps and "交付文件" in steps
     filename = page.locator(".file-card .name").inner_text()
@@ -583,7 +583,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
     page = logged_in
     page.click(".side-link:has-text('技能')")
     page.wait_for_url(stack.portal + "/skills")
-    ppt = page.locator(".skill-row", has_text="演示文稿（PPT）")
+    ppt = page.locator(".skill-row", has_text="PPT 设计")
     switch = ppt.locator("button[role=switch]")
     assert switch.get_attribute("aria-checked") == "true"
     try:
@@ -591,7 +591,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             switch.click()
         assert saved.value.ok  # the optimistic switch alone does not mean the setting was saved
         page.reload()  # saved on the server, not just in the page
-        page.wait_for_selector(".skill-row.off:has-text('演示文稿（PPT）')")
+        page.wait_for_selector(".skill-row.off:has-text('PPT 设计')")
         page.goto(stack.portal + "/")
         page.get_by_role("button", name="添加附件", exact=True).click()
         menu = page.locator(".composer-menu")
@@ -606,7 +606,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/skills/pptx")) as restored:
                 switch.click()
             assert restored.value.ok
-            page.wait_for_selector(".skill-row:not(.off):has-text('演示文稿（PPT）')")
+            page.wait_for_selector(".skill-row:not(.off):has-text('PPT 设计')")
 
 
 def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, stack, tmp_path) -> None:
@@ -620,7 +620,7 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     row = page.locator(".skill-row", has_text="周报助手")
     row.wait_for(timeout=40000)
     assert row.locator("button[role=switch]").get_attribute("aria-checked") == "true"
-    assert name in row.inner_text()
+    assert row.get_by_role("button", name="编辑 周报助手").is_visible()
 
     page.goto(stack.portal + "/files")
     page.get_by_role("button", name="上传", exact=True).wait_for()
@@ -631,9 +631,9 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     _pick_skill(page, "周报助手")
     _start_conversation(page, "帮我写本周周报")
     _wait_for_turns(page, 1)
-    assert page.inner_text(".msg.user .attach-chip") == "周报助手"
+    assert page.inner_text(".msg.user .skill-chip") == "周报助手"
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
+    page.locator(".steps .step-label", has_text="已加载技能").first.wait_for()
     assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file
