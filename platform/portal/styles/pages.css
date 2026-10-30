@@ -155,21 +155,6 @@ input[type="number"]:focus { outline: none; }
   .memory-row:hover .memory-remove, .memory-row:focus-within .memory-remove { opacity: 1; }
   .memory-row.paused .memory-pause { opacity: 1; }
 }
-.dream-panel { margin-bottom: 28px; padding-bottom: 8px; }
-.dream-window { padding: 0 16px 8px; }
-.dream-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; }
-.dream-runs { border-top: 1px solid var(--border); margin-top: 4px; }
-.dream-run + .dream-run { border-top: 1px solid var(--border); }
-.dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
-.dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
-.dream-run-head:hover { background: var(--subtle); }
-.dream-status { font-size: var(--text-2xs); padding: 2px 7px; border-radius: 999px; background: var(--subtle); color: var(--muted-foreground); }
-.dream-status.applied { color: var(--ok, #22863a); }
-.dream-status.failed { color: var(--destructive); }
-.dream-detail { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
-.dream-change { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); line-height: 1.5; }
-.dream-op { flex: none; font-size: var(--text-2xs); color: var(--primary); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
-.dream-journal { white-space: pre-wrap; }
 @keyframes sheet-in { from { opacity: .4; transform: translateY(28px); } }
 /* admin: context compaction */
 .context-settings { max-width: 640px; }
