@@ -222,6 +222,18 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .send-failed .link { font-size: var(--text-sm); font-weight: 600; padding: 0; }
 .send-failed .link.muted { color: var(--muted-foreground); font-weight: 500; }
 
+/* back to the newest message: shown only after the reader scrolls up, floating just above the composer */
+.to-bottom {
+  position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 2; width: 36px; height: 36px; min-height: 0; margin: 0 auto; padding: 0;
+  display: grid; place-items: center; border-radius: 50%; border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--popover) 78%, transparent); color: var(--muted-foreground);
+  -webkit-backdrop-filter: blur(8px) saturate(1.4); backdrop-filter: blur(8px) saturate(1.4); box-shadow: var(--shadow-sm);
+  opacity: 0; scale: .85; pointer-events: none; transition: opacity var(--t) var(--ease), scale var(--t) var(--ease), color var(--t-fast);
+}
+.to-bottom.shown { opacity: 1; scale: 1; pointer-events: auto; }
+.to-bottom:hover { background: var(--popover); color: var(--foreground); }
+@media (pointer: coarse) { .to-bottom { width: 40px; height: 40px; } }
+
 /* ---------- composer: one line when empty, grows to four, then scrolls inside (HLD §16.5) ---------- */
 .composer-dock { padding: 6px 24px max(16px, env(safe-area-inset-bottom)); max-width: 832px; gap: 8px; z-index: 1; }
 .composer-box {
@@ -233,15 +245,13 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .composer-box:focus-within { border-color: color-mix(in srgb, var(--ring) 55%, var(--border-strong)); }
 .composer-box.dragging { border-color: var(--primary); border-style: dashed; background: color-mix(in srgb, var(--selected) 60%, var(--popover)); }
 .composer-main { display: flex; align-items: flex-end; gap: 6px; min-width: 0; }
-.composer-main > textarea {
-  flex: 1 1 auto; align-self: center; min-width: 0; height: 36px; max-height: none; margin: 0; padding: 6px 4px; border: 0; border-radius: 0; resize: none;
-  background: transparent; box-shadow: none; font-size: var(--text-md); line-height: 24px; overflow-y: hidden; color: var(--foreground);
+.composer-main > .composer-input {
+  flex: 1 1 auto; align-self: center; min-width: 0; min-height: 36px; max-height: calc(24px * 4 + 12px); margin: 0; padding: 6px 4px;
+  font-size: var(--text-md); line-height: 24px; overflow-y: auto; overscroll-behavior: contain; color: var(--foreground);
 }
-.composer-main > textarea:focus { box-shadow: none; outline: none; }
-.composer-main > textarea::placeholder { color: var(--faint-foreground); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* more than a line: the text takes the whole first row, the controls sit under it */
 .composer-main.expanded { flex-wrap: wrap; }
-.composer-main.expanded > textarea { order: -1; flex-basis: 100%; padding: 4px 8px 2px; }
+.composer-main.expanded > .composer-input { order: -1; flex-basis: 100%; padding: 4px 8px 2px; }
 .composer-main.expanded .composer-right { margin-left: auto; }
 .composer-right { display: inline-flex; align-items: center; gap: 4px; margin-left: 0; flex: none; min-width: 0; }
 .composer-right .hint { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 4px; }
@@ -277,16 +287,42 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .menu-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 4px; }
 .menu-empty { padding: 16px 10px; color: var(--faint-foreground); font-size: var(--text-sm); text-align: center; }
 
-/* the chosen skill: one removable tag above the text */
+/* the message box: text with skill chips in it (components/chat/rich-input.tsx) */
+.rich-input { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; cursor: text; caret-color: var(--primary); }
+.rich-input.is-empty::before {
+  content: attr(data-placeholder); position: absolute; left: inherit; right: 4px; color: var(--faint-foreground); pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.skill-chip {
+  --chip: var(--primary);
+  display: inline-flex; align-items: center; gap: 1px; max-width: 100%; height: 22px; margin: 0 1px; padding: 0 2px 0 8px; vertical-align: 1px;
+  border-radius: 999px; background: color-mix(in srgb, var(--chip) 13%, var(--popover)); color: color-mix(in srgb, var(--chip) 78%, var(--foreground));
+  font-size: var(--text-sm); font-weight: 600; line-height: 22px; white-space: nowrap; cursor: default; user-select: all; -webkit-user-select: all;
+}
+.skill-chip.tone-1 { --chip: var(--series-1); } .skill-chip.tone-2 { --chip: var(--series-2); } .skill-chip.tone-3 { --chip: var(--series-3); }
+.skill-chip.tone-4 { --chip: var(--series-4); } .skill-chip.tone-5 { --chip: var(--series-5); } .skill-chip.tone-6 { --chip: var(--series-6); }
+.skill-chip-label { min-width: 0; max-width: 11em; overflow: hidden; text-overflow: ellipsis; }
+.skill-chip.open { height: auto; min-height: 22px; white-space: normal; }
+.skill-chip.open .skill-chip-label { max-width: none; overflow-wrap: anywhere; }
+.skill-chip-x {
+  display: grid; place-items: center; flex: none; width: 18px; height: 18px; min-height: 0; padding: 0; border: 0; border-radius: 50%;
+  background: none; color: inherit; opacity: .55;
+}
+.skill-chip-x:hover { opacity: 1; background: color-mix(in srgb, var(--chip) 18%, transparent); color: inherit; }
+span.skill-chip:not(:has(.skill-chip-x)) { padding-right: 8px; cursor: pointer; }
+.skill-chip.flash { animation: chip-flash .9s var(--ease); }
+@keyframes chip-flash { 30% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--chip) 35%, transparent); } }
+.composer-menu .skill-menu-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.composer-menu .menu-item.on { color: var(--foreground); }
+/* above the text: what a chip brings with it (the PPT template) */
 .skill-tag-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 2px 4px 6px; min-width: 0; }
-.skill-tag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 28px; padding: 0 4px 0 10px; border-radius: 999px; background: var(--selected); color: var(--selected-foreground); font-size: var(--text-sm); font-weight: 550; }
-.skill-tag svg { flex: none; }
-.skill-tag-x { display: grid; place-items: center; width: 22px; height: 22px; min-height: 0; padding: 0; border: 0; border-radius: 50%; background: none; color: inherit; }
-.skill-tag-x:hover { background: color-mix(in srgb, var(--primary) 16%, transparent); color: inherit; }
 .slash-menu { left: 6px; bottom: calc(100% + 10px); border-radius: var(--radius); box-shadow: var(--shadow-overlay); }
+.slash-menu .menu-empty { padding: 10px; }
 .slash-item { min-height: 38px; font-size: var(--text-ui); }
-.slash-icon { background: var(--subtle); color: var(--muted-foreground); }
-.slash-item.on .slash-icon { background: var(--selected); color: var(--primary); }
+.slash-icon { background: color-mix(in srgb, var(--chip, var(--muted-foreground)) 12%, var(--popover)); color: var(--chip, var(--muted-foreground)); }
+.slash-icon.tone-1 { --chip: var(--series-1); } .slash-icon.tone-2 { --chip: var(--series-2); } .slash-icon.tone-3 { --chip: var(--series-3); }
+.slash-icon.tone-4 { --chip: var(--series-4); } .slash-icon.tone-5 { --chip: var(--series-5); } .slash-icon.tone-6 { --chip: var(--series-6); }
+.slash-item.picked { color: var(--muted-foreground); }
 
 /* attachments: a bounded band above the text, each state in the tile's top-right corner (HLD §16.3) */
 .composer-attachments { max-height: 84px; overflow-y: auto; margin: 0 0 6px; padding: 2px; gap: 6px; }
@@ -339,7 +375,11 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 @media (max-width: 760px) {
   /* iOS zooms into any field under 16px and leaves the page zoomed, so every text field is 16px on phones whatever its own
      rule says; this invariant is the one place !important is right */
-  input:not([type="checkbox"], [type="radio"], [type="range"], .project-name-input), textarea, select { font-size: 1rem !important; }
+  input:not([type="checkbox"], [type="radio"], [type="range"], .project-name-input), textarea, select, .rich-input { font-size: 1rem !important; }
+  /* the phone list uses the width: a long skill name wraps instead of being cut */
+  .slash-menu { width: calc(100% - 12px); max-height: min(320px, 45dvh); }
+  .slash-label { white-space: normal; overflow-wrap: anywhere; }
+  .skill-chip-label { max-width: 9em; }
 }
 @media (pointer: coarse) {
   .composer-main .icon-btn.plus, .send-btn { width: 40px; height: 40px; }
@@ -352,4 +392,95 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 }
 @media print {
   .main-top, .pane-reopen { display: none; }
+}
+
+/* Memory consolidation panel: one row per batch, a report of every candidate under it */
+.dream-panel { margin-bottom: 28px; padding-bottom: 8px; }
+.dream-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 10px; }
+.dream-state { font-size: var(--text-sm); color: var(--muted-foreground); }
+.dream-state.live { color: var(--foreground); }
+.dream-runs { border-top: 1px solid var(--border); }
+.dream-run + .dream-run { border-top: 1px solid var(--border); }
+.dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
+.dream-run-head:hover { background: var(--subtle); color: var(--foreground); }
+.dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
+.dream-status { font-size: var(--text-2xs); padding: 2px 7px; border-radius: 999px; background: var(--subtle); color: var(--muted-foreground); }
+.dream-status.applied { color: var(--ok, #22863a); }
+.dream-status.failed { color: var(--destructive); }
+.dream-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
+.dream-sum.failed { color: var(--destructive); }
+.dream-detail { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
+.dream-cand { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); line-height: 1.5; color: var(--muted-foreground); }
+.dream-cand.kept { color: var(--foreground); }
+.dream-op { flex: none; min-width: 4.5em; text-align: center; font-size: var(--text-2xs); color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; margin-top: 1px; }
+.dream-op.added, .dream-op.updated { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
+.dream-op.invalidate { color: var(--destructive); }
+.dream-quote { display: block; margin-top: 2px; font-size: var(--text-xs); color: var(--muted-foreground); quotes: "“" "”"; }
+.dream-related { margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--border); font-size: var(--text-xs); color: var(--muted-foreground); }
+.dream-reason { flex: none; max-width: 40%; text-align: right; }
+.dream-revert { align-self: flex-start; }
+@media (max-width: 640px) {
+  .dream-run-head { flex-wrap: wrap; row-gap: 2px; }
+  .dream-run-head .spacer { display: none; }
+  .dream-sum { flex-basis: 100%; white-space: normal; }
+  .dream-cand { flex-wrap: wrap; }
+  .dream-reason { max-width: none; flex-basis: 100%; text-align: left; padding-left: calc(4.5em + 18px); }
+}
+
+/* Sidebar: a skill draft is being made (spinner) or waits for the user (count) */
+.side-badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--primary-foreground, #fff); font-size: var(--text-2xs); font-weight: 600; line-height: 18px; text-align: center; }
+.side-badge.busy { min-width: 14px; width: 14px; height: 14px; padding: 0; background: none; border: 2px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .side-badge.busy { animation-duration: 2.4s; } }
+
+/* Skills page: a base skill has no switch; the slot keeps the rows aligned */
+.switch-slot { flex: none; width: 42px; }
+.draft-row .draft-open { display: block; min-width: 0; padding: 0; background: none; border: 0; color: inherit; text-align: left; cursor: pointer; }
+.draft-row .skill-desc { overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.draft-state { font-weight: 450; }
+.draft-state.ready { color: var(--primary); }
+.draft-state.failed { color: var(--destructive); }
+.draft-spin { display: inline-block; width: 18px; height: 18px; border-radius: 50%; border: 2px solid color-mix(in srgb, var(--primary) 22%, transparent); border-top-color: var(--primary); animation: spin .9s linear infinite; }
+
+/* Draft editor: the skill as a folder, tree on the left, the open file on the right */
+.modal.draft-editor { max-width: 1040px; width: calc(100vw - 48px); height: min(820px, calc(100dvh - 48px)); max-height: none; }
+.draft-editor .modal-body { gap: 10px; min-height: 0; }
+.draft-summary { margin: 0; font-size: var(--text-sm); line-height: 1.6; color: var(--muted-foreground); white-space: pre-wrap; }
+.draft-wait { display: flex; align-items: center; justify-content: center; gap: 10px; flex: 1; color: var(--muted-foreground); font-size: var(--text-sm); }
+.draft-body { display: flex; flex: 1; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
+.draft-side { display: flex; flex-direction: column; width: 260px; flex: none; border-right: 1px solid var(--border); background: var(--subtle); min-height: 0; }
+.draft-tools { display: flex; align-items: center; gap: 2px; padding: 6px; border-bottom: 1px solid var(--border); }
+.draft-target { min-width: 0; margin-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); }
+.draft-tree { flex: 1; overflow: auto; padding: 4px 0; }
+.draft-node { display: flex; align-items: center; gap: 6px; min-height: 30px; padding-right: 6px; font-size: var(--text-sm); cursor: pointer; user-select: none; color: var(--foreground); }
+.draft-node svg { flex: none; color: var(--muted-foreground); }
+.draft-node:hover { background: var(--nav-hover); }
+.draft-node.on { background: var(--nav-selected); }
+.draft-node:focus-visible { outline: 2px solid var(--ring, var(--primary)); outline-offset: -2px; }
+.draft-node.gone { cursor: default; color: var(--muted-foreground); }
+.draft-node.gone .draft-name { text-decoration: line-through; }
+.draft-caret { width: 12px; flex: none; transition: transform var(--t-fast); }
+.draft-caret.open { transform: rotate(90deg); }
+.draft-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.draft-change { flex: none; font-size: var(--text-2xs); padding: 0 5px; border-radius: 4px; line-height: 16px; }
+.draft-change.added { color: var(--ok, #22863a); background: color-mix(in srgb, var(--ok, #22863a) 12%, transparent); }
+.draft-change.modified { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.draft-change.deleted { color: var(--destructive); background: var(--destructive-soft); }
+.draft-node-actions { display: none; flex: none; gap: 0; }
+.draft-node:hover .draft-node-actions, .draft-node:focus-within .draft-node-actions, .draft-node.on .draft-node-actions { display: flex; }
+.draft-node-actions .icon-btn { width: 24px; height: 24px; }
+.draft-node.naming input { flex: 1; min-width: 0; height: 24px; padding: 0 6px; font-size: var(--text-sm); }
+.draft-main { flex: 1; min-width: 0; display: flex; flex-direction: column; min-height: 0; }
+.draft-main .empty { margin: auto; }
+.draft-text { border: 0; border-radius: 0; height: 100%; }
+.draft-binary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex: 1; padding: 20px; overflow: auto; word-break: break-all; text-align: center; }
+.draft-binary img { max-width: 100%; max-height: 60%; object-fit: contain; border-radius: var(--radius-sm); background: repeating-conic-gradient(var(--subtle) 0 25%, transparent 0 50%) 0 0 / 16px 16px; }
+.draft-binary-actions { display: flex; gap: 8px; margin-top: 4px; }
+@media (hover: none) { .draft-node-actions { display: flex; } }
+@media (max-width: 640px) {
+  .modal-scrim:has(.draft-editor) { padding: 0; }
+  .modal.draft-editor { width: 100vw; max-width: none; height: 100dvh; border-radius: 0; border: 0; }
+  .draft-body { flex-direction: column; }
+  .draft-side { width: auto; max-height: 38%; border-right: 0; border-bottom: 1px solid var(--border); }
+  .draft-main { min-height: 50%; }
+  .draft-text { font-size: 16px; }
 }

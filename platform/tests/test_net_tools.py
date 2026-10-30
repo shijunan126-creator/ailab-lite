@@ -282,6 +282,7 @@ def test_tools_offered_per_mode(monkeypatch) -> None:
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
     chat = {t["function"]["name"] for t in tools.tools_for_chat()}
     assert chat == {
+        "run_js",
         "web_search",
         "read_url",
         "save_skill",

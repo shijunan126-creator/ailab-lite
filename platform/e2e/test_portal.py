@@ -26,7 +26,13 @@ def _send(page, prompt: str, model: str | None = None) -> None:
     wait_models(page)
     if model:
         select_model(page, model)
-    page.fill("textarea", prompt)
+    box = page.get_by_role("textbox", name="消息", exact=True)
+    if box.locator(".skill-chip").count():
+        box.click()
+        page.keyboard.press("End")
+        page.keyboard.type(prompt)
+    else:
+        box.fill(prompt)
     page.keyboard.press("Enter")
 
 
@@ -48,7 +54,7 @@ def test_narrative_arrives_before_the_model_finishes(logged_in, stack):
 def _pick_skill(page, label: str) -> None:
     """Skills live in the composer's + menu: the first few at its top, the rest behind 更多技能."""
     page.get_by_role("button", name="添加附件", exact=True).click()
-    item = page.get_by_role("menuitemradio", name=label, exact=True)
+    item = page.get_by_role("menuitemcheckbox", name=label, exact=True)
     if not item.count():
         page.get_by_role("menuitem", name="更多技能", exact=True).click()
     item.click()
@@ -284,7 +290,7 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
     # the render runs in the background, so its note may land in a later group of steps: open them all
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
-    assert "读取技能 pptx" in steps and "交付文件" in steps
+    assert "读取技能" in steps and "PPT" in steps and "交付文件" in steps
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
@@ -487,26 +493,25 @@ def test_chat_mode_answers_in_words_without_a_sandbox(logged_in, stack) -> None:
     assert "离线演示模型" in page.inner_text(".assistant-body > .md")
     assert page.locator(".work-entry.process-steps .step").count() == 0
     assert page.locator(".msg.user .attach-chip").count() == 0
-    assert "只回答" not in page.locator(".composer-box textarea").get_attribute("placeholder")
     page.goto(stack.portal + "/")
     page.wait_for_selector(".mode-toggle button.on:has-text('对话')")  # remembered
 
 
 def test_a_skill_button_makes_the_file_with_that_skill(logged_in) -> None:
     page = logged_in
-    _pick_skill(page, "PPT 生成")
-    page.wait_for_selector(".skill-tag:has-text('PPT 生成')")
-    assert "页数" in page.get_attribute("textarea", "placeholder")
+    page.get_by_role("radio", name="工作", exact=True).click()
+    _pick_skill(page, "PPT 设计")
+    page.wait_for_selector(".skill-chip:has-text('PPT 设计')")
     _start_conversation(page, "春游活动介绍")  # no "PPT" in the words: the button says it
     _wait_for_turns(page, 1, seconds=120)
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
+    page.locator(".steps .step-label", has_text="读取技能").first.wait_for()
     steps = "\n".join(page.locator(".steps").all_inner_texts())
-    assert "已加载技能" in steps and "交付文件" in steps
+    assert "读取技能" in steps and "PPT 设计" in steps and "已加载技能" not in steps and "交付文件" in steps
     filename = page.locator(".file-card .name").inner_text()
     assert filename.startswith("ailab-demo") and filename.endswith(".pptx")
-    assert page.inner_text(".msg.user .attach-chip") == "PPT 生成"
-    assert page.locator(".skill-tag").count() == 0  # one message only
+    assert page.inner_text(".msg.user .skill-chip") == "PPT 设计"
+    assert page.get_by_role("textbox", name="消息", exact=True).locator(".skill-chip").count() == 0
 
 
 def test_an_attachment_is_read_without_a_sandbox(logged_in, tmp_path) -> None:
@@ -535,7 +540,7 @@ def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(
     page.on("request", lambda r: r.method == "POST" and sends.search(r.url) and created.append(r.url))
     note = tmp_path / "slow.txt"
     note.write_text("还在上传", encoding="utf-8")
-    page.fill("textarea", "请读取附件")
+    page.get_by_role("textbox", name="消息", exact=True).fill("请读取附件")
     page.set_input_files(".composer-box input[type=file]", str(note))
     page.wait_for_timeout(100)
     assert "upload" in held
@@ -543,7 +548,7 @@ def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(
     assert send.is_enabled()
     send.click()
     page.locator(".pending-turn", has_text="请读取附件").wait_for()
-    assert page.input_value("textarea") == ""  # the box is free for the next message
+    assert page.get_by_role("textbox", name="消息", exact=True).inner_text() == ""  # the box is free for the next message
     page.wait_for_timeout(300)
     assert created == [], "no conversation or model call before the file is ready"
     held["upload"].continue_()
@@ -578,7 +583,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
     page = logged_in
     page.click(".side-link:has-text('技能')")
     page.wait_for_url(stack.portal + "/skills")
-    ppt = page.locator(".skill-row", has_text="演示文稿（PPT）")
+    ppt = page.locator(".skill-row", has_text="PPT 设计")
     switch = ppt.locator("button[role=switch]")
     assert switch.get_attribute("aria-checked") == "true"
     try:
@@ -586,13 +591,14 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             switch.click()
         assert saved.value.ok  # the optimistic switch alone does not mean the setting was saved
         page.reload()  # saved on the server, not just in the page
-        page.wait_for_selector(".skill-row.off:has-text('演示文稿（PPT）')")
+        page.wait_for_selector(".skill-row.off:has-text('PPT 设计')")
         page.goto(stack.portal + "/")
         page.get_by_role("button", name="添加附件", exact=True).click()
         menu = page.locator(".composer-menu")
-        menu.get_by_role("menuitemradio", name="Excel 表格", exact=True).wait_for()
+        page.get_by_role("menuitem", name="更多技能", exact=True).click()
+        menu.get_by_role("menuitemcheckbox", name="Excel", exact=True).wait_for()
         # Default skills render before the asynchronous skill list arrives.
-        menu.get_by_role("menuitemradio", name="PPT 生成", exact=True).wait_for(state="detached", timeout=15000)
+        menu.get_by_role("menuitemcheckbox", name="PPT 设计", exact=True).wait_for(state="detached", timeout=15000)
         page.keyboard.press("Escape")
     finally:
         page.goto(stack.portal + "/skills")
@@ -601,7 +607,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/skills/pptx")) as restored:
                 switch.click()
             assert restored.value.ok
-            page.wait_for_selector(".skill-row:not(.off):has-text('演示文稿（PPT）')")
+            page.wait_for_selector(".skill-row:not(.off):has-text('PPT 设计')")
 
 
 def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, stack, tmp_path) -> None:
@@ -615,7 +621,7 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     row = page.locator(".skill-row", has_text="周报助手")
     row.wait_for(timeout=40000)
     assert row.locator("button[role=switch]").get_attribute("aria-checked") == "true"
-    assert name in row.inner_text()
+    assert row.get_by_role("button", name="编辑 周报助手").is_visible()
 
     page.goto(stack.portal + "/files")
     page.get_by_role("button", name="上传", exact=True).wait_for()
@@ -626,10 +632,11 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     _pick_skill(page, "周报助手")
     _start_conversation(page, "帮我写本周周报")
     _wait_for_turns(page, 1)
-    assert page.inner_text(".msg.user .attach-chip") == "周报助手"
+    assert page.inner_text(".msg.user .skill-chip") == "周报助手"
     _open_all_steps(page)
-    page.locator(".steps .step-label", has_text="已加载技能").wait_for()
-    assert "已加载技能" in "\n".join(page.locator(".steps").all_inner_texts())
+    page.locator(".steps .step-label", has_text="读取技能").first.wait_for()
+    steps = "\n".join(page.locator(".steps").all_inner_texts())
+    assert "读取技能" in steps and "周报助手" in steps and "已加载技能" not in steps
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file
     page.locator(".skill-row", has_text="周报助手").locator("button:has-text('删除')").click()
@@ -647,6 +654,6 @@ def test_collapsed_sidebar_gives_back_its_column_and_phone_fields_never_zoom(log
     page.set_viewport_size({"width": 390, "height": 780})
     page.goto(stack.portal + "/files")
     # iOS zooms into a field under 16px and leaves the page zoomed
-    fields = "input[type=text], input:not([type]), textarea"
+    fields = 'input[type=text], input:not([type]), textarea, [role="textbox"][contenteditable="true"]'
     sizes = page.evaluate("(q) => [...document.querySelectorAll(q)].map((e) => getComputedStyle(e).fontSize)", fields)
     assert sizes and set(sizes) == {"16px"}, sizes

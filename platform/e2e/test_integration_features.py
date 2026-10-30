@@ -151,9 +151,7 @@ def test_slash_selects_skill_template_and_work_mode(logged_in):
     expect(page.locator(".slash-menu")).to_be_visible()
     page.get_by_role("textbox", name="消息", exact=True).press("Enter")
     expect(page.locator(".slash-menu")).to_have_count(0)
-    expect(page.get_by_role("textbox", name="消息", exact=True)).to_have_value(re.compile("主题："))
-    expect(page.get_by_role("radio", name="工作", exact=True)).to_have_attribute("aria-checked", "true")
-    expect(page.locator(".skill-tag")).to_be_visible()
+    expect(page.get_by_role("textbox", name="消息", exact=True).locator(".skill-chip")).to_be_visible()
 
 
 def test_library_page_citation_opens_real_file_viewer(logged_in, stack, tmp_path):

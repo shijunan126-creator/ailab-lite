@@ -56,7 +56,7 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
     const body = {
       title: d.title.trim(),
       prompt: d.prompt.trim(),
-      mode: d.skill ? "work" : d.mode,
+      mode: d.mode,
       skill: d.skill,
       project_id: d.project_id,
       schedule: { kind: d.kind, time: d.time, ...(d.kind === "weekly" ? { days: [...d.days].sort() } : {}) },
@@ -115,12 +115,18 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
           <span>模式</span>
           <Select
             aria-label="模式"
-            value={d.skill ? `skill:${d.skill}` : d.mode}
-            options={[{ value: "chat", label: "对话" }, { value: "work", label: "工作" }, ...skills.map((s) => ({ value: `skill:${s.name}`, label: s.title }))]}
-            onChange={(v) => {
-              if (v.startsWith("skill:")) set({ skill: v.slice(6), mode: "work" });
-              else set({ skill: null, mode: v as "chat" | "work" });
-            }}
+            value={d.mode}
+            options={[{ value: "chat", label: "对话" }, { value: "work", label: "工作" }]}
+            onChange={(v) => set({ mode: v as "chat" | "work" })}
+          />
+        </label>
+        <label className="field">
+          <span>技能</span>
+          <Select
+            aria-label="技能"
+            value={d.skill || ""}
+            options={[{ value: "", label: "不指定" }, ...skills.map((s) => ({ value: s.name, label: s.title }))]}
+            onChange={(v) => set({ skill: v || null })}
           />
         </label>
         <label className="field">
@@ -147,7 +153,7 @@ export default function SchedulesPage() {
   const load = useCallback(() => api<Schedule[]>("/v1/schedules").then(setList).catch((err) => setError(errorMessage(err))), []);
   useEffect(() => {
     load();
-    api<Skill[]>("/v1/skills").then((all) => setSkills(all.filter((s) => s.enabled && !s.implicit))).catch(() => undefined);
+    api<Skill[]>("/v1/skills").then((all) => setSkills(all.filter((s) => (s.enabled || s.kind === "base") && !s.implicit))).catch(() => undefined);
   }, [load]);
   // a task that is running now: its status settles on its own
   useEffect(() => {

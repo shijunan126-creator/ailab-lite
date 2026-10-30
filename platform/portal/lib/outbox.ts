@@ -3,9 +3,11 @@
 // passed) is the model asked to answer. Kept outside React so it survives navigation from the new-chat page.
 import { create } from "zustand";
 import { api, errorCode, errorMessage, type Conversation, type QueuedMessage, type Run, type TemplateRef } from "./api";
+import type { SkillPick } from "./message-parts";
 import { canRetry, forgetUpload, getUpload, retryUpload, settle } from "./uploads";
 
-export type SendOptions = { mode: "chat" | "work"; skill?: string; template?: TemplateRef };
+// skills: where each chip sits in the prompt (code points); a skill no longer decides the mode
+export type SendOptions = { mode: "chat" | "work"; skills?: SkillPick[]; template?: TemplateRef };
 
 export type Pending = {
   id: string; // client_send_id: a retry after a lost response finds the same run instead of starting another
@@ -106,7 +108,8 @@ async function turnOf(p: Pending) {
 }
 
 async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]> {
-  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, ...p.options };
+  const skills = p.options.skills?.map(({ name, file_id, at }) => ({ name, file_id, at }));
+  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, ...p.options, ...(skills ? { skills } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
     conversation = await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model: p.model, project_id: p.projectId || undefined }) });

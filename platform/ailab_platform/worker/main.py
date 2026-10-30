@@ -76,7 +76,13 @@ def handle_message(queue, msg) -> None:
 
             identity = attempt_id_var.set(token)
             try:
-                _handle(completion, msg, file_id)
+                if envelope.kind == "skill_unpack":
+                    from .skill_unpack import process_skill_unpack
+
+                    process_skill_unpack(client, envelope.draft_id, envelope.job_id, token)
+                    completion.ack()
+                else:
+                    _handle(completion, msg, file_id)
             finally:
                 attempt_id_var.reset(identity)
             if completion.completed:

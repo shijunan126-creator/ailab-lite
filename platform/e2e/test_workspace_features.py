@@ -97,7 +97,7 @@ def test_project_brief_persists_and_reaches_model(logged_in, stack):
         conv = _start_conversation(page, prompt)
         _wait_for_turns(page, 1)
         messages = httpx.get(stack.agent + "/e2e/workspace-seen").json()[prompt]
-        assert brief in messages[0]["content"]
+        assert brief in messages[1]["content"]
         assert api(page, stack, "get", "/conversations/" + conv)["project_id"] == p["id"]
     finally:
         api(page, stack, "delete", "/projects/" + p["id"])

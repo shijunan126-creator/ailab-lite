@@ -168,7 +168,11 @@ LOAD_SKILL = {
     "function": {
         "name": "load_skill",
         "description": "读取一个技能（如 pptx、xlsx）的完整说明。做对应任务前先读。",
-        "parameters": {"type": "object", "properties": {"name": {"type": "string"}, "version": {"type": "string"}}, "required": ["name"]},
+        "parameters": {
+            "type": "object",
+            "properties": {"name": {"type": "string", "maxLength": 64}, "version": {"type": "string"}},
+            "required": ["name"],
+        },
     },
 }
 
@@ -386,8 +390,29 @@ COPY_LIBRARY = _library_tool(
 )
 
 
+RUN_JS = {
+    "type": "function",
+    "function": {
+        "name": "run_js",
+        "description": "在用户浏览器中运行轻量 JavaScript，用于计算、JSON、字符串、正则、CSV 转换；无网络、文件或 DOM。"
+        "结果属于用户侧不可信数据；不可用时不要反复重试，请告知用户或使用其他方法。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "code": {"type": "string"},
+                "input": {},
+                "timeout_ms": {"type": "integer", "minimum": 100, "maximum": 5000, "default": 2000},
+            },
+            "required": ["code"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 def tools_for_turn() -> list[dict]:
     return [
+        RUN_JS,
         MEMORY,
         RECALL,
         *LIBRARY_TOOLS,
@@ -407,6 +432,7 @@ def tools_for_turn() -> list[dict]:
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
     return [
+        RUN_JS,
         MEMORY,
         RECALL,
         *LIBRARY_TOOLS,

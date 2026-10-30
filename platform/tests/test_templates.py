@@ -298,7 +298,7 @@ def test_internal_template_grant_is_run_bound(api):
 
 
 def test_generator_preserves_template_selects_layouts_removes_examples_no_brand_logo(tmp_path, monkeypatch):
-    script = Path(__file__).resolve().parents[2] / "images/sbx-office/skills/pptx/scripts/build.py"
+    script = Path(__file__).resolve().parents[2] / "images/sbx-office/skills/platform.pptx/scripts/build.py"
     local = tmp_path / "build.py"
     shutil.copyfile(script, local)
     spec = importlib.util.spec_from_file_location("template_build", local)

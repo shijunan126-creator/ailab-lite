@@ -107,7 +107,7 @@ def test_template_preview_updates_without_reopening(page, stack, scope, preview_
     if scope == "company":
         page.goto(stack.portal + "/admin?t=brand")
     else:
-        _pick_skill(page, "PPT 生成")
+        _pick_skill(page, "PPT 设计")
         page.get_by_role("button", name="模板", exact=True).click()
     container = (
         page.locator(".brand-slot").filter(has_text="Delayed preview")

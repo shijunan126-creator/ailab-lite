@@ -100,13 +100,14 @@ def test_skill_create_edit_and_scanned_version(page, stack):
     editor = page.get_by_role("dialog")
     editor.get_by_role("textbox").fill(content)
     editor.get_by_role("button", name="保存", exact=True).click()
-    row = page.locator(".skill-row").filter(has_text=name)
+    row = page.locator(".skill-row").filter(has_text="浏览器验收技能")
     row.get_by_role("button", name="编辑 浏览器验收技能", exact=True).wait_for(timeout=60000)
     expect(row.get_by_role("button", name="编辑 浏览器验收技能", exact=True)).to_be_enabled(timeout=60000)
     row.get_by_role("button", name="编辑 浏览器验收技能", exact=True).click()
-    editor.get_by_role("textbox").fill(content + "第二步校验结果。\n")
-    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/v1/skills/content")) as saved:
-        editor.get_by_role("button", name="保存", exact=True).click()
+    expect(editor.get_by_role("tree", name="技能文件")).to_be_visible()
+    editor.get_by_role("textbox", name="SKILL.md").fill(content + "第二步校验结果。\n")
+    with page.expect_response(lambda r: r.request.method == "POST" and r.url.endswith("/confirm")) as saved:
+        editor.get_by_role("button", name="保存新版本", exact=True).click()
     fid = saved.value.json()["file_id"]
     expect(editor).to_have_count(0)
     headers = auth(stack)
@@ -119,9 +120,9 @@ def test_skill_create_edit_and_scanned_version(page, stack):
     assert file["status"] == "ready", file
     page.reload()
     row.get_by_role("button", name="编辑 浏览器验收技能", exact=True).click()
-    expect(editor.get_by_role("textbox")).to_have_value(content + "第二步校验结果。\n")
+    expect(editor.get_by_role("textbox", name="SKILL.md")).to_have_value(content + "第二步校验结果。\n")
     page.screenshot(path=str(stack.log_dir / "skill-edit.png"), animations="disabled")
-    editor.get_by_role("button", name="取消", exact=True).click()
+    editor.get_by_role("button", name="关闭", exact=True).filter(has_text="关闭").click()
     headers = auth(stack)
     skill = next(s for s in httpx.get(stack.api + "/v1/skills", headers=headers).json() if s["name"] == name)
     assert len(httpx.get(stack.api + f"/v1/files/{skill['file_id']}/versions", headers=headers).json()) == 2

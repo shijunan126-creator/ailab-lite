@@ -29,6 +29,9 @@ _SLOW = (1, 2.5, 5, 10, 20, 40, 60, 120, 300, 600, 900)
 HTTP_REQUESTS = Counter("ailab_http_requests_total", "HTTP requests", ["service", "method", "route", "status"])
 HTTP_SECONDS = Histogram("ailab_http_request_seconds", "Time to first response byte", ["service", "route"], buckets=_FAST)
 
+CLIENT_CALLS = Counter("ailab_client_calls_total", "Browser call outcomes", ["kind", "outcome"])
+CLIENT_CALL_SECONDS = Histogram("ailab_client_call_seconds", "Browser call latency", ["kind", "outcome"], buckets=_SLOW)
+
 RUNS = Counter("ailab_runs_total", "Runs that entered a status", ["status"])
 CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes and fallback causes", ["outcome", "reason"])
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)
@@ -41,6 +44,7 @@ WEB_READ_SECONDS = Histogram(
 )
 MEMORY_RECALL = Counter("ailab_memory_recall_total", "History recall calls by outcome", ["outcome"])
 MEMORY_EMBEDDING = Counter("ailab_memory_embedding_total", "Embedding endpoint calls by outcome", ["outcome"])
+SKILL_DRAFTS = Counter("ailab_skill_drafts_total", "Background skill draft outcomes", ["outcome"])
 MEMORY_GUARD_REJECTED = Counter("ailab_memory_guard_rejected_total", "Memory writes refused by the safety guard", ["reason", "source"])
 QUOTA_REJECTIONS = Counter("ailab_quota_rejections_total", "Requests refused by a quota", ["kind"])
 REAPER_ACTIONS = Counter("ailab_reaper_actions_total", "Things the reaper repaired", ["action"])

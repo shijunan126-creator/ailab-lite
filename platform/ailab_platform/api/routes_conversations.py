@@ -220,6 +220,9 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
 
 @router.post("/{conversation_id}/messages", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def send_message(conversation_id: str, body: MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    from .routes_runs import reject_both_skill_fields
+
+    reject_both_skill_fields(body)
     conv = _owned(db, conversation_id, user)
     run = start_run(
         db,
@@ -230,8 +233,10 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         conversation=conv,
         mode=body.mode if "mode" in body.model_fields_set else None,
         skill=body.skill,
+        selections=body.skills,
         template=body.template,
         client_send_id=body.client_send_id,
+        client="portal",
     )
     return run_dict(db, run, detail=True)
 
@@ -384,6 +389,8 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     if total_events > 100000:
                         raise HTTPException(422, "分叉过程记录超过100000条上限")
                     for event in events:
+                        if event.type in {"client.call", "client.result"}:
+                            continue
                         payload = deepcopy(event.payload)
                         if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
                             payload["queued_id"] = copied_steers[payload["queued_id"]]

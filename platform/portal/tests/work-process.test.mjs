@@ -158,3 +158,16 @@ test('an event keeps the identity of every item and step it does not change',()=
  assert.equal(after[1].steps[0].status,'ok');
  assert.equal(before[1].steps[0].status,'running','the previous state is not mutated');
 });
+
+test('a skill read through load_skill shows one step, named by its title; a skill loaded otherwise still notes it',()=>{
+ let items=[];
+ items=reduceEvent(items,event('agent.tool_call',{step:0,name:'load_skill',arguments:{name:'weekly'}}));
+ items=reduceEvent(items,event('agent.skill',{name:'weekly',title:'周报助手',status:'loaded',reason:'user'}));
+ items=reduceEvent(items,event('agent.tool_result',{step:0,name:'load_skill',ok:true}));
+ items=reduceEvent(items,event('agent.tool_call',{step:0,name:'load_skill',arguments:{name:'gone'}}));
+ items=reduceEvent(items,event('agent.skill',{name:'gone',title:'gone',status:'failed',error:'找不到'}));
+ items=reduceEvent(items,event('agent.tool_result',{step:0,name:'load_skill',ok:false,error:'找不到'}));
+ items=reduceEvent(items,event('agent.skill',{name:'other',title:'别的',status:'loaded'}));
+ const steps=items.flatMap(it=>it.kind==='steps'?it.steps:[]);
+ assert.deepEqual(steps.map(s=>[s.label,s.detail,s.status]),[['读取技能','周报助手','ok'],['读取技能','gone','failed'],['已加载技能','别的','ok']]);
+});

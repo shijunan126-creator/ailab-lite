@@ -698,3 +698,71 @@ def test_ui_state_upgrade_downgrade_preserves_run(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT ui_state FROM runs WHERE id='r1'")) is None
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_base_skill_migration_removes_only_xlsx_disables(engine):
+    import json
+
+    _upgrade_to(engine, "0039")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text("UPDATE users SET settings = :settings WHERE id = 'u1'"),
+            {"settings": json.dumps({"disabled_skills": ["xlsx", "pptx"], "other": 1})},
+        )
+        conn.execute(
+            text("INSERT INTO skill_policies (scope, name, state) VALUES ('global', 'xlsx', 'disabled'), ('global', 'pptx', 'disabled')")
+        )
+    _upgrade_to(engine, "0040")
+    with engine.connect() as conn:
+        settings = conn.scalar(text("SELECT settings FROM users WHERE id = 'u1'"))
+        if isinstance(settings, str):
+            settings = json.loads(settings)
+        assert settings == {"disabled_skills": ["pptx"], "other": 1}
+        assert list(conn.execute(text("SELECT name FROM skill_policies"))) == [("pptx",)]
+    _downgrade_to(engine, "0039")
+    with engine.connect() as conn:
+        assert list(conn.execute(text("SELECT name FROM skill_policies"))) == [("pptx",)]
+
+
+def test_client_calls_upgrade_and_downgrade(engine):
+    _upgrade_to(engine, "0042")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0043")
+
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO client_calls (run_id, call_id, kind, status, claim_deadline, deadline, created_at) "
+                "VALUES ('r1', 'call', 'js', 'pending', '2026-01-01', '2026-01-01', '2026-01-01')"
+            )
+        )
+    _downgrade_to(engine, "0042")
+    assert "client_calls" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT count(*) FROM runs WHERE id = 'r1'")).scalar() == 1
+    _upgrade_to(engine, "0043")
+
+
+def test_dream_batch_downgrade_keeps_latest_finished_applied(engine):
+    _upgrade_to(engine, "0042")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for ident, status, created, finished in [
+            ("a", "applied", "2026-01-01", "2026-01-02"),
+            ("b", "applied", "2026-01-02", "2026-01-03"),
+            ("c", "failed", "2026-01-04", None),
+        ]:
+            conn.execute(
+                text(
+                    "INSERT INTO memory_dream_runs (id,user_id,local_date,timezone,status,trigger,created_at,finished_at,"
+                    "input_run_ids,plan,before_memory,after_memory,token_usage) "
+                    "VALUES (:id,'u1','2026-01-01','UTC',:status,'manual',:created,:finished,'[]','{}','{}','{}','{}')"
+                ),
+                {"id": ident, "status": status, "created": created, "finished": finished},
+            )
+    _downgrade_to(engine, "0041")
+    with engine.connect() as conn:
+        assert list(conn.execute(text("SELECT id FROM memory_dream_runs"))) == [("b",)]
+    _upgrade_to(engine, "head")

@@ -90,7 +90,7 @@ def test_prompt_admission_stable_prefix(mode, monkeypatch):
     monkeypatch.setattr(settings, "genui_html_enabled", False)
     enabled = system_prompt_for(mode, genui=True, picked_text="PRIVATE SKILL", deferred=True)
     assert index_for(False) in enabled
-    assert enabled.index(index_for(False)) < enabled.index("PRIVATE SKILL")
+    assert "PRIVATE SKILL" not in enabled
     assert "HtmlArtifact" not in index_for(False)
     assert index_for(False) not in system_prompt_for(mode, genui=False)
     monkeypatch.setattr(settings, "genui_enabled", False)

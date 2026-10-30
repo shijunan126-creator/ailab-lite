@@ -1,11 +1,14 @@
 "use client";
 
+import type { SkillPick } from "../../lib/message-parts";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
+import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
+import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
@@ -13,7 +16,7 @@ import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged, conversationTitled } from "../app-shell";
 import { CONVERSATION_MOVED } from "../conversation-menu";
-import { IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
+import { IconArrowDown, IconBranch, IconChevronRight, IconFolder, IconPanelRight } from "../icons";
 import ProjectHome from "../project-home";
 import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
 import PendingMessage from "./pending-message";
@@ -112,6 +115,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const scroller = useRef<HTMLDivElement | null>(null);
   const tail = useFollow(scroller, { slack: 80 });
   const stick = tail.following;
+  // the reader went up into the history: offer the way back, never pull them down
+  const [away, setAway] = useState(false);
+  useEffect(() => setAway(false), [id]);
   const loadSeq = useRef(0);
   const detailController = useRef<AbortController | null>(null);
   const olderController = useRef<AbortController | null>(null);
@@ -217,6 +223,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             conversationTitled(String(event.payload.conversation_id || run.conversation_id || id || ""), title);
           }
           if (event.type === "run.status" || event.type === "artifact.created") refreshRun(run.id);
+          // the model asked this page to run a small program: claim it, run it in a worker, report back
+          if (event.type === "client.call" && event.payload?.call_id) void handleClientCall(run.id, event.payload as ClientCall);
           if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
             batch.flush();
             loadDetail();
@@ -591,7 +599,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
-  async function changeQueued(qid: string, body: { prompt?: string; steer?: boolean } | null): Promise<boolean> {
+  async function changeQueued(qid: string, body: { prompt?: string; steer?: boolean; skills?: { name: string; file_id?: string | null; at?: number | null }[] } | null): Promise<boolean> {
     if (!id) return false;
     try {
       if (body) {
@@ -683,12 +691,12 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
 
   /** Send an earlier message again, changed; the conversation continues from there. */
-  async function edit(run: Run, prompt: string): Promise<boolean> {
+  async function edit(run: Run, prompt: string, skills: SkillPick[]): Promise<boolean> {
     setError("");
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/edit`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, file_ids: null, model: model || null, mode: null }),
+        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, mode: null }),
       });
       branchTo(run, fresh);
       return true;
@@ -759,6 +767,17 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const turnResume = useStable(resume);
   const turnAnswer = useStable(answer);
   const turnRetry = useStable(retry);
+  const turnExtract = useStable(async () => {
+    if (!id) return false;
+    setError("");
+    try {
+      await extractSkill(id);
+      return true;
+    } catch (err) {
+      setError(errorMessage(err));
+      return false;
+    }
+  });
   const turnEdit = useStable(edit);
   const turnSwitch = useStable(switchTo);
   const turnFork = useStable(fork);
@@ -860,7 +879,9 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               ref={scroller}
               onScroll={(e) => {
                 tail.onScroll(e);
-                if (e.currentTarget.scrollTop < 80) void loadOlder();
+                const el = e.currentTarget;
+                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > Math.max(160, el.clientHeight * 0.35));
+                if (el.scrollTop < 80) void loadOlder();
               }}
             >
               <GenUIHostProvider value={genuiHost}>
@@ -900,6 +921,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     onResume={turnResume}
                     onAnswer={turnAnswer}
                     onRetry={running ? undefined : turnRetry}
+                    onExtract={turnExtract}
                     onEdit={turnEdit}
                     onSwitch={turnSwitch}
                     locked={running}
@@ -916,13 +938,25 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               </GenUIHostProvider>
             </div>
             <div className="composer-dock">
+              <button type="button" className={`to-bottom ${away ? "shown" : ""}`} aria-label="回到底部" title="回到底部" tabIndex={away ? 0 : -1} aria-hidden={!away}
+                onClick={() => {
+                  tail.toBottom();
+                  setAway(false);
+                }}>
+                <IconArrowDown size={18} />
+              </button>
               {error ? <div className="alert error">{error}</div> : null}
               <QueueStrip
                 queue={detail?.queue || []}
                 paused={!!detail?.queue_paused}
                 running={running && !question}
                 onSteer={async (qid) => void (await changeQueued(qid, { steer: true }))}
-                onEdit={(qid, prompt) => changeQueued(qid, { prompt })}
+                onEdit={(qid, prompt) => {
+                  // the chips keep their place, or the end of the text if it got shorter
+                  const length = Array.from(prompt).length;
+                  const skills = (detail?.queue || []).find((q) => q.id === qid)?.skills?.map(({ name, file_id, at }) => ({ name, file_id, at: at == null ? at : Math.min(at, length) }));
+                  return changeQueued(qid, skills?.length ? { prompt, skills } : { prompt });
+                }}
                 onRemove={async (qid) => void (await changeQueued(qid, null))}
                 onResume={resumeQueue}
               />

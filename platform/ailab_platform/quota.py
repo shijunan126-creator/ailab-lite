@@ -17,7 +17,7 @@ from .contracts.usage import ReserveUsageIn, SettleUsageIn, UsageErrorCode, Usag
 from .domain.ledger import MILLI, POLICY_VERSION, reserved_amount, snapshot_weight, weighted_amount
 from .domain.quota_policy import Limits, limits_for
 from .locks import user_critical_section
-from .models import FileObject, FileStatus, MemoryDreamRun, ModelUsage, Run, RunStatus, Template, UsageReservation, User
+from .models import FileObject, FileStatus, MemoryDreamRun, ModelUsage, Run, RunStatus, SkillDraft, Template, UsageReservation, User
 
 
 def _error(status: int, code: UsageErrorCode, **detail):
@@ -116,6 +116,8 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
         if body.subject == "run"
         else db.get(MemoryDreamRun, body.job_id)
         if body.subject == "memory_job"
+        else db.get(SkillDraft, body.job_id)
+        if body.subject == "skill_draft"
         else db.get(FileObject, body.file_id)
     )
     if owner is None:
@@ -140,9 +142,13 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
                     raise _error(409, UsageErrorCode.RUN_NOT_ACTIVE)
                 if body.mode != (owner.options or {}).get("mode", "work"):
                     raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
-            elif body.subject == "memory_job":
+            elif body.subject in {"memory_job", "skill_draft"}:
                 if owner.status != "running" or owner.claim_token != body.attempt_id:
                     raise HTTPException(409, "memory job claim lost")
+                if body.subject == "skill_draft" and (
+                    not owner.claimed_until or owner.claimed_until.replace(tzinfo=UTC) <= datetime.now(UTC)
+                ):
+                    raise HTTPException(409, "skill draft claim lost")
             elif owner.status != FileStatus.READY or owner.deleted_at or owner.purged_at:
                 raise HTTPException(409, "file is not ready for OCR")
             spec = get_catalog().get(body.alias)

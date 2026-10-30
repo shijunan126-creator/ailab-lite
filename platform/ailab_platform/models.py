@@ -308,6 +308,21 @@ class Run(Base):
     artifacts: Mapped[list[Artifact]] = relationship(back_populates="run")
 
 
+class ClientCall(Base):
+    __tablename__ = "client_calls"
+    __table_args__ = (Index("ix_client_calls_run_status", "run_id", "status"),)
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), primary_key=True)
+    call_id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    claim_token: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
 class RunEvent(Base):
     __tablename__ = "run_events"
     __table_args__ = (
@@ -687,13 +702,53 @@ class MemoryEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SkillDraft(Base):
+    __tablename__ = "skill_drafts"
+    __table_args__ = (
+        Index("ix_skill_drafts_user_status_updated", "user_id", "status", "updated_at"),
+        Index("ix_skill_drafts_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("sd"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    origin: Mapped[str] = mapped_column(String(20))
+    conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_kind: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    base_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    name: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action: Mapped[str] = mapped_column(String(20))
+    status: Mapped[str] = mapped_column(String(20))
+    stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    files: Mapped[list] = mapped_column(JSON, default=list)
+    claim_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    claimed_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    target: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
 class MemoryDreamRun(Base):
     """One user-night background consolidation. Never creates a visible Run or RunEvent."""
 
     __tablename__ = "memory_dream_runs"
     __table_args__ = (
-        UniqueConstraint("user_id", "local_date", name="uq_memory_dream_user_date"),
+        Index(
+            "uq_memory_dream_user_active",
+            "user_id",
+            unique=True,
+            sqlite_where=text("status IN ('pending', 'running')"),
+            postgresql_where=text("status IN ('pending', 'running')"),
+        ),
         Index("ix_memory_dream_user_finished", "user_id", "finished_at"),
+        Index("ix_memory_dream_user_date_trigger", "user_id", "local_date", "trigger"),
         Index("ix_memory_dream_status_created", "status", "created_at"),
     )
 
@@ -703,10 +758,12 @@ class MemoryDreamRun(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="cron")
+    batch_index: Mapped[int] = mapped_column(Integer, default=1)
     cursor_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     input_run_ids: Mapped[list] = mapped_column(JSON, default=list)
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
     journal: Mapped[str] = mapped_column(Text, default="")
+    report: Mapped[dict] = mapped_column(JSON, default=dict)
     before_memory: Mapped[dict] = mapped_column(JSON, default=dict)
     after_memory: Mapped[dict] = mapped_column(JSON, default=dict)
     token_usage: Mapped[dict] = mapped_column(JSON, default=dict)

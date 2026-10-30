@@ -35,20 +35,6 @@
 .skill-row.broken .skill-icon { background: var(--destructive-soft); color: var(--destructive); }
 .skill-file { margin-top: 4px; word-break: break-all; }
 .skill-row .link.danger-text { font-size: var(--text-sm); }
-.market-panel { padding: 16px; }
-.market-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
-.market-card { display: flex; flex-direction: column; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--popover); }
-.market-card .skill-title { font-size: var(--text-ui); }
-.market-card .skill-desc { flex: 1; margin-top: 8px; }
-.market-card .skill-file { margin-top: 10px; }
-.market-card .market-action { align-self: flex-end; margin-top: 12px; }
-.market-action { flex: none; white-space: nowrap; min-width: 96px; }
-@media (max-width: 900px) {
-  .market-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 640px) {
-  .market-grid { grid-template-columns: 1fr; }
-}
 .skill-editor-actions { display: flex; align-items: center; gap: 4px; flex: none; }
 .skill-editor-actions .link { font-size: var(--text-sm); }
 .skill-editor-head { flex-wrap: wrap; row-gap: 8px; }
@@ -57,8 +43,6 @@
 .skill-editor .modal-body { gap: 10px; }
 .skill-editor-text { flex: 1; min-height: 240px; resize: none; font-size: var(--text-sm); line-height: 1.65; tab-size: 2; white-space: pre; overflow: auto; }
 .skill-editor-text[readonly] { background: var(--subtle); }
-.skill-editor-zip { display: flex; flex-direction: column; gap: 6px; padding: 8px 0; word-break: break-all; }
-.skill-editor-steps { margin: 8px 0 0; padding-left: 20px; line-height: 1.9; color: var(--muted-foreground); }
 @media (max-width: 640px) {
   .modal-scrim:has(.skill-editor) { padding: 0; }
   .modal.skill-editor { max-width: none; height: 100dvh; border-radius: 0; border: 0; }
@@ -155,21 +139,6 @@ input[type="number"]:focus { outline: none; }
   .memory-row:hover .memory-remove, .memory-row:focus-within .memory-remove { opacity: 1; }
   .memory-row.paused .memory-pause { opacity: 1; }
 }
-.dream-panel { margin-bottom: 28px; padding-bottom: 8px; }
-.dream-window { padding: 0 16px 8px; }
-.dream-actions { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; }
-.dream-runs { border-top: 1px solid var(--border); margin-top: 4px; }
-.dream-run + .dream-run { border-top: 1px solid var(--border); }
-.dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
-.dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
-.dream-run-head:hover { background: var(--subtle); }
-.dream-status { font-size: var(--text-2xs); padding: 2px 7px; border-radius: 999px; background: var(--subtle); color: var(--muted-foreground); }
-.dream-status.applied { color: var(--ok, #22863a); }
-.dream-status.failed { color: var(--destructive); }
-.dream-detail { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 8px; }
-.dream-change { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); line-height: 1.5; }
-.dream-op { flex: none; font-size: var(--text-2xs); color: var(--primary); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
-.dream-journal { white-space: pre-wrap; }
 @keyframes sheet-in { from { opacity: .4; transform: translateY(28px); } }
 /* admin: context compaction */
 .context-settings { max-width: 640px; }
@@ -208,7 +177,7 @@ input[type="number"]:focus { outline: none; }
 .day { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--popover); color: var(--muted-foreground); font-weight: 550; }
 .day:hover { background: var(--subtle); color: var(--foreground); }
 .day.on, .day.on:hover { background: var(--primary); border-color: var(--primary); color: var(--primary-foreground); }
-.schedule-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.schedule-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .schedule-row select { width: 100%; }
 .schedule-editor .field > span { display: block; font-weight: 600; font-size: var(--text-sm); margin-bottom: 6px; }
 .schedule-editor div.field { margin-bottom: 14px; }

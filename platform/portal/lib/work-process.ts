@@ -19,7 +19,17 @@ export type Item =
   | { kind: "steps"; steps: Step[] }
   | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
 
-const SKILL_LABEL: Record<string, string> = { pptx: "PPT 生成", xlsx: "Excel 表格" };
+/** Platform skill titles, for runs and steps recorded without one. */
+export const SKILL_TITLES: Record<string, string> = {
+  "platform.pdf": "PDF",
+  "platform.docx": "Word",
+  "platform.xlsx": "Excel",
+  "platform.pptx": "PPT",
+  pptx: "PPT 设计",
+  xlsx: "Excel",
+  "auto-skill": "提取技能",
+};
+const SKILL_LABEL = SKILL_TITLES;
 const LOOP_REASON: Record<string, string> = {
   identical_call_result: "同一操作重复得到相同结果",
   repeated_call_error: "同一操作反复出错",
@@ -29,7 +39,11 @@ const LOOP_REASON: Record<string, string> = {
 function describeTool(name: string, args: any): { label: string; detail?: string } {
   switch (name) {
     case "load_skill":
-      return { label: `读取技能 ${args?.name || ""}` };
+      return { label: "读取技能", detail: SKILL_LABEL[args?.name] || args?.name };
+    case "search_capabilities":
+      return { label: "查找可用能力", detail: args?.query };
+    case "run_js":
+      return { label: "运行 JavaScript", detail: String(args?.code || "").split("\n").find((l) => l.trim())?.trim().slice(0, 120) };
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
     case "exec":
@@ -80,6 +94,24 @@ function pushStep(next: Item[], step: Step): void {
   const last = next[next.length - 1];
   if (last && last.kind === "steps") next[next.length - 1] = { kind: "steps", steps: [...last.steps, step] };
   else next.push({ kind: "steps", steps: [step] });
+}
+
+/** A skill loaded through a 读取技能 step already shows there: name it by its title instead of adding a second step. */
+function showLoaded(next: Item[], p: any): boolean {
+  const detail = SKILL_LABEL[p.name] || p.name;
+  for (let i = next.length - 1; i >= 0; i--) {
+    const it = next[i];
+    if (it.kind !== "steps") continue;
+    const j = it.steps.findLastIndex((s) => s.name === "load_skill" && s.detail === detail);
+    if (j < 0) continue;
+    if (p.title && p.title !== detail) {
+      const steps = it.steps.slice();
+      steps[j] = { ...steps[j], detail: p.title };
+      next[i] = { kind: "steps", steps };
+    }
+    return true;
+  }
+  return false;
 }
 
 /** Fold one event of a run into its display items: the model's reasoning, its text, and groups of tool steps, in order.
@@ -189,7 +221,10 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       break;
     }
     case "agent.skill":
-      note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
+      // picked by the user, needed for an office file, or chosen by the model; a failure says why, never silently
+      if (showLoaded(next, p)) break; // its 读取技能 step carries the result and the error
+      if (p.status === "failed") note("技能未能加载", [p.title || SKILL_LABEL[p.name] || p.name, p.error].filter(Boolean).join("："), "failed");
+      else note("已加载技能", p.title || SKILL_LABEL[p.name] || p.name, "ok");
       break;
     case "agent.attachments":
       for (const f of p.files || [])

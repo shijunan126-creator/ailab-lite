@@ -40,6 +40,15 @@ class Settings(BaseSettings):
         allow_inf_nan=False,
     )
 
+    client_js_enabled: bool = True
+    client_js_claim_timeout_seconds: float = Field(default=6, gt=0, le=60)
+    client_js_max_timeout_ms: int = Field(default=5000, ge=100, le=5000)
+    client_js_code_max_bytes: int = Field(default=32768, ge=1, le=32768)
+    client_js_input_max_bytes: int = Field(default=262144, ge=1, le=262144)
+    client_js_value_max_bytes: int = Field(default=65536, ge=1, le=65536)
+    client_js_logs_max_bytes: int = Field(default=8192, ge=1, le=8192)
+    client_js_error_max_bytes: int = Field(default=1024, ge=1, le=1024)
+
     genui_enabled: bool = True
     genui_html_enabled: bool = True
     genui_max_blocks: int = Field(default=8, ge=1, le=20)
@@ -336,11 +345,14 @@ class Settings(BaseSettings):
     memory_dream_interval_seconds: int = Field(default=300, ge=30, le=3600)
     memory_dream_model: str = ""  # empty -> catalog default
     memory_dream_max_users: int = Field(default=5, ge=1, le=100)
+    memory_dream_manual_batches: int = Field(default=3, ge=1, le=100)
+    memory_dream_auto_batches: int = Field(default=6, ge=1, le=100)
     memory_dream_min_runs: int = Field(default=2, ge=1, le=100)
     memory_dream_input_chars: int = Field(default=8000, ge=1000, le=100_000)
     memory_dream_confidence: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_target_ratio: float = Field(default=0.8, ge=0.5, le=1)
     memory_dream_max_tokens: int = Field(default=2000, ge=200, le=20_000)
+    skill_draft_input_chars: int = Field(default=24_000, ge=1000, le=100_000)
     memory_dream_default_timezone: str = "Asia/Shanghai"
     # Dense channel of the history recall. Any OpenAI-compatible /embeddings endpoint (TEI, vLLM, Ollama, a hosted API);
     # empty URL = lexical search only. Vectors of another model are ignored until the indexer has redone them.

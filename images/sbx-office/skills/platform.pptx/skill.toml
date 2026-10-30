@@ -1,0 +1,6 @@
+name = "platform.pptx"
+version = "1.0.0"
+description = "PPT 文件读取、定位与处理"
+license = "NOASSERTION"
+requires = ["python-pptx", "matplotlib", "pandas", "libreoffice", "pdftoppm"]
+roles = []

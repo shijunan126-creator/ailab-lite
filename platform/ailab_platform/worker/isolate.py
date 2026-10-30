@@ -22,6 +22,7 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
 
     output.mkdir(parents=True, exist_ok=True)
     spec = output / "job.json"
+    output_limit = 32 * 1024 * 1024 if operation == "skill_unpack" else MAX_OUTPUT_BYTES
     spec.write_text(
         json.dumps(
             {
@@ -31,6 +32,7 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
                 "options": options,
                 "memory_mb": memory_mb or settings.parse_memory_mb,
                 "cpu_seconds": settings.parse_cpu_seconds,
+                "output_limit": output_limit,
             }
         )
     )
@@ -47,7 +49,7 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
             while proc.poll() is None:
                 if time.monotonic() - started > (timeout or settings.parse_timeout_seconds):
                     raise IsolationError("timeout")
-                if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > MAX_OUTPUT_BYTES:
+                if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > output_limit:
                     raise IsolationError("output_limit")
                 # macOS ignores RLIMIT_AS; use an RSS watchdog for dev in addition to CPU/wall/file limits.
                 if sys.platform == "darwin":
@@ -57,7 +59,7 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
                     if rss and int(rss) > (memory_mb or settings.parse_memory_mb) * 1024:
                         raise IsolationError("memory_limit")
                 time.sleep(0.05)
-            if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > MAX_OUTPUT_BYTES:
+            if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > output_limit:
                 raise IsolationError("output_limit")
             result = output / "result.json"
             if not result.exists():
@@ -89,7 +91,8 @@ def _child(spec: dict) -> None:
     if sys.platform.startswith("linux"):
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
     resource.setrlimit(resource.RLIMIT_CPU, (spec["cpu_seconds"], spec["cpu_seconds"] + 1))
-    resource.setrlimit(resource.RLIMIT_FSIZE, (MAX_OUTPUT_BYTES, MAX_OUTPUT_BYTES))
+    output_limit = spec.get("output_limit", MAX_OUTPUT_BYTES)
+    resource.setrlimit(resource.RLIMIT_FSIZE, (output_limit, output_limit))
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     from .parsers import run
 

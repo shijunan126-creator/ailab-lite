@@ -14,7 +14,7 @@ pytestmark = pytest.mark.e2e
 def _ask(page, prompt: str) -> None:
     wait_models(page)
     select_model(page, "test-fast")
-    page.fill("textarea", prompt)
+    page.get_by_role("textbox", name="消息", exact=True).fill(prompt)
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
     page.wait_for_function("(n) => document.querySelectorAll('.turn-meta').length >= n", arg=1, timeout=90000)

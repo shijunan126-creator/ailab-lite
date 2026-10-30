@@ -8,7 +8,7 @@ const afterFrame = callback => requestAnimationFrame(() => {
   channel.port2.postMessage(0);
 });
 document.addEventListener('keydown', event => {
-  if (event.target.matches('textarea') && event.key.length === 1) {
+  if (event.target.matches('[role="textbox"][aria-label="消息"]') && event.key.length === 1) {
     const start = performance.now();
     afterFrame(now => p.keys.push(now - start));
   }

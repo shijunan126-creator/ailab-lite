@@ -86,6 +86,14 @@ def invalidate(db, user_id, file_ids):
         .where(MessageFileRef.file_id.in_(file_ids), MessageFileRef.invalidated_epoch.is_(None))
         .values(invalidated_epoch=epoch)
     )
+    from ..skill_drafts.service import invalidate_drafts
+
+    affected = descendants(user_id, file_ids)
+    conversation_ids = list(
+        db.scalars(select(Run.conversation_id).where(Run.id.in_(select(affected.c.id)), Run.conversation_id.is_not(None)).distinct())
+    )
+    if conversation_ids:
+        invalidate_drafts(db, user_id, conversation_ids)
     for fid in file_ids:
         item = db.get(FileSourceInvalidation, fid)
         if item:
@@ -176,6 +184,9 @@ def drain_invalidations(db, limit=100):
         schedule_object_deletion(db, f"workspaces/{run.id}/", "file_source", prefix=True)
         for key in db.scalars(select(RunCheckpoint.state_key).where(RunCheckpoint.run_id == run.id)):
             schedule_object_deletion(db, key, "file_source")
+        from ..models import ClientCall
+
+        db.execute(delete(ClientCall).where(ClientCall.run_id == run.id))
         db.execute(delete(RunCheckpoint).where(RunCheckpoint.run_id == run.id))
         if run.conversation_id:
             db.execute(
@@ -232,6 +243,8 @@ def _drain_memory_copies(db, item, path, limit):
         for row in rows:
             row.before_memory = document(row.before_memory or {})
             row.after_memory = document(row.after_memory or {})
+            if row.input_run_ids and db.scalar(select(Run.id).where(Run.id.in_(row.input_run_ids), Run.id.in_(select(path.c.id))).limit(1)):
+                row.report = {**(row.report or {}), "candidates": []}
             row.plan = {
                 **(row.plan or {}),
                 "changes": [clean for entry in (row.plan or {}).get("changes", []) if (clean := redact(entry)) is not None],

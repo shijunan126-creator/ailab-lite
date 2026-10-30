@@ -43,6 +43,7 @@ def queue_output(row):
         "model": row.model,
         "mode": row.options.get("mode", "work"),
         "skill": row.options.get("skill"),
+        "skills": row.options.get("skills"),
         "template": row.options.get("template"),
         "steer": row.steer,
         "state": row.state,
@@ -76,9 +77,11 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 conversation=conv,
                 mode=row.options.get("mode", "work"),
                 skill=row.options.get("skill"),
+                selections=row.options.get("skills"),
                 locked=True,
                 commit=False,
                 frozen_template=row.options.get("template"),
+                client="portal",
             )
             db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()
@@ -164,14 +167,18 @@ def acknowledge_steers(db, run, state):
     for qid in supplied:
         if qid not in previous:
             row = claimed[qid]
+            from ..agent.prompts import render_skill_mentions
+
+            selections = row.options.get("skills") or ([{"name": row.options["skill"]}] if row.options.get("skill") else [])
+            rendered = render_skill_mentions(row.prompt, selections)
 
             def includes_prompt(message):
                 content = message.get("content")
                 return message.get("role") == "user" and (
-                    (isinstance(content, str) and content.startswith(row.prompt))
+                    (isinstance(content, str) and content.startswith(rendered))
                     or (
                         isinstance(content, list)
-                        and any(p.get("type") == "text" and p.get("text", "").startswith(row.prompt) for p in content)
+                        and any(p.get("type") == "text" and p.get("text", "").startswith(rendered) for p in content)
                     )
                 )
 

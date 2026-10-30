@@ -10,6 +10,7 @@ import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 import { confirmDialog } from "../lib/dialog";
 import { placeMenu } from "../lib/menu-place";
+import { extractSkill } from "../lib/skill-drafts";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
@@ -93,20 +94,9 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
     setAt(null);
     setError("");
     try {
-      await api(`/v1/conversations/${conv.id}/messages`, {
-        method: "POST",
-        body: JSON.stringify({
-          prompt:
-            "请使用 auto-skill 分析这段对话，判断是否值得保存为个人技能。先给 SKILL.md 草稿、变更建议以及是否应更新已有技能；不要直接保存，等我确认。",
-          mode: "work",
-          skill: "auto-skill",
-        }),
-      });
-      conversationsChanged();
-      if (window.location.pathname === `/c/${conv.id}`) window.location.reload();
-      else window.location.href = `/c/${conv.id}`;
-    } catch {
-      setError("提取技能失败，请稍后重试");
+      await extractSkill(conv.id); // made in the background; the sidebar's 技能 entry shows its progress
+    } catch (e) {
+      setError(errorMessage(e));
     }
   }
 

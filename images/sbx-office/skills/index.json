@@ -10,8 +10,60 @@
       "sha256": "f121bcba3e3b9c46e683b8372ca87b923451e9fcb6b44cdaa4fed9cf3d2ca649",
       "version": "0.1.0"
     },
+    "platform.docx": {
+      "description": "Word 文件读取、定位与处理",
+      "license": "NOASSERTION",
+      "name": "platform.docx",
+      "requires": [
+        "python-docx",
+        "libreoffice"
+      ],
+      "roles": [],
+      "sha256": "3ea4acee025c9713c4327abb9bed2c110d3e3b1ecef0092625fe673a69b0cbf0",
+      "version": "1.0.0"
+    },
+    "platform.pdf": {
+      "description": "PDF 文件读取、定位与处理",
+      "license": "NOASSERTION",
+      "name": "platform.pdf",
+      "requires": [
+        "pypdf",
+        "pdftoppm"
+      ],
+      "roles": [],
+      "sha256": "43e5c3d17fa2998b354a2d5603336414841dc6cd470a811895c0c3fada4ae43c",
+      "version": "1.0.0"
+    },
+    "platform.pptx": {
+      "description": "PPT 文件读取、定位与处理",
+      "license": "NOASSERTION",
+      "name": "platform.pptx",
+      "requires": [
+        "python-pptx",
+        "matplotlib",
+        "pandas",
+        "libreoffice",
+        "pdftoppm"
+      ],
+      "roles": [],
+      "sha256": "025a29f5a53e3462bb3da3c284ace2ca51c9fef66cf75625d5211e7e9a3b2ac2",
+      "version": "1.0.0"
+    },
+    "platform.xlsx": {
+      "description": "Excel 文件读取、定位与处理",
+      "license": "NOASSERTION",
+      "name": "platform.xlsx",
+      "requires": [
+        "openpyxl",
+        "pandas",
+        "libreoffice"
+      ],
+      "roles": [],
+      "sha256": "e2fdaaa817b09f340673e5cbf5811fbbbd00575e41d25f60ae865eaee6c5390f",
+      "version": "1.0.0"
+    },
     "pptx": {
-      "description": "做演示文稿 / PPT / 汇报材料（.pptx）：多种版式、配色主题、图标、原生图表、配图；支持多轮修改",
+      "description": "演示逻辑、故事线、版式与视觉设计",
       "license": "NOASSERTION",
       "name": "pptx",
       "requires": [
@@ -22,20 +74,7 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "f059436c5e9a58a0ceef36eb3a282d914507019005722ca83c91e64b3c5f7390",
-      "version": "1.0.0"
-    },
-    "xlsx": {
-      "description": "做 Excel 表格 / 报表 / 数据分析（.xlsx）：表头样式、数字格式、公式、合计行、原生图表；支持多轮修改",
-      "license": "NOASSERTION",
-      "name": "xlsx",
-      "requires": [
-        "openpyxl",
-        "pandas",
-        "libreoffice"
-      ],
-      "roles": [],
-      "sha256": "2edc8edc40c830cb9d4d63657e08bd2e7b84bcd6c25ada82f7640f74e58c2990",
+      "sha256": "219ac5e86396ec05faaf21da3d65074f3423d30b9b9e3327d49fce40179d551c",
       "version": "1.0.0"
     }
   }

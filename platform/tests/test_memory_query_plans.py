@@ -2,13 +2,13 @@
 
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import event, insert, inspect, text
+from sqlalchemy import event, insert, inspect, select, text
 from sqlalchemy.orm import Session
 
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_recall.search import _rows
 from ailab_platform.migrate import run_migrations
-from ailab_platform.models import MemoryWorkItem, Run, User
+from ailab_platform.models import MemoryDreamRun, MemoryWorkItem, Run, User
 from tests.test_migrations import engine as engine
 
 
@@ -54,9 +54,10 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
         try:
             assert len(_rows(db, uid, None, None)) == 400
             assert len(service._new_runs(db, uid, None, now)) == 40
+            assert len(service._new_runs(db, uid, None, now, limit=201)) == 100
         finally:
             event.remove(engine, "before_cursor_execute", capture)
-        assert len(statements) == 2
+        assert len(statements) == 3
         indexes = {i["name"] for i in inspect(engine).get_indexes("runs")}
         assert {"ix_runs_memory_history", "ix_runs_memory_index"} <= indexes
         for sql, params in statements:
@@ -68,3 +69,22 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
             ), plan
             if "memory_work_items" in sql:
                 assert "memory_work_items" in plan, plan
+
+
+def test_dream_budget_and_active_queries_have_indexed_paths(engine):
+    run_migrations(engine)
+    with Session(engine) as db:
+        queries = [
+            select(MemoryDreamRun.id)
+            .where(MemoryDreamRun.user_id == "user", MemoryDreamRun.local_date == "2026-10-30", MemoryDreamRun.trigger == "cron")
+            .limit(6),
+            select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == "user", MemoryDreamRun.status.in_(("pending", "running"))).limit(1),
+        ]
+        indexes = {i["name"] for i in inspect(engine).get_indexes("memory_dream_runs")}
+        assert {"uq_memory_dream_user_active", "ix_memory_dream_user_date_trigger"} <= indexes
+        for query in queries:
+            sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
+            prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+            plan = "\n".join(str(row) for row in db.connection().exec_driver_sql(prefix + sql))
+            if engine.dialect.name == "sqlite":
+                assert "INDEX" in plan, plan

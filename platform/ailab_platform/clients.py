@@ -199,6 +199,9 @@ class PlatformClient(_PlatformApi):
     def job_action(self, job_id, action, **body) -> dict:
         return self._send(self._job_action(job_id, action, **body)).json()
 
+    def skill_draft_action(self, draft_id: str, action: str, **body) -> dict:
+        return self._send(self._req("POST", f"/internal/skill-drafts/{draft_id}/{action}", json=body)).json()
+
     def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return self._send(self._set_run_status(run_id, status, summary, error, result)).json()
 
@@ -341,6 +344,12 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
 
+    async def create_client_call(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/client-calls", timeout=5, json=payload))).json()
+
+    async def get_client_call(self, run_id: str, call_id: str) -> dict:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/client-calls/{call_id}", timeout=5))).json()
+
     async def get_checkpoint(self, run_id: str) -> dict | None:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
 
@@ -424,9 +433,23 @@ class AsyncPlatformClient(_PlatformApi):
             params["expected_file_id"] = expected_file_id
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/skills", timeout=120, params=params, content=data))).json()
 
-    async def get_file_bytes(self, file_id: str, *, run_id: str | None = None, job: str = "processing") -> bytes:
+    async def get_file_bytes(
+        self, file_id: str, *, run_id: str | None = None, job: str = "processing", max_bytes: int | None = None
+    ) -> bytes:
         """A personal skill's file. The agent only asks for ids the API listed in the run's personal_skills."""
-        return (await self._send(self._get_file_bytes(file_id, run_id, job))).content
+        req = self._get_file_bytes(file_id, run_id, job)
+        if max_bytes is None:
+            return (await self._send(req)).content
+        async with self._http.stream(req.method, req.url, timeout=req.timeout, **_traced_kwargs(req)) as response:
+            if response.status_code >= 400:
+                await response.aread()
+                _raise(req.method, req.url, response)
+            data = bytearray()
+            async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
+                if len(data) + len(chunk) > max_bytes:
+                    raise ValueError("file exceeds bounded read limit")
+                data.extend(chunk)
+            return bytes(data)
 
 
 class AsyncBrokerClient(_Service):

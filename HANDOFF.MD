@@ -1,5 +1,16 @@
 # HANDOFF
 
+## 2026-10-30 Skills / memory 集成
+
+- 恢复个人技能的冻结版本必须以当前 Run 的 checkpoint 精确绑定并重新核对用户、删除和审核策略；仅依赖当前技能 head 会在更新后卡住沙箱。读取和解包必须有大小上限，失效时警告并继续。
+- `0042` 降级前按用户和本地日期确定性保留一条记录；同日多批是正常数据。当前没有外键引用 `memory_dream_runs`。
+- Prompt 稳定系统段与动态项目/记忆段分别位于首两个消息；测试历史、恢复图片和摘要时不能继续假设用户消息紧接第一段系统提示。`client_calls` 测试清理须先于 runs。
+- 浏览器 QuickJS（`@jitl/quickjs-wasmfile-release-sync`）的 `runtime.setMemoryLimit` 不生效（该构建拿不到 `malloc_usable_size`），死循环分配能涨到数百 MB。硬上限要用 `newVariant(variant, { wasmMemory: new WebAssembly.Memory({ initial: 256, maximum: 256 + MB*16 }) })`；超限后丢弃整个模块重新加载。CSP 需 `'wasm-unsafe-eval'`。
+- Portal 里被 `tests/*.test.mjs`（node-test-compat）加载的文件只能单文件转译，不能有相对 import（如 `lib/work-process.ts`），否则报 `Failed to resolve module specifier`；共享常量放在被加载的文件里。
+- 用 `git hash-object -w` + `update-index --cacheinfo` 分批暂存同一文件的部分改动时，路径必须相对仓库根；在 `platform/portal` 下执行会在根目录生成错误的索引项。
+- Codex 委派：`--approve-for-me` 不能与 `-s` 同用；`codex exec resume` 没有该参数和 `-C`，用 `-c sandbox_mode=… -c approval_policy=…` 并在 worktree 目录里运行；需要写 `.git` 时加 `--add-dir <repo>/.git`。
+- Portal Skill `kind` 是 `base|builtin|personal`，个人文件格式是 `kind_file`；旧 Skills 页面按 `kind == md|zip` 比较会使生产构建失败。E2E 的 composer 是 contenteditable，技能 chip 不能用 fill 覆盖。
+
 ## 2026-10-30 收起侧栏与手机字号
 
 - 收起 Grid 侧栏必须将列宽变量 `--side-w` 设为 0；只隐藏侧栏不会归还列宽。
@@ -925,3 +936,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 合法交互不限Select/Slider/Toggle：Tabs也能满足原地切换，不能被评分器当成缺控件。SVG命名空间URI仅是标识符；字面量告警保留，但要与资源URL/联网分开。
 - 组件/表达式接手计算仍会有语义错误：先核对比较的主客体，再判断多/少；HTML测周期需累计模拟时间，不能相减不同帧内的局部时间。parser通过不代表HTML实现正确。
 - 本次用户要求保留`/tmp/ailab-genui-eval/`原始回答供审阅，不能沿用旧轮“结束清理”流程。证据只链接[第五轮](docs/progress/updates/2026-10-30-genui-real-model-eval.md#第五轮catalog-v2)，不复制原始输出进仓库。
+
+## 2026-10-31 草稿编辑与测试
+
+- 草稿文本编辑后直接点击「保存新版本」会先触发 textarea blur 保存；blur 期间禁用按钮可能取消点击，未发 confirm。修复要保证一次点击等待已在途写入后继续确认，见 I2 记录的失败截图。通用 `button:hover` 色值也会覆盖记忆批次标题，浅色主题需检查悬停对比度。
+- PostgreSQL 不保证无 `ORDER BY` 的事件查询顺序；协议顺序用 `RunEvent.seq`。本机 mock 沙箱测试必须在 PATH 前置 GNU coreutils/findutils，macOS `stat` 不支持 `-c`。性能断言和 Portal 异步加载测试避免与其他整套检查并发。

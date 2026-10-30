@@ -1,6 +1,6 @@
 name = "pptx"
 version = "1.0.0"
-description = "做演示文稿 / PPT / 汇报材料（.pptx）：多种版式、配色主题、图标、原生图表、配图；支持多轮修改"
+description = "演示逻辑、故事线、版式与视觉设计"
 license = "NOASSERTION"
 requires = ["python-pptx", "matplotlib", "pandas", "libreoffice", "pdftoppm"]
 roles = []

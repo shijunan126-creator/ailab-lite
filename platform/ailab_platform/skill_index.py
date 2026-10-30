@@ -23,7 +23,11 @@ def build_index(root: Path) -> dict:
         manifest = tomllib.loads((directory / "skill.toml").read_text())
         if set(manifest) != {"name", "version", "description", "license", "requires", "roles"}:
             raise ValueError(f"invalid manifest fields: {directory.name}")
-        if manifest["name"] != directory.name or not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", directory.name):
+        if (
+            manifest["name"] != directory.name
+            or len(directory.name) > 64
+            or not re.fullmatch(r"(?:platform\.)?[a-z][a-z0-9_-]{0,63}", directory.name)
+        ):
             raise ValueError("manifest name differs from directory")
         for key in ("version", "description", "license"):
             if not isinstance(manifest[key], str) or not manifest[key].strip():

@@ -90,6 +90,7 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
                 Run.user_id,
                 Run.input_file_ids,
                 Run.prompt.label("prompt"),
+                Run.options,
                 Run.summary.label("summary"),
                 Run.status,
                 Run.runtime_meta["steer_ids"].label("steer_ids"),
@@ -106,12 +107,17 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
     for id_ in page:
         row = rows[id_]
         applied = row.steer_ids or []
+        from ..agent.prompts import render_skill_mentions
+
         prompts = (
-            dict(
-                db.execute(
-                    select(QueuedMessage.id, QueuedMessage.prompt).where(QueuedMessage.run_id == id_, QueuedMessage.state == "steered")
-                ).all()
-            )
+            {
+                item.id: render_skill_mentions(item.prompt, (item.options or {}).get("skills"))
+                for item in db.execute(
+                    select(QueuedMessage.id, QueuedMessage.prompt, QueuedMessage.options).where(
+                        QueuedMessage.run_id == id_, QueuedMessage.state == "steered"
+                    )
+                )
+            }
             if applied
             else {}
         )
@@ -119,6 +125,12 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         item = {
             "id": id_,
             "prompt": row.prompt,
+            "skills": (row.options or {}).get("skills")
+            or (
+                [{"name": (row.options or {}).get("skill"), "title": (row.options or {}).get("skill_title")}]
+                if (row.options or {}).get("skill")
+                else []
+            ),
             "reply": "（文件来源已失效，需重新读取）"
             if row.source_invalidated or id_ in invalid
             else for_history(row.summary or row.error or "", keep_ui=id_ == ids[-1], limit=16000),

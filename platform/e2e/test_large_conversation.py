@@ -104,11 +104,11 @@ def test_500_loaded_turns_keep_only_nearby_content_mounted_and_composer_responsi
     samples = []
     for _ in range(10):
         start = time.perf_counter()
-        page.locator("textarea").press_sequentially("流畅", delay=0)
+        page.get_by_role("textbox", name="消息", exact=True).press_sequentially("流畅", delay=0)
         page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => resolve()))")
         samples.append((time.perf_counter() - start) * 1000)
     assert max(samples) < 1000, samples
-    assert page.locator("textarea").input_value() == "流畅" * 10
+    assert page.get_by_role("textbox", name="消息", exact=True).inner_text() == "流畅" * 10
     report = {"turns": 500, "mounted_at_top": mounted, "dom_nodes": page.locator("*").count(), "input_ms": samples}
     (stack.log_dir / "500-turns.json").write_text(json.dumps(report))
     page.screenshot(path=str(stack.log_dir / "500-turns.png"))

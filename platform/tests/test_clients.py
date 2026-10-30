@@ -72,6 +72,21 @@ def test_async_client_reuses_one_transport(monkeypatch) -> None:
     assert fake.closed is True
 
 
+def test_async_skill_read_enforces_stream_limit():
+    async def exercise():
+        client = AsyncPlatformClient(base_url="http://api", token="t")
+        await client._http.aclose()
+        client._http = httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(200, content=b"12345")))
+        try:
+            assert await client.get_file_bytes("f", run_id="r", job="skill", max_bytes=5) == b"12345"
+            with pytest.raises(ValueError, match="bounded read"):
+                await client.get_file_bytes("f", run_id="r", job="skill", max_bytes=4)
+        finally:
+            await client.aclose()
+
+    asyncio.run(exercise())
+
+
 def test_client_rejects_error_responses(monkeypatch) -> None:
     class Bad(_Response):
         status_code = 503

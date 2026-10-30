@@ -26,14 +26,28 @@ from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
 from ..library import owned_project
 from ..locks import user_critical_section
-from ..models import Conversation, FileObject, FileStatus, OutboxMessage, QueuedMessage, Run, RunAttempt, RunEvent, RunStatus, User, utcnow
+from ..models import (
+    Conversation,
+    FileObject,
+    FileStatus,
+    OutboxMessage,
+    QueuedMessage,
+    Run,
+    RunAttempt,
+    RunEvent,
+    RunStatus,
+    SkillApproval,
+    User,
+    utcnow,
+)
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
 from ..schemas import EventOut, RunCreate, RunDetail, RunEdit, RunOut, RunRetry
-from ..skill_policy import run_disabled_skills
+from ..skill_policy import effective_policy
+from ..skill_registry import BASE_SKILLS, resolve_name
 from ..storage import get_storage
 from .conversation_mode import resolve_conversation_mode
-from .routes_skills import usable_personal
+from .routes_skills import personal_skills, usable_personal
 from .serializers import run_dict
 from .ui_state import UIState
 
@@ -82,25 +96,79 @@ def list_models(_: User = Depends(current_user)) -> dict:
     }
 
 
-def validate_run_input(db, user, prompt, model, file_ids, mode=None, skill=None, template=None, *, conversation=None, turn_mode=None):
+def reject_both_skill_fields(body):
+    if {"skill", "skills"} <= body.model_fields_set:
+        raise HTTPException(400, "不能同时指定 skill 和 skills")
+
+
+def validate_run_input(
+    db, user, prompt, model, file_ids, mode=None, skill=None, template=None, *, selections=None, conversation=None, turn_mode=None
+):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
     options: dict = {"mode": mode, "capability_discovery": 1}
-    if skill:
-        if skill in run_disabled_skills(db, user):
-            raise HTTPException(status_code=400, detail=f"技能「{skill}」已关闭，可在侧栏「技能」里打开")
-        known = skills().get(skill) or usable_personal(db, user).get(skill)
+    if skill is not None and selections is not None:
+        raise HTTPException(400, "不能同时指定 skill 和 skills")
+    requested = selections if selections is not None else ([{"name": skill}] if skill else [])
+    if len(requested) > 5:
+        raise HTTPException(400, "最多选择5个技能")
+    personal = personal_skills(db, user)
+    allowed = usable_personal(db, user)
+    off = set((user.settings or {}).get("disabled_skills") or [])
+    denied, personal_policy = effective_policy(db, user)
+    resolved, seen = [], set()
+    for raw in requested:
+        item = raw.model_dump() if hasattr(raw, "model_dump") else dict(raw)
+        name = resolve_name(item["name"])
+        position = item.get("at")
+        if position is not None and (not isinstance(position, int) or position < 0 or position > len(prompt)):
+            raise HTTPException(400, f"技能「{item['name']}」的位置无效")
+        candidate = None
+        if item.get("file_id"):
+            source = db.get(FileObject, item["file_id"])
+            if source and source.user_id == user.id and source.purpose == "skill":
+                candidate = next((s for s in personal if s.get("lineage_id") == source.lineage_id), None)
+            if candidate is None:
+                raise HTTPException(400, f"技能「{item['name']}」不存在或已删除")
+            name = candidate["name"]
+        else:
+            candidate = next((s for s in personal if s["name"] == name), None)
+        platform = None if item.get("file_id") else skills().get(name)
+        known = platform or candidate
+        title = (known or {}).get("title") or item["name"]
         if not known:
-            raise HTTPException(status_code=400, detail=f"unknown skill: {skill}")
-        options = {
-            "mode": "work",
-            "capability_discovery": 1,
-            "skill": skill,
-            "skill_title": known.get("title") or skill,
-        }  # a skill is work by definition
+            raise HTTPException(400, f"技能「{title}」不存在或已删除")
+        if name in off and name not in BASE_SKILLS:
+            raise HTTPException(400, f"技能「{title}」已关闭")
+        if name in denied or (candidate and not platform and personal_policy == "disabled"):
+            raise HTTPException(400, f"技能「{title}」已被管理员停用")
+        if candidate and not platform and (name not in allowed or allowed[name]["file_id"] != candidate["file_id"]):
+            approval = db.get(SkillApproval, candidate["file_id"])
+            error = candidate.get("error") or "未通过审核"
+            if approval and approval.state == "disabled":
+                error = "已被管理员停用"
+            elif error == "安全扫描中":
+                error = "还在安全扫描"
+            elif error == "未通过安全扫描":
+                error = "未通过审核"
+            raise HTTPException(400, f"技能「{title}」{error}")
+        identity = ("personal", candidate["file_id"]) if candidate and not platform else ("platform", name)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        frozen = {
+            "name": name,
+            "title": title,
+            "kind": "base" if name in BASE_SKILLS else "builtin" if platform else "personal",
+            "at": position,
+        }
+        if candidate and not platform:
+            frozen["file_id"] = candidate["file_id"]
+        resolved.append(frozen)
+    options["skills"] = resolved
 
     mode = resolve_conversation_mode(
-        db, conversation, mode, turn_mode=turn_mode, requires_work=bool(skill or (template is not None and conversation is not None))
+        db, conversation, mode, turn_mode=turn_mode, requires_work=bool(template is not None and conversation is not None)
     )
     options["mode"] = mode
 
@@ -163,12 +231,14 @@ def start_run(
     conversation: Conversation | None = None,
     mode: str | None = None,
     skill: str | None = None,
+    selections=None,
     locked: bool = False,
     commit: bool = True,
     sibling_of: Run | None = None,
     template=None,
     frozen_template: dict | None = None,
     client_send_id: str | None = None,
+    client: str | None = None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -188,6 +258,9 @@ def start_run(
                         "conversation_id": conversation.id if conversation else None,
                         "mode": mode,
                         "skill": skill,
+                        "skills": [s.model_dump() if hasattr(s, "model_dump") else s for s in selections]
+                        if selections is not None
+                        else None,
                         "template": template.model_dump(mode="json") if template is not None else None,
                     },
                     sort_keys=True,
@@ -209,6 +282,7 @@ def start_run(
             mode,
             skill,
             template,
+            selections=selections,
             conversation=conversation,
             turn_mode=(sibling_of.options or {}).get("mode", "work") if sibling_of else None,
         )
@@ -249,7 +323,7 @@ def start_run(
             prompt=prompt,
             model=model_id,
             input_file_ids=inputs,
-            options=options,
+            options={**options, **({"client": client} if client else {})},
         )
         db.add(run)
         if conversation is not None:
@@ -283,6 +357,7 @@ def start_run(
 
 @router.post("/runs", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def create_run(body: RunCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    reject_both_skill_fields(body)
     run = start_run(
         db,
         user,
@@ -292,8 +367,10 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         body.title,
         mode=body.mode,
         skill=body.skill,
+        selections=body.skills,
         template=body.template,
         client_send_id=body.client_send_id,
+        client="portal",
     )
     return run_dict(db, run, detail=True)
 
@@ -483,6 +560,8 @@ async def stream_events(
 def _new_version(db, user, run_id, body, editing=False):
     from ..conversation_tree import path_ids, require_idle, siblings_query
 
+    if editing:
+        reject_both_skill_fields(body)
     with user_critical_section(db, user.id):
         old = _get_owned_run(db, run_id, user)
         db.refresh(old)
@@ -517,13 +596,27 @@ def _new_version(db, user, run_id, body, editing=False):
             None if editing else old.title,
             conversation=conv,
             mode=body.mode or options.get("mode") or "work",
-            skill=options.get("skill"),
+            skill=(
+                body.skill
+                if editing and body.skill is not None
+                else options.get("skill")
+                if options.get("skills") is None and not (editing and body.skills is not None)
+                else None
+            ),
+            selections=(
+                body.skills
+                if editing and body.skills is not None
+                else None
+                if editing and body.skill is not None
+                else options.get("skills")
+            ),
             locked=True,
             commit=False,
             sibling_of=old,
             frozen_template=options.get("template"),
+            client="portal",
         )
-        new.options = {**options, **new.options}
+        new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills"}}, **new.options}
         conv.queue_paused = True
         if editing:
             new.edited_from = old.id

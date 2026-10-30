@@ -1,6 +1,7 @@
 // The browser only ever talks to this Portal's own /api proxy (see app/api/v1). The access token
 // is an httpOnly cookie that the proxy turns into an Authorization header on the server, so no
 // token exists in this bundle, in URLs, or in anything JavaScript can read.
+import type { SentSkill } from "./message-parts";
 import type { UIState } from "./ui-state";
 
 export const API_BASE = "/api";
@@ -39,7 +40,7 @@ export type Run = {
   work_ms?: number | null;
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string }[];
-  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string };
+  options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[] };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
     file_wait?: { action: "extract-text" | "image-reference" };
@@ -72,20 +73,54 @@ export type Preview = {
   error?: string;
 };
 
+/** base: platform office skills, always on; builtin: platform skills the user may switch off; personal: the user's own. */
+export type SkillKind = "base" | "builtin" | "personal";
 export type Skill = {
   name: string;
   title: string;
   description: string;
+  kind?: SkillKind; // older APIs: derive from scope
+  toggleable?: boolean;
   builtin: boolean;
   implicit?: boolean; // driven by another entry (e.g. the conversation menu): not offered as a skill of its own
   enabled: boolean;
   scope: "builtin" | "personal";
+  extras?: "ppt_template"[]; // platform-registered interactions next to the chip
+  version?: string;
   file_id?: string; // personal skills: the file in the library that defines it
+  lineage_id?: string;
   filename?: string;
-  kind?: "md" | "zip";
+  kind_file?: "md" | "zip";
   files?: number;
   error?: string | null; // why a personal skill file cannot be used
 };
+
+export type DraftStatus = "queued" | "running" | "preparing" | "ready" | "failed" | "confirmed" | "discarded";
+export type DraftFile = { path: string; size: number; kind: "text" | "image" | "binary"; change: "added" | "modified" | "deleted" | "unchanged" };
+/** A skill being drafted or edited before it becomes a real skill (contract §3). */
+export type SkillDraft = {
+  id: string;
+  status: DraftStatus;
+  stage?: "reading" | "drafting" | "unpacking" | null;
+  origin: "conversation" | "skill";
+  conversation_id?: string | null;
+  conversation_title?: string | null;
+  action: "create" | "update";
+  base?: { name: string; kind: SkillKind; file_id?: string | null } | null;
+  name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  summary?: string | null;
+  error?: string | null;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  files?: DraftFile[];
+  result?: { file_id: string; name: string; version?: number } | null;
+};
+
+export const skillKind = (s: Pick<Skill, "kind" | "scope" | "name">): SkillKind =>
+  s.kind ?? (s.scope === "personal" ? "personal" : s.name.startsWith("platform.") ? "base" : "builtin");
 
 export type Conversation = {
   memory_policy?: { read?: boolean; write?: boolean };
@@ -119,12 +154,14 @@ export type QueuedMessage = {
   model: string;
   mode: "chat" | "work";
   skill: string | null;
+  skills?: SentSkill[] | null;
   steer: boolean;
   state: "queued" | "steered" | "started" | "canceled";
   created_at: string;
 };
 
-export type NotificationKind = "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received";
+export type NotificationKind =
+  | "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received" | "skill_draft.ready" | "skill_draft.failed";
 export type Notice = {
   id: string;
   kind: NotificationKind;

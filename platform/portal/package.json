@@ -10,6 +10,7 @@
     "genui:prompt": "OPENUI_TELEMETRY_DISABLED=1 node scripts/genui-prompt.ts"
   },
   "dependencies": {
+    "@jitl/quickjs-wasmfile-release-sync": "0.32.0",
     "@openuidev/lang-core": "1.0.2",
     "@openuidev/react-lang": "1.0.2",
     "@tailwindcss/postcss": "4.3.3",
@@ -17,6 +18,7 @@
     "lucide-react": "1.64.0",
     "next": "^16.4.2",
     "pdfjs-dist": "^4.8.69",
+    "quickjs-emscripten-core": "0.32.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-pdf": "^9.2.1",

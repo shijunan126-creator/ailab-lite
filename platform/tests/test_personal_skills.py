@@ -80,6 +80,43 @@ def _upload(c: TestClient, headers: dict, filename: str, data: bytes) -> str:
     return up["id"]
 
 
+def test_frozen_skill_read_requires_checkpoint_owner_and_current_policy(monkeypatch):
+    from fastapi import HTTPException
+
+    from ailab_platform.api.routes_internal import _bound_file
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import FileObject, SkillApproval, User
+    from ailab_platform.service_auth import SERVICE_SCOPES, ServicePrincipal
+
+    with TestClient(app) as c:
+        me, other = _user(c), _user(c)
+        file_id = _upload(c, me, "SKILL.md", SKILL_MD.format(name="frozen-weekly").encode())
+        run = c.post("/v1/runs", headers=me, json={"prompt": "test"}).json()
+        other_run = c.post("/v1/runs", headers=other, json={"prompt": "test"}).json()
+        monkeypatch.setattr(
+            "ailab_platform.api.routes_runtime.read_checkpoint",
+            lambda db, run: {"state": {"loaded_skills": [{"name": "frozen-weekly", "file_id": file_id, "kind": "personal"}]}},
+        )
+        principal = ServicePrincipal("agent", SERVICE_SCOPES["agent"])
+        with SessionLocal() as db:
+            file = db.get(FileObject, file_id)
+            file.is_head = 0
+            db.commit()
+            assert _bound_file(db, file_id, principal, run["id"], "skill").id == file_id
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, other_run["id"], "skill")
+            db.add(SkillApproval(file_id=file_id, state="disabled"))
+            db.commit()
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, run["id"], "skill")
+            db.delete(db.get(SkillApproval, file_id))
+            user = db.get(User, file.user_id)
+            user.settings = {**(user.settings or {}), "disabled_skills": ["frozen-weekly"]}
+            db.commit()
+            with pytest.raises(HTTPException):
+                _bound_file(db, file_id, principal, run["id"], "skill")
+
+
 def test_a_skill_in_the_library_is_listed_switchable_and_usable_by_its_owner_only() -> None:
     name = f"weekly-{uuid.uuid4().hex[:6]}"
     with TestClient(app) as c:
@@ -90,7 +127,7 @@ def test_a_skill_in_the_library_is_listed_switchable_and_usable_by_its_owner_onl
         assert [s for s in c.get("/v1/skills", headers=other).json() if s["scope"] == "personal"] == []
 
         run = c.post("/v1/runs", headers=me, json={"prompt": "写周报", "skill": name}).json()
-        assert run["options"] == {"mode": "work", "capability_discovery": 1, "skill": name, "skill_title": "周报助手"}
+        assert run["options"]["skills"] == [{"name": name, "title": "周报助手", "kind": "personal", "file_id": file_id, "at": None}]
         personal = c.get(f"/internal/runs/{run['id']}", headers=SERVICE).json()["personal_skills"]
         assert personal == [
             {"name": name, "title": "周报助手", "description": "按团队模板写周报", "file_id": file_id, "filename": "SKILL.md", "kind": "md"}
@@ -150,7 +187,7 @@ def test_the_model_sees_personal_skills_and_reads_one_whose_files_reach_the_sand
     broker = FakeBroker()
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=llm).process("run_1", attempt_id="att_1"))
     system = llm.seen_messages[0][0]["content"]
-    assert "# 个人技能" in system and "- weekly：周报助手" in system
+    assert "- weekly：周报助手" not in system
     tool_msg = llm.seen_messages[1][-1]["content"]
     assert "运行 scripts/fill.py" in tool_msg and "/workspace/.ailab/skills/weekly/" in tool_msg
     # read before there was a sandbox: installed once the exec leased one
@@ -165,5 +202,25 @@ def test_a_picked_personal_skill_comes_preloaded() -> None:
     llm = ScriptedLLM([LLMResponse(content="ok")])
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     system = llm.seen_messages[0][0]["content"]
-    assert "本轮已选技能：weekly" in system and "运行 scripts/fill.py" in system
-    assert ("agent.skill", {"name": "weekly", "title": "周报助手"}) in platform.events
+    assert "运行 scripts/fill.py" not in system
+    assert any(m["role"] == "tool" and "运行 scripts/fill.py" in m["content"] for m in llm.seen_messages[0])
+    assert any(t == "agent.skill" and p["name"] == "weekly" and p["status"] == "loaded" for t, p in platform.events)
+
+
+def test_selected_file_id_follows_personal_skill_lineage_head():
+    name = f"weekly-{uuid.uuid4().hex[:6]}"
+    with TestClient(app) as client:
+        me = _user(client)
+        old = _upload(client, me, "SKILL.md", SKILL_MD.format(name=name).encode())
+        updated = client.post(
+            "/v1/skills/content", headers=me, json={"name": name, "content": SKILL_MD.format(name=name), "expected_file_id": old}
+        )
+        assert updated.status_code == 201, updated.text
+        current = updated.json()["file_id"]
+        process_file(current, platform=_ApiClient(client), storage=get_storage())
+        response = client.post(
+            "/v1/runs", headers=me, json={"prompt": "写周报", "mode": "chat", "skills": [{"name": "旧标题", "file_id": old}]}
+        )
+        assert response.status_code == 201, response.text
+        selected = response.json()["options"]["skills"]
+        assert selected == [{"name": name, "title": "周报助手", "kind": "personal", "file_id": current, "at": None}]

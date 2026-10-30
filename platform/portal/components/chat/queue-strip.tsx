@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { QueuedMessage } from "../../lib/api";
 import { IconCornerDownRight, IconPencil, IconQueue, IconX } from "../icons";
+import { fromPayload } from "../../lib/message-parts";
+import MessageText from "./message-text";
 
 /** Messages written while an answer is running, right above the composer. Each goes after the answer in turn;
  * "插入" hands it to the running answer at its next step instead. */
@@ -70,7 +72,7 @@ export default function QueueStrip({
               onBlur={() => setEditing(null)}
             />
           ) : (
-            <span className="queue-text" title={q.prompt}>{q.prompt}</span>
+            <span className="queue-text" title={q.prompt}><MessageText parts={fromPayload(q.prompt, q.skills)} /></span>
           )}
           {running && !q.steer && !paused ? (
             <button className="link queue-steer" disabled={busy === q.id} onClick={() => act(q.id, () => onSteer(q.id))} title="交给正在进行的回答">

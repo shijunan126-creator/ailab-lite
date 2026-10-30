@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -277,48 +277,83 @@ def update_dream_settings(body: MemoryDreamSettings, user: User = Depends(curren
 
 
 @router.post("/v1/memory/dream/run")
-def run_dream_now(background: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    """Manual trigger for QA and for a user who does not want to wait for the quiet window."""
-    from ..memory_dream.service import process_dream, reclaim_failed
+def run_dream_now(background: BackgroundTasks, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..config import settings
+    from ..memory_dream.service import _new_runs, process_dream_chain
     from ..memory_dream.settings import dream_settings
 
-    ds = dream_settings(user)
-    if not ds.enabled or not memory_for(user)["enabled"] or not memory_for(user)["auto_save"]:
-        raise HTTPException(409, "nightly dream is disabled")
-    zone_name = ds.timezone or "Asia/Shanghai"
-    local_date = datetime.now(UTC).astimezone(ZoneInfo(zone_name)).date().isoformat()
     with user_critical_section(db, user.id):
         db.refresh(user)
-        if db.scalar(select(Run.id).where(Run.user_id == user.id, Run.status.notin_(RunStatus.TERMINAL)).limit(1)):
-            raise HTTPException(409, "wait for the current turn to finish")
-        existing = db.scalar(
-            select(MemoryDreamRun).where(
-                MemoryDreamRun.user_id == user.id,
-                MemoryDreamRun.local_date == local_date,
+        ds = dream_settings(user)
+        memory = memory_for(user)
+        if not memory["enabled"]:
+            raise HTTPException(409, "记忆未开启")
+        if not memory["auto_save"]:
+            raise HTTPException(409, "自动记忆已关闭，无法整理")
+        pending_count = len(_new_runs(db, user.id, None, datetime.now(UTC), limit=201))
+        pending = "200+" if pending_count > 200 else pending_count
+        active = db.scalar(
+            select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.status.in_(("pending", "running"))).limit(1)
+        )
+        if active:
+            return {"id": active.id, "status": active.status, "reused": True, "pending_runs": pending}
+        if not pending:
+            return {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
+        zone_name = ds.timezone or settings.memory_dream_default_timezone
+        run = MemoryDreamRun(
+            id=new_id("dream"),
+            user_id=user.id,
+            local_date=datetime.now(UTC).astimezone(ZoneInfo(zone_name)).date().isoformat(),
+            timezone=zone_name,
+            status="pending",
+            trigger="manual",
+            input_run_ids=[],
+            before_memory={},
+            after_memory={},
+            token_usage={},
+        )
+        db.add(run)
+        db.commit()
+        run_id = run.id
+    background.add_task(process_dream_chain, run_id)
+    response.status_code = 202
+    return {"id": run_id, "status": "pending", "reused": False, "pending_runs": pending}
+
+
+@router.get("/v1/memory/dream/status")
+def dream_status(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..config import settings
+    from ..memory_dream.service import _new_runs
+    from ..memory_dream.settings import dream_settings
+
+    pending = len(_new_runs(db, user.id, None, datetime.now(UTC), limit=201))
+    active = db.scalar(
+        select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.status.in_(("pending", "running"))).limit(1)
+    )
+    finished = db.scalar(
+        select(MemoryDreamRun.finished_at)
+        .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.finished_at.is_not(None))
+        .order_by(MemoryDreamRun.finished_at.desc())
+        .limit(1)
+    )
+    zone = dream_settings(user).timezone or settings.memory_dream_default_timezone
+    date = datetime.now(UTC).astimezone(ZoneInfo(zone)).date().isoformat()
+    batches = len(
+        list(
+            db.scalars(
+                select(MemoryDreamRun.id)
+                .where(MemoryDreamRun.user_id == user.id, MemoryDreamRun.local_date == date, MemoryDreamRun.trigger == "cron")
+                .limit(settings.memory_dream_auto_batches)
             )
         )
-        if existing and existing.status != "failed":
-            raise HTTPException(409, "dream already ran today")
-        if existing:
-            # A failed night must be retryable the same day, not lost until tomorrow.
-            run = reclaim_failed(db, existing, trigger="manual")
-        else:
-            run = MemoryDreamRun(
-                id=new_id("dream"),
-                user_id=user.id,
-                local_date=local_date,
-                timezone=zone_name,
-                status="pending",
-                trigger="manual",
-                input_run_ids=[],
-                before_memory={},
-                after_memory={},
-                token_usage={},
-            )
-            db.add(run)
-        db.commit()
-    background.add_task(process_dream, run.id)
-    return {"id": run.id}
+    )
+    return {
+        "pending_runs": "200+" if pending > 200 else pending,
+        "active": {"id": active.id, "status": active.status, "trigger": active.trigger} if active else None,
+        "last_finished_at": finished,
+        "auto_batches_today": batches,
+        "manual_batches_limit": settings.memory_dream_manual_batches,
+    }
 
 
 @router.get("/v1/memory/dreams", response_model=list[MemoryDreamRunOut])

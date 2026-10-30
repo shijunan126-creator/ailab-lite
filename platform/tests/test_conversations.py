@@ -69,6 +69,7 @@ def test_a_conversation_collects_turns_and_gets_a_title() -> None:
         assert internal["history"] == [
             {
                 "prompt": "帮我做一个关于城市更新的 PPT\n细节…",
+                "skills": [],
                 "reply": "# 城市更新演示方案\n做好了",
                 "status": "succeeded",
                 "files": [],

@@ -343,7 +343,9 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
 
                 purge_episodes_for_runs(db, ids)
                 # the usage ledger stays: what these runs cost still counts
-                for model in (RunEvent, Artifact):
+                from ..models import ClientCall
+
+                for model in (RunEvent, Artifact, ClientCall):
                     db.execute(delete(model).where(model.run_id.in_(ids)))
                 db.execute(delete(Run).where(Run.id.in_(ids)))
                 remaining -= len(ids)

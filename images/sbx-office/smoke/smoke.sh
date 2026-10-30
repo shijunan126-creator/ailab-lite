@@ -9,7 +9,7 @@ echo "font map OK"
 python /opt/ailab-tools/smoke/office_reader.py
 
 mkdir -p /workspace/work
-python /opt/skills/pptx/scripts/build.py --example > /workspace/work/deck.json
+python /opt/skills/platform.pptx/scripts/build.py --example > /workspace/work/deck.json
 python - <<'PY'
 import json
 spec = json.load(open("/workspace/work/deck.json"))
@@ -18,11 +18,11 @@ for s in spec["slides"]:
 spec["slides"].append({"layout": "bullets", "title": "故意过长", "bullets": ["这是一条非常非常长的要点，用来测试文字过长时的告警" * 6] * 6})
 json.dump(spec, open("/workspace/work/deck.json", "w"), ensure_ascii=False)
 PY
-python /opt/skills/pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/smoke.pptx | tee /tmp/build.log
+python /opt/skills/platform.pptx/scripts/build.py /workspace/work/deck.json /workspace/outputs/smoke.pptx | tee /tmp/build.log
 grep -q "^WARN slide 10" /tmp/build.log || { echo "too-long text was not reported"; exit 1; }
 echo "overflow warning OK"
-python /opt/skills/xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json
-python /opt/skills/xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/smoke.xlsx
+python /opt/skills/platform.xlsx/scripts/build_xlsx.py --example > /workspace/work/book.json
+python /opt/skills/platform.xlsx/scripts/build_xlsx.py /workspace/work/book.json /workspace/outputs/smoke.xlsx
 start=$(date +%s)
 soffice --headless --convert-to pdf --outdir /tmp /workspace/outputs/smoke.pptx >/dev/null
 pdftoppm -png -r 30 /tmp/smoke.pdf /tmp/smoke

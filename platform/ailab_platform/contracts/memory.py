@@ -213,6 +213,7 @@ class MemoryDreamRunOut(BaseModel):
     input_run_ids: list[str] = Field(default_factory=list)
     changes: list[DreamChange] = Field(default_factory=list)
     journal: str = ""
+    report: dict = Field(default_factory=dict)
     token_usage: dict = Field(default_factory=dict)
     error: str = ""
     created_at: datetime | None = None

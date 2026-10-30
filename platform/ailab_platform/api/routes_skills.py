@@ -19,6 +19,8 @@ from ..deps import current_user, get_db
 from ..locks import user_critical_section
 from ..models import REVIEW_PREDICATES, Department, FileObject, FileStatus, SkillApproval, SkillPolicy, User, UserRole
 from ..skill_policy import effective_policy, run_disabled_skills
+from ..skill_registry import BASE_SKILLS
+from ..skill_registry import kind as platform_kind
 from ..skillfiles import MAX_SKILL_MD
 
 router = APIRouter(prefix="/v1/skills", tags=["skills"])
@@ -54,7 +56,14 @@ def personal_skills(db: Session, user: User) -> list[dict]:
     out, seen = [], set()
     for f in files:
         meta = f.meta or {}
-        item = {"file_id": f.id, "filename": f.filename, "name": f"file-{f.id}", "created_at": f.created_at, **(meta.get("skill") or {})}
+        item = {
+            "file_id": f.id,
+            "lineage_id": f.lineage_id,
+            "filename": f.filename,
+            "name": f"file-{f.id}",
+            "created_at": f.created_at,
+            **(meta.get("skill") or {}),
+        }
         if f.status == FileStatus.PENDING:
             item["error"] = "安全扫描中"
         elif f.status == FileStatus.REJECTED:
@@ -131,10 +140,15 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
             "scope": "builtin",
             "builtin": True,
             "implicit": n in IMPLICIT_SKILLS,
-            "enabled": n not in off,
+            "kind": platform_kind(n),
+            "toggleable": n not in BASE_SKILLS,
+            "extras": ["ppt_template"] if n in {"platform.pptx", "pptx"} else [],
+            "enabled": n in BASE_SKILLS or n not in off,
             **{k: m[k] for k in ("version", "sha256", "license", "requires", "roles")},
         }
-        for n, m in skills().items()
+        for n, m in sorted(
+            skills().items(), key=lambda item: (BASE_SKILLS.index(item[0]) if item[0] in BASE_SKILLS else len(BASE_SKILLS), item[0])
+        )
     ]
     personal = [
         {
@@ -146,7 +160,10 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
             "enabled": s.get("name") in allowed,
             "file_id": s["file_id"],
             "filename": s["filename"],
-            "kind": s.get("kind"),
+            "kind": "personal",
+            "kind_file": s.get("kind"),
+            "lineage_id": s.get("lineage_id"),
+            "toggleable": True,
             "files": s.get("files"),
             "error": s.get("error"),
         }
@@ -157,6 +174,8 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
 
 @router.put("/{name}")
 def toggle_skill(name: str, body: SkillToggle, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    if name in BASE_SKILLS:
+        raise HTTPException(403, "基础技能不能关闭")
     denied, personal_policy = effective_policy(db, user)
     builtin = skills()
     personal = {s["name"]: s for s in personal_skills(db, user) if not s.get("error")}
@@ -217,6 +236,8 @@ def set_policy(body: PolicyInput, user: User = Depends(current_user), db: Sessio
     _admin(user)
     if body.scope != "global" and not db.get(Department, body.scope):
         raise HTTPException(422, "unknown department")
+    if body.name in BASE_SKILLS:
+        raise HTTPException(403, "基础技能不能关闭")
     if body.name not in skills() and body.name != "*personal*":
         raise HTTPException(422, "unknown skill")
     states = {"allowed", "review", "disabled"} if body.name == "*personal*" else {"allowed", "disabled"}
@@ -331,7 +352,14 @@ def read_skill_content(name: str, user: User = Depends(current_user), db: Sessio
     from ..storage import get_storage
 
     if name in skills():
-        return {"name": name, "content": load_skill(name), "file_id": None, "editable": False, "kind": "builtin", "revision": None}
+        return {
+            "name": name,
+            "content": load_skill(name),
+            "file_id": None,
+            "editable": False,
+            "kind": platform_kind(name),
+            "revision": None,
+        }
     personal = next((s for s in personal_skills(db, user) if s["name"] == name), None)
     if not personal:
         raise HTTPException(404, "skill not found")

@@ -1,0 +1,6 @@
+name = "platform.pdf"
+version = "1.0.0"
+description = "PDF 文件读取、定位与处理"
+license = "NOASSERTION"
+requires = ["pypdf", "pdftoppm"]
+roles = []
