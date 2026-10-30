@@ -4,7 +4,7 @@
     python build_xlsx.py --example               print an example spec
 
     # in your own script (pandas analysis etc.):
-    import sys; sys.path.insert(0, "/opt/skills/xlsx/scripts")
+    import sys; sys.path.insert(0, "/opt/skills/platform.xlsx/scripts")
     from build_xlsx import write_table, add_chart, title_block, autofit
 
 Cells whose value is a string starting with "=" are formulas, written as formulas (not computed values),
