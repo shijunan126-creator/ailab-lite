@@ -1,5 +1,10 @@
 # HANDOFF
 
+## 2026-10-30 PR #108 CI 时序隔离
+
+- 共享测试数据库里的 outbox 会被 API lifespan dispatcher 扫描；只替换 `preview_dispatch.get_queue` 无法隔离缩略图测试，后台 tick 会发布其他测试遗留任务。需要显式控制 tick 的测试在启动 TestClient 前替换 `main.dispatch_forever`，保留严格队列断言；恢复/后台调度仍由其他合同测试覆盖。
+- Playwright `goto` 完成不代表 React effect 已注册。全局键盘快捷键测试先等客户端 effect 后才出现的 `.user-chip`，再发键；不加 sleep、不重复发键或放宽可见性断言。
+
 ## 2026-10-30 P6 无错误陈述门槛
 
 - **23 项的单次运行，波动约 ±4 项。** v6 和 v7 只差一条提示规则，严格项却从 20 降到 16，新增的失败都与改动无关。所以单轮结果不能证明某条规则有效或有害。要看错误陈述总数这类跨轮趋势；要判断一条规则是否有效，同一份提示至少跑两次。

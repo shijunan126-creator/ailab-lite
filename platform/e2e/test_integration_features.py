@@ -133,6 +133,8 @@ def test_pin_and_search_earlier_prompt_with_unicode_highlight(logged_in, stack, 
     page.reload()
     expect(pinned).to_be_visible()
     page.goto(stack.portal + "/")
+    # The account chip appears after client effects; SSR navigation alone does not install shortcuts.
+    expect(page.locator(".user-chip")).to_be_visible()
     page.keyboard.press(shortcut)
     dialog = page.locator(".search-dialog")
     expect(dialog).to_be_visible()

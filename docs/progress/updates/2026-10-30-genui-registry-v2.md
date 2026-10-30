@@ -67,3 +67,8 @@ Codex 增量部署 `genui-v2-5bf1a1e460a6`：只重建后端共用镜像和 Port
 - **P6 未达到 100%。** 用户已把门槛改为“没有错误陈述”。随后两轮提示词迭代（v6 与 v7），采用 v6：在两种模式的基础提示中加入一条通用的数据陈述规则，严格项 20/23。迭代已停止，见 [迭代 v6/v7](2026-10-30-genui-real-model-eval.md#迭代-v7)。
 - v1 历史回答不再按 v1 渲染（用户确认历史回答不需要保留）：位置参数错位的组件会被单独丢弃。
 - 没有做打印和分享页的新组件专项检查，没有做 4×CPU 性能复测。
+
+## PR #108 CI 发布跟进
+
+- 首轮 CI `41024805716`（head `576046d`）：质量、Shell、crawler、存储合同、PostgreSQL 通过；SQLite 的缩略图测试被共享 outbox 后台调度污染，E2E Ctrl+K 在 hydration 前发送。分别在 `tests/test_library.py` 控制 dispatcher、`e2e/test_integration_features.py` 等客户端账号入口出现；原断言不变，未改 CI 或产品代码。可复用原因见 HANDOFF。修复后 Ruff check/format 通过，`test_eager_previews.py` 与 `test_library.py` 合跑 38 项通过；E2E 与完整套件由新 head CI 复核。
+- 部署仍为 `genui-v2-695dbf2d51d0`，CI 测试隔离修复不触发再次部署。最终 CI 与合并结果以 [PR #108](https://github.com/shijunan126-creator/ailab-lite/pull/108) 为准；后续由 Claude 审阅报告与 diff，P6 风险保持。

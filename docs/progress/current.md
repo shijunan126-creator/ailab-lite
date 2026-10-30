@@ -25,7 +25,7 @@
 - 本轮用户明确授权部署、提交、push、PR、CI 修复及绿灯后 squash 合并；覆盖下方历史授权限制。
 - 已增量部署 `genui-v2-695dbf2d51d0`（多块穿插提示词及再生成契约）：migration-before、sync、build-backend、build-portal、up、migration-after、health 均 exit 0；12 服务 running，配置的健康检查全部 healthy，Portal HTTP 200，Alembic head/database 0039。只重建后端共享镜像和 Portal，未备份，未执行部署后浏览器/模型/其他测试。
 - 提交前 Ruff check/format 通过（464 文件），Portal `npm test` 96 项通过；全套交给 CI。已 fetch，`origin/main` 仍为 `97793e6`。
-- [PR #108](https://github.com/shijunan126-creator/ailab-lite/pull/108) 已创建并用于合并；下一步跟进 CI，全部要求检查成功后 squash 合并。P6 20/23 与多块未付费评测的边界不变。
+- [PR #108](https://github.com/shijunan126-creator/ailab-lite/pull/108) 已创建并用于合并；首轮 CI 的 SQLite 队列隔离与 E2E hydration 竞态已定位并修复，详见[本轮发布记录](updates/2026-10-30-genui-registry-v2.md#pr-108-ci-发布跟进)。后续流程为 CI 全绿后 squash 合并，再由 Claude 审阅；最终 CI、合并状态与 SHA 以 PR 为准。本机无需再次部署。P6 20/23 与多块未付费评测的边界不变。
 
 ## GenUI 对话模式空白块与 HtmlArtifact 坏 JS（2026-10-30）
 
