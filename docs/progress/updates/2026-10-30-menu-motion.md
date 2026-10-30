@@ -20,3 +20,7 @@
 - Codex 本轮提交前：`cd platform && .venv/bin/ruff check . && .venv/bin/ruff format --check .` 通过（464 文件）；`cd platform/portal && npm test` 通过（19 文件 / 96 项）。完整检查由 PR CI 执行，结果待补。
 - 未测：深色模式截图、移动端触摸；文件/项目/分支菜单未逐一目视，仅由已有 E2E 覆盖。Codex 未重复 Claude 的浏览器与定向 E2E；本地未重复完整 Python/Portal build，由 CI 执行仓库范围选择的套件。
 - 未部署，线上仍为旧菜单，部署需用户另行要求。P6、目录扩展与多块付费评测不在本轮范围。
+
+## PR 跟进
+
+[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109)：UI `b6b42b6`，记录 `593abdb`；补链接提交后等待 CI，全绿即 squash 合并，不部署。

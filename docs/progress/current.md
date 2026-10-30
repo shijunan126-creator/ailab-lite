@@ -2,13 +2,13 @@
 
 ## 侧栏菜单定位与动效（2026-10-30）
 
-`fix/sidebar-menu-motion`，base `origin/main@e586ff6`。本轮已授权 UI 修复与记录一起提交、push、开 PR、修复 CI 并在全绿后 squash 合并；PR 创建后补链接。Claude 完成并审核 UI 改动，Codex 维护记录与发布流程，最终报告由 Claude 审阅。
+`fix/sidebar-menu-motion`，base `origin/main@e586ff6`。本轮已授权 UI 修复与记录一起提交、push、开 PR、修复 CI 并在全绿后 squash 合并；[PR #109](https://github.com/shijunan126-creator/ailab-lite/pull/109) 已创建。Claude 完成并审核 UI 改动，Codex 维护记录与发布流程，最终报告由 Claude 审阅。
 
 修复按钮按压跳动、菜单位移与宽度偏差，并统一固定菜单定位；根因、回归与未测边界见[本轮记录](updates/2026-10-30-menu-motion.md)。本轮 Ruff check/format、Portal 96 项通过，完整检查交给 PR CI。
 
 **未部署**：用户本轮未要求部署，线上仍显示旧菜单，待用户要求部署后更新。
 
-**下一步**：创建 PR，CI 全绿后 squash 合并；P6 与组件目录扩展仍待用户决定，多块穿插尚未付费评测，不自动推进。
+**下一步**：等待 PR #109 CI 全绿后 squash 合并；P6 与组件目录扩展仍待用户决定，多块穿插尚未付费评测，不自动推进。
 
 ## GenUI 组件目录 v2 与按需披露（2026-10-30）
 
