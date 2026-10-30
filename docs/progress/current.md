@@ -1,16 +1,14 @@
 # 当前工作
 
-## Skills / memory 集成 I2（2026-10-31）
+## 技能、办公、记忆与轻量计算（2026-10-31）
 
-`feat/sm-integration`，base `46abc67`；本轮不 push、不部署、不修改 Portal 产品代码。后端草稿通知、持久元数据和活动草稿复用已实现；检查、Portal 产品问题和截图缺口见 [I2 记录](updates/2026-10-31-skills-memory-integration-i2.md)。
+`feat/skills-memory`，base `main@b35ef6e`。用户授权：后端由 Codex（gpt-6.1-terra high）实现、测试、部署；Claude 负责 Portal 与总审；部署替换现有版本、不备份；之后由 Codex 提 PR、修复 CI 并合并。
 
-下一步：在最终交接提交以 GNU PATH 复跑全套以确认精确 SHA，并清理本轮专用 PG/Redis；交给 Claude 修复草稿直接保存的点击竞态和记忆批次悬停样式。
+**已完成**：需求全部范围已实现（基础办公技能、句中多技能且不强制 Work、后台技能草稿与目录树编辑、回到底部、浏览器 QuickJS、增量记忆整理与报告、稳定提示前缀，迁移 0040–0043），见[汇总记录](updates/2026-10-31-skills-memory.md)。最终 `ca1ee78` 全套通过：SQLite 1713/111 跳过、PG+Redis 1768/56 跳过、Portal 113 + build、E2E 145/6 跳过（[I3](updates/2026-10-31-skills-memory-integration-i3.md)）。本机已部署 `sm-i3-ca1ee78`，12 服务 healthy，迁移 0043，入口 http://127.0.0.1:23000。
 
-## Skills / memory 集成 I1（2026-10-30）
+**未验**：真实模型质量、供应商缓存命中、QuickJS 设备开销与浏览器截图、真实沙箱下的办公产物。
 
-`feat/sm-integration`，基线 `efa99a1`（`feat/skills-memory` 四包合并）；本轮用户授权后端修复、验证和本地提交，不 push、不部署，不修改 Portal。后端修复及实际验证见 [I1 记录](updates/2026-10-30-skills-memory-integration-i1.md)。旧章节中的分支和发布授权不适用于本任务。
-
-下一步：Claude 修复 Portal SkillKind 编译错误并完成相关页面后，重新运行整套 E2E；对最终代码基线按需要重新运行完整后端套件。当前 E2E 无法启动，不能标为集成完成。
+**下一步**：Codex push 并提 PR，CI 全绿后合并；合并后记录 PR 号与合并提交。
 
 ## 菜单、收起侧栏与手机字号修复（2026-10-30）
 
