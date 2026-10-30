@@ -78,6 +78,24 @@ def test_memory_routes_expose_dream_settings_and_history() -> None:
         assert c.get("/v1/memory", headers=me).json()["entries"][0]["content"] == "旧记忆"
 
 
+def test_manual_dream_ignores_nightly_switch_and_checks_memory_settings():
+    with TestClient(app) as c:
+        me = _user(c)
+        doc = c.get("/v1/memory", headers=me).json()
+        assert c.patch("/v1/memory/dream", headers=me, json={**doc["dream"], "enabled": False}).status_code == 200
+        assert c.post("/v1/memory/dream/run", headers=me).json()["status"] == "nothing"
+        for enabled, auto_save, detail in [(False, True, "记忆未开启"), (True, False, "自动记忆已关闭，无法整理")]:
+            current = c.get("/v1/memory", headers=me).json()
+            response = c.put(
+                "/v1/memory",
+                headers=me,
+                json={"expected_revision": current["revision"], "enabled": enabled, "auto_save": auto_save, "entries": []},
+            )
+            assert response.status_code == 200
+            response = c.post("/v1/memory/dream/run", headers=me)
+            assert response.status_code == 409 and response.json()["detail"] == detail
+
+
 def test_invalidate_keeps_history_and_hides_the_old_fact() -> None:
     with TestClient(app) as c:
         me = _user(c)

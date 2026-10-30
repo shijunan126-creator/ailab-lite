@@ -24,6 +24,20 @@ def upgrade():
 def downgrade():
     op.drop_index("uq_memory_dream_user_active", table_name="memory_dream_runs")
     op.drop_index("ix_memory_dream_user_date_trigger", table_name="memory_dream_runs")
+    op.execute(
+        sa.text("""
+        DELETE FROM memory_dream_runs WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+              PARTITION BY user_id, local_date
+              ORDER BY CASE WHEN status = 'applied' AND finished_at IS NOT NULL THEN 0 ELSE 1 END,
+                       CASE WHEN status = 'applied' AND finished_at IS NOT NULL THEN finished_at ELSE created_at END DESC,
+                       created_at DESC, id DESC
+            ) AS position FROM memory_dream_runs
+          ) ranked WHERE position > 1
+        )
+    """)
+    )
     with op.batch_alter_table("memory_dream_runs") as batch:
         batch.drop_column("batch_index")
         batch.drop_column("report")

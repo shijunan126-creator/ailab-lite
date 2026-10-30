@@ -730,6 +730,7 @@ def test_client_calls_upgrade_and_downgrade(engine):
     with engine.begin() as conn:
         _seed_user_and_run(conn)
     _upgrade_to(engine, "0043")
+
     with engine.begin() as conn:
         conn.execute(
             text(
@@ -742,3 +743,26 @@ def test_client_calls_upgrade_and_downgrade(engine):
     with engine.connect() as conn:
         assert conn.execute(text("SELECT count(*) FROM runs WHERE id = 'r1'")).scalar() == 1
     _upgrade_to(engine, "0043")
+
+
+def test_dream_batch_downgrade_keeps_latest_finished_applied(engine):
+    _upgrade_to(engine, "0042")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        for ident, status, created, finished in [
+            ("a", "applied", "2026-01-01", "2026-01-02"),
+            ("b", "applied", "2026-01-02", "2026-01-03"),
+            ("c", "failed", "2026-01-04", None),
+        ]:
+            conn.execute(
+                text(
+                    "INSERT INTO memory_dream_runs (id,user_id,local_date,timezone,status,trigger,created_at,finished_at,"
+                    "input_run_ids,plan,before_memory,after_memory,token_usage) "
+                    "VALUES (:id,'u1','2026-01-01','UTC',:status,'manual',:created,:finished,'[]','{}','{}','{}','{}')"
+                ),
+                {"id": ident, "status": status, "created": created, "finished": finished},
+            )
+    _downgrade_to(engine, "0041")
+    with engine.connect() as conn:
+        assert list(conn.execute(text("SELECT id FROM memory_dream_runs"))) == [("b",)]
+    _upgrade_to(engine, "head")

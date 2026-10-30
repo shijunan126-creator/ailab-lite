@@ -285,8 +285,11 @@ def run_dream_now(background: BackgroundTasks, response: Response, user: User = 
     with user_critical_section(db, user.id):
         db.refresh(user)
         ds = dream_settings(user)
-        if not ds.enabled or not memory_for(user)["enabled"] or not memory_for(user)["auto_save"]:
-            raise HTTPException(409, "nightly dream is disabled")
+        memory = memory_for(user)
+        if not memory["enabled"]:
+            raise HTTPException(409, "记忆未开启")
+        if not memory["auto_save"]:
+            raise HTTPException(409, "自动记忆已关闭，无法整理")
         pending_count = len(_new_runs(db, user.id, None, datetime.now(UTC), limit=201))
         pending = "200+" if pending_count > 200 else pending_count
         active = db.scalar(
