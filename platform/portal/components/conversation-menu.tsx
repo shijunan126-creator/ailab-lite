@@ -5,16 +5,17 @@ import { createPortal } from "react-dom";
 import { api, Conversation, errorMessage } from "../lib/api";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
-import { IconFolderInput, IconMore, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
+import { IconBook, IconCheck, IconFilePen, IconFolderInput, IconMore, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
 import ShareDialog from "./share-dialog";
 import { MoveDialog } from "./library/projects";
 import { confirmDialog } from "../lib/dialog";
+import { placeMenu } from "../lib/menu-place";
 
 /** The open conversation page follows a move made from the sidebar (its breadcrumb, where uploads go). */
 export const CONVERSATION_MOVED = "ailab:conversation-moved";
 
-const MENU_W = 176;
-const MENU_H = 324;
+const MENU_W = 200;
+const MENU_H = 300;
 
 /** "⋯" on a conversation: move it into / out of a project, or delete it. */
 export default function ConversationMenu({ conv, onDeleted, onPinned, className = "" }: {
@@ -23,7 +24,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
   onPinned?: (pinnedAt: string | null) => void;
   className?: string;
 }) {
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [at, setAt] = useState<React.CSSProperties | null>(null);
   const [moving, setMoving] = useState(false);
   const [withFiles, setWithFiles] = useState(true);
   const [sharing, setSharing] = useState(false);
@@ -55,9 +56,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
   function open() {
     if (at) return setAt(null);
     setError("");
-    const r = button.current!.getBoundingClientRect();
-    const below = r.bottom + 4 + MENU_H < window.innerHeight;
-    setAt({ top: Math.max(8, below ? r.bottom + 4 : r.top - 4 - MENU_H), left: Math.max(8, r.right - MENU_W) });
+    setAt(placeMenu(button.current!.getBoundingClientRect(), MENU_W, MENU_H));
   }
 
   async function move(projectId: string | null) {
@@ -155,7 +154,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
       {error ? <span role="alert" className="alert error">{error}</span> : null}
       {at
         ? createPortal(
-        <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+        <div ref={menu} className="pop-menu fixed" role="menu" style={at}>
           {onPinned ? (
             <button className="menu-item" role="menuitem" onClick={pin}>
               {conv.pinned_at ? <IconPinOff size={15} /> : <IconPin size={15} />} {conv.pinned_at ? "取消置顶" : "置顶"}
@@ -171,9 +170,6 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
           >
             <IconFolderInput size={15} /> {conv.project_id ? "移动到…" : "移到项目"}
           </button>
-          <button className="menu-item" role="menuitem" onClick={extract}>
-            <IconSparkles size={15} /> 提取技能
-          </button>
           <button
             className="menu-item"
             role="menuitem"
@@ -184,12 +180,19 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
           >
             <IconShare size={15} /> 分享
           </button>
+          <button className="menu-item" role="menuitem" onClick={extract}>
+            <IconSparkles size={15} /> 提取技能
+          </button>
+          <div className="menu-sep" role="separator" />
           <button className="menu-item" role="menuitemcheckbox" aria-checked={policy.read !== false} disabled={policyBusy} onClick={() => toggleMemory("read")}>
-            <IconSparkles size={15} /> 使用已有记忆 {policy.read !== false ? "✓" : ""}
+            <IconBook size={15} /> <span className="grow">使用已有记忆</span>
+            <span className="menu-check">{policy.read !== false ? <IconCheck size={15} /> : null}</span>
           </button>
           <button className="menu-item" role="menuitemcheckbox" aria-checked={policy.write !== false} disabled={policyBusy} onClick={() => toggleMemory("write")}>
-            <IconSparkles size={15} /> 允许记住本对话 {policy.write !== false ? "✓" : ""}
+            <IconFilePen size={15} /> <span className="grow">允许记住本对话</span>
+            <span className="menu-check">{policy.write !== false ? <IconCheck size={15} /> : null}</span>
           </button>
+          <div className="menu-sep" role="separator" />
           <button className="menu-item danger" role="menuitem" onClick={remove}>
             <IconTrash size={15} /> 删除
           </button>

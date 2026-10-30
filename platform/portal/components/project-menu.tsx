@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { errorMessage, Project } from "../lib/api";
 import { deleteProject, requestBriefEdit } from "../lib/projects";
+import { placeMenu } from "../lib/menu-place";
 import { IconFilePen, IconMore, IconPencil, IconTrash } from "./icons";
 
 const MENU_W = 176;
@@ -16,7 +17,7 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
   onBrief: () => void;
   onDeleted: () => void | Promise<void>;
 }) {
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [at, setAt] = useState<React.CSSProperties | null>(null);
   const [error, setError] = useState("");
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -41,9 +42,7 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
   function open() {
     if (at) return setAt(null);
     setError("");
-    const r = button.current!.getBoundingClientRect();
-    const below = r.bottom + 4 + MENU_H < window.innerHeight;
-    setAt({ top: below ? r.bottom + 4 : r.top - 4 - MENU_H, left: Math.max(8, r.right - MENU_W) });
+    setAt(placeMenu(button.current!.getBoundingClientRect(), MENU_W, MENU_H));
   }
 
   async function remove() {
@@ -73,7 +72,7 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
       {error ? <span role="alert" className="alert error">{error}</span> : null}
       {at
         ? createPortal(
-            <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+            <div ref={menu} className="pop-menu fixed" role="menu" style={at}>
               <button className="menu-item" role="menuitem" onClick={() => { setAt(null); onRename(); }}>
                 <IconPencil size={15} /> 重命名
               </button>

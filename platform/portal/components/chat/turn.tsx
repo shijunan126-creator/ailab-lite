@@ -4,6 +4,7 @@ import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
+import { placeMenu } from "../../lib/menu-place";
 import { startingState } from "../../lib/ui-state";
 import { splitTurn, turnSources, type Source } from "../../lib/work-process";
 import CopyButton from "../copy-button";
@@ -103,7 +104,7 @@ const MENU_W = 184;
 
 /** Continue from this turn in a new conversation. A conversation that already worked in files can only go on working. */
 function ForkButton({ modes, onFork }: { modes: ForkMode[]; onFork: (mode: ForkMode) => Promise<void> }) {
-  const [at, setAt] = useState<{ top: number; left: number } | null>(null);
+  const [at, setAt] = useState<React.CSSProperties | null>(null);
   const [busy, setBusy] = useState(false);
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
@@ -139,15 +140,12 @@ function ForkButton({ modes, onFork }: { modes: ForkMode[]; onFork: (mode: ForkM
       <button ref={button} type="button" className={`icon-btn act ${at ? "open" : ""}`} aria-label="从这里分支" title="从这里分支" aria-expanded={!!at} disabled={busy}
         onClick={() => {
           if (at) return setAt(null);
-          const r = button.current!.getBoundingClientRect();
-          const height = 12 + modes.length * 38;
-          const above = r.top - height - 6 > 8;
-          setAt({ top: above ? r.top - height - 6 : r.bottom + 6, left: Math.min(Math.max(8, r.left), window.innerWidth - MENU_W - 8) });
+          setAt(placeMenu(button.current!.getBoundingClientRect(), MENU_W, 12 + modes.length * 38, { align: "start", prefer: "above" }));
         }}>
         <IconBranch size={15} />
       </button>
       {at ? createPortal(
-        <div ref={menu} className="pop-menu fixed" role="menu" style={{ top: at.top, left: at.left, width: MENU_W }}>
+        <div ref={menu} className="pop-menu fixed" role="menu" style={at}>
           {modes.map((mode) => (
             <button key={mode} className="menu-item" role="menuitem" onClick={() => fork(mode)}>
               <IconBranch size={15} /> {mode === "chat" ? "分支为对话" : "分支为工作"}

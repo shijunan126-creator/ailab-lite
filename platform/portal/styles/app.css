@@ -38,6 +38,12 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .menu-item.on svg { color: var(--primary); }
 .menu-item .grow { flex: 1; min-width: 0; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.menu-item .menu-check { flex: none; display: grid; width: 15px; }
+.menu-item .menu-check svg { color: var(--primary); }
+/* a menu placed from its trigger takes the width it was placed with and grows out of the trigger's corner (placeMenu) */
+.pop-menu.fixed { min-width: 0; }
+/* popovers fade and settle in place; no travel, no overshoot */
+@keyframes pop { from { opacity: 0; transform: scale(.97); } }
 .menu-count { flex: none; color: var(--faint-foreground); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
 
 /* ---------- shell: navigation surface, reading surface ---------- */
@@ -61,7 +67,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .conv-title { flex: 1; min-width: 0; font-size: var(--text-ui); line-height: 1.4; }
 .conv-item.on .conv-title { font-weight: 550; }
 .conv-live { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--primary); animation: pulse 1.2s ease-in-out infinite; }
-.conv-item .conv-more, .project-item .conv-more { width: 26px; height: 26px; padding: 0; place-items: center; border-radius: var(--radius-xs); }
+/* centred by insets, not a transform: pressing a button resets transform, which made it jump */
+.conv-item .conv-more, .project-item .conv-more { position: absolute; inset: 0 4px 0 auto; margin: auto 0; display: grid; width: 26px; height: 26px; padding: 0; place-items: center; border-radius: var(--radius-xs); opacity: 0; }
 .user-menu { border-top: 0; padding-top: 6px; }
 .user-menu .user-chip { min-height: 44px; padding: 6px 8px; border-radius: var(--radius-sm); font-size: var(--text-ui); }
 .avatar { background: var(--selected); color: var(--selected-foreground); font-size: var(--text-sm); }

@@ -37,7 +37,6 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
 .conv-item { position: relative; border-radius: 8px; }
 .conv-item a { display: flex; color: var(--foreground); transition: background var(--t-fast), box-shadow var(--t-fast); }
 .conv-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; animation: fade var(--t-slow) var(--ease); }
-.conv-item .conv-more, .project-item .conv-more { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); opacity: 0; display: grid; }
 .conv-item:hover .conv-more, .project-item:hover .conv-more, .conv-more:focus-visible, .conv-more.open { opacity: 1; }
 .project-item { position: relative; }
 .conv-more.open { color: var(--foreground); }

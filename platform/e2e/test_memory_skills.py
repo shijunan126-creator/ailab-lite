@@ -190,3 +190,28 @@ def test_conversation_menu_controls_memory_read_and_write(page, stack):
     expect(write).to_have_attribute("aria-checked", "false")
     value = httpx.get(stack.api + f"/v1/conversations/{conv['id']}", headers=headers).json()
     assert value["memory_policy"] == {"read": False, "write": False}
+
+
+def test_conversation_menu_stays_put_and_hangs_from_its_button(page, stack):
+    headers = auth(stack)
+    conv = httpx.post(stack.api + "/v1/conversations", headers=headers, json={"title": "菜单位置验收"}).json()
+    login(page, stack, path=f"/c/{conv['id']}")
+    button = page.locator(".conv-item .conv-more").first
+    page.locator(".conv-item").first.hover()
+    before = button.bounding_box()
+    # pressing resets a button's transform; the trigger must not be positioned by one
+    button.dispatch_event("pointerdown")
+    page.mouse.move(before["x"] + before["width"] / 2, before["y"] + before["height"] / 2)
+    page.mouse.down()
+    pressed = button.bounding_box()
+    page.mouse.up()
+    assert abs(pressed["y"] - before["y"]) < 1, (before, pressed)
+    menu = page.get_by_role("menu")
+    expect(menu).to_be_visible()
+    menu.evaluate("(m) => Promise.all(m.getAnimations().map((a) => a.finished))")
+    box = menu.bounding_box()
+    assert abs(box["x"] + box["width"] - (before["x"] + before["width"])) < 1, (box, before)
+    assert 0 <= box["y"] - (before["y"] + before["height"]) <= 6, (box, before)
+    assert menu.evaluate("(m) => getComputedStyle(m).transformOrigin.startsWith(String(m.offsetWidth))")
+    page.screenshot(path=str(stack.log_dir / "conversation-menu.png"), clip={"x": 0, "y": 340, "width": 300, "height": 380})
+    assert httpx.delete(stack.api + f"/v1/conversations/{conv['id']}", headers=headers).status_code == 204

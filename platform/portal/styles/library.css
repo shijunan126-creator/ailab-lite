@@ -24,7 +24,6 @@
 .check.on, .check.some, .check.on:hover, .check.some:hover { background: var(--primary); border-color: var(--primary); }
 .check .dash { width: 8px; height: 2px; border-radius: 1px; background: #fff; }
 .pop-menu { position: absolute; bottom: calc(100% + 6px); left: 0; background: var(--popover); border: 1px solid var(--border); z-index: 40; animation: pop var(--t) var(--ease) both; transform-origin: bottom left; }
-@keyframes pop { from { opacity: 0; transform: translateY(4px) scale(.97); } }
 .pop-menu.fixed { position: fixed; bottom: auto; z-index: 70; }
 .pop-menu.right { left: auto; right: 0; bottom: auto; top: calc(100% + 4px); }
 .menu-item.danger, .menu-item.danger svg { background: none; border-color: transparent; }
