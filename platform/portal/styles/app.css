@@ -402,7 +402,7 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 .dream-runs { border-top: 1px solid var(--border); }
 .dream-run + .dream-run { border-top: 1px solid var(--border); }
 .dream-run-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
-.dream-run-head:hover { background: var(--subtle); }
+.dream-run-head:hover { background: var(--subtle); color: var(--foreground); }
 .dream-run-head > span:first-child, .dream-status { white-space: nowrap; }
 .dream-status { font-size: var(--text-2xs); padding: 2px 7px; border-radius: 999px; background: var(--subtle); color: var(--muted-foreground); }
 .dream-status.applied { color: var(--ok, #22863a); }

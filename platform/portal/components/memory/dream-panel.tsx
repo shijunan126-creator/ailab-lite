@@ -226,7 +226,7 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
             ? status?.active?.status === "running" ? "正在整理…" : "等待整理…"
             : pending ? `${pending} 段新对话待整理` : notice || "没有待整理的新对话"}
         </span>
-        <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings?.enabled || !pending}>
+        <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings || !pending}>
           立即整理
         </button>
       </div>
