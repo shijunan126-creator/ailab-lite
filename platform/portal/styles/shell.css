@@ -53,7 +53,6 @@ html[data-sidebar="closed"] .shell.settling .sidebar { opacity: 0; visibility: h
 .menu-item { display: flex; align-items: center; width: 100%; background: none; border: 0; justify-content: flex-start; }
 .menu-item:active { transform: none; }
 .main { min-width: 0; position: relative; }
-.shell.collapsed .page { padding-top: 56px; }
 .sidebar-scrim { display: none; }
 /* the chat fills the viewport; other pages scroll inside main */
 .main > .page { min-height: 100vh; }

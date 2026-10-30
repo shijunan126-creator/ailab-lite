@@ -48,6 +48,8 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 
 /* ---------- shell: navigation surface, reading surface ---------- */
 .shell { --side-w: 264px; }
+/* collapsed on desktop the column goes too, so the floating group sits in the window's corner and the page takes the width */
+.shell.collapsed { --side-w: 0px; }
 .sidebar > * { min-width: 243px; }
 .sidebar { gap: 2px; padding: 10px 10px 12px; background: var(--nav); border-right: 0; box-shadow: inset -1px 0 0 var(--border); }
 .sidebar-head { padding: 2px 4px 10px 6px; gap: 2px; }
@@ -89,6 +91,21 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 @media (pointer: coarse) {
   .main-top .icon-btn { width: 40px; height: 40px; }
   .pane-reopen { width: 44px; height: 44px; }
+}
+
+/* pages start below the floating group when the sidebar is collapsed, as the chat column does */
+.shell.collapsed .page { padding-top: 64px; }
+
+/* memory: one row of controls at one height */
+.memory-filters { display: flex; gap: 8px; align-items: center; margin: 20px 0; flex-wrap: wrap; }
+.memory-filters input { flex: 1; min-width: 160px; height: 38px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--popover); }
+.memory-filters button.select, .memory-filters button.secondary { height: 38px; padding-top: 0; padding-bottom: 0; }
+.memory-filters button.select { width: 168px; }
+.memory-entry-meta button.select { min-width: 0; max-width: 180px; height: 30px; padding: 0 8px 0 10px; font-size: var(--text-sm); }
+@media (max-width: 600px) {
+  .memory-filters input { flex-basis: 100%; }
+  .memory-filters button.select { flex: 1; width: auto; }
+  .memory-entry-meta button.select { max-width: 100%; }
 }
 
 /* ---------- new conversation ---------- */
@@ -318,6 +335,11 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 @container (max-width: 420px) {
   .composer-right .hint { display: none; }
   .model-btn { max-width: 96px; padding: 0 6px 0 8px; }
+}
+@media (max-width: 760px) {
+  /* iOS zooms into any field under 16px and leaves the page zoomed, so every text field is 16px on phones whatever its own
+     rule says; this invariant is the one place !important is right */
+  input:not([type="checkbox"], [type="radio"], [type="range"], .project-name-input), textarea, select { font-size: 1rem !important; }
 }
 @media (pointer: coarse) {
   .composer-main .icon-btn.plus, .send-btn { width: 40px; height: 40px; }

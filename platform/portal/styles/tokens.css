@@ -77,6 +77,16 @@
 
 }
 
+/* phones are read closer than desktops: reading text and titles one step smaller, controls unchanged */
+@media (max-width: 760px) {
+  :root {
+    --text-md: 0.9375rem; /* 15px */
+    --text-lg: 1.0625rem; /* 17px */
+    --text-xl: 1.3125rem; /* 21px */
+    --leading-read: 1.7;
+  }
+}
+
 :root.dark {
   color-scheme: dark;
 
