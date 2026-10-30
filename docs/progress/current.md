@@ -1,5 +1,11 @@
 # 当前工作
 
+## 记忆质量与 run_js（2026-10-31）
+
+`fix/memory-js-backend`，base `origin/main@995a5f6`；后端提交 `b7480ed`、`b57331e`，未 push。用户授权集成 Portal 分支后增量部署及轻量真模型验收，不合并 main。现有记忆未修改。线上错误来源、提示修订、20 例配置模型对照及当前检查见[记录](updates/2026-10-31-memory-js-backend.md)。
+
+**下一步**：等待 Portal 负责人确认分支就绪；完成 SQLite 检查，建立临时集成分支、部署并执行约 10 次真实模型验收，记录结果及未测边界。
+
 ## 技能、办公、记忆与轻量计算（2026-10-31）
 
 `feat/skills-memory`，base `main@b35ef6e`，已通过 [PR #110](https://github.com/shijunan126-creator/ailab-lite/pull/110) 合并至 main（merge commit `8cd9792`，保留各独立提交）。PR CI 13/13 通过；[main CI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/41104326303) 通过。
