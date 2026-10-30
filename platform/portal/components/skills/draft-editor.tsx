@@ -116,10 +116,14 @@ export default function DraftEditor({
     return () => ctl.abort();
   }, [draft, ready, current, texts]);
 
-  /** One write to the draft. A 409 means someone (another tab) changed it: show the newer draft, keep unsaved text. */
-  async function write<T = SkillDraft>(path: string, init: RequestInit): Promise<T | null> {
-    writes.current++;
-    setBusy(true);
+  /** One write to the draft. A 409 means someone (another tab) changed it: show the newer draft, keep unsaved text.
+   * Saving text does not lock the editor: a blur starts one just as a click lands on 保存, and a button disabled
+   * between mousedown and mouseup swallows that click. confirm() and move wait for it through flush(). */
+  async function write<T = SkillDraft>(path: string, init: RequestInit, lock = true): Promise<T | null> {
+    if (lock) {
+      writes.current++;
+      setBusy(true);
+    }
     setError("");
     try {
       return await api<T>(path, init);
@@ -128,7 +132,7 @@ export default function DraftEditor({
       if (String((e as Error)?.message || "").startsWith("409")) await reload().catch(() => undefined);
       return null;
     } finally {
-      if (--writes.current === 0 && mounted.current) setBusy(false);
+      if (lock && --writes.current === 0 && mounted.current) setBusy(false);
     }
   }
 
@@ -143,7 +147,7 @@ export default function DraftEditor({
       const next = await write(`/v1/skill-drafts/${draftId}/files/${path.split("/").map(encodeURIComponent).join("/")}`, {
         method: "PUT",
         body: JSON.stringify({ content, expected_revision: revision() }),
-      });
+      }, false);
       if (!next) return false;
       accept(next);
       setTexts((t) => ({ ...t, [path]: content }));
@@ -240,14 +244,21 @@ export default function DraftEditor({
   }
 
   async function confirm() {
-    if (!draft || !ready || busy || !(await flush())) return;
-    const saved = await write<{ file_id: string; name: string }>(`/v1/skill-drafts/${draftId}/confirm`, {
-      method: "POST",
-      body: JSON.stringify({ expected_revision: revision() }),
-    });
-    if (!saved) return;
-    draftsChanged();
-    onConfirmed(saved.file_id, draftRef.current?.title || saved.name);
+    if (!draft || !ready || writes.current) return; // the ref, not busy: a second click can land before the next render
+    writes.current++;
+    setBusy(true);
+    try {
+      if (!(await flush())) return;
+      const saved = await write<{ file_id: string; name: string }>(`/v1/skill-drafts/${draftId}/confirm`, {
+        method: "POST",
+        body: JSON.stringify({ expected_revision: revision() }),
+      });
+      if (!saved) return;
+      draftsChanged();
+      onConfirmed(saved.file_id, draftRef.current?.title || saved.name);
+    } finally {
+      if (--writes.current === 0 && mounted.current) setBusy(false);
+    }
   }
 
   async function retry() {
@@ -276,9 +287,10 @@ export default function DraftEditor({
 
   const close = useCallback(async () => {
     if (busy) return;
-    if (dirty.length && !(await confirmDialog({ title: "放弃未保存的修改？", action: "放弃", danger: true }))) return;
+    await Promise.all(saving.current.values()); // a blur may have just started saving what would otherwise count as unsaved
+    if (Object.keys(editsRef.current).length && !(await confirmDialog({ title: "放弃未保存的修改？", action: "放弃", danger: true }))) return;
     onClose();
-  }, [busy, dirty.length, onClose]);
+  }, [busy, onClose]);
 
   const title = draft?.title || draft?.name || (draft?.base ? draft.base.name : "技能草稿");
   const footer = draft && (ready || draft.status === "failed") ? (
