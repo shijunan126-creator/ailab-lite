@@ -10,7 +10,7 @@ from ..deps import get_db
 from ..locks import user_critical_section
 from ..models import FileObject, OutboxMessage, SkillDraft
 from ..service_auth import require_scope
-from ..skill_drafts.files import checked_path, validate_manifest
+from ..skill_drafts.files import checked_path, update_metadata, validate_manifest
 from ..skillfiles import SkillFileError
 from ..storage import get_storage
 
@@ -104,14 +104,23 @@ def complete(draft_id: str, body: Completion, db: Session = Depends(get_db)):
                     raise SkillFileError("无效的技能说明")
             except (SkillFileError, KeyError):
                 draft.status, draft.stage, draft.error = "failed", None, "技能说明无效，请重试"
+                if draft.origin == "conversation":
+                    from .inbox import create_notification
+
+                    create_notification(db, draft.user_id, "skill_draft.failed", "技能提取失败", draft.conversation_id)
                 db.commit()
                 return {"ok": False}
             draft.files = merged
+            update_metadata(draft, get_storage())
             draft.claim_token = None
             if draft.origin == "conversation":
                 draft.status, draft.stage = "queued", "reading"
             else:
                 draft.status, draft.stage = "ready", None
             draft.revision += 1
+        if draft.status == "failed" and draft.origin == "conversation":
+            from .inbox import create_notification
+
+            create_notification(db, draft.user_id, "skill_draft.failed", "技能提取失败", draft.conversation_id)
         db.commit()
     return {"ok": True}

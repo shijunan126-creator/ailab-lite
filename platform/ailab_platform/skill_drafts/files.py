@@ -52,3 +52,9 @@ def store_file(storage, user_id: str, draft_id: str, path: str, content: bytes, 
     key = f"skill-drafts/{user_id}/{draft_id}/{digest}"
     storage.put_bytes(key, content)
     return {"path": path, "size": len(content), "sha256": digest, "kind": classify(path, content), "change": change, "blob": key}
+
+
+def update_metadata(draft, storage):
+    md = next((f for f in draft.files or [] if f["path"] == "SKILL.md" and f["change"] != "deleted"), None)
+    meta = skillfiles.frontmatter(storage.get_bytes(md["blob"]).decode("utf-8", "replace")) if md else {}
+    draft.name, draft.title, draft.description = (meta.get(k) for k in ("name", "title", "description"))

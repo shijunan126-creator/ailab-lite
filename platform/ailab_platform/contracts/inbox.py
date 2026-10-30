@@ -19,7 +19,16 @@ class InboxUTC(BaseModel):
 
 class NotificationOut(InboxUTC):
     id: str
-    kind: Literal["run.succeeded", "run.failed", "run.waiting", "schedule.succeeded", "schedule.failed", "share.received"]
+    kind: Literal[
+        "run.succeeded",
+        "run.failed",
+        "run.waiting",
+        "schedule.succeeded",
+        "schedule.failed",
+        "share.received",
+        "skill_draft.ready",
+        "skill_draft.failed",
+    ]
     title: str
     conversation_id: str | None
     run_id: str | None

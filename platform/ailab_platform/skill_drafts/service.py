@@ -23,7 +23,7 @@ from ..model_policy import ModelPolicy, estimator
 from ..models import Conversation, FileObject, FileStatus, RunEvent, SkillDraft, User, utcnow
 from ..quota import reserve_usage, settle_usage
 from ..storage import get_storage
-from .files import MAX_TEXT, checked_path, store_file, validate_manifest
+from .files import MAX_TEXT, checked_path, store_file, update_metadata, validate_manifest
 
 log = logging.getLogger("ailab.skill_drafts")
 
@@ -241,6 +241,7 @@ def _install_output(db, draft, data, skills, truncated):
             item = store_file(storage, draft.user_id, draft.id, "SKILL.md", storage.get_bytes(parent.storage_key), "unchanged")
             item["baseline"] = item["sha256"]
             draft.files = [item]
+            update_metadata(draft, storage)
             draft.status, draft.stage = "queued", "reading"
         return
     if parent:
@@ -269,6 +270,7 @@ def _install_output(db, draft, data, skills, truncated):
     md = next(f for f in files if f["path"] == "SKILL.md" and f["change"] != "deleted")
     if not skillfiles.inspect(storage.get_bytes(md["blob"]), "SKILL.md"):
         raise ValueError("技能缺少有效的 SKILL.md")
+    update_metadata(draft, storage)
     draft.status, draft.stage = "ready", None
     draft.revision += 1
 
@@ -326,6 +328,10 @@ async def process_draft(draft_id):
                 if draft.status != "preparing":
                     draft.claim_token = None
                 draft.claimed_until = None
+                if draft.status == "ready" and draft.origin == "conversation":
+                    from ..api.inbox import create_notification
+
+                    create_notification(db, draft.user_id, "skill_draft.ready", draft.title or "技能草稿", draft.conversation_id)
                 db.commit()
         metrics.SKILL_DRAFTS.labels("processed").inc()
     except Exception as exc:
@@ -339,6 +345,10 @@ async def process_draft(draft_id):
                     str(exc)[:500] if isinstance(exc, (ValueError, skillfiles.SkillFileError)) else "提取失败，请重试",
                 )
                 draft.claim_token, draft.claimed_until = None, None
+                if draft.origin == "conversation":
+                    from ..api.inbox import create_notification
+
+                    create_notification(db, draft.user_id, "skill_draft.failed", "技能提取失败", draft.conversation_id)
                 db.commit()
         metrics.SKILL_DRAFTS.labels("failed").inc()
 

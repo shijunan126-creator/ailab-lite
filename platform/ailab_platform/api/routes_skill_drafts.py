@@ -7,7 +7,7 @@ import tempfile
 import zipfile
 from pathlib import PurePosixPath
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -20,7 +20,7 @@ from ..library import assign_file_version, delete_storage_objects, schedule_obje
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, SkillDraft, User, new_id, utcnow
 from ..quota import enforce_library_quota
-from ..skill_drafts.files import MAX_TEXT, SAFE_IMAGES, checked_path, store_file, validate_manifest
+from ..skill_drafts.files import MAX_TEXT, SAFE_IMAGES, checked_path, store_file, update_metadata, validate_manifest
 from ..storage import get_storage
 from .jobs import stage_job
 from .routes_internal import _skill_heads
@@ -94,10 +94,7 @@ def _output(db, row, include_files=True):
     result["base"] = {"name": row.base_name, "kind": row.base_kind, "file_id": row.base_file_id} if row.base_name else None
     if include_files:
         result["files"] = [{k: f[k] for k in ("path", "size", "kind", "change")} for f in row.files or []]
-    md = next((f for f in row.files or [] if f["path"] == "SKILL.md" and f["change"] != "deleted"), None)
-    if md:
-        meta = skillfiles.frontmatter(get_storage().get_bytes(md["blob"]).decode("utf-8", "replace"))
-        result.update({k: meta.get(k) for k in ("name", "title", "description")})
+    result.update({k: getattr(row, k) for k in ("name", "title", "description")})
     return result
 
 
@@ -191,6 +188,7 @@ async def write_file(draft_id: str, path: str, request: Request, user: User = De
         files = [f for f in row.files if f["path"] != path] + [item]
         _check(files)
         row.files = files
+        update_metadata(row, get_storage())
         row.revision += 1
         row.updated_at = utcnow()
         db.commit()
@@ -224,6 +222,7 @@ def move(draft_id: str, body: MoveIn, user: User = Depends(current_user), db: Se
             files.append({**item, "path": new_path, "change": change, "baseline": baseline})
         _check(files)
         row.files = files
+        update_metadata(row, get_storage())
         row.revision += 1
         row.updated_at = utcnow()
         db.commit()
@@ -240,6 +239,7 @@ def delete_file(draft_id: str, path: str, expected_revision: int, user: User = D
         if not selected:
             raise HTTPException(404, "文件不存在")
         row.files = [f for f in row.files if f not in selected] + [{**f, "change": "deleted"} for f in selected if f.get("baseline")]
+        update_metadata(row, get_storage())
         row.revision += 1
         row.updated_at = utcnow()
         db.commit()
@@ -355,13 +355,30 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
 
 
 @router.post("/v1/skills/{name}/drafts", status_code=202)
-def open_skill(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def open_skill(name: str, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     from ..skill_index import checked_index
 
     storage = get_storage()
     with user_critical_section(db, user.id):
-        _room(db, user.id)
         personal = next((s for s in personal_skills(db, user) if s["name"] == name and not s.get("error")), None)
+        base_file_id = personal["file_id"] if personal else None
+        existing = db.scalar(
+            select(SkillDraft)
+            .where(
+                SkillDraft.user_id == user.id,
+                SkillDraft.origin == "skill",
+                SkillDraft.status.in_(ACTIVE),
+                SkillDraft.base_file_id == base_file_id
+                if personal
+                else (SkillDraft.base_file_id.is_(None) & (SkillDraft.base_name == name)),
+            )
+            .order_by(SkillDraft.created_at.desc())
+            .limit(1)
+        )
+        if existing:
+            response.status_code = 200
+            return _output(db, existing)
+        _room(db, user.id)
         row = SkillDraft(
             id=new_id("sd"),
             user_id=user.id,
@@ -406,6 +423,7 @@ def open_skill(name: str, user: User = Depends(current_user), db: Session = Depe
             _check(entries, True)
             row.files, row.status, row.stage = entries, "ready", None
             db.add(row)
+        update_metadata(row, storage)
         db.commit()
         return _output(db, row)
 

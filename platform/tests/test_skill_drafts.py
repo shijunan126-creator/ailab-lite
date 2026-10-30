@@ -6,7 +6,7 @@ from sqlalchemy import select
 
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import Conversation, OutboxMessage, Run
+from ailab_platform.models import Conversation, Notification, OutboxMessage, Run
 from ailab_platform.skill_drafts import service
 from ailab_platform.worker.skill_unpack import process_skill_unpack
 
@@ -105,6 +105,9 @@ def test_extract_create_and_deletion_fence(monkeypatch):
         asyncio.run(service.process_draft(did))
         draft = c.get(f"/v1/skill-drafts/{did}", headers=me).json()
         assert draft["status"] == "ready" and draft["name"] == "extract-test"
+        with SessionLocal() as db:
+            notification = db.scalar(select(Notification).where(Notification.conversation_id == conv))
+            assert notification.kind == "skill_draft.ready" and notification.title == (draft["title"] or "技能草稿")
         c.delete(f"/v1/conversations/{conv}", headers=me)
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "discarded"
 
@@ -121,6 +124,9 @@ def test_invalid_model_output_can_retry(monkeypatch):
         monkeypatch.setattr(service, "_chat", bad)
         asyncio.run(service.process_draft(did))
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "failed"
+        with SessionLocal() as db:
+            notification = db.scalar(select(Notification).where(Notification.conversation_id == conv))
+            assert notification.kind == "skill_draft.failed" and notification.title == "技能提取失败"
         assert c.post(f"/v1/skill-drafts/{did}/retry?expected_revision=0", headers=me).json()["status"] == "queued"
         assert c.delete(f"/v1/skill-drafts/{did}?expected_revision=1", headers=me).json()["status"] == "discarded"
 
@@ -190,7 +196,8 @@ def test_upload_content_security_and_version_conflict():
         name = "conflict-example"
         _upload(c, me, "skill.md", SKILL_MD.format(name=name).encode())
         first = c.post(f"/v1/skills/{name}/drafts", headers=me, json={}).json()
-        second = c.post(f"/v1/skills/{name}/drafts", headers=me, json={}).json()
+        reused = c.post(f"/v1/skills/{name}/drafts", headers=me, json={})
+        assert reused.status_code == 200 and reused.json()["id"] == first["id"]
         did = first["id"]
         url = f"/v1/skill-drafts/{did}/files/image.svg"
         put = c.put(
@@ -208,7 +215,6 @@ def test_upload_content_security_and_version_conflict():
             == 413
         )
         assert c.post(f"/v1/skill-drafts/{did}/confirm", headers=me, json={"expected_revision": 1}).status_code == 200
-        assert c.post(f"/v1/skill-drafts/{second['id']}/confirm", headers=me, json={"expected_revision": 0}).status_code == 409
 
 
 def test_model_call_has_draft_usage_identity(monkeypatch):
@@ -312,3 +318,39 @@ def test_active_draft_limit():
             assert c.post(f"/v1/conversations/{conv}/skill-drafts", headers=me, json={}).status_code == 202
         assert c.post(f"/v1/conversations/{conv}/skill-drafts", headers=me, json={}).status_code == 409
         assert len(c.get("/v1/skill-drafts?active=1", headers=me).json()) == 20
+
+
+def test_metadata_tracks_file_changes_without_list_storage_reads(monkeypatch):
+    from ailab_platform.storage import get_storage
+
+    with TestClient(app) as c:
+        me = _user(c)
+        name = "metadata-test"
+        _upload(c, me, "skill.md", SKILL_MD.format(name=name).encode())
+        draft = c.post(f"/v1/skills/{name}/drafts", headers=me, json={}).json()
+        did = draft["id"]
+        content = SKILL_MD.format(name="renamed-test")
+        updated = c.put(f"/v1/skill-drafts/{did}/files/SKILL.md", headers=me, json={"content": content, "expected_revision": 0})
+        assert updated.json()["name"] == "renamed-test"
+        storage = get_storage()
+        with monkeypatch.context() as m:
+            m.setattr(storage, "get_bytes", lambda *args: (_ for _ in ()).throw(AssertionError("storage read")))
+            assert c.get("/v1/skill-drafts", headers=me).json()[0]["name"] == "renamed-test"
+        moved = c.post(f"/v1/skill-drafts/{did}/move", headers=me, json={"from": "SKILL.md", "to": "other.md", "expected_revision": 1})
+        assert moved.json()["name"] is None
+        moved = c.post(f"/v1/skill-drafts/{did}/move", headers=me, json={"from": "other.md", "to": "SKILL.md", "expected_revision": 2})
+        assert moved.json()["name"] == "renamed-test"
+        deleted = c.delete(f"/v1/skill-drafts/{did}/files/SKILL.md?expected_revision=3", headers=me)
+        assert deleted.json()["name"] is None
+
+
+def test_platform_draft_reused_without_notifications():
+    with TestClient(app) as c:
+        me = _user(c)
+        first = c.post("/v1/skills/platform.pdf/drafts", headers=me, json={})
+        assert first.status_code == 202
+        second = c.post("/v1/skills/platform.pdf/drafts", headers=me, json={})
+        assert second.status_code == 200 and second.json()["id"] == first.json()["id"]
+        user_id = c.get("/v1/me", headers=me).json()["id"]
+        with SessionLocal() as db:
+            assert not db.scalar(select(Notification).where(Notification.user_id == user_id))
