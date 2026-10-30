@@ -7,6 +7,7 @@ import Link from "next/link";
 import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
+import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
 import { useStable } from "../../lib/use-stable";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
 import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
@@ -221,6 +222,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             conversationTitled(String(event.payload.conversation_id || run.conversation_id || id || ""), title);
           }
           if (event.type === "run.status" || event.type === "artifact.created") refreshRun(run.id);
+          // the model asked this page to run a small program: claim it, run it in a worker, report back
+          if (event.type === "client.call" && event.payload?.call_id) void handleClientCall(run.id, event.payload as ClientCall);
           if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
             batch.flush();
             loadDetail();

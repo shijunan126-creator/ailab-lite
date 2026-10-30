@@ -40,6 +40,8 @@ function describeTool(name: string, args: any): { label: string; detail?: string
   switch (name) {
     case "load_skill":
       return { label: "读取技能", detail: SKILL_LABEL[args?.name] || args?.name };
+    case "run_js":
+      return { label: "运行 JavaScript", detail: String(args?.code || "").split("\n").find((l) => l.trim())?.trim().slice(0, 120) };
     case "search_images":
       return { label: "搜索图片", detail: args?.query };
     case "exec":
