@@ -1049,7 +1049,8 @@ class AgentLoop:
     def _delivery_note(delivered):
         paths = list(delivered or {})
         lines = [f"{path.rsplit('/', 1)[-1]}：{path}" for path in paths[:64]]
-        return {"role": "system", "content": "平台已确认交付（共 %d 项）：\n%s" % (len(paths), "\n".join(lines))}
+        listing = "\n".join(lines)
+        return {"role": "system", "content": f"平台已确认交付（共 {len(paths)} 项）：\n{listing}"}
 
     async def _compact_parent_context(self, run_id, run, llm, model, prior, current, tools, delivered=None):
         """Summarize the exact parent prefix before adding the new turn."""

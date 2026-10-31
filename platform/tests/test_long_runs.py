@@ -204,7 +204,9 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[1]["content"] == "context"
-    assert "本轮执行摘要" in turn.messages[2]["content"]
+    assert turn.messages[2] == {"role": "user", "content": "original constraints"}
+    assert "本轮执行摘要" in turn.messages[3]["content"]
+    assert "平台已确认交付" in turn.messages[4]["content"]
     assert [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"] == ["3", "4"]
     assert platform.checkpoint and platform.reservations
 

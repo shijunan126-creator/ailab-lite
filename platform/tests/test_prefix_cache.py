@@ -683,6 +683,7 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
         {"role": "user", "content": [{"type": "text", "text": "旧" * 5100}, old_image]},
+        {"role": "user", "content": "current task"},
         {"role": "assistant", "content": "old"},
         {"role": "assistant", "content": "recent one"},
         {"role": "tool", "tool_call_id": "x", "content": "result"},
@@ -692,7 +693,7 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
     original = copy.deepcopy(messages)
     with scripted_server([{"content": "summary"}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
-        loop._states["r"] = {}
+        loop._states["r"] = {"user_message_index": 3}
 
         async def checkpoint(*args):
             pass
@@ -700,7 +701,8 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
         asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run={"_attempt_id": "a"}), loop.llm, "m", []))
     assert requests[0]["messages"][:-1] == original
-    assert messages[3:] == original[-4:]
+    assert messages[2] == {"role": "user", "content": "current task"}
+    assert messages[5:] == original[-4:]
     assert old_image not in [part for m in messages if isinstance(m.get("content"), list) for part in m["content"]]
     assert messages[-1]["content"] == [recent_image]
 
