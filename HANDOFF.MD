@@ -986,3 +986,6 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - render 沙箱复用的健康检查不能要求 tmpfs 字节数回到基线：LibreOffice profile 每个文档增长数 KiB，严格比较会让 PPTX 永远不复用。用户文件由清理步骤删除，profile 增长按上限容忍。
 - 渲染测速要看分阶段日志（Broker `library render phases=`、Worker `file processing phase=`），不要只看总时长：C3d 的“预热无效”实际原因是解析抢走 standby 槽、预览串行在解析之后、LibreOffice 冷启动。逐页单独 exec 在 runsc 下每页 0.4–0.6 s。
 - 直接并发调用 `LibraryRenderer.render` 会得到 `render_busy`：Broker 拒绝、Worker 作业持久重试是设计行为，并发测速要经过 Worker 路径。
+- mock 沙箱曾把命令里的 `/tmp` 留在宿主机：渲染预热写 `/tmp/ailab-warm`、健康检查清 `/tmp`。宿主机残留的 `warmup.pdf` 让 macOS 上的预热“假成功”，E2E 因此一直通过，CI（无 LibreOffice）则会全部预览失败。现在 mock 的 `/tmp` 映射到沙箱目录并设 `TMPDIR`，`render_sandbox_health.py` 从自身位置和 `TMPDIR` 取路径；mock 声明 `office_listener = False`，渲染不预热、不加 `AILAB_LO_STRICT`、健康检查只做清理。真实镜像仍要求 listener。
+- 生成页（HtmlArtifact）的高度不能用 `documentElement.scrollHeight`：它不会小于 iframe 自身高度，页面变短后框永远不缩；`height:100%` 的页面则永远不长。按 body 内容范围（Range 包围盒 + 内边距/外边距）测量，见 `lib/frame.ts` 的 `RUN_HELPER`。
+- 固定工具目录约 2.8k token，并且计入压缩预算。上下文窗口很小（如 3.3k）的测试夹具放不下任何一轮历史，会报 `history exceeds model budget before compaction`，这是夹具问题，不是产品回归。

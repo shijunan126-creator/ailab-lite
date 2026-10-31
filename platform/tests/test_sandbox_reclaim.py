@@ -60,6 +60,14 @@ def test_a_second_sandbox_is_allowed_while_the_pool_has_room(pool):
         take(pool, "user_a", "a3")
 
 
+def test_a_users_render_sandbox_does_not_use_their_work_allowance(pool, monkeypatch):
+    from ailab_platform.broker.render import LibraryRenderer
+
+    monkeypatch.setattr(settings, "sandbox_max_per_user", 1)
+    pool.acquire(LibraryRenderer(pool)._spec(), LeasePrincipal("user_a", "preview:job", system=True), wait_seconds=0)
+    assert take(pool, "user_a", "a0")["state"] == "active"
+
+
 def test_the_allowance_shrinks_to_one_when_the_pool_fills(pool):
     take(pool, "user_a", "a0")
     for i in range(6):  # seven of nine general slots busy
