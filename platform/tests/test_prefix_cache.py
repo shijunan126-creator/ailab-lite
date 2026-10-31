@@ -163,7 +163,7 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
             )
         )
     assert requests[0]["messages"][:-1] == previous
-    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert result[:2] == previous[:2] and result[2]["content"].endswith("summary") and result[-1] == current
     assert "final.txt：/workspace/outputs/source.txt" in result[3]["content"]
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
@@ -222,7 +222,7 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
         except BudgetPause:
             pass  # Still examine the request made before a non-converging compaction paused.
     assert requests[0]["messages"][:-1] == original
-    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert messages[:3] == original[:3]
     assert messages[3]["content"].endswith("summary")
     assert "report.txt" in messages[4]["content"] and "/workspace/outputs/report.txt" in messages[4]["content"]
@@ -517,7 +517,7 @@ def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypat
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
         result = asyncio.run(loop._assemble_context("r", {"_attempt_id": "a", "_fixed_catalog": tools}, "m", base))
     assert requests[0]["messages"][:-1] == [*base[:2], {"role": "user", "content": "旧" * 5300}, {"role": "assistant", "content": "done"}]
-    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert result[:2] == base[:2] and result[-1] == base[-1] and result[2]["content"].endswith("summary")
     assert platform.saved["through_run_id"] == "old"
 
@@ -617,7 +617,7 @@ def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch):
         asyncio.run(loop.process("r", attempt=2, attempt_id="second"))
     assert platform.statuses[-1][0] == "succeeded"
     assert_extension(requests[0], requests[1])
-    assert requests[1]["tool_choice"] == "none"
+    assert requests[1]["tool_choice"] == "auto" and "thinking" not in requests[1]  # same shape as the run's calls
     assert_extension(requests[1], requests[2])
     assert any("此前收尾限制已解除" in str(m.get("content")) for m in requests[2]["messages"])
 
@@ -800,7 +800,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
         loop._states["r"] = {"user_message_index": 2}
         with pytest.raises(BudgetPause):
             asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run=run), loop.llm, "m", []))
-    assert calls == [("m", -3, "none"), ("m", -3, "none")]
+    assert calls == [("m", -3, None), ("m", -3, None)]
 
 
 def test_empty_context_layout_survives_three_resumes():
@@ -823,3 +823,28 @@ def test_empty_context_layout_survives_three_resumes():
 def test_delivery_note_preserves_delivered_filename():
     note = AgentLoop._delivery_note({"/workspace/outputs/source.txt": 4}, {"/workspace/outputs/source.txt": "final.txt"})
     assert "final.txt：/workspace/outputs/source.txt" in note["content"]
+
+
+def test_summary_keeps_request_shape_and_refuses_tools_only_after_a_tool_call(monkeypatch):
+    """tool_choice=none or a reasoning toggle re-renders the provider prompt and loses the cached prefix."""
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    previous = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 4700},
+        {"role": "assistant", "content": "a"},
+    ]
+    tools = [{"type": "function", "function": {"name": "noop", "parameters": {"type": "object"}}}]
+    call = {"tool_calls": [{"index": 0, "id": "c1", "type": "function", "function": {"name": "noop", "arguments": "{}"}}]}
+    with scripted_server([call, {"content": "summary"}]) as (url, requests):
+        transport = ModelTransport(url, disable_reasoning_for_quiet=True)
+        loop = AgentLoop(platform=FakePlatform(), llm=transport)
+        result = asyncio.run(
+            loop._compact_parent_context(
+                "r", {"_attempt_id": "a"}, transport, "m", previous, {"role": "user", "content": "新" * 500}, tools
+            )
+        )
+    assert requests[0]["tool_choice"] == "auto" and "thinking" not in requests[0]
+    assert requests[1]["tool_choice"] == "none" and "thinking" not in requests[1]
+    assert result[2]["content"].endswith("summary")

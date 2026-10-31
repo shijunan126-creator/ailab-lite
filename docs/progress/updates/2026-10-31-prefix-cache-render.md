@@ -180,3 +180,18 @@ C3g 全量 SQLite 首轮 6 组失败：两组旧测试先渲染而与 pending �
 - 内存（VM cgroup，含页缓存）：warm standby 102 MiB，处理三种样本后 158 MiB，峰值 192 MiB。槽位决定见 ADR 0030。
 - 空闲到期：`cleanup_once` 后 render 租约 1 → 0。
 - 未测：Work 内 `view_workspace_file` 第一/第二次耗时（见真实模型验收）、CPU 秒、真实 ClamAV 扫描。
+
+## 真实 DeepSeek 一次性验收（2026-11-01）
+
+本轮仅验收，未改产品、未重跑付费场景、未提交/push/部署。启动基线 `e541e6b`；期间 HEAD 由另一操作推进到 `12d9ea7`，差异仅交接文档，产品树不变。独立四后端服务（按要求省略 Portal）+ Redis，真实 Agent、DeepSeek、Docker runsc、既有 `c3-render-lifecycle:latest`；未操作用户栈。
+
+- `model_usage` 的23次 settled调用与供应商usage逐条一致，含压缩调用、首次请求：Chat 8次，30,080/62,523=48.11%；Work 6次，30,720/53,661=57.25%；PPT 9次，67,456/83,263=81.02%。均未达到90%。Chat六轮、Work四轮，各第2轮有真实ready附件，分别压缩2次/1次。
+- 消息与工具仅追加的压缩请求中，Chat第4轮及Work第4轮零命中；同时发生 thinking默认开启→disabled、tool_choice auto→none，不能从单次观察独立分离两项影响。压缩后又在messages[2]（PPT为[3]）用摘要替换历史；普通续轮未发现旧消息/tools改写。各请求首处差异留在仓库外报告。
+- PPT实际5页，check.py执行一次exit0、有6条Oval越界/重叠警告；同文件第一页查看13.329s/3.324s，总53.37s。临时窗口24000、压缩阈值0.6也沿用于PPT，第二次查看后摘要仍超安全阈值，Run interrupted、summary空；兜底自动交付1次，显式deliver_file=0。不能判完整成功，也不能推出原1M窗口会失败；未resume或重跑。
+- web_search：无付费搜索调用；独立工具目录检查在provider=searxng时首轮直接提供web_search，不依赖search_capabilities。付费栈provider=none，无实际搜索后端验收。
+- 余额9.62→9.55元，差约0.07元；按官方峰值USD价格、保守折算8估值约0.2346元。未输出密钥。启动准备曾因Codex沙箱禁止Worker ps而失败，在模型请求前解除限制重新准备；不计为付费场景重跑。
+- 清理完毕：本次服务/Redis/转发器停止、六个端口空闲、pc容器/网络/卷均无残留，12个ailab-local容器名称/ID保持，既有镜像保留。未跑pytest/E2E/Portal构建。
+
+详细报告与原始请求在仓库外 `/private/tmp/pc-codex/accept/`（不入库，收尾时清理）。
+
+**根因与修复（Claude）**：用 request-003 原样直接调用 DeepSeek（`max_tokens=1`）隔离：同请求 9,479/9,344 命中；只加 `thinking: disabled` → 9,182/1,152；只改 `tool_choice: none` → 7,193/1,152（工具被移出模板）。两者各自都会丢掉整段前缀。修复：压缩摘要和步数用尽收尾改走 `_answer_without_tools`，保持 `tool_choice=auto` 与推理设置，模型仍调用工具时才以 `none` 重问一次；`ModelCall.continues_prefix` 让 quiet 续写调用不触发 `disable_reasoning_for_quiet`。压缩后下一次请求以摘要替换历史，属每次压缩固有的一次部分未命中，设计文档已写明。

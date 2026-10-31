@@ -102,7 +102,7 @@ class ModelTransport(LLMClient):
         call = model_call.get()
         if call is not None:
             payload["max_tokens"] = call.max_output_tokens
-            if call.quiet and self.disable_reasoning_for_quiet:
+            if call.quiet and self.disable_reasoning_for_quiet and not call.continues_prefix:
                 payload["thinking"] = {"type": "disabled"}
             if call.run_id:
                 headers["x-run-id"] = call.run_id

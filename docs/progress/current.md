@@ -15,7 +15,7 @@
 
 ## 三、待办
 
-1. 真实 DeepSeek 验收（Chat/Work 命中率、PPT 完整流程、web_search 直用）——进行中，结果写入 dated update。
+1. 真实 DeepSeek 一次性验收已结束，**未通过缓存/完整 PPT 成功门槛**：Chat 48.11%、Work 57.25%、PPT 81.02%；PPT 检查与两次查看后因临时小窗口阈值中断，兜底交付一次。见 [dated update](updates/2026-10-31-prefix-cache-render.md#真实-deepseek-一次性验收2026-11-01)。本验收任务仅授权验收，不修产品、不重跑、不提交或发布；下一步由用户决定压缩策略与复测范围。
 2. PR + merge，之后部署（只更新变化组件）。
 3. 清理：`.worktrees/render-view`、`/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`（ailab-verify Docker）。
 

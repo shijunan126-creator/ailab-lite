@@ -989,3 +989,5 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - mock 沙箱曾把命令里的 `/tmp` 留在宿主机：渲染预热写 `/tmp/ailab-warm`、健康检查清 `/tmp`。宿主机残留的 `warmup.pdf` 让 macOS 上的预热“假成功”，E2E 因此一直通过，CI（无 LibreOffice）则会全部预览失败。现在 mock 的 `/tmp` 映射到沙箱目录并设 `TMPDIR`，`render_sandbox_health.py` 从自身位置和 `TMPDIR` 取路径；mock 声明 `office_listener = False`，渲染不预热、不加 `AILAB_LO_STRICT`、健康检查只做清理。真实镜像仍要求 listener。
 - 生成页（HtmlArtifact）的高度不能用 `documentElement.scrollHeight`：它不会小于 iframe 自身高度，页面变短后框永远不缩；`height:100%` 的页面则永远不长。按 body 内容范围（Range 包围盒 + 内边距/外边距）测量，见 `lib/frame.ts` 的 `RUN_HELPER`。
 - 固定工具目录约 2.8k token，并且计入压缩预算。上下文窗口很小（如 3.3k）的测试夹具放不下任何一轮历史，会报 `history exceeds model budget before compaction`，这是夹具问题，不是产品回归。
+- 前缀缓存不只看 messages/tools 是否仅追加：请求级参数也进提示模板。DeepSeek 实测同一 9.5k 前缀，`thinking: disabled` 或 `tool_choice: none`（后者把工具从模板删掉）都让命中从 9.3k 掉到 1.2k。续写会话的调用（压缩摘要、步数用尽收尾）必须与主循环同形，见 `AgentLoop._answer_without_tools`。用直接调用 API 的小探针隔离参数影响，几分钱即可，不要靠整轮验收猜。
+- 验收用的强制压缩小窗口（如 24k、阈值 0.6）会让 PPT 这类带图片的 Work 任务在两次查看后 BudgetPause 并兜底交付，不能当作 PPT 流程结论；命中率也被频繁压缩拉低，要单列压缩相关调用。交付文件数 = 1 不等于模型主动 `deliver_file` 或 Run succeeded，轮询要识别 interrupted。

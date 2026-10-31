@@ -593,6 +593,7 @@ class AgentLoop:
         max_output_tokens=None,
         tool_choice=None,
         allow_fallback=True,
+        continues_prefix=False,
     ):
         offered = tools_for_turn() if tools is None else tools
         catalog = get_catalog()
@@ -626,6 +627,7 @@ class AgentLoop:
                         quiet=quiet,
                         max_output_tokens=max_output_tokens,
                         tool_choice=tool_choice,
+                        continues_prefix=continues_prefix,
                     )
                 except LLMError as exc:
                     if getattr(exc, "output_started", False) or not policy.retryable(exc):
@@ -645,6 +647,21 @@ class AgentLoop:
                     await asyncio.sleep(settings.llm_retry_backoff_seconds * 2**retry * random.uniform(0.5, 1.5))
         raise LLMError("all eligible models failed")
 
+    async def _answer_without_tools(self, llm, run_id, run, model, messages, step, tools, *, quiet=False, allow_fallback=True):
+        """Ask for a text answer that continues the conversation (a summary, the out-of-steps wrap-up).
+
+        The request keeps the conversation's shape: the same tools with ``tool_choice=auto`` and the same reasoning
+        setting. ``tool_choice=none`` or a reasoning toggle re-renders the provider's prompt template and loses the
+        whole cached prefix (DeepSeek, 2026-11-01: 9.3k of 9.5k cached tokens fell to 1.2k). The instruction asks for
+        no tool calls; only a model that still makes one is asked again with tools refused.
+        """
+        options = {"quiet": quiet, "allow_fallback": allow_fallback, "continues_prefix": True}
+        response = await self._call_model(llm, run_id, run, model, messages, step, tools=tools, **options)
+        if response.tool_calls and (quiet or not response.content.strip()):
+            response = await self._call_model(llm, run_id, run, model, messages, step, tools=tools, tool_choice="none", **options)
+        response.tool_calls = []
+        return response
+
     async def _model_attempt(
         self,
         llm: LLMClient,
@@ -658,6 +675,7 @@ class AgentLoop:
         quiet=False,
         max_output_tokens=None,
         tool_choice=None,
+        continues_prefix=False,
     ):
         if messages and hasattr(self.platform, "get_memory_context") and not quiet:
             latest = await self.platform.get_memory_context(run_id)
@@ -706,10 +724,13 @@ class AgentLoop:
         if settings.model_max_output_tokens is not None:
             output_limit = min(output_limit, settings.model_max_output_tokens)
         if quiet:
-            output_limit = min(output_limit, 2048)
+            # A continuation keeps reasoning on, and reasoning shares the output budget with the summary itself.
+            output_limit = min(output_limit, 8192 if continues_prefix else 2048)
         if max_output_tokens is not None:
             output_limit = min(output_limit, max_output_tokens)
-        call = ModelCall(uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet, tool_choice=tool_choice)
+        call = ModelCall(
+            uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet, tool_choice=tool_choice, continues_prefix=continues_prefix
+        )
         try:
             await self.platform.reserve_usage(
                 {
@@ -979,17 +1000,8 @@ class AgentLoop:
                     evidence.pop()
                     continue
                 raise LLMError("history exceeds model budget before compaction")
-            response = await self._call_model(
-                self.llm or llm_for(model),
-                run_id,
-                run,
-                model,
-                prompt,
-                -1,
-                tools=context_tools,
-                quiet=True,
-                tool_choice="none",
-                allow_fallback=False,
+            response = await self._answer_without_tools(
+                self.llm or llm_for(model), run_id, run, model, prompt, -1, context_tools, quiet=True, allow_fallback=False
             )
             if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
                 raise LLMError("summary model returned no valid summary")
@@ -1071,9 +1083,7 @@ class AgentLoop:
         prompt = [*prior, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= policy.input_budget(spec):
             raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self._call_model(
-            llm, run_id, run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none", allow_fallback=False
-        )
+        response = await self._answer_without_tools(llm, run_id, run, model, prompt, -3, tools, quiet=True, allow_fallback=False)
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         summary = {"role": "system", "content": "历史摘要（仅作背景）：\n" + response.content}
@@ -1117,9 +1127,7 @@ class AgentLoop:
         prompt = [*messages, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= limit:
             raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self._call_model(
-            llm, run_id, turn.run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none", allow_fallback=False
-        )
+        response = await self._answer_without_tools(llm, run_id, turn.run, model, prompt, -3, tools, quiet=True, allow_fallback=False)
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         recent = self._compacted_recent(messages[cut:])
@@ -2089,9 +2097,7 @@ class AgentLoop:
                     if not state.get("out_of_steps_done"):
                         messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
                         await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
-                        response = await self._call_model(
-                            llm, run_id, run, model, messages, settings.max_agent_steps, tools=offered, tool_choice="none"
-                        )
+                        response = await self._answer_without_tools(llm, run_id, run, model, messages, settings.max_agent_steps, offered)
                         messages.append({"role": "assistant", "content": response.content})
                         state["final_summary"] = response.content
                         metrics.record_genui(

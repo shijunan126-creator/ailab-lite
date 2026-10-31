@@ -59,6 +59,9 @@ class ModelCall:
     ttft_seconds: float | None = None
     quiet: bool = False
     tool_choice: str | None = None
+    # A quiet call that continues the conversation (a summary, a wrap-up) keeps its request shape so the
+    # provider's prefix cache still applies: no reasoning toggle, even for models that drop it on quiet calls.
+    continues_prefix: bool = False
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
