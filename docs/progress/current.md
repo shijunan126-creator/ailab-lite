@@ -1,12 +1,10 @@
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
-工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，base `origin/main@995a5f6`，产品基线 `9115406`，部署标签 `sm-p3-9115406`；未 push、未 PR。
+工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，base `origin/main@995a5f6`，产品基线 `90fc016`。
 
-**完成**：P6 全套验证通过、平台和 Portal 增量部署；整理实际判定语义重复。结果与边界见 [P3–P6 记录](updates/2026-10-31-memory-js-polish.md#p6-完整验证部署与复查2026-10-31)。
+**完成**：P7 记忆删除修复已部署，平台 `sm-p3-90fc016`、Portal 沿用 `sm-p3-9115406`；指定真实模型检查通过。构建、检查结果及边界见 [P7 记录](updates/2026-10-31-memory-js-polish.md#p7-记忆删除修复部署与真实模型检查2026-10-31)。
 
-**待审阅**：Excel 成功交付但未触发等待，不能确认真实暂停恢复；模型以本地文件名调用附件接口返回 404。偏好回合模型主动删除原记忆并声明 explicit，用户并未要求删除，API 接受；详见记录。其他模型、长期稳定性和有行的定时任务菜单未验。
-
-**下一步**：Claude 审阅并处理上述问题及边界，之后打开 PR 并合并；本包只提交文档。
+**下一步**：Claude 推送文档提交，等待 PR CI 后合并。后续关注模型查看文件后重新交付、通过 `search_capabilities` 发现 exec/deliver_file；`view_attachment` 的真实暂停恢复路径仅由回归测试覆盖。
 
 ---
 

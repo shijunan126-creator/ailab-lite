@@ -60,3 +60,14 @@ GNU PATH 下 Ruff check 与 format 通过（477 文件）；SQLite 全套 1677 �
 偏好回合及立即整理后，最新整理 applied，候选「用户要求以后回复都先说结论」为 duplicate，related 包含已有「用户要求以后回答都先给结论」，新增 0。`ui3.py` 点击后没有等待该次记录创建，打印了 P5 的旧 added 记录；通过 API 核对最新记录终态得上述结果。历史 P5 重复项仍保留。但偏好回合中模型主动调用 `memory remove`，将原有「希望回答时先给结论，再展开说明。」删除，并把 `explicit` 设为 true；本次用户输入没有要求删除，API 接受了该调用。根因路径：`agent/tools.py` 将 `explicit` 交由模型填写；`api/routes_memory.py::run_memory` 在 auto_save 开启时允许写操作，`remove` 直接移除可访问条目，没有核验用户是否要求删除，且该分支不要求 `explicit`。这是新发现的记忆删除授权问题，需 Claude 处理；未自行改产品或恢复数据。
 
 遗留：模型查看文件后可能修改并重新交付；Work 模式仍通过 `search_capabilities` 发现 exec/deliver_file，均为提示词/设计后续，未在本包修复。真实等待恢复、最终 Excel 内容、其他模型及长期稳定性未验；定时任务无行菜单仍未验。未 push 或创建 PR；Claude 应先审阅上述新问题和未覆盖边界，再决定 PR/合并。
+
+
+## P7 记忆删除修复部署与真实模型检查（2026-10-31）
+
+产品基线 `90fc016`：`d821cb8` 要求 memory remove 带 `explicit=true`，否则返回 422；`90fc016` 明确授权只针对用户本轮要求忘掉的条目，记住一条不授权删除或合并另一条，已知内容不重复保存。P6 的共同根因是模型自行将删除标为 explicit，而 API 原先未要求该标志；标志仍由模型提供，真实模型遵循存在波动。Claude 本地报告 Ruff 通过、memory 与 agent loop 138 项通过；完整套件由 PR CI 执行。
+
+按授权以 Git archive 固定 `90fc016`，仅构建平台镜像 `sm-p3-90fc016`，Portal 沿用 `sm-p3-9115406`，其他镜像复用，无备份。sync、平台构建、四服务 compose up --wait 均 exit 0，四服务 healthy；日志 `/tmp/ailab-p7-build.log`、`/tmp/ailab-p7-up.log`。
+
+指定 `/tmp/p4qa/memcheck.py` 真实模型检查 exit 0：新账号的两条近似偏好在三次「记住」后均保留（工具调用分别无、list、无）；「忘掉」回合调用 list、remove、list、remove、list，最终两条均移除，四次 run 均 succeeded。原始输出 `/tmp/p4qa/memcheck.out`。这是单次模型检查，不代表所有模型或长期行为。
+
+后续：Claude 等待 PR CI 后合并；模型查看文件后可能重新交付、Work 经 `search_capabilities` 发现 exec/deliver_file，以及 `view_attachment` 的真实暂停恢复路径仅有回归测试覆盖，仍待后续处理。
