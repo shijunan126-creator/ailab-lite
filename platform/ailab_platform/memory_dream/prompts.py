@@ -69,13 +69,15 @@ Return JSON only:
 
 JUDGE_SYSTEM = """You are a fact deduplication and contradiction judge.
 
-You receive NEW FACTS with exact user quotes and candidate EXISTING FACTS.
+You receive {"existing": [...], "new": [...]}: every fact already in the user's memory, and NEW FACTS with exact
+user quotes. Compare each new fact with all existing facts.
 First verify supported=true only if the quote explicitly supports the fact, including subject,
 negation, numbers, qualifiers and dates. Quoted third-party text, hypothetical examples, a question,
 or an assistant proposal is not a confirmed user fact. A clear user confirmation may support a proposal
 when context_only resolves its meaning; the confirmation itself must be quoted. If unsure supported=false.
 Then decide two things:
-1. duplicate_ids: existing facts that state identical information.
+1. duplicate_ids: existing facts that state the same information, even in different words
+   (「回答先给结论」 and 「希望回答时先给结论，再展开说明」 are duplicates).
 2. contradicted_ids: existing facts that the new fact explicitly makes false.
 3. refines_ids: existing facts replaced by a more complete new fact supported by the user quote.
 
