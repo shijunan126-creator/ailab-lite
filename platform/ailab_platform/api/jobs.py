@@ -17,12 +17,15 @@ from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunStatus, SkillDraft
 from ..obs import NO_REQUEST, request_id_var
 from ..ports.service_auth import ServicePrincipal
+from ..queue import job_topic
 from ..service_auth import require_scope
 
 router = APIRouter(prefix="/internal/jobs", tags=["internal-jobs"])
 
 
-def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=None, mode="work", job_id=None) -> OutboxMessage:
+def stage_job(
+    db: Session, kind: str, *, run_id=None, file_id=None, draft_id=None, mode="work", job_id=None, priority=False
+) -> OutboxMessage:
     envelope = JobEnvelope(
         job_id=job_id or run_id or (f"thumb_{file_id}" if kind == "thumbnail" else uuid4().hex),
         kind=kind,
@@ -30,12 +33,13 @@ def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=Non
         file_id=file_id,
         draft_id=draft_id,
         mode=mode,
+        priority=priority,
         deadline=datetime.now(UTC) + timedelta(seconds=settings.job_deadline_seconds),
         enqueued_at=datetime.now(UTC),
         traceparent=getattr(obs, "traceparent_var").get() if hasattr(obs, "traceparent_var") else None,
         request_id=None if request_id_var.get() == NO_REQUEST else request_id_var.get(),
     )
-    topic = f"{settings.run_queue}:{mode}" if kind == "run" else settings.file_queue
+    topic = job_topic(kind, mode, priority)
     existing = db.get(OutboxMessage, envelope.job_id)
     if existing:
         return existing
@@ -50,6 +54,7 @@ class ClaimIn(BaseModel):
 
 class FinishIn(BaseModel):
     token: str = Field(min_length=1, max_length=40)
+    retry_after_seconds: int = Field(default=0, ge=0, le=60)
 
 
 def _job(db, job_id, principal):
@@ -168,6 +173,18 @@ def _claim_locked(db, job, body):
                 )
             )
     expired = envelope.deadline <= now
+    render_waiting = (
+        envelope.kind == "preview" or (envelope.kind == "file" and (file.meta or {}).get("processing") == "render_pending")
+        if envelope.kind in {"preview", "file"}
+        else False
+    )
+    if not done and render_waiting:
+        if envelope.kind == "file":
+            # Capacity waits do not consume the scanner failure budget.
+            job.deliveries = 1
+        if expired:
+            job.payload = {**job.payload, "deadline": (now + timedelta(seconds=settings.job_deadline_seconds)).isoformat()}
+            expired = False
     if expired and envelope.kind == "run" and not done:
         from ..run_state import transition_run
 
@@ -272,7 +289,7 @@ def release_job(
         .values(
             claim_token=None,
             claimed_until=None,
-            next_attempt_at=now,
+            next_attempt_at=now + timedelta(seconds=body.retry_after_seconds),
         )
     ).rowcount
     if not changed:

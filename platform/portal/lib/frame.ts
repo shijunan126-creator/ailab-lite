@@ -27,11 +27,21 @@ if(kind==="genui-preview"&&typeof ResizeObserver!=="undefined")new ResizeObserve
 parent.postMessage({ailab:"ready"},"*")})()`;
 
 /** Added to a complete generated page: reports its height so the frame grows with it, and follows theme changes. */
+// The height is the content's own extent, not documentElement.scrollHeight: scrollHeight never drops below the
+// frame, so a page that grows and then shrinks (a reset button, a collapsed panel) would keep its tallest box.
 export const RUN_HELPER = `<script>(function(){
-function height(){parent.postMessage({ailab:"height",h:Math.ceil(document.documentElement.scrollHeight)},"*")}
+var sent=-1,range=document.createRange(),ro=typeof ResizeObserver!=="undefined"?new ResizeObserver(height):null;
+function px(s,p){return parseFloat(s[p])||0}
+function height(){var b=document.body,h;
+if(!b)h=document.documentElement.getBoundingClientRect().height;else{
+range.selectNodeContents(b);var r=range.getBoundingClientRect(),s=getComputedStyle(b),k=b.lastElementChild;
+h=(r.width||r.height?r.bottom:b.getBoundingClientRect().top+px(s,"paddingTop")+px(s,"borderTopWidth"))+scrollY
++px(s,"paddingBottom")+px(s,"borderBottomWidth")+px(s,"marginBottom")+(k?px(getComputedStyle(k),"marginBottom"):0)}
+h=Math.ceil(h);if(h!==sent){sent=h;parent.postMessage({ailab:"height",h:h},"*")}}
+function watch(){if(!ro)return;ro.observe(document.documentElement);var b=document.body;if(!b)return;ro.observe(b);for(var i=0;i<b.children.length;i++)ro.observe(b.children[i])}
 addEventListener("message",function(e){if(e.source!==parent||!e.data||typeof e.data.theme!=="string")return;var s=document.getElementById("ailab-theme");if(s)s.textContent=e.data.theme});
-if(typeof ResizeObserver!=="undefined")new ResizeObserver(height).observe(document.documentElement);
-addEventListener("load",height);height()})()</script>`;
+if(typeof MutationObserver!=="undefined")new MutationObserver(function(){watch();height()}).observe(document.documentElement,{childList:true,subtree:true,characterData:true});
+addEventListener("load",function(){watch();height()});addEventListener("resize",height);watch();height()})()</script>`;
 
 const NO_NETWORK = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 

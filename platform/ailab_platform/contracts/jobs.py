@@ -15,6 +15,7 @@ class JobEnvelope(BaseModel):
     file_id: str | None = None
     draft_id: str | None = None
     mode: Literal["chat", "work"] = "work"
+    priority: bool = False
     attempt: int = Field(default=1, ge=1)
     deadline: datetime
     enqueued_at: datetime | None = None

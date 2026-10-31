@@ -14,6 +14,10 @@ from ailab_platform.config import Settings
         {"sandbox_render_memory_bytes": 4 * 1024**3},
         {"sandbox_queue_limit": 0},
         {"sandbox_max_per_user": 0},
+        {"render_user_idle_seconds": 0},
+        {"render_reuse_max_jobs": 0},
+        {"render_max_age_seconds": 119, "sandbox_render_max_ttl_seconds": 120},
+        {"render_work_listener_rss_bytes": 1},
         {"broker_lock_ttl_seconds": 0},
     ],
 )

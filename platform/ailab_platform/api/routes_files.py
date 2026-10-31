@@ -438,7 +438,13 @@ def download_thumbnail(
 
 def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
     file = _owned_file(db, file_id, user)
-    if file.status != FileStatus.READY:
+    scanned = (
+        file.status == FileStatus.PENDING
+        and file.purpose == "library"
+        and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean"
+        and bool((file.meta or {}).get("preview_job_id"))
+    )
+    if not (file.status == FileStatus.READY or scanned):
         raise HTTPException(status_code=404, detail="preview not found")
     return file
 
@@ -452,6 +458,11 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
         cached = None
     if cached and (cached["status"] != "pending" or now - (file.meta or {}).get("preview_requested_at", 0) <= 300):
         return cached
+    if cached and cached.get("status") == "pending":
+        from ..models import OutboxMessage
+
+        if (file.meta or {}).get("preview_job_id") and db.get(OutboxMessage, file.meta["preview_job_id"]):
+            return cached
     # Same user lock as deletion: concurrent opens use the committed manifest, without storage reads.
     with user_critical_section(db, user.id):
         file = _ready_file(db, file_id, user)
@@ -487,7 +498,7 @@ def preview_asset(
     meta = file.meta or {}
     manifest = meta.get("preview") or {}
     allowed = [*manifest.get("pages", []), manifest.get("data"), manifest.get("image"), manifest.get("text")]
-    if manifest.get("status") != "ready" or name not in allowed or name in {".", ".."} or "/" in name or "\\" in name:
+    if manifest.get("status") not in {"ready", "pending"} or name not in allowed or name in {".", ".."} or "/" in name or "\\" in name:
         raise HTTPException(status_code=404, detail="preview asset not found")
     asset = (meta.get("preview_assets") or {}).get(name) or {}
     if name == "original":

@@ -81,6 +81,18 @@ def _transition_run(
         # At most two rows per run. A frozen deadline makes lifecycle an indexed
         # range scan instead of joining/sorting every historical checkpoint.
         db.execute(update(RunCheckpoint).where(RunCheckpoint.run_id == run_id).values(expires_at=now + timedelta(days=7)))
+        if new_status == RunStatus.SUCCEEDED and run.conversation_id and (run.runtime_meta or {}).get("context_snapshot"):
+            db.execute(
+                update(RunCheckpoint)
+                .where(RunCheckpoint.run_id == run_id, RunCheckpoint.step == run.checkpoint_step)
+                .values(expires_at=None)
+            )
+            if run.parent_run_id:
+                db.execute(
+                    update(RunCheckpoint)
+                    .where(RunCheckpoint.run_id == run.parent_run_id, RunCheckpoint.expires_at.is_(None))
+                    .values(expires_at=now + timedelta(days=7))
+                )
     metrics.RUNS.labels(new_status).inc()
     if new_status in RunStatus.TERMINAL:
         started = run.started_at or run.created_at

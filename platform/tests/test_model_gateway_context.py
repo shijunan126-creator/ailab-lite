@@ -166,6 +166,8 @@ def test_pre_output_fallback_has_distinct_calls_and_real_ledger(monkeypatch, kin
                 assert rows[1].actual_backend == "actual-ok"
                 assert float(rows[0].weight) == 3 and float(rows[1].weight) == 1
             assert any(t == "agent.model_fallback" for t, _ in bridge.events)
+            assert ("agent.context_boundary", {"reason": "model_changed"}) in bridge.events
+            assert seen1[0][1]["messages"] == seen2[0][1]["messages"]
             assert len(seen1) == len(seen2) == 1
             assert len(ttft) == 1 and ttft[0][0] == "backup" and ttft[0][1] > 0
 
@@ -271,12 +273,12 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
     async def exercise():
         loop = AgentLoop(platform=bridge, llm=SummaryLLM())
         base = [{"role": "system", "content": "系统"}, {"role": "user", "content": "当前问题"}]
-        messages = await loop._assemble_context("run", {"_attempt_id": "attempt"}, "summary", base)
+        messages = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
         assert estimator.estimate("summary", {"messages": messages, "tools": []}) <= ModelPolicy.input_budget(cat.get("summary"))
         assert any("历史摘要" in m["content"] for m in messages)
         calls = len(bridge.reservations)
         assert calls > 0 and calls == len(bridge.settlements) == len(bridge.saved)
-        again = await loop._assemble_context("run", {"_attempt_id": "attempt"}, "summary", base)
+        again = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
         assert again == messages
         assert len(bridge.reservations) == calls
 

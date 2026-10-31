@@ -222,7 +222,7 @@ def stack(tmp_path_factory):
         for log in logs:
             log.close()
         client = redis.Redis.from_url(REDIS_URL)
-        for pattern in (f"ailab:stream:e2e-*-{tag}", "ailab:lease:*", "ailab:leases:active", "ailab:lock:*"):
+        for pattern in (f"ailab:stream:e2e-*-{tag}*", "ailab:lease:*", "ailab:leases:active", "ailab:lock:*"):
             for key in client.scan_iter(pattern):
                 client.delete(key)
 

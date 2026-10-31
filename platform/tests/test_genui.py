@@ -233,7 +233,8 @@ def test_compaction_inputs_strip_ui_before_serializing(monkeypatch):
         async def save_model_summary(self, run_id, payload):
             pass
 
-    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3300, max_output_tokens=1000)])
+    # Room for the fixed tool catalog (~2.8k tokens) plus a few turns, so the 15 turns still force compaction.
+    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=6000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     loop = AgentLoop(platform=Context(), llm=SummaryLLM())
     asyncio.run(
@@ -256,7 +257,7 @@ def test_search_summary_snippet_does_not_leak_ui_source():
         assert "root =" not in item["snippet"] and "```" not in item["snippet"]
 
 
-def test_work_compaction_strips_pinned_prompt_and_previous_summary(monkeypatch):
+def test_work_compaction_preserves_genui_prefix_in_summary_request(monkeypatch):
     from ailab_platform.adapters.runtime import fresh_state
     from ailab_platform.agent.loop import AgentLoop, _Turn
     from ailab_platform.catalog import Catalog, ModelSpec
@@ -267,11 +268,10 @@ def test_work_compaction_strips_pinned_prompt_and_previous_summary(monkeypatch):
 
     class SummaryLLM(LLMClient):
         async def chat(self, messages, tools, model, user_id=None):
-            payload = json.loads(messages[-1]["content"])
-            assert "root =" not in messages[-1]["content"]
-            assert payload["previous_summary"] == "[界面：Metric]"
-            assert payload["pinned_state"]["user_prompt"] == "[界面：Metric]原始问题"
-            seen.append(payload)
+            assert messages[1]["content"] == UI + "原始问题"
+            assert "root =" in messages[2]["content"]
+            assert "只输出摘要" in messages[-1]["content"]
+            seen.append(messages)
             return LLMResponse(content="执行摘要", usage={"prompt_tokens": 10, "completion_tokens": 5})
 
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)])
@@ -407,7 +407,6 @@ def test_ui_components_validates_arguments(args):
 @pytest.mark.parametrize("mode", ["chat", "work"])
 @pytest.mark.parametrize("supported", [False, True])
 def test_ui_tool_model_admission_and_no_sandbox(monkeypatch, mode, supported):
-    from ailab_platform.agent.discovery import offered
     from ailab_platform.agent.tools import tools_for_chat, tools_for_turn
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.llm import LLMResponse, ToolCall
@@ -423,7 +422,7 @@ def test_ui_tool_model_admission_and_no_sandbox(monkeypatch, mode, supported):
     )
     monkeypatch.setattr(settings, "genui_enabled", True)
     catalog = tools_for_chat() if mode == "chat" else tools_for_turn()
-    assert "ui_components" in {t["function"]["name"] for t in offered(catalog, [])}
+    assert "ui_components" in {t["function"]["name"] for t in catalog}
     llm = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("u1", "ui_components", {"names": ["Text"]})]), LLMResponse(content="完成")])
     platform, broker = _run(llm, platform=Platform())
     assert platform.statuses[-1][0] == "succeeded"

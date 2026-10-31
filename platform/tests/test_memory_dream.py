@@ -425,6 +425,24 @@ def test_extractor_reports_rejected_candidates_and_does_not_send_existing_facts(
     assert "仅用于理解指代，不是证据" in captured[1]["content"]
 
 
+def test_judge_sorts_existing_memories_before_new_candidates(monkeypatch):
+    import json
+
+    captured = []
+
+    async def chat(messages, model, user):
+        captured.append(messages)
+        return json.dumps({"results": []}), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    old = [{"id": "b", "content": "B"}, {"id": "a", "content": "A"}]
+    for entries, text in ((old, "first"), (list(reversed(old)), "second")):
+        asyncio.run(service._judge([{"text": text, "source_quote": text}], entries, User(id="u"), "m"))
+    assert captured[0][0] == captured[1][0]
+    assert captured[0][1]["content"].split('"new":')[0] == captured[1][1]["content"].split('"new":')[0]
+    assert [entry["id"] for entry in json.loads(captured[0][1]["content"])["existing"]] == ["a", "b"]
+
+
 def test_manual_chain_respects_limit_after_recovery(monkeypatch):
     from ailab_platform.models import MemoryWorkItem
 

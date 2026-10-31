@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import re
 import tarfile
 
@@ -9,17 +10,21 @@ from .isolate import IsolationError
 
 PARSER_VERSION = "zcode-3c5b227-ailab2"
 KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx"}
+log = logging.getLogger("ailab.worker.office")
 
 
 def read(file_id, platform, storage, output, scan):
     job = platform.prepare_document(file_id, scan)
     result = platform.read_document(file_id, job["job_id"])
-    if result.get("error"):
-        raise IsolationError(result["error"])
-    key = result["archive_key"]
-    if key != f"derived/{file_id}/office-staging/{job['job_id']}.tar" or result["bytes"] > 48 * 1024**2:
-        raise IsolationError("invalid_document_output")
+    key = None
+    success = False
     try:
+        if result.get("error"):
+            raise IsolationError(result["error"])
+        staging_key = result["archive_key"]
+        if staging_key != f"derived/{file_id}/office-staging/{job['job_id']}.tar" or result["bytes"] > 48 * 1024**2:
+            raise IsolationError("invalid_document_output")
+        key = staging_key
         output.mkdir(parents=True, exist_ok=True)
         archive = output / "bundle.tar"
         size = 0
@@ -73,9 +78,18 @@ def read(file_id, platform, storage, output, scan):
         storage.put_file(prefix + "manifest.json", output / "manifest.json", "application/json")
         storage.put_file(f"derived/{file_id}/text.txt", output / "text.txt", "text/plain; charset=utf-8")
         manifest["_object_prefix"] = prefix
+        success = True
         return manifest
     finally:
-        storage.delete(key)
+        try:
+            if key:
+                storage.delete(key)
+        finally:
+            if result.get("render_lease_id") and result.get("render_generation"):
+                try:
+                    platform.finish_render(result["render_lease_id"], job["job_id"], "document", result["render_generation"], success)
+                except Exception:
+                    log.warning("document render completion failed; lease expiry will release it", exc_info=True)
 
 
 def copy_cache(file_id, source, storage, platform=None):

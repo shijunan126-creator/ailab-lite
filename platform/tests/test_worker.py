@@ -8,6 +8,128 @@ from PIL import Image
 from ailab_platform.worker.pipeline import extract, scan_bytes
 
 
+def test_busy_preview_remains_unacknowledged(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.worker import main
+
+    acknowledgements = []
+    monkeypatch.setattr(main, "process_preview", lambda *args: {"skipped": "busy"})
+    queue = SimpleNamespace(ack=lambda *args: acknowledgements.append(args))
+    main._handle(queue, SimpleNamespace(payload={"preview_only": True, "job_id": "job"}), "file")
+    assert acknowledgements == []
+
+
+def test_file_render_capacity_wait_is_marked_and_released_for_retry(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import main
+
+    events = []
+
+    def busy(*args, **kwargs):
+        raise ClientError("POST", "/read-document", 503, "capacity")
+
+    monkeypatch.setattr(main, "process_file", busy)
+    monkeypatch.setattr(main, "_patch", lambda file_id, **kwargs: events.append((file_id, kwargs)))
+    queue = SimpleNamespace(retry_after=lambda seconds: events.append(seconds), ack=lambda *args: pytest.fail("must retry"))
+    main._handle(queue, SimpleNamespace(payload={}, deliveries=1), "file")
+    assert events == [("file", {"meta": {"processing": "render_pending"}}), 2]
+
+
+def test_preview_capacity_error_keeps_job_pending(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import preview
+
+    released = []
+    queue = SimpleNamespace(acquire_lock=lambda *args: "token", release_lock=lambda *args: released.append(args))
+    monkeypatch.setattr(preview, "get_queue", lambda: queue)
+    monkeypatch.setattr(preview, "get_storage", lambda: object())
+
+    def unavailable(*args):
+        raise ClientError("POST", "/render", 429, "capacity")
+
+    platform = SimpleNamespace(
+        get_file=lambda *args, **kwargs: {
+            "status": "ready",
+            "filename": "file.docx",
+            "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
+        },
+        render_preview=unavailable,
+        complete_preview=lambda *args: pytest.fail("capacity is not a failed preview"),
+    )
+    assert preview.process_preview("file", "job", platform) == {"skipped": "busy"}
+    assert len(released) == 1
+
+
+@pytest.mark.parametrize("published", [True, False])
+def test_preview_returns_lease_only_after_publication(monkeypatch, published):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import preview
+
+    events = []
+    queue = SimpleNamespace(acquire_lock=lambda *args: "token", release_lock=lambda *args: None)
+    monkeypatch.setattr(preview, "get_queue", lambda: queue)
+    monkeypatch.setattr(preview, "get_storage", lambda: object())
+
+    def complete(*args):
+        events.append("publish")
+        if not published:
+            raise ClientError("POST", "/preview", 409, "superseded")
+
+    platform = SimpleNamespace(
+        get_file=lambda *args, **kwargs: {
+            "status": "ready",
+            "filename": "file.docx",
+            "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
+        },
+        render_preview=lambda *args: {
+            "preview": {"status": "ready"},
+            "assets": {},
+            "render_lease_id": "lease",
+            "render_generation": "generation",
+        },
+        complete_preview=complete,
+        finish_render=lambda lease, job, kind, generation, success: events.append((lease, job, kind, generation, success)),
+    )
+    preview.process_preview("file", "job", platform)
+    assert events == ["publish", ("lease", "job", "preview", "generation", published)]
+
+
+def test_clean_scan_renders_before_office_reader(monkeypatch):
+    from ailab_platform.config import settings
+    from ailab_platform.worker import office, pipeline, preview
+
+    events = []
+    p = ImagePlatform(b"data", filename="input.docx", content_type="application/octet-stream")
+    original_patch = p.patch_file
+
+    def patch(file_id, meta=None, status=None, **kwargs):
+        original_patch(file_id, meta, status, **kwargs)
+        if meta and "scan" in meta and status is None:
+            p.file["meta"].update(preview_job_id="job", preview={"status": "pending", "kind": "pages"})
+        return p.file
+
+    monkeypatch.setattr(settings, "render_prewarm", 1)
+    monkeypatch.setattr(p, "patch_file", patch)
+    monkeypatch.setattr(preview, "process_preview", lambda *args: events.append("preview") or {"status": "ready"})
+    monkeypatch.setattr(
+        office,
+        "read",
+        lambda *args: (
+            events.append("parse")
+            or {"_object_prefix": "derived/x/", "kind": "docx", "chars": 0, "status": "ready", "parser": "test", "total_units": 0}
+        ),
+    )
+    pipeline.process_file("fil_order", platform=p)
+    assert events == ["preview", "parse"]
+
+
 def image_bytes(fmt="PNG", size=(960, 240), mode="RGB", color="red", **kwargs):
     out = io.BytesIO()
     Image.new(mode, size, color).save(out, fmt, **kwargs)

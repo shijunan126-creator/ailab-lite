@@ -58,6 +58,10 @@ class ModelCall:
     emitted: bool = False
     ttft_seconds: float | None = None
     quiet: bool = False
+    tool_choice: str | None = None
+    # A quiet call that continues the conversation (a summary, a wrap-up) keeps its request shape so the
+    # provider's prefix cache still applies: no reasoning toggle, even for models that drop it on quiet calls.
+    continues_prefix: bool = False
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
@@ -237,9 +241,7 @@ def _content_text(content) -> str:
 
 
 def _user_prompt(messages: list[dict]) -> str:
-    from .agent.prompts import strip_turn_context
-
-    return strip_turn_context(next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), ""))
+    return next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
 
 
 def _wants_ppt(prompt: str) -> bool:
@@ -317,12 +319,15 @@ _GENUI_PAGE = (
     '</style></head><body><div class="wrap">'
     '<div id="count">已抛 0 次</div><div class="track"><div class="bar" id="bar"></div></div>'
     '<button id="go">抛 10 次</button><div id="net">net:pending</div><div id="store">store:pending</div>'
+    '<div id="log"></div><button id="more">展开记录</button><button id="reset">重置</button>'
     '<img src="https://example.com/x.png" alt="">'
     "</div><script>"
     'var n=0,h=0;document.body.dataset.ran="1";'
     'document.getElementById("go").onclick=function(){for(var i=0;i<10;i++){n++;if(Math.random()<.5)h++}'
     'document.getElementById("count").textContent="已抛 "+n+" 次，正面 "+h+" 次";'
     'document.getElementById("bar").style.width=(h/n*100)+"%"};'
+    'document.getElementById("more").onclick=function(){document.getElementById("log").style.height="900px"};'
+    'document.getElementById("reset").onclick=function(){document.getElementById("log").style.height="0"};'
     'fetch("/api/v1/auth/me").then(function(){document.getElementById("net").textContent="net:allowed"},'
     'function(){document.getElementById("net").textContent="net:blocked"});'
     'try{localStorage.setItem("x","1");document.getElementById("store").textContent="store:allowed"}'
@@ -393,18 +398,9 @@ class MockLLM(LLMClient):
 
         script, closing = None, ""
         offered = {t.get("function", {}).get("name") for t in tools or []}
-        deferred = "search_capabilities" in offered
-        if deferred:
-            last_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=0)
-            step = sum(
-                1
-                for m in messages[last_user:]
-                if m.get("role") == "assistant"
-                and any(c.get("function", {}).get("name") != "search_capabilities" for c in m.get("tool_calls", []))
-            )
         system = str(messages[0].get("content") or "") if messages else ""
         picked = next((k for k in ("pptx", "xlsx") if f"本轮已选技能：{k}" in system), "")
-        if "exec" not in offered and not (deferred and "本轮没有沙箱执行" not in system):  # no sandbox offered (chat): words only
+        if "exec" not in offered:  # no sandbox offered (chat): words only
             pass
         elif picked == "pptx" or _wants_ppt(prompt):
             script, closing = _PPT, "已完成：演示文稿已生成并交付到资料库，右侧可以预览。想调整哪一页、换什么配色，直接告诉我。"
@@ -434,10 +430,6 @@ class MockLLM(LLMClient):
             return LLMResponse(content=text, usage=usage, reasoning_content=thinking)
         if step < len(script):
             name, arguments = script[step]
-            if deferred and name not in offered:
-                response = _call(step, "search_capabilities", {"query": name, "kind": "tool", "limit": 1})
-                response.usage = usage
-                return response
             response = _call(step, name, arguments)
             response.usage = usage
             return response

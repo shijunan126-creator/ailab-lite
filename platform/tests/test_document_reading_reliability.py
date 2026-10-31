@@ -186,6 +186,7 @@ def test_dependency_reconciliation_is_idempotent_bounded_and_does_not_revive_can
 
 
 def test_image_reference_asked_while_another_preview_is_pending_still_gets_its_pages(monkeypatch):
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     from ailab_platform.api import file_dependencies
     from ailab_platform.api.routes_library_tools import document_images
 
@@ -252,6 +253,7 @@ def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbo
 
 
 def test_chat_vision_prepares_visual_pages_and_nonvision_does_not_claim_image_semantics(monkeypatch):
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     from ailab_platform.models import RenderedPage
 
     monkeypatch.setitem(

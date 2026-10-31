@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import tempfile
+import time
 from dataclasses import asdict
 from pathlib import Path, PurePath
 
@@ -117,6 +118,13 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         return {"file_id": file_id, "skipped": meta.get("status")}
     if not thumbnail_only and (meta.get("meta") or {}).get("scan_exhausted"):
         return {"file_id": file_id, "skipped": "scan_exhausted"}
+    if not thumbnail_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
+        hint = getattr(platform, "prewarm_render", None)
+        if hint:
+            try:
+                hint()
+            except Exception:
+                log.warning("render prewarm hint failed")
     with tempfile.TemporaryDirectory(prefix="ailab-file-") as tmp:
         source = Path(tmp) / ("input" + PurePath(meta["filename"]).suffix.lower())
         download(
@@ -132,8 +140,10 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                 platform.patch_file(file_id, meta=thumb, job="thumbnail")
             return {"file_id": file_id, **thumb}
         attempts = int((meta.get("meta") or {}).get("scan_attempts", 0))
+        scan_started = time.monotonic()
         with source.open("rb") as stream:
             scan = asdict(get_scanner().scan(stream))
+        log.info("file processing phase=scan seconds=%.3f", time.monotonic() - scan_started)
         scan["ok"] = scan["verdict"] == "clean"
         if scan["verdict"] == "unavailable":
             platform.patch_file(
@@ -149,6 +159,21 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        # Commit the scanner verdict before any parser starts. The API stages a
+        # preview in the same transaction, independently of parsing readiness.
+        scanned_file = platform.patch_file(file_id, meta={"scan": scan})
+        # Give the preview the standby before the document reader competes for
+        # the same reserved capacity. The durable outbox remains the retry path.
+        if settings.render_prewarm and isinstance(scanned_file, dict):
+            preview_meta = scanned_file.get("meta") or {}
+            job_id = preview_meta.get("preview_job_id")
+            if job_id and (preview_meta.get("preview") or {}).get("status") == "pending":
+                from .preview import process_preview
+
+                try:
+                    process_preview(file_id, job_id, platform)
+                except Exception:
+                    log.warning("early preview failed; durable preview job will retry", exc_info=True)
         if (meta.get("meta") or {}).get("template_kind"):
             try:
                 analysis = execute("template", source, Path(tmp) / "template")
@@ -185,6 +210,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     platform.patch_file(file_id, meta={**cached, "scan": scan}, status="ready")
                     return {"file_id": file_id, "cache": "private_copy"}
         thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
+        parse_started = time.monotonic()
         if source.stat().st_size > settings.max_parse_bytes:
             info = {"kind": "too_large", "chars": 0, "bytes": source.stat().st_size, "truncated": True}
         else:
@@ -211,6 +237,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     )
             except IsolationError as exc:
                 info = {"kind": "error", "error": str(exc), "chars": 0}
+        log.info("file processing phase=parse seconds=%.3f", time.monotonic() - parse_started)
         text = info.pop("text", "")
         skill = {k: info.pop(k) for k in ("skill", "skill_error") if k in info}
         derived = {

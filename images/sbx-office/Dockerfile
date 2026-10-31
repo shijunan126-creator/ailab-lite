@@ -18,7 +18,7 @@ FROM python:3.12-slim-trixie
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-impress-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
-      poppler-utils fonts-noto-cjk fontconfig tini libatomic1 libstdc++6 \
+      poppler-utils fonts-noto-cjk fontconfig tini libatomic1 libstdc++6 python3-uno \
  && rm -rf /var/lib/apt/lists/*
 
 # L3 Python 办公库（版本锁定）

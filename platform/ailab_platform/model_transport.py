@@ -32,8 +32,7 @@ class ModelTransport(LLMClient):
         self.upstream_model = upstream_model  # what the upstream calls the model; None = send the id as is
         self._transport = transport
         # Thinking models (DeepSeek V4.x) reject a tool conversation unless each assistant turn carries its
-        # reasoning_content back; other upstreams may reject the extra field. Off by default, and switched on
-        # for good the first time the upstream asks for it (see _asks_for_reasoning).
+        # reasoning_content back; other upstreams may reject the extra field. This is configured per model.
         self.echo_reasoning = echo_reasoning
         self.disable_reasoning_for_quiet = disable_reasoning_for_quiet
 
@@ -48,14 +47,6 @@ class ModelTransport(LLMClient):
                 for m in messages
             ]
         return [{k: v for k, v in m.items() if k != "reasoning_content"} if "reasoning_content" in m else m for m in messages]
-
-    def _asks_for_reasoning(self, exc: LLMError) -> bool:
-        text = str(exc)
-        if self.echo_reasoning or "reasoning_content" not in text or " 400" not in text:
-            return False
-        log.warning("upstream %s wants reasoning_content passed back; echoing it from now on", self.base_url)
-        self.echo_reasoning = True
-        return True
 
     async def _post(self, payload: dict, headers: dict) -> dict:
         """POST with bounded retries on transient failures (429 / 5xx / network)."""
@@ -111,7 +102,7 @@ class ModelTransport(LLMClient):
         call = model_call.get()
         if call is not None:
             payload["max_tokens"] = call.max_output_tokens
-            if call.quiet and self.disable_reasoning_for_quiet:
+            if call.quiet and self.disable_reasoning_for_quiet and not call.continues_prefix:
                 payload["thinking"] = {"type": "disabled"}
             if call.run_id:
                 headers["x-run-id"] = call.run_id
@@ -124,7 +115,7 @@ class ModelTransport(LLMClient):
             payload["stream_options"] = {"include_usage": True}
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = call.tool_choice if call is not None and call.tool_choice else "auto"
         return payload, headers
 
     async def chat_stream(
@@ -138,14 +129,7 @@ class ModelTransport(LLMClient):
     ) -> LLMResponse:
         try:
             async with asyncio.timeout(settings.llm_total_timeout_seconds or settings.llm_timeout_seconds):
-                try:
-                    return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
-                except LLMError as exc:
-                    if not exc.output_started and self._asks_for_reasoning(exc):
-                        if model_call.get() is None:
-                            return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
-                        exc.retryable = True
-                    raise
+                return await self._stream_once(messages, tools, model, user_id, on_text, on_reasoning)
         except TimeoutError as exc:
             raise LLMError("model total or first-output deadline exceeded", retryable=True) from exc
 
@@ -238,12 +222,7 @@ class ModelTransport(LLMClient):
     async def _chat(
         self, messages: list[dict], tools: list[dict], model: str, user_id: str | None = None, *, max_tokens: int | None = None
     ) -> LLMResponse:
-        try:
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
-        except LLMError as exc:
-            if not self._asks_for_reasoning(exc) or model_call.get() is not None:
-                raise
-            data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
+        data = await self._post(*self._request(messages, tools, model, user_id, stream=False, max_tokens=max_tokens))
 
         call = model_call.get()
         if call is not None:

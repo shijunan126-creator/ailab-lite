@@ -1,8 +1,40 @@
-# 当前工作交接：Super-agent 借鉴与前缀缓存（2026-10-31）
+# 前缀缓存 + 渲染：交接（2026-11-01，PR #121）
+
+## 一、先读这些
+
+1. 本节 + [HANDOFF.MD](../../HANDOFF.MD) 末尾“2026-11-01 前缀缓存与渲染”的陷阱。
+2. 设计：[前缀缓存](../architecture/design/2026-10-31-prefix-cache.md)、[渲染沙箱生命周期](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)、[ADR 0032](../architecture/adr/0032-prewarmed-single-use-render-sandboxes.md)（含槽位决定）。
+3. 过程、测速与检查：[dated update](updates/2026-10-31-prefix-cache-render.md) 的 “C4 收尾” 一节。
+
+## 二、状态
+
+- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，已合并 `fix/render-view` 与 `origin/main@fe4f712`（PR #114–#120）。与 #117 的前缀实现冲突处采用本分支设计（固定目录、边界上下文、同形压缩），保留 #117 的 GenUI 原文渲染及 #114–#119 其余功能；watchdog 与子任务的 quiet 调用也改为同形续写。ADR 编号：本分支渲染 ADR 改为 0032。用户已授权本轮 PR + merge 到 main 及合并后部署最新版本（2026-11-01）。PR [#121](https://github.com/shijunan126-creator/ailab-lite/pull/121)。
+- 本轮完成：剩余页批量光栅化与单次传输；mock 沙箱私有 `/tmp` 与无 listener 渲染（E2E 文档预览失败的根因）；Work 用户配额不再计入 render 沙箱（全套 E2E 暴露）；GenUI 生成页重置后高度回缩；ADR 0032 槽位保持 1 槽 / 768 MiB。
+- 测速：15 页 PPTX 全页 2.5 s（原 7.4–10.4 s）、7 页 DOCX 3.2 s（原 5.1 s，仍高于 2.5 s 目标）、首页约 1.0 s；交替用户冷启动首页 4.2–4.6 s。
+- 检查：Ruff；SQLite、PG+Redis 全套（仅一个夹具问题，已修）；Office runner；E2E 全套 + 失败项复跑通过。合并 main 后 SQLite 全套仅 1 项失败（#115 的 read_file 改为分窗，断言已在 `0f60343` 改），Portal 115 测试与 build 通过；PG 与 E2E 交给 PR CI。
+
+## 三、待办
+
+1. PR #121 CI 通过后 merge，之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
+2. 清理：已删 `.worktrees/render-view`（分支保留）、本轮 `/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`；旧会话的 `/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/c3-*` 待用户确认后删除。
+
+真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
+
+已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
+
+## 四、尚未测试
+
+- 摘要是否遵守“不写入 recall 原文”；运行中途撤销的 recall 来源要到下一次 Run 启动才检测。
+- 真实 Docker 下多用户故障/恢复（Broker 重启、Worker 崩溃、LibreOffice 卡死）只在 mock 下测过；CPU 秒、真实 ClamAV 扫描耗时。
+- 正常大窗口下的长对话命中率（本轮只测了强制压缩场景）；Work 首次 `view_workspace_file` 14.7 s 偏慢（listener 冷启动），未优化。
+
+---
+
+## 上一交接：Super-agent 借鉴与前缀缓存（2026-10-31，PR #114–#119）
 
 已合并 PR #114–#119 → `main@cd74472`（各自 squash，CI 全绿）：插话打断 `exec_wait`、`read_file` 分段、历史召回附带下一跳、**模型请求前缀稳定（缓存命中修复，ADR 0030）**、Work 进展监督（默认 observe）、并行子任务 `run_subtasks`（ADR 0031）。合并、部署与边界见[记录](updates/2026-10-31-superagent-merge-deploy.md)。
 
-**下一步**：在真实 DeepSeek 上按 run 对比 `model_usage.cached_tokens/prompt_tokens` 确认命中率改善（用户 Mac 部署 `AILab-local` 尚未更新，本机 k3s 见记录）；观察 `agent.watchdog` 后决定是否切 `AILAB_WATCHDOG_MODE=nudge`；`run_subtasks` 真实使用效果待测。其余待用户决定事项同下节（“Work 需 search_capabilities 才能找到 exec/deliver_file”已由 #117 解决：大窗口模型一次提供完整工具目录）。
+**下一步（已由上方合并取代前缀部分）**：在真实 DeepSeek 上按 run 对比 `model_usage.cached_tokens/prompt_tokens` 确认命中率改善（用户 Mac 部署 `AILab-local` 尚未更新，本机 k3s 见记录）；观察 `agent.watchdog` 后决定是否切 `AILAB_WATCHDOG_MODE=nudge`；`run_subtasks` 真实使用效果待测。其余待用户决定事项同下节（“Work 需 search_capabilities 才能找到 exec/deliver_file”已由 #117 解决：大窗口模型一次提供完整工具目录）。
 
 ---
 

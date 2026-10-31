@@ -427,6 +427,8 @@ def document_images(db, file, selected, *, prepare=True):
     all_pages = selected is None
     if all_pages and preview.get("status") == "ready" and preview.get("page_count"):
         selected = list(range(1, min(preview["page_count"], 20) + 1))
+    elif all_pages and meta.get("render_page_count"):
+        selected = list(range(1, min(meta["render_page_count"], 20) + 1))
     pages = (
         db.scalars(
             select(RenderedPage)
