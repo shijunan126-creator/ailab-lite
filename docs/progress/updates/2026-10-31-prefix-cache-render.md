@@ -195,3 +195,19 @@ C3g 全量 SQLite 首轮 6 组失败：两组旧测试先渲染而与 pending �
 详细报告与原始请求在仓库外 `/private/tmp/pc-codex/accept/`（不入库，收尾时清理）。
 
 **根因与修复（Claude）**：用 request-003 原样直接调用 DeepSeek（`max_tokens=1`）隔离：同请求 9,479/9,344 命中；只加 `thinking: disabled` → 9,182/1,152；只改 `tool_choice: none` → 7,193/1,152（工具被移出模板）。两者各自都会丢掉整段前缀。修复：压缩摘要和步数用尽收尾改走 `_answer_without_tools`，保持 `tool_choice=auto` 与推理设置，模型仍调用工具时才以 `none` 重问一次；`ModelCall.continues_prefix` 让 quiet 续写调用不触发 `disable_reasoning_for_quiet`。压缩后下一次请求以摘要替换历史，属每次压缩固有的一次部分未命中，设计文档已写明。
+
+### 修复后复测（2026-11-01，代码 `da98cbe`）
+
+同一脚本、同一 DeepSeek 条目；Chat 六轮、Work 四轮沿用 24k 窗口 + 0.6 阈值（每约两轮压缩一次），PPT 改用原窗口与默认阈值。每个场景一次，估算 ¥0.12。
+
+| 组 | 调用 | Σprompt | Σcached | 命中率 | 修复前 |
+|---|---:|---:|---:|---:|---:|
+| Chat | 8 | 67,450 | 53,248 | 78.9% | 48.1% |
+| Work | 6 | 57,148 | 48,768 | 85.3% | 57.3% |
+| PPT | 7 | 75,521 | 72,960 | 96.6% | 81.0% |
+
+- 压缩摘要调用 0% / 20% / 0% → 97.6% / 98.6% / 98.5%；与前一请求相比 thinking、tool_choice、tools 相同，messages 仅尾部追加指令。
+- 所有非压缩续轮都缓存了前一次请求的全部前缀（误差在供应商 64-token 块内）；剩余未命中只有每轮新内容（本测试每轮约 2k token、占 7–11k 提示的 20%）和压缩后摘要重建（46–56%，只命中系统前缀，属设计边界）。Chat/Work 汇总未到 90%，原因是测试刻意每两轮压缩一次且提示很短，不是前缀缺陷；正常窗口下压缩罕见。
+- 首次调用 97% 命中，是因为同一 key 的系统前缀已在供应商缓存中。
+- PPT：Run succeeded；check.py 一次（退出 0，8 条几何警告）；`view_workspace_file` 两次 14.7 s / 3.2 s（首次含 Work listener 冷启动）；模型主动 `deliver_file` 一次，无兜底交付。
+- web_search：首轮工具目录直接包含（provider=searxng 时），无需发现；付费栈未配置搜索后端，没有实际搜索结果验收。

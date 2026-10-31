@@ -1,4 +1,4 @@
-# 前缀缓存 + 渲染：交接（2026-11-01，收尾中）
+# 前缀缓存 + 渲染：交接（2026-11-01，提 PR）
 
 ## 一、先读这些
 
@@ -15,9 +15,10 @@
 
 ## 三、待办
 
-1. 真实 DeepSeek 一次性验收已结束，**未通过缓存/完整 PPT 成功门槛**：Chat 48.11%、Work 57.25%、PPT 81.02%；PPT 检查与两次查看后因临时小窗口阈值中断，兜底交付一次。见 [dated update](updates/2026-10-31-prefix-cache-render.md#真实-deepseek-一次性验收2026-11-01)。本验收任务仅授权验收，不修产品、不重跑、不提交或发布；下一步由用户决定压缩策略与复测范围。
-2. PR + merge，之后部署（只更新变化组件）。
-3. 清理：`.worktrees/render-view`、`/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`（ailab-verify Docker）。
+1. PR + merge（已授权），之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
+2. 清理：`.worktrees/render-view`、`/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`（ailab-verify Docker）。
+
+真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
 已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
 
@@ -25,6 +26,8 @@
 
 - 摘要是否遵守“不写入 recall 原文”；运行中途撤销的 recall 来源要到下一次 Run 启动才检测。
 - 真实 Docker 下多用户故障/恢复（Broker 重启、Worker 崩溃、LibreOffice 卡死）只在 mock 下测过；CPU 秒、真实 ClamAV 扫描耗时。
+- 正常大窗口下的长对话命中率（本轮只测了强制压缩场景）；Work 首次 `view_workspace_file` 14.7 s 偏慢（listener 冷启动），未优化。
+
 ---
 
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
