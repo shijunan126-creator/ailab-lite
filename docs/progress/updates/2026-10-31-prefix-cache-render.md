@@ -31,3 +31,12 @@
 检查基线 `768f30a`：Ruff check/format 通过，SQLite 全套 1698 passed / 151 skipped。此前一次全套有 8 项失败（两处产品回归共三项失败，另外五项依赖旧契约或旧排序），另一次因后续代码变更不计最终基线。PostgreSQL 独立临时表 2 万行、默认优化器 EXPLAIN：按 run 的有效快照使用主键 bitmap index，run 与 step 的精确查找使用主键 index scan，分别 0.024 ms、0.011 ms（本机单次，不代表生产延迟）。数据库/Redis 与 E2E 结果见下。
 
 `768f30a` PostgreSQL/Redis 全套 1793 passed / 56 skipped。首次启动因本 worktree 虚拟环境缺 `psycopg` 中止；从本机缓存离线安装后通过。E2E 前 `lsof` 确认 18080–18083、13000 被 `render-view` 的 C3 栈占用，待其退出后启动。E2E 全套 144 passed / 1 failed / 6 skipped：模板双轮用例中的测试模型误读前一轮 exec 结果。`86713e0` 将测试模型限制在当前用户消息后的结果；该用例单独重跑 1 passed。全套未在测试模型改动后重跑，其他结果基于 `768f30a`。本次创建的 PostgreSQL/Redis 已停止。
+
+
+## C2b 最终续做
+
+用户确定撤权不暂停：父快照 recall 来源失效时声明 `access_revoked` 并从有效历史重组，不执行历史工具；运行中将失效结果替换为固定墓碑并声明边界。模型 fallback 声明 `model_changed`，无快照历史摘要使用同一模型、同一工具和末尾追加指令；旧记忆布局首次使用声明 `rebuilt`，保留 checkpoint 的待处理工具和交付围栏。压缩边界刷新记忆快照。步数耗尽的收尾请求保留固定工具目录并设置 `tool_choice=none`。
+
+`2321ca2` 新增真实 AgentLoop/ModelTransport 请求级场景：Chat/Work 双轮、附件引用和内联文本、预选技能、失败重试、checkpoint 暂停续跑、steer、卡住和收尾提示、图片组压缩、撤权重组、旧 checkpoint 及无快照摘要。轮内压缩测试在 `/private/tmp` 临时检出 `6b00401` 上实际失败：捕获的首条消息为旧摘要指令而非原系统消息；在当前实现通过。临时检出已移除。旧 checkpoint 测试的角色序列随新布局更新，并额外检查旧用户消息保留、边界与 pending 工具配对。
+
+最终代码基线 `2321ca2`：GNU PATH 下 Ruff check 和 format 通过；SQLite 1711 passed / 151 skipped；PostgreSQL + Redis 1806 passed / 56 skipped；E2E 145 passed / 6 skipped。E2E 前 `lsof` 显示 `render-view` 占用默认端口，等待其退出后执行。摘要首选模型失败时不切换备用模型，回归已验证。此前 `768f30a` 的 E2E 失败属于测试模型读取上一轮工具结果，`86713e0` 修正后本次全套通过。独立 PostgreSQL/Redis 测试进程已停止。未 push、部署或调用付费模型；真实模型缓存命中率、成本以及模型是否遵守 recall 摘要排除指令仍未验证。下一步等待用户授权的审阅或集成。
