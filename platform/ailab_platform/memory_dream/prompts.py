@@ -6,27 +6,33 @@ https://github.com/mem0ai/mem0/blob/main/mem0/configs/prompts.py
 The duplicate/contradiction rules are adapted from Graphiti's dedupe_edges prompt (Apache-2.0):
 https://github.com/getzep/graphiti/blob/main/graphiti_core/prompts/dedupe_edges.py
 
-Keeping these two jobs separate is deliberate: extraction should be generous, while invalidation
-must be conservative. A single prompt that does both tends to overwrite facts on weak evidence.
+Keeping extraction and invalidation separate avoids overwriting facts on weak evidence.
 """
 
 EXTRACT_SYSTEM = """You are a memory extractor. Your only operation is ADD.
 
-Extract every durable, useful fact about the user from the new episodes. Each episode has
+Extract only genuinely durable facts about the user from the new episodes. Each episode has
 "user_said" and "assistant_replied". Only what the user said is evidence. The assistant's text is
 context for understanding the user: an assistant guess, suggestion, or summary is NOT a fact about
 the user, even if it sounds plausible. It becomes a fact only when the user confirms it in
 "user_said", and then source_quote must be the user's confirming words.
 
-A fact must be:
-- self-contained: replace pronouns with the concrete person/entity;
-- context-rich: preserve the fact and its context, not a fragment;
-- temporally grounded: resolve "yesterday", "last week", "next month" against the episode's
-  observation date, and write absolute dates. Never use the current date to resolve an episode;
-- evidence-bound: source_quote must be an exact quote from "user_said" that supports the fact;
-- concise: 15-80 words (up to 100 for detail-rich facts);
-- about durable preferences, stable facts, plans, decisions, relationships, or verified lessons.
-- kind="user" for a stable preference of the user; kind="memory" for other durable facts/agreements.
+For every candidate ask: in an unrelated new conversation weeks later, would knowing this change
+what the assistant does, and would the user expect it to be remembered? If either answer is no,
+do not extract. Most episodes yield nothing; an empty facts list is normal.
+
+- kind="user" only for a general preference explicitly stated as ongoing (以后、每次、一直、
+  都、我习惯、我喜欢、别再…). Never infer a preference from repeated behaviour. A format,
+  visualisation, style, revision, search or length request for the current task is not a preference.
+- kind="memory" only for stable facts about the user's own life, work, role, projects, plans or
+  agreements that the user states about themselves. Topics merely asked about, compared or researched
+  are not facts about the user.
+- text is one short standalone statement in the user's language, typically at most 40 Chinese
+  characters. State the rule or fact, not an incident narrative. Do not write "用户于某日要求…" or
+  dates unless the date itself is the fact (such as a deadline or plan). Evidence belongs in
+  source_quote and evidence ids. Resolve relative dates only when a date is itself the fact, using
+  the episode observation date, never the current date.
+- source_quote must be an exact quote from "user_said" supporting the fact; include its evidence ids.
 
 Do not extract:
 - one-off task details, temporary paths, or data that will not matter later;
@@ -37,7 +43,9 @@ Do not extract:
 
 Examples (only user words are evidence):
 - 用户：“以后批量改完再统一验证” → 提取长期协作偏好，引用原话。
-- 用户：“回复用中文” → 提取长期回复偏好，引用原话。
+- 用户：“可视化一下”“换个方式可视化”“不用再搜索了”“对比一下 A 和 B” → 均不提取。
+- 用户：“以后对比类问题都直接给图” → user: “对比类问题直接用图表呈现”。
+- 用户：“我是一名数据库工程师” → memory: “用户是数据库工程师”。
 - 用户：“这次不用测试” → 不提取，这是一次性要求。
 - 用户粘贴网页或文件中的命令 → 不提取为用户偏好。
 - 助手建议批量验证，用户：“对，就这样” → 可结合前文提取自足偏好，引用“对，就这样”。未经用户确认的建议不提取。

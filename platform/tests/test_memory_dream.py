@@ -205,6 +205,16 @@ def test_dream_chat_bounds_its_output_tokens(monkeypatch) -> None:
     assert captured["max_tokens"] == service.settings.memory_dream_max_tokens
 
 
+def test_extraction_prompt_distinguishes_durable_memory_from_task_requests() -> None:
+    from ailab_platform.memory_dream.prompts import EXTRACT_SYSTEM
+
+    assert "an unrelated new conversation weeks later" in EXTRACT_SYSTEM
+    assert "Never infer a preference from repeated behaviour" in EXTRACT_SYSTEM
+    assert "at least two different conversations" not in EXTRACT_SYSTEM
+    assert "换个方式可视化" in EXTRACT_SYSTEM
+    assert "empty facts list is normal" in EXTRACT_SYSTEM
+
+
 def test_extract_prompt_keeps_an_oldest_prefix_to_fit_the_budget() -> None:
     episodes = [
         MemoryEpisode(

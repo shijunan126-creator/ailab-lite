@@ -1,5 +1,11 @@
 # 当前工作
 
+## 记忆质量与 run_js（2026-10-31）
+
+`fix/memory-js-backend`，base `origin/main@995a5f6`；后端提交 `b7480ed`、`b57331e`，未 push。本轮收紧偏好规则，真实 episode 对照及三条指定记忆删除见[记录](updates/2026-10-31-memory-js-backend.md#p2a真实来源回放与删除)。
+
+**下一步**：等待单独的集成包；本轮明确不集成、不部署、不做真实模型产品验收。完整检查由后续集成包负责。
+
 ## 技能、办公、记忆与轻量计算（2026-10-31）
 
 `feat/skills-memory`，base `main@b35ef6e`，已通过 [PR #110](https://github.com/shijunan126-creator/ailab-lite/pull/110) 合并至 main（merge commit `8cd9792`，保留各独立提交）。PR CI 13/13 通过；[main CI](https://github.com/shijunan126-creator/ailab-lite/actions/runs/41104326303) 通过。
