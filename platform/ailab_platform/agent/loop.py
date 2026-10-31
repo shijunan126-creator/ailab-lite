@@ -1311,8 +1311,6 @@ class AgentLoop:
                 result = {"ok": True, "skill": load_skill(wanted, mode=mode), "version": skills()[wanted]["version"]}
                 if wanted in BASE_SKILLS:
                     discovery.activate(self._states[run_id], internal_skills.TOOLS, _tools_for_run(turn.run))
-                if mode == "work" and wanted in {"platform.xlsx", "platform.pptx", "platform.docx", "platform.pdf"}:
-                    discovery.activate(self._states[run_id], ["view_workspace_file"], _tools_for_run(turn.run))
             elif wanted in turn.personal:
                 if getattr(call, "expected_file_id", None) and turn.personal[wanted]["file_id"] != call.expected_file_id:
                     raise ToolError(f"技能 {wanted} 的版本已失效")
