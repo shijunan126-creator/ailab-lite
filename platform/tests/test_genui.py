@@ -58,8 +58,9 @@ def test_history_boundaries_and_placeholders():
             assert value.count("```") == 2
     value = for_history('```openui\nroot = Stack([Metric("a", 1), Metric("b", 2), Metric("c", 3)])\n```', False, 100)
     assert value == "[界面：Stack、Metric×3]"
+    # Every turn renders the same in every later request, so an earlier reply is never rewritten (prefix cache).
     messages = history_messages([{"reply": UI}, {"reply": UI}])
-    assert "```" not in messages[1]["content"] and UI == messages[3]["content"]
+    assert UI == messages[1]["content"] == messages[3]["content"]
 
 
 @pytest.mark.parametrize(
@@ -155,8 +156,7 @@ def test_history_api_and_result_whitelist():
         assert detail["turns"][0]["result"]["genui"]["blocks"] == 1
         for endpoint in (f"/internal/runs/{ids[-1]}", f"/internal/runs/{ids[-1]}/model-context"):
             history = client.get(endpoint, headers=SERVICE).json()["history"]
-            assert "```" not in history[0]["reply"]
-            assert history[1]["reply"] == UI
+            assert history[0]["reply"] == history[1]["reply"] == UI
 
 
 @pytest.mark.parametrize("marker,blocks,unclosed", [("demo", 3, 0), ("bad", 2, 1), ("inject", 1, 0)])

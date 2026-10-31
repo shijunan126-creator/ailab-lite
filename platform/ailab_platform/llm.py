@@ -237,7 +237,9 @@ def _content_text(content) -> str:
 
 
 def _user_prompt(messages: list[dict]) -> str:
-    return next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
+    from .agent.prompts import strip_turn_context
+
+    return strip_turn_context(next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), ""))
 
 
 def _wants_ppt(prompt: str) -> bool:

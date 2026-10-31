@@ -43,15 +43,14 @@ from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
-    WORKSPACE_EXPIRED_NOTE,
     history_messages,
     load_skill,
     memory_prompt,
     personal_header,
-    project_library_prompt,
     render_skill_mentions,
     skills,
     system_prompt_for,
+    turn_context,
     user_prompt,
     workspace_prompt,
 )
@@ -82,6 +81,33 @@ WORKSPACE_RECLAIMED_NOTE = (
 )
 RECLAIM_WAIT_SECONDS = 240  # the Broker packs the workspace before deleting the sandbox
 WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保存下来，工作区是空的。需要的文件请重新生成。）"
+
+
+def _text_of(content) -> str:
+    if isinstance(content, list):
+        return "\n".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+    return str(content or "")
+
+
+def _with_context(content, context: str):
+    if not context:
+        return content
+    if isinstance(content, list):
+        return [{"type": "text", "text": context.rstrip()}, *content]
+    return context + content
+
+
+def _tool_budgets(spec):
+    """(discovery budget, whole-catalog budget) in tokens; both depend only on the model, so the choice is stable for a run."""
+    if spec is None:
+        return 2400, 2400
+    window = ModelPolicy(get_catalog()).input_budget(spec)
+    return max(800, min(2400, int(window * 0.15))), int(window * 0.15)
+
+
+def _offers_everything(run, model) -> bool:
+    spec = get_catalog().get(model)
+    return discovery.full_fits(_tools_for_run(run), _tool_budgets(spec)[1])
 
 
 def _tools_for_run(run):
@@ -636,12 +662,16 @@ class AgentLoop:
         # Checkpoints can predate a deletion or scope move; refresh the bounded system block.
         if messages and hasattr(self.platform, "get_memory_context") and not quiet:
             latest = await self.platform.get_memory_context(run_id)
-            context_index = (
-                1
-                if len(messages) > 1 and messages[1].get("role") == "system" and "<ailab_memory>" in str(messages[1].get("content", ""))
-                else 0
-            )
+            # The block rides on this turn's user message; checkpoints from before that kept it in the second system message.
+            pinned = (self._states.get(run_id) or {}).get("user_message_index")
+            candidates = [pinned] if isinstance(pinned, int) and pinned < len(messages) else []
+            candidates += range(len(messages))
+            context_index = next((i for i in candidates if "<ailab_memory>" in _text_of(messages[i].get("content"))), 0)
             content = messages[context_index].get("content", "")
+            part_index = None
+            if isinstance(content, list):
+                part_index = next((i for i, part in enumerate(content) if "<ailab_memory>" in str(part.get("text", ""))), None)
+                content = content[part_index]["text"] if part_index is not None else ""
             if isinstance(content, str) and "<ailab_memory>" in content:
                 start = content.index("<ailab_memory>")
                 end = content.index("</ailab_memory>", start) + len("</ailab_memory>")
@@ -656,7 +686,13 @@ class AgentLoop:
                 except (ValueError, IndexError, TypeError):
                     needs_refresh = old_block != new_block
                 if needs_refresh:
-                    messages[context_index] = {**messages[context_index], "content": content[:start] + new_block + content[end:]}
+                    # Rewriting costs the cache from here on; only a removed or narrowed fact or changed rules justify it.
+                    refreshed = content[:start] + new_block + content[end:]
+                    if part_index is not None:
+                        parts = list(messages[context_index]["content"])
+                        parts[part_index] = {**parts[part_index], "text": refreshed}
+                        refreshed = parts
+                    messages[context_index] = {**messages[context_index], "content": refreshed}
             calls_by_id = {}
             for index, message in enumerate(messages):
                 for call_data in message.get("tool_calls") or []:
@@ -886,7 +922,11 @@ class AgentLoop:
         config = run.get("context_settings") or {}
         threshold = policy.compaction_threshold(spec, config)
         fixed = [*base[:2], base[-1]] if len(base) > 2 and base[1].get("role") == "system" else [base[0], base[-1]]
-        context_tools = discovery.offered(_tools_for_run(run), [])
+        context_tools = (
+            discovery.offer(_tools_for_run(run), [], *_tool_budgets(spec))
+            if (run.get("options") or {}).get("capability_discovery") == 1
+            else _tools_for_run(run)
+        )
         if not spec.supports({"tools"}):
             context_tools = []
         if estimator.estimate(model, {"messages": fixed, "tools": context_tools}) >= budget:
@@ -1789,22 +1829,25 @@ class AgentLoop:
                             turn.disabled_skills,
                             list(turn.personal.values()),
                             picked_text,
-                            deferred=options.get("capability_discovery") == 1,
+                            deferred=options.get("capability_discovery") == 1 and not _offers_everything(run, model),
                             genui=bool(get_catalog().get(model) and get_catalog().get(model).supports({"genui"})),
                             genui_tools=bool(get_catalog().get(model) and get_catalog().get(model).supports({"tools"})),
                         ),
                     },
-                    {
-                        "role": "system",
-                        "content": workspace_prompt(
-                            run.get("project_instructions") or "", run.get("brand") or {}, (run.get("options") or {}).get("template")
-                        )
-                        + memory_prompt(run.get("memory") or {})
-                        + project_library_prompt(run.get("project_library") or [])
-                        + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
-                    },
+                    {"role": "system", "content": workspace_prompt(run.get("project_instructions") or "", run.get("brand") or {})},
                     *history_messages(run.get("history")),
-                    {"role": "user", "content": await self._user_content(run_id, run, model)},
+                    {
+                        "role": "user",
+                        "content": _with_context(
+                            await self._user_content(run_id, run, model),
+                            turn_context(
+                                run.get("memory") or {},
+                                run.get("project_library") or [],
+                                options.get("template"),
+                                bool(run.get("workspace_expired")) and mode != "chat",
+                            ),
+                        ),
+                    },
                 ]
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 state["user_message_index"] = len(state["messages"]) - 1
@@ -1840,11 +1883,7 @@ class AgentLoop:
             offered = (
                 []
                 if spec is not None and not spec.supports({"tools"})
-                else discovery.bounded(
-                    catalog,
-                    state["active_tools"],
-                    (max(800, min(2400, int(ModelPolicy(get_catalog()).input_budget(spec) * 0.15))) if spec else 2400),
-                )
+                else discovery.offer(catalog, state["active_tools"], *_tool_budgets(spec))
                 if deferred
                 else catalog
             )
@@ -1915,11 +1954,7 @@ class AgentLoop:
                     offered = (
                         []
                         if spec is not None and not spec.supports({"tools"})
-                        else discovery.bounded(
-                            catalog,
-                            state["active_tools"],
-                            (max(800, min(2400, int(ModelPolicy(get_catalog()).input_budget(spec) * 0.15))) if spec else 2400),
-                        )
+                        else discovery.offer(catalog, state["active_tools"], *_tool_budgets(spec))
                         if deferred
                         else catalog
                     )

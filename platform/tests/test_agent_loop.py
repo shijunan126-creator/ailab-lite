@@ -621,7 +621,9 @@ def test_the_model_is_told_when_the_last_workspace_expired() -> None:
 
     llm = ScriptedLLM([LLMResponse(content="ok")])
     _run(llm, platform=Expired())
-    assert "上一轮的工作区已过期" in llm.seen_messages[0][1]["content"]
+    # Turn-specific context rides on this turn's user message, not ahead of the cached history.
+    assert "上一轮的工作区已过期" in llm.seen_messages[0][-1]["content"]
+    assert "上一轮的工作区已过期" not in llm.seen_messages[0][1]["content"]
 
 
 def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):

@@ -12,6 +12,7 @@ import json
 
 from ailab_platform.agent import loop
 from ailab_platform.agent.main import app
+from ailab_platform.agent.prompts import strip_turn_context
 from ailab_platform.llm import LLMClient, LLMError, LLMResponse, MockLLM, ToolCall
 
 TRIGGER = "需要提问"
@@ -52,8 +53,13 @@ async def release_stream():
     return {"ok": True}
 
 
+def _user_texts(messages: list[dict]):
+    """What the user typed, newest first: the turn's <ailab_context> block is platform context, not the prompt."""
+    return (strip_turn_context(m["content"]) for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str))
+
+
 def _last_user_text(messages: list[dict]) -> str:
-    return next((m["content"] for m in reversed(messages) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+    return next(_user_texts(messages), "")
 
 
 class QuestionThenAnswer(LLMClient):
@@ -91,14 +97,7 @@ class QuestionThenAnswer(LLMClient):
 
     async def _chat(self, messages, tools, model, user_id=None):
         prompt = _last_user_text(messages)
-        original = next(
-            (
-                m["content"]
-                for m in reversed(messages)
-                if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].startswith("工作区")
-            ),
-            "",
-        )
+        original = next((text for text in _user_texts(messages) if text.startswith("工作区")), "")
         if prompt.startswith("PPT模板链路"):
             results = [json.loads(m["content"]) for m in messages if m.get("role") == "tool" and m.get("name") == "exec"]
             if results:
