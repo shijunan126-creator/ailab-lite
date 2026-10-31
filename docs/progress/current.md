@@ -1,3 +1,7 @@
+# 前缀缓存 C2：进行中（2026-10-31）
+
+工作树 `fix/prefix-cache-render`，base `origin/main@f316b85`，代码 head `86713e0`。固定工具目录、静态 reasoning、后台提示、缓存指标、图片恢复和跨轮 checkpoint 基础路径已提交；完整契约尚未实现或验收，见 [C2 记录](updates/2026-10-31-prefix-cache-render.md)。跨轮临界预算已有追加式摘要；按用户决定，摘要提示要求不保留 recall 原文和仅来自 recall 的事实。轮内压缩、记忆通知和 recall 原结果保留已部分实现；失效 recall 当前安全暂停。下一步完成 recall 撤权重建及副作用围栏、旧快照记忆迁移、可见权限变化检测、边界时刷新记忆、历史重建压缩和剩余请求场景。SQLite、PG/Redis 全套及 E2E 结果见记录；本范围未完成。不要 push 或部署。
+
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
 已合并：PR #112 → `main@8fe67d9`（merge commit，保留分批提交），最终 head `1d530fc` CI 九项通过。本机部署：平台 `sm-p3-90fc016`、Portal `sm-p3-9115406`，与 main 产品代码一致。结果与边界见 [P3–P7 记录](updates/2026-10-31-memory-js-polish.md)。
