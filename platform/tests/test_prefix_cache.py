@@ -2,10 +2,15 @@ import asyncio
 import copy
 import json
 
+import pytest
+
+from ailab_platform.adapters.runtime import checkpoint_state, fresh_state
 from ailab_platform.agent.discovery import REDUCED_V1, catalog_for_budget
-from ailab_platform.agent.loop import AgentLoop, _tools_for_run
+from ailab_platform.agent.loop import AgentLoop, BudgetPause, _tools_for_run
+from ailab_platform.agent.multimodal import image_part
 from ailab_platform.agent.prompts import memory_prompt
 from ailab_platform.agent.tools import tools_for_turn
+from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.llm import LLMResponse
 from ailab_platform.model_transport import ModelTransport
 from tests.prefix_harness import assert_extension, scripted_server
@@ -100,3 +105,27 @@ def test_reported_cache_tokens_identify_main_title_and_compaction(monkeypatch):
     asyncio.run(exercise())
     assert [(mode, kind) for mode, kind, _ in observed] == [("chat", "main"), ("chat", "title"), ("chat", "compaction")]
     assert all(usage["cached_tokens"] == 80 and usage["prompt_tokens"] == 100 for _, _, usage in observed)
+
+
+@pytest.mark.parametrize("data,unchanged", [(b"same", True), (b"changed", False)])
+def test_checkpoint_image_restore_requires_identical_authorized_bytes(monkeypatch, data, unchanged):
+    class Platform(FakePlatform):
+        async def get_file_image(self, file_id, run_id):
+            return data
+
+    monkeypatch.setattr(
+        "ailab_platform.agent.loop.get_catalog",
+        lambda: Catalog([ModelSpec("m", "m", provider="mock", capabilities=frozenset({"vision"}))]),
+    )
+    file = {"id": "image", "filename": "photo.webp", "content_type": "image/webp"}
+    original = image_part(b"same", "image/webp")
+    state = fresh_state()
+    state["messages"] = [{"role": "user", "content": [original]}]
+    saved = checkpoint_state(state, {original["image_url"]["url"]: file})
+    loop = AgentLoop(platform=Platform())
+    if unchanged:
+        asyncio.run(loop._restore_images("r1", {"model": "m"}, saved))
+        assert saved["messages"][0]["content"] == [original]
+    else:
+        with pytest.raises(BudgetPause, match="图片内容已变化"):
+            asyncio.run(loop._restore_images("r1", {"model": "m"}, saved))

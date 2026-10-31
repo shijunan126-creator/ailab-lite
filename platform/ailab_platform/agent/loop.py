@@ -1175,6 +1175,9 @@ class AgentLoop:
         return parts
 
     async def _restore_images(self, run_id, run, state):
+        import base64
+        import hashlib
+
         spec = get_catalog().get(run.get("model"))
         pending = [{"content": parts} for parts in state.get("pending_image_inputs", [])]
         for message in [*state["messages"], *pending]:
@@ -1184,7 +1187,18 @@ class AgentLoop:
             for part in message["content"]:
                 if part.get("type") == "ailab_image":
                     restored = await self._image_content(run_id, run, part["file"], spec)
-                    parts.extend([item for item in restored if item.get("type") == "image_url"] or restored)
+                    images = [item for item in restored if item.get("type") == "image_url"]
+                    if len(images) != 1 or not part.get("sha256"):
+                        raise BudgetPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
+                    image = images[0]["image_url"]
+                    header, data = image["url"].split(",", 1)
+                    if (
+                        header != part.get("header")
+                        or image.get("detail") != part.get("detail")
+                        or hashlib.sha256(base64.b64decode(data, validate=True)).hexdigest() != part["sha256"]
+                    ):
+                        raise BudgetPause("附件图片内容已变化，已暂停；请重新开始任务")
+                    parts.append(images[0])
                 else:
                     parts.append(part)
             message["content"] = parts

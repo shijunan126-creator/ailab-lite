@@ -1,5 +1,7 @@
 """Self-developed runtime state, independent of model and orchestration frameworks."""
 
+import base64
+import hashlib
 from copy import deepcopy
 
 RUNTIME_VERSION = 1
@@ -35,26 +37,30 @@ def restored_state(checkpoint):
 
 def checkpoint_state(state, image_files):
     """Persist authorized immutable file references instead of copying base64 images at every step."""
+
+    def image_reference(part):
+        url = part["image_url"]["url"]
+        header, data = url.split(",", 1)
+        digest = hashlib.sha256(base64.b64decode(data, validate=True)).hexdigest()
+        return {
+            "type": "ailab_image",
+            "file": image_files[url],
+            "sha256": digest,
+            "header": header,
+            "detail": part["image_url"].get("detail"),
+        }
+
     messages = []
     for message in state["messages"]:
         content = message.get("content")
         if isinstance(content, list):
             content = [
-                {"type": "ailab_image", "file": image_files[part["image_url"]["url"]]}
-                if part.get("type") == "image_url" and part.get("image_url", {}).get("url") in image_files
-                else part
+                image_reference(part) if part.get("type") == "image_url" and part.get("image_url", {}).get("url") in image_files else part
                 for part in content
             ]
             message = {**message, "content": content}
         messages.append(message)
     pending = []
     for parts in state.get("pending_image_inputs", []):
-        pending.append(
-            [
-                {"type": "ailab_image", "file": image_files[p["image_url"]["url"]]}
-                if p.get("type") == "image_url" and p["image_url"]["url"] in image_files
-                else p
-                for p in parts
-            ]
-        )
+        pending.append([image_reference(p) if p.get("type") == "image_url" and p["image_url"]["url"] in image_files else p for p in parts])
     return {**state, "messages": messages, **({"pending_image_inputs": pending} if pending else {})}
