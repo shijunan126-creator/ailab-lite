@@ -188,6 +188,7 @@ class LeaseManager:
         self._render_jobs = 0
         self._render_waiters = 0
         self._warming = False
+        self._warm_thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self.admission = AdmissionPolicy(
@@ -655,7 +656,7 @@ class LeaseManager:
                     self.request_prewarm()
 
         thread = threading.Thread(target=warm, name="render-prewarm", daemon=True)
-        self._threads.append(thread)
+        self._warm_thread = thread
         thread.start()
 
     def create(
@@ -845,6 +846,10 @@ class LeaseManager:
 
     @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
+        with self.render_activity():
+            return self._refresh_previews(lease_id)
+
+    def _refresh_previews(self, lease_id: str) -> list[dict]:
         """Render previews of office files in /workspace/outputs that are new or changed since the last call.
 
         Pages become JPEGs and spreadsheets a JSON of cell values, stored under previews/<run>/<n>/ where the
@@ -1438,5 +1443,7 @@ class LeaseManager:
             self._notify()
         for thread in self._threads:
             thread.join(timeout=1)
-        if not any(thread.is_alive() for thread in self._threads):
+        if self._warm_thread:
+            self._warm_thread.join(timeout=1)
+        if not any(thread.is_alive() for thread in self._threads) and not (self._warm_thread and self._warm_thread.is_alive()):
             self.store.release_owner(self._token)

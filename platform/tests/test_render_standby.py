@@ -90,6 +90,17 @@ def test_standby_provider_lifetime_covers_idle_and_job(monkeypatch):
     assert not manager.active_leases()
 
 
+def test_separate_jobs_use_separate_sandboxes(monkeypatch):
+    manager, provider, spec, first = warmed(monkeypatch)
+    principal = LeasePrincipal("system:preview", "preview:a", system=True)
+    handle = manager.adopt_standby(spec, principal, lambda lease: manager.put_input(lease, "/workspace/inputs/a.txt", b"private"))
+    manager.release(handle)
+    second = manager.create_standby(spec)
+    assert second != first
+    assert not (provider.root / second / "workspace/inputs/a.txt").exists()
+    manager.release(second)
+
+
 def test_replenishment_waits_for_render(monkeypatch):
     manager, _, _ = _manager()
     manager._ensure_started()
