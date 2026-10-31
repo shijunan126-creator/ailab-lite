@@ -129,6 +129,10 @@ class RunCanceled(Exception):
     pass
 
 
+class SteerArrived(Exception):
+    """A user message arrived while waiting on something the run can safely stop waiting for."""
+
+
 def _office_skills(value, *, keywords=False):
     text = json.dumps(value, ensure_ascii=False).lower()
     result = []
@@ -359,11 +363,13 @@ class AgentLoop:
             log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
             return False
 
-    async def _interruptible(self, run_id: str, awaitable: Awaitable[T]) -> T:
+    async def _interruptible(self, run_id: str, awaitable: Awaitable[T], *, steerable: bool = False) -> T:
         """Await a model call or tool, abandoning it if the user cancels the run.
 
         The sandbox command itself keeps running until the lease is released, which
-        the caller does right after on RunCanceled.
+        the caller does right after on RunCanceled. A steerable wait also ends with
+        SteerArrived once a user message is pending, so the model reads it within one
+        poll instead of after a wait of up to five minutes.
         """
         task = asyncio.ensure_future(awaitable)
         try:
@@ -381,6 +387,8 @@ class AgentLoop:
                     raise BudgetPause("长时间未收到模型或工具进展，已暂停，可继续")
                 if await self._is_canceled(run_id):
                     raise RunCanceled()
+                if steerable and run_id in self._steer_pending:
+                    raise SteerArrived()
         finally:
             if not task.done():
                 task.cancel()
@@ -1300,7 +1308,21 @@ class AgentLoop:
                     120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
                 )
                 with span("agent.tool", tool=tool):
-                    result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
+                    try:
+                        result = await self._interruptible(
+                            run_id,
+                            execute_tool(call.name, call.arguments, lease_id, self.broker, ctx),
+                            steerable=call.name == "exec_wait",
+                        )
+                    except SteerArrived:
+                        # Only the wait is abandoned: the command keeps running and its unread output stays behind the same offset.
+                        result = {
+                            "ok": True,
+                            "handle": call.arguments.get("handle"),
+                            "running": True,
+                            "steered": True,
+                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 exec_wait。",
+                        }
         except (RunCanceled, LeaseInterrupted, BudgetPause, FileDependencyPending):
             raise
         except ClientError as exc:
