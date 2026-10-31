@@ -24,6 +24,15 @@
 
 - macOS 的 bsdtar 默认可能为带扩展属性的图片加入 `._` AppleDouble 成员；预览归档校验必须禁止这些额外成员，打包时设置 `COPYFILE_DISABLE=1`。完整 C3 边界见 [记录](docs/progress/updates/2026-10-31-prefix-cache-render.md)。
 
+
+## 2026-10-31 Super-agent 借鉴与前缀缓存
+
+- 前缀缓存：供应商按“最长已见前缀”命中，工具 schema 渲染在所有消息之前（DeepSeek 模板还会把所有 system 消息提到开头）。任何按位置/分页决定的渲染（如“只有最后一轮保留 GenUI”“每页最后一条”）都会改写更早的轮次；运行中改变 tools 数组会让整段失效。改请求结构前先跑 `tests/test_prefix_cache.py`，它录下每次请求比较前缀。依据与 dsh 做法见 [ADR 0030](docs/architecture/adr/0030-prefix-stable-model-requests.md)。
+- （2026-11-01 合并后已取代）#117 曾把每轮会变的上下文放到当轮 user 消息的 `<ailab_context>`；合并 `fix/prefix-cache-render` 后改回边界 system 消息 + 运行中追加变化，见前缀缓存设计与 ADR 0030 状态。不要再假设 `<ailab_context>` 存在。
+- 子任务（`run_subtasks`）不能从 schema 删除工具，只能执行时拒绝，否则 fork 前缀失效。watchdog 判定请求也重放同一消息与工具；测试 conftest 默认 `AILAB_WATCHDOG_MODE=off`，否则脚本模型会被判定调用消耗回复。
+- `tests/test_document_context.py::test_document_indexes_are_bounded_at_100000_blocks` 在 PG 上偶发选中另一索引（EXPLAIN 断言），与改动无关时重跑。
+- 本机自动模式会拦截 `kubectl exec` 读取 Pod 环境变量（含 DB 连接串）；查线上缓存命中要让用户提供数据或走正常 API。
+
 ## 2026-10-31 记忆与本机部署
 
 - 依赖等待必须由 reconciler 持续重驱动，不能只依赖发起请求的一次尝试：无关的 pending job 可能触发 guard，使该请求被跳过。

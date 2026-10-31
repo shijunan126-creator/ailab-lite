@@ -75,7 +75,7 @@ def test_clipped_tool_result_stays_identical_on_later_calls():
     assert_extension(requests[0], requests[1])
     assert_extension(requests[1], requests[2])
     result = next(message for message in requests[1]["messages"] if message.get("tool_call_id") == "read")
-    assert "truncated" in result["content"] and len(result["content"]) < 100_000
+    assert '"next_offset"' in result["content"] and len(result["content"]) < 100_000  # read_file returns a bounded window
 
 
 def test_reasoning_is_echoed_without_rewriting_earlier_messages():

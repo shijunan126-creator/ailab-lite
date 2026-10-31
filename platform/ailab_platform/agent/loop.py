@@ -36,7 +36,7 @@ from ..runtime_context import attempt_id_var, delivery_id_var
 from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
-from . import discovery, net_tools
+from . import discovery, net_tools, subtasks, watchdog
 from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
@@ -66,13 +66,13 @@ CANCEL_POLL_SECONDS = 2.0
 SANDBOX_RETRY_SECONDS = 3.0
 DELTA_FLUSH_SECONDS = 0.25  # how often streamed text is written as an agent.delta event
 DELTA_FLUSH_CHARS = 120
-PREVIEW_AFTER = {"exec", "exec_wait", "exec_kill", "write_file"}  # tools that can change files in /workspace/outputs
+PREVIEW_AFTER = {"exec", "exec_wait", "exec_kill", "write_file", "run_subtasks"}  # tools that can change files in /workspace/outputs
 THINKING_KEEP_CHARS = 20_000  # of the reasoning stored with the run (the events keep all of it)
 WRAP_UP_STEPS = 3  # this many steps before the limit the model is told to finish up
 WRAP_UP_NOTE = "（平台提示：本轮只剩 {n} 次工具调用。请尽快收尾：生成并交付文件，然后用文字回复用户。）"
 OUT_OF_STEPS_NOTE = "（平台提示：本轮的步数已用完。不要再调用工具，直接用文字告诉用户已经完成了什么、还有什么没完成、下一轮可以怎么继续。）"
 FILE_TOOLS = frozenset(
-    {"copy_library_file", "write_file", "exec", "deliver_file", *net_tools.NAMES}
+    {"copy_library_file", "write_file", "exec", "deliver_file", "run_subtasks", *net_tools.NAMES}
 )  # tools that change /workspace or its outputs
 WORKSPACE_DEBOUNCE_SECONDS = 60  # between workspace snapshots while the run is busy
 WORKSPACE_LAG_NOTE = "（平台提示：工作区快照落后于执行记录；部分文件变更可能丢失。请先检查工作区，不要假定已执行命令的文件仍在。）"
@@ -140,6 +140,10 @@ class LeaseInterrupted(Exception):
 
 class RunCanceled(Exception):
     pass
+
+
+class SteerArrived(Exception):
+    """A user message arrived while waiting on something the run can safely stop waiting for."""
 
 
 def _office_skills(value, *, keywords=False):
@@ -229,6 +233,7 @@ class _Turn:
         self.messages: list[dict] = []  # the conversation as the model sees it: where fetchable URLs come from
         self.net_budget = net_tools.Budget()
         self.allowed_tools: set[str] | None = None  # None until the turn's tools are known
+        self.offered: list[dict] = []  # the tool schemas of the latest request; subtasks reuse them to share its prefix
 
 
 class _DeltaWriter:
@@ -372,11 +377,13 @@ class AgentLoop:
             log.warning("cancel check failed for %s; assuming not canceled", run_id, exc_info=True)
             return False
 
-    async def _interruptible(self, run_id: str, awaitable: Awaitable[T]) -> T:
+    async def _interruptible(self, run_id: str, awaitable: Awaitable[T], *, steerable: bool = False) -> T:
         """Await a model call or tool, abandoning it if the user cancels the run.
 
         The sandbox command itself keeps running until the lease is released, which
-        the caller does right after on RunCanceled.
+        the caller does right after on RunCanceled. A steerable wait also ends with
+        SteerArrived once a user message is pending, so the model reads it within one
+        poll instead of after a wait of up to five minutes.
         """
         task = asyncio.ensure_future(awaitable)
         try:
@@ -394,6 +401,8 @@ class AgentLoop:
                     raise BudgetPause("长时间未收到模型或工具进展，已暂停，可继续")
                 if await self._is_canceled(run_id):
                     raise RunCanceled()
+                if steerable and run_id in self._steer_pending:
+                    raise SteerArrived()
         finally:
             if not task.done():
                 task.cancel()
@@ -1098,6 +1107,128 @@ class AgentLoop:
         await self._event(run_id, "agent.context_boundary", {"reason": "compacted"})
         return result
 
+    async def _watchdog(self, llm, run_id, turn, model, offered, budget) -> None:
+        """Every watchdog_interval_seconds of active work, judge whether the run still advances the goal."""
+        state, messages = self._states[run_id], turn.messages
+        if budget.data["active_seconds"] < budget.data.setdefault("watchdog_at", settings.watchdog_interval_seconds):
+            return
+        budget.data["watchdog_at"] = budget.data["active_seconds"] + settings.watchdog_interval_seconds
+        try:
+            # Same messages and tools as the next real call, so the check is a prefix-cache hit plus one short turn.
+            response = await self._call_model(
+                llm,
+                run_id,
+                turn.run,
+                model,
+                [*messages, {"role": "user", "content": watchdog.PROMPT}],
+                -1,
+                tools=offered,
+                quiet=True,
+                continues_prefix=True,
+            )
+        except LLMError:
+            log.warning("watchdog check failed run=%s", run_id, exc_info=True)
+            return
+        result = watchdog.verdict(None if response.tool_calls else response.content)
+        metrics.WATCHDOG_VERDICTS.labels(result["verdict"]).inc()
+        await self._event(run_id, "agent.watchdog", result)
+        if settings.watchdog_mode == "nudge" and result["verdict"] != "unknown":
+            if result["verdict"] == "progressing":
+                state.pop("watchdog_nudged", None)
+            elif state.get("watchdog_nudged"):
+                raise BudgetPause(watchdog.PAUSE)
+            else:
+                state["watchdog_nudged"] = True
+                reason = result["reason"] or "最近没有明显进展"
+                messages.append({"role": "user", "content": watchdog.NUDGE.format(reason=reason)})
+                await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": f"监督检查：{reason}"})
+        await self._checkpoint(run_id, turn)
+
+    async def _subtasks(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+        try:
+            tasks = subtasks.validate(call.arguments)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        messages = turn.messages
+        # Fork at the parent's latest request: everything before the assistant message that asked for the subtasks.
+        cut = next(
+            (
+                i
+                for i in range(len(messages) - 1, -1, -1)
+                if messages[i].get("role") == "assistant" and any(c.get("id") == call.id for c in messages[i].get("tool_calls") or [])
+            ),
+            len(messages),
+        )
+        base = [dict(m) for m in messages[:cut]]
+        lease_id = await self._ensure_lease(turn, run_id)
+        llm = self.llm or llm_for(turn.run.get("model") or "")
+        children = [
+            asyncio.create_task(self._subtask(turn, run_id, llm, base, lease_id, index, task, step)) for index, task in enumerate(tasks)
+        ]
+        try:
+            results = await asyncio.gather(*children)
+        except BaseException:
+            for child in children:
+                child.cancel()
+            await asyncio.gather(*children, return_exceptions=True)
+            raise
+        return {"ok": all(r["status"] == "done" for r in results), "results": results}
+
+    async def _subtask(self, turn: _Turn, run_id: str, llm, base: list[dict], lease_id: str, index: int, task: dict, step: int) -> dict:
+        run, model, offered = turn.run, turn.run.get("model") or "", turn.offered
+        messages = [*base, {"role": "user", "content": subtasks.BRIEF.format(**task)}]
+        await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": "started"})
+        report, status, used = "", "incomplete", 0
+        for used in range(1, settings.subtask_max_steps + 1):
+            try:
+                # A fork of the parent's request: same tools and reasoning setting, so the shared prefix stays cached.
+                response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered, quiet=True, continues_prefix=True)
+            except LLMError as exc:
+                report, status = f"模型调用失败：{exc}"[:300], "failed"
+                break
+            assistant = {"role": "assistant", "content": response.content or ""}
+            if response.tool_calls:
+                assistant["tool_calls"] = [
+                    {"id": c.id, "type": "function", "function": {"name": c.name, "arguments": _arguments_json(c.arguments)}}
+                    for c in response.tool_calls
+                ]
+            if response.reasoning_content:
+                assistant["reasoning_content"] = response.reasoning_content
+            messages.append(assistant)
+            report = response.content or report
+            if not response.tool_calls:
+                status = "done"
+                break
+            for c in response.tool_calls:
+                if c.name in subtasks.ALLOWED:
+                    result = await self._subtask_tool(turn, run_id, lease_id, c, messages)
+                else:
+                    result = {"ok": False, "error": subtasks.REFUSED.format(name=c.name)}
+                messages.append(tool_result_message(c.id, c.name, result))
+        if status == "incomplete":
+            report = subtasks.OUT_OF_STEPS + "\n" + report
+        await self._event(run_id, "agent.subtask", {"index": index, "title": task["title"], "status": status, "steps": used})
+        return {"title": task["title"], "status": status, "steps": used, "report": report[: subtasks.REPORT_CHARS]}
+
+    async def _subtask_tool(self, turn: _Turn, run_id: str, lease_id: str, call, messages: list[dict]) -> dict:
+        ctx = ToolContext(run_id, self.platform, messages, turn.net_budget)
+        budget = self._budgets[run_id]
+        budget.update()
+        ctx.exec_lifetime_seconds = max(1, settings.run_max_seconds - budget.data["active_seconds"])
+        try:
+            return await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
+        except (RunCanceled, LeaseInterrupted, BudgetPause):
+            raise
+        except ClientError as exc:
+            if exc.status == 410:
+                raise LeaseInterrupted() from exc
+            return {"ok": False, "error": "工具请求失败"}
+        except ToolError as exc:
+            return {"ok": False, "error": str(exc)}
+        except Exception:
+            log.exception("subtask tool %s failed", call.name)
+            return {"ok": False, "error": "工具执行失败"}
+
     async def _compact_work_context(self, run_id, turn, llm, model, offered):
         messages = turn.messages
         spec = get_catalog().get(model)
@@ -1366,6 +1497,9 @@ class AgentLoop:
                     result = {"ok": True, "file_id": turn.personal[wanted]["file_id"], "skill": text, "name": wanted}
             elif call.name == "load_skill":
                 raise ToolError(f"技能 {wanted or ''} 不存在或已不可用")
+            elif call.name == "run_subtasks":
+                with span("agent.tool", tool=tool):
+                    result = await self._subtasks(turn, run_id, call, step)
             else:
                 needs_sandbox = call.name in SANDBOX_TOOLS or (call.name == "save_skill" and call.arguments.get("path"))
                 lease_id = await self._ensure_lease(turn, run_id) if needs_sandbox else (turn.lease_id or "")
@@ -1376,7 +1510,21 @@ class AgentLoop:
                     120 if budget.data.get("pause_step") is not None else max(1, settings.run_max_seconds - budget.data["active_seconds"])
                 )
                 with span("agent.tool", tool=tool):
-                    result = await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
+                    try:
+                        result = await self._interruptible(
+                            run_id,
+                            execute_tool(call.name, call.arguments, lease_id, self.broker, ctx),
+                            steerable=call.name == "exec_wait",
+                        )
+                    except SteerArrived:
+                        # Only the wait is abandoned: the command keeps running and its unread output stays behind the same offset.
+                        result = {
+                            "ok": True,
+                            "handle": call.arguments.get("handle"),
+                            "running": True,
+                            "steered": True,
+                            "hint": "用户发来新消息，已停止等待；命令仍在后台运行。先处理新消息，需要时用相同 offset 继续 exec_wait。",
+                        }
         except (RunCanceled, LeaseInterrupted, BudgetPause, FileDependencyPending):
             raise
         except ClientError as exc:
@@ -1944,6 +2092,7 @@ class AgentLoop:
                 internal_skills.load(internal_name, version)
             offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
             turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
+            turn.offered = offered
             error = None
             pause_reason = None
             step_limit = budget.data["start_step"] + settings.max_agent_steps
@@ -2008,6 +2157,9 @@ class AgentLoop:
                             await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": reason})
                             await self._checkpoint(run_id, turn)
                     turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
+                    if mode == "work" and settings.watchdog_mode != "off" and offered and state["tool_log"]:
+                        await self._watchdog(llm, run_id, turn, model, offered, budget)
+                    turn.offered = offered
                     await self._compact_work_context(run_id, turn, llm, model, offered)
                     response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
                     if offered == [] and response.tool_calls:

@@ -1,4 +1,4 @@
-# ADR 0030：单次使用的预热渲染沙箱
+# ADR 0032：单次使用的预热渲染沙箱
 
 状态：部分被取代（2026-10-31）。用户确认隔离边界为用户，新的决定见[渲染沙箱生命周期指南](../design/2026-10-31-render-sandbox-lifecycle.md)；实现完成，2026-11-01 测速见[记录](../../progress/updates/2026-10-31-prefix-cache-render.md)。历史结果和未测边界见 [C3d](../../progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
 

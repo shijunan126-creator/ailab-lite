@@ -1,6 +1,6 @@
 # 渲染沙箱生命周期与资源调度设计指南
 
-状态：设计指导（2026-10-31，用户确认“按用户复用”）。取代 [ADR 0030](../adr/0030-prewarmed-single-use-render-sandboxes.md) 中“每个沙箱只用一次”的决定；ADR 0030 修订为指向本指南。适用于文件预览与系统解析（render 类租约）和 Work 内的 `view_workspace_file`。Work 沙箱的额度与闲置回收仍按 [ADR 0020](../adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)。
+状态：设计指导（2026-10-31，用户确认“按用户复用”）。取代 [ADR 0032](../adr/0032-prewarmed-single-use-render-sandboxes.md) 中“每个沙箱只用一次”的决定；ADR 0032 修订为指向本指南。适用于文件预览与系统解析（render 类租约）和 Work 内的 `view_workspace_file`。Work 沙箱的额度与闲置回收仍按 [ADR 0020](../adr/0020-elastic-sandbox-allowance-and-idle-reclaim.md)。
 
 ## 一、目标与约束
 
@@ -34,7 +34,7 @@ creating ─▶ spare ──bind(U)──▶ busy(U) ⇄ idle(U) ─▶ releasin
 5. **补充 spare**：仅当有空 render 槽、没有转换在执行、没有排队的 render 任务、最近 `render_prewarm_idle_seconds` 内有文件活动（上传、交付、Work Run 启动的提示）时，由**唯一的后台补充线程**创建；创建失败指数退避（2→60 秒），不重试风暴。`AILAB_RENDER_PREWARM=0` 时不建 spare，但同用户复用仍生效。
 6. **Broker 重启或租约存储丢失**：所有 render 类租约直接释放，不认领（render 沙箱无需保留的状态）。按标签周期对账，删除没有租约记录的孤儿容器。
 
-槽数选择：常驻 LibreOffice 实测约 274 MiB（C3f，runsc）。render 槽数与每槽内存由实测的“常驻 + 最大样本转换峰值”决定：若两个沙箱能放进 768 MiB 预留，则用 2 槽（可同时保留一个 spare 和一个 `idle(U)`，减少用户交替时的冷启动）；否则 1 槽。用数字决定并写进 ADR 0030。
+槽数选择：常驻 LibreOffice 实测约 274 MiB（C3f，runsc）。render 槽数与每槽内存由实测的“常驻 + 最大样本转换峰值”决定：若两个沙箱能放进 768 MiB 预留，则用 2 槽（可同时保留一个 spare 和一个 `idle(U)`，减少用户交替时的冷启动）；否则 1 槽。用数字决定并写进 ADR 0032。
 
 ## 三、调度（很多用户、资源不够时）
 

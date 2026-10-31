@@ -66,7 +66,7 @@ SQLite 全套基线 `e616f1d` 加 Ruff 修正：1711 passed / 151 skipped / 3 fa
 
 ## C3d 预热渲染
 
-基线 `fb05186`；产品提交 `3365c91`、`bbefcae`、`793f69e`、`dfeb277`，Ruff 测试修正 `06b0717`。单次 standby、空闲释放、重启释放、按需认领与工作区 profile 复用的决定见 [ADR 0030](../../architecture/adr/0030-prewarmed-single-use-render-sandboxes.md)。定向测试覆盖认领互斥、释放、无预热回退、等待时不补池、失败、禁用、隔离与工作区 profile；真实 runsc 预热和认领取用通过。最终代码 `06b0717`：Ruff 通过，SQLite 1705 通过/151 跳过，PostgreSQL+Redis 1800 通过/56 跳过，Office runner 15 通过，E2E 145 通过/6 跳过；测试和基准的临时服务与容器已清理。Docker supervisor 的上限需覆盖空闲期再加一次任务，不能沿用普通 render 120 秒上限。
+基线 `fb05186`；产品提交 `3365c91`、`bbefcae`、`793f69e`、`dfeb277`，Ruff 测试修正 `06b0717`。单次 standby、空闲释放、重启释放、按需认领与工作区 profile 复用的决定见 [ADR 0032](../../architecture/adr/0032-prewarmed-single-use-render-sandboxes.md)。定向测试覆盖认领互斥、释放、无预热回退、等待时不补池、失败、禁用、隔离与工作区 profile；真实 runsc 预热和认领取用通过。最终代码 `06b0717`：Ruff 通过，SQLite 1705 通过/151 跳过，PostgreSQL+Redis 1800 通过/56 跳过，Office runner 15 通过，E2E 145 通过/6 跳过；测试和基准的临时服务与容器已清理。Docker supervisor 的上限需覆盖空闲期再加一次任务，不能沿用普通 render 120 秒上限。
 
 基线与后测使用同一 Docker/runsc、Office 与 document-reader 镜像、独立宿主服务、stub 扫描器（本机无运行中的 ClamAV）；每类顺序上传三次，同一用户和字节可命中已有缓存，非完全冷文件样本。以下为秒数中位数，后测产品基线 `793f69e`，之后 `dfeb277` 只调整工作区自动预览协调，`06b0717` 只改测试。首屏与全页同时发布；XLSX 是表格就绪，不是视觉页。
 
@@ -130,7 +130,7 @@ GNU PATH：Ruff 全库通过；SQLite 1691 通过、151 跳过、1 项依赖审�
 下一步：补齐同条件 delivery/live-preview→reconcile 分阶段资源对照、抢占正在进行的完整预览及逐页就绪设计，再评估是否需要进一步优化；不得将本轮上传基准当作完整 C3 性能验收。
 # C3g 按用户复用（进行中）
 
-基线 `3e5823e`：导入用户批准的生命周期指南并部分取代 ADR 0030 的单次使用决定。Broker 对账不再从 provider 标签重建丢失记录的 render 租约；启动或存储恢复时释放已有 render 租约，包括忙碌租约。`tests/test_render_standby.py` 9 项通过（GNU PATH，Python 3.12），覆盖保留记录与丢失记录两种恢复路径。尚未完成按用户复用、调度、合并解析、逐页发布、Work listener、确定性、测量和完整检查；不可视为验收通过。
+基线 `3e5823e`：导入用户批准的生命周期指南并部分取代 ADR 0032 的单次使用决定。Broker 对账不再从 provider 标签重建丢失记录的 render 租约；启动或存储恢复时释放已有 render 租约，包括忙碌租约。`tests/test_render_standby.py` 9 项通过（GNU PATH，Python 3.12），覆盖保留记录与丢失记录两种恢复路径。尚未完成按用户复用、调度、合并解析、逐页发布、Work listener、确定性、测量和完整检查；不可视为验收通过。
 
 
 C3g 后续：API 仅在 Broker 的 preview/document 任务绑定验证成功后返回文件所有者，普通 Worker 文件请求不返回该字段；`tests/test_service_identity.py` 40 项通过。调用端尚未接入按用户复用。
@@ -177,7 +177,7 @@ C3g 全量 SQLite 首轮 6 组失败：两组旧测试先渲染而与 pending �
 
 - 阶段（单次）：DOCX 首页转换 0.29 s + 光栅 0.32 s，剩余 6 页批量 1.79 s；PPTX 剩余 14 页 1.18 s。DOCX 全页仍高于 2.5 s 目标，主要在 PNG 光栅化。
 - 用户交替 A/B/A/B（1 槽）：切换后首页 4.2–4.6 s（冷启动），回到同用户热复用 1.0–1.4 s。两用户并发（经 Broker 拒绝 + 0.25 s 重试模拟 Worker）：先到者首页 4.3 s，后到者 11.0 s。
-- 内存（VM cgroup，含页缓存）：warm standby 102 MiB，处理三种样本后 158 MiB，峰值 192 MiB。槽位决定见 ADR 0030。
+- 内存（VM cgroup，含页缓存）：warm standby 102 MiB，处理三种样本后 158 MiB，峰值 192 MiB。槽位决定见 ADR 0032。
 - 空闲到期：`cleanup_once` 后 render 租约 1 → 0。
 - 未测：Work 内 `view_workspace_file` 第一/第二次耗时（见真实模型验收）、CPU 秒、真实 ClamAV 扫描。
 

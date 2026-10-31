@@ -54,6 +54,7 @@ WEB_READ_SECONDS = Histogram(
     ["path", "outcome"],
     buckets=(0.25, 0.5, 1, 2.5, 5, 10, 20, 40),
 )
+WATCHDOG_VERDICTS = Counter("ailab_watchdog_verdicts_total", "Progress watchdog verdicts on Work runs", ["verdict"])
 MEMORY_RECALL = Counter("ailab_memory_recall_total", "History recall calls by outcome", ["outcome"])
 MEMORY_EMBEDDING = Counter("ailab_memory_embedding_total", "Embedding endpoint calls by outcome", ["outcome"])
 SKILL_DRAFTS = Counter("ailab_skill_drafts_total", "Background skill draft outcomes", ["outcome"])

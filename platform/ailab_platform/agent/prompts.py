@@ -34,6 +34,8 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 - 长构建、下载、批处理直接用 exec，未完成时返回句柄，再用 exec_wait(handle, seconds, offset) 监测；
   只有 idle_seconds 持续偏高、输出长期不前进且确认卡死时才 exec_kill。后台进程只在当前沙箱租约内存活，恢复后先检查文件，不能盲目重跑。
 - 收到平台每小时自查提示时，检查计划、方向和已有成果；收到收尾提示时保存文件并说明未完成部分。
+- 任务能拆成 2–4 个互不依赖、各需多步的部分（分别调研几个主题、分别处理几个文件）时，用 run_subtasks 并行完成，
+  给每个子任务写清目标、输入和中间文件路径（如 /workspace/work/<主题>/）；收到报告后由你汇总、生成和交付成品。
 
 # 沙箱约定
 - /workspace/inputs/：用户本轮上传的文件（只读使用）
@@ -228,7 +230,7 @@ def history_messages(history: list[dict] | None) -> list[dict]:
     """Earlier turns of the conversation as plain user/assistant messages (tool traffic is not replayed)."""
     out: list[dict] = []
     turns = history or []
-    for index, turn in enumerate(turns):
+    for turn in turns:
         prompt = render_skill_mentions(turn.get("prompt") or "", turn.get("skills"))
         if turn.get("attachments"):
             import json
@@ -236,7 +238,8 @@ def history_messages(history: list[dict] | None) -> list[dict]:
             prompt += "\n附件引用（需回查原文件，不代表已读正文）：" + json.dumps(turn["attachments"], ensure_ascii=False)
         out.append({"role": "user", "content": prompt})
         out.extend({"role": "user", "content": prompt} for prompt in turn.get("steers", []))
-        reply = for_history(turn.get("reply") or "（没有回复）", keep_ui=index == len(turns) - 1, limit=16000)
+        # Rendered the same in every later turn: stripping UI from all but the newest reply rewrote an earlier turn each time.
+        reply = for_history(turn.get("reply") or "（没有回复）", keep_ui=True, limit=16000)
         if turn.get("files"):
             reply += "\n\n（这一轮产出的文件：" + "、".join(turn["files"]) + "）"
         if turn.get("sources"):

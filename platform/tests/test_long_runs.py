@@ -310,3 +310,48 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
         turn.messages.extend(group(i))
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert state["user_message_index"] == 2 and turn.messages[2] == task
+
+
+def test_user_steer_ends_a_background_wait_but_not_the_command(monkeypatch):
+    monkeypatch.setattr("ailab_platform.agent.loop.CANCEL_POLL_SECONDS", 0.01)
+    handle = "a" * 32
+    abandoned = []
+
+    class Broker(FakeBroker):
+        controls = []
+
+        async def exec(self, lease_id, command, timeout=None):
+            action = background_request(self, command)["action"]
+            self.controls.append(action)
+            if action != "wait":
+                return await super().exec(lease_id, command, timeout)
+            platform.typed = True  # the user writes while the model is waiting
+            try:
+                await asyncio.sleep(3)
+                return {"exit_code": 0, "stdout": json.dumps({"ok": True, "handle": handle, "running": True})}
+            except asyncio.CancelledError:
+                abandoned.append(True)
+                raise
+
+    class Platform(FakePlatform):
+        async def get_run_state(self, run_id):
+            return {**await super().get_run_state(run_id), "steer_pending": hasattr(self, "typed") and not hasattr(self, "claimed")}
+
+        async def claim_steers(self, run_id):
+            self.claimed = True
+            return {"items": [{"id": "steer", "prompt": "先别等了，改用方案B"}]}
+
+    model = ScriptedLLM(
+        [
+            LLMResponse(tool_calls=[ToolCall("w", "exec_wait", {"handle": handle, "seconds": 300})]),
+            LLMResponse(content="好的，改用方案B"),
+        ]
+    )
+    platform = Platform()
+    platform, broker = _run(model, platform, Broker())
+    assert abandoned and broker.controls.count("wait") == 1
+    seen = model.seen_messages[1]
+    waited = json.loads(next(m["content"] for m in seen if m.get("role") == "tool"))
+    assert waited["steered"] is True and waited["running"] is True and waited["handle"] == handle
+    assert seen[-1] == {"role": "user", "content": "先别等了，改用方案B"}
+    assert platform.statuses[-1][0] == "succeeded"

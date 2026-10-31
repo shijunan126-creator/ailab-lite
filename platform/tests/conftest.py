@@ -31,3 +31,4 @@ os.environ["AILAB_SERVICE_TOKEN"] = "test-service"
 os.environ["AILAB_REDIS_URL"] = "redis://127.0.0.1:6379/15"
 os.environ["AILAB_MAX_ACTIVE_RUNS_PER_USER"] = "1000"
 os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from tests
+os.environ["AILAB_WATCHDOG_MODE"] = "off"  # scripted models answer in order; tests that need the judge turn it on

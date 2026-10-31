@@ -161,7 +161,7 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
             ),
             "reply": "（文件来源已失效，需重新读取）"
             if row.source_invalidated or id_ in invalid
-            else for_history(row.summary or row.error or "", keep_ui=id_ == ids[-1], limit=16000),
+            else for_history(row.summary or row.error or "", keep_ui=True, limit=16000),
             "status": row.status,
             "sources": history_sources(row.sources),
         }

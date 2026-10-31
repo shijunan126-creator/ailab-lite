@@ -14,7 +14,7 @@ from ..config import settings
 from ..contracts.genui import component_names, docs_for, guide_for
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
-from . import net_tools
+from . import net_tools, subtasks
 from .background_exec import background_exec
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
@@ -56,10 +56,14 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "读取沙箱中的文本文件。",
+            "description": "读取沙箱中的文本文件。长文件分段返回，有 next_offset 时用它作为 offset 继续读。",
             "parameters": {
                 "type": "object",
-                "properties": {"path": {"type": "string"}},
+                "properties": {
+                    "path": {"type": "string"},
+                    "offset": {"type": "integer", "minimum": 0, "default": 0},
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 30000, "default": 30000},
+                },
                 "required": ["path"],
             },
         },
@@ -334,7 +338,8 @@ RECALL = {
                 "before": {"type": "string", "format": "date-time"},
                 "after": {"type": "string", "format": "date-time"},
             },
-            "description": "检索返回next_cursor时可继续。用run_id读取命中轮次原文；before/after限定历史时间。",
+            "description": "检索返回next_cursor时可继续。用run_id读取命中轮次原文，结果里的previous_run_id/next_run_ids可继续读相邻轮次；"
+            "files是该轮交付的文件，用read_library_file(file_id)打开。before/after限定历史时间。",
         },
     },
 }
@@ -445,6 +450,7 @@ def tools_for_turn() -> list[dict]:
         net_tools.SAVE_SKILL,
         *([SEARCH_IMAGES] if images.enabled() else []),
         *([*WEB_TOOLS, *net_tools.TOOLS] if web.enabled() else []),
+        subtasks.TOOL,
     ]
 
 
@@ -495,8 +501,23 @@ def _looks_binary(data: bytes) -> bool:
     return False
 
 
-def _truncate(text: str, limit: int = 4000) -> str:
-    return text if len(text) <= limit else text[:limit] + f"\n...[truncated {len(text) - limit} chars]"
+def _text_window(text: str, offset, limit) -> dict:
+    """One bounded window of a text file; the rest stays in the sandbox behind next_offset instead of being cut off."""
+    if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+        raise ToolError("offset 须是非负整数")
+    if limit is None:
+        limit = READ_LIMIT_CHARS
+    if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= READ_LIMIT_CHARS:
+        raise ToolError(f"limit 须在 1 到 {READ_LIMIT_CHARS} 之间")
+    if offset > len(text):
+        raise ToolError(f"offset 超出文件长度（共 {len(text)} 字符）")
+    end = min(len(text), offset + limit)
+    window = {"content": text[offset:end]}
+    if offset or end < len(text):
+        window.update(offset=offset, total_chars=len(text))
+    if end < len(text):
+        window["next_offset"] = end
+    return window
 
 
 async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: AsyncBrokerClient, ctx: ToolContext | None = None) -> dict:
@@ -566,7 +587,7 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         if _looks_binary(data):
             # Decoding an image/zip as text would put ~100k characters of noise into the context.
             return {"ok": False, "path": path, "error": f"binary file ({len(data)} bytes); read_file only reads text files"}
-        return {"ok": True, "path": path, "content": _truncate(data.decode("utf-8", "replace"), READ_LIMIT_CHARS)}
+        return {"ok": True, "path": path, **_text_window(data.decode("utf-8", "replace"), args.get("offset", 0), args.get("limit"))}
 
     if name == "list_files":
         path = _workspace_path(str(args.get("path") or "/workspace"))

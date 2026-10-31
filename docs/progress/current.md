@@ -3,13 +3,13 @@
 ## 一、先读这些
 
 1. 本节 + [HANDOFF.MD](../../HANDOFF.MD) 末尾“2026-11-01 前缀缓存与渲染”的陷阱。
-2. 设计：[前缀缓存](../architecture/design/2026-10-31-prefix-cache.md)、[渲染沙箱生命周期](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)、[ADR 0030](../architecture/adr/0030-prewarmed-single-use-render-sandboxes.md)（含槽位决定）。
+2. 设计：[前缀缓存](../architecture/design/2026-10-31-prefix-cache.md)、[渲染沙箱生命周期](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)、[ADR 0032](../architecture/adr/0032-prewarmed-single-use-render-sandboxes.md)（含槽位决定）。
 3. 过程、测速与检查：[dated update](updates/2026-10-31-prefix-cache-render.md) 的 “C4 收尾” 一节。
 
 ## 二、状态
 
-- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，已合并 `fix/render-view`。用户已授权本轮 PR + merge 到 main 及合并后部署最新版本（2026-11-01）。
-- 本轮完成：剩余页批量光栅化与单次传输；mock 沙箱私有 `/tmp` 与无 listener 渲染（E2E 文档预览失败的根因）；Work 用户配额不再计入 render 沙箱（全套 E2E 暴露）；GenUI 生成页重置后高度回缩；ADR 0030 槽位保持 1 槽 / 768 MiB。
+- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，已合并 `fix/render-view` 与 `origin/main@fe4f712`（PR #114–#120）。与 #117 的前缀实现冲突处采用本分支设计（固定目录、边界上下文、同形压缩），保留 #117 的 GenUI 原文渲染及 #114–#119 其余功能；watchdog 与子任务的 quiet 调用也改为同形续写。ADR 编号：本分支渲染 ADR 改为 0032。用户已授权本轮 PR + merge 到 main 及合并后部署最新版本（2026-11-01）。
+- 本轮完成：剩余页批量光栅化与单次传输；mock 沙箱私有 `/tmp` 与无 listener 渲染（E2E 文档预览失败的根因）；Work 用户配额不再计入 render 沙箱（全套 E2E 暴露）；GenUI 生成页重置后高度回缩；ADR 0032 槽位保持 1 槽 / 768 MiB。
 - 测速：15 页 PPTX 全页 2.5 s（原 7.4–10.4 s）、7 页 DOCX 3.2 s（原 5.1 s，仍高于 2.5 s 目标）、首页约 1.0 s；交替用户冷启动首页 4.2–4.6 s。
 - 检查：Ruff；SQLite、PG+Redis 全套（仅一个夹具问题，已修）；Office runner；E2E 全套 + 失败项复跑通过。admission/broker 修复后的完整 Python 全套交给 PR CI。
 
@@ -30,7 +30,15 @@
 
 ---
 
-# 当前工作交接：memory / JS / 管理页集成（2026-10-31）
+## 上一交接：Super-agent 借鉴与前缀缓存（2026-10-31，PR #114–#119）
+
+已合并 PR #114–#119 → `main@cd74472`（各自 squash，CI 全绿）：插话打断 `exec_wait`、`read_file` 分段、历史召回附带下一跳、**模型请求前缀稳定（缓存命中修复，ADR 0030）**、Work 进展监督（默认 observe）、并行子任务 `run_subtasks`（ADR 0031）。合并、部署与边界见[记录](updates/2026-10-31-superagent-merge-deploy.md)。
+
+**下一步（已由上方合并取代前缀部分）**：在真实 DeepSeek 上按 run 对比 `model_usage.cached_tokens/prompt_tokens` 确认命中率改善（用户 Mac 部署 `AILab-local` 尚未更新，本机 k3s 见记录）；观察 `agent.watchdog` 后决定是否切 `AILAB_WATCHDOG_MODE=nudge`；`run_subtasks` 真实使用效果待测。其余待用户决定事项同下节（“Work 需 search_capabilities 才能找到 exec/deliver_file”已由 #117 解决：大窗口模型一次提供完整工具目录）。
+
+---
+
+## 上一交接：memory / JS / 管理页集成（2026-10-31）
 
 已合并：PR #112 → `main@8fe67d9`（merge commit，保留分批提交），最终 head `1d530fc` CI 九项通过。本机部署：平台 `sm-p3-90fc016`、Portal `sm-p3-9115406`，与 main 产品代码一致。结果与边界见 [P3–P7 记录](updates/2026-10-31-memory-js-polish.md)。
 
