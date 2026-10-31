@@ -149,7 +149,7 @@ def test_streaming_hands_over_thinking_then_text_and_assembles_tool_calls() -> N
     assert r.usage == {"prompt_tokens": 5, "completion_tokens": 7, "cached_tokens": 2}
 
 
-def test_reasoning_is_stripped_unless_the_upstream_wants_it_back() -> None:
+def test_reasoning_policy_does_not_change_after_an_upstream_error() -> None:
     import json as _json
 
     history = [
@@ -169,9 +169,11 @@ def test_reasoning_is_stripped_unless_the_upstream_wants_it_back() -> None:
         return _sse({"choices": [{"delta": {"content": "hi"}, "finish_reason": "stop"}]}) if body.get("stream") else _ok()
 
     client, _ = _client(handler)
-    assert asyncio.run(client.chat(history, [], "m")).content == "hi"
-    assert ["reasoning_content" in b["messages"][1] for b in bodies] == [False, True]
-    assert client.echo_reasoning is True  # remembered: the next call sends it straight away
+    with pytest.raises(LLMError, match="400"):
+        asyncio.run(client.chat(history, [], "m"))
+    assert ["reasoning_content" in b["messages"][1] for b in bodies] == [False]
+    assert client.echo_reasoning is False
+    client.echo_reasoning = True  # model configuration on a fresh transport
     asyncio.run(client.chat_stream(history, [], "m"))
     assert "reasoning_content" in bodies[-1]["messages"][1]
 
