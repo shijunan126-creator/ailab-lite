@@ -77,6 +77,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 "messages": state["messages"],
                                 "tools": state["tool_catalog_v1"],
                             }
+                            if "memory_observed" in state:
+                                out["previous_model_context"]["memory_observed"] = state["memory_observed"]
                 else:
                     out["context_boundary"] = "rebuilt"
     alive = newest is not None and newest.id not in invalid and workspace_alive(newest, datetime.now(UTC))

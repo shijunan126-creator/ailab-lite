@@ -222,6 +222,38 @@ def test_unchanged_memory_refresh_preserves_all_request_messages():
     asyncio.run(exercise())
 
 
+def test_memory_deletion_appends_note_without_rewriting_prior_results():
+    initial = {"revision": 1, "enabled": True, "entries": [{"id": "m1", "kind": "user", "content": "旧偏好"}]}
+    latest = {"revision": 2, "enabled": True, "entries": []}
+
+    class Platform(FakePlatform):
+        async def get_memory_context(self, run_id):
+            return latest
+
+        async def memory(self, run_id, request):
+            return latest
+
+    async def exercise():
+        loop = AgentLoop(platform=Platform())
+        loop._states["r"] = {"memory_observed": copy.deepcopy(initial)}
+        messages = [
+            {"role": "system", "content": "rules"},
+            {"role": "system", "content": memory_prompt(initial)},
+            {"role": "assistant", "tool_calls": [{"id": "one", "function": {"name": "memory", "arguments": '{"action":"list"}'}}]},
+            {"role": "tool", "name": "memory", "tool_call_id": "one", "content": "原始结果 旧偏好"},
+        ]
+        original = copy.deepcopy(messages)
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
+        assert messages[: len(original)] == original
+        assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
+        assert "旧偏好" not in messages[-1]["content"]
+        count = len(messages)
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
+        assert len(messages) == count
+
+    asyncio.run(exercise())
+
+
 def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
     from ailab_platform.agent.discovery import SEARCH
     from ailab_platform.model_policy import estimator

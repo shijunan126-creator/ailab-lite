@@ -649,48 +649,26 @@ class AgentLoop:
         max_output_tokens=None,
         tool_choice=None,
     ):
-        # Checkpoints can predate a deletion or scope move; refresh the bounded system block.
         if messages and hasattr(self.platform, "get_memory_context") and not quiet:
             latest = await self.platform.get_memory_context(run_id)
-            context_index = (
-                1
-                if len(messages) > 1 and messages[1].get("role") == "system" and "<ailab_memory>" in str(messages[1].get("content", ""))
-                else 0
-            )
-            content = messages[context_index].get("content", "")
-            if isinstance(content, str) and "<ailab_memory>" in content:
-                start = content.index("<ailab_memory>")
-                end = content.index("</ailab_memory>", start) + len("</ailab_memory>")
-                old_block = content[start:end]
-                new_block = memory_prompt(latest).strip()
-                try:
-                    old_facts = json.loads(old_block.splitlines()[-2])
-                    new_facts = json.loads(new_block.splitlines()[-2])
-                    old_rules = "\n".join(old_block.splitlines()[:-2])
-                    new_rules = "\n".join(new_block.splitlines()[:-2])
-                    needs_refresh = old_rules != new_rules or any(fact not in new_facts for fact in old_facts)
-                except (ValueError, IndexError, TypeError):
-                    needs_refresh = old_block != new_block
-                if needs_refresh:
-                    messages[context_index] = {**messages[context_index], "content": content[:start] + new_block + content[end:]}
-            calls_by_id = {}
+            state = self._states.setdefault(run_id, {})
+            observed = state.get("memory_observed")
+            if observed is not None and observed.get("revision") != latest.get("revision"):
+                before = {entry["id"]: entry for entry in observed.get("entries", []) if entry.get("id")}
+                after = {entry["id"]: entry for entry in latest.get("entries", []) if entry.get("id")}
+                if not latest.get("enabled", True):
+                    after = {}
+                changes = [f"记忆 {entry_id} 已删除，不得再使用" for entry_id in sorted(before.keys() - after.keys())]
+                changes += [
+                    f"记忆 {entry_id}：{after[entry_id].get('content', '')}"
+                    for entry_id in sorted(after)
+                    if entry_id not in before or after[entry_id].get("content") != before[entry_id].get("content")
+                ]
+                if changes:
+                    messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
+            state["memory_observed"] = latest
             for index, message in enumerate(messages):
-                for call_data in message.get("tool_calls") or []:
-                    calls_by_id[call_data["id"]] = call_data.get("function") or {}
-                if message.get("role") != "tool":
-                    continue
-                if message.get("name") == "memory":
-                    function = calls_by_id.get(message.get("tool_call_id"), {})
-                    try:
-                        arguments = json.loads(function.get("arguments") or "{}")
-                    except ValueError:
-                        arguments = {}
-                    request = {"action": "list"}
-                    if arguments.get("action") == "search":
-                        request = {"action": "search", **{k: arguments[k] for k in ("query", "as_of") if k in arguments}}
-                    current = await self.platform.memory(run_id, request)
-                    messages[index] = {**message, "content": json.dumps(current, ensure_ascii=False)}
-                elif message.get("name") == "recall_history":
+                if message.get("name") == "recall_history":
                     try:
                         previous = json.loads(message.get("content") or "{}")
                     except ValueError:
@@ -1775,12 +1753,14 @@ class AgentLoop:
                 if previous and previous.get("tools") == state["tool_catalog_v1"] and previous.get("messages", [{}])[0] == messages[0]:
                     prior = {"messages": previous["messages"]}
                     await self._restore_images(run_id, run, prior)
+                    state["memory_observed"] = previous.get("memory_observed", run.get("memory") or {})
                     state["messages"] = await self._compact_parent_context(
                         run_id, run, llm, model, prior["messages"], messages[-1], state["tool_catalog_v1"]
                     )
                 else:
                     if previous:
                         run["context_boundary"] = "model_changed"
+                    state["memory_observed"] = run.get("memory") or {}
                     state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 if reason := run.get("context_boundary"):
                     await self._event(run_id, "agent.context_boundary", {"reason": reason})
