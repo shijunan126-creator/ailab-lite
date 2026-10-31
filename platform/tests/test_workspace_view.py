@@ -1,6 +1,7 @@
 """Workspace visual input is bounded, deterministic, and scoped to the run sandbox."""
 
 import io
+import shutil
 
 import pytest
 from PIL import Image
@@ -77,6 +78,7 @@ def test_workspace_view_timeout_and_oversized_output(tmp_path, monkeypatch):
     manager.close()
 
 
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout"]), reason="PDF tools unavailable")
 def test_workspace_pdf_renders_requested_pages_and_rejects_large_input(tmp_path):
     from pypdf import PdfWriter
 

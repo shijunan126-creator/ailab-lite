@@ -137,6 +137,8 @@ def test_render_lifecycle_does_not_retain_records_after_1000_cycles(monkeypatch)
     import gc
     import tracemalloc
 
+    # No heartbeat runs in this test; under coverage 1000 cycles outlast the default ownership lease.
+    monkeypatch.setattr(settings, "broker_lock_ttl_seconds", 3600)
     manager, provider, spec, first = warmed(monkeypatch)
     manager.release(first)
     provider.released.clear()

@@ -133,6 +133,7 @@ def test_first_page_is_published_before_remaining_render(tmp_path):
     manager.release(result["render_lease_id"])
 
 
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
 def test_waiting_page_is_rendered_before_other_remaining_pages(tmp_path):
     from pypdf import PdfWriter
 
