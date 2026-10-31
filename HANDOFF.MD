@@ -1,5 +1,7 @@
 # HANDOFF
 
+- runsc 容器启动后 `docker cp` 的 overlay 文件可能对容器进程不可见；探针通过 `docker exec -i` 写入容器内文件。UNO listener 真实探针两次转换成功，但 soffice 进程 RSS 约 274 MiB，不能用目标值代替实测容器总 RSS。
+
 - 渲染日志旧版 `acquire_seconds` 包含 `inject_seconds`，相加会重复计算；C3e 起分别记录且标记 standby/cold。一次并发样本和整批发布的 ready 时间不能当作三次中位数或逐页首屏证据。
 
 - Docker sandbox 的 supervisor 在创建时固定最长生存期；standby 的提供者上限须覆盖空闲期加一次任务，认领后业务租约仍保持短 TTL。LibreOffice 仅复用 profile 不代表进程常驻，热查看延迟仍须实测；详见 [C3d](docs/progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
