@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconPlus, IconTrash } from "../../../components/icons";
+import { IconCheck, IconFolder, IconPause, IconPlay, IconPlus, IconQuote, IconTrash } from "../../../components/icons";
+import RowMenu, { RowAction } from "../../../components/row-menu";
 import DreamPanel from "../../../components/memory/dream-panel";
 import Select from "../../../components/select";
 import Switch from "../../../components/switch";
@@ -253,11 +254,18 @@ export default function MemoryPage() {
 
   const byId = new Map((stored?.entries || []).map((e) => [e.id, e]));
 
-  return (
-    <main className="page page-narrow memory-page">
-      <div className="page-head">
-        <h1>记忆</h1>
+  const scopeName = (id?: string | null) => (id ? projects.find((p) => p.id === id)?.name || "项目" : "账号");
+  const setEntry = (key: string, patch: Partial<Draft>) => setDraft((list) => list.map((v) => (v.key === key ? { ...v, ...patch } : v)));
 
+  return (
+    <main className="page mpage memory-page">
+      <div className="mpage-head">
+        <h1>记忆</h1>
+        {stored ? (
+          <span className={`hint ${over ? "memory-over" : ""}`}>
+            {used.toLocaleString()} / {limitChars.toLocaleString()} 字 · {draft.length} / {limitEntries} 条
+          </span>
+        ) : null}
       </div>
       {error ? (
         <div className="alert error memory-alert" role="alert">
@@ -271,35 +279,38 @@ export default function MemoryPage() {
       ) : null}
 
       {stored === null ? (
-        error ? null : <div className="empty">加载中…</div>
+        error ? null : <div className="mlist"><div className="mlist-empty">加载中…</div></div>
       ) : (
         <>
-          <section className="card skill-list">
-            <div className="skill-row">
-              <div className="grow">
-                <div className="skill-title">使用记忆</div>
-                <div className="skill-desc">关闭后 AI 不读取也不写入，已有内容保留。</div>
+          <section className="msection">
+            <div className="mlist">
+              <div className="mrow">
+                <div className="mrow-main">
+                  <span className="mrow-title"><span>使用记忆</span></span>
+                  <span className="mrow-desc">关闭后 AI 不读取也不写入，已有内容保留。</span>
+                </div>
+                <div className="mrow-trail"><Switch on={stored.enabled} label="使用记忆" disabled={saving} onChange={(enabled) => toggle({ enabled })} /></div>
               </div>
-              <Switch on={stored.enabled} label="使用记忆" disabled={saving} onChange={(enabled) => toggle({ enabled })} />
-            </div>
-            <div className={`skill-row ${stored.enabled ? "" : "off"}`}>
-              <div className="grow">
-                <div className="skill-title">自动记忆</div>
-                <div className="skill-desc">关闭后只在你明确要求时记住或忘记。</div>
+              <div className={`mrow ${stored.enabled ? "" : "off"}`}>
+                <div className="mrow-main">
+                  <span className="mrow-title"><span>自动记忆</span></span>
+                  <span className="mrow-desc">关闭后只在你明确要求时记住或忘记。</span>
+                </div>
+                <div className="mrow-trail"><Switch on={stored.auto_save} label="自动记忆" disabled={saving || !stored.enabled} onChange={(auto_save) => toggle({ auto_save })} /></div>
               </div>
-              <Switch on={stored.auto_save} label="自动记忆" disabled={saving || !stored.enabled} onChange={(auto_save) => toggle({ auto_save })} />
-            </div>
-            <div className="skill-row">
-              <div className="grow"><div className="skill-title">引用历史对话</div></div>
-              <Switch on={stored.reference_history !== false} label="引用历史对话" disabled={saving || !stored.enabled} onChange={(reference_history) => toggle({ reference_history })} />
-            </div>
-            <div className="skill-row">
-              <div className="grow"><div className="skill-title">项目仅使用本项目记忆</div></div>
-              <Switch on={!!stored.project_only} label="项目仅使用本项目记忆" disabled={saving} onChange={(project_only) => toggle({ project_only })} />
+              <div className={`mrow ${stored.enabled ? "" : "off"}`}>
+                <div className="mrow-main"><span className="mrow-title"><span>引用历史对话</span></span></div>
+                <div className="mrow-trail"><Switch on={stored.reference_history !== false} label="引用历史对话" disabled={saving || !stored.enabled} onChange={(reference_history) => toggle({ reference_history })} /></div>
+              </div>
+              <div className="mrow">
+                <div className="mrow-main"><span className="mrow-title"><span>项目仅使用本项目记忆</span></span></div>
+                <div className="mrow-trail"><Switch on={!!stored.project_only} label="项目仅使用本项目记忆" disabled={saving} onChange={(project_only) => toggle({ project_only })} /></div>
+              </div>
             </div>
           </section>
 
           <DreamPanel initial={stored.dream} onChanged={() => load()} />
+
           <div className="memory-filters">
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索记忆" aria-label="搜索记忆" />
             <Select value={scope} onChange={setScope} aria-label="记忆范围"
@@ -312,82 +323,87 @@ export default function MemoryPage() {
               && (!query || d.content.toLocaleLowerCase().includes(query.toLocaleLowerCase()))
               && (showHistory || !byId.get(d.id || "")?.invalid_at));
             return (
-              <div key={g.kind} className={`memory-group ${stored.enabled ? "" : "off"}`}>
-                <div className="section-title">
-                  {g.title}
-                  {rows.length ? <span className="count">{rows.length}</span> : null}
-                  <span className="spacer" />
-                  <button className="secondary sm" onClick={() => add(g.kind)} disabled={full || saving}>
-                    <IconPlus size={15} /> 新建
-                  </button>
+              <section key={g.kind} className={`msection memory-group ${stored.enabled ? "" : "off"}`}>
+                <div className="msection-head">
+                  <h2>{g.title}</h2>
+                  {rows.length ? <span className="meta">{rows.length}</span> : null}
+                  <div className="actions">
+                    <button className="link sm" onClick={() => add(g.kind)} disabled={full || saving}>
+                      <IconPlus size={14} /> 新建
+                    </button>
+                  </div>
                 </div>
-                <section className="card memory-list">
-                  {rows.length === 0 ? <div className="empty memory-empty">还没有内容</div> : null}
+                <div className="mlist">
+                  {rows.length === 0 ? <div className="mlist-empty">还没有内容</div> : null}
                   {rows.map((d) => {
                     const prior = d.id ? byId.get(d.id) : undefined;
+                    const gone = !!(prior?.superseded_by || prior?.invalid_at);
+                    const meta = [
+                      scopeName(d.project_id),
+                      prior ? `${prior.source === "agent" ? "对话中记录" : prior.source === "nightly" ? "夜间整理" : "手动"} · ${timeAgo(prior.updated_at)}` : "",
+                      gone ? "已失效" : "",
+                      d.suppressed ? "已暂停" : "",
+                      d.status === "review" ? "待确认" : "",
+                      prior?.evidence_deleted ? "来源已删除" : "",
+                    ].filter(Boolean);
+                    const actions: RowAction[] = [
+                      ...(d.status === "review" ? [{ label: "确认使用", icon: <IconCheck size={15} />, onSelect: () => setEntry(d.key, { status: "active" }) }] : []),
+                      ...(prior?.evidence_run_ids?.length ? [{ label: "查看来源", icon: <IconQuote size={15} />, onSelect: () => inspectSource(prior.id) }] : []),
+                      { label: d.suppressed ? "恢复" : "暂停", icon: d.suppressed ? <IconPlay size={15} /> : <IconPause size={15} />, onSelect: () => pause(d.key) },
+                      "sep",
+                      { heading: "范围" },
+                      { label: "账号", icon: <IconFolder size={15} />, checked: !d.project_id, onSelect: () => setEntry(d.key, { project_id: null }) },
+                      ...projects.map((p) => ({ label: p.name, icon: <IconFolder size={15} />, checked: d.project_id === p.id, onSelect: () => setEntry(d.key, { project_id: p.id }) })),
+                      "sep",
+                      { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: () => remove(d.key) },
+                    ];
                     return (
-                      <div key={d.key} className={`memory-row ${prior?.superseded_by || prior?.invalid_at ? "superseded" : ""} ${d.suppressed ? "paused" : ""}`}>
-                        <textarea
-                          className="memory-text"
-                          value={d.content}
-                          rows={Math.min(8, Math.max(d.content.split("\n").length, Math.ceil(d.content.length / 48)) || 1)} // where field-sizing is unsupported
-                          maxLength={ENTRY_CHARS}
-                          readOnly={saving}
-                          autoFocus={d.key === focusKey}
-                          aria-label={g.title}
-                          title={prior ? `${prior.source === "agent" ? "AI 记录" : prior.source === "nightly" ? "夜间整理" : "手动"} · ${timeAgo(prior.updated_at)}${prior.confidence != null && prior.confidence < 0.95 ? ` · 置信度 ${Math.round(prior.confidence * 100)}%` : ""}${prior.superseded_by || prior.invalid_at ? " · 已失效" : ""}` : undefined}
-                          onChange={(e) => edit(d.key, e.target.value)}
-                        />
-                        {d.content.length > ENTRY_CHARS * 0.9 ? <span className="hint memory-count">{d.content.length}/{ENTRY_CHARS}</span> : null}
-                        <div className="memory-entry-meta">
-                          <Select aria-label="条目范围" value={d.project_id || ""} disabled={saving}
-                            options={[{ value: "", label: "账号" }, ...projects.map((p) => ({ value: p.id, label: p.name }))]}
-                            onChange={(value) => setDraft((list) => list.map((v) => v.key === d.key ? { ...v, project_id: value || null } : v))} />
-                          {prior?.invalid_at ? <span>已失效</span> : null}
-                          {d.status === "review" ? <button className="secondary sm" onClick={() => setDraft((list) => list.map((v) => v.key === d.key ? { ...v, status: "active" } : v))}>确认使用</button> : null}
-                          {prior?.evidence_run_ids?.length ? <button className="secondary sm" onClick={() => inspectSource(prior.id)}>查看来源</button> : null}
-                          {d.id && sources[d.id] ? <div className="memory-source">
-                            {sources[d.id].quote ? <blockquote>{sources[d.id].quote}</blockquote> : null}
-                            {sources[d.id].sources.map((v, i) => v.conversation_id ? <Link key={i} href={`/c/${v.conversation_id}`}>{v.title}</Link> : <span key={i}>{v.title}</span>)}
-                          </div> : null}
+                      <div key={d.key} className={`mrow memory-row ${gone ? "superseded" : ""} ${d.suppressed ? "paused" : ""}`}>
+                        <div className="mrow-main">
+                          <textarea
+                            className="memory-text"
+                            value={d.content}
+                            rows={Math.min(8, Math.max(d.content.split("\n").length, Math.ceil(d.content.length / 44)) || 1)} // where field-sizing is unsupported
+                            maxLength={ENTRY_CHARS}
+                            readOnly={saving}
+                            autoFocus={d.key === focusKey}
+                            aria-label={g.title}
+                            onChange={(e) => edit(d.key, e.target.value)}
+                          />
+                          <span className="memory-entry-meta">
+                            {meta.join(" · ")}
+                            {d.content.length > ENTRY_CHARS * 0.9 ? ` · ${d.content.length}/${ENTRY_CHARS}` : ""}
+                          </span>
+                          {d.id && sources[d.id] ? (
+                            <div className="memory-source">
+                              {sources[d.id].quote ? <blockquote>{sources[d.id].quote}</blockquote> : null}
+                              {sources[d.id].sources.map((v, i) => v.conversation_id ? <Link key={i} href={`/c/${v.conversation_id}`}>{v.title}</Link> : <span key={i}>{v.title}</span>)}
+                            </div>
+                          ) : null}
                         </div>
-                        {d.suppressed ? <span className="hint memory-tag">已暂停</span> : null}
-                        {prior?.evidence_deleted ? <span className="hint memory-tag" title="来源对话已删除，原话和引用已清除；这条记忆仍然保留，可在此删除">来源已删除</span> : null}
-                        <button
-                          className="secondary sm memory-pause memory-remove"
-                          onClick={() => pause(d.key)}
-                          disabled={saving}
-                          title={d.suppressed ? "恢复后 AI 会重新参考这条" : "暂停后保留在这里，但 AI 不会参考"}
-                        >
-                          {d.suppressed ? "恢复" : "暂停"}
-                        </button>
-                        <button className="icon-btn danger-hover memory-remove" onClick={() => remove(d.key)} disabled={saving} aria-label="删除" title="删除">
-                          <IconTrash size={16} />
-                        </button>
+                        <div className="mrow-trail">
+                          <RowMenu label={d.content.slice(0, 24) || g.title} actions={actions} disabled={saving} />
+                        </div>
                       </div>
                     );
                   })}
-                </section>
-              </div>
+                </div>
+              </section>
             );
           })}
 
-          <div className={`memory-foot ${dirty ? "dirty" : ""}`}>
-            <span className={`hint ${over ? "memory-over" : ""}`}>
-              {used.toLocaleString()} / {limitChars.toLocaleString()} 字 · {draft.length} / {limitEntries} 条
-            </span>
-            <span className="spacer" />
-            {dirty ? (
-              <>
-                <button className="secondary sm" onClick={discard} disabled={saving}>
-                  放弃更改
-                </button>
-                <button className="sm" onClick={save} disabled={saving || over}>
-                  {saving ? "保存中…" : "保存"}
-                </button>
-              </>
-            ) : null}
-          </div>
+          {dirty ? (
+            <div className="memory-foot">
+              <span className="hint">有未保存的修改</span>
+              <span className="spacer" />
+              <button className="secondary sm" onClick={discard} disabled={saving}>
+                放弃更改
+              </button>
+              <button className="sm" onClick={save} disabled={saving || over}>
+                {saving ? "保存中…" : "保存"}
+              </button>
+            </div>
+          ) : null}
         </>
       )}
     </main>

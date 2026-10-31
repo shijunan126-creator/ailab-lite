@@ -136,7 +136,7 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
 
   useEffect(() => {
     mounted.current = true;
-    load().catch((e) => { if (mounted.current && !loads.current?.signal.aborted) setError(errorMessage(e)); });
+    load().catch((e) => { if (mounted.current && (e as Error)?.name !== "AbortError" && !loads.current?.signal.aborted) setError(errorMessage(e)); });
     return () => { mounted.current = false; loads.current?.abort(); detailLoad.current?.abort(); };
   }, [load]);
 
@@ -239,31 +239,37 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
   const latest = runs.find((r) => r.changes.some((c) => c.op !== "noop") && r.status !== "failed")?.id || null;
   const working = !!status?.active;
   return (
-    <section className="card dream-panel">
-      <div className="skill-row">
-        <div className="grow">
-          <div className="skill-title">夜间自动整理</div>
+    <section className="msection">
+      <div className="msection-head"><h2>整理</h2></div>
+      <div className="mlist dream-panel">
+      <div className="mrow">
+        <div className="mrow-main">
+          <span className="mrow-title"><span>夜间自动整理</span></span>
           {settings ? (
-            <div className="skill-desc">
+            <span className="mrow-desc">
               {settings.window_start}–{settings.window_end}
               {settings.timezone ? ` · ${settings.timezone}` : ""}
-            </div>
+            </span>
           ) : null}
         </div>
-        <Switch on={!!settings?.enabled} label="夜间自动整理" disabled={busy || !settings} onChange={toggle} />
+        <div className="mrow-trail"><Switch on={!!settings?.enabled} label="夜间自动整理" disabled={busy || !settings} onChange={toggle} /></div>
       </div>
-      {error ? <div className="alert error">{error}</div> : null}
-      <div className="dream-actions" aria-live="polite">
-        <span className={`dream-state grow ${working ? "live" : ""}`}>
-          {working
-            ? status?.active?.status === "running" ? "正在整理…" : "等待整理…"
-            : pending ? `${pending} 段新对话待整理` : notice || "没有待整理的新对话"}
-        </span>
-        <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings || !pending}>
-          立即整理
-        </button>
+      {error ? <div className="alert error dream-alert">{error}</div> : null}
+      <div className="mrow" aria-live="polite">
+        <div className="mrow-main">
+          <span className={`mrow-desc dream-state ${working ? "live" : ""}`}>
+            {working
+              ? status?.active?.status === "running" ? "正在整理…" : "等待整理…"
+              : pending ? `${pending} 段新对话待整理` : notice || "没有待整理的新对话"}
+          </span>
+        </div>
+        <div className="mrow-trail">
+          <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings || !pending}>
+            立即整理
+          </button>
+        </div>
       </div>
-      {confirmRevert ? <div role="alertdialog" aria-label="撤销记忆整理" className="alert">
+      {confirmRevert ? <div role="alertdialog" aria-label="撤销记忆整理" className="alert dream-alert">
         <span className="grow">撤销最近一次整理？它新增的记忆会删除，失效的会恢复。</span>
         <button className="secondary sm" onClick={() => setConfirmRevert(null)}>取消</button>
         <button className="sm" onClick={() => revert(confirmRevert)} disabled={busy}>确认撤销</button>
@@ -290,6 +296,7 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
           ) : null}
         </div>
       ) : null}
+      </div>
     </section>
   );
 }
