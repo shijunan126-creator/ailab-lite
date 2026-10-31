@@ -14,7 +14,7 @@ from ..config import settings
 from ..contracts.genui import component_names, docs_for, guide_for
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
-from . import net_tools
+from . import net_tools, subtasks
 from .background_exec import background_exec
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
@@ -433,6 +433,7 @@ def tools_for_turn() -> list[dict]:
         net_tools.SAVE_SKILL,
         *([SEARCH_IMAGES] if images.enabled() else []),
         *([*WEB_TOOLS, *net_tools.TOOLS] if web.enabled() else []),
+        subtasks.TOOL,
     ]
 
 

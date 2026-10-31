@@ -269,6 +269,7 @@ class Settings(BaseSettings):
     # Progress watchdog for Work runs: observe records verdicts only; nudge also tells the model and pauses on a repeat.
     watchdog_mode: Literal["off", "observe", "nudge"] = "observe"
     watchdog_interval_seconds: int = Field(default=600, ge=60, le=86400)  # active work between checks
+    subtask_max_steps: int = Field(default=20, ge=1, le=100)  # model steps per run_subtasks child
     exec_background_max_jobs: int = Field(default=8, ge=1, le=16)
     exec_background_log_bytes: int = Field(default=1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_active_runs_per_user: int = Field(default=2, gt=0)
