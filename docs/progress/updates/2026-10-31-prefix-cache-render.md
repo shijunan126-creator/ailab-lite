@@ -156,3 +156,27 @@ C3g 逐页后续：每页光栅并立即发布，页间读取等待者请求以�
 C3g 兼容测试：预览合同专项将预热关闭，以观察未 claim 的持久预览；旧 mock reader 更新为模拟授权所有者与预热 listener。受影响的预览、预览优先级和 outbox 故障专项 65 项通过、1 项跳过。
 
 C3g 全量 SQLite 首轮 6 组失败：两组旧测试先渲染而与 pending 测试前提冲突，三组测试替身返回空值/legacy 消息，另一组 UNO 为镜像内依赖被平台依赖检查误报；修复后仅复跑失败参数 9 项通过。15 页 PPTX 真实 runsc tmpfs 在清理后比基线多 8192 B，符合失败即释放规则；未声称该样本实现热复用。测量、PG 和 E2E 尚在进行。
+
+## C4 收尾（2026-11-01，Claude）
+
+基线 `04ed29e`（合并 `fix/render-view` 后）。本节提交：`f68a946` 剩余页批量化，`3e5a5f4`/`dc8b353` mock 沙箱私有 `/tmp` 与无 listener 渲染，`7ce9632` GenUI 生成页高度，`99e4701` Work 配额不计 render 沙箱；完整列表见 `git log 04ed29e..`。
+
+- **剩余页批量化**：首页之后读一次 `preview_requested_pages`，按“等待页优先、其余顺序”一次 exec 光栅化（连续页合并成一次 pdftoppm 区间），一次 tar 下载（与整批路径共用 `_bundle` 校验），再逐页发布。
+- **E2E 文档预览失败根因**：mock 沙箱把 `/tmp` 留在宿主机，宿主机残留的 `/tmp/ailab-warm/warmup.pdf` 让预热在 macOS 上“假成功”，转换时 `AILAB_LO_STRICT` 找不到 listener 而失败；CI（无 LibreOffice）则所有沙箱预览都会失败。修复：mock `/tmp` 私有化、健康检查脚本不再写死宿主路径、provider 声明 `office_listener`（mock 为 False：不预热、每次启动 LibreOffice、健康检查只清理）。
+- **全套 E2E 暴露的产品缺陷**：用户绑定的 idle render 沙箱被计入该用户的 Work 配额，刚预览过文件的用户 Work 运行排队到 render 空闲过期。修复：Work 用户上限只计 Work 租约（`domain/admission.py`）。
+- **GenUI 生成页高度**：`documentElement.scrollHeight` 不会小于 iframe 自身高度，重置后框不缩；改为按 body 内容范围测量。浏览器对照：旧 helper 展开→重置停在 1105 px，`height:100%` 页面不长；新 helper 三种页面都回到初始高度。新增 E2E。
+- **检查**（代码基线 `cb5f03e` 之前的对应提交）：Ruff 通过；SQLite 与 PG+Redis（15433/16380）全套各 1 项失败（压缩夹具上下文 3.3k 放不下 2.8k 固定工具目录，已调夹具）；Office runner 15 项；E2E 全套 134 通过、6 跳过、12 失败 → 修 admission 与一个测试竞态后，失败的 12 项复跑全部通过。admission/broker 修复后未再跑完整 SQLite/PG，交给 PR CI。
+
+### 测速（runsc，`c3-render-lifecycle` 镜像，3 次中位数，每次新字节）
+
+| 样本 | 首页 | 全页 | C3g（修正前） |
+|---|---|---|---|
+| PPTX 15 页 | 1.05 s | 2.53 s | 全页 7.4–10.4 s |
+| DOCX 7 页 | 1.05 s | 3.18 s | 全页约 5.1 s |
+| XLSX（视觉 3 页） | 0.98 s | 1.83 s | 0.84 s（仅首页） |
+
+- 阶段（单次）：DOCX 首页转换 0.29 s + 光栅 0.32 s，剩余 6 页批量 1.79 s；PPTX 剩余 14 页 1.18 s。DOCX 全页仍高于 2.5 s 目标，主要在 PNG 光栅化。
+- 用户交替 A/B/A/B（1 槽）：切换后首页 4.2–4.6 s（冷启动），回到同用户热复用 1.0–1.4 s。两用户并发（经 Broker 拒绝 + 0.25 s 重试模拟 Worker）：先到者首页 4.3 s，后到者 11.0 s。
+- 内存（VM cgroup，含页缓存）：warm standby 102 MiB，处理三种样本后 158 MiB，峰值 192 MiB。槽位决定见 ADR 0030。
+- 空闲到期：`cleanup_once` 后 render 租约 1 → 0。
+- 未测：Work 内 `view_workspace_file` 第一/第二次耗时（见真实模型验收）、CPU 秒、真实 ClamAV 扫描。
