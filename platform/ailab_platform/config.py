@@ -266,6 +266,9 @@ class Settings(BaseSettings):
     job_lease_seconds: int = Field(default=300, ge=120, le=900)
     run_stall_seconds: int = Field(default=1200, ge=601, le=86400)
     run_max_seconds: int = Field(default=14400, ge=60, le=86400)
+    # Progress watchdog for Work runs: observe records verdicts only; nudge also tells the model and pauses on a repeat.
+    watchdog_mode: Literal["off", "observe", "nudge"] = "observe"
+    watchdog_interval_seconds: int = Field(default=600, ge=60, le=86400)  # active work between checks
     exec_background_max_jobs: int = Field(default=8, ge=1, le=16)
     exec_background_log_bytes: int = Field(default=1024 * 1024, ge=4096, le=16 * 1024 * 1024)
     max_active_runs_per_user: int = Field(default=2, gt=0)

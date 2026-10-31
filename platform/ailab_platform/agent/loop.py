@@ -36,7 +36,7 @@ from ..runtime_context import attempt_id_var, delivery_id_var
 from ..skill_registry import BASE_SKILLS, resolve_name
 from ..telemetry import span
 from ..title_text import normalize_title
-from . import discovery, net_tools
+from . import discovery, net_tools, watchdog
 from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
@@ -1036,6 +1036,35 @@ class AgentLoop:
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
         raise LLMError("context pagination limit reached")
 
+    async def _watchdog(self, llm, run_id, turn, model, offered, budget) -> None:
+        """Every watchdog_interval_seconds of active work, judge whether the run still advances the goal."""
+        state, messages = self._states[run_id], turn.messages
+        if budget.data["active_seconds"] < budget.data.setdefault("watchdog_at", settings.watchdog_interval_seconds):
+            return
+        budget.data["watchdog_at"] = budget.data["active_seconds"] + settings.watchdog_interval_seconds
+        try:
+            # Same messages and tools as the next real call, so the check is a prefix-cache hit plus one short turn.
+            response = await self._call_model(
+                llm, run_id, turn.run, model, [*messages, {"role": "user", "content": watchdog.PROMPT}], -1, tools=offered, quiet=True
+            )
+        except LLMError:
+            log.warning("watchdog check failed run=%s", run_id, exc_info=True)
+            return
+        result = watchdog.verdict(None if response.tool_calls else response.content)
+        metrics.WATCHDOG_VERDICTS.labels(result["verdict"]).inc()
+        await self._event(run_id, "agent.watchdog", result)
+        if settings.watchdog_mode == "nudge" and result["verdict"] != "unknown":
+            if result["verdict"] == "progressing":
+                state.pop("watchdog_nudged", None)
+            elif state.get("watchdog_nudged"):
+                raise BudgetPause(watchdog.PAUSE)
+            else:
+                state["watchdog_nudged"] = True
+                reason = result["reason"] or "最近没有明显进展"
+                messages.append({"role": "user", "content": watchdog.NUDGE.format(reason=reason)})
+                await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": f"监督检查：{reason}"})
+        await self._checkpoint(run_id, turn)
+
     async def _compact_work_context(self, run_id, turn, llm, model, offered):
         messages = turn.messages
         spec = get_catalog().get(model)
@@ -1959,6 +1988,8 @@ class AgentLoop:
                         else catalog
                     )
                     turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
+                    if mode == "work" and settings.watchdog_mode != "off" and offered and state["tool_log"]:
+                        await self._watchdog(llm, run_id, turn, model, offered, budget)
                     await self._compact_work_context(run_id, turn, llm, model, offered)
                     response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)
                     if offered == [] and response.tool_calls:
