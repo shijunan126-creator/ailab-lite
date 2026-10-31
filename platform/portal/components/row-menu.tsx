@@ -17,9 +17,12 @@ export default function RowMenu({ label, actions, disabled }: { label: string; a
   const [at, setAt] = useState<React.CSSProperties | null>(null);
   const button = useRef<HTMLButtonElement | null>(null);
   const menu = useRef<HTMLDivElement | null>(null);
+  const items = actions.filter((a, i) => a !== "sep" || (i > 0 && i < actions.length - 1));
+  const height = items.reduce((h, a) => h + (a === "sep" ? 9 : "heading" in a ? 28 : ITEM_H), 8);
 
+  const open = !!at;
   useEffect(() => {
-    if (!at) return;
+    if (!open) return;
     const close = (e: Event) => {
       if (e.type === "mousedown" && (menu.current?.contains(e.target as Node) || button.current?.contains(e.target as Node))) return;
       if (e.type === "keydown") {
@@ -28,20 +31,26 @@ export default function RowMenu({ label, actions, disabled }: { label: string; a
       }
       setAt(null);
     };
+    // A scroll the user did not mean as "dismiss" (momentum after the tap, the page shrinking under a filter) must not
+    // swallow the menu: it follows its button and closes only once the button has left the screen.
+    const follow = (e: Event) => {
+      if (menu.current?.contains(e.target as Node)) return;
+      const rect = button.current?.getBoundingClientRect();
+      if (!rect || !button.current?.isConnected || rect.bottom < 0 || rect.top > window.innerHeight) setAt(null);
+      else setAt(placeMenu(rect, 184, height));
+    };
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", close);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
     return () => {
       document.removeEventListener("mousedown", close);
       document.removeEventListener("keydown", close);
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
     };
-  }, [at]);
+  }, [open, height]);
 
-  const items = actions.filter((a, i) => a !== "sep" || (i > 0 && i < actions.length - 1));
-  const height = items.reduce((h, a) => h + (a === "sep" ? 9 : "heading" in a ? 28 : ITEM_H), 8);
   return (
     <>
       <button
