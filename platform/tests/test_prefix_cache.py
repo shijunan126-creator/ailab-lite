@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+from types import SimpleNamespace
 
 import pytest
 
@@ -168,6 +169,38 @@ def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeyp
         result = asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
     assert "不要把 recall_history 的原文" in requests[0]["messages"][-1]["content"]
     assert all(message.get("name") != "recall_history" for message in result)
+
+
+def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypatch):
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 5100},
+        {"role": "assistant", "content": "old"},
+        {"role": "assistant", "content": "recent one"},
+        {"role": "tool", "tool_call_id": "x", "content": "result"},
+        {"role": "assistant", "content": "recent two"},
+    ]
+    original = copy.deepcopy(messages)
+    tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
+    with scripted_server([{"content": "summary"}]) as (url, requests):
+        platform = FakePlatform()
+        loop = AgentLoop(platform=platform, llm=ModelTransport(url))
+        loop._states["r"] = {"user_message_index": 2}
+
+        async def checkpoint(*args):
+            pass
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+        turn = SimpleNamespace(messages=messages, run={"_attempt_id": "a", "_ledger_tokens": 0})
+        asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", tools))
+    assert requests[0]["messages"][:-1] == original
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert messages[:2] == original[:2] and messages[2]["content"].endswith("summary")
+    assert messages[3:] == original[-3:]
+    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
 
 
 def test_unchanged_memory_refresh_preserves_all_request_messages():
