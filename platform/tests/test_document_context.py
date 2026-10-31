@@ -99,7 +99,7 @@ def test_internal_skills_and_constant_initial_schema():
         assert c.post("/v1/runs", headers=AUTH, json={"prompt": "x", "skill": "platform.pdf.read"}).status_code == 201
 
 
-def test_discovered_tool_activation_survives_checkpoint():
+def test_skill_search_does_not_change_tool_availability():
     import asyncio
 
     from ailab_platform.agent.loop import AgentLoop
@@ -120,7 +120,7 @@ def test_discovered_tool_activation_survives_checkpoint():
     )
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
-    assert "write_file" in platform.checkpoint["state"]["active_tools"]
+    assert not platform.checkpoint["state"].get("active_tools")
     assert broker.leases == 1
 
 
@@ -499,7 +499,7 @@ def test_summary_revalidation_reads_completed_ocr_when_native_text_is_absent():
 
 
 def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
-    """Discovery keeps unused schemas out of the prompt; it must not fail read_url after a search found web_search."""
+    """Available tools can be called without a preceding skill search."""
     import asyncio
 
     from ailab_platform.agent.loop import AgentLoop
@@ -520,4 +520,4 @@ def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     result = next(payload for name, payload in platform.events if name == "agent.tool_result")
     assert result["ok"] is True, result
-    assert "write_file" in platform.checkpoint["state"]["active_tools"]
+    assert not platform.checkpoint["state"].get("active_tools")

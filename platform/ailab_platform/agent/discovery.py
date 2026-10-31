@@ -6,7 +6,7 @@ SEARCH = {
     "type": "function",
     "function": {
         "name": "search_capabilities",
-        "description": "按需发现平台工具或内部办公技能；关键词如PDF、表格、网页、执行。",
+        "description": "按关键词发现可用技能。",
         "parameters": {
             "type": "object",
             "properties": {

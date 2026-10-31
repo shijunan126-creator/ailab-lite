@@ -85,7 +85,7 @@ WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保
 
 
 def _tools_for_run(run):
-    catalog = tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn()
+    catalog = [discovery.SEARCH, *(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn())]
     if not settings.client_js_enabled or (run.get("options") or {}).get("client") != "portal":
         catalog = [t for t in catalog if t["function"]["name"] != "run_js"]
     spec = get_catalog().get(run.get("model"))
@@ -878,7 +878,9 @@ class AgentLoop:
         config = run.get("context_settings") or {}
         threshold = policy.compaction_threshold(spec, config)
         fixed = [*base[:2], base[-1]] if len(base) > 2 and base[1].get("role") == "system" else [base[0], base[-1]]
-        context_tools = discovery.offered(_tools_for_run(run), [])
+        context_tools = _tools_for_run(run)
+        if not spec.supports({"vision"}):
+            context_tools = [t for t in context_tools if t["function"]["name"] != "view_attachment"]
         if not spec.supports({"tools"}):
             context_tools = []
         if estimator.estimate(model, {"messages": fixed, "tools": context_tools}) >= budget:
@@ -1213,10 +1215,7 @@ class AgentLoop:
                 if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
                     raise ToolError("ui_components is not available for this model")
             if turn.allowed_tools is not None and call.name not in turn.allowed_tools:
-                # Discovery only keeps unused schemas out of the prompt. A tool this mode allows, called by its exact
-                # name (read_url after web_search found only web_search), runs and stays offered from the next step.
-                discovery.activate(self._states[run_id], [call.name], current_catalog)
-                turn.allowed_tools.add(call.name)
+                raise ToolError("tool is not available in the current model catalog")
             if (turn.run.get("options") or {}).get("mode") == "chat" and call.name == "save_skill" and call.arguments.get("path"):
                 raise ToolError("对话模式保存技能请传 content；压缩包/脚本修改请切换工作模式")
             wanted = resolve_name(call.arguments.get("name")) if call.name == "load_skill" and call.arguments.get("name") else None
@@ -1263,23 +1262,16 @@ class AgentLoop:
             elif call.name == "ui_components":
                 result = ui_components(call.arguments, self._states[run_id], html_enabled=settings.genui_html_enabled)
             elif call.name == "search_capabilities":
-                state = self._states[run_id]
-                catalog = _tools_for_run(turn.run)
                 user_skills = [
                     {"name": name, "description": entry.get("description", "")[:160]}
                     for name, entry in {**skills(), **turn.personal}.items()
                     if name not in turn.disabled_skills
                 ]
-                hits = discovery.search(
-                    call.arguments.get("query", ""), call.arguments.get("kind", "any"), call.arguments.get("limit", 3), catalog, user_skills
-                )
-                discovery.activate(state, [h["name"] for h in hits if h["kind"] == "tool"], catalog)
+                hits = discovery.search(call.arguments.get("query", ""), "skill", call.arguments.get("limit", 3), [], user_skills)
                 result = {"ok": True, "capabilities": hits}
             elif wanted and wanted in skills():
                 mode = (turn.run.get("options") or {}).get("mode", "work")
                 result = {"ok": True, "skill": load_skill(wanted, mode=mode), "version": skills()[wanted]["version"]}
-                if wanted in BASE_SKILLS:
-                    discovery.activate(self._states[run_id], internal_skills.TOOLS, _tools_for_run(turn.run))
             elif wanted in turn.personal:
                 if getattr(call, "expected_file_id", None) and turn.personal[wanted]["file_id"] != call.expected_file_id:
                     raise ToolError(f"技能 {wanted} 的版本已失效")
@@ -1806,26 +1798,10 @@ class AgentLoop:
             catalog = _tools_for_run(turn.run)
             if spec and not spec.supports({"vision"}):
                 catalog = [t for t in catalog if t["function"]["name"] != "view_attachment"]
-            deferred = options.get("capability_discovery") == 1
-            if checkpoint and not state.get("capability_catalog_revision"):
-                discovery.activate(state, [p["name"] for p in state.get("pending", [])], catalog)
-            state.setdefault("active_tools", [])
-            if deferred and mode == "work" and run.get("input_files"):
-                discovery.activate(state, ["read_library_file", "extract_text", "view_attachment"], catalog)
             state.setdefault("internal_skill_versions", {})
             for internal_name, version in state["internal_skill_versions"].items():
                 internal_skills.load(internal_name, version)
-            offered = (
-                []
-                if spec is not None and not spec.supports({"tools"})
-                else discovery.bounded(
-                    catalog,
-                    state["active_tools"],
-                    (max(800, min(2400, int(ModelPolicy(get_catalog()).input_budget(spec) * 0.15))) if spec else 2400),
-                )
-                if deferred
-                else catalog
-            )
+            offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
             turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
             error = None
             pause_reason = None
@@ -1890,17 +1866,6 @@ class AgentLoop:
                             messages.append({"role": "user", "content": STUCK_NOTE})
                             await self._event(run_id, "agent.budget", {"kind": "nudge", "reason": reason})
                             await self._checkpoint(run_id, turn)
-                    offered = (
-                        []
-                        if spec is not None and not spec.supports({"tools"})
-                        else discovery.bounded(
-                            catalog,
-                            state["active_tools"],
-                            (max(800, min(2400, int(ModelPolicy(get_catalog()).input_budget(spec) * 0.15))) if spec else 2400),
-                        )
-                        if deferred
-                        else catalog
-                    )
                     turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
                     await self._compact_work_context(run_id, turn, llm, model, offered)
                     response = await self._call_model(llm, run_id, run, model, messages, step, tools=offered)

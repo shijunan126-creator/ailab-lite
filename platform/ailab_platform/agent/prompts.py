@@ -158,7 +158,7 @@ def system_prompt_for(
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
         base += WEB_NOTE
-    base += "\n需要能力时search_capabilities；文件/网页/计算/办公技能均按需发现，不猜未激活工具。"
+    base += "\n工具已在本轮提供；其他技能可用 search_capabilities 查找后调用 load_skill。"
     if mode == "chat":
         base += (
             "\n处理 PDF/Word/Excel/PPT 文件时先 load_skill 对应的 platform.* 基础技能；其他技能用 search_capabilities 发现后 load_skill。"
