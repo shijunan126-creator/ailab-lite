@@ -1,4 +1,4 @@
-# 前缀缓存 + 渲染：交接（2026-11-01，提 PR）
+# 前缀缓存 + 渲染：交接（2026-11-01，PR #121）
 
 ## 一、先读这些
 
@@ -8,14 +8,14 @@
 
 ## 二、状态
 
-- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，已合并 `fix/render-view` 与 `origin/main@fe4f712`（PR #114–#120）。与 #117 的前缀实现冲突处采用本分支设计（固定目录、边界上下文、同形压缩），保留 #117 的 GenUI 原文渲染及 #114–#119 其余功能；watchdog 与子任务的 quiet 调用也改为同形续写。ADR 编号：本分支渲染 ADR 改为 0032。用户已授权本轮 PR + merge 到 main 及合并后部署最新版本（2026-11-01）。
+- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，已合并 `fix/render-view` 与 `origin/main@fe4f712`（PR #114–#120）。与 #117 的前缀实现冲突处采用本分支设计（固定目录、边界上下文、同形压缩），保留 #117 的 GenUI 原文渲染及 #114–#119 其余功能；watchdog 与子任务的 quiet 调用也改为同形续写。ADR 编号：本分支渲染 ADR 改为 0032。用户已授权本轮 PR + merge 到 main 及合并后部署最新版本（2026-11-01）。PR [#121](https://github.com/shijunan126-creator/ailab-lite/pull/121)。
 - 本轮完成：剩余页批量光栅化与单次传输；mock 沙箱私有 `/tmp` 与无 listener 渲染（E2E 文档预览失败的根因）；Work 用户配额不再计入 render 沙箱（全套 E2E 暴露）；GenUI 生成页重置后高度回缩；ADR 0032 槽位保持 1 槽 / 768 MiB。
 - 测速：15 页 PPTX 全页 2.5 s（原 7.4–10.4 s）、7 页 DOCX 3.2 s（原 5.1 s，仍高于 2.5 s 目标）、首页约 1.0 s；交替用户冷启动首页 4.2–4.6 s。
-- 检查：Ruff；SQLite、PG+Redis 全套（仅一个夹具问题，已修）；Office runner；E2E 全套 + 失败项复跑通过。admission/broker 修复后的完整 Python 全套交给 PR CI。
+- 检查：Ruff；SQLite、PG+Redis 全套（仅一个夹具问题，已修）；Office runner；E2E 全套 + 失败项复跑通过。合并 main 后 SQLite 全套仅 1 项失败（#115 的 read_file 改为分窗，断言已在 `0f60343` 改），Portal 115 测试与 build 通过；PG 与 E2E 交给 PR CI。
 
 ## 三、待办
 
-1. PR + merge（已授权），之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
+1. PR #121 CI 通过后 merge，之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
 2. 清理：已删 `.worktrees/render-view`（分支保留）、本轮 `/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`；旧会话的 `/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/c3-*` 待用户确认后删除。
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
