@@ -46,7 +46,13 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     if os.environ.get("AILAB_LO_LISTENER"):
         try:
             subprocess.run(
-                ["/usr/bin/python3", "/workspace/.ailab/uno_convert.py", str(src), str(out), fmt.partition(":")[2]],
+                [
+                    "/usr/bin/python3",
+                    os.environ.get("AILAB_LO_CLIENT", "/workspace/.ailab/uno_convert.py"),
+                    str(src),
+                    str(out),
+                    fmt.partition(":")[2],
+                ],
                 check=True,
                 capture_output=True,
                 timeout=90,

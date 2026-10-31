@@ -95,7 +95,25 @@ def main() -> None:
         else:
             rendered = work / "pages"
             rendered.mkdir()
-            result = render_preview.pages(source, rendered, selected)
+            listener = None
+            if suffix != ".pdf":
+                listener_spec = importlib.util.spec_from_file_location(
+                    "work_view_listener", Path(__file__).with_name("work_view_listener.py")
+                )
+                listener = importlib.util.module_from_spec(listener_spec)
+                listener_spec.loader.exec_module(listener)
+                try:
+                    listener.ensure(int(os.environ["AILAB_LO_RSS_LIMIT"]))
+                except (OSError, RuntimeError):
+                    listener = None
+                else:
+                    os.environ["AILAB_LO_LISTENER"] = "1"
+                    os.environ["AILAB_LO_PIPE"] = listener.PIPE
+            try:
+                result = render_preview.pages(source, rendered, selected)
+            finally:
+                if listener:
+                    listener.touch()
             names = [rendered / name for name in result["pages"]]
         images = [normalize(name) for name in names]
         if sum(map(len, images)) > MAX_TOTAL:

@@ -1,5 +1,7 @@
 # HANDOFF
 
+- Debian Office 镜像的 `soffice` 是启动脚本，会派生 `soffice.bin`；监控启动脚本的 RSS 不能约束真实转换器。Work listener 直接启动并监督 `soffice.bin`，runsc 中低阈值和空闲退出探针已验证。
+
 - runsc 容器启动后 `docker cp` 的 overlay 文件可能对容器进程不可见；探针通过 `docker exec -i` 写入容器内文件。UNO listener 真实探针两次转换成功，但 soffice 进程 RSS 约 274 MiB，不能用目标值代替实测容器总 RSS。
 
 - 渲染日志旧版 `acquire_seconds` 包含 `inject_seconds`，相加会重复计算；C3e 起分别记录且标记 standby/cold。一次并发样本和整批发布的 ready 时间不能当作三次中位数或逐页首屏证据。

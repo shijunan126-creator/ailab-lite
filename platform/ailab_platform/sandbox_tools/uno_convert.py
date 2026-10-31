@@ -1,7 +1,9 @@
 """Convert one file through the sandbox's private LibreOffice listener."""
 
+import os
 import pathlib
 import sys
+import time
 
 import uno
 from com.sun.star.beans import PropertyValue
@@ -16,7 +18,16 @@ def prop(name, value):
 source, output, filter_name = sys.argv[1:]
 context = uno.getComponentContext()
 resolver = context.ServiceManager.createInstanceWithContext("com.sun.star.bridge.UnoUrlResolver", context)
-remote = resolver.resolve("uno:pipe,name=ailab;urp;StarOffice.ComponentContext")
+pipe = os.environ.get("AILAB_LO_PIPE", "ailab")
+deadline = time.monotonic() + 10
+while True:
+    try:
+        remote = resolver.resolve(f"uno:pipe,name={pipe};urp;StarOffice.ComponentContext")
+        break
+    except Exception:
+        if time.monotonic() >= deadline:
+            raise
+        time.sleep(0.1)
 desktop = remote.ServiceManager.createInstanceWithContext("com.sun.star.frame.Desktop", remote)
 document = desktop.loadComponentFromURL(pathlib.Path(source).resolve().as_uri(), "_blank", 0, (prop("Hidden", True),))
 if document is None:

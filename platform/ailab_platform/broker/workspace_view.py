@@ -8,10 +8,13 @@ import time
 from pathlib import Path
 from uuid import uuid4
 
+from ..config import settings
 from ..paths import PathError, normalize_path
 from .render import SCRIPT as RENDER_SCRIPT
 
 HELPER = Path(__file__).resolve().parents[1] / "sandbox_tools" / "view_workspace_file.py"
+LISTENER = HELPER.with_name("work_view_listener.py")
+UNO_CLIENT = HELPER.with_name("uno_convert.py")
 MAX_RESULT = 1700 * 1024
 MAX_TOTAL = 1200 * 1024
 
@@ -78,8 +81,15 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
     try:
         manager.put_file(lease_id, helper, HELPER.read_bytes())
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
+        manager.put_file(lease_id, f"{directory}/work_view_listener.py", LISTENER.read_bytes())
+        manager.put_file(lease_id, f"{directory}/uno_convert.py", UNO_CLIENT.read_bytes())
         args = " ".join(shlex.quote(s) for s in (helper, "/workspace", path, result_path, json.dumps(selected)))
-        result = manager.exec(lease_id, f"AILAB_LO_PROFILE=/tmp/.ailab-lo-profile timeout -k 2 45s python {args}", 48)
+        result = manager.exec(
+            lease_id,
+            f"AILAB_LO_CLIENT={shlex.quote(directory + '/uno_convert.py')} AILAB_LO_RSS_LIMIT={settings.render_work_listener_rss_bytes} "
+            f"timeout -k 2 45s python {args}",
+            48,
+        )
         if result.exit_code:
             raise ValueError("view_timeout" if result.exit_code in {124, 137} else "view_failed")
         if time.monotonic() - start > 60:
