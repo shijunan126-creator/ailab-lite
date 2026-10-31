@@ -6,6 +6,24 @@
 
 # HANDOFF
 
+- runsc 15 页 PPTX 探针中 LO profile 使 tmpfs 比预热基线增加 8192 字节；健康检查按设计释放该沙箱。不能仅提高阈值让它复用：须先证明残留内容已清除且监听器仍健康。
+
+- Debian Office 镜像的 `soffice` 是启动脚本，会派生 `soffice.bin`；监控启动脚本的 RSS 不能约束真实转换器。Work listener 直接启动并监督 `soffice.bin`，runsc 中低阈值和空闲退出探针已验证。
+
+- runsc 容器启动后 `docker cp` 的 overlay 文件可能对容器进程不可见；探针通过 `docker exec -i` 写入容器内文件。UNO listener 真实探针两次转换成功，但 soffice 进程 RSS 约 274 MiB，不能用目标值代替实测容器总 RSS。
+
+- 渲染日志旧版 `acquire_seconds` 包含 `inject_seconds`，相加会重复计算；C3e 起分别记录且标记 standby/cold。一次并发样本和整批发布的 ready 时间不能当作三次中位数或逐页首屏证据。
+
+- Docker sandbox 的 supervisor 在创建时固定最长生存期；standby 的提供者上限须覆盖空闲期加一次任务，认领后业务租约仍保持短 TTL。LibreOffice 仅复用 profile 不代表进程常驻，热查看延迟仍须实测；详见 [C3d](docs/progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
+
+- Codex 沙箱内 `bin/docker.sh` 可能因 `ps` 检查受限误判磁盘状态；指定 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock` 和 `DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client` 直接调用 Docker，socket 受限时在获准环境执行。该 daemon 与个人栈共享，测试仅操作独立 `c3-*` 资源。
+
+- GNU PATH 必须 `export` 给整个 pytest 进程树；只对 `ruff` 命令前置赋值会让后续 MockSandbox 使用 macOS `stat/find`，产生与产品无关的失败。C3b 并行解析与渲染在 2 CPU 下可能竞争租约和 CPU，必须实测首屏及完整耗时，不能假设并行更快。
+
+- 共享 Docker daemon 上的独立 Broker 必须使用唯一 `AILAB_BROKER_OWNER`；同 owner 的现有 Broker 会认领测试容器并按不存在的 run 回收，不能把退出码 137 直接判为 OOM。无租约标签的一次性容器可用于单机脚本测量。
+
+- macOS 的 bsdtar 默认可能为带扩展属性的图片加入 `._` AppleDouble 成员；预览归档校验必须禁止这些额外成员，打包时设置 `COPYFILE_DISABLE=1`。完整 C3 边界见 [记录](docs/progress/updates/2026-10-31-prefix-cache-render.md)。
+
 ## 2026-10-31 记忆与本机部署
 
 - 依赖等待必须由 reconciler 持续重驱动，不能只依赖发起请求的一次尝试：无关的 pending job 可能触发 guard，使该请求被跳过。

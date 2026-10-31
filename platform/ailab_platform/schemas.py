@@ -289,6 +289,11 @@ class FileOut(ORMModel):
     preview: dict | None = None
 
 
+class InternalFileOut(FileOut):
+    # Only the Broker's job-bound render/reader request receives this identity.
+    render_owner_id: str | None = None
+
+
 class LibraryFilePatch(BaseModel):
     starred: bool = None
     project_id: str | None = None

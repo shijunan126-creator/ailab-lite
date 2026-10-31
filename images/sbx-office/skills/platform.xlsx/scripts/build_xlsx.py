@@ -9,8 +9,7 @@
 
 Cells whose value is a string starting with "=" are formulas, written as formulas (not computed values),
 so the workbook stays live when people change the inputs. In formulas, {r} is the cell's own row and
-{first} / {last} the first / last data row of the table, e.g. "=SUM(B{r}:D{r})" or "=E{r}/SUM(E{first}:E{last})". The platform recalculates with LibreOffice
-for the preview; errors like #DIV/0! or #REF! show up there - fix them.
+{first} / {last} the first / last data row of the table, e.g. "=SUM(B{r}:D{r})" or "=E{r}/SUM(E{first}:E{last})". Run check.py before delivery to recalculate a copy and inspect formula errors and chart references.
 """
 
 from __future__ import annotations

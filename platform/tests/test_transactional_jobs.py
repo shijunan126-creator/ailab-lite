@@ -166,6 +166,44 @@ def test_worker_duplicate_delivery_executes_once_then_ack(api, monkeypatch):  # 
         assert db.get(OutboxMessage, jid) is None
 
 
+def test_busy_preview_is_released_for_redelivery_without_acknowledging_job(api, monkeypatch):  # noqa: F811
+    from ailab_platform.models import FileObject
+    from ailab_platform.queue import InMemoryQueue, job_topic
+    from ailab_platform.worker import main
+
+    fid = api.post("/v1/files", headers=AUTH, files={"upload": ("job.pdf", b"payload", "application/pdf")}).json()["id"]
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.status = "ready"
+        job = jobs.stage_job(db, "preview", file_id=fid)
+        file.meta = {**(file.meta or {}), "preview_job_id": job.id, "preview": {"status": "pending"}}
+        payload, jid = job.payload, job.id
+        db.commit()
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def job_action(self, job_id, action, **body):
+            result = api.post(f"/internal/jobs/{job_id}/{action}", headers=SERVICE, json=body)
+            assert result.status_code == 200
+            return result.json()
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main, "PlatformClient", Client)
+    monkeypatch.setattr(main, "process_preview", lambda *args: {"skipped": "busy"})
+    topic, queue = job_topic("preview"), InMemoryQueue()
+    queue.enqueue(topic, payload)
+    main.handle_message(queue, queue.dequeue(topic, timeout=0), topic)
+    assert queue.length(topic) == 0
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, jid)
+        assert job and job.claim_token is None
+        assert (db.get(FileObject, fid).meta or {})["preview"]["status"] == "pending"
+
+
 def test_agent_api_failure_after_runtime_does_not_ack_durable_job(api, monkeypatch):  # noqa: F811
     import asyncio
 
@@ -229,6 +267,39 @@ def test_file_expiry_refreshes_meta_under_user_lock(api, monkeypatch):  # noqa: 
     assert result["meta"]["other_writer"] == "preserved"
     assert result["meta"]["thumb_key"] == "derived/race/thumb.webp"
     assert result["meta"]["processing"] == "job_expired"
+
+
+@pytest.mark.parametrize("kind", ["file", "preview"])
+def test_render_capacity_wait_survives_deadline_and_retries_with_delay(api, kind):  # noqa: F811
+    from ailab_platform.models import FileObject
+
+    response = api.post("/v1/files", headers=AUTH, files={"upload": ("wait.pdf", b"payload", "application/pdf")})
+    fid = response.json()["id"]
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        if kind == "file":
+            file.meta = {**(file.meta or {}), "processing": "render_pending", "scan": {"verdict": "clean"}}
+            job = db.scalar(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid))
+        else:
+            file.status = "ready"
+            job = jobs.stage_job(db, "preview", file_id=fid)
+            file.meta = {**(file.meta or {}), "preview_job_id": job.id, "preview": {"status": "pending"}}
+        job.payload = {**job.payload, "deadline": (datetime.now(UTC) - timedelta(seconds=1)).isoformat()}
+        job.deliveries = 8
+        jid = job.id
+        db.commit()
+    claimed = claim(api, jid)
+    assert claimed["state"] == "claimed"
+    if kind == "file":
+        assert claimed["attempt"] == 1
+    response = api.post(f"/internal/jobs/{jid}/release", headers=SERVICE, json={"token": claimed["token"], "retry_after_seconds": 2})
+    assert response.status_code == 200
+    with SessionLocal() as db:
+        job = db.get(OutboxMessage, jid)
+        assert datetime.fromisoformat(job.payload["deadline"]) > datetime.now(UTC)
+        when = job.next_attempt_at.replace(tzinfo=UTC) if job.next_attempt_at.tzinfo is None else job.next_attempt_at
+        assert when > datetime.now(UTC)
+        assert not (db.get(FileObject, fid).meta or {}).get("scan_exhausted")
 
 
 def test_concurrent_thumbnail_backfills_share_artifact_job_identity(api):  # noqa: F811

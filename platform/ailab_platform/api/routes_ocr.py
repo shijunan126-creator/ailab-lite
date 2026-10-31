@@ -194,7 +194,7 @@ def vision_image(
         rendered = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
         if not rendered:
             raise HTTPException(409, "page image unavailable")
-        key, mime = rendered.key, "image/jpeg"
+        key, mime = rendered.key, "image/png" if rendered.key.endswith(".png") else "image/jpeg"
     if not key:
         raise HTTPException(409, "normalized image unavailable")
     try:
@@ -410,12 +410,26 @@ def request_page_render(db, file, pages):
 
     meta = dict(file.meta or {})
     if (meta.get("preview") or {}).get("status") == "pending":
+        # Promote the durable job as well as its transport: it may already have
+        # been published to the background queue. Claims still fence duplicates.
+        from ..models import OutboxMessage
+        from ..queue import job_topic
+
+        job = db.get(OutboxMessage, meta.get("preview_job_id"))
+        if job and not job.claim_token and not job.payload.get("priority"):
+            job.payload = {**job.payload, "priority": True}
+            job.topic = job_topic("preview", priority=True)
+            job.next_attempt_at = datetime.now(UTC)
+        wanted = list(dict.fromkeys([*(meta.get("preview_requested_pages") or []), *(pages or [])]))[:20]
+        if wanted:
+            meta["preview_requested_pages"] = wanted
+            file.meta = meta
         return
     job_id = uuid.uuid4().hex
     meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
     meta.update(preview={"status": "pending", "kind": "pages"}, preview_job_id=job_id, ocr_render_job_id=job_id, ocr_render_pages=pages)
     file.meta = meta
-    stage_job(db, "preview", file_id=file.id, job_id=job_id)
+    stage_job(db, "preview", file_id=file.id, job_id=job_id, priority=True)
 
 
 @extraction_router.get("/{file_id}/extract-text")

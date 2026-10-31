@@ -94,7 +94,7 @@ def _tools_for_run(run):
     if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
         catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
     if spec and not spec.supports({"vision"}):
-        catalog = [t for t in catalog if t["function"]["name"] != "view_attachment"]
+        catalog = [t for t in catalog if t["function"]["name"] not in {"view_attachment", "view_workspace_file"}]
     if spec and not spec.supports({"tools"}):
         return []
     if spec:
@@ -1297,6 +1297,37 @@ class AgentLoop:
                             raise ToolError("图片当前不可读取")
                         self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
                     result = {**binding, "ok": True, "input": "image"}
+            elif call.name == "view_workspace_file":
+                import base64
+
+                from .checkpoint_budget import encoded_size
+                from .multimodal import image_part
+
+                spec = get_catalog().get(turn.run.get("model"))
+                if not spec or not spec.supports({"vision"}):
+                    raise ToolError("当前模型不支持图像理解，请选择视觉模型后查看工作文件")
+                if set(call.arguments) - {"path", "pages"} or not isinstance(call.arguments.get("path"), str):
+                    raise ToolError("请提供工作区文件路径和最多四个页码")
+                lease_id = await self._ensure_lease(turn, run_id)
+                try:
+                    viewed = await self._interruptible(
+                        run_id, self.broker.view_workspace_file(lease_id, call.arguments["path"], call.arguments.get("pages"))
+                    )
+                except ClientError as exc:
+                    raise ToolError("无法查看工作文件：请检查路径、页数、大小和格式，或稍后重试") from exc
+                state = self._states[run_id]
+                additional = sum(len(item) for item in viewed["images"])
+                if (
+                    encoded_size(checkpoint_state(state, turn.run.get("_image_files", {}))) + additional + 128_000
+                    > settings.checkpoint_max_bytes
+                ):
+                    raise ToolError("当前执行记录空间不足，请减少查看页数或开始新任务")
+                for page, encoded in zip(viewed["pages"], viewed["images"], strict=True):
+                    part = image_part(base64.b64decode(encoded, validate=True), "image/jpeg")
+                    state.setdefault("pending_image_inputs", []).append(
+                        [{"type": "text", "text": f"工作文件 {call.arguments['path']} 第 {page} 页"}, part]
+                    )
+                result = {"ok": True, "pages": viewed["pages"], "input": "image"}
             elif call.name == "extract_text":
                 result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))
                 if result.get("ocr") in {"pending", "running"}:

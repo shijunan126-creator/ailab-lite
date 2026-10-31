@@ -11,11 +11,13 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -40,7 +42,34 @@ def check_archive(source: Path) -> None:
 
 
 def soffice(src: Path, fmt: str, outdir: Path) -> Path:
-    profile = Path(tempfile.mkdtemp(prefix="lo-profile-"))  # a private profile: parallel runs do not collide
+    out = outdir / f"{src.stem}.{fmt.split(':')[0]}"
+    if os.environ.get("AILAB_LO_LISTENER"):
+        try:
+            subprocess.run(
+                [
+                    "/usr/bin/python3",
+                    os.environ.get("AILAB_LO_CLIENT", "/workspace/.ailab/uno_convert.py"),
+                    str(src),
+                    str(out),
+                    fmt.partition(":")[2],
+                ],
+                check=True,
+                capture_output=True,
+                timeout=90,
+            )
+            if out.exists():
+                return out
+        except (OSError, subprocess.SubprocessError):
+            pass
+        out.unlink(missing_ok=True)
+        if os.environ.get("AILAB_LO_STRICT"):
+            raise RuntimeError("LibreOffice listener failed")
+        # A failed listener can retain a profile lock; the cold fallback must
+        # use a fresh profile rather than forward to the broken instance.
+        configured = None
+    else:
+        configured = os.environ.get("AILAB_LO_PROFILE")
+    profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))
     try:
         subprocess.run(
             ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
@@ -49,8 +78,8 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
             timeout=90,
         )
     finally:
-        shutil.rmtree(profile, ignore_errors=True)
-    out = outdir / f"{src.stem}.{fmt.split(':')[0]}"
+        if not configured:
+            shutil.rmtree(profile, ignore_errors=True)
     if not out.exists():
         raise RuntimeError(f"LibreOffice produced no {fmt} for {src.name}")
     return out
@@ -75,22 +104,24 @@ def pdf_document(src: Path, out: Path) -> dict:
     return {"kind": "pdf", "pdf": "document.pdf", "page_count": count}
 
 
-def pages(src: Path, out: Path, selected: list[int] | None = None) -> dict:
+def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
+        convert_started = time.monotonic()
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
+        convert_seconds = time.monotonic() - convert_started
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
         ranges = [(n, n) for n in selected] if selected else [(1, MAX_PAGES)]
+        raster_started = time.monotonic()
+        png = os.environ.get("AILAB_PAGE_PNG") == "1"
         for first, last in ranges:
             if count is not None and first > count:
                 raise ValueError("page_out_of_range")
             subprocess.run(
                 [
                     "pdftoppm",
-                    "-jpeg",
-                    "-jpegopt",
-                    "quality=82",
+                    *(["-png"] if png else ["-jpeg", "-jpegopt", "quality=82"]),
                     "-scale-to",
                     "1280",
                     "-f",
@@ -104,8 +135,20 @@ def pages(src: Path, out: Path, selected: list[int] | None = None) -> dict:
                 capture_output=True,
                 timeout=90,
             )
-    names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
-    return {"kind": "pages", "pages": names, "page_count": count}
+        raster_seconds = time.monotonic() - raster_started
+        if save_pdf and pdf.stat().st_size <= 32 * 1024 * 1024:
+            shutil.copyfile(pdf, out / "document.pdf")
+    names = sorted((p.name for p in out.glob("p-*.png" if png else "p-*.jpg")), key=lambda n: int(n[2:-4]))
+    if selected:
+        order = {page: index for index, page in enumerate(selected)}
+        names.sort(key=lambda name: order[int(name[2:-4])])
+    return {
+        "kind": "pages",
+        "pages": names,
+        "page_count": count,
+        "phases": {"convert_seconds": round(convert_seconds, 3), "raster_seconds": round(raster_seconds, 3)},
+        **({"pdf_cache": "document.pdf"} if (out / "document.pdf").exists() else {}),
+    }
 
 
 def template_thumbnail(out: Path, result: dict) -> None:
@@ -269,7 +312,7 @@ def main() -> int:
                 selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]
                 if not 1 <= len(selected) <= 20 or any(n < 1 or n > 100000 for n in selected):
                     raise ValueError("invalid_page_selection")
-            result = pages(src, out, selected)
+            result = pages(src, out, selected, save_pdf="--save-pdf" in sys.argv[3:])
             if "--template-thumbnail" in sys.argv[3:]:
                 template_thumbnail(out, result)
                 result["thumbnail"] = "template-thumbnail.jpg"

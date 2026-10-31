@@ -2,8 +2,8 @@
 
 from typing import Protocol
 
-LIVE_STATES = frozenset({"creating", "active", "releasing"})
-LEASE_STATES = ("creating", "active", "releasing", "released", "failed")
+LIVE_STATES = frozenset({"creating", "standby", "idle", "active", "releasing"})
+LEASE_STATES = ("creating", "standby", "idle", "active", "releasing", "released", "failed")
 
 
 class LeaseStore(Protocol):

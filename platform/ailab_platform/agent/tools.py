@@ -28,6 +28,22 @@ TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "view_workspace_file",
+            "description": "视觉模型查看 /workspace 下工作文件的布局或图片；pages 最多 4 页，默认第 1 页。用于交付前检查。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 4},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "list_files",
             "description": "列出沙箱目录中的文件（最多 500 个）。",
             "parameters": {
@@ -259,6 +275,7 @@ READ_URL = {
 
 # Tools that need a sandbox: the first call to one of them starts it.
 SANDBOX_TOOLS = {
+    "view_workspace_file",
     "copy_library_file",
     "list_files",
     "read_file",

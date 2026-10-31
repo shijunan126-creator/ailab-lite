@@ -278,6 +278,20 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
         ).json()
 
+    def publish_preview_page(self, file_id: str, job_id: str, name: str, page_count: int, asset: dict) -> dict:
+        return self._send(
+            self._req(
+                "POST",
+                f"/internal/files/{file_id}/preview-page",
+                json={
+                    "job_id": job_id,
+                    "name": name,
+                    "page_count": page_count,
+                    "asset": asset,
+                },
+            )
+        ).json()
+
     def prepare_document(self, file_id, scan):
         return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
 
@@ -285,9 +299,28 @@ class PlatformClient(_PlatformApi):
         req = self._req("POST", "/internal/read-document", timeout=150, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/read-document")).json()
 
+    def prewarm_render(self):
+        req = self._req("POST", "/internal/render-prewarm", timeout=2)
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render-prewarm")).json()
+
     def render_preview(self, file_id: str, job_id: str) -> dict:
         req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()
+
+    def finish_render(self, lease_id: str, job_id: str, kind: str, generation: str, success: bool) -> dict:
+        req = self._req(
+            "POST",
+            "/internal/render-finish",
+            timeout=20,
+            json={
+                "lease_id": lease_id,
+                "job_id": job_id,
+                "kind": kind,
+                "generation": generation,
+                "success": success,
+            },
+        )
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render-finish")).json()
 
     def document_cache_pages(self, file_id, source_id, after=-1):
         return self._send(
@@ -514,6 +547,10 @@ class AsyncBrokerClient(_Service):
             timeout=(timeout_seconds or 120) + 30,
             json={"cmd": cmd, "timeout_seconds": timeout_seconds},
         )
+        return (await self._send(req)).json()
+
+    async def view_workspace_file(self, lease_id: str, path: str, pages: list[int] | None = None) -> dict:
+        req = self._req("POST", f"/internal/leases/{lease_id}/view-workspace-file", timeout=80, json={"path": path, "pages": pages})
         return (await self._send(req)).json()
 
     async def copy_library_file(self, lease_id: str, file_id: str, path: str | None = None) -> dict:

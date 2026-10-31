@@ -19,8 +19,8 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "3ea4acee025c9713c4327abb9bed2c110d3e3b1ecef0092625fe673a69b0cbf0",
-      "version": "1.0.0"
+      "sha256": "7eb8b3882aea0179c0e8a0905f25b3e5d514412659f0de74f4bf60b158920dbb",
+      "version": "1.1.0"
     },
     "platform.pdf": {
       "description": "PDF 文件读取、定位与处理",
@@ -31,8 +31,8 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "43e5c3d17fa2998b354a2d5603336414841dc6cd470a811895c0c3fada4ae43c",
-      "version": "1.0.0"
+      "sha256": "f98e8685a7f15b41f04e56679a89a31a4614e7e6c4c814d95c5e33fa124a69c6",
+      "version": "1.1.0"
     },
     "platform.pptx": {
       "description": "PPT 文件读取、定位与处理",
@@ -46,8 +46,8 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "025a29f5a53e3462bb3da3c284ace2ca51c9fef66cf75625d5211e7e9a3b2ac2",
-      "version": "1.0.0"
+      "sha256": "0fc7c38ab67e14db056ec58844f262c8d941572b5ab07796768ec21b1f50f154",
+      "version": "1.1.0"
     },
     "platform.xlsx": {
       "description": "Excel 文件读取、定位与处理",
@@ -59,8 +59,8 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "e2fdaaa817b09f340673e5cbf5811fbbbd00575e41d25f60ae865eaee6c5390f",
-      "version": "1.0.0"
+      "sha256": "5b11c9be33d9bf9a39fba0f5ec4b6ae312e40ff4c4d2c746179239bd7af52507",
+      "version": "1.1.0"
     },
     "pptx": {
       "description": "演示逻辑、故事线、版式与视觉设计",

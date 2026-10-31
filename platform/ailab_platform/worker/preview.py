@@ -7,6 +7,7 @@ import logging
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..clients import ClientError, PlatformClient
@@ -21,6 +22,16 @@ _render_slot = threading.Lock()
 log = logging.getLogger("ailab.worker.preview")
 
 
+@contextmanager
+def _try_render_slot():
+    acquired = _render_slot.acquire(blocking=False)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            _render_slot.release()
+
+
 def process_preview(file_id: str, job_id: str, platform: PlatformClient | None = None) -> dict:
     if platform is None:
         with PlatformClient(service="worker") as owned:
@@ -32,7 +43,9 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
         return {"skipped": "in_flight"}
     slot_seconds = 0.0
     try:
-        with _render_slot:
+        with _try_render_slot() as acquired:
+            if not acquired:
+                return {"skipped": "busy"}
             slot_seconds = time.monotonic() - started
             try:
                 file = platform.get_file(file_id, job="preview")
@@ -44,10 +57,13 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             if meta.get("preview_job_id") != job_id:
                 return {"skipped": "superseded"}
             manifest = meta.get("preview") or {}
-            if file.get("status") != "ready" or manifest.get("status") != "pending":
+            scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
+            if not (file.get("status") == "ready" or scanned) or manifest.get("status") != "pending":
                 return {"skipped": "already_complete"}
             storage = get_storage()
             assets = {}
+            render_lease_id = None
+            render_generation = None
             try:
                 visual_job = meta.get("ocr_render_job_id") == job_id
                 reused = cached_page_preview(file_id, meta) if not visual_job and manifest.get("kind") == "pages" else None
@@ -96,11 +112,19 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 else:
                     result = platform.render_preview(file_id, job_id)
                     manifest, assets = result["preview"], result["assets"]
+                    render_lease_id = result.get("render_lease_id")
+                    render_generation = result.get("render_generation")
             except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status in {429, 503}:
+                    return {"skipped": "busy"}
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}
+            published = False
             try:
+                publish_started = time.monotonic()
                 platform.complete_preview(file_id, job_id, manifest, assets)
+                published = True
+                log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
                 if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
                     for obj in storage.list_prefix(f"derived/{file_id}/"):
@@ -109,6 +133,12 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 if exc.status == 409:
                     return {"skipped": "superseded"}
                 raise
+            finally:
+                if render_lease_id and render_generation:
+                    try:
+                        platform.finish_render(render_lease_id, job_id, "preview", render_generation, published)
+                    except Exception:
+                        log.warning("render completion failed; lease expiry will release it", exc_info=True)
             return manifest
     finally:
         queue.release_lock(f"ailab:preview:{file_id}", token)

@@ -1,6 +1,8 @@
-# 前缀缓存 C2c：审阅修复完成（2026-10-31）
+# 前缀缓存 + 渲染合并分支（2026-11-01，验收中）
 
-工作树 `fix/prefix-cache-render`，base `f316b85`，C2c 产品代码基线 `de74d01`。五项审阅修复及交付重命名补充已完成，SQLite 原全套三项旧合同断言已修正并定向通过，PostgreSQL/Redis 全套及 E2E 通过；各自测试基线与未测边界见 [C2 记录](updates/2026-10-31-prefix-cache-render.md)及[设计](../architecture/design/2026-10-31-prefix-cache.md)。临时 PostgreSQL/Redis 已停止；未 push、部署或调用付费模型。下一步等待用户安排审阅或集成，不自动推进。
+`fix/prefix-cache-render` 已合并 `fix/render-view`（base `f316b85`）。前缀缓存 C2/C2c 完成并通过全套检查，见[设计](../architecture/design/2026-10-31-prefix-cache.md)与[记录](updates/2026-10-31-prefix-cache-render.md)。渲染按用户复用沙箱，见[生命周期指南](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)与 ADR 0030；C3g 实现已提交，合并后修正：render 健康检查允许 16 MiB 内 LibreOffice profile 增长（`fa0d5c8`）、非视觉模型不提供 `view_workspace_file`。已知限制：Worker 已领取的预览按优先级 FIFO，尚无按用户轮转（Broker 层已有）。下一步：合并代码上测速与全套检查各一次 → 真实模型验收（Chat/Work 命中率、PPT 自查一次交付）→ PR 合并。用户已授权本轮 PR 合并；未授权部署。
+
+---
 
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 

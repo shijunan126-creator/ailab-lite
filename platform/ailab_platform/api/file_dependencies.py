@@ -1,6 +1,8 @@
 """Bounded reconciliation of suspended file tools; jobs and continuation commit together."""
 
+import logging
 import time
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -10,6 +12,7 @@ from ..locks import user_critical_section
 from ..models import FileObject, Run, RunStatus
 
 _after = ""
+log = logging.getLogger("ailab.api.file_dependencies")
 
 
 def ready(db, dependency):
@@ -38,6 +41,8 @@ def ready(db, dependency):
             preview = meta.get("ocr_preview") or {}
             if preview.get("status") == "ready" and preview.get("page_count"):
                 selected = list(range(1, min(preview["page_count"], 20) + 1))
+            elif meta.get("render_page_count"):
+                selected = list(range(1, min(meta["render_page_count"], 20) + 1))
     if selected == []:
         return True
     if selected:
@@ -79,9 +84,9 @@ def reconcile():
 
 def prepare(db, dependency):
     """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
-    the file is still pending (the sheet preview every new spreadsheet gets) that request is skipped, and nothing
-    else asks again once it finishes; this tick does. request_page_render stages nothing while a preview is pending,
-    so asking every tick queues at most one render."""
+    the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
+    Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
+    duplicate durable jobs."""
     if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
         return
     file = db.get(FileObject, dependency["file_id"])
@@ -120,6 +125,7 @@ def resume_dependency(db, run):
     from ..run_state import transition_run
     from .routes_runtime import _admit_continuation, queue_continuation
 
+    started = time.monotonic()
     try:
         _admit_continuation(db, run)
     except HTTPException as exc:
@@ -135,3 +141,8 @@ def resume_dependency(db, run):
         return
     run.runtime_meta = {k: v for k, v in run.runtime_meta.items() if k != "file_dependency"}
     queue_continuation(db, run)
+    waiting_since = run.waiting_since
+    if waiting_since and waiting_since.tzinfo is None:
+        waiting_since = waiting_since.replace(tzinfo=UTC)
+    wait_seconds = max(0.0, (datetime.now(UTC) - waiting_since).total_seconds()) if waiting_since else 0.0
+    log.info("file dependency phase=resume seconds=%.3f wait_seconds=%.3f", time.monotonic() - started, wait_seconds)
