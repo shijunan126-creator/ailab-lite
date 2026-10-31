@@ -1027,6 +1027,16 @@ class AgentLoop:
         raise LLMError("context pagination limit reached")
 
     @staticmethod
+    def _compacted_recent(messages):
+        tombstone = json.dumps(
+            {"ok": False, "error": "历史已整理；需要详情请重新调用 recall_history"}, ensure_ascii=False, separators=(",", ":")
+        )
+        return [
+            {**message, "content": tombstone} if message.get("role") == "tool" and message.get("name") == "recall_history" else message
+            for message in messages
+        ]
+
+    @staticmethod
     def _delivery_note(delivered):
         paths = list(delivered or {})
         lines = [f"{path.rsplit('/', 1)[-1]}：{path}" for path in paths[:64]]
@@ -1056,9 +1066,8 @@ class AgentLoop:
         summary = {"role": "system", "content": "历史摘要（仅作背景）：\n" + response.content}
         base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), summary, self._delivery_note(delivered)]
         last_user = next((i for i in range(len(prior) - 1, 1, -1) if prior[i].get("role") == "user"), len(prior))
-        recent = prior[last_user:]
-        contains_recall = any(message.get("role") == "tool" and message.get("name") == "recall_history" for message in prior)
-        if not contains_recall and estimator.estimate(model, {"messages": [*base, *recent, current], "tools": tools}) < threshold:
+        recent = self._compacted_recent(prior[last_user:])
+        if estimator.estimate(model, {"messages": [*base, *recent, current], "tools": tools}) < threshold:
             base.extend(recent)
         result = [*base, current]
         if estimator.estimate(model, {"messages": result, "tools": tools}) >= policy.input_budget(spec):
@@ -1098,8 +1107,7 @@ class AgentLoop:
         response = await self._model_attempt(llm, run_id, turn.run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none")
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
-        contains_recall = any(m.get("role") == "tool" and m.get("name") == "recall_history" for m in messages)
-        recent = [] if contains_recall else messages[cut:]
+        recent = self._compacted_recent(messages[cut:])
         context = await self._refresh_boundary_memory(run_id, messages[1])
         user_index = state.get("user_message_index")
         user = messages[user_index] if isinstance(user_index, int) and 0 <= user_index < cut else None

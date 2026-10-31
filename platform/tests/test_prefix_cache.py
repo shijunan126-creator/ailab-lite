@@ -163,14 +163,20 @@ def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeyp
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
         {"role": "user", "content": "旧" * 4700},
-        {"role": "tool", "name": "recall_history", "tool_call_id": "recall", "content": "{}"},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "recent"},
+        {"role": "assistant", "content": "other message"},
+        {"role": "tool", "name": "recall_history", "tool_call_id": "recall", "content": "secret recall content"},
     ]
     current = {"role": "user", "content": "新" * 500}
     with scripted_server([{"content": "曾查询历史主题"}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
         result = asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
     assert "不要把 recall_history 的原文" in requests[0]["messages"][-1]["content"]
-    assert all(message.get("name") != "recall_history" for message in result)
+    assert {"role": "assistant", "content": "other message"} in result
+    recall = next(message for message in result if message.get("name") == "recall_history")
+    assert json.loads(recall["content"]) == {"ok": False, "error": "历史已整理；需要详情请重新调用 recall_history"}
+    assert "secret recall content" not in json.dumps(result, ensure_ascii=False)
 
 
 def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypatch):
