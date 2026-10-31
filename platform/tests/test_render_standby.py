@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from ailab_platform.broker.render import LibraryRenderer
-from ailab_platform.broker.service import LeaseError, LeaseLostError
+from ailab_platform.broker.service import AdmissionRejected, AdmissionTimeout, LeaseError, LeaseLostError
 from ailab_platform.config import settings
 from ailab_platform.domain.admission import LeasePrincipal
 from tests.test_broker_lease import _manager
@@ -65,6 +65,14 @@ def test_idle_and_restart_release_standby(monkeypatch):
     manager.cleanup_once()
     manager._recovering = False
     assert lease_id in provider.released
+
+
+def test_shutdown_releases_render_without_deleting_work(monkeypatch):
+    manager, provider, _, lease_id = warmed(monkeypatch)
+    work = manager.create("work-run")
+    manager.close()
+    assert lease_id in provider.released
+    assert provider.inspect(work["provider_ref"]) is not None
 
 
 def test_bound_idle_only_reuses_for_the_same_user(monkeypatch):
@@ -148,10 +156,14 @@ def test_render_lifecycle_does_not_retain_records_after_1000_cycles(monkeypatch)
             if i == 499:
                 gc.collect()
                 midpoint = tracemalloc.get_traced_memory()[0]
+                midpoint_snapshot = tracemalloc.take_snapshot()
         gc.collect()
         after = tracemalloc.get_traced_memory()[0]
         assert after - before < 6 * 1024 * 1024
-        assert after - midpoint < 2 * 1024 * 1024
+        growth = tracemalloc.take_snapshot().compare_to(midpoint_snapshot, "lineno")[:5]
+        # pathlib interns unique MockSandbox path components; CPython may resize
+        # that global table once by about 3.7 MiB during this measurement.
+        assert after - midpoint < 5 * 1024 * 1024, str(growth)
         assert not manager.store.all()
         assert not manager._render_birth and not manager._activity and not manager._operations and not manager.admission.queue
     finally:
@@ -268,3 +280,51 @@ def test_waiting_render_precedes_replenishment(monkeypatch):
     release.set()
     thread.join(2)
     manager.close()
+
+
+def test_render_scheduler_prioritizes_then_round_robins_users():
+    manager, _, _ = _manager()
+    order = []
+
+    def run(owner, rank):
+        with manager.render_activity(owner, priority=rank, wait_seconds=5):
+            order.append(owner)
+
+    with manager.render_activity("a", priority=1):
+        threads = [Thread(target=run, args=item) for item in [("a", 1), ("a", 1), ("b", 1), ("c", 0)]]
+        for thread in threads:
+            thread.start()
+        with manager._condition:
+            assert manager._condition.wait_for(lambda: len(manager._render_tickets) == 4, timeout=3)
+    for thread in threads:
+        thread.join(5)
+        assert not thread.is_alive()
+    assert order == ["c", "b", "a", "a"]
+    assert not manager._render_tickets and manager._render_waiters == 0
+
+
+def test_render_scheduler_bounds_queue_and_cleans_expired_tickets(monkeypatch):
+    manager, _, _ = _manager()
+    monkeypatch.setattr(settings, "render_queue_limit", 1)
+    waiting = Event()
+    errors = []
+
+    def queued():
+        waiting.set()
+        try:
+            with manager.render_activity("b", wait_seconds=0.2):
+                pytest.fail("busy conversion was preempted")
+        except AdmissionTimeout:
+            errors.append("deadline")
+
+    with manager.render_activity("a"):
+        thread = Thread(target=queued)
+        thread.start()
+        assert waiting.wait(1)
+        with manager._condition:
+            assert manager._condition.wait_for(lambda: len(manager._render_tickets) == 1, timeout=1)
+        with pytest.raises(AdmissionRejected, match="render_queue_full"):
+            with manager.render_activity("c", wait_seconds=0):
+                pass
+        thread.join(2)
+        assert errors == ["deadline"] and not manager._render_tickets

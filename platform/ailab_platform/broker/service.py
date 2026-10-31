@@ -187,6 +187,8 @@ class LeaseManager:
         self._pending_runs: set[str] = set()
         self._render_jobs = 0
         self._render_waiters = 0
+        self._render_tickets: dict[str, tuple[str, int]] = {}
+        self._render_last_user: list[str | None] = [None, None, None]
         self._render_birth: dict[str, float] = {}
         self._warming = False
         self._warm_thread: threading.Thread | None = None
@@ -717,20 +719,45 @@ class LeaseManager:
                 return False
 
     @contextmanager
-    def render_activity(self):
+    def render_activity(self, user_id: str = "system", priority: int = 2, wait_seconds: float | None = None):
+        if not user_id or priority not in {0, 1, 2}:
+            raise LeaseError("invalid render scheduling request")
+        deadline = time.monotonic() + (settings.render_queue_wait_seconds if wait_seconds is None else max(0, wait_seconds))
+        ticket = uuid.uuid4().hex
+        entered = False
         with self._condition:
+            if len(self._render_tickets) >= settings.render_queue_limit:
+                raise AdmissionRejected("render_queue_full")
+            self._render_tickets[ticket] = (user_id, priority)
             self._render_waiters += 1
+            self._notify()
             try:
-                while self._warming or self._render_jobs:
-                    self._condition.wait(timeout=1)
-                self._render_jobs += 1
+                while True:
+                    if self._stop.is_set():
+                        raise LeaseError("broker is stopping")
+                    best = min(item[1] for item in self._render_tickets.values())
+                    peers = [(key, owner) for key, (owner, rank) in self._render_tickets.items() if rank == best]
+                    winner = next((key for key, owner in peers if owner != self._render_last_user[best]), peers[0][0])
+                    if not self._warming and not self._render_jobs and winner == ticket:
+                        self._render_tickets.pop(ticket)
+                        self._render_last_user[priority] = user_id
+                        self._render_jobs += 1
+                        entered = True
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise AdmissionTimeout("render_queue_deadline")
+                    self._condition.wait(timeout=remaining)
             finally:
                 self._render_waiters -= 1
+                self._render_tickets.pop(ticket, None)
+                self._notify()
         try:
             yield
         finally:
             with self._condition:
-                self._render_jobs -= 1
+                if entered:
+                    self._render_jobs -= 1
                 self._notify()
             self.request_prewarm()
 
@@ -971,7 +998,8 @@ class LeaseManager:
 
     @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
-        with self.render_activity():
+        lease = self._load(lease_id)
+        with self.render_activity(lease["user_id"], priority=2):
             return self._refresh_previews(lease_id)
 
     def _refresh_previews(self, lease_id: str) -> list[dict]:
@@ -1599,9 +1627,16 @@ class LeaseManager:
         return self._threads[-1]
 
     def close(self) -> None:
-        """Stop housekeeping without destroying active resources; next Broker adopts them."""
+        """Destroy disposable render resources; the next Broker may adopt Work leases."""
         self._stop.set()
         self._warm_wakeup.set()
+        if self._started and not self._fenced and self.store.owns(self._token):
+            for lease in self.active_leases():
+                if lease.get("spec", {}).get("profile") == "render":
+                    try:
+                        self.release(lease["lease_id"], reason="broker_shutdown")
+                    except Exception:
+                        log.warning("render shutdown release failed; recovery will retry", exc_info=True)
         with self._condition:
             self._fenced = True
             self._notify()

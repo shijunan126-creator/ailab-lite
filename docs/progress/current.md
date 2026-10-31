@@ -1,6 +1,6 @@
 # C3g 按用户复用渲染沙箱（2026-10-31，进行中）
 
-`fix/render-view`，base `f316b85`，起点 `3e5823e`。用户确认的[生命周期指南](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)已入库，ADR 0030 中单次使用决定被部分取代；Broker 恢复和租约记录丢失时不再认领 render 容器。专项结果和余项见 [C3g](updates/2026-10-31-prefix-cache-render.md#c3g-按用户复用进行中)。Broker 已能在任务授权成功后取得文件所有者，预热补充使用单线程和失败退避，预览容量繁忙时保留并延迟重投递，跨截止时间不标记失败；预览和解析已接入同用户租约及带代次的发布后回执；下一步完成公平调度、真实容器验证和增量发布，再完成解析、增量发布、Work listener 和完整测量；未 push、未部署。
+`fix/render-view`，base `f316b85`，起点 `3e5823e`。用户确认的[生命周期指南](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)已入库，ADR 0030 中单次使用决定被部分取代；Broker 恢复和租约记录丢失时不再认领 render 容器。专项结果和余项见 [C3g](updates/2026-10-31-prefix-cache-render.md#c3g-按用户复用进行中)。Broker 已能在任务授权成功后取得文件所有者，预热补充使用单线程和失败退避，预览容量繁忙时保留并延迟重投递，跨截止时间不标记失败；预览和解析已接入同用户租约及带代次的发布后回执；Broker 内已加入有界优先级及同级用户轮转；下一步完成 Worker 端公平队列、真实容器验证和增量发布，再完成解析、增量发布、Work listener 和完整测量；未 push、未部署。
 
 ---
 

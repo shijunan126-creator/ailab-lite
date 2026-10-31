@@ -39,10 +39,15 @@ class LibraryRenderer:
         )
 
     def render(self, file_id: str, job_id: str) -> dict:
-        with self.manager.render_activity():
-            return self._render(file_id, job_id)
+        file = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
+        owner = file.get("render_owner_id")
+        if not isinstance(owner, str) or not owner:
+            raise LeaseError("render job has no authorized owner")
+        priority = 0 if (file.get("meta") or {}).get("ocr_render_job_id") == job_id else 1
+        with self.manager.render_activity(owner, priority=priority):
+            return self._render(file_id, job_id, owner)
 
-    def _render(self, file_id: str, job_id: str) -> dict:
+    def _render(self, file_id: str, job_id: str, scheduled_owner: str) -> dict:
         started = time.monotonic()
         phases = {}
         platform = self.manager.platform
@@ -104,8 +109,8 @@ class LibraryRenderer:
             phases["inject_seconds"] = time.monotonic() - injection_started
 
         owner = file.get("render_owner_id")
-        if not isinstance(owner, str) or not owner:
-            raise LeaseError("render job has no authorized owner")
+        if owner != scheduled_owner:
+            raise LeaseError("render job owner changed while waiting")
         principal = LeasePrincipal(user_id=owner, run_id=f"preview:{job_id}", system=True)
         acquire_started = time.monotonic()
         spec = self._spec()

@@ -198,7 +198,8 @@ def view_workspace_file(lease_id: str, body: dict) -> dict:
         raise HTTPException(422, "invalid_view_arguments")
     try:
         manager = get_manager()
-        with manager.render_activity():
+        lease = manager.get(lease_id)
+        with manager.render_activity(lease["user_id"], priority=0):
             return view(manager, lease_id, body["path"], body.get("pages"))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc

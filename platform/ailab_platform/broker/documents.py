@@ -17,10 +17,14 @@ class DocumentReader:
         self.manager = manager
 
     def read(self, file_id, job_id):
-        with self.manager.render_activity():
-            return self._read(file_id, job_id)
+        file = self.manager.platform.get_file(file_id, job="document", preview_job=job_id)
+        owner = file.get("render_owner_id")
+        if not isinstance(owner, str) or not owner:
+            raise LeaseError("document job has no authorized owner")
+        with self.manager.render_activity(owner, priority=2):
+            return self._read(file_id, job_id, owner)
 
-    def _read(self, file_id, job_id):
+    def _read(self, file_id, job_id, scheduled_owner):
         total_started = time.monotonic()
         phases = {}
         file = self.manager.platform.get_file(file_id, job="document", preview_job=job_id)
@@ -28,8 +32,8 @@ class DocumentReader:
         if not kind or file.get("size", 0) > settings.max_parse_bytes:
             raise LeaseError("document_input_limit")
         owner = file.get("render_owner_id")
-        if not isinstance(owner, str) or not owner:
-            raise LeaseError("document job has no authorized owner")
+        if owner != scheduled_owner:
+            raise LeaseError("document job owner changed while waiting")
         spec = LibraryRenderer(self.manager)._spec()
         source = "/workspace/inputs/document." + kind
 

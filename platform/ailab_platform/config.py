@@ -203,6 +203,8 @@ class Settings(BaseSettings):
     render_user_idle_seconds: int = Field(default=180, ge=1, le=86400)
     render_reuse_max_jobs: int = Field(default=50, ge=1, le=10000)
     render_max_age_seconds: int = Field(default=1800, ge=1, le=86400)
+    render_queue_limit: int = Field(default=32, ge=1, le=10000)
+    render_queue_wait_seconds: int = Field(default=30, ge=1, le=300)
     render_work_listener_rss_bytes: int = Field(default=384 * 1024**2, ge=32 * 1024**2, le=4 * 1024**3)
     preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
