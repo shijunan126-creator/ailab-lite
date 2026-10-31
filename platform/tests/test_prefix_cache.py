@@ -8,7 +8,7 @@ from ailab_platform.adapters.runtime import checkpoint_state, fresh_state
 from ailab_platform.agent.discovery import REDUCED_V1, catalog_for_budget
 from ailab_platform.agent.loop import AgentLoop, BudgetPause, _tools_for_run
 from ailab_platform.agent.multimodal import image_part
-from ailab_platform.agent.prompts import memory_prompt
+from ailab_platform.agent.prompts import memory_prompt, system_prompt_for
 from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.llm import LLMResponse
@@ -129,3 +129,11 @@ def test_checkpoint_image_restore_requires_identical_authorized_bytes(monkeypatc
     else:
         with pytest.raises(BudgetPause, match="图片内容已变化"):
             asyncio.run(loop._restore_images("r1", {"model": "m"}, saved))
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_platform_system_prompt_does_not_include_user_skill_state(mode):
+    first = system_prompt_for(mode, "private-one", frozenset({"disabled-one"}), [{"name": "private-one"}], "secret one")
+    second = system_prompt_for(mode, "private-two", frozenset({"disabled-two"}), [{"name": "private-two"}], "secret two")
+    assert first == second
+    assert all(value not in first for value in ("private-one", "disabled-one", "secret one", "private-two", "disabled-two", "secret two"))
