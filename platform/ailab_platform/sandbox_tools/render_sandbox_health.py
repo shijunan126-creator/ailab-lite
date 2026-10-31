@@ -10,6 +10,9 @@ WORK = Path("/workspace")
 TEMP = Path("/tmp")
 KEEP_TOOLS = {"uno_convert.py", "render_sandbox_health.py"}
 KEEP_TEMP = {"lo-profile", "ailab-warm"}
+# Every user file is deleted above; what remains is LibreOffice's own profile, which grows a few KiB per
+# document (registry, recent list) for the same user. Destroying the sandbox for that defeats reuse.
+PROFILE_GROWTH = 16 * 1024 * 1024
 
 
 def used_tmp():
@@ -52,7 +55,7 @@ def cleanup(baseline, rss_limit):
         raise RuntimeError("cleanup_failed")
     rss = listener_rss()
     used = used_tmp()
-    if rss >= rss_limit or used > baseline:
+    if rss >= rss_limit or used > baseline + PROFILE_GROWTH:
         raise RuntimeError(f"health_limit rss={rss} rss_limit={rss_limit} tmp_used={used} tmp_baseline={baseline}")
     return {"rss": rss, "tmp_used": used}
 

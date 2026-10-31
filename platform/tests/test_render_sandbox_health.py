@@ -25,7 +25,7 @@ def test_cleanup_removes_job_files_without_following_symlinks(tmp_path, monkeypa
     assert (outside / "keep").read_text() == "outside" and not (temp / "job").exists()
 
 
-@pytest.mark.parametrize("rss,used", [(100, 20), (10, 21)])
+@pytest.mark.parametrize("rss,used", [(100, 20), (10, 21 + health.PROFILE_GROWTH)])
 def test_cleanup_rejects_unhealthy_listener_or_tmpfs(tmp_path, monkeypatch, rss, used):
     monkeypatch.setattr(health, "WORK", tmp_path / "work")
     monkeypatch.setattr(health, "TEMP", tmp_path / "tmp")
@@ -33,3 +33,12 @@ def test_cleanup_rejects_unhealthy_listener_or_tmpfs(tmp_path, monkeypatch, rss,
     monkeypatch.setattr(health, "used_tmp", lambda: used)
     with pytest.raises(RuntimeError, match="health_limit"):
         health.cleanup(20, 100)
+
+
+def test_cleanup_accepts_small_profile_growth(tmp_path, monkeypatch):
+    # A 15-slide deck left the profile 8 KiB larger; that must not destroy the user's warm sandbox.
+    monkeypatch.setattr(health, "WORK", tmp_path / "work")
+    monkeypatch.setattr(health, "TEMP", tmp_path / "tmp")
+    monkeypatch.setattr(health, "listener_rss", lambda: 10)
+    monkeypatch.setattr(health, "used_tmp", lambda: 20 + 8192)
+    assert health.cleanup(20, 100)["tmp_used"] == 20 + 8192
