@@ -233,7 +233,8 @@ def test_compaction_inputs_strip_ui_before_serializing(monkeypatch):
         async def save_model_summary(self, run_id, payload):
             pass
 
-    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3300, max_output_tokens=1000)])
+    # Room for the fixed tool catalog (~2.8k tokens) plus a few turns, so the 15 turns still force compaction.
+    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=6000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     loop = AgentLoop(platform=Context(), llm=SummaryLLM())
     asyncio.run(
