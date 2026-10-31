@@ -80,3 +80,5 @@ GNU PATH：Ruff 全库通过；SQLite 1691 通过、151 跳过、1 项依赖审�
 
 基线 `3e5823e`：导入用户批准的生命周期指南并部分取代 ADR 0030 的单次使用决定。Broker 对账不再从 provider 标签重建丢失记录的 render 租约；启动或存储恢复时释放已有 render 租约，包括忙碌租约。`tests/test_render_standby.py` 9 项通过（GNU PATH，Python 3.12），覆盖保留记录与丢失记录两种恢复路径。尚未完成按用户复用、调度、合并解析、逐页发布、Work listener、确定性、测量和完整检查；不可视为验收通过。
 
+
+C3g 后续：API 仅在 Broker 的 preview/document 任务绑定验证成功后返回文件所有者，普通 Worker 文件请求不返回该字段；`tests/test_service_identity.py` 40 项通过。调用端尚未接入按用户复用。

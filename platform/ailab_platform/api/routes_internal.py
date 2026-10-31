@@ -60,6 +60,7 @@ from ..schemas import (
     EventOut,
     FileOut,
     FilePatch,
+    InternalFileOut,
     InternalRunDetail,
     RunDetail,
     RunStateOut,
@@ -860,7 +861,7 @@ FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:rea
 FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill"]
 
 
-@router.get("/files/{file_id}", response_model=FileOut)
+@router.get("/files/{file_id}", response_model=InternalFileOut, response_model_exclude_unset=True)
 def internal_get_file(
     file_id: str,
     run_id: str | None = None,
@@ -869,7 +870,11 @@ def internal_get_file(
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
 ) -> dict:
-    return file_dict(_bound_file(db, file_id, principal, run_id, job, preview_job))
+    file = _bound_file(db, file_id, principal, run_id, job, preview_job)
+    result = file_dict(file)
+    if principal.service == "broker" and job in {"preview", "document"}:
+        result["render_owner_id"] = file.user_id
+    return result
 
 
 @router.get("/files/{file_id}/content")

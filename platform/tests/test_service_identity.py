@@ -121,6 +121,37 @@ def test_service_scope_and_file_binding(identities):
         )
 
 
+def test_render_owner_is_only_returned_after_job_binding(identities):
+    from ailab_platform.api.main import app
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.models import FileObject, FileStatus, User, new_id
+
+    init_db()
+    with SessionLocal() as db:
+        user = User(id=new_id("test"), email=f"{new_id('test')}@test")
+        db.add(user)
+        db.flush()
+        file = FileObject(
+            id=new_id("test"),
+            user_id=user.id,
+            filename="own.pdf",
+            storage_key="own",
+            status=FileStatus.READY,
+            size=1,
+            meta={"preview_job_id": "job", "preview": {"status": "pending"}},
+        )
+        db.add(file)
+        db.commit()
+        file_id, user_id = file.id, user.id
+    with TestClient(app) as client:
+        url = f"/internal/files/{file_id}"
+        valid = client.get(url, params={"job": "preview", "preview_job": "job"}, headers=identities["broker"])
+        assert valid.status_code == 200 and valid.json()["render_owner_id"] == user_id
+        assert client.get(url, params={"job": "preview", "preview_job": "wrong"}, headers=identities["broker"]).status_code == 403
+        worker = client.get(url, params={"job": "preview"}, headers=identities["worker"])
+        assert worker.status_code == 200 and "render_owner_id" not in worker.json()
+
+
 def secure_settings(**overrides):
     tokens = {name: f"operator-{name}-{'z' * 32}" for name in ("api", "agent", "broker", "worker", "ops")}
     values = dict(
