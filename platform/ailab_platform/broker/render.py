@@ -154,6 +154,10 @@ class LibraryRenderer:
         owner = file.get("render_owner_id")
         if owner != scheduled_owner:
             raise LeaseError("render job owner changed while waiting")
+        # Convert through the sandbox's warm listener and fail rather than start a second LibreOffice beside it.
+        office_env = "AILAB_LO_PROFILE=/tmp/lo-profile " + (
+            "AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1 " if self.manager.provider.office_listener else ""
+        )
         principal = LeasePrincipal(user_id=owner, run_id=f"preview:{job_id}", system=True)
         acquire_started = time.monotonic()
         spec = self._spec()
@@ -192,8 +196,7 @@ class LibraryRenderer:
                 first_started = time.monotonic()
                 first = self.manager.exec(
                     lease_id,
-                    "AILAB_PAGE_PNG=1 AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1 "
-                    f"timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
+                    f"AILAB_PAGE_PNG=1 {office_env}timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
                     f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
                     95,
                 )
@@ -317,8 +320,7 @@ class LibraryRenderer:
             exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
-                "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1 "
-                f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
+                f"{office_env}timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
             )

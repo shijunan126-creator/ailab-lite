@@ -28,6 +28,7 @@ TOOLS = BASE_DIR.parent / "images" / "sbx-office"
 
 class MockSandbox(SandboxProvider):
     name = "mock"
+    office_listener = False
 
     def __init__(self) -> None:
         self._process_lock = threading.Lock()

@@ -566,20 +566,21 @@ class LeaseManager:
             self.put_input(lease, "/workspace/.ailab/uno_convert.py", uno_client.read_bytes())
             health = uno_client.with_name("render_sandbox_health.py")
             self.put_input(lease, "/workspace/.ailab/render_sandbox_health.py", health.read_bytes())
-            result = self._provider_call(
-                "exec",
-                lease["provider_ref"],
-                "mkdir -p /tmp/ailab-warm && "
-                "(soffice --headless --invisible --norestore -env:UserInstallation=file:///tmp/lo-profile "
-                "'--accept=pipe,name=ailab;urp;' >/tmp/ailab-warm/listener.log 2>&1 </dev/null &) && "
-                'i=0; while [ "$i" -lt 40 ]; do '
-                "timeout -k 1 3s /usr/bin/python3 /workspace/.ailab/uno_convert.py "
-                "/workspace/.ailab/warmup.fodt /tmp/ailab-warm/warmup.pdf '' >/dev/null 2>&1 && break; "
-                "i=$((i+1)); sleep 0.2; done; test -s /tmp/ailab-warm/warmup.pdf",
-                48,
-            )
-            if result.exit_code:
-                raise LeaseError("render warmup failed")
+            if self.provider.office_listener:
+                result = self._provider_call(
+                    "exec",
+                    lease["provider_ref"],
+                    "mkdir -p /tmp/ailab-warm && "
+                    "(soffice --headless --invisible --norestore -env:UserInstallation=file:///tmp/lo-profile "
+                    "'--accept=pipe,name=ailab;urp;' >/tmp/ailab-warm/listener.log 2>&1 </dev/null &) && "
+                    'i=0; while [ "$i" -lt 40 ]; do '
+                    "timeout -k 1 3s /usr/bin/python3 /workspace/.ailab/uno_convert.py "
+                    "/workspace/.ailab/warmup.fodt /tmp/ailab-warm/warmup.pdf '' >/dev/null 2>&1 && break; "
+                    "i=$((i+1)); sleep 0.2; done; test -s /tmp/ailab-warm/warmup.pdf",
+                    48,
+                )
+                if result.exit_code:
+                    raise LeaseError("render warmup failed")
             baseline = self._provider_call("exec", lease["provider_ref"], "python /workspace/.ailab/render_sandbox_health.py baseline", 5)
             try:
                 used = json.loads(baseline.stdout)["tmp_used"]
@@ -698,7 +699,8 @@ class LeaseManager:
                 result = self._provider_call(
                     "exec",
                     handle.provider_ref,
-                    f"python /workspace/.ailab/render_sandbox_health.py {baseline} {int(lease['spec']['memory'] * 0.7)}",
+                    f"python /workspace/.ailab/render_sandbox_health.py {baseline} {int(lease['spec']['memory'] * 0.7)} "
+                    f"{int(self.provider.office_listener)}",
                     15,
                 )
                 if result.exit_code:

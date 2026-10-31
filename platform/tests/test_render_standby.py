@@ -198,6 +198,7 @@ def test_disabled_and_failed_warmup(monkeypatch):
 
 def test_standby_provider_lifetime_covers_idle_and_job(monkeypatch):
     manager, provider, _ = _manager()
+    monkeypatch.setattr(provider, "office_listener", True)  # a real image warms its listener; the mock host cannot
     original = provider.acquire
     specs = []
 

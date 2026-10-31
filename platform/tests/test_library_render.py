@@ -44,7 +44,8 @@ def setup_renderer(tmp_path, content, filename):
                     else:
                         path.unlink()
             return SimpleNamespace(exit_code=0, stdout="{}")
-        return execute(ref, command.replace("AILAB_LO_STRICT=1 ", ""), timeout)
+        assert "AILAB_LO_STRICT" not in command  # the mock host has no private listener to insist on
+        return execute(ref, command, timeout)
 
     manager.provider.exec = mock_listener
     return manager, LibraryRenderer(manager), storage

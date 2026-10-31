@@ -37,6 +37,9 @@ class ExecResult:
 
 class SandboxProvider(ABC):
     name = "base"
+    # Render sandboxes keep a private LibreOffice listener warm and convert through it. A provider whose
+    # commands run on the host (mock) has no private listener; its conversions start LibreOffice per call.
+    office_listener = True
 
     @abstractmethod
     def acquire(

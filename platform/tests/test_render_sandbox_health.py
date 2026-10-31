@@ -42,3 +42,14 @@ def test_cleanup_accepts_small_profile_growth(tmp_path, monkeypatch):
     monkeypatch.setattr(health, "listener_rss", lambda: 10)
     monkeypatch.setattr(health, "used_tmp", lambda: 20 + 8192)
     assert health.cleanup(20, 100)["tmp_used"] == 20 + 8192
+
+
+def test_host_backed_sandbox_is_cleaned_without_listener_or_tmpfs_checks(tmp_path, monkeypatch):
+    # The mock provider shares the host filesystem and starts LibreOffice per call: there is no listener to find.
+    monkeypatch.setattr(health, "WORK", tmp_path / "work")
+    monkeypatch.setattr(health, "TEMP", tmp_path / "tmp")
+    monkeypatch.setattr(health, "listener_rss", lambda: (_ for _ in ()).throw(RuntimeError("listener_not_alive")))
+    (tmp_path / "work" / "inputs").mkdir(parents=True)
+    (tmp_path / "work" / "inputs" / "private").write_text("input")
+    assert health.cleanup(0, 100, isolated=False) == {"rss": 0, "tmp_used": 0}
+    assert list((tmp_path / "work" / "inputs").iterdir()) == []

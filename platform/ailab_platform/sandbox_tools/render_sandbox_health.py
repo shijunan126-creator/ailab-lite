@@ -52,9 +52,12 @@ def listener_rss():
     return total
 
 
-def cleanup(baseline, rss_limit):
+def cleanup(baseline, rss_limit, isolated=True):
     if not all((clear(WORK / "inputs", set()), clear(WORK / ".ailab", KEEP_TOOLS), clear(TEMP, KEEP_TEMP))):
         raise RuntimeError("cleanup_failed")
+    if not isolated:
+        # A host-backed sandbox (mock) has no listener and shares the host filesystem: only the cleanup applies.
+        return {"rss": 0, "tmp_used": 0}
     rss = listener_rss()
     used = used_tmp()
     if rss >= rss_limit or used > baseline + PROFILE_GROWTH:
@@ -66,4 +69,4 @@ if __name__ == "__main__":
     if sys.argv[1:] == ["baseline"]:
         print(json.dumps({"tmp_used": used_tmp()}))
     else:
-        print(json.dumps(cleanup(int(sys.argv[1]), int(sys.argv[2]))))
+        print(json.dumps(cleanup(int(sys.argv[1]), int(sys.argv[2]), sys.argv[3:4] != ["0"])))
