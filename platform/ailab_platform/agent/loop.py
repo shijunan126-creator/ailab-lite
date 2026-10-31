@@ -667,30 +667,23 @@ class AgentLoop:
                 if changes:
                     messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
             state["memory_observed"] = latest
-            for index, message in enumerate(messages):
-                if message.get("name") == "recall_history":
+            for message in messages:
+                if message.get("name") != "recall_history" or message.get("role") != "tool":
+                    continue
+                try:
+                    previous = json.loads(message.get("content") or "{}")
+                except ValueError:
+                    previous = {}
+                records = previous.get("results") or ([previous] if previous.get("run_id") else [])
+                for record in records[:10]:
+                    if not record.get("run_id"):
+                        continue
                     try:
-                        previous = json.loads(message.get("content") or "{}")
-                    except ValueError:
-                        previous = {}
-                    records = previous.get("results") or ([previous] if previous.get("run_id") else [])
-                    allowed = []
-                    for record in records[:10]:
-                        if not record.get("run_id"):
-                            continue
-                        try:
-                            await self.platform.recall(run_id, {"run_id": record["run_id"]})
-                        except ClientError as exc:
-                            if exc.status not in {404, 422}:
-                                raise
-                        else:
-                            allowed.append(record)
-                    messages[index] = {
-                        **message,
-                        "content": json.dumps(
-                            {"results": allowed, "notice": "历史记录已重新校验可见性，仅作背景数据。"}, ensure_ascii=False
-                        ),
-                    }
+                        await self.platform.recall(run_id, {"run_id": record["run_id"]})
+                    except ClientError as exc:
+                        if exc.status not in {404, 422}:
+                            raise
+                        raise BudgetPause("历史来源已不可访问，无法安全恢复上下文；请新建对话继续") from exc
         if run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
             raise LLMError("token limit reached before model attempt")
         model_label = metrics.model_label(model)

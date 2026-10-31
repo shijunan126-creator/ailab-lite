@@ -407,7 +407,7 @@ def test_real_late_title_reaches_open_sse_after_run_completed(monkeypatch, fallb
         asyncio.run(scenario(c, run))
 
 
-def test_system_prefix_is_shared_and_memory_refresh_only_rewrites_context():
+def test_system_prefix_is_shared_and_memory_changes_append_notes():
     from ailab_platform.agent.prompts import memory_prompt
     from tests.test_agent_loop import ScriptedLLM
 
@@ -415,7 +415,7 @@ def test_system_prefix_is_shared_and_memory_refresh_only_rewrites_context():
         def __init__(self, uid, entry, project):
             super().__init__()
             self.uid, self.project = uid, project
-            self.current = {"enabled": True, "auto_save": True, "entries": [entry]}
+            self.current = {"revision": 1, "enabled": True, "auto_save": True, "entries": [entry]}
 
         async def get_run(self, run_id):
             return {
@@ -441,14 +441,16 @@ def test_system_prefix_is_shared_and_memory_refresh_only_rewrites_context():
         assert "项目一" in left[1]["content"] and "项目二" in right[1]["content"]
         messages = [dict(m) for m in left]
         original = [dict(m) for m in messages[:2]]
-        p1.current = {**p1.current, "entries": [first, second]}
         loop = AgentLoop(platform=p1)
+        loop._states["r1"] = {"memory_observed": p1.current}
+        p1.current = {**p1.current, "revision": 2, "entries": [first, second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert messages[:2] == original
-        p1.current = {**p1.current, "entries": [second]}
+        p1.current = {**p1.current, "revision": 3, "entries": [second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
-        assert messages[0] == original[0] and messages[1] != original[1]
-        assert "中文" not in messages[1]["content"] and "简洁" in messages[1]["content"]
+        assert messages[:2] == original
+        assert "记忆 m2：简洁" in messages[-2]["content"]
+        assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
         assert "revision=" not in memory_prompt(p1.current)
 
     asyncio.run(exercise())

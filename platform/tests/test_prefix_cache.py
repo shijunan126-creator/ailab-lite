@@ -254,6 +254,35 @@ def test_memory_deletion_appends_note_without_rewriting_prior_results():
     asyncio.run(exercise())
 
 
+def test_recall_revalidation_preserves_result_and_refuses_revoked_source():
+    from ailab_platform.clients import ClientError
+
+    class Platform(FakePlatform):
+        revoked = False
+
+        async def get_memory_context(self, run_id):
+            return {}
+
+        async def recall(self, run_id, request):
+            if self.revoked:
+                raise ClientError("POST", "/recall", 404, "gone")
+            return {"run_id": request["run_id"]}
+
+    async def exercise():
+        platform = Platform()
+        loop = AgentLoop(platform=platform)
+        messages = [{"role": "tool", "name": "recall_history", "content": '{"results":[{"run_id":"source","text":"old"}]}'}]
+        original = copy.deepcopy(messages)
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
+        assert messages == original
+        platform.revoked = True
+        with pytest.raises(BudgetPause):
+            await loop._model_attempt(ScriptedLLM([]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
+        assert messages == original
+
+    asyncio.run(exercise())
+
+
 def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
     from ailab_platform.agent.discovery import SEARCH
     from ailab_platform.model_policy import estimator
