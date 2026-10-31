@@ -42,6 +42,8 @@ def job_topic(kind: str, mode: str = "work") -> str:
         return f"{settings.run_queue}:{mode}"
     if kind == "summary":
         return f"{settings.file_queue}:summary"
+    if kind == "preview":
+        return f"{settings.file_queue}:preview"
     return settings.file_queue
 
 

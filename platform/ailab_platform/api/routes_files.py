@@ -438,7 +438,13 @@ def download_thumbnail(
 
 def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
     file = _owned_file(db, file_id, user)
-    if file.status != FileStatus.READY:
+    scanned = (
+        file.status == FileStatus.PENDING
+        and file.purpose == "library"
+        and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean"
+        and bool((file.meta or {}).get("preview_job_id"))
+    )
+    if not (file.status == FileStatus.READY or scanned):
         raise HTTPException(status_code=404, detail="preview not found")
     return file
 

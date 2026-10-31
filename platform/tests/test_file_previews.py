@@ -13,7 +13,7 @@ from ailab_platform.api.main import app
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject
-from ailab_platform.queue import get_queue
+from ailab_platform.queue import get_queue, job_topic
 from ailab_platform.storage import get_storage
 from ailab_platform.worker.pipeline import process_file
 from ailab_platform.worker.preview import process_preview
@@ -265,14 +265,14 @@ def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: preview(api, fid), range(8)))
     assert all(p["status"] == "pending" for p in results)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(job_topic("preview")) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 1
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.meta = {**file.meta, "preview_requested_at": datetime.now(UTC).timestamp() - 301}
         db.commit()
     preview(api, fid)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(job_topic("preview")) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 2 and jobs[0]["job_id"] != jobs[1]["job_id"]
 
 
@@ -304,7 +304,7 @@ def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
     from datetime import timedelta
 
     dispatch_preview_jobs(job_id, now=datetime.now(UTC) + timedelta(seconds=5))
-    assert any(m.get("job_id") == job_id for m in q.outstanding(settings.file_queue))
+    assert any(m.get("job_id") == job_id for m in q.outstanding(job_topic("preview")))
     with SessionLocal() as db:
         assert db.get(OutboxMessage, job_id) is not None  # publication is not consumer ACK
 

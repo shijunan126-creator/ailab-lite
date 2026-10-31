@@ -13,7 +13,7 @@ def request_ready_preview(db, file):
     """Speculate only on bounded library documents; the caller commits readiness and outbox together."""
     if (
         file.purpose != "library"
-        or file.status != "ready"
+        or not (file.status == "ready" or (file.status == "pending" and (file.meta or {}).get("scan", {}).get("verdict") == "clean"))
         or file.deleted_at
         or file.purged_at
         or not settings.preview_eager_max_bytes

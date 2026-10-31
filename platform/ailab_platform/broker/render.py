@@ -44,7 +44,12 @@ class LibraryRenderer:
         platform = self.manager.platform
         file = platform.get_file(file_id, job="preview", preview_job=job_id)
         meta = file.get("meta") or {}
-        if file.get("status") != "ready" or meta.get("preview_job_id") != job_id or (meta.get("preview") or {}).get("status") != "pending":
+        scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
+        if (
+            not (file.get("status") == "ready" or scanned)
+            or meta.get("preview_job_id") != job_id
+            or (meta.get("preview") or {}).get("status") != "pending"
+        ):
             raise LeaseError("preview job is not pending for this file")
         suffix = Path(file["filename"]).suffix.lower()
         pdf_mime = file.get("content_type", "").split(";")[0] == "application/pdf"

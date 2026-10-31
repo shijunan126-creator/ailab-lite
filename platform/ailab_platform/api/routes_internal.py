@@ -711,13 +711,21 @@ def _bound_file(
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
         meta = file.meta or {}
         pending = (meta.get("preview") or {}).get("status") == "pending"
-        if "files:read_for_preview" not in principal.scopes or file.status != FileStatus.READY or not pending or not preview_job:
+        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        if (
+            "files:read_for_preview" not in principal.scopes
+            or not (file.status == FileStatus.READY or scanned)
+            or not pending
+            or not preview_job
+        ):
             raise HTTPException(status_code=403, detail="no pending preview job for this file")
         if meta.get("preview_job_id") != preview_job:
             raise HTTPException(status_code=403, detail="preview job superseded")
         return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
+        if job == "preview" and file.status == FileStatus.PENDING and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean":
+            allowed = True
         if not allowed:
             raise HTTPException(status_code=403, detail="file is not eligible for this processing job")
         return file
@@ -998,7 +1006,8 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
     with user_critical_section(db, file.user_id):
         db.refresh(file)
         meta = dict(file.meta or {})
-        if file.status != FileStatus.READY or meta.get("preview_job_id") != body.job_id:
+        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        if not (file.status == FileStatus.READY or scanned) or meta.get("preview_job_id") != body.job_id:
             raise HTTPException(status_code=409, detail="preview job superseded")
         preview = body.preview
         if preview.status not in {"ready", "failed"}:

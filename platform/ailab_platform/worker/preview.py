@@ -31,8 +31,16 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
     if token is None:
         return {"skipped": "in_flight"}
     slot_seconds = 0.0
+    render_token = None
     try:
         with _render_slot:
+            deadline = time.monotonic() + 120
+            while render_token is None:
+                render_token = queue.acquire_lock("ailab:preview:render-slot", 300)
+                if render_token is None:
+                    if time.monotonic() >= deadline:
+                        raise TimeoutError("preview render slot unavailable")
+                    time.sleep(0.1)
             slot_seconds = time.monotonic() - started
             try:
                 file = platform.get_file(file_id, job="preview")
@@ -44,7 +52,8 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             if meta.get("preview_job_id") != job_id:
                 return {"skipped": "superseded"}
             manifest = meta.get("preview") or {}
-            if file.get("status") != "ready" or manifest.get("status") != "pending":
+            scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
+            if not (file.get("status") == "ready" or scanned) or manifest.get("status") != "pending":
                 return {"skipped": "already_complete"}
             storage = get_storage()
             assets = {}
@@ -113,5 +122,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 raise
             return manifest
     finally:
+        if render_token is not None:
+            queue.release_lock("ailab:preview:render-slot", render_token)
         queue.release_lock(f"ailab:preview:{file_id}", token)
         log.info("preview completed total_seconds=%.3f slot_wait_seconds=%.3f", time.monotonic() - started, slot_seconds)

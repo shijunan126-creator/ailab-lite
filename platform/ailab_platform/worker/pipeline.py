@@ -152,6 +152,9 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        # Commit the scanner verdict before any parser starts. The API stages a
+        # preview in the same transaction, independently of parsing readiness.
+        platform.patch_file(file_id, meta={"scan": scan})
         if (meta.get("meta") or {}).get("template_kind"):
             try:
                 analysis = execute("template", source, Path(tmp) / "template")

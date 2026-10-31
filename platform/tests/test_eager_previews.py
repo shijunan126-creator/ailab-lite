@@ -26,6 +26,44 @@ def preview_jobs(db, fid):
     )
 
 
+def test_clean_scan_stages_preview_before_parse_and_exposes_only_scanned_file(api):
+    fid = upload(api, "early.pdf", process=False)
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).status_code == 404
+    p = ApiClient(api)
+    p.patch_file(fid, meta={"scan": {"verdict": "clean", "ok": True}})
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.status == "pending"
+        assert len(preview_jobs(db, fid)) == 1
+        job_id = file.meta["preview_job_id"]
+    assert process_preview(fid, job_id, p)["status"] == "ready"
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "ready"
+    assert api.get(f"/v1/files/{fid}/preview/p-01.jpg", headers=AUTH).status_code == 200
+    p.patch_file(fid, status="ready", meta={"processing": "done"})
+    with SessionLocal() as db:
+        assert len(preview_jobs(db, fid)) == 1
+        assert db.get(FileObject, fid).meta["preview"]["status"] == "ready"
+
+
+def test_worker_publishes_clean_scan_before_office_parse(api, monkeypatch):
+    from ailab_platform.worker import office
+    from ailab_platform.worker.isolate import IsolationError
+    from ailab_platform.worker.pipeline import process_file
+
+    fid = upload(api, "early.docx", process=False)
+
+    def parse(file_id, platform, storage, output, scan):
+        with SessionLocal() as db:
+            file = db.get(FileObject, file_id)
+            assert file.status == "pending"
+            assert file.meta["scan"]["verdict"] == "clean"
+            assert len(preview_jobs(db, file_id)) == 1
+        raise IsolationError("test parser failure")
+
+    monkeypatch.setattr(office, "read", parse)
+    process_file(fid, ApiClient(api))
+
+
 @pytest.mark.parametrize("name", ["a.docx", "a.pptx", "a.xlsx", "a.pdf", "a.xls"])
 def test_readiness_stages_preview_without_a_click_and_without_rendering(api, name):
     fid = upload(api, name)

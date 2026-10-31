@@ -30,6 +30,7 @@ setup_logging("worker")
 log = logging.getLogger("ailab.worker")
 _thread: threading.Thread | None = None
 _summary_thread: threading.Thread | None = None
+_preview_thread: threading.Thread | None = None
 _stop = threading.Event()
 
 
@@ -242,7 +243,7 @@ def _consume(topic: str, consumer: str) -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _thread, _summary_thread
+    global _thread, _summary_thread, _preview_thread
     settings.validate_secrets("worker")
     settings.ensure_dirs()
     _stop.clear()
@@ -250,8 +251,12 @@ async def lifespan(_: FastAPI):
     _summary_thread = threading.Thread(
         target=_consume, args=(job_topic("summary"), CONSUMER + "-summary"), name="summary-worker", daemon=True
     )
+    _preview_thread = threading.Thread(
+        target=_consume, args=(job_topic("preview"), CONSUMER + "-preview"), name="preview-worker", daemon=True
+    )
     _thread.start()
     _summary_thread.start()
+    _preview_thread.start()
     log.info("file worker ready")
     yield
     _stop.set()
@@ -272,7 +277,9 @@ def readyz() -> Response:
         queue_ok = get_queue().ping()
     except Exception:
         queue_ok = False
-    running = bool(_thread and _thread.is_alive() and _summary_thread and _summary_thread.is_alive())
+    running = bool(
+        _thread and _thread.is_alive() and _summary_thread and _summary_thread.is_alive() and _preview_thread and _preview_thread.is_alive()
+    )
     ok = queue_ok and running
     return JSONResponse(status_code=200 if ok else 503, content={"ok": ok, "queue": queue_ok, "worker_running": running})
 
