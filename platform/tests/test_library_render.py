@@ -122,7 +122,7 @@ def test_first_page_is_published_before_remaining_render(tmp_path):
     events = []
     execute = manager.exec
     manager.exec = lambda lease, cmd, timeout: (
-        events.append("first" if "/first " in cmd else "second" if "/page-2 " in cmd else "other") or execute(lease, cmd, timeout)
+        events.append("first" if "/first " in cmd else "second" if "/rest " in cmd else "other") or execute(lease, cmd, timeout)
     )
     manager.platform.publish_preview_page = lambda fid, job, name, count, asset: events.append(f"publish:{name}")
     result = renderer.render("file", "job")
@@ -179,7 +179,7 @@ def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
-def test_render_exports_and_publishes_each_page(tmp_path, caplog):
+def test_render_batches_remaining_pages_into_one_transfer(tmp_path, caplog):
     from pypdf import PdfWriter
 
     writer = PdfWriter()
@@ -198,8 +198,8 @@ def test_render_exports_and_publishes_each_page(tmp_path, caplog):
     manager._download = record_download
     with caplog.at_level("INFO", logger="ailab.broker.render"):
         result = renderer.render("file", "job")
-    assert len(downloads) == 3 and downloads[0].startswith("/workspace/.ailab/first/p-")
-    assert all(f"/page-{i}/" in downloads[i - 1] for i in (2, 3))
+    # The first page is fetched alone; every remaining page comes back in one archive.
+    assert downloads == ["/workspace/.ailab/first/p-1.png", "/workspace/.ailab/rest.tar"]
     assert len(result["assets"]) == 3
     assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
     assert all(storage.get_bytes(asset["key"]).startswith(b"\x89PNG\r\n\x1a\n") for asset in result["assets"].values())

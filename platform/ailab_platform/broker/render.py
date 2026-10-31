@@ -38,6 +38,48 @@ class LibraryRenderer:
             self.manager.default_spec(ttl_seconds=ttl), profile="render", memory=settings.sandbox_render_memory_bytes, max_lifetime=ttl
         )
 
+    def _bundle(self, handle, directory: str, names: list[str], deadline: float, *, pdf_name: str | None = None):
+        """Pack ``names`` once in the sandbox, download one archive and yield each validated member as (name, path, sha256).
+
+        One transfer avoids a provider round trip per page. The archive is untrusted, so members are never extracted
+        by path: names, types and sizes are checked first, then each is streamed to its own local file in ``names`` order.
+        """
+        remaining = int(deadline - time.monotonic())
+        if remaining <= 1:
+            raise LeaseError("render_timeout")
+        archive = f"{directory}.tar"
+        args = " ".join(shlex.quote(name) for name in names)
+        packed = self.manager.exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
+        if packed.exit_code != 0 or time.monotonic() >= deadline:
+            raise LeaseError("render_failed")
+        with self.manager.transfer_file() as local:
+            self.manager._download(self.manager.get(handle), archive, local, 65 * 1024 * 1024)
+            with tarfile.open(local, "r:") as bundle:
+                members = {m.name: m for m in bundle.getmembers()}
+                if (
+                    len(members) != len(names)
+                    or set(members) != set(names)
+                    or any(
+                        not m.isfile() or not 0 <= m.size <= (32 * 1024 * 1024 if m.name == pdf_name else settings.max_sandbox_read_bytes)
+                        for m in members.values()
+                    )
+                    or sum(m.size for m in members.values() if m.name != pdf_name) > (32 if pdf_name else 64) * 1024 * 1024
+                ):
+                    raise LeaseError("invalid_render_output")
+                for name in names:
+                    if time.monotonic() >= deadline:
+                        raise LeaseError("render_timeout")
+                    source = bundle.extractfile(members[name])
+                    if source is None:
+                        raise LeaseError("invalid_render_output")
+                    with source, self.manager.transfer_file() as asset:
+                        digest = hashlib.sha256()
+                        with asset.open("wb") as out:
+                            for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                                out.write(chunk)
+                        yield name, asset, digest.hexdigest()
+
     def render(self, file_id: str, job_id: str) -> dict:
         file = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
         owner = file.get("render_owner_id")
@@ -49,6 +91,7 @@ class LibraryRenderer:
 
     def _render(self, file_id: str, job_id: str, scheduled_owner: str) -> dict:
         started = time.monotonic()
+        deadline = started + 120
         phases = {}
         platform = self.manager.platform
         file = platform.get_file(file_id, job="preview", preview_job=job_id)
@@ -122,9 +165,10 @@ class LibraryRenderer:
         returned = False
         first_asset = None
 
-        def publish_page(name, page_count, local):
-            with local.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        def publish_page(name, page_count, local, digest=None):
+            if digest is None:
+                with local.open("rb") as stream:
+                    digest = hashlib.file_digest(stream, "sha256").hexdigest()
             key = f"derived/{file_id}/preview/{name}"
             self.manager.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
@@ -197,49 +241,44 @@ class LibraryRenderer:
                     cache_started = time.monotonic()
                     self.manager.store_file(self.manager.get(handle), source, cache_key, "application/pdf", 32 * 1024 * 1024)
                     phases["pdf_export_seconds"] = time.monotonic() - cache_started
-                for page in pending_pages:
+                if pending_pages:
                     current = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
                     if current.get("render_owner_id") != owner:
                         raise LeaseError("render job owner changed")
                     wanted = (current.get("meta") or {}).get("preview_requested_pages") or []
-                    # Requests are read between pages; a conversion already in progress is never interrupted.
-                    pending = [p for p in pending_pages if p not in names_by_page]
-                    page = next((p for p in wanted if type(p) is int and p in pending), pending[0])
-                    remaining = max(1, int(120 - (time.monotonic() - started)))
+                    # Requests are read once: pages a waiting Run asked for are rasterized and published first,
+                    # the rest follow in document order, all in one exec and one archive transfer.
+                    front = [p for p in dict.fromkeys(wanted) if type(p) is int and p in pending_pages]
+                    order = front + [p for p in pending_pages if p not in front]
+                    remaining = int(deadline - time.monotonic())
                     if remaining <= 1:
                         raise LeaseError("render_timeout")
-                    page_started = time.monotonic()
+                    rest_started = time.monotonic()
                     result = self.manager.exec(
                         lease_id,
                         f"AILAB_PAGE_PNG=1 timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
-                        f"{shlex.quote(source)} /workspace/.ailab/page-{page} --pages {page}",
+                        f"{shlex.quote(source)} /workspace/.ailab/rest --pages {','.join(map(str, order))}",
                         remaining,
                     )
                     if result.exit_code:
                         raise LeaseError("render_failed")
                     try:
-                        page_manifest = json.loads((result.stdout.strip().splitlines() or ["{}"])[-1])
-                        page_names = page_manifest["pages"]
+                        rest = json.loads((result.stdout.strip().splitlines() or ["{}"])[-1])
+                        rest_names = rest["pages"]
                         if (
-                            page_manifest.get("kind") != "pages"
-                            or page_manifest.get("page_count") != count
-                            or not isinstance(page_names, list)
-                            or len(page_names) != 1
-                            or not isinstance(page_names[0], str)
-                            or not re.fullmatch(r"p-\d+\.png", page_names[0])
-                            or int(page_names[0][2:-4]) != page
+                            rest.get("kind") != "pages"
+                            or rest.get("page_count") != count
+                            or not isinstance(rest_names, list)
+                            or any(not isinstance(n, str) or not re.fullmatch(r"p-\d+\.png", n) for n in rest_names)
+                            or [int(n[2:-4]) for n in rest_names] != order
                         ):
-                            raise ValueError("invalid page")
+                            raise ValueError("invalid pages")
                     except (ValueError, TypeError, KeyError, AttributeError) as exc:
                         raise LeaseError("invalid_render_output") from exc
-                    name = page_names[0]
-                    with self.manager.transfer_file() as local:
-                        self.manager._download(
-                            self.manager.get(handle), f"/workspace/.ailab/page-{page}/{name}", local, settings.max_sandbox_read_bytes
-                        )
-                        assets[name] = publish_page(name, count, local)
-                    names_by_page[page] = name
-                    phases["remaining_pages_seconds"] = phases.get("remaining_pages_seconds", 0) + time.monotonic() - page_started
+                    for name, local, digest in self._bundle(handle, "/workspace/.ailab/rest", rest_names, deadline):
+                        assets[name] = publish_page(name, count, local, digest)
+                        names_by_page[int(name[2:-4])] = name
+                    phases["remaining_pages_seconds"] = time.monotonic() - rest_started
                 names = [names_by_page[page] for page in page_numbers]
                 if template:
                     thumb_started = time.monotonic()
@@ -329,56 +368,14 @@ class LibraryRenderer:
                 names = [*names, pdf_name]
             assets = {}
             export_started = time.monotonic()
-            remaining = max(1, int(120 - (time.monotonic() - started)))
-            archive = "/workspace/.ailab/preview.tar"
-            args = " ".join(shlex.quote(name) for name in names)
-            packed = self.manager.exec(lease_id, f"COPYFILE_DISABLE=1 tar -C /workspace/.ailab/preview -cf {archive} -- {args}", remaining)
-            if packed.exit_code != 0 or time.monotonic() - started >= 120:
-                raise LeaseError("render_failed")
-            # One sandbox transfer avoids a provider round trip for every page. Never
-            # extract an untrusted archive by path: validate every member first.
-            with self.manager.transfer_file() as local:
-                self.manager._download(self.manager.get(lease_id), archive, local, 65 * 1024 * 1024)
-                with tarfile.open(local, "r:") as bundle:
-                    members = bundle.getmembers()
-                    if (
-                        len(members) != len(names)
-                        or {m.name for m in members} != set(names)
-                        or any(
-                            not m.isfile()
-                            or not 0 <= m.size <= (32 * 1024 * 1024 if m.name == pdf_name else settings.max_sandbox_read_bytes)
-                            for m in members
-                        )
-                        or sum(m.size for m in members if m.name != pdf_name) > 32 * 1024 * 1024
-                    ):
-                        raise LeaseError("invalid_render_output")
-                    for member in members:
-                        if time.monotonic() - started >= 120:
-                            raise LeaseError("render_timeout")
-                        is_pdf = member.name == pdf_name
-                        key = cache_key if is_pdf else f"derived/{file_id}/preview/{member.name}"
-                        source = bundle.extractfile(member)
-                        if source is None:
-                            raise LeaseError("invalid_render_output")
-                        with source, self.manager.transfer_file() as asset:
-                            digest = hashlib.sha256()
-                            with asset.open("wb") as out:
-                                for chunk in iter(lambda: source.read(1024 * 1024), b""):
-                                    digest.update(chunk)
-                                    out.write(chunk)
-                            if first_asset and member.name == first_asset[0] and digest.hexdigest() != first_asset[1]:
-                                raise LeaseError("non_deterministic_page")
-                            self.manager.storage.put_file(key, asset, "application/pdf" if is_pdf else mime)
-                        if not is_pdf:
-                            assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
-                            if (
-                                kind == "pages"
-                                and member.name != "template-thumbnail.jpg"
-                                and (not first_asset or member.name != first_asset[0])
-                            ):
-                                self.manager.platform.publish_preview_page(
-                                    file_id, job_id, member.name, preview["page_count"], assets[member.name]
-                                )
+            for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name):
+                is_pdf = name == pdf_name
+                key = cache_key if is_pdf else f"derived/{file_id}/preview/{name}"
+                self.manager.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
+                if not is_pdf:
+                    assets[name] = {"key": key, "content_type": mime, "sha256": digest}
+                    if kind == "pages" and name != "template-thumbnail.jpg":
+                        self.manager.platform.publish_preview_page(file_id, job_id, name, preview["page_count"], assets[name])
             phases["export_seconds"] = time.monotonic() - export_started
             generation = self.manager.get(handle)["render_generation"]
             returned = True

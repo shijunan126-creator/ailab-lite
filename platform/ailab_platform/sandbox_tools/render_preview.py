@@ -112,11 +112,18 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
-        ranges = [(n, n) for n in selected] if selected else [(1, MAX_PAGES)]
+        ranges = []
+        for n in selected or []:
+            # Consecutive pages share one pdftoppm call; the requested order is kept between runs.
+            if ranges and ranges[-1][1] + 1 == n:
+                ranges[-1] = (ranges[-1][0], n)
+            else:
+                ranges.append((n, n))
+        ranges = ranges or [(1, MAX_PAGES)]
         raster_started = time.monotonic()
         png = os.environ.get("AILAB_PAGE_PNG") == "1"
         for first, last in ranges:
-            if count is not None and first > count:
+            if count is not None and last > count and selected:
                 raise ValueError("page_out_of_range")
             subprocess.run(
                 [
@@ -310,7 +317,7 @@ def main() -> int:
             selected = None
             if "--pages" in sys.argv[3:]:
                 selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]
-                if not 1 <= len(selected) <= 20 or any(n < 1 or n > 100000 for n in selected):
+                if not 1 <= len(selected) <= MAX_PAGES or len(set(selected)) != len(selected) or any(n < 1 or n > 100000 for n in selected):
                     raise ValueError("invalid_page_selection")
             result = pages(src, out, selected, save_pdf="--save-pdf" in sys.argv[3:])
             if "--template-thumbnail" in sys.argv[3:]:
