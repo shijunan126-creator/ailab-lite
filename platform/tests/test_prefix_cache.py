@@ -90,6 +90,40 @@ def test_reasoning_is_echoed_without_rewriting_earlier_messages():
     assert requests[1]["messages"][len(requests[0]["messages"])]["reasoning_content"] == "先检查"
 
 
+def test_next_run_extends_the_previous_run_wire_messages():
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            assert payload["expected_step"] == step
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "prompt": "first" if run_id == "first" else "second"}
+            if run_id == "second":
+                state = self.checkpoints["first"]["state"]
+                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+            return run
+
+    call = {"index": 0, "id": "plan", "type": "function", "function": {"name": "update_plan", "arguments": '{"steps":["finish"]}'}}
+    with scripted_server([{"tool_calls": [call]}, {"content": "first answer"}, {"content": "second answer"}]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("first", attempt_id="a1"))
+        asyncio.run(loop.process("second", attempt_id="a2"))
+    assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
+    assert len(requests) == 3
+    assert_extension(requests[1], requests[2])
+    assert requests[2]["messages"][len(requests[1]["messages"])] == {"role": "assistant", "content": "first answer"}
+
+
 def test_unchanged_memory_refresh_preserves_all_request_messages():
     memory = {"enabled": True, "entries": [{"id": "m1", "kind": "user", "content": "中文"}]}
 

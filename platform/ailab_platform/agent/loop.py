@@ -1447,6 +1447,8 @@ class AgentLoop:
             budget.update()
         state = self._states[run_id]
         state.update(artifacts=turn.artifacts, delivered=turn.delivered)
+        if turn.run.get("_last_model"):
+            state["context_model"] = turn.run["_last_model"]
         compact_log(state)
         payload, exceeded = bounded_checkpoint(checkpoint_state(state, turn.run.get("_image_files", {})), settings.checkpoint_max_bytes)
         saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps[run_id], "state": payload})
@@ -1812,7 +1814,17 @@ class AgentLoop:
                     *history_messages(run.get("history")),
                     {"role": "user", "content": await self._user_content(run_id, run, model)},
                 ]
-                state["messages"] = await self._assemble_context(run_id, run, model, messages)
+                previous = run.get("previous_model_context")
+                if previous and previous.get("tools") == state["tool_catalog_v1"] and previous.get("messages", [{}])[0] == messages[0]:
+                    prior = {"messages": previous["messages"]}
+                    await self._restore_images(run_id, run, prior)
+                    state["messages"] = [*prior["messages"], messages[-1]]
+                else:
+                    if previous:
+                        run["context_boundary"] = "model_changed"
+                    state["messages"] = await self._assemble_context(run_id, run, model, messages)
+                if reason := run.get("context_boundary"):
+                    await self._event(run_id, "agent.context_boundary", {"reason": reason})
                 state["user_message_index"] = len(state["messages"]) - 1
                 await self._checkpoint(run_id, turn)
             messages = state["messages"]

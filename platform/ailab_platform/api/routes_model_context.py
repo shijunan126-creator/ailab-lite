@@ -55,6 +55,27 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .source_lifecycle import invalid_history
 
     invalid = invalid_history(db, path_ids(db, run.conversation_id, run.parent_run_id)) if run.conversation_id else set()
+    if run.conversation_id and run.parent_run_id:
+        parent = db.get(Run, run.parent_run_id)
+        if parent and parent.conversation_id == run.conversation_id and parent.user_id == run.user_id:
+            if parent.id in invalid:
+                out["context_boundary"] = "access_revoked"
+            elif parent.model != run.model:
+                out["context_boundary"] = "model_changed"
+            elif parent.status == "succeeded" and (parent.runtime_meta or {}).get("context_snapshot"):
+                from .routes_runtime import read_checkpoint
+
+                snapshot = read_checkpoint(db, parent)
+                if snapshot:
+                    state = snapshot["state"]
+                    if state.get("finished") and state.get("messages") and state.get("tool_catalog_v1") is not None:
+                        if state.get("context_model", parent.model) != run.model:
+                            out["context_boundary"] = "model_changed"
+                        else:
+                            out["previous_model_context"] = {
+                                "messages": state["messages"],
+                                "tools": state["tool_catalog_v1"],
+                            }
     alive = newest is not None and newest.id not in invalid and workspace_alive(newest, datetime.now(UTC))
     own = (run.runtime_meta or {}).get("workspace")
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None

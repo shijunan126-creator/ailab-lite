@@ -185,7 +185,7 @@ def vision_image(
 ):
     from .routes_internal import _bound_file
 
-    file = _bound_file(db, file_id, principal, run_id, "processing")
+    file = _bound_file(db, file_id, principal, run_id, "vision")
     key = (file.meta or {}).get("display_key")
     mime = "image/webp"
     if page is not None:

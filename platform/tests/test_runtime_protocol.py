@@ -96,6 +96,30 @@ def test_checkpoint_cas_gzip_recent_two_and_seven_day_cleanup(api):  # noqa: F81
         assert db.scalars(select(RunCheckpoint).where(RunCheckpoint.run_id == rid)).all() == []
 
 
+def test_finished_conversation_checkpoint_is_available_to_child_and_survives_expiry(api):  # noqa: F811
+    conv = api.post("/v1/conversations", headers=AUTH, json={}).json()
+    parent = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "first"}).json()
+    from tests.run_claims import owned_headers
+
+    headers = owned_headers(api, parent["id"])
+    assert api.post(f"/internal/runs/{parent['id']}/transition", headers=headers, json={"status": "running"}).status_code == 200
+    state = fresh_state()
+    state.update(
+        finished=True,
+        messages=[{"role": "user", "content": "first"}, {"role": "assistant", "content": "answer"}],
+        tool_catalog_v1=[],
+        context_model=parent["model"],
+    )
+    assert save(api, parent["id"], headers, state=state).status_code == 200
+    assert api.post(f"/internal/runs/{parent['id']}/status", headers=headers, json={"status": "succeeded"}).status_code == 200
+    with SessionLocal() as db:
+        lifecycle_once(db, now=datetime.now(UTC) + timedelta(days=8))
+        assert db.get(RunCheckpoint, (parent["id"], 1)).expires_at is None
+    child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "second"}).json()
+    result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
+    assert result["previous_model_context"] == {"messages": state["messages"], "tools": []}
+
+
 def test_wait_answer_new_job_old_ack_cannot_delete_continuation(api):  # noqa: F811
     rid, token, headers = owned(api)
     assert save(api, rid, headers).status_code == 200

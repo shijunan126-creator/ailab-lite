@@ -801,6 +801,20 @@ def _bound_file(
                 .limit(1)
             )
         )
+    if not attached and principal.service == "agent" and job == "vision" and run.conversation_id and run.parent_run_id:
+        # A continued model context can contain a previously authorized image. Revalidate both the branch
+        # and the file instead of granting arbitrary access to the owner's library.
+        from ..conversation_tree import path_ids
+        from .source_lifecycle import invalid_history
+
+        ancestors = path_ids(db, run.conversation_id, run.parent_run_id)
+        invalid = invalid_history(db, ancestors)
+        if run.parent_run_id not in invalid:
+            from ..models import MessageFileRef
+
+            attached = bool(
+                db.scalar(select(MessageFileRef.id).where(MessageFileRef.run_id.in_(ancestors), MessageFileRef.file_id == file.id).limit(1))
+            )
     if principal.service == "broker" and file.purpose == "library" and file.id in ((run.runtime_meta or {}).get("library_file_ids") or []):
         attached = True
     if not attached and run.conversation_id:
