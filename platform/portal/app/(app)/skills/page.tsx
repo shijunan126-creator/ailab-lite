@@ -4,7 +4,8 @@ import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Switch from "../../../components/switch";
-import { IconDownload, IconPlus, IconSparkles, IconUpload } from "../../../components/icons";
+import { IconCopyPlus, IconDownload, IconEye, IconPencil, IconPlus, IconRetry, IconSparkles, IconTrash, IconUpload } from "../../../components/icons";
+import RowMenu, { RowAction } from "../../../components/row-menu";
 import { skillIcon } from "../../../components/chat/composer";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import DraftEditor from "../../../components/skills/draft-editor";
@@ -60,64 +61,66 @@ function SkillRow({
 }) {
   const Icon = skillIcon(s.name);
   const kind = skillKind(s);
+  const personal = kind === "personal";
   const toggleable = s.toggleable ?? kind !== "base";
+  const zip = personal && s.kind_file === "zip" && s.file_id;
+  const actions: RowAction[] = personal
+    ? [
+        { label: "编辑", icon: <IconPencil size={15} />, onSelect: onOpen, disabled: locked },
+        ...(zip ? [{ label: "下载", icon: <IconDownload size={15} />, onSelect: () => download(downloadUrl(`/v1/files/${s.file_id}/content`), s.filename) }] : []),
+        ...(onDelete ? ["sep" as const, { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: onDelete }] : []),
+      ]
+    : [
+        { label: "查看", icon: <IconEye size={15} />, onSelect: onOpen },
+        ...(onCustomize ? [{ label: "另存为个人技能", icon: <IconCopyPlus size={15} />, onSelect: onCustomize }] : []),
+      ];
   return (
-    <div className={`skill-row ${s.enabled || !toggleable ? "" : "off"} ${s.error ? "broken" : ""}`}>
-      <span className="skill-icon">
-        <Icon size={20} />
+    <div className={`mrow ${s.enabled || !toggleable ? "" : "off"}`}>
+      <span className={`mrow-icon ${s.error ? "broken" : ""}`}>
+        <Icon size={17} />
       </span>
-      <div className="grow">
-        <div className="skill-title">
-          {s.title}
-          {kind === "personal" && s.kind_file === "zip" ? <span className="chip">{s.files} 个文件</span> : null}
-        </div>
-        {s.description ? <div className="skill-desc">{s.description}</div> : null}
-        {s.error ? <div className="skill-file hint"><span className="error">无法使用：{s.error}</span></div> : null}
+      <button className="mrow-main" onClick={onOpen} disabled={locked} aria-label={`${personal ? "编辑" : "查看"} ${s.title}`}>
+        <span className="mrow-title">
+          <span>{s.title}</span>
+          {zip ? <span className="state">{s.files} 个文件</span> : null}
+        </span>
+        {s.error ? <span className="mrow-desc error">无法使用：{s.error}</span> : s.description ? <span className="mrow-desc">{s.description}</span> : null}
+      </button>
+      <div className="mrow-trail">
+        <RowMenu label={s.title} actions={actions} />
+        {toggleable ? (
+          <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
+        ) : (
+          <span className="switch-slot" />
+        )}
       </div>
-      <div className="skill-editor-actions">
-        <button className="link" onClick={onOpen} disabled={locked} aria-label={`${kind === "personal" ? "编辑" : "查看"} ${s.title}`}>
-          {kind === "personal" ? "编辑" : "查看"}
-        </button>
-        {onCustomize ? (
-          <button className="link" onClick={onCustomize} aria-label={`另存 ${s.title} 为个人技能`}>
-            另存
-          </button>
-        ) : null}
-        {kind === "personal" && s.kind_file === "zip" && s.file_id ? (
-          <a className="link" href={downloadUrl(`/v1/files/${s.file_id}/content`)} download={s.filename} aria-label={`下载 ${s.title}`}>
-            下载
-          </a>
-        ) : null}
-        {onDelete ? (
-          <button className="link danger-text" onClick={onDelete} aria-label={`删除 ${s.title}`}>
-            删除
-          </button>
-        ) : null}
-      </div>
-      {toggleable ? (
-        <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
-      ) : (
-        <span className="switch-slot" />
-      )}
     </div>
   );
+}
+
+function download(href: string, filename?: string) {
+  Object.assign(document.createElement("a"), { href, download: filename || "" }).click();
 }
 
 function DraftRow({ d, onOpen, onDiscard }: { d: SkillDraft; onOpen: () => void; onDiscard: () => void }) {
   const title = d.title || d.name || (d.base ? d.base.name : d.conversation_title ? `「${d.conversation_title}」` : "技能草稿");
   return (
-    <div className={`skill-row draft-row ${d.status}`}>
-      <span className="skill-icon">{working(d) ? <span className="draft-spin" /> : <IconSparkles size={20} />}</span>
-      <button className="grow draft-open" onClick={onOpen}>
-        <div className="skill-title">
-          {title}
-          <span className={`chip draft-state ${d.status}`}>{draftLabel(d)}</span>
-        </div>
-        {d.status === "failed" && d.error ? <div className="skill-desc error">{d.error}</div> : d.summary ? <div className="skill-desc">{d.summary}</div> : null}
+    <div className="mrow">
+      <span className="mrow-icon">{working(d) ? <span className="draft-spin" /> : <IconSparkles size={17} />}</span>
+      <button className="mrow-main" onClick={onOpen} aria-label={`打开草稿 ${title}`}>
+        <span className="mrow-title"><span>{title}</span></span>
+        {d.status === "failed" && d.error ? <span className="mrow-desc error">{d.error}</span> : d.summary ? <span className="mrow-desc">{d.summary}</span> : null}
       </button>
-      <div className="skill-editor-actions">
-        <button className="link" onClick={onOpen}>{d.status === "ready" ? "查看" : d.status === "failed" ? "重试" : "打开"}</button>
-        <button className="link danger-text" onClick={onDiscard} aria-label={`丢弃 ${title}`}>丢弃</button>
+      <div className="mrow-trail">
+        <span className={`state ${d.status}`}>{draftLabel(d)}</span>
+        <RowMenu
+          label={title}
+          actions={[
+            ...(d.status === "failed" ? [{ label: "重试", icon: <IconRetry size={15} />, onSelect: onOpen }] : []),
+            { label: "丢弃草稿", icon: <IconTrash size={15} />, danger: true, onSelect: onDiscard },
+          ]}
+        />
+        <span className="switch-slot" />
       </div>
     </div>
   );
@@ -275,80 +278,82 @@ export default function SkillsPage() {
   const openDrafts = (drafts || []).filter((d) => d.status !== "confirmed" && d.status !== "discarded");
 
   return (
-    <main className="page page-narrow">
-      <div className="page-head">
+    <main className="page mpage">
+      <div className="mpage-head">
         <h1>技能</h1>
-      </div>
-      {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
-
-      <h2 className="section-title">平台技能</h2>
-      <section className="card skill-list">
-        {skills === null ? (
-          <div className="empty">加载中…</div>
-        ) : (
-          platform.map((s) => (
-            <SkillRow
-              key={s.name}
-              s={s}
-              busy={busy === s.name}
-              onToggle={(on) => toggle(s, on)}
-              onOpen={() => setEditing({ mode: "view", skill: s })}
-              onCustomize={() => openDraft(s)}
-            />
-          ))
-        )}
-      </section>
-
-      {openDrafts.length ? (
-        <>
-          <h2 className="section-title" style={{ marginTop: 32 }}>草稿</h2>
-          <section className="card skill-list" aria-label="技能草稿">
-            {openDrafts.map((d) => <DraftRow key={d.id} d={d} onOpen={() => setDraft(d.id)} onDiscard={() => discard(d)} />)}
-          </section>
-        </>
-      ) : null}
-
-      <div className="section-title skill-editor-head" style={{ marginTop: 32 }}>
-        个人技能
-        {storage ? <span className="hint">已用 {formatBytes(storage.used_bytes)} · 剩余 {formatBytes(storage.available_bytes)}</span> : null}
-        <span className="spacer" />
-        <button className="link" onClick={downloadTemplate}>
-          <IconDownload size={15} /> 模板
-        </button>
-        <button className="secondary sm" onClick={() => setEditing({ mode: "create", content: TEMPLATE })}>
-          <IconPlus size={15} /> 新建
-        </button>
         <button className="secondary sm" onClick={() => picker.current?.click()}>
           <IconUpload size={15} /> 上传
         </button>
+        <button className="sm" onClick={() => setEditing({ mode: "create", content: TEMPLATE })}>
+          <IconPlus size={15} /> 新建
+        </button>
         <input ref={picker} type="file" accept=".md,.zip" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
       </div>
-      <section className="card skill-list">
-        {uploading.map((n) => (
-          <div key={n} className="skill-row off">
-            <span className="skill-icon">
-              <IconSparkles size={20} />
-            </span>
-            <div className="grow hint">正在上传并识别 {n}…</div>
+      {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
+
+      {openDrafts.length ? (
+        <section className="msection" aria-label="技能草稿">
+          <div className="msection-head"><h2>草稿</h2></div>
+          <div className="mlist">
+            {openDrafts.map((d) => <DraftRow key={d.id} d={d} onOpen={() => setDraft(d.id)} onDiscard={() => discard(d)} />)}
           </div>
-        ))}
-        {skills !== null && personal.length === 0 && uploading.length === 0 ? (
-          <div className="empty">
-            <strong>还没有个人技能</strong>
-            上传 SKILL.md 或 ZIP，或在对话里提取技能。
+        </section>
+      ) : null}
+
+      <section className="msection">
+        <div className="msection-head">
+          <h2>个人技能</h2>
+          {storage ? <span className="meta">已用 {formatBytes(storage.used_bytes)} · 剩余 {formatBytes(storage.available_bytes)}</span> : null}
+          <div className="actions">
+            <button className="link sm" onClick={downloadTemplate}>
+              <IconDownload size={14} /> 模板
+            </button>
           </div>
-        ) : null}
-        {personal.map((s) => (
-          <SkillRow
-            key={s.file_id}
-            s={s}
-            busy={busy === s.name}
-            locked={isLocked(s, scanning) || busy === s.name}
-            onToggle={(on) => toggle(s, on)}
-            onOpen={() => openDraft(s)}
-            onDelete={() => remove(s)}
-          />
-        ))}
+        </div>
+        <div className="mlist">
+          {uploading.map((n) => (
+            <div key={n} className="mrow off">
+              <span className="mrow-icon"><span className="draft-spin" /></span>
+              <div className="mrow-main"><span className="mrow-desc">正在上传并识别 {n}…</span></div>
+            </div>
+          ))}
+          {skills === null ? (
+            <div className="mlist-empty">加载中…</div>
+          ) : personal.length === 0 && uploading.length === 0 ? (
+            <div className="mlist-empty">上传 SKILL.md 或 ZIP，或在对话里提取技能</div>
+          ) : null}
+          {personal.map((s) => (
+            <SkillRow
+              key={s.file_id}
+              s={s}
+              busy={busy === s.name}
+              locked={isLocked(s, scanning) || busy === s.name}
+              onToggle={(on) => toggle(s, on)}
+              onOpen={() => openDraft(s)}
+              onDelete={() => remove(s)}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="msection">
+        <div className="msection-head"><h2>平台技能</h2></div>
+        <div className="mlist">
+          {skills === null ? (
+            <div className="mlist-empty">加载中…</div>
+          ) : (
+            platform.map((s) => (
+              <SkillRow
+                key={s.name}
+                s={s}
+                busy={busy === s.name}
+                onToggle={(on) => toggle(s, on)}
+                onOpen={() => setEditing({ mode: "view", skill: s })}
+                onCustomize={() => openDraft(s)}
+              />
+            ))
+          )}
+        </div>
       </section>
       {editing ? (
         <SkillEditor target={editing} onClose={() => setEditing(null)} onSaved={saved} onCustomize={(s) => openDraft(s)} />
