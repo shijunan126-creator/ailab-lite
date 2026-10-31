@@ -336,7 +336,9 @@ def test_a_flaky_status_check_does_not_fail_the_run() -> None:
 
 # ---- read_file ----------------------------------------------------------------------------------
 
-from ailab_platform.agent.tools import READ_LIMIT_CHARS, execute_tool  # noqa: E402
+import pytest  # noqa: E402
+
+from ailab_platform.agent.tools import READ_LIMIT_CHARS, ToolError, execute_tool  # noqa: E402
 
 
 class _ReadBroker:
@@ -347,8 +349,8 @@ class _ReadBroker:
         return self.data
 
 
-def _read(data: bytes) -> dict:
-    return asyncio.run(execute_tool("read_file", {"path": "/workspace/x"}, "lease", _ReadBroker(data)))
+def _read(data: bytes, **window) -> dict:
+    return asyncio.run(execute_tool("read_file", {"path": "/workspace/x", **window}, "lease", _ReadBroker(data)))
 
 
 def test_read_file_refuses_binary_instead_of_flooding_the_context() -> None:
@@ -359,8 +361,23 @@ def test_read_file_refuses_binary_instead_of_flooding_the_context() -> None:
 
 def test_read_file_reads_text_including_chinese_and_truncates_long_files() -> None:
     assert _read("你好，世界\n".encode())["content"] == "你好，世界\n"
-    big = _read(("字" * (READ_LIMIT_CHARS + 500)).encode())
-    assert big["ok"] and len(big["content"]) < READ_LIMIT_CHARS + 100 and "truncated" in big["content"]
+    text = "".join(f"{i}字" for i in range(READ_LIMIT_CHARS))
+    first = _read(text.encode())
+    assert first["ok"] and first["content"] == text[:READ_LIMIT_CHARS]
+    assert first["total_chars"] == len(text) and first["next_offset"] == READ_LIMIT_CHARS
+    chunks, offset = [first["content"]], first["next_offset"]
+    while offset is not None:
+        part = _read(text.encode(), offset=offset)
+        chunks.append(part["content"])
+        offset = part.get("next_offset")
+    assert "".join(chunks) == text and part["offset"] > 0 and "next_offset" not in part
+    assert _read(text.encode(), offset=5, limit=3)["content"] == text[5:8]
+
+
+@pytest.mark.parametrize("window", [{"offset": -1}, {"offset": 10**9}, {"limit": 0}, {"limit": READ_LIMIT_CHARS + 1}, {"offset": "3"}])
+def test_read_file_rejects_bad_windows(window) -> None:
+    with pytest.raises(ToolError):
+        _read(b"short", **window)
 
 
 def test_a_multibyte_char_split_by_the_sniff_window_is_still_text() -> None:
