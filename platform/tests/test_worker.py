@@ -8,6 +8,35 @@ from PIL import Image
 from ailab_platform.worker.pipeline import extract, scan_bytes
 
 
+def test_clean_scan_renders_before_office_reader(monkeypatch):
+    from ailab_platform.config import settings
+    from ailab_platform.worker import office, pipeline, preview
+
+    events = []
+    p = ImagePlatform(b"data", filename="input.docx", content_type="application/octet-stream")
+    original_patch = p.patch_file
+
+    def patch(file_id, meta=None, status=None, **kwargs):
+        original_patch(file_id, meta, status, **kwargs)
+        if meta and "scan" in meta and status is None:
+            p.file["meta"].update(preview_job_id="job", preview={"status": "pending", "kind": "pages"})
+        return p.file
+
+    monkeypatch.setattr(settings, "render_prewarm", 1)
+    monkeypatch.setattr(p, "patch_file", patch)
+    monkeypatch.setattr(preview, "process_preview", lambda *args: events.append("preview") or {"status": "ready"})
+    monkeypatch.setattr(
+        office,
+        "read",
+        lambda *args: (
+            events.append("parse")
+            or {"_object_prefix": "derived/x/", "kind": "docx", "chars": 0, "status": "ready", "parser": "test", "total_units": 0}
+        ),
+    )
+    pipeline.process_file("fil_order", platform=p)
+    assert events == ["preview", "parse"]
+
+
 def image_bytes(fmt="PNG", size=(960, 240), mode="RGB", color="red", **kwargs):
     out = io.BytesIO()
     Image.new(mode, size, color).save(out, fmt, **kwargs)

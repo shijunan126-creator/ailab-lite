@@ -161,7 +161,26 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
             return {"file_id": file_id, "rejected": scan}
         # Commit the scanner verdict before any parser starts. The API stages a
         # preview in the same transaction, independently of parsing readiness.
-        platform.patch_file(file_id, meta={"scan": scan})
+        scanned_file = platform.patch_file(file_id, meta={"scan": scan})
+        # Give the preview the standby before the document reader competes for
+        # the same reserved capacity. The durable outbox remains the retry path.
+        if settings.render_prewarm and isinstance(scanned_file, dict):
+            preview_meta = scanned_file.get("meta") or {}
+            job_id = preview_meta.get("preview_job_id")
+            if job_id and (preview_meta.get("preview") or {}).get("status") == "pending":
+                from .preview import process_preview
+
+                try:
+                    result = process_preview(file_id, job_id, platform)
+                    if result.get("skipped") == "in_flight":
+                        deadline = time.monotonic() + 120
+                        while time.monotonic() < deadline:
+                            current = platform.get_file(file_id, job="preview").get("meta") or {}
+                            if current.get("preview_job_id") != job_id or (current.get("preview") or {}).get("status") != "pending":
+                                break
+                            time.sleep(0.1)
+                except Exception:
+                    log.warning("early preview failed; durable preview job will retry", exc_info=True)
         if (meta.get("meta") or {}).get("template_kind"):
             try:
                 analysis = execute("template", source, Path(tmp) / "template")
