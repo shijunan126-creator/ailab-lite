@@ -8,6 +8,7 @@ from __future__ import annotations
 import io
 import os
 import shutil
+import subprocess
 import uuid
 from pathlib import Path
 
@@ -73,7 +74,17 @@ def test_a_workbook_previews_as_sheets(logged_in, stack, tmp_path) -> None:
     page.keyboard.press("Escape")
 
 
-@pytest.mark.skipif(not all(shutil.which(x) for x in ("soffice", "pdftoppm", "pdfinfo", "timeout")), reason="Office tools unavailable")
+def _render_listener_available() -> bool:
+    """The render sandbox converts through a LibreOffice listener driven by the image's /usr/bin/python3 with UNO.
+    The mock provider runs that on the host, so the host must offer the same (Linux with python3-uno; not macOS)."""
+    if os.environ.get("AILAB_E2E_SANDBOX_PROVIDER", "mock") != "mock":
+        return True
+    if not all(shutil.which(x) for x in ("soffice", "pdftoppm", "pdfinfo", "timeout")) or not Path("/proc").is_dir():
+        return False
+    return subprocess.run(["/usr/bin/python3", "-c", "import uno"], capture_output=True, timeout=10).returncode == 0
+
+
+@pytest.mark.skipif(not _render_listener_available(), reason="render sandbox listener unavailable on this host")
 def test_a_document_previews_as_pages_rendered_in_a_sandbox(logged_in, stack, tmp_path) -> None:
     from docx import Document
 

@@ -6,8 +6,10 @@ import shutil
 import sys
 from pathlib import Path
 
-WORK = Path("/workspace")
-TEMP = Path("/tmp")
+# Resolved from the script's own place (/workspace/.ailab) and TMPDIR so a provider that maps the sandbox
+# into a host directory never makes this clean the host's /workspace or /tmp.
+WORK = Path(__file__).resolve().parents[1]
+TEMP = Path(os.environ.get("TMPDIR") or "/tmp")
 KEEP_TOOLS = {"uno_convert.py", "render_sandbox_health.py"}
 KEEP_TEMP = {"lo-profile", "ailab-warm"}
 # Every user file is deleted above; what remains is LibreOffice's own profile, which grows a few KiB per

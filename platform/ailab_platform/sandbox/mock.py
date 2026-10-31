@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import signal
 import subprocess
@@ -114,19 +115,26 @@ class MockSandbox(SandboxProvider):
         return count
 
     def _translate_command(self, sandbox_id: str, cmd: str) -> str:
-        translated = cmd
         root = self._sandbox_root(sandbox_id)
-        translated = translated.replace("/tmp/ailab-background", str(root / "background"))
-        translated = translated.replace("/workspace", str(root / "workspace"))
-        translated = translated.replace("/opt/skills", str(SKILLS))
-        translated = translated.replace("/opt/ailab-office", str(BASE_DIR.parent / "vendor" / "zcode-office-runtime"))
-        return translated.replace("/opt/ailab-tools", str(TOOLS))
+        # A real sandbox has a private /tmp. One pass keeps a host root that itself contains /tmp from being remapped.
+        mapping = {
+            "/tmp/ailab-background": root / "background",
+            "/tmp": root / "tmp",
+            "/workspace": root / "workspace",
+            "/opt/skills": SKILLS,
+            "/opt/ailab-office": BASE_DIR.parent / "vendor" / "zcode-office-runtime",
+            "/opt/ailab-tools": TOOLS,
+        }
+        pattern = "|".join(re.escape(prefix) for prefix in mapping)
+        return re.sub(rf"({pattern})(?![\w.-])", lambda match: str(mapping[match[1]]), cmd)
 
     def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
         translated = self._translate_command(sandbox_id, cmd)
         root = self._sandbox_root(sandbox_id)
         env = os.environ.copy()
         env["PATH"] = f"{Path(sys.executable).parent}:{env.get('PATH', '')}"
+        (root / "tmp").mkdir(exist_ok=True)
+        env["TMPDIR"] = str(root / "tmp")
         started = time.monotonic()
         try:
             proc = subprocess.Popen(
