@@ -20,6 +20,23 @@ SEARCH = {
     },
 }
 CORE = {"ui_components", "search_capabilities", "load_skill", "recall_history", "ask_user", "update_plan", "run_js"}
+# Version 1 is intentionally fixed: selection does not depend on prompt, user, or prior tool calls.
+REDUCED_V1 = frozenset(
+    {"search_capabilities", "load_skill", "memory", "recall_history", "ask_user", "update_plan", "exec", "exec_wait", "deliver_file"}
+)
+
+
+def catalog_for_budget(catalog, budget_tokens):
+    from ..model_policy import estimator
+
+    if estimator.raw(catalog) <= budget_tokens:
+        return catalog
+    reduced = [tool for tool in catalog if tool["function"]["name"] in REDUCED_V1]
+    if estimator.raw(reduced) > budget_tokens:
+        raise ValueError("version 1 reduced tool catalog exceeds model schema budget")
+    return reduced
+
+
 ALIASES = {
     "执行": "exec",
     "计算": "run_js",

@@ -2,8 +2,10 @@ import asyncio
 import copy
 import json
 
-from ailab_platform.agent.loop import AgentLoop
+from ailab_platform.agent.discovery import REDUCED_V1, catalog_for_budget
+from ailab_platform.agent.loop import AgentLoop, _tools_for_run
 from ailab_platform.agent.prompts import memory_prompt
+from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.llm import LLMResponse
 from ailab_platform.model_transport import ModelTransport
 from tests.prefix_harness import assert_extension, scripted_server
@@ -62,3 +64,14 @@ def test_unchanged_memory_refresh_preserves_all_request_messages():
             assert messages == original
 
     asyncio.run(exercise())
+
+
+def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
+    from ailab_platform.agent.discovery import SEARCH
+    from ailab_platform.model_policy import estimator
+
+    catalog = [SEARCH, *tools_for_turn()]
+    reduced = [tool for tool in catalog if tool["function"]["name"] in REDUCED_V1]
+    assert catalog_for_budget(catalog, estimator.raw(catalog)) == catalog
+    assert catalog_for_budget(catalog, estimator.raw(reduced)) == reduced
+    assert _tools_for_run({"_fixed_catalog": reduced}) == reduced

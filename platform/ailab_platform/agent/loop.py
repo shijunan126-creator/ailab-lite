@@ -85,12 +85,25 @@ WORKSPACE_MISSING_NOTE = "（平台提示：此前在沙箱中的文件没有保
 
 
 def _tools_for_run(run):
+    if "_fixed_catalog" in run:
+        return run["_fixed_catalog"]
     catalog = [discovery.SEARCH, *(tools_for_chat() if (run.get("options") or {}).get("mode") == "chat" else tools_for_turn())]
     if not settings.client_js_enabled or (run.get("options") or {}).get("client") != "portal":
         catalog = [t for t in catalog if t["function"]["name"] != "run_js"]
     spec = get_catalog().get(run.get("model"))
     if not settings.genui_enabled or not spec or not spec.supports({"genui", "tools"}):
         catalog = [t for t in catalog if t["function"]["name"] != "ui_components"]
+    if spec and not spec.supports({"vision"}):
+        catalog = [t for t in catalog if t["function"]["name"] != "view_attachment"]
+    if spec and not spec.supports({"tools"}):
+        return []
+    if spec:
+        input_budget = ModelPolicy.input_budget(spec)
+        budget = min(input_budget, max(800, int(input_budget * 0.15)))
+        try:
+            return discovery.catalog_for_budget(catalog, budget)
+        except ValueError as exc:
+            raise LLMError(str(exc)) from exc
     return catalog
 
 
@@ -879,10 +892,6 @@ class AgentLoop:
         threshold = policy.compaction_threshold(spec, config)
         fixed = [*base[:2], base[-1]] if len(base) > 2 and base[1].get("role") == "system" else [base[0], base[-1]]
         context_tools = _tools_for_run(run)
-        if not spec.supports({"vision"}):
-            context_tools = [t for t in context_tools if t["function"]["name"] != "view_attachment"]
-        if not spec.supports({"tools"}):
-            context_tools = []
         if estimator.estimate(model, {"messages": fixed, "tools": context_tools}) >= budget:
             raise LLMError("system, skills and current input exceed context budget")
         page = await self.platform.get_model_context(run_id)
@@ -1740,6 +1749,9 @@ class AgentLoop:
             llm = self.llm or llm_for(model)  # fails the run early if the model is gone from the catalog
             options = run.get("options") or {}
             mode, skill = options.get("mode", "work"), options.get("skill")
+            if "tool_catalog_v1" not in state:
+                state["tool_catalog_v1"] = _tools_for_run(run)
+            run["_fixed_catalog"] = state["tool_catalog_v1"]
             turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
             turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
             if state.get("checkpoint_capacity_exceeded"):
@@ -1796,8 +1808,6 @@ class AgentLoop:
             spec = get_catalog().get(model)
             # chat mode, or a model without tool calling: words only, so never a sandbox
             catalog = _tools_for_run(turn.run)
-            if spec and not spec.supports({"vision"}):
-                catalog = [t for t in catalog if t["function"]["name"] != "view_attachment"]
             state.setdefault("internal_skill_versions", {})
             for internal_name, version in state["internal_skill_versions"].items():
                 internal_skills.load(internal_name, version)
