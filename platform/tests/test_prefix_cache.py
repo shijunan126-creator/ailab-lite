@@ -52,6 +52,30 @@ def test_discovery_keeps_request_prefix_and_tools():
     }
 
 
+def test_clipped_tool_result_stays_identical_on_later_calls():
+    class Broker(FakeBroker):
+        async def get_file(self, lease_id, path):
+            return b"x" * 100_000
+
+    def tool_call(call_id, name, arguments):
+        return {"tool_calls": [{"index": 0, "id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}]}
+
+    responses = [
+        tool_call("read", "read_file", '{"path":"/workspace/work/large.txt"}'),
+        tool_call("plan", "update_plan", '{"steps":["finish"]}'),
+        {"content": "done"},
+    ]
+    with scripted_server(responses) as (url, requests):
+        platform = FakePlatform()
+        asyncio.run(AgentLoop(platform=platform, broker=Broker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 3
+    assert_extension(requests[0], requests[1])
+    assert_extension(requests[1], requests[2])
+    result = next(message for message in requests[1]["messages"] if message.get("tool_call_id") == "read")
+    assert "truncated" in result["content"] and len(result["content"]) < 100_000
+
+
 def test_unchanged_memory_refresh_preserves_all_request_messages():
     memory = {"enabled": True, "entries": [{"id": "m1", "kind": "user", "content": "中文"}]}
 
