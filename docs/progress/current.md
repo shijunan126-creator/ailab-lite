@@ -1,3 +1,15 @@
+# 当前工作交接：memory / JS / 管理页集成（2026-10-31）
+
+工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，基于 `origin/main@995a5f6`；依次合并后端 `ce68e25` 和 Portal `3974dd8`。E2E 选择器调整提交 `10a26ea`；未 push、未 PR。详情和验证基线见 [P3 记录](updates/2026-10-31-memory-js-polish.md)。
+
+**完成**：Ruff、Portal 单测及构建；SQLite 和 PostgreSQL 全套的环境失败项按 GNU PATH 复测通过。E2E 全套及失败项复测完成。
+
+**待处理**：资料库末行边框断言与新外框设计不一致；390px 记忆行菜单在点击前消失，交 Portal 负责人排查。AILab 卷已附加但无法挂载，系统报告无法读取 APFS 容器超级块，部署与真模型验收均未执行。
+
+**下一步**：由用户处理或授权处理本地磁盘故障；Claude 处理移动端菜单及确认表格验收契约，之后复测相关 E2E，并在环境恢复后按本轮授权增量部署和执行指定轻量模型检查。
+
+---
+
 # 当前工作
 
 ## 记忆质量与 run_js（2026-10-31）
