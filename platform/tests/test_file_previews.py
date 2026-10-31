@@ -413,6 +413,19 @@ def test_preview_completion_rejects_untrusted_manifest(api, tamper):
     assert preview(api, fid)["status"] == "pending"
 
 
+def test_eager_pages_are_available_to_visual_requests_without_another_render(api):
+    from ailab_platform.api.routes_library_tools import document_images
+
+    fid = upload(api, "eager.pdf")
+    job = ApiClient(api).get_file(fid)["meta"]["preview_job_id"]
+    process_preview(fid, job, platform=ApiClient(api))
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        result = document_images(db, file, [1])
+        assert [page["page"] for page in result["files"]] == [1]
+        assert file.meta["preview_job_id"] == job
+
+
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "gb18030"])
 def test_text_artifact_without_extracted_text_gets_a_preview(api, encoding):
     api.headers.update(AUTH)

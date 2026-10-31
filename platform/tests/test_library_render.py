@@ -1,5 +1,6 @@
 """Library sandbox rendering reuses public lease lifecycle, including error cleanup."""
 
+import hashlib
 import io
 import shutil
 import tarfile
@@ -112,6 +113,41 @@ def test_render_rejects_unexpected_archive_members(tmp_path):
         renderer.render("file", "job")
     assert not storage.exists("derived/file/preview/p-1.jpg")
     assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(
+    not all(shutil.which(x) for x in ["soffice", "pdftoppm", "pdfinfo", "timeout", "tar"]), reason="Office tools unavailable"
+)
+def test_visual_page_requests_reuse_private_pdf_and_keep_requested_order(tmp_path):
+    document = Document()
+    document.add_paragraph("First")
+    document.add_page_break()
+    document.add_paragraph("Second")
+    data = io.BytesIO()
+    document.save(data)
+    content = data.getvalue()
+    manager, renderer, storage = setup_renderer(tmp_path, content, "hello.docx")
+    original = manager.platform.get_file
+    manager.platform.get_file = lambda fid, **bound: {
+        **original(fid, **bound),
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "meta": {"preview_job_id": "job", "preview": {"status": "pending"}, "ocr_render_job_id": "job", "ocr_render_pages": [2, 1]},
+    }
+    commands = []
+    execute = manager.exec
+    manager.exec = lambda lease, cmd, timeout: commands.append(cmd) or execute(lease, cmd, timeout)
+    first = renderer.render("file", "job")
+    second = renderer.render("file", "job")
+    other = renderer.render("other-file", "job")
+    assert [int(name[2:-4]) for name in first["preview"]["pages"]] == [2, 1]
+    assert second["preview"] == first["preview"]
+    render_commands = [cmd for cmd in commands if "render_preview.py" in cmd]
+    assert other["preview"] == first["preview"]
+    assert len(render_commands) == 3
+    assert "/workspace/inputs/input.docx" in render_commands[0]
+    assert "/workspace/inputs/cached.pdf" in render_commands[1]
+    assert "/workspace/inputs/input.docx" in render_commands[2]
+    assert storage.list_prefix("derived/file/render-cache/")
 
 
 def test_render_uses_the_reserved_render_class_and_reads_bound_to_its_job(tmp_path):

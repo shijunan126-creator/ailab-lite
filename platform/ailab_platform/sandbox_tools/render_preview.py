@@ -75,7 +75,7 @@ def pdf_document(src: Path, out: Path) -> dict:
     return {"kind": "pdf", "pdf": "document.pdf", "page_count": count}
 
 
-def pages(src: Path, out: Path, selected: list[int] | None = None) -> dict:
+def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
@@ -104,8 +104,18 @@ def pages(src: Path, out: Path, selected: list[int] | None = None) -> dict:
                 capture_output=True,
                 timeout=90,
             )
+        if save_pdf and pdf.stat().st_size <= 32 * 1024 * 1024:
+            shutil.copyfile(pdf, out / "document.pdf")
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
-    return {"kind": "pages", "pages": names, "page_count": count}
+    if selected:
+        order = {page: index for index, page in enumerate(selected)}
+        names.sort(key=lambda name: order[int(name[2:-4])])
+    return {
+        "kind": "pages",
+        "pages": names,
+        "page_count": count,
+        **({"pdf_cache": "document.pdf"} if (out / "document.pdf").exists() else {}),
+    }
 
 
 def template_thumbnail(out: Path, result: dict) -> None:
@@ -269,7 +279,7 @@ def main() -> int:
                 selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]
                 if not 1 <= len(selected) <= 20 or any(n < 1 or n > 100000 for n in selected):
                     raise ValueError("invalid_page_selection")
-            result = pages(src, out, selected)
+            result = pages(src, out, selected, save_pdf="--save-pdf" in sys.argv[3:])
             if "--template-thumbnail" in sys.argv[3:]:
                 template_thumbnail(out, result)
                 result["thumbnail"] = "template-thumbnail.jpg"

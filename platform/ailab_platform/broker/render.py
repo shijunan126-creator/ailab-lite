@@ -65,9 +65,32 @@ class LibraryRenderer:
                 raise LeaseError("invalid_page_selection")
             thumbnail_option += " --pages " + ",".join(map(str, selected))
 
+        digest = file.get("sha256", "")
+        cache_key = None
+        visual = suffix in PAGES or meta.get("ocr_render_job_id") == job_id
+        if re.fullmatch(r"[a-f0-9]{64}", digest) and visual and suffix != ".pdf" and not pdf_mime:
+            version = hashlib.sha256(SCRIPT.read_bytes() + b"\0" + self._spec().image.encode()).hexdigest()[:20]
+            cache_key = f"derived/{file_id}/render-cache/{digest}/{version}/document.pdf"
+        cached_pdf = bool(cache_key and self.manager.storage.exists(cache_key))
+        if cached_pdf:
+            source = "/workspace/inputs/cached.pdf"
+        elif cache_key:
+            thumbnail_option += " --save-pdf"
+
         def prepare(lease: dict) -> None:
             injection_started = time.monotonic()
-            self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)
+            if cached_pdf:
+                with self.manager.transfer_file() as local:
+                    with self.manager.storage.open_stream(cache_key) as chunks, local.open("wb") as out:
+                        total = 0
+                        for chunk in chunks:
+                            total += len(chunk)
+                            if total > 32 * 1024 * 1024:
+                                raise LeaseError("cached_pdf_limit")
+                            out.write(chunk)
+                    self.manager._provider_call("put_file_from_path", lease["provider_ref"], source, local, max_bytes=32 * 1024 * 1024)
+            else:
+                self.manager.inject_file(lease, file_id, source, job="preview", preview_job=job_id)
             self.manager.put_input(lease, "/workspace/.ailab/render_preview.py", SCRIPT.read_bytes())
             phases["inject_seconds"] = time.monotonic() - injection_started
 
@@ -123,6 +146,11 @@ class LibraryRenderer:
                 preview = {"status": "ready", "kind": "sheets", "data": "sheets.json"}
             else:
                 raise LeaseError("invalid_render_output")
+            pdf_name = manifest.get("pdf_cache")
+            if pdf_name is not None and (pdf_name != "document.pdf" or not cache_key or cached_pdf or kind != "pages"):
+                raise LeaseError("invalid_render_output")
+            if pdf_name:
+                names = [*names, pdf_name]
             assets = {}
             export_started = time.monotonic()
             remaining = max(1, int(120 - (time.monotonic() - started)))
@@ -134,20 +162,25 @@ class LibraryRenderer:
             # One sandbox transfer avoids a provider round trip for every page. Never
             # extract an untrusted archive by path: validate every member first.
             with self.manager.transfer_file() as local:
-                self.manager._download(self.manager.get(lease_id), archive, local, 33 * 1024 * 1024)
+                self.manager._download(self.manager.get(lease_id), archive, local, 65 * 1024 * 1024)
                 with tarfile.open(local, "r:") as bundle:
                     members = bundle.getmembers()
                     if (
                         len(members) != len(names)
                         or {m.name for m in members} != set(names)
-                        or any(not m.isfile() or not 0 <= m.size <= settings.max_sandbox_read_bytes for m in members)
-                        or sum(m.size for m in members) > 32 * 1024 * 1024
+                        or any(
+                            not m.isfile()
+                            or not 0 <= m.size <= (32 * 1024 * 1024 if m.name == pdf_name else settings.max_sandbox_read_bytes)
+                            for m in members
+                        )
+                        or sum(m.size for m in members if m.name != pdf_name) > 32 * 1024 * 1024
                     ):
                         raise LeaseError("invalid_render_output")
                     for member in members:
                         if time.monotonic() - started >= 120:
                             raise LeaseError("render_timeout")
-                        key = f"derived/{file_id}/preview/{member.name}"
+                        is_pdf = member.name == pdf_name
+                        key = cache_key if is_pdf else f"derived/{file_id}/preview/{member.name}"
                         source = bundle.extractfile(member)
                         if source is None:
                             raise LeaseError("invalid_render_output")
@@ -157,8 +190,9 @@ class LibraryRenderer:
                                 for chunk in iter(lambda: source.read(1024 * 1024), b""):
                                     digest.update(chunk)
                                     out.write(chunk)
-                            self.manager.storage.put_file(key, asset, mime)
-                        assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
+                            self.manager.storage.put_file(key, asset, "application/pdf" if is_pdf else mime)
+                        if not is_pdf:
+                            assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
             phases["export_seconds"] = time.monotonic() - export_started
             return {"preview": preview, "assets": assets}
         finally:

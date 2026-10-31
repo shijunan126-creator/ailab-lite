@@ -1037,10 +1037,12 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if preview.image == "display.webp":
             meta["display_key"] = f"derived/{file_id}/display.webp"
             meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
-        if meta.get("ocr_render_job_id") == body.job_id:
+        if preview.status == "ready" and preview.kind == "pages":
             from ..models import RenderedPage
 
             for name, asset in assets.items():
+                if name == "template-thumbnail.jpg":
+                    continue
                 page = int(name[2:-4])
                 existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
                 if existing:
@@ -1048,7 +1050,11 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
                 else:
                     db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
             meta["ocr_preview"] = meta["preview"]
-            meta["ocr_preview_assets"] = assets
+            meta["ocr_preview_assets"] = {name: assets[name] for name in preview.pages}
+        if meta.get("ocr_render_job_id") == body.job_id:
+            if preview.status != "ready":
+                meta["ocr_preview"] = meta["preview"]
+                meta["ocr_preview_assets"] = assets
             before = meta.pop("preview_before_ocr", {})
             for key in ("preview", "preview_assets", "preview_job_id"):
                 if key in before:
