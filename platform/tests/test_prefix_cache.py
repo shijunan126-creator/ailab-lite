@@ -153,7 +153,7 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
 
 
-def test_parent_with_recall_pauses_before_summarizing_until_sources_can_be_revalidated(monkeypatch):
+def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeypatch):
     spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     prior = [
@@ -162,10 +162,12 @@ def test_parent_with_recall_pauses_before_summarizing_until_sources_can_be_reval
         {"role": "user", "content": "旧" * 4700},
         {"role": "tool", "name": "recall_history", "tool_call_id": "recall", "content": "{}"},
     ]
-    loop = AgentLoop(platform=FakePlatform(), llm=ScriptedLLM([]))
     current = {"role": "user", "content": "新" * 500}
-    with pytest.raises(BudgetPause, match="历史引用需要重新校验"):
-        asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
+    with scripted_server([{"content": "曾查询历史主题"}]) as (url, requests):
+        loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
+        result = asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
+    assert "不要把 recall_history 的原文" in requests[0]["messages"][-1]["content"]
+    assert all(message.get("name") != "recall_history" for message in result)
 
 
 def test_unchanged_memory_refresh_preserves_all_request_messages():
