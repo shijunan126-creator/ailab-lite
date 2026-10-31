@@ -130,6 +130,44 @@ def test_next_run_extends_the_previous_run_wire_messages():
     ]
 
 
+def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    previous = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 4700},
+        {"role": "assistant", "content": "done"},
+    ]
+    current = {"role": "user", "content": "新" * 500}
+    tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
+    with scripted_server([{"content": "summary"}]) as (url, requests):
+        platform = FakePlatform()
+        llm = ModelTransport(url)
+        run = {"_attempt_id": "attempt", "options": {"mode": "chat"}}
+        loop = AgentLoop(platform=platform, llm=llm)
+        result = asyncio.run(loop._compact_parent_context("fixture", run, llm, "m", previous, current, tools))
+    assert requests[0]["messages"][:-1] == previous
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert result[:2] == previous[:2] and result[2]["content"].endswith("summary") and result[-1] == current
+    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+
+
+def test_parent_with_recall_pauses_before_summarizing_until_sources_can_be_revalidated(monkeypatch):
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    prior = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 4700},
+        {"role": "tool", "name": "recall_history", "tool_call_id": "recall", "content": "{}"},
+    ]
+    loop = AgentLoop(platform=FakePlatform(), llm=ScriptedLLM([]))
+    current = {"role": "user", "content": "新" * 500}
+    with pytest.raises(BudgetPause, match="历史引用需要重新校验"):
+        asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
+
+
 def test_unchanged_memory_refresh_preserves_all_request_messages():
     memory = {"enabled": True, "entries": [{"id": "m1", "kind": "user", "content": "中文"}]}
 

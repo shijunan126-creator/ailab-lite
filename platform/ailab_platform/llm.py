@@ -58,6 +58,7 @@ class ModelCall:
     emitted: bool = False
     ttft_seconds: float | None = None
     quiet: bool = False
+    tool_choice: str | None = None
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)

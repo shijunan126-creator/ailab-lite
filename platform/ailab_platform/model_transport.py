@@ -115,7 +115,7 @@ class ModelTransport(LLMClient):
             payload["stream_options"] = {"include_usage": True}
         if tools:
             payload["tools"] = tools
-            payload["tool_choice"] = "auto"
+            payload["tool_choice"] = call.tool_choice if call is not None and call.tool_choice else "auto"
         return payload, headers
 
     async def chat_stream(
