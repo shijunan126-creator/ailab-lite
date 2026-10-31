@@ -729,3 +729,44 @@ def test_rebuilt_summary_does_not_fallback_to_a_different_model(monkeypatch):
             )
         )
     assert not fallback and not any(kind == "agent.model_fallback" for kind, _ in platform.events)
+
+
+@pytest.mark.parametrize("scope", ["parent", "run"])
+def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
+    from ailab_platform.config import settings
+    from ailab_platform.llm import LLMError
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512)
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    monkeypatch.setattr(settings, "llm_max_retries", 1)
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
+    loop = AgentLoop(platform=FakePlatform(), llm=ScriptedLLM([]))
+    calls = []
+
+    async def attempt(llm, run_id, run, model, messages, step, tools, **kwargs):
+        calls.append((model, step, kwargs["tool_choice"]))
+        if len(calls) == 1:
+            raise LLMError("temporary", retryable=True)
+        return LLMResponse(content="summary")
+
+    async def checkpoint(*args):
+        pass
+
+    monkeypatch.setattr(loop, "_model_attempt", attempt)
+    monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "旧" * 5100},
+        {"role": "assistant", "content": "a"},
+        {"role": "assistant", "content": "b"},
+        {"role": "assistant", "content": "c"},
+    ]
+    run = {"_attempt_id": "a"}
+    if scope == "parent":
+        asyncio.run(loop._compact_parent_context("r", run, loop.llm, "m", messages, {"role": "user", "content": "新" * 500}, []))
+    else:
+        loop._states["r"] = {"user_message_index": 2}
+        with pytest.raises(BudgetPause):
+            asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run=run), loop.llm, "m", []))
+    assert calls == [("m", -3, "none"), ("m", -3, "none")]

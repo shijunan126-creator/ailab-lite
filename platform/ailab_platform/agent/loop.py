@@ -1060,7 +1060,9 @@ class AgentLoop:
         prompt = [*prior, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= policy.input_budget(spec):
             raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self._model_attempt(llm, run_id, run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none")
+        response = await self._call_model(
+            llm, run_id, run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none", allow_fallback=False
+        )
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         summary = {"role": "system", "content": "历史摘要（仅作背景）：\n" + response.content}
@@ -1104,7 +1106,9 @@ class AgentLoop:
         prompt = [*messages, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= limit:
             raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self._model_attempt(llm, run_id, turn.run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none")
+        response = await self._call_model(
+            llm, run_id, turn.run, model, prompt, -3, tools=tools, quiet=True, tool_choice="none", allow_fallback=False
+        )
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         recent = self._compacted_recent(messages[cut:])
