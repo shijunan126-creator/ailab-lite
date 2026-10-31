@@ -45,3 +45,18 @@ P5 产品基线 `dd25c82`，平台镜像标签 `sm-p3-dd25c82`，Portal 沿用 P
 - 1280 与 390 宽度：技能 7 行、记忆 2 行、文件 1 行，首行菜单均打开；定时任务 0 行，无可测菜单。脚本没有分别记录菜单耗时；截图和输出保存在 `/tmp/p4qa/`。
 
 本包按用户要求不改产品代码，只提交文档；语义重复与附件查看超时需后续处理。真实模型输出具有波动，本次不证明长期稳定性、其他模型或有定时任务行时的菜单行为。未重复完整测试或部署后额外验收。
+
+
+## P6 完整验证、部署与复查（2026-10-31）
+
+产品基线 `9115406`，在 P5 后新增 `7924ec8`（整理 judge 比较全部已有记忆，修复中文 token_set_ratio 约 41 低于 55 导致语义重复未进入比较）、`11b33ec`（reconciler 在其他预览结束后重新请求等待中的页面渲染，修复约 150 秒停滞）和 `9115406`（390px 整理日期行单行）。P5 Excel 是模型交付、查看、修改并重复交付三次，不是重放。
+
+GNU PATH 下 Ruff check 与 format 通过（477 文件）；SQLite 全套 1677 通过、151 跳过；PostgreSQL + Redis 全套 1772 通过、56 跳过；Portal 114 通过、build 通过；E2E 145 通过、6 跳过。隔离 PostgreSQL 15432、Redis 16379 已停止并删除。pytest 安静模式的数量按进度字符统计；日志留在 `/tmp/p6-*.log`。
+
+按授权以 Git archive 固定 `9115406`，平台与 Portal 标签 `sm-p3-9115406`，复用其他镜像、依赖；sync、两项构建、五服务 compose up --wait 均 exit 0，五服务 healthy，无备份。日志 `/tmp/ailab-p6-build.log`、`/tmp/ailab-p6-up.log`。
+
+指定 `ui3.py` 复查：Excel run succeeded、37 秒、交付一个文件，无暂停或恢复事件，因而没有重现 150 秒停滞，**也没有覆盖等待恢复路径**。模型在交付前以本地文件名 `pg-1.png` 作为 `view_attachment` 的 file_id，image-reference 返回 404（资料不存在或不可用），随后继续生成并成功交付；不能把这次当作页面渲染等待已通过。自动回归覆盖见 `tests/test_document_reading_reliability.py`。
+
+偏好回合及立即整理后，最新整理 applied，候选「用户要求以后回复都先说结论」为 duplicate，related 包含已有「用户要求以后回答都先给结论」，新增 0。`ui3.py` 点击后没有等待该次记录创建，打印了 P5 的旧 added 记录；通过 API 核对最新记录终态得上述结果。历史 P5 重复项仍保留。但偏好回合中模型主动调用 `memory remove`，将原有「希望回答时先给结论，再展开说明。」删除，并把 `explicit` 设为 true；本次用户输入没有要求删除，API 接受了该调用。根因路径：`agent/tools.py` 将 `explicit` 交由模型填写；`api/routes_memory.py::run_memory` 在 auto_save 开启时允许写操作，`remove` 直接移除可访问条目，没有核验用户是否要求删除，且该分支不要求 `explicit`。这是新发现的记忆删除授权问题，需 Claude 处理；未自行改产品或恢复数据。
+
+遗留：模型查看文件后可能修改并重新交付；Work 模式仍通过 `search_capabilities` 发现 exec/deliver_file，均为提示词/设计后续，未在本包修复。真实等待恢复、最终 Excel 内容、其他模型及长期稳定性未验；定时任务无行菜单仍未验。未 push 或创建 PR；Claude 应先审阅上述新问题和未覆盖边界，再决定 PR/合并。

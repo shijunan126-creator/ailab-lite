@@ -1,12 +1,12 @@
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
-工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，基于 `origin/main@995a5f6`；部署产品基线 `dd25c82`、平台标签 `sm-p3-dd25c82`，未 push、未 PR。
+工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，base `origin/main@995a5f6`，产品基线 `9115406`，部署标签 `sm-p3-9115406`；未 push、未 PR。
 
-**完成**：P3/P4 检查与 P5 指定部署和复验已记录，个人技能与 xlsx Run 最终成功；手动整理和有行页面菜单已检查。详见 [P3–P5 记录](updates/2026-10-31-memory-js-polish.md)。
+**完成**：P6 全套验证通过、平台和 Portal 增量部署；整理实际判定语义重复。结果与边界见 [P3–P6 记录](updates/2026-10-31-memory-js-polish.md#p6-完整验证部署与复查2026-10-31)。
 
-**遗留**：整理新增语义重复的偏好；xlsx Run 最后一次附件查看超时，虽成功交付并最终 succeeded，原因尚未完全确认。定时任务无行，菜单未测。本包按要求只提交文档，未改产品代码。
+**待审阅**：Excel 成功交付但未触发等待，不能确认真实暂停恢复；模型以本地文件名调用附件接口返回 404。偏好回合模型主动删除原记忆并声明 explicit，用户并未要求删除，API 接受；详见记录。其他模型、长期稳定性和有行的定时任务菜单未验。
 
-**下一步**：Claude 打开 PR 并合并；审阅上述缺陷与未测边界。未 push 或创建 PR。
+**下一步**：Claude 审阅并处理上述问题及边界，之后打开 PR 并合并；本包只提交文档。
 
 ---
 
