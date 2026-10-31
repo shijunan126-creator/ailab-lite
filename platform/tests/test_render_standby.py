@@ -59,7 +59,7 @@ def test_idle_and_restart_release_standby(monkeypatch):
 
 
 def test_disabled_and_failed_warmup(monkeypatch):
-    manager, provider, _ = _manager()
+    manager, _, _ = _manager()
     spec = LibraryRenderer(manager)._spec()
     monkeypatch.setattr(settings, "render_prewarm", 0)
     with pytest.raises(LeaseError, match="disabled"):
