@@ -76,6 +76,20 @@ def test_clipped_tool_result_stays_identical_on_later_calls():
     assert "truncated" in result["content"] and len(result["content"]) < 100_000
 
 
+def test_reasoning_is_echoed_without_rewriting_earlier_messages():
+    calls = [{"index": 0, "id": "plan", "type": "function", "function": {"name": "update_plan", "arguments": '{"steps":["finish"]}'}}]
+    with scripted_server([{"reasoning_content": "先检查", "tool_calls": calls}, {"content": "done"}]) as (url, requests):
+        platform = FakePlatform()
+        asyncio.run(
+            AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url, echo_reasoning=True)).process(
+                "fixture", attempt_id="attempt"
+            )
+        )
+    assert platform.statuses[-1][0] == "succeeded"
+    assert_extension(*requests)
+    assert requests[1]["messages"][len(requests[0]["messages"])]["reasoning_content"] == "先检查"
+
+
 def test_unchanged_memory_refresh_preserves_all_request_messages():
     memory = {"enabled": True, "entries": [{"id": "m1", "kind": "user", "content": "中文"}]}
 
