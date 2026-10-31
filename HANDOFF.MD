@@ -1,5 +1,7 @@
 # HANDOFF
 
+- Docker sandbox 的 supervisor 在创建时固定最长生存期；standby 的提供者上限须覆盖空闲期加一次任务，认领后业务租约仍保持短 TTL。LibreOffice 仅复用 profile 不代表进程常驻，热查看延迟仍须实测；详见 [C3d](docs/progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
+
 - Codex 沙箱内 `bin/docker.sh` 可能因 `ps` 检查受限误判磁盘状态；指定 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock` 和 `DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client` 直接调用 Docker，socket 受限时在获准环境执行。该 daemon 与个人栈共享，测试仅操作独立 `c3-*` 资源。
 
 - GNU PATH 必须 `export` 给整个 pytest 进程树；只对 `ruff` 命令前置赋值会让后续 MockSandbox 使用 macOS `stat/find`，产生与产品无关的失败。C3b 并行解析与渲染在 2 CPU 下可能竞争租约和 CPU，必须实测首屏及完整耗时，不能假设并行更快。

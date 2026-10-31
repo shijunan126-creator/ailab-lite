@@ -1,3 +1,7 @@
+# C3d 预热渲染（2026-10-31，性能未达标）
+
+`fix/render-view`，base `f316b85`，起点 `fb05186`；已实现单次使用 standby、空闲回收、活动提示及租约内 profile 复用。测量未达到目标，解析仍使用独立沙箱，逐页发布未实现；不要作为性能验收完成。结果和下一步见 [C3d 记录](updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)及 [ADR 0030](../architecture/adr/0030-prewarmed-single-use-render-sandboxes.md)。未 push 或部署。
+
 # C3c 渲染延迟（2026-10-31，未完成）
 
 `fix/render-view`，base `f316b85`，起点 `a5a4a23`。同文件等待请求可提升尚未 claim 的后台预览任务，复用原任务身份；预热池、合并解析、逐页发布、工作区热 listener 和跨路径限流仍未实现，性能目标未验收。下一步完成这些合同并按 C3c brief 做隔离、故障和同条件性能验证；见 [C3c 记录](updates/2026-10-31-prefix-cache-render.md#c3c-后续)。未 push 或部署。
