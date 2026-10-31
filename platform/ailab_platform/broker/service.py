@@ -553,12 +553,18 @@ class LeaseManager:
 
         def prepare(lease):
             self.put_input(lease, "/workspace/.ailab/warmup.fodt", warmup)
+            uno_client = Path(__file__).resolve().parents[1] / "sandbox_tools" / "uno_convert.py"
+            self.put_input(lease, "/workspace/.ailab/uno_convert.py", uno_client.read_bytes())
             result = self._provider_call(
                 "exec",
                 lease["provider_ref"],
-                "mkdir -p /tmp/ailab-warm && timeout -k 2 45s soffice --headless "
-                "-env:UserInstallation=file:///tmp/lo-profile --convert-to pdf --outdir /tmp/ailab-warm "
-                "/workspace/.ailab/warmup.fodt && test -s /tmp/ailab-warm/warmup.pdf",
+                "mkdir -p /tmp/ailab-warm && "
+                "(soffice --headless --invisible --norestore -env:UserInstallation=file:///tmp/lo-profile "
+                "'--accept=pipe,name=ailab;urp;' >/tmp/ailab-warm/listener.log 2>&1 </dev/null &) && "
+                'i=0; while [ "$i" -lt 40 ]; do '
+                "timeout -k 1 3s /usr/bin/python3 /workspace/.ailab/uno_convert.py "
+                "/workspace/.ailab/warmup.fodt /tmp/ailab-warm/warmup.pdf '' >/dev/null 2>&1 && break; "
+                "i=$((i+1)); sleep 0.2; done; test -s /tmp/ailab-warm/warmup.pdf",
                 48,
             )
             if result.exit_code:

@@ -124,7 +124,8 @@ class LibraryRenderer:
             exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
-                f"AILAB_LO_PROFILE=/tmp/lo-profile timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
+                f"AILAB_LO_PROFILE=/tmp/lo-profile {'AILAB_LO_LISTENER=1 ' if lease_source == 'standby' else ''}"
+                f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
             )

@@ -42,7 +42,25 @@ def check_archive(source: Path) -> None:
 
 
 def soffice(src: Path, fmt: str, outdir: Path) -> Path:
-    configured = os.environ.get("AILAB_LO_PROFILE")
+    out = outdir / f"{src.stem}.{fmt.split(':')[0]}"
+    if os.environ.get("AILAB_LO_LISTENER"):
+        try:
+            subprocess.run(
+                ["/usr/bin/python3", "/workspace/.ailab/uno_convert.py", str(src), str(out), fmt.partition(":")[2]],
+                check=True,
+                capture_output=True,
+                timeout=90,
+            )
+            if out.exists():
+                return out
+        except (OSError, subprocess.SubprocessError):
+            pass
+        out.unlink(missing_ok=True)
+        # A failed listener can retain a profile lock; the cold fallback must
+        # use a fresh profile rather than forward to the broken instance.
+        configured = None
+    else:
+        configured = os.environ.get("AILAB_LO_PROFILE")
     profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))
     try:
         subprocess.run(
@@ -54,7 +72,6 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     finally:
         if not configured:
             shutil.rmtree(profile, ignore_errors=True)
-    out = outdir / f"{src.stem}.{fmt.split(':')[0]}"
     if not out.exists():
         raise RuntimeError(f"LibreOffice produced no {fmt} for {src.name}")
     return out
