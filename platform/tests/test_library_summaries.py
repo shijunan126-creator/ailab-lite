@@ -1,6 +1,8 @@
 """Summary settings, transactional staging, OCR late text and bounded tool results."""
 
+import threading
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 from fastapi.testclient import TestClient
@@ -16,6 +18,68 @@ from tests.faults.test_library_summary import Model, deliver, summary_file
 from tests.test_conversations import AUTH, _other_user
 from tests.test_file_previews import SERVICE, ApiClient
 from tests.test_ocr import upstream as upstream
+
+
+def test_slow_summary_does_not_block_preview_consumer(monkeypatch):
+    from ailab_platform.contracts.jobs import JobEnvelope
+    from ailab_platform.queue import InMemoryQueue, job_topic
+    from ailab_platform.worker import main
+
+    queue = InMemoryQueue()
+    started, release, preview = threading.Event(), threading.Event(), threading.Event()
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def job_action(self, job_id, action, **kwargs):
+            return {"state": "claimed", "token": "test", "attempt": 1}
+
+        def summarize_file(self, file_id):
+            started.set()
+            assert release.wait(5)
+            return {"status": "done"}
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(main, "PlatformClient", Client)
+    monkeypatch.setattr(main, "get_queue", lambda: queue)
+    monkeypatch.setattr(main, "process_preview", lambda *args: preview.set())
+    stop = threading.Event()
+    monkeypatch.setattr(main, "_stop", stop)
+    for kind in ("summary", "preview"):
+        payload = JobEnvelope(job_id=kind, kind=kind, file_id="file", deadline=datetime.now(UTC) + timedelta(minutes=5))
+        queue.enqueue(job_topic(kind), payload.model_dump(mode="json"))
+    summary = threading.Thread(target=main._consume, args=(job_topic("summary"), "test-summary"))
+    worker = threading.Thread(target=main._consume, args=(job_topic("preview"), "test-file"))
+    summary.start()
+    try:
+        assert started.wait(3)
+        worker.start()
+        assert preview.wait(3)
+    finally:
+        release.set()
+        stop.set()
+        summary.join(5)
+        if worker.ident is not None:
+            worker.join(5)
+    assert not summary.is_alive() and not worker.is_alive()
+    assert not queue.outstanding(job_topic("summary"))
+    assert not queue.outstanding(job_topic("preview"))
+
+
+def test_summary_outbox_dispatches_to_separate_stream(monkeypatch):
+    from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
+    from ailab_platform.queue import InMemoryQueue, job_topic
+
+    with TestClient(app) as client:
+        _, job = summary_file(client)
+        queue = InMemoryQueue()
+        monkeypatch.setattr("ailab_platform.api.preview_dispatch.get_queue", lambda: queue)
+        assert dispatch_preview_jobs(job) == 1
+        assert [message["job_id"] for message in queue.outstanding(job_topic("summary"))] == [job]
+        assert not queue.outstanding(job_topic("preview"))
 
 
 def test_library_settings_platform_admin_and_disabled_pending_job(monkeypatch):

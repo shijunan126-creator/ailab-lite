@@ -21,7 +21,7 @@ from ..contracts.jobs import JobEnvelope
 from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
-from ..queue import get_queue
+from ..queue import get_queue, job_topic
 from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
@@ -29,6 +29,7 @@ from .preview import process_preview
 setup_logging("worker")
 log = logging.getLogger("ailab.worker")
 _thread: threading.Thread | None = None
+_summary_thread: threading.Thread | None = None
 _stop = threading.Event()
 
 
@@ -36,7 +37,8 @@ CONSUMER = f"worker-{socket.gethostname()}-{os.getpid()}"
 FILE_VISIBILITY_SECONDS = 600
 
 
-def handle_message(queue, msg) -> None:
+def handle_message(queue, msg, topic: str | None = None) -> None:
+    topic = topic or settings.file_queue
     file_id = msg.payload.get("file_id")
     trace_context = getattr(obs, "traceparent_var", None)
     trace_token = None
@@ -55,7 +57,7 @@ def handle_message(queue, msg) -> None:
         try:
             claim = client.job_action(envelope.job_id, "claim", consumer=CONSUMER)
             if claim["state"] != "claimed":
-                queue.ack(settings.file_queue, msg)
+                queue.ack(topic, msg)
                 return
             token = claim["token"]
             msg.deliveries = claim["attempt"]
@@ -87,7 +89,7 @@ def handle_message(queue, msg) -> None:
                 attempt_id_var.reset(identity)
             if completion.completed:
                 client.job_action(envelope.job_id, "ack", token=token)
-                queue.ack(settings.file_queue, msg)
+                queue.ack(topic, msg)
         finally:
             client.close()
     finally:
@@ -221,11 +223,11 @@ def _handle(queue, msg, file_id) -> None:
     queue.ack(settings.file_queue, msg)
 
 
-def _consume() -> None:
+def _consume(topic: str, consumer: str) -> None:
     while not _stop.is_set():
         queue = get_queue()
         try:
-            msg = queue.dequeue(settings.file_queue, CONSUMER, 2, FILE_VISIBILITY_SECONDS)
+            msg = queue.dequeue(topic, consumer, 2, FILE_VISIBILITY_SECONDS)
         except Exception:
             log.exception("file queue unavailable; retrying")
             _stop.wait(3)
@@ -233,19 +235,23 @@ def _consume() -> None:
         if msg is None:
             continue
         try:
-            handle_message(queue, msg)
+            handle_message(queue, msg, topic)
         except Exception:
             log.exception("could not finish handling file message %s", msg.id)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global _thread
+    global _thread, _summary_thread
     settings.validate_secrets("worker")
     settings.ensure_dirs()
     _stop.clear()
-    _thread = threading.Thread(target=_consume, name="file-worker", daemon=True)
+    _thread = threading.Thread(target=_consume, args=(settings.file_queue, CONSUMER), name="file-worker", daemon=True)
+    _summary_thread = threading.Thread(
+        target=_consume, args=(job_topic("summary"), CONSUMER + "-summary"), name="summary-worker", daemon=True
+    )
     _thread.start()
+    _summary_thread.start()
     log.info("file worker ready")
     yield
     _stop.set()
@@ -266,7 +272,7 @@ def readyz() -> Response:
         queue_ok = get_queue().ping()
     except Exception:
         queue_ok = False
-    running = bool(_thread and _thread.is_alive())
+    running = bool(_thread and _thread.is_alive() and _summary_thread and _summary_thread.is_alive())
     ok = queue_ok and running
     return JSONResponse(status_code=200 if ok else 503, content={"ok": ok, "queue": queue_ok, "worker_running": running})
 

@@ -12,7 +12,7 @@ from ..config import settings
 from ..contracts.jobs import JobEnvelope
 from ..db import SessionLocal
 from ..models import OutboxMessage
-from ..queue import get_queue
+from ..queue import get_queue, job_topic
 
 log = logging.getLogger("ailab.api.jobs")
 _dispatch_lock = threading.Lock()
@@ -71,7 +71,7 @@ def _dispatch_batch(queue, job_id, now):
                 values["payload"] = payload
             try:
                 envelope = JobEnvelope.model_validate(payload)
-                topic = f"{settings.run_queue}:{envelope.mode}" if envelope.kind == "run" else settings.file_queue
+                topic = job_topic(envelope.kind, envelope.mode)
                 queue.enqueue(topic, payload)
             except Exception as exc:
                 attempts = message.attempts + 1

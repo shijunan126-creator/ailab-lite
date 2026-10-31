@@ -17,6 +17,7 @@ from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, OutboxMessage, Run, RunAttempt, RunStatus, SkillDraft
 from ..obs import NO_REQUEST, request_id_var
 from ..ports.service_auth import ServicePrincipal
+from ..queue import job_topic
 from ..service_auth import require_scope
 
 router = APIRouter(prefix="/internal/jobs", tags=["internal-jobs"])
@@ -35,7 +36,7 @@ def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=Non
         traceparent=getattr(obs, "traceparent_var").get() if hasattr(obs, "traceparent_var") else None,
         request_id=None if request_id_var.get() == NO_REQUEST else request_id_var.get(),
     )
-    topic = f"{settings.run_queue}:{mode}" if kind == "run" else settings.file_queue
+    topic = job_topic(kind, mode)
     existing = db.get(OutboxMessage, envelope.job_id)
     if existing:
         return existing

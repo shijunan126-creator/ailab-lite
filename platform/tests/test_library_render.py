@@ -2,6 +2,7 @@
 
 import io
 import shutil
+import tarfile
 from pathlib import Path
 
 import pytest
@@ -60,6 +61,56 @@ def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
     manager, renderer, _ = setup_renderer(tmp_path, data.getvalue(), "57pages.pdf")
     result = renderer.render("file", "job")
     assert result["preview"]["page_count"] == 57 and len(result["preview"]["pages"]) == 40
+    assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
+def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(3):
+        writer.add_blank_page(width=72, height=72)
+    data = io.BytesIO()
+    writer.write(data)
+    manager, renderer, storage = setup_renderer(tmp_path, data.getvalue(), "pages.pdf")
+    downloads = []
+    original = manager._download
+
+    def record_download(lease, path, local, limit):
+        downloads.append(path)
+        return original(lease, path, local, limit)
+
+    manager._download = record_download
+    result = renderer.render("file", "job")
+    assert downloads == ["/workspace/.ailab/preview.tar"]
+    assert len(result["assets"]) == 3
+    assert all(storage.get_bytes(asset["key"]).startswith(b"\xff\xd8") for asset in result["assets"].values())
+    assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
+def test_render_rejects_unexpected_archive_members(tmp_path):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    data = io.BytesIO()
+    writer.write(data)
+    manager, renderer, storage = setup_renderer(tmp_path, data.getvalue(), "page.pdf")
+    original = manager._download
+
+    def tamper(lease, path, local, limit):
+        original(lease, path, local, limit)
+        with tarfile.open(local, "a") as bundle:
+            entry = tarfile.TarInfo("../escape")
+            entry.size = 1
+            bundle.addfile(entry, io.BytesIO(b"x"))
+
+    manager._download = tamper
+    with pytest.raises(LeaseError, match="invalid_render_output"):
+        renderer.render("file", "job")
+    assert not storage.exists("derived/file/preview/p-1.jpg")
     assert manager.active_leases() == []
 
 

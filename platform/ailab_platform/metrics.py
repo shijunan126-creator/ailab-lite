@@ -152,7 +152,7 @@ class ApiStateCollector(Collector):
             depth.add_metric(["runs"], chat_depth + work_depth)
             depth.add_metric(["chat"], chat_depth)
             depth.add_metric(["work"], work_depth)
-            depth.add_metric(["files"], queue.length(settings.file_queue))
+            depth.add_metric(["files"], queue.length(settings.file_queue) + queue.length(f"{settings.file_queue}:summary"))
         except Exception:
             log.warning("could not read queue depth for /metrics", exc_info=True)
         yield depth

@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import re
 import shlex
+import tarfile
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -102,7 +104,13 @@ class LibraryRenderer:
             kind = manifest.get("kind")
             if kind == "pages":
                 names = manifest.get("pages") or []
-                if not names or len(names) > 40 or any(not re.fullmatch(r"p-\d+\.jpg", n) for n in names):
+                if (
+                    not isinstance(names, list)
+                    or not names
+                    or len(names) > 40
+                    or any(not isinstance(n, str) or not re.fullmatch(r"p-\d+\.jpg", n) for n in names)
+                    or len(set(names)) != len(names)
+                ):
                     raise LeaseError("invalid_render_output")
                 preview = {"status": "ready", "kind": "pages", "pages": names, "page_count": manifest.get("page_count")}
                 mime = "image/jpeg"
@@ -115,22 +123,42 @@ class LibraryRenderer:
                 preview = {"status": "ready", "kind": "sheets", "data": "sheets.json"}
             else:
                 raise LeaseError("invalid_render_output")
-            assets, total = {}, 0
+            assets = {}
             export_started = time.monotonic()
-            # Manager enforces a per-object read cap; additionally bound the complete preview.
-            for name in names:
-                if time.monotonic() - started >= 120:
-                    raise LeaseError("render_timeout")
-                key = f"derived/{file_id}/preview/{name}"
-                size, digest = self.manager.store_file(
-                    self.manager.get(lease_id),
-                    f"/workspace/.ailab/preview/{name}",
-                    key,
-                    mime,
-                    min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024 - total),
-                )
-                total += size
-                assets[name] = {"key": key, "content_type": mime, "sha256": digest}
+            remaining = max(1, int(120 - (time.monotonic() - started)))
+            archive = "/workspace/.ailab/preview.tar"
+            args = " ".join(shlex.quote(name) for name in names)
+            packed = self.manager.exec(lease_id, f"COPYFILE_DISABLE=1 tar -C /workspace/.ailab/preview -cf {archive} -- {args}", remaining)
+            if packed.exit_code != 0 or time.monotonic() - started >= 120:
+                raise LeaseError("render_failed")
+            # One sandbox transfer avoids a provider round trip for every page. Never
+            # extract an untrusted archive by path: validate every member first.
+            with self.manager.transfer_file() as local:
+                self.manager._download(self.manager.get(lease_id), archive, local, 33 * 1024 * 1024)
+                with tarfile.open(local, "r:") as bundle:
+                    members = bundle.getmembers()
+                    if (
+                        len(members) != len(names)
+                        or {m.name for m in members} != set(names)
+                        or any(not m.isfile() or not 0 <= m.size <= settings.max_sandbox_read_bytes for m in members)
+                        or sum(m.size for m in members) > 32 * 1024 * 1024
+                    ):
+                        raise LeaseError("invalid_render_output")
+                    for member in members:
+                        if time.monotonic() - started >= 120:
+                            raise LeaseError("render_timeout")
+                        key = f"derived/{file_id}/preview/{member.name}"
+                        source = bundle.extractfile(member)
+                        if source is None:
+                            raise LeaseError("invalid_render_output")
+                        with source, self.manager.transfer_file() as asset:
+                            digest = hashlib.sha256()
+                            with asset.open("wb") as out:
+                                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                                    digest.update(chunk)
+                                    out.write(chunk)
+                            self.manager.storage.put_file(key, asset, mime)
+                        assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
             phases["export_seconds"] = time.monotonic() - export_started
             return {"preview": preview, "assets": assets}
         finally:
