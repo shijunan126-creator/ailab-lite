@@ -274,11 +274,13 @@ def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
 
     class Platform(FakePlatform):
         revoked = False
+        calls = []
 
         async def get_memory_context(self, run_id):
             return {}
 
         async def recall(self, run_id, request):
+            self.calls.append(request["run_id"])
             if self.revoked:
                 raise ClientError("POST", "/recall", 404, "gone")
             return {"run_id": request["run_id"]}
@@ -286,12 +288,18 @@ def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
     async def exercise():
         platform = Platform()
         loop = AgentLoop(platform=platform)
-        messages = [{"role": "tool", "name": "recall_history", "content": '{"results":[{"run_id":"source","text":"old"}]}'}]
+        messages = [
+            {"role": "tool", "name": "recall_history", "content": '{"results":[{"run_id":"source","text":"old"},{"run_id":"source2"}]}'}
+        ]
         original = copy.deepcopy(messages)
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert messages == original
         platform.revoked = True
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
+        assert messages == original
+        assert platform.calls == ["source", "source2"]
+        loop._states["next_run"] = {}
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "next_run", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert json.loads(messages[0]["content"]) == {"ok": False, "error": "引用的历史已不可用"}
         assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
 

@@ -878,6 +878,8 @@ class AgentLoop:
         if not hasattr(self.platform, "recall"):
             return []
         revoked = []
+        validated = self._states.setdefault(run_id, {}).setdefault("validated_recall_run_ids", [])
+        known = set(validated)
         for index, message in enumerate(messages):
             if message.get("role") != "tool" or message.get("name") != "recall_history":
                 continue
@@ -891,13 +893,18 @@ class AgentLoop:
             for record in records:
                 if not isinstance(record, dict) or not record.get("run_id"):
                     continue
+                source_id = record["run_id"]
+                if source_id in known:
+                    continue
                 try:
-                    await self.platform.recall(run_id, {"run_id": record["run_id"]})
+                    await self.platform.recall(run_id, {"run_id": source_id})
                 except ClientError as exc:
                     if exc.status not in {404, 422}:
                         raise
                     revoked.append(index)
                     break
+                known.add(source_id)
+                validated.append(source_id)
         return revoked
 
     async def _refresh_boundary_memory(self, run_id, context):
