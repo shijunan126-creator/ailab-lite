@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { IconClock, IconPencil, IconPlus, IconSend, IconTrash } from "../../../components/icons";
+import RowMenu from "../../../components/row-menu";
 import Switch from "../../../components/switch";
 import Modal from "../../../components/library/modal";
 import { api, errorMessage, Schedule, Skill } from "../../../lib/api";
@@ -177,60 +178,60 @@ export default function SchedulesPage() {
 
   const full = (list?.length || 0) >= LIMIT;
   return (
-    <main className="page page-narrow schedules-page">
-      <div className="library-head">
+    <main className="page mpage">
+      <div className="mpage-head">
         <h1>定时任务</h1>
-        <span className="spacer" />
-        <button onClick={() => setEditing("new")} disabled={full || !list} title={full ? `最多 ${LIMIT} 个定时任务` : undefined}>
-          <IconPlus size={16} /> 新建
+        {list?.length ? <span className="hint">{list.length} / {LIMIT}</span> : null}
+        <button className="sm" onClick={() => setEditing("new")} disabled={full || !list} title={full ? `最多 ${LIMIT} 个定时任务` : undefined}>
+          <IconPlus size={15} /> 新建
         </button>
       </div>
-      {error ? <div className="alert error library-alert">{error}</div> : null}
-      {list === null ? <div className="pr-loading"><span /><span /><span /></div> : list.length === 0 ? (
-        <div className="empty schedules-empty">
-          <span className="project-mark"><IconClock size={20} /></span>
-          <strong>还没有定时任务</strong>
-          <button className="secondary" onClick={() => setEditing("new")}><IconPlus size={15} /> 新建定时任务</button>
-        </div>
-      ) : (
-        <div className="card schedule-list">
-          {list.map((s) => (
-            <div key={s.id} className={`schedule ${s.enabled ? "" : "off"}`}>
-              <Switch
-                on={s.enabled}
-                label={`${s.enabled ? "停用" : "启用"} ${s.title}`}
-                disabled={busy === s.id}
-                onChange={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}
-              />
-              <div className="grow">
-                <div className="schedule-title">{s.title}</div>
-                <div className="schedule-meta">
-                  <span>{when(s.schedule)}</span>
-                  {s.enabled && s.next_run_at ? <span>下次 {nextText(s.next_run_at)}</span> : null}
-                  {s.last_conversation_id ? (
-                    <Link href={`/c/${s.last_conversation_id}`} className={`schedule-last ${s.last_status || ""}`} title={s.last_error || undefined}>
-                      {statusLabel(s.last_status || "")}
-                    </Link>
-                  ) : s.last_status === "failed" ? <span className="schedule-last failed" title={s.last_error || undefined}>{s.last_error || "失败"}</span> : null}
-                </div>
-              </div>
-              <div className="row-actions">
-                <button className="icon-btn" aria-label={`立即运行 ${s.title}`} title="立即运行" disabled={busy === s.id}
-                  onClick={() => act(s, () => api(`/v1/schedules/${s.id}/run`, { method: "POST" }))}>
-                  <IconSend size={16} />
-                </button>
-                <button className="icon-btn" aria-label={`编辑 ${s.title}`} title="编辑" onClick={() => setEditing(s)}>
-                  <IconPencil size={16} />
-                </button>
-                <button className="icon-btn danger-hover" aria-label={`删除 ${s.title}`} title="删除" disabled={busy === s.id}
-                  onClick={async () => (await confirmDialog({ title: `删除定时任务「${s.title}」？`, action: "删除", danger: true })) && act(s, () => api(`/v1/schedules/${s.id}`, { method: "DELETE" }))}>
-                  <IconTrash size={16} />
-                </button>
+      {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
+      <div className="mlist">
+        {list === null ? (
+          <div className="mlist-empty">加载中…</div>
+        ) : list.length === 0 ? (
+          <div className="mlist-empty">还没有定时任务</div>
+        ) : (
+          list.map((s) => (
+            <div key={s.id} className={`mrow ${s.enabled ? "" : "off"}`}>
+              <span className="mrow-icon"><IconClock size={17} /></span>
+              <button className="mrow-main" onClick={() => setEditing(s)} aria-label={`编辑 ${s.title}`}>
+                <span className="mrow-title"><span>{s.title}</span></span>
+                <span className="mrow-desc">
+                  {[when(s.schedule), s.enabled && s.next_run_at ? `下次 ${nextText(s.next_run_at)}` : ""].filter(Boolean).join(" · ")}
+                </span>
+              </button>
+              <div className="mrow-trail">
+                {s.last_conversation_id ? (
+                  <Link href={`/c/${s.last_conversation_id}`} className={`state ${s.last_status === "failed" ? "failed" : ""}`} title={s.last_error || undefined}>
+                    {statusLabel(s.last_status || "")}
+                  </Link>
+                ) : s.last_status === "failed" ? <span className="state failed" title={s.last_error || undefined}>失败</span> : null}
+                <RowMenu
+                  label={s.title}
+                  disabled={busy === s.id}
+                  actions={[
+                    { label: "立即运行", icon: <IconSend size={15} />, onSelect: () => act(s, () => api(`/v1/schedules/${s.id}/run`, { method: "POST" })) },
+                    { label: "编辑", icon: <IconPencil size={15} />, onSelect: () => setEditing(s) },
+                    "sep",
+                    {
+                      label: "删除", icon: <IconTrash size={15} />, danger: true,
+                      onSelect: async () => (await confirmDialog({ title: `删除定时任务「${s.title}」？`, action: "删除", danger: true })) && act(s, () => api(`/v1/schedules/${s.id}`, { method: "DELETE" })),
+                    },
+                  ]}
+                />
+                <Switch
+                  on={s.enabled}
+                  label={`${s.enabled ? "停用" : "启用"} ${s.title}`}
+                  disabled={busy === s.id}
+                  onChange={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}
+                />
               </div>
             </div>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
       {editing ? (
         <Editor initial={editing === "new" ? null : editing} skills={skills} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); load(); }} />

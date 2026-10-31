@@ -37,15 +37,6 @@ type Run = {
 };
 type Status = { pending_runs: Pending; active: { id: string; status: string; trigger: string } | null; last_finished_at: string | null };
 
-const STATUS: Record<string, string> = {
-  pending: "排队中",
-  running: "整理中",
-  applied: "已整理",
-  skipped: "已跳过",
-  failed: "失败",
-  reverted: "已撤销",
-  evaluated: "已评估",
-};
 const OUTCOME: Record<Outcome, string> = {
   added: "新增",
   updated: "更新",
@@ -62,30 +53,63 @@ const KEPT = new Set<Outcome>(["added", "updated"]);
 const POLL_MS = 2000;
 const POLL_FOR_MS = 15 * 60_000; // three manual batches of extraction and judgement fit well inside this
 
-function summary(run: Run): string {
-  if (run.status === "failed") return run.error || "整理失败";
-  if (run.status === "pending" || run.status === "running") return "";
-  const c = run.report?.counts;
-  if (!c) return run.changes.length ? `${run.changes.length} 条变更` : "无变更";
-  if (!c.candidates) return "没有可长期保存的内容";
-  const parts = [
-    c.added ? `新增 ${c.added}` : "",
-    c.updated ? `更新 ${c.updated}` : "",
-    c.invalidated ? `失效 ${c.invalidated}` : "",
-    c.duplicate ? `重复 ${c.duplicate}` : "",
-    c.filtered ? `过滤 ${c.filtered}` : "",
-    c.deferred ? `延后 ${c.deferred}` : "",
-  ].filter(Boolean);
-  return parts.join(" · ") || "无变更";
+const SHOWN_DAYS = 3;
+
+/** Batches of one local day, newest first: a busy night runs many small batches, the user reads it as one night. */
+type Day = { date: string; runs: Run[] };
+function byDay(runs: Run[]): Day[] {
+  const days: Day[] = [];
+  for (const run of runs) {
+    const last = days[days.length - 1];
+    if (last?.date === run.local_date) last.runs.push(run);
+    else days.push({ date: run.local_date, runs: [run] });
+  }
+  return days;
 }
 
-/** The user never gets a notification for a dream; this is where they start one and see what each batch did and why. */
+function dayLabel(date: string): string {
+  const local = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const now = new Date();
+  if (date === local(now)) return "今天";
+  if (date === local(new Date(now.getTime() - 86_400_000))) return "昨天";
+  const [y, m, d] = date.split("-").map(Number);
+  return `${y === now.getFullYear() ? "" : `${y}年`}${m}月${d}日`;
+}
+
+function summary(day: Day): { text: string; failed: boolean } {
+  let added = 0, updated = 0, invalidated = 0, failed = 0, reverted = 0;
+  for (const run of day.runs) {
+    if (run.status === "failed") failed++;
+    else if (run.status === "reverted") reverted++;
+    else if (run.report?.counts) {
+      added += run.report.counts.added || 0;
+      updated += run.report.counts.updated || 0;
+      invalidated += run.report.counts.invalidated || 0;
+    } else
+      for (const c of run.changes) {
+        if (c.op === "add") added++;
+        else if (c.op === "invalidate") invalidated++;
+      }
+  }
+  const parts = [
+    added ? `新增 ${added}` : "",
+    updated ? `更新 ${updated}` : "",
+    invalidated ? `失效 ${invalidated}` : "",
+    reverted ? `撤销 ${reverted} 次` : "",
+    failed ? `失败 ${failed} 次` : "",
+  ].filter(Boolean);
+  const live = day.runs.some((r) => r.status === "pending" || r.status === "running");
+  return { text: parts.join(" · ") || (live ? "整理中…" : "没有新增"), failed: !!failed && !parts.slice(0, 3).some(Boolean) };
+}
+
+/** The user never gets a notification for a dream; this is where they start one and see, day by day, what it kept and why. */
 export default function DreamPanel({ initial, onChanged }: { initial?: DreamSettings | null; onChanged?: () => void }) {
   const [settings, setSettings] = useState<DreamSettings | null>(initial || null);
   const [runs, setRuns] = useState<Run[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
-  const [detail, setDetail] = useState<Run | null>(null);
+  const [open, setOpen] = useState<string | null>(null); // a day
+  const [detail, setDetail] = useState<Run[] | null>(null);
+  const [all, setAll] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -112,7 +136,7 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
 
   useEffect(() => {
     mounted.current = true;
-    load().catch((e) => { if (mounted.current && !loads.current?.signal.aborted) setError(errorMessage(e)); });
+    load().catch((e) => { if (mounted.current && (e as Error)?.name !== "AbortError" && !loads.current?.signal.aborted) setError(errorMessage(e)); });
     return () => { mounted.current = false; loads.current?.abort(); detailLoad.current?.abort(); };
   }, [load]);
 
@@ -155,19 +179,25 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
     }
   }
 
-  async function inspect(run: Run) {
+  async function inspect(day: Day) {
     detailLoad.current?.abort();
     const controller = new AbortController();
     detailLoad.current = controller;
     setError("");
-    setOpen(run.id);
+    setOpen(day.date);
     setDetail(null);
     try {
-      const value = await api<Run>(`/v1/memory/dreams/${run.id}`, { signal: controller.signal });
+      const value = await Promise.all(day.runs.map((run) => api<Run>(`/v1/memory/dreams/${run.id}`, { signal: controller.signal })));
       if (!controller.signal.aborted && mounted.current) setDetail(value);
     } catch (e) {
       if (!controller.signal.aborted) setError(errorMessage(e));
     }
+  }
+
+  function collapse() {
+    detailLoad.current?.abort();
+    setOpen(null);
+    setDetail(null);
   }
 
   async function runNow() {
@@ -204,76 +234,94 @@ export default function DreamPanel({ initial, onChanged }: { initial?: DreamSett
   }
 
   const pending = status?.pending_runs ?? 0;
+  const days = byDay(runs);
+  // only the newest change can be undone: a revert restores the memory as it was before that batch
+  const latest = runs.find((r) => r.changes.some((c) => c.op !== "noop") && r.status !== "failed")?.id || null;
   const working = !!status?.active;
   return (
-    <section className="card dream-panel">
-      <div className="skill-row">
-        <div className="grow">
-          <div className="skill-title">夜间自动整理</div>
+    <section className="msection">
+      <div className="msection-head"><h2>整理</h2></div>
+      <div className="mlist dream-panel">
+      <div className="mrow">
+        <div className="mrow-main">
+          <span className="mrow-title"><span>夜间自动整理</span></span>
           {settings ? (
-            <div className="skill-desc">
+            <span className="mrow-desc">
               {settings.window_start}–{settings.window_end}
               {settings.timezone ? ` · ${settings.timezone}` : ""}
-            </div>
+            </span>
           ) : null}
         </div>
-        <Switch on={!!settings?.enabled} label="夜间自动整理" disabled={busy || !settings} onChange={toggle} />
+        <div className="mrow-trail"><Switch on={!!settings?.enabled} label="夜间自动整理" disabled={busy || !settings} onChange={toggle} /></div>
       </div>
-      {error ? <div className="alert error">{error}</div> : null}
-      <div className="dream-actions" aria-live="polite">
-        <span className={`dream-state grow ${working ? "live" : ""}`}>
-          {working
-            ? status?.active?.status === "running" ? "正在整理…" : "等待整理…"
-            : pending ? `${pending} 段新对话待整理` : notice || "没有待整理的新对话"}
-        </span>
-        <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings || !pending}>
-          立即整理
-        </button>
+      {error ? <div className="alert error dream-alert">{error}</div> : null}
+      <div className="mrow" aria-live="polite">
+        <div className="mrow-main">
+          <span className={`mrow-desc dream-state ${working ? "live" : ""}`}>
+            {working
+              ? status?.active?.status === "running" ? "正在整理…" : "等待整理…"
+              : pending ? `${pending} 段新对话待整理` : notice || "没有待整理的新对话"}
+          </span>
+        </div>
+        <div className="mrow-trail">
+          <button className="secondary sm" onClick={runNow} disabled={busy || working || !settings || !pending}>
+            立即整理
+          </button>
+        </div>
       </div>
-      {confirmRevert ? <div role="alertdialog" aria-label="撤销记忆整理" className="alert">
-        <span className="grow">撤销 {confirmRevert.local_date} 的这次整理？</span>
+      {confirmRevert ? <div role="alertdialog" aria-label="撤销记忆整理" className="alert dream-alert">
+        <span className="grow">撤销最近一次整理？它新增的记忆会删除，失效的会恢复。</span>
         <button className="secondary sm" onClick={() => setConfirmRevert(null)}>取消</button>
         <button className="sm" onClick={() => revert(confirmRevert)} disabled={busy}>确认撤销</button>
       </div> : null}
-      {runs.length ? (
+      {days.length ? (
         <div className="dream-runs">
-          {runs.map((run) => (
-            <div key={run.id} className="dream-run">
-              <button
-                className="dream-run-head"
-                aria-expanded={open === run.id}
-                onClick={() => (open === run.id ? (detailLoad.current?.abort(), setOpen(null), setDetail(null)) : inspect(run))}
-              >
-                <span>{run.local_date}</span>
-                <span className={`dream-status ${run.status}`}>{run.trigger === "manual" ? "手动" : "自动"} · {STATUS[run.status] || run.status}</span>
-                <span className="spacer" />
-                <span className={`dream-sum ${run.status === "failed" ? "failed" : ""}`}>{summary(run)}</span>
-              </button>
-              {open === run.id && detail?.id === run.id ? <RunDetail run={detail} busy={busy} onRevert={() => setConfirmRevert(detail)} /> : null}
-            </div>
-          ))}
+          {(all ? days : days.slice(0, SHOWN_DAYS)).map((day) => {
+            const sum = summary(day);
+            return (
+              <div key={day.date} className="dream-run">
+                <button className="dream-run-head" aria-expanded={open === day.date} onClick={() => (open === day.date ? collapse() : inspect(day))}>
+                  <span>{dayLabel(day.date)}</span>
+                  <span className="spacer" />
+                  <span className={`dream-sum ${sum.failed ? "failed" : ""}`}>{sum.text}</span>
+                </button>
+                {open === day.date && detail ? (
+                  <DayDetail runs={detail} latest={latest} busy={busy} onRevert={(run) => setConfirmRevert(run)} />
+                ) : null}
+              </div>
+            );
+          })}
+          {days.length > SHOWN_DAYS ? (
+            <button className="link dream-more" onClick={() => setAll(!all)}>{all ? "收起" : "更早"}</button>
+          ) : null}
         </div>
       ) : null}
+      </div>
     </section>
   );
 }
 
-function RunDetail({ run, busy, onRevert }: { run: Run; busy: boolean; onRevert: () => void }) {
-  const scope = run.report?.scope;
-  const candidates = run.report?.candidates || [];
-  const after = run.report?.pending_after;
+function DayDetail({ runs, latest, busy, onRevert }: { runs: Run[]; latest: string | null; busy: boolean; onRevert: (run: Run) => void }) {
+  const live = runs.filter((r) => r.status !== "reverted" && r.status !== "failed");
+  const total = (key: "runs" | "chars") => live.reduce((n, r) => n + (r.report?.scope?.[key] || 0), 0);
+  const after = runs[0]?.report?.pending_after;
   const facts = [
-    scope ? `${scope.runs} 段对话` : "",
-    scope?.chars ? `${scope.chars.toLocaleString()} 字` : "",
-    scope?.trimmed_runs ? `${scope.trimmed_runs} 段较长，余下部分留到下一批` : "",
+    total("runs") ? `${total("runs")} 段对话` : "",
+    total("chars") ? `${total("chars").toLocaleString()} 字` : "",
     after ? `还有 ${after} 段待整理` : "",
   ].filter(Boolean);
-  const invalidated = run.changes.filter((c) => c.op === "invalidate");
+  const candidates = live.flatMap((r) => r.report?.candidates || []);
+  candidates.sort((a, b) => Number(KEPT.has(b.outcome)) - Number(KEPT.has(a.outcome)));
+  const invalidated = live.flatMap((r) => r.changes.filter((c) => c.op === "invalidate"));
+  const legacy = live.filter((r) => !r.report?.counts).flatMap((r) => r.changes);
+  const errors = [...new Set(runs.filter((r) => r.status === "failed").map((r) => r.error || "整理失败"))];
+  const reverted = runs.filter((r) => r.status === "reverted").length;
+  const undo = runs.find((r) => r.id === latest && r.status === "applied");
   return (
     <div className="dream-detail">
       {facts.length ? <div className="hint">{facts.join(" · ")}</div> : null}
-      {run.status === "failed" ? <div className="alert error">{run.error || "整理失败"}</div> : null}
-      {run.status !== "failed" && run.report?.counts && !candidates.length ? <div className="hint">这批对话没有可长期保存的内容</div> : null}
+      {errors.map((e) => <div key={e} className="alert error">{e}</div>)}
+      {live.length && !candidates.length && !invalidated.length && !legacy.length ? <div className="hint">这些对话没有可长期保存的内容</div> : null}
       {candidates.map((c, i) => (
         <div key={i} className={`dream-cand ${KEPT.has(c.outcome) ? "kept" : ""}`}>
           <span className={`dream-op ${c.outcome}`}>{OUTCOME[c.outcome] || c.outcome}</span>
@@ -294,15 +342,14 @@ function RunDetail({ run, busy, onRevert }: { run: Run; busy: boolean; onRevert:
           {c.reason ? <span className="hint dream-reason">{c.reason}</span> : null}
         </div>
       ))}
-      {!run.report?.counts && run.changes.length ? run.changes.map((c, i) => (
+      {legacy.map((c, i) => (
         <div key={`c${i}`} className="dream-cand">
           <span className="dream-op">{c.op === "add" ? "新增" : c.op === "invalidate" ? "失效" : "无变更"}</span>
           <span className="grow">{c.content || c.reason}</span>
         </div>
-      )) : null}
-      {run.status === "applied" && run.changes.some((c) => c.op !== "noop") ? (
-        <button className="secondary sm dream-revert" onClick={onRevert} disabled={busy}>撤销这次整理</button>
-      ) : null}
+      ))}
+      {reverted ? <div className="hint">已撤销 {reverted} 次整理</div> : null}
+      {undo ? <button className="secondary sm dream-revert" onClick={() => onRevert(undo)} disabled={busy}>撤销最近一次整理</button> : null}
     </div>
   );
 }

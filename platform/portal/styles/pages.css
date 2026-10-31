@@ -17,28 +17,12 @@
   .auth { grid-template-columns: minmax(0, 1fr); }
   .auth-brand { display: none; }
 }
-/* skills page */
-.skill-list { padding: 4px 0; }
-.skill-row { display: flex; align-items: center; gap: 14px; padding: 16px 18px; }
-.skill-row + .skill-row { border-top: 1px solid var(--border); }
-.skill-row.off .skill-icon, .skill-row.off .skill-title, .skill-row.off .skill-desc { opacity: .55; }
-.skill-icon { width: 42px; height: 42px; border-radius: 11px; display: grid; place-items: center; background: var(--selected); color: var(--primary); flex: none; }
-.skill-title { font-weight: 650; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.skill-title .chip { margin: 0; font-weight: 500; font-size: var(--text-2xs); padding: 0 7px; }
-.skill-desc { color: var(--muted-foreground); font-size: var(--text-sm); margin-top: 3px; line-height: 1.6; }
+/* skills page: switch (also used by memory and schedules) and the SKILL.md editor */
 .switch { position: relative; flex: none; width: 42px; height: 24px; padding: 0; border-radius: 999px; background: var(--border-strong); border: 0; transition: background .15s; }
 .switch:hover { background: var(--faint-foreground); }
 .switch.on, .switch.on:hover { background: var(--primary); }
 .switch .knob { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 25%); transition: transform .15s; }
 .switch.on .knob { transform: translateX(18px); }
-.section-hint { margin: -6px 0 12px; }
-.skill-row.broken .skill-icon { background: var(--destructive-soft); color: var(--destructive); }
-.skill-file { margin-top: 4px; word-break: break-all; }
-.skill-row .link.danger-text { font-size: var(--text-sm); }
-.skill-editor-actions { display: flex; align-items: center; gap: 4px; flex: none; }
-.skill-editor-actions .link { font-size: var(--text-sm); }
-.skill-editor-head { flex-wrap: wrap; row-gap: 8px; }
-.skill-editor-head button { white-space: nowrap; }
 .modal.skill-editor { max-width: 860px; height: min(780px, calc(100dvh - 48px)); max-height: none; }
 .skill-editor .modal-body { gap: 10px; }
 .skill-editor-text { flex: 1; min-height: 240px; resize: none; font-size: var(--text-sm); line-height: 1.65; tab-size: 2; white-space: pre; overflow: auto; }
@@ -46,10 +30,6 @@
 @media (max-width: 640px) {
   .modal-scrim:has(.skill-editor) { padding: 0; }
   .modal.skill-editor { max-width: none; height: 100dvh; border-radius: 0; border: 0; }
-  .skill-row { flex-wrap: wrap; }
-  .skill-row .grow { flex-basis: calc(100% - 56px); }
-  .skill-editor-actions { margin-left: 56px; margin-right: auto; }
-  .skill-editor-head .spacer { flex-basis: 100%; }
 }
 /* admin */
 .admin-section { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
@@ -112,33 +92,6 @@ input[type="number"]:focus { outline: none; }
   .audit-detail { margin-left: 10px; }
   .usage-bar { grid-template-columns: 96px 1fr 60px; }
 }
-/* ---------- memory ---------- */
-.memory-page .skill-list { margin-bottom: 32px; }
-.memory-page .grow { flex: 1; min-width: 0; }
-.memory-alert { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.memory-group { margin-bottom: 28px; }
-.memory-group.off .memory-list { opacity: .6; }
-.memory-list { padding: 4px 0; }
-.memory-empty { padding: 24px 16px; font-size: var(--text-sm); }
-.memory-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px 10px 6px 8px; }
-.memory-row + .memory-row { border-top: 1px solid var(--border); }
-.memory-row.superseded .memory-text { opacity: .55; text-decoration: line-through; }
-.memory-row.paused .memory-text { opacity: .55; }
-.memory-tag { align-self: center; flex: none; white-space: nowrap; }
-.memory-pause { flex: none; margin-top: 2px; }
-.memory-text { flex: 1; min-width: 0; field-sizing: content; min-height: 36px; max-height: 320px; resize: none; border-color: transparent; background: transparent; padding: 7px 10px; font-size: var(--text-ui); }
-.memory-text:hover { border-color: var(--border); }
-.memory-text:focus { border-color: var(--primary); background: var(--popover); }
-.memory-count { align-self: center; flex: none; }
-.memory-remove { flex: none; margin-top: 2px; }
-.memory-foot { position: sticky; bottom: 0; display: flex; align-items: center; gap: 8px; min-height: 52px; padding: 10px 0; background: var(--popover); }
-.memory-foot.dirty { border-top: 1px solid var(--border); }
-.memory-over { color: var(--destructive); }
-@media (hover: hover) {
-  .memory-remove { opacity: 0; }
-  .memory-row:hover .memory-remove, .memory-row:focus-within .memory-remove { opacity: 1; }
-  .memory-row.paused .memory-pause { opacity: 1; }
-}
 @keyframes sheet-in { from { opacity: .4; transform: translateY(28px); } }
 /* admin: context compaction */
 .context-settings { max-width: 640px; }
@@ -157,21 +110,6 @@ input[type="number"]:focus { outline: none; }
 .context-models .num { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
 .context-foot { display: flex; align-items: center; gap: 8px; }
 /* ---------- scheduled tasks ---------- */
-.schedule-list { padding: 4px 0; }
-.schedule { display: flex; align-items: center; gap: 14px; padding: 14px 16px; }
-.schedule + .schedule { border-top: 1px solid var(--border); }
-.schedule.off .schedule-title, .schedule.off .schedule-meta { opacity: .55; }
-.schedule .grow { flex: 1; min-width: 0; }
-.schedule-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.schedule-meta { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; color: var(--muted-foreground); font-size: var(--text-sm); }
-.schedule-last { display: inline-flex; align-items: center; gap: 5px; color: var(--muted-foreground); }
-.schedule-last::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--faint-foreground); }
-.schedule-last.succeeded::before { background: var(--success); }
-.schedule-last.failed, .schedule-last.failed::before { color: var(--destructive); background: var(--destructive); }
-.schedule-last.failed { background: none; }
-.schedule-last.running::before, .schedule-last.queued::before { background: var(--primary); animation: pulse 1s ease-in-out infinite; }
-.schedule .row-actions { opacity: 1; }
-.schedules-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; }
 .schedule-when { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .day-picker { display: flex; gap: 6px; padding-top: 10px; }
 .day { width: 34px; height: 34px; padding: 0; border-radius: 50%; border: 1px solid var(--border-strong); background: var(--popover); color: var(--muted-foreground); font-weight: 550; }
@@ -184,7 +122,6 @@ input[type="number"]:focus { outline: none; }
 .grow-alert { flex: 1; min-width: 0; padding: 6px 10px; }
 @media (max-width: 640px) {
   .schedule-row { grid-template-columns: 1fr; }
-  .schedule .row-actions .icon-btn { width: 30px; height: 30px; }
 }
 /* ---------- brand kit ---------- */
 .brand-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 14px; }
@@ -235,13 +172,3 @@ input[type="number"]:focus { outline: none; }
 .brand-thumb.wide img { object-fit: cover; }
 .brand-slot-name strong.ellipsis { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tpl-rename { font: inherit; font-size: var(--text-sm); padding: 3px 8px; }
-/* Memory content owns a complete row, so controls never squeeze CJK into one-character columns. */
-.memory-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; align-items: start; padding: 12px; }
-.memory-row .memory-text { grid-column: 1 / -1; width: 100%; min-width: 0; }
-.memory-entry-meta { min-width: 0; align-items: center; }
-.memory-foot { z-index: 1; padding: 10px 12px; border-radius: 8px; box-shadow: 0 -1px 0 var(--border); }
-.memory-list { margin-bottom: 8px; }
-@media (max-width: 600px) {
-  .memory-row { grid-template-columns: minmax(0, 1fr) auto auto; }
-  .memory-entry-meta { grid-column: 1 / -1; }
-}

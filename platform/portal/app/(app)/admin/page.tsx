@@ -54,7 +54,7 @@ function Admin() {
 
   return (
     <main className="page page-admin">
-      <div className="library-head">
+      <div className="mpage-head">
         <h1>管理</h1>
       </div>
       <div className="library-bar">

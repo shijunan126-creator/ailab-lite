@@ -351,7 +351,7 @@ function Library() {
 
   return (
     <main
-      className={`page page-library ${over ? "drag-over" : ""}`}
+      className={`page mpage page-library ${over ? "drag-over" : ""}`}
       onDragOver={(e) => {
         if (!canUpload || !e.dataTransfer.types.includes("Files")) return;
         e.preventDefault();
@@ -359,23 +359,22 @@ function Library() {
       }}
       onDrop={onDrop}
     >
-      <div className="library-head">
+      <div className="mpage-head">
         <h1>资料库</h1>
-        <span className="spacer" />
         {trash ? (
           files.length ? (
-            <button className="secondary" onClick={emptyTrash}>
-              <IconTrash size={16} /> 清空回收站
+            <button className="secondary sm" onClick={emptyTrash}>
+              <IconTrash size={15} /> 清空回收站
             </button>
           ) : null
         ) : showsFiles ? (
           <button
-            className="secondary"
+            className="sm"
             disabled={busy}
             onClick={() => inputRef.current?.click()}
             title={maxUpload ? `单个文件最大 ${formatBytes(maxUpload)}` : undefined}
           >
-            <IconUpload size={16} /> {busy ? "上传中…" : "上传"}
+            <IconUpload size={15} /> {busy ? "上传中…" : "上传"}
           </button>
         ) : null}
         <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
@@ -482,6 +481,7 @@ function Library() {
           ))}
         </div>
       ) : (
+        <div className="mlist lib-table">
         <table className={`file-list ${selected.size ? "selecting" : ""}`} aria-label="资料库文件">
           <thead>
             <tr className="file-list-head">
@@ -544,6 +544,7 @@ function Library() {
             })}
           </tbody>
         </table>
+        </div>
       )}
 
       {showsFiles && more ? (

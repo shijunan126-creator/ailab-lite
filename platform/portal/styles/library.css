@@ -89,10 +89,7 @@
 .picker-row .check { pointer-events: none; }
 .picker-list .more, .load-more .link { align-self: center; margin-top: 8px; }
 /* ---------- library page ---------- */
-.page-library { max-width: 980px; }
-.library-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; min-height: 42px; }
-.library-head h1 { font-size: var(--text-xl); }
-.library-bar { display: flex; align-items: flex-end; gap: 16px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.library-bar { display: flex; align-items: flex-end; gap: 16px; border-bottom: 1px solid var(--border); margin: -12px 0 16px; }
 .library-bar .tabs { border-bottom: 0; flex: 1; }
 .library-bar .search { margin-bottom: 7px; }
 .library-crumb { display: flex; align-items: center; gap: 6px; padding: 10px 2px 2px; font-size: var(--text-sm); color: var(--faint-foreground); }
@@ -100,7 +97,9 @@
 .library-crumb a:hover { color: var(--foreground); }
 .library-crumb > span:not(.spacer) { color: var(--foreground); font-weight: 600; }
 .library-alert { margin: 10px 0; }
-.file-list { width: 100%; table-layout: fixed; border-collapse: collapse; margin-top: 4px; text-align: left; }
+.file-list { width: 100%; table-layout: fixed; border-collapse: collapse; text-align: left; }
+.lib-table .file-list tbody tr:last-child td { border-bottom: 0; }
+.library-folders + .lib-table, .library-folders + .image-grid { margin-top: 16px; }
 .file-list th, .file-list td { padding: 12px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .file-list-head { background: var(--subtle); }
 .file-list-head th { padding-top: 9px; padding-bottom: 9px; color: var(--muted-foreground); font-size: var(--text-xs); font-weight: 500; }

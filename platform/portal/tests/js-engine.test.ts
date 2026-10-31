@@ -16,6 +16,12 @@ describe("browser JavaScript engine", () => {
     expect(run(await loadEngine(), job("Promise.reject(new TypeError('no'))"))).toMatchObject({ ok: false, error: { type: "runtime", message: "TypeError: no" } });
   });
 
+  it("runs code written as a function body: return and top-level await", async () => {
+    expect(run(await loadEngine(), job("const a = 2183718927391282739n, b = 1321n;\nreturn (a * b).toString();"))).toMatchObject({ ok: true, value: '"2884692703083884498219"' });
+    expect(run(await loadEngine(), job("const x = await Promise.resolve(input * 2);\nreturn { x };", { input: 21 }))).toMatchObject({ ok: true, value: '{"x":42}' });
+    expect(run(await loadEngine(), job("return (;"))).toMatchObject({ ok: false, error: { type: "syntax" } });
+  });
+
   it("stops an endless loop and a catastrophic regex at the deadline", async () => {
     const started = Date.now();
     expect(run(await loadEngine(), job("while (true) {}", { timeout_ms: 200 }))).toMatchObject({ ok: false, error: { type: "timeout" } });
