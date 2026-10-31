@@ -21,3 +21,11 @@
 用户授权本轮增量部署、无需备份，但未执行构建/同步/启动：`~/Documents/AILab-local` 指向的卷未挂载。`hdiutil info` 显示映像已附加，`diskutil info disk6s1` 显示 AILab 未挂载；两次 `diskutil mount` 失败，`diskutil verifyVolume disk6s1` 报无法读取容器超级块、退出码 8。系统挂载过程尝试修复并失败；未主动修复、重建或更改个人数据。现有 23000 转发连接重置。无部署 tag，所有指定真实模型、草稿通知、记忆和整理检查未执行；也未读取测试账号记忆。需恢复磁盘后继续。
 
 原始测试日志在 `/tmp/p3-*.log`，浏览器日志在 `/tmp/ailab-p3-e2e-*`，未提交仓库。
+
+## P4 部署（2026-10-31）
+
+部署产品基线 `c3cdb273ca5001b78ebfd7913cbddb3631d2eae3`，标签 `sm-p3-c3cdb27`。磁盘 status 显示已挂载、无需恢复。用 `git archive c3cdb27` 固定源码，沿用增量平台 Dockerfile；依赖清单相对 `ca1ee78` 无变化。`python3 bin/sync.py`、`bash bin/vm.sh ssh sh -c 'cd ~/ailab-local && bash config/build.sh'`、`bash bin/vm.sh ssh sh -c 'cd ~/ailab-local && docker compose -f config/compose.yaml up -d --no-deps --no-build --wait --wait-timeout 180 api broker worker agent portal'` 均 exit 0。仅构建平台和 Portal，复用 Office 及其他镜像；无备份。12 服务运行，配置健康检查的服务 healthy，Portal HTTP 200。构建和启动日志在 `/tmp/ailab-p4-build.log`、`/tmp/ailab-p4-up.log`。
+
+Claude 的受影响 E2E 日志 `/tmp/p3-claude-e2e.log` 显示 14 项通过；其详细结果由 Claude 确认。P3 的资料库末行契约及滚动菜单代码分别由 `c3cdb27`、`00575b6` 更新。
+
+真实模型和桌面/390px 菜单检查尚未执行：内置浏览器因执行器拒绝符号链接可写根目录而无法启动；已有 Python Playwright 可作为备用，但旧脚本使用管理员账号，历史专用验收账号已禁用，尚未确定本轮指定的现有测试账号。两个计算、两种技能、技能提取通知、记忆自动记录/整理和四页面菜单均无结果或耗时；未读取账号记忆。待确认账号后执行，不能把服务健康视作功能通过。未发现新的产品缺陷；真模型行为、移动端实际操作及长期性能仍未验证。
