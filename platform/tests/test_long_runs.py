@@ -269,3 +269,44 @@ def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
     assert ("agent.context_boundary", {"reason": "rebuilt"}) in platform.events
     assert "对照计划" in messages[-1]["content"]
     assert "review_at" not in platform.checkpoint["state"]["budget"]
+
+
+def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
+    from ailab_platform.agent.loop import _Turn
+    from ailab_platform.catalog import Catalog, ModelSpec
+    from ailab_platform.model_policy import ModelPolicy
+
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
+    monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
+    model = ScriptedLLM([LLMResponse(content="摘要") for _ in range(10)])
+    loop = AgentLoop(FakePlatform(), FakeBroker(), model)
+
+    def group(i):
+        return [
+            {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
+        ]
+
+    state = fresh_state()
+    state["messages"] = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        *group(0),
+        *group(1),
+        *group(2),
+        *group(3),
+    ]
+    task = {"role": "user", "content": "current task"}
+    state["messages"] += [task, *group(4)]
+    state["user_message_index"] = len(state["messages"]) - 3
+    loop._states["run_1"], loop._steps["run_1"] = state, 0
+    turn = _Turn({"prompt": "current task", "_attempt_id": "a", "_ledger_tokens": 0})
+    turn.messages = state["messages"]
+    asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
+    assert turn.messages[state["user_message_index"]] == task
+    assert state["user_message_index"] > 4
+    for i in (5, 6, 7):
+        turn.messages.extend(group(i))
+    asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
+    assert state["user_message_index"] == 2 and turn.messages[2] == task

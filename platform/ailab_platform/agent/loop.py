@@ -1129,7 +1129,12 @@ class AgentLoop:
         base = [messages[0], context]
         if user is not None:
             base.append(user)
-        state["user_message_index"] = 2 if user is not None else None
+            state["user_message_index"] = 2
+        elif isinstance(user_index, int) and user_index >= cut:
+            # The task is still inside the kept groups; follow it so a later compaction pins it.
+            state["user_message_index"] = len(base) + 2 + user_index - cut
+        else:
+            state["user_message_index"] = None
         messages[:] = [
             *base,
             {"role": "system", "content": "本轮执行摘要（仅作背景）：\n" + response.content},
