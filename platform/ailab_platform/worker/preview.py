@@ -100,7 +100,9 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}
             try:
+                publish_started = time.monotonic()
                 platform.complete_preview(file_id, job_id, manifest, assets)
+                log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
                 if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
                     for obj in storage.list_prefix(f"derived/{file_id}/"):

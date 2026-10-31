@@ -16,6 +16,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from pathlib import Path
 
@@ -77,11 +78,14 @@ def pdf_document(src: Path, out: Path) -> dict:
 
 def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
+        convert_started = time.monotonic()
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
+        convert_seconds = time.monotonic() - convert_started
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
         ranges = [(n, n) for n in selected] if selected else [(1, MAX_PAGES)]
+        raster_started = time.monotonic()
         for first, last in ranges:
             if count is not None and first > count:
                 raise ValueError("page_out_of_range")
@@ -104,6 +108,7 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
                 capture_output=True,
                 timeout=90,
             )
+        raster_seconds = time.monotonic() - raster_started
         if save_pdf and pdf.stat().st_size <= 32 * 1024 * 1024:
             shutil.copyfile(pdf, out / "document.pdf")
     names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
@@ -114,6 +119,7 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         "kind": "pages",
         "pages": names,
         "page_count": count,
+        "phases": {"convert_seconds": round(convert_seconds, 3), "raster_seconds": round(raster_seconds, 3)},
         **({"pdf_cache": "document.pdf"} if (out / "document.pdf").exists() else {}),
     }
 

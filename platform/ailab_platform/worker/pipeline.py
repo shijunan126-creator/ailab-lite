@@ -6,6 +6,7 @@ import io
 import json
 import logging
 import tempfile
+import time
 from dataclasses import asdict
 from pathlib import Path, PurePath
 
@@ -132,8 +133,10 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                 platform.patch_file(file_id, meta=thumb, job="thumbnail")
             return {"file_id": file_id, **thumb}
         attempts = int((meta.get("meta") or {}).get("scan_attempts", 0))
+        scan_started = time.monotonic()
         with source.open("rb") as stream:
             scan = asdict(get_scanner().scan(stream))
+        log.info("file processing phase=scan seconds=%.3f", time.monotonic() - scan_started)
         scan["ok"] = scan["verdict"] == "clean"
         if scan["verdict"] == "unavailable":
             platform.patch_file(
@@ -185,6 +188,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     platform.patch_file(file_id, meta={**cached, "scan": scan}, status="ready")
                     return {"file_id": file_id, "cache": "private_copy"}
         thumb = _images(file_id, source, meta, storage, Path(tmp) / "images")
+        parse_started = time.monotonic()
         if source.stat().st_size > settings.max_parse_bytes:
             info = {"kind": "too_large", "chars": 0, "bytes": source.stat().st_size, "truncated": True}
         else:
@@ -211,6 +215,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                     )
             except IsolationError as exc:
                 info = {"kind": "error", "error": str(exc), "chars": 0}
+        log.info("file processing phase=parse seconds=%.3f", time.monotonic() - parse_started)
         text = info.pop("text", "")
         skill = {k: info.pop(k) for k in ("skill", "skill_error") if k in info}
         derived = {

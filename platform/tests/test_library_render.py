@@ -66,7 +66,7 @@ def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
-def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path):
+def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog):
     from pypdf import PdfWriter
 
     writer = PdfWriter()
@@ -83,9 +83,11 @@ def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path):
         return original(lease, path, local, limit)
 
     manager._download = record_download
-    result = renderer.render("file", "job")
+    with caplog.at_level("INFO", logger="ailab.broker.render"):
+        result = renderer.render("file", "job")
     assert downloads == ["/workspace/.ailab/preview.tar"]
     assert len(result["assets"]) == 3
+    assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
     assert all(storage.get_bytes(asset["key"]).startswith(b"\xff\xd8") for asset in result["assets"].values())
     assert manager.active_leases() == []
 

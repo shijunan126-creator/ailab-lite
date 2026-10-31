@@ -1,6 +1,8 @@
 """Bounded reconciliation of suspended file tools; jobs and continuation commit together."""
 
+import logging
 import time
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -10,6 +12,7 @@ from ..locks import user_critical_section
 from ..models import FileObject, Run, RunStatus
 
 _after = ""
+log = logging.getLogger("ailab.api.file_dependencies")
 
 
 def ready(db, dependency):
@@ -120,6 +123,7 @@ def resume_dependency(db, run):
     from ..run_state import transition_run
     from .routes_runtime import _admit_continuation, queue_continuation
 
+    started = time.monotonic()
     try:
         _admit_continuation(db, run)
     except HTTPException as exc:
@@ -135,3 +139,8 @@ def resume_dependency(db, run):
         return
     run.runtime_meta = {k: v for k, v in run.runtime_meta.items() if k != "file_dependency"}
     queue_continuation(db, run)
+    waiting_since = run.waiting_since
+    if waiting_since and waiting_since.tzinfo is None:
+        waiting_since = waiting_since.replace(tzinfo=UTC)
+    wait_seconds = max(0.0, (datetime.now(UTC) - waiting_since).total_seconds()) if waiting_since else 0.0
+    log.info("file dependency phase=resume seconds=%.3f wait_seconds=%.3f", time.monotonic() - started, wait_seconds)

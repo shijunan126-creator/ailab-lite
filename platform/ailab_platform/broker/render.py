@@ -122,6 +122,12 @@ class LibraryRenderer:
                 raise LeaseError("invalid_render_output") from exc
             if not isinstance(manifest, dict):
                 raise LeaseError("invalid_render_output")
+            timings = manifest.get("phases")
+            if isinstance(timings, dict):
+                for key in ("convert_seconds", "raster_seconds"):
+                    value = timings.get(key)
+                    if type(value) in (int, float) and 0 <= value <= 120:
+                        phases[key] = value
             if manifest.get("error"):
                 raise LeaseError("render_failed")
             kind = manifest.get("kind")
