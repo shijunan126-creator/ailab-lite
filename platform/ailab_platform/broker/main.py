@@ -160,6 +160,20 @@ def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     return asdict(result)
 
 
+@router.post("/leases/{lease_id}/view-workspace-file", dependencies=[Depends(require_scope("sandbox:use"))])
+def view_workspace_file(lease_id: str, body: dict) -> dict:
+    from .workspace_view import view
+
+    if set(body) - {"path", "pages"} or "path" not in body:
+        raise HTTPException(422, "invalid_view_arguments")
+    try:
+        return view(get_manager(), lease_id, body["path"], body.get("pages"))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except SandboxError as exc:
+        raise HTTPException(502, "view_unavailable") from exc
+
+
 @router.put("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
 def put_file(
     lease_id: str,

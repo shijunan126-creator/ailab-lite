@@ -1,0 +1,130 @@
+"""Workspace visual input is bounded, deterministic, and scoped to the run sandbox."""
+
+import io
+
+import pytest
+from PIL import Image
+
+from ailab_platform.broker.workspace_view import view
+from ailab_platform.sandbox import ExecResult
+from ailab_platform.sandbox.transfer import TransferLimitError
+from tests.test_workspace_previews import _manager
+
+
+def image_bytes():
+    data = io.BytesIO()
+    Image.new("RGB", (80, 60), "red").save(data, "PNG")
+    return data.getvalue()
+
+
+def test_workspace_image_is_deterministic_and_rejects_escape(tmp_path):
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("view-test")["lease_id"]
+    manager.put_file(lease, "/workspace/outputs/image.png", image_bytes())
+    first = view(manager, lease, "/workspace/outputs/image.png", None)
+    assert first == view(manager, lease, "/workspace/outputs/image.png", [1])
+    assert first["pages"] == [1] and first["images"]
+    for path in ("/etc/passwd", "/workspace/../etc/passwd", "/workspace/.ailab/private.png"):
+        with pytest.raises(ValueError, match="invalid_workspace_path"):
+            view(manager, lease, path, None)
+    with pytest.raises(ValueError, match="invalid_page_selection"):
+        view(manager, lease, "/workspace/outputs/image.png", [1, 2, 3, 4, 5])
+    manager.exec(lease, "ln -s /etc/passwd /workspace/outputs/link.jpg", 5)
+    with pytest.raises(ValueError, match="view_failed"):
+        view(manager, lease, "/workspace/outputs/link.jpg", None)
+    manager.close()
+
+
+def test_workspace_view_timeout_and_oversized_output(tmp_path, monkeypatch):
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("view-limits")["lease_id"]
+    manager.put_file(lease, "/workspace/outputs/image.png", image_bytes())
+    execute = manager.exec
+    monkeypatch.setattr(
+        manager, "exec", lambda lid, cmd, timeout: ExecResult(124, "", "", 0) if "timeout -k" in cmd else execute(lid, cmd, timeout)
+    )
+    with pytest.raises(ValueError, match="view_timeout"):
+        view(manager, lease, "/workspace/outputs/image.png", None)
+    monkeypatch.setattr(manager, "exec", execute)
+
+    def too_large(*args):
+        raise TransferLimitError("too large")
+
+    monkeypatch.setattr(manager, "_download", too_large)
+    with pytest.raises(TransferLimitError):
+        view(manager, lease, "/workspace/outputs/image.png", None)
+    manager.close()
+
+
+def test_workspace_pdf_renders_requested_pages_and_rejects_large_input(tmp_path):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.add_blank_page(width=120, height=72)
+    data = io.BytesIO()
+    writer.write(data)
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("view-pages")["lease_id"]
+    manager.put_file(lease, "/workspace/outputs/two.pdf", data.getvalue())
+    result = view(manager, lease, "/workspace/outputs/two.pdf", [2, 1])
+    assert result["pages"] == [2, 1] and len(result["images"]) == 2
+    manager.exec(lease, "truncate -s 22000000 /workspace/outputs/large.pdf", 5)
+    with pytest.raises(ValueError, match="view_failed"):
+        view(manager, lease, "/workspace/outputs/large.pdf", None)
+    manager.close()
+
+
+def test_view_tool_appends_immutable_image_to_subsequent_requests(monkeypatch):
+    import asyncio
+    import base64
+    import copy
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import ModelSpec, get_catalog
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    monkeypatch.setitem(
+        get_catalog().models,
+        "m",
+        ModelSpec(id="m", name="m", provider="mock", capabilities=["tools", "vision"], context_tokens=200000),
+    )
+
+    class Broker(FakeBroker):
+        async def view_workspace_file(self, lease_id, path, pages):
+            return {"pages": [1], "images": [base64.b64encode(b"\xff\xd8\xfftest\xff\xd9").decode()]}
+
+    class RecordingLLM(ScriptedLLM):
+        async def chat(self, messages, tools, model, user_id=None):
+            self.seen_messages.append(copy.deepcopy(messages))
+            return self.responses.pop(0)
+
+    def call(ident):
+        return LLMResponse(tool_calls=[ToolCall(ident, "view_workspace_file", {"path": "/workspace/outputs/a.png"})])
+
+    model = RecordingLLM([call("one"), call("two"), LLMResponse(content="done")])
+    platform = FakePlatform()
+    asyncio.run(AgentLoop(platform=platform, broker=Broker(), llm=model).process("run_1", attempt_id="attempt"))
+    first = next(m for m in model.seen_messages[1] if isinstance(m.get("content"), list) and m["content"][-1].get("type") == "image_url")
+    later = [m for m in model.seen_messages[2] if isinstance(m.get("content"), list) and m["content"][-1].get("type") == "image_url"]
+    assert len(later) == 2 and later[0] == first
+    assert first in platform.checkpoint["state"]["messages"]
+
+
+def test_nonvision_model_rejects_view_before_allocating_sandbox(monkeypatch):
+    import asyncio
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import ModelSpec, get_catalog
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    monkeypatch.setitem(get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools"]))
+    broker = FakeBroker()
+    model = ScriptedLLM(
+        [LLMResponse(tool_calls=[ToolCall("view", "view_workspace_file", {"path": "/workspace/a.png"})]), LLMResponse(content="done")]
+    )
+    asyncio.run(AgentLoop(platform=FakePlatform(), broker=broker, llm=model).process("run_1", attempt_id="attempt"))
+    assert broker.leases == 0
+    assert any("不支持图像理解" in m.get("content", "") for m in model.seen_messages[1] if m["role"] == "tool")
