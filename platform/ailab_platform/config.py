@@ -200,6 +200,10 @@ class Settings(BaseSettings):
     sandbox_render_max_ttl_seconds: int = Field(default=120, ge=1)
     render_prewarm: int = Field(default=1, ge=0, le=8)
     render_prewarm_idle_seconds: int = Field(default=600, ge=1, le=86400)
+    render_user_idle_seconds: int = Field(default=180, ge=1, le=86400)
+    render_reuse_max_jobs: int = Field(default=50, ge=1, le=10000)
+    render_max_age_seconds: int = Field(default=1800, ge=1, le=86400)
+    render_work_listener_rss_bytes: int = Field(default=384 * 1024**2, ge=32 * 1024**2, le=4 * 1024**3)
     preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file
@@ -418,6 +422,8 @@ class Settings(BaseSettings):
     def validate_broker_limits(self):
         if self.sandbox_ttl_seconds > self.sandbox_max_lifetime_seconds:
             raise ValueError("sandbox ttl exceeds max lifetime")
+        if self.render_max_age_seconds < self.sandbox_render_max_ttl_seconds:
+            raise ValueError("render max age must cover a render job")
         if self.sandbox_render_reserved_slots >= self.max_sandboxes:
             raise ValueError("render reservation must leave at least one general slot")
         if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
