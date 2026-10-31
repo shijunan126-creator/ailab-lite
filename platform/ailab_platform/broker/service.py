@@ -186,6 +186,7 @@ class LeaseManager:
         self._inflight: set[str] = set()
         self._pending_runs: set[str] = set()
         self._render_jobs = 0
+        self._render_waiters = 0
         self._warming = False
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
@@ -609,9 +610,13 @@ class LeaseManager:
     @contextmanager
     def render_activity(self):
         with self._condition:
-            while self._warming or self._render_jobs:
-                self._condition.wait(timeout=1)
-            self._render_jobs += 1
+            self._render_waiters += 1
+            try:
+                while self._warming or self._render_jobs:
+                    self._condition.wait(timeout=1)
+                self._render_jobs += 1
+            finally:
+                self._render_waiters -= 1
         try:
             yield
         finally:
@@ -624,7 +629,12 @@ class LeaseManager:
         if not self._start_background or not settings.render_prewarm or self._stop.is_set():
             return
         with self._condition:
-            if self._warming or self._render_jobs or sum(x["state"] == "standby" for x in self.active_leases()) >= settings.render_prewarm:
+            if (
+                self._warming
+                or self._render_jobs
+                or self._render_waiters
+                or sum(x["state"] == "standby" for x in self.active_leases()) >= settings.render_prewarm
+            ):
                 return
             self._warming = True
 
@@ -750,6 +760,7 @@ class LeaseManager:
             self.platform.append_event(run_id, "sandbox.leased", {"lease_id": handle.lease_id, "provider": self.provider.name})
         except Exception:
             log.warning("could not record sandbox.leased")
+        self.request_prewarm()
         return lease
 
     def get(self, handle: str | LeaseHandle) -> dict:

@@ -285,6 +285,10 @@ class PlatformClient(_PlatformApi):
         req = self._req("POST", "/internal/read-document", timeout=150, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/read-document")).json()
 
+    def prewarm_render(self):
+        req = self._req("POST", "/internal/render-prewarm", timeout=2)
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render-prewarm")).json()
+
     def render_preview(self, file_id: str, job_id: str) -> dict:
         req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()

@@ -118,6 +118,13 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         return {"file_id": file_id, "skipped": meta.get("status")}
     if not thumbnail_only and (meta.get("meta") or {}).get("scan_exhausted"):
         return {"file_id": file_id, "skipped": "scan_exhausted"}
+    if not thumbnail_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
+        hint = getattr(platform, "prewarm_render", None)
+        if hint:
+            try:
+                hint()
+            except Exception:
+                log.warning("render prewarm hint failed")
     with tempfile.TemporaryDirectory(prefix="ailab-file-") as tmp:
         source = Path(tmp) / ("input" + PurePath(meta["filename"]).suffix.lower())
         download(

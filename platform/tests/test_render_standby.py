@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
+from threading import Event, Thread
 from types import SimpleNamespace
 
 import pytest
@@ -100,3 +101,31 @@ def test_replenishment_waits_for_render(monkeypatch):
         if thread.name == "render-prewarm":
             thread.join(2)
     assert len(calls) == 1
+
+
+def test_waiting_render_precedes_replenishment(monkeypatch):
+    manager, _, _ = _manager()
+    manager._ensure_started()
+    manager._start_background = True
+    waiting = Event()
+    entered = Event()
+    release = Event()
+    calls = []
+    monkeypatch.setattr(manager, "create_standby", lambda spec: calls.append("warm") or (_ for _ in ()).throw(LeaseError("stop")))
+
+    def second():
+        waiting.set()
+        with manager.render_activity():
+            entered.set()
+            release.wait(2)
+
+    with manager.render_activity():
+        thread = Thread(target=second)
+        thread.start()
+        assert waiting.wait(1)
+        with manager._condition:
+            assert manager._condition.wait_for(lambda: manager._render_waiters == 1, timeout=1)
+    assert entered.wait(1)
+    assert not calls
+    release.set()
+    thread.join(2)
