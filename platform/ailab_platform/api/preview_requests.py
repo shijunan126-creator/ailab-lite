@@ -20,6 +20,11 @@ def request_ready_preview(db, file):
         or file.size > settings.preview_eager_max_bytes
     ):
         return
+    meta = file.meta or {}
+    # A durable preview already in the outbox owns the pending state, even if
+    # capacity waits exceed the old client retry interval.
+    if (meta.get("preview") or {}).get("status") == "pending" and meta.get("preview_job_id"):
+        return
     suffix = Path(file.filename).suffix.lower()
     if suffix in PAGES | LOCAL_SHEETS | SANDBOX_SHEETS or file.content_type.split(";")[0] == "application/pdf":
         request_preview(db, file, retry_stale=False)
@@ -31,6 +36,10 @@ def request_preview(db, file, *, retry_stale=True):
     cached = meta.get("preview")
     if cached and cached.get("reason") != "text_unavailable":
         if not retry_stale or cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300:
+            return cached, None
+        from ..models import OutboxMessage
+
+        if meta.get("preview_job_id") and db.get(OutboxMessage, meta["preview_job_id"]):
             return cached, None
     job_id = None
     kind = "image" if meta.get("display_key") else preview_kind(file.filename, file.content_type)
@@ -50,6 +59,7 @@ def request_preview(db, file, *, retry_stale=True):
         manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
     else:
         manifest = {"status": "pending", "kind": kind}
+        meta.pop("preview_requested_pages", None)
         job_id = uuid.uuid4().hex
         meta.update(preview_requested_at=now, preview_job_id=job_id)
         stage_job(db, "preview", file_id=file.id, job_id=job_id)

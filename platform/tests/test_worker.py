@@ -62,7 +62,7 @@ def test_preview_capacity_error_keeps_job_pending(monkeypatch):
         complete_preview=lambda *args: pytest.fail("capacity is not a failed preview"),
     )
     assert preview.process_preview("file", "job", platform) == {"skipped": "busy"}
-    assert len(released) == 2
+    assert len(released) == 1
 
 
 @pytest.mark.parametrize("published", [True, False])

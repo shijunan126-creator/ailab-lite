@@ -4,6 +4,7 @@ import asyncio
 import logging
 import threading
 import time
+from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select, update
@@ -11,11 +12,29 @@ from sqlalchemy import or_, select, update
 from ..config import settings
 from ..contracts.jobs import JobEnvelope
 from ..db import SessionLocal
-from ..models import OutboxMessage
+from ..models import FileObject, OutboxMessage
 from ..queue import get_queue, job_topic
 
 log = logging.getLogger("ailab.api.jobs")
 _dispatch_lock = threading.Lock()
+
+
+def _fair_preview_order(messages, owners):
+    """Round-robin due preview jobs per user within priority, retaining other job positions."""
+    previews = [message for message in messages if message.payload.get("kind") == "preview"]
+    groups = defaultdict(deque)
+    for message in previews:
+        groups[(bool(message.payload.get("priority")), owners.get(message.payload.get("file_id"), message.id))].append(message)
+    ordered = []
+    for priority in (True, False):
+        users = deque(key for key in groups if key[0] == priority)
+        while users:
+            key = users.popleft()
+            ordered.append(groups[key].popleft())
+            if groups[key]:
+                users.append(key)
+    preview_iter = iter(ordered)
+    return [next(preview_iter) if message.payload.get("kind") == "preview" else message for message in messages]
 
 
 def dispatch_preview_jobs(job_id: str | None = None, *, now: datetime | None = None) -> int:
@@ -53,8 +72,12 @@ def _dispatch_batch(queue, job_id, now):
         query = query.order_by(OutboxMessage.next_attempt_at, OutboxMessage.id).limit(50)
         if db.bind.dialect.name == "postgresql":
             query = query.with_for_update(skip_locked=True)
+        messages = list(db.scalars(query))
+        file_ids = {message.payload.get("file_id") for message in messages if message.payload.get("kind") == "preview"}
+        owners = dict(db.execute(select(FileObject.id, FileObject.user_id).where(FileObject.id.in_(file_ids))).all()) if file_ids else {}
+        messages = _fair_preview_order(messages, owners)
         sent = 0
-        for message in db.scalars(query):
+        for message in messages:
             if time.monotonic() >= deadline:
                 break
             observed_at, observed_token = message.next_attempt_at, message.claim_token

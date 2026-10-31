@@ -27,3 +27,20 @@ def test_listener_conversion_and_cold_fallback(tmp_path, monkeypatch, listener_f
     if listener_fails:
         assert calls[1][0] == "soffice"
         assert "/tmp/listener-profile" not in " ".join(calls[1])
+
+
+def test_strict_render_does_not_hide_a_failed_listener(tmp_path, monkeypatch):
+    source = tmp_path / "document.docx"
+    source.write_bytes(b"input")
+    monkeypatch.setenv("AILAB_LO_LISTENER", "1")
+    monkeypatch.setenv("AILAB_LO_STRICT", "1")
+    calls = []
+
+    def fail(command, **kwargs):
+        calls.append(command)
+        raise render_preview.subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(render_preview.subprocess, "run", fail)
+    with pytest.raises(RuntimeError, match="listener failed"):
+        render_preview.soffice(source, "pdf", tmp_path)
+    assert len(calls) == 1

@@ -697,6 +697,10 @@ def _bound_file(
         raise HTTPException(status_code=410, detail="version purged")
     if principal.service == "legacy":
         return file  # explicit dev/test compatibility, never enabled in secure
+    if job in {"document", "preview"} and principal.service == "broker":
+        owner = db.get(User, file.user_id)
+        if owner is None or owner.disabled_at is not None:
+            raise HTTPException(403, "render owner unavailable")
     if job == "document" and principal.service == "broker":
         meta = file.meta or {}
         if (
@@ -1023,9 +1027,12 @@ def publish_preview_page(
             page < 1
             or page > body.page_count
             or asset["key"] != f"derived/{file_id}/preview/{body.name}"
-            or asset["content_type"] != "image/jpeg"
+            or asset["content_type"] != ("image/png" if body.name.endswith(".png") else "image/jpeg")
         ):
             raise HTTPException(400, "invalid preview page")
+        meta["preview_requested_pages"] = [p for p in (meta.get("preview_requested_pages") or []) if p != page]
+        meta["render_page_count"] = body.page_count
+        file.meta = meta
         from ..models import RenderedPage
 
         existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
@@ -1086,10 +1093,14 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
         meta["preview"] = preview.model_dump(exclude_unset=True)
-        for asset in assets.values():
-            if asset["content_type"] != {"pages": "image/jpeg", "sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(
-                preview.kind
-            ):
+        meta.pop("preview_requested_pages", None)
+        for name, asset in assets.items():
+            mime = (
+                ("image/png" if name.endswith(".png") else "image/jpeg")
+                if preview.kind == "pages"
+                else {"sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(preview.kind)
+            )
+            if asset["content_type"] != mime:
                 raise HTTPException(status_code=400, detail="invalid asset content type")
         meta["preview_assets"] = assets
         if thumbnail:

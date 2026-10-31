@@ -42,13 +42,9 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
     if token is None:
         return {"skipped": "in_flight"}
     slot_seconds = 0.0
-    render_token = None
     try:
         with _try_render_slot() as acquired:
             if not acquired:
-                return {"skipped": "busy"}
-            render_token = queue.acquire_lock("ailab:preview:render-slot", 300)
-            if render_token is None:
                 return {"skipped": "busy"}
             slot_seconds = time.monotonic() - started
             try:
@@ -145,7 +141,5 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                         log.warning("render completion failed; lease expiry will release it", exc_info=True)
             return manifest
     finally:
-        if render_token is not None:
-            queue.release_lock("ailab:preview:render-slot", render_token)
         queue.release_lock(f"ailab:preview:{file_id}", token)
         log.info("preview completed total_seconds=%.3f slot_wait_seconds=%.3f", time.monotonic() - started, slot_seconds)

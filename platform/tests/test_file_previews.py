@@ -63,9 +63,28 @@ class ApiClient:
         from ailab_platform.sandbox.mock import MockSandbox
         from tests.fakes import FakeRedis
 
+        class TestProvider(MockSandbox):
+            def exec(self, ref, command, timeout):
+                if "warmup.fodt" in command or "render_sandbox_health.py" in command:
+                    from types import SimpleNamespace
+
+                    return SimpleNamespace(exit_code=0, stdout='{"tmp_used":0}')
+                return super().exec(ref, command, timeout)
+
+        class BoundPlatform:
+            def get_file(self, file_id, **binding):
+                result = self_api.get_file(file_id, **binding)
+                with SessionLocal() as db:
+                    result["render_owner_id"] = db.get(FileObject, file_id).user_id
+                return result
+
+            def download_file(self, *args, **kwargs):
+                return self_api.download_file(*args, **kwargs)
+
+        self_api = self
         manager = LeaseManager(
-            provider=MockSandbox(),
-            platform=self,
+            provider=TestProvider(),
+            platform=BoundPlatform(),
             storage=get_storage(),
             redis_client=FakeRedis(),
             store=MemoryLeaseStore(),
@@ -260,7 +279,8 @@ def test_owned_ready_only(api):
     assert api.get(f"/v1/files/{fid}/preview", headers=other_auth).status_code == 404
 
 
-def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
+def test_concurrent_opens_keep_durable_pending_job(api, monkeypatch):
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     fid = upload(api, "a.pdf")
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: preview(api, fid), range(8)))
@@ -273,7 +293,7 @@ def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
         db.commit()
     preview(api, fid)
     jobs = [m for m in get_queue().outstanding(job_topic("preview")) if m.get("kind") == "preview" and m["file_id"] == fid]
-    assert len(jobs) == 2 and jobs[0]["job_id"] != jobs[1]["job_id"]
+    assert len(jobs) == 1
 
 
 def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):

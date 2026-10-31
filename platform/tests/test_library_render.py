@@ -44,7 +44,7 @@ def setup_renderer(tmp_path, content, filename):
                     else:
                         path.unlink()
             return SimpleNamespace(exit_code=0, stdout="{}")
-        return execute(ref, command, timeout)
+        return execute(ref, command.replace("AILAB_LO_STRICT=1 ", ""), timeout)
 
     manager.provider.exec = mock_listener
     return manager, LibraryRenderer(manager), storage
@@ -69,7 +69,7 @@ def test_docx_real_renderer_and_release(tmp_path):
     assert result["preview"]["status"] == "ready" and result["preview"]["page_count"] == 1
     assert len(result["preview"]["pages"]) == 1
     key = next(iter(result["assets"].values()))["key"]
-    assert storage.get_bytes(key).startswith(b"\xff\xd8")
+    assert storage.get_bytes(key).startswith(b"\x89PNG\r\n\x1a\n")
     published(manager, result)
     manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
@@ -122,12 +122,41 @@ def test_first_page_is_published_before_remaining_render(tmp_path):
     events = []
     execute = manager.exec
     manager.exec = lambda lease, cmd, timeout: (
-        events.append("first" if "/first " in cmd else "bulk" if "/preview" in cmd else "other") or execute(lease, cmd, timeout)
+        events.append("first" if "/first " in cmd else "second" if "/page-2 " in cmd else "other") or execute(lease, cmd, timeout)
     )
     manager.platform.publish_preview_page = lambda fid, job, name, count, asset: events.append(f"publish:{name}")
     result = renderer.render("file", "job")
-    assert events.index("first") < events.index("publish:p-1.jpg") < events.index("bulk") < events.index("publish:p-2.jpg")
-    assert events.count("publish:p-1.jpg") == 1
+    assert events.index("first") < events.index("publish:p-1.png") < events.index("second") < events.index("publish:p-2.png")
+    assert events.count("publish:p-1.png") == 1
+    published(manager, result)
+    manager.release(result["render_lease_id"])
+
+
+def test_waiting_page_is_rendered_before_other_remaining_pages(tmp_path):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    for _ in range(4):
+        writer.add_blank_page(width=72, height=72)
+    data = io.BytesIO()
+    writer.write(data)
+    manager, renderer, _ = setup_renderer(tmp_path, data.getvalue(), "pages.pdf")
+    requested, published_pages = [], []
+    original = manager.platform.get_file
+    manager.platform.get_file = lambda fid, **binding: {
+        **original(fid, **binding),
+        "meta": {**original(fid, **binding)["meta"], "preview_requested_pages": requested},
+    }
+
+    def publish(fid, job, name, count, asset):
+        published_pages.append(int(name[2:-4]))
+        if len(published_pages) == 1:
+            requested.append(4)
+
+    manager.platform.publish_preview_page = publish
+    result = renderer.render("file", "job")
+    assert published_pages == [1, 4, 2, 3]
+    assert [int(name[2:-4]) for name in result["preview"]["pages"]] == [1, 2, 3, 4]
     published(manager, result)
     manager.release(result["render_lease_id"])
 
@@ -150,7 +179,7 @@ def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
-def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog):
+def test_render_exports_and_publishes_each_page(tmp_path, caplog):
     from pypdf import PdfWriter
 
     writer = PdfWriter()
@@ -169,11 +198,11 @@ def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog)
     manager._download = record_download
     with caplog.at_level("INFO", logger="ailab.broker.render"):
         result = renderer.render("file", "job")
-    assert len(downloads) == 2 and downloads[0].startswith("/workspace/.ailab/first/p-")
-    assert downloads[1] == "/workspace/.ailab/preview.tar"
+    assert len(downloads) == 3 and downloads[0].startswith("/workspace/.ailab/first/p-")
+    assert all(f"/page-{i}/" in downloads[i - 1] for i in (2, 3))
     assert len(result["assets"]) == 3
     assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
-    assert all(storage.get_bytes(asset["key"]).startswith(b"\xff\xd8") for asset in result["assets"].values())
+    assert all(storage.get_bytes(asset["key"]).startswith(b"\x89PNG\r\n\x1a\n") for asset in result["assets"].values())
     published(manager, result)
     manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
@@ -181,19 +210,11 @@ def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog)
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
 def test_render_rejects_unexpected_archive_members(tmp_path):
-    from pypdf import PdfWriter
-
-    writer = PdfWriter()
-    writer.add_blank_page(width=72, height=72)
-    data = io.BytesIO()
-    writer.write(data)
-    manager, renderer, storage = setup_renderer(tmp_path, data.getvalue(), "page.pdf")
+    manager, renderer, _ = setup_renderer(tmp_path, b"a,b\n1,2\n", "sheet.csv")
     original = manager._download
 
     def tamper(lease, path, local, limit):
         original(lease, path, local, limit)
-        if not path.endswith(".tar"):
-            return
         with tarfile.open(local, "a") as bundle:
             entry = tarfile.TarInfo("../escape")
             entry.size = 1
@@ -202,7 +223,6 @@ def test_render_rejects_unexpected_archive_members(tmp_path):
     manager._download = tamper
     with pytest.raises(LeaseError, match="invalid_render_output"):
         renderer.render("file", "job")
-    assert storage.exists("derived/file/preview/p-1.jpg")  # the independently validated first page was already published
     assert manager.active_leases() == []
 
 
@@ -235,6 +255,9 @@ def test_visual_page_requests_reuse_private_pdf_and_keep_requested_order(tmp_pat
     published(manager, other)
     assert [int(name[2:-4]) for name in first["preview"]["pages"]] == [2, 1]
     assert second["preview"] == first["preview"]
+    assert [first["assets"][name]["sha256"] for name in first["preview"]["pages"]] == [
+        second["assets"][name]["sha256"] for name in second["preview"]["pages"]
+    ]
     render_commands = [cmd for cmd in commands if "render_preview.py" in cmd]
     assert other["preview"] == first["preview"]
     assert len(render_commands) == 6

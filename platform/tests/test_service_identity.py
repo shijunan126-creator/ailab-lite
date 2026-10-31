@@ -150,6 +150,13 @@ def test_render_owner_is_only_returned_after_job_binding(identities):
         assert client.get(url, params={"job": "preview", "preview_job": "wrong"}, headers=identities["broker"]).status_code == 403
         worker = client.get(url, params={"job": "preview"}, headers=identities["worker"])
         assert worker.status_code == 200 and "render_owner_id" not in worker.json()
+        with SessionLocal() as db:
+            from datetime import UTC, datetime
+
+            db.get(User, user_id).disabled_at = datetime.now(UTC)
+            db.commit()
+        denied = client.get(url, params={"job": "preview", "preview_job": "job"}, headers=identities["broker"])
+        assert denied.status_code == 403 and denied.json()["detail"] == "render owner unavailable"
 
 
 def secure_settings(**overrides):

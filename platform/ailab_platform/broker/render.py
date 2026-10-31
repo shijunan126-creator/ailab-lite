@@ -121,6 +121,21 @@ class LibraryRenderer:
         lease_id = handle.lease_id
         returned = False
         first_asset = None
+
+        def publish_page(name, page_count, local):
+            with local.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            key = f"derived/{file_id}/preview/{name}"
+            self.manager.storage.put_file(key, local, "image/png")
+            asset = {"key": key, "content_type": "image/png", "sha256": digest}
+            try:
+                self.manager.platform.publish_preview_page(file_id, job_id, name, page_count, asset)
+            except Exception:
+                # A deleted file can race the object write after its prefix was purged.
+                self.manager.storage.delete(key)
+                raise
+            return asset
+
         try:
             if pdf_mime and suffix != ".pdf":
                 self.manager.exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
@@ -133,7 +148,7 @@ class LibraryRenderer:
                 first_started = time.monotonic()
                 first = self.manager.exec(
                     lease_id,
-                    "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 "
+                    "AILAB_PAGE_PNG=1 AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1 "
                     f"timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
                     f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
                     95,
@@ -151,7 +166,7 @@ class LibraryRenderer:
                         or not isinstance(names, list)
                         or len(names) != 1
                         or not isinstance(names[0], str)
-                        or not re.fullmatch(r"p-\d+\.jpg", names[0])
+                        or not re.fullmatch(r"p-\d+\.png", names[0])
                         or int(names[0][2:-4]) != first_page
                         or type(count) is not int
                         or count < first_page
@@ -167,29 +182,103 @@ class LibraryRenderer:
                     self.manager._download(
                         self.manager.get(handle), f"/workspace/.ailab/first/{names[0]}", local, settings.max_sandbox_read_bytes
                     )
-                    asset_digest = hashlib.sha256(local.read_bytes()).hexdigest()
-                    asset_key = f"derived/{file_id}/preview/{names[0]}"
-                    self.manager.storage.put_file(asset_key, local, "image/jpeg")
-                self.manager.platform.publish_preview_page(
-                    file_id,
-                    job_id,
-                    names[0],
-                    count,
-                    {"key": asset_key, "content_type": "image/jpeg", "sha256": asset_digest},
-                )
-                first_asset = (names[0], asset_digest)
+                    first = publish_page(names[0], count, local)
+                first_asset = (names[0], first)
                 phases["first_publish_seconds"] = time.monotonic() - first_started
                 if save_pdf:
                     if first_manifest.get("pdf_cache") != "document.pdf":
                         raise LeaseError("render_pdf_cache_missing")
                     source = "/workspace/.ailab/first/document.pdf"
+                page_numbers = selected if selected else list(range(1, min(count, 40) + 1))
+                pending_pages = [page for page in page_numbers if page != first_page]
+                assets = {first_asset[0]: first_asset[1]}
+                names_by_page = {first_page: first_asset[0]}
+                if cache_key and not cached_pdf:
+                    cache_started = time.monotonic()
+                    self.manager.store_file(self.manager.get(handle), source, cache_key, "application/pdf", 32 * 1024 * 1024)
+                    phases["pdf_export_seconds"] = time.monotonic() - cache_started
+                for page in pending_pages:
+                    current = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
+                    if current.get("render_owner_id") != owner:
+                        raise LeaseError("render job owner changed")
+                    wanted = (current.get("meta") or {}).get("preview_requested_pages") or []
+                    # Requests are read between pages; a conversion already in progress is never interrupted.
+                    pending = [p for p in pending_pages if p not in names_by_page]
+                    page = next((p for p in wanted if type(p) is int and p in pending), pending[0])
+                    remaining = max(1, int(120 - (time.monotonic() - started)))
+                    if remaining <= 1:
+                        raise LeaseError("render_timeout")
+                    page_started = time.monotonic()
+                    result = self.manager.exec(
+                        lease_id,
+                        f"AILAB_PAGE_PNG=1 timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
+                        f"{shlex.quote(source)} /workspace/.ailab/page-{page} --pages {page}",
+                        remaining,
+                    )
+                    if result.exit_code:
+                        raise LeaseError("render_failed")
+                    try:
+                        page_manifest = json.loads((result.stdout.strip().splitlines() or ["{}"])[-1])
+                        page_names = page_manifest["pages"]
+                        if (
+                            page_manifest.get("kind") != "pages"
+                            or page_manifest.get("page_count") != count
+                            or not isinstance(page_names, list)
+                            or len(page_names) != 1
+                            or not isinstance(page_names[0], str)
+                            or not re.fullmatch(r"p-\d+\.png", page_names[0])
+                            or int(page_names[0][2:-4]) != page
+                        ):
+                            raise ValueError("invalid page")
+                    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                        raise LeaseError("invalid_render_output") from exc
+                    name = page_names[0]
+                    with self.manager.transfer_file() as local:
+                        self.manager._download(
+                            self.manager.get(handle), f"/workspace/.ailab/page-{page}/{name}", local, settings.max_sandbox_read_bytes
+                        )
+                        assets[name] = publish_page(name, count, local)
+                    names_by_page[page] = name
+                    phases["remaining_pages_seconds"] = phases.get("remaining_pages_seconds", 0) + time.monotonic() - page_started
+                names = [names_by_page[page] for page in page_numbers]
+                if template:
+                    thumb_started = time.monotonic()
+                    thumbnail = self.manager.exec(
+                        lease_id,
+                        "python /workspace/.ailab/render_preview.py "
+                        f"{shlex.quote(source)} /workspace/.ailab/thumbnail --pages {first_page} --template-thumbnail",
+                        max(1, int(120 - (time.monotonic() - started))),
+                    )
+                    if thumbnail.exit_code:
+                        raise LeaseError("render_failed")
+                    with self.manager.transfer_file() as local:
+                        self.manager._download(
+                            self.manager.get(handle),
+                            "/workspace/.ailab/thumbnail/template-thumbnail.jpg",
+                            local,
+                            settings.max_sandbox_read_bytes,
+                        )
+                        with local.open("rb") as stream:
+                            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+                        key = f"derived/{file_id}/preview/template-thumbnail.jpg"
+                        self.manager.storage.put_file(key, local, "image/jpeg")
+                    assets["template-thumbnail.jpg"] = {"key": key, "content_type": "image/jpeg", "sha256": digest}
+                    phases["thumbnail_seconds"] = time.monotonic() - thumb_started
+                generation = self.manager.get(handle)["render_generation"]
+                returned = True
+                return {
+                    "preview": {"status": "ready", "kind": "pages", "pages": names, "page_count": count},
+                    "assets": assets,
+                    "render_lease_id": lease_id,
+                    "render_generation": generation,
+                }
             if time.monotonic() - started >= 120:
                 raise LeaseError("render_timeout")
             remaining = max(1, int(120 - (time.monotonic() - started)))
             exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
-                "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 "
+                "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1 "
                 f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,

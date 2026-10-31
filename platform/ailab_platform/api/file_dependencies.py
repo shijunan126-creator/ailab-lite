@@ -41,6 +41,8 @@ def ready(db, dependency):
             preview = meta.get("ocr_preview") or {}
             if preview.get("status") == "ready" and preview.get("page_count"):
                 selected = list(range(1, min(preview["page_count"], 20) + 1))
+            elif meta.get("render_page_count"):
+                selected = list(range(1, min(meta["render_page_count"], 20) + 1))
     if selected == []:
         return True
     if selected:

@@ -62,6 +62,8 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
         except (OSError, subprocess.SubprocessError):
             pass
         out.unlink(missing_ok=True)
+        if os.environ.get("AILAB_LO_STRICT"):
+            raise RuntimeError("LibreOffice listener failed")
         # A failed listener can retain a profile lock; the cold fallback must
         # use a fresh profile rather than forward to the broken instance.
         configured = None
@@ -112,15 +114,14 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         count = int(match[1]) if match else None
         ranges = [(n, n) for n in selected] if selected else [(1, MAX_PAGES)]
         raster_started = time.monotonic()
+        png = os.environ.get("AILAB_PAGE_PNG") == "1"
         for first, last in ranges:
             if count is not None and first > count:
                 raise ValueError("page_out_of_range")
             subprocess.run(
                 [
                     "pdftoppm",
-                    "-jpeg",
-                    "-jpegopt",
-                    "quality=82",
+                    *(["-png"] if png else ["-jpeg", "-jpegopt", "quality=82"]),
                     "-scale-to",
                     "1280",
                     "-f",
@@ -137,7 +138,7 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         raster_seconds = time.monotonic() - raster_started
         if save_pdf and pdf.stat().st_size <= 32 * 1024 * 1024:
             shutil.copyfile(pdf, out / "document.pdf")
-    names = sorted((p.name for p in out.glob("p-*.jpg")), key=lambda n: int(n[2:-4]))
+    names = sorted((p.name for p in out.glob("p-*.png" if png else "p-*.jpg")), key=lambda n: int(n[2:-4]))
     if selected:
         order = {page: index for index, page in enumerate(selected)}
         names.sort(key=lambda name: order[int(name[2:-4])])

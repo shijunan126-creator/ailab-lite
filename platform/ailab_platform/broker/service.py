@@ -703,6 +703,8 @@ class LeaseManager:
                 )
                 if result.exit_code:
                     raise LeaseError("render cleanup or health check failed")
+                if time.monotonic() - birth >= settings.render_max_age_seconds or _expired(lease):
+                    raise LeaseError("render expired during cleanup")
                 until = min(
                     datetime.now(UTC) + timedelta(seconds=settings.render_user_idle_seconds),
                     datetime.fromisoformat(lease["max_expires_at"]),
@@ -1524,6 +1526,12 @@ class LeaseManager:
                         ):
                             self.release(lease_id, reason="render_idle_reconcile")
                     elif lease["state"] == "active":
+                        birth = self._render_birth.get(lease_id)
+                        if lease["spec"].get("profile") == "render" and (
+                            birth is None or time.monotonic() - birth >= settings.render_max_age_seconds
+                        ):
+                            self.release(lease_id, reason="render_max_age")
+                            continue
                         if lease["spec"].get("profile") != "render" and hasattr(self.platform, "get_run"):
                             try:
                                 run = (getattr(self.platform, "get_run_state", None) or self.platform.get_run)(lease["run_id"])

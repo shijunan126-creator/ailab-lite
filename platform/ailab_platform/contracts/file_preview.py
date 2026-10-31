@@ -53,7 +53,7 @@ class FilePreview(BaseModel):
     @model_validator(mode="after")
     def usable_manifest(self):
         if self.status == "ready":
-            if self.kind == "pages" and self.pages and all(re.fullmatch(r"p-\d+\.jpg", n) for n in self.pages):
+            if self.kind == "pages" and self.pages and all(re.fullmatch(r"p-\d+\.(?:jpg|png)", n) for n in self.pages):
                 return self
             if self.kind == "sheets" and self.data == "sheets.json":
                 return self
@@ -69,7 +69,7 @@ class FilePreview(BaseModel):
 
 class PreviewAsset(BaseModel):
     key: str = Field(max_length=500)
-    content_type: Literal["image/jpeg", "application/json", "text/plain; charset=utf-8"]
+    content_type: Literal["image/jpeg", "image/png", "application/json", "text/plain; charset=utf-8"]
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
@@ -81,7 +81,7 @@ class PreviewCompletion(BaseModel):
 
 class PreviewPagePublication(BaseModel):
     job_id: str = Field(min_length=1, max_length=40)
-    name: str = Field(pattern=r"^p-\d+\.jpg$", max_length=30)
+    name: str = Field(pattern=r"^p-\d+\.(?:jpg|png)$", max_length=30)
     page_count: int = Field(ge=1, le=100000)
     asset: PreviewAsset
 
@@ -109,7 +109,10 @@ def cached_page_preview(file_id: str, meta: dict) -> tuple[dict, dict] | None:
         if [int(name[2:-4]) for name in names] != list(range(1, min(40, preview.page_count) + 1)):
             return None
         assets = {name: PreviewAsset.model_validate(meta["ocr_preview_assets"][name]).model_dump() for name in names}
-        if any(a["key"] != f"derived/{file_id}/preview/{name}" or a["content_type"] != "image/jpeg" for name, a in assets.items()):
+        if any(
+            a["key"] != f"derived/{file_id}/preview/{name}" or a["content_type"] != ("image/png" if name.endswith(".png") else "image/jpeg")
+            for name, a in assets.items()
+        ):
             return None
         return preview.model_dump(exclude_none=True), assets
     except (ValueError, KeyError, TypeError):

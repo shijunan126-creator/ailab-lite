@@ -458,6 +458,11 @@ def get_preview(file_id: str, user: User = Depends(current_user), db: Session = 
         cached = None
     if cached and (cached["status"] != "pending" or now - (file.meta or {}).get("preview_requested_at", 0) <= 300):
         return cached
+    if cached and cached.get("status") == "pending":
+        from ..models import OutboxMessage
+
+        if (file.meta or {}).get("preview_job_id") and db.get(OutboxMessage, file.meta["preview_job_id"]):
+            return cached
     # Same user lock as deletion: concurrent opens use the committed manifest, without storage reads.
     with user_critical_section(db, user.id):
         file = _ready_file(db, file_id, user)
