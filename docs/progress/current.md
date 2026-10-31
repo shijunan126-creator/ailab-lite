@@ -1,12 +1,12 @@
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
-工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，基于 `origin/main@995a5f6`；产品部署基线 `c3cdb27`，未 push、未 PR。详情和验证见 [P3/P4 记录](updates/2026-10-31-memory-js-polish.md)。
+工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，基于 `origin/main@995a5f6`；部署产品基线 `dd25c82`、平台标签 `sm-p3-dd25c82`，未 push、未 PR。
 
-**完成**：P3 全套和失败组复测已记录；Claude 的受影响 E2E 日志显示 14 项通过。`sm-p3-c3cdb27` 已增量部署，五个更新服务 healthy，Portal HTTP 200。
+**完成**：P3/P4 检查与 P5 指定部署和复验已记录，个人技能与 xlsx Run 最终成功；手动整理和有行页面菜单已检查。详见 [P3–P5 记录](updates/2026-10-31-memory-js-polish.md)。
 
-**待处理**：指定轻量真实模型、技能提取、记忆及桌面/手机菜单检查尚未执行。内置浏览器受执行器符号链接限制；已有 Playwright 可作备用，需确定指定现有测试账号及其本机凭据路径。
+**遗留**：整理新增语义重复的偏好；xlsx Run 最后一次附件查看超时，虽成功交付并最终 succeeded，原因尚未完全确认。定时任务无行，菜单未测。本包按要求只提交文档，未改产品代码。
 
-**下一步**：确定测试账号后完成 P4 检查、记录结果及缺陷；随后由 Claude 处理 PR 和合并。未 push 或创建 PR。
+**下一步**：Claude 打开 PR 并合并；审阅上述缺陷与未测边界。未 push 或创建 PR。
 
 ---
 

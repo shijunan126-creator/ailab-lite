@@ -2,6 +2,8 @@
 
 ## 2026-10-31 记忆与本机部署
 
+- 记忆整理对中文候选先按 token_set_ratio ≥ 55 或实体重叠筛选，语义相同的不同表述可能被挡在 judge 之外；例子及未修复状态见 [P5 记录](docs/progress/updates/2026-10-31-memory-js-polish.md)。立即整理启动后不能仅凭瞬时 active=false 判断完成，应等该次记录终态。
+
 - `ailab-disk status` 在沙箱内可能因禁止 `ps` 失败，`vm.sh` 随后误报 SSD 未挂载；先在可访问进程状态的环境核实，不能据此 attach/recover。记忆评测须走 evaluation job 和正常计费，不应用真实用户记忆作为输出目标。
 - 真实 episode 回放必须核对 `_fit_episodes` 实际送入的片段；按 dream 的 run ID 取回 episode 可能超过原批次且被输入预算截断。单次新旧模型回放的旧版没有重现历史误提取，不能将零误提取解释为确定性修复。
 
