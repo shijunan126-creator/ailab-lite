@@ -75,3 +75,28 @@ def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
     assert catalog_for_budget(catalog, estimator.raw(catalog)) == catalog
     assert catalog_for_budget(catalog, estimator.raw(reduced)) == reduced
     assert _tools_for_run({"_fixed_catalog": reduced}) == reduced
+
+
+def test_reported_cache_tokens_identify_main_title_and_compaction(monkeypatch):
+    observed = []
+    monkeypatch.setattr(
+        "ailab_platform.agent.loop.metrics.record_prompt_cache", lambda mode, kind, usage: observed.append((mode, kind, usage))
+    )
+
+    async def exercise():
+        loop = AgentLoop(platform=FakePlatform())
+        for step in (0, -2, -3):
+            usage = {"prompt_tokens": 100, "cached_tokens": 80}
+            await loop._model_attempt(
+                ScriptedLLM([LLMResponse(content="ok", usage=usage)]),
+                "r1",
+                {"_attempt_id": "a", "options": {"mode": "chat"}},
+                "m",
+                [{"role": "user", "content": "hello"}],
+                step,
+                tools=[],
+            )
+
+    asyncio.run(exercise())
+    assert [(mode, kind) for mode, kind, _ in observed] == [("chat", "main"), ("chat", "title"), ("chat", "compaction")]
+    assert all(usage["cached_tokens"] == 80 and usage["prompt_tokens"] == 100 for _, _, usage in observed)

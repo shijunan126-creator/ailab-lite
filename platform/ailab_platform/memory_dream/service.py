@@ -425,6 +425,8 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
                         status=status,
                     ),
                 )
+        if call.usage:
+            metrics.record_prompt_cache("memory", "memory", call.usage)
     if response.tool_calls or not response.content.strip():
         raise DreamError("dream model returned no final JSON")
     return response.content, dict(response.usage or {})

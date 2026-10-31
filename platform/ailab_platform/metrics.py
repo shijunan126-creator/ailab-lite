@@ -36,6 +36,18 @@ RUNS = Counter("ailab_runs_total", "Runs that entered a status", ["status"])
 CONVERSATION_TITLES = Counter("ailab_conversation_titles_total", "Title outcomes and fallback causes", ["outcome", "reason"])
 RUN_SECONDS = Histogram("ailab_run_seconds", "Start-to-finish time of a run", ["status"], buckets=_SLOW)
 MODEL_TOKENS = Counter("ailab_model_tokens_total", "Model tokens as reported by the upstream", ["model", "kind"])
+PROMPT_CACHE_TOKENS = Counter(
+    "ailab_prompt_cache_tokens_total", "Reported prompt and cached tokens by request type", ["mode", "kind", "token_type"]
+)
+
+
+def record_prompt_cache(mode: str, kind: str, usage: dict) -> None:
+    if mode not in {"chat", "work", "memory"} or kind not in {"main", "title", "compaction", "memory", "draft"}:
+        raise ValueError("unknown prompt cache metric label")
+    for token_type, key in (("prompt", "prompt_tokens"), ("cached", "cached_tokens")):
+        PROMPT_CACHE_TOKENS.labels(mode, kind, token_type).inc(max(0, int(usage.get(key, 0) or 0)))
+
+
 WEB_READ_SECONDS = Histogram(
     "ailab_web_read_seconds",
     "read_url time by path (static, rendered, static_fallback) and outcome",

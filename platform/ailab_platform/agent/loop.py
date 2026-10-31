@@ -772,7 +772,12 @@ class AgentLoop:
                 "reasoning_tokens": usage.get("reasoning_tokens", 0),
                 "status": status,
             }
-            return await self.platform.settle_usage(payload)
+            settled = await self.platform.settle_usage(payload)
+            if usage:
+                mode = (run.get("options") or {}).get("mode", "work")
+                kind = "title" if step == -2 else "compaction" if step in {-1, -3} else "main"
+                metrics.record_prompt_cache(mode if mode in {"chat", "work"} else "work", kind, usage)
+            return settled
 
         try:
             if await self._is_canceled(run_id):
@@ -1079,7 +1084,7 @@ class AgentLoop:
                 size //= 2
                 if size < 128:
                     raise BudgetPause("摘要与新增记录超出输入预算，已保存连续读取进度")
-            response = await self._call_model(llm, run_id, turn.run, model, prompt, -2, tools=[], quiet=True)
+            response = await self._call_model(llm, run_id, turn.run, model, prompt, -3, tools=[], quiet=True)
             if not response.content.strip() or len(response.content) > 16000:
                 raise BudgetPause("上下文整理未完成，已保存进度，可继续")
             summary = response.content

@@ -88,6 +88,8 @@ async def _chat(messages, model, user_id, draft_id, token):
                     status="settled" if usage else "estimated" if call.reached_model else "released",
                 ),
             )
+        if call.usage:
+            metrics.record_prompt_cache("memory", "draft", call.usage)
     if response.tool_calls or not response.content.strip():
         raise ValueError("模型没有返回技能草稿")
     return response.content
