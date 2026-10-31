@@ -1,5 +1,7 @@
 # HANDOFF
 
+- GNU PATH 必须 `export` 给整个 pytest 进程树；只对 `ruff` 命令前置赋值会让后续 MockSandbox 使用 macOS `stat/find`，产生与产品无关的失败。C3b 并行解析与渲染在 2 CPU 下可能竞争租约和 CPU，必须实测首屏及完整耗时，不能假设并行更快。
+
 - 共享 Docker daemon 上的独立 Broker 必须使用唯一 `AILAB_BROKER_OWNER`；同 owner 的现有 Broker 会认领测试容器并按不存在的 run 回收，不能把退出码 137 直接判为 OOM。无租约标签的一次性容器可用于单机脚本测量。
 
 - macOS 的 bsdtar 默认可能为带扩展属性的图片加入 `._` AppleDouble 成员；预览归档校验必须禁止这些额外成员，打包时设置 `COPYFILE_DISABLE=1`。完整 C3 边界见 [记录](docs/progress/updates/2026-10-31-prefix-cache-render.md)。
