@@ -76,3 +76,7 @@
 GNU PATH：Ruff 全库通过；SQLite 1691 通过、151 跳过、1 项依赖审计失败后修复并复测通过；PG+Redis（15433/16380）1786 通过、56 跳过、1 项测试集群 SQL_ASCII 默认模板导致失败，重建 UTF-8 临时集群后该项通过。Office runner 15 项通过；四个检查器夹具通过。真实 runsc 重复查看 PNG/PPTX/DOCX/XLSX 图片字节一致。E2E 145 项通过、6 项跳过；完成后测试容器和数据库清理见报告。
 
 下一步：补齐同条件 delivery/live-preview→reconcile 分阶段资源对照、抢占正在进行的完整预览及逐页就绪设计，再评估是否需要进一步优化；不得将本轮上传基准当作完整 C3 性能验收。
+# C3g 按用户复用（进行中）
+
+基线 `3e5823e`：导入用户批准的生命周期指南并部分取代 ADR 0030 的单次使用决定。Broker 对账不再从 provider 标签重建丢失记录的 render 租约；启动或存储恢复时释放已有 render 租约，包括忙碌租约。`tests/test_render_standby.py` 9 项通过（GNU PATH，Python 3.12），覆盖保留记录与丢失记录两种恢复路径。尚未完成按用户复用、调度、合并解析、逐页发布、Work listener、确定性、测量和完整检查；不可视为验收通过。
+

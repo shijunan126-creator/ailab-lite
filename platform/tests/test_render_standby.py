@@ -58,6 +58,23 @@ def test_idle_and_restart_release_standby(monkeypatch):
     assert lease_id in provider.released
 
 
+@pytest.mark.parametrize("lose_record", [False, True])
+def test_recovery_releases_busy_render_instead_of_adopting(monkeypatch, lose_record):
+    manager, provider, spec, lease_id = warmed(monkeypatch)
+    handle = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:job", system=True), lambda lease: None)
+    assert handle is not None
+    if lose_record:
+        lease = manager.store.get(lease_id)
+        assert manager.store.delete(lease_id, lease["version"])
+    manager._recovering = True
+    try:
+        manager.cleanup_once()
+    finally:
+        manager._recovering = False
+    assert lease_id in provider.released
+    assert not manager.active_leases()
+
+
 def test_disabled_and_failed_warmup(monkeypatch):
     manager, _, _ = _manager()
     spec = LibraryRenderer(manager)._spec()

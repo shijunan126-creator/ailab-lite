@@ -1279,7 +1279,13 @@ class LeaseManager:
                         self._save(lease)
                     elif lease is None:
                         rebuilt = self._from_resource(resource)
-                        if rebuilt and rebuilt["state"] == "active" and resource.running and not _expired(rebuilt):
+                        if (
+                            rebuilt
+                            and rebuilt["spec"].get("profile") != "render"
+                            and rebuilt["state"] == "active"
+                            and resource.running
+                            and not _expired(rebuilt)
+                        ):
                             self._save(rebuilt)
                             metrics.SANDBOX_RECONCILE_ACTIONS.labels("rebuilt").inc()
                             continue
@@ -1328,6 +1334,11 @@ class LeaseManager:
                     if lease["state"] in {"released", "failed"}:
                         if time.time() - datetime.fromisoformat(lease["closed_at"]).timestamp() > settings.broker_record_retention_seconds:
                             self.store.delete(lease_id, lease["version"])
+                        continue
+                    # Render leases contain disposable, potentially incomplete job data.
+                    # Unlike Work leases they must never be adopted by a new owner.
+                    if self._recovering and lease.get("spec", {}).get("profile") == "render":
+                        self.release(lease_id, reason="render_recovery")
                         continue
                     resource = by_id.get(lease.get("provider_ref"))
                     if resource is None and lease.get("provider_ref") and lease["state"] in {"active", "standby", "creating"}:
