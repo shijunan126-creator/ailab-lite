@@ -100,7 +100,10 @@ class QuestionThenAnswer(LLMClient):
             "",
         )
         if prompt.startswith("PPT模板链路"):
-            results = [json.loads(m["content"]) for m in messages if m.get("role") == "tool" and m.get("name") == "exec"]
+            current_turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
+            results = [
+                json.loads(m["content"]) for m in messages[current_turn + 1 :] if m.get("role") == "tool" and m.get("name") == "exec"
+            ]
             if results:
                 return LLMResponse(content="模板检查：" + json.dumps(results[-1], ensure_ascii=False))
             if "无模板" in prompt:
