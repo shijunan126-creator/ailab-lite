@@ -171,14 +171,7 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
                 from .preview import process_preview
 
                 try:
-                    result = process_preview(file_id, job_id, platform)
-                    if result.get("skipped") == "in_flight":
-                        deadline = time.monotonic() + 120
-                        while time.monotonic() < deadline:
-                            current = platform.get_file(file_id, job="preview").get("meta") or {}
-                            if current.get("preview_job_id") != job_id or (current.get("preview") or {}).get("status") != "pending":
-                                break
-                            time.sleep(0.1)
+                    process_preview(file_id, job_id, platform)
                 except Exception:
                     log.warning("early preview failed; durable preview job will retry", exc_info=True)
         if (meta.get("meta") or {}).get("template_kind"):

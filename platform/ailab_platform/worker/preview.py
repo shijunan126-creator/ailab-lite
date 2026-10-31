@@ -7,6 +7,7 @@ import logging
 import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from ..clients import ClientError, PlatformClient
@@ -21,6 +22,16 @@ _render_slot = threading.Lock()
 log = logging.getLogger("ailab.worker.preview")
 
 
+@contextmanager
+def _try_render_slot():
+    acquired = _render_slot.acquire(blocking=False)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            _render_slot.release()
+
+
 def process_preview(file_id: str, job_id: str, platform: PlatformClient | None = None) -> dict:
     if platform is None:
         with PlatformClient(service="worker") as owned:
@@ -33,14 +44,12 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
     slot_seconds = 0.0
     render_token = None
     try:
-        with _render_slot:
-            deadline = time.monotonic() + 120
-            while render_token is None:
-                render_token = queue.acquire_lock("ailab:preview:render-slot", 300)
-                if render_token is None:
-                    if time.monotonic() >= deadline:
-                        raise TimeoutError("preview render slot unavailable")
-                    time.sleep(0.1)
+        with _try_render_slot() as acquired:
+            if not acquired:
+                return {"skipped": "busy"}
+            render_token = queue.acquire_lock("ailab:preview:render-slot", 300)
+            if render_token is None:
+                return {"skipped": "busy"}
             slot_seconds = time.monotonic() - started
             try:
                 file = platform.get_file(file_id, job="preview")
@@ -106,6 +115,8 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                     result = platform.render_preview(file_id, job_id)
                     manifest, assets = result["preview"], result["assets"]
             except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status in {429, 503}:
+                    return {"skipped": "busy"}
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}
             try:

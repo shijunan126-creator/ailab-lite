@@ -123,7 +123,9 @@ def _handle(queue, msg, file_id) -> None:
     preview_only = msg.payload.get("preview_only") is True
     if preview_only:
         try:
-            process_preview(file_id, msg.payload.get("job_id", ""))
+            result = process_preview(file_id, msg.payload.get("job_id", ""))
+            if result.get("skipped") in {"busy", "in_flight"}:
+                return
         except Exception:
             log.exception("preview job could not complete for %s", file_id)
             return

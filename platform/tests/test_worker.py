@@ -8,6 +8,45 @@ from PIL import Image
 from ailab_platform.worker.pipeline import extract, scan_bytes
 
 
+def test_busy_preview_remains_unacknowledged(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.worker import main
+
+    acknowledgements = []
+    monkeypatch.setattr(main, "process_preview", lambda *args: {"skipped": "busy"})
+    queue = SimpleNamespace(ack=lambda *args: acknowledgements.append(args))
+    main._handle(queue, SimpleNamespace(payload={"preview_only": True, "job_id": "job"}), "file")
+    assert acknowledgements == []
+
+
+def test_preview_capacity_error_keeps_job_pending(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import preview
+
+    released = []
+    queue = SimpleNamespace(acquire_lock=lambda *args: "token", release_lock=lambda *args: released.append(args))
+    monkeypatch.setattr(preview, "get_queue", lambda: queue)
+    monkeypatch.setattr(preview, "get_storage", lambda: object())
+
+    def unavailable(*args):
+        raise ClientError("POST", "/render", 429, "capacity")
+
+    platform = SimpleNamespace(
+        get_file=lambda *args, **kwargs: {
+            "status": "ready",
+            "filename": "file.docx",
+            "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
+        },
+        render_preview=unavailable,
+        complete_preview=lambda *args: pytest.fail("capacity is not a failed preview"),
+    )
+    assert preview.process_preview("file", "job", platform) == {"skipped": "busy"}
+    assert len(released) == 2
+
+
 def test_clean_scan_renders_before_office_reader(monkeypatch):
     from ailab_platform.config import settings
     from ailab_platform.worker import office, pipeline, preview
