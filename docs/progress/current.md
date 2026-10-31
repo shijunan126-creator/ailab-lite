@@ -1,3 +1,6 @@
+# C3e 渲染性能（2026-10-31，未完成）
+`fix/render-view`，base `f316b85`，起点 `d723a81`。完成新字节基线及渲染日志中租约来源和注入时间拆分；常驻转换器、合并解析、逐页发布与工作区监听器均未实现，性能目标未验收。下一步按 [C3e 记录](updates/2026-10-31-prefix-cache-render.md#c3e-后续)实现并做完整同条件对照；未 push 或部署。
+
 # C3d 预热渲染（2026-10-31，性能未达标）
 
 `fix/render-view`，base `f316b85`，起点 `fb05186`；已实现单次使用 standby、空闲回收、活动提示及租约内 profile 复用。测量未达到目标，解析仍使用独立沙箱，逐页发布未实现；不要作为性能验收完成。结果和下一步见 [C3d 记录](updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)及 [ADR 0030](../architecture/adr/0030-prewarmed-single-use-render-sandboxes.md)。未 push 或部署。

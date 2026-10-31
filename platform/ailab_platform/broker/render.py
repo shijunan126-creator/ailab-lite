@@ -107,9 +107,12 @@ class LibraryRenderer:
         acquire_started = time.monotonic()
         spec = self._spec()
         handle = self.manager.adopt_standby(spec, principal, prepare)
+        lease_source = "standby" if handle is not None else "cold"
         if handle is None:
             handle = self.manager.acquire(spec, principal, wait_seconds=30, prepare=prepare)
-        phases["acquire_seconds"] = time.monotonic() - acquire_started
+        # Preparation injects the input inside acquisition. Report disjoint
+        # phases so adding the timings does not count the transfer twice.
+        phases["acquire_seconds"] = max(0.0, time.monotonic() - acquire_started - phases.get("inject_seconds", 0.0))
         lease_id = handle.lease_id
         try:
             if pdf_mime and suffix != ".pdf":
@@ -218,4 +221,4 @@ class LibraryRenderer:
             self.manager.release(handle, reason="preview_complete")
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - started
-            log.info("library render phases=%s", {k: round(v, 3) for k, v in phases.items()})
+            log.info("library render lease_source=%s phases=%s", lease_source, {k: round(v, 3) for k, v in phases.items()})

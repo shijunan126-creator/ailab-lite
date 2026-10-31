@@ -1,5 +1,13 @@
 # C3：渲染、工作区视觉与办公检查（2026-10-31）
 
+## C3e 后续
+
+起点 `d723a81`。日志区分 standby 与冷获取，并将注入时间从租约获取耗时中扣除，避免重复计算。定向测试：Ruff 通过；render/standby 12 项通过、4 项在受限环境中 LibreOffice 失败，四项在限制外重跑通过。未运行全套检查。
+
+真实 Docker/runsc、stub 扫描器、15 页 PPTX，每次追加不同字节避免文件缓存：上传到完整预览三次中位数 PPTX 6.310 秒、DOCX 5.831 秒、XLSX 3.979 秒。当前整批发布，首屏与全页同时就绪；一次并发 PPTX/DOCX 为 17.791/12.201 秒，不是三次中位数。原始阶段日志在仓库外 `/private/tmp/sm-codex/C3d-c3e-before-broker.log`；旧获取耗时包含注入。工作区对照、三轮并发、CPU/RSS 和后测未完成。
+
+常驻转换器、同沙箱解析、逐页发布及工作区 listener 仍未实现；下一步完成这些合同及用户指定的全部回归、性能对照和最终检查。不得将本次基线或日志调整视为性能通过。临时测试服务和 `c3-*` 容器已清理。
+
 ## C3d 预热渲染
 
 基线 `fb05186`；产品提交 `3365c91`、`bbefcae`、`793f69e`、`dfeb277`，Ruff 测试修正 `06b0717`。单次 standby、空闲释放、重启释放、按需认领与工作区 profile 复用的决定见 [ADR 0030](../../architecture/adr/0030-prewarmed-single-use-render-sandboxes.md)。定向测试覆盖认领互斥、释放、无预热回退、等待时不补池、失败、禁用、隔离与工作区 profile；真实 runsc 预热和认领取用通过。最终代码 `06b0717`：Ruff 通过，SQLite 1705 通过/151 跳过，PostgreSQL+Redis 1800 通过/56 跳过，Office runner 15 通过，E2E 145 通过/6 跳过；测试和基准的临时服务与容器已清理。Docker supervisor 的上限需覆盖空闲期再加一次任务，不能沿用普通 render 120 秒上限。

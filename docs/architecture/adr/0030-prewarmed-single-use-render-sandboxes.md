@@ -2,6 +2,8 @@
 
 状态：本地实现，性能目标未达成；结果和未测边界见 [C3d](../../progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
 
+C3e 目前仅补充租约来源及非重叠注入计时，以下设计仍未改变；新字节基线及待完成事项见 [C3e](../../progress/updates/2026-10-31-prefix-cache-render.md#c3e-后续)。
+
 ## 决定
 
 Broker 在预留 render 容量内按 `AILAB_RENDER_PREWARM`（默认 1，0 禁用）创建无用户输入的 standby 沙箱，运行一次 headless LibreOffice 转换，保留 profile 与系统缓存，不保留常驻 LibreOffice 进程。standby 计入容量、不可经普通租约 I/O 使用；预览任务通过单次认领绑定新的系统任务身份，注入文件后激活，完成或失败时销毁。未命中时走原有短租约。预热失败不阻止按需冷启动。
