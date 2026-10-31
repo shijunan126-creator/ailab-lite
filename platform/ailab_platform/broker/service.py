@@ -543,12 +543,12 @@ class LeaseManager:
         metrics.SANDBOX_ACQUIRE_SECONDS.observe(time.perf_counter() - started)
         return LeaseHandle(lease_id, ref)
 
-    def create_standby(self, spec: SandboxSpec) -> str:
+    def create_standby(self, spec: SandboxSpec, *, on_demand: bool = False) -> str:
         """Create and warm a fresh reserved render lease; no user input enters it."""
-        if not settings.render_prewarm or spec.profile != "render":
+        if (not settings.render_prewarm and not on_demand) or spec.profile != "render":
             raise LeaseError("render prewarming disabled or invalid spec")
         with self._condition:
-            if self._render_jobs:
+            if self._render_jobs and not on_demand:
                 raise LeaseError("render in progress")
         warmup = (
             b'<?xml version="1.0" encoding="UTF-8"?>'
@@ -591,6 +591,24 @@ class LeaseManager:
         principal = LeasePrincipal(user_id="system:standby", run_id="standby:" + uuid.uuid4().hex, system=True)
         return self.acquire(spec, principal, wait_seconds=0, prepare=prepare, _standby=True).lease_id
 
+    def acquire_render(self, spec: SandboxSpec, principal: LeasePrincipal, prepare: Callable[[dict], None]) -> tuple[LeaseHandle, str]:
+        """Acquire an owner-bound render lease while the caller holds render_activity."""
+        if not principal.system or not principal.user_id or principal.user_id.startswith("system:"):
+            raise LeaseError("render job requires an authorized user")
+        handle = self.adopt_standby(spec, principal, prepare)
+        if handle:
+            return handle, "warm"
+        live = [lease for lease in self.active_leases() if lease["spec"].get("profile") == "render"]
+        cap = self.capacity.capacity()
+        if len(live) >= cap.render_slots or sum(lease["spec"]["memory"] for lease in live) + spec.memory > cap.render_memory:
+            if not self._reclaim_for(principal, spec, "capacity"):
+                raise AdmissionRejected("render_busy")
+        self.create_standby(spec, on_demand=True)
+        handle = self.adopt_standby(spec, principal, prepare)
+        if handle is None:
+            raise AdmissionRejected("render_busy")
+        return handle, "cold"
+
     def adopt_standby(self, spec: SandboxSpec, principal: LeasePrincipal, prepare: Callable[[dict], None]) -> LeaseHandle | None:
         self._ensure_started()
         if not principal.system or spec.profile != "render":
@@ -621,7 +639,7 @@ class LeaseManager:
                         or time.monotonic() - self._render_birth[lease_id] >= settings.render_max_age_seconds
                     ):
                         return None
-                    lease.update(state="creating", run_id=principal.run_id, user_id=principal.user_id)
+                    lease.update(state="creating", run_id=principal.run_id, user_id=principal.user_id, render_generation=uuid.uuid4().hex)
                     now = datetime.now(UTC)
                     lease["expires_at"] = min(
                         now + timedelta(seconds=spec.ttl), datetime.fromisoformat(lease["max_expires_at"])
@@ -645,12 +663,18 @@ class LeaseManager:
                 self._inflight.discard(lease_id)
                 self._notify()
 
-    def finish_render(self, handle: LeaseHandle, *, run_id: str, success: bool) -> bool:
+    def finish_render(self, handle: LeaseHandle, *, run_id: str, generation: str, success: bool) -> bool:
         """Return a clean, healthy user-bound render sandbox to its owner, or destroy it."""
         lease_id = handle.lease_id
         with self._stripe(lease_id):
             lease = self.store.get(lease_id)
-            if not lease or lease["state"] != "active" or lease.get("provider_ref") != handle.provider_ref or lease["run_id"] != run_id:
+            if (
+                not lease
+                or lease["state"] != "active"
+                or lease.get("provider_ref") != handle.provider_ref
+                or lease["run_id"] != run_id
+                or lease.get("render_generation") != generation
+            ):
                 return False
             jobs = lease.get("render_jobs", 0) + 1
             birth = self._render_birth.get(lease_id)

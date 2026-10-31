@@ -293,6 +293,21 @@ class PlatformClient(_PlatformApi):
         req = self._req("POST", "/internal/render", timeout=125, json={"file_id": file_id, "job_id": job_id})
         return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render")).json()
 
+    def finish_render(self, lease_id: str, job_id: str, kind: str, generation: str, success: bool) -> dict:
+        req = self._req(
+            "POST",
+            "/internal/render-finish",
+            timeout=20,
+            json={
+                "lease_id": lease_id,
+                "job_id": job_id,
+                "kind": kind,
+                "generation": generation,
+                "success": success,
+            },
+        )
+        return self._send(req._replace(url=settings.broker_base_url.rstrip("/") + "/internal/render-finish")).json()
+
     def document_cache_pages(self, file_id, source_id, after=-1):
         return self._send(
             self._req("GET", f"/internal/files/{file_id}/document-cache-pages", params={"source_id": source_id, "after": after})

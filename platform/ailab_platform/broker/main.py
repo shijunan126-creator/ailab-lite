@@ -16,6 +16,7 @@ from ..metrics import BrokerStateCollector, metrics_response, register_once
 from ..obs import RequestContextMiddleware, setup_logging
 from ..runtime_context import RuntimeContextMiddleware
 from ..sandbox import SandboxError
+from ..sandbox.base import LeaseHandle
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
 from .render import LibraryRenderer
@@ -90,6 +91,29 @@ def render_library_file(body: dict) -> dict:
         return LibraryRenderer(get_manager()).render(body["file_id"], body["job_id"])
     except (LeaseError, SandboxError) as exc:
         raise HTTPException(status_code=429 if isinstance(exc, CapacityError) else 502, detail=str(exc)) from exc
+
+
+@router.post("/render-finish", dependencies=[Depends(require_scope("sandbox:render"))])
+def finish_render(body: dict) -> dict:
+    if (
+        set(body) != {"lease_id", "job_id", "kind", "generation", "success"}
+        or not all(isinstance(body[key], str) and 1 <= len(body[key]) <= 100 for key in ("lease_id", "job_id", "generation"))
+        or not isinstance(body["kind"], str)
+        or body["kind"] not in {"preview", "document"}
+        or type(body["success"]) is not bool
+    ):
+        raise HTTPException(422, "invalid render completion")
+    manager = get_manager()
+    manager._ensure_started()
+    lease = manager.store.get(body["lease_id"])
+    if not lease or not lease.get("provider_ref"):
+        return {"reused": False}
+    handle = LeaseHandle(body["lease_id"], lease["provider_ref"])
+    return {
+        "reused": manager.finish_render(
+            handle, run_id=f"{body['kind']}:{body['job_id']}", generation=body["generation"], success=body["success"]
+        )
+    }
 
 
 @router.post("/leases", response_model=LeaseOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_scope("sandbox:use"))])

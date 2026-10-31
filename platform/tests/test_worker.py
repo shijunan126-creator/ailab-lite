@@ -20,6 +20,24 @@ def test_busy_preview_remains_unacknowledged(monkeypatch):
     assert acknowledgements == []
 
 
+def test_file_render_capacity_wait_is_marked_and_released_for_retry(monkeypatch):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import main
+
+    events = []
+
+    def busy(*args, **kwargs):
+        raise ClientError("POST", "/read-document", 503, "capacity")
+
+    monkeypatch.setattr(main, "process_file", busy)
+    monkeypatch.setattr(main, "_patch", lambda file_id, **kwargs: events.append((file_id, kwargs)))
+    queue = SimpleNamespace(retry_after=lambda seconds: events.append(seconds), ack=lambda *args: pytest.fail("must retry"))
+    main._handle(queue, SimpleNamespace(payload={}, deliveries=1), "file")
+    assert events == [("file", {"meta": {"processing": "render_pending"}}), 2]
+
+
 def test_preview_capacity_error_keeps_job_pending(monkeypatch):
     from types import SimpleNamespace
 
@@ -45,6 +63,42 @@ def test_preview_capacity_error_keeps_job_pending(monkeypatch):
     )
     assert preview.process_preview("file", "job", platform) == {"skipped": "busy"}
     assert len(released) == 2
+
+
+@pytest.mark.parametrize("published", [True, False])
+def test_preview_returns_lease_only_after_publication(monkeypatch, published):
+    from types import SimpleNamespace
+
+    from ailab_platform.clients import ClientError
+    from ailab_platform.worker import preview
+
+    events = []
+    queue = SimpleNamespace(acquire_lock=lambda *args: "token", release_lock=lambda *args: None)
+    monkeypatch.setattr(preview, "get_queue", lambda: queue)
+    monkeypatch.setattr(preview, "get_storage", lambda: object())
+
+    def complete(*args):
+        events.append("publish")
+        if not published:
+            raise ClientError("POST", "/preview", 409, "superseded")
+
+    platform = SimpleNamespace(
+        get_file=lambda *args, **kwargs: {
+            "status": "ready",
+            "filename": "file.docx",
+            "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
+        },
+        render_preview=lambda *args: {
+            "preview": {"status": "ready"},
+            "assets": {},
+            "render_lease_id": "lease",
+            "render_generation": "generation",
+        },
+        complete_preview=complete,
+        finish_render=lambda lease, job, kind, generation, success: events.append((lease, job, kind, generation, success)),
+    )
+    preview.process_preview("file", "job", platform)
+    assert events == ["publish", ("lease", "job", "preview", "generation", published)]
 
 
 def test_clean_scan_renders_before_office_reader(monkeypatch):

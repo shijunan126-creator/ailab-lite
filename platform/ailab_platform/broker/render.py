@@ -103,17 +103,18 @@ class LibraryRenderer:
             self.manager.put_input(lease, "/workspace/.ailab/render_preview.py", SCRIPT.read_bytes())
             phases["inject_seconds"] = time.monotonic() - injection_started
 
-        principal = LeasePrincipal(user_id="system:preview", run_id=f"preview:{job_id}", system=True)
+        owner = file.get("render_owner_id")
+        if not isinstance(owner, str) or not owner:
+            raise LeaseError("render job has no authorized owner")
+        principal = LeasePrincipal(user_id=owner, run_id=f"preview:{job_id}", system=True)
         acquire_started = time.monotonic()
         spec = self._spec()
-        handle = self.manager.adopt_standby(spec, principal, prepare)
-        lease_source = "standby" if handle is not None else "cold"
-        if handle is None:
-            handle = self.manager.acquire(spec, principal, wait_seconds=30, prepare=prepare)
+        handle, lease_source = self.manager.acquire_render(spec, principal, prepare)
         # Preparation injects the input inside acquisition. Report disjoint
         # phases so adding the timings does not count the transfer twice.
         phases["acquire_seconds"] = max(0.0, time.monotonic() - acquire_started - phases.get("inject_seconds", 0.0))
         lease_id = handle.lease_id
+        returned = False
         try:
             if pdf_mime and suffix != ".pdf":
                 self.manager.exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
@@ -124,7 +125,7 @@ class LibraryRenderer:
             exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
-                f"AILAB_LO_PROFILE=/tmp/lo-profile {'AILAB_LO_LISTENER=1 ' if lease_source == 'standby' else ''}"
+                "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 "
                 f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
@@ -216,10 +217,18 @@ class LibraryRenderer:
                         if not is_pdf:
                             assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
             phases["export_seconds"] = time.monotonic() - export_started
-            return {"preview": preview, "assets": assets}
+            generation = self.manager.get(handle)["render_generation"]
+            returned = True
+            return {
+                "preview": preview,
+                "assets": assets,
+                "render_lease_id": lease_id,
+                "render_generation": generation,
+            }
         finally:
             release_started = time.monotonic()
-            self.manager.release(handle, reason="preview_complete")
+            if not returned:
+                self.manager.release(handle, reason="preview_failed")
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - started
             log.info("library render lease_source=%s phases=%s", lease_source, {k: round(v, 3) for k, v in phases.items()})

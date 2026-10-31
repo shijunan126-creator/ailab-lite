@@ -5,12 +5,15 @@ import io
 import shutil
 import tarfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from docx import Document
 
+from ailab_platform.broker.documents import DocumentReader
 from ailab_platform.broker.render import LibraryRenderer
 from ailab_platform.broker.service import LeaseError
+from ailab_platform.sandbox.base import LeaseHandle
 from tests.test_workspace_previews import _manager
 
 
@@ -18,12 +21,40 @@ def setup_renderer(tmp_path, content, filename):
     manager, api, storage = _manager(tmp_path)
     api.get_file = lambda fid, **bound: {
         "id": fid,
+        "render_owner_id": "user_test",
         "status": "ready",
         "filename": filename,
         "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
     }
     api.download_file = lambda fid, target, **bound: Path(target).write_bytes(content)
+    execute = manager.provider.exec
+
+    def mock_listener(ref, command, timeout):
+        if "warmup.fodt" in command or "render_sandbox_health.py baseline" in command:
+            return SimpleNamespace(exit_code=0, stdout='{"tmp_used":0}')
+        if "render_sandbox_health.py" in command:
+            root = manager.provider.root / ref / "workspace"
+            for directory in (root / "inputs", root / ".ailab"):
+                for path in directory.iterdir():
+                    if path.name in {"uno_convert.py", "render_sandbox_health.py"}:
+                        continue
+                    if path.is_dir():
+                        shutil.rmtree(path)
+                    else:
+                        path.unlink()
+            return SimpleNamespace(exit_code=0, stdout="{}")
+        return execute(ref, command, timeout)
+
+    manager.provider.exec = mock_listener
     return manager, LibraryRenderer(manager), storage
+
+
+def published(manager, result):
+    lease_id = result["render_lease_id"]
+    lease = manager.get(lease_id)
+    assert manager.finish_render(
+        LeaseHandle(lease_id, lease["provider_ref"]), run_id="preview:job", generation=result["render_generation"], success=True
+    )
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["soffice", "pdftoppm", "pdfinfo", "timeout"]), reason="Office tools unavailable")
@@ -38,6 +69,8 @@ def test_docx_real_renderer_and_release(tmp_path):
     assert len(result["preview"]["pages"]) == 1
     key = next(iter(result["assets"].values()))["key"]
     assert storage.get_bytes(key).startswith(b"\xff\xd8")
+    published(manager, result)
+    manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
 
 
@@ -48,6 +81,31 @@ def test_failed_renderer_releases_and_job_id_is_bound(tmp_path):
     with pytest.raises(LeaseError, match="render_failed"):
         renderer.render("file", "job")
     assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["node", "pdftoppm", "pdfinfo", "timeout"]), reason="reader tools unavailable")
+def test_parse_reuses_same_user_sandbox_and_job_binding(tmp_path):
+    source = Path(__file__).resolve().parents[2] / "vendor/zcode-office-runtime/fixtures/paper.pdf"
+    manager, renderer, storage = setup_renderer(tmp_path, source.read_bytes(), "paper.pdf")
+    preview = renderer.render("file", "job")
+    published(manager, preview)
+    original = manager.platform.get_file
+    manager.platform.get_file = lambda fid, **binding: {**original(fid, **binding), "size": source.stat().st_size}
+    reads = []
+    download = manager.platform.download_file
+    manager.platform.download_file = lambda fid, target, **binding: reads.append(binding) or download(fid, target, **binding)
+    parsed = DocumentReader(manager).read("file", "document-job")
+    assert parsed["render_lease_id"] == preview["render_lease_id"]
+    assert parsed["lease_source"] == "warm" and storage.exists(parsed["archive_key"])
+    assert reads[0]["job"] == "document" and reads[0]["preview_job"] == "document-job"
+    lease = manager.get(parsed["render_lease_id"])
+    assert manager.finish_render(
+        LeaseHandle(parsed["render_lease_id"], lease["provider_ref"]),
+        run_id="document:document-job",
+        generation=parsed["render_generation"],
+        success=True,
+    )
+    manager.release(parsed["render_lease_id"])
 
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout"]), reason="PDF tools unavailable")
@@ -62,6 +120,8 @@ def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
     manager, renderer, _ = setup_renderer(tmp_path, data.getvalue(), "57pages.pdf")
     result = renderer.render("file", "job")
     assert result["preview"]["page_count"] == 57 and len(result["preview"]["pages"]) == 40
+    published(manager, result)
+    manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
 
 
@@ -89,6 +149,8 @@ def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog)
     assert len(result["assets"]) == 3
     assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
     assert all(storage.get_bytes(asset["key"]).startswith(b"\xff\xd8") for asset in result["assets"].values())
+    published(manager, result)
+    manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
 
 
@@ -139,8 +201,11 @@ def test_visual_page_requests_reuse_private_pdf_and_keep_requested_order(tmp_pat
     execute = manager.exec
     manager.exec = lambda lease, cmd, timeout: commands.append(cmd) or execute(lease, cmd, timeout)
     first = renderer.render("file", "job")
+    published(manager, first)
     second = renderer.render("file", "job")
+    published(manager, second)
     other = renderer.render("other-file", "job")
+    published(manager, other)
     assert [int(name[2:-4]) for name in first["preview"]["pages"]] == [2, 1]
     assert second["preview"] == first["preview"]
     render_commands = [cmd for cmd in commands if "render_preview.py" in cmd]
@@ -189,4 +254,6 @@ def test_template_real_sandbox_preview_includes_cached_first_page_thumbnail(tmp_
     assert asset["key"] == "derived/file/preview/template-thumbnail.jpg"
     with Image.open(io.BytesIO(storage.get_bytes(asset["key"]))) as image:
         assert image.format == "JPEG" and image.width == 480
+    published(manager, result)
+    manager.release(result["render_lease_id"])
     assert manager.active_leases() == []

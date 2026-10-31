@@ -66,6 +66,8 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 return {"skipped": "already_complete"}
             storage = get_storage()
             assets = {}
+            render_lease_id = None
+            render_generation = None
             try:
                 visual_job = meta.get("ocr_render_job_id") == job_id
                 reused = cached_page_preview(file_id, meta) if not visual_job and manifest.get("kind") == "pages" else None
@@ -114,14 +116,18 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 else:
                     result = platform.render_preview(file_id, job_id)
                     manifest, assets = result["preview"], result["assets"]
+                    render_lease_id = result.get("render_lease_id")
+                    render_generation = result.get("render_generation")
             except Exception as exc:
                 if isinstance(exc, ClientError) and exc.status in {429, 503}:
                     return {"skipped": "busy"}
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}
+            published = False
             try:
                 publish_started = time.monotonic()
                 platform.complete_preview(file_id, job_id, manifest, assets)
+                published = True
                 log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
                 if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
@@ -131,6 +137,12 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 if exc.status == 409:
                     return {"skipped": "superseded"}
                 raise
+            finally:
+                if render_lease_id and render_generation:
+                    try:
+                        platform.finish_render(render_lease_id, job_id, "preview", render_generation, published)
+                    except Exception:
+                        log.warning("render completion failed; lease expiry will release it", exc_info=True)
             return manifest
     finally:
         if render_token is not None:

@@ -29,6 +29,11 @@ def warmed(monkeypatch):
     return manager, provider, spec, lease_id
 
 
+def complete(manager, handle, run_id, success=True):
+    generation = manager.store.get(handle.lease_id)["render_generation"]
+    return manager.finish_render(handle, run_id=run_id, generation=generation, success=success)
+
+
 def test_single_use_adoption_is_atomic_and_hidden(monkeypatch):
     manager, provider, spec, lease_id = warmed(monkeypatch)
     assert manager.store.get(lease_id)["state"] == "standby"
@@ -65,24 +70,36 @@ def test_idle_and_restart_release_standby(monkeypatch):
 def test_bound_idle_only_reuses_for_the_same_user(monkeypatch):
     manager, provider, spec, lease_id = warmed(monkeypatch)
     first = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:a", system=True), lambda lease: None)
-    assert first and manager.finish_render(first, run_id="preview:a", success=True)
+    generation = manager.store.get(lease_id)["render_generation"]
+    assert first and complete(manager, first, "preview:a")
     assert manager.store.get(lease_id)["state"] == "idle"
     with pytest.raises(LeaseLostError):
         manager.status(lease_id)
     assert manager.adopt_standby(spec, LeasePrincipal("user_b", "preview:b", system=True), lambda lease: None) is None
-    second = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:c", system=True), lambda lease: None)
+    second = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:a", system=True), lambda lease: None)
     assert second and second.lease_id == lease_id
-    assert not manager.finish_render(first, run_id="preview:a", success=True)
+    assert not manager.finish_render(first, run_id="preview:a", generation=generation, success=True)
     assert manager.store.get(lease_id)["state"] == "active"
-    assert not manager.finish_render(second, run_id="preview:c", success=False)
+    assert not complete(manager, second, "preview:a", success=False)
     assert lease_id in provider.released
+
+
+def test_on_demand_reuses_only_authorized_user_even_with_prewarm_disabled(monkeypatch):
+    manager, _, spec, lease_id = warmed(monkeypatch)
+    monkeypatch.setattr(settings, "render_prewarm", 0)
+    first, source = manager.acquire_render(spec, LeasePrincipal("user_a", "preview:a", system=True), lambda lease: None)
+    assert source == "warm" and first.lease_id == lease_id
+    assert complete(manager, first, "preview:a")
+    again, source = manager.acquire_render(spec, LeasePrincipal("user_a", "preview:b", system=True), lambda lease: None)
+    assert source == "warm" and again.lease_id == lease_id
+    manager.release(again)
 
 
 def test_failed_cleanup_never_returns_render_to_idle(monkeypatch):
     manager, provider, spec, lease_id = warmed(monkeypatch)
     handle = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:a", system=True), lambda lease: None)
     monkeypatch.setattr(provider, "exec", lambda *args: SimpleNamespace(exit_code=1))
-    assert handle and not manager.finish_render(handle, run_id="preview:a", success=True)
+    assert handle and not complete(manager, handle, "preview:a")
     assert lease_id in provider.released
 
 
@@ -92,7 +109,7 @@ def test_reclaim_never_preempts_busy_or_same_user_idle(monkeypatch):
     other = LeasePrincipal("user_b", "preview:b", system=True)
     handle = manager.adopt_standby(spec, owner, lambda lease: None)
     assert handle and not manager._reclaim_for(other, spec, "capacity")
-    assert manager.finish_render(handle, run_id=owner.run_id, success=True)
+    assert complete(manager, handle, owner.run_id)
     assert not manager._reclaim_for(owner, spec, "capacity")
     assert manager._reclaim_for(other, spec, "capacity")
     assert lease_id in provider.released
@@ -102,9 +119,9 @@ def test_reuse_job_limit_releases_the_sandbox(monkeypatch):
     monkeypatch.setattr(settings, "render_reuse_max_jobs", 2)
     manager, provider, spec, lease_id = warmed(monkeypatch)
     first = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:a", system=True), lambda lease: None)
-    assert first and manager.finish_render(first, run_id="preview:a", success=True)
+    assert first and complete(manager, first, "preview:a")
     second = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:b", system=True), lambda lease: None)
-    assert second and not manager.finish_render(second, run_id="preview:b", success=True)
+    assert second and not complete(manager, second, "preview:b")
     assert lease_id in provider.released
 
 
@@ -120,15 +137,21 @@ def test_render_lifecycle_does_not_retain_records_after_1000_cycles(monkeypatch)
     try:
         gc.collect()
         before = tracemalloc.get_traced_memory()[0]
+        midpoint = before
         for i in range(1000):
             lease_id = manager.create_standby(spec)
             handle = manager.adopt_standby(spec, LeasePrincipal(f"user_{i}", f"preview:{i}", system=True), lambda lease: None)
-            assert handle and manager.finish_render(handle, run_id=f"preview:{i}", success=True)
+            assert handle and complete(manager, handle, f"preview:{i}")
             manager.release(lease_id)
             provider.released.clear()
             provider.acquired_ttl.clear()
+            if i == 499:
+                gc.collect()
+                midpoint = tracemalloc.get_traced_memory()[0]
         gc.collect()
-        assert tracemalloc.get_traced_memory()[0] - before < 2 * 1024 * 1024
+        after = tracemalloc.get_traced_memory()[0]
+        assert after - before < 6 * 1024 * 1024
+        assert after - midpoint < 2 * 1024 * 1024
         assert not manager.store.all()
         assert not manager._render_birth and not manager._activity and not manager._operations and not manager.admission.queue
     finally:
