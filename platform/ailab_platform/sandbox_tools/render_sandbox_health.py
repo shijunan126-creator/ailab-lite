@@ -53,7 +53,7 @@ def cleanup(baseline, rss_limit):
     rss = listener_rss()
     used = used_tmp()
     if rss >= rss_limit or used > baseline:
-        raise RuntimeError("health_limit")
+        raise RuntimeError(f"health_limit rss={rss} rss_limit={rss_limit} tmp_used={used} tmp_baseline={baseline}")
     return {"rss": rss, "tmp_used": used}
 
 

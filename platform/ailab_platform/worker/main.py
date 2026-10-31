@@ -130,7 +130,7 @@ def _handle(queue, msg, file_id) -> None:
     preview_only = msg.payload.get("preview_only") is True
     if preview_only:
         try:
-            result = process_preview(file_id, msg.payload.get("job_id", ""))
+            result = process_preview(file_id, msg.payload.get("job_id", "")) or {}
             if result.get("skipped") in {"busy", "in_flight"}:
                 if hasattr(queue, "retry_after"):
                     queue.retry_after(2)
@@ -168,7 +168,7 @@ def _handle(queue, msg, file_id) -> None:
         return
     thumbnail_only = msg.payload.get("thumbnail_only") is True
     if file_id and msg.deliveries > settings.file_max_attempts:
-        if not thumbnail_only:
+        if not thumbnail_only and "schema_version" in msg.payload:
             try:
                 with PlatformClient(service="worker") as pending_client:
                     waiting = (pending_client.get_file(file_id).get("meta") or {}).get("processing") == "render_pending"

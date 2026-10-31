@@ -258,6 +258,9 @@ def test_visual_page_requests_reuse_private_pdf_and_keep_requested_order(tmp_pat
     assert [first["assets"][name]["sha256"] for name in first["preview"]["pages"]] == [
         second["assets"][name]["sha256"] for name in second["preview"]["pages"]
     ]
+    assert [first["assets"][name]["sha256"] for name in first["preview"]["pages"]] == [
+        other["assets"][name]["sha256"] for name in other["preview"]["pages"]
+    ]
     render_commands = [cmd for cmd in commands if "render_preview.py" in cmd]
     assert other["preview"] == first["preview"]
     assert len(render_commands) == 6

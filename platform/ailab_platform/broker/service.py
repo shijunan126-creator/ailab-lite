@@ -702,6 +702,7 @@ class LeaseManager:
                     15,
                 )
                 if result.exit_code:
+                    log.warning("render cleanup or health check failed: %s", result.stderr[-500:])
                     raise LeaseError("render cleanup or health check failed")
                 if time.monotonic() - birth >= settings.render_max_age_seconds or _expired(lease):
                     raise LeaseError("render expired during cleanup")
