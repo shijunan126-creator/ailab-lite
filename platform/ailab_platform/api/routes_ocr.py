@@ -415,7 +415,7 @@ def request_page_render(db, file, pages):
     meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
     meta.update(preview={"status": "pending", "kind": "pages"}, preview_job_id=job_id, ocr_render_job_id=job_id, ocr_render_pages=pages)
     file.meta = meta
-    stage_job(db, "preview", file_id=file.id, job_id=job_id)
+    stage_job(db, "preview", file_id=file.id, job_id=job_id, priority=True)
 
 
 @extraction_router.get("/{file_id}/extract-text")

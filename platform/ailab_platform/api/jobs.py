@@ -23,7 +23,9 @@ from ..service_auth import require_scope
 router = APIRouter(prefix="/internal/jobs", tags=["internal-jobs"])
 
 
-def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=None, mode="work", job_id=None) -> OutboxMessage:
+def stage_job(
+    db: Session, kind: str, *, run_id=None, file_id=None, draft_id=None, mode="work", job_id=None, priority=False
+) -> OutboxMessage:
     envelope = JobEnvelope(
         job_id=job_id or run_id or (f"thumb_{file_id}" if kind == "thumbnail" else uuid4().hex),
         kind=kind,
@@ -31,12 +33,13 @@ def stage_job(db: Session, kind: str, *, run_id=None, file_id=None, draft_id=Non
         file_id=file_id,
         draft_id=draft_id,
         mode=mode,
+        priority=priority,
         deadline=datetime.now(UTC) + timedelta(seconds=settings.job_deadline_seconds),
         enqueued_at=datetime.now(UTC),
         traceparent=getattr(obs, "traceparent_var").get() if hasattr(obs, "traceparent_var") else None,
         request_id=None if request_id_var.get() == NO_REQUEST else request_id_var.get(),
     )
-    topic = job_topic(kind, mode)
+    topic = job_topic(kind, mode, priority)
     existing = db.get(OutboxMessage, envelope.job_id)
     if existing:
         return existing

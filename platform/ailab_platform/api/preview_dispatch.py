@@ -71,7 +71,7 @@ def _dispatch_batch(queue, job_id, now):
                 values["payload"] = payload
             try:
                 envelope = JobEnvelope.model_validate(payload)
-                topic = job_topic(envelope.kind, envelope.mode)
+                topic = job_topic(envelope.kind, envelope.mode, envelope.priority)
                 queue.enqueue(topic, payload)
             except Exception as exc:
                 attempts = message.attempts + 1

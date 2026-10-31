@@ -241,6 +241,32 @@ def _consume(topic: str, consumer: str) -> None:
             log.exception("could not finish handling file message %s", msg.id)
 
 
+def _consume_previews(consumer: str) -> None:
+    urgent = job_topic("preview", priority=True)
+    background = job_topic("preview")
+    while not _stop.is_set():
+        queue = get_queue()
+        try:
+            msg = queue.dequeue(urgent, consumer, 0, FILE_VISIBILITY_SECONDS)
+            topic = urgent
+            if msg is None:
+                topic = background
+                msg = queue.dequeue(background, consumer, 1, FILE_VISIBILITY_SECONDS)
+                if msg is not None:
+                    # An urgent request may arrive while the background read blocks.
+                    waiting = queue.dequeue(urgent, consumer, 0, FILE_VISIBILITY_SECONDS)
+                    if waiting is not None:
+                        try:
+                            handle_message(queue, waiting, urgent)
+                        except Exception:
+                            log.exception("priority preview could not complete")
+            if msg is not None:
+                handle_message(queue, msg, topic)
+        except Exception:
+            log.exception("preview queue unavailable; retrying")
+            _stop.wait(3)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     global _thread, _summary_thread, _preview_thread
@@ -251,9 +277,7 @@ async def lifespan(_: FastAPI):
     _summary_thread = threading.Thread(
         target=_consume, args=(job_topic("summary"), CONSUMER + "-summary"), name="summary-worker", daemon=True
     )
-    _preview_thread = threading.Thread(
-        target=_consume, args=(job_topic("preview"), CONSUMER + "-preview"), name="preview-worker", daemon=True
-    )
+    _preview_thread = threading.Thread(target=_consume_previews, args=(CONSUMER + "-preview",), name="preview-worker", daemon=True)
     _thread.start()
     _summary_thread.start()
     _preview_thread.start()

@@ -64,6 +64,22 @@ def test_worker_publishes_clean_scan_before_office_parse(api, monkeypatch):
     process_file(fid, ApiClient(api))
 
 
+def test_requested_pages_are_staged_on_priority_queue(api, monkeypatch):
+    from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
+    from ailab_platform.api.routes_ocr import request_page_render
+    from ailab_platform.queue import get_queue, job_topic
+
+    monkeypatch.setattr(settings, "preview_eager_max_bytes", 0)
+    fid = upload(api, "priority.pdf")
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        request_page_render(db, file, [2])
+        job = file.meta["preview_job_id"]
+        db.commit()
+    dispatch_preview_jobs(job)
+    assert any(msg["job_id"] == job for msg in get_queue().outstanding(job_topic("preview", priority=True)))
+
+
 @pytest.mark.parametrize("name", ["a.docx", "a.pptx", "a.xlsx", "a.pdf", "a.xls"])
 def test_readiness_stages_preview_without_a_click_and_without_rendering(api, name):
     fid = upload(api, name)

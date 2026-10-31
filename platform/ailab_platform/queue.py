@@ -37,13 +37,13 @@ def run_lock_key(run_id: str) -> str:
     return f"ailab:lock:run:{run_id}"
 
 
-def job_topic(kind: str, mode: str = "work") -> str:
+def job_topic(kind: str, mode: str = "work", priority: bool = False) -> str:
     if kind == "run":
         return f"{settings.run_queue}:{mode}"
     if kind == "summary":
         return f"{settings.file_queue}:summary"
     if kind == "preview":
-        return f"{settings.file_queue}:preview"
+        return f"{settings.file_queue}:preview" + (":priority" if priority else "")
     return settings.file_queue
 
 
