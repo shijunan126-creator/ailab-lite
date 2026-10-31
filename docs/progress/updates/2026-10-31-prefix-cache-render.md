@@ -1,5 +1,11 @@
 # C3：渲染、工作区视觉与办公检查（2026-10-31）
 
+## C3b 后续
+
+基线 `d0ef2e8`，`3927720` 移除 Office skill 的 `view_workspace_file` 激活钩子，依赖并行 C2b 将该工具纳入固定 Work 目录；单独集成此提交会影响现有按需发现。`3bdf9af` 记录扫描、解析、转换、栅格化、发布以及依赖恢复耗时；分派、队列、租约各阶段和 delivery 到 resume 尚未完整测量。`3bdf9af` 的 Ruff、SQLite 全套、临时 PostgreSQL/Redis 全套及浏览器 E2E 均通过，Office runner 15 项通过；真实沙箱性能与隔离未验。具体结果见 `/private/tmp/sm-codex/C3.report.md`。
+
+未完成：扫描后独立预览、常驻 LibreOffice 及隔离证明、逐页发布、等待请求优先级、同条件三样本和并发性能验收。Docker 包装器报告 AILab SSD 未挂载，无法运行真实 runsc 沙箱；不能用宿主转换数据代替隔离验收。下一步先恢复可用的一次性沙箱测试环境，围绕扫描通过的事务状态、按页发布与恢复、跨租户进程状态清理和队列优先级设计实现及故障测试，再测全部目标。未推送、未部署、未调用付费模型。
+
 `fix/render-view`，base `f316b8521bcfc2ff86382b0524724a113957aa28`。实现提交 `ce2aa70`、`5dc9fc0`、`5e50ae4`、`bb28ca0`、`e2b3aa6`；未部署。完整边界和报告见 `/private/tmp/sm-codex/C3.report.md`。
 
 ## 实现
