@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..contracts.jobs import RunStatus
-from ..models import Conversation, Run, User
+from ..models import Artifact, Conversation, FileObject, FileStatus, Run, User
 from . import embeddings, text
 
 MAX_DOCS = 400  # newest runs scanned per query
@@ -36,6 +36,7 @@ DENSE_RECENCY_BOOST = 0.05  # cosine scores sit in a narrow band, so a smaller n
 RRF_K = 60  # the constant from the original reciprocal-rank-fusion paper
 RECENCY_HALF_LIFE_DAYS = 45.0
 SNIPPET_CHARS = 360
+FILES_PER_TURN = 5
 NO_RELEVANT_MEMORY = "NO_RELEVANT_MEMORY"
 
 
@@ -113,6 +114,36 @@ def _rows(
     return db.execute(stmt).all()
 
 
+def delivered_files(db: Session, user_id: str, run_ids: list[str]) -> dict[str, list[dict]]:
+    """The readable library files each turn delivered, keyed by run.
+
+    A recalled turn names its own outputs, so the model can open the deck it made last week with
+    read_library_file instead of searching the library by guesswork. The filters are the ones
+    read_library_file enforces, so every id handed out here can actually be opened.
+    """
+    if not run_ids:
+        return {}
+    rows = db.execute(
+        select(Artifact.run_id, FileObject.id, FileObject.filename)
+        .join(FileObject, FileObject.id == Artifact.file_id)
+        .where(
+            Artifact.run_id.in_(run_ids),
+            FileObject.user_id == user_id,
+            FileObject.status == FileStatus.READY,
+            FileObject.purpose == "library",
+            FileObject.deleted_at.is_(None),
+            FileObject.purged_at.is_(None),
+        )
+        .order_by(Artifact.run_id, Artifact.created_at, Artifact.id)
+    ).all()
+    out: dict[str, list[dict]] = {}
+    for run_id, file_id, filename in rows:
+        files = out.setdefault(run_id, [])
+        if len(files) < FILES_PER_TURN and all(f["file_id"] != file_id for f in files):
+            files.append({"file_id": file_id, "filename": filename})
+    return out
+
+
 def search_history(
     db: Session,
     user: User,
@@ -173,6 +204,7 @@ def search_history(
     ranked = sorted(fused, key=lambda k: (-fused[k], k))
 
     results = []
+    files = delivered_files(db, user.id, ranked[:limit])
     for key in ranked[:limit]:
         conv_id, created_at, prompt, summary, title = by_key[key]
         hit = lexical.get(key)
@@ -187,6 +219,8 @@ def search_history(
             "matched_terms": list(matched)[:8],
             "found_by": [name for name, hit_in in (("lexical", key in lexical), ("dense", key in similar)) if hit_in],
         }
+        if files.get(key):
+            item["files"] = files[key]
         if hit:
             item["relevance"] = round(hit.coverage, 2)
         if key in similar:
