@@ -1,10 +1,8 @@
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
-工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，base `origin/main@995a5f6`，产品基线 `90fc016`。
+已合并：PR #112 → `main@8fe67d9`（merge commit，保留分批提交），最终 head `1d530fc` CI 九项通过。本机部署：平台 `sm-p3-90fc016`、Portal `sm-p3-9115406`，与 main 产品代码一致。结果与边界见 [P3–P7 记录](updates/2026-10-31-memory-js-polish.md)。
 
-**完成**：P7 记忆删除修复已部署，平台 `sm-p3-90fc016`、Portal 沿用 `sm-p3-9115406`；指定真实模型检查通过。构建、检查结果及边界见 [P7 记录](updates/2026-10-31-memory-js-polish.md#p7-记忆删除修复部署与真实模型检查2026-10-31)。
-
-**下一步**：Claude 推送文档提交，等待 PR CI 后合并。后续关注模型查看文件后重新交付、通过 `search_capabilities` 发现 exec/deliver_file；`view_attachment` 的真实暂停恢复路径仅由回归测试覆盖。
+**下一步**：本范围完成，无授权中的后续工作。待用户决定的后续：模型查看附件后修改并重复交付（提示词/技能）；Work 模式仍需 `search_capabilities` 才能找到 exec/deliver_file（加载需要沙箱的技能时可直接提供）；`view_attachment` 真实暂停恢复路径仅由回归测试覆盖。本机留有验收用一次性账号 `qa-p3-*`、`qa-mem-*`，可删除。
 
 ---
 
