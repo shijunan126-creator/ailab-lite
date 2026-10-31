@@ -9,7 +9,8 @@ from pathlib import Path
 def rss(pid):
     if sys.platform == "linux":
         status = Path(f"/proc/{pid}/status").read_text()
-        return next(int(line.split()[1]) * 1024 for line in status.splitlines() if line.startswith("VmRSS:"))
+        # An exiting process drops its memory map before it can be reaped: no VmRSS line means no memory.
+        return next((int(line.split()[1]) * 1024 for line in status.splitlines() if line.startswith("VmRSS:")), 0)
     result = subprocess.run(["ps", "-o", "rss=", "-p", str(pid)], capture_output=True, text=True, check=True)
     return int(result.stdout.strip()) * 1024
 
@@ -24,9 +25,8 @@ def run(command, timeout, rss_limit):
             try:
                 if rss(process.pid) > rss_limit:
                     return 137
-            except (OSError, ValueError, StopIteration, subprocess.SubprocessError):
-                if process.poll() is None:
-                    return 1
+            except (OSError, ValueError, subprocess.SubprocessError):
+                pass  # the process is exiting; poll() reaps it and the deadline still bounds the wait
             time.sleep(0.05)
         return process.returncode
     finally:

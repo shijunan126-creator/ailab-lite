@@ -990,6 +990,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 ## 2026-11-01 前缀缓存与渲染
 
+- Linux 下按 `/proc/<pid>/status` 监控子进程内存时，进程退出会先释放内存映射、之后才可被回收：这段时间没有 `VmRSS` 行而 `poll()` 仍为 None。`office_exec.py` 曾把它当失败返回 1，PDF 解析在 CI（SQLite+coverage 较慢）偶发丢 `units`，本机 macOS（走 `ps`）不复现。缺 `VmRSS` 记为 0，由 `poll()` 与截止时间决定结束。
+- CI 的 python 任务没有 poppler：依赖 `pdftoppm`/`pdfinfo` 的测试必须 `skipif`，否则本机通过、CI 必败。无 heartbeat 的长循环测试（`start_background=False`）要放大 `broker_lock_ttl_seconds`，coverage 下 30 s 所有权会过期。
 - Codex 委派：`--add-dir` 必须用真实路径（`/private/tmp`、`/Users/michael/AILabDisk/local`），符号链接路径会让沙箱拒绝所有命令；`codex exec resume` 会丢掉启动时的 `--add-dir`。会话常在 1–2 个提交后自行结束，且曾因额度用尽静默卡住（看 `~/.codex/sessions/.../rollout-*.jsonl` 的 `rate_limits`）。用户要求：模型用 gpt-6.1-sol medium，测试只跑一次，不要反复全量重跑；明显错误直接修。
 - Codex 沙箱内 `bin/docker.sh` 的 `ailab-disk require` 会失败；直接用 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client`。该 daemon 同时运行用户的 `ailab-local-*`，只能动一次性 `c3-*` 资源。
 - render 沙箱复用的健康检查不能要求 tmpfs 字节数回到基线：LibreOffice profile 每个文档增长数 KiB，严格比较会让 PPTX 永远不复用。用户文件由清理步骤删除，profile 增长按上限容忍。
