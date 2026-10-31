@@ -30,6 +30,8 @@ def test_single_use_adoption_is_atomic_and_hidden(monkeypatch):
     assert manager.store.get(lease_id)["state"] == "standby"
     with pytest.raises(LeaseLostError):
         manager.exec(lease_id, "true")
+    with pytest.raises(LeaseLostError):
+        manager.status(lease_id)
     principal = LeasePrincipal("system:preview", "preview:job", system=True)
     with ThreadPoolExecutor(max_workers=2) as executor:
         handles = list(executor.map(lambda _: manager.adopt_standby(spec, principal, lambda lease: None), range(2)))

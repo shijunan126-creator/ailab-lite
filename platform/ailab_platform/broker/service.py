@@ -317,7 +317,7 @@ class LeaseManager:
         if self._recovering:
             raise BrokerOwnershipError("broker is rebuilding lease ownership")
         lease = self.store.get(self._id(handle))
-        if lease is None:
+        if lease is None or lease["state"] == "standby":
             raise LeaseLostError("lease not found")
         return lease
 
