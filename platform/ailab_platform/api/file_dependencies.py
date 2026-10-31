@@ -82,9 +82,9 @@ def reconcile():
 
 def prepare(db, dependency):
     """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
-    the file is still pending (the sheet preview every new spreadsheet gets) that request is skipped, and nothing
-    else asks again once it finishes; this tick does. request_page_render stages nothing while a preview is pending,
-    so asking every tick queues at most one render."""
+    the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
+    Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
+    duplicate durable jobs."""
     if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
         return
     file = db.get(FileObject, dependency["file_id"])

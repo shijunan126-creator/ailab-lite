@@ -80,6 +80,27 @@ def test_requested_pages_are_staged_on_priority_queue(api, monkeypatch):
     assert any(msg["job_id"] == job for msg in get_queue().outstanding(job_topic("preview", priority=True)))
 
 
+def test_waiting_page_promotes_an_already_published_background_job(api):
+    from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
+    from ailab_platform.api.routes_ocr import request_page_render
+    from ailab_platform.queue import get_queue, job_topic
+
+    fid = upload(api, "promote.pdf")
+    with SessionLocal() as db:
+        job = db.get(FileObject, fid).meta["preview_job_id"]
+    dispatch_preview_jobs(job)
+    assert any(msg["job_id"] == job for msg in get_queue().outstanding(job_topic("preview")))
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        request_page_render(db, file, [2])
+        request_page_render(db, file, [2])
+        db.commit()
+        assert file.meta["preview_job_id"] == job
+        assert len(preview_jobs(db, fid)) == 1
+    dispatch_preview_jobs(job)
+    assert any(msg["job_id"] == job for msg in get_queue().outstanding(job_topic("preview", priority=True)))
+
+
 @pytest.mark.parametrize("name", ["a.docx", "a.pptx", "a.xlsx", "a.pdf", "a.xls"])
 def test_readiness_stages_preview_without_a_click_and_without_rendering(api, name):
     fid = upload(api, name)

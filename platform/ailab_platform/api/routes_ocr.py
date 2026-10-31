@@ -410,6 +410,16 @@ def request_page_render(db, file, pages):
 
     meta = dict(file.meta or {})
     if (meta.get("preview") or {}).get("status") == "pending":
+        # Promote the durable job as well as its transport: it may already have
+        # been published to the background queue. Claims still fence duplicates.
+        from ..models import OutboxMessage
+        from ..queue import job_topic
+
+        job = db.get(OutboxMessage, meta.get("preview_job_id"))
+        if job and not job.claim_token and not job.payload.get("priority"):
+            job.payload = {**job.payload, "priority": True}
+            job.topic = job_topic("preview", priority=True)
+            job.next_attempt_at = datetime.now(UTC)
         return
     job_id = uuid.uuid4().hex
     meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
