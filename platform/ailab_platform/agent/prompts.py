@@ -17,6 +17,8 @@ from ..contracts.genui import full_prompt, index_for
 from ..domain.answer_parts import for_history
 from ..skill_registry import catalog as skills
 
+PLATFORM_PROMPT_VERSION = "2026-10-31-v1"
+
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
 
 # 怎么回答
@@ -146,7 +148,9 @@ def system_prompt_for(
     genui_tools: bool = True,
 ) -> str:
     """Describe the actual capabilities; preload a picked skill and omit disabled skill names."""
-    base = CHAT_MODE_NOTE if mode == "chat" else system_prompt(frozenset(disabled), deferred)
+    base = f"[AILab platform rules {PLATFORM_PROMPT_VERSION}; mode={mode}]\n" + (
+        CHAT_MODE_NOTE if mode == "chat" else system_prompt(frozenset(disabled), deferred)
+    )
     base += (
         "\n引用已实际 read_library_file 阅读的资料时用 Markdown 链接 [《文件名》第N页](ailab-file://<file_id>?page=N)；"
         "页码未知时用 [《文件名》](ailab-file://<file_id>)。不得引用未读文件或猜页码。"
