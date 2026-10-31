@@ -110,6 +110,7 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         tool_catalog_v1=[],
         context_model=parent["model"],
         delivered={"/workspace/outputs/report.txt": 12},
+        delivery_names={"/workspace/outputs/report.txt": "final.txt"},
     )
     assert save(api, parent["id"], headers, state=state).status_code == 200
     assert api.post(f"/internal/runs/{parent['id']}/status", headers=headers, json={"status": "succeeded"}).status_code == 200
@@ -118,7 +119,12 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         assert db.get(RunCheckpoint, (parent["id"], 1)).expires_at is None
     child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "second"}).json()
     result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
-    assert result["previous_model_context"] == {"messages": state["messages"], "tools": [], "delivered": state["delivered"]}
+    assert result["previous_model_context"] == {
+        "messages": state["messages"],
+        "tools": [],
+        "delivered": state["delivered"],
+        "delivery_names": state["delivery_names"],
+    }
     child_headers = owned_headers(api, child["id"])
     assert api.post(f"/internal/runs/{child['id']}/transition", headers=child_headers, json={"status": "running"}).status_code == 200
     assert save(api, child["id"], child_headers, state=state).status_code == 200

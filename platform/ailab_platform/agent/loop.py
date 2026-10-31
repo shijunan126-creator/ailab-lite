@@ -1046,13 +1046,14 @@ class AgentLoop:
         ]
 
     @staticmethod
-    def _delivery_note(delivered):
+    def _delivery_note(delivered, names=None):
         paths = list(delivered or {})
-        lines = [f"{path.rsplit('/', 1)[-1]}：{path}" for path in paths[:64]]
+        names = names or {}
+        lines = [f"{names.get(path) or path.rsplit('/', 1)[-1]}：{path}" for path in paths[:64]]
         listing = "\n".join(lines)
         return {"role": "system", "content": f"平台已确认交付（共 {len(paths)} 项）：\n{listing}"}
 
-    async def _compact_parent_context(self, run_id, run, llm, model, prior, current, tools, delivered=None):
+    async def _compact_parent_context(self, run_id, run, llm, model, prior, current, tools, delivered=None, delivery_names=None):
         """Summarize the exact parent prefix before adding the new turn."""
         spec = get_catalog().get(model)
         if spec is None:
@@ -1076,7 +1077,7 @@ class AgentLoop:
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         summary = {"role": "system", "content": "历史摘要（仅作背景）：\n" + response.content}
-        base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), summary, self._delivery_note(delivered)]
+        base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), summary, self._delivery_note(delivered, delivery_names)]
         last_user = next((i for i in range(len(prior) - 1, 1, -1) if prior[i].get("role") == "user"), len(prior))
         recent = self._compacted_recent(prior[last_user:])
         if estimator.estimate(model, {"messages": [*base, *recent, current], "tools": tools}) < threshold:
@@ -1132,7 +1133,7 @@ class AgentLoop:
         messages[:] = [
             *base,
             {"role": "system", "content": "本轮执行摘要（仅作背景）：\n" + response.content},
-            self._delivery_note(state.get("delivered")),
+            self._delivery_note(state.get("delivered"), state.get("delivery_names")),
             *recent,
         ]
         after = estimator.estimate(model, {"messages": messages, "tools": tools})
@@ -1409,6 +1410,7 @@ class AgentLoop:
             path = call.arguments.get("path")
             if isinstance(path, str):
                 turn.delivered[path] = result.get("size", 0)
+                self._states[run_id].setdefault("delivery_names", {})[path] = result.get("filename") or path.rsplit("/", 1)[-1]
         return result
 
     async def _apply_steers(self, run_id: str, turn: _Turn, *, pending: bool | None = None) -> None:
@@ -1856,7 +1858,15 @@ class AgentLoop:
                     await self._restore_images(run_id, run, prior)
                     state["memory_observed"] = previous.get("memory_observed", run.get("memory") or {})
                     state["messages"] = await self._compact_parent_context(
-                        run_id, run, llm, model, prior["messages"], messages[-1], state["tool_catalog_v1"], previous.get("delivered")
+                        run_id,
+                        run,
+                        llm,
+                        model,
+                        prior["messages"],
+                        messages[-1],
+                        state["tool_catalog_v1"],
+                        previous.get("delivered"),
+                        previous.get("delivery_names"),
                     )
                 else:
                     if previous:

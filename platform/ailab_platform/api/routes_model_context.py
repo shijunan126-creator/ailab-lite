@@ -77,6 +77,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 "messages": state["messages"],
                                 "tools": state["tool_catalog_v1"],
                                 "delivered": state.get("delivered", {}),
+                                "delivery_names": state.get("delivery_names", {}),
                             }
                             if "memory_observed" in state:
                                 out["previous_model_context"]["memory_observed"] = state["memory_observed"]
