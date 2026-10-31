@@ -61,5 +61,11 @@ async def input_content(platform, run_id: str, file: dict, spec, *, text: str = 
         except (ClientError, ValueError):
             pass
     return attachment_content(
-        file, vision=spec.supports({"vision"}), image=image, content_type="image/jpeg" if file.get("page") else "image/webp", text=text
+        file,
+        vision=spec.supports({"vision"}),
+        image=image,
+        content_type=("image/png" if image and image.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg")
+        if file.get("page")
+        else "image/webp",
+        text=text,
     )

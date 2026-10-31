@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from ..agent.prompts import skills as builtin_skills
 from ..config import settings
-from ..contracts.file_preview import PreviewCompletion
+from ..contracts.file_preview import PreviewCompletion, PreviewPagePublication
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
@@ -60,6 +60,7 @@ from ..schemas import (
     EventOut,
     FileOut,
     FilePatch,
+    InternalFileOut,
     InternalRunDetail,
     RunDetail,
     RunStateOut,
@@ -696,6 +697,10 @@ def _bound_file(
         raise HTTPException(status_code=410, detail="version purged")
     if principal.service == "legacy":
         return file  # explicit dev/test compatibility, never enabled in secure
+    if job in {"document", "preview"} and principal.service == "broker":
+        owner = db.get(User, file.user_id)
+        if owner is None or owner.disabled_at is not None:
+            raise HTTPException(403, "render owner unavailable")
     if job == "document" and principal.service == "broker":
         meta = file.meta or {}
         if (
@@ -711,13 +716,21 @@ def _bound_file(
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
         meta = file.meta or {}
         pending = (meta.get("preview") or {}).get("status") == "pending"
-        if "files:read_for_preview" not in principal.scopes or file.status != FileStatus.READY or not pending or not preview_job:
+        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        if (
+            "files:read_for_preview" not in principal.scopes
+            or not (file.status == FileStatus.READY or scanned)
+            or not pending
+            or not preview_job
+        ):
             raise HTTPException(status_code=403, detail="no pending preview job for this file")
         if meta.get("preview_job_id") != preview_job:
             raise HTTPException(status_code=403, detail="preview job superseded")
         return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
+        if job == "preview" and file.status == FileStatus.PENDING and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean":
+            allowed = True
         if not allowed:
             raise HTTPException(status_code=403, detail="file is not eligible for this processing job")
         return file
@@ -801,6 +814,19 @@ def _bound_file(
                 .limit(1)
             )
         )
+    if not attached and principal.service == "agent" and job == "vision" and run.conversation_id and run.parent_run_id:
+        # A continued model context can contain a previously authorized image. Revalidate both the branch
+        # and the file instead of granting arbitrary access to the owner's library.
+        from .source_lifecycle import invalid_history
+
+        ancestors = path_ids(db, run.conversation_id, run.parent_run_id)
+        invalid = invalid_history(db, ancestors)
+        if run.parent_run_id not in invalid:
+            from ..models import MessageFileRef
+
+            attached = bool(
+                db.scalar(select(MessageFileRef.id).where(MessageFileRef.run_id.in_(ancestors), MessageFileRef.file_id == file.id).limit(1))
+            )
     if principal.service == "broker" and file.purpose == "library" and file.id in ((run.runtime_meta or {}).get("library_file_ids") or []):
         attached = True
     if not attached and run.conversation_id:
@@ -852,7 +878,7 @@ FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:rea
 FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill"]
 
 
-@router.get("/files/{file_id}", response_model=FileOut)
+@router.get("/files/{file_id}", response_model=InternalFileOut, response_model_exclude_unset=True)
 def internal_get_file(
     file_id: str,
     run_id: str | None = None,
@@ -861,7 +887,11 @@ def internal_get_file(
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
 ) -> dict:
-    return file_dict(_bound_file(db, file_id, principal, run_id, job, preview_job))
+    file = _bound_file(db, file_id, principal, run_id, job, preview_job)
+    result = file_dict(file)
+    if principal.service == "broker" and job in {"preview", "document"}:
+        result["render_owner_id"] = file.user_id
+    return result
 
 
 @router.get("/files/{file_id}/content")
@@ -989,6 +1019,55 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
     return file_dict(file)
 
 
+@router.post("/files/{file_id}/preview-page")
+def publish_preview_page(
+    file_id: str,
+    body: PreviewPagePublication,
+    principal: ServicePrincipal = Depends(require_scope("files:read_for_preview")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Publish a single page only for the Broker's currently authorized preview job."""
+    file = _bound_file(db, file_id, principal, None, "preview", body.job_id)
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        file = _bound_file(db, file_id, principal, None, "preview", body.job_id)
+        meta = dict(file.meta or {})
+        if meta.get("preview_job_id") != body.job_id or (meta.get("preview") or {}).get("status") != "pending":
+            raise HTTPException(409, "preview job superseded")
+        page = int(body.name[2:-4])
+        asset = body.asset.model_dump()
+        if (
+            page < 1
+            or page > body.page_count
+            or asset["key"] != f"derived/{file_id}/preview/{body.name}"
+            or asset["content_type"] != ("image/png" if body.name.endswith(".png") else "image/jpeg")
+        ):
+            raise HTTPException(400, "invalid preview page")
+        meta["preview_requested_pages"] = [p for p in (meta.get("preview_requested_pages") or []) if p != page]
+        meta["render_page_count"] = body.page_count
+        file.meta = meta
+        from ..models import RenderedPage
+
+        existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
+        if existing:
+            existing.key, existing.digest = asset["key"], asset["sha256"]
+        else:
+            db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
+        if meta.get("ocr_render_job_id") != body.job_id:
+            manifest = dict(meta.get("preview") or {})
+            names = set(manifest.get("pages") or [])
+            names.add(body.name)
+            manifest.update(kind="pages", pages=sorted(names, key=lambda name: int(name[2:-4])), page_count=body.page_count)
+            meta["preview"] = manifest
+            meta["preview_assets"] = {**(meta.get("preview_assets") or {}), body.name: asset}
+            file.meta = meta
+        from .file_dependencies import wake_file
+
+        wake_file(db, file)
+        db.commit()
+    return {"ok": True}
+
+
 @router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])
 def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
     """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
@@ -998,7 +1077,8 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
     with user_critical_section(db, file.user_id):
         db.refresh(file)
         meta = dict(file.meta or {})
-        if file.status != FileStatus.READY or meta.get("preview_job_id") != body.job_id:
+        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        if not (file.status == FileStatus.READY or scanned) or meta.get("preview_job_id") != body.job_id:
             raise HTTPException(status_code=409, detail="preview job superseded")
         preview = body.preview
         if preview.status not in {"ready", "failed"}:
@@ -1026,10 +1106,14 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
         meta["preview"] = preview.model_dump(exclude_unset=True)
-        for asset in assets.values():
-            if asset["content_type"] != {"pages": "image/jpeg", "sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(
-                preview.kind
-            ):
+        meta.pop("preview_requested_pages", None)
+        for name, asset in assets.items():
+            mime = (
+                ("image/png" if name.endswith(".png") else "image/jpeg")
+                if preview.kind == "pages"
+                else {"sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(preview.kind)
+            )
+            if asset["content_type"] != mime:
                 raise HTTPException(status_code=400, detail="invalid asset content type")
         meta["preview_assets"] = assets
         if thumbnail:
@@ -1037,10 +1121,12 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if preview.image == "display.webp":
             meta["display_key"] = f"derived/{file_id}/display.webp"
             meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
-        if meta.get("ocr_render_job_id") == body.job_id:
+        if preview.status == "ready" and preview.kind == "pages":
             from ..models import RenderedPage
 
             for name, asset in assets.items():
+                if name == "template-thumbnail.jpg":
+                    continue
                 page = int(name[2:-4])
                 existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
                 if existing:
@@ -1048,7 +1134,11 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
                 else:
                     db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
             meta["ocr_preview"] = meta["preview"]
-            meta["ocr_preview_assets"] = assets
+            meta["ocr_preview_assets"] = {name: assets[name] for name in preview.pages}
+        if meta.get("ocr_render_job_id") == body.job_id:
+            if preview.status != "ready":
+                meta["ocr_preview"] = meta["preview"]
+                meta["ocr_preview_assets"] = assets
             before = meta.pop("preview_before_ocr", {})
             for key in ("preview", "preview_assets", "preview_job_id"):
                 if key in before:

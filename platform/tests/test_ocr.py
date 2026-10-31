@@ -171,6 +171,33 @@ def test_conversation_image_is_bound_to_attached_active_run(api, rapid_upstream)
         assert api.get(f"/internal/files/{fid}/vision", params={"run_id": run["id"]}, headers=headers).status_code == 200
 
 
+def test_prior_turn_image_is_available_only_on_its_authorized_branch(api, rapid_upstream):
+    import hashlib
+
+    from tests.test_conversations import _finish
+
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
+    run_ocr_job(api, fid)
+    conv = api.post("/v1/conversations", headers=AUTH, json={}).json()
+    response = api.post(
+        f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "看图", "file_ids": [fid], "mode": "chat"}
+    )
+    assert response.status_code == 201, response.text
+    first = response.json()
+    _finish(api, first["id"], "done")
+    child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "continue"}).json()
+    other = api.post("/v1/runs", headers=AUTH, json={"prompt": "other"}).json()
+    credentials = {"agent": "sha256:" + hashlib.sha256(b"agent-image-test").hexdigest()}
+    with patch.object(settings, "service_credentials", credentials):
+        headers = {"X-Service-Token": "agent-image-test"}
+        assert api.get(f"/internal/files/{fid}/vision", params={"run_id": child["id"]}, headers=headers).status_code == 200
+        assert api.get(f"/internal/files/{fid}/vision", params={"run_id": other["id"]}, headers=headers).status_code == 404
+        assert api.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
+        assert api.get(f"/internal/files/{fid}/vision", params={"run_id": child["id"]}, headers=headers).status_code == 404
+
+
 def test_file_usage_subject_is_validated():
     from pydantic import ValidationError
 

@@ -107,7 +107,7 @@ def test_context_nonconvergence_pauses_before_second_paid_compaction(monkeypatch
     turn.messages = state["messages"]
     with pytest.raises(BudgetPause, match="上下文"):
         asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
-    assert state["compaction"]["after"] >= state["compaction"]["threshold"]
+    assert not loop.platform.reservations  # An over-window prefix cannot be summarized safely.
     paid = len(loop.platform.reservations)
     with pytest.raises(BudgetPause, match="上下文"):
         asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))

@@ -82,7 +82,11 @@ class AdmissionPolicy:
     def _reason(self, ticket: _Ticket, live: list[dict]) -> str | None:
         p, spec, cap = ticket.principal, ticket.spec, self.capacity_provider.capacity()
         render = spec.profile == "render"
-        if not render and sum(x["user_id"] == p.user_id for x in live) >= self.effective_user_limit(spec, live):
+        # A render sandbox stays bound to its user between previews, but it is reserved capacity of its own class:
+        # it must not count against the user's Work allowance.
+        if not render and sum(x["user_id"] == p.user_id and x["spec"]["profile"] != "render" for x in live) >= self.effective_user_limit(
+            spec, live
+        ):
             return "user_limit"
         same = [x for x in live if (x["spec"]["profile"] == "render") == render]
         slots = cap.render_slots if render else cap.sandboxes - cap.render_slots

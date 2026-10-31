@@ -241,6 +241,14 @@ def test_already_delivered_file_is_not_delivered_twice() -> None:
     assert broker.commits == ["/workspace/outputs/report.md"]  # once, by the model
 
 
+def test_renamed_delivery_is_recorded_in_checkpoint() -> None:
+    path = "/workspace/outputs/source.txt"
+    broker = RichBroker(outputs=[])
+    deliver = ToolCall(id="c1", name="deliver_file", arguments={"path": path, "filename": "final.txt"})
+    platform, _ = _run(ScriptedLLM([LLMResponse(tool_calls=[deliver]), LLMResponse(content="done")]), broker=broker)
+    assert platform.checkpoint["state"]["delivery_names"] == {path: "final.txt"}
+
+
 def test_deliver_file_outside_outputs_is_refused_before_reaching_the_broker() -> None:
     broker = RichBroker()
     bad = ToolCall(id="c1", name="deliver_file", arguments={"path": "/workspace/notes.txt"})
@@ -621,9 +629,7 @@ def test_the_model_is_told_when_the_last_workspace_expired() -> None:
 
     llm = ScriptedLLM([LLMResponse(content="ok")])
     _run(llm, platform=Expired())
-    # Turn-specific context rides on this turn's user message, not ahead of the cached history.
-    assert "上一轮的工作区已过期" in llm.seen_messages[0][-1]["content"]
-    assert "上一轮的工作区已过期" not in llm.seen_messages[0][1]["content"]
+    assert "上一轮的工作区已过期" in llm.seen_messages[0][1]["content"]
 
 
 def test_cancel_while_waiting_for_sandbox_aborts_the_request(monkeypatch):

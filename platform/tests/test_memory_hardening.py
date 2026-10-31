@@ -630,7 +630,7 @@ def test_judge_sees_every_existing_fact_so_a_paraphrase_is_a_duplicate(monkeypat
     fact = {"text": "用户要求以后回答都先给结论", "source_quote": "以后回答都先给结论"}
     assert service._candidates(fact, active) == []  # too little lexical overlap for the prefilter
     verdicts, _ = asyncio.run(service._judge([fact], active, User(id="usr_test"), "fake"))
-    assert [e["id"] for e in sent[0]["existing"]] == ["mem_pref", "mem_city"]
+    assert [e["id"] for e in sent[0]["existing"]] == ["mem_city", "mem_pref"]
     assert verdicts[0]["duplicate_ids"] == ["mem_pref"]
 
 

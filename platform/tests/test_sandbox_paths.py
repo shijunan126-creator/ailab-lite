@@ -8,6 +8,8 @@ provider resolves the final path and rejects anything outside its root.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ailab_platform.queue import Message, RedisQueue
@@ -78,6 +80,26 @@ def test_mock_sandbox_rejects_symlink_escape() -> None:
         provider.get_file(sandbox_id, "/workspace/outputs/passwd")
     with pytest.raises(SandboxError, match="escapes"):
         provider.put_file(sandbox_id, "/workspace/outputs/passwd", b"overwrite")
+
+
+def test_mock_sandbox_keeps_tmp_private(tmp_path) -> None:
+    """Render warmup and cleanup write and clear /tmp; on the mock provider that must never reach the host /tmp."""
+    provider = MockSandbox()
+    sandbox_id = provider.acquire(f"lease-tmp-{tmp_path.name}", "unused")
+    root = provider._sandbox_root(sandbox_id)
+    marker = f"/tmp/ailab-mock-{tmp_path.name}"
+    result = provider.exec(sandbox_id, f'echo x > {marker} && test -f "$TMPDIR/{Path(marker).name}"', 5)
+    assert result.exit_code == 0
+    assert (root / "tmp" / Path(marker).name).exists() and not Path(marker).exists()
+    script = Path(__file__).resolve().parents[1] / "ailab_platform/sandbox_tools/render_sandbox_health.py"
+    provider.put_file(sandbox_id, "/workspace/.ailab/render_sandbox_health.py", script.read_bytes())
+    # Exec output maps host paths back to sandbox paths, so compare inside the sandbox process.
+    probe = (
+        "import os, runpy; m = runpy.run_path('/workspace/.ailab/render_sandbox_health.py'); "
+        "print(m['WORK'].samefile(os.getcwd()), str(m['TEMP']) == os.environ['TMPDIR'])"
+    )
+    assert provider.exec(sandbox_id, f'python -c "{probe}"', 10).stdout.split() == ["True", "True"]
+    provider.release(sandbox_id)
 
 
 def test_redis_ack_is_one_atomic_script() -> None:

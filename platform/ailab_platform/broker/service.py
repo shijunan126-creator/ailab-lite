@@ -17,7 +17,7 @@ import uuid
 from collections import Counter
 from collections.abc import Callable
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -185,6 +185,15 @@ class LeaseManager:
         self._fenced = False
         self._inflight: set[str] = set()
         self._pending_runs: set[str] = set()
+        self._render_jobs = 0
+        self._render_waiters = 0
+        self._render_tickets: dict[str, tuple[str, int]] = {}
+        self._render_last_user: list[str | None] = [None, None, None]
+        self._render_birth: dict[str, float] = {}
+        self._warming = False
+        self._warm_thread: threading.Thread | None = None
+        self._warm_wakeup = threading.Event()
+        self._last_render_activity = 0.0
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self.admission = AdmissionPolicy(
@@ -236,6 +245,7 @@ class LeaseManager:
         with self._condition:
             self._generation += 1
             self._condition.notify_all()
+            self._warm_wakeup.set()
 
     def is_ready(self) -> bool:
         return self._started and not self._fenced and not self._recovering and self.store.owns(self._token)
@@ -314,7 +324,7 @@ class LeaseManager:
         if self._recovering:
             raise BrokerOwnershipError("broker is rebuilding lease ownership")
         lease = self.store.get(self._id(handle))
-        if lease is None:
+        if lease is None or lease["state"] in {"standby", "idle"}:
             raise LeaseLostError("lease not found")
         return lease
 
@@ -393,6 +403,7 @@ class LeaseManager:
         on_queued: Callable[[AdmissionDecision], None] | None = None,
         prepare: Callable[[dict], None] | None = None,
         ensure_active: Callable[[], None] | None = None,
+        _standby: bool = False,
     ) -> LeaseHandle:
         """Trusted service API. prepare runs before activation; C can omit it for render jobs.
 
@@ -420,7 +431,7 @@ class LeaseManager:
                     if self._recovering:
                         raise BrokerOwnershipError("broker is reconciling after store loss")
                     generation = self._generation
-                    existing = next((x for x in self.active_leases() if x["run_id"] == principal.run_id), None)
+                    existing = next((x for x in self.active_leases() if x["state"] != "standby" and x["run_id"] == principal.run_id), None)
                     if existing:
                         if existing["user_id"] != principal.user_id:
                             raise LeaseError("run principal mismatch")
@@ -459,6 +470,8 @@ class LeaseManager:
                         # moment the lease first becomes visible to it.
                         self._inflight.add(lease_id)
                         self._save(lease)
+                        if spec.profile == "render":
+                            self._render_birth[lease_id] = time.monotonic()
                         break
                     position, blocked_by = decision.position, decision.reason
                 # Event delivery never holds the admission condition across an HTTP call.
@@ -486,7 +499,14 @@ class LeaseManager:
                 if ensure_active:
                     ensure_active()
                 create_started = True
-                ref = self._provider_call("acquire", lease_id, spec.image, ttl_seconds=spec.ttl, spec=spec, labels=self._metadata(lease))
+                provider_spec = (
+                    replace(spec, max_lifetime=max(spec.max_lifetime, settings.render_max_age_seconds) + spec.max_lifetime)
+                    if _standby
+                    else spec
+                )
+                ref = self._provider_call(
+                    "acquire", lease_id, spec.image, ttl_seconds=spec.ttl, spec=provider_spec, labels=self._metadata(lease)
+                )
                 self._assert_owner()
                 lease.update(provider_ref=ref, sandbox_id=ref)
                 self._save(lease)
@@ -497,7 +517,13 @@ class LeaseManager:
                 self._provider_call("renew", ref, datetime.fromisoformat(lease["expires_at"]))
                 if _expired(lease):
                     raise LeaseExpiredError("lease expired during sandbox preparation")
-                lease["state"] = "active"
+                if _standby:
+                    now = datetime.now(UTC)
+                    maximum = now + timedelta(seconds=settings.render_max_age_seconds)
+                    until = min(now + timedelta(seconds=settings.render_prewarm_idle_seconds), maximum)
+                    lease.update(expires_at=until.isoformat(), max_expires_at=maximum.isoformat())
+                    self._provider_call("renew", ref, until)
+                lease["state"] = "standby" if _standby else "active"
                 self.touch(lease_id)
                 # Activation reaches the resource first, so a crash/Redis flush can
                 # only adopt fully staged input, never a partially prepared sandbox.
@@ -518,6 +544,277 @@ class LeaseManager:
                 self._notify()
         metrics.SANDBOX_ACQUIRE_SECONDS.observe(time.perf_counter() - started)
         return LeaseHandle(lease_id, ref)
+
+    def create_standby(self, spec: SandboxSpec, *, on_demand: bool = False) -> str:
+        """Create and warm a fresh reserved render lease; no user input enters it."""
+        if (not settings.render_prewarm and not on_demand) or spec.profile != "render":
+            raise LeaseError("render prewarming disabled or invalid spec")
+        with self._condition:
+            if self._render_jobs and not on_demand:
+                raise LeaseError("render in progress")
+        warmup = (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<office:document xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+            b'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+            b'office:version="1.2" office:mimetype="application/vnd.oasis.opendocument.text">'
+            b"<office:body><office:text><text:p>Warmup</text:p></office:text></office:body></office:document>"
+        )
+
+        def prepare(lease):
+            self.put_input(lease, "/workspace/.ailab/warmup.fodt", warmup)
+            uno_client = Path(__file__).resolve().parents[1] / "sandbox_tools" / "uno_convert.py"
+            self.put_input(lease, "/workspace/.ailab/uno_convert.py", uno_client.read_bytes())
+            health = uno_client.with_name("render_sandbox_health.py")
+            self.put_input(lease, "/workspace/.ailab/render_sandbox_health.py", health.read_bytes())
+            if self.provider.office_listener:
+                result = self._provider_call(
+                    "exec",
+                    lease["provider_ref"],
+                    "mkdir -p /tmp/ailab-warm && "
+                    "(soffice --headless --invisible --norestore -env:UserInstallation=file:///tmp/lo-profile "
+                    "'--accept=pipe,name=ailab;urp;' >/tmp/ailab-warm/listener.log 2>&1 </dev/null &) && "
+                    'i=0; while [ "$i" -lt 40 ]; do '
+                    "timeout -k 1 3s /usr/bin/python3 /workspace/.ailab/uno_convert.py "
+                    "/workspace/.ailab/warmup.fodt /tmp/ailab-warm/warmup.pdf '' >/dev/null 2>&1 && break; "
+                    "i=$((i+1)); sleep 0.2; done; test -s /tmp/ailab-warm/warmup.pdf",
+                    48,
+                )
+                if result.exit_code:
+                    raise LeaseError("render warmup failed")
+            baseline = self._provider_call("exec", lease["provider_ref"], "python /workspace/.ailab/render_sandbox_health.py baseline", 5)
+            try:
+                used = json.loads(baseline.stdout)["tmp_used"]
+                if baseline.exit_code or type(used) is not int or used < 0:
+                    raise ValueError("invalid baseline")
+            except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                raise LeaseError("render tmpfs baseline unavailable") from exc
+            lease["render_tmp_baseline"] = used
+            lease["render_jobs"] = 0
+
+        principal = LeasePrincipal(user_id="system:standby", run_id="standby:" + uuid.uuid4().hex, system=True)
+        return self.acquire(spec, principal, wait_seconds=0, prepare=prepare, _standby=True).lease_id
+
+    def acquire_render(self, spec: SandboxSpec, principal: LeasePrincipal, prepare: Callable[[dict], None]) -> tuple[LeaseHandle, str]:
+        """Acquire an owner-bound render lease while the caller holds render_activity."""
+        if not principal.system or not principal.user_id or principal.user_id.startswith("system:"):
+            raise LeaseError("render job requires an authorized user")
+        handle = self.adopt_standby(spec, principal, prepare)
+        if handle:
+            return handle, "warm"
+        live = [lease for lease in self.active_leases() if lease["spec"].get("profile") == "render"]
+        cap = self.capacity.capacity()
+        if len(live) >= cap.render_slots or sum(lease["spec"]["memory"] for lease in live) + spec.memory > cap.render_memory:
+            if not self._reclaim_for(principal, spec, "capacity"):
+                raise AdmissionRejected("render_busy")
+        self.create_standby(spec, on_demand=True)
+        handle = self.adopt_standby(spec, principal, prepare)
+        if handle is None:
+            raise AdmissionRejected("render_busy")
+        return handle, "cold"
+
+    def adopt_standby(self, spec: SandboxSpec, principal: LeasePrincipal, prepare: Callable[[dict], None]) -> LeaseHandle | None:
+        self._ensure_started()
+        if not principal.system or spec.profile != "render":
+            raise LeaseError("standby requires a system render job")
+        with self._condition:
+            candidates = [
+                x
+                for x in self.active_leases()
+                if (x["state"] == "standby" or (x["state"] == "idle" and x["user_id"] == principal.user_id))
+                and x["spec"] == asdict(spec)
+                and not _expired(x)
+                and x["lease_id"] in self._render_birth
+                and time.monotonic() - self._render_birth[x["lease_id"]] < settings.render_max_age_seconds
+            ]
+            candidates.sort(key=lambda x: x["state"] != "idle")
+            if not candidates:
+                return None
+            lease_id = candidates[0]["lease_id"]
+        try:
+            with self._stripe(lease_id):
+                with self._condition:
+                    lease = self.store.get(lease_id)
+                    if (
+                        not lease
+                        or not (lease["state"] == "standby" or (lease["state"] == "idle" and lease["user_id"] == principal.user_id))
+                        or _expired(lease)
+                        or lease_id not in self._render_birth
+                        or time.monotonic() - self._render_birth[lease_id] >= settings.render_max_age_seconds
+                    ):
+                        return None
+                    lease.update(state="creating", run_id=principal.run_id, user_id=principal.user_id, render_generation=uuid.uuid4().hex)
+                    now = datetime.now(UTC)
+                    lease["expires_at"] = min(
+                        now + timedelta(seconds=spec.ttl), datetime.fromisoformat(lease["max_expires_at"])
+                    ).isoformat()
+                    self._inflight.add(lease_id)
+                    self._save(lease)
+                prepare(lease)
+                self._provider_call("renew", lease["provider_ref"], datetime.fromisoformat(lease["expires_at"]))
+                if _expired(lease):
+                    raise LeaseExpiredError("standby expired during preparation")
+                lease["state"] = "active"
+                self._provider_call("update_metadata", lease["provider_ref"], self._metadata(lease))
+                self._save(lease)
+                self.touch(lease_id)
+                return LeaseHandle(lease_id, lease["provider_ref"])
+        except BaseException:
+            self.release(lease_id, reason="standby_adoption_failed")
+            raise
+        finally:
+            with self._condition:
+                self._inflight.discard(lease_id)
+                self._notify()
+
+    def finish_render(self, handle: LeaseHandle, *, run_id: str, generation: str, success: bool) -> bool:
+        """Return a clean, healthy user-bound render sandbox to its owner, or destroy it."""
+        lease_id = handle.lease_id
+        with self._stripe(lease_id):
+            lease = self.store.get(lease_id)
+            if (
+                not lease
+                or lease["state"] != "active"
+                or lease.get("provider_ref") != handle.provider_ref
+                or lease["run_id"] != run_id
+                or lease.get("render_generation") != generation
+            ):
+                return False
+            jobs = lease.get("render_jobs", 0) + 1
+            birth = self._render_birth.get(lease_id)
+            if (
+                not success
+                or lease["spec"].get("profile") != "render"
+                or birth is None
+                or time.monotonic() - birth >= settings.render_max_age_seconds
+                or jobs >= settings.render_reuse_max_jobs
+                or _expired(lease)
+            ):
+                self.release(handle, reason="render_not_reusable")
+                return False
+            baseline = lease.get("render_tmp_baseline")
+            if type(baseline) is not int or baseline < 0:
+                self.release(handle, reason="render_missing_baseline")
+                return False
+            try:
+                result = self._provider_call(
+                    "exec",
+                    handle.provider_ref,
+                    f"python /workspace/.ailab/render_sandbox_health.py {baseline} {int(lease['spec']['memory'] * 0.7)} "
+                    f"{int(self.provider.office_listener)}",
+                    15,
+                )
+                if result.exit_code:
+                    log.warning("render cleanup or health check failed: %s", result.stderr[-500:])
+                    raise LeaseError("render cleanup or health check failed")
+                if time.monotonic() - birth >= settings.render_max_age_seconds or _expired(lease):
+                    raise LeaseError("render expired during cleanup")
+                until = min(
+                    datetime.now(UTC) + timedelta(seconds=settings.render_user_idle_seconds),
+                    datetime.fromisoformat(lease["max_expires_at"]),
+                )
+                self._provider_call("renew", handle.provider_ref, until)
+                lease.update(state="idle", expires_at=until.isoformat(), render_jobs=jobs)
+                self._provider_call("update_metadata", handle.provider_ref, self._metadata(lease))
+                self._save(lease)
+                self.touch(lease_id)
+                self._notify()
+                return True
+            except Exception:
+                self.release(handle, reason="render_cleanup_failed")
+                return False
+
+    @contextmanager
+    def render_activity(self, user_id: str = "system", priority: int = 2, wait_seconds: float | None = None):
+        if not user_id or priority not in {0, 1, 2}:
+            raise LeaseError("invalid render scheduling request")
+        deadline = time.monotonic() + (settings.render_queue_wait_seconds if wait_seconds is None else max(0, wait_seconds))
+        ticket = uuid.uuid4().hex
+        entered = False
+        with self._condition:
+            if len(self._render_tickets) >= settings.render_queue_limit:
+                raise AdmissionRejected("render_queue_full")
+            self._render_tickets[ticket] = (user_id, priority)
+            self._render_waiters += 1
+            self._notify()
+            try:
+                while True:
+                    if self._stop.is_set():
+                        raise LeaseError("broker is stopping")
+                    best = min(item[1] for item in self._render_tickets.values())
+                    peers = [(key, owner) for key, (owner, rank) in self._render_tickets.items() if rank == best]
+                    winner = next((key for key, owner in peers if owner != self._render_last_user[best]), peers[0][0])
+                    if not self._warming and not self._render_jobs and winner == ticket:
+                        self._render_tickets.pop(ticket)
+                        self._render_last_user[priority] = user_id
+                        self._render_jobs += 1
+                        entered = True
+                        break
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise AdmissionTimeout("render_queue_deadline")
+                    self._condition.wait(timeout=remaining)
+            finally:
+                self._render_waiters -= 1
+                self._render_tickets.pop(ticket, None)
+                self._notify()
+        try:
+            yield
+        finally:
+            with self._condition:
+                if entered:
+                    self._render_jobs -= 1
+                self._notify()
+            self.request_prewarm()
+
+    def request_prewarm(self) -> None:
+        if not self._start_background or not settings.render_prewarm or self._stop.is_set():
+            return
+        with self._condition:
+            self._last_render_activity = time.monotonic()
+            if self._warm_thread is None:
+                self._warm_thread = threading.Thread(target=self._replenish_render, name="render-prewarm", daemon=True)
+                self._warm_thread.start()
+            self._warm_wakeup.set()
+
+    def _replenish_render(self) -> None:
+        from .render import LibraryRenderer
+
+        backoff, retry_at = 2.0, 0.0
+        while not self._stop.is_set():
+            self._warm_wakeup.wait(timeout=1)
+            self._warm_wakeup.clear()
+            with self._condition:
+                now = time.monotonic()
+                if (
+                    not settings.render_prewarm
+                    or now - self._last_render_activity >= settings.render_prewarm_idle_seconds
+                    or now < retry_at
+                    or self._warming
+                    or self._render_jobs
+                    or self._render_waiters
+                ):
+                    continue
+                spec = LibraryRenderer(self)._spec()
+                live = [lease for lease in self.active_leases() if lease["spec"]["profile"] == "render"]
+                cap = self.capacity.capacity()
+                if (
+                    sum(lease["state"] == "standby" for lease in live) >= settings.render_prewarm
+                    or len(live) >= cap.render_slots
+                    or sum(lease["spec"]["memory"] for lease in live) + spec.memory > cap.render_memory
+                ):
+                    continue
+                self._warming = True
+            try:
+                self.create_standby(spec)
+                retry_at, backoff = 0.0, 2.0
+            except Exception:
+                log.warning("render standby creation failed", exc_info=True)
+                retry_at = time.monotonic() + backoff
+                backoff = min(60.0, backoff * 2)
+            finally:
+                with self._condition:
+                    self._warming = False
+                    self._notify()
 
     def create(
         self,
@@ -621,6 +918,7 @@ class LeaseManager:
             self.platform.append_event(run_id, "sandbox.leased", {"lease_id": handle.lease_id, "provider": self.provider.name})
         except Exception:
             log.warning("could not record sandbox.leased")
+        self.request_prewarm()
         return lease
 
     def get(self, handle: str | LeaseHandle) -> dict:
@@ -705,6 +1003,11 @@ class LeaseManager:
 
     @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
+        lease = self._load(lease_id)
+        with self.render_activity(lease["user_id"], priority=2):
+            return self._refresh_previews(lease_id)
+
+    def _refresh_previews(self, lease_id: str) -> list[dict]:
         """Render previews of office files in /workspace/outputs that are new or changed since the last call.
 
         Pages become JPEGs and spreadsheets a JSON of cell values, stored under previews/<run>/<n>/ where the
@@ -797,6 +1100,11 @@ class LeaseManager:
     def _finish(self, lease: dict, state: str, reason: str) -> None:
         lease.update(state=state, reason=reason, closed_at=datetime.now(UTC).isoformat())
         self._save(lease)
+        self._render_birth.pop(lease["lease_id"], None)
+        if lease.get("spec", {}).get("profile") == "render":
+            # Render jobs have no resumable state; retain deletion intent only until
+            # provider deletion is confirmed, not a terminal record per preview.
+            self.store.delete(lease["lease_id"], lease["version"])
         with self._activity_lock:
             self._activity.pop(lease["lease_id"], None)
             self._renewed.pop(lease["lease_id"], None)
@@ -997,6 +1305,22 @@ class LeaseManager:
     def _reclaim_for(self, principal: LeasePrincipal, spec: SandboxSpec, why: str) -> bool:
         """Start giving up one idle sandbox. Never called with the admission condition held."""
         if spec.profile == "render":
+            candidates = [
+                lease
+                for lease in self.active_leases()
+                if lease["spec"].get("profile") == "render"
+                and (lease["state"] == "standby" or (lease["state"] == "idle" and lease["user_id"] != principal.user_id))
+            ]
+            candidates.sort(key=lambda lease: (lease["state"] != "standby", -self.idle_seconds(lease)))
+            for victim in candidates:
+                lease_id = victim["lease_id"]
+                with self._stripe(lease_id):
+                    current = self.store.get(lease_id)
+                    if current and (
+                        current["state"] == "standby" or (current["state"] == "idle" and current["user_id"] != principal.user_id)
+                    ):
+                        self.release(lease_id, reason="render_capacity_needed")
+                        return True
             return False
         try:
             victim = self._pick_victim(principal, why, self.active_leases())
@@ -1124,7 +1448,13 @@ class LeaseManager:
                         self._save(lease)
                     elif lease is None:
                         rebuilt = self._from_resource(resource)
-                        if rebuilt and rebuilt["state"] == "active" and resource.running and not _expired(rebuilt):
+                        if (
+                            rebuilt
+                            and rebuilt["spec"].get("profile") != "render"
+                            and rebuilt["state"] == "active"
+                            and resource.running
+                            and not _expired(rebuilt)
+                        ):
                             self._save(rebuilt)
                             metrics.SANDBOX_RECONCILE_ACTIONS.labels("rebuilt").inc()
                             continue
@@ -1174,13 +1504,37 @@ class LeaseManager:
                         if time.time() - datetime.fromisoformat(lease["closed_at"]).timestamp() > settings.broker_record_retention_seconds:
                             self.store.delete(lease_id, lease["version"])
                         continue
+                    # Render leases contain disposable, potentially incomplete job data.
+                    # Unlike Work leases they must never be adopted by a new owner.
+                    if self._recovering and lease.get("spec", {}).get("profile") == "render":
+                        self.release(lease_id, reason="render_recovery")
+                        continue
                     resource = by_id.get(lease.get("provider_ref"))
-                    if resource is None and lease.get("provider_ref") and lease["state"] in {"active", "creating"}:
+                    if resource is None and lease.get("provider_ref") and lease["state"] in {"active", "standby", "idle", "creating"}:
                         # The list is a snapshot; allocation may finish after it was read.
                         resource = self._provider_call("inspect", lease["provider_ref"])
                     if lease["state"] == "creating" and lease_id in self._inflight:
                         continue
-                    if lease["state"] == "active":
+                    if lease["state"] in {"standby", "idle"}:
+                        birth = self._render_birth.get(lease_id)
+                        idle_limit = settings.render_user_idle_seconds if lease["state"] == "idle" else settings.render_prewarm_idle_seconds
+                        if (
+                            self._recovering
+                            or _expired(lease)
+                            or resource is None
+                            or not resource.running
+                            or birth is None
+                            or time.monotonic() - birth >= settings.render_max_age_seconds
+                            or self.idle_seconds(lease) >= idle_limit
+                        ):
+                            self.release(lease_id, reason="render_idle_reconcile")
+                    elif lease["state"] == "active":
+                        birth = self._render_birth.get(lease_id)
+                        if lease["spec"].get("profile") == "render" and (
+                            birth is None or time.monotonic() - birth >= settings.render_max_age_seconds
+                        ):
+                            self.release(lease_id, reason="render_max_age")
+                            continue
                         if lease["spec"].get("profile") != "render" and hasattr(self.platform, "get_run"):
                             try:
                                 run = (getattr(self.platform, "get_run_state", None) or self.platform.get_run)(lease["run_id"])
@@ -1284,12 +1638,22 @@ class LeaseManager:
         return self._threads[-1]
 
     def close(self) -> None:
-        """Stop housekeeping without destroying active resources; next Broker adopts them."""
+        """Destroy disposable render resources; the next Broker may adopt Work leases."""
         self._stop.set()
+        self._warm_wakeup.set()
+        if self._started and not self._fenced and self.store.owns(self._token):
+            for lease in self.active_leases():
+                if lease.get("spec", {}).get("profile") == "render":
+                    try:
+                        self.release(lease["lease_id"], reason="broker_shutdown")
+                    except Exception:
+                        log.warning("render shutdown release failed; recovery will retry", exc_info=True)
         with self._condition:
             self._fenced = True
             self._notify()
         for thread in self._threads:
             thread.join(timeout=1)
-        if not any(thread.is_alive() for thread in self._threads):
+        if self._warm_thread:
+            self._warm_thread.join(timeout=1)
+        if not any(thread.is_alive() for thread in self._threads) and not (self._warm_thread and self._warm_thread.is_alive()):
             self.store.release_owner(self._token)

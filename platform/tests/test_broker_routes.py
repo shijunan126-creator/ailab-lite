@@ -78,6 +78,33 @@ def test_canceled_lease_is_a_conflict(broker, monkeypatch):
     assert response.json()["detail"]["code"] == "run_canceled"
 
 
+def test_render_completion_is_fenced_to_its_attempt(broker, monkeypatch):
+    from ailab_platform.domain.admission import LeasePrincipal
+
+    client, manager, provider = broker
+    execute = provider.exec
+
+    def fake_exec(ref, command, timeout):
+        if "warmup.fodt" in command or "render_sandbox_health.py" in command:
+            from types import SimpleNamespace
+
+            return SimpleNamespace(exit_code=0, stdout='{"tmp_used":0}')
+        return execute(ref, command, timeout)
+
+    monkeypatch.setattr(provider, "exec", fake_exec)
+    spec = main.LibraryRenderer(manager)._spec()
+    manager.create_standby(spec)
+    handle = manager.adopt_standby(spec, LeasePrincipal("user_a", "preview:job", system=True), lambda lease: None)
+    generation = manager.get(handle)["render_generation"]
+    headers = {"X-Service-Token": settings.service_token}
+    payload = {"lease_id": handle.lease_id, "job_id": "job", "kind": "preview", "generation": "wrong", "success": True}
+    assert client.post("/internal/render-finish", json=payload, headers=headers).json() == {"reused": False}
+    assert manager.get(handle)["state"] == "active"
+    payload["generation"] = generation
+    assert client.post("/internal/render-finish", json=payload, headers=headers).json() == {"reused": True}
+    assert manager.store.get(handle.lease_id)["state"] == "idle"
+
+
 def test_fetched_downloads_stream_into_the_sandbox_within_the_limit(broker, monkeypatch):
     client, manager, _provider = broker
     headers = {"X-Service-Token": settings.service_token}

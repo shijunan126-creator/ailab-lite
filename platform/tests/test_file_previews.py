@@ -13,7 +13,7 @@ from ailab_platform.api.main import app
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject
-from ailab_platform.queue import get_queue
+from ailab_platform.queue import get_queue, job_topic
 from ailab_platform.storage import get_storage
 from ailab_platform.worker.pipeline import process_file
 from ailab_platform.worker.preview import process_preview
@@ -63,9 +63,28 @@ class ApiClient:
         from ailab_platform.sandbox.mock import MockSandbox
         from tests.fakes import FakeRedis
 
+        class TestProvider(MockSandbox):
+            def exec(self, ref, command, timeout):
+                if "warmup.fodt" in command or "render_sandbox_health.py" in command:
+                    from types import SimpleNamespace
+
+                    return SimpleNamespace(exit_code=0, stdout='{"tmp_used":0}')
+                return super().exec(ref, command, timeout)
+
+        class BoundPlatform:
+            def get_file(self, file_id, **binding):
+                result = self_api.get_file(file_id, **binding)
+                with SessionLocal() as db:
+                    result["render_owner_id"] = db.get(FileObject, file_id).user_id
+                return result
+
+            def download_file(self, *args, **kwargs):
+                return self_api.download_file(*args, **kwargs)
+
+        self_api = self
         manager = LeaseManager(
-            provider=MockSandbox(),
-            platform=self,
+            provider=TestProvider(),
+            platform=BoundPlatform(),
             storage=get_storage(),
             redis_client=FakeRedis(),
             store=MemoryLeaseStore(),
@@ -100,7 +119,9 @@ class ApiClient:
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
+    # These tests inspect the durable preview before its worker claims it.
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     with TestClient(app) as client:
         yield client
 
@@ -260,20 +281,21 @@ def test_owned_ready_only(api):
     assert api.get(f"/v1/files/{fid}/preview", headers=other_auth).status_code == 404
 
 
-def test_concurrent_opens_one_job_and_stale_pending_requeues(api):
+def test_concurrent_opens_keep_durable_pending_job(api, monkeypatch):
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     fid = upload(api, "a.pdf")
     with ThreadPoolExecutor(max_workers=8) as pool:
         results = list(pool.map(lambda _: preview(api, fid), range(8)))
     assert all(p["status"] == "pending" for p in results)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
+    jobs = [m for m in get_queue().outstanding(job_topic("preview")) if m.get("kind") == "preview" and m["file_id"] == fid]
     assert len(jobs) == 1
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.meta = {**file.meta, "preview_requested_at": datetime.now(UTC).timestamp() - 301}
         db.commit()
     preview(api, fid)
-    jobs = [m for m in get_queue().outstanding(settings.file_queue) if m.get("kind") == "preview" and m["file_id"] == fid]
-    assert len(jobs) == 2 and jobs[0]["job_id"] != jobs[1]["job_id"]
+    jobs = [m for m in get_queue().outstanding(job_topic("preview")) if m.get("kind") == "preview" and m["file_id"] == fid]
+    assert len(jobs) == 1
 
 
 def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
@@ -304,7 +326,7 @@ def test_outbox_survives_queue_failure_and_dispatch_retry(api, monkeypatch):
     from datetime import timedelta
 
     dispatch_preview_jobs(job_id, now=datetime.now(UTC) + timedelta(seconds=5))
-    assert any(m.get("job_id") == job_id for m in q.outstanding(settings.file_queue))
+    assert any(m.get("job_id") == job_id for m in q.outstanding(job_topic("preview")))
     with SessionLocal() as db:
         assert db.get(OutboxMessage, job_id) is not None  # publication is not consumer ACK
 
@@ -411,6 +433,19 @@ def test_preview_completion_rejects_untrusted_manifest(api, tamper):
     response = api.post(f"/internal/files/{fid}/preview", headers=SERVICE, json=body)
     assert response.status_code in {400, 409, 422}
     assert preview(api, fid)["status"] == "pending"
+
+
+def test_eager_pages_are_available_to_visual_requests_without_another_render(api):
+    from ailab_platform.api.routes_library_tools import document_images
+
+    fid = upload(api, "eager.pdf")
+    job = ApiClient(api).get_file(fid)["meta"]["preview_job_id"]
+    process_preview(fid, job, platform=ApiClient(api))
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        result = document_images(db, file, [1])
+        assert [page["page"] for page in result["files"]] == [1]
+        assert file.meta["preview_job_id"] == job
 
 
 @pytest.mark.parametrize("encoding", ["utf-8", "utf-8-sig", "utf-16", "gb18030"])

@@ -179,28 +179,34 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock")])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
     monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     platform = FakePlatform()
     model = ScriptedLLM([LLMResponse(content="已执行前三步，后台句柄abc；保留文件 /workspace/a") for _ in range(10)])
     loop = AgentLoop(platform, FakeBroker(), model)
     state = fresh_state()
-    state["messages"] = [{"role": "system", "content": "rules"}, {"role": "user", "content": "original constraints"}]
-    state["user_message_index"] = 1
+    state["messages"] = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "original constraints"},
+    ]
+    state["user_message_index"] = 2
     for i in range(5):
         state["messages"].extend(
             [
                 {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
-                {"role": "tool", "tool_call_id": str(i), "content": "x" * 10000},
+                {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
             ]
         )
     loop._states["run_1"], loop._steps["run_1"] = state, 0
     turn = _Turn({"prompt": "original constraints", "_attempt_id": "a", "_ledger_tokens": 0})
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
-    assert turn.messages[1]["content"] == "original constraints"
-    assert "本轮执行摘要" in turn.messages[2]["content"]
+    assert turn.messages[1]["content"] == "context"
+    assert turn.messages[2] == {"role": "user", "content": "original constraints"}
+    assert "本轮执行摘要" in turn.messages[3]["content"]
+    assert "平台已确认交付" in turn.messages[4]["content"]
     assert [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"] == ["3", "4"]
     assert platform.checkpoint and platform.reservations
 
@@ -258,9 +264,52 @@ def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
     _run(model, platform, attempt_id="retry")
     assert platform.statuses[-1][0] == "succeeded"
     messages = model.seen_messages[0]
-    assert [message["role"] for message in messages] == ["user", "assistant", "tool", "user"]
+    assert [message["role"] for message in messages] == ["system", "system", "user", "assistant", "tool", "user"]
+    assert messages[2]["content"] == "继续检查"
+    assert ("agent.context_boundary", {"reason": "rebuilt"}) in platform.events
     assert "对照计划" in messages[-1]["content"]
     assert "review_at" not in platform.checkpoint["state"]["budget"]
+
+
+def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
+    from ailab_platform.agent.loop import _Turn
+    from ailab_platform.catalog import Catalog, ModelSpec
+    from ailab_platform.model_policy import ModelPolicy
+
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
+    monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
+    model = ScriptedLLM([LLMResponse(content="摘要") for _ in range(10)])
+    loop = AgentLoop(FakePlatform(), FakeBroker(), model)
+
+    def group(i):
+        return [
+            {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
+            {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
+        ]
+
+    state = fresh_state()
+    state["messages"] = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        *group(0),
+        *group(1),
+        *group(2),
+        *group(3),
+    ]
+    task = {"role": "user", "content": "current task"}
+    state["messages"] += [task, *group(4)]
+    state["user_message_index"] = len(state["messages"]) - 3
+    loop._states["run_1"], loop._steps["run_1"] = state, 0
+    turn = _Turn({"prompt": "current task", "_attempt_id": "a", "_ledger_tokens": 0})
+    turn.messages = state["messages"]
+    asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
+    assert turn.messages[state["user_message_index"]] == task
+    assert state["user_message_index"] > 4
+    for i in (5, 6, 7):
+        turn.messages.extend(group(i))
+    asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
+    assert state["user_message_index"] == 2 and turn.messages[2] == task
 
 
 def test_user_steer_ends_a_background_wait_but_not_the_command(monkeypatch):

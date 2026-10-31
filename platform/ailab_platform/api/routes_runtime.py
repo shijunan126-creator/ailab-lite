@@ -134,7 +134,15 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         from .inbox import acknowledge_steers
 
         steer_ids = acknowledge_steers(db, run, body.state)
-        run.runtime_meta = {**(run.runtime_meta or {}), "plan": body.state.get("plan", []), "workspace": workspace, "steer_ids": steer_ids}
+        run.runtime_meta = {
+            **(run.runtime_meta or {}),
+            "plan": body.state.get("plan", []),
+            "workspace": workspace,
+            "steer_ids": steer_ids,
+            "context_snapshot": bool(
+                body.state.get("finished") and body.state.get("messages") and body.state.get("tool_catalog_v1") is not None
+            ),
+        }
         old = db.scalars(select(RunCheckpoint).where(RunCheckpoint.run_id == run_id, RunCheckpoint.step < step - 1)).all()
         for row in old:
             schedule_object_deletion(db, row.state_key, "checkpoint")

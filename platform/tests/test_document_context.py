@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from ailab_platform.agent import discovery
-from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.internal_skills import load
@@ -78,15 +77,10 @@ def test_delete_fences_active_context():
         assert c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 404
 
 
-def test_internal_skills_and_constant_initial_schema():
-    catalog = tools_for_turn()
-    massive = catalog + [
-        {"type": "function", "function": {"name": f"unused{i}", "description": "unrelated", "parameters": {}}} for i in range(500)
-    ]
-    assert discovery.offered(catalog, []) == discovery.offered(massive, [])
+def test_internal_skills_are_discoverable():
     from ailab_platform.agent.prompts import skills
 
-    hit = discovery.search("pdf", "skill", 3, catalog, list(skills().values()))[0]
+    hit = discovery.search("pdf", 3, list(skills().values()))[0]
     assert hit["name"] == "platform.pdf"
     assert "next_cursor" in load("platform.pdf.read")
     for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):
@@ -99,7 +93,7 @@ def test_internal_skills_and_constant_initial_schema():
         assert c.post("/v1/runs", headers=AUTH, json={"prompt": "x", "skill": "platform.pdf.read"}).status_code == 201
 
 
-def test_discovered_tool_activation_survives_checkpoint():
+def test_skill_search_does_not_change_tool_availability():
     import asyncio
 
     from ailab_platform.agent.loop import AgentLoop
@@ -120,7 +114,7 @@ def test_discovered_tool_activation_survives_checkpoint():
     )
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
-    assert "write_file" in platform.checkpoint["state"]["active_tools"]
+    assert not platform.checkpoint["state"].get("active_tools")
     assert broker.leases == 1
 
 
@@ -499,7 +493,7 @@ def test_summary_revalidation_reads_completed_ocr_when_native_text_is_absent():
 
 
 def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
-    """Discovery keeps unused schemas out of the prompt; it must not fail read_url after a search found web_search."""
+    """Available tools can be called without a preceding skill search."""
     import asyncio
 
     from ailab_platform.agent.loop import AgentLoop
@@ -520,4 +514,4 @@ def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():
     asyncio.run(AgentLoop(platform, broker, model).process("run_1", attempt_id="a"))
     result = next(payload for name, payload in platform.events if name == "agent.tool_result")
     assert result["ok"] is True, result
-    assert "write_file" in platform.checkpoint["state"]["active_tools"]
+    assert not platform.checkpoint["state"].get("active_tools")

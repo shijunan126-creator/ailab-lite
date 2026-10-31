@@ -37,6 +37,25 @@ def test_a_generated_page_runs_without_network_storage_or_cookies(logged_in) -> 
     expect(page.locator(".gu-html-note")).to_have_count(0)
 
 
+def test_a_page_that_grows_and_resets_returns_to_its_height(logged_in) -> None:
+    page = logged_in
+    _ask(page, "[[genui-html]] 抛硬币")
+    box = page.locator(".gu-html-frame:not(.gu-html-pending)")
+    box.wait_for(timeout=20000)
+    frame = page.frame_locator(".gu-html-frame:not(.gu-html-pending)")
+    expect(frame.locator("body")).to_have_attribute("data-ran", "1")
+
+    def settled():
+        page.wait_for_timeout(600)  # the frame eases its height
+        return round(box.bounding_box()["height"])
+
+    start = settled()
+    frame.get_by_role("button", name="展开记录").click()
+    assert settled() > start + 200  # capped by the viewport
+    frame.get_by_role("button", name="重置").click()
+    assert abs(settled() - start) <= 2
+
+
 def test_a_page_whose_block_never_closed_does_not_run(logged_in) -> None:
     page = logged_in
     _ask(page, "[[genui-html-cut]]")

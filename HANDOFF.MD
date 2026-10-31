@@ -1,9 +1,34 @@
+# 前缀缓存陷阱（2026-10-31）
+
+压缩不能丢掉当前轮原始用户输入及已确认交付围栏；近期工具组要保持配对，recall 正文在压缩边界替换为固定提示。recall 来源仅在 run 内首次使用时验证，run 中途撤权到下一 run 才检测，恢复同一 run 保留验证缓存。
+
+同一上下文段内的请求必须只追加到前一次请求；刷新旧块、重跑工具、改变工具集合或重新裁剪任何较早字节，都会让后续上下文重新计价。权限撤销和压缩需要显式边界，不能为了缓存跳过授权复验。
+
 # HANDOFF
+
+- runsc 15 页 PPTX 探针中 LO profile 使 tmpfs 比预热基线增加 8192 字节；健康检查按设计释放该沙箱。不能仅提高阈值让它复用：须先证明残留内容已清除且监听器仍健康。
+
+- Debian Office 镜像的 `soffice` 是启动脚本，会派生 `soffice.bin`；监控启动脚本的 RSS 不能约束真实转换器。Work listener 直接启动并监督 `soffice.bin`，runsc 中低阈值和空闲退出探针已验证。
+
+- runsc 容器启动后 `docker cp` 的 overlay 文件可能对容器进程不可见；探针通过 `docker exec -i` 写入容器内文件。UNO listener 真实探针两次转换成功，但 soffice 进程 RSS 约 274 MiB，不能用目标值代替实测容器总 RSS。
+
+- 渲染日志旧版 `acquire_seconds` 包含 `inject_seconds`，相加会重复计算；C3e 起分别记录且标记 standby/cold。一次并发样本和整批发布的 ready 时间不能当作三次中位数或逐页首屏证据。
+
+- Docker sandbox 的 supervisor 在创建时固定最长生存期；standby 的提供者上限须覆盖空闲期加一次任务，认领后业务租约仍保持短 TTL。LibreOffice 仅复用 profile 不代表进程常驻，热查看延迟仍须实测；详见 [C3d](docs/progress/updates/2026-10-31-prefix-cache-render.md#c3d-预热渲染)。
+
+- Codex 沙箱内 `bin/docker.sh` 可能因 `ps` 检查受限误判磁盘状态；指定 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock` 和 `DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client` 直接调用 Docker，socket 受限时在获准环境执行。该 daemon 与个人栈共享，测试仅操作独立 `c3-*` 资源。
+
+- GNU PATH 必须 `export` 给整个 pytest 进程树；只对 `ruff` 命令前置赋值会让后续 MockSandbox 使用 macOS `stat/find`，产生与产品无关的失败。C3b 并行解析与渲染在 2 CPU 下可能竞争租约和 CPU，必须实测首屏及完整耗时，不能假设并行更快。
+
+- 共享 Docker daemon 上的独立 Broker 必须使用唯一 `AILAB_BROKER_OWNER`；同 owner 的现有 Broker 会认领测试容器并按不存在的 run 回收，不能把退出码 137 直接判为 OOM。无租约标签的一次性容器可用于单机脚本测量。
+
+- macOS 的 bsdtar 默认可能为带扩展属性的图片加入 `._` AppleDouble 成员；预览归档校验必须禁止这些额外成员，打包时设置 `COPYFILE_DISABLE=1`。完整 C3 边界见 [记录](docs/progress/updates/2026-10-31-prefix-cache-render.md)。
+
 
 ## 2026-10-31 Super-agent 借鉴与前缀缓存
 
 - 前缀缓存：供应商按“最长已见前缀”命中，工具 schema 渲染在所有消息之前（DeepSeek 模板还会把所有 system 消息提到开头）。任何按位置/分页决定的渲染（如“只有最后一轮保留 GenUI”“每页最后一条”）都会改写更早的轮次；运行中改变 tools 数组会让整段失效。改请求结构前先跑 `tests/test_prefix_cache.py`，它录下每次请求比较前缀。依据与 dsh 做法见 [ADR 0030](docs/architecture/adr/0030-prefix-stable-model-requests.md)。
-- 每轮会变的上下文（记忆块、项目资料索引、PPT 模板、工作区过期）现在在当轮 user 消息开头的 `<ailab_context>` 里，第二条 system 只剩项目说明与品牌。测试/脚本模型按用户原话匹配时要先 `strip_turn_context()`；e2e `scripted_agent.py` 与 `MockLLM` 已这样做。
+- （2026-11-01 合并后已取代）#117 曾把每轮会变的上下文放到当轮 user 消息的 `<ailab_context>`；合并 `fix/prefix-cache-render` 后改回边界 system 消息 + 运行中追加变化，见前缀缓存设计与 ADR 0030 状态。不要再假设 `<ailab_context>` 存在。
 - 子任务（`run_subtasks`）不能从 schema 删除工具，只能执行时拒绝，否则 fork 前缀失效。watchdog 判定请求也重放同一消息与工具；测试 conftest 默认 `AILAB_WATCHDOG_MODE=off`，否则脚本模型会被判定调用消耗回复。
 - `tests/test_document_context.py::test_document_indexes_are_bounded_at_100000_blocks` 在 PG 上偶发选中另一索引（EXPLAIN 断言），与改动无关时重跑。
 - 本机自动模式会拦截 `kubectl exec` 读取 Pod 环境变量（含 DB 连接串）；查线上缓存命中要让用户提供数据或走正常 API。
@@ -958,3 +983,22 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 - 草稿文本编辑后直接点击「保存新版本」会先触发 textarea blur 保存；blur 期间禁用按钮可能取消点击，未发 confirm。修复要保证一次点击等待已在途写入后继续确认，见 I2 记录的失败截图。通用 `button:hover` 色值也会覆盖记忆批次标题，浅色主题需检查悬停对比度。
 - PostgreSQL 不保证无 `ORDER BY` 的事件查询顺序；协议顺序用 `RunEvent.seq`。本机 mock 沙箱测试必须在 PATH 前置 GNU coreutils/findutils，macOS `stat` 不支持 `-c`。性能断言和 Portal 异步加载测试避免与其他整套检查并发。
+
+## 2026-10-31 前缀缓存
+
+- 同一会话段的模型请求必须追加扩展上一请求；刷新旧记忆块、重跑工具、改变工具目录或重新裁剪历史都会使后续前缀失效。权限撤销和压缩须显式记录边界；不能为缓存复用失效权限。具体边界和未测项见 [设计记录](docs/architecture/design/2026-10-31-prefix-cache.md)。
+
+## 2026-11-01 前缀缓存与渲染
+
+- Linux 下按 `/proc/<pid>/status` 监控子进程内存时，进程退出会先释放内存映射、之后才可被回收：这段时间没有 `VmRSS` 行而 `poll()` 仍为 None。`office_exec.py` 曾把它当失败返回 1，PDF 解析在 CI（SQLite+coverage 较慢）偶发丢 `units`，本机 macOS（走 `ps`）不复现。缺 `VmRSS` 记为 0，由 `poll()` 与截止时间决定结束。
+- CI 的 python 任务没有 poppler：依赖 `pdftoppm`/`pdfinfo` 的测试必须 `skipif`，否则本机通过、CI 必败。无 heartbeat 的长循环测试（`start_background=False`）要放大 `broker_lock_ttl_seconds`，coverage 下 30 s 所有权会过期。
+- Codex 委派：`--add-dir` 必须用真实路径（`/private/tmp`、`/Users/michael/AILabDisk/local`），符号链接路径会让沙箱拒绝所有命令；`codex exec resume` 会丢掉启动时的 `--add-dir`。会话常在 1–2 个提交后自行结束，且曾因额度用尽静默卡住（看 `~/.codex/sessions/.../rollout-*.jsonl` 的 `rate_limits`）。用户要求：模型用 gpt-6.1-sol medium，测试只跑一次，不要反复全量重跑；明显错误直接修。
+- Codex 沙箱内 `bin/docker.sh` 的 `ailab-disk require` 会失败；直接用 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client`。该 daemon 同时运行用户的 `ailab-local-*`，只能动一次性 `c3-*` 资源。
+- render 沙箱复用的健康检查不能要求 tmpfs 字节数回到基线：LibreOffice profile 每个文档增长数 KiB，严格比较会让 PPTX 永远不复用。用户文件由清理步骤删除，profile 增长按上限容忍。
+- 渲染测速要看分阶段日志（Broker `library render phases=`、Worker `file processing phase=`），不要只看总时长：C3d 的“预热无效”实际原因是解析抢走 standby 槽、预览串行在解析之后、LibreOffice 冷启动。逐页单独 exec 在 runsc 下每页 0.4–0.6 s。
+- 直接并发调用 `LibraryRenderer.render` 会得到 `render_busy`：Broker 拒绝、Worker 作业持久重试是设计行为，并发测速要经过 Worker 路径。
+- mock 沙箱曾把命令里的 `/tmp` 留在宿主机：渲染预热写 `/tmp/ailab-warm`、健康检查清 `/tmp`。宿主机残留的 `warmup.pdf` 让 macOS 上的预热“假成功”，E2E 因此一直通过，CI（无 LibreOffice）则会全部预览失败。现在 mock 的 `/tmp` 映射到沙箱目录并设 `TMPDIR`，`render_sandbox_health.py` 从自身位置和 `TMPDIR` 取路径；mock 声明 `office_listener = False`，渲染不预热、不加 `AILAB_LO_STRICT`、健康检查只做清理。真实镜像仍要求 listener。
+- 生成页（HtmlArtifact）的高度不能用 `documentElement.scrollHeight`：它不会小于 iframe 自身高度，页面变短后框永远不缩；`height:100%` 的页面则永远不长。按 body 内容范围（Range 包围盒 + 内边距/外边距）测量，见 `lib/frame.ts` 的 `RUN_HELPER`。
+- 固定工具目录约 2.8k token，并且计入压缩预算。上下文窗口很小（如 3.3k）的测试夹具放不下任何一轮历史，会报 `history exceeds model budget before compaction`，这是夹具问题，不是产品回归。
+- 前缀缓存不只看 messages/tools 是否仅追加：请求级参数也进提示模板。DeepSeek 实测同一 9.5k 前缀，`thinking: disabled` 或 `tool_choice: none`（后者把工具从模板删掉）都让命中从 9.3k 掉到 1.2k。续写会话的调用（压缩摘要、步数用尽收尾）必须与主循环同形，见 `AgentLoop._answer_without_tools`。用直接调用 API 的小探针隔离参数影响，几分钱即可，不要靠整轮验收猜。
+- 验收用的强制压缩小窗口（如 24k、阈值 0.6）会让 PPT 这类带图片的 Work 任务在两次查看后 BudgetPause 并兜底交付，不能当作 PPT 流程结论；命中率也被频繁压缩拉低，要单列压缩相关调用。交付文件数 = 1 不等于模型主动 `deliver_file` 或 Run succeeded，轮询要识别 interrupted。

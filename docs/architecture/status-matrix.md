@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-10-31 Super-agent 借鉴（PR #114–#119 已合并 `main@cd74472`）：模型请求前缀稳定（工具目录固定、历史原文渲染、每轮上下文挂当轮 user 消息，[ADR 0030](adr/0030-prefix-stable-model-requests.md)）；插话打断 `exec_wait`；`read_file` 分段；召回附交付文件/相邻轮次；Work 进展监督（默认 observe）；并行子任务 `run_subtasks`（[ADR 0031](adr/0031-parallel-subtasks.md)）。真实命中率、监督误报和子任务效果未验，见[记录](../progress/updates/2026-10-31-superagent-merge-deploy.md)。
+2026-10-31 Super-agent 借鉴（PR #114–#119 已合并 `main@cd74472`）：模型请求前缀稳定（工具目录固定、历史原文渲染；上下文放置与压缩已由 [前缀缓存设计](design/2026-10-31-prefix-cache.md) 取代，见 [ADR 0030](adr/0030-prefix-stable-model-requests.md) 状态）；插话打断 `exec_wait`；`read_file` 分段；召回附交付文件/相邻轮次；Work 进展监督（默认 observe）；并行子任务 `run_subtasks`（[ADR 0031](adr/0031-parallel-subtasks.md)）。真实命中率、监督误报和子任务效果未验，见[记录](../progress/updates/2026-10-31-superagent-merge-deploy.md)。
 
 2026-10-31 技能/办公/记忆/QuickJS 本地实施（`feat/skills-memory`，未合并）：四个不可关闭的基础办公技能、句中多技能且不强制Work、后台技能草稿与目录树编辑、回到底部、浏览器QuickJS `run_js`、增量记忆整理与解释报告、稳定提示前缀；迁移0040–0043。真实模型质量、供应商缓存命中与设备开销未验，见[记录](../progress/updates/2026-10-31-skills-memory.md)。
 
@@ -130,6 +130,7 @@
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
 | Work 本地 Office 读取 | 镜像预装固定 Node/ZCode reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |
 | 资料库预览 | 首次打开时生成并永久缓存：PDF/Word/PPT 页面、Excel/CSV 表格、图片（≤2048 px 显示图）、文本/Markdown/代码。Office/PDF 在 Broker 的 render 保留槽沙箱中渲染，xlsx/csv 在 Worker 受限进程中处理；ETag/304/CSP；删除时清理 | 2026-10-23 k3s→OSB render 保留槽 DOCX 8.12 s ready，中文 DOCX/PPTX JPEG 已看图；真实 OSB+S3 联合部署未验 |
+| 渲染沙箱（按用户复用） | 用户绑定的 render 沙箱常驻 LibreOffice listener，同用户预览与解析复用；首页先发布，其余页批量光栅化后逐页发布；1 槽 / 768 MiB（ADR 0032） | 2026-11-01 runsc：15 页 PPTX 全页 2.5 s、7 页 DOCX 3.2 s、首页约 1.0 s，交替用户冷启动首页 4.2–4.6 s；见 [C4](../progress/updates/2026-10-31-prefix-cache-render.md#c4-收尾2026-11-01claude) |
 | 对话发送附件预览 | 复用资料库渲染内容，以file_id建立侧栏标签；同名文件独立、切换/关闭/下载；手机保留带标签整屏侧栏 | 2026-10-29 本机Portal独立更新，真实DOCX/表格/图片及1440/390浏览器通过；[记录](../progress/updates/2026-10-29-chat-attachment-tabs.md)，非全站E2E重验 |
 | 版本与回收站（T18） | 版本为不可变行（lineage + version 唯一）；旧版恢复 = 新建 head；每链最多 10 版，超出的旧版留 tombstone（内容 410）；删除整链进回收站 30 天并计入空间额度；项目删除把文件移入回收站；对象删除在同一事务写持久删除意图，失败由 lifecycle 重试 | 真实 S3 全套行为已验；生产规模历史版本 copy/RSS/延迟仍未验 |
 
