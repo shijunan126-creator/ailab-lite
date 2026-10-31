@@ -201,7 +201,7 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
         {"role": "user", "content": "旧" * 5100},
         {"role": "assistant", "content": "old"},
         {"role": "assistant", "content": "recent one"},
-        {"role": "tool", "tool_call_id": "x", "content": "result"},
+        {"role": "tool", "name": "recall_history", "tool_call_id": "x", "content": "secret recall content"},
         {"role": "assistant", "content": "recent two"},
     ]
     original = copy.deepcopy(messages)
@@ -226,7 +226,9 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     assert messages[:3] == original[:3]
     assert messages[3]["content"].endswith("summary")
     assert "report.txt" in messages[4]["content"] and "/workspace/outputs/report.txt" in messages[4]["content"]
-    assert messages[5:] == original[-3:]
+    assert messages[5] == original[-3] and messages[7] == original[-1]
+    assert json.loads(messages[6]["content"]) == {"ok": False, "error": "历史已整理；需要详情请重新调用 recall_history"}
+    assert "secret recall content" not in json.dumps(messages, ensure_ascii=False)
     assert loop._states["r"]["user_message_index"] == 2
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
 

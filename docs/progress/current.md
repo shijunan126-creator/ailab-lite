@@ -1,6 +1,6 @@
-# 前缀缓存 C2：进行中（2026-10-31）
+# 前缀缓存 C2c：审阅修复完成（2026-10-31）
 
-工作树 `fix/prefix-cache-render`，base `origin/main@f316b85`，最终代码基线 `2321ca2`。C2b 已完成用户确认的 recall 撤权、模型 fallback、无快照历史摘要、旧布局重建和请求级场景；Ruff、SQLite、PostgreSQL/Redis 与 E2E 全部通过。范围、检查和未测边界见 [C2 记录](updates/2026-10-31-prefix-cache-render.md)及[设计](../architecture/design/2026-10-31-prefix-cache.md)。真实模型缓存命中率与摘要行为未测。下一步等待用户安排审阅或集成；不要 push 或部署。
+工作树 `fix/prefix-cache-render`，base `f316b85`，C2c 产品代码基线 `de74d01`。五项审阅修复及交付重命名补充已完成，SQLite 原全套三项旧合同断言已修正并定向通过，PostgreSQL/Redis 全套及 E2E 通过；各自测试基线与未测边界见 [C2 记录](updates/2026-10-31-prefix-cache-render.md)及[设计](../architecture/design/2026-10-31-prefix-cache.md)。临时 PostgreSQL/Redis 已停止；未 push、部署或调用付费模型。下一步等待用户安排审阅或集成，不自动推进。
 
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 

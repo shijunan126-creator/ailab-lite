@@ -26,7 +26,7 @@
 
 `0f6bdaf` 将轮内摘要改为追加指令并保留完整近期组；请求级测试在调整触发阈值后通过；最初的修复前失败因测试输入未达到阈值，不能作为有效红灯证据。`fe9128c` 冻结记忆块和既有 memory 工具结果，按 revision 追加删除/变更通知并把观察状态随快照传给子 run；删除回归先失败后通过。`768f30a` 在通知删除前确认完整可见列表，避免把相关性筛选遗漏误认为删除（对应测试先失败后通过）。`6607f14` 修复 `path_ids` 局部导入遮蔽和记忆整理指标同名遮蔽；调整旧测试中动态工具、排序和旧摘要请求假设。
 
-这不是完整 C2：`790191c` 保留已发 recall 结果，来源失效时安全暂停（测试先失败后通过）；失效来源自动重建及副作用围栏、历史重组压缩、旧快照记忆迁移、压缩时刷新记忆快照及其余请求场景未完成。详见 [设计记录](../../architecture/design/2026-10-31-prefix-cache.md)。首轮 SQLite 检查跨越代码变更，仅供诊断，八项失败已核对；固定基线检查及 PostgreSQL/Redis、E2E 结果待补。无 push、部署或付费模型调用。
+这不是完整 C2：`790191c` 保留已发 recall 结果，来源失效时安全暂停（测试先失败后通过）；失效来源自动重建及副作用围栏、历史重组压缩、旧快照记忆迁移、压缩时刷新记忆快照及其余请求场景未完成。详见 [设计记录](../../architecture/design/2026-10-31-prefix-cache.md)。首轮 SQLite 检查跨越代码变更，仅供诊断，八项失败已核对；固定基线检查及 PostgreSQL/Redis、E2E 在 `de74d01` 运行：145 passed / 6 skipped；此前用 lsof 确认共享端口空闲。测试用 PostgreSQL 和 Redis 已停止。无 push、部署或付费模型调用。
 
 检查基线 `768f30a`：Ruff check/format 通过，SQLite 全套 1698 passed / 151 skipped。此前一次全套有 8 项失败（两处产品回归共三项失败，另外五项依赖旧契约或旧排序），另一次因后续代码变更不计最终基线。PostgreSQL 独立临时表 2 万行、默认优化器 EXPLAIN：按 run 的有效快照使用主键 bitmap index，run 与 step 的精确查找使用主键 index scan，分别 0.024 ms、0.011 ms（本机单次，不代表生产延迟）。数据库/Redis 与 E2E 结果见下。
 
@@ -40,3 +40,10 @@
 `2321ca2` 新增真实 AgentLoop/ModelTransport 请求级场景：Chat/Work 双轮、附件引用和内联文本、预选技能、失败重试、checkpoint 暂停续跑、steer、卡住和收尾提示、图片组压缩、撤权重组、旧 checkpoint 及无快照摘要。轮内压缩测试在 `/private/tmp` 临时检出 `6b00401` 上实际失败：捕获的首条消息为旧摘要指令而非原系统消息；在当前实现通过。临时检出已移除。旧 checkpoint 测试的角色序列随新布局更新，并额外检查旧用户消息保留、边界与 pending 工具配对。
 
 最终代码基线 `2321ca2`：GNU PATH 下 Ruff check 和 format 通过；SQLite 1711 passed / 151 skipped；PostgreSQL + Redis 1806 passed / 56 skipped；E2E 145 passed / 6 skipped。E2E 前 `lsof` 显示 `render-view` 占用默认端口，等待其退出后执行。摘要首选模型失败时不切换备用模型，回归已验证。此前 `768f30a` 的 E2E 失败属于测试模型读取上一轮工具结果，`86713e0` 修正后本次全套通过。独立 PostgreSQL/Redis 测试进程已停止。未 push、部署或调用付费模型；真实模型缓存命中率、成本以及模型是否遵守 recall 摘要排除指令仍未验证。下一步等待用户授权的审阅或集成。
+
+
+## C2c 审阅修复
+
+在 `2a36e8d` 上按审阅逐项提交 `291af44`、`227781e`、`8d62671`、`a2aa1b4`、`e616f1d`：压缩保留原始用户消息与交付记录，近期组内 recall 内容换成固定提示，摘要调用同模型重试，recall 每 run 验证一次并保存 checkpoint，空上下文布局保持第二个 system 消息；指标覆盖 title / compaction / main 编号。`c4da111` 更新旧合同测试并修正 Ruff，`de74d01` 补充重命名交付的实际文件名与路径关联（旧记录用路径末段）。撤权检测和摘要安全边界见[设计](../../architecture/design/2026-10-31-prefix-cache.md)。
+
+SQLite 全套基线 `e616f1d` 加 Ruff 修正：1711 passed / 151 skipped / 3 failed；三项为预期变化导致的旧断言，修订后受影响测试均通过，没有重跑全套。PostgreSQL + Redis 全套 `c4da111`：1809 passed / 56 skipped；随后发现实际交付名称可与路径不同，`de74d01` 增补修复，相关 PostgreSQL 和跨轮定向测试通过。E2E 在 `de74d01` 运行：145 passed / 6 skipped；此前用 lsof 确认共享端口空闲。测试用 PostgreSQL 和 Redis 已停止。未 push、部署或付费模型调用；真实模型摘要是否遵守 recall 排除指令及实际缓存命中率未测。
