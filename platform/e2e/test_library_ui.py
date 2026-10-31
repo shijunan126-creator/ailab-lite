@@ -222,7 +222,9 @@ def test_library_table_keeps_columns_and_row_boundaries(logged_in, stack, tmp_pa
                 adjoining: !i || Math.abs(row.getBoundingClientRect().top - rows[i - 1].getBoundingClientRect().bottom) < 1,
             }));
         }""")
-        assert all(r["aligned"] and r["adjoining"] and r["border"] == "1px" for r in geometry)
+        # rows are divided by a 1px rule; the list frame closes the last one
+        assert all(r["aligned"] and r["adjoining"] for r in geometry)
+        assert [r["border"] for r in geometry] == ["1px"] * (len(geometry) - 1) + ["0px"]
         _shot(page, f"library-table-{scheme}")
 
     # Keyboard focus must reveal actions, even when the pointer is elsewhere.

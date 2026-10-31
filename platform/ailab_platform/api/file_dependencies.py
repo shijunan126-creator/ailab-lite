@@ -66,11 +66,34 @@ def reconcile():
             with user_critical_section(db, user_id):
                 run = db.get(Run, run_id, populate_existing=True)
                 dependency = (run.runtime_meta or {}).get("file_dependency")
-                if run.status != RunStatus.INTERRUPTED or not dependency or not ready(db, dependency):
+                if run.status != RunStatus.INTERRUPTED or not dependency:
                     db.rollback()
+                    continue
+                if not ready(db, dependency):
+                    prepare(db, dependency)
+                    db.commit()
                     continue
                 resume_dependency(db, run)
                 db.commit()
+
+
+def prepare(db, dependency):
+    """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
+    the file is still pending (the sheet preview every new spreadsheet gets) that request is skipped, and nothing
+    else asks again once it finishes; this tick does. request_page_render stages nothing while a preview is pending,
+    so asking every tick queues at most one render."""
+    if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
+        return
+    file = db.get(FileObject, dependency["file_id"])
+    if not file or file.deleted_at or file.purged_at or file.content_type.startswith("image/"):
+        return
+    from .routes_library_tools import document_images
+    from .routes_ocr import request_page_render
+
+    selected = dependency.get("pages")
+    missing = document_images(db, file, selected, prepare=False)
+    if missing.get("pending"):
+        request_page_render(db, file, None if selected is None else missing["pages"])
 
 
 def wake_file(db, file):

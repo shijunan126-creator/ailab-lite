@@ -561,20 +561,19 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
     for index, fact in enumerate(facts):
         if len(work) >= DREAM_MAX_CHANGES:
             break
-        candidates = _candidates(fact, active)
         work.append(
             {
                 "index": index,
                 "new": {"text": fact["text"], "source_quote": fact["source_quote"]},
                 "context_only": [c for c in dream_context.get() if c.get("run_id") in fact.get("evidence_run_ids", [])],
-                "existing": [{"id": c["id"], "text": c["content"], "valid_from": c.get("valid_from")} for c in candidates],
             }
         )
-        while len(json.dumps(work[-1], ensure_ascii=False)) > settings.memory_dream_input_chars and work[-1]["existing"]:
-            work[-1]["existing"].pop()
     if not work:
         return {}, {}
-    payload = json.dumps(work, ensure_ascii=False)
+    # The judge sees every existing fact once: a Chinese paraphrase shares too few tokens with what it repeats for a
+    # lexical prefilter to find it, and memory is capped at MAX_CHARS, so the whole of it is a bounded input.
+    existing = [{"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")} for e in active]
+    payload = json.dumps({"existing": existing, "new": work}, ensure_ascii=False)
     raw, usage = await _chat(
         [
             {"role": "system", "content": JUDGE_SYSTEM},
@@ -588,6 +587,7 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
     if not isinstance(results, list):
         raise DreamError("judge response has no results list")
     by_index = {int(item["index"]): item for item in work if "index" in item}
+    valid_ids = {e["id"] for e in active}
     out: dict[int, dict] = {index: {"deferred": True} for index in range(len(facts)) if index not in by_index}
     out.update({index: {"supported": False, "duplicate_ids": [], "contradicted_ids": []} for index in by_index})
     for item in results:
@@ -599,7 +599,6 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
             continue
         if index not in by_index:
             continue
-        valid_ids = {c["id"] for c in by_index[index]["existing"]}
         out[index] = {
             "supported": item.get("supported") is True,
             "duplicate_ids": [x for x in item.get("duplicate_ids") or [] if x in valid_ids],
@@ -851,7 +850,9 @@ async def process_dream(run_id: str) -> None:
         seen = {_hash(e["content"]) for e in active}
         for index, fact in enumerate(facts):
             verdict = verdicts.get(index, {})
-            related = [{"id": e["id"], "text": e["content"]} for e in _candidates(fact, active)]
+            linked = {*verdict.get("duplicate_ids", []), *verdict.get("contradicted_ids", []), *verdict.get("refines_ids", [])}
+            related = [{"id": e["id"], "text": e["content"]} for e in active if e["id"] in linked]
+            related += [{"id": e["id"], "text": e["content"]} for e in _candidates(fact, active) if e["id"] not in linked]
             outcome = {
                 "text": fact["text"],
                 "quote": fact.get("source_quote", ""),

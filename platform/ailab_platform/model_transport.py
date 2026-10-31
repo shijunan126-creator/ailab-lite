@@ -39,7 +39,14 @@ class ModelTransport(LLMClient):
 
     def _outgoing(self, messages: list[dict]) -> list[dict]:
         if self.echo_reasoning:
-            return messages
+            # Turns the agent writes itself (a preselected skill's load_skill) have no reasoning, but the upstream
+            # rejects a tool-call turn without the field; an empty one is accepted.
+            return [
+                {**m, "reasoning_content": ""}
+                if m.get("role") == "assistant" and m.get("tool_calls") and "reasoning_content" not in m
+                else m
+                for m in messages
+            ]
         return [{k: v for k, v in m.items() if k != "reasoning_content"} if "reasoning_content" in m else m for m in messages]
 
     def _asks_for_reasoning(self, exc: LLMError) -> bool:

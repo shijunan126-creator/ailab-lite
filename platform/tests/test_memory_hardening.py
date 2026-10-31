@@ -615,6 +615,25 @@ def test_judge_denies_unsupported_inferences_even_with_valid_quotes(monkeypatch)
     assert verdicts[0]["supported"] is False
 
 
+def test_judge_sees_every_existing_fact_so_a_paraphrase_is_a_duplicate(monkeypatch):
+    sent = []
+
+    async def chat(messages, *args):
+        sent.append(json.loads(messages[1]["content"].split("\n\n")[0]))
+        return '{"results":[{"index":0,"supported":true,"duplicate_ids":["mem_pref"],"contradicted_ids":[]}]}', {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    active = [
+        {"id": "mem_pref", "content": "希望回答时先给结论，再展开说明。"},
+        {"id": "mem_city", "content": "用户目前住在上海"},
+    ]
+    fact = {"text": "用户要求以后回答都先给结论", "source_quote": "以后回答都先给结论"}
+    assert service._candidates(fact, active) == []  # too little lexical overlap for the prefilter
+    verdicts, _ = asyncio.run(service._judge([fact], active, User(id="usr_test"), "fake"))
+    assert [e["id"] for e in sent[0]["existing"]] == ["mem_pref", "mem_city"]
+    assert verdicts[0]["duplicate_ids"] == ["mem_pref"]
+
+
 def test_long_source_segments_and_steers_reach_the_extractor_without_gaps(monkeypatch):
     from ailab_platform.models import QueuedMessage
 

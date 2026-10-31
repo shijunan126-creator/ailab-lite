@@ -1,4 +1,20 @@
+# 当前工作交接：memory / JS / 管理页集成（2026-10-31）
+
+工作树 `.worktrees/polish-integ`，分支 `fix/memory-js-polish`，base `origin/main@995a5f6`，产品基线 `90fc016`。
+
+**完成**：P7 记忆删除修复已部署，平台 `sm-p3-90fc016`、Portal 沿用 `sm-p3-9115406`；指定真实模型检查通过。构建、检查结果及边界见 [P7 记录](updates/2026-10-31-memory-js-polish.md#p7-记忆删除修复部署与真实模型检查2026-10-31)。
+
+**下一步**：Claude 推送文档提交，等待 PR CI 后合并。后续关注模型查看文件后重新交付、通过 `search_capabilities` 发现 exec/deliver_file；`view_attachment` 的真实暂停恢复路径仅由回归测试覆盖。
+
+---
+
 # 当前工作
+
+## 记忆质量与 run_js（2026-10-31）
+
+`fix/memory-js-backend`，base `origin/main@995a5f6`；后端提交 `b7480ed`、`b57331e`，未 push。本轮收紧偏好规则，真实 episode 对照及三条指定记忆删除见[记录](updates/2026-10-31-memory-js-backend.md#p2a真实来源回放与删除)。
+
+**下一步**：等待单独的集成包；本轮明确不集成、不部署、不做真实模型产品验收。完整检查由后续集成包负责。
 
 ## 技能、办公、记忆与轻量计算（2026-10-31）
 

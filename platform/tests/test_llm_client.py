@@ -176,6 +176,29 @@ def test_reasoning_is_stripped_unless_the_upstream_wants_it_back() -> None:
     assert "reasoning_content" in bodies[-1]["messages"][1]
 
 
+def test_a_tool_call_turn_without_reasoning_gets_an_empty_one_when_echoing() -> None:
+    import json as _json
+
+    synthetic = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "skill_1", "type": "function", "function": {"name": "load_skill", "arguments": "{}"}}],
+    }
+    history = [{"role": "user", "content": "x"}, synthetic, {"role": "tool", "tool_call_id": "skill_1", "content": "{}"}]
+    bodies: list[dict] = []
+
+    def handler(n, request):
+        bodies.append(_json.loads(request.content))
+        return _ok()
+
+    client, _ = _client(handler)
+    client.echo_reasoning = True
+    asyncio.run(client.chat(history, [], "m"))
+    assert bodies[-1]["messages"][1]["reasoning_content"] == ""
+    assert bodies[-1]["messages"][0] == {"role": "user", "content": "x"}  # only tool-call turns get the field
+    assert "reasoning_content" not in synthetic  # the caller's history is not mutated
+
+
 def test_an_unrelated_400_is_not_retried_with_reasoning() -> None:
     client, seen = _client(lambda n, r: httpx.Response(400, text="bad request: unknown model"))
     with pytest.raises(LLMError, match="400"):

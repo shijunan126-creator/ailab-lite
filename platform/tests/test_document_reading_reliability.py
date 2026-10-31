@@ -185,6 +185,48 @@ def test_dependency_reconciliation_is_idempotent_bounded_and_does_not_revive_can
             assert db.get(Run, run_id).status == "canceled"
 
 
+def test_image_reference_asked_while_another_preview_is_pending_still_gets_its_pages(monkeypatch):
+    from ailab_platform.api import file_dependencies
+    from ailab_platform.api.routes_library_tools import document_images
+
+    with TestClient(app) as c:
+        fid = upload(c, "deck.pdf", office_image("pdf"), "application/pdf")
+        run_id = c.post("/v1/runs", headers=AUTH, json={"prompt": "看图", "file_ids": [fid]}).json()["id"]
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            # the ordinary preview a delivered file gets is still running when the model asks to see the pages
+            file.meta = {**file.meta, "preview": {"status": "pending", "kind": "sheets"}, "preview_job_id": "eager"}
+            assert document_images(db, file, [1])["pending"]
+            run = db.get(Run, run_id)
+            run.status = "interrupted"
+            run.runtime_meta = {
+                **run.runtime_meta,
+                "file_dependency": {"file_id": fid, "action": "image-reference", "pages": [1], "deadline": time.time() + 100},
+            }
+            db.commit()
+
+        def renders():
+            with SessionLocal() as db:
+                return [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.id != "eager"]
+
+        before = len(renders())
+        monkeypatch.setattr(file_dependencies, "_after", "")
+        file_dependencies.reconcile()
+        assert len(renders()) == before  # nothing stacked on the pending preview
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "preview": {"status": "ready", "kind": "sheets"}}
+            db.commit()
+        for _ in range(3):
+            monkeypatch.setattr(file_dependencies, "_after", "")
+            file_dependencies.reconcile()
+        with SessionLocal() as db:
+            meta = db.get(FileObject, fid).meta
+            assert meta["preview"]["status"] == "pending" and meta["ocr_render_pages"] == [1]
+            assert db.get(Run, run_id).status == "interrupted"
+        assert len(renders()) == before + 1  # one render, however many ticks
+
+
 def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbox():
     from ailab_platform.agent.loop import AgentLoop
     from ailab_platform.llm import LLMResponse, ToolCall

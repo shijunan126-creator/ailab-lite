@@ -583,7 +583,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
     page = logged_in
     page.click(".side-link:has-text('技能')")
     page.wait_for_url(stack.portal + "/skills")
-    ppt = page.locator(".skill-row", has_text="PPT 设计")
+    ppt = page.locator(".mrow", has_text="PPT 设计")
     switch = ppt.locator("button[role=switch]")
     assert switch.get_attribute("aria-checked") == "true"
     try:
@@ -591,7 +591,7 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
             switch.click()
         assert saved.value.ok  # the optimistic switch alone does not mean the setting was saved
         page.reload()  # saved on the server, not just in the page
-        page.wait_for_selector(".skill-row.off:has-text('PPT 设计')")
+        page.wait_for_selector(".mrow.off:has-text('PPT 设计')")
         page.goto(stack.portal + "/")
         page.get_by_role("button", name="添加附件", exact=True).click()
         menu = page.locator(".composer-menu")
@@ -602,12 +602,12 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
         page.keyboard.press("Escape")
     finally:
         page.goto(stack.portal + "/skills")
-        page.wait_for_selector(".skill-row")
+        page.wait_for_selector(".mrow")
         if ppt.locator("button[role=switch]").get_attribute("aria-checked") == "false":
             with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith("/api/v1/skills/pptx")) as restored:
                 switch.click()
             assert restored.value.ok
-            page.wait_for_selector(".skill-row:not(.off):has-text('PPT 设计')")
+            page.wait_for_selector(".mrow:not(.off):has-text('PPT 设计')")
 
 
 def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, stack, tmp_path) -> None:
@@ -616,9 +616,9 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     skill = tmp_path / "SKILL.md"
     skill.write_text(f"---\nname: {name}\ntitle: 周报助手\ndescription: 按团队模板写周报\n---\n# 步骤\n先列本周完成。\n", encoding="utf-8")
     page.goto(stack.portal + "/skills")
-    page.wait_for_selector(".skill-row")
+    page.wait_for_selector(".mrow")
     page.set_input_files("input[accept='.md,.zip']", str(skill))
-    row = page.locator(".skill-row", has_text="周报助手")
+    row = page.locator(".mrow", has_text="周报助手")
     row.wait_for(timeout=40000)
     assert row.locator("button[role=switch]").get_attribute("aria-checked") == "true"
     assert row.get_by_role("button", name="编辑 周报助手").is_visible()
@@ -639,7 +639,8 @@ def test_a_personal_skill_is_hidden_from_library_and_can_be_picked(logged_in, st
     assert "读取技能" in steps and "周报助手" in steps and "已加载技能" not in steps
 
     page.goto(stack.portal + "/skills")  # deleting the skill deletes the file
-    page.locator(".skill-row", has_text="周报助手").locator("button:has-text('删除')").click()
+    page.locator(".mrow", has_text="周报助手").get_by_role("button", name="更多操作 周报助手", exact=True).click()
+    page.get_by_role("menuitem", name="删除", exact=True).click()
     confirm_action(page)
     page.wait_for_function("() => !document.body.innerText.includes('周报助手')", timeout=15000)
 
