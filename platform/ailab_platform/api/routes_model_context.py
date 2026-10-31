@@ -63,9 +63,10 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
             elif parent.model != run.model:
                 out["context_boundary"] = "model_changed"
             elif parent.status == "succeeded" and (parent.runtime_meta or {}).get("context_snapshot"):
+                from ..models import RunCheckpoint
                 from .routes_runtime import read_checkpoint
 
-                snapshot = read_checkpoint(db, parent)
+                snapshot = read_checkpoint(db, parent) if db.get(RunCheckpoint, (parent.id, parent.checkpoint_step)) else None
                 if snapshot:
                     state = snapshot["state"]
                     if state.get("finished") and state.get("messages") and state.get("tool_catalog_v1") is not None:
@@ -76,6 +77,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 "messages": state["messages"],
                                 "tools": state["tool_catalog_v1"],
                             }
+                else:
+                    out["context_boundary"] = "rebuilt"
     alive = newest is not None and newest.id not in invalid and workspace_alive(newest, datetime.now(UTC))
     own = (run.runtime_meta or {}).get("workspace")
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None

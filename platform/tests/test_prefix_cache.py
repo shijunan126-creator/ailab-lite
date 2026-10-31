@@ -113,15 +113,21 @@ def test_next_run_extends_the_previous_run_wire_messages():
             return run
 
     call = {"index": 0, "id": "plan", "type": "function", "function": {"name": "update_plan", "arguments": '{"steps":["finish"]}'}}
-    with scripted_server([{"tool_calls": [call]}, {"content": "first answer"}, {"content": "second answer"}]) as (url, requests):
+    with scripted_server(
+        [{"tool_calls": [call]}, {"content": "first answer", "reasoning_content": "answer reasoning"}, {"content": "second answer"}]
+    ) as (url, requests):
         platform = Platform()
-        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url, echo_reasoning=True))
         asyncio.run(loop.process("first", attempt_id="a1"))
         asyncio.run(loop.process("second", attempt_id="a2"))
     assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
     assert len(requests) == 3
     assert_extension(requests[1], requests[2])
-    assert requests[2]["messages"][len(requests[1]["messages"])] == {"role": "assistant", "content": "first answer"}
+    assert requests[2]["messages"] == [
+        *requests[1]["messages"],
+        {"role": "assistant", "content": "first answer", "reasoning_content": "answer reasoning"},
+        {"role": "user", "content": "second"},
+    ]
 
 
 def test_unchanged_memory_refresh_preserves_all_request_messages():

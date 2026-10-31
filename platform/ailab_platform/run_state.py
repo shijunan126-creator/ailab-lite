@@ -87,6 +87,12 @@ def _transition_run(
                 .where(RunCheckpoint.run_id == run_id, RunCheckpoint.step == run.checkpoint_step)
                 .values(expires_at=None)
             )
+            if run.parent_run_id:
+                db.execute(
+                    update(RunCheckpoint)
+                    .where(RunCheckpoint.run_id == run.parent_run_id, RunCheckpoint.expires_at.is_(None))
+                    .values(expires_at=now + timedelta(days=7))
+                )
     metrics.RUNS.labels(new_status).inc()
     if new_status in RunStatus.TERMINAL:
         started = run.started_at or run.created_at
