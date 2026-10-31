@@ -1,6 +1,7 @@
 """Bounded visual rendering inside the current run sandbox."""
 
 import base64
+import importlib.util
 import io
 import json
 import os
@@ -10,7 +11,10 @@ import tempfile
 from pathlib import Path
 
 from PIL import Image, ImageOps
-from render_preview import check_archive, pages
+
+spec = importlib.util.spec_from_file_location("render_preview", Path(__file__).with_name("render_preview.py"))
+render_preview = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(render_preview)
 
 MAX_INPUT = 20 * 1024 * 1024
 MAX_PIXELS = 16_000_000
@@ -83,7 +87,7 @@ def main() -> None:
         work = Path(tmp)
         source = work / ("input" + suffix)
         copy_source(root, path, source)
-        check_archive(source)
+        render_preview.check_archive(source)
         if suffix in {".png", ".jpg", ".jpeg"}:
             if selected != [1]:
                 raise ValueError("page_out_of_range")
@@ -91,7 +95,7 @@ def main() -> None:
         else:
             rendered = work / "pages"
             rendered.mkdir()
-            result = pages(source, rendered, selected)
+            result = render_preview.pages(source, rendered, selected)
             names = [rendered / name for name in result["pages"]]
         images = [normalize(name) for name in names]
         if sum(map(len, images)) > MAX_TOTAL:
