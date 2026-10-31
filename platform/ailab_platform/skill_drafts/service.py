@@ -118,9 +118,11 @@ def _snapshot(db, draft):
         )
     if not parts:
         raise ValueError("没有可提取的对话内容")
-    skills = [s for s in personal_skills(db, user) if not s.get("error")][:50]
+    skills = sorted((s for s in personal_skills(db, user) if not s.get("error")), key=lambda s: s["name"])[:50]
     descriptions = [{k: s.get(k) for k in ("name", "description")} for s in skills]
-    base_files = [{"path": f["path"], "kind": f["kind"]} for f in draft.files or [] if f["change"] != "deleted"]
+    base_files = sorted(
+        ({"path": f["path"], "kind": f["kind"]} for f in draft.files or [] if f["change"] != "deleted"), key=lambda f: f["path"]
+    )
     base_md = next((f for f in draft.files or [] if f["path"] == "SKILL.md" and f["change"] != "deleted"), None)
     base_content = get_storage().get_bytes(base_md["blob"]).decode("utf-8", "replace") if base_md else ""
     budget = settings.skill_draft_input_chars - len(json.dumps(descriptions, ensure_ascii=False)) - len(base_content)

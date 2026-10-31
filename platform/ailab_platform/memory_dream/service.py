@@ -449,11 +449,7 @@ async def _extract(episodes: list[MemoryEpisode], active: list[dict], user: User
         raise DreamError(f"dream model not found: {model}")
     payload = _episode_payload(_fit_episodes(episodes, settings.memory_dream_input_chars))
     user_prompt = (
-        "有界前文（仅用于理解指代，不是证据）：\n"
-        + json.dumps(dream_context.get(), ensure_ascii=False)
-        + "\n\n新 episodes：\n"
-        + payload
-        + "\n\n只返回符合要求的 JSON。"
+        "有界前文（仅用于理解指代，不是证据）：\n" + json.dumps(dream_context.get(), ensure_ascii=False) + "\n\n新 episodes：\n" + payload
     )
     raw, usage = await _chat(
         [{"role": "system", "content": EXTRACT_SYSTEM}, {"role": "user", "content": user_prompt}],
@@ -572,12 +568,12 @@ async def _judge(facts: list[dict], active: list[dict], user: User, model: str) 
         return {}, {}
     # The judge sees every existing fact once: a Chinese paraphrase shares too few tokens with what it repeats for a
     # lexical prefilter to find it, and memory is capped at MAX_CHARS, so the whole of it is a bounded input.
-    existing = [{"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")} for e in active]
+    existing = [{"id": e["id"], "text": e["content"], "valid_from": e.get("valid_from")} for e in sorted(active, key=lambda e: e["id"])]
     payload = json.dumps({"existing": existing, "new": work}, ensure_ascii=False)
     raw, usage = await _chat(
         [
             {"role": "system", "content": JUDGE_SYSTEM},
-            {"role": "user", "content": payload + "\n\n只返回符合要求的 JSON。"},
+            {"role": "user", "content": payload},
         ],
         model,
         user,
