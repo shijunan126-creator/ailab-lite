@@ -79,7 +79,7 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
         manager.put_file(lease_id, helper, HELPER.read_bytes())
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
         args = " ".join(shlex.quote(s) for s in (helper, "/workspace", path, result_path, json.dumps(selected)))
-        result = manager.exec(lease_id, f"timeout -k 2 45s python {args}", 48)
+        result = manager.exec(lease_id, f"AILAB_LO_PROFILE=/tmp/.ailab-lo-profile timeout -k 2 45s python {args}", 48)
         if result.exit_code:
             raise ValueError("view_timeout" if result.exit_code in {124, 137} else "view_failed")
         if time.monotonic() - start > 60:

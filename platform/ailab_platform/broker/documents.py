@@ -17,6 +17,10 @@ class DocumentReader:
         self.manager = manager
 
     def read(self, file_id, job_id):
+        with self.manager.render_activity():
+            return self._read(file_id, job_id)
+
+    def _read(self, file_id, job_id):
         total_started = time.monotonic()
         phases = {}
         file = self.manager.platform.get_file(file_id, job="document", preview_job=job_id)

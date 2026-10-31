@@ -38,7 +38,7 @@ class RedisLeaseStore:
                 "if v~=tonumber(ARGV[2]) then return 0 end; "
                 "redis.call('HSET',KEYS[1],ARGV[1],ARGV[3]); "
                 "local state=cjson.decode(ARGV[3]).state; "
-                "if state=='creating' or state=='active' or state=='releasing' then "
+                "if state=='creating' or state=='standby' or state=='active' or state=='releasing' then "
                 "redis.call('SADD',KEYS[2],ARGV[1]) else redis.call('SREM',KEYS[2],ARGV[1]) end; return 1",
                 2,
                 self.key,

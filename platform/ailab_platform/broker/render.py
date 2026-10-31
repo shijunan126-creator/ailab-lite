@@ -39,6 +39,10 @@ class LibraryRenderer:
         )
 
     def render(self, file_id: str, job_id: str) -> dict:
+        with self.manager.render_activity():
+            return self._render(file_id, job_id)
+
+    def _render(self, file_id: str, job_id: str) -> dict:
         started = time.monotonic()
         phases = {}
         platform = self.manager.platform
@@ -101,7 +105,10 @@ class LibraryRenderer:
 
         principal = LeasePrincipal(user_id="system:preview", run_id=f"preview:{job_id}", system=True)
         acquire_started = time.monotonic()
-        handle = self.manager.acquire(self._spec(), principal, wait_seconds=30, prepare=prepare)
+        spec = self._spec()
+        handle = self.manager.adopt_standby(spec, principal, prepare)
+        if handle is None:
+            handle = self.manager.acquire(spec, principal, wait_seconds=30, prepare=prepare)
         phases["acquire_seconds"] = time.monotonic() - acquire_started
         lease_id = handle.lease_id
         try:
@@ -114,7 +121,7 @@ class LibraryRenderer:
             exec_started = time.monotonic()
             result = self.manager.exec(
                 lease_id,
-                f"timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
+                f"AILAB_LO_PROFILE=/tmp/lo-profile timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
                 remaining,
             )

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -41,7 +42,8 @@ def check_archive(source: Path) -> None:
 
 
 def soffice(src: Path, fmt: str, outdir: Path) -> Path:
-    profile = Path(tempfile.mkdtemp(prefix="lo-profile-"))  # a private profile: parallel runs do not collide
+    configured = os.environ.get("AILAB_LO_PROFILE")
+    profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))
     try:
         subprocess.run(
             ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
@@ -50,7 +52,8 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
             timeout=90,
         )
     finally:
-        shutil.rmtree(profile, ignore_errors=True)
+        if not configured:
+            shutil.rmtree(profile, ignore_errors=True)
     out = outdir / f"{src.stem}.{fmt.split(':')[0]}"
     if not out.exists():
         raise RuntimeError(f"LibreOffice produced no {fmt} for {src.name}")

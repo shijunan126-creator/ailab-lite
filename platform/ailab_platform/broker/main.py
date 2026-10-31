@@ -42,6 +42,7 @@ async def lifespan(_: FastAPI):
     register_once("broker-state", BrokerStateCollector(get_manager))
     try:
         manager.recover()
+        manager.request_prewarm()
         log.info("sandbox broker ready provider=%s", manager.provider.name)
     except Exception:
         log.exception("broker startup recovery failed")
@@ -167,7 +168,9 @@ def view_workspace_file(lease_id: str, body: dict) -> dict:
     if set(body) - {"path", "pages"} or "path" not in body:
         raise HTTPException(422, "invalid_view_arguments")
     try:
-        return view(get_manager(), lease_id, body["path"], body.get("pages"))
+        manager = get_manager()
+        with manager.render_activity():
+            return view(manager, lease_id, body["path"], body.get("pages"))
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     except SandboxError as exc:

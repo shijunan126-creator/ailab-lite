@@ -198,6 +198,8 @@ class Settings(BaseSettings):
     sandbox_render_reserved_slots: int = Field(default=1, ge=0)
     sandbox_render_memory_bytes: int = Field(default=768 * 1024**2, ge=0)
     sandbox_render_max_ttl_seconds: int = Field(default=120, ge=1)
+    render_prewarm: int = Field(default=1, ge=0, le=8)
+    render_prewarm_idle_seconds: int = Field(default=600, ge=1, le=86400)
     preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file

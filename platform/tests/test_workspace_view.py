@@ -11,6 +11,27 @@ from ailab_platform.sandbox.transfer import TransferLimitError
 from tests.test_workspace_previews import _manager
 
 
+def test_workspace_view_uses_one_lease_profile(tmp_path, monkeypatch):
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("profile-run")["lease_id"]
+    commands = []
+    original = manager.exec
+
+    def capture(lease_id, command, timeout):
+        commands.append(command)
+        return original(lease_id, command, timeout)
+
+    monkeypatch.setattr(manager, "exec", capture)
+    data = io.BytesIO()
+    Image.new("RGB", (5, 5), "white").save(data, "PNG")
+    manager.put_file(lease, "/workspace/outputs/image.png", data.getvalue())
+    view(manager, lease, "/workspace/outputs/image.png", None)
+    view(manager, lease, "/workspace/outputs/image.png", None)
+    invocations = [c for c in commands if "view_workspace_file.py" in c]
+    assert len(invocations) == 2
+    assert all("AILAB_LO_PROFILE=/tmp/.ailab-lo-profile" in c for c in invocations)
+
+
 def image_bytes():
     data = io.BytesIO()
     Image.new("RGB", (80, 60), "red").save(data, "PNG")
