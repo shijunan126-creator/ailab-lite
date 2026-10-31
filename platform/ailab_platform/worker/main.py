@@ -70,9 +70,13 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
 
             class Completion:
                 completed = False
+                retry_delay = None
 
                 def ack(self, *args):
                     self.completed = True
+
+                def retry_after(self, seconds):
+                    self.retry_delay = seconds
 
             completion = Completion()
             from ..runtime_context import attempt_id_var
@@ -90,6 +94,9 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                 attempt_id_var.reset(identity)
             if completion.completed:
                 client.job_action(envelope.job_id, "ack", token=token)
+                queue.ack(topic, msg)
+            elif completion.retry_delay is not None:
+                client.job_action(envelope.job_id, "release", token=token, retry_after_seconds=completion.retry_delay)
                 queue.ack(topic, msg)
         finally:
             client.close()
@@ -125,6 +132,8 @@ def _handle(queue, msg, file_id) -> None:
         try:
             result = process_preview(file_id, msg.payload.get("job_id", ""))
             if result.get("skipped") in {"busy", "in_flight"}:
+                if hasattr(queue, "retry_after"):
+                    queue.retry_after(2)
                 return
         except Exception:
             log.exception("preview job could not complete for %s", file_id)
@@ -158,6 +167,16 @@ def _handle(queue, msg, file_id) -> None:
         queue.ack(settings.file_queue, msg)
         return
     thumbnail_only = msg.payload.get("thumbnail_only") is True
+    if file_id and msg.deliveries > settings.file_max_attempts:
+        if not thumbnail_only:
+            try:
+                with PlatformClient(service="worker") as pending_client:
+                    waiting = (pending_client.get_file(file_id).get("meta") or {}).get("processing") == "render_pending"
+            except Exception:
+                # Do not quarantine a capacity wait merely because its metadata is unavailable.
+                return
+            if waiting:
+                msg.deliveries = 1
     if file_id and msg.deliveries > settings.file_max_attempts:
         if thumbnail_only:
             log.warning("abandoning thumbnail for %s after %d attempts", file_id, msg.deliveries - 1)
@@ -209,6 +228,15 @@ def _handle(queue, msg, file_id) -> None:
             queue.ack(settings.file_queue, msg)
             return
         except Exception as exc:
+            if isinstance(exc, ClientError) and exc.status in {429, 503} and not thumbnail_only:
+                try:
+                    _patch(file_id, meta={"processing": "render_pending"})
+                except Exception:
+                    log.warning("could not mark render capacity wait for %s", file_id, exc_info=True)
+                else:
+                    if hasattr(queue, "retry_after"):
+                        queue.retry_after(2)
+                return
             if _obsolete_job(exc):
                 log.info("dropping obsolete file job %s", file_id)
                 queue.ack(settings.file_queue, msg)

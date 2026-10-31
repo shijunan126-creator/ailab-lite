@@ -54,6 +54,7 @@ class ClaimIn(BaseModel):
 
 class FinishIn(BaseModel):
     token: str = Field(min_length=1, max_length=40)
+    retry_after_seconds: int = Field(default=0, ge=0, le=60)
 
 
 def _job(db, job_id, principal):
@@ -172,6 +173,18 @@ def _claim_locked(db, job, body):
                 )
             )
     expired = envelope.deadline <= now
+    render_waiting = (
+        envelope.kind == "preview" or (envelope.kind == "file" and (file.meta or {}).get("processing") == "render_pending")
+        if envelope.kind in {"preview", "file"}
+        else False
+    )
+    if not done and render_waiting:
+        if envelope.kind == "file":
+            # Capacity waits do not consume the scanner failure budget.
+            job.deliveries = 1
+        if expired:
+            job.payload = {**job.payload, "deadline": (now + timedelta(seconds=settings.job_deadline_seconds)).isoformat()}
+            expired = False
     if expired and envelope.kind == "run" and not done:
         from ..run_state import transition_run
 
@@ -276,7 +289,7 @@ def release_job(
         .values(
             claim_token=None,
             claimed_until=None,
-            next_attempt_at=now,
+            next_attempt_at=now + timedelta(seconds=body.retry_after_seconds),
         )
     ).rowcount
     if not changed:
