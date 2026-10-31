@@ -18,6 +18,10 @@ def scripted_server(responses):
         def do_POST(self):
             requests.append(json.loads(self.rfile.read(int(self.headers["content-length"]))))
             delta = next(script)
+            if "status" in delta:
+                self.send_response(delta["status"])
+                self.end_headers()
+                return
             finish = "tool_calls" if delta.get("tool_calls") else "stop"
             chunks = [
                 {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]},
@@ -45,3 +49,4 @@ def assert_extension(previous, current):
     assert json.dumps(previous.get("tools"), ensure_ascii=False) == json.dumps(current.get("tools"), ensure_ascii=False)
     old = previous["messages"]
     assert current["messages"][: len(old)] == old
+    assert current["messages"][len(old)]["role"] == "assistant"

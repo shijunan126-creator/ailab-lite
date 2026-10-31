@@ -262,6 +262,8 @@ def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
     _run(model, platform, attempt_id="retry")
     assert platform.statuses[-1][0] == "succeeded"
     messages = model.seen_messages[0]
-    assert [message["role"] for message in messages] == ["user", "assistant", "tool", "user"]
+    assert [message["role"] for message in messages] == ["system", "system", "user", "assistant", "tool", "user"]
+    assert messages[2]["content"] == "继续检查"
+    assert ("agent.context_boundary", {"reason": "rebuilt"}) in platform.events
     assert "对照计划" in messages[-1]["content"]
     assert "review_at" not in platform.checkpoint["state"]["budget"]

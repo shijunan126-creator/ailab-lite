@@ -1,6 +1,7 @@
 import asyncio
 import copy
 import json
+from itertools import pairwise
 from types import SimpleNamespace
 
 import pytest
@@ -91,7 +92,8 @@ def test_reasoning_is_echoed_without_rewriting_earlier_messages():
     assert requests[1]["messages"][len(requests[0]["messages"])]["reasoning_content"] == "先检查"
 
 
-def test_next_run_extends_the_previous_run_wire_messages():
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_next_run_extends_the_previous_run_wire_messages(mode):
     class Platform(FakePlatform):
         def __init__(self):
             super().__init__()
@@ -107,7 +109,7 @@ def test_next_run_extends_the_previous_run_wire_messages():
             return {"step": step + 1}
 
         async def get_run(self, run_id):
-            run = {**await super().get_run(run_id), "prompt": "first" if run_id == "first" else "second"}
+            run = {**await super().get_run(run_id), "prompt": "first" if run_id == "first" else "second", "options": {"mode": mode}}
             if run_id == "second":
                 state = self.checkpoints["first"]["state"]
                 run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
@@ -188,14 +190,18 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     with scripted_server([{"content": "summary"}]) as (url, requests):
         platform = FakePlatform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
-        loop._states["r"] = {"user_message_index": 2}
+        loop._states["r"] = {"user_message_index": 2, "delivered": {}}
+        loop._steps["r"] = 0
 
         async def checkpoint(*args):
             pass
 
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
-        turn = SimpleNamespace(messages=messages, run={"_attempt_id": "a", "_ledger_tokens": 0})
-        asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", tools))
+        turn = SimpleNamespace(messages=messages, run={"_attempt_id": "a", "_ledger_tokens": 0, "prompt": "constraints"})
+        try:
+            asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", tools))
+        except BudgetPause:
+            pass  # Still examine the request made before a non-converging compaction paused.
     assert requests[0]["messages"][:-1] == original
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
     assert messages[:2] == original[:2] and messages[2]["content"].endswith("summary")
@@ -254,7 +260,7 @@ def test_memory_deletion_appends_note_without_rewriting_prior_results():
     asyncio.run(exercise())
 
 
-def test_recall_revalidation_preserves_result_and_refuses_revoked_source():
+def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
     from ailab_platform.clients import ClientError
 
     class Platform(FakePlatform):
@@ -276,9 +282,9 @@ def test_recall_revalidation_preserves_result_and_refuses_revoked_source():
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert messages == original
         platform.revoked = True
-        with pytest.raises(BudgetPause):
-            await loop._model_attempt(ScriptedLLM([]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
-        assert messages == original
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
+        assert json.loads(messages[0]["content"]) == {"ok": False, "error": "引用的历史已不可用"}
+        assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
 
     asyncio.run(exercise())
 
@@ -395,3 +401,322 @@ def test_platform_system_prompt_does_not_include_user_skill_state(mode):
     assert first == second
     assert PLATFORM_PROMPT_VERSION in first
     assert all(value not in first for value in ("private-one", "disabled-one", "secret one", "private-two", "disabled-two", "secret two"))
+
+
+def test_revoked_parent_rebuilds_valid_history_without_replaying_tools(monkeypatch):
+    from ailab_platform.clients import ClientError
+
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([ModelSpec("m", "m", provider="mock")]))
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "previous_model_context": {
+                    "messages": [
+                        {"role": "system", "content": "old"},
+                        {
+                            "role": "assistant",
+                            "tool_calls": [{"id": "exec", "type": "function", "function": {"name": "exec", "arguments": "{}"}}],
+                        },
+                        {"role": "tool", "name": "exec", "tool_call_id": "exec", "content": "already executed"},
+                        {
+                            "role": "assistant",
+                            "tool_calls": [{"id": "delivery", "type": "function", "function": {"name": "deliver_file", "arguments": "{}"}}],
+                        },
+                        {"role": "tool", "name": "deliver_file", "tool_call_id": "delivery", "content": "already delivered"},
+                        {"role": "tool", "name": "recall_history", "content": '{"results":[{"run_id":"gone","text":"secret"}]}'},
+                        {"role": "assistant", "content": "secret from source"},
+                    ],
+                    "tools": [],
+                },
+            }
+
+        async def recall(self, run_id, payload):
+            raise ClientError("POST", "/recall", 404, "gone")
+
+        async def get_model_context(self, run_id, after=None):
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [{"id": "old", "prompt": "valid", "reply": "done"}],
+                "has_more": False,
+            }
+
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        platform, broker = Platform(), FakeBroker()
+        asyncio.run(AgentLoop(platform=platform, broker=broker, llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
+    assert "secret" not in json.dumps(requests[0], ensure_ascii=False)
+    assert any(m.get("content") == "valid" for m in requests[0]["messages"])
+    assert broker.leases == 0 and not broker.put_calls
+
+
+def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypatch):
+    from ailab_platform.agent.loop import estimator
+
+    monkeypatch.setattr(estimator, "factors", {})
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, run_id, after=None):
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [{"id": "old", "prompt": "旧" * 5300, "reply": "done"}],
+                "has_more": False,
+            }
+
+        async def save_model_summary(self, run_id, payload):
+            self.saved = payload
+
+    tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
+    base = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}, {"role": "user", "content": "current"}]
+    with scripted_server([{"content": "summary"}]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, llm=ModelTransport(url))
+        result = asyncio.run(loop._assemble_context("r", {"_attempt_id": "a", "_fixed_catalog": tools}, "m", base))
+    assert requests[0]["messages"][:-1] == [*base[:2], {"role": "user", "content": "旧" * 5300}, {"role": "assistant", "content": "done"}]
+    assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
+    assert result[:2] == base[:2] and result[-1] == base[-1] and result[2]["content"].endswith("summary")
+    assert platform.saved["through_run_id"] == "old"
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_legacy_checkpoint_rebuilds_once_and_preserves_tool_fences(split):
+    state = fresh_state()
+    state["messages"] = (
+        [{"role": "system", "content": "legacy rules"}, {"role": "system", "content": "<ailab_memory>old</ailab_memory>"}]
+        if split
+        else [{"role": "system", "content": "legacy rules\n<ailab_memory>old</ailab_memory>"}]
+    ) + [{"role": "user", "content": "current task"}]
+    state["user_message_index"] = len(state["messages"]) - 1
+    state["delivered"] = {"/workspace/out.txt": 12}
+    state["tool_log"] = {"0:0": {"name": "exec", "status": "started"}}
+    platform, broker = FakePlatform(), FakeBroker()
+    platform.checkpoint = {"step": 1, "state": state}
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=broker, llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert [event for event in platform.events if event == ("agent.context_boundary", {"reason": "rebuilt"})] == [
+        ("agent.context_boundary", {"reason": "rebuilt"})
+    ]
+    assert "legacy rules" not in json.dumps(requests[0], ensure_ascii=False)
+    assert requests[0]["messages"][1]["role"] == "system"
+    assert requests[0]["messages"][2] == {"role": "user", "content": "current task"}
+    assert platform.checkpoint["state"]["delivered"] == {"/workspace/out.txt": 12}
+    assert "0:0" in platform.checkpoint["state"]["tool_log"] and broker.leases == 0
+
+
+def _plan_call(number):
+    return {
+        "tool_calls": [
+            {
+                "index": 0,
+                "id": f"plan{number}",
+                "type": "function",
+                "function": {"name": "update_plan", "arguments": '{"steps":["finish"]}'},
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize("strategy", ["reference", "inline"])
+def test_attachment_and_picked_skill_keep_request_prefix(strategy):
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "input_files": [
+                    {"file_id": "file1", "filename": "note.txt", "version": 1, "text": "attachment body", "input_strategy": strategy}
+                ],
+                "options": {"mode": "work", "skill": "pptx"},
+            }
+
+    with scripted_server([_plan_call(1), {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert_extension(*requests)
+    original = requests[0]["messages"]
+    assert any("file1" in str(message.get("content")) for message in original)
+    assert ("attachment body" in json.dumps(original, ensure_ascii=False)) == (strategy == "inline")
+    assert any(message.get("role") == "tool" and "演示设计" in message.get("content", "") for message in original)
+
+
+def test_failed_model_request_retry_reuses_identical_body(monkeypatch):
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "llm_max_retries", 1)
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
+    with scripted_server([{"status": 503}, _plan_call(1), {"content": "done"}]) as (url, requests):
+        platform = FakePlatform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert requests[0] == requests[1]
+    assert_extension(requests[1], requests[2])
+
+
+def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch):
+    from ailab_platform.config import settings
+
+    class Platform(FakePlatform):
+        window = "first"
+
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "budget_window_id": self.window}
+
+    platform = Platform()
+    with scripted_server([_plan_call(1), {"content": "paused summary"}, {"content": "done"}]) as (url, requests):
+        monkeypatch.setattr(settings, "max_agent_steps", 1)
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("r", attempt_id="first"))
+        assert platform.paused is not None
+        platform.window = "second"
+        monkeypatch.setattr(settings, "max_agent_steps", 4)
+        asyncio.run(loop.process("r", attempt=2, attempt_id="second"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert_extension(requests[0], requests[1])
+    assert requests[1]["tool_choice"] == "none"
+    assert_extension(requests[1], requests[2])
+    assert any("此前收尾限制已解除" in str(m.get("content")) for m in requests[2]["messages"])
+
+
+def test_steer_wrap_up_and_stuck_notes_are_appended(monkeypatch):
+    from ailab_platform.agent.loop import STUCK_NOTE, WRAP_UP_NOTE
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "max_agent_steps", 7)
+    count = 0
+
+    def detect(*args):
+        nonlocal count
+        count += 1
+        return "repeated" if count == 2 else None
+
+    monkeypatch.setattr("ailab_platform.agent.loop.detect_loop", detect)
+
+    class Platform(FakePlatform):
+        async def claim_steers(self, run_id):
+            return {"items": [{"id": "steer1", "prompt": "additional request"}]}
+
+    class Loop(AgentLoop):
+        async def _apply_steers(self, run_id, turn, *, pending=None):
+            await super()._apply_steers(run_id, turn, pending=self._states[run_id]["next_step"] == 1)
+
+    with scripted_server([*(_plan_call(i) for i in range(4)), {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(Loop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    assert any(m.get("content") == "additional request" for m in requests[1]["messages"])
+    assert any(m.get("content") == STUCK_NOTE for m in requests[1]["messages"])
+    assert any(m.get("content") == WRAP_UP_NOTE.format(n=3) for m in requests[-1]["messages"][len(requests[-2]["messages"]) :])
+    assert any(kind == "agent.budget" and payload.get("kind") == "nudge" for kind, payload in platform.events)
+
+
+def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
+    from ailab_platform.agent.loop import estimator
+
+    monkeypatch.setattr(estimator, "factors", {})
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    old = {"revision": 1, "entries": [{"id": "old", "content": "旧专属事实"}]}
+    new = {"revision": 2, "entries": [{"id": "new", "content": "最新"}]}
+    prior = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "project" + memory_prompt(old)},
+        {"role": "user", "content": "旧" * 4700},
+        {"role": "assistant", "content": "done"},
+    ]
+
+    class Platform(FakePlatform):
+        async def get_memory_context(self, run_id):
+            return new
+
+    with scripted_server([{"content": "summary"}]) as (url, requests):
+        loop = AgentLoop(platform=Platform(), llm=ModelTransport(url))
+        result = asyncio.run(
+            loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, {"role": "user", "content": "新" * 500}, [])
+        )
+    assert requests[0]["messages"][:-1] == prior
+    assert "旧专属事实" not in result[1]["content"] and "最新" in result[1]["content"]
+    assert loop._states["r"]["memory_observed"]["revision"] == 2
+
+
+def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
+    from ailab_platform.agent.loop import estimator
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(estimator, "factors", {})
+    monkeypatch.setattr(settings, "vision_input_tokens", 16)
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools", "vision"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    old_image, recent_image = image_part(b"old image", "image/png"), image_part(b"recent image", "image/png")
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": [{"type": "text", "text": "旧" * 5100}, old_image]},
+        {"role": "assistant", "content": "old"},
+        {"role": "assistant", "content": "recent one"},
+        {"role": "tool", "tool_call_id": "x", "content": "result"},
+        {"role": "assistant", "content": "recent two"},
+        {"role": "user", "content": [recent_image]},
+    ]
+    original = copy.deepcopy(messages)
+    with scripted_server([{"content": "summary"}]) as (url, requests):
+        loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
+        loop._states["r"] = {}
+
+        async def checkpoint(*args):
+            pass
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+        asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run={"_attempt_id": "a"}), loop.llm, "m", []))
+    assert requests[0]["messages"][:-1] == original
+    assert messages[3:] == original[-4:]
+    assert old_image not in [part for m in messages if isinstance(m.get("content"), list) for part in m["content"]]
+    assert messages[-1]["content"] == [recent_image]
+
+
+def test_rebuilt_summary_does_not_fallback_to_a_different_model(monkeypatch):
+    from ailab_platform.agent.loop import estimator
+    from ailab_platform.config import settings
+    from ailab_platform.llm import LLMError
+
+    monkeypatch.setattr(estimator, "factors", {})
+    monkeypatch.setattr(settings, "llm_max_retries", 0)
+    first = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, fallback=["backup"])
+    second = ModelSpec("backup", "backup", provider="mock", context_tokens=6000, max_output_tokens=512)
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([first, second]))
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, run_id, after=None):
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [{"id": "old", "prompt": "旧" * 5300, "reply": "done"}],
+                "has_more": False,
+            }
+
+    class Failure(ScriptedLLM):
+        async def chat(self, messages, tools, model, user_id=None):
+            raise LLMError("unavailable", retryable=True)
+
+    fallback = []
+    monkeypatch.setattr("ailab_platform.agent.loop.llm_for", lambda model: fallback.append(model))
+    platform = Platform()
+    loop = AgentLoop(platform=platform, llm=Failure([]))
+    with pytest.raises(LLMError, match="unavailable"):
+        asyncio.run(
+            loop._assemble_context(
+                "r",
+                {"_attempt_id": "a", "_fixed_catalog": []},
+                "m",
+                [{"role": "system", "content": "rules"}, {"role": "user", "content": "current"}],
+            )
+        )
+    assert not fallback and not any(kind == "agent.model_fallback" for kind, _ in platform.events)
