@@ -16,7 +16,7 @@
 ## 三、待办
 
 1. PR + merge（已授权），之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
-2. 清理：`.worktrees/render-view`、`/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`（ailab-verify Docker）。
+2. 清理：已删 `.worktrees/render-view`（分支保留）、本轮 `/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`；旧会话的 `/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/c3-*` 待用户确认后删除。
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
