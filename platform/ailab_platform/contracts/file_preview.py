@@ -79,6 +79,13 @@ class PreviewCompletion(BaseModel):
     assets: dict[str, PreviewAsset] = Field(default_factory=dict, max_length=41)
 
 
+class PreviewPagePublication(BaseModel):
+    job_id: str = Field(min_length=1, max_length=40)
+    name: str = Field(pattern=r"^p-\d+\.jpg$", max_length=30)
+    page_count: int = Field(ge=1, le=100000)
+    asset: PreviewAsset
+
+
 def preview_kind(filename: str, content_type: str) -> str | None:
     suffix = PurePath(filename).suffix.lower()
     if suffix in PAGES or content_type.split(";")[0] == "application/pdf":

@@ -120,10 +120,69 @@ class LibraryRenderer:
         phases["acquire_seconds"] = max(0.0, time.monotonic() - acquire_started - phases.get("inject_seconds", 0.0))
         lease_id = handle.lease_id
         returned = False
+        first_asset = None
         try:
             if pdf_mime and suffix != ".pdf":
                 self.manager.exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
                 source = "/workspace/.ailab/input.pdf"
+            if visual:
+                # Convert once, publish the first requested page, then rasterize the
+                # remaining pages from that same PDF in the normal bulk path.
+                first_page = selected[0] if selected else 1
+                save_pdf = not source.endswith(".pdf")
+                first_started = time.monotonic()
+                first = self.manager.exec(
+                    lease_id,
+                    "AILAB_LO_PROFILE=/tmp/lo-profile AILAB_LO_LISTENER=1 "
+                    f"timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
+                    f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
+                    95,
+                )
+                if first.exit_code:
+                    raise LeaseError("render_failed")
+                try:
+                    first_manifest = json.loads((first.stdout.strip().splitlines() or ["{}"])[-1])
+                    if isinstance(first_manifest, dict) and first_manifest.get("error"):
+                        raise LeaseError("render_failed")
+                    names = first_manifest["pages"]
+                    count = first_manifest["page_count"]
+                    if (
+                        first_manifest.get("kind") != "pages"
+                        or not isinstance(names, list)
+                        or len(names) != 1
+                        or not isinstance(names[0], str)
+                        or not re.fullmatch(r"p-\d+\.jpg", names[0])
+                        or int(names[0][2:-4]) != first_page
+                        or type(count) is not int
+                        or count < first_page
+                    ):
+                        raise ValueError("invalid page")
+                except (ValueError, TypeError, KeyError, AttributeError) as exc:
+                    raise LeaseError("invalid_render_output") from exc
+                for key in ("convert_seconds", "raster_seconds"):
+                    value = (first_manifest.get("phases") or {}).get(key)
+                    if type(value) in (int, float) and 0 <= value <= 120:
+                        phases["first_" + key] = value
+                with self.manager.transfer_file() as local:
+                    self.manager._download(
+                        self.manager.get(handle), f"/workspace/.ailab/first/{names[0]}", local, settings.max_sandbox_read_bytes
+                    )
+                    asset_digest = hashlib.sha256(local.read_bytes()).hexdigest()
+                    asset_key = f"derived/{file_id}/preview/{names[0]}"
+                    self.manager.storage.put_file(asset_key, local, "image/jpeg")
+                self.manager.platform.publish_preview_page(
+                    file_id,
+                    job_id,
+                    names[0],
+                    count,
+                    {"key": asset_key, "content_type": "image/jpeg", "sha256": asset_digest},
+                )
+                first_asset = (names[0], asset_digest)
+                phases["first_publish_seconds"] = time.monotonic() - first_started
+                if save_pdf:
+                    if first_manifest.get("pdf_cache") != "document.pdf":
+                        raise LeaseError("render_pdf_cache_missing")
+                    source = "/workspace/.ailab/first/document.pdf"
             if time.monotonic() - started >= 120:
                 raise LeaseError("render_timeout")
             remaining = max(1, int(120 - (time.monotonic() - started)))
@@ -218,9 +277,19 @@ class LibraryRenderer:
                                 for chunk in iter(lambda: source.read(1024 * 1024), b""):
                                     digest.update(chunk)
                                     out.write(chunk)
+                            if first_asset and member.name == first_asset[0] and digest.hexdigest() != first_asset[1]:
+                                raise LeaseError("non_deterministic_page")
                             self.manager.storage.put_file(key, asset, "application/pdf" if is_pdf else mime)
                         if not is_pdf:
                             assets[member.name] = {"key": key, "content_type": mime, "sha256": digest.hexdigest()}
+                            if (
+                                kind == "pages"
+                                and member.name != "template-thumbnail.jpg"
+                                and (not first_asset or member.name != first_asset[0])
+                            ):
+                                self.manager.platform.publish_preview_page(
+                                    file_id, job_id, member.name, preview["page_count"], assets[member.name]
+                                )
             phases["export_seconds"] = time.monotonic() - export_started
             generation = self.manager.get(handle)["render_generation"]
             returned = True

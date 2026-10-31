@@ -27,6 +27,7 @@ def setup_renderer(tmp_path, content, filename):
         "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
     }
     api.download_file = lambda fid, target, **bound: Path(target).write_bytes(content)
+    api.publish_preview_page = lambda *args: None
     execute = manager.provider.exec
 
     def mock_listener(ref, command, timeout):
@@ -108,6 +109,29 @@ def test_parse_reuses_same_user_sandbox_and_job_binding(tmp_path):
     manager.release(parsed["render_lease_id"])
 
 
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout", "tar"]), reason="PDF tools unavailable")
+def test_first_page_is_published_before_remaining_render(tmp_path):
+    from pypdf import PdfWriter
+
+    writer = PdfWriter()
+    writer.add_blank_page(width=72, height=72)
+    writer.add_blank_page(width=72, height=72)
+    data = io.BytesIO()
+    writer.write(data)
+    manager, renderer, _ = setup_renderer(tmp_path, data.getvalue(), "pages.pdf")
+    events = []
+    execute = manager.exec
+    manager.exec = lambda lease, cmd, timeout: (
+        events.append("first" if "/first " in cmd else "bulk" if "/preview" in cmd else "other") or execute(lease, cmd, timeout)
+    )
+    manager.platform.publish_preview_page = lambda fid, job, name, count, asset: events.append(f"publish:{name}")
+    result = renderer.render("file", "job")
+    assert events.index("first") < events.index("publish:p-1.jpg") < events.index("bulk") < events.index("publish:p-2.jpg")
+    assert events.count("publish:p-1.jpg") == 1
+    published(manager, result)
+    manager.release(result["render_lease_id"])
+
+
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["pdftoppm", "pdfinfo", "timeout"]), reason="PDF tools unavailable")
 def test_pdf_caps_at_40_but_reports_total_page_count(tmp_path):
     from pypdf import PdfWriter
@@ -145,7 +169,8 @@ def test_render_exports_multiple_pages_in_one_sandbox_transfer(tmp_path, caplog)
     manager._download = record_download
     with caplog.at_level("INFO", logger="ailab.broker.render"):
         result = renderer.render("file", "job")
-    assert downloads == ["/workspace/.ailab/preview.tar"]
+    assert len(downloads) == 2 and downloads[0].startswith("/workspace/.ailab/first/p-")
+    assert downloads[1] == "/workspace/.ailab/preview.tar"
     assert len(result["assets"]) == 3
     assert "convert_seconds" in caplog.text and "raster_seconds" in caplog.text
     assert all(storage.get_bytes(asset["key"]).startswith(b"\xff\xd8") for asset in result["assets"].values())
@@ -167,6 +192,8 @@ def test_render_rejects_unexpected_archive_members(tmp_path):
 
     def tamper(lease, path, local, limit):
         original(lease, path, local, limit)
+        if not path.endswith(".tar"):
+            return
         with tarfile.open(local, "a") as bundle:
             entry = tarfile.TarInfo("../escape")
             entry.size = 1
@@ -175,7 +202,7 @@ def test_render_rejects_unexpected_archive_members(tmp_path):
     manager._download = tamper
     with pytest.raises(LeaseError, match="invalid_render_output"):
         renderer.render("file", "job")
-    assert not storage.exists("derived/file/preview/p-1.jpg")
+    assert storage.exists("derived/file/preview/p-1.jpg")  # the independently validated first page was already published
     assert manager.active_leases() == []
 
 
@@ -210,10 +237,10 @@ def test_visual_page_requests_reuse_private_pdf_and_keep_requested_order(tmp_pat
     assert second["preview"] == first["preview"]
     render_commands = [cmd for cmd in commands if "render_preview.py" in cmd]
     assert other["preview"] == first["preview"]
-    assert len(render_commands) == 3
+    assert len(render_commands) == 6
     assert "/workspace/inputs/input.docx" in render_commands[0]
-    assert "/workspace/inputs/cached.pdf" in render_commands[1]
-    assert "/workspace/inputs/input.docx" in render_commands[2]
+    assert "/workspace/inputs/cached.pdf" in render_commands[2]
+    assert "/workspace/inputs/input.docx" in render_commands[4]
     assert storage.list_prefix("derived/file/render-cache/")
 
 

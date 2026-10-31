@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 
 from ..agent.prompts import skills as builtin_skills
 from ..config import settings
-from ..contracts.file_preview import PreviewCompletion
+from ..contracts.file_preview import PreviewCompletion, PreviewPagePublication
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
@@ -1000,6 +1000,52 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
     db.commit()
     db.refresh(file)
     return file_dict(file)
+
+
+@router.post("/files/{file_id}/preview-page")
+def publish_preview_page(
+    file_id: str,
+    body: PreviewPagePublication,
+    principal: ServicePrincipal = Depends(require_scope("files:read_for_preview")),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Publish a single page only for the Broker's currently authorized preview job."""
+    file = _bound_file(db, file_id, principal, None, "preview", body.job_id)
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        file = _bound_file(db, file_id, principal, None, "preview", body.job_id)
+        meta = dict(file.meta or {})
+        if meta.get("preview_job_id") != body.job_id or (meta.get("preview") or {}).get("status") != "pending":
+            raise HTTPException(409, "preview job superseded")
+        page = int(body.name[2:-4])
+        asset = body.asset.model_dump()
+        if (
+            page < 1
+            or page > body.page_count
+            or asset["key"] != f"derived/{file_id}/preview/{body.name}"
+            or asset["content_type"] != "image/jpeg"
+        ):
+            raise HTTPException(400, "invalid preview page")
+        from ..models import RenderedPage
+
+        existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
+        if existing:
+            existing.key, existing.digest = asset["key"], asset["sha256"]
+        else:
+            db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
+        if meta.get("ocr_render_job_id") != body.job_id:
+            manifest = dict(meta.get("preview") or {})
+            names = set(manifest.get("pages") or [])
+            names.add(body.name)
+            manifest.update(kind="pages", pages=sorted(names, key=lambda name: int(name[2:-4])), page_count=body.page_count)
+            meta["preview"] = manifest
+            meta["preview_assets"] = {**(meta.get("preview_assets") or {}), body.name: asset}
+            file.meta = meta
+        from .file_dependencies import wake_file
+
+        wake_file(db, file)
+        db.commit()
+    return {"ok": True}
 
 
 @router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])

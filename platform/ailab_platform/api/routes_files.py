@@ -493,7 +493,7 @@ def preview_asset(
     meta = file.meta or {}
     manifest = meta.get("preview") or {}
     allowed = [*manifest.get("pages", []), manifest.get("data"), manifest.get("image"), manifest.get("text")]
-    if manifest.get("status") != "ready" or name not in allowed or name in {".", ".."} or "/" in name or "\\" in name:
+    if manifest.get("status") not in {"ready", "pending"} or name not in allowed or name in {".", ".."} or "/" in name or "\\" in name:
         raise HTTPException(status_code=404, detail="preview asset not found")
     asset = (meta.get("preview_assets") or {}).get(name) or {}
     if name == "original":

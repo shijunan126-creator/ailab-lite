@@ -278,6 +278,20 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
         ).json()
 
+    def publish_preview_page(self, file_id: str, job_id: str, name: str, page_count: int, asset: dict) -> dict:
+        return self._send(
+            self._req(
+                "POST",
+                f"/internal/files/{file_id}/preview-page",
+                json={
+                    "job_id": job_id,
+                    "name": name,
+                    "page_count": page_count,
+                    "asset": asset,
+                },
+            )
+        ).json()
+
     def prepare_document(self, file_id, scan):
         return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
 

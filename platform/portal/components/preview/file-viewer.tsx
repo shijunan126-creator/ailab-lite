@@ -23,11 +23,12 @@ export const FileSourceContext = createContext<FileSource>(LIBRARY);
 /** The preview of one file: what the list already knows when it is ready, else asked for (which starts a render) and polled. */
 function usePreview(file: FileItem): FilePreview | null {
   const known = file.preview?.status === "ready" ? file.preview : null;
+  const canPreview = file.status === "ready" || (file.status === "pending" && file.meta?.scan?.verdict === "clean");
   const [preview, setPreview] = useState<FilePreview | null>(known);
   const source = useContext(FileSourceContext);
   useEffect(() => {
     setPreview(known);
-    if (known || file.status !== "ready") return;
+    if (known || !canPreview) return;
     let stale = false;
     let timer: ReturnType<typeof setTimeout>;
     const ask = () =>
@@ -44,7 +45,7 @@ function usePreview(file: FileItem): FilePreview | null {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.id, file.status]);
+  }, [file.id, file.status, canPreview]);
   return preview;
 }
 
@@ -53,7 +54,7 @@ function PageScroll({ file, preview, page }: { file: FileItem; preview: FilePrev
   const pages = preview.pages || [];
   const total = preview.page_count || pages.length;
   return <DocumentPages pages={pages} src={(name) => source.asset(file.id, name)} documentKey={file.id} total={total} initialPage={page}>
-    {total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
+    {preview.status === "ready" && total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
       <IconDownload size={15} /> 下载查看全部 {total} 页
     </a> : null}
   </DocumentPages>;
@@ -161,8 +162,10 @@ function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
 export function FilePreviewBody({ file, page }: { file: FileItem; page?: number }) {
   const source = useContext(FileSourceContext);
   const preview = usePreview(file);
-  if (file.status !== "ready") return <Unavailable file={file} />;
-  if (!preview || preview.status === "pending") return <Waiting />;
+  const canPreview = file.status === "ready" || (file.status === "pending" && file.meta?.scan?.verdict === "clean");
+  if (!canPreview) return <Unavailable file={file} />;
+  if (!preview || (preview.status === "pending" && !(preview.kind === "pages" && preview.pages?.length))) return <Waiting />;
+  if (preview.status === "pending" && preview.kind === "pages") return <PageScroll file={file} preview={preview} page={page} />;
   if (preview.status !== "ready") return <Unavailable file={file} reason={preview.status === "failed" ? preview.reason : undefined} />;
   switch (preview.kind) {
     case "pages":
