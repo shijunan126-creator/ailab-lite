@@ -1179,6 +1179,7 @@ class AgentLoop:
         import hashlib
 
         spec = get_catalog().get(run.get("model"))
+        legacy = False
         pending = [{"content": parts} for parts in state.get("pending_image_inputs", [])]
         for message in [*state["messages"], *pending]:
             if not isinstance(message.get("content"), list):
@@ -1188,11 +1189,13 @@ class AgentLoop:
                 if part.get("type") == "ailab_image":
                     restored = await self._image_content(run_id, run, part["file"], spec)
                     images = [item for item in restored if item.get("type") == "image_url"]
-                    if len(images) != 1 or not part.get("sha256"):
+                    if len(images) != 1:
                         raise BudgetPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
                     image = images[0]["image_url"]
                     header, data = image["url"].split(",", 1)
-                    if (
+                    if not part.get("sha256"):
+                        legacy = True
+                    elif (
                         header != part.get("header")
                         or image.get("detail") != part.get("detail")
                         or hashlib.sha256(base64.b64decode(data, validate=True)).hexdigest() != part["sha256"]
@@ -1204,6 +1207,7 @@ class AgentLoop:
             message["content"] = parts
         if pending:
             state["pending_image_inputs"] = [message["content"] for message in pending]
+        return legacy
 
     async def _ensure_skill(self, turn, run_id, name, reason, file_id=None):
         name = resolve_name(name)
@@ -1749,7 +1753,8 @@ class AgentLoop:
                 )
                 await self._event(run_id, "agent.recovered", {"attempt": attempt, "note": note})
             if checkpoint:
-                await self._restore_images(run_id, run, state)
+                if await self._restore_images(run_id, run, state):
+                    await self._checkpoint(run_id, turn)
                 metrics.RUN_RESUMES.labels("checkpoint").inc()
                 workspace = state.get("workspace")
                 if workspace and state["workspace_dirty"]:

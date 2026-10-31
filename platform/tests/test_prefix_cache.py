@@ -169,6 +169,31 @@ def test_checkpoint_image_restore_requires_identical_authorized_bytes(monkeypatc
             asyncio.run(loop._restore_images("r1", {"model": "m"}, saved))
 
 
+def test_legacy_image_checkpoint_trusts_first_authorized_read_and_then_verifies(monkeypatch):
+    class Platform(FakePlatform):
+        data = b"first authorized image"
+
+        async def get_file_image(self, file_id, run_id):
+            return self.data
+
+    monkeypatch.setattr(
+        "ailab_platform.agent.loop.get_catalog",
+        lambda: Catalog([ModelSpec("m", "m", provider="mock", capabilities=frozenset({"vision"}))]),
+    )
+    file = {"id": "image", "filename": "photo.webp", "content_type": "image/webp"}
+    state = fresh_state()
+    state["messages"] = [{"role": "user", "content": [{"type": "ailab_image", "file": file}]}]
+    platform = Platform()
+    loop = AgentLoop(platform=platform)
+    run = {"model": "m"}
+    assert asyncio.run(loop._restore_images("r1", run, state)) is True
+    saved = checkpoint_state(state, run["_image_files"])
+    assert saved["messages"][0]["content"][0]["sha256"]
+    platform.data = b"different image"
+    with pytest.raises(BudgetPause, match="图片内容已变化"):
+        asyncio.run(loop._restore_images("r1", {"model": "m"}, saved))
+
+
 @pytest.mark.parametrize("mode", ["chat", "work"])
 def test_platform_system_prompt_does_not_include_user_skill_state(mode):
     first = system_prompt_for(mode, "private-one", frozenset({"disabled-one"}), [{"name": "private-one"}], "secret one")
