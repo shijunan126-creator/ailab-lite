@@ -1,4 +1,12 @@
-# 当前工作交接：memory / JS / 管理页集成（2026-10-31）
+# 当前工作交接：Super-agent 借鉴与前缀缓存（2026-10-31）
+
+已合并 PR #114–#119 → `main@cd74472`（各自 squash，CI 全绿）：插话打断 `exec_wait`、`read_file` 分段、历史召回附带下一跳、**模型请求前缀稳定（缓存命中修复，ADR 0030）**、Work 进展监督（默认 observe）、并行子任务 `run_subtasks`（ADR 0031）。合并、部署与边界见[记录](updates/2026-10-31-superagent-merge-deploy.md)。
+
+**下一步**：在真实 DeepSeek 上按 run 对比 `model_usage.cached_tokens/prompt_tokens` 确认命中率改善（用户 Mac 部署 `AILab-local` 尚未更新，本机 k3s 见记录）；观察 `agent.watchdog` 后决定是否切 `AILAB_WATCHDOG_MODE=nudge`；`run_subtasks` 真实使用效果待测。其余待用户决定事项同下节（“Work 需 search_capabilities 才能找到 exec/deliver_file”已由 #117 解决：大窗口模型一次提供完整工具目录）。
+
+---
+
+## 上一交接：memory / JS / 管理页集成（2026-10-31）
 
 已合并：PR #112 → `main@8fe67d9`（merge commit，保留分批提交），最终 head `1d530fc` CI 九项通过。本机部署：平台 `sm-p3-90fc016`、Portal `sm-p3-9115406`，与 main 产品代码一致。结果与边界见 [P3–P7 记录](updates/2026-10-31-memory-js-polish.md)。
 
