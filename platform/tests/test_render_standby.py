@@ -123,14 +123,22 @@ def test_replenishment_waits_for_render(monkeypatch):
     manager._ensure_started()
     manager._start_background = True
     calls = []
-    monkeypatch.setattr(manager, "create_standby", lambda spec: calls.append(spec) or (_ for _ in ()).throw(LeaseError("stop")))
+    called = Event()
+
+    def fail(spec):
+        calls.append(spec)
+        called.set()
+        raise LeaseError("stop")
+
+    monkeypatch.setattr(manager, "create_standby", fail)
     with manager.render_activity():
         manager.request_prewarm()
         assert not calls
-    for thread in __import__("threading").enumerate():
-        if thread.name == "render-prewarm":
-            thread.join(2)
+    assert called.wait(2)
+    manager.request_prewarm()
+    assert not manager._stop.wait(0.2)
     assert len(calls) == 1
+    manager.close()
 
 
 def test_waiting_render_precedes_replenishment(monkeypatch):
@@ -159,3 +167,4 @@ def test_waiting_render_precedes_replenishment(monkeypatch):
     assert not calls
     release.set()
     thread.join(2)
+    manager.close()

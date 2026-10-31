@@ -189,6 +189,8 @@ class LeaseManager:
         self._render_waiters = 0
         self._warming = False
         self._warm_thread: threading.Thread | None = None
+        self._warm_wakeup = threading.Event()
+        self._last_render_activity = 0.0
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
         self.admission = AdmissionPolicy(
@@ -240,6 +242,7 @@ class LeaseManager:
         with self._condition:
             self._generation += 1
             self._condition.notify_all()
+            self._warm_wakeup.set()
 
     def is_ready(self) -> bool:
         return self._started and not self._fenced and not self._recovering and self.store.owns(self._token)
@@ -636,34 +639,51 @@ class LeaseManager:
         if not self._start_background or not settings.render_prewarm or self._stop.is_set():
             return
         with self._condition:
-            if (
-                self._warming
-                or self._render_jobs
-                or self._render_waiters
-                or sum(x["state"] == "standby" for x in self.active_leases()) >= settings.render_prewarm
-            ):
-                return
-            self._warming = True
+            self._last_render_activity = time.monotonic()
+            if self._warm_thread is None:
+                self._warm_thread = threading.Thread(target=self._replenish_render, name="render-prewarm", daemon=True)
+                self._warm_thread.start()
+            self._warm_wakeup.set()
 
-        def warm():
-            created = False
+    def _replenish_render(self) -> None:
+        from .render import LibraryRenderer
+
+        backoff, retry_at = 2.0, 0.0
+        while not self._stop.is_set():
+            self._warm_wakeup.wait(timeout=1)
+            self._warm_wakeup.clear()
+            with self._condition:
+                now = time.monotonic()
+                if (
+                    not settings.render_prewarm
+                    or now - self._last_render_activity >= settings.render_prewarm_idle_seconds
+                    or now < retry_at
+                    or self._warming
+                    or self._render_jobs
+                    or self._render_waiters
+                ):
+                    continue
+                spec = LibraryRenderer(self)._spec()
+                live = [lease for lease in self.active_leases() if lease["spec"]["profile"] == "render"]
+                cap = self.capacity.capacity()
+                if (
+                    sum(lease["state"] == "standby" for lease in live) >= settings.render_prewarm
+                    or len(live) >= cap.render_slots
+                    or sum(lease["spec"]["memory"] for lease in live) + spec.memory > cap.render_memory
+                ):
+                    continue
+                self._warming = True
             try:
-                from .render import LibraryRenderer
-
-                self.create_standby(LibraryRenderer(self)._spec())
-                created = True
+                self.create_standby(spec)
+                retry_at, backoff = 0.0, 2.0
             except Exception:
                 log.warning("render standby creation failed", exc_info=True)
+                retry_at = time.monotonic() + backoff
+                backoff = min(60.0, backoff * 2)
             finally:
                 with self._condition:
                     self._warming = False
                     self._notify()
-                if created:
-                    self.request_prewarm()
-
-        thread = threading.Thread(target=warm, name="render-prewarm", daemon=True)
-        self._warm_thread = thread
-        thread.start()
 
     def create(
         self,
@@ -1455,6 +1475,7 @@ class LeaseManager:
     def close(self) -> None:
         """Stop housekeeping without destroying active resources; next Broker adopts them."""
         self._stop.set()
+        self._warm_wakeup.set()
         with self._condition:
             self._fenced = True
             self._notify()

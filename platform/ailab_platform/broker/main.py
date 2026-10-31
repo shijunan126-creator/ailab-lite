@@ -42,7 +42,6 @@ async def lifespan(_: FastAPI):
     register_once("broker-state", BrokerStateCollector(get_manager))
     try:
         manager.recover()
-        manager.request_prewarm()
         log.info("sandbox broker ready provider=%s", manager.provider.name)
     except Exception:
         log.exception("broker startup recovery failed")

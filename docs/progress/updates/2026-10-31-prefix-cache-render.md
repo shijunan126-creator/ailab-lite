@@ -82,3 +82,5 @@ GNU PATH：Ruff 全库通过；SQLite 1691 通过、151 跳过、1 项依赖审�
 
 
 C3g 后续：API 仅在 Broker 的 preview/document 任务绑定验证成功后返回文件所有者，普通 Worker 文件请求不返回该字段；`tests/test_service_identity.py` 40 项通过。调用端尚未接入按用户复用。
+
+C3g 预热补充：取消 Broker 启动时无活动预热，按活动提示由单一线程补充，空容量检查后创建，失败从 2 秒指数退避至 60 秒；忙碌或有等待者时不补充。`test_render_standby.py` 与 `test_broker_routes.py` 14 项通过。按用户复用和性能验收仍未完成。
