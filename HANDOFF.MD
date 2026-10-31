@@ -1,5 +1,7 @@
 # HANDOFF
 
+- Codex 沙箱内 `bin/docker.sh` 可能因 `ps` 检查受限误判磁盘状态；指定 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock` 和 `DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client` 直接调用 Docker，socket 受限时在获准环境执行。该 daemon 与个人栈共享，测试仅操作独立 `c3-*` 资源。
+
 - GNU PATH 必须 `export` 给整个 pytest 进程树；只对 `ruff` 命令前置赋值会让后续 MockSandbox 使用 macOS `stat/find`，产生与产品无关的失败。C3b 并行解析与渲染在 2 CPU 下可能竞争租约和 CPU，必须实测首屏及完整耗时，不能假设并行更快。
 
 - 共享 Docker daemon 上的独立 Broker 必须使用唯一 `AILAB_BROKER_OWNER`；同 owner 的现有 Broker 会认领测试容器并按不存在的 run 回收，不能把退出码 137 直接判为 OOM。无租约标签的一次性容器可用于单机脚本测量。
