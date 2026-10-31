@@ -119,7 +119,9 @@ class ApiClient:
 
 
 @pytest.fixture
-def api():
+def api(monkeypatch):
+    # These tests inspect the durable preview before its worker claims it.
+    monkeypatch.setattr(settings, "render_prewarm", 0)
     with TestClient(app) as client:
         yield client
 
