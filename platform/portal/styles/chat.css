@@ -445,7 +445,3 @@ button.pr-row:active { transform: none; }
 .viewer-mode:hover, .viewer-mode.on:hover { background: var(--subtle); color: var(--foreground); border-color: var(--border-strong); }
 .reader-body[hidden] { display: none; }
 .reader-frame { min-height: 0; }
-.memory-entry-meta { color: var(--muted-foreground); font-size: var(--text-xs); display: flex; gap: 6px; flex-wrap: wrap; }
-.memory-source { flex-basis: 100%; overflow-wrap: anywhere; }
-.memory-source blockquote { margin: 4px 0; padding-left: 8px; border-left: 2px solid var(--border); }
-.memory-source a { margin-right: 8px; }
