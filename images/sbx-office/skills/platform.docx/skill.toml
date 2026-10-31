@@ -1,5 +1,5 @@
 name = "platform.docx"
-version = "1.0.0"
+version = "1.1.0"
 description = "Word 文件读取、定位与处理"
 license = "NOASSERTION"
 requires = ["python-docx", "libreoffice"]
