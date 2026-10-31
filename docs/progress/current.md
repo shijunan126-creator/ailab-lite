@@ -1,3 +1,9 @@
+# C3 渲染与工作区视觉（2026-10-31，部分完成）
+
+`fix/render-view`，base `f316b8521bcfc2ff86382b0524724a113957aa28`；产品提交 `ce2aa70`、`5dc9fc0`、`5e50ae4`、`bb28ca0`、`e2b3aa6`，未部署。渲染性能、工作区视觉和办公检查已实现并通过约定检查；准确结果及未测边界见 [C3 记录](updates/2026-10-31-prefix-cache-render.md)。C3 整体仍未完全验收：正在运行的完整预览不可抢占、逐页就绪未实现，delivery/live-preview 到 reconcile 的逐阶段 CPU/RSS 和同条件对照未测。下一步补齐这些边界，并审查基于文件隔离的持久缓存及资源成本。
+
+---
+
 # 当前工作交接：memory / JS / 管理页集成（2026-10-31）
 
 已合并：PR #112 → `main@8fe67d9`（merge commit，保留分批提交），最终 head `1d530fc` CI 九项通过。本机部署：平台 `sm-p3-90fc016`、Portal `sm-p3-9115406`，与 main 产品代码一致。结果与边界见 [P3–P7 记录](updates/2026-10-31-memory-js-polish.md)。

@@ -1,5 +1,9 @@
 # HANDOFF
 
+- 共享 Docker daemon 上的独立 Broker 必须使用唯一 `AILAB_BROKER_OWNER`；同 owner 的现有 Broker 会认领测试容器并按不存在的 run 回收，不能把退出码 137 直接判为 OOM。无租约标签的一次性容器可用于单机脚本测量。
+
+- macOS 的 bsdtar 默认可能为带扩展属性的图片加入 `._` AppleDouble 成员；预览归档校验必须禁止这些额外成员，打包时设置 `COPYFILE_DISABLE=1`。完整 C3 边界见 [记录](docs/progress/updates/2026-10-31-prefix-cache-render.md)。
+
 ## 2026-10-31 记忆与本机部署
 
 - 依赖等待必须由 reconciler 持续重驱动，不能只依赖发起请求的一次尝试：无关的 pending job 可能触发 guard，使该请求被跳过。
