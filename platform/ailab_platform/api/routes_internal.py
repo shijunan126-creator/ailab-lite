@@ -804,7 +804,6 @@ def _bound_file(
     if not attached and principal.service == "agent" and job == "vision" and run.conversation_id and run.parent_run_id:
         # A continued model context can contain a previously authorized image. Revalidate both the branch
         # and the file instead of granting arbitrary access to the owner's library.
-        from ..conversation_tree import path_ids
         from .source_lifecycle import invalid_history
 
         ancestors = path_ids(db, run.conversation_id, run.parent_run_id)

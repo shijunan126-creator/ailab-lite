@@ -45,7 +45,7 @@ from ..locks import user_critical_section
 from ..memory_recall import guard
 from ..memory_recall.policy import run_permissions, run_project, visible
 from ..memory_recall.tombstones import blocked_by_tombstone, tombstones_of
-from ..metrics import MEMORY_GUARD_REJECTED
+from ..metrics import MEMORY_GUARD_REJECTED, record_prompt_cache
 from ..models import Conversation, MemoryDreamRun, MemoryEpisode, MemoryWorkItem, PlatformSetting, Run, RunStatus, User, new_id, utcnow
 from .prompts import EXTRACT_SYSTEM, JUDGE_SYSTEM
 from .settings import dream_settings, local_window
@@ -426,7 +426,7 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
                     ),
                 )
         if call.usage:
-            metrics.record_prompt_cache("memory", "memory", call.usage)
+            record_prompt_cache("memory", "memory", call.usage)
     if response.tool_calls or not response.content.strip():
         raise DreamError("dream model returned no final JSON")
     return response.content, dict(response.usage or {})

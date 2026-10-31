@@ -256,7 +256,7 @@ def test_search_summary_snippet_does_not_leak_ui_source():
         assert "root =" not in item["snippet"] and "```" not in item["snippet"]
 
 
-def test_work_compaction_strips_pinned_prompt_and_previous_summary(monkeypatch):
+def test_work_compaction_preserves_genui_prefix_in_summary_request(monkeypatch):
     from ailab_platform.adapters.runtime import fresh_state
     from ailab_platform.agent.loop import AgentLoop, _Turn
     from ailab_platform.catalog import Catalog, ModelSpec
@@ -267,11 +267,10 @@ def test_work_compaction_strips_pinned_prompt_and_previous_summary(monkeypatch):
 
     class SummaryLLM(LLMClient):
         async def chat(self, messages, tools, model, user_id=None):
-            payload = json.loads(messages[-1]["content"])
-            assert "root =" not in messages[-1]["content"]
-            assert payload["previous_summary"] == "[界面：Metric]"
-            assert payload["pinned_state"]["user_prompt"] == "[界面：Metric]原始问题"
-            seen.append(payload)
+            assert messages[1]["content"] == UI + "原始问题"
+            assert "root =" in messages[2]["content"]
+            assert "只输出摘要" in messages[-1]["content"]
+            seen.append(messages)
             return LLMResponse(content="执行摘要", usage={"prompt_tokens": 10, "completion_tokens": 5})
 
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)])

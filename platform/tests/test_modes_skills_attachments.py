@@ -109,6 +109,7 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     broker = _run(llm, _Platform(options={"mode": "chat"}))
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
         [
+            "search_capabilities",
             "memory",
             "recall_history",
             "extract_text",

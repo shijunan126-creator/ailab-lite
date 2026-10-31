@@ -179,27 +179,31 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock")])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
     monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     platform = FakePlatform()
     model = ScriptedLLM([LLMResponse(content="已执行前三步，后台句柄abc；保留文件 /workspace/a") for _ in range(10)])
     loop = AgentLoop(platform, FakeBroker(), model)
     state = fresh_state()
-    state["messages"] = [{"role": "system", "content": "rules"}, {"role": "user", "content": "original constraints"}]
-    state["user_message_index"] = 1
+    state["messages"] = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "original constraints"},
+    ]
+    state["user_message_index"] = 2
     for i in range(5):
         state["messages"].extend(
             [
                 {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
-                {"role": "tool", "tool_call_id": str(i), "content": "x" * 10000},
+                {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
             ]
         )
     loop._states["run_1"], loop._steps["run_1"] = state, 0
     turn = _Turn({"prompt": "original constraints", "_attempt_id": "a", "_ledger_tokens": 0})
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
-    assert turn.messages[1]["content"] == "original constraints"
+    assert turn.messages[1]["content"] == "context"
     assert "本轮执行摘要" in turn.messages[2]["content"]
     assert [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"] == ["3", "4"]
     assert platform.checkpoint and platform.reservations
