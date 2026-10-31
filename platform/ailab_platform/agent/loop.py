@@ -1026,7 +1026,13 @@ class AgentLoop:
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
         raise LLMError("context pagination limit reached")
 
-    async def _compact_parent_context(self, run_id, run, llm, model, prior, current, tools):
+    @staticmethod
+    def _delivery_note(delivered):
+        paths = list(delivered or {})
+        lines = [f"{path.rsplit('/', 1)[-1]}：{path}" for path in paths[:64]]
+        return {"role": "system", "content": "平台已确认交付（共 %d 项）：\n%s" % (len(paths), "\n".join(lines))}
+
+    async def _compact_parent_context(self, run_id, run, llm, model, prior, current, tools, delivered=None):
         """Summarize the exact parent prefix before adding the new turn."""
         spec = get_catalog().get(model)
         if spec is None:
@@ -1048,7 +1054,7 @@ class AgentLoop:
         if response.tool_calls or not response.content.strip() or len(response.content) > 16000:
             raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话")
         summary = {"role": "system", "content": "历史摘要（仅作背景）：\n" + response.content}
-        base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), summary]
+        base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), summary, self._delivery_note(delivered)]
         last_user = next((i for i in range(len(prior) - 1, 1, -1) if prior[i].get("role") == "user"), len(prior))
         recent = prior[last_user:]
         contains_recall = any(message.get("role") == "tool" and message.get("name") == "recall_history" for message in prior)
@@ -1095,8 +1101,18 @@ class AgentLoop:
         contains_recall = any(m.get("role") == "tool" and m.get("name") == "recall_history" for m in messages)
         recent = [] if contains_recall else messages[cut:]
         context = await self._refresh_boundary_memory(run_id, messages[1])
-        messages[:] = [messages[0], context, {"role": "system", "content": "本轮执行摘要（仅作背景）：\n" + response.content}, *recent]
-        state["user_message_index"] = None
+        user_index = state.get("user_message_index")
+        user = messages[user_index] if isinstance(user_index, int) and 0 <= user_index < cut else None
+        base = [messages[0], context]
+        if user is not None:
+            base.append(user)
+        state["user_message_index"] = 2 if user is not None else None
+        messages[:] = [
+            *base,
+            {"role": "system", "content": "本轮执行摘要（仅作背景）：\n" + response.content},
+            self._delivery_note(state.get("delivered")),
+            *recent,
+        ]
         after = estimator.estimate(model, {"messages": messages, "tools": tools})
         state["compaction"] = {"after": after, "limit": limit, "threshold": threshold, "summary": response.content}
         state.pop("compaction_work", None)
@@ -1818,7 +1834,7 @@ class AgentLoop:
                     await self._restore_images(run_id, run, prior)
                     state["memory_observed"] = previous.get("memory_observed", run.get("memory") or {})
                     state["messages"] = await self._compact_parent_context(
-                        run_id, run, llm, model, prior["messages"], messages[-1], state["tool_catalog_v1"]
+                        run_id, run, llm, model, prior["messages"], messages[-1], state["tool_catalog_v1"], previous.get("delivered")
                     )
                 else:
                     if previous:

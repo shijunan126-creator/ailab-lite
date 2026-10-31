@@ -190,7 +190,7 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     with scripted_server([{"content": "summary"}]) as (url, requests):
         platform = FakePlatform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
-        loop._states["r"] = {"user_message_index": 2, "delivered": {}}
+        loop._states["r"] = {"user_message_index": 2, "delivered": {"/workspace/outputs/report.txt": 12}}
         loop._steps["r"] = 0
 
         async def checkpoint(*args):
@@ -204,8 +204,11 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
             pass  # Still examine the request made before a non-converging compaction paused.
     assert requests[0]["messages"][:-1] == original
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "none"
-    assert messages[:2] == original[:2] and messages[2]["content"].endswith("summary")
-    assert messages[3:] == original[-3:]
+    assert messages[:3] == original[:3]
+    assert messages[3]["content"].endswith("summary")
+    assert "report.txt" in messages[4]["content"] and "/workspace/outputs/report.txt" in messages[4]["content"]
+    assert messages[5:] == original[-3:]
+    assert loop._states["r"]["user_message_index"] == 2
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
 
 
