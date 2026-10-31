@@ -655,10 +655,12 @@ class AgentLoop:
             observed = state.get("memory_observed")
             if observed is not None and observed.get("revision") != latest.get("revision"):
                 before = {entry["id"]: entry for entry in observed.get("entries", []) if entry.get("id")}
-                after = {entry["id"]: entry for entry in latest.get("entries", []) if entry.get("id")}
-                if not latest.get("enabled", True):
-                    after = {}
-                changes = [f"记忆 {entry_id} 已删除，不得再使用" for entry_id in sorted(before.keys() - after.keys())]
+                selected = {entry["id"]: entry for entry in latest.get("entries", []) if entry.get("id")}
+                visible = await self.platform.memory(run_id, {"action": "list"})
+                all_visible = {entry["id"]: entry for entry in visible.get("entries", []) if entry.get("id")}
+                after = {entry_id: all_visible[entry_id] for entry_id in before.keys() & all_visible.keys()}
+                after.update(selected)
+                changes = [f"记忆 {entry_id} 已删除，不得再使用" for entry_id in sorted(before.keys() - all_visible.keys())]
                 changes += [
                     f"记忆 {entry_id}：{after[entry_id].get('content', '')}"
                     for entry_id in sorted(after)
@@ -666,7 +668,9 @@ class AgentLoop:
                 ]
                 if changes:
                     messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
-            state["memory_observed"] = latest
+                state["memory_observed"] = {**latest, "revision": visible.get("revision"), "entries": list(after.values())}
+            else:
+                state.setdefault("memory_observed", latest)
             for message in messages:
                 if message.get("name") != "recall_history" or message.get("role") != "tool":
                     continue

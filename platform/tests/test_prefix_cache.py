@@ -283,6 +283,26 @@ def test_recall_revalidation_preserves_result_and_refuses_revoked_source():
     asyncio.run(exercise())
 
 
+def test_memory_entry_omitted_by_turn_relevance_is_not_reported_deleted():
+    entry = {"id": "m1", "kind": "memory", "content": "项目事实"}
+
+    class Platform(FakePlatform):
+        async def get_memory_context(self, run_id):
+            return {"revision": 2, "entries": []}
+
+        async def memory(self, run_id, request):
+            return {"revision": 2, "entries": [entry]}
+
+    async def exercise():
+        loop = AgentLoop(platform=Platform())
+        loop._states["r"] = {"memory_observed": {"revision": 1, "entries": [entry]}}
+        messages = [{"role": "system", "content": "rules"}]
+        await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
+        assert len(messages) == 1
+
+    asyncio.run(exercise())
+
+
 def test_reduced_catalog_is_fixed_and_selected_once_from_model_budget():
     from ailab_platform.agent.discovery import SEARCH
     from ailab_platform.model_policy import estimator

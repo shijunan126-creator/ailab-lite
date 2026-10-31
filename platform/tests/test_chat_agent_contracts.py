@@ -429,6 +429,9 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
         async def get_memory_context(self, run_id):
             return self.current
 
+        async def memory(self, run_id, request):
+            return self.current
+
     async def exercise():
         first = {"id": "m1", "kind": "user", "content": "中文"}
         second = {"id": "m2", "kind": "user", "content": "简洁"}
