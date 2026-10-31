@@ -1,6 +1,41 @@
-# 前缀缓存 + 渲染合并分支（2026-11-01，验收中）
+# 前缀缓存 + 渲染：交接（2026-11-01，验收未完成）
 
-`fix/prefix-cache-render` 已合并 `fix/render-view`（base `f316b85`）。前缀缓存 C2/C2c 完成并通过全套检查，见[设计](../architecture/design/2026-10-31-prefix-cache.md)与[记录](updates/2026-10-31-prefix-cache-render.md)。渲染按用户复用沙箱，见[生命周期指南](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)与 ADR 0030；C3g 实现已提交，合并后修正：render 健康检查允许 16 MiB 内 LibreOffice profile 增长（`fa0d5c8`）、非视觉模型不提供 `view_workspace_file`。已知限制：Worker 已领取的预览按优先级 FIFO，尚无按用户轮转（Broker 层已有）。下一步：合并代码上测速与全套检查各一次 → 真实模型验收（Chat/Work 命中率、PPT 自查一次交付）→ PR 合并。用户已授权本轮 PR 合并；未授权部署。
+## 一、先读这些（按顺序，其余不必通读）
+
+1. 本节 + [HANDOFF.MD](../../HANDOFF.MD) 末尾“2026-11-01 前缀缓存与渲染”一节的陷阱。
+2. 前缀缓存设计：[2026-10-31-prefix-cache.md](../architecture/design/2026-10-31-prefix-cache.md)（追加不改写、固定工具目录、边界事件、压缩追加在末尾）。
+3. 渲染生命周期指南（用户已确认：隔离单位是用户）：[2026-10-31-render-sandbox-lifecycle.md](../architecture/design/2026-10-31-render-sandbox-lifecycle.md)；ADR 0030 是它的决定记录。
+4. 过程与测量历史只在需要时查：[dated update](updates/2026-10-31-prefix-cache-render.md)（C2…C3g 各节）。
+
+关键代码：`agent/loop.py`（`_tools_for_run`、`_compact_work_context`、`_compact_parent_context`、`_assemble_context`、`_revoked_recall_results`）、`agent/discovery.py`（`REDUCED_V1`、`search` 只找技能）、`agent/prompts.py`；`broker/service.py`（`acquire_render`、`finish_render`、standby/补充/回收）、`broker/render.py`（首页先发布、其余页）、`sandbox_tools/render_preview.py`、`render_sandbox_health.py`、`uno_convert.py`；`broker/workspace_view.py`。测试入口：`tests/test_prefix_cache.py`、`tests/prefix_harness.py`（真实 AgentLoop+ModelTransport→本地 SSE）、`tests/test_render_standby.py`、`tests/test_render_sandbox_health.py`、`tests/test_workspace_view.py`。
+
+## 二、状态
+
+- 分支 `fix/prefix-cache-render`（worktree `.worktrees/prefix-cache`），base `f316b85`，HEAD 见 `git log`；已合并 `fix/render-view@fa0d5c8`。未 push，未开 PR，未部署。
+- 前缀缓存（C2/C2c + 审阅修复 `b8977d5`）：实现完成；SQLite/PG+Redis/E2E 全套在合并前的 C2c 代码上通过。
+- 渲染（C3…C3g）：按用户复用沙箱、常驻 LibreOffice、首页先发布、优先级调度、Work 内 listener 已提交。合并后修正：健康检查允许 16 MiB 内 profile 增长（`fa0d5c8`，否则 PPTX 永不复用）、非视觉模型不提供 `view_workspace_file`。
+- 部分测速（C3g，修正前，runsc，stub 扫描器）：同用户热复用首页 DOCX 1.1–1.25 s、XLSX 0.84 s（达标）；冷启动首页约 4.1–4.3 s；**全页未达标**：15 页 PPTX 7.4–10.4 s、7 页 DOCX 约 5.1 s（目标 2.5 s）。
+
+## 三、待办（按顺序）
+
+1. **剩余页面批量化**（未动代码）：`broker/render.py` 首页之后对每页单独 exec+下载+发布，runsc 下每页 0.4–0.6 s。改为：读一次 `preview_requested_pages`，按“请求页优先、其余顺序”一次 exec 光栅化全部剩余页并 tar，一次下载（复用同文件里已有的 tar 校验代码），再逐页发布；`render_preview.py` 的 `--pages` 支持逗号列表，可把连续页合并成一次 pdftoppm 区间。保持首页 sha256 一致性检查。
+2. **E2E 失败待查**：`e2e/test_library_ui.py::test_a_document_previews_as_pages_rendered_in_a_sandbox`（90 s 内文档预览图未出现，日志 `/private/tmp/sm-codex/C3g-e2e.log`，可能晚于 `11d1639`）。先单独复跑；怀疑点：增量页改为 PNG（`p-N.png`）后 Portal/API 对页名或类型的假设、或容量繁忙重试的延迟。
+3. ADR 0030 第 17、23 行仍是单次使用时代的描述，与第 11 行矛盾，按指南改写；槽位数（1 或 2）按实测常驻（单进程约 274 MiB）+峰值 RSS 决定并写入。
+4. 合并后 HEAD 跑一次全套：ruff；SQLite（导出 GNU PATH）；PG+Redis（一次性 15433/16380）；Office runner；E2E（先 `lsof`）。只修真实失败，不反复全量重跑。
+5. 测速一次（3 次中位数、每次新字节）：首页/全页（PPTX、DOCX、XLSX），同用户第二个文件，A/B 交替，2 并发（经 Worker 路径；直接调 `renderer.render` 并发会得到 `render_busy`，那是设计上的拒绝+Worker 持久重试，不是 bug），Work 第一/第二次查看，空闲/峰值 RSS，空闲到期后归零。脚本可参考 `/private/tmp/sm-codex/c3g-measure.py`。
+6. **真实模型验收**（用户已授权，DeepSeek 余额约 ¥9.6，控制在 ¥5 内；密钥在 `~/AILabDisk/local/config/deepseek.env` 的 `AILAB_KEY_DEEPSEEK`，不得打印或入库）：Chat、Work 各一个多轮对话（含一次压缩、一次附件/图片），按 `model_usage` 计算 token 加权命中率 Σcached/Σprompt，目标 ≥90%（争取 ≥95%），只有首次调用允许未命中；一个“做 PPT→check.py→view_workspace_file→只交付一次”的完整 Work 任务；确认 web_search 无需发现即可用。临时五服务栈，不用用户的 `ailab-local-*`。
+7. 通过后提 PR 并 merge 到 main（用户已授权本轮 PR+merge；**未授权部署**）。
+8. 清理：`.worktrees/render-view`（已合并）、`/private/tmp/sm-codex`、`/private/tmp/c1`、镜像 `c3-render-lifecycle:latest`（1.77 GB，在 ailab-verify Docker 上）。
+
+已知限制（记录即可，非本轮必须）：Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）；未提交的尝试把最多 32 条消息预取进内存，超过可见期会被重投，已撤回。
+
+## 四、尚未测试
+
+- 修复后的真实模型缓存命中率（Chat/Work、压缩期间、跨轮、记忆变更、模型切换）——从未实测。
+- 摘要是否遵守“不写入 recall 原文”的指令（非确定性隔离）；运行中途撤销的 recall 来源要到下一次 Run 启动才检测。
+- 修正后的全部测速（见待办 5）、CPU 秒、峰值 RSS、交付→`view_attachment` 恢复时间；真实 ClamAV 下的扫描耗时。
+- 真实 Docker 下的多用户故障/恢复（Broker 重启、Worker 崩溃中途、LibreOffice 卡死）只在 mock 下测过。
+- 合并后 HEAD 的任何全套检查。
 
 ---
 

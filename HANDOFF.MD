@@ -978,3 +978,11 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 ## 2026-10-31 前缀缓存
 
 - 同一会话段的模型请求必须追加扩展上一请求；刷新旧记忆块、重跑工具、改变工具目录或重新裁剪历史都会使后续前缀失效。权限撤销和压缩须显式记录边界；不能为缓存复用失效权限。具体边界和未测项见 [设计记录](docs/architecture/design/2026-10-31-prefix-cache.md)。
+
+## 2026-11-01 前缀缓存与渲染
+
+- Codex 委派：`--add-dir` 必须用真实路径（`/private/tmp`、`/Users/michael/AILabDisk/local`），符号链接路径会让沙箱拒绝所有命令；`codex exec resume` 会丢掉启动时的 `--add-dir`。会话常在 1–2 个提交后自行结束，且曾因额度用尽静默卡住（看 `~/.codex/sessions/.../rollout-*.jsonl` 的 `rate_limits`）。用户要求：模型用 gpt-6.1-sol medium，测试只跑一次，不要反复全量重跑；明显错误直接修。
+- Codex 沙箱内 `bin/docker.sh` 的 `ailab-disk require` 会失败；直接用 `DOCKER_HOST=unix:///Users/michael/AILabDisk/local/colima/ailab-verify/docker.sock DOCKER_CONFIG=/Users/michael/AILabDisk/local/docker-client`。该 daemon 同时运行用户的 `ailab-local-*`，只能动一次性 `c3-*` 资源。
+- render 沙箱复用的健康检查不能要求 tmpfs 字节数回到基线：LibreOffice profile 每个文档增长数 KiB，严格比较会让 PPTX 永远不复用。用户文件由清理步骤删除，profile 增长按上限容忍。
+- 渲染测速要看分阶段日志（Broker `library render phases=`、Worker `file processing phase=`），不要只看总时长：C3d 的“预热无效”实际原因是解析抢走 standby 槽、预览串行在解析之后、LibreOffice 冷启动。逐页单独 exec 在 runsc 下每页 0.4–0.6 s。
+- 直接并发调用 `LibraryRenderer.render` 会得到 `render_busy`：Broker 拒绝、Worker 作业持久重试是设计行为，并发测速要经过 Worker 路径。
