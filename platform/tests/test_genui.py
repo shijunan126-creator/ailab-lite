@@ -407,7 +407,6 @@ def test_ui_components_validates_arguments(args):
 @pytest.mark.parametrize("mode", ["chat", "work"])
 @pytest.mark.parametrize("supported", [False, True])
 def test_ui_tool_model_admission_and_no_sandbox(monkeypatch, mode, supported):
-    from ailab_platform.agent.discovery import offered
     from ailab_platform.agent.tools import tools_for_chat, tools_for_turn
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.llm import LLMResponse, ToolCall
@@ -423,7 +422,7 @@ def test_ui_tool_model_admission_and_no_sandbox(monkeypatch, mode, supported):
     )
     monkeypatch.setattr(settings, "genui_enabled", True)
     catalog = tools_for_chat() if mode == "chat" else tools_for_turn()
-    assert "ui_components" in {t["function"]["name"] for t in offered(catalog, [])}
+    assert "ui_components" in {t["function"]["name"] for t in catalog}
     llm = ScriptedLLM([LLMResponse(tool_calls=[ToolCall("u1", "ui_components", {"names": ["Text"]})]), LLMResponse(content="完成")])
     platform, broker = _run(llm, platform=Platform())
     assert platform.statuses[-1][0] == "succeeded"

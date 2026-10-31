@@ -1276,7 +1276,7 @@ class AgentLoop:
                     for name, entry in {**skills(), **turn.personal}.items()
                     if name not in turn.disabled_skills
                 ]
-                hits = discovery.search(call.arguments.get("query", ""), "skill", call.arguments.get("limit", 3), [], user_skills)
+                hits = discovery.search(call.arguments.get("query", ""), call.arguments.get("limit", 3), user_skills)
                 result = {"ok": True, "capabilities": hits}
             elif wanted and wanted in skills():
                 mode = (turn.run.get("options") or {}).get("mode", "work")

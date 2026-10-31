@@ -5,7 +5,6 @@ from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from ailab_platform.agent import discovery
-from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.internal_skills import load
@@ -78,15 +77,10 @@ def test_delete_fences_active_context():
         assert c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 404
 
 
-def test_internal_skills_and_constant_initial_schema():
-    catalog = tools_for_turn()
-    massive = catalog + [
-        {"type": "function", "function": {"name": f"unused{i}", "description": "unrelated", "parameters": {}}} for i in range(500)
-    ]
-    assert discovery.offered(catalog, []) == discovery.offered(massive, [])
+def test_internal_skills_are_discoverable():
     from ailab_platform.agent.prompts import skills
 
-    hit = discovery.search("pdf", "skill", 3, catalog, list(skills().values()))[0]
+    hit = discovery.search("pdf", 3, list(skills().values()))[0]
     assert hit["name"] == "platform.pdf"
     assert "next_cursor" in load("platform.pdf.read")
     for name in ("platform.document.read", "platform.spreadsheet.read", "platform.presentation.read", "platform.pdf.read"):

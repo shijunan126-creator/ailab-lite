@@ -30,7 +30,7 @@ def test_discovery_keeps_request_prefix_and_tools():
             "index": 0,
             "id": "call_1",
             "type": "function",
-            "function": {"name": "search_capabilities", "arguments": '{"query":"exec","kind":"tool"}'},
+            "function": {"name": "search_capabilities", "arguments": '{"query":"pdf"}'},
         }
     ]
     with scripted_server([{"tool_calls": calls}, {"content": "done"}]) as (url, requests):

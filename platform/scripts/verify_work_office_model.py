@@ -1,7 +1,7 @@
 """Opt-in metered model + real offline container check; never connects to the business DB.
 
 Run with --execute, an explicit key env/catalog and an already running disposable container.
-Uses production Work prompt, tool schemas and capability discovery; this is not a five-service E2E.
+Uses the Work prompt and fixed tool schemas; this is not a five-service E2E.
 """
 
 import argparse
@@ -37,10 +37,9 @@ def main():
     if not spec or not spec.available or spec.provider != "openai":
         raise RuntimeError("real model unavailable")
     allowed = {"exec", "read_file", "write_file", "load_skill", "update_plan", "deliver_file"}
-    tool_catalog = [t for t in tools.tools_for_turn() if t["function"]["name"] in allowed]
-    state = {}
+    tool_catalog = [discovery.SEARCH, *[t for t in tools.tools_for_turn() if t["function"]["name"] in allowed]]
     messages = [
-        {"role": "system", "content": prompts.system_prompt(deferred=True)},
+        {"role": "system", "content": prompts.system_prompt()},
         {
             "role": "user",
             "content": "请检查/workspace/inputs/report.docx和/workspace/inputs/budget.xlsx，"
@@ -68,7 +67,7 @@ def main():
                 json={
                     "model": spec.upstream_model,
                     "messages": messages,
-                    "tools": discovery.offered(tool_catalog, state.get("active_tools", [])),
+                    "tools": tool_catalog,
                     "max_tokens": 4096,
                     "thinking": {"type": "disabled"},
                 },
@@ -88,23 +87,23 @@ def main():
                 name = tool["function"]["name"]
                 values = json.loads(tool["function"]["arguments"])
                 if name == "search_capabilities":
-                    result = discovery.search(values["query"], values.get("kind", "any"), values.get("limit", 5), tool_catalog)
-                    discovery.activate(state, [e["name"] for e in result if e["kind"] == "tool"], tool_catalog)
+                    skills = [{"name": name, "description": item.get("description", "")} for name, item in prompts.skills().items()]
+                    result = discovery.search(values["query"], values.get("limit", 5), skills)
                 elif name == "load_skill":
                     skill = values["name"]
                     try:
                         result = internal_load(skill) if skill.startswith("platform.") else prompts.load_skill(skill)
                     except (KeyError, ValueError):
                         result = {"error": "skill unavailable; use search_capabilities to discover actual skills"}
-                elif name == "exec" and name in state.get("active_tools", []):
+                elif name == "exec":
                     command = values["cmd"]
                     commands.append(command)
                     result = docker("sh", "-lc", command)
-                elif name == "read_file" and name in state.get("active_tools", []):
+                elif name == "read_file":
                     result = docker(
                         "python", "-c", "import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text()[:16000])", values["path"]
                     )
-                elif name == "write_file" and name in state.get("active_tools", []):
+                elif name == "write_file":
                     result = docker(
                         "python",
                         "-c",
