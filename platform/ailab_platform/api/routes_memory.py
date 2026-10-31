@@ -499,6 +499,10 @@ def run_memory(
             if entries[match].id not in {e["id"] for e in model_view(current, project_id)["entries"]}:
                 raise HTTPException(422, "这条记忆不在当前可访问范围")
             if body.action == "remove":
+                # Forgetting is the user's call: a removal leaves a tombstone that keeps the fact from coming back, so
+                # the model may not delete on its own (a correction is replace, a duplicate is the dream's to merge).
+                if not body.explicit:
+                    raise HTTPException(422, "只在用户明确要求忘记时删除记忆（explicit=true）；纠正请用 replace")
                 entries.pop(match)
             else:
                 corrected = MemoryEntryInput(

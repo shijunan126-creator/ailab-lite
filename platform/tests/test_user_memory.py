@@ -90,7 +90,13 @@ def test_agent_memory_replay_conflict_and_fence():
         assert corrected.status_code == 200
         current_id = corrected.json()["entries"][0]["id"]
         assert current_id != entry["id"]
-        assert _tool(c, run, action="remove", revision=2, delivery="m3", id=current_id).json()["entries"] == []
+        # the model cannot forget on its own: only a removal the user asked for goes through, and leaves a tombstone
+        refused = _tool(c, run, action="remove", revision=2, delivery="m3", id=current_id)
+        assert refused.status_code == 422 and "明确要求" in refused.json()["detail"]
+        assert [e["id"] for e in c.get("/v1/memory", headers=me).json()["entries"] if not e.get("invalid_at")] == [current_id]
+        removed = _tool(c, run, action="remove", revision=2, delivery="m4", id=current_id, explicit=True)
+        assert removed.json()["entries"] == []
+        assert _tool(c, run, revision=3, delivery="m5", content="改用 TypeScript").status_code == 422  # tombstoned
         assert c.post(f"/internal/runs/{run}/memory", headers=me, json={"action": "list"}).status_code == 403
         assert (
             c.post(
