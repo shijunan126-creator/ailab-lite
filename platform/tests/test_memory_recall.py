@@ -447,3 +447,34 @@ def test_a_long_prompt_cannot_turn_assistant_text_into_user_evidence() -> None:
     digest = service._digest(run)
     assert "助手的猜测" in digest.split(service.ASSISTANT_MARK, 1)[1]
     assert "助手的猜测" not in service._user_part(digest)
+
+
+def test_recall_names_the_next_hops_delivered_files_and_adjacent_turns() -> None:
+    from ailab_platform.models import Artifact, FileObject
+
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        conv = _conversation(uid, "季度汇报")
+        first = _seed(uid, "做一份 Q3 销售汇报 PPT", "已生成 PPT", days_ago=3, conversation_id=conv)
+        second = _seed(uid, "第三页换成柱状图", "已改好", days_ago=2, conversation_id=conv, parent_run_id=first)
+        hidden = _seed(uid, "另一个分支", "失败", days_ago=2, conversation_id=conv, parent_run_id=first, superseded_by_run_id=second)
+        with SessionLocal() as db:
+            live = FileObject(user_id=uid, filename="Q3汇报.pptx", status="ready", purpose="library", storage_key="unused")
+            gone = FileObject(user_id=uid, filename="草稿.pptx", status="ready", purpose="library", storage_key="unused")
+            gone.deleted_at = datetime.now(UTC)
+            db.add_all([live, gone])
+            db.flush()
+            db.add_all([Artifact(run_id=first, file_id=live.id), Artifact(run_id=first, file_id=gone.id)])
+            db.commit()
+            live_id = live.id
+        run = _running(c, me)
+        url = f"/internal/runs/{run}/recall"
+        hit = c.post(url, headers=SERVICE, json={"query": "Q3 销售汇报"}).json()["results"][0]
+        assert hit["run_id"] == first and hit["conversation_id"] == conv
+        assert hit["files"] == [{"file_id": live_id, "filename": "Q3汇报.pptx"}]
+        opened = c.post(url, headers=SERVICE, json={"run_id": first}).json()
+        assert opened["files"] == hit["files"] and opened["next_run_ids"] == [second] and "previous_run_id" not in opened
+        assert hidden not in opened["next_run_ids"]
+        follow = c.post(url, headers=SERVICE, json={"run_id": second}).json()
+        assert follow["previous_run_id"] == first and "files" not in follow and "next_run_ids" not in follow

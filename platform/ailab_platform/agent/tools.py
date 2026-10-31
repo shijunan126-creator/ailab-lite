@@ -321,7 +321,8 @@ RECALL = {
                 "before": {"type": "string", "format": "date-time"},
                 "after": {"type": "string", "format": "date-time"},
             },
-            "description": "检索返回next_cursor时可继续。用run_id读取命中轮次原文；before/after限定历史时间。",
+            "description": "检索返回next_cursor时可继续。用run_id读取命中轮次原文，结果里的previous_run_id/next_run_ids可继续读相邻轮次；"
+            "files是该轮交付的文件，用read_library_file(file_id)打开。before/after限定历史时间。",
         },
     },
 }
