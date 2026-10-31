@@ -924,6 +924,8 @@ class AgentLoop:
         return {**context, "content": content}
 
     async def _assemble_context(self, run_id, run, model, base):
+        if len(base) < 2 or base[1].get("role") != "system":
+            base = [base[0], {"role": "system", "content": ""}, *base[1:]]
         if not hasattr(self.platform, "get_model_context"):
             return base
         policy = ModelPolicy(get_catalog())

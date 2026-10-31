@@ -345,7 +345,7 @@ def test_reported_cache_tokens_identify_main_title_and_compaction(monkeypatch):
 
     async def exercise():
         loop = AgentLoop(platform=FakePlatform())
-        for step in (0, -2, -3):
+        for step in (0, -2, -3, -1, 5):
             usage = {"prompt_tokens": 100, "cached_tokens": 80}
             await loop._model_attempt(
                 ScriptedLLM([LLMResponse(content="ok", usage=usage)]),
@@ -358,7 +358,13 @@ def test_reported_cache_tokens_identify_main_title_and_compaction(monkeypatch):
             )
 
     asyncio.run(exercise())
-    assert [(mode, kind) for mode, kind, _ in observed] == [("chat", "main"), ("chat", "title"), ("chat", "compaction")]
+    assert [(mode, kind) for mode, kind, _ in observed] == [
+        ("chat", "main"),
+        ("chat", "title"),
+        ("chat", "compaction"),
+        ("chat", "compaction"),
+        ("chat", "main"),
+    ]
     assert all(usage["cached_tokens"] == 80 and usage["prompt_tokens"] == 100 for _, _, usage in observed)
 
 
@@ -778,3 +784,20 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
         with pytest.raises(BudgetPause):
             asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run=run), loop.llm, "m", []))
     assert calls == [("m", -3, "none"), ("m", -3, "none")]
+
+
+def test_empty_context_layout_survives_three_resumes():
+    platform = FakePlatform()
+    loop = AgentLoop(platform=platform, llm=ScriptedLLM([]))
+    base = [{"role": "system", "content": "rules"}, {"role": "user", "content": "task"}]
+    messages = asyncio.run(loop._assemble_context("r", {}, "m", base))
+    assert messages[1] == {"role": "system", "content": ""}
+    state = fresh_state()
+    state["messages"] = messages
+    state["user_message_index"] = 2
+    platform.checkpoint = {"step": 1, "state": state}
+    for _ in range(3):
+        before = copy.deepcopy(platform.checkpoint["state"]["messages"])
+        asyncio.run(AgentLoop(platform=platform, llm=ScriptedLLM([LLMResponse(content="done")])).process("r", attempt_id="a"))
+        assert platform.checkpoint["state"]["messages"][: len(before)] == before
+        assert not any(event == ("agent.context_boundary", {"reason": "rebuilt"}) for event in platform.events)
