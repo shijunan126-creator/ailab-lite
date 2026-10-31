@@ -175,7 +175,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
                     if (turn.options or {}).get("skill")
                     else []
                 ),
-                "reply": for_history(reply, keep_ui=turn.id == earlier[-1].id, limit=HISTORY_CHARS),
+                "reply": for_history(reply, keep_ui=True, limit=HISTORY_CHARS),
                 "status": turn.status,
                 "files": files,
                 "sources": history_sources((turn.result or {}).get("sources")),

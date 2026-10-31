@@ -84,3 +84,22 @@ def bounded(catalog, active, budget_tokens):
     if estimator.raw(result) > budget_tokens:
         raise ValueError("capability entry schemas exceed model budget")
     return result
+
+
+def full_fits(catalog, budget_tokens):
+    """Whether the whole catalog can be offered on every step.
+
+    The provider renders tool schemas ahead of every message, so a tool list that grows as tools are
+    discovered turns the entire conversation into a prefix-cache miss each time. When the model's window
+    can carry the whole catalog, a fixed list costs far less than repeated misses; small windows keep
+    progressive disclosure.
+    """
+    from ..model_policy import estimator
+
+    return estimator.raw(offered(catalog, [t["function"]["name"] for t in catalog])) <= budget_tokens
+
+
+def offer(catalog, active, budget_tokens, full_budget_tokens):
+    if full_fits(catalog, full_budget_tokens):
+        return offered(catalog, [t["function"]["name"] for t in catalog])
+    return bounded(catalog, active, budget_tokens)

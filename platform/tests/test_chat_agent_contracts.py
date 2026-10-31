@@ -439,16 +439,18 @@ def test_system_prefix_is_shared_and_memory_refresh_only_rewrites_context():
         left, right = llm1.seen_messages[0], llm2.seen_messages[0]
         assert left[0] == right[0] and left[1] != right[1]
         assert "项目一" in left[1]["content"] and "项目二" in right[1]["content"]
+        # Memory rides on the turn's user message, after the shared system prefix and the history.
+        assert "<ailab_memory>" not in left[1]["content"] and "中文" in left[-1]["content"]
         messages = [dict(m) for m in left]
-        original = [dict(m) for m in messages[:2]]
+        original = [dict(m) for m in messages]
         p1.current = {**p1.current, "entries": [first, second]}
         loop = AgentLoop(platform=p1)
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
-        assert messages[:2] == original
+        assert messages == original  # an added fact does not rewrite the request
         p1.current = {**p1.current, "entries": [second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
-        assert messages[0] == original[0] and messages[1] != original[1]
-        assert "中文" not in messages[1]["content"] and "简洁" in messages[1]["content"]
+        assert messages[:-1] == original[:-1] and messages[-1] != original[-1]
+        assert "中文" not in messages[-1]["content"] and "简洁" in messages[-1]["content"]
         assert "revision=" not in memory_prompt(p1.current)
 
     asyncio.run(exercise())
