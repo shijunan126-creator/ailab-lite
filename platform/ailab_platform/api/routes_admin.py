@@ -21,8 +21,24 @@ from ..contracts.identity import ROLES, Principal
 from ..deps import current_user, get_db
 from ..domain.authorization import Target, policy
 from ..domain.ledger import MILLI
-from ..models import AuditLog, Department, FileObject, MemoryDreamRun, ModelUsage, PlatformSetting, QuotaPolicy, User, UserRole, utcnow
+from ..locks import user_critical_section
+from ..models import (
+    AuditLog,
+    Department,
+    FileObject,
+    MemoryDreamRun,
+    ModelUsage,
+    PlatformSetting,
+    QueuedMessage,
+    QuotaPolicy,
+    Run,
+    RunStatus,
+    User,
+    UserRole,
+    utcnow,
+)
 from ..quota import quota_windows
+from ..run_state import transition_run
 from ..schemas import ContextSettings, UTCModel
 
 router = APIRouter(prefix="/v1/admin", tags=["admin"], route_class=AuditedRoute)
@@ -281,6 +297,11 @@ def _editable(db, user, target_id, action, body=None):
 
 @router.patch("/users/{target_id}")
 def patch_user(target_id: str, body: UserPatch, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    with user_critical_section(db, target_id):
+        return _patch_user(target_id, body, user, db)
+
+
+def _patch_user(target_id, body, user, db):
     row = _editable(db, user, target_id, "users.update", body)
     changes = body.model_dump(exclude_unset=True)
     if any(changes.get(k, "present") is None for k in ("roles", "display_name", "disabled")):
@@ -294,6 +315,13 @@ def patch_user(target_id: str, body: UserPatch, user: User = Depends(current_use
             row.disabled_at = utcnow() if value else None
             if value:
                 revoke_sessions(db, row.id)
+                for run_id in db.scalars(select(Run.id).where(Run.user_id == row.id, Run.status.not_in(RunStatus.TERMINAL))):
+                    transition_run(db, run_id, RunStatus.CANCELED, reason="user_disabled", commit=False)
+                db.execute(
+                    update(QueuedMessage)
+                    .where(QueuedMessage.user_id == row.id, QueuedMessage.state == "queued")
+                    .values(state="canceled", updated_at=utcnow())
+                )
         else:
             setattr(row, field, value)
     _commit(
