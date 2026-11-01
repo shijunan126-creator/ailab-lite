@@ -359,29 +359,57 @@ export default function FileViewer({
   );
 }
 
+function GoneViewer({ message, onClose }: { message: string; onClose: () => void }) {
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [onClose]);
+  return createPortal(
+    <div className="viewer" role="dialog" aria-modal="true" aria-label={message}>
+      <header className="viewer-bar">
+        <span className="viewer-name" />
+        <button className="icon-btn" onClick={onClose} aria-label="关闭预览">
+          <IconX size={18} />
+        </button>
+      </header>
+      <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+        <div className="viewer-state">
+          <strong>{message}</strong>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 /** Opens the viewer from places that hold only file ids (a turn's attachments, its artifacts). */
 export function useFileViewer(): { open: (ids: string[], id: string, page?: number) => void; viewer: React.ReactNode } {
-  const [state, setState] = useState<{ files: FileItem[]; file: FileItem; page?: number } | null>(null);
+  const [state, setState] = useState<{ files: FileItem[]; file: FileItem; page?: number } | { gone: string } | null>(null);
   const asked = useRef(0);
   const open = useCallback((ids: string[], id: string, page?: number) => {
     const ticket = ++asked.current; // a later click wins over a slower earlier lookup
     filesByIds(ids)
       .then((files) => {
+        if (ticket !== asked.current) return;
         const file = files.find((f) => f.id === id);
-        if (ticket === asked.current && file) setState({ files, file, page });
+        // the lookup leaves out trashed and purged files: say so instead of ignoring the click
+        setState(file ? { files, file, page } : { gone: "文件已删除" });
       })
-      .catch(() => undefined);
+      .catch((err) => ticket === asked.current && setState({ gone: errorMessage(err) }));
   }, []);
   const close = useCallback(() => setState(null), []);
-  const viewer = state ? (
+  const viewer = !state ? null : "gone" in state ? (
+    <GoneViewer message={state.gone} onClose={close} />
+  ) : (
     <FileViewer
       files={state.files}
       file={state.file}
       page={state.page}
-      onOpen={(file) => setState((s) => (s ? { ...s, file, page: undefined } : s))}
+      onOpen={(file) => setState((s) => (s && !("gone" in s) ? { ...s, file, page: undefined } : s))}
       onClose={close}
       chatHref={(f) => askHref(f.id, f.project_id)}
     />
-  ) : null;
+  );
   return { open, viewer };
 }

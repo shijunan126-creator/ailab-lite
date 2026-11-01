@@ -347,6 +347,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     const htmlVersions = new Map<string, number>();
     for (const t of detail?.turns || []) {
       for (const a of t.artifacts || []) {
+        if (a.deleted) continue;
         if ((a.content_type || "").split(";")[0] !== "text/html" && !/\.(html?|xhtml)$/i.test(a.filename)) continue;
         const version = (htmlVersions.get(a.filename) || 0) + 1;
         htmlVersions.set(a.filename, version);
@@ -387,7 +388,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   const downloads = useMemo(() => {
     const out: Record<string, string> = {};
-    for (const t of detail?.turns || []) for (const a of t.artifacts || []) out[a.filename] = downloadUrl(a.download_url);
+    for (const t of detail?.turns || []) for (const a of t.artifacts || []) if (!a.deleted) out[a.filename] = downloadUrl(a.download_url);
     for (const p of libraryPreviews) out[previewTabKey(p)] = downloadUrl(`/v1/files/${p.libraryFileId}/content`);
     return out;
   }, [detail, libraryPreviews]);

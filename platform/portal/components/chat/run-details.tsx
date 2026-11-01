@@ -165,13 +165,13 @@ export default function RunDetails({ id }: { id: string }) {
                   </span>
                   <div className="grow">
                     <div className="name" title={artifact.filename}>{artifact.filename}</div>
-                    <div className="size">
-                      {formatBytes(artifact.size)} · {artifact.content_type}
-                    </div>
+                    <div className="size">{artifact.deleted ? "已删除" : `${formatBytes(artifact.size)} · ${artifact.content_type}`}</div>
                   </div>
-                  <a className="btn secondary sm" href={downloadUrl(artifact.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${artifact.filename}`}>
-                    <IconDownload size={15} /> 下载
-                  </a>
+                  {artifact.deleted ? null : (
+                    <a className="btn secondary sm" href={downloadUrl(artifact.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${artifact.filename}`}>
+                      <IconDownload size={15} /> 下载
+                    </a>
+                  )}
                 </div>
               ))}
             </div>

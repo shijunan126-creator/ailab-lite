@@ -39,7 +39,7 @@ export type Run = {
   finished_at?: string | null;
   work_ms?: number | null;
   artifacts?: Artifact[];
-  input_files?: { file_id: string; filename: string }[];
+  input_files?: { file_id: string; filename: string; deleted?: boolean }[]; // deleted: trashed or purged; a purged one has lost its name
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[] };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
@@ -190,7 +190,8 @@ export type Share = {
 };
 
 export type ShareFile = Pick<FileItem, "id" | "filename" | "content_type" | "size" | "thumbnail_url"> & {
-  download_url: string; // /api/v1/shares/<id>/files/<file>/content: reachable only through the share
+  download_url: string; // /api/v1/shares/<id>/files/<file>/content: reachable only through the share; empty once deleted
+  deleted?: boolean;
 };
 
 export type ShareView = {
@@ -205,7 +206,7 @@ export type ShareView = {
     created_at: string;
     mode: "chat" | "work";
     artifacts: ShareFile[];
-    attachments: { filename: string }[];
+    attachments: { filename: string; deleted?: boolean }[];
   }[];
   file?: ShareFile | null; // a file share: the file itself
   next_cursor: string | null;
@@ -291,7 +292,8 @@ export type Artifact = {
   filename: string;
   content_type: string;
   size: number;
-  download_url: string;
+  download_url: string; // empty once deleted
+  deleted?: boolean;
 };
 
 export type ModelInfo = {
