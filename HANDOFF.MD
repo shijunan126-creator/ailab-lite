@@ -13,6 +13,7 @@
 - **不进图片的元素一律标 `data-capture-skip`**（操作条、所有 `CopyButton`）；图表读数 `.gu-tip` 也被过滤。画图前等一帧，让指针刚离开的悬停高亮先提交。
 - **光栅只用系统字体**（`font: false`）。以后若加 `@font-face`，要打开字体内嵌，否则图片里会回落字体。
 - **Markdown 表格外多了 `.table-frame`**：流式光标规则改为 `.md.streaming > .table-frame:last-child`。表格复制的纯文本：Markdown 表格复制原文，GenUI 表格由 DOM 生成（排序后的可见顺序、只含已显示的行）。
+- **本机 npm 11 `npm i <包>` 会从 lock 里删掉 `canvas` 等可选 peer 依赖条目**（约 500 行），CI 的 Linux `npm ci` 行为随之改变。加依赖后核对 `git diff origin/main -- package-lock.json` 只多出新包；否则恢复原 lock 只补新条目，并用干净目录 `npm ci` 验证。
 - **哪些块给图片操作**由解析树里的组件名决定（`openui/block.tsx` 的 `pictured`）：`@Each` 生成的组件在树里还是 `{k:"Comp"}` AST 节点，要一起计入；元素的 `hasDynamicProps` 会因子按钮的 `@ToAssistant` 上浮到父 Stack，不能当判据。
 
 - runsc 15 页 PPTX 探针中 LO profile 使 tmpfs 比预热基线增加 8192 字节；健康检查按设计释放该沙箱。不能仅提高阈值让它复用：须先证明残留内容已清除且监听器仍健康。
