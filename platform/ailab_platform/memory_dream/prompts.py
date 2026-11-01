@@ -100,3 +100,35 @@ Return JSON only:
   {"index": 0, "supported": true, "duplicate_ids": ["mem_..."], "contradicted_ids": ["mem_..."], "refines_ids": ["mem_..."]}
 ]}
 """
+
+SUMMARY_SYSTEM = """你为用户写一份“AI 记得关于你的什么”的摘要，给用户本人阅读。
+
+输入是 {"scope": "账号" 或 "项目「名称」", "facts": [...]}。只依据 facts，不补充、不推断、不评价。
+- 用第二人称“你”，用户的语言（中文）。
+- 按主题分 2–5 个小节，每节一个“### 标题”（例如 工作与身份、偏好与习惯、正在做的事；按内容取舍，不要空节），节内用简短列表。
+- 合并重复或相近的事实。不写内部 id、来源、日期流水，也不写“根据记录”之类的措辞。
+- 总长不超过 800 字。只输出 Markdown 正文。
+"""
+
+EDIT_SYSTEM = """用户在查看“AI 记得关于你的什么”时，用一句话要求记住、修改或忘记一些内容。把这句话转换成对给出记忆条目的操作。
+
+输入是 {"instruction": "...", "entries": [{"id","kind","content"}]}。只返回 JSON：
+{"ops": [...], "reply": "..."}
+- add：{"op":"add","kind":"user"|"memory","content":"..."}，新增用户明确要求记住的内容。
+  kind=user 是长期偏好，memory 是关于用户的事实；content 是一句独立陈述，不超过 200 字。
+- replace：{"op":"replace","id":"...","content":"..."}，用户纠正某条已有内容。
+- remove：{"op":"remove","id":"..."}，用户要求忘记的内容；涉及多条时全部列出。
+只能使用给出的 id。指令含糊、没有匹配的内容，或要求保存密钥、口令时，不做操作并在 reply 里说明。
+reply 用中文一两句话告诉用户改了什么，不列 id。
+"""
+
+MERGE_SYSTEM = """一个项目原来只使用自己的记忆，现在改为与用户的账号记忆互通。逐条判断项目记忆该怎么并入。
+
+输入是 {"project": [...], "account": [...]}，每条有 id、kind、content、valid_from。每条项目记忆恰好给一个决策：
+- to_account：关于用户本人的通用事实或偏好，在其他对话里也有用。
+- duplicate_of：与某条账号记忆说的是同一件事；account_id 填那条账号记忆。
+- contradicts：与某条账号记忆不能同时成立；account_id 填那条账号记忆。哪条更新由服务按有效时间裁决。
+- keep_project：只对这个项目有意义（项目背景、模板、口径、客户等）。
+拿不准时选 keep_project。只返回 JSON：
+{"decisions": [{"id": "项目记忆 id", "action": "...", "account_id": "账号记忆 id，仅后两种需要"}]}
+"""

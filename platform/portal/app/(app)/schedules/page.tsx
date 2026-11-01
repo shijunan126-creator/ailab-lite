@@ -240,6 +240,12 @@ export default function SchedulesPage() {
                     {statusLabel(s.last_status || "")}
                   </Link>
                 ) : s.last_status === "failed" ? <span className="state failed" title={s.last_error || undefined}>失败</span> : null}
+                <Switch
+                  on={s.enabled}
+                  label={`${s.enabled ? "停用" : "启用"} ${s.title}`}
+                  disabled={busy === s.id}
+                  onChange={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}
+                />
                 <RowMenu
                   label={s.title}
                   disabled={busy === s.id}
@@ -252,12 +258,6 @@ export default function SchedulesPage() {
                       onSelect: async () => (await confirmDialog({ title: `删除定时任务「${s.title}」？`, action: "删除", danger: true })) && act(s, () => api(`/v1/schedules/${s.id}`, { method: "DELETE" })),
                     },
                   ]}
-                />
-                <Switch
-                  on={s.enabled}
-                  label={`${s.enabled ? "停用" : "启用"} ${s.title}`}
-                  disabled={busy === s.id}
-                  onChange={() => act(s, () => api(`/v1/schedules/${s.id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) }))}
                 />
               </div>
             </div>

@@ -76,15 +76,17 @@ export async function deleteProject(project: Project): Promise<boolean> {
   return true;
 }
 
-// The sidebar's "项目说明" opens the brief editor on the project page, which may mount after the click.
-export const EDIT_BRIEF = "ailab:edit-brief";
-let briefRequest: string | null = null;
-export function requestBriefEdit(projectId: string): void {
-  briefRequest = projectId;
-  window.dispatchEvent(new CustomEvent(EDIT_BRIEF, { detail: projectId }));
+// The sidebar's "项目说明" and "记忆" open a panel on the project page, which may mount after the click.
+export type ProjectPanel = "brief" | "memory";
+export const OPEN_PROJECT_PANEL = "ailab:project-panel";
+let panelRequest: { projectId: string; panel: ProjectPanel } | null = null;
+export function requestProjectPanel(projectId: string, panel: ProjectPanel): void {
+  panelRequest = { projectId, panel };
+  window.dispatchEvent(new Event(OPEN_PROJECT_PANEL));
 }
-export function takeBriefEdit(projectId: string): boolean {
-  if (briefRequest !== projectId) return false;
-  briefRequest = null;
+/** True once for the page that the request was for; the request is consumed. */
+export function takeProjectPanel(projectId: string, panel: ProjectPanel): boolean {
+  if (panelRequest?.projectId !== projectId || panelRequest.panel !== panel) return false;
+  panelRequest = null;
   return true;
 }

@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, errorMessage, Project } from "../lib/api";
-import { EDIT_BRIEF, projectsChanged, takeBriefEdit } from "../lib/projects";
+import { OPEN_PROJECT_PANEL, projectsChanged, takeProjectPanel } from "../lib/projects";
 import { IconFilePen } from "./icons";
 
 const LIMIT = 4000; // the API enforces the same
@@ -21,10 +21,10 @@ export default function ProjectBrief({ project }: { project: Project }) {
   }, [saved, editing]);
 
   useEffect(() => {
-    const open = () => takeBriefEdit(project.id) && setEditing(true);
+    const open = () => takeProjectPanel(project.id, "brief") && setEditing(true);
     open();
-    window.addEventListener(EDIT_BRIEF, open);
-    return () => window.removeEventListener(EDIT_BRIEF, open);
+    window.addEventListener(OPEN_PROJECT_PANEL, open);
+    return () => window.removeEventListener(OPEN_PROJECT_PANEL, open);
   }, [project.id]);
 
   useEffect(() => {

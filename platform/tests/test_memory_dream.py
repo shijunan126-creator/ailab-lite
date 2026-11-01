@@ -83,6 +83,7 @@ def test_manual_dream_ignores_nightly_switch_and_checks_memory_settings():
         me = _user(c)
         doc = c.get("/v1/memory", headers=me).json()
         assert c.patch("/v1/memory/dream", headers=me, json={**doc["dream"], "enabled": False}).status_code == 200
+        assert c.post("/v1/memory/dream/run", headers=me).json()["status"] == "nothing"  # no facts or summary is an empty scope, not stale
         assert c.post("/v1/memory/dream/run", headers=me).json()["status"] == "nothing"
         for enabled, auto_save, detail in [(False, True, "记忆未开启"), (True, False, "自动记忆已关闭，无法整理")]:
             current = c.get("/v1/memory", headers=me).json()
@@ -93,7 +94,10 @@ def test_manual_dream_ignores_nightly_switch_and_checks_memory_settings():
             )
             assert response.status_code == 200
             response = c.post("/v1/memory/dream/run", headers=me)
-            assert response.status_code == 409 and response.json()["detail"] == detail
+            if enabled:
+                assert response.status_code == 200 and response.json()["status"] == "nothing"
+            else:
+                assert response.status_code == 409 and response.json()["detail"] == detail
 
 
 def test_invalidate_keeps_history_and_hides_the_old_fact() -> None:
@@ -350,6 +354,7 @@ def test_manual_trigger_allows_new_batches_same_day() -> None:
                 )
             )
             db.commit()
+        c.post("/v1/memory/dream/run", headers=me)  # materialize the empty account summary
         empty = c.post("/v1/memory/dream/run", headers=me)
         assert empty.status_code == 200 and empty.json() == {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
         with SessionLocal() as db:

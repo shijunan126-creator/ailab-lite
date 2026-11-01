@@ -303,7 +303,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 <ProjectMenu
                   project={p}
                   onRename={() => setRenamingProject(p.id)}
-                  onBrief={() => router.push(`/p/${p.id}`)}
+                  onOpen={() => router.push(`/p/${p.id}`)}
                   onDeleted={async () => {
                     conversationsChanged();
                     if (p.id === currentProject) return router.push("/");

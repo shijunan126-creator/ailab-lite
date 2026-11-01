@@ -41,7 +41,12 @@ class ReserveUsageIn(BaseModel):
     @model_validator(mode="after")
     def valid_subject(self):
         if self.subject in {"memory_job", "skill_draft"}:
-            if not self.job_id or self.run_id or self.file_id or self.mode != "memory":
+            if (
+                not self.job_id
+                or self.run_id
+                or self.file_id
+                or self.mode not in ({"memory", "summary"} if self.subject == "memory_job" else {"memory"})
+            ):
                 raise ValueError("memory_job requires job_id and memory mode")
             return self
         if self.job_id:

@@ -19,8 +19,9 @@ def evaluate(path: Path | None = None) -> dict:
     results = []
     for case in corpus["cases"]:
         selected = model_view(
-            {"entries": corpus["entries"], "enabled": case.get("enabled", True), "project_only": case.get("project_only", False)},
+            {"entries": corpus["entries"], "enabled": case.get("enabled", True)},
             case.get("project_id"),
+            mode=case.get("memory_mode", "shared"),
             query=case["query"],
             as_of=datetime.fromisoformat(case["as_of"]) if case.get("as_of") else None,
         )["entries"]

@@ -9,7 +9,7 @@ import RowMenu, { RowAction } from "../../../components/row-menu";
 import { skillIcon } from "../../../components/chat/composer";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import DraftEditor from "../../../components/skills/draft-editor";
-import { isLocked, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
+import { isLocked, SCANNING, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, Skill, SkillDraft, skillKind } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
 import { draftLabel, draftsChanged, useActiveDrafts, working } from "../../../lib/skill-drafts";
@@ -74,25 +74,29 @@ function SkillRow({
         { label: "查看", icon: <IconEye size={15} />, onSelect: onOpen },
         ...(onCustomize ? [{ label: "另存为个人技能", icon: <IconCopyPlus size={15} />, onSelect: onCustomize }] : []),
       ];
+  const scanning = s.error === SCANNING; // a new version on its way, not a broken skill
+  const broken = !!s.error && !scanning;
   return (
     <div className={`mrow ${s.enabled || !toggleable ? "" : "off"}`}>
-      <span className={`mrow-icon ${s.error ? "broken" : ""}`}>
-        <Icon size={17} />
+      <span className={`mrow-icon ${broken ? "broken" : ""}`}>
+        {scanning ? <span className="draft-spin" /> : <Icon size={17} />}
       </span>
       <button className="mrow-main" onClick={onOpen} disabled={locked} aria-label={`${personal ? "编辑" : "查看"} ${s.title}`}>
         <span className="mrow-title">
           <span>{s.title}</span>
-          {zip ? <span className="state">{s.files} 个文件</span> : null}
+          {zip && s.files ? <span className="state">{s.files} 个文件</span> : null}
         </span>
-        {s.error ? <span className="mrow-desc error">无法使用：{s.error}</span> : s.description ? <span className="mrow-desc">{s.description}</span> : null}
+        {broken ? (
+          <span className="mrow-desc error">无法使用：{s.error}</span>
+        ) : scanning ? (
+          <span className="mrow-desc">{SCANNING}…</span>
+        ) : s.description ? (
+          <span className="mrow-desc">{s.description}</span>
+        ) : null}
       </button>
       <div className="mrow-trail">
+        {toggleable ? <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} /> : null}
         <RowMenu label={s.title} actions={actions} />
-        {toggleable ? (
-          <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} />
-        ) : (
-          <span className="switch-slot" />
-        )}
       </div>
     </div>
   );
@@ -120,7 +124,6 @@ function DraftRow({ d, onOpen, onDiscard }: { d: SkillDraft; onOpen: () => void;
             { label: "丢弃草稿", icon: <IconTrash size={15} />, danger: true, onSelect: onDiscard },
           ]}
         />
-        <span className="switch-slot" />
       </div>
     </div>
   );

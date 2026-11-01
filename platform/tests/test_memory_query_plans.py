@@ -74,11 +74,31 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
 def test_dream_budget_and_active_queries_have_indexed_paths(engine):
     run_migrations(engine)
     with Session(engine) as db:
+        users = [User(email=f"dream-plan-{i}@example.test") for i in range(64)]
+        db.add_all(users)
+        db.flush()
+        now = datetime.now(UTC)
+        db.execute(
+            insert(MemoryDreamRun),
+            [
+                {
+                    "id": f"dream_plan_{i}",
+                    "user_id": users[i % 64].id,
+                    "local_date": "2026-11-01",
+                    "timezone": "UTC",
+                    "status": "applied",
+                    "claimed_until": now + timedelta(minutes=10) if i == 0 else None,
+                }
+                for i in range(8000)
+            ],
+        )
+        db.commit()
+        db.execute(text("ANALYZE"))
         queries = [
             select(MemoryDreamRun.id)
             .where(MemoryDreamRun.user_id == "user", MemoryDreamRun.local_date == "2026-10-30", MemoryDreamRun.trigger == "cron")
             .limit(6),
-            select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == "user", MemoryDreamRun.status.in_(("pending", "running"))).limit(1),
+            select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == users[0].id, service.active_job(now)).limit(1),
         ]
         indexes = {i["name"] for i in inspect(engine).get_indexes("memory_dream_runs")}
         assert {"uq_memory_dream_user_active", "ix_memory_dream_user_date_trigger"} <= indexes
@@ -86,5 +106,52 @@ def test_dream_budget_and_active_queries_have_indexed_paths(engine):
             sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
             prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
             plan = "\n".join(str(row) for row in db.connection().exec_driver_sql(prefix + sql))
-            if engine.dialect.name == "sqlite":
-                assert "INDEX" in plan, plan
+            assert "INDEX" in plan.upper() or "BITMAP" in plan.upper(), plan
+
+
+def test_summary_and_project_pool_queries_are_indexed(engine):
+    from ailab_platform.models import MemorySummary, Project
+
+    run_migrations(engine)
+    with Session(engine) as db:
+        users = [User(email=f"summary-plans-{i}@example.test") for i in range(32)]
+        user = users[0]
+        db.add_all(users)
+        db.flush()
+        db.execute(
+            insert(Project),
+            [
+                {
+                    "id": f"prj_plan_{i}",
+                    "user_id": users[(i // 2) % 32].id,
+                    "name": str(i),
+                    "memory_mode": "isolated" if i % 2 else "shared",
+                }
+                for i in range(4000)
+            ],
+        )
+        db.execute(
+            insert(MemorySummary),
+            [
+                {"id": f"msum_plan_{i}", "user_id": user.id, "project_id": f"prj_plan_{i}", "text": "", "source_digest": ""}
+                for i in range(4000)
+            ],
+        )
+        db.add(MemorySummary(user_id=user.id, text="", source_digest=""))
+        db.commit()
+        db.execute(text("ANALYZE"))
+        queries = [
+            select(Project.id).where(Project.user_id == user.id, Project.memory_mode == "shared"),
+            select(MemorySummary).where(MemorySummary.user_id == user.id, MemorySummary.project_id.is_(None)),
+            select(MemorySummary).where(MemorySummary.user_id == user.id, MemorySummary.project_id == "prj_plan_8"),
+            select(MemorySummary.id).where(MemorySummary.project_id == "prj_plan_8"),
+            select(Project.id, MemorySummary.source_digest)
+            .outerjoin(MemorySummary, (MemorySummary.project_id == Project.id) & (MemorySummary.user_id == user.id))
+            .where(Project.user_id == user.id)
+            .order_by(Project.updated_at.desc(), Project.id),
+        ]
+        for query in queries:
+            sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
+            prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+            plan = "\n".join(str(row) for row in db.connection().exec_driver_sql(prefix + sql))
+            assert "INDEX" in plan.upper() or "BITMAP" in plan.upper(), plan

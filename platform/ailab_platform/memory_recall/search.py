@@ -71,6 +71,8 @@ def _rows(
     after=None,
     cursor=None,
 ):
+    from .policy import history_pool
+
     stmt = (
         select(
             Run.id,
@@ -83,7 +85,7 @@ def _rows(
         .outerjoin(Conversation, Conversation.id == Run.conversation_id)
         .where(
             Run.user_id == user_id,  # scope is enforced in the query, never by filtering afterwards
-            Conversation.project_id == project_id,
+            history_pool(db, user_id, project_id),
             Conversation.memory_policy["write"].as_boolean().is_not(False),
             Run.options["memory_policy"]["write"].as_boolean().is_not(False),
             Run.status == RunStatus.SUCCEEDED,

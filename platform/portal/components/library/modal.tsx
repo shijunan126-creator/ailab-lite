@@ -11,12 +11,14 @@ export default function Modal({
   onClose,
   children,
   footer,
+  actions,
   className = "",
 }: {
   title: React.ReactNode;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
+  actions?: React.ReactNode; // beside the close button
   className?: string;
 }) {
   useEffect(() => {
@@ -30,6 +32,7 @@ export default function Modal({
       <div className={`modal ${className}`} role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}>
         <div className="modal-head">
           <h2>{title}</h2>
+          {actions}
           <button className="icon-btn" onClick={onClose} aria-label="关闭">
             <IconX size={18} />
           </button>

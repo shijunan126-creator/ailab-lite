@@ -143,7 +143,9 @@ def reserve_usage(db: Session, body: ReserveUsageIn) -> UsageReservation:
                 if body.mode != (owner.options or {}).get("mode", "work"):
                     raise _error(409, UsageErrorCode.CALL_CONFLICT, message="mode differs from run")
             elif body.subject in {"memory_job", "skill_draft"}:
-                if owner.status != "running" or owner.claim_token != body.attempt_id:
+                summary = body.subject == "memory_job" and body.mode == "summary"
+                allowed = {"applied", "skipped", "failed"} if summary else {"running"}
+                if owner.status not in allowed or owner.claim_token != body.attempt_id:
                     raise HTTPException(409, "memory job claim lost")
                 if body.subject == "skill_draft" and (
                     not owner.claimed_until or owner.claimed_until.replace(tzinfo=UTC) <= datetime.now(UTC)

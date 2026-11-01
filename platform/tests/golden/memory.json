@@ -18,7 +18,7 @@
     {"name":"suppression","query":"住在上海","forbidden":["mem_paused"]},
     {"name":"sensitive inference","query":"慢性病","forbidden":["mem_review"]},
     {"name":"irrelevance","query":"量子力学","forbidden":["mem_old","mem_new","mem_project","mem_other","mem_code"]},
-    {"name":"strict project","query":"中文回答 BLUEFIN","project_id":"prj_a","project_only":true,"required":["mem_project"],"forbidden":["mem_style","mem_other"]},
+    {"name":"strict project","query":"中文回答 BLUEFIN","project_id":"prj_a","memory_mode":"isolated","required":["mem_project"],"forbidden":["mem_style","mem_other"]},
     {"name":"disabled","query":"依赖 pnpm","enabled":false,"forbidden":["mem_new","mem_style"]}
   ]
 }

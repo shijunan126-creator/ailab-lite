@@ -71,7 +71,6 @@ class MemoryUpdate(BaseModel):
     enabled: bool = True
     auto_save: bool = True
     reference_history: bool | None = None
-    project_only: bool | None = None
     entries: list[MemoryEntryInput] = Field(max_length=MAX_ENTRIES)
 
     @model_validator(mode="after")

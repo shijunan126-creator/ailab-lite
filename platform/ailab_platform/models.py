@@ -202,6 +202,8 @@ class ApiToken(Base):
 class Project(Base):
     __tablename__ = "projects"
     __table_args__ = (
+        Index("ix_projects_memory_pool", "user_id", "memory_mode", "id"),
+        Index("ix_projects_memory_merge", "user_id", "memory_merge_requested_at"),
         Index("ix_projects_user_updated", "user_id", "updated_at"),
         Index("uq_projects_user_name", "user_id", "name_key", unique=True),
     )
@@ -209,11 +211,42 @@ class Project(Base):
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("prj"))
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(120))
+    memory_mode: Mapped[str] = mapped_column(String(16), default="shared", server_default="shared")
+    memory_merge_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     instructions: Mapped[str] = mapped_column(Text, default="", server_default="")
     name_key: Mapped[str] = mapped_column(
         String(64), server_default="", default=lambda ctx: naming.name_key(ctx.get_current_parameters()["name"])
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class MemorySummary(Base):
+    __tablename__ = "memory_summaries"
+    __table_args__ = (
+        Index("ix_memory_summaries_user", "user_id"),
+        Index(
+            "uq_memory_summary_account",
+            "user_id",
+            unique=True,
+            sqlite_where=text("project_id IS NULL"),
+            postgresql_where=text("project_id IS NULL"),
+        ),
+        Index(
+            "uq_memory_summary_project",
+            "user_id",
+            "project_id",
+            unique=True,
+            sqlite_where=text("project_id IS NOT NULL"),
+            postgresql_where=text("project_id IS NOT NULL"),
+        ),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("msum"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
+    text: Mapped[str] = mapped_column(Text, default="", server_default="")
+    source_digest: Mapped[str] = mapped_column(String(64), default="", server_default="")
+    generated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -760,6 +793,8 @@ class MemoryDreamRun(Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     trigger: Mapped[str] = mapped_column(String(20), default="cron")
+    project_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    instruction: Mapped[str] = mapped_column(Text, default="", server_default="")
     batch_index: Mapped[int] = mapped_column(Integer, default=1)
     cursor_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     input_run_ids: Mapped[list] = mapped_column(JSON, default=list)

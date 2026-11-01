@@ -97,15 +97,6 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 /* pages start below the floating group when the sidebar is collapsed, as the chat column does */
 .shell.collapsed .page { padding-top: 64px; }
 
-/* memory: one row of controls at one height */
-.memory-filters { display: flex; gap: 8px; align-items: center; margin: 36px 0 20px; flex-wrap: wrap; }
-.memory-filters input { flex: 1; min-width: 160px; height: 38px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); background: var(--popover); }
-.memory-filters button.select, .memory-filters button.secondary { height: 38px; padding-top: 0; padding-bottom: 0; }
-.memory-filters button.select { width: 168px; }
-@media (max-width: 600px) {
-  .memory-filters input { flex-basis: 100%; }
-  .memory-filters button.select { flex: 1; width: auto; }
-}
 
 /* ---------- new conversation ---------- */
 .chat-home { padding: 24px 16px; }
@@ -310,7 +301,7 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 /* the message box: text with skill chips in it (components/chat/rich-input.tsx) */
 .rich-input { position: relative; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; cursor: text; caret-color: var(--primary); }
 .rich-input.is-empty::before {
-  content: attr(data-placeholder); position: absolute; left: inherit; right: 4px; color: var(--faint-foreground); pointer-events: none;
+  content: attr(data-placeholder); position: absolute; inset: 0; padding: inherit; color: var(--faint-foreground); pointer-events: none;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .skill-chip {
@@ -414,31 +405,6 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
   .main-top, .pane-reopen { display: none; }
 }
 
-/* Memory consolidation panel: one row per day, a report of every candidate of that day's batches under it */
-.dream-state { font-size: var(--text-sm); color: var(--muted-foreground); }
-.dream-state.live { color: var(--foreground); }
-.dream-runs { border-top: 1px solid var(--border); }
-.dream-run + .dream-run { border-top: 1px solid var(--border); }
-.dream-run-head { display: flex; align-items: center; justify-content: flex-start; gap: 10px; width: 100%; min-height: 48px; padding: 0 16px; border-radius: 0; background: none; border: 0; color: var(--foreground); text-align: left; cursor: pointer; font-size: var(--text-sm); }
-.dream-run-head:hover { background: var(--subtle); color: var(--foreground); }
-.dream-run-head > span:first-child { white-space: nowrap; }
-.dream-sum { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
-.dream-sum.failed { color: var(--destructive); }
-.dream-detail { padding: 2px 16px 14px; display: flex; flex-direction: column; gap: 10px; }
-.dream-cand { display: flex; align-items: flex-start; gap: 8px; font-size: var(--text-sm); line-height: 1.5; color: var(--muted-foreground); }
-.dream-cand.kept { color: var(--foreground); }
-.dream-op { flex: none; min-width: 4.5em; text-align: center; font-size: var(--text-2xs); color: var(--muted-foreground); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; margin-top: 1px; }
-.dream-op.added, .dream-op.updated { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 40%, var(--border)); }
-.dream-op.invalidate { color: var(--destructive); }
-.dream-quote { display: block; margin-top: 2px; font-size: var(--text-xs); color: var(--muted-foreground); quotes: "“" "”"; }
-.dream-related { margin-top: 4px; padding-left: 8px; border-left: 2px solid var(--border); font-size: var(--text-xs); color: var(--muted-foreground); }
-.dream-reason { flex: none; max-width: 40%; text-align: right; }
-.dream-revert { align-self: flex-start; }
-.dream-more { display: block; width: 100%; padding: 10px 16px 4px; border-top: 1px solid var(--border); text-align: left; font-size: var(--text-sm); }
-@media (max-width: 640px) {
-  .dream-cand { flex-wrap: wrap; }
-  .dream-reason { max-width: none; flex-basis: 100%; text-align: left; padding-left: calc(4.5em + 18px); }
-}
 
 /* Sidebar: a skill draft is being made (spinner) or waits for the user (count) */
 .side-badge { flex: none; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--primary); color: var(--primary-foreground, #fff); font-size: var(--text-2xs); font-weight: 600; line-height: 18px; text-align: center; }
@@ -518,8 +484,7 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .mrow-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--muted-foreground); }
 .mrow-desc.error { color: var(--destructive); white-space: normal; }
 .mrow-desc a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.mrow-trail { flex: none; display: flex; align-items: center; gap: 4px; }
-.switch-slot { flex: none; display: inline-block; width: 42px; }
+.mrow-trail { flex: none; display: flex; align-items: center; gap: 8px; }
 .mrow.off .mrow-icon, .mrow.off .mrow-title, .mrow.off .mrow-desc { opacity: .55; }
 .mrow-icon.broken { background: var(--destructive-soft); color: var(--destructive); }
 .msection-head .link { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-sm); color: var(--muted-foreground); }
@@ -538,22 +503,57 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
   .mrow-desc { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 }
 
-/* Memory entries: the text is edited in place; scope, pause, source and delete live in the row's ⋯ menu. */
-.memory-alert { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.memory-group.off .mlist { opacity: .6; }
-.memory-row { align-items: flex-start; padding-top: 8px; padding-bottom: 10px; }
-.memory-row .mrow-main { gap: 0; }
-.memory-row .mrow-trail { padding-top: 4px; }
-.memory-text { width: calc(100% + 10px); margin-left: -10px; field-sizing: content; min-height: 34px; max-height: 320px; resize: none; padding: 6px 10px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; font-size: var(--text-ui); line-height: 1.6; }
-.memory-text:hover { border-color: var(--border); }
-.memory-text:focus { border-color: var(--primary); background: var(--popover); }
-.memory-row.superseded .memory-text { opacity: .55; text-decoration: line-through; }
-.memory-row.paused .memory-text { opacity: .55; }
-.memory-entry-meta { color: var(--faint-foreground); font-size: var(--text-xs); }
-.memory-source { margin-top: 6px; font-size: var(--text-xs); color: var(--muted-foreground); overflow-wrap: anywhere; }
-.memory-source blockquote { margin: 0 0 4px; padding-left: 8px; border-left: 2px solid var(--border); }
-.memory-source a { margin-right: 8px; }
-.memory-over { color: var(--destructive); }
-/* only while there is something to save */
-.memory-foot { position: sticky; bottom: 0; z-index: 1; display: flex; align-items: center; gap: 8px; margin-top: 24px; padding: 10px 12px 10px 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); box-shadow: var(--shadow-float); }
-.mlist > .alert { margin: 8px 12px; }
+/* Account: the same list rows as the other settings pages */
+.account-value { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-sm); color: var(--muted-foreground); }
+.account-form { display: flex; flex-direction: column; gap: 14px; padding: 16px; }
+.account-form label.field { margin: 0; }
+.account-form .alert { margin: 0; }
+.account-foot { display: flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.account-foot .hint { margin-right: auto; }
+.account-note { margin-top: 16px; }
+
+/* Memory: one summary per scope (components/memory/memory-summary.tsx), the facts behind it stay out of sight */
+.memory-alert { margin-bottom: 12px; }
+.memory-card .mrow-main { gap: 4px; padding: 4px 0; }
+.memory-preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: var(--text-sm); line-height: 1.6; color: var(--muted-foreground); }
+.memory-preview.empty { color: var(--faint-foreground); }
+.memory-chevron { color: var(--faint-foreground); }
+.mrow.memory-card:has(> button.mrow-main:hover) .memory-chevron { color: var(--foreground); }
+.mrow.off .memory-preview { opacity: .55; }
+.modal.memory-dialog { max-width: 640px; height: min(720px, calc(100dvh - 48px)); max-height: none; }
+.memory-dialog .modal-head { gap: 8px; }
+.memory-dialog .modal-body { gap: 16px; }
+.memory-organize { display: inline-flex; align-items: center; gap: 6px; }
+.memory-organize .draft-spin { width: 13px; height: 13px; border-width: 1.5px; }
+.memory-mode .mrow { min-height: 52px; }
+.memory-summary { transition: opacity var(--t); }
+.memory-summary.working { opacity: .55; }
+.memory-summary .md { font-size: var(--text-ui); line-height: 1.7; }
+.memory-summary .md :is(h1, h2, h3, h4, h5) { margin: 18px 0 6px; font-size: var(--text-ui); font-weight: 650; }
+.memory-summary .md > :first-child { margin-top: 0; }
+.memory-summary-empty { padding: 48px 0; text-align: center; color: var(--muted-foreground); font-size: var(--text-sm); }
+.memory-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
+.memory-turn { max-width: 85%; font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }
+.memory-turn.user { align-self: flex-end; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--subtle); color: var(--foreground); white-space: pre-wrap; }
+.memory-turn.ai { align-self: flex-start; display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; color: var(--foreground); }
+.memory-turn.ai.failed { color: var(--destructive); }
+.memory-turn.ai.reverted > span:first-child { color: var(--muted-foreground); text-decoration: line-through; }
+.memory-turn .link.sm { padding: 0; font-size: var(--text-sm); }
+.memory-turn-note { color: var(--muted-foreground); }
+.memory-typing { display: inline-flex; gap: 4px; padding: 6px 0; }
+.memory-typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--faint-foreground); animation: memory-typing 1.2s ease-in-out infinite; }
+.memory-typing i:nth-child(2) { animation-delay: .15s; }
+.memory-typing i:nth-child(3) { animation-delay: .3s; }
+@keyframes memory-typing { 0%, 80%, 100% { opacity: .3; } 40% { opacity: 1; } }
+.memory-dialog .modal-foot { padding: 12px 16px 16px; }
+.memory-ask { flex: 1; display: flex; align-items: flex-end; gap: 6px; min-width: 0; padding: 5px 5px 5px 14px; border: 1px solid var(--border-strong); border-radius: 22px; background: var(--popover); transition: border-color var(--t); }
+.memory-ask:focus-within { border-color: color-mix(in srgb, var(--ring) 55%, var(--border-strong)); }
+.memory-ask textarea { flex: 1; min-width: 0; min-height: 32px; max-height: 120px; field-sizing: content; resize: none; padding: 5px 0; border: 0; background: none; box-shadow: none; font-size: var(--text-ui); line-height: 22px; }
+.memory-ask textarea:focus { box-shadow: none; }
+.memory-send { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: var(--primary-foreground); }
+.memory-send:hover:not(:disabled) { background: var(--primary); color: var(--primary-foreground); opacity: .9; }
+.memory-send:disabled { background: var(--subtle); color: var(--faint-foreground); }
+@media (max-width: 640px) {
+  .modal-scrim:has(.memory-dialog) { padding: 0; }
+  .modal.memory-dialog { height: 100dvh; border-radius: 0; border: 0; }
+}

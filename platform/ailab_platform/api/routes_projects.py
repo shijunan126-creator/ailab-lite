@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, status
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,7 @@ def _project_rows(db: Session, user_id: str, project_id: str | None = None) -> l
             "id": project.id,
             "name": project.name,
             "instructions": project.instructions,
+            "memory_mode": project.memory_mode,
             "created_at": project.created_at,
             "updated_at": project.updated_at,
             "conversations": conversation_count,
@@ -79,7 +80,9 @@ def get_project(project_id: str, user: User = Depends(current_user), db: Session
 
 
 @router.patch("/{project_id}", response_model=ProjectOut)
-def rename_project(project_id: str, body: ProjectPatch, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+def rename_project(
+    project_id: str, body: ProjectPatch, background: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(get_db)
+) -> dict:
     with user_critical_section(db, user.id):
         project = owned_project(db, project_id, user)
         if body.name is not None:
@@ -88,10 +91,60 @@ def rename_project(project_id: str, body: ProjectPatch, user: User = Depends(cur
                 raise HTTPException(409, "已有同名项目，请换一个名称")
             project.name_key = key
             project.name = body.name.strip()
+        mode_changed = body.memory_mode is not None and body.memory_mode != project.memory_mode
+        if not mode_changed and body.model_fields_set == {"memory_mode"}:
+            db.commit()
+            return _project_rows(db, user.id, project_id)[0]
+        if mode_changed:
+            from ..audit import record_audit
+            from ..contracts.memory import MemoryUpdate
+            from ..memory_dream.maintenance import inputs
+            from .routes_memory import memory_for, write_memory
+
+            db.refresh(user)
+            if body.memory_mode == "isolated":
+                current = memory_for(user)
+                current_evidence = {rid for entry in current["entries"] for rid in entry.get("evidence_run_ids", [])}
+                evidence = set(
+                    db.scalars(
+                        select(Run.id)
+                        .join(Conversation, Conversation.id == Run.conversation_id)
+                        .where(Run.user_id == user.id, Conversation.project_id == project.id, Run.id.in_(current_evidence))
+                    )
+                )
+                entries = inputs(current["entries"])
+                changed = False
+                for entry in entries:
+                    if entry.project_id is None and entry.evidence_run_ids and set(entry.evidence_run_ids) <= evidence:
+                        entry.project_id = project.id
+                        changed = True
+                if changed:
+                    write_memory(
+                        db,
+                        user,
+                        MemoryUpdate(
+                            expected_revision=current["revision"],
+                            enabled=current["enabled"],
+                            auto_save=current["auto_save"],
+                            entries=entries,
+                        ),
+                        "user",
+                        tombstone_removed=False,
+                    )
+                project.memory_merge_requested_at = None
+            else:
+                project.memory_merge_requested_at = utcnow()
+            project.memory_mode = body.memory_mode
+            record_audit(db, "project.memory_mode", "project", project.id, actor_id=user.id, detail={"memory_mode": body.memory_mode})
         if body.instructions is not None:
             project.instructions = body.instructions
         project.updated_at = utcnow()
         db.commit()
+        if mode_changed and body.memory_mode == "shared" and project.memory_merge_requested_at:
+            from .routes_memory import run_dream_now
+
+            if memory_for(user)["enabled"]:
+                run_dream_now(background, Response(), user, db, project_id=project.id)
         return _project_rows(db, user.id, project_id)[0]
 
 
