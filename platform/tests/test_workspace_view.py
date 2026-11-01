@@ -360,3 +360,37 @@ def test_view_tool_reports_safe_reason_to_model_and_event(monkeypatch, detail, e
     assert any(expected in error for error in errors)
     assert all("/private" not in error and "secret" not in error for error in errors)
     assert any(kind == "agent.tool_result" and not data["ok"] and expected in data["error"] for kind, data in platform.events)
+
+
+def test_listener_interrupted_export_recovers_in_fresh_output_directory(tmp_path, monkeypatch):
+    import subprocess
+    from pathlib import Path
+
+    from ailab_platform.sandbox_tools import render_preview
+
+    source = tmp_path / "input.pptx"
+    source.write_bytes(b"pptx")
+    output = tmp_path / "output"
+    output.mkdir()
+    monkeypatch.setenv("AILAB_LO_LISTENER", "1")
+    monkeypatch.delenv("AILAB_LO_STRICT", raising=False)
+    calls = []
+
+    def convert(command, **kwargs):
+        calls.append(command)
+        if command[0] == "/usr/bin/python3":
+            (output / "export-state").write_text("interrupted UNO export")
+            (output / "input.pdf").write_bytes(b"partial PDF")
+            raise subprocess.CalledProcessError(1, command, stderr=b"Binary URP bridge disposed during call")
+        destination = Path(command[command.index("--outdir") + 1])
+        # LibreOffice may exit zero on an aborted export. Removing only input.pdf
+        # cannot make the interrupted export's output namespace safe to reuse.
+        if not (destination / "export-state").exists():
+            (destination / "input.pdf").write_bytes(b"complete PDF")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(render_preview.subprocess, "run", convert)
+    rendered = render_preview.soffice(source, "pdf", output)
+    assert rendered.read_bytes() == b"complete PDF"
+    assert rendered.parent != output
+    assert len(calls) == 2
