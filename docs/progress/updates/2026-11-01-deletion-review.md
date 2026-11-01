@@ -10,7 +10,7 @@
 
 ## 收尾修复与验证
 
-- 第一组 `49990c9`；历史/分享/分叉 `3459066`。随后补 purged 版本预览 410、原件孤儿扫描（以 FileObject 而非 Run 存活保护资料库产物，独立扫描游标）、来源 GC 清 plan/question/file_dependency；修正 result.artifacts 仅覆盖已删除身份，保留额度暂停的原交付状态。
+- 第一组 `49990c9`；历史/分享/分叉 `3459066`；最终产品代码 `0a494c1`。后者补 purged 版本预览 410、原件孤儿扫描（以 FileObject 而非 Run 存活保护资料库产物，独立扫描游标）、来源 GC 清 plan/question/file_dependency；修正 result.artifacts 仅覆盖已删除身份，保留额度暂停的原交付状态。
 - 迁移 0044 仅增加 artifacts.file_id 反向索引；既有 files.parent_id 索引复用。必要性是 file purge 的反向关联清理和 INSERT SELECT 不扫描整张 artifacts 表；SQLite upgrade/downgrade、drift、EXPLAIN 均验证。PG 未运行。新增索引带来每产物一次索引写入及 O(产物数) 磁盘成本；原件 GC 每轮新增六个前缀各至多 gc_batch_size 个对象，PK 查文件，沿用宽限期与删除预算；未测目标机开销。
 - 完整 SQLite **只运行一次**，代码基线 `3459066`：1835 passed / 152 skipped / 2 failed。两项为新增 serializer 替换 result.artifacts 影响 quota pause；已在后续修正。失败与受影响删除回归 84 passed / 16 skipped；最终迁移/删除契约 56 passed / 42 skipped。这些补测覆盖后续修改，不冒充最终 HEAD 全套重跑。
 - 最终 Ruff check 通过、501 files formatted。原基线隔离红测两组：11 failed / 6 controls passed / 1 skipped，以及 8 failed / 6 skipped。初期环境/迁移开发失败不作为产品验收；缺 Office runner 需先 npm ci/build，已处理。详细 a/b/c、12 类根因、Portal 文件行号、产品决定和大历史性能边界见仓库外指定报告。
