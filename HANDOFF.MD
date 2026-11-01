@@ -1009,3 +1009,9 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 - `pdf-document.tsx` 的 worker 取自顶层 `pdfjs-dist`，API 取自 `react-pdf` 依赖的那份；两者版本不同 PDF.js 拒绝打开所有 PDF。`react-pdf` 精确锁定 pdfjs 版本，所以顶层 `pdfjs-dist` 也写成精确版本，只随 `react-pdf` 一起升级。Dependabot 会分别提两个 PR（如 #100、#101），单独合并任一都会坏，而 CI 没有浏览器打开 PDF 的用例（E2E 的 PDF 断言只在有 LibreOffice 时跑）；`tests/pdf-worker-version.test.mjs` 守这条。
 - `react-pdf` 11 默认 Suspense + Error Boundary；预览组件用 `suspense={false}` 保留原来的内联加载与错误提示。PDF.js 的 CMap、标准字体、wasm 解码器和 ICC 由 `app/pdfjs/[version]/[kind]/[name]` 从已安装的 `pdfjs-dist` 提供（standalone 靠 `outputFileTracingIncludes` 带上）；缺了它们，STSong + UniGB-UCS2-H（reportlab 中文 PDF 常用）那行空白、JPEG2000 图片空白，只有控制台警告。
+
+## 2026-11-01 删除审查
+
+- 来源删除不能只取消 `RunStatus.ACTIVE`（仅 queued/running），waiting_user/interrupted 同样持有可恢复上下文。来源副本 GC 会改 User.settings，必须和用户写入共享用户锁，并在锁内重读 invalidation 游标。
+- 资料库工具应取得用户锁之后刷新文件/会话再登记 agent_read，锁前读取会让删除在等待期间穿过。purge 后 file 任务重投需先判 done，不能在 render_waiting 计算中再解引用缺失 FileObject。
+- tombstone 保留 FileObject 行不代表 derived 对象还可留存：孤儿 GC 必须把 purged 行视为失效 owner，收敛迟到 Worker 输出。

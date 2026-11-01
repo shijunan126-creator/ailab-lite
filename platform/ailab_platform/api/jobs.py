@@ -175,7 +175,7 @@ def _claim_locked(db, job, body):
     expired = envelope.deadline <= now
     render_waiting = (
         envelope.kind == "preview" or (envelope.kind == "file" and (file.meta or {}).get("processing") == "render_pending")
-        if envelope.kind in {"preview", "file"}
+        if not done and envelope.kind in {"preview", "file"}
         else False
     )
     if not done and render_waiting:

@@ -45,19 +45,24 @@ class Read(BaseModel):
 
 def _ready(db, run_id, file_id):
     run = _run_or_404(db, run_id)
-    file = db.get(FileObject, file_id, populate_existing=True)
-    if (
-        not file
-        or file.user_id != run.user_id
-        or file.status != FileStatus.READY
-        or file.purpose != "library"
-        or file.deleted_at
-        or file.purged_at
-    ):
-        raise HTTPException(404, "资料不存在或不可用")
     from ..models import MessageFileRef
 
     with user_critical_section(db, run.user_id):
+        db.refresh(run)
+        conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
+        if run.conversation_id and (conversation is None or conversation.deleted_at):
+            raise HTTPException(404, "对话不存在")
+        file = db.get(FileObject, file_id, populate_existing=True)
+        if (
+            not file
+            or file.user_id != run.user_id
+            or file.status != FileStatus.READY
+            or file.purpose != "library"
+            or file.deleted_at
+            or file.purged_at
+        ):
+            raise HTTPException(404, "资料不存在或不可用")
+
         existing = db.scalar(
             select(MessageFileRef.id).where(
                 MessageFileRef.run_id == run.id,

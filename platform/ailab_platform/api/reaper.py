@@ -263,7 +263,8 @@ def purge_orphan_objects(db: Session, storage, now: datetime) -> int:
             if _aware(item.modified_at) >= cutoff:
                 continue
             owner_id = item.key.split("/")[1]
-            if db.get(owner, owner_id) is not None:
+            resource = db.get(owner, owner_id)
+            if resource is not None and not (owner is FileObject and resource.purged_at is not None):
                 continue
             _schedule_delete(db, item.key, "orphan")
             db.commit()

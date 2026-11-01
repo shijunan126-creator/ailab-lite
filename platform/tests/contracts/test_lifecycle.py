@@ -239,3 +239,17 @@ def test_capacity_warning_never_blocks_startup(monkeypatch):
     monkeypatch.setattr(main.log, "warning", lambda message, *args: warnings.append(message))
     main.warn_storage_capacity()
     assert any("storage overcommitted" in message for message in warnings)
+
+
+def test_orphan_gc_collects_late_derivatives_of_purged_versions(env):
+    factory, storage = env
+    key = "derived/trimmed/late-preview"
+    with factory() as db:
+        db.add(FileObject(id="trimmed", user_id="u", filename="文件已删除", storage_key="gone", purged_at=OLD, is_head=0))
+        db.commit()
+        put_old(storage, key)
+        for _ in range(4):
+            purge_orphan_objects(db, storage, NOW)
+            drain_object_deletions(db, storage)
+        assert not storage.exists(key)
+        assert db.get(FileObject, "trimmed") is not None
