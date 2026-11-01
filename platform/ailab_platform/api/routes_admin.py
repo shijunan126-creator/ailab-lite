@@ -315,7 +315,7 @@ def _patch_user(target_id, body, user, db):
             row.disabled_at = utcnow() if value else None
             if value:
                 revoke_sessions(db, row.id)
-                for run_id in db.scalars(select(Run.id).where(Run.user_id == row.id, Run.status.not_in(RunStatus.TERMINAL))):
+                for run_id in db.scalars(select(Run.id).where(Run.user_id == row.id, Run.status.not_in(RunStatus.TERMINAL))).all():
                     transition_run(db, run_id, RunStatus.CANCELED, reason="user_disabled", commit=False)
                 db.execute(
                     update(QueuedMessage)

@@ -239,6 +239,10 @@ def record_failure(db, task):
         pause_task(db, task, "failures")
 
 
+def _aware(value):
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+
+
 def unattended(db, task, now):
     ids = task.recent_run_ids or []
     if len(ids) < UNREAD_OCCURRENCES:
@@ -256,8 +260,7 @@ def unattended(db, task, now):
         ).all()
         if not notes or any(n.read_at for n in notes):
             return False
-        started = run.started_at or run.created_at
-        started = started.replace(tzinfo=UTC) if started.tzinfo is None else started
+        started = _aware(run.started_at or run.created_at)
         oldest = min(oldest, started) if oldest else started
     return now - oldest >= UNREAD_GRACE
 
@@ -268,6 +271,11 @@ def dispatch_task(db, task, user, now, observed):
         pause_task(db, task, "ended")
         return
     last = db.get(Run, task.last_run_id) if task.last_run_id else None
+    stalled = last and last.status in {RunStatus.WAITING_USER, RunStatus.INTERRUPTED}
+    if stalled and now - _aware(last.started_at or last.created_at) >= UNREAD_GRACE:
+        # a question nobody answers would otherwise skip every later occurrence without end
+        pause_task(db, task, "unread")
+        return
     if last and last.status not in RunStatus.TERMINAL:
         task.last_status, task.last_error = "skipped", "上一次还未结束"
         task.updated_at = now

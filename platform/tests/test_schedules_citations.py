@@ -351,6 +351,23 @@ def test_dispatch_does_not_overlap_and_advances(guardrail_task, status):
     assert c.get("/v1/schedules", headers=auth).json()[0]["last_status"] == "skipped"
 
 
+@pytest.mark.parametrize("status", ["waiting_user", "interrupted"])
+def test_unanswered_occurrence_pauses_instead_of_skipping_forever(guardrail_task, status):
+    from ailab_platform.models import Notification
+
+    c, auth, task = guardrail_task
+    first = c.post(f"/v1/schedules/{task['id']}/run", headers=auth).json()
+    with SessionLocal() as db:
+        run = db.get(Run, first["run_id"])
+        run.status, run.started_at = status, utcnow() - timedelta(days=8)
+        db.commit()
+    due(task["id"], utcnow())
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert not row.enabled and row.paused_reason == "unread" and row.last_run_id == first["run_id"]
+        assert db.scalar(select(Notification).where(Notification.user_id == row.user_id, Notification.kind == "schedule.paused"))
+
+
 def test_end_date_local_validation_and_single_pause(guardrail_task, monkeypatch):
     import ailab_platform.api.routes_schedules as schedules
     from ailab_platform.models import Notification
