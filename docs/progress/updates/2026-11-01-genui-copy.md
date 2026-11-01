@@ -20,6 +20,7 @@
 
 ## 本轮检查（Claude，代码基线为本分支工作区）
 
+- Codex（基线 `3881e14` + 本轮 fixture/E2E）：独立 Python 3.12 `.venv`；`ruff check` + `ruff format --check`（`ailab_platform/llm.py e2e/test_genui.py`）通过；`pytest tests -q -k "genui or llm"` 84 通过；`AILAB_E2E=1 .venv/bin/pytest e2e/test_genui.py -q` 首轮 7 通过、1 失败（测试误用原始数值 1280，实际按可见格式复制 1,280），修正断言后仅重跑该用例 1 通过；`cd portal && npm test` 128 通过。未改 Portal 产品代码，未跑全套 Python/E2E；新用例验证真实 hover、PNG 下载/剪贴板及 HTML/Markdown/代码复制。
 - `npm test`（含新增 `tests/genui-image.test.tsx` 9 项）与 `npm run build` 通过。
 - 生产构建 + Playwright（Chromium），临时展示页已删除：浅/深色悬停位置、复制图片读回 PNG、下载文件名、块内表格悬停只显示表格复制、Markdown/GenUI/Compare 表格剪贴板读回 HTML + Markdown、代码复制、图片中不含任何操作按钮；手机 390 宽触屏：点表格只显示表格复制、点指标只显示块操作、点外部全部隐藏；无页面错误。
 

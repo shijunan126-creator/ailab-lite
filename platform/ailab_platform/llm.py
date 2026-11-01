@@ -360,6 +360,13 @@ def _genui_answer(prompt: str) -> str | None:
         return _genui_page(escape=True)
     if "[[genui-html-cut]]" in prompt:
         return _genui_page(closed=False)
+    if "[[genui-copy]]" in prompt:
+        return (
+            '```openui\nroot = Stack([Heading("请求概览"), '
+            'BarChart("请求", ["成功", "失败"], [Series("次数", [300, 20])])])\n```\n\n'
+            '```openui\nroot = Stack([Heading("地区明细"), Table(["地区", "营收"], [["华东", 1280], ["华北", 380]])])\n```\n\n'
+            '| 名称 | 数量 |\n|---|--:|\n| 苹果 | 3 |\n\n```python\nname = "AILab"\nprint(name)\n```'
+        )
     if "[[genui-demo]]" in prompt:
         return (
             '三个指标与图表。\n```openui\nroot = Grid([Metric("请求", 320, "次"), Metric("成功", 300, "次"), '
