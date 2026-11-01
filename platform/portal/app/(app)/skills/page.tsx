@@ -51,6 +51,7 @@ function SkillRow({
   onOpen,
   onCustomize,
   onDelete,
+  onReset,
 }: {
   s: Skill;
   busy: boolean;
@@ -59,13 +60,21 @@ function SkillRow({
   onOpen: () => void;
   onCustomize?: () => void;
   onDelete?: () => void;
+  onReset?: () => void;
 }) {
   const Icon = skillIcon(s.name);
   const kind = skillKind(s);
   const personal = kind === "personal";
   const toggleable = s.toggleable ?? kind !== "base";
   const zip = personal && s.kind_file === "zip" && s.file_id;
-  const actions: RowAction[] = personal
+  const actions: RowAction[] = kind === "platform"
+    ? [
+        { label: "查看", icon: <IconEye size={15} />, onSelect: onOpen },
+        ...(onCustomize ? [{ label: "修改", icon: <IconPencil size={15} />, onSelect: onCustomize, disabled: locked }] : []),
+        ...(s.customized && onReset ? [{ label: "恢复默认", icon: <IconRetry size={15} />, onSelect: onReset }] : []),
+        ...(onDelete ? ["sep" as const, { label: "移除", icon: <IconTrash size={15} />, danger: true, onSelect: onDelete }] : []),
+      ]
+    : personal
     ? [
         { label: "编辑", icon: <IconPencil size={15} />, onSelect: onOpen, disabled: locked },
         ...(zip ? [{ label: "下载", icon: <IconDownload size={15} />, onSelect: () => download(downloadUrl(`/v1/files/${s.file_id}/content`), s.filename) }] : []),
@@ -86,6 +95,7 @@ function SkillRow({
         <span className="mrow-title">
           <span>{s.title}</span>
           {zip && s.files ? <span className="state">{s.files} 个文件</span> : null}
+          {s.update_available ? <span className="state ready">有新版本</span> : s.customized ? <span className="state">已修改</span> : null}
         </span>
         {broken ? (
           <span className="mrow-desc error">无法使用：{s.error}</span>
@@ -206,7 +216,8 @@ export default function SkillsPage() {
     setEditing(null);
     setError("");
     const kind = skillKind(s);
-    const existing = drafts?.find((d) => d.origin === "skill" && d.base?.name === s.name && (kind !== "personal" || d.base?.file_id === s.file_id));
+    const origin = kind === "platform" ? "platform" : "skill";
+    const existing = drafts?.find((d) => d.origin === origin && d.base?.name === s.name && (kind !== "personal" || d.base?.file_id === s.file_id));
     if (existing) return setDraft(existing.id);
     setBusy(s.name);
     try {
@@ -283,8 +294,38 @@ export default function SkillsPage() {
     URL.revokeObjectURL(url);
   }
 
-  const platform = (skills || []).filter((s) => skillKind(s) !== "personal");
+  const platform = (skills || []).filter((s) => skillKind(s) === "base" || skillKind(s) === "builtin");
+  const added = (skills || []).filter((s) => skillKind(s) === "platform");
   const personal = (skills || []).filter((s) => skillKind(s) === "personal");
+
+  async function resetSkill(s: Skill) {
+    if (!(await confirmDialog({ title: `恢复「${s.title}」的默认内容？`, body: "你的修改会被删除，之后随平台更新。", action: "恢复默认", danger: true }))) return;
+    setBusy(s.name);
+    try {
+      await api(`/v1/platform-skills/${encodeURIComponent(s.id!)}/reset`, { method: "POST" });
+      draftsChanged();
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeAdded(s: Skill) {
+    const body = s.customized ? "你的修改也会被删除。可以再从技能广场添加。" : "可以再从技能广场添加。";
+    if (!(await confirmDialog({ title: `移除「${s.title}」？`, body, action: "移除", danger: true }))) return;
+    setBusy(s.name);
+    try {
+      await api(`/v1/platform-skills/${encodeURIComponent(s.id!)}/add`, { method: "DELETE" });
+      draftsChanged();
+      await load();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(null);
+    }
+  }
   const openDrafts = (drafts || []).filter((d) => d.status !== "confirmed" && d.status !== "discarded");
 
   function go(next: Tab) {
@@ -316,7 +357,7 @@ export default function SkillsPage() {
       </div>
       {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
 
-      {tab === "market" ? <Market onAdded={(fileId, title) => settle(fileId, title)} /> : <>
+      {tab === "market" ? <Market onAdded={() => void load()} /> : <>
 
       {openDrafts.length ? (
         <section className="msection" aria-label="技能草稿">
@@ -362,6 +403,27 @@ export default function SkillsPage() {
           ))}
         </div>
       </section>
+
+      {added.length ? (
+        <section className="msection">
+          <div className="msection-head"><h2>广场技能</h2></div>
+          <div className="mlist">
+            {added.map((s) => (
+              <SkillRow
+                key={s.id || s.name}
+                s={s}
+                busy={busy === s.name}
+                locked={busy === s.name}
+                onToggle={(on) => toggle(s, on)}
+                onOpen={() => (s.customized ? openDraft(s) : setEditing({ mode: "view", skill: s }))}
+                onCustomize={() => openDraft(s)}
+                onReset={() => resetSkill(s)}
+                onDelete={() => removeAdded(s)}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="msection">
         <div className="msection-head"><h2>平台技能</h2></div>

@@ -96,7 +96,7 @@ export default function SkillEditor({
   ) : skill && onCustomize && skillKind(skill) !== "personal" ? (
     <>
       <span className="spacer" />
-      <button className="sm" onClick={() => onCustomize(skill)}>另存为个人技能</button>
+      <button className="sm" onClick={() => onCustomize(skill)}>{skillKind(skill) === "platform" ? "修改" : "另存为个人技能"}</button>
     </>
   ) : undefined;
 

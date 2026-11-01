@@ -567,5 +567,11 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .market-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .market-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-ui); font-weight: 600; }
 .market-desc { flex: 1; margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.market-error { margin: 0; color: var(--destructive); font-size: var(--text-xs); }
-.market-add { align-self: flex-end; gap: 4px; }
+.market-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.market-source { color: var(--faint-foreground); font-size: var(--text-xs); }
+.market-source:hover { color: var(--foreground); }
+.market-add { gap: 4px; }
+.market-more { display: block; margin: 16px auto 0; }
+
+/* admin 技能广场: two short fields side by side */
+.admin-form .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
