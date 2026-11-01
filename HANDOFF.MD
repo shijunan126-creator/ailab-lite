@@ -1,5 +1,7 @@
 ## 2026-11-01 工作文件查看与搜索诊断
 
+- `gh pr merge --auto` 不保证等 CI：仓库没有 required checks 时会立即合并，即使检查仍 running。本轮 #141 因此提前 squash；严格“绿后合并”须先确认所有检查与仓库要求，不能把 `--auto` 当等待器。
+
 - SearXNG 的 HTTP 200 不表示引擎成功：`results=[]` 加 `unresponsive_engines` 是供应商失败，不能作为成功空结果送给模型；存在结果的部分成功仍可用。排查需同时看响应和引擎日志，不要先改 query/language/密钥。
 - `view_workspace_file` 的 sandbox stderr 和 Broker HTTP detail 曾被连续折叠成两条通用报错，事件无法还原原始原因；只传递白名单原因码，禁止直接透传含宿主路径或子进程命令的异常。旧容器重建会丢日志；仅有 5 秒失败事件不能断言是 45 秒超时或四页限制。真实模型定位及验收边界见[记录](docs/progress/updates/2026-11-01-workspace-search-errors.md)。
 - Work LO listener 的 384 MiB RSS ceiling 会在整份 PPT 导出中途杀掉进程（实测峰值 403–457 MB），不是按请求页数计费的内存。UNO bridge disposed 后即便换 profile、unlink PDF，也不能复用原中止导出目录：冷 LO 可 exit 0、报 Io Abort 而没有 PDF。保留资源上限，冷恢复使用全新输出子目录；不能仅提高上限或增加自动重试。真实模型复现规格要从 gzip checkpoint 取完整 tool arguments，事件中的 `write_file.content` 已截断。

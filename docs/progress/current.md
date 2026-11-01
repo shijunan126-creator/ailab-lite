@@ -12,7 +12,7 @@
 - 分支 `t3/workspace-search-errors`，base `origin/main@21f3300`；用户授权后端调查、修复、PR、CI 绿后 squash 合并，明确不部署。其他交接保持原范围。
 - 已确认：新闻会话 6 次搜索被记为成功空结果，同期 SearXNG 多引擎网络超时；现已恢复（现场同参数探针 42 条、无失败引擎）。修复 HTTP 200 中的失败信号识别，保留真正空结果和部分成功结果。
 - PPT：用户追加授权真模型后，从 checkpoint 恢复首次失败规格，复现并抓到 RSS ceiling 在导出中途终止 LO、冷回退复用中止导出目录导致 exit 0 却无 PDF。修复为全新输出命名空间恢复，保留内存上限；真模型八组查看与补充 12 次调用全通过，含实际 bridge disposed 后恢复成功。错误码安全贯穿模型与事件。
-- 验证、局限与后续见[记录](updates/2026-11-01-workspace-search-errors.md)。[PR #141](https://github.com/shijunan126-creator/ailab-lite/pull/141) 已提交；最终本机全套与失败项复核完成，下一步：等 CI 绿后 squash，之后等待用户另行授权部署，其他范围不自动开展。未修改 Portal，未部署。
+- 验证、局限与后续见[记录](updates/2026-11-01-workspace-search-errors.md)。[PR #141](https://github.com/shijunan126-creator/ailab-lite/pull/141) 已提交；最终本机全套与失败项复核完成。`gh pr merge --auto` 在无 required checks 的仓库意外立即 squash 为 `1d3d8d5`，未遵守绿后合并条件；当前 CI 6 项通过、SQLite/PG/E2E 3 项运行中，无已知失败。下一步：核对最终 CI，失败则修复；之后等待用户另行授权部署，其他范围不自动开展。未修改 Portal，未部署。
 
 ---
 
