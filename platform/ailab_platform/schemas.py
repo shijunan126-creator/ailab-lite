@@ -41,6 +41,7 @@ class ArtifactOut(ORMModel):
     size: int
     sha256: str
     download_url: str = ""
+    deleted: bool = False
 
 
 class LoginRequest(BaseModel):

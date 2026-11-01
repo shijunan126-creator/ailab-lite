@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, object_session
 
-from ..models import Artifact, FileObject, ModelUsage, QueuedMessage, Run
+from ..models import Artifact, FileObject, MessageFileRef, ModelUsage, QueuedMessage, Run
 
 
 def file_dict(file: FileObject, versions: int | None = None) -> dict:
@@ -45,15 +45,17 @@ def file_dict(file: FileObject, versions: int | None = None) -> dict:
 
 
 def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
+    deleted = file.deleted_at is not None or file.purged_at is not None
     return {
         "id": artifact.id,
         "file_id": file.id,
         "role": artifact.role,
-        "filename": file.filename,
+        "filename": "文件已删除" if deleted else file.filename,
         "content_type": file.content_type,
         "size": file.size,
         "sha256": file.sha256,
-        "download_url": f"/v1/files/{file.id}/content",
+        "download_url": "" if deleted else f"/v1/files/{file.id}/content",
+        "deleted": deleted,
     }
 
 
@@ -104,7 +106,7 @@ def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: boo
 
 
 def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
-    """Serialize one bounded page with four related-row reads, regardless of turn count."""
+    """Serialize related rows in batches, regardless of turn count."""
     if not runs:
         return []
     ids = [run.id for run in runs]
@@ -113,8 +115,31 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
         select(Artifact, FileObject).join(FileObject, Artifact.file_id == FileObject.id).where(Artifact.run_id.in_(ids))
     ):
         artifacts.setdefault(artifact.run_id, []).append(artifact_dict(artifact, file))
+    for ref in db.scalars(select(MessageFileRef).where(MessageFileRef.run_id.in_(ids), MessageFileRef.message_kind == "artifact")):
+        artifacts.setdefault(ref.run_id, []).append(
+            {
+                "id": ref.message_id,
+                "file_id": ref.file_id,
+                "role": ref.reference_origin,
+                "filename": "文件已删除",
+                "content_type": "application/octet-stream",
+                "size": 0,
+                "sha256": "",
+                "download_url": "",
+                "deleted": True,
+            }
+        )
     file_ids = {fid for run in runs for fid in run.input_file_ids or []}
-    files = dict(db.execute(select(FileObject.id, FileObject.filename).where(FileObject.id.in_(file_ids))).all()) if file_ids else {}
+    files = (
+        {
+            file.id: file
+            for file in db.execute(
+                select(FileObject.id, FileObject.filename, FileObject.deleted_at, FileObject.purged_at).where(FileObject.id.in_(file_ids))
+            )
+        }
+        if file_ids
+        else {}
+    )
     applied = {run.id: (run.runtime_meta or {}).get("steer_ids", []) for run in runs}
     steer_ids = {qid for values in applied.values() for qid in values}
     prompts = (
@@ -151,7 +176,13 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
         out = run_dict(db, run, source_invalid=run.id in invalid)
         out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
         out["artifacts"] = artifacts.get(run.id, [])
-        out["input_files"] = [{"file_id": fid, "filename": files[fid]} for fid in run.input_file_ids or [] if fid in files]
+        if "artifacts" in out["result"]:
+            out["result"] = {**out["result"], "artifacts": out["artifacts"]}
+        out["input_files"] = [
+            {"file_id": fid, "filename": files[fid].filename if available else "文件已删除", "deleted": not available}
+            for fid in run.input_file_ids or []
+            for available in [fid in files and files[fid].deleted_at is None and files[fid].purged_at is None]
+        ]
         out["usage"] = (run.result or {}).get("forked_usage") or usage.get(run.id, dict.fromkeys((*columns, "calls"), 0))
         result.append(out)
     return result

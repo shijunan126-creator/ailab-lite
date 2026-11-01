@@ -7,7 +7,7 @@ from datetime import timedelta
 from pathlib import PurePath
 
 from fastapi import HTTPException
-from sqlalchemy import delete, func, literal_column, select, update
+from sqlalchemy import delete, func, insert, literal, literal_column, select, update
 from sqlalchemy.orm import Session
 
 from .config import settings
@@ -68,6 +68,23 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
         return keys
     # Clear links within the selection too, so FK enforcement does not depend on delete order.
     db.execute(update(FileObject).where(FileObject.parent_id.in_(ids)).values(parent_id=None))
+    # Keep a byte-free history identity after the file/Artifact FK rows are removed.
+    db.execute(
+        insert(MessageFileRef).from_select(
+            ["id", "run_id", "message_kind", "message_id", "file_id", "role", "ordinal", "reference_origin", "created_at"],
+            select(
+                Artifact.id,
+                Artifact.run_id,
+                literal("artifact"),
+                Artifact.id,
+                Artifact.file_id,
+                literal("output"),
+                literal(0),
+                Artifact.role,
+                literal(utcnow()),
+            ).where(Artifact.file_id.in_(ids)),
+        )
+    )
     db.execute(delete(Artifact).where(Artifact.file_id.in_(ids)))
     db.execute(delete(FileObject).where(FileObject.id.in_(ids)))
     return keys

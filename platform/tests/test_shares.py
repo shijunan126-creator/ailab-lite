@@ -392,3 +392,34 @@ def test_post_share_reuses_live_object_share(shared):
     assert repeated.status_code == 201
     assert repeated.json()["id"] == share["id"]
     assert repeated.json()["audience"] == "everyone"
+
+
+def test_share_view_fences_deleted_attachment_summary(shared):
+    from ailab_platform.api.document_sources import bind_refs
+
+    c, share, recipient, _, _, run_id, _, fids = shared
+    with SessionLocal() as db:
+        bind_refs(db, "run_prompt", run_id, [fids[1]], run_id)
+        db.commit()
+    assert c.delete(f"/v1/files/{fids[1]}", headers=AUTH).status_code == 204
+    for purge in (False, True):
+        if purge:
+            assert c.delete("/v1/trash", headers=AUTH).status_code == 200
+        response = c.get(f"/v1/shares/{share['id']}/view", headers=recipient)
+        assert response.status_code == 200
+        turn = response.json()["turns"][0]
+        assert turn["answer"] == "（文件来源已失效）"
+        assert turn["attachments"][0]["filename"] == "文件已删除"
+
+
+def test_share_preserves_deleted_artifact_identity(shared):
+    c, share, recipient, _, _, _, _, fids = shared
+    assert c.delete(f"/v1/files/{fids[0]}", headers=AUTH).status_code == 204
+    for purge in (False, True):
+        if purge:
+            assert c.delete("/v1/trash", headers=AUTH).status_code == 200
+        result = c.get(f"/v1/shares/{share['id']}/view", headers=recipient)
+        assert result.status_code == 200
+        artifact = result.json()["turns"][0]["artifacts"][0]
+        assert artifact["deleted"] and artifact["filename"] == "文件已删除" and artifact["file_id"] == fids[0]
+        assert artifact["content_url"] == artifact["download_url"] == ""
