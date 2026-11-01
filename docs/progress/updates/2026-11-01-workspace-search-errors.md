@@ -29,6 +29,8 @@ PPT Run 中首个四页 `[1,2,4,5]` 成功，随后 9 次失败涉及四页、�
 - Ruff 全库 lint / format、导入边界与 skill 清单检查通过。
 - 相关 `test_web.py`、`test_workspace_view.py`、`test_net_tools.py`、`test_reader.py`：86 通过；之后补充的显式 provider error 用例纳入完整套件。
 - 新回归在旧实现下分别会出现：失败供应商被返回 `[]`、Broker 丢失码、模型只收到通用文案。还覆盖合法空响应、部分成功、非法响应，以及未知 detail 不泄漏。
-- 完整 Python 首轮 1927 通过、163 跳过、18 失败：本 worktree 未构建 vendor Office reader；按 CI 执行 `npm ci --ignore-scripts` + `npm run build` 后只重跑 18 个失败项，全部通过。真实模型定位后新增恢复修复与回归，相关 39 项通过；最终全套与 CI 结果待填写。
+- 完整 Python 首轮 1927 通过、163 跳过、18 失败：本 worktree 未构建 vendor Office reader；按 CI 执行 `npm ci --ignore-scripts` + `npm run build` 后只重跑 18 个失败项，全部通过。真实模型定位后新增恢复修复与回归，相关 39 项通过。最终产品基线 `46450f9` 全套 1944 通过、163 跳过、2 失败：旧 UNO fixture 写死原输出目录，已更新为从实际命令读取目标；另一个 `test_pre_output_fallback_has_distinct_calls_and_real_ledger[429]` 偶发账本行数 3 而非 2，未改相关产品代码。只重跑 `test_uno_render.py` 与 `test_model_gateway_context.py`，24 项全部通过；CI 结果见 PR。
 - 未运行浏览器或本机 Portal build（无 Portal 改动）；CI 按既定流程运行。未连接业务 DB 跑测试；现场 DB 仅只读查询。未部署。
 - 无新依赖、后台任务、数据库查询或迁移；成功路径增加常数次响应结构检查，失败路径只处理有界 stderr 尾部，并新增一个临时恢复子目录。渲染与网络资源限制保持原值。临时文件和原始输出仅在仓库外，调查结束清理。
+
+PR：[后端修复 #141](https://github.com/shijunan126-creator/ailab-lite/pull/141)，等待最终 CI，绿后 squash。仅测试夹具与文档在最终全套后调整，未再改产品代码。
