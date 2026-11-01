@@ -5,11 +5,12 @@
 - PPT：用户追加授权真模型后，从 checkpoint 恢复首次失败规格，复现并抓到 RSS ceiling 在导出中途终止 LO、冷回退复用中止导出目录导致 exit 0 却无 PDF。修复为全新输出命名空间恢复，保留内存上限；真模型八组查看与补充 12 次调用全通过，含实际 bridge disposed 后恢复成功。错误码安全贯穿模型与事件。
 - 验证、局限与后续见[记录](updates/2026-11-01-workspace-search-errors.md)。下一步：完成本轮检查与 PR；合并后等待用户另行授权部署，其他范围不自动开展。未修改 Portal，未部署。
 
-# 记忆摘要与项目记忆模式：交接（2026-11-01，进行中）
+# 记忆摘要与项目记忆模式：交接（2026-11-01，已合并并部署）
 
-- 分支 `feat/memory-summary`（worktree `.worktrees/memory-summary`），base `origin/main@4c6f092`，**全部改动未提交**。用户授权：设计实施、PR、merge、最终部署；后端实现、测试与部署交给 Codex（gpt-6.1-sol medium），质量由 Claude 最终把关（美观、无 bug）。用户原始指令、已完成内容、验证与临时栈见[本轮记录](updates/2026-11-01-memory-summary.md)，设计见 [design](../architecture/design/2026-11-01-memory-summary-project-scope.md)，陷阱见 HANDOFF 顶部。
-- 已完成：后端与 Portal 实施及审查 1–9 修复：批次终态/游标先落库，摘要独立计费刷新且保留活动租约至 finally 结束；请求作用域优先；编辑围栏限本作用域；精简删除写入、召回模式读取和摘要 GET，禁用不自动整理，卡片/弹窗单轮询。本轮补充修复摘要阶段 active/并发保护与 Portal 编辑等待，验证基线、结果与残余风险只见[本轮记录](updates/2026-11-01-memory-summary.md#验证审查修复后的未提交工作树)。全部仍未提交。
-- 下一步（交回主代理，按序）：④ 最终 review（本次子任务不提交）、提交、PR、CI 全绿后 merge；⑤ 按本轮记录的原授权和测试环境约定部署 merge 后的 main 到 AILab-local（迁移 0045→0046）。本次实现子任务只完成步骤 1–3，不执行发布或部署。
+- 分支 `feat/memory-summary`，base `origin/main@4c6f092`；[PR #137](https://github.com/shijunan126-creator/ailab-lite/pull/137) head `3af6da3` CI 9 项全绿，squash 为 `main@21f3300`。用户授权：设计实施、PR、merge、部署；后端实现、测试与部署由 Codex（gpt-6.1-sol medium），Claude 审查把关。指令、实现、验证与风险见[本轮记录](updates/2026-11-01-memory-summary.md)，设计见 [design](../architecture/design/2026-11-01-memory-summary-project-scope.md)。
+- 已完成：项目记忆模式 shared/isolated 两向迁移与融合、记忆摘要与对话式修改/撤销/清空、`PATCH /v1/memory/settings`、记忆页/项目记忆弹窗与其他页签 UI 修整；审查后修复摘要阶段与批次终态解耦（终态/游标先落库，摘要阶段保留活动租约）、请求作用域优先、编辑本作用域围栏及若干查询开销。
+- 已部署：Codex 把 `main@21f3300` 部署到本机 AILab-local：后端共用镜像与 Portal 为 `release-21f3300`，其余复用；迁移 0045→0046；12 服务 running、10 项健康检查 healthy、Portal 200。未备份、未做部署后验收，细节只在 AILab-local 记录。
+- 下一步：本范围完成。未测边界：真实模型下摘要质量、编辑理解与融合判定；升级后既有共享项目历史互相可召回（设计决定）。待用户使用反馈。
 
 ---
 

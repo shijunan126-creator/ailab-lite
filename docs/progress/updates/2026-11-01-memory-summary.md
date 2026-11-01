@@ -1,6 +1,6 @@
-# 记忆摘要、项目记忆模式与设置页 UI（2026-11-01，进行中，未提交）
+# 记忆摘要、项目记忆模式与设置页 UI（2026-11-01，已合并并部署）
 
-worktree `/Users/michael/Developer/ailab-lite/.worktrees/memory-summary`，分支 `feat/memory-summary`，base `origin/main@4c6f092`。**全部改动未提交**（`git status` 约 40 项，含 `git rm` 的 `dream-panel.tsx`）。设计合同：[2026-11-01-memory-summary-project-scope.md](../../architecture/design/2026-11-01-memory-summary-project-scope.md)。
+worktree `/Users/michael/Developer/ailab-lite/.worktrees/memory-summary`，分支 `feat/memory-summary`，base `origin/main@4c6f092`，已合并为 `main@21f3300`（见下“合并与部署”）。设计合同：[2026-11-01-memory-summary-project-scope.md](../../architecture/design/2026-11-01-memory-summary-project-scope.md)。
 
 ## 用户原始指令（2026-11-01，要点照录）
 
@@ -49,7 +49,12 @@ worktree `/Users/michael/Developer/ailab-lite/.worktrees/memory-summary`，分�
 - 临时测试 URL：`AILAB_TEST_DATABASE_URL=postgresql+psycopg://ailab@127.0.0.1:25432/ailab_test`、`AILAB_TEST_POSTGRES_URL=postgresql+psycopg://ailab@127.0.0.1:25432/ailab_migrations`；Redis `AILAB_TEST_REDIS_URL=redis://127.0.0.1:26379/14`，E2E 使用 `/15`。E2E 服务端口 18480–18483、Portal 13400；仅使用专用临时实例，PG/Redis 均已停止。
 - 原始日志仅在仓库外 `/tmp/ms-summary-regression-*.log` 和 `/tmp/ms-summary-regression-e2e/`。本轮未跑完整 E2E 或视觉走查（此前 154 passed / 6 skipped 与 1280/390/深色走查是历史证据）；本轮指定 E2E 为真实浏览器 + mock 模型，未测真实模型质量或生产隔离。
 
-## 剩余工作（按顺序）
+## 合并与部署
+
+- [PR #137](https://github.com/shijunan126-creator/ailab-lite/pull/137) head `3af6da3`（最终工作树：SQLite 1930 passed/163 skipped，PG16+Redis 2037 passed/56 skipped，Portal 131 passed + build，E2E 记忆/Portal 40 passed）CI 9 项全绿，squash 为 `main@21f3300`。
+- Codex 部署 `main@21f3300` 到 AILab-local：后端共用镜像与 Portal `release-21f3300`，其余复用；迁移 0045→0046；12 服务 running、10 项健康检查 healthy、Portal 200。未备份、未做部署后验收。
+
+## 原剩余工作（已完成，保留作历史）
 
 1–3 **已完成并修复审查 1–9**：批次终态/游标与摘要解耦，失败路径仍刷新摘要；请求作用域优先；空作用域与禁用不自动运行；去除摘要 GET 历史扫描和重复轮询；编辑仅围栏本作用域事实；删除与召回查询开销修正。本轮补充修复摘要阶段活动租约与 Portal 编辑等待；验证与首次失败/复跑结果见上。本次实现子任务未 commit/stash/reset、推送、提 PR、merge 或部署。
 
