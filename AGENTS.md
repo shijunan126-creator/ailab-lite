@@ -65,6 +65,15 @@ platform/ailab_platform/
 - Every external call has connect/read/total timeouts. Every loop that waits has a deadline.
 - Streams (S3 bodies, HTTP responses, browser readers) are closed in `finally`.
 
+### Model request prefix stability
+
+Every agent feature (tools, skills, memory, files, images, compaction, sub-tasks) must keep model requests prefix-stable so the provider's prefix cache keeps hitting; the target is ≥95% cached prompt tokens on multi-turn Work and Chat runs. Rules and evidence: [prefix-cache design](docs/architecture/design/2026-10-31-prefix-cache.md), [ADR 0030](docs/architecture/adr/0030-prefix-stable-model-requests.md).
+
+- A request is the previous request plus appended messages. Never rewrite earlier messages, reorder them, or change the tool list, `tool_choice`, reasoning settings or system messages inside a run.
+- Anything that changes between turns (memory, skills, attachments, templates, workspace state) is appended as a message or a tool result. It is not inserted into the system prompt or the tool schemas. System content is refreshed only at a recorded boundary (`agent.context_boundary`: compaction, model change, access revoked, rebuild).
+- Side calls (summaries, wrap-up, checks, sub-tasks) reuse the main request's prefix and settings and append their instruction.
+- A change that touches request construction needs a recorded-request test in `tests/test_prefix_cache.py`, and a real-model check of `cached_tokens / prompt_tokens` before it is called done.
+
 ## 5. Security rules
 
 - Ownership is decided in the API from the authenticated principal; never accept a `user_id` from the agent or the model.
