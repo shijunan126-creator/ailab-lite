@@ -192,6 +192,10 @@ def test_document_indexes_are_bounded_at_100000_blocks():
                     ],
                 )
             db.commit()
+            if db.bind.dialect.name == "postgresql":
+                # Production tables have autovacuum statistics; without them the plan depends on whether
+                # autoanalyze happened to run after the bulk insert.
+                db.execute(text("ANALYZE document_blocks"))
             query = (
                 select(DocumentBlock.id)
                 .where(DocumentBlock.derivation_id == derivation.id, DocumentBlock.unit_number == 85000)
