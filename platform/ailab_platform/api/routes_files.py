@@ -84,8 +84,8 @@ async def upload_file(
 ) -> dict:
     # Stream Starlette's spooled upload to a temp file while hashing. Only the
     # chunk and the object-storage copy exist at once, never the whole file twice.
-    tmp = tempfile.NamedTemporaryFile(prefix="ailab-upload-", delete=False)
-    storage = get_storage()
+    tmp = await asyncio.to_thread(tempfile.NamedTemporaryFile, prefix="ailab-upload-", delete=False)
+    storage = await asyncio.to_thread(get_storage)
     try:
         digest = hashlib.sha256()
         size = 0
@@ -94,8 +94,8 @@ async def upload_file(
             if size > settings.max_upload_bytes:
                 raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes} bytes")
             digest.update(chunk)
-            tmp.write(chunk)
-        tmp.close()
+            await asyncio.to_thread(tmp.write, chunk)
+        await asyncio.to_thread(tmp.close)
         if size == 0:
             raise HTTPException(status_code=400, detail="empty file")
 
@@ -106,7 +106,7 @@ async def upload_file(
         try:
             await asyncio.to_thread(storage.put_file, key, tmp.name, content_type)
 
-            def record() -> FileObject:
+            def record() -> dict:
                 # The per-user lock can be held for a while by another request of this user (an artifact being
                 # hashed): wait for it in a worker thread, never on the event loop that serves everyone.
                 with user_critical_section(db, user.id):  # quota check and the file row are one step
@@ -151,17 +151,17 @@ async def upload_file(
                     db.commit()
                     delete_storage_objects(keys)
                     db.refresh(row)
-                    return row
+                    return file_dict(row)
 
             file = await asyncio.to_thread(record)
         except Exception:
-            storage.delete(key)
+            await asyncio.to_thread(storage.delete, key)
             raise
     finally:
-        tmp.close()
-        os.unlink(tmp.name)
+        await asyncio.to_thread(tmp.close)
+        await asyncio.to_thread(os.unlink, tmp.name)
 
-    return file_dict(file)
+    return file
 
 
 @router.get("", response_model=list[FileOut])

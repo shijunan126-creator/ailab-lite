@@ -603,16 +603,17 @@ async def internal_save_skill(
     if not x_delivery_id or not x_delivery_id.startswith(run_id + ":") or len(x_delivery_id) > 160:
         raise HTTPException(422, "stable delivery identity required")
     limit = min(settings.max_upload_bytes, settings.max_sandbox_read_bytes)
-    storage = get_storage()
-    with tempfile.NamedTemporaryFile(prefix="ailab-skill-") as tmp:
+    storage = await asyncio.to_thread(get_storage)
+    tmp = await asyncio.to_thread(tempfile.NamedTemporaryFile, prefix="ailab-skill-")
+    try:
         digest, size = hashlib.sha256(), 0
         async for chunk in request.stream():
             size += len(chunk)
             if size > limit:
                 raise HTTPException(413, f"skill exceeds {limit} bytes")
             digest.update(chunk)
-            tmp.write(chunk)
-        tmp.flush()
+            await asyncio.to_thread(tmp.write, chunk)
+        await asyncio.to_thread(tmp.flush)
         if size == 0:
             raise HTTPException(400, "empty skill")
 
@@ -680,6 +681,9 @@ async def internal_save_skill(
                 return result
 
         return await asyncio.to_thread(record)
+
+    finally:
+        await asyncio.to_thread(tmp.close)
 
 
 def _enqueue_thumbnail(db: Session, file: FileObject) -> None:
