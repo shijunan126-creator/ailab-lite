@@ -14,15 +14,16 @@
 
 ## 验证
 
-基线为本分支相对 `7f71d30` 的本轮代码改动（最终提交仅补文档结果）。
+测试代码基线 `eb1ab44`（base `7f71d30`，后续仅补文档结果）。
 
 - `ruff check .`、`ruff format --check .`：通过。
 - `pytest tests/test_market_api.py tests/test_personal_skills.py -q`：15 通过；覆盖全部包与 frontmatter 对齐、Worker 共用扫描器兼容、真实安装路由 pending/去重/用户隔离/匿名拒绝及旧格式入口 404。
 - `uv build --wheel --out-dir /tmp/ailab-market-wheel platform`：通过，检查 wheel 包含全部八份 SKILL.md。
-- 完整 Python 套件：运行中，结束后补结果。
+- 完整 Python 套件 `pytest tests -q`：一次完成，exit 0，1931 通过、163 跳过。macOS 使用 GNU coreutils/findutils PATH，按 CI 构建 vendor Office reader；未配置的外部后端契约按规则跳过。无全套重跑。
+- golden 结构自检：2 份 fixture 通过，不代表真实模型或视觉质量验收。
 
 未做真实模型内容质量评测、实际容器构建和部署验收。Portal 未改，本机不另跑 Portal build/浏览器；PR CI 按既定规则覆盖前端构建、双库与 E2E。status-matrix 无独立市场能力行，本轮不新增状态分类。
 
 ## 下一步
 
-提一个 PR，CI 全绿后 squash merge；不部署。
+[PR #140](https://github.com/shijunan126-creator/ailab-lite/pull/140) 已创建；等待 CI 全绿后 squash merge，不部署。

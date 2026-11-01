@@ -2,7 +2,7 @@
 
 - 分支 `t3/curated-office-skill-market`，base `origin/main@7f71d30`。本次授权：仅后端/内容实施、测试、一个 PR、CI 全绿后 squash merge；不改 Portal、不部署。Portal 重建由另一代理负责。
 - 已完成：八个纯 Markdown 办公业务技能、目录元数据、wheel package-data 与安装回归测试。验证与未测边界见[本轮记录](updates/2026-11-01-curated-skill-market.md)。
-- 下一步：完整 Python 验证结束后提 PR，等待 CI 并合并；保留其他任务原有边界。起始工作树附带的无关 Portal 提交已保留在 `preserve/market-original-portal-follow`，不进入本 PR。
+- 下一步：完整 Python 套件一次通过；[PR #140](https://github.com/shijunan126-creator/ailab-lite/pull/140) 等待 CI 并合并；保留其他任务原有边界。起始工作树附带的无关 Portal 提交已保留在 `preserve/market-original-portal-follow`，不进入本 PR。
 
 ---
 
