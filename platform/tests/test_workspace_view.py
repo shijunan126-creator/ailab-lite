@@ -161,3 +161,54 @@ def test_nonvision_catalog_omits_visual_tools(monkeypatch):
     monkeypatch.setitem(get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools"]))
     names = {t["function"]["name"] for t in _tools_for_run({"model": "m", "mode": "work"})}
     assert "exec" in names and not names & {"view_attachment", "view_workspace_file"}
+
+
+def test_warm_starts_the_listener_only_where_one_can_run(tmp_path, monkeypatch):
+    from ailab_platform.broker.workspace_view import warm
+
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("warm-run")["lease_id"]
+    commands = []
+    monkeypatch.setattr(manager, "exec", lambda lease_id, command, timeout: commands.append(command) or ExecResult(0, "", "", 1))
+    # The mock shares the host and starts LibreOffice per call: nothing to warm.
+    assert warm(manager, lease) == {"ok": False, "skipped": True} and commands == []
+    monkeypatch.setattr(manager.provider, "office_listener", True)
+    assert warm(manager, lease) == {"ok": True}
+    assert "work_view_listener.py --ensure " in commands[0] and commands[-1].startswith("rm -rf -- /workspace/.ailab/view-warm-")
+
+
+@pytest.mark.parametrize("prompt,warms", [("做一份演示文稿", 1), ("整理一下笔记", 0)])
+def test_office_work_run_warms_the_view_listener_once_its_sandbox_exists(monkeypatch, prompt, warms):
+    import asyncio
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import ModelSpec, get_catalog
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    monkeypatch.setitem(
+        get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools", "vision"], context_tokens=200000)
+    )
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "prompt": prompt, "options": {"mode": "work"}}
+
+    class Broker(FakeBroker):
+        def __init__(self):
+            super().__init__()
+            self.warmed = []
+
+        async def warm_workspace_view(self, lease_id):
+            self.warmed.append(lease_id)
+            return {"ok": True}
+
+    async def attested(broker, lease_id):
+        return None
+
+    monkeypatch.setattr("ailab_platform.agent.loop.verify_sandbox_skills", attested)
+    broker = Broker()
+    work = [ToolCall(f"c{i}", "exec", {"cmd": "true"}) for i in range(3)]
+    model = ScriptedLLM([LLMResponse(tool_calls=[call]) for call in work] + [LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=Platform(), broker=broker, llm=model).process("run_1", attempt_id="attempt"))
+    assert len(broker.warmed) == warms  # repeated sandbox work within a minute does not warm again

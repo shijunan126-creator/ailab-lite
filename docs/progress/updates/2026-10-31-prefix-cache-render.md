@@ -211,3 +211,11 @@ C3g 全量 SQLite 首轮 6 组失败：两组旧测试先渲染而与 pending �
 - 首次调用 97% 命中，是因为同一 key 的系统前缀已在供应商缓存中。
 - PPT：Run succeeded；check.py 一次（退出 0，8 条几何警告）；`view_workspace_file` 两次 14.7 s / 3.2 s（首次含 Work listener 冷启动）；模型主动 `deliver_file` 一次，无兜底交付。
 - web_search：首轮工具目录直接包含（provider=searxng 时），无需发现；付费栈未配置搜索后端，没有实际搜索结果验收。
+
+## 正常窗口复测与两项优化（2026-11-01）
+
+**正常窗口真实 DeepSeek（代码 `main@277a8c4`，一次，约 ¥0.13）**：窗口 1,048,576、默认阈值 0.85，无压缩；独立临时服务 + mock 沙箱。Chat 10 轮 93.8%（去首调用 96.7%），Work 6 轮 76.4%（去首 83.2%）；所有续轮都只尾部追加。Work 的缺口来自每轮自动重新注入约 3k token 的 `platform.pptx`：技能去重只看本 run 状态，而每轮是新 run（提示里“不是制作演示文稿”这种否定说法也会命中关键词）。
+
+- **技能跨轮去重**：内置技能若同版本、同模式的完整结果仍在延续的消息里，就不再注入，只登记到 `loaded_skills`；模型主动 `load_skill` 返回 `already_loaded`。结果新增 `mode` 字段以区分 Chat/Work 渲染；历史被压缩/重建后技能原文不在消息里，会正常重新加载。未修关键词否定误触发：去重后误触发最多一次。
+- **首次查看预热**：Work + 视觉模型 + 已加载 Office 技能的 run，在沙箱就绪时由 Agent 后台调用 Broker `view-warm`，启动 lease 内 LibreOffice listener；之后每次沙箱工具最多每分钟续一次，使 listener 停在 120 s 空闲窗口内。mock 不预热。runsc、同镜像 2 CPU/768 MiB 实测：首次查看 11.4 s → 1.3 s（第二次 1.4 s → 0.4 s）。代价：预热后未查看时，该 run 自己的沙箱里多一个空闲 LibreOffice 进程，最长 120 s 空闲后自退；每分钟最多一次很小的 exec。
+- **检查**：新增回归测试（第二轮只带一次技能、版本/模式不符不复用、预热条件与节流、Broker 只在有 listener 的 provider 上预热）在去掉改动时失败；Ruff；SQLite 全套。未在完整栈上复测真实 Work 首次查看（只做了沙箱级测速）。

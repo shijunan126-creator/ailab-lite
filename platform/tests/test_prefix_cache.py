@@ -848,3 +848,53 @@ def test_summary_keeps_request_shape_and_refuses_tools_only_after_a_tool_call(mo
     assert requests[0]["tool_choice"] == "auto" and "thinking" not in requests[0]
     assert requests[1]["tool_choice"] == "none" and "thinking" not in requests[1]
     assert result[2]["content"].endswith("summary")
+
+
+def test_office_skill_loaded_earlier_in_the_conversation_is_not_sent_again():
+    # Work prompts naming a deck load platform.pptx; repeating that 3k-token result every turn wasted it each time.
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "prompt": f"{run_id} 演示文稿", "options": {"mode": "work"}}
+            if run_id == "second":
+                state = self.checkpoints["first"]["state"]
+                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+            return run
+
+    def skill_loads(request):
+        return [m for m in request["messages"] if m.get("role") == "tool" and m.get("name") == "load_skill"]
+
+    with scripted_server([{"content": "first answer"}, {"content": "second answer"}]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("first", attempt_id="a1"))
+        asyncio.run(loop.process("second", attempt_id="a2"))
+    assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
+    assert len(skill_loads(requests[0])) == len(skill_loads(requests[1])) == 1
+    assert_extension(requests[0], requests[1])
+
+
+def test_carried_skill_must_match_version_and_mode():
+    from ailab_platform.agent.loop import _skill_in_history
+    from ailab_platform.agent.tools import tool_result_message
+
+    call = {"id": "c1", "type": "function", "function": {"name": "load_skill", "arguments": '{"name": "platform.pptx"}'}}
+    loaded = {"ok": True, "skill": "text", "version": "v1", "mode": "work"}
+    messages = [{"role": "assistant", "content": "", "tool_calls": [call]}, tool_result_message("c1", "load_skill", loaded)]
+    assert _skill_in_history(messages, "platform.pptx", "v1", "work")
+    assert not _skill_in_history(messages, "platform.pptx", "v2", "work")
+    assert not _skill_in_history(messages, "platform.pptx", "v1", "chat")
+    assert not _skill_in_history(messages, "platform.docx", "v1", "work")
+    failed = [messages[0], tool_result_message("c1", "load_skill", {"ok": False, "error": "x"})]
+    assert not _skill_in_history(failed, "platform.pptx", "v1", "work")

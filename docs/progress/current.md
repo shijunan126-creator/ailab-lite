@@ -20,13 +20,15 @@
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
+后续（分支 `perf/skill-carryover-view-warm`）：内置技能跨轮去重、Work 首次查看预热 listener（沙箱级首次查看 11.4 s → 1.3 s）。
+
 已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
 
 ## 四、尚未测试
 
 - 摘要是否遵守“不写入 recall 原文”；运行中途撤销的 recall 来源要到下一次 Run 启动才检测。
 - 真实 Docker 下多用户故障/恢复（Broker 重启、Worker 崩溃、LibreOffice 卡死）只在 mock 下测过；CPU 秒、真实 ClamAV 扫描耗时。
-- 正常大窗口下的长对话命中率（本轮只测了强制压缩场景）；Work 首次 `view_workspace_file` 14.7 s 偏慢（listener 冷启动），未优化。
+- 正常窗口命中率已补测（Chat 96.7%，Work 因技能每轮重注入偏低，已修复，见 dated update “正常窗口复测与两项优化”）；修复后 Work 命中率与完整栈上的首次查看耗时未复测。
 
 ---
 

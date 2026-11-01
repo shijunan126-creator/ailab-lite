@@ -164,6 +164,34 @@ def _office_skills(value, *, keywords=False):
     return result
 
 
+def _skill_in_history(messages, name, version, mode):
+    """A built-in skill whose full text, at this version and mode, is still in the carried-over messages."""
+    calls = set()
+    for message in messages:
+        if message.get("role") == "assistant":
+            for call in message.get("tool_calls") or []:
+                function = call.get("function") or {}
+                if function.get("name") != "load_skill":
+                    continue
+                try:
+                    arguments = json.loads(function.get("arguments") or "{}")
+                except ValueError:
+                    continue
+                if isinstance(arguments, dict) and resolve_name(str(arguments.get("name") or "")) == name:
+                    calls.add(call.get("id"))
+        elif message.get("role") == "tool" and message.get("tool_call_id") in calls:
+            try:
+                result = json.loads(message.get("content") or "")
+            except ValueError:
+                continue
+            if isinstance(result, dict) and result.get("ok") and result.get("skill"):
+                if (result.get("version"), result.get("mode")) == (version, mode):
+                    return True
+    return False
+
+
+_OFFICE_VIEW_SKILLS = {"platform.pptx", "platform.docx", "platform.xlsx"}
+
 _FILE_TOOLS = {
     "list_files",
     "read_file",
@@ -224,6 +252,8 @@ class _Turn:
         self.delivered: dict[str, int] = {}  # sandbox path -> size at delivery (or at restore)
         self.previews: dict[str, dict] = {}  # filename -> latest preview manifest
         self.preview_task: asyncio.Task | None = None
+        self.view_warm_task: asyncio.Task | None = None
+        self.view_warmed_at = float("-inf")
         self.preview_again = False
         self.disabled_skills: frozenset[str] = frozenset()  # the user switched these off
         self.personal: dict[str, dict] = {}  # the user's own skills (files in their library), by name
@@ -525,7 +555,29 @@ class AgentLoop:
         except Exception:
             log.warning("could not list outputs after leasing for %s", run_id, exc_info=True)
         turn.lease_ready = True
+        self._warm_view(turn, run_id)
         return turn.lease_id
+
+    def _warm_view(self, turn: _Turn, run_id: str) -> None:
+        """Start the sandbox's LibreOffice listener while the model is still writing an Office file.
+
+        Only for runs that can view their work (vision model, Work mode) and have loaded an Office skill.
+        Repeated sandbox activity keeps the listener inside its idle window, at most one call a minute.
+        """
+        if not turn.lease_ready or not turn.lease_id or "view_workspace_file" not in (turn.allowed_tools or ()):
+            return
+        if not any(item["name"] in _OFFICE_VIEW_SKILLS for item in self._states[run_id].get("loaded_skills", [])):
+            return
+        if (turn.view_warm_task and not turn.view_warm_task.done()) or time.monotonic() - turn.view_warmed_at < 60:
+            return
+        turn.view_warmed_at = time.monotonic()
+        turn.view_warm_task = asyncio.create_task(self._warm_view_once(run_id, turn.lease_id))
+
+    async def _warm_view_once(self, run_id: str, lease_id: str) -> None:
+        try:
+            await self.broker.warm_workspace_view(lease_id)
+        except Exception:
+            log.info("workspace view warm-up failed run=%s; the first view starts the listener itself", run_id)
 
     # ---- personal skills: read from the user's library, their files copied into the sandbox
     async def _read_personal(self, turn: _Turn, run_id: str, name: str) -> str:
@@ -1367,6 +1419,9 @@ class AgentLoop:
         attempted = state.setdefault("attempted_skills", [])
         if name in attempted or any(item["name"] == name for item in state.get("loaded_skills", [])):
             return
+        if self._skill_carried_over(turn, run_id, name):
+            attempted.append(name)
+            return
         call_id = "skill_" + uuid4().hex
         call = ToolCall(call_id, "load_skill", {"name": name})
         call.skill_reason = reason
@@ -1384,6 +1439,19 @@ class AgentLoop:
         state["messages"].append(tool_result_message(call_id, "load_skill", result))
         attempted.append(name)
         await self._checkpoint(run_id, turn)
+
+    def _skill_carried_over(self, turn, run_id, name) -> bool:
+        # Each turn is a new run: without this, a skill loaded earlier in the conversation is sent again every turn.
+        if name not in skills():
+            return False
+        mode = (turn.run.get("options") or {}).get("mode", "work")
+        state = self._states[run_id]
+        if not _skill_in_history(state.get("messages") or [], name, skills()[name]["version"], mode):
+            return False
+        loaded = state.setdefault("loaded_skills", [])
+        if not any(item["name"] == name for item in loaded):
+            loaded.append({"name": name, "kind": "base" if name in BASE_SKILLS else "builtin", "version": skills()[name]["version"]})
+        return True
 
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
@@ -1418,7 +1486,10 @@ class AgentLoop:
                 deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
                 if time.time() >= deadline:
                     raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
-            if wanted and any(item["name"] == wanted for item in self._states[run_id].get("loaded_skills", [])):
+            if wanted and (
+                any(item["name"] == wanted for item in self._states[run_id].get("loaded_skills", []))
+                or self._skill_carried_over(turn, run_id, wanted)
+            ):
                 result = {"ok": True, "name": wanted, "already_loaded": True}
             elif call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
@@ -1486,7 +1557,7 @@ class AgentLoop:
                 result = {"ok": True, "capabilities": hits}
             elif wanted and wanted in skills():
                 mode = (turn.run.get("options") or {}).get("mode", "work")
-                result = {"ok": True, "skill": load_skill(wanted, mode=mode), "version": skills()[wanted]["version"]}
+                result = {"ok": True, "skill": load_skill(wanted, mode=mode), "version": skills()[wanted]["version"], "mode": mode}
             elif wanted in turn.personal:
                 if getattr(call, "expected_file_id", None) and turn.personal[wanted]["file_id"] != call.expected_file_id:
                     raise ToolError(f"技能 {wanted} 的版本已失效")
@@ -1564,6 +1635,8 @@ class AgentLoop:
                     **({"error": result.get("error")} if not result.get("ok") else {}),
                 },
             )
+        if call.name in SANDBOX_TOOLS or call.name == "load_skill":
+            self._warm_view(turn, run_id)
         metrics.TOOL_SECONDS.labels(tool).observe(time.perf_counter() - tool_started)
         metrics.TOOL_CALLS.labels(tool, str(bool(result.get("ok"))).lower()).inc()
         shown = result.get("skill")
@@ -1704,6 +1777,10 @@ class AgentLoop:
             turn.preview_task.cancel()
             await asyncio.gather(turn.preview_task, return_exceptions=True)
             turn.preview_task = None
+        if turn.view_warm_task:
+            turn.view_warm_task.cancel()
+            await asyncio.gather(turn.view_warm_task, return_exceptions=True)
+            turn.view_warm_task = None
         if turn.lease_id:
             lease_id, turn.lease_id = turn.lease_id, None
             async with asyncio.timeout(65):
