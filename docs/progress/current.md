@@ -20,7 +20,7 @@
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
-后续（分支 `perf/skill-carryover-view-warm`）：内置技能跨轮去重、Work 首次查看预热 listener（沙箱级首次查看 11.4 s → 1.3 s）。
+后续 PR #123 → `main@c6fefd3`（CI 全绿）：内置技能跨轮去重、Work 首次查看预热 listener（沙箱级首次查看 11.4 s → 1.3 s）；已由 Codex 增量部署到 AILab-local（只重建后端镜像，重启 api/agent/broker/worker，均 healthy），按约定未做部署后验证。
 
 已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
 
