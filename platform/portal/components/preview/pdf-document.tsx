@@ -9,7 +9,16 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.m
 // Module-level constant: react-pdf tears down and re-fetches the whole document whenever the options
 // identity changes, and an inline literal would reload the PDF on every chat stream event.
 // isEvalSupported: the Portal CSP forbids eval, and PDF.js would otherwise probe it (a logged violation per file).
-const PDF_OPTIONS = { withCredentials: true, isEvalSupported: false };
+// The data URLs point at app/pdfjs, which serves the files of the same PDF.js version.
+const ASSETS = `/pdfjs/${pdfjs.version}`;
+const PDF_OPTIONS = {
+  withCredentials: true,
+  isEvalSupported: false,
+  cMapUrl: `${ASSETS}/cmaps/`,
+  standardFontDataUrl: `${ASSETS}/standard_fonts/`,
+  wasmUrl: `${ASSETS}/wasm/`,
+  iccUrl: `${ASSETS}/iccs/`,
+};
 
 /** PDF.js preview: selectable text, zoom, lazy-ish page rendering; the backend only has to produce the PDF. */
 export default function PdfDocument({ url, title }: { url: string; title: string }) {
