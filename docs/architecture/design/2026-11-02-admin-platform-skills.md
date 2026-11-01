@@ -36,15 +36,27 @@
 - 名称空间：平台技能、镜像技能、个人技能三者不得重名；冲突在写入时拒绝。
 - `/v1/market` 与 `market.py` 移除，广场改读新接口。
 
-### 接口（草案）
+### 接口（后端最终契约）
 
 - 用户：`GET /v1/platform-skills`（广场，含 added/customized/update_available），`POST /v1/platform-skills/{id}/add`，`DELETE /v1/platform-skills/{id}/add`，`POST /v1/platform-skills/{id}/customize`（开草稿），`POST /v1/platform-skills/{id}/reset`。`GET /v1/skills` 把已添加的平台技能并入列表（`kind: "platform"`）。
 - 管理员：`GET/POST /v1/admin/platform-skills`、`PATCH/DELETE /v1/admin/platform-skills/{id}`、`POST /v1/admin/platform-skills/{id}/versions`（上传新版本）、`POST /v1/admin/platform-skills/{id}/publish/{file_id}`（回退）。
 - Run 输入：已添加且启用的平台技能以与个人技能相同的结构进入 `personal_skills`（Agent 无需改动），内部取文件接口允许读取 `purpose="platform_skill"` 的已发布/曾发布版本。
 
+- 两个目录 GET 均返回 `{items, next_cursor}`，参数 `after`（上一页最后一个 id，默认空）、`limit`（默认 100，范围 1–100）。用户目录只显示已发布版本，管理员目录也显示尚未发布的条目。条目字段为 `id/name/title/description/category/source_url/license/current_file_id/created_at/updated_at/kind/added/customized/update_available`；`kind` 固定 `platform`。
+- 创建管理员条目使用 JSON `{name,title,description?,category?,source_url?,license?}`，返回 201；PATCH 只接受上述元数据字段，`name` 创建后不可改。字符串字段不能写 null。删除为 204，名称保留不复用。
+- 上传版本使用 multipart 字段 **`upload`**（`.md` 或 `.zip`），返回 202 `{file_id,status:"pending",version}`；Worker 扫描成功且技能 name 匹配后自动发布。上传后旧发布版本继续可用。发布/回退 POST 无请求体，返回条目；文件必须属于此技能、ready 且无技能错误。
+- 补充管理员对接接口：`GET /v1/admin/platform-skills/{id}/versions?before=<version>&limit=50` 返回 `{items,next_cursor}`（最多 100）；每项 `file_id/filename/version/status/error/current/published/created_at`。`GET /v1/admin/platform-skills/{id}/versions/{file_id}/content` 下载已扫描的版本（附件流，不内联执行）。保留数外且无引用的版本可能已被清理。
+- 补充管理员在线编辑：`POST /v1/admin/platform-skills/{id}/drafts` 返回现有草稿 DTO（202，新建；200，复用）。以当前发布版本为底，`origin:"platform_admin"`，后续文件编辑/confirm 全部沿用 `/v1/skill-drafts`；confirm 创建系统所有者的新 pending 版本，不计管理员配额，仍需 Worker 扫描后发布。并发上传/发布改变底稿时 confirm 为 409；无已发布版本时先上传文件。
+- add/reset POST 无请求体，返回条目（200）；DELETE add 无请求体，204、可重复。每用户最多添加 100 项。取消添加会清除自定义副本；管理员删除则保留并脱钩副本。
+- customize POST 无请求体，返回现有草稿 DTO（202，新建；200，复用），`origin:"platform"`、`base.kind:"platform"`，Markdown 可直接编辑，ZIP 通过 Worker 解包后编辑；随后沿用 `/v1/skill-drafts/{id}/files/{path}` 和 `/confirm`。confirm 沿用 `{expected_revision}` 与 `{file_id,name,version}`，在同一事务记录副本 lineage/base。自定义必须保留原 name，重置/取消添加会废弃未完成的自定义草稿。`POST /v1/skills/{name}/drafts` 对平台名称亦转到该流程。
+- `GET /v1/skills` 保持原数组返回；已添加条目含 `id/added/customized/update_available`，`scope/kind:"platform"`、`builtin:false`、`kind_file:"md"|"zip"`、`file_id/filename/lineage_id/enabled/toggleable/files/error`。开关沿用 `PUT /v1/skills/{name}` 的 `{enabled}`，返回 scope 为 platform。未修改的平台版本不受 `*personal*` 审核开关影响，自定义副本受其审核规则约束；按平台 name 的全局/部门禁用对两者均有效。
+- Run 在创建事务中冻结已启用平台条目；Agent 的 `personal_skills` 仍只传 `name/title/description/file_id/filename/kind`，其中 **kind 是文件格式 md/zip**，不是 UI 的 platform。内部文件读取同时核对活跃 Run、冻结 file_id、当前订阅、当前策略、系统所有者及发布标记；普通用户文件接口不提供平台文件下载。解除订阅、管理员删除及策略撤销会撤销读取；更新版本不会改写进行中 Run 的冻结输入。
+
 ### 成本
 
-- 每次 Run 多一次按用户索引的连接查询（订阅数通常 <20）；列表接口有界。版本文件只存一份，不按用户复制，存储随管理员版本数增长，旧版本按现有 `trim_file_versions` 规则保留。
+- 每次解析平台输入使用按用户主键的订阅连接查询和一次按 file_id/lineage 索引的批量文件查询（最多 100 项）；自定义副本另执行现有审批核对。无新后台轮询、进程或依赖，Worker 扫描复用原有资源限制。目录/版本接口分页。
+- 版本文件只存一份，用户添加不复制、不占用户配额；只有自定义副本计入本人配额。旧版本按 `trim_file_versions` 清理，但当前发布版本、自定义 base、活动草稿及 `run_asset_refs` 的冻结版本必须保留；这些引用可使保留数超过普通版本上限。管理员软删除保留系统版本的历史身份与内容，副本不丢失。
+- `AILAB_PROFILE=secure` 无新增不安全默认：系统所有者无密码/登录 token 且默认 disabled；平台版本仍走既有 Worker scanner/隔离解析，secure 原有真实 scanner 与服务凭证校验继续适用。不新增共享读取 token 或绕过扫描开关。
 
 ## 内容来源
 

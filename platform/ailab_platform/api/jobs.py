@@ -140,16 +140,9 @@ def _claim_locked(db, job, body):
     elif envelope.kind == "skill_unpack":
         draft = db.get(SkillDraft, envelope.draft_id)
         file = db.get(FileObject, draft.base_file_id) if draft else None
-        done = (
-            not draft
-            or draft.status != "preparing"
-            or draft.claim_token != job_id
-            or not file
-            or file.user_id != draft.user_id
-            or file.deleted_at is not None
-            or file.purged_at is not None
-            or not file.is_head
-        )
+        from .platform_skills import draft_source_allowed
+
+        done = not draft or draft.status != "preparing" or draft.claim_token != job_id or not draft_source_allowed(db, draft, file)
     else:
         file = db.get(FileObject, envelope.file_id)
         done = file is None or file.deleted_at is not None or file.purged_at is not None
