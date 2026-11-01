@@ -24,6 +24,8 @@
 
 部署 `main@af4b1b3` 到 AILab-local（含 PR #125/#126 的 Portal PDF.js 升级）：重建后端共用镜像与 Portal，Office 复用，五应用 healthy。部署后实测：Work 3 轮 PPT 每轮首次查看 3.2/2.8/2.5 s（修复前后续轮 12.9/13.2 s），命中率 97.4%；GenUI 页面展开后重置高度 120→765→120 px；PDF.js cmaps/字体/wasm/icc 资源均可取。
 
+后续 PR #129 → `main@8fce6ab`（CI 全绿）：未被工具用到的提前沙箱不再重复快照；顺带修正 `test_shares` 查询数预算在 PostgreSQL CI 上把后台循环计入的偶发失败。已部署后端（`release-8fce6ab`）：只问不改的续轮 3.1 s 且无快照，修改轮首次查看 2.6 s、工作区照常保存。
+
 已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
 
 ## 四、尚未测试
