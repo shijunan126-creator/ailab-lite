@@ -34,6 +34,8 @@ import { GenUIHostProvider, type GenUIHost } from "../genui/host";
 // Shared, not rebuilt per render: Turn is memoised and a fresh array would re-render every turn on any refresh.
 const CHAT_OR_WORK: ForkMode[] = ["chat", "work"];
 const WORK_ONLY: ForkMode[] = ["work"];
+// answers started on the new-chat page: the conversation page that takes over follows them from their start, like a send
+const startedHere = new Set<string>();
 
 function useModels() {
   const [models, setModels] = useState<ModelInfo[]>([]);
@@ -115,8 +117,22 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const scroller = useRef<HTMLDivElement | null>(null);
   const tail = useFollow(scroller, { slack: 80 });
   const stick = tail.following;
+  /** A new answer is followed until its start reaches the top of the view; the reader scrolls on from there. */
+  const answerFrom = useCallback((runId: string) => {
+    stick.current = true;
+    tail.stopAt(() => {
+      const el = scroller.current;
+      const reply = el?.querySelector<HTMLElement>(`[id="turn-${runId}"] .msg.assistant`);
+      if (!el || !reply) return null;
+      // the same room above it as the conversation's first message has (more under the floating top bar)
+      const room = parseFloat(getComputedStyle(el.querySelector(".messages-inner") || el).paddingTop) || 0;
+      return reply.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - room;
+    });
+  }, [stick, tail]);
   // the reader went up into the history: offer the way back, never pull them down
   const [away, setAway] = useState(false);
+  // measured from where following takes the view, so a glide to the bottom does not flash the button
+  const measureAway = (el: HTMLElement) => setAway(el.scrollHeight - tail.heading() - el.clientHeight > Math.max(160, el.clientHeight * 0.35));
   useEffect(() => setAway(false), [id]);
   const loadSeq = useRef(0);
   const detailController = useRef<AbortController | null>(null);
@@ -242,7 +258,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             // a message queued behind this answer has started on its own: follow it like one sent from here
             const next = d?.turns[d.turns.length - 1];
             if (next && next.id !== run.id && !isTerminal(next.status, !!next.result?.file_wait) && !controller.signal.aborted) {
-              stick.current = true;
+              answerFrom(next.id);
               follow(next);
             }
             const finished = d?.turns.find((t) => t.id === run.id);
@@ -263,7 +279,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       });
       return controller;
     },
-    [loadDetail, refreshRun]
+    [loadDetail, refreshRun, answerFrom]
   );
 
   // open a conversation: load it, and follow its last turn if that is still being answered
@@ -281,7 +297,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail().then(async (d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
-      if (last && (!isTerminal(last.status, !!last.result?.file_wait) || last.status === "interrupted")) controller = follow(last);
+      if (last && (!isTerminal(last.status, !!last.result?.file_wait) || last.status === "interrupted")) {
+        if (startedHere.delete(last.id)) answerFrom(last.id);
+        controller = follow(last);
+      }
       else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target);
       if (target && !disposed) requestAnimationFrame(() => reveal(target));
     });
@@ -333,6 +352,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       el.scrollTop = el.scrollHeight - prependHeight.current;
       prependHeight.current = null;
     } else tail.settle();
+    // an answer stopped at its start grows below the view: the way down shows without the reader scrolling
+    if (el) measureAway(el);
   }, [items, detail, pending.length, tail]);
 
   const previews = useMemo<PanePreview[]>(() => {
@@ -494,6 +515,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     if (!id && conversation) {
       // the conversation page starts from what is already known: the question shows at once and its answer streams in
       cacheConversation({ ...conversation, turns: [run], previews: [], has_more: false });
+      startedHere.add(run.id);
       conversationsChanged();
       if (p.projectId) projectsChanged();
       // the blank new-chat page becomes this conversation, so Back leaves it rather than returning to an empty composer;
@@ -504,7 +526,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
     markDetailWrite();
     setDetail((d) => (d && !d.turns.some((t) => t.id === run.id) ? { ...d, turns: [...d.turns, run] } : d));
-    stick.current = true;
+    answerFrom(run.id);
     follow(run);
     conversationsChanged();
   }
@@ -550,6 +572,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       if (created) {
         // the conversation page starts from what is already known: the question shows at once and its answer streams in
         cacheConversation({ ...created, turns: [run], previews: [], has_more: false });
+        startedHere.add(run.id);
         conversationsChanged();
         if (projectId) projectsChanged();
         // the blank new-chat page becomes this conversation, so Back leaves it rather than returning to an empty composer;
@@ -560,7 +583,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       }
       markDetailWrite();
       setDetail((d) => (d ? { ...d, turns: [...d.turns, run] } : d));
-      stick.current = true;
+      answerFrom(run.id);
       follow(run);
       conversationsChanged();
       return true;
@@ -627,7 +650,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const d = await loadDetail();
       const started = d?.turns[d.turns.length - 1];
       if (started && !isTerminal(started.status, !!started.result?.file_wait)) {
-        stick.current = true;
+        answerFrom(started.id);
         follow(started);
       }
     } catch (err) {
@@ -653,6 +676,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       markDetailWrite();
       setDetail((d) => (d ? { ...d, turns: d.turns.map((t) => (t.id === run.id ? resumed : t)) } : d));
       stick.current = true;
+      tail.stopAt(null);
       follow(resumed);
     } catch (err: any) {
       setError(errorMessage(err));
@@ -671,7 +695,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const at = d.turns.findIndex((t) => t.id === old.id);
       return { ...d, turns: [...(at < 0 ? d.turns : d.turns.slice(0, at)).filter((t) => t.id !== fresh.id), fresh] };
     });
-    stick.current = true;
+    answerFrom(fresh.id);
     follow(fresh);
     loadDetail(); // the run alone does not carry its versions: the conversation does
     conversationsChanged();
@@ -881,7 +905,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
               onScroll={(e) => {
                 tail.onScroll(e);
                 const el = e.currentTarget;
-                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > Math.max(160, el.clientHeight * 0.35));
+                measureAway(el);
                 if (el.scrollTop < 80) void loadOlder();
               }}
             >
