@@ -102,7 +102,7 @@ def test_extract_create_and_deletion_fence(monkeypatch):
             )
 
         monkeypatch.setattr(service, "_chat", fake_chat)
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         draft = c.get(f"/v1/skill-drafts/{did}", headers=me).json()
         assert draft["status"] == "ready" and draft["name"] == "extract-test"
         with SessionLocal() as db:
@@ -123,7 +123,7 @@ def test_invalid_model_output_can_retry(monkeypatch):
             return "not json"
 
         monkeypatch.setattr(service, "_chat", bad)
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "failed"
         with SessionLocal() as db:
             notification = db.scalar(select(Notification).where(Notification.conversation_id == conv))
@@ -152,7 +152,7 @@ def test_extraction_update_merges_zip_and_second_call_reads_base(monkeypatch):
             )
 
         monkeypatch.setattr(service, "_chat", chat)
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "preparing"
         with SessionLocal() as db:
             job = db.scalar(select(OutboxMessage).where(OutboxMessage.payload["draft_id"].as_string() == did))
@@ -160,7 +160,7 @@ def test_extraction_update_merges_zip_and_second_call_reads_base(monkeypatch):
         claim = c.post(f"/internal/jobs/{job_id}/claim", headers=SERVICE, json={"consumer": "test"}).json()
         process_skill_unpack(WorkerClient(c), did, job_id, claim["token"])
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "queued"
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         draft = c.get(f"/v1/skill-drafts/{did}", headers=me).json()
         assert draft["status"] == "ready" and len(calls) == 2
         assert {f["path"]: f["change"] for f in draft["files"]} == {
@@ -186,7 +186,7 @@ def test_source_deleted_during_model_await_without_user_lock(monkeypatch):
             )
 
         monkeypatch.setattr(service, "_chat", chat)
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         draft = c.get(f"/v1/skill-drafts/{did}", headers=me).json()
         assert draft["status"] == "discarded" and draft["files"] == []
 
@@ -240,7 +240,7 @@ def test_model_call_has_draft_usage_identity(monkeypatch):
         me = _user(c)
         conv = _conversation(c, me)
         did = c.post(f"/v1/conversations/{conv}/skill-drafts", headers=me, json={}).json()["id"]
-        asyncio.run(service.process_draft(did))
+        c.portal.call(service.process_draft, did)
         assert c.get(f"/v1/skill-drafts/{did}", headers=me).json()["status"] == "ready"
         with SessionLocal() as db:
             usage = db.scalar(select(ModelUsage).where(ModelUsage.job_id == did))

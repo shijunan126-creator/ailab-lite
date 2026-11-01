@@ -2,9 +2,11 @@
 
 from contextlib import ExitStack
 from copy import deepcopy
+from datetime import timedelta
 
 from sqlalchemy import select
 
+from ..config import settings
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, PlatformSetting, Project, User, utcnow
 
@@ -32,6 +34,15 @@ def brand_settings(db):
 
 
 def save_brand(db, value):
+    previous = brand_settings(db)
+
+    def asset_ids(v):
+        return {fid for fid in [*(v.get(k) for k in KINDS.values()), *(v.get("pending") or {}).values()] if fid}
+
+    for fid in asset_ids(previous) - asset_ids(value):
+        file = db.get(FileObject, fid)
+        if file:
+            file.purge_at = utcnow() + timedelta(seconds=settings.reaper_grace_seconds)
     value = deepcopy(value)
     value["version"] = value.get("version", 0) + 1
     value["updated_at"] = utcnow().isoformat()
@@ -89,6 +100,9 @@ def workspace_input(db, run):
                 brand["assets"] = assets
             meta.update(brand_version=value.get("version", 0), brand=brand)
             run.runtime_meta = meta
+            from .asset_refs import register_assets
+
+            register_assets(db, run)
             db.commit()
         result["brand"] = deepcopy(meta.get("brand") or {})
     return result

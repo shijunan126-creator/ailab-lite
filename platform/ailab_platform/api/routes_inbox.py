@@ -3,6 +3,7 @@
 import base64
 import hashlib
 import json
+from contextlib import nullcontext
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
@@ -23,6 +24,7 @@ from ..deps import current_user, get_db
 from ..locks import user_critical_section
 from ..models import Notification, QueuedMessage, Run, RunStatus, User, utcnow
 from ..service_auth import require_scope
+from .brand import brand_lock
 from .inbox import dispatch_next, pending_query, queue_output, steers_for_run
 from .routes_conversations import _owned
 from .routes_runs import validate_run_input
@@ -113,7 +115,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             raise HTTPException(409, "client_send_id already used for a direct send")
         return None
 
-    with user_critical_section(db, user.id):
+    with brand_lock(db) if body.template is not None else nullcontext(), user_critical_section(db, user.id):
         conv = _owned(db, conversation_id, user)
         db.refresh(conv)
         if (prior := replay()) is not None:
@@ -139,6 +141,10 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             conversation=conv,
             turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
         )
+        if options.get("template"):
+            from .asset_refs import register_asset
+
+            register_asset(db, leaf.id, options["template"]["file_id"], "template")
         row = QueuedMessage(
             conversation_id=conv.id,
             user_id=user.id,

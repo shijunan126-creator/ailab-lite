@@ -245,6 +245,7 @@ export default function FileViewer({
   onOpen,
   onClose,
   onChanged,
+  onRestore,
   chatHref,
   page,
 }: {
@@ -254,6 +255,7 @@ export default function FileViewer({
   onOpen: (file: FileItem) => void;
   onClose: () => void;
   onChanged?: (head: FileItem) => void; // an old version was restored: the list has a new head
+  onRestore?: (file: FileItem) => Promise<void>; // the file is in the trash: read it, then bring it back
   chatHref?: (file: FileItem) => string;
 }) {
   const [version, setVersion] = useState<FileItem | null>(null);
@@ -266,6 +268,18 @@ export default function FileViewer({
     setRestoreError("");
   }, [file.id]);
   const shown = version || file;
+  const trashed = !!file.deleted_at; // readable, not to be worked with until it is restored
+
+  async function restoreFile() {
+    setRestoring(true);
+    setRestoreError("");
+    try {
+      await onRestore!(file);
+    } catch (err: any) {
+      setRestoreError(`恢复失败：${errorMessage(err)}`);
+      setRestoring(false);
+    }
+  }
 
   async function restoreVersion(old: FileItem) {
     setRestoring(true);
@@ -312,21 +326,26 @@ export default function FileViewer({
         <span className="viewer-name" title={shown.filename}>
           {shown.filename}
         </span>
-        {(file.versions || 0) > 1 ? <Versions file={file} shown={shown} onPick={(v) => setVersion(v.id === file.id ? null : v)} /> : null}
+        {(file.versions || 0) > 1 && !trashed ? <Versions file={file} shown={shown} onPick={(v) => setVersion(v.id === file.id ? null : v)} /> : null}
         {restoreError ? <span className="viewer-error" role="alert">{restoreError}</span> : null}
         {version ? (
           <button className="viewer-chip primary" disabled={restoring} onClick={() => restoreVersion(version)}>
             恢复此版本
           </button>
         ) : null}
+        {trashed && onRestore ? (
+          <button className="viewer-chip primary" disabled={restoring} onClick={restoreFile}>
+            恢复
+          </button>
+        ) : null}
         {shown.status === "ready" ? (
           <>
-            {chatHref && !version ? (
+            {chatHref && !version && !trashed ? (
               <a className="icon-btn" href={chatHref(file)} title="围绕它对话" aria-label={`围绕 ${file.filename} 对话`}>
                 <IconMessage size={18} />
               </a>
             ) : null}
-            {own && !version ? (
+            {own && !version && !trashed ? (
               <button className="icon-btn" onClick={() => setSharing(true)} title="分享" aria-label={`分享 ${file.filename}`}>
                 <IconShare size={18} />
               </button>

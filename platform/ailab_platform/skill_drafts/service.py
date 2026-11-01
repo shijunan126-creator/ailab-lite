@@ -48,21 +48,25 @@ async def _chat(messages, model, user_id, draft_id, token):
     spec = get_catalog().get(model)
     if spec is not None and estimate > ModelPolicy(get_catalog()).input_budget(spec):
         raise ValueError("提取内容超出模型上下文限制")
-    with SessionLocal() as db:
-        reserve_usage(
-            db,
-            ReserveUsageIn(
-                call_id=call.call_id,
-                subject="skill_draft",
-                job_id=draft_id,
-                attempt_id=token,
-                alias=model,
-                mode="memory",
-                quiet=True,
-                max_output_tokens=call.max_output_tokens,
-                estimated_input_tokens=estimate,
-            ),
-        )
+
+    def reserve():
+        with SessionLocal() as db:
+            reserve_usage(
+                db,
+                ReserveUsageIn(
+                    call_id=call.call_id,
+                    subject="skill_draft",
+                    job_id=draft_id,
+                    attempt_id=token,
+                    alias=model,
+                    mode="memory",
+                    quiet=True,
+                    max_output_tokens=call.max_output_tokens,
+                    estimated_input_tokens=estimate,
+                ),
+            )
+
+    await asyncio.to_thread(reserve)
     context = model_call.set(call)
     response = None
     try:
@@ -74,20 +78,24 @@ async def _chat(messages, model, user_id, draft_id, token):
     finally:
         model_call.reset(context)
         usage = call.usage
-        with SessionLocal() as db:
-            settle_usage(
-                db,
-                SettleUsageIn(
-                    call_id=call.call_id,
-                    attempt_id=token,
-                    actual_backend=call.actual_backend,
-                    input_tokens=usage.get("prompt_tokens", estimate if call.reached_model else 0),
-                    output_tokens=usage.get("completion_tokens", (call.output_bytes + 3) // 4 if call.reached_model else 0),
-                    cached_tokens=usage.get("cached_tokens", 0),
-                    reasoning_tokens=usage.get("reasoning_tokens", 0),
-                    status="settled" if usage else "estimated" if call.reached_model else "released",
-                ),
-            )
+
+        def settle():
+            with SessionLocal() as db:
+                settle_usage(
+                    db,
+                    SettleUsageIn(
+                        call_id=call.call_id,
+                        attempt_id=token,
+                        actual_backend=call.actual_backend,
+                        input_tokens=usage.get("prompt_tokens", estimate if call.reached_model else 0),
+                        output_tokens=usage.get("completion_tokens", (call.output_bytes + 3) // 4 if call.reached_model else 0),
+                        cached_tokens=usage.get("cached_tokens", 0),
+                        reasoning_tokens=usage.get("reasoning_tokens", 0),
+                        status="settled" if usage else "estimated" if call.reached_model else "released",
+                    ),
+                )
+
+        await asyncio.to_thread(settle)
         if call.usage:
             metrics.record_prompt_cache("memory", "draft", call.usage)
     if response.tool_calls or not response.content.strip():
@@ -281,79 +289,98 @@ def _install_output(db, draft, data, skills, truncated):
 
 async def process_draft(draft_id):
     token = uuid4().hex
-    with SessionLocal() as db:
-        now = utcnow()
-        claimed = db.execute(
-            update(SkillDraft)
-            .where(
-                SkillDraft.id == draft_id,
-                SkillDraft.status.in_(("queued", "running")),
-                or_(SkillDraft.claimed_until.is_(None), SkillDraft.claimed_until < now),
-            )
-            .values(
-                status="running",
-                stage="reading",
-                claim_token=token,
-                claimed_until=now + timedelta(minutes=10),
-                attempts=SkillDraft.attempts + 1,
-            )
-        ).rowcount
-        db.commit()
-        if not claimed:
-            return
-    try:
+
+    def claim():
         with SessionLocal() as db:
-            draft = db.get(SkillDraft, draft_id)
-            snapshot = _snapshot(db, draft)
-            draft.stage = "drafting"
+            now = utcnow()
+            claimed = db.execute(
+                update(SkillDraft)
+                .where(
+                    SkillDraft.id == draft_id,
+                    SkillDraft.status.in_(("queued", "running")),
+                    or_(SkillDraft.claimed_until.is_(None), SkillDraft.claimed_until < now),
+                )
+                .values(
+                    status="running",
+                    stage="reading",
+                    claim_token=token,
+                    claimed_until=now + timedelta(minutes=10),
+                    attempts=SkillDraft.attempts + 1,
+                )
+            ).rowcount
             db.commit()
+            return bool(claimed)
+
+    if not await asyncio.to_thread(claim):
+        return
+    try:
+
+        def prepare():
+            with SessionLocal() as db:
+                draft = db.get(SkillDraft, draft_id)
+                snapshot = _snapshot(db, draft)
+                draft.stage = "drafting"
+                db.commit()
+            return snapshot, system_prompt()
+
+        snapshot, prompt = await asyncio.to_thread(prepare)
         model = settings.memory_dream_model or get_catalog().default_id()
         raw = await _chat(
-            [{"role": "system", "content": system_prompt()}, {"role": "user", "content": json.dumps(snapshot[5], ensure_ascii=False)}],
+            [{"role": "system", "content": prompt}, {"role": "user", "content": json.dumps(snapshot[5], ensure_ascii=False)}],
             model,
             snapshot[0],
             draft_id,
             token,
         )
         data = _output_json(raw)
-        with SessionLocal() as db:
-            with user_critical_section(db, snapshot[0]):
-                draft = db.get(SkillDraft, draft_id, populate_existing=True)
-                if (
-                    not draft
-                    or draft.status != "running"
-                    or draft.claim_token != token
-                    or not draft.claimed_until
-                    or draft.claimed_until.replace(tzinfo=utcnow().tzinfo) <= utcnow()
-                ):
-                    return
-                _check_source(db, draft, snapshot)
-                _install_output(db, draft, data, snapshot[4], snapshot[6])
-                if draft.status != "preparing":
-                    draft.claim_token = None
-                draft.claimed_until = None
-                if draft.status == "ready" and draft.origin == "conversation":
-                    from ..api.inbox import create_notification
 
-                    create_notification(db, draft.user_id, "skill_draft.ready", draft.title or "技能草稿", draft.conversation_id)
-                db.commit()
+        def install():
+            with SessionLocal() as db:
+                with user_critical_section(db, snapshot[0]):
+                    draft = db.get(SkillDraft, draft_id, populate_existing=True)
+                    if (
+                        not draft
+                        or draft.status != "running"
+                        or draft.claim_token != token
+                        or not draft.claimed_until
+                        or draft.claimed_until.replace(tzinfo=utcnow().tzinfo) <= utcnow()
+                    ):
+                        return
+                    _check_source(db, draft, snapshot)
+                    _install_output(db, draft, data, snapshot[4], snapshot[6])
+                    if draft.status != "preparing":
+                        draft.claim_token = None
+                    draft.claimed_until = None
+                    if draft.status == "ready" and draft.origin == "conversation":
+                        from ..api.inbox import create_notification
+
+                        create_notification(db, draft.user_id, "skill_draft.ready", draft.title or "技能草稿", draft.conversation_id)
+                    db.commit()
+                    return True
+
+        if not await asyncio.to_thread(install):
+            return
         metrics.SKILL_DRAFTS.labels("processed").inc()
     except Exception as exc:
         log.warning("skill draft extraction failed: %s", type(exc).__name__)
-        with SessionLocal() as db:
-            draft = db.get(SkillDraft, draft_id)
-            if draft and draft.status == "running" and draft.claim_token == token:
-                draft.status, draft.stage, draft.error = (
-                    "failed",
-                    None,
-                    str(exc)[:500] if isinstance(exc, (ValueError, skillfiles.SkillFileError)) else "提取失败，请重试",
-                )
-                draft.claim_token, draft.claimed_until = None, None
-                if draft.origin == "conversation":
-                    from ..api.inbox import create_notification
 
-                    create_notification(db, draft.user_id, "skill_draft.failed", "技能提取失败", draft.conversation_id)
-                db.commit()
+        def fail(error):
+            with SessionLocal() as db:
+                draft = db.get(SkillDraft, draft_id)
+                if draft and draft.status == "running" and draft.claim_token == token:
+                    draft.status, draft.stage, draft.error = (
+                        "failed",
+                        None,
+                        str(error)[:500] if isinstance(error, (ValueError, skillfiles.SkillFileError)) else "提取失败，请重试",
+                    )
+                    draft.claim_token, draft.claimed_until = None, None
+                    if draft.origin == "conversation":
+                        from ..api.inbox import create_notification
+
+                        create_notification(db, draft.user_id, "skill_draft.failed", "技能提取失败", draft.conversation_id)
+                    db.commit()
+
+        await asyncio.to_thread(fail, exc)
         metrics.SKILL_DRAFTS.labels("failed").inc()
 
 
@@ -362,18 +389,23 @@ async def draft_forever():
         return
     while True:
         try:
-            with SessionLocal() as db:
-                ids = list(
-                    db.scalars(
-                        select(SkillDraft.id)
-                        .where(
-                            SkillDraft.status.in_(("queued", "running")),
-                            or_(SkillDraft.claimed_until.is_(None), SkillDraft.claimed_until < utcnow()),
+
+            def pending():
+                with SessionLocal() as db:
+                    ids = list(
+                        db.scalars(
+                            select(SkillDraft.id)
+                            .where(
+                                SkillDraft.status.in_(("queued", "running")),
+                                or_(SkillDraft.claimed_until.is_(None), SkillDraft.claimed_until < utcnow()),
+                            )
+                            .order_by(SkillDraft.created_at)
+                            .limit(20)
                         )
-                        .order_by(SkillDraft.created_at)
-                        .limit(20)
                     )
-                )
+                return ids
+
+            ids = await asyncio.to_thread(pending)
             for draft_id in ids:
                 await process_draft(draft_id)
         except Exception:

@@ -392,3 +392,29 @@ def test_context_settings_platform_admin_only_and_audited(env):
             assert db.get(PlatformSetting, "context").value["auto_compact"] is True
             db.delete(db.get(PlatformSetting, "context"))
             db.commit()
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "waiting_user", "interrupted"])
+def test_disabling_user_cancels_work_atomically(env, status):
+    from ailab_platform.models import Conversation, QueuedMessage, RunEvent
+
+    uid = env["users"]["user"]["id"]
+    with SessionLocal() as db:
+        conv = Conversation(user_id=uid, title="pending")
+        db.add(conv)
+        db.flush()
+        run = Run(user_id=uid, conversation_id=conv.id, prompt="pending", model="test", status=status)
+        db.add(run)
+        db.flush()
+        queued = QueuedMessage(user_id=uid, conversation_id=conv.id, prompt="later", model="test")
+        db.add(queued)
+        db.commit()
+        rid, qid = run.id, queued.id
+    with TestClient(app) as c:
+        response = c.patch(f"/v1/admin/users/{uid}", headers=_headers(env, "platform_admin"), json={"disabled": True})
+        assert response.status_code == 200
+    with SessionLocal() as db:
+        assert db.get(Run, rid).status == "canceled"
+        assert db.get(QueuedMessage, qid).state == "canceled"
+        event = db.scalar(select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type == "run.canceled"))
+        assert event.payload["reason"] == "user_disabled"

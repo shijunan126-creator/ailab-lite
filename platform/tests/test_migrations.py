@@ -788,3 +788,55 @@ def test_deletion_reverse_indexes_roundtrip_and_query_plans(engine):
         for table, name in (("artifacts", "ix_artifacts_file_id"),):
             assert name not in {index["name"] for index in inspect(conn).get_indexes(table)}
     _upgrade_to(engine, "0044")
+
+
+def test_lifecycle_limits_backfill_and_roundtrip(engine):
+    import json
+
+    _upgrade_to(engine, "0044")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text("UPDATE runs SET options=:options, runtime_meta=:meta WHERE id='r1'"),
+            {
+                "options": json.dumps({"template": {"file_id": "missing-template"}}),
+                "meta": json.dumps({"brand": {"assets": {"logo": "missing-brand", "docx": "missing-brand"}}}),
+            },
+        )
+        conn.execute(
+            text(
+                "INSERT INTO scheduled_tasks (id, user_id, title, prompt, mode, schedule, timezone, enabled, "
+                "next_run_at, created_at, updated_at) "
+                "VALUES ('s1', 'u1', 'title', 'p', 'chat', '{}', 'UTC', true, '2026-01-01', '2026-01-01', '2026-01-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO conversations (id,user_id,title,model,created_at,updated_at) "
+                "VALUES ('cq','u1','q','m','2026-01-01','2026-01-01')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO queued_messages (id,user_id,conversation_id,prompt,model,options,after_run_id,"
+                "file_ids,steer,state,created_at,updated_at) "
+                "VALUES ('q1','u1','cq','p','m',:options,'r1','[]',false,'queued','2026-01-01','2026-01-01')"
+            ),
+            {"options": json.dumps({"template": {"file_id": "queued-template"}})},
+        )
+    _upgrade_to(engine, "0045")
+    with engine.connect() as conn:
+        assert set(conn.execute(text("SELECT run_id,file_id,kind FROM run_asset_refs"))) == {
+            ("r1", "missing-template", "template"),
+            ("r1", "queued-template", "template"),
+            ("r1", "missing-brand", "brand"),
+        }
+        row = conn.execute(text("SELECT ends_on, paused_reason, recent_run_ids, failure_streak FROM scheduled_tasks")).one()
+        assert row[0] is None and row[1] is None and row[3] == 0
+        assert (json.loads(row[2]) if isinstance(row[2], str) else row[2]) == []
+    _downgrade_to(engine, "0044")
+    assert "run_asset_refs" not in inspect(engine).get_table_names()
+    _upgrade_to(engine, "0045")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM run_asset_refs")) == 3
+        assert conn.scalar(text("SELECT count(*) FROM runs")) == 1

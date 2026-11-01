@@ -12,6 +12,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .. import skillfiles
 from ..config import settings
@@ -174,25 +175,30 @@ async def write_file(draft_id: str, path: str, request: Request, user: User = De
             data = await upload.read(skillfiles.MAX_UNPACKED + 1)
         except (ValueError, TypeError, AttributeError) as exc:
             raise HTTPException(422, "文件或版本无效") from exc
-    with user_critical_section(db, user.id):
-        row = _owned(db, user, draft_id)
-        _editable(row, revision)
-        old = next((f for f in row.files if f["path"] == path), None)
-        if len(data) > skillfiles.MAX_UNPACKED:
-            raise HTTPException(413, "文件超过大小限制")
-        item = store_file(get_storage(), user.id, row.id, path, data, "added")
-        if old:
-            baseline = old.get("baseline")
-            item["baseline"] = baseline
-            item["change"] = "unchanged" if baseline == item["sha256"] else "modified" if baseline else "added"
-        files = [f for f in row.files if f["path"] != path] + [item]
-        _check(files)
-        row.files = files
-        update_metadata(row, get_storage())
-        row.revision += 1
-        row.updated_at = utcnow()
-        db.commit()
-        return _output(db, row)
+
+    def save():
+        with user_critical_section(db, user.id):
+            row = _owned(db, user, draft_id)
+            _editable(row, revision)
+            old = next((f for f in row.files if f["path"] == path), None)
+            if len(data) > skillfiles.MAX_UNPACKED:
+                raise HTTPException(413, "文件超过大小限制")
+            item = store_file(get_storage(), user.id, row.id, path, data, "added")
+            if old:
+                baseline = old.get("baseline")
+                item["baseline"] = baseline
+                item["change"] = "unchanged" if baseline == item["sha256"] else "modified" if baseline else "added"
+            files = [f for f in row.files if f["path"] != path] + [item]
+            _check(files)
+            row.files = files
+            update_metadata(row, get_storage())
+            row.revision += 1
+            row.updated_at = utcnow()
+            db.commit()
+            return _output(db, row)
+
+    # The user lock and the database are blocking: waiting for either on the event loop would stall every request.
+    return await run_in_threadpool(save)
 
 
 @router.post("/v1/skill-drafts/{draft_id}/move")

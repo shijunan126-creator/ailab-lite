@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
@@ -131,8 +132,12 @@ def test_workspace_gc_streams_objects_without_snapshot_sized_queries(monkeypatch
         engine = db.get_bind()
 
     queries = []
+    caller = threading.get_ident()
 
     def record(conn, cursor, statement, parameters, context, executemany):
+        # The engine is shared with background loops left by earlier app instances; count only this GC call.
+        if threading.get_ident() != caller:
+            return
         if "runs" in statement and statement.lstrip().upper().startswith("SELECT"):
             queries.append((statement, len(parameters)))
 

@@ -17,7 +17,7 @@ from ailab_platform import accounts
 from ailab_platform.api.routes_internal import _bound_file
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import FileObject, Run, Template, utcnow
+from ailab_platform.models import FileObject, Run, RunAssetRef, Template, utcnow
 from ailab_platform.quota import library_bytes
 from ailab_platform.service_auth import ServicePrincipal
 from ailab_platform.worker.pipeline import process_file
@@ -212,6 +212,9 @@ def test_template_run_validation_freeze_retry_edit_and_queue(api):
     assert edit.status_code == 201, edit.text
     assert edit.json()["options"]["template"] == frozen
     assert api.get(f"/internal/runs/{edit.json()['id']}", headers=SERVICE).json()["options"]["template"] == frozen
+    with SessionLocal() as db:
+        for run_id in (run["id"], next_id, rid, edit.json()["id"]):
+            assert db.scalar(select(RunAssetRef.id).where(RunAssetRef.run_id == run_id, RunAssetRef.file_id == frozen["file_id"]))
 
 
 def test_one_off_file_validation_and_library_slides_filter(api, monkeypatch):
@@ -374,7 +377,16 @@ def test_resume_and_fork_retain_frozen_selection(api):
     headers = {**SERVICE, "X-Run-Attempt": claim["attempt_id"]}
     api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
     api.post(f"/internal/runs/{rid}/status", headers=headers, json={"status": "succeeded"})
+    with SessionLocal() as db:
+        old = db.get(Run, rid)
+        old.runtime_meta = {**old.runtime_meta, "brand_version": 1, "brand": {"assets": {"logo": "frozen-brand"}}}
+        db.commit()
     fork = api.post(f"/v1/conversations/{conv['id']}/fork", json={"run_id": rid, "mode": "work"})
     assert fork.status_code == 201, fork.text
     copied = api.get(f"/v1/conversations/{fork.json()['id']}").json()["turns"][-1]
     assert copied["options"]["template"] == frozen
+    with SessionLocal() as db:
+        assert db.get(Run, copied["id"]).runtime_meta["brand"]["assets"] == {"logo": "frozen-brand"}
+        assert db.scalar(select(RunAssetRef.id).where(RunAssetRef.run_id == copied["id"], RunAssetRef.file_id == "frozen-brand"))
+    with SessionLocal() as db:
+        assert db.scalar(select(RunAssetRef.id).where(RunAssetRef.run_id == copied["id"], RunAssetRef.file_id == frozen["file_id"]))

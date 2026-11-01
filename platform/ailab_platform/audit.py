@@ -6,6 +6,7 @@ from fastapi.routing import APIRoute
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from .models import AuditLog
 from .obs import clean_request_id, request_id_var
@@ -86,24 +87,30 @@ class AuditedRoute(APIRoute):
                     action = "users.password" if parts[-1] == "password" else "auth." + ("login" if parts[-1] == "callback" else parts[-1])
                 else:
                     raise
-                with SessionLocal() as db:
-                    existing = db.scalar(
-                        select(AuditLog.id)
-                        .where(AuditLog.request_id == request_id_var.get(), AuditLog.at >= started, AuditLog.outcome == "failure")
-                        .limit(1)
-                    )
-                    if existing is None:
-                        actor = authenticate(db, bearer_token(request))
-                        code = exc.status_code if isinstance(exc, HTTPException) else 409 if isinstance(exc, IntegrityError) else 422
-                        record_audit(
-                            db,
-                            action,
-                            "admin" if parts[1] == "admin" else "user",
-                            actor_id=actor.id if actor else None,
-                            outcome="failure",
-                            detail={"reason": str(code)},
+
+                def audit_failure(error):
+                    with SessionLocal() as db:
+                        existing = db.scalar(
+                            select(AuditLog.id)
+                            .where(AuditLog.request_id == request_id_var.get(), AuditLog.at >= started, AuditLog.outcome == "failure")
+                            .limit(1)
                         )
-                        db.commit()
+                        if existing is None:
+                            actor = authenticate(db, bearer_token(request))
+                            code = (
+                                error.status_code if isinstance(error, HTTPException) else 409 if isinstance(error, IntegrityError) else 422
+                            )
+                            record_audit(
+                                db,
+                                action,
+                                "admin" if parts[1] == "admin" else "user",
+                                actor_id=actor.id if actor else None,
+                                outcome="failure",
+                                detail={"reason": str(code)},
+                            )
+                            db.commit()
+
+                await run_in_threadpool(audit_failure, exc)
                 if isinstance(exc, IntegrityError):
                     raise HTTPException(409, "conflict") from None
                 raise

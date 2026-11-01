@@ -124,6 +124,13 @@ def on_transition(db, run):
         schedule_id = (run.options or {}).get("schedule_id")
         if schedule_id:
             task = db.get(ScheduledTask, schedule_id)
+            if task:
+                from .routes_schedules import record_failure
+
+                if status == RunStatus.FAILED:
+                    record_failure(db, task)
+                elif status == RunStatus.SUCCEEDED:
+                    task.failure_streak = 0
             title = task.title if task else title
             kind = f"schedule.{status}"
         else:
