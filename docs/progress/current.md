@@ -1,4 +1,4 @@
-# 前缀缓存 + 渲染：交接（2026-11-01，PR #121）
+# 前缀缓存 + 渲染：交接（2026-11-01，已合并并部署）
 
 ## 一、先读这些
 
@@ -15,8 +15,8 @@
 
 ## 三、待办
 
-1. PR #121 CI 通过后 merge，之后由 Codex 部署最新版本（只更新变化组件，不另做验收）。
-2. 清理：已删 `.worktrees/render-view`（分支保留）、本轮 `/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`；旧会话的 `/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/c3-*` 待用户确认后删除。
+1. 已完成：PR #121 CI 13 项全绿后 squash 合并为 `main@277a8c4`（CI 期间修复 Linux 下 `office_exec.py` 把退出中进程缺 `VmRSS` 当失败、PDF 解析偶发丢页数的缺陷）；Codex 已增量部署到本机 AILab-local：重建后端共用镜像、Portal、sbx-office，五个应用服务 healthy，迁移无变化（0043）；按约定未备份、未做部署后验收，细节只记在 AILab-local。
+2. 清理：已删 `.worktrees/render-view`（分支保留）、本轮 `/private/tmp/pc-*`、镜像 `c3-render-lifecycle:latest`；旧会话的 `/private/tmp/sm-codex`、`/private/tmp/c1`、`/private/tmp/c3-*` 已按用户确认删除。
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
