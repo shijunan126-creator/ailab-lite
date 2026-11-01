@@ -897,3 +897,56 @@ def test_carried_skill_must_match_version_and_mode():
     assert not _carried_skills(messages, {"platform.pptx": "v1"}, "chat")
     failed = [messages[0], tool_result_message("c1", "load_skill", {"ok": False, "error": "x"})]
     assert not _carried_skills(failed, {"platform.pptx": "v1"}, "work")
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+@pytest.mark.parametrize("updated", [False, True])
+def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mode, updated):
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+            self.reads = []
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_file_bytes(self, file_id, **kwargs):
+            self.reads.append((file_id, kwargs["run_id"]))
+            return f"---\nname: team-skill\ndescription: team rules\n---\nInstructions {file_id}".encode()
+
+        async def get_run(self, run_id):
+            version = "v2" if updated and run_id == "second" else "v1"
+            run = {
+                **await super().get_run(run_id),
+                "options": {"mode": mode, "skill": "team-skill"},
+                "personal_skills": [{"name": "team-skill", "file_id": version, "filename": "SKILL.md", "kind": "md"}],
+            }
+            if run_id == "second":
+                state = self.checkpoints["first"]["state"]
+                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+            return run
+
+    execute = {"tool_calls": [{"index": 0, "id": "exec", "type": "function", "function": {"name": "exec", "arguments": '{"cmd":"true"}'}}]}
+    responses = [{"content": "first"}, *([execute] if mode == "work" else []), {"content": "second"}]
+    with scripted_server(responses) as (url, requests):
+        platform, broker = Platform(), FakeBroker()
+        loop = AgentLoop(platform=platform, broker=broker, llm=ModelTransport(url))
+        asyncio.run(loop.process("first", attempt_id="a1"))
+        asyncio.run(loop.process("second", attempt_id="a2"))
+    assert [s for s, _ in platform.statuses if s == "succeeded"] == ["succeeded", "succeeded"]
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    loads = [m for m in requests[-1]["messages"] if m.get("name") == "load_skill"]
+    assert len(loads) == (2 if updated else 1)
+    assert platform.reads == [("v1", "first"), ("v2" if updated else "v1", "second")]
+    if mode == "work":
+        assert (
+            "/workspace/.ailab/skills/team-skill/SKILL.md",
+            f"---\nname: team-skill\ndescription: team rules\n---\nInstructions {'v2' if updated else 'v1'}".encode(),
+        ) in broker.put_calls

@@ -1,4 +1,14 @@
-# 管理员平台技能与技能广场：交接（2026-11-02，进行中）
+# 前缀缓存矩阵与首批广场技能：交接（2026-11-02）
+
+- 分支 `test/prefix-cache-matrix`，base `origin/main@c308ed7`。用户授权：测试子代理自行启动隔离临时栈、真实模型多轮矩阵、导入并试用六个 ZIP、修复缓存缺口、回归与完整 pytest、提交 PR；不部署、不合并。下方管理员技能旧交接的“待 PR/合并”已由 #143 取代。
+- 已完成：文件技能按 file_id/模式跨轮复用正文，仍重新授权读取并安装沙箱文件；四项录制请求回归。29 组多轮与六个真实技能任务，逐调用计数、首处差异、边界和限制统一见[矩阵](updates/2026-11-02-prefix-cache-matrix.md)。广场稳定续轮 Chat/Work 98.14%/98.49%；不宣称全场景 ≥95%，短 Chat 供应商限制、新版与压缩冷段均保留实测。
+- 六包扫描发布并以普通用户添加全部通过；五个任务通过，gongwen 因缺 zip/unzip、标准字体而受限失败（Noto 替代 DOCX 已交付，但不合规且步数耗尽）。未向部署环境导入。
+- 验证：Ruff 与前缀专项 42 通过；完整 Python 1963 passed / 164 skipped / 2 failed，修复网关测试 500ms 期限后该组21通过，未重复整套；未改 Portal，不跑 build。具体基线、未测边界和开销见矩阵。
+- 临时栈已停止，六端口空闲、沙箱0残留。下一步：提交 PR，等待审查/CI；未授权合并或部署。不要把短 Chat 相同正文复放仍不足95%的供应商计数当成消息改写继续修补。
+
+---
+
+# 管理员平台技能与技能广场：历史交接（已合并为 main@c308ed7）
 
 - 分支 `feat/admin-platform-skills`（worktree `.worktrees/platform-skills`），base `origin/main@82ff828`。用户要求：删掉自写八个技能（#140 已关闭）；广场改放高 star、许可可再分发的办公技能；管理员可增删改平台技能（不含基础技能）并同步所有用户，未修改的随平台更新、修改过的不更新，可恢复默认；以后所有 agent 设计考虑前缀缓存（已写入 AGENTS.md，#142）。
 - 已完成：设计 [design](../architecture/design/2026-11-02-admin-platform-skills.md)；后端（Codex，迁移 0047）与 Portal（Claude），记录见[本轮记录](updates/2026-11-02-admin-platform-skills.md)。

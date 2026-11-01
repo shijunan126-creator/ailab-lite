@@ -164,8 +164,8 @@ def _office_skills(value, *, keywords=False):
     return result
 
 
-def _carried_skills(messages, versions, mode) -> set[str]:
-    """Built-in skills whose full text, at the current version and this mode, is still in the carried-over messages."""
+def _carried_skills(messages, versions, mode, *, identity="version") -> set[str]:
+    """Skills whose complete current version and mode remain in the carried-over messages."""
     calls: dict[str, str] = {}
     found = set()
     for message in messages:
@@ -186,7 +186,7 @@ def _carried_skills(messages, versions, mode) -> set[str]:
             except ValueError:
                 continue
             if isinstance(result, dict) and result.get("ok") and result.get("skill"):
-                if (result.get("version"), result.get("mode")) == (versions[name], mode):
+                if (result.get(identity), result.get("mode")) == (versions[name], mode):
                     found.add(name)
     return found
 
@@ -1469,7 +1469,7 @@ class AgentLoop:
         attempted.append(name)
         await self._checkpoint(run_id, turn)
 
-    def _register_carried_skills(self, turn, run_id) -> None:
+    async def _register_carried_skills(self, turn, run_id) -> None:
         # Each turn is a new run: a skill loaded earlier in the conversation is loaded for this run too. Without this it
         # was sent again every turn, and nothing that depends on the loaded skills (attestation, view warm-up) saw it.
         mode = (turn.run.get("options") or {}).get("mode", "work")
@@ -1479,6 +1479,22 @@ class AgentLoop:
         for name in sorted(_carried_skills(state.get("messages") or [], versions, mode)):
             if not any(item["name"] == name for item in loaded):
                 loaded.append({"name": name, "kind": "base" if name in BASE_SKILLS else "builtin", "version": versions[name]})
+        files = {name: skill["file_id"] for name, skill in turn.personal.items() if name not in turn.disabled_skills}
+        for name in sorted(_carried_skills(state.get("messages") or [], files, mode, identity="file_id")):
+            if any(item["name"] == name for item in loaded):
+                continue
+            # Recheck file access and prepare this run's sandbox files without resending the instructions.
+            await self._read_personal(turn, run_id, name)
+            skill = turn.personal[name]
+            loaded.append(
+                {
+                    "name": name,
+                    "kind": "personal",
+                    "file_id": skill["file_id"],
+                    "filename": skill["filename"],
+                    "title": skill.get("title") or name,
+                }
+            )
 
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
@@ -1600,7 +1616,13 @@ class AgentLoop:
                     text = await self._interruptible(run_id, self._read_personal(turn, run_id, wanted))
                     if (turn.run.get("options") or {}).get("mode") == "chat":
                         text += "\n当前对话没有沙箱，技能中的脚本步骤无法执行。"
-                    result = {"ok": True, "file_id": turn.personal[wanted]["file_id"], "skill": text, "name": wanted}
+                    result = {
+                        "ok": True,
+                        "file_id": turn.personal[wanted]["file_id"],
+                        "skill": text,
+                        "name": wanted,
+                        "mode": (turn.run.get("options") or {}).get("mode", "work"),
+                    }
             elif call.name == "load_skill":
                 raise ToolError(f"技能 {wanted or ''} 不存在或已不可用")
             elif call.name == "run_subtasks":
@@ -2188,7 +2210,7 @@ class AgentLoop:
             messages = state["messages"]
             turn.messages = messages
             if not state.get("skill_initialization_done"):
-                self._register_carried_skills(turn, run_id)
+                await self._register_carried_skills(turn, run_id)
                 selected = options.get("skills")
                 if selected is None:
                     selected = [{"name": skill, "title": options.get("skill_title") or skill}] if skill else []
