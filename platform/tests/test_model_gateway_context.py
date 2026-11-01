@@ -171,7 +171,9 @@ def test_pre_output_fallback_has_distinct_calls_and_real_ledger(monkeypatch, kin
             assert len(seen1) == len(seen2) == 1
             assert len(ttft) == 1 and ttft[0][0] == "backup" and ttft[0][1] > 0
 
-    monkeypatch.setattr(settings, "ttft_timeout_seconds", 0.5)
+    # Include HTTP client/TLS setup and ledger callbacks on a loaded developer machine;
+    # the stalled primary still times out, without also timing out the healthy backup.
+    monkeypatch.setattr(settings, "ttft_timeout_seconds", 3)
     with TestClient(app) as c:
         asyncio.run(exercise(c))
 
@@ -199,7 +201,7 @@ def test_output_never_replayed(monkeypatch, kind):
             assert len(one) == 1 and not two
             assert len(bridge.reservations) == len(bridge.settlements) == 1
 
-    monkeypatch.setattr(settings, "llm_idle_timeout_seconds", 0.5)
+    monkeypatch.setattr(settings, "llm_idle_timeout_seconds", 3)
     asyncio.run(exercise())
 
 
