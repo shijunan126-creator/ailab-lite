@@ -274,3 +274,7 @@ API新消息与排队统一执行开始后不可切换的合同；省略继承�
   - 缓存解释在 v6 和 v7 中都无条件给出延迟数量级。
   - 偶发的计数和排名笔误。
 - 详见[评测报告](../progress/updates/2026-10-30-genui-real-model-eval.md#迭代-v7)。
+
+## GenUI 存图与表格复制（2026-11-01）
+
+GenUI 块可复制为图片/下载 PNG（浏览器内光栅，首击加载），表格（Markdown、GenUI Table/Compare）复制为 HTML + Markdown，代码块逐块复制。HtmlArtifact 不支持存图。[记录](../progress/updates/2026-11-01-genui-copy.md)。

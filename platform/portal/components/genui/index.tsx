@@ -2,8 +2,10 @@
 
 // <GenUIBlock/>: the one entry point for a generated UI block (HLD §6.5). The renderer, catalog and charts load
 // with the first block on the page; a block that cannot render falls back without affecting the rest of the answer.
-import { Component, lazy, Suspense, useCallback, useMemo, useState, type ReactNode } from "react";
+import { Component, lazy, Suspense, useCallback, useMemo, useRef, useState, type ReactNode } from "react";
+import { useTouchReveal } from "../../lib/use-touch-reveal";
 import { MAX_BLOCK_CHARS } from "./catalog/limits";
+import { ImageTools, placeTools } from "./image";
 import type { BlockState } from "./openui/block";
 
 /** Loads the GenUI chunk ahead of time (print waits for it so every block is on paper). */
@@ -43,15 +45,25 @@ function SourceFallback({ source, onRetry }: { source: string; onRetry?: () => v
 /** `index`: the block's place among the answer's UI blocks, the key its saved state is kept under. */
 export function GenUIBlock({ source, index, streaming, closed }: { source: string; index: number; streaming: boolean; closed: boolean }) {
   const [state, setState] = useState<BlockState | null>(null);
+  const [picture, setPicture] = useState(false);
   const [attempt, setAttempt] = useState(0);
-  const onState = useCallback((next: BlockState) => setState(next), []);
+  const ref = useRef<HTMLDivElement>(null);
+  const [touched, reveal] = useTouchReveal(ref);
+  const onState = useCallback((next: BlockState, pictured: boolean) => {
+    setState(next);
+    setPicture(pictured);
+  }, []);
   // a new lazy component per attempt: React caches a failed import, a retry must load again
   const OpenUIBlock = useMemo(() => lazy(() => import("./openui/block")), [attempt]);
   if (source.length > MAX_BLOCK_CHARS) return <SourceFallback source={source.slice(0, 2000) + "\n…"} />;
   const live = streaming && !closed;
   const failed = !live && state === "empty";
   return (
-    <div className="genui-block" data-state={live ? "streaming" : state || "loading"}>
+    <div ref={ref} className="genui-block" data-state={live ? "streaming" : state || "loading"} data-touched={touched || undefined}
+      onPointerEnter={() => { if (picture && ref.current) placeTools(ref.current); }}
+      onPointerDown={(e) => {
+        if (picture && ref.current && reveal(e)) placeTools(ref.current);
+      }}>
       <Boundary resetKey={String(attempt)} fallback={<SourceFallback source={source} onRetry={() => setAttempt((n) => n + 1)} />}>
         <Suspense fallback={<Skeleton />}>
           {failed ? <SourceFallback source={source} /> : null}
@@ -61,6 +73,7 @@ export function GenUIBlock({ source, index, streaming, closed }: { source: strin
           {live && state !== "ok" ? <Skeleton /> : null}
         </Suspense>
       </Boundary>
+      {!live && state === "ok" && picture ? <ImageTools block={ref} /> : null}
     </div>
   );
 }

@@ -5,10 +5,14 @@ from __future__ import annotations
 import re
 
 import pytest
+from playwright.sync_api import expect
 
 from .conftest import select_model, wait_models
 
 pytestmark = pytest.mark.e2e
+
+COPY_MARKDOWN = "| 名称 | 数量 |\n|---|--:|\n| 苹果 | 3 |"
+COPY_CODE = 'name = "AILab"\nprint(name)'
 
 
 def _ask(page, prompt: str) -> None:
@@ -18,6 +22,86 @@ def _ask(page, prompt: str) -> None:
     page.keyboard.press("Enter")
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=15000)
     page.wait_for_function("(n) => document.querySelectorAll('.turn-meta').length >= n", arg=1, timeout=90000)
+
+
+@pytest.fixture()
+def copy_answer(logged_in, context, stack):
+    context.grant_permissions(["clipboard-read", "clipboard-write"], origin=stack.portal)
+    _ask(logged_in, "[[genui-copy]]")
+    answer = logged_in.locator(".msg.assistant").last
+    expect(answer.locator(".genui-block[data-state='ok']")).to_have_count(2, timeout=20000)
+    expect(answer.locator(".md-codeblock code")).to_have_text(COPY_CODE)
+    return answer
+
+
+def _clipboard_text(page) -> dict[str, str]:
+    return page.evaluate("""async () => {
+        const result = {};
+        for (const item of await navigator.clipboard.read()) {
+            for (const type of item.types) {
+                if (type.startsWith('text/')) result[type] = await (await item.getType(type)).text();
+            }
+        }
+        return result;
+    }""")
+
+
+def test_chart_hover_downloads_and_copies_a_png(copy_answer, page) -> None:
+    chart = copy_answer.locator(".genui-block").filter(has_text="请求概览")
+    tools = chart.locator(".genui-tools")
+    page.mouse.move(0, 0)
+    expect(tools).to_have_css("opacity", "0")
+    chart.locator(".gu-heading").hover()
+    expect(tools).to_have_css("opacity", "1")
+    expect(tools).to_be_visible()
+    with page.expect_download() as download_info:
+        tools.get_by_role("button", name="下载图片", exact=True).click()
+    download = download_info.value
+    assert download.suggested_filename == "请求概览.png"
+    picture = download.path().read_bytes()
+    assert picture.startswith(b"\x89PNG\r\n\x1a\n")
+    assert len(picture) > 1024
+    copy = tools.get_by_role("button", name="复制为图片", exact=True)
+    copy.click()
+    expect(tools.locator("button").first).to_have_attribute("data-phase", "done", timeout=20000)
+    expect(tools.locator("button").first).to_have_attribute("aria-label", "已复制")
+    assert page.evaluate("async () => (await navigator.clipboard.read()).some(item => item.types.includes('image/png'))")
+
+
+def test_table_only_block_copies_html_and_numeric_markdown(copy_answer, page) -> None:
+    block = copy_answer.locator(".genui-block").filter(has_text="地区明细")
+    expect(block.locator(".genui-tools")).to_have_count(0)
+    table = block.locator(".table-frame")
+    page.mouse.move(0, 0)
+    expect(table.locator(".table-tools")).to_have_css("opacity", "0")
+    table.locator("table").hover()
+    expect(table.locator(".table-tools")).to_have_css("opacity", "1")
+    table.get_by_role("button", name="复制表格", exact=True).click()
+    expect(table.get_by_role("button", name="已复制", exact=True)).to_be_visible()
+    copied = _clipboard_text(page)
+    assert "<table" in copied["text/html"]
+    assert "---:" in copied["text/plain"]
+    assert "| 地区 | 营收 |" in copied["text/plain"]
+    assert "| 华东 | 1,280 |" in copied["text/plain"]
+
+
+def test_markdown_table_copies_its_exact_source(copy_answer, page) -> None:
+    table = copy_answer.locator(".table-frame").filter(has_text="苹果")
+    table.locator("table").hover()
+    expect(table.locator(".table-tools")).to_have_css("opacity", "1")
+    table.get_by_role("button", name="复制表格", exact=True).click()
+    expect(table.get_by_role("button", name="已复制", exact=True)).to_be_visible()
+    copied = _clipboard_text(page)
+    assert copied["text/plain"] == COPY_MARKDOWN
+    assert "<table" in copied["text/html"]
+
+
+def test_code_block_copies_only_the_exact_code(copy_answer, page) -> None:
+    code = copy_answer.locator(".md-codeblock")
+    code.hover()
+    code.get_by_role("button", name="复制代码", exact=True).click()
+    expect(code.get_by_role("button", name="已复制", exact=True)).to_be_visible()
+    assert _clipboard_text(page)["text/plain"] == COPY_CODE
 
 
 def test_text_and_ui_blocks_render_in_order_and_a_button_sends_its_message(logged_in) -> None:
