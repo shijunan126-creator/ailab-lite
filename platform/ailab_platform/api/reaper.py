@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
@@ -166,9 +167,10 @@ GC_ERRORS = metrics.Counter("ailab_gc_errors_total", "Lifecycle passes requiring
 _gc_cursors: dict[str, str | None] = {}
 
 
-def _page(storage, prefix: str):
-    page = storage.list_prefix(prefix, cursor=_gc_cursors.get(prefix), limit=settings.gc_batch_size)
-    _gc_cursors[prefix] = page.cursor
+def _page(storage, prefix: str, *, cursor_key: str | None = None):
+    cursor_key = cursor_key or prefix
+    page = storage.list_prefix(prefix, cursor=_gc_cursors.get(cursor_key), limit=settings.gc_batch_size)
+    _gc_cursors[cursor_key] = page.cursor
     return page
 
 
@@ -263,11 +265,35 @@ def purge_orphan_objects(db: Session, storage, now: datetime) -> int:
             if _aware(item.modified_at) >= cutoff:
                 continue
             owner_id = item.key.split("/")[1]
-            if db.get(owner, owner_id) is not None:
+            resource = db.get(owner, owner_id)
+            if resource is not None and not (owner is FileObject and resource.purged_at is not None):
                 continue
             _schedule_delete(db, item.key, "orphan")
             db.commit()
             removed += 1
+    # Original objects can outlive a failed copy-before-commit or its best-effort
+    # exception cleanup. File ownership, not Run existence, protects delivered
+    # artifacts retained after conversation purge.
+    for prefix in ("uploads/", "versions/", "runs/", "skills/", "templates/", "brand/"):
+        for item in _page(storage, prefix, cursor_key=f"orphan:{prefix}"):
+            if _aware(item.modified_at) >= cutoff:
+                continue
+            parts = item.key.split("/")
+            index = 1 if prefix in {"templates/", "brand/"} else 2
+            if len(parts) <= index:
+                continue
+            file_id = parts[index]
+            file = db.get(FileObject, file_id)
+            run = db.get(Run, parts[1]) if prefix == "runs/" else None
+            user_id = file.user_id if file else run.user_id if run else parts[1] if index == 2 and prefix != "runs/" else None
+            with user_critical_section(db, user_id) if user_id else nullcontext():
+                file = db.get(FileObject, file_id, populate_existing=True)
+                if file and file.purged_at is None and file.storage_key == item.key:
+                    db.rollback()
+                    continue
+                _schedule_delete(db, item.key, "orphan")
+                db.commit()
+                removed += 1
     return removed
 
 

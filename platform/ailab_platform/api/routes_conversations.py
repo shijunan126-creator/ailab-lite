@@ -308,6 +308,8 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 if old.status not in RunStatus.TERMINAL:
                     raise HTTPException(422, "复制范围中存在未结束的轮次")
                 result = deepcopy(old.result or {})
+                if old.id in invalid_sources:
+                    result = {key: value for key, value in result.items() if key == "artifacts"}
                 result["forked_from_run_id"] = old.id
                 result["forked_usage"] = run_dict(db, old, detail=True)["usage"]
                 for key in ("workspace_saved", "workspace_key", "workspace_saved_at", "workspace_bytes"):
@@ -323,7 +325,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     parent_run_id=mapping[old.parent_run_id].id if old.parent_run_id in mapping else None,
                     title=old.title,
                     prompt=old.prompt,
-                    summary=old.summary,
+                    summary="（文件来源已失效）" if old.id in invalid_sources else old.summary,
                     error=old.error,
                     status=old.status,
                     options=deepcopy(old.options),
@@ -391,12 +393,14 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     for event in events:
                         if event.type in {"client.call", "client.result"}:
                             continue
-                        payload = deepcopy(event.payload)
+                        payload = {"source_unavailable": True} if old.id in invalid_sources else deepcopy(event.payload)
                         if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
                             payload["queued_id"] = copied_steers[payload["queued_id"]]
                         db.add(RunEvent(run_id=new.id, seq=event.seq, type=event.type, payload=payload, created_at=event.created_at))
                     after = events[-1].seq
                     db.flush()
+                if old.id in invalid_sources:
+                    continue
                 cursor = None
                 while True:
                     page = storage.list_prefix(f"previews/{old.id}/", cursor=cursor, limit=100)

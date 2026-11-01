@@ -291,11 +291,17 @@ export default memo(function Turn({
         ) : null}
         {run.input_files?.length ? (
           <div className="attach-row">
-            {run.input_files.map((f) => (
-              <button key={f.file_id} className="attach-chip open" onClick={() => onPreviewFile(f)}>
-                <IconFile size={13} /> {f.filename}
-              </button>
-            ))}
+            {run.input_files.map((f) =>
+              f.deleted ? (
+                <span key={f.file_id} className="attach-chip gone" title="已删除">
+                  <IconFile size={13} /> {f.filename}
+                </span>
+              ) : (
+                <button key={f.file_id} className="attach-chip open" onClick={() => onPreviewFile(f)}>
+                  <IconFile size={13} /> {f.filename}
+                </button>
+              )
+            )}
           </div>
         ) : null}
         {steered.map((x) => (
@@ -336,32 +342,44 @@ export default memo(function Turn({
 
           {run.artifacts?.length ? (
             <div className="files">
-              {run.artifacts.map((a) => (
-                <div key={a.id} className="file-card">
-                  <ExtTile filename={a.filename} size={38} />
-                  <div className="grow">
-                    <div className="name" title={a.filename}>
-                      {a.filename}
+              {run.artifacts.map((a) =>
+                a.deleted ? (
+                  <div key={a.id} className="file-card gone">
+                    <ExtTile filename={a.filename} size={38} />
+                    <div className="grow">
+                      <div className="name" title={a.filename}>
+                        {a.filename}
+                      </div>
+                      <div className="meta">已删除</div>
                     </div>
-                    <div className="meta">{formatBytes(a.size)}</div>
                   </div>
-                  <button
-                    className="secondary sm"
-                    onClick={() => {
-                      // the live pane follows a file through later turns; anything else opens on its own
-                      const key = PREVIEWABLE.test(a.filename) ? previewKey(run, a.filename) : null;
-                      if (key) onPreview(key);
-                      else files.open(run.artifacts!.map((x) => x.file_id), a.file_id);
-                    }}
-                  >
-                    预览
-                  </button>
-                  <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
-                    <IconDownload size={15} /> <span className="dl-label">下载</span>
-                  </a>
-                  <FileMenu fileId={a.file_id} filename={a.filename} projectId={projectId} />
-                </div>
-              ))}
+                ) : (
+                  <div key={a.id} className="file-card">
+                    <ExtTile filename={a.filename} size={38} />
+                    <div className="grow">
+                      <div className="name" title={a.filename}>
+                        {a.filename}
+                      </div>
+                      <div className="meta">{formatBytes(a.size)}</div>
+                    </div>
+                    <button
+                      className="secondary sm"
+                      onClick={() => {
+                        // the live pane follows a file through later turns; anything else opens on its own
+                        const key = PREVIEWABLE.test(a.filename) ? previewKey(run, a.filename) : null;
+                        if (key) onPreview(key);
+                        else files.open(run.artifacts!.filter((x) => !x.deleted).map((x) => x.file_id), a.file_id);
+                      }}
+                    >
+                      预览
+                    </button>
+                    <a className="btn secondary sm" href={downloadUrl(a.download_url)} target="_blank" rel="noreferrer" aria-label={`下载 ${a.filename}`}>
+                      <IconDownload size={15} /> <span className="dl-label">下载</span>
+                    </a>
+                    <FileMenu fileId={a.file_id} filename={a.filename} projectId={projectId} />
+                  </div>
+                )
+              )}
             </div>
           ) : null}
 

@@ -6,7 +6,7 @@ from copy import deepcopy
 from sqlalchemy import select
 
 from ..contracts.context_summary import ContextSummary
-from ..models import AppliedMessagePosition, ContextSummaryFrame, ContextSummarySource, MessageFileRef, QueuedMessage
+from ..models import AppliedMessagePosition, ContextSummaryFrame, ContextSummarySource, MessageFileRef, QueuedMessage, new_id
 
 
 def copy_message_sources(db, old, new, steers):
@@ -15,13 +15,14 @@ def copy_message_sources(db, old, new, steers):
     identities = {old.id: new.id, **steers}
     refs = db.scalars(select(MessageFileRef).where(MessageFileRef.run_id == old.id)).all()
     for ref in refs:
-        if ref.message_id not in identities:
+        message_id = new_id("art") if ref.message_kind == "artifact" else identities.get(ref.message_id)
+        if message_id is None:
             continue
         db.add(
             MessageFileRef(
                 run_id=new.id,
                 message_kind=ref.message_kind,
-                message_id=identities[ref.message_id],
+                message_id=message_id,
                 file_id=ref.file_id,
                 role=ref.role,
                 ordinal=ref.ordinal,

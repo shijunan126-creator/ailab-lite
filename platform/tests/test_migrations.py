@@ -766,3 +766,25 @@ def test_dream_batch_downgrade_keeps_latest_finished_applied(engine):
     with engine.connect() as conn:
         assert list(conn.execute(text("SELECT id FROM memory_dream_runs"))) == [("b",)]
     _upgrade_to(engine, "head")
+
+
+def test_deletion_reverse_indexes_roundtrip_and_query_plans(engine):
+    _upgrade_to(engine, "0043")
+    with engine.connect() as conn:
+        assert "ix_artifacts_file_id" not in {index["name"] for index in inspect(conn).get_indexes("artifacts")}
+    _upgrade_to(engine, "0044")
+    with engine.connect() as conn:
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SET LOCAL enable_seqscan=off"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        for query, index in (
+            ("SELECT id FROM artifacts WHERE file_id='deleted'", "ix_artifacts_file_id"),
+            ("SELECT id FROM files WHERE parent_id='deleted'", "ix_files_parent_id"),
+        ):
+            plan = str(conn.execute(text(prefix + query)).all())
+            assert index in plan, plan
+    _downgrade_to(engine, "0043")
+    with engine.connect() as conn:
+        for table, name in (("artifacts", "ix_artifacts_file_id"),):
+            assert name not in {index["name"] for index in inspect(conn).get_indexes(table)}
+    _upgrade_to(engine, "0044")

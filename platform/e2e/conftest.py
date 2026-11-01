@@ -23,6 +23,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -164,6 +165,12 @@ def stack(tmp_path_factory):
             else ("AILAB_OSB_DOMAIN", "AILAB_OSB_PROTOCOL", "AILAB_OSB_API_KEY", "AILAB_OSB_USE_SERVER_PROXY", "AILAB_OSB_NETWORK_MODE")
         )
         env.update({name: os.environ[name] for name in names if name in os.environ})
+    # A leftover server on one of these ports answers the health probes, and the suite then silently tests
+    # stale code (an orphaned `next start` from an aborted run did exactly that). Refuse to start instead.
+    for port in (*ports.values(), PORTAL_PORT):
+        with socket.socket() as probe:
+            if probe.connect_ex(("127.0.0.1", port)) == 0:
+                raise RuntimeError(f"E2E port {port} is already in use; stop that process or set AILAB_E2E_BASE_PORT/AILAB_E2E_PORTAL_PORT")
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     procs: list[subprocess.Popen] = []
     logs = []

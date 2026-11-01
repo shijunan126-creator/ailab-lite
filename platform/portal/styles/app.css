@@ -144,6 +144,9 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .msg.user .bubble.steer { display: flex; gap: 8px; align-items: baseline; margin-top: 6px; background: none; border: 1px dashed var(--border-strong); color: var(--muted-foreground); font-size: var(--text-ui); }
 .msg.user .attach-row { gap: 6px; }
 .msg.user .attach-chip { max-width: min(100%, 280px); }
+/* a file deleted from the library after the turn: still named in history, no longer opens */
+.attach-chip.gone, .file-card.gone .name { color: var(--faint-foreground); text-decoration: line-through; }
+.file-card.gone:hover { border-color: var(--border); box-shadow: none; }
 .msg.assistant { gap: 0; }
 .avatar-ai { display: none; }
 .assistant-body { gap: 12px; }

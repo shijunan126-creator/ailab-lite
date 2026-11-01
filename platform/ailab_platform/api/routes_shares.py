@@ -56,10 +56,12 @@ class ShareFile(BaseModel):
     download_url: str
     preview_url: str
     thumbnail_url: str
+    deleted: bool = False
 
 
 class AttachmentName(BaseModel):
     filename: str
+    deleted: bool = False
 
 
 class ShareTurn(UTCModel):
@@ -350,17 +352,19 @@ def revoke(share_id: str, user: User = Depends(current_user), db: Session = Depe
 
 
 def share_file(row, file):
+    deleted = file.deleted_at is not None or file.purged_at is not None
     base = f"/api/v1/shares/{row.id}/files/{file.id}"
     return {
         "id": file.id,
         "file_id": file.id,
-        "filename": file.filename,
+        "filename": "文件已删除" if deleted else file.filename,
         "content_type": file.content_type,
         "size": file.size,
-        "content_url": base + "/content",
-        "download_url": base + "/content",
-        "preview_url": base + "/preview",
-        "thumbnail_url": base + "/thumbnail",
+        "content_url": "" if deleted else base + "/content",
+        "download_url": "" if deleted else base + "/content",
+        "preview_url": "" if deleted else base + "/preview",
+        "thumbnail_url": "" if deleted else base + "/thumbnail",
+        "deleted": deleted,
     }
 
 
@@ -387,19 +391,46 @@ def view(
         .where(
             Artifact.run_id.in_(page),
             FileObject.user_id == row.owner_id,
-            FileObject.deleted_at.is_(None),
-            FileObject.purged_at.is_(None),
             FileObject.status == FileStatus.READY,
         )
     ):
         artifacts.setdefault(rid, []).append(share_file(row, file))
+    from ..models import MessageFileRef
+
+    for ref in db.scalars(select(MessageFileRef).where(MessageFileRef.run_id.in_(page), MessageFileRef.message_kind == "artifact")):
+        artifacts.setdefault(ref.run_id, []).append(
+            {
+                "id": ref.file_id,
+                "file_id": ref.file_id,
+                "filename": "文件已删除",
+                "content_type": "application/octet-stream",
+                "size": 0,
+                "content_url": "",
+                "download_url": "",
+                "preview_url": "",
+                "thumbnail_url": "",
+                "deleted": True,
+            }
+        )
     attachment_ids = {fid for r in runs.values() for fid in r.input_file_ids}
     names = dict(
         db.execute(
-            select(FileObject.id, FileObject.filename).where(FileObject.id.in_(attachment_ids), FileObject.user_id == row.owner_id)
+            select(FileObject.id, FileObject.filename).where(
+                FileObject.id.in_(attachment_ids),
+                FileObject.user_id == row.owner_id,
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
         ).all()
     )
     owner = db.get(User, row.owner_id)
+    from .source_lifecycle import invalid_sources_query
+
+    invalid = (
+        set(db.scalars(select(Run.id).where(Run.id.in_(page), Run.id.in_(invalid_sources_query(row.owner_id)))))
+        if owner.context_source_epoch
+        else set()
+    )
     result = {
         "share": share_out(db, row),
         "owner": {"display_name": owner.display_name},
@@ -408,12 +439,12 @@ def view(
             {
                 "id": r.id,
                 "prompt": r.prompt,
-                "answer": r.summary,
+                "answer": "（文件来源已失效）" if r.id in invalid else r.summary,
                 "ui_state": r.ui_state,
                 "created_at": r.created_at,
                 "mode": (r.options or {}).get("mode", "work"),
                 "artifacts": artifacts.get(r.id, []),
-                "attachments": [{"filename": names[fid]} for fid in r.input_file_ids if fid in names],
+                "attachments": [{"filename": names.get(fid, "文件已删除"), "deleted": fid not in names} for fid in r.input_file_ids],
             }
             for rid in page
             if (r := runs.get(rid))

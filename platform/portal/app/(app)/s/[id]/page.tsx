@@ -16,6 +16,17 @@ function asFile(f: ShareFile): FileItem {
 }
 
 function FileCard({ file, onOpen }: { file: ShareFile; onOpen: () => void }) {
+  if (file.deleted) {
+    return (
+      <div className="file-card gone">
+        <ExtTile filename={file.filename} size={38} />
+        <div className="grow">
+          <div className="name" title={file.filename}>{file.filename}</div>
+          <div className="meta">已删除</div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="file-card">
       <ExtTile filename={file.filename} size={38} />
@@ -56,7 +67,7 @@ export default function SharedPage() {
         if (c.signal.aborted) return;
         setView(v);
         document.title = `${v.title || "分享"} · AILab`;
-        if (v.file) setViewing({ files: [asFile(v.file)], file: asFile(v.file) });
+        if (v.file && !v.file.deleted) setViewing({ files: [asFile(v.file)], file: asFile(v.file) });
       })
       .catch((err) => !c.signal.aborted && setError(/^404 /.test(String(err?.message)) ? "这个分享不存在或已停止" : errorMessage(err)));
     return () => {
@@ -113,7 +124,7 @@ export default function SharedPage() {
                 {t.attachments.length ? (
                   <div className="attach-row">
                     {t.attachments.map((a, i) => (
-                      <span key={i} className="attach-chip"><IconFile size={13} /> {a.filename}</span>
+                      <span key={i} className={`attach-chip${a.deleted ? " gone" : ""}`} title={a.deleted ? "已删除" : undefined}><IconFile size={13} /> {a.filename}</span>
                     ))}
                   </div>
                 ) : null}
@@ -125,7 +136,7 @@ export default function SharedPage() {
                   {t.artifacts.length ? (
                     <div className="files">
                       {t.artifacts.map((a) => (
-                        <FileCard key={a.id} file={a} onOpen={() => setViewing({ files: t.artifacts.map(asFile), file: asFile(a) })} />
+                        <FileCard key={a.id} file={a} onOpen={() => setViewing({ files: t.artifacts.filter((x) => !x.deleted).map(asFile), file: asFile(a) })} />
                       ))}
                     </div>
                   ) : null}

@@ -239,3 +239,37 @@ def test_capacity_warning_never_blocks_startup(monkeypatch):
     monkeypatch.setattr(main.log, "warning", lambda message, *args: warnings.append(message))
     main.warn_storage_capacity()
     assert any("storage overcommitted" in message for message in warnings)
+
+
+def test_orphan_gc_collects_late_derivatives_of_purged_versions(env):
+    factory, storage = env
+    key = "derived/trimmed/late-preview"
+    with factory() as db:
+        db.add(FileObject(id="trimmed", user_id="u", filename="文件已删除", storage_key="gone", purged_at=OLD, is_head=0))
+        db.commit()
+        put_old(storage, key)
+        for _ in range(4):
+            purge_orphan_objects(db, storage, NOW)
+            drain_object_deletions(db, storage)
+        assert not storage.exists(key)
+        assert db.get(FileObject, "trimmed") is not None
+
+
+@pytest.mark.parametrize("prefix", ["uploads/u", "versions/u", "runs/missing-run", "skills/u", "templates", "brand"])
+def test_orphan_originals_collect_failed_copies_but_keep_library_files(env, prefix):
+    factory, storage = env
+    live = f"{prefix}/retained/original"
+    orphan = f"{prefix}/absent/original"
+    stale = f"{prefix}/retained/failed-copy"
+    with factory() as db:
+        db.add(FileObject(id="retained", user_id="u", filename="retained", storage_key=live))
+        db.commit()
+        for key in (live, orphan, stale):
+            put_old(storage, key)
+        young = f"{prefix}/in-flight/new"
+        storage.put_bytes(young, b"uploading")
+        for _ in range(6):
+            purge_orphan_objects(db, storage, NOW)
+            drain_object_deletions(db, storage)
+        assert storage.exists(live) and storage.exists(young)
+        assert not storage.exists(orphan) and not storage.exists(stale)

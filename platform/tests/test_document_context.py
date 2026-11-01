@@ -192,6 +192,10 @@ def test_document_indexes_are_bounded_at_100000_blocks():
                     ],
                 )
             db.commit()
+            if db.bind.dialect.name == "postgresql":
+                # Production tables have autovacuum statistics; without them the plan depends on whether
+                # autoanalyze happened to run after the bulk insert.
+                db.execute(text("ANALYZE document_blocks"))
             query = (
                 select(DocumentBlock.id)
                 .where(DocumentBlock.derivation_id == derivation.id, DocumentBlock.unit_number == 85000)
@@ -248,6 +252,7 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
             run = db.get(Run, old["id"])
             run.status = "succeeded"
             run.summary = "private evidence from file"
+            run.runtime_meta = {**(run.runtime_meta or {}), "plan": {"text": "private evidence"}, "question": {"text": "private evidence"}}
             run.result = {"thinking": {"text": "private evidence"}, "artifacts": []}
             from ailab_platform.events import append_event
             from ailab_platform.models import RunDelivery
@@ -316,6 +321,7 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
             assert all(e.payload == {"source_unavailable": True} for e in db.scalars(select(RunEvent).where(RunEvent.run_id == run.id)))
             assert db.get(RunDelivery, (run.id, "confirmed-call")).result == {"source_unavailable": True}
             assert run.summary == "（文件来源已失效）"
+            assert "plan" not in run.runtime_meta and "question" not in run.runtime_meta
 
 
 def test_ocr_cache_reads_early_pages_beyond_recent_metadata():

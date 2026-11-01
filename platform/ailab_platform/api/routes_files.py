@@ -438,6 +438,8 @@ def download_thumbnail(
 
 def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
     file = _owned_file(db, file_id, user)
+    if file.purged_at is not None:
+        raise HTTPException(status_code=410, detail="version purged")
     scanned = (
         file.status == FileStatus.PENDING
         and file.purpose == "library"

@@ -22,7 +22,7 @@ from ..run_state import transition_run
 
 def descendants(user_id, file_ids=None):
     query = select(Run.id, MessageFileRef.invalidated_epoch.label("epoch")).join(MessageFileRef, MessageFileRef.run_id == Run.id)
-    query = query.where(Run.user_id == user_id, MessageFileRef.invalidated_epoch.is_not(None))
+    query = query.where(Run.user_id == user_id, MessageFileRef.role != "output", MessageFileRef.invalidated_epoch.is_not(None))
     if file_ids is not None:
         query = query.where(MessageFileRef.file_id.in_(file_ids))
     else:
@@ -46,6 +46,7 @@ def invalid_history(db, ids):
         .join(User, User.id == Run.user_id)
         .where(
             MessageFileRef.run_id.in_(ids),
+            MessageFileRef.role != "output",
             or_(
                 MessageFileRef.invalidated_epoch.is_not(None),
                 FileObject.id.is_(None),
@@ -102,7 +103,7 @@ def invalidate(db, user_id, file_ids):
             db.add(FileSourceInvalidation(file_id=fid, user_id=user_id, state="pending", cursor=""))
     path = descendants(user_id, file_ids)
     # Admission already bounds active runs per user. Freeze them in the deletion transaction.
-    active = db.scalars(select(Run).where(Run.id.in_(select(path.c.id)), Run.status.in_(RunStatus.ACTIVE))).all()
+    active = db.scalars(select(Run).where(Run.id.in_(select(path.c.id)), Run.status.not_in(RunStatus.TERMINAL))).all()
     for run in active:
         if run.conversation_id:
             db.execute(update(Conversation).where(Conversation.id == run.conversation_id).values(queue_paused=True))
@@ -111,11 +112,27 @@ def invalidate(db, user_id, file_ids):
 
 
 def drain_invalidations(db, limit=100):
+    from ..locks import user_critical_section
+
+    candidate = db.execute(
+        select(FileSourceInvalidation.file_id, FileSourceInvalidation.user_id)
+        .where(FileSourceInvalidation.state.in_(("pending", "events", "dreams", "deliveries")))
+        .order_by(FileSourceInvalidation.file_id)
+        .limit(1)
+    ).first()
+    if not candidate:
+        return 0
+    with user_critical_section(db, candidate.user_id):
+        return _drain_invalidation(db, candidate.file_id, limit)
+
+
+def _drain_invalidation(db, file_id, limit):
     from ..library import schedule_object_deletion
 
     item = db.scalar(
         select(FileSourceInvalidation)
-        .where(FileSourceInvalidation.state.in_(("pending", "events", "dreams", "deliveries")))
+        .where(FileSourceInvalidation.file_id == file_id, FileSourceInvalidation.state.in_(("pending", "events", "dreams", "deliveries")))
+        .execution_options(populate_existing=True)
         .order_by(FileSourceInvalidation.file_id)
         .limit(1)
     )
@@ -166,6 +183,8 @@ def drain_invalidations(db, limit=100):
     for run in runs:
         meta = dict(run.runtime_meta or {})
         meta["source_invalidated"] = True
+        for field in ("plan", "question", "file_dependency"):
+            meta.pop(field, None)
         workspace = meta.pop("workspace", None)
         if workspace and workspace.get("key"):
             schedule_object_deletion(db, workspace["key"], "file_source")

@@ -1009,3 +1009,14 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 - `pdf-document.tsx` 的 worker 取自顶层 `pdfjs-dist`，API 取自 `react-pdf` 依赖的那份；两者版本不同 PDF.js 拒绝打开所有 PDF。`react-pdf` 精确锁定 pdfjs 版本，所以顶层 `pdfjs-dist` 也写成精确版本，只随 `react-pdf` 一起升级。Dependabot 会分别提两个 PR（如 #100、#101），单独合并任一都会坏，而 CI 没有浏览器打开 PDF 的用例（E2E 的 PDF 断言只在有 LibreOffice 时跑）；`tests/pdf-worker-version.test.mjs` 守这条。
 - `react-pdf` 11 默认 Suspense + Error Boundary；预览组件用 `suspense={false}` 保留原来的内联加载与错误提示。PDF.js 的 CMap、标准字体、wasm 解码器和 ICC 由 `app/pdfjs/[version]/[kind]/[name]` 从已安装的 `pdfjs-dist` 提供（standalone 靠 `outputFileTracingIncludes` 带上）；缺了它们，STSong + UniGB-UCS2-H（reportlab 中文 PDF 常用）那行空白、JPEG2000 图片空白，只有控制台警告。
+
+## 2026-11-01 删除审查
+
+- 来源删除不能只取消 `RunStatus.ACTIVE`（仅 queued/running），waiting_user/interrupted 同样持有可恢复上下文。来源副本 GC 会改 User.settings，必须和用户写入共享用户锁，并在锁内重读 invalidation 游标。
+- 资料库工具应取得用户锁之后刷新文件/会话再登记 agent_read，锁前读取会让删除在等待期间穿过。purge 后 file 任务重投需先判 done，不能在 render_waiting 计算中再解引用缺失 FileObject。
+- tombstone 保留 FileObject 行不代表 derived 对象还可留存：孤儿 GC 必须把 purged 行视为失效 owner，收敛迟到 Worker 输出。
+- 历史产物占位用现有 MessageFileRef 的 output 角色，必须排除在来源失效传播之外；删除产物不代表生成它的整轮输入失效。purge 前 INSERT SELECT 保留 byte-free 身份；fork 为占位生成独立消息身份。分享不能直接输出 Run.summary 绕过来源围栏，失效分叉也不能继续复制 previews/events 正文。
+- 原件孤儿扫描不能按 Run 不存在就删 runs/：会话 purge 后资料库产物仍合法。按路径中 file_id 查 FileObject，锁内复核精确 storage_key；扫描 uploads/ 的原件 GC 与 presign GC 用独立游标，避免两次推进共用 cursor 永远跳过交替页。purged 版本的 preview 入口必须先 410，不能重新排渲染任务。
+- 删除反向查 Artifact.file_id 原先无索引；0044 补 ix_artifacts_file_id。files.parent_id 的 ix_files_parent_id 已在0013创建，勿重复创建。result.artifacts 可能保留独立确认交付状态，不能整体替换为当前 Artifact 查询列表；只重写已确认删除的身份。
+- 历史中的已删除文件：本人视图里回收站文件保留原名（可恢复，`deleted=true`、无下载地址）；purge 后行名已被清为“文件已删除”。分享页一律不暴露已删除文件名。Portal 用 `.attach-chip.gone` / `.file-card.gone`，不要再给它们预览/下载/菜单。
+- E2E 遗留的孤儿 `next start`（父进程 1，cwd 在 pytest 临时目录）会占住 13000 并通过健康探针，套件随之测到旧 Portal。conftest 现在端口被占用即报错；遇到时结束那个孤儿进程或改 `AILAB_E2E_BASE_PORT/AILAB_E2E_PORTAL_PORT`。E2E 种子文件要走 `assign_file_version`，否则没有 head，删除接口 204 却什么都没删。
