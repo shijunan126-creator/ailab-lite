@@ -6,6 +6,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -126,5 +127,25 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as exc:
-        print(f"view failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+        known = {
+            "invalid_workspace_path",
+            "invalid_page_selection",
+            "page_out_of_range",
+            "unsupported_file_type",
+            "input_limit",
+            "archive_limit",
+            "pixel_limit",
+            "image_size_limit",
+            "output_limit",
+        }
+        code = str(exc) if isinstance(exc, ValueError) and str(exc) in known else "view_failed"
+        if isinstance(exc, FileNotFoundError):
+            code = "file_not_found"
+        elif isinstance(exc, subprocess.TimeoutExpired):
+            code = "view_timeout"
+        elif isinstance(exc, (subprocess.CalledProcessError, RuntimeError)):
+            code = "conversion_failed"
+        elif isinstance(exc, Image.DecompressionBombError):
+            code = "pixel_limit"
+        print(f"workspace_view_error:{code}", file=sys.stderr)
         sys.exit(1)

@@ -75,3 +75,29 @@ def test_chat_mode_offers_only_read_only_web_tools(monkeypatch) -> None:
     }
     work_names = {tool["function"]["name"] for tool in tools.tools_for_turn()}
     assert {"web_search", "read_url"} <= work_names
+
+
+@pytest.mark.parametrize(
+    "payload,error",
+    [
+        ({"results": [], "unresponsive_engines": [["google", "timeout"]]}, "engines failed"),
+        ({"error": "upstream failed"}, "invalid response"),
+        ({"results": [], "error": "upstream failed"}, "engines failed"),
+        ([], "invalid response"),
+        ({"results": [None]}, "invalid result"),
+        ({"results": []}, None),
+        ({"results": [{"url": "https://example.com"}], "unresponsive_engines": [["bing", "timeout"]]}, None),
+    ],
+)
+def test_search_provider_errors_are_not_successful_empty_results(monkeypatch, payload, error):
+    import httpx
+
+    monkeypatch.setattr(web.settings, "web_search_provider", "searxng")
+    original = httpx.AsyncClient
+    transport = httpx.MockTransport(lambda request: httpx.Response(200, json=payload))
+    monkeypatch.setattr(web.httpx, "AsyncClient", lambda **kwargs: original(transport=transport, **kwargs))
+    if error:
+        with pytest.raises(web.WebError, match=error):
+            asyncio.run(web.search("news today"))
+    else:
+        assert len(asyncio.run(web.search("news today"))) == len(payload["results"])

@@ -384,10 +384,19 @@ async def search(query: str, count: int | None = None) -> list[dict]:
             resp.raise_for_status()
             data = resp.json()
     except Exception as exc:
-        raise WebError(f"search service unavailable: {type(exc).__name__}: {exc}") from exc
+        raise WebError(f"search service unavailable: {type(exc).__name__}") from exc
+
+    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+        raise WebError("search service returned an invalid response")
+    # SearXNG reports upstream failures in a successful HTTP response. Do not
+    # turn an outage into evidence that the query has no matching sources.
+    if data.get("error") or (not data["results"] and data.get("unresponsive_engines")):
+        raise WebError("search provider engines failed or timed out; retry later (not a successful empty search)")
 
     out: list[dict] = []
-    for item in data.get("results") or []:
+    for item in data["results"]:
+        if not isinstance(item, dict):
+            raise WebError("search service returned an invalid result")
         url = str(item.get("url") or "").strip()
         if not url.startswith(("http://", "https://")):
             continue

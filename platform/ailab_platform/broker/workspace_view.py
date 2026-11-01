@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..config import settings
+from ..contracts.workspace_view import VIEW_ERRORS
 from ..paths import PathError, normalize_path
 from .render import SCRIPT as RENDER_SCRIPT
 
@@ -91,7 +92,11 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
             48,
         )
         if result.exit_code:
-            raise ValueError("view_timeout" if result.exit_code in {124, 137} else "view_failed")
+            code = "view_timeout" if result.exit_code in {124, 137} else "view_failed"
+            for line in result.stderr.splitlines():
+                if line.startswith("workspace_view_error:") and line.removeprefix("workspace_view_error:") in VIEW_ERRORS:
+                    code = line.removeprefix("workspace_view_error:")
+            raise ValueError(code)
         if time.monotonic() - start > 60:
             raise ValueError("view_timeout")
         with manager.transfer_file() as local:
