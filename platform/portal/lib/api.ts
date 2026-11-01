@@ -161,7 +161,7 @@ export type QueuedMessage = {
 };
 
 export type NotificationKind =
-  | "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "share.received" | "skill_draft.ready" | "skill_draft.failed";
+  | "run.succeeded" | "run.failed" | "run.waiting" | "schedule.succeeded" | "schedule.failed" | "schedule.paused" | "share.received" | "skill_draft.ready" | "skill_draft.failed";
 export type Notice = {
   id: string;
   kind: NotificationKind;
@@ -274,6 +274,8 @@ export type Schedule = {
   schedule: { kind: "daily" | "weekdays" | "weekly"; time: string; days?: number[] };
   timezone: string;
   enabled: boolean;
+  ends_on: string | null; // YYYY-MM-DD in the task's timezone, the last day it may run
+  paused_reason: "ended" | "unread" | "failures" | null; // why the platform switched it off
   next_run_at: string | null;
   last_run_at: string | null;
   last_run_id: string | null;

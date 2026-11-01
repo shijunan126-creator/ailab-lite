@@ -506,13 +506,13 @@ function Library() {
           <tbody>
             {files.map((f) => {
               const st = fileStatusText(f);
-              const open = () => (selected.size || trash ? toggle(f.id) : setViewing(f)); // the trash only selects
+              const open = () => (selected.size ? toggle(f.id) : setViewing(f));
               return (
                 <tr key={f.id} className={`lib-row ${selected.has(f.id) ? "on" : ""}`}>
                   <td className="lib-col-check">{checkbox(f)}</td>
                   <td>
                     <div className="lib-file">
-                      <button className="lib-open" onClick={open} aria-label={trash ? `选择 ${f.filename}` : `预览 ${f.filename}`}>
+                      <button className="lib-open" onClick={open} aria-label={`预览 ${f.filename}`}>
                         <FileTile file={f} size={32} />
                       </button>
                       <div className="grow">
@@ -629,6 +629,13 @@ function Library() {
           onClose={() => setViewing(null)}
           onChanged={(head) => {
             setViewing(head);
+            reload();
+          }}
+          onRestore={async (f) => {
+            await batch("restore", [f]);
+            setViewing(null);
+            setSelected(new Set());
+            projectsChanged();
             reload();
           }}
           chatHref={(f) => chatHref([f])}

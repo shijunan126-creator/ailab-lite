@@ -15,7 +15,24 @@ import Select, { TimeSelect } from "../../../components/select";
 const LIMIT = 5; // the API enforces the same
 const DAYS = ["一", "二", "三", "四", "五", "六", "日"];
 type Kind = Schedule["schedule"]["kind"];
-type Draft = Pick<Schedule, "title" | "prompt" | "mode" | "skill" | "project_id"> & { kind: Kind; time: string; days: number[] };
+type Draft = Pick<Schedule, "title" | "prompt" | "mode" | "skill" | "project_id" | "ends_on"> & { kind: Kind; time: string; days: number[] };
+// the platform also pauses a task whose results go unread or that keeps failing
+const PAUSED: Record<NonNullable<Schedule["paused_reason"]>, string> = {
+  ended: "已到结束日期",
+  unread: "结果一直没人看，已暂停",
+  failures: "连续失败，已暂停",
+};
+
+/** YYYY-MM-DD of the local day `days` from today. */
+function fromToday(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+const dayText = (value: string) => {
+  const [y, m, d] = value.split("-").map(Number);
+  return `${y === new Date().getFullYear() ? "" : `${y}年`}${m}月${d}日`;
+};
 
 function when(s: Schedule["schedule"]): string {
   if (s.kind === "daily") return `每天 ${s.time}`;
@@ -45,7 +62,16 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
     kind: initial?.schedule.kind || "weekdays",
     time: initial?.schedule.time || "09:00",
     days: initial?.schedule.days || [0],
+    ends_on: initial?.ends_on || null,
   }));
+  const ends = [
+    { value: "", label: "不结束" },
+    ...(d.ends_on ? [{ value: d.ends_on, label: dayText(d.ends_on) }] : []),
+    { value: fromToday(7), label: "一周后" },
+    { value: fromToday(30), label: "一个月后" },
+    { value: fromToday(91), label: "三个月后" },
+    { value: fromToday(182), label: "半年后" },
+  ].filter((o, i, all) => all.findIndex((x) => x.value === o.value) === i);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (patch: Partial<Draft>) => setD((x) => ({ ...x, ...patch }));
@@ -61,6 +87,7 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
       skill: d.skill,
       project_id: d.project_id,
       schedule: { kind: d.kind, time: d.time, ...(d.kind === "weekly" ? { days: [...d.days].sort() } : {}) },
+      ends_on: d.ends_on,
       timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     };
     try {
@@ -99,6 +126,7 @@ function Editor({ initial, skills, onClose, onSaved }: { initial: Schedule | nul
             ))}
           </div>
           <TimeSelect value={d.time} onChange={(time) => set({ time })} aria-label="时刻" />
+          <Select aria-label="结束" value={d.ends_on || ""} options={ends} onChange={(v) => set({ ends_on: v || null })} />
         </div>
         <div className="collapse" data-open={d.kind === "weekly"} inert={d.kind !== "weekly"}>
           <div>
@@ -199,7 +227,11 @@ export default function SchedulesPage() {
               <button className="mrow-main" onClick={() => setEditing(s)} aria-label={`编辑 ${s.title}`}>
                 <span className="mrow-title"><span>{s.title}</span></span>
                 <span className="mrow-desc">
-                  {[when(s.schedule), s.enabled && s.next_run_at ? `下次 ${nextText(s.next_run_at)}` : ""].filter(Boolean).join(" · ")}
+                  {[
+                    when(s.schedule),
+                    s.paused_reason && !s.enabled ? PAUSED[s.paused_reason] : s.enabled && s.next_run_at ? `下次 ${nextText(s.next_run_at)}` : "",
+                    s.ends_on && s.enabled ? `${dayText(s.ends_on)}结束` : "",
+                  ].filter(Boolean).join(" · ")}
                 </span>
               </button>
               <div className="mrow-trail">
