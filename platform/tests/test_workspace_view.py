@@ -244,12 +244,13 @@ def test_follow_up_office_turn_takes_its_sandbox_and_warms_during_the_first_mode
             return {"step": step + 1}
 
         async def get_run(self, run_id):
-            prompt = {"first": "做一份演示文稿", "second": "把第2页标题改成两周试点方案"}[run_id]
+            prompt = {"first": "做一份演示文稿", "second": "把第2页标题改成两周试点方案", "third": "第2页标题是什么"}[run_id]
             run = {**await super().get_run(run_id), "prompt": prompt, "options": {"mode": "work"}}
-            if run_id == "second":  # no Office words: the skill comes from the history
-                state = self.checkpoints["first"]["state"]
+            previous = {"second": "first", "third": "second"}.get(run_id)
+            if previous:  # no Office words: the skill comes from the history
+                state = self.checkpoints[previous]["state"]
                 run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
-                run["workspace_restore_key"] = "workspaces/first.tgz"
+                run["workspace_restore_key"] = f"workspaces/{previous}.tgz"
             return run
 
     class Broker(FakeBroker):
@@ -297,3 +298,10 @@ def test_follow_up_office_turn_takes_its_sandbox_and_warms_during_the_first_mode
     assert not any(kind == "agent.waiting_sandbox" for kind, _ in platform.events)  # an early lease never queues
     load = [m for m in platform.checkpoints["second"]["state"]["messages"] if m.get("role") == "tool" and m.get("name") == "load_skill"]
     assert len(load) == 1
+
+    # A question about the deck uses no tool: its early sandbox is released without saving the unchanged workspace again.
+    leases, snapshots = broker.leases, broker.snapshots
+    third = Model([LLMResponse(content="两周试点方案")])
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=third).process("third", attempt_id="a3"))
+    assert [status for status, _ in platform.statuses].count("succeeded") == 3
+    assert broker.leases == leases + 1 and broker.snapshots == snapshots

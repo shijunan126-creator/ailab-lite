@@ -3,11 +3,12 @@
 import uuid
 
 import pytest
+from fastapi import Response
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
 
 from ailab_platform.api.main import app
-from ailab_platform.api.routes_shares import live_conditions, received
+from ailab_platform.api.routes_shares import live_conditions, received, view
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import Artifact, AuditLog, Conversation, FileObject, Run, Share, User, utcnow
 from ailab_platform.storage import get_storage
@@ -221,8 +222,6 @@ def test_large_snapshot_view_query_budget_and_lookup_indexes(shared):
 
     from sqlalchemy import and_, event, or_
 
-    from ailab_platform.db import engine
-
     c, share, recipient, _, cid, first, owner, _ = shared
     with SessionLocal() as db:
         parent = first
@@ -234,20 +233,18 @@ def test_large_snapshot_view_query_budget_and_lookup_indexes(shared):
         db.get(Conversation, cid).active_run_id = parent
         db.commit()
     c.patch(f"/v1/shares/{share['id']}", headers=AUTH, json={"refresh": True}).raise_for_status()
-    statements = []
-
-    def count(conn, cursor, statement, parameters, context, executemany):
-        statements.append(statement)
-
-    event.listen(engine, "before_cursor_execute", count)
-    try:
+    assert c.get(f"/v1/shares/{share['id']}/view", headers=recipient).status_code == 200
+    reader = c.get("/v1/me", headers=recipient).json()["id"]
+    # Count on the view's own connection: the API's background loops (outbox, reaper) share the engine and would be counted too.
+    with SessionLocal() as db:
+        user = db.get(User, reader)
+        statements = []
+        event.listen(db.connection(), "before_cursor_execute", lambda conn, cursor, statement, *args: statements.append(statement))
         started = time.perf_counter()
-        response = c.get(f"/v1/shares/{share['id']}/view", headers=recipient)
+        result = view(share["id"], Response(), None, user, db)
         elapsed = (time.perf_counter() - started) * 1000
-    finally:
-        event.remove(engine, "before_cursor_execute", count)
-    assert response.status_code == 200 and len(response.json()["turns"]) == 20
-    assert len(statements) <= 16, statements
+    assert len(result["turns"]) == 20
+    assert len(statements) <= 12, statements  # 8 on SQLite; the HTTP budget of 16 also counted the token and user lookups
     print(f"share-view-500: queries={len(statements)} ms={elapsed:.2f}")
     with SessionLocal() as db:
         if db.bind.dialect.name == "postgresql":

@@ -991,6 +991,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 ## 2026-11-01 前缀缓存与渲染
 
 - 每轮对话是新 run：只按 run 状态（`attempted_skills`/`loaded_skills`）去重的东西会在每轮重复注入。自动技能曾每轮重发 3k token 的 `platform.pptx`，Work 命中率因此掉到 83%；去重要看延续过来的消息本身。按 run 登记的 `loaded_skills` 也要在 run 启动时从延续消息重建，否则依赖它的预热、技能认证都看不到继承的技能。每轮还是新沙箱：要让后续轮次的首次操作快，准备工作须在第一次模型调用期间开始，不能等第一个工具。
+- 查询数预算测试不能在 `engine` 上挂 `before_cursor_execute` 后走 `TestClient`：API lifespan 的 outbox/reaper 等后台循环共用 engine，慢的 PostgreSQL CI 上会被计入（曾 63 条 > 16）。直接调用路由函数并只监听该 session 的 `db.connection()`（同 `test_conversation_paging`）。
 - Linux 下按 `/proc/<pid>/status` 监控子进程内存时，进程退出会先释放内存映射、之后才可被回收：这段时间没有 `VmRSS` 行而 `poll()` 仍为 None。`office_exec.py` 曾把它当失败返回 1，PDF 解析在 CI（SQLite+coverage 较慢）偶发丢 `units`，本机 macOS（走 `ps`）不复现。缺 `VmRSS` 记为 0，由 `poll()` 与截止时间决定结束。
 - CI 的 python 任务没有 poppler：依赖 `pdftoppm`/`pdfinfo` 的测试必须 `skipif`，否则本机通过、CI 必败。无 heartbeat 的长循环测试（`start_background=False`）要放大 `broker_lock_ttl_seconds`，coverage 下 30 s 所有权会过期。
 - Codex 委派：`--add-dir` 必须用真实路径（`/private/tmp`、`/Users/michael/AILabDisk/local`），符号链接路径会让沙箱拒绝所有命令；`codex exec resume` 会丢掉启动时的 `--add-dir`。会话常在 1–2 个提交后自行结束，且曾因额度用尽静默卡住（看 `~/.codex/sessions/.../rollout-*.jsonl` 的 `rate_limits`）。用户要求：模型用 gpt-6.1-sol medium，测试只跑一次，不要反复全量重跑；明显错误直接修。
