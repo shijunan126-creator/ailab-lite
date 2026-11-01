@@ -176,21 +176,6 @@ def ensure_bootstrap_admin(db: Session) -> None:
         record_audit(db, "users.update", "user", user.id, actor_service="bootstrap", detail={"roles": ["platform_admin"]})
 
 
-class LocalIdentityProvider:
-    def __init__(self, db: Session):
-        self.db = db
-
-    async def authenticate(self, credentials: dict[str, str]):
-        from starlette.concurrency import run_in_threadpool
-
-        from .ports.identity import Identity, IdentityError
-
-        user = await run_in_threadpool(check_credentials, self.db, credentials.get("username", ""), credentials.get("password", ""))
-        if user is None:
-            raise IdentityError("invalid username or password")
-        return Identity(None, user.id, user_id=user.id)
-
-
 def oidc_user(db: Session, identity) -> User:
     """Only (issuer, subject) links accounts; never auto-link by email or preferred username."""
     from .models import Department

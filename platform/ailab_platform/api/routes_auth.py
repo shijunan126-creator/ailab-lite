@@ -12,10 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from ..accounts import (
     AccountError,
-    LocalIdentityProvider,
     LoginThrottle,
     address_throttle,
     check_credentials,
@@ -118,7 +118,8 @@ def register(body: RegisterRequest, request: Request, db: Session = Depends(get_
 
 
 @router.post("/login")
-async def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)) -> dict:
+    # Sync on purpose: on the event loop a SQLite busy wait would stall every request, including the one holding the lock.
     if settings.auth_backend == "oidc":
         record_audit(db, "auth.login", "user", outcome="failure", detail={"auth": "local", "reason": "backend disabled"})
         db.commit()
@@ -135,11 +136,7 @@ async def login(body: LoginRequest, request: Request, db: Session = Depends(get_
             detail=f"too many failed attempts, try again in {wait} seconds",
             headers={"Retry-After": str(wait)},
         )
-    try:
-        identity = await LocalIdentityProvider(db).authenticate({"username": username, "password": body.password})
-        user = db.get(User, identity.user_id)
-    except IdentityError:
-        user = None
+    user = check_credentials(db, username, body.password)
     if user is None:
         record_audit(db, "auth.login", "user", outcome="failure", detail={"auth": "local", "username": username})
         db.commit()
@@ -214,46 +211,62 @@ async def oidc_start(request: Request, db: Session = Depends(get_db)):
         url = await oidc_provider.authorization_url(state, nonce, verifier)
     except IdentityError:
         raise HTTPException(502, "identity provider unavailable") from None
-    db.execute(delete(OIDCFlow).where(OIDCFlow.expires_at < utcnow()))
-    db.add(
-        OIDCFlow(
-            state_hash=hash_token(state),
-            binding_hash=hash_token(binding),
-            nonce=nonce,
-            verifier=verifier,
-            expires_at=utcnow() + timedelta(seconds=settings.oidc_flow_ttl_seconds),
+
+    def record_flow():
+        db.execute(delete(OIDCFlow).where(OIDCFlow.expires_at < utcnow()))
+        db.add(
+            OIDCFlow(
+                state_hash=hash_token(state),
+                binding_hash=hash_token(binding),
+                nonce=nonce,
+                verifier=verifier,
+                expires_at=utcnow() + timedelta(seconds=settings.oidc_flow_ttl_seconds),
+            )
         )
-    )
-    db.commit()
+        db.commit()
+
+    # Database work leaves the event loop; only the identity provider's network calls are awaited on it.
+    await run_in_threadpool(record_flow)
     return {"authorization_url": url, "flow_token": binding, "expires_in": settings.oidc_flow_ttl_seconds}
 
 
 @router.post("/oidc/callback")
 async def oidc_callback(body: OIDCCallback, db: Session = Depends(get_db)):
     _oidc_enabled()
-    # Atomic DELETE consumes the transaction once, before the network exchange. Another callback cannot reuse it.
-    flow = db.execute(
-        delete(OIDCFlow)
-        .where(
-            OIDCFlow.state_hash == hash_token(body.state),
-            OIDCFlow.binding_hash == hash_token(body.flow_token),
-            OIDCFlow.expires_at > utcnow(),
-        )
-        .returning(OIDCFlow.verifier, OIDCFlow.nonce)
-    ).first()
-    db.commit()
-    try:
-        if flow is None or body.error or not body.code:
-            raise IdentityError("invalid state or identity provider refusal")
-        identity = await oidc_provider.authenticate({"code": body.code, "verifier": flow.verifier, "nonce": flow.nonce})
+
+    def consume():
+        # Atomic DELETE consumes the transaction once, before the network exchange. Another callback cannot reuse it.
+        flow = db.execute(
+            delete(OIDCFlow)
+            .where(
+                OIDCFlow.state_hash == hash_token(body.state),
+                OIDCFlow.binding_hash == hash_token(body.flow_token),
+                OIDCFlow.expires_at > utcnow(),
+            )
+            .returning(OIDCFlow.verifier, OIDCFlow.nonce)
+        ).first()
+        db.commit()
+        return flow
+
+    def sign_in(identity):
         user = oidc_user(db, identity)
         token, lifetime = issue_session(db, user)
         user.last_login_at = utcnow()
         record_audit(db, "auth.login", "user", user.id, actor_id=user.id, detail={"auth": "oidc"})
         db.commit()
         return {"token": token, "expires_in": lifetime, "user": _user_out(user)}
-    except (IdentityError, IntegrityError):
+
+    def refuse():
         db.rollback()
         record_audit(db, "auth.login", "user", outcome="failure", detail={"auth": "oidc", "reason": "authentication refused"})
         db.commit()
+
+    flow = await run_in_threadpool(consume)
+    try:
+        if flow is None or body.error or not body.code:
+            raise IdentityError("invalid state or identity provider refusal")
+        identity = await oidc_provider.authenticate({"code": body.code, "verifier": flow.verifier, "nonce": flow.nonce})
+        return await run_in_threadpool(sign_in, identity)
+    except (IdentityError, IntegrityError):
+        await run_in_threadpool(refuse)
         raise HTTPException(401, "OIDC authentication refused") from None
