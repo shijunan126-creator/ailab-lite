@@ -34,7 +34,8 @@
 - Ruff check/format 通过；完整 SQLite 1844 passed / 159 skipped / 0 failed；Portal `npm test` 119 项与 `npm run build` 通过。
 - Portal 新回归 `tests/file-viewer-deleted.test.tsx`（旧代码红）；E2E `test_deleted_files_ui.py` 桌面/手机宽度通过，截图人工检查（划线、“已删除”、无操作按钮）。
 - 首次 E2E 误测到 00:47 遗留的孤儿 `next start`（占用 13000，健康探针通过）；已结束该进程，conftest 现在端口被占用即拒绝启动。
-- PostgreSQL、全套 E2E 交由 PR CI；真实模型、真实 Docker 资源回收、大历史删除的负载未测。
+- PR #131 CI：首轮 PG 一项计划断言因缺统计信息失败（与本 PR 无关，已改为先 ANALYZE，PG16 本机 3/3 通过）；最终 `764938f` 9 项全绿，合并为 `main@e5e78af`。
+- 真实模型、真实 Docker 资源回收、大历史删除的负载未测。
 
 ## 待产品决定（未实现）
 
