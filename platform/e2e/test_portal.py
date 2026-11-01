@@ -55,8 +55,11 @@ def _pick_skill(page, label: str) -> None:
     """Skills live in the composer's + menu: the first few at its top, the rest behind 更多技能."""
     page.get_by_role("button", name="添加附件", exact=True).click()
     item = page.get_by_role("menuitemcheckbox", name=label, exact=True)
+    more = page.get_by_role("menuitem", name="更多技能", exact=True)
+    # the skills arrive after the menu opens: wait until the list shows the skill or the way to the rest
+    item.or_(more).first.wait_for()
     if not item.count():
-        page.get_by_role("menuitem", name="更多技能", exact=True).click()
+        more.click()
     item.click()
 
 
