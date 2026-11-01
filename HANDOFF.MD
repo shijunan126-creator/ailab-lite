@@ -1,3 +1,11 @@
+## 2026-11-02 管理员平台技能（后端）
+
+- 平台技能是 `purpose=platform_skill` 的系统所有者文件，Worker 识别技能时不能统一改写为 `purpose=skill`；metadata 合并、草稿任务领取和 Worker 解包授权三处必须同步识别平台来源。公开用户文件接口仍不可读取系统文件。
+- 新 Run 创建时把平台版本写入 runtime_meta，并通过 `run_asset_refs` 保留文件；bootstrap/恢复不能重新挑最新版本。读取必须同时核对该 Run 冻结 ID、用户当前订阅和策略，不能仅凭“曾发布”放行。版本清理要保护当前发布、自定义 base、活动草稿与 Run 引用。
+- 自定义只在 confirm 后登记关联，扫描认名时允许该副本 lineage 保留平台 name；reset/取消添加须废弃未确认草稿，管理员删除则只删关联、保留个人文件。管理员在线草稿还要对当前发布与打开时 head 做 CAS，回退版本可以作为底稿，但并发新上传不可被旧草稿覆盖。
+- `platform_skills.current_file_id` 保留软删行的 FK；共享测试若之后会 `DELETE FROM files`，新平台测试的 teardown 必须清掉自己的 registry 行，不能只调用软删 API。新 worktree 按 constraints 安装 Python，文档读取测试先构建 vendor Office reader，避免把缺少本地构建误判成解析回归。
+- 最终接口、验证与边界见 [设计](docs/architecture/design/2026-11-02-admin-platform-skills.md#接口后端最终契约) 和 [后端记录](docs/progress/updates/2026-11-02-admin-platform-skills.md)。
+
 ## 2026-11-01 工作文件查看与搜索诊断
 
 - `gh pr merge --auto` 不保证等 CI：仓库没有 required checks 时会立即合并，即使检查仍 running。本轮 #141 因此提前 squash；严格“绿后合并”须先确认所有检查与仓库要求，不能把 `--auto` 当等待器。
