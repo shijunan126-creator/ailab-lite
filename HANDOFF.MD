@@ -181,6 +181,8 @@
 - 工具流量不回放进后续轮次的历史：若历史里没有上一轮读过的来源，模型会否认自己引用过的数字。`history_sources` 把来源标题和 URL 附在历史回复后。
 - `capability_discovery` 只是把未用工具的 schema 挤出提示词，不是权限：模式允许的工具按名字直接调用（search 后 read_url）要执行并激活，不能报 `not available in this turn`。
 - 滚动跟随统一用 `lib/use-follow.ts`：ResizeObserver 驱动、指数缓动、远距离直接跳；用 `placed` 区分自己写的 scrollTop 和读者滚动，否则缓动本身会被当成“用户上滚”而停止跟随。
+- 新回复用 `stopAt` 停在回复开头：跟随只向下（停点在视图上方即视为已过），只有读者到底且越过停点才清除停点。依赖滚动事件的“回到底部”按钮在停住后不会自己出现，须在内容变化时按 `heading()`（跟随目标）重算，按当前 scrollTop 算会在滑行中闪现。新对话由首页 `router.replace` 进入，停点要经模块级集合带到对话页。
+- 测 Portal 构建版时先确认端口上的旧 `next start` 已退出（`pkill -f` 匹配不到 next-server 进程，按端口 `lsof -ti` 结束）；旧进程配新 `.next` 会报 “This page couldn’t load”。Turbopack 不接受指向工作树外的 node_modules 符号链接，需在当前工作树 `npm ci`。
 - `npm test` 是 Vitest：旧 `node:test` 用例经 `tests/node-test-compat.mjs` 提供 `t.mock/t.after`；React.lazy 会缓存失败的 import，重试必须新建 lazy。
 - 旧 `.chat-main{padding-top:48px}` 已删：浮动按钮不占行，靠 `.messages-inner` 顶部留白；E2E 依赖的类名/中文标签见 `platform/portal/AGENTS.md`。
 - 懒加载会被常量导入悄悄打破：从 `catalog/schema.ts` 取一个数字就会把 zod + lang-core（约 65 KB gzip）拉进对话页首包。聊天侧只从 `catalog/limits.ts` 取常量；验收看 `.next/server/app/(app)/c/[id]/page_client-reference-manifest.js` 的 entryJSFiles 不含 `createLibrary`。

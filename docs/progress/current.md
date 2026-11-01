@@ -1,9 +1,20 @@
+# Portal 滚动锚定、页面宽度、技能广场：交接（2026-11-01）
+
+- 分支 `fix/composer-scroll-anchor`，base `origin/main@1d3d8d5`。用户本轮：前端由 Claude 做；后端 view_workspace_file 反复失败、联网搜索为空、广场目录内容交给 Codex（gpt-6.1-sol medium，各自 worktree/PR，不部署）。
+- 已完成（前端，[PR #139](https://github.com/shijunan126-creator/ailab-lite/pull/139)）：发送后跟随到回复开头即停、到底后贴底；管理页 840、资料库 1120；技能页“我的技能 / 技能广场”；基础技能不进 `/` 与 + 菜单。占位符靠右已由 #137 修复。结论与检查见[本轮记录](updates/2026-11-01-portal-follow-skills.md)。
+- 后端两项已由 Codex 的 #141 合并（见下节）。广场目录 [PR #140](https://github.com/shijunan126-creator/ailab-lite/pull/140) CI 全绿但暂不合并：用户质疑八个技能包价值，待其选择（只做深公文/合同并经真模型对比后上架、改用团队自有技能、或作示例全部合并）。
+- 下一步：#139 CI 全绿后 merge；#140 等用户决定。未授权部署。
+
+---
+
 ## 工作文件查看与搜索错误语义（2026-11-01）
 
 - 分支 `t3/workspace-search-errors`，base `origin/main@21f3300`；用户授权后端调查、修复、PR、CI 绿后 squash 合并，明确不部署。其他交接保持原范围。
 - 已确认：新闻会话 6 次搜索被记为成功空结果，同期 SearXNG 多引擎网络超时；现已恢复（现场同参数探针 42 条、无失败引擎）。修复 HTTP 200 中的失败信号识别，保留真正空结果和部分成功结果。
 - PPT：用户追加授权真模型后，从 checkpoint 恢复首次失败规格，复现并抓到 RSS ceiling 在导出中途终止 LO、冷回退复用中止导出目录导致 exit 0 却无 PDF。修复为全新输出命名空间恢复，保留内存上限；真模型八组查看与补充 12 次调用全通过，含实际 bridge disposed 后恢复成功。错误码安全贯穿模型与事件。
 - 验证、局限与后续见[记录](updates/2026-11-01-workspace-search-errors.md)。[PR #141](https://github.com/shijunan126-creator/ailab-lite/pull/141) 已提交；最终本机全套与失败项复核完成，下一步：等 CI 绿后 squash，之后等待用户另行授权部署，其他范围不自动开展。未修改 Portal，未部署。
+
+---
 
 # 记忆摘要与项目记忆模式：交接（2026-11-01，已合并并部署）
 
