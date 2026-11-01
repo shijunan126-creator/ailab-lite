@@ -164,9 +164,10 @@ def _office_skills(value, *, keywords=False):
     return result
 
 
-def _skill_in_history(messages, name, version, mode):
-    """A built-in skill whose full text, at this version and mode, is still in the carried-over messages."""
-    calls = set()
+def _carried_skills(messages, versions, mode) -> set[str]:
+    """Built-in skills whose full text, at the current version and this mode, is still in the carried-over messages."""
+    calls: dict[str, str] = {}
+    found = set()
     for message in messages:
         if message.get("role") == "assistant":
             for call in message.get("tool_calls") or []:
@@ -177,17 +178,17 @@ def _skill_in_history(messages, name, version, mode):
                     arguments = json.loads(function.get("arguments") or "{}")
                 except ValueError:
                     continue
-                if isinstance(arguments, dict) and resolve_name(str(arguments.get("name") or "")) == name:
-                    calls.add(call.get("id"))
-        elif message.get("role") == "tool" and message.get("tool_call_id") in calls:
+                if isinstance(arguments, dict) and (name := resolve_name(str(arguments.get("name") or ""))) in versions:
+                    calls[call.get("id")] = name
+        elif message.get("role") == "tool" and (name := calls.get(message.get("tool_call_id"))):
             try:
                 result = json.loads(message.get("content") or "")
             except ValueError:
                 continue
             if isinstance(result, dict) and result.get("ok") and result.get("skill"):
-                if (result.get("version"), result.get("mode")) == (version, mode):
-                    return True
-    return False
+                if (result.get("version"), result.get("mode")) == (versions[name], mode):
+                    found.add(name)
+    return found
 
 
 _OFFICE_VIEW_SKILLS = {"platform.pptx", "platform.docx", "platform.xlsx"}
@@ -248,6 +249,8 @@ class _Turn:
         self.lease_id: str | None = None
         self.skills_attested = False
         self.lease_ready = False
+        self.lease_lock = asyncio.Lock()
+        self.lease_task: asyncio.Task | None = None  # a sandbox taken ahead of the first tool that needs it
         self.artifacts: list[dict] = []
         self.delivered: dict[str, int] = {}  # sandbox path -> size at delivery (or at restore)
         self.previews: dict[str, dict] = {}  # filename -> latest preview manifest
@@ -441,20 +444,21 @@ class AgentLoop:
                 except asyncio.CancelledError:
                     pass
 
-    async def _acquire_lease(self, run_id: str) -> dict:
-        budget = self._budgets.get(run_id)
+    async def _acquire_lease(self, run_id: str, *, wait: bool = True) -> dict:
+        # A lease taken ahead of need runs beside the model call, whose time still counts: only a real wait pauses the budget.
+        budget = self._budgets.get(run_id) if wait else None
         if budget:
             budget.update()
             budget.suspended = True
         try:
-            return await self._wait_lease(run_id)
+            return await self._wait_lease(run_id, wait=wait)
         finally:
             if budget:
                 budget.update()
                 budget.suspended = False
                 budget.progress()
 
-    async def _wait_lease(self, run_id: str) -> dict:
+    async def _wait_lease(self, run_id: str, *, wait: bool = True) -> dict:
         """Take a sandbox, waiting in line (like the design's waiting_sandbox) when at capacity."""
         waited = 0.0
         announced = False
@@ -466,6 +470,8 @@ class AgentLoop:
             except ClientError as exc:
                 if exc.status != 429:
                     raise
+            if not wait:
+                raise ToolError("no sandbox is free right now")
             if waited >= settings.sandbox_wait_seconds:
                 raise ToolError(f"no sandbox became available within {settings.sandbox_wait_seconds}s")
             if not announced:
@@ -510,14 +516,18 @@ class AgentLoop:
                 {"message": f"{len(pending) - settings.max_auto_deliver_files} more files in outputs were not delivered"},
             )
 
-    async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False) -> str:
+    async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False, wait: bool = True) -> str:
+        async with turn.lease_lock:  # a lease taken ahead of need may still be starting when the first tool asks
+            return await self._ensure_lease_locked(turn, run_id, required=required, wait=wait)
+
+    async def _ensure_lease_locked(self, turn: _Turn, run_id: str, *, required: bool, wait: bool) -> str:
         if turn.lease_id and turn.lease_ready:
             loaded = self._states[run_id].get("loaded_skills", [])
             if not turn.skills_attested and any(item.get("kind") in {"base", "builtin"} for item in loaded):
                 await verify_sandbox_skills(self.broker, turn.lease_id)
                 turn.skills_attested = True
             return turn.lease_id
-        lease = await self._acquire_lease(run_id) if not turn.lease_id else {"lease_id": turn.lease_id}
+        lease = await self._acquire_lease(run_id, wait=wait) if not turn.lease_id else {"lease_id": turn.lease_id}
         turn.lease_id = lease["lease_id"]
         await self._event(run_id, "agent.sandbox", {"lease_id": turn.lease_id, "provider": lease.get("provider")})
         if lease.get("restored") is False and lease.get("restore_error"):
@@ -558,15 +568,34 @@ class AgentLoop:
         self._warm_view(turn, run_id)
         return turn.lease_id
 
+    def _views_office_work(self, turn: _Turn, run_id: str) -> bool:
+        """The run can view its work (vision model, Work mode) and has an Office skill, loaded now or carried in its history."""
+        return "view_workspace_file" in (turn.allowed_tools or ()) and any(
+            item["name"] in _OFFICE_VIEW_SKILLS for item in self._states[run_id].get("loaded_skills", [])
+        )
+
+    def _prepare_office_turn(self, turn: _Turn, run_id: str) -> None:
+        """Every turn gets a fresh sandbox, so a follow-up edit would view through a cold LibreOffice (11+ s).
+
+        A turn that continues an Office workspace takes its sandbox and starts the listener during the first model call.
+        It never queues for a sandbox; on any failure the first tool takes the lease as usual.
+        """
+        if turn.lease_id or not turn.run.get("workspace_restore_key") or not self._views_office_work(turn, run_id):
+            return
+        turn.lease_task = asyncio.create_task(self._prepare_lease(turn, run_id))
+
+    async def _prepare_lease(self, turn: _Turn, run_id: str) -> None:
+        try:
+            await self._ensure_lease(turn, run_id, wait=False)
+        except Exception:
+            log.info("early sandbox for run=%s not taken; the first tool takes it", run_id, exc_info=True)
+
     def _warm_view(self, turn: _Turn, run_id: str) -> None:
         """Start the sandbox's LibreOffice listener while the model is still writing an Office file.
 
-        Only for runs that can view their work (vision model, Work mode) and have loaded an Office skill.
         Repeated sandbox activity keeps the listener inside its idle window, at most one call a minute.
         """
-        if not turn.lease_ready or not turn.lease_id or "view_workspace_file" not in (turn.allowed_tools or ()):
-            return
-        if not any(item["name"] in _OFFICE_VIEW_SKILLS for item in self._states[run_id].get("loaded_skills", [])):
+        if not turn.lease_ready or not turn.lease_id or not self._views_office_work(turn, run_id):
             return
         if (turn.view_warm_task and not turn.view_warm_task.done()) or time.monotonic() - turn.view_warmed_at < 60:
             return
@@ -1419,9 +1448,6 @@ class AgentLoop:
         attempted = state.setdefault("attempted_skills", [])
         if name in attempted or any(item["name"] == name for item in state.get("loaded_skills", [])):
             return
-        if self._skill_carried_over(turn, run_id, name):
-            attempted.append(name)
-            return
         call_id = "skill_" + uuid4().hex
         call = ToolCall(call_id, "load_skill", {"name": name})
         call.skill_reason = reason
@@ -1440,18 +1466,16 @@ class AgentLoop:
         attempted.append(name)
         await self._checkpoint(run_id, turn)
 
-    def _skill_carried_over(self, turn, run_id, name) -> bool:
-        # Each turn is a new run: without this, a skill loaded earlier in the conversation is sent again every turn.
-        if name not in skills():
-            return False
+    def _register_carried_skills(self, turn, run_id) -> None:
+        # Each turn is a new run: a skill loaded earlier in the conversation is loaded for this run too. Without this it
+        # was sent again every turn, and nothing that depends on the loaded skills (attestation, view warm-up) saw it.
         mode = (turn.run.get("options") or {}).get("mode", "work")
         state = self._states[run_id]
-        if not _skill_in_history(state.get("messages") or [], name, skills()[name]["version"], mode):
-            return False
+        versions = {name: spec["version"] for name, spec in skills().items()}
         loaded = state.setdefault("loaded_skills", [])
-        if not any(item["name"] == name for item in loaded):
-            loaded.append({"name": name, "kind": "base" if name in BASE_SKILLS else "builtin", "version": skills()[name]["version"]})
-        return True
+        for name in sorted(_carried_skills(state.get("messages") or [], versions, mode)):
+            if not any(item["name"] == name for item in loaded):
+                loaded.append({"name": name, "kind": "base" if name in BASE_SKILLS else "builtin", "version": versions[name]})
 
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
@@ -1486,10 +1510,7 @@ class AgentLoop:
                 deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
                 if time.time() >= deadline:
                     raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
-            if wanted and (
-                any(item["name"] == wanted for item in self._states[run_id].get("loaded_skills", []))
-                or self._skill_carried_over(turn, run_id, wanted)
-            ):
+            if wanted and any(item["name"] == wanted for item in self._states[run_id].get("loaded_skills", [])):
                 result = {"ok": True, "name": wanted, "already_loaded": True}
             elif call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
@@ -1777,6 +1798,9 @@ class AgentLoop:
             turn.preview_task.cancel()
             await asyncio.gather(turn.preview_task, return_exceptions=True)
             turn.preview_task = None
+        if turn.lease_task:  # awaited, not cancelled: a create_lease cut short would leave a sandbox nobody releases
+            await asyncio.gather(turn.lease_task, return_exceptions=True)
+            turn.lease_task = None
         if turn.view_warm_task:
             turn.view_warm_task.cancel()
             await asyncio.gather(turn.view_warm_task, return_exceptions=True)
@@ -2150,6 +2174,7 @@ class AgentLoop:
             messages = state["messages"]
             turn.messages = messages
             if not state.get("skill_initialization_done"):
+                self._register_carried_skills(turn, run_id)
                 selected = options.get("skills")
                 if selected is None:
                     selected = [{"name": skill, "title": options.get("skill_title") or skill}] if skill else []
@@ -2170,6 +2195,7 @@ class AgentLoop:
             offered = [] if spec is not None and not spec.supports({"tools"}) else catalog
             turn.allowed_tools = {t["function"]["name"] for t in offered} | {"finish"}
             turn.offered = offered
+            self._prepare_office_turn(turn, run_id)
             error = None
             pause_reason = None
             step_limit = budget.data["start_step"] + settings.max_agent_steps

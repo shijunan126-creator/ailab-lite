@@ -886,15 +886,14 @@ def test_office_skill_loaded_earlier_in_the_conversation_is_not_sent_again():
 
 
 def test_carried_skill_must_match_version_and_mode():
-    from ailab_platform.agent.loop import _skill_in_history
+    from ailab_platform.agent.loop import _carried_skills
     from ailab_platform.agent.tools import tool_result_message
 
     call = {"id": "c1", "type": "function", "function": {"name": "load_skill", "arguments": '{"name": "platform.pptx"}'}}
     loaded = {"ok": True, "skill": "text", "version": "v1", "mode": "work"}
     messages = [{"role": "assistant", "content": "", "tool_calls": [call]}, tool_result_message("c1", "load_skill", loaded)]
-    assert _skill_in_history(messages, "platform.pptx", "v1", "work")
-    assert not _skill_in_history(messages, "platform.pptx", "v2", "work")
-    assert not _skill_in_history(messages, "platform.pptx", "v1", "chat")
-    assert not _skill_in_history(messages, "platform.docx", "v1", "work")
+    assert _carried_skills(messages, {"platform.pptx": "v1", "platform.docx": "v1"}, "work") == {"platform.pptx"}
+    assert not _carried_skills(messages, {"platform.pptx": "v2"}, "work")
+    assert not _carried_skills(messages, {"platform.pptx": "v1"}, "chat")
     failed = [messages[0], tool_result_message("c1", "load_skill", {"ok": False, "error": "x"})]
-    assert not _skill_in_history(failed, "platform.pptx", "v1", "work")
+    assert not _carried_skills(failed, {"platform.pptx": "v1"}, "work")

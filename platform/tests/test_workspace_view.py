@@ -212,3 +212,88 @@ def test_office_work_run_warms_the_view_listener_once_its_sandbox_exists(monkeyp
     model = ScriptedLLM([LLMResponse(tool_calls=[call]) for call in work] + [LLMResponse(content="done")])
     asyncio.run(AgentLoop(platform=Platform(), broker=broker, llm=model).process("run_1", attempt_id="attempt"))
     assert len(broker.warmed) == warms  # repeated sandbox work within a minute does not warm again
+
+
+@pytest.mark.parametrize("busy", [False, True])
+def test_follow_up_office_turn_takes_its_sandbox_and_warms_during_the_first_model_call(monkeypatch, busy):
+    # Every turn gets a fresh sandbox: a follow-up edit used to view through a cold LibreOffice (13 s on AILab-local).
+    import asyncio
+    import copy
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import ModelSpec, get_catalog
+    from ailab_platform.clients import ClientError
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    monkeypatch.setitem(
+        get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools", "vision"], context_tokens=200000)
+    )
+
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_run(self, run_id):
+            prompt = {"first": "做一份演示文稿", "second": "把第2页标题改成两周试点方案"}[run_id]
+            run = {**await super().get_run(run_id), "prompt": prompt, "options": {"mode": "work"}}
+            if run_id == "second":  # no Office words: the skill comes from the history
+                state = self.checkpoints["first"]["state"]
+                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+                run["workspace_restore_key"] = "workspaces/first.tgz"
+            return run
+
+    class Broker(FakeBroker):
+        def __init__(self):
+            super().__init__()
+            self.warmed = []
+            self.busy = False
+
+        async def create_lease(self, run_id, **kw):
+            if self.busy:
+                self.busy = False
+                raise ClientError("POST", "/internal/leases", 429, "sandbox capacity reached")
+            return await super().create_lease(run_id, **kw)
+
+        async def warm_workspace_view(self, lease_id):
+            self.warmed.append(lease_id)
+            return {"ok": True}
+
+    class Model(ScriptedLLM):
+        def __init__(self, responses):
+            super().__init__(responses)
+            self.at_first_call = None
+
+        async def chat(self, messages, tools, model, user_id=None):
+            if self.at_first_call is None:
+                await asyncio.sleep(0.05)  # the first model call takes seconds; the sandbox is prepared meanwhile
+                self.at_first_call = (broker.leases, len(broker.warmed))
+            return await super().chat(messages, tools, model, user_id)
+
+    async def attested(broker, lease_id):
+        return None
+
+    monkeypatch.setattr("ailab_platform.agent.loop.verify_sandbox_skills", attested)
+    platform, broker = Platform(), Broker()
+    first = Model([LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=first).process("first", attempt_id="a1"))
+    assert first.at_first_call == (0, 0)  # a first turn has no workspace to continue: its sandbox waits for a tool
+
+    broker.busy = busy
+    second = Model([LLMResponse(tool_calls=[ToolCall("c1", "exec", {"cmd": "true"})]), LLMResponse(content="done")])
+    asyncio.run(AgentLoop(platform=platform, broker=broker, llm=second).process("second", attempt_id="a2"))
+    assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
+    assert second.at_first_call == ((0, 0) if busy else (1, 1))
+    assert broker.leases == 1 and len(broker.warmed) == 1  # the tool reuses the early sandbox, or takes one itself
+    assert not any(kind == "agent.waiting_sandbox" for kind, _ in platform.events)  # an early lease never queues
+    load = [m for m in platform.checkpoints["second"]["state"]["messages"] if m.get("role") == "tool" and m.get("name") == "load_skill"]
+    assert len(load) == 1
