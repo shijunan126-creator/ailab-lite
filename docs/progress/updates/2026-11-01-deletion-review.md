@@ -1,18 +1,49 @@
-# 后端删除正确性审查
+# 删除路径审查与修复（2026-11-01）
 
-基线：`fix/deletion-review`，base `origin/main@17aa2ef`。仅本地后端修复/提交，不 push、部署或修改 Portal。
+分支 `fix/deletion-review`，base `origin/main@17aa2ef`。用户要求：复查各类删除逻辑、修复全部问题、提 PR 测试并合并（未要求部署）。后端审查与修复由 Codex（gpt-6.1-sol medium）完成，Claude 审阅、修正并完成 Portal。
 
-第一组修复：来源删除取消 waiting_user/interrupted；资料库工具在取得用户锁后重新检查文件/会话；来源 GC 使用用户锁；purged 文件的迟到 file 任务 claim 不再访问 None；孤儿 GC 不再把 purged tombstone 当活文件。第一组无迁移、依赖或新开关。新增回归覆盖这些边界，原基线红测确认。
+## 结论（用户三问）
 
-第二组：历史输入在 purge 后继续返回“文件已删除”；Artifact FK 删除前以 INSERT SELECT 保存无正文身份到现有 MessageFileRef，查询/分享/分叉均保留占位。分享回答读取统一来源围栏；失效分叉清除旧摘要/result/事件正文且不复制旧预览。无迁移。完整 a/b/c、代码证据、Portal 交接和产品决定只维护在用户指定 `/private/tmp/del-review/report.md`。
+- **删除文件后原对话**：回收站是可恢复保留，purge 才物理删除。历史轮次保留附件/产物身份并带 `deleted=true`、下载地址为空；回收站中的文件对本人仍显示原文件名（可恢复），purge 后行或名称已不存在，显示“文件已删除”。分享页一律显示“文件已删除”。后续轮次、分叉、召回、模型上下文都按来源围栏排除已删除文件，不报错、不泄露正文；Portal 中这些条目划线、标“已删除”，无预览/下载/菜单，点击已不在资料库的文件提示“文件已删除”。
+- **删除对话**：只软删对话，取消未结束 Run（含 waiting_user/interrupted）和排队消息，清除记忆副本；资料库上传文件与交付产物保留，30 天后 purge 对话也保留文件和用量账本（`test_conversation_delete_and_retention_keep_library_files`）。删除项目是另一操作：项目文件进回收站、项目对话软删。
+- **关联删除**：会话、项目、文件谱系、技能、技能草稿、模板、分享、定时任务、记忆条目、部门、额度策略逐项核对（无删除用户接口，仅停用）。依赖行由显式删除或 CASCADE/SET NULL 处理，对象删除意图与行变更同事务、提交后清理并可重试；用量账本保留。
 
-验证边界：PG/Redis、E2E、Portal、真实模型和真实运行资源未运行。缺 Office runner 会令 PDF 原生索引测试失败，已按 HANDOFF 在 vendor runtime 安装/构建后分组复验；macOS Worker harness 需要 ps，沙箱内失败不计作产品结果。
+## 修复的缺陷
 
-## 收尾修复与验证
+| 根因 | 提交 |
+|---|---|
+| 来源删除只取消 queued/running，waiting_user/interrupted 可带旧上下文恢复 | `49990c9` |
+| 资料库工具锁外校验文件/会话，删除可在等待期间穿过 | `49990c9` |
+| 来源 GC 与用户记忆写入并发覆盖 `User.settings` | `49990c9` |
+| purge 后迟到的 file 任务 claim 解引用 None（500） | `49990c9` |
+| 孤儿 GC 把 purged tombstone 当活文件，迟到的派生对象永不回收 | `49990c9` |
+| purge 删除 Artifact 行后历史产物消失、输入附件无删除状态 | `3459066` |
+| 分享页绕过来源围栏直接输出 `Run.summary` | `3459066` |
+| 失效来源的分叉仍复制旧摘要、事件正文与预览 | `3459066` |
+| purged 版本仍可排新预览任务 | `0a494c1` |
+| copy 后提交失败的原件对象无人回收（只扫 derived/previews） | `0a494c1` |
+| 来源 GC 留下系统生成的 plan/question 元数据 | `0a494c1` |
+| `artifacts.file_id` 无索引，文件清理全表扫描（迁移 0044） | `0a494c1` |
+| 回收站文件在本人历史中被改名为“文件已删除”，无法分辨是哪份 | `008c0b7` |
+| Portal 对已删除附件/产物仍给预览/下载，点击无反应 | `cf8601b` |
 
-- 第一组 `49990c9`；历史/分享/分叉 `3459066`；最终产品代码 `0a494c1`。后者补 purged 版本预览 410、原件孤儿扫描（以 FileObject 而非 Run 存活保护资料库产物，独立扫描游标）、来源 GC 清 plan/question/file_dependency；修正 result.artifacts 仅覆盖已删除身份，保留额度暂停的原交付状态。
-- 迁移 0044 仅增加 artifacts.file_id 反向索引；既有 files.parent_id 索引复用。必要性是 file purge 的反向关联清理和 INSERT SELECT 不扫描整张 artifacts 表；SQLite upgrade/downgrade、drift、EXPLAIN 均验证。PG 未运行。新增索引带来每产物一次索引写入及 O(产物数) 磁盘成本；原件 GC 每轮新增六个前缀各至多 gc_batch_size 个对象，PK 查文件，沿用宽限期与删除预算；未测目标机开销。
-- 完整 SQLite **只运行一次**，代码基线 `3459066`：1835 passed / 152 skipped / 2 failed。两项为新增 serializer 替换 result.artifacts 影响 quota pause；已在后续修正。失败与受影响删除回归 84 passed / 16 skipped；最终迁移/删除契约 56 passed / 42 skipped。这些补测覆盖后续修改，不冒充最终 HEAD 全套重跑。
-- 最终 Ruff check 通过、501 files formatted。原基线隔离红测两组：11 failed / 6 controls passed / 1 skipped，以及 8 failed / 6 skipped。初期环境/迁移开发失败不作为产品验收；缺 Office runner 需先 npm ci/build，已处理。详细 a/b/c、12 类根因、Portal 文件行号、产品决定和大历史性能边界见仓库外指定报告。
+审阅要点：原件孤儿扫描只在 24 h 宽限后、取用户锁并复核 `FileObject.storage_key` 后删除，本地 `copy` 写新 mtime，不会误删上传中或交付中的对象；`output` 角色只用于新 tombstone，不改变来源失效传播。0044 使分享页查询计划可走 `ix_artifacts_file_id`（等值条件下更优），`test_shares` 的索引断言改为接受任一 artifacts 索引。
 
-结果：本地修复完成，未 push/部署。下一步由用户/Claude 审阅 Portal 交接；任何发布、PG/真实资源验收或大历史优化均不自动执行。保留 owner-only 回收站内容读取、软删模板冻结引用、独立定时发生轮次、显式保存事实和不可变用量账本的既有产品合同。
+## 检查（代码基线 `cf8601b`）
+
+- Ruff check/format 通过；完整 SQLite 套件结果见下方 PR 记录；Portal `npm test` 119 项与 `npm run build` 通过。
+- Portal 新回归 `tests/file-viewer-deleted.test.tsx`（旧代码红）；E2E `test_deleted_files_ui.py` 桌面/手机宽度通过，截图人工检查（划线、“已删除”、无操作按钮）。
+- 首次 E2E 误测到 00:47 遗留的孤儿 `next start`（占用 13000，健康探针通过）；已结束该进程，conftest 现在端口被占用即拒绝启动。
+- PostgreSQL、全套 E2E 交由 PR CI；真实模型、真实 Docker 资源回收、大历史删除的负载未测。
+
+## 待产品决定（未实现）
+
+- 回收站文件本人仍可下载/查看缓存预览（现有合同），是否禁止。
+- 软删模板与旧品牌素材的到期与空间计量（冻结 Run 需要不可变字节）。
+- 删除定时任务是否也取消已开始的那一轮。
+- 账号删除与停用的区别（审计/账本保留、运行中工作）。
+- 删除来源对话时是否连带删除用户显式保存的记忆事实（现行 ADR 0019 保留）。
+
+## 剩余技术边界
+
+超大历史的单事务删除、前缀遍历与记忆证据清理会物化全部 id，未做分页设计与负载测量；purge 早于本修复的产物身份无法恢复。

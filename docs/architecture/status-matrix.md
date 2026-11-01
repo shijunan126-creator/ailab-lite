@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-11-01 删除路径审查（本地 `fix/deletion-review`，base `17aa2ef`）：补齐暂停 Run 来源取消、清理串行、任务重投、tombstone 孤儿收敛、历史/分享/分叉删除占位与来源围栏、原件孤儿扫描、purged 预览拒绝；0044 增加产物反向索引；会话删除仍保留资料库文件及用量账本。最终检查/边界见[记录](../progress/updates/2026-11-01-deletion-review.md)，未推送或部署，PG/Portal 未验。
+2026-11-01 删除路径审查（`fix/deletion-review`，base `17aa2ef`）：补齐暂停 Run 来源取消、清理串行、任务重投、tombstone 与原件孤儿回收、历史/分享/分叉删除占位与来源围栏、purged 预览拒绝；0044 增加产物反向索引；Portal 把已删除附件/产物显示为“已删除”；会话删除保留资料库文件及用量账本。检查与边界见[记录](../progress/updates/2026-11-01-deletion-review.md)。
 
 2026-10-31 Super-agent 借鉴（PR #114–#119 已合并 `main@cd74472`）：模型请求前缀稳定（工具目录固定、历史原文渲染；上下文放置与压缩已由 [前缀缓存设计](design/2026-10-31-prefix-cache.md) 取代，见 [ADR 0030](adr/0030-prefix-stable-model-requests.md) 状态）；插话打断 `exec_wait`；`read_file` 分段；召回附交付文件/相邻轮次；Work 进展监督（默认 observe）；并行子任务 `run_subtasks`（[ADR 0031](adr/0031-parallel-subtasks.md)）。真实命中率、监督误报和子任务效果未验，见[记录](../progress/updates/2026-10-31-superagent-merge-deploy.md)。
 
