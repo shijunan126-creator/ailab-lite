@@ -39,13 +39,21 @@ def disabled_skills(user: User) -> list[str]:
     return list((user.settings or {}).get("disabled_skills") or [])
 
 
-def personal_skills(db: Session, user: User) -> list[dict]:
+def personal_skills(db: Session, user: User, *, include_platform=True) -> list[dict]:
     """The user's skill files, newest first; `error` says why one cannot be used (bad file, name taken)."""
+    from .platform_skills import added_skills
+
+    platform = added_skills(db, user) if include_platform else []
+    from ..models import UserPlatformSkill
+
     builtin = skills()
     files = db.scalars(
         select(FileObject)
         .where(
             FileObject.user_id == user.id,
+            ~select(UserPlatformSkill.skill_id)
+            .where(UserPlatformSkill.user_id == user.id, UserPlatformSkill.custom_lineage_id == FileObject.lineage_id)
+            .exists(),
             FileObject.purpose == "skill",
             FileObject.is_head == 1,
             FileObject.deleted_at.is_(None),
@@ -79,23 +87,26 @@ def personal_skills(db: Session, user: User) -> list[dict]:
         else:
             seen.add(item["name"])
         out.append(item)
-    return out
+    return out + platform
 
 
-def usable_personal(db: Session, user: User) -> dict[str, dict]:
+def usable_personal(db: Session, user: User, *, include_platform=True) -> dict[str, dict]:
     """name -> skill for the personal skills that work and are switched on."""
-    off = set(disabled_skills(user))
+    from .platform_skills import usable_platform
+
+    platform = usable_platform(db, user) if include_platform else {}
+    off = set(run_disabled_skills(db, user))
     _, policy = effective_policy(db, user)
     if policy == "disabled":
-        return {}
-    candidates = [s for s in personal_skills(db, user) if not s.get("error") and s["name"] not in off]
+        return platform
+    candidates = [s for s in personal_skills(db, user, include_platform=False) if not s.get("error") and s["name"] not in off]
     ids = [s["file_id"] for s in candidates]
     approvals = {}
     for start in range(0, len(ids), 200):
         approvals.update(
             {a.file_id: a.state for a in db.scalars(select(SkillApproval).where(SkillApproval.file_id.in_(ids[start : start + 200])))}
         )
-    return {
+    return platform | {
         s["name"]: s
         for s in candidates
         if approvals.get(s["file_id"]) != "disabled" and (policy == "allowed" or approvals.get(s["file_id"]) == "allowed")
@@ -155,12 +166,13 @@ def list_skills(user: User = Depends(current_user), db: Session = Depends(get_db
             "name": s.get("name", ""),
             "title": s.get("title") or s["filename"],
             "description": s.get("description", ""),
-            "scope": "personal",
+            "scope": "platform" if s.get("platform") else "personal",
             "builtin": False,
             "enabled": s.get("name") in allowed,
             "file_id": s["file_id"],
             "filename": s["filename"],
-            "kind": "personal",
+            "kind": "platform" if s.get("platform") else "personal",
+            **({k: s[k] for k in ("id", "added", "customized", "update_available")} if s.get("platform") else {}),
             "kind_file": s.get("kind"),
             "lineage_id": s.get("lineage_id"),
             "toggleable": True,
@@ -181,7 +193,10 @@ def toggle_skill(name: str, body: SkillToggle, user: User = Depends(current_user
     personal = {s["name"]: s for s in personal_skills(db, user) if not s.get("error")}
     if name not in builtin and name not in personal:
         raise HTTPException(status_code=404, detail=f"unknown skill: {name}")
-    if body.enabled and (name in denied or (name in personal and personal_policy == "disabled")):
+    if body.enabled and (
+        name in denied
+        or (name in personal and (not personal[name].get("platform") or personal[name].get("customized")) and personal_policy == "disabled")
+    ):
         raise HTTPException(403, "技能已被管理员禁用")
     known = set(builtin) | set(personal)
     with user_critical_section(db, user.id):
@@ -191,7 +206,11 @@ def toggle_skill(name: str, body: SkillToggle, user: User = Depends(current_user
             off.append(name)
         user.settings = {**(user.settings or {}), "disabled_skills": sorted(off)}  # a new dict: SQLAlchemy sees the change
         db.commit()
-    return {"name": name, "enabled": body.enabled, "scope": "builtin" if name in builtin else "personal"}
+    return {
+        "name": name,
+        "enabled": body.enabled,
+        "scope": "builtin" if name in builtin else "platform" if personal[name].get("platform") else "personal",
+    }
 
 
 class PolicyInput(BaseModel):
@@ -238,7 +257,9 @@ def set_policy(body: PolicyInput, user: User = Depends(current_user), db: Sessio
         raise HTTPException(422, "unknown department")
     if body.name in BASE_SKILLS:
         raise HTTPException(403, "基础技能不能关闭")
-    if body.name not in skills() and body.name != "*personal*":
+    from .platform_skills import platform_name
+
+    if body.name not in skills() and not platform_name(db, body.name) and body.name != "*personal*":
         raise HTTPException(422, "unknown skill")
     states = {"allowed", "review", "disabled"} if body.name == "*personal*" else {"allowed", "disabled"}
     if body.state not in states:
@@ -326,15 +347,20 @@ def review_skill(file_id: str, body: ReviewInput, user: User = Depends(current_u
     return {"file_id": file_id, "state": body.state}
 
 
-def skill_input_for(db: Session, owner: User | None) -> dict:
+def skill_input_for(db: Session, owner: User | None, run=None) -> dict:
     """Shared bootstrap fields for legacy GET and T14 model-input; ownership comes from the Run."""
     if owner is None:
         return {"disabled_skills": sorted(skills()), "personal_skills": []}
+    from .platform_skills import frozen_platform
+
+    candidates = usable_personal(db, owner, include_platform=run is None)
+    if run is not None:
+        candidates = {n: s for n, s in candidates.items() if not s.get("platform")}
+        candidates.update({s["name"]: s for s in frozen_platform(db, owner, run)})
     return {
         "disabled_skills": run_disabled_skills(db, owner),
         "personal_skills": [
-            {k: skill[k] for k in ("name", "title", "description", "file_id", "filename", "kind")}
-            for skill in usable_personal(db, owner).values()
+            {k: skill[k] for k in ("name", "title", "description", "file_id", "filename", "kind")} for skill in candidates.values()
         ],
     }
 
@@ -397,6 +423,9 @@ def save_skill_content(body: SkillContentInput, user: User = Depends(current_use
         raise HTTPException(422, "通用技能不能覆盖，请另取个人技能名称")
     storage = get_storage()
     with user_critical_section(db, user.id):
+        from .platform_skills import check_name
+
+        check_name(db, body.name)
         heads = _skill_heads(db, user.id, body.name)
         parent = heads[0] if heads else None
         if (parent.id if parent else None) != body.expected_file_id:

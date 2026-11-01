@@ -1,5 +1,8 @@
 # 单机能力状态
 
+2026-11-02 管理员平台技能后端已实现并完成双库核心复核（未合并/未部署）：系统版本与用户订阅、自定义/重置、Worker 自动发布、Run 文件冻结与权限、旧 market API 移除。Portal 与外部验收由前端实施方完成；[最终契约](design/2026-11-02-admin-platform-skills.md#接口后端最终契约)、[本轮验证](../progress/updates/2026-11-02-admin-platform-skills.md)。
+
+
 2026-11-01 记忆摘要与项目记忆模式（`feat/memory-summary`，base `4c6f092`）：记忆页改为“你的记忆”摘要（派生数据，不进模型上下文）+ 开关；对话式修改/撤销、清空；项目 shared/isolated 两向迁移（隔离→互通由模型逐条融合）；批次终态/游标先提交、摘要阶段保留活动租约、失败仍独立刷新摘要，请求作用域优先（迁移 0046）。真实模型下摘要/编辑/融合质量未验，见[记录](../progress/updates/2026-11-01-memory-summary.md)。
 
 2026-11-01 删除路径审查（`fix/deletion-review`，base `17aa2ef`）：补齐暂停 Run 来源取消、清理串行、任务重投、tombstone 与原件孤儿回收、历史/分享/分叉删除占位与来源围栏、purged 预览拒绝；0044 增加产物反向索引；Portal 把已删除附件/产物显示为“已删除”；会话删除保留资料库文件及用量账本。检查与边界见[记录](../progress/updates/2026-11-01-deletion-review.md)。

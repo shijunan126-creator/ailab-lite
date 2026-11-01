@@ -737,10 +737,47 @@ class MemoryEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class PlatformSkill(Base):
+    __tablename__ = "platform_skills"
+    __table_args__ = (
+        Index("ix_platform_skills_live_id", "deleted_at", "id"),
+        Index("ix_platform_skills_current_file", "current_file_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("psk"))
+    name: Mapped[str] = mapped_column(String(40), unique=True)
+    title: Mapped[str] = mapped_column(String(120))
+    description: Mapped[str] = mapped_column(Text, default="", server_default="")
+    category: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    source_url: Mapped[str] = mapped_column(String(2048), default="", server_default="")
+    license: Mapped[str] = mapped_column(String(120), default="", server_default="")
+    current_file_id: Mapped[str | None] = mapped_column(ForeignKey("files.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class UserPlatformSkill(Base):
+    __tablename__ = "user_platform_skills"
+    __table_args__ = (
+        Index("ix_user_platform_skills_skill_user", "skill_id", "user_id"),
+        Index("ix_user_platform_skills_custom", "custom_lineage_id"),
+        Index("ix_user_platform_skills_base_file", "base_file_id"),
+    )
+
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    skill_id: Mapped[str] = mapped_column(ForeignKey("platform_skills.id", ondelete="CASCADE"), primary_key=True)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    custom_lineage_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    base_file_id: Mapped[str | None] = mapped_column(ForeignKey("files.id"), nullable=True)
+
+
 class SkillDraft(Base):
     __tablename__ = "skill_drafts"
     __table_args__ = (
         Index("ix_skill_drafts_user_status_updated", "user_id", "status", "updated_at"),
+        Index("ix_skill_drafts_base_file", "base_file_id"),
         Index("ix_skill_drafts_status_created", "status", "created_at"),
     )
 

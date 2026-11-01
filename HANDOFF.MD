@@ -1,3 +1,11 @@
+## 2026-11-02 管理员平台技能（后端）
+
+- 平台技能是 `purpose=platform_skill` 的系统所有者文件，Worker 识别技能时不能统一改写为 `purpose=skill`；metadata 合并、草稿任务领取和 Worker 解包授权三处必须同步识别平台来源。公开用户文件接口仍不可读取系统文件。
+- 新 Run 创建时把平台版本写入 runtime_meta，并通过 `run_asset_refs` 保留文件；bootstrap/恢复不能重新挑最新版本。读取必须同时核对该 Run 冻结 ID、用户当前订阅和策略，不能仅凭“曾发布”放行。版本清理要保护当前发布、自定义 base、活动草稿与 Run 引用。
+- 自定义只在 confirm 后登记关联，扫描认名时允许该副本 lineage 保留平台 name；reset/取消添加须废弃未确认草稿，管理员删除则只删关联、保留个人文件。管理员在线草稿还要对当前发布与打开时 head 做 CAS，回退版本可以作为底稿，但并发新上传不可被旧草稿覆盖。
+- `platform_skills.current_file_id` 保留软删行的 FK；共享测试若之后会 `DELETE FROM files`，新平台测试的 teardown 必须清掉自己的 registry 行，不能只调用软删 API。新 worktree 按 constraints 安装 Python，文档读取测试先构建 vendor Office reader，避免把缺少本地构建误判成解析回归。
+- 最终接口、验证与边界见 [设计](docs/architecture/design/2026-11-02-admin-platform-skills.md#接口后端最终契约) 和 [后端记录](docs/progress/updates/2026-11-02-admin-platform-skills.md)。
+
 ## 2026-11-01 工作文件查看与搜索诊断
 
 - `gh pr merge --auto` 不保证等 CI：仓库没有 required checks 时会立即合并，即使检查仍 running。本轮 #141 因此提前 squash；严格“绿后合并”须先确认所有检查与仓库要求，不能把 `--auto` 当等待器。
@@ -183,6 +191,7 @@
 - 工具流量不回放进后续轮次的历史：若历史里没有上一轮读过的来源，模型会否认自己引用过的数字。`history_sources` 把来源标题和 URL 附在历史回复后。
 - `capability_discovery` 只是把未用工具的 schema 挤出提示词，不是权限：模式允许的工具按名字直接调用（search 后 read_url）要执行并激活，不能报 `not available in this turn`。
 - 滚动跟随统一用 `lib/use-follow.ts`：ResizeObserver 驱动、指数缓动、远距离直接跳；用 `placed` 区分自己写的 scrollTop 和读者滚动，否则缓动本身会被当成“用户上滚”而停止跟随。
+- CI `python (postgres)` 显示 cancelled 而无失败用例时，先看是否撞上 job `timeout-minutes`（2026-11-02 全套已 11m40s，12 分钟上限被 #143 触发，已调到 15）。持续增长时应拆分或并行，而不是反复加时限。
 - 新回复用 `stopAt` 停在回复开头：跟随只向下（停点在视图上方即视为已过），只有读者到底且越过停点才清除停点。依赖滚动事件的“回到底部”按钮在停住后不会自己出现，须在内容变化时按 `heading()`（跟随目标）重算，按当前 scrollTop 算会在滑行中闪现。新对话由首页 `router.replace` 进入，停点要经模块级集合带到对话页。
 - 测 Portal 构建版时先确认端口上的旧 `next start` 已退出（`pkill -f` 匹配不到 next-server 进程，按端口 `lsof -ti` 结束）；旧进程配新 `.next` 会报 “This page couldn’t load”。Turbopack 不接受指向工作树外的 node_modules 符号链接，需在当前工作树 `npm ci`。
 - `npm test` 是 Vitest：旧 `node:test` 用例经 `tests/node-test-compat.mjs` 提供 `t.mock/t.after`；React.lazy 会缓存失败的 import，重试必须新建 lazy。

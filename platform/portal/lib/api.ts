@@ -74,7 +74,7 @@ export type Preview = {
 };
 
 /** base: platform office skills, always on; builtin: platform skills the user may switch off; personal: the user's own. */
-export type SkillKind = "base" | "builtin" | "personal";
+export type SkillKind = "base" | "builtin" | "personal" | "platform";
 export type Skill = {
   name: string;
   title: string;
@@ -84,7 +84,7 @@ export type Skill = {
   builtin: boolean;
   implicit?: boolean; // driven by another entry (e.g. the conversation menu): not offered as a skill of its own
   enabled: boolean;
-  scope: "builtin" | "personal";
+  scope: "builtin" | "personal" | "platform";
   extras?: "ppt_template"[]; // platform-registered interactions next to the chip
   version?: string;
   file_id?: string; // personal skills: the file in the library that defines it
@@ -93,7 +93,39 @@ export type Skill = {
   kind_file?: "md" | "zip";
   files?: number;
   error?: string | null; // why a personal skill file cannot be used
+  // an added platform skill (kind "platform"): follows the platform until the user changes it
+  id?: string;
+  customized?: boolean;
+  update_available?: boolean;
 };
+
+/** An admin-managed platform skill as the 技能广场 lists it (GET /v1/platform-skills). */
+export type PlatformSkill = {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  category: string;
+  source_url: string;
+  license: string;
+  current_file_id: string | null;
+  created_at: string;
+  updated_at: string;
+  added: boolean;
+  customized: boolean;
+  update_available: boolean;
+};
+export type PlatformSkillVersion = {
+  file_id: string;
+  filename: string;
+  version: number;
+  status: string;
+  error: string | null;
+  current: boolean;
+  published: boolean;
+  created_at: string;
+};
+export type Page<T> = { items: T[]; next_cursor: string | null };
 
 export type DraftStatus = "queued" | "running" | "preparing" | "ready" | "failed" | "confirmed" | "discarded";
 export type DraftFile = { path: string; size: number; kind: "text" | "image" | "binary"; change: "added" | "modified" | "deleted" | "unchanged" };

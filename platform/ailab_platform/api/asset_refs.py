@@ -13,6 +13,8 @@ def register_assets(db, run):
     for fid in (((run.runtime_meta or {}).get("brand") or {}).get("assets") or {}).values():
         if fid:
             assets.add((fid, "brand"))
+    for skill in (run.runtime_meta or {}).get("platform_skills", []):
+        assets.add((skill["file_id"], "platform_skill"))
     for fid, kind in assets:
         register_asset(db, run.id, fid, kind)
 

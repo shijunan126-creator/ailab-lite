@@ -38,7 +38,7 @@ export const skillIcon = (name: string) => ICONS[name] || IconSparkles;
 
 // The + and / menus offer what a message can choose: optional platform skills first, then the user's own. The four
 // office skills (kind base) are always on, so picking one would add nothing and they are not offered.
-const RANK: Record<SkillKind, number> = { builtin: 0, personal: 1, base: 2 };
+const RANK: Record<SkillKind, number> = { builtin: 0, platform: 1, personal: 2, base: 3 };
 
 export function offeredSkills(list: Skill[]): Offered[] {
   return list

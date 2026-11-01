@@ -212,7 +212,7 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .brand import workspace_input
 
     out.update(workspace_input(db, run))
-    out.update(skill_input_for(db, owner))
+    out.update(skill_input_for(db, owner, run))
     now = datetime.now(UTC)
     newest = next((t for t in reversed(earlier) if workspace_data(t)), None)
     alive = newest is not None and newest.id not in invalid and workspace_alive(newest, now)
@@ -627,6 +627,9 @@ async def internal_save_skill(
                     raise HTTPException(409, f"run is {run.status}")
                 if name in builtin_skills():
                     raise HTTPException(422, f"{name} 是通用技能，不能被个人技能覆盖；请换个名字")
+                from .platform_skills import check_name
+
+                check_name(db, name)
                 heads = _skill_heads(db, run.user_id, name)
                 if mode == "create" and heads:
                     raise HTTPException(422, f"已有同名个人技能 {name}；要改它请用 mode=update（会保留旧版本）")
@@ -771,6 +774,19 @@ def _bound_file(
         raise HTTPException(404, "brand assets require the brand injection path")
     if job == "brand":
         raise HTTPException(404, "not a brand asset")
+    if file.purpose in {"platform_skill", "skill"}:
+        from .platform_skills import SYSTEM_OWNER, frozen_platform
+
+        owner = db.get(User, run.user_id)
+        frozen = frozen_platform(db, owner, run) if owner else []
+        bound = any(s["file_id"] == file.id for s in frozen)
+        if bound and principal.service in {"agent", "broker"} and file.status == FileStatus.READY:
+            if file.purpose == "skill" and file.user_id == run.user_id:
+                return file
+            if file.purpose == "platform_skill" and file.user_id == SYSTEM_OWNER and (file.meta or {}).get("platform_published"):
+                return file
+        if file.purpose == "platform_skill":
+            raise HTTPException(404, "skill not bound to run")
     if file.user_id != context.user_id or file.status != FileStatus.READY:
         raise HTTPException(status_code=404, detail="file not found for run")
     attached = False
@@ -938,7 +954,7 @@ def internal_patch_file(
     file = _bound_file(db, file_id, principal, None, job)
     from .brand import brand_lock
 
-    lock = brand_lock(db) if file.purpose == "brand" else user_critical_section(db, file.user_id)
+    lock = brand_lock(db) if file.purpose in {"brand", "platform_skill"} else user_critical_section(db, file.user_id)
     with lock:
         db.refresh(file)
         return _apply_file_patch(db, file, body, principal, job)
@@ -976,15 +992,24 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             # Saved as one name, its SKILL.md says another: it must not quietly replace a different skill.
             merged.pop("skill")
             merged["skill_error"] = f"SKILL.md 里的 name 与保存时的名称 {claim} 不一致"
+        if merged.get("skill") and file.purpose != "platform_skill":
+            from .platform_skills import check_name
+
+            try:
+                check_name(db, merged["skill"]["name"], lineage_id=file.lineage_id)
+            except HTTPException:
+                merged.pop("skill")
+                merged["skill_error"] = "与平台技能重名"
         file.meta = merged
         if merged.get("skill") or merged.get("skill_error"):
             head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file
-            head.purpose, head.project_id = "skill", None
+            purpose = "platform_skill" if file.purpose == "platform_skill" else "skill"
+            head.purpose, head.project_id = purpose, None
             reserve_filename(db, head)
             db.execute(
                 update(FileObject)
                 .where(FileObject.lineage_id == file.lineage_id)
-                .values(purpose="skill", project_id=None, filename=head.filename, name_key=head.name_key)
+                .values(purpose=purpose, project_id=None, filename=head.filename, name_key=head.name_key)
             )
     if (body.meta or {}).get("document_manifest_key"):
         from ..runtime_context import attempt_id_var
@@ -1005,6 +1030,10 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
         if body.status not in {FileStatus.PENDING, FileStatus.READY, FileStatus.REJECTED}:
             raise HTTPException(status_code=400, detail=f"bad file status: {body.status}")
         file.status = body.status
+    if file.purpose == "platform_skill":
+        from .platform_skills import activate
+
+        activate(db, file)
     if file.purpose == "brand":
         from .brand import activate_asset
 

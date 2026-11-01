@@ -39,7 +39,7 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     from .brand import workspace_input
 
     out.update(workspace_input(db, run))
-    out.update(skill_input_for(db, owner))  # the same effective policy as the legacy internal GET
+    out.update(skill_input_for(db, owner, run))  # the same effective policy as the legacy internal GET
     path = ancestor_query(run.conversation_id, run.parent_run_id)
     newest = (
         db.scalar(

@@ -44,7 +44,9 @@ def fenced(db, draft_id, body):
     ):
         raise HTTPException(409, "stale_claim")
     file = db.get(FileObject, draft.base_file_id, populate_existing=True)
-    if not file or file.user_id != draft.user_id or not file.is_head or file.deleted_at or file.purged_at:
+    from .platform_skills import draft_source_allowed
+
+    if not draft_source_allowed(db, draft, file):
         raise HTTPException(409, "技能已被修改")
     return draft, file
 

@@ -894,3 +894,38 @@ def test_memory_summary_0046_upgrade_downgrade_reupgrade_data(engine, strict):
             ["isolated", "isolated"] if strict else ["shared", "shared"]
         )
         assert "project_only" not in conn.execute(sa.select(users.c.settings).where(users.c.id == "u1")).scalar_one()["memory"]
+
+
+def test_platform_skills_roundtrip_and_run_lookup_plan(engine):
+    _upgrade_to(engine, "0046")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0047")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO platform_skills (id,name,title,created_by,created_at,updated_at) "
+                "VALUES (:id,:id,'skill','u1','2026-01-01','2026-01-01')"
+            ),
+            [{"id": f"psk-{i:05}"} for i in range(2000)],
+        )
+        conn.execute(text("INSERT INTO user_platform_skills (user_id,skill_id,added_at) VALUES ('u1','psk-00000','2026-01-01')"))
+        conn.execute(text("ANALYZE platform_skills"))
+        conn.execute(text("ANALYZE user_platform_skills"))
+        from ailab_platform.api.platform_skills import subscriptions_query
+
+        sql = str(subscriptions_query("u1").compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        plan = str(conn.execute(text(prefix + sql)).all())
+        # The selective subscription join probes the platform PK rather than scanning its catalogue.
+        assert any(
+            index in plan for index in ("platform_skills_pkey", "sqlite_autoindex_platform_skills_1", "ix_platform_skills_live_id")
+        ), plan
+        assert conn.scalar(text("SELECT count(*) FROM user_platform_skills WHERE user_id='u1'")) == 1
+    _downgrade_to(engine, "0046")
+    assert "platform_skills" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
+    _upgrade_to(engine, "0047")
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
