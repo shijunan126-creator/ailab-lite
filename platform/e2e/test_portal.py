@@ -581,6 +581,8 @@ def test_a_file_removed_while_it_is_checked_stays_removed(logged_in, tmp_path) -
 
 def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) -> None:
     page = logged_in
+    from playwright.sync_api import expect
+
     page.click(".side-link:has-text('技能')")
     page.wait_for_url(stack.portal + "/skills")
     ppt = page.locator(".mrow", has_text="PPT 设计")
@@ -592,13 +594,16 @@ def test_skills_can_be_switched_off_and_their_buttons_go_away(logged_in, stack) 
         assert saved.value.ok  # the optimistic switch alone does not mean the setting was saved
         page.reload()  # saved on the server, not just in the page
         page.wait_for_selector(".mrow.off:has-text('PPT 设计')")
-        page.goto(stack.portal + "/")
+        # the + menu lists what the composer's own skill request returned: wait for it rather than for a menu entry
+        with page.expect_response(lambda r: r.request.method == "GET" and r.url.endswith("/api/v1/skills")) as listed:
+            page.goto(stack.portal + "/")
+        assert listed.value.ok
         page.get_by_role("button", name="添加附件", exact=True).click()
         menu = page.locator(".composer-menu")
-        page.get_by_role("menuitem", name="更多技能", exact=True).click()
-        menu.get_by_role("menuitemcheckbox", name="Excel", exact=True).wait_for()
-        # Default skills render before the asynchronous skill list arrives.
-        menu.get_by_role("menuitemcheckbox", name="PPT 设计", exact=True).wait_for(state="detached", timeout=15000)
+        menu.get_by_role("menuitem", name="上传文件", exact=True).wait_for()
+        # switched off, and the four always-on office skills are never offered for picking
+        for name in ("PPT 设计", "PPT", "Word", "Excel", "PDF"):
+            expect(menu.get_by_role("menuitemcheckbox", name=name, exact=True)).to_have_count(0)
         page.keyboard.press("Escape")
     finally:
         page.goto(stack.portal + "/skills")
