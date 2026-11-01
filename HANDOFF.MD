@@ -1022,3 +1022,5 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - E2E 遗留的孤儿 `next start`（父进程 1，cwd 在 pytest 临时目录）会占住 13000 并通过健康探针，套件随之测到旧 Portal。conftest 现在端口被占用即报错；遇到时结束那个孤儿进程或改 `AILAB_E2E_BASE_PORT/AILAB_E2E_PORTAL_PORT`。E2E 种子文件要走 `assign_file_version`，否则没有 head，删除接口 204 却什么都没删。
 - 冻结资产（模板、品牌素材）的保留由 `run_asset_refs` 决定，不能复用 MessageFileRef（那是消息来源，会触发来源失效）。品牌退役用 `purge_at` 记宽限，不能写 `deleted_at`：内部授权会把它当回收站文件，破坏历史快照。带模板的启动先持品牌锁再持用户锁，保持这一锁序。排队消息冻结模板时还没有自己的 Run，引用先挂在 `after_run_id`。
 - 定时任务的跳过（上一轮未结束）必须排在“无人理会”判断之后才不会永远跳过：等待回复/中断超过 7 天直接按无人查看暂停。
+- API 事件循环上不能做阻塞工作（SQLAlchemy/SQLite、`user_critical_section` 的 RLock、存储 I/O）。SQLite 下会死锁：线程池里的同步请求持写锁（如 `fence_attempt` 的 UPDATE），事务要等依赖 teardown 关闭会话才释放，而 teardown 需要事件循环调度；此时协程在循环上等 SQLite，双方卡满 30 s busy timeout（CI 中 async `login` 与 `/internal/runs/{id}/memory` 撞上）。async 处理器和 lifespan 后台协程里的数据库/锁整段放进 `run_in_threadpool`/`asyncio.to_thread`，测试套件有守卫：在服务事件循环上执行 SQL 即失败。
+- 查询数预算测试若在 engine 上挂监听，只计调用线程的语句（`threading.get_ident()`），否则会算进前面测试遗留的后台循环。
