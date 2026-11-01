@@ -63,7 +63,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 12
+    # the PostgreSQL full suite ran 11m40s on main@82ff828: 12 left no room for new tests
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
