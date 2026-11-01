@@ -58,6 +58,7 @@ from .routes_templates import router as templates_router
 
 setup_logging("api")
 log = logging.getLogger("ailab.api")
+SERVING_LOOP: asyncio.AbstractEventLoop | None = None
 
 
 def warn_storage_capacity() -> None:
@@ -79,6 +80,7 @@ def warn_storage_capacity() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global SERVING_LOOP
     settings.validate_secrets("api")
     settings.ensure_dirs()
     get_catalog()  # fail at startup, not on the first request, if models.toml is broken
@@ -94,6 +96,7 @@ async def lifespan(_: FastAPI):
             "per-user locks have no database-level protection otherwise"
         )
     log.info("platform api ready db=%s storage=%s", settings.redacted()["database_url"], settings.storage_backend)
+    SERVING_LOOP = asyncio.get_running_loop()
     preview_dispatch = asyncio.create_task(dispatch_forever(), name="preview-outbox")
     reaper = asyncio.create_task(reap_forever(), name="reaper")
     workspace_cleanup = asyncio.create_task(workspace_cleanup_forever(), name="workspace-cleanup")
@@ -102,15 +105,16 @@ async def lifespan(_: FastAPI):
     skill_drafts = asyncio.create_task(draft_forever(), name="skill-drafts")
     memory_dream = asyncio.create_task(dream_forever(), name="memory-dream")
     memory_embeddings = asyncio.create_task(embed_forever(), name="memory-embeddings")
-    yield
-    memory_embeddings.cancel()
-    memory_dream.cancel()
-    skill_drafts.cancel()
-    schedules.cancel()
-    lifecycle_cleanup.cancel()
-    preview_dispatch.cancel()
-    reaper.cancel()
-    workspace_cleanup.cancel()
+    tasks = (memory_embeddings, memory_dream, skill_drafts, schedules, lifecycle_cleanup, preview_dispatch, reaper, workspace_cleanup)
+    try:
+        yield
+    finally:
+        for task in tasks:
+            task.cancel()
+        try:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        finally:
+            SERVING_LOOP = None
 
 
 app = FastAPI(
