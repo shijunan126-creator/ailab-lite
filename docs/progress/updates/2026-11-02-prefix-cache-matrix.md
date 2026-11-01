@@ -68,3 +68,11 @@
 | 全套 Python | 完整 `pytest tests -q` 已执行：1963 passed、164 skipped、2 failed。两项是 test_model_gateway_context 的 500ms 期限导致额外调用/提前超时；独立复查同组也复现期限失败。期限调整到3秒后同组21项全部通过，未修改生产重试/账本。最后仅改测试期限，没有再重复整套，因此不宣称最终同一基线一次全套全绿。 |
 | 未测边界 | 未提供临时 PostgreSQL/Redis 合同测试 URL，故可选后端项跳过；Redis用于真实栈。未改 Portal，按用户要求不跑 Portal build/浏览器。没有生产性能、真实 ClamAV、大模型财务质量或字体许可验收。 |
 | 清理与下一步 | 临时四后端、代理与Redis已停止，六端口空闲，本 owner 沙箱0残留；仓库外请求、日志、数据与临时凭据已清除。不部署、不合并。95%全场景目标因供应商短前缀限制与合法冷段未完全达到，保留失败事实。 |
+
+
+## 部署（2026-11-02）
+
+- 当次授权部署 `origin/main@41dc893015d254c990a8d3f133000c861bccbd3e`（含 #139/#141/#143/#144），替换本机 `release-21f3300`。固定 archive、定向 tar 同步、VM `docker buildx build --load`、Compose stop/up --no-deps --no-build --wait 均最终 exit 0。后端共享、Portal、Office 标签均为 `release-41dc893`；后端依赖继承、Portal npm ci 命中缓存，Office 增量安装 zip/unzip 与字体别名，其余镜像复用。构建/启动细节仅存本机 AILab-local 部署记录。
+- API 启动迁移 0046→0047，源码 head 与数据库版本查询均 0047；12 服务 running、10 项 healthcheck healthy，Portal 23000 HTTP 200，API forward 保持 28080。2CPU/6GiB VM 与服务限额沿用；没有性能基准或功能验收结论。
+- 通过部署后的管理员 API 创建元数据、multipart 上传 ZIP、轮询 current_file_id；按名称跳过已有项，本次六项均新建并发布：gongwen、official-document-writing、humanizer-zh、audit-xls、financial-analyst、process-doc。来源取各包 SOURCE.md，保留原包内容；真实 Worker 扫描发布，未在宿主执行第三方脚本。
+- 无备份、部署后测试套件、浏览器或真模型验收；gongwen 未在新沙箱镜像复测。Noto 字体映射仅解决替代渲染，不声称标准字体合规。上方隔离栈矩阵与技能试用均为历史证据。
