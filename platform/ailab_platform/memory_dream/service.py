@@ -381,21 +381,25 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
     if spec is not None and estimate > ModelPolicy(get_catalog()).input_budget(spec):
         raise DreamError("记忆整理输入超出模型上下文预算")
     if identity:
-        with SessionLocal() as db:
-            reserve_usage(
-                db,
-                ReserveUsageIn(
-                    call_id=call.call_id,
-                    subject="memory_job",
-                    job_id=identity[0],
-                    attempt_id=identity[1],
-                    alias=model,
-                    mode="memory",
-                    quiet=True,
-                    max_output_tokens=call.max_output_tokens,
-                    estimated_input_tokens=estimate,
-                ),
-            )
+
+        def reserve():
+            with SessionLocal() as db:
+                reserve_usage(
+                    db,
+                    ReserveUsageIn(
+                        call_id=call.call_id,
+                        subject="memory_job",
+                        job_id=identity[0],
+                        attempt_id=identity[1],
+                        alias=model,
+                        mode="memory",
+                        quiet=True,
+                        max_output_tokens=call.max_output_tokens,
+                        estimated_input_tokens=estimate,
+                    ),
+                )
+
+        await asyncio.to_thread(reserve)
     elif settings.env != "test":
         raise DreamError("模型抽取必须通过有计费身份的后台任务运行")
     token = model_call.set(call)
@@ -411,20 +415,24 @@ async def _chat(messages: list[dict], model: str, user: User) -> tuple[str, dict
         if identity:
             usage = call.usage
             status = "settled" if usage else "estimated" if call.reached_model else "released"
-            with SessionLocal() as db:
-                settle_usage(
-                    db,
-                    SettleUsageIn(
-                        call_id=call.call_id,
-                        attempt_id=identity[1],
-                        actual_backend=call.actual_backend,
-                        input_tokens=usage.get("prompt_tokens", estimate if call.reached_model else 0),
-                        output_tokens=usage.get("completion_tokens", (call.output_bytes + 3) // 4 if call.reached_model else 0),
-                        cached_tokens=usage.get("cached_tokens", 0),
-                        reasoning_tokens=usage.get("reasoning_tokens", 0),
-                        status=status,
-                    ),
-                )
+
+            def settle():
+                with SessionLocal() as db:
+                    settle_usage(
+                        db,
+                        SettleUsageIn(
+                            call_id=call.call_id,
+                            attempt_id=identity[1],
+                            actual_backend=call.actual_backend,
+                            input_tokens=usage.get("prompt_tokens", estimate if call.reached_model else 0),
+                            output_tokens=usage.get("completion_tokens", (call.output_bytes + 3) // 4 if call.reached_model else 0),
+                            cached_tokens=usage.get("cached_tokens", 0),
+                            reasoning_tokens=usage.get("reasoning_tokens", 0),
+                            status=status,
+                        ),
+                    )
+
+            await asyncio.to_thread(settle)
         if call.usage:
             record_prompt_cache("memory", "memory", call.usage)
     if response.tool_calls or not response.content.strip():
@@ -730,82 +738,98 @@ def _finish(db: Session, run: MemoryDreamRun, status: str, **fields) -> None:
 async def process_dream(run_id: str) -> None:
     """Read/claim and persist input, await models without a transaction, then fenced short commit."""
     token = new_id("claim")
-    with SessionLocal() as db:
-        now = utcnow()
-        changed = db.execute(
-            update(MemoryDreamRun)
-            .where(
-                MemoryDreamRun.id == run_id,
-                MemoryDreamRun.status.in_(("pending", "running")),
-                or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
-            )
-            .values(status="running", claim_token=token, claimed_until=now + timedelta(minutes=10), started_at=now)
-        ).rowcount
-        db.commit()
-        if not changed:
-            return
-    try:
+
+    def claim():
         with SessionLocal() as db:
-            run = db.get(MemoryDreamRun, run_id)
-            user = db.get(User, run.user_id)
-            if not user or user.disabled_at:
-                raise DreamError("账号不可用")
-            with user_critical_section(db, user.id):
-                db.refresh(user)
-                memory = _memory_view(user)
-                if not memory["enabled"] or not memory["auto_save"] or not dream_settings(user).enabled:
-                    _finish(db, run, "skipped", journal="自动记忆已关闭")
-                    return
-                runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow())
-                if not runs:
-                    _finish(db, run, "skipped", journal="没有新的对话")
-                    return
-                # A batch never combines evidence from different projects.
-                project_id = run_project(db, runs[0])
-                runs = [r for r in runs if run_project(db, r) == project_id]
-                pending = [r for r in runs if (item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "pending"]
-                if pending:
-                    runs = pending
-                episodes = _fit_episodes(_episodes(db, user, runs), settings.memory_dream_input_chars)
-                selected = {e.run_id for e in episodes}
-                runs = [r for r in runs if r.id in selected]
-                work = {r.id: db.get(MemoryWorkItem, r.id) for r in runs}
-                cached = all(w is not None and w.state == "pending" for w in work.values())
-                facts = [f for w in work.values() if w for f in w.candidates or []] if cached else None
-                active = [e for e in _active(memory["entries"]) if e.get("project_id") == project_id]
-                before = memory
-                contexts = []
-                context_chars = max(25, 1000 // max(1, len(runs)))
-                for source in runs:
-                    if source.conversation_id:
-                        previous = db.scalar(
-                            select(Run)
-                            .where(
-                                Run.user_id == user.id,
-                                Run.conversation_id == source.conversation_id,
-                                Run.created_at < source.created_at,
-                                Run.status.in_(TERMINAL),
-                                Run.superseded_by_run_id.is_(None),
-                            )
-                            .order_by(Run.created_at.desc(), Run.id.desc())
-                            .limit(1)
-                        )
-                        from ..api.source_lifecycle import invalid_sources_query
+            now = utcnow()
+            changed = db.execute(
+                update(MemoryDreamRun)
+                .where(
+                    MemoryDreamRun.id == run_id,
+                    MemoryDreamRun.status.in_(("pending", "running")),
+                    or_(MemoryDreamRun.claimed_until.is_(None), MemoryDreamRun.claimed_until < now),
+                )
+                .values(status="running", claim_token=token, claimed_until=now + timedelta(minutes=10), started_at=now)
+            ).rowcount
+            db.commit()
+            return bool(changed)
 
-                        invalid = previous and db.scalar(
-                            select(Run.id).where(Run.id == previous.id, Run.id.in_(invalid_sources_query(user.id)))
-                        )
-                        if previous and not invalid and run_permissions(db, previous)["read"] and run_project(db, previous) == project_id:
-                            contexts.append(
-                                {
-                                    "run_id": source.id,
-                                    "user_said": _source_text(db, previous)[:context_chars],
-                                    "assistant_replied": (previous.summary or "")[:context_chars],
-                                }
-                            )
-                uid = user.id
-                db.commit()  # Crucial: no SQL writer or user lock crosses either model await.
+    if not await asyncio.to_thread(claim):
+        return
+    try:
 
+        def prepare():
+            with SessionLocal() as db:
+                run = db.get(MemoryDreamRun, run_id)
+                user = db.get(User, run.user_id)
+                if not user or user.disabled_at:
+                    raise DreamError("账号不可用")
+                with user_critical_section(db, user.id):
+                    db.refresh(user)
+                    memory = _memory_view(user)
+                    if not memory["enabled"] or not memory["auto_save"] or not dream_settings(user).enabled:
+                        _finish(db, run, "skipped", journal="自动记忆已关闭")
+                        return
+                    runs = _new_runs(db, user.id, _last_success(db, user.id), utcnow())
+                    if not runs:
+                        _finish(db, run, "skipped", journal="没有新的对话")
+                        return
+                    # A batch never combines evidence from different projects.
+                    project_id = run_project(db, runs[0])
+                    runs = [r for r in runs if run_project(db, r) == project_id]
+                    pending = [r for r in runs if (item := db.get(MemoryWorkItem, r.id)) is not None and item.state == "pending"]
+                    if pending:
+                        runs = pending
+                    episodes = _fit_episodes(_episodes(db, user, runs), settings.memory_dream_input_chars)
+                    selected = {e.run_id for e in episodes}
+                    runs = [r for r in runs if r.id in selected]
+                    work = {r.id: db.get(MemoryWorkItem, r.id) for r in runs}
+                    cached = all(w is not None and w.state == "pending" for w in work.values())
+                    facts = [f for w in work.values() if w for f in w.candidates or []] if cached else None
+                    active = [e for e in _active(memory["entries"]) if e.get("project_id") == project_id]
+                    before = memory
+                    contexts = []
+                    context_chars = max(25, 1000 // max(1, len(runs)))
+                    for source in runs:
+                        if source.conversation_id:
+                            previous = db.scalar(
+                                select(Run)
+                                .where(
+                                    Run.user_id == user.id,
+                                    Run.conversation_id == source.conversation_id,
+                                    Run.created_at < source.created_at,
+                                    Run.status.in_(TERMINAL),
+                                    Run.superseded_by_run_id.is_(None),
+                                )
+                                .order_by(Run.created_at.desc(), Run.id.desc())
+                                .limit(1)
+                            )
+                            from ..api.source_lifecycle import invalid_sources_query
+
+                            invalid = previous and db.scalar(
+                                select(Run.id).where(Run.id == previous.id, Run.id.in_(invalid_sources_query(user.id)))
+                            )
+                            if (
+                                previous
+                                and not invalid
+                                and run_permissions(db, previous)["read"]
+                                and run_project(db, previous) == project_id
+                            ):
+                                contexts.append(
+                                    {
+                                        "run_id": source.id,
+                                        "user_said": _source_text(db, previous)[:context_chars],
+                                        "assistant_replied": (previous.summary or "")[:context_chars],
+                                    }
+                                )
+                    uid = user.id
+                    db.commit()  # Crucial: no SQL writer or user lock crosses either model await.
+            return user, runs, episodes, facts, active, before, contexts, project_id, uid
+
+        snapshot = await asyncio.to_thread(prepare)
+        if snapshot is None:
+            return
+        user, runs, episodes, facts, active, before, contexts, project_id, uid = snapshot
         usage = {}
         model = settings.memory_dream_model or get_catalog().default_id()
         context = dream_call.set((run_id, token))
@@ -817,26 +841,31 @@ async def process_dream(run_id: str) -> None:
                 facts, usage, model = await _extract(episodes, active, user)
                 for fact in facts:
                     fact["project_id"] = project_id
-                with SessionLocal() as db:
-                    with user_critical_section(db, uid):
-                        owner = db.get(User, uid, populate_existing=True)
-                        _validate_sources(db, owner, runs, project_id)
-                        facts = _screen(facts, tombstones_of(owner))
-                        _check_claim(db, run_id, token)
-                        for source in runs:
-                            item = db.get(MemoryWorkItem, source.id)
-                            if item is None:
-                                item = MemoryWorkItem(run_id=source.id, user_id=uid)
-                            item.candidates = [f for f in facts if source.id in f.get("evidence_run_ids", [])]
-                            item.state = "pending"
-                            episode = next(e for e in episodes if e.run_id == source.id)
-                            item.source_end = (
-                                json.loads(episode.digest).get("source_end", 0)
-                                if episode.digest.startswith('{"user_said":')
-                                else len(source.prompt)
-                            )
-                            db.add(item)
-                        db.commit()
+
+                def save_candidates():
+                    with SessionLocal() as db:
+                        with user_critical_section(db, uid):
+                            owner = db.get(User, uid, populate_existing=True)
+                            _validate_sources(db, owner, runs, project_id)
+                            screened = _screen(facts, tombstones_of(owner))
+                            _check_claim(db, run_id, token)
+                            for source in runs:
+                                item = db.get(MemoryWorkItem, source.id)
+                                if item is None:
+                                    item = MemoryWorkItem(run_id=source.id, user_id=uid)
+                                item.candidates = [f for f in screened if source.id in f.get("evidence_run_ids", [])]
+                                item.state = "pending"
+                                episode = next(e for e in episodes if e.run_id == source.id)
+                                item.source_end = (
+                                    json.loads(episode.digest).get("source_end", 0)
+                                    if episode.digest.startswith('{"user_said":')
+                                    else len(source.prompt)
+                                )
+                                db.add(item)
+                            db.commit()
+                    return screened
+
+                facts = await asyncio.to_thread(save_candidates)
             verdicts, judge_usage = await _judge(facts, active, user, model) if facts else ({}, {})
         finally:
             dream_call.reset(context)
@@ -893,157 +922,182 @@ async def process_dream(run_id: str) -> None:
                 outcomes.append({**outcome, "outcome": "duplicate", "reason": "已有相同记忆"})
             consumed.append(_hash(fact["text"]))
         plan = DreamPlan(changes=changes, journal=f"保留 {len(changes)} 组变更")
-        with SessionLocal() as db:
-            with user_critical_section(db, uid):
-                run = _check_claim(db, run_id, token)
-                owner = db.get(User, uid, populate_existing=True)
-                _validate_sources(db, owner, runs, project_id)
-                if _memory_view(owner)["revision"] != before["revision"]:
-                    raise DreamError("记忆已更新，稍后重试")
-                after = (
-                    _apply(db, owner, plan, {e.run_id: e for e in episodes}, expected_revision=before["revision"])
-                    if changes
-                    else _memory_view(owner)
-                )
-                for source in runs:
-                    item = db.get(MemoryWorkItem, source.id)
-                    if item is None:
-                        item = MemoryWorkItem(run_id=source.id, user_id=uid)
-                    item.candidates = [f for f in (item.candidates or []) if _hash(f["text"]) not in consumed]
-                    if item.candidates:
-                        item.state = "pending"
-                    else:
-                        item.source_offset = item.source_end or len(source.prompt)
-                        item.state = "done" if item.source_offset >= len(_source_text(db, source)) else "ready"
-                    item.updated_at = utcnow()
-                    db.add(item)
-                for outcome in outcomes:
-                    if guard.reject_reason(outcome.get("text", "")) or guard.reject_reason(outcome.get("quote", "")):
-                        outcome["text"] = ""
-                        outcome["quote"] = ""
-                db.flush()
-                pending_after = len(_new_runs(db, uid, None, utcnow(), limit=201))
-                counts = {key: sum(1 for x in outcomes if x["outcome"] == key) for key in ("added", "updated", "duplicate", "deferred")}
-                counts.update(
-                    {
-                        "candidates": len(outcomes),
-                        "invalidated": sum(len(c.supersedes) for c in changes),
-                        "filtered": sum(
-                            1
-                            for x in outcomes
-                            if x["outcome"] in {"unsupported", "low_confidence", "quote_mismatch", "guard", "tombstone", "capacity"}
-                        ),
+
+        def apply():
+            with SessionLocal() as db:
+                with user_critical_section(db, uid):
+                    run = _check_claim(db, run_id, token)
+                    owner = db.get(User, uid, populate_existing=True)
+                    _validate_sources(db, owner, runs, project_id)
+                    if _memory_view(owner)["revision"] != before["revision"]:
+                        raise DreamError("记忆已更新，稍后重试")
+                    after = (
+                        _apply(db, owner, plan, {e.run_id: e for e in episodes}, expected_revision=before["revision"])
+                        if changes
+                        else _memory_view(owner)
+                    )
+                    for source in runs:
+                        item = db.get(MemoryWorkItem, source.id)
+                        if item is None:
+                            item = MemoryWorkItem(run_id=source.id, user_id=uid)
+                        item.candidates = [f for f in (item.candidates or []) if _hash(f["text"]) not in consumed]
+                        if item.candidates:
+                            item.state = "pending"
+                        else:
+                            item.source_offset = item.source_end or len(source.prompt)
+                            item.state = "done" if item.source_offset >= len(_source_text(db, source)) else "ready"
+                        item.updated_at = utcnow()
+                        db.add(item)
+                    for outcome in outcomes:
+                        if guard.reject_reason(outcome.get("text", "")) or guard.reject_reason(outcome.get("quote", "")):
+                            outcome["text"] = ""
+                            outcome["quote"] = ""
+                    db.flush()
+                    pending_after = len(_new_runs(db, uid, None, utcnow(), limit=201))
+                    counts = {key: sum(1 for x in outcomes if x["outcome"] == key) for key in ("added", "updated", "duplicate", "deferred")}
+                    counts.update(
+                        {
+                            "candidates": len(outcomes),
+                            "invalidated": sum(len(c.supersedes) for c in changes),
+                            "filtered": sum(
+                                1
+                                for x in outcomes
+                                if x["outcome"] in {"unsupported", "low_confidence", "quote_mismatch", "guard", "tombstone", "capacity"}
+                            ),
+                        }
+                    )
+                    report = {
+                        "scope": {
+                            "project_id": project_id,
+                            "runs": len(runs),
+                            "episodes": len(episodes),
+                            "chars": sum(len(_user_part(e.digest)) for e in episodes),
+                            "trimmed_runs": sum(
+                                1
+                                for e in episodes
+                                if json.loads(e.digest).get("source_end", 0)
+                                < len(_source_text(db, next(r for r in runs if r.id == e.run_id)))
+                                if e.digest.startswith('{"user_said":')
+                            ),
+                        },
+                        "counts": counts,
+                        "candidates": outcomes,
+                        "pending_after": "200+" if pending_after > 200 else pending_after,
                     }
-                )
-                report = {
-                    "scope": {
-                        "project_id": project_id,
-                        "runs": len(runs),
-                        "episodes": len(episodes),
-                        "chars": sum(len(_user_part(e.digest)) for e in episodes),
-                        "trimmed_runs": sum(
-                            1
-                            for e in episodes
-                            if json.loads(e.digest).get("source_end", 0) < len(_source_text(db, next(r for r in runs if r.id == e.run_id)))
-                            if e.digest.startswith('{"user_said":')
-                        ),
-                    },
-                    "counts": counts,
-                    "candidates": outcomes,
-                    "pending_after": "200+" if pending_after > 200 else pending_after,
-                }
-                _finish(
-                    db,
-                    run,
-                    "applied",
-                    report=report,
-                    cursor_run_id=runs[-1].id,
-                    input_run_ids=[r.id for r in runs],
-                    plan=plan.model_dump(mode="json"),
-                    journal=plan.journal,
-                    before_memory=before,
-                    after_memory=after,
-                    token_usage=usage,
-                )
+                    _finish(
+                        db,
+                        run,
+                        "applied",
+                        report=report,
+                        cursor_run_id=runs[-1].id,
+                        input_run_ids=[r.id for r in runs],
+                        plan=plan.model_dump(mode="json"),
+                        journal=plan.journal,
+                        before_memory=before,
+                        after_memory=after,
+                        token_usage=usage,
+                    )
+
+        await asyncio.to_thread(apply)
     except Exception as exc:
         log.warning("memory dream stopped run=%s type=%s", run_id, type(exc).__name__)
-        with SessionLocal() as db:
-            run = db.get(MemoryDreamRun, run_id)
-            if run and run.claim_token == token:
-                _finish(db, run, "failed", error="记忆整理未完成，请稍后重试" if not isinstance(exc, DreamError) else str(exc)[:300])
+
+        def fail(error):
+            with SessionLocal() as db:
+                run = db.get(MemoryDreamRun, run_id)
+                if run and run.claim_token == token:
+                    _finish(
+                        db, run, "failed", error="记忆整理未完成，请稍后重试" if not isinstance(error, DreamError) else str(error)[:300]
+                    )
+
+        await asyncio.to_thread(fail, exc)
 
 
 async def process_dream_chain(run_id: str) -> None:
     """Process bounded successive batches, creating each only after the previous commit."""
-    with SessionLocal() as db:
-        first = db.get(MemoryDreamRun, run_id)
-        if not first:
-            return
-        limit = settings.memory_dream_manual_batches if first.trigger == "manual" else settings.memory_dream_auto_batches
-        remaining = max(1, limit - first.batch_index + 1) if first.trigger == "manual" else limit
+
+    def batch_limit():
+        with SessionLocal() as db:
+            first = db.get(MemoryDreamRun, run_id)
+            if not first:
+                return
+            limit = settings.memory_dream_manual_batches if first.trigger == "manual" else settings.memory_dream_auto_batches
+            remaining = max(1, limit - first.batch_index + 1) if first.trigger == "manual" else limit
+        return remaining, limit
+
+    limits = await asyncio.to_thread(batch_limit)
+    if limits is None:
+        return
+    remaining, limit = limits
     for batch in range(remaining):
         await process_dream(run_id)
         if batch + 1 == remaining:
             return
-        with SessionLocal() as db:
-            previous = db.get(MemoryDreamRun, run_id)
-            if not previous or previous.status != "applied":
-                return
-            with user_critical_section(db, previous.user_id):
-                owner = db.get(User, previous.user_id, populate_existing=True)
-                if not owner or not _new_runs(db, previous.user_id, None, utcnow(), limit=1):
+
+        def next_batch():
+            with SessionLocal() as db:
+                previous = db.get(MemoryDreamRun, run_id)
+                if not previous or previous.status != "applied":
                     return
-                if db.scalar(
-                    select(MemoryDreamRun.id)
-                    .where(MemoryDreamRun.user_id == previous.user_id, MemoryDreamRun.status.in_(("pending", "running")))
-                    .limit(1)
-                ):
-                    return
-                if previous.trigger == "cron":
-                    ds = dream_settings(owner)
-                    local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
-                    start, end = local_window(ds)
-                    if (
-                        not ds.enabled
-                        or not start <= local.hour * 60 + local.minute < end
-                        or local.date().isoformat() != previous.local_date
+                with user_critical_section(db, previous.user_id):
+                    owner = db.get(User, previous.user_id, populate_existing=True)
+                    if not owner or not _new_runs(db, previous.user_id, None, utcnow(), limit=1):
+                        return
+                    if db.scalar(
+                        select(MemoryDreamRun.id)
+                        .where(MemoryDreamRun.user_id == previous.user_id, MemoryDreamRun.status.in_(("pending", "running")))
+                        .limit(1)
                     ):
                         return
-                    used = len(
-                        list(
-                            db.scalars(
-                                select(MemoryDreamRun.id)
-                                .where(
-                                    MemoryDreamRun.user_id == previous.user_id,
-                                    MemoryDreamRun.local_date == previous.local_date,
-                                    MemoryDreamRun.trigger == "cron",
+                    if previous.trigger == "cron":
+                        ds = dream_settings(owner)
+                        local = utcnow().astimezone(ZoneInfo(ds.timezone or settings.memory_dream_default_timezone))
+                        start, end = local_window(ds)
+                        if (
+                            not ds.enabled
+                            or not start <= local.hour * 60 + local.minute < end
+                            or local.date().isoformat() != previous.local_date
+                        ):
+                            return
+                        used = len(
+                            list(
+                                db.scalars(
+                                    select(MemoryDreamRun.id)
+                                    .where(
+                                        MemoryDreamRun.user_id == previous.user_id,
+                                        MemoryDreamRun.local_date == previous.local_date,
+                                        MemoryDreamRun.trigger == "cron",
+                                    )
+                                    .limit(limit)
                                 )
-                                .limit(limit)
                             )
                         )
+                        if used >= limit:
+                            return
+                    row = MemoryDreamRun(
+                        id=new_id("dream"),
+                        user_id=previous.user_id,
+                        local_date=previous.local_date,
+                        timezone=previous.timezone,
+                        status="pending",
+                        trigger=previous.trigger,
+                        batch_index=previous.batch_index + 1,
+                        input_run_ids=[],
+                        before_memory={},
+                        after_memory={},
+                        token_usage={},
                     )
-                    if used >= limit:
+                    db.add(row)
+                    try:
+                        db.commit()
+                    except IntegrityError:
+                        db.rollback()
                         return
-                row = MemoryDreamRun(
-                    id=new_id("dream"),
-                    user_id=previous.user_id,
-                    local_date=previous.local_date,
-                    timezone=previous.timezone,
-                    status="pending",
-                    trigger=previous.trigger,
-                    batch_index=previous.batch_index + 1,
-                    input_run_ids=[],
-                    before_memory={},
-                    after_memory={},
-                    token_usage={},
-                )
-                db.add(row)
-                try:
-                    db.commit()
-                except IntegrityError:
-                    db.rollback()
-                    return
-                run_id = row.id
+                    return row.id
+
+        run_id = await asyncio.to_thread(next_batch)
+        if run_id is None:
+            return
 
 
 def _validate_sources(db: Session, owner: User, runs: list[Run], project_id: str | None) -> None:

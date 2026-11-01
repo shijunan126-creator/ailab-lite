@@ -594,7 +594,7 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
             db.add(row)
             db.commit()
             did = row.id
-        asyncio.run(service.process_dream(did))
+        c.portal.call(service.process_dream, did)
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"
             calls = list(db.scalars(select(ModelUsage).where(ModelUsage.job_id == did)))
@@ -697,7 +697,7 @@ def test_background_quota_refusal_never_dispatches_a_model(monkeypatch):
             db.add(row)
             db.commit()
             did = row.id
-        asyncio.run(service.process_dream(did))
+        c.portal.call(service.process_dream, did)
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "failed"
             from ailab_platform.models import ModelUsage
@@ -727,7 +727,7 @@ def test_concurrent_dream_dispatch_has_one_model_owner(monkeypatch):
         async def together():
             await asyncio.gather(service.process_dream(did), service.process_dream(did))
 
-        asyncio.run(together())
+        c.portal.call(together)
         assert calls == [1]
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"

@@ -184,7 +184,7 @@ def test_process_dream_applies_without_a_visible_run(monkeypatch) -> None:
         monkeypatch.setattr(service, "_extract", fake_extract)
         monkeypatch.setattr(service, "_judge", fake_judge)
         monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
-        asyncio.run(service.process_dream("dream_test"))
+        c.portal.call(service.process_dream, "dream_test")
         with SessionLocal() as db:
             run = db.get(MemoryDreamRun, "dream_test")
             assert run.status == "applied"
@@ -449,7 +449,7 @@ def test_manual_chain_respects_limit_after_recovery(monkeypatch):
     monkeypatch.setattr(service.settings, "memory_dream_manual_batches", 3)
     calls = []
 
-    async def finish_one(run_id):
+    def finish_sync(run_id):
         calls.append(run_id)
         with SessionLocal() as db:
             row = db.get(MemoryDreamRun, run_id)
@@ -458,6 +458,9 @@ def test_manual_chain_respects_limit_after_recovery(monkeypatch):
                 db.add(MemoryWorkItem(run_id=pending[0].id, user_id=row.user_id, state="done", candidates=[]))
             row.status = "applied"
             db.commit()
+
+    async def finish_one(run_id):
+        await asyncio.to_thread(finish_sync, run_id)
 
     monkeypatch.setattr(service, "process_dream", finish_one)
     with TestClient(app) as c:
@@ -477,7 +480,7 @@ def test_manual_chain_respects_limit_after_recovery(monkeypatch):
                 )
             )
             db.commit()
-        asyncio.run(service.process_dream_chain("dream_chain_resume"))
+        c.portal.call(service.process_dream_chain, "dream_chain_resume")
         assert len(calls) == 2
         with SessionLocal() as db:
             assert len(service._new_runs(db, uid, None, datetime.now(UTC))) == 2
