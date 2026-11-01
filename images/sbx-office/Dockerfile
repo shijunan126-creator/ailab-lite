@@ -18,7 +18,7 @@ FROM python:3.12-slim-trixie
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-impress-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
-      poppler-utils fonts-noto-cjk fontconfig tini libatomic1 libstdc++6 python3-uno \
+      poppler-utils fonts-noto-cjk fontconfig tini libatomic1 libstdc++6 python3-uno zip unzip \
  && rm -rf /var/lib/apt/lists/*
 
 # L3 Python 办公库（版本锁定）
@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir \
       python-pptx==1.0.2 python-docx==1.2.0 openpyxl==3.1.5 \
       matplotlib==3.10.7 pandas==2.3.3 pypdf==6.1.3
 
-# 字体映射：模型和模板里写“微软雅黑/宋体”，实际落到 Noto CJK
+# 字体映射：模型和模板里写“微软雅黑/宋体/仿宋”等，实际落到 Noto CJK；zip/unzip 供技能脚本打包 docx 等
 COPY images/sbx-office/fonts-local.conf /etc/fonts/local.conf
 RUN fc-cache -f
 

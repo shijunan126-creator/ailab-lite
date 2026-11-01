@@ -944,7 +944,9 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
         assert_extension(before, after)
     loads = [m for m in requests[-1]["messages"] if m.get("name") == "load_skill"]
     assert len(loads) == (2 if updated else 1)
-    assert platform.reads == [("v1", "first"), ("v2" if updated else "v1", "second")]
+    # Only a sandbox needs the files again; the carried text is never re-read just to be resent.
+    second = [("v2" if updated else "v1", "second")] if mode == "work" or updated else []
+    assert platform.reads == [("v1", "first"), *second]
     if mode == "work":
         assert (
             "/workspace/.ailab/skills/team-skill/SKILL.md",

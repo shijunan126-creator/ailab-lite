@@ -1469,7 +1469,7 @@ class AgentLoop:
         attempted.append(name)
         await self._checkpoint(run_id, turn)
 
-    async def _register_carried_skills(self, turn, run_id) -> None:
+    def _register_carried_skills(self, turn, run_id) -> None:
         # Each turn is a new run: a skill loaded earlier in the conversation is loaded for this run too. Without this it
         # was sent again every turn, and nothing that depends on the loaded skills (attestation, view warm-up) saw it.
         mode = (turn.run.get("options") or {}).get("mode", "work")
@@ -1483,8 +1483,8 @@ class AgentLoop:
         for name in sorted(_carried_skills(state.get("messages") or [], files, mode, identity="file_id")):
             if any(item["name"] == name for item in loaded):
                 continue
-            # Recheck file access and prepare this run's sandbox files without resending the instructions.
-            await self._read_personal(turn, run_id, name)
+            # The text stays in history; leasing a sandbox fetches this version's files through the run-bound read and
+            # installs them, warning instead of failing if the file is gone. Chat has no sandbox and needs no read.
             skill = turn.personal[name]
             loaded.append(
                 {
@@ -2210,7 +2210,7 @@ class AgentLoop:
             messages = state["messages"]
             turn.messages = messages
             if not state.get("skill_initialization_done"):
-                await self._register_carried_skills(turn, run_id)
+                self._register_carried_skills(turn, run_id)
                 selected = options.get("skills")
                 if selected is None:
                     selected = [{"name": skill, "title": options.get("skill_title") or skill}] if skill else []

@@ -1,8 +1,8 @@
 ## 2026-11-02 文件技能跨轮缓存与验收
 
-- 个人/广场技能与内置技能走不同版本标识：以 file_id + mode 确认完整成功 load_skill 结果仍在历史中，不能只比较名称或套用内置 version。复用模型正文时仍须按本 run 冻结输入重新鉴权并为新沙箱安装随包文件；新版本只追加新加载结果。旧结果缺 mode 时保守重载一次。见[矩阵](docs/progress/updates/2026-11-02-prefix-cache-matrix.md)。
+- 个人/广场技能与内置技能走不同版本标识：以 file_id + mode 确认完整成功 load_skill 结果仍在历史中，不能只比较名称或套用内置 version。复用时只登记到 loaded_skills，不在 run 开始时读文件：租沙箱时按 run 绑定读取并安装随包文件，读不到只警告；Chat 无沙箱不读。新版本只追加新加载结果。旧结果缺 mode 时保守重载一次。见[矩阵](docs/progress/updates/2026-11-02-prefix-cache-matrix.md)。
 - 不要把缓存比例当成纯结构测试：本轮完全相同正文连续复放，短 Chat 图片仍为4096/4350、个人技能4096/4312；没有旧消息差异也可能不到95%。大批新增输入、技能新版本与压缩新基底需分别报告。网关 TCP 测试的500ms期限在本机可使健康备用模型也超时，产生额外合法账本行；调整测试期限，不删账本或篡改生产重试。
-- 隔离真栈必须用分服务凭证；旧 shared token 的 legacy 主体不会获得文档渲染 owner。图片上传必须传 image/png 等真实 MIME，octet-stream 会按 binary 准备而被 Chat 拒绝。技能包发布成功只证明该扫描后端接受，stub 不代表 ClamAV；gongwen 在现有沙箱缺 zip/unzip 与标准字体，Noto 替代成品不等于标准公文。
+- 隔离真栈必须用分服务凭证；旧 shared token 的 legacy 主体不会获得文档渲染 owner。图片上传必须传 image/png 等真实 MIME，octet-stream 会按 binary 准备而被 Chat 拒绝。技能包发布成功只证明该扫描后端接受，stub 不代表 ClamAV；gongwen 当时缺 zip/unzip（#144 已加入 sbx-office 镜像，需重建）；标准公文字体有商业许可不进镜像，fontconfig 只把仿宋/楷体/小标宋映射到 Noto 供沙箱预览，文档仍写标准字体名，严格字体检查仍会失败。
 
 ## 2026-11-02 管理员平台技能（后端）
 
