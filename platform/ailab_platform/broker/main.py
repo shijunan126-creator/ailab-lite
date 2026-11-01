@@ -207,6 +207,16 @@ def view_workspace_file(lease_id: str, body: dict) -> dict:
         raise HTTPException(502, "view_unavailable") from exc
 
 
+@router.post("/leases/{lease_id}/view-warm", dependencies=[Depends(require_scope("sandbox:use"))])
+def warm_workspace_view(lease_id: str) -> dict:
+    from .workspace_view import warm
+
+    try:
+        return warm(get_manager(), lease_id)
+    except SandboxError as exc:
+        raise HTTPException(502, "view_unavailable") from exc
+
+
 @router.put("/leases/{lease_id}/files", dependencies=[Depends(require_scope("sandbox:use"))])
 def put_file(
     lease_id: str,

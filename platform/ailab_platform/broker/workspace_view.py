@@ -119,3 +119,25 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
             manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
         except Exception:
             pass
+
+
+def warm(manager, lease_id: str) -> dict:
+    """Start (or keep alive) the run's LibreOffice listener before its first view.
+
+    A cold listener made the first Office view ~15 s against ~3 s warm; the model spends longer than that
+    writing the file. The listener exits by itself after its idle window, so a warm that is not followed by a
+    view costs one idle LibreOffice process in the run's own sandbox for at most that window.
+    """
+    if not manager.provider.office_listener:
+        return {"ok": False, "skipped": True}
+    directory = f"/workspace/.ailab/view-warm-{uuid4().hex}"
+    script = f"{directory}/work_view_listener.py"
+    try:
+        manager.put_file(lease_id, script, LISTENER.read_bytes())
+        result = manager.exec(lease_id, f"timeout -k 2 8s python {script} --ensure {settings.render_work_listener_rss_bytes}", 12)
+        return {"ok": result.exit_code == 0}
+    finally:
+        try:
+            manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
+        except Exception:
+            pass

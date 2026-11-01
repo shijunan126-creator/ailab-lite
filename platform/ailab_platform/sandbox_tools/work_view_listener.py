@@ -90,3 +90,5 @@ def serve(rss_limit):
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "--serve":
         serve(int(sys.argv[2]))
+    elif len(sys.argv) == 3 and sys.argv[1] == "--ensure":
+        ensure(int(sys.argv[2]))

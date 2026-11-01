@@ -553,6 +553,9 @@ class AsyncBrokerClient(_Service):
         req = self._req("POST", f"/internal/leases/{lease_id}/view-workspace-file", timeout=80, json={"path": path, "pages": pages})
         return (await self._send(req)).json()
 
+    async def warm_workspace_view(self, lease_id: str) -> dict:
+        return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/view-warm", timeout=30))).json()
+
     async def copy_library_file(self, lease_id: str, file_id: str, path: str | None = None) -> dict:
         return (
             await self._send(
