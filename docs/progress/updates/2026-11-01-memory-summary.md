@@ -1,6 +1,6 @@
 # 记忆摘要、项目记忆模式与设置页 UI（2026-11-01，已合并并部署）
 
-worktree `/Users/michael/Developer/ailab-lite/.worktrees/memory-summary`，分支 `feat/memory-summary`，base `origin/main@4c6f092`。**全部改动未提交**（`git status` 约 40 项，含 `git rm` 的 `dream-panel.tsx`）。设计合同：[2026-11-01-memory-summary-project-scope.md](../../architecture/design/2026-11-01-memory-summary-project-scope.md)。
+worktree `/Users/michael/Developer/ailab-lite/.worktrees/memory-summary`，分支 `feat/memory-summary`，base `origin/main@4c6f092`，已合并为 `main@21f3300`（见下“合并与部署”）。设计合同：[2026-11-01-memory-summary-project-scope.md](../../architecture/design/2026-11-01-memory-summary-project-scope.md)。
 
 ## 用户原始指令（2026-11-01，要点照录）
 
