@@ -1007,4 +1007,4 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 ## 2026-11-01 PDF 预览依赖
 
 - `pdf-document.tsx` 的 worker 取自顶层 `pdfjs-dist`，API 取自 `react-pdf` 依赖的那份；两者版本不同 PDF.js 拒绝打开所有 PDF。`react-pdf` 精确锁定 pdfjs 版本，所以顶层 `pdfjs-dist` 也写成精确版本，只随 `react-pdf` 一起升级。Dependabot 会分别提两个 PR（如 #100、#101），单独合并任一都会坏，而 CI 没有浏览器打开 PDF 的用例（E2E 的 PDF 断言只在有 LibreOffice 时跑）；`tests/pdf-worker-version.test.mjs` 守这条。
-- `react-pdf` 11 默认 Suspense + Error Boundary；预览组件用 `suspense={false}` 保留原来的内联加载与错误提示。未配置 `cMapUrl`，使用预定义 CMap 的 CJK 字体（如 STSong + UniGB-UCS2-H）那一行不显示，4.8/6.3 一样，是既有缺口。
+- `react-pdf` 11 默认 Suspense + Error Boundary；预览组件用 `suspense={false}` 保留原来的内联加载与错误提示。PDF.js 的 CMap、标准字体、wasm 解码器和 ICC 由 `app/pdfjs/[version]/[kind]/[name]` 从已安装的 `pdfjs-dist` 提供（standalone 靠 `outputFileTracingIncludes` 带上）；缺了它们，STSong + UniGB-UCS2-H（reportlab 中文 PDF 常用）那行空白、JPEG2000 图片空白，只有控制台警告。
