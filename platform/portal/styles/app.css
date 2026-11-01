@@ -461,7 +461,9 @@ button.att-name { min-height: 0; padding: 0; font-weight: 400; color: inherit; t
 /* Management pages (技能/定时任务/资料库/记忆): one frame. Title and the page's main actions on one line; sections are a
    title with its count and actions above a quiet list; a row is icon, title, one muted line, then ⋯ and the switch at
    the far end. Clicking a row opens it, so secondary actions live in the ⋯ menu instead of a row of text links. */
-.page.mpage { max-width: 760px; padding: 40px 24px 96px; }
+.page.mpage { max-width: 840px; padding: 40px 24px 96px; }
+/* the library is a table of files: it takes the width a desktop offers */
+.page.mpage.page-library { max-width: 1120px; }
 .mpage-head { display: flex; align-items: center; gap: 8px; min-height: 40px; margin-bottom: 28px; }
 .mpage-head h1 { font-size: var(--text-xl); font-weight: 650; margin-right: auto; }
 .mpage-head .hint { font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
@@ -557,3 +559,13 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
   .modal-scrim:has(.memory-dialog) { padding: 0; }
   .modal.memory-dialog { height: 100dvh; border-radius: 0; border: 0; }
 }
+
+/* 技能 page: 我的技能 / 技能广场; the square is a grid of official skills to add */
+.mpage-tabs { margin: -12px 0 24px; }
+.market-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.market-card { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--background); }
+.market-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.market-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-ui); font-weight: 600; }
+.market-desc { flex: 1; margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.market-error { margin: 0; color: var(--destructive); font-size: var(--text-xs); }
+.market-add { align-self: flex-end; gap: 4px; }

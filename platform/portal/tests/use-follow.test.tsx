@@ -85,3 +85,57 @@ test("a gap of more than a screen and a half is closed at once", () => {
   grow(5000);
   assert.equal(el.scrollTop, 5600);
 });
+
+test("a new answer is followed until its start reaches the top, then the view stays", () => {
+  const { el, grow } = box(1000);
+  el.scrollTop = 600;
+  const { result } = renderHook(() => useFollow({ current: el }));
+  act(() => result.current.content(document.createElement("div")));
+  result.current.stopAt(() => 800); // the answer's start sits at the top when scrollTop is 800
+  grow(100); // still short: the bottom comes first
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 700);
+  grow(600);
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 800);
+  grow(2000); // far below, but the answer is read from its start
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 800);
+  assert.equal(result.current.following.current, true);
+});
+
+test("scrolling to the bottom past the stop sticks to the bottom again", () => {
+  const { el, grow } = box(1000);
+  el.scrollTop = 600;
+  const { result } = renderHook(() => useFollow({ current: el }));
+  act(() => result.current.content(document.createElement("div")));
+  result.current.stopAt(() => 700);
+  grow(1000);
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 700);
+  el.scrollTop = 1000; // somewhere in the answer: nothing pulls the reader
+  result.current.onScroll(scrollEvent(el));
+  grow(100);
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 1000);
+  el.scrollTop = 1700; // the reader reaches the bottom
+  result.current.onScroll(scrollEvent(el));
+  grow(100);
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 1800);
+});
+
+test("a short answer keeps its stop when the reader scrolls up and back down", () => {
+  const { el, grow } = box(1000);
+  el.scrollTop = 600;
+  const { result } = renderHook(() => useFollow({ current: el }));
+  act(() => result.current.content(document.createElement("div")));
+  result.current.stopAt(() => 800);
+  el.scrollTop = 300;
+  result.current.onScroll(scrollEvent(el));
+  el.scrollTop = 600;
+  result.current.onScroll(scrollEvent(el));
+  grow(1000);
+  for (let i = 0; i < 40; i++) tick();
+  assert.equal(el.scrollTop, 800);
+});

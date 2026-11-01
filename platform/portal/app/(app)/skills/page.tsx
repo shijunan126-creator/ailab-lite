@@ -9,6 +9,7 @@ import RowMenu, { RowAction } from "../../../components/row-menu";
 import { skillIcon } from "../../../components/chat/composer";
 import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
 import DraftEditor from "../../../components/skills/draft-editor";
+import Market from "../../../components/skills/market";
 import { isLocked, SCANNING, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
 import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, Skill, SkillDraft, skillKind } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
@@ -129,7 +130,11 @@ function DraftRow({ d, onOpen, onDiscard }: { d: SkillDraft; onOpen: () => void;
   );
 }
 
+const TABS = [["mine", "我的技能"], ["market", "技能广场"]] as const;
+type Tab = (typeof TABS)[number][0];
+
 export default function SkillsPage() {
+  const [tab, setTab] = useState<Tab>("mine");
   const [storage, setStorage] = useState<{ used_bytes: number; limit_bytes: number; available_bytes: number } | null>(null);
   const [skills, setSkills] = useState<Skill[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -159,8 +164,10 @@ export default function SkillsPage() {
     scans.current = new AbortController();
     load();
     // a link from a notification or another page: /skills?draft=sd_…
-    const wanted = new URLSearchParams(window.location.search).get("draft");
+    const query = new URLSearchParams(window.location.search);
+    const wanted = query.get("draft");
     if (wanted) setDraft(wanted);
+    else if (query.get("tab") === "market") setTab("market");
     return () => { disposed.current = true; generation.current++; scans.current?.abort(); };
   }, [load]);
 
@@ -280,6 +287,14 @@ export default function SkillsPage() {
   const personal = (skills || []).filter((s) => skillKind(s) === "personal");
   const openDrafts = (drafts || []).filter((d) => d.status !== "confirmed" && d.status !== "discarded");
 
+  function go(next: Tab) {
+    setTab(next);
+    const url = new URL(window.location.href);
+    if (next === "mine") url.searchParams.delete("tab");
+    else url.searchParams.set("tab", next);
+    window.history.replaceState(window.history.state, "", url.pathname + url.search);
+  }
+
   return (
     <main className="page mpage">
       <div className="mpage-head">
@@ -292,7 +307,16 @@ export default function SkillsPage() {
         </button>
         <input ref={picker} type="file" accept=".md,.zip" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
       </div>
+      <div className="tabs mpage-tabs" role="tablist">
+        {TABS.map(([key, label]) => (
+          <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""} onClick={() => go(key)}>
+            {label}
+          </button>
+        ))}
+      </div>
       {error ? <div className="alert error" style={{ marginBottom: 12 }}>{error}</div> : null}
+
+      {tab === "market" ? <Market onAdded={(fileId, title) => settle(fileId, title)} /> : <>
 
       {openDrafts.length ? (
         <section className="msection" aria-label="技能草稿">
@@ -358,6 +382,7 @@ export default function SkillsPage() {
           )}
         </div>
       </section>
+      </>}
       {editing ? (
         <SkillEditor target={editing} onClose={() => setEditing(null)} onSaved={saved} onCustomize={(s) => openDraft(s)} />
       ) : null}

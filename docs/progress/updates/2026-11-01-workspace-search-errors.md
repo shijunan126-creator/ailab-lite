@@ -33,4 +33,4 @@ PPT Run 中首个四页 `[1,2,4,5]` 成功，随后 9 次失败涉及四页、�
 - 未运行浏览器或本机 Portal build（无 Portal 改动）；CI 按既定流程运行。未连接业务 DB 跑测试；现场 DB 仅只读查询。未部署。
 - 无新依赖、后台任务、数据库查询或迁移；成功路径增加常数次响应结构检查，失败路径只处理有界 stderr 尾部，并新增一个临时恢复子目录。渲染与网络资源限制保持原值。临时文件和原始输出仅在仓库外，调查结束清理。
 
-PR：[后端修复 #141](https://github.com/shijunan126-creator/ailab-lite/pull/141)，等待最终 CI，绿后 squash。仅测试夹具与文档在最终全套后调整，未再改产品代码。
+PR：[后端修复 #141](https://github.com/shijunan126-creator/ailab-lite/pull/141)，已 squash 为 `1d3d8d5bcd2ffb2cd74dba71ff18ee7fa79e8a87`（head `9ee93bb`）。执行 `gh pr merge --auto` 时仓库没有必需检查，GitHub 立即合并；当时仍有 CI 运行，未满足用户“绿后合并”的条件。当前 6 项通过、SQLite/PG/E2E 3 项运行中，最终结果待接续核对。此次提前合并已明确告知用户；未部署。仅测试夹具与文档在最终全套后调整，未再改产品代码。
