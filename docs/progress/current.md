@@ -1,3 +1,10 @@
+## 工作文件查看与搜索错误语义（2026-11-01）
+
+- 分支 `t3/workspace-search-errors`，base `origin/main@21f3300`；用户授权后端调查、修复、PR、CI 绿后 squash 合并，明确不部署。其他交接保持原范围。
+- 已确认：新闻会话 6 次搜索被记为成功空结果，同期 SearXNG 多引擎网络超时；现已恢复（现场同参数探针 42 条、无失败引擎）。修复 HTTP 200 中的失败信号识别，保留真正空结果和部分成功结果。
+- PPT：用户追加授权真模型后，从 checkpoint 恢复首次失败规格，复现并抓到 RSS ceiling 在导出中途终止 LO、冷回退复用中止导出目录导致 exit 0 却无 PDF。修复为全新输出命名空间恢复，保留内存上限；真模型八组查看与补充 12 次调用全通过，含实际 bridge disposed 后恢复成功。错误码安全贯穿模型与事件。
+- 验证、局限与后续见[记录](updates/2026-11-01-workspace-search-errors.md)。下一步：完成本轮检查与 PR；合并后等待用户另行授权部署，其他范围不自动开展。未修改 Portal，未部署。
+
 # 记忆摘要与项目记忆模式：交接（2026-11-01，进行中）
 
 - 分支 `feat/memory-summary`（worktree `.worktrees/memory-summary`），base `origin/main@4c6f092`，**全部改动未提交**。用户授权：设计实施、PR、merge、最终部署；后端实现、测试与部署交给 Codex（gpt-6.1-sol medium），质量由 Claude 最终把关（美观、无 bug）。用户原始指令、已完成内容、验证与临时栈见[本轮记录](updates/2026-11-01-memory-summary.md)，设计见 [design](../architecture/design/2026-11-01-memory-summary-project-scope.md)，陷阱见 HANDOFF 顶部。
