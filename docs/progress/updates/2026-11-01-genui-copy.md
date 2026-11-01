@@ -24,6 +24,11 @@
 - `npm test`（含新增 `tests/genui-image.test.tsx` 9 项）与 `npm run build` 通过。
 - 生产构建 + Playwright（Chromium），临时展示页已删除：浅/深色悬停位置、复制图片读回 PNG、下载文件名、块内表格悬停只显示表格复制、Markdown/GenUI/Compare 表格剪贴板读回 HTML + Markdown、代码复制、图片中不含任何操作按钮；手机 390 宽触屏：点表格只显示表格复制、点指标只显示块操作、点外部全部隐藏；无页面错误。
 
+## 合并与部署
+
+- PR #135 CI 9 项（含 E2E、SQLite/PG 全套）通过，squash 合并为 `main@8890338`。
+- 部署完整 `main@8890338` 到 AILab-local：后端与 Portal 镜像 `release-8890338`，迁移 0043→0045，服务均 healthy，Portal 200；按约定未做部署后验收。
+
 ## 未测边界
 
 - Safari/Firefox 真机复制图片（依赖 ClipboardItem Promise）、iOS 下载行为；Excel/Word 实际粘贴只验证了剪贴板内容，未在 Office 里粘贴。
