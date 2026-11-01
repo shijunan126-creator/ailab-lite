@@ -242,7 +242,10 @@ def start_run(
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
-    with nullcontext() if locked else user_critical_section(db, user.id):
+    from .brand import brand_lock
+
+    # Registry selection must stay serialized with company-template deletion until commit.
+    with brand_lock(db) if template is not None else nullcontext(), nullcontext() if locked else user_critical_section(db, user.id):
         send_digest = None
         if client_send_id is not None:
             # Both send endpoints share the user lock; a queued identity cannot become a second direct call.
@@ -330,6 +333,9 @@ def start_run(
             conversation.model = model_id
             conversation.updated_at = utcnow()
         db.flush()
+        from .asset_refs import register_assets
+
+        register_assets(db, run)
         from .document_sources import bind_refs
 
         bind_refs(db, "run_prompt", run.id, inputs, run.id)

@@ -390,6 +390,59 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
     return removed
 
 
+def unused_asset_query(cutoff):
+    from ..models import RunAssetRef, Template
+
+    live_template = select(Template.id).where(Template.file_id == FileObject.id, Template.deleted_at.is_(None)).exists()
+    recent_deletion = select(Template.id).where(Template.file_id == FileObject.id, Template.deleted_at >= cutoff).exists()
+    refs = select(RunAssetRef.id).where(RunAssetRef.file_id == FileObject.id).exists()
+    return select(FileObject).where(
+        FileObject.purpose.in_(["template", "brand"]),
+        FileObject.purged_at.is_(None),
+        FileObject.created_at < cutoff,
+        (FileObject.purge_at.is_(None) | (FileObject.purge_at <= cutoff + timedelta(seconds=settings.reaper_grace_seconds))),
+        ~refs,
+        ~live_template,
+        ~recent_deletion,
+    )
+
+
+def purge_unused_assets(db: Session, now: datetime) -> int:
+    from ..library import delete_file_rows
+    from ..models import Template
+    from .brand import KINDS, brand_lock, brand_settings
+
+    cutoff = now - timedelta(seconds=settings.reaper_grace_seconds)
+    query = unused_asset_query(cutoff)
+
+    # Current and pending assets are immutable but still selectable; exclude before LIMIT to avoid starvation.
+    def current_ids():
+        value = brand_settings(db)
+        return [fid for fid in [*(value.get(k) for k in KINDS.values()), *(value.get("pending") or {}).values()] if fid]
+
+    protected = current_ids()
+    candidates = db.scalars(
+        query.where(FileObject.id.not_in(protected)).order_by(FileObject.created_at, FileObject.id).limit(settings.gc_batch_size)
+    ).all()
+    removed = 0
+    for candidate in candidates:
+        company = db.scalar(select(Template.id).where(Template.file_id == candidate.id, Template.scope == "company").limit(1))
+        lock = brand_lock(db) if company or candidate.purpose == "brand" else user_critical_section(db, candidate.user_id)
+        with lock:
+            due = db.scalar(
+                query.where(FileObject.id == candidate.id, FileObject.id.not_in(current_ids())).execution_options(populate_existing=True)
+            )
+            if due is None:
+                db.rollback()
+                continue
+            # Tombstone preserves the registry FK while freeing quota and all derived/original objects.
+            keys = delete_file_rows(db, [due], tombstone=True)
+            db.commit()
+            removed += 1
+        delete_storage_objects(keys)
+    return removed
+
+
 def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> dict[str, int]:
     storage = storage or get_storage()
     now = now or datetime.now(UTC)
@@ -404,6 +457,7 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
         ("events", lambda: purge_run_events(db, now)),
         ("conversation", lambda: purge_deleted_conversations(db, now)),
         ("trash", lambda: purge_expired_trash(db, now)),
+        ("assets", lambda: purge_unused_assets(db, now)),
         ("cleanup", lambda: drain_object_deletions(db, storage)),
     ):
         try:

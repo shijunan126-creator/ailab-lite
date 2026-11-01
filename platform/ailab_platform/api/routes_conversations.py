@@ -337,8 +337,12 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     work_ms=old.work_ms,
                     result=result,
                 )
+                new.runtime_meta = {k: deepcopy(v) for k, v in (old.runtime_meta or {}).items() if k in {"brand", "brand_version"}}
                 db.add(new)
                 db.flush()
+                from .asset_refs import register_assets
+
+                register_assets(db, new)
                 mapping[old.id] = new
                 if old.id in invalid_sources:
                     new.runtime_meta = {**(new.runtime_meta or {}), "source_invalidated": True}
