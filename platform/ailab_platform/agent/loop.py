@@ -251,6 +251,7 @@ class _Turn:
         self.lease_ready = False
         self.lease_lock = asyncio.Lock()
         self.lease_task: asyncio.Task | None = None  # a sandbox taken ahead of the first tool that needs it
+        self.lease_used = False  # a tool asked for the sandbox (an early one may end the turn unused)
         self.artifacts: list[dict] = []
         self.delivered: dict[str, int] = {}  # sandbox path -> size at delivery (or at restore)
         self.previews: dict[str, dict] = {}  # filename -> latest preview manifest
@@ -516,9 +517,11 @@ class AgentLoop:
                 {"message": f"{len(pending) - settings.max_auto_deliver_files} more files in outputs were not delivered"},
             )
 
-    async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False, wait: bool = True) -> str:
+    async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False, early: bool = False) -> str:
+        """The turn's sandbox. ``early``: taken ahead of need, never queued, and not yet used by any tool."""
+        turn.lease_used = turn.lease_used or not early
         async with turn.lease_lock:  # a lease taken ahead of need may still be starting when the first tool asks
-            return await self._ensure_lease_locked(turn, run_id, required=required, wait=wait)
+            return await self._ensure_lease_locked(turn, run_id, required=required, wait=not early)
 
     async def _ensure_lease_locked(self, turn: _Turn, run_id: str, *, required: bool, wait: bool) -> str:
         if turn.lease_id and turn.lease_ready:
@@ -586,7 +589,7 @@ class AgentLoop:
 
     async def _prepare_lease(self, turn: _Turn, run_id: str) -> None:
         try:
-            await self._ensure_lease(turn, run_id, wait=False)
+            await self._ensure_lease(turn, run_id, early=True)
         except Exception:
             log.info("early sandbox for run=%s not taken; the first tool takes it", run_id, exc_info=True)
 
@@ -1756,7 +1759,7 @@ class AgentLoop:
             raise BudgetPause(CAPACITY_NOTE)
 
     async def _workspace_checkpoint(self, run_id: str, turn: _Turn, *, force=False) -> None:
-        if not turn.lease_id:
+        if not turn.lease_id or not turn.lease_used:  # an unused early sandbox holds the restored workspace unchanged
             return
         state = self._states[run_id]
         when = (state.get("workspace") or {}).get("saved_at", 0)
@@ -2377,7 +2380,7 @@ class AgentLoop:
             genui_report = inspect_answer(state["final_summary"] or "", max_block_chars=settings.genui_max_block_chars)
             if genui_report["blocks"]:
                 result["genui"] = {"format": FORMAT, "catalog": CATALOG_VERSION, "blocks": genui_report["blocks"]}
-            if turn.lease_id:
+            if turn.lease_id and turn.lease_used:  # an unused early sandbox ends like a turn without one
                 await self._stop_background(run_id, turn)
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
