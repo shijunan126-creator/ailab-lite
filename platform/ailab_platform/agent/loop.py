@@ -1548,7 +1548,18 @@ class AgentLoop:
                         run_id, self.broker.view_workspace_file(lease_id, call.arguments["path"], call.arguments.get("pages"))
                     )
                 except ClientError as exc:
-                    raise ToolError("无法查看工作文件：请检查路径、页数、大小和格式，或稍后重试") from exc
+                    from ..contracts.workspace_view import VIEW_ERRORS
+
+                    try:
+                        code = json.loads(exc.body).get("detail")
+                    except (ValueError, AttributeError):
+                        code = None
+                    reason = (
+                        VIEW_ERRORS.get(code, VIEW_ERRORS["view_unavailable"]) if isinstance(code, str) else VIEW_ERRORS["view_unavailable"]
+                    )
+                    raise ToolError(
+                        f"无法查看工作文件：{reason}（{code if isinstance(code, str) and code in VIEW_ERRORS else 'view_unavailable'}）"
+                    ) from exc
                 state = self._states[run_id]
                 additional = sum(len(item) for item in viewed["images"])
                 if (

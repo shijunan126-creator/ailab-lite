@@ -93,7 +93,7 @@ def test_workspace_pdf_renders_requested_pages_and_rejects_large_input(tmp_path)
     result = view(manager, lease, "/workspace/outputs/two.pdf", [2, 1])
     assert result["pages"] == [2, 1] and len(result["images"]) == 2
     manager.exec(lease, "truncate -s 22000000 /workspace/outputs/large.pdf", 5)
-    with pytest.raises(ValueError, match="view_failed"):
+    with pytest.raises(ValueError, match="input_limit"):
         view(manager, lease, "/workspace/outputs/large.pdf", None)
     manager.close()
 
@@ -305,3 +305,92 @@ def test_follow_up_office_turn_takes_its_sandbox_and_warms_during_the_first_mode
     asyncio.run(AgentLoop(platform=platform, broker=broker, llm=third).process("third", attempt_id="a3"))
     assert [status for status, _ in platform.statuses].count("succeeded") == 3
     assert broker.leases == leases + 1 and broker.snapshots == snapshots
+
+
+@pytest.mark.parametrize("code", ["page_out_of_range", "input_limit", "conversion_failed", "output_limit", "/private/secret"])
+def test_workspace_view_preserves_only_safe_renderer_errors(tmp_path, monkeypatch, code):
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("view-errors")["lease_id"]
+    execute = manager.exec
+
+    def fail(lid, cmd, timeout):
+        return ExecResult(1, "", f"workspace_view_error:{code}\n", 0) if "timeout -k" in cmd else execute(lid, cmd, timeout)
+
+    monkeypatch.setattr(manager, "exec", fail)
+    try:
+        with pytest.raises(ValueError, match="^" + ("view_failed" if code.startswith("/") else code) + "$"):
+            view(manager, lease, "/workspace/a.pptx", [7, 8])
+    finally:
+        manager.close()
+
+
+@pytest.mark.parametrize(
+    "detail,expected",
+    [
+        ("page_out_of_range", "超出文件总页数"),
+        ("/private/secret", "暂不可用"),
+        ({"secret": "x"}, "暂不可用"),
+    ],
+)
+def test_view_tool_reports_safe_reason_to_model_and_event(monkeypatch, detail, expected):
+    import asyncio
+    import json
+
+    from ailab_platform.agent.loop import AgentLoop
+    from ailab_platform.catalog import ModelSpec, get_catalog
+    from ailab_platform.clients import ClientError
+    from ailab_platform.llm import LLMResponse, ToolCall
+    from tests.test_agent_loop import FakeBroker, FakePlatform, ScriptedLLM
+
+    monkeypatch.setitem(get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools", "vision"]))
+
+    class Broker(FakeBroker):
+        async def view_workspace_file(self, *args):
+            raise ClientError("POST", "/internal/private", 422, json.dumps({"detail": detail}))
+
+    model = ScriptedLLM(
+        [
+            LLMResponse(tool_calls=[ToolCall("view", "view_workspace_file", {"path": "/workspace/a.pptx"})]),
+            LLMResponse(content="done"),
+        ]
+    )
+    platform = FakePlatform()
+    asyncio.run(AgentLoop(platform=platform, broker=Broker(), llm=model).process("run_1", attempt_id="a"))
+    errors = [m["content"] for m in model.seen_messages[1] if m["role"] == "tool"]
+    assert any(expected in error for error in errors)
+    assert all("/private" not in error and "secret" not in error for error in errors)
+    assert any(kind == "agent.tool_result" and not data["ok"] and expected in data["error"] for kind, data in platform.events)
+
+
+def test_listener_interrupted_export_recovers_in_fresh_output_directory(tmp_path, monkeypatch):
+    import subprocess
+    from pathlib import Path
+
+    from ailab_platform.sandbox_tools import render_preview
+
+    source = tmp_path / "input.pptx"
+    source.write_bytes(b"pptx")
+    output = tmp_path / "output"
+    output.mkdir()
+    monkeypatch.setenv("AILAB_LO_LISTENER", "1")
+    monkeypatch.delenv("AILAB_LO_STRICT", raising=False)
+    calls = []
+
+    def convert(command, **kwargs):
+        calls.append(command)
+        if command[0] == "/usr/bin/python3":
+            (output / "export-state").write_text("interrupted UNO export")
+            (output / "input.pdf").write_bytes(b"partial PDF")
+            raise subprocess.CalledProcessError(1, command, stderr=b"Binary URP bridge disposed during call")
+        destination = Path(command[command.index("--outdir") + 1])
+        # LibreOffice may exit zero on an aborted export. Removing only input.pdf
+        # cannot make the interrupted export's output namespace safe to reuse.
+        if not (destination / "export-state").exists():
+            (destination / "input.pdf").write_bytes(b"complete PDF")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(render_preview.subprocess, "run", convert)
+    rendered = render_preview.soffice(source, "pdf", output)
+    assert rendered.read_bytes() == b"complete PDF"
+    assert rendered.parent != output
+    assert len(calls) == 2

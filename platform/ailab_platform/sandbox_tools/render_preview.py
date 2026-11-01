@@ -67,6 +67,11 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
         # A failed listener can retain a profile lock; the cold fallback must
         # use a fresh profile rather than forward to the broken instance.
         configured = None
+        # An interrupted UNO export can leave temporary/locked output state even
+        # after its target is unlinked. Recover in a fresh namespace; the caller
+        # owns outdir and cleans this directory with the rest of the render job.
+        outdir = Path(tempfile.mkdtemp(prefix="lo-recovery-", dir=outdir))
+        out = outdir / out.name
     else:
         configured = os.environ.get("AILAB_LO_PROFILE")
     profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))

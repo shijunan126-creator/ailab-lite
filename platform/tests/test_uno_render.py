@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -17,7 +18,8 @@ def test_listener_conversion_and_cold_fallback(tmp_path, monkeypatch, listener_f
         calls.append(command)
         if command[0] == "/usr/bin/python3" and listener_fails:
             raise render_preview.subprocess.CalledProcessError(1, command)
-        (tmp_path / "document.pdf").write_bytes(b"pdf")
+        target = Path(command[3]) if command[0] == "/usr/bin/python3" else Path(command[command.index("--outdir") + 1]) / "document.pdf"
+        target.write_bytes(b"pdf")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(render_preview.subprocess, "run", run)
