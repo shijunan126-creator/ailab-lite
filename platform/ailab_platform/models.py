@@ -7,7 +7,7 @@ internal API instead of importing this module.
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from sqlalchemy import (
@@ -15,6 +15,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     CheckConstraint,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -343,6 +344,7 @@ class RunEvent(Base):
 class FileObject(Base):
     __tablename__ = "files"
     __table_args__ = (
+        Index("ix_files_asset_gc", "purpose", "purged_at", "created_at", "id"),
         Index("ix_files_user_created", "user_id", "created_at"),
         Index("ix_files_user_sha", "user_id", "sha256", "status", "deleted_at", "purged_at"),
         Index("ix_files_status_created", "status", "created_at", "id"),
@@ -822,6 +824,10 @@ class ScheduledTask(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     schedule: Mapped[dict] = mapped_column(JSON)
     timezone: Mapped[str] = mapped_column(String(100))
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    recent_run_ids: Mapped[list] = mapped_column(JSON, default=list, server_default="[]")
+    failure_streak: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    paused_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -1077,3 +1083,15 @@ class OcrPageResult(Base):
     engine: Mapped[str] = mapped_column(String(80))
     backend: Mapped[str] = mapped_column(String(16))
     seconds: Mapped[float] = mapped_column(Float)
+
+
+class RunAssetRef(Base):
+    __tablename__ = "run_asset_refs"
+    __table_args__ = (
+        UniqueConstraint("run_id", "file_id", "kind", name="uq_run_asset_refs_run_file_kind"),
+        Index("ix_run_asset_refs_file", "file_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("rar"))
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    file_id: Mapped[str] = mapped_column(String(40))
+    kind: Mapped[str] = mapped_column(String(16))
