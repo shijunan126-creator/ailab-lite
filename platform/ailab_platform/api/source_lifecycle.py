@@ -183,6 +183,8 @@ def _drain_invalidation(db, file_id, limit):
     for run in runs:
         meta = dict(run.runtime_meta or {})
         meta["source_invalidated"] = True
+        for field in ("plan", "question", "file_dependency"):
+            meta.pop(field, None)
         workspace = meta.pop("workspace", None)
         if workspace and workspace.get("key"):
             schedule_object_deletion(db, workspace["key"], "file_source")

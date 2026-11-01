@@ -80,7 +80,7 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
                 Artifact.file_id,
                 literal("output"),
                 literal(0),
-                Artifact.role,
+                literal("library"),
                 literal(utcnow()),
             ).where(Artifact.file_id.in_(ids)),
         )

@@ -461,7 +461,7 @@ class Artifact(Base):
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("art"))
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
-    file_id: Mapped[str] = mapped_column(ForeignKey("files.id"))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id"), index=True)
     role: Mapped[str] = mapped_column(String(30), default="output")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 

@@ -67,6 +67,14 @@ def test_eleventh_version_keeps_tombstone_and_original_references(api):
     assert api.get(f"/v1/runs/{run['id']}").json()["artifacts"][0]["file_id"] == first["id"]
     assert api.get(f"/v1/runs/{run['id']}").json()["input_files"][0]["file_id"] == first["id"]
     assert api.post(f"/v1/files/{first['id']}/restore-version").status_code == 410
+    from ailab_platform.models import OutboxMessage
+
+    with SessionLocal() as db:
+        jobs = set(db.scalars(select(OutboxMessage.id)))
+    assert api.get(f"/v1/files/{first['id']}/preview").status_code == 410
+    assert api.get(f"/v1/files/{first['id']}/preview/text.txt").status_code == 410
+    with SessionLocal() as db:
+        assert set(db.scalars(select(OutboxMessage.id))) == jobs
 
 
 def test_restore_version_is_a_new_copy_and_history_does_not_change(api):

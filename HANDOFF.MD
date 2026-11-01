@@ -1016,3 +1016,5 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 资料库工具应取得用户锁之后刷新文件/会话再登记 agent_read，锁前读取会让删除在等待期间穿过。purge 后 file 任务重投需先判 done，不能在 render_waiting 计算中再解引用缺失 FileObject。
 - tombstone 保留 FileObject 行不代表 derived 对象还可留存：孤儿 GC 必须把 purged 行视为失效 owner，收敛迟到 Worker 输出。
 - 历史产物占位用现有 MessageFileRef 的 output 角色，必须排除在来源失效传播之外；删除产物不代表生成它的整轮输入失效。purge 前 INSERT SELECT 保留 byte-free 身份；fork 为占位生成独立消息身份。分享不能直接输出 Run.summary 绕过来源围栏，失效分叉也不能继续复制 previews/events 正文。
+- 原件孤儿扫描不能按 Run 不存在就删 runs/：会话 purge 后资料库产物仍合法。按路径中 file_id 查 FileObject，锁内复核精确 storage_key；扫描 uploads/ 的原件 GC 与 presign GC 用独立游标，避免两次推进共用 cursor 永远跳过交替页。purged 版本的 preview 入口必须先 410，不能重新排渲染任务。
+- 删除反向查 Artifact.file_id 原先无索引；0044 补 ix_artifacts_file_id。files.parent_id 的 ix_files_parent_id 已在0013创建，勿重复创建。result.artifacts 可能保留独立确认交付状态，不能整体替换为当前 Artifact 查询列表；只重写已确认删除的身份。
