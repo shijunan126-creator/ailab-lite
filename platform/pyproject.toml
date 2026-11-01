@@ -65,4 +65,5 @@ show_missing = true
 fail_under = 80
 
 [tool.setuptools.package-data]
+"ailab_platform" = ["market_skills/*/SKILL.md"]
 "ailab_platform.contracts.genui" = ["*.md", "*.json"]

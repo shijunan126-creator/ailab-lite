@@ -1,3 +1,11 @@
+# 技能广场精选内容（2026-11-01）
+
+- 分支 `t3/curated-office-skill-market`，base `origin/main@7f71d30`。本次授权：仅后端/内容实施、测试、一个 PR、CI 全绿后 squash merge；不改 Portal、不部署。Portal 重建由另一代理负责。
+- 已完成：八个纯 Markdown 办公业务技能、目录元数据、wheel package-data 与安装回归测试。验证与未测边界见[本轮记录](updates/2026-11-01-curated-skill-market.md)。
+- 下一步：完整 Python 验证结束后提 PR，等待 CI 并合并；保留其他任务原有边界。起始工作树附带的无关 Portal 提交已保留在 `preserve/market-original-portal-follow`，不进入本 PR。
+
+---
+
 # 记忆摘要与项目记忆模式：交接（2026-11-01，已合并并部署）
 
 - 分支 `feat/memory-summary`，base `origin/main@4c6f092`；[PR #137](https://github.com/shijunan126-creator/ailab-lite/pull/137) head `3af6da3` CI 9 项全绿，squash 为 `main@21f3300`。用户授权：设计实施、PR、merge、部署；后端实现、测试与部署由 Codex（gpt-6.1-sol medium），Claude 审查把关。指令、实现、验证与风险见[本轮记录](updates/2026-11-01-memory-summary.md)，设计见 [design](../architecture/design/2026-11-01-memory-summary-project-scope.md)。

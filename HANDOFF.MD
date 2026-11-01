@@ -1054,3 +1054,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 定时任务的跳过（上一轮未结束）必须排在“无人理会”判断之后才不会永远跳过：等待回复/中断超过 7 天直接按无人查看暂停。
 - API 事件循环上不能做阻塞工作（SQLAlchemy/SQLite、`user_critical_section` 的 RLock、存储 I/O）。SQLite 下会死锁：线程池里的同步请求持写锁（如 `fence_attempt` 的 UPDATE），事务要等依赖 teardown 关闭会话才释放，而 teardown 需要事件循环调度；此时协程在循环上等 SQLite，双方卡满 30 s busy timeout（CI 中 async `login` 与 `/internal/runs/{id}/memory` 撞上）。async 处理器和 lifespan 后台协程里的数据库/锁整段放进 `run_in_threadpool`/`asyncio.to_thread`，测试套件有守卫：在服务事件循环上执行 SQL 即失败。
 - 查询数预算测试若在 engine 上挂监听，只计调用线程的语句（`threading.get_ident()`），否则会算进前面测试遗留的后台循环。
+
+## 2026-11-01 技能市场打包
+
+- 市场目录属于 Python 分发资源：Dockerfile 的源码 COPY 能让源码镜像读到技能，但不能证明安装后的 wheel 含技能。新增 `market_skills/*/SKILL.md` 时须维护 `pyproject.toml` package-data，并实际检查 wheel；包须经 Worker 共用的 `skillfiles.inspect` 校验，个人技能名不能使用 `platform.`。
