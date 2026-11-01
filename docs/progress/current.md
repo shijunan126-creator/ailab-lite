@@ -20,7 +20,9 @@
 
 真实 DeepSeek 验收（详见 dated update “修复后复测”）：压缩调用曾因 `thinking`/`tool_choice` 改写模板零命中，已修复（`da98cbe`），复测 97–99%；PPT 96.6% 且流程通过；Chat 79% / Work 85% 的缺口来自每两轮强制压缩的测试设置与每轮新内容，非前缀缺陷。
 
-后续 PR #123 → `main@c6fefd3`（CI 全绿）：内置技能跨轮去重、Work 首次查看预热 listener（沙箱级首次查看 11.4 s → 1.3 s）；已由 Codex 增量部署到 AILab-local（只重建后端镜像，重启 api/agent/broker/worker，均 healthy），按约定未做部署后验证。用户要求后在部署环境复测：命中率达标；后续轮次首次查看仍 13 s，已在 `fix/work-view-warm-later-turns` 修复（run 启动时登记继承技能，延续 Office 工作区的 Work 轮提前取沙箱并预热）。
+后续 PR #123 → `main@c6fefd3`（CI 全绿）：内置技能跨轮去重、Work 首次查看预热 listener（沙箱级首次查看 11.4 s → 1.3 s）；已由 Codex 增量部署到 AILab-local（只重建后端镜像，重启 api/agent/broker/worker，均 healthy），按约定未做部署后验证。用户要求后在部署环境复测：命中率达标；后续轮次首次查看仍 13 s，PR #127 修复（run 启动时登记继承技能，延续 Office 工作区的 Work 轮提前取沙箱并预热）→ `main@af4b1b3`，CI 全绿。
+
+部署 `main@af4b1b3` 到 AILab-local（含 PR #125/#126 的 Portal PDF.js 升级）：重建后端共用镜像与 Portal，Office 复用，五应用 healthy。部署后实测：Work 3 轮 PPT 每轮首次查看 3.2/2.8/2.5 s（修复前后续轮 12.9/13.2 s），命中率 97.4%；GenUI 页面展开后重置高度 120→765→120 px；PDF.js cmaps/字体/wasm/icc 资源均可取。
 
 已知限制：DOCX 全页未达 2.5 s（PNG 光栅为主）；剩余页批次开始后的新页请求不插队；Worker 已领取的预览按优先级 FIFO，未按用户轮转（Broker 层有）。
 
@@ -28,7 +30,7 @@
 
 - 摘要是否遵守“不写入 recall 原文”；运行中途撤销的 recall 来源要到下一次 Run 启动才检测。
 - 真实 Docker 下多用户故障/恢复（Broker 重启、Worker 崩溃、LibreOffice 卡死）只在 mock 下测过；CPU 秒、真实 ClamAV 扫描耗时。
-- 部署环境已复测命中率（Work 去首调用 97.9%、Chat 96.0%）；Work 后续轮次首次查看提前预热的修复尚未在完整栈上测速（见 dated update “完整栈复测与后续轮次预热”）。
+- 提前取沙箱在沙箱满载（2 个）时的真实表现只在单测里覆盖（放弃预热、不排队）；只问答不改文件的 Office 续轮会多占一次沙箱与 LibreOffice 启动，未量化对并发用户的影响。
 
 ---
 
