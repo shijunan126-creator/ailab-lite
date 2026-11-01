@@ -1,3 +1,11 @@
+# 管理员平台技能与技能广场：交接（2026-11-02，进行中）
+
+- 分支 `feat/admin-platform-skills`（worktree `.worktrees/platform-skills`），base `origin/main@82ff828`。用户要求：删掉自写八个技能（#140 已关闭）；广场改放高 star、许可可再分发的办公技能；管理员可增删改平台技能（不含基础技能）并同步所有用户，未修改的随平台更新、修改过的不更新，可恢复默认；以后所有 agent 设计考虑前缀缓存（已写入 AGENTS.md，#142）。
+- 已完成：设计 [design](../architecture/design/2026-11-02-admin-platform-skills.md)；后端（Codex，迁移 0047）与 Portal（Claude），记录见[本轮记录](updates/2026-11-02-admin-platform-skills.md)。
+- 下一步：① 本分支全套检查后提 PR、CI 全绿后 merge；② 管理后台可用后按调研首批（gongwen 公文排版、公文写作、humanizer-zh、audit-xls、process-doc、financial-analyst，保留 LICENSE 与来源）导入并用真模型试用；③ 用户要求：完成后交 Codex 用真实模型测文件/图片/技能/压缩/多轮等场景的前缀缓存命中（目标 ≥95%），有问题修复。未授权部署。
+
+---
+
 # Portal 滚动锚定、页面宽度、技能广场：交接（2026-11-01）
 
 - 分支 `fix/composer-scroll-anchor`，base `origin/main@1d3d8d5`。用户本轮：前端由 Claude 做；后端 view_workspace_file 反复失败、联网搜索为空、广场目录内容交给 Codex（gpt-6.1-sol medium，各自 worktree/PR，不部署）。
