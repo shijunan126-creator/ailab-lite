@@ -259,7 +259,10 @@ def test_large_snapshot_view_query_budget_and_lookup_indexes(shared):
                 .limit(8),
                 "ix_users_",
             ),
-            (select(Artifact.id).where(Artifact.run_id.in_([first, parent]), Artifact.file_id == "f").limit(1), "ix_artifacts_run_id"),
+            (
+                select(Artifact.id).where(Artifact.run_id.in_([first, parent]), Artifact.file_id == "f").limit(1),
+                "ix_artifacts_",
+            ),  # run_id or the 0044 file_id index, never a scan
         ]
         for query, index in queries:
             sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))

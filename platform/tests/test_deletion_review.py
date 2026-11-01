@@ -32,16 +32,16 @@ def test_deleted_files_keep_explicit_history_placeholders(action):
             aid = artifact.id
         assert c.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
 
-        def check():
+        def check(name):
             response = c.get(f"/v1/conversations/{conv['id']}", headers=AUTH)
             assert response.status_code == 200, response.text
             turn = response.json()["turns"][0]
-            assert turn["input_files"] == [{"file_id": fid, "filename": "文件已删除", "deleted": True}]
+            assert turn["input_files"] == [{"file_id": fid, "filename": name, "deleted": True}]
             artifact = turn["artifacts"][0]
             assert artifact["id"] == aid and artifact["file_id"] == fid and artifact["deleted"]
-            assert artifact["download_url"] == "" and artifact["filename"] == "文件已删除"
+            assert artifact["download_url"] == "" and artifact["filename"] == name
 
-        check()
+        check("history.txt")  # in the trash the owner still sees which file it was
         if action == "retention":
             with SessionLocal() as db:
                 db.get(FileObject, fid).purge_at = utcnow() - timedelta(days=1)
@@ -52,7 +52,7 @@ def test_deleted_files_keep_explicit_history_placeholders(action):
         else:
             result = c.post("/v1/files/batch", headers=AUTH, json={"ids": [fid], "action": "purge"})
             assert result.status_code == 200, result.text
-        check()
+        check("文件已删除")
         assert c.get(f"/v1/files/{fid}/content", headers=AUTH).status_code == 404
         fork = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": run["id"], "mode": "work"})
         assert fork.status_code == 201, fork.text

@@ -50,7 +50,7 @@ def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
         "id": artifact.id,
         "file_id": file.id,
         "role": artifact.role,
-        "filename": "文件已删除" if deleted else file.filename,
+        "filename": file.filename,  # a purged row has already lost its name; a trashed one can still be restored
         "content_type": file.content_type,
         "size": file.size,
         "sha256": file.sha256,
@@ -176,19 +176,19 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
         out = run_dict(db, run, source_invalid=run.id in invalid)
         out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
         out["artifacts"] = artifacts.get(run.id, [])
-        deleted_artifacts = {item["file_id"] for item in out["artifacts"] if item["deleted"]}
+        deleted_artifacts = {item["file_id"]: item["filename"] for item in out["artifacts"] if item["deleted"]}
         if deleted_artifacts and "artifacts" in out["result"]:
             out["result"] = {
                 **out["result"],
                 "artifacts": [
-                    {**item, "filename": "文件已删除", "download_url": "", "deleted": True}
+                    {**item, "filename": deleted_artifacts[item["file_id"]], "download_url": "", "deleted": True}
                     if item.get("file_id") in deleted_artifacts
                     else item
                     for item in out["result"]["artifacts"]
                 ],
             }
         out["input_files"] = [
-            {"file_id": fid, "filename": files[fid].filename if available else "文件已删除", "deleted": not available}
+            {"file_id": fid, "filename": files[fid].filename if fid in files else "文件已删除", "deleted": not available}
             for fid in run.input_file_ids or []
             for available in [fid in files and files[fid].deleted_at is None and files[fid].purged_at is None]
         ]
