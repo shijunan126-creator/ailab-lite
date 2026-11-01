@@ -29,6 +29,7 @@
 - PR #133 首轮 CI 两处失败，均为根因修复：
   - PG `test_workspace_ttl` 查询预算把后台循环线程的查询也计入 → 只计调用线程。
   - E2E 记忆测试 30 s “database is locked”：异步处理器在事件循环上直接执行 SQLite（login、OIDC、技能草稿写入、失败审计、上传、记忆整理/技能提取后台任务），而线程池请求持写锁直到依赖清理（需要事件循环）→ 互等。修复：这些数据库/存储工作整体移到线程池，模型调用期间不持会话或用户锁；`tests/conftest.py` 新增常驻守卫，`main.SERVING_LOOP` 上执行 SQL 即测试失败（把 login 改回 async 验证守卫变红）。
-  - 修复后完整 SQLite 1876 passed / 160 skipped / 0 failed（基线 `90dc84c`）。
+  - 修复后完整 SQLite 1876 passed / 160 skipped / 0 failed（基线 `90dc84c`）；本机 PG16 + Redis 1980 passed / 56 skipped（`27303a1`）。
+- 合并：最终 head `27303a1` CI 9 项全绿（含 PostgreSQL、全套 E2E），squash 为 `main@b42a3bd`；未部署。
 - 开销：无新依赖或常驻进程；每个 Run 至多 3 条资产引用；每次调度最多多查 3 个 Run/会话/通知；带模板的启动会短暂持品牌锁。
 - 未测：真实多进程并发、PG 下 GC 计划与锁等待、目标机资源占用。迁移前已退役的品牌素材按创建时间与现存引用判断。
