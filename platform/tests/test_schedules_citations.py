@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select, text, update
 
 from ailab_platform.api.main import app
 from ailab_platform.api.routes_schedules import dispatch_schedules, next_occurrence
@@ -102,6 +102,7 @@ def test_due_claim_coalesces_with_two_dispatchers_and_records_failures():
             row = db.get(ScheduledTask, task["id"])
             assert as_utc(row.next_run_at) > now and row.last_run_id
             assert db.scalar(select(func.count()).select_from(Conversation).where(Conversation.user_id == owner)) == 1
+            db.get(Run, row.last_run_id).status = "succeeded"
             row.next_run_at = now - timedelta(seconds=1)
             row.skill = "missing"
             db.commit()
@@ -312,3 +313,189 @@ def test_dispatch_crash_rolls_back_claim_conversation_run_and_outbox(monkeypatch
         with SessionLocal() as db:
             row = db.get(ScheduledTask, task["id"])
             assert db.get(OutboxMessage, row.last_run_id) is not None
+
+
+@pytest.fixture
+def guardrail_task():
+    with TestClient(app) as c:
+        auth = _other_user(c)
+        with SessionLocal() as db:
+            db.execute(update(ScheduledTask).values(enabled=False))
+            db.commit()
+        task = c.post("/v1/schedules", headers=auth, json=body()).json()
+        yield c, auth, task
+
+
+def due(task_id, now):
+    with SessionLocal() as db:
+        db.get(ScheduledTask, task_id).next_run_at = now
+        db.commit()
+    dispatch_schedules(now)
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "waiting_user", "interrupted"])
+def test_dispatch_does_not_overlap_and_advances(guardrail_task, status):
+    c, auth, task = guardrail_task
+    first = c.post(f"/v1/schedules/{task['id']}/run", headers=auth).json()
+    with SessionLocal() as db:
+        db.get(Run, first["run_id"]).status = status
+        db.commit()
+    now = utcnow()
+    due(task["id"], now)
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert row.last_run_id == first["run_id"] and row.failure_streak == 0
+        assert row.last_status == "skipped" and row.last_error == "上一次还未结束"
+        assert as_utc(row.next_run_at) > now
+        assert row.recent_run_ids == [first["run_id"]]
+    assert c.get("/v1/schedules", headers=auth).json()[0]["last_status"] == "skipped"
+
+
+def test_end_date_local_validation_and_single_pause(guardrail_task, monkeypatch):
+    import ailab_platform.api.routes_schedules as schedules
+    from ailab_platform.models import Notification
+
+    c, auth, task = guardrail_task
+    now = datetime(2026, 11, 2, 1, tzinfo=UTC)
+    monkeypatch.setattr(schedules, "utcnow", lambda: now)
+    # Still November 1 in Los Angeles.
+    changed = c.patch(f"/v1/schedules/{task['id']}", headers=auth, json={"ends_on": "2026-11-01", "timezone": "America/Los_Angeles"})
+    assert changed.status_code == 200, changed.text
+    bad = c.patch(f"/v1/schedules/{task['id']}", headers=auth, json={"ends_on": "2026-10-31"})
+    assert bad.status_code == 422 and bad.json()["detail"] == "截止日期不能早于今天"
+    bad = c.post("/v1/schedules", headers=auth, json=body(ends_on="2026-11-01", timezone="Asia/Shanghai"))
+    assert bad.status_code == 422 and bad.json()["detail"] == "截止日期不能早于今天"
+    due(task["id"], now + timedelta(days=1))
+    dispatch_schedules(now + timedelta(days=2))
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert not row.enabled and row.paused_reason == "ended" and row.last_run_id is None
+        notes = db.scalars(select(Notification).where(Notification.user_id == row.user_id)).all()
+        assert len(notes) == 1 and notes[0].kind == "schedule.paused"
+        assert notes[0].title == row.title and notes[0].conversation_id is None
+    assert c.get("/v1/schedules", headers=auth).status_code == 200  # Expired dates remain serializable.
+    assert c.get("/v1/notifications", headers=auth).json()["items"][0]["kind"] == "schedule.paused"
+
+
+def test_final_allowed_occurrence_runs_then_ends(guardrail_task):
+    c, auth, task = guardrail_task
+    today = utcnow().date()
+    assert c.patch(f"/v1/schedules/{task['id']}", headers=auth, json={"ends_on": today.isoformat(), "timezone": "UTC"}).status_code == 200
+    due(task["id"], utcnow().replace(hour=23, minute=59))
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert row.last_run_id and not row.enabled and row.paused_reason == "ended"
+
+
+@pytest.mark.parametrize("seen", [None, "read", "deleted", "canceled", "no_notification", "young", "two"])
+def test_unattended_pause_requires_three_unseen_and_seven_days(guardrail_task, seen):
+    from ailab_platform.models import Notification
+
+    _, _, task = guardrail_task
+    now = utcnow()
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        ids = []
+        for i in range(2 if seen == "two" else 3):
+            conv = Conversation(user_id=row.user_id, title="occurrence", deleted_at=now if seen == "deleted" and i == 0 else None)
+            db.add(conv)
+            db.flush()
+            run = Run(
+                user_id=row.user_id,
+                conversation_id=conv.id,
+                prompt="p",
+                model="m",
+                status="canceled" if seen == "canceled" and i == 0 else "succeeded",
+                started_at=now - timedelta(days=(6 if seen == "young" else 7) - i),
+            )
+            db.add(run)
+            db.flush()
+            ids.append(run.id)
+            if not (seen == "no_notification" and i == 0):
+                db.add(
+                    Notification(
+                        user_id=row.user_id,
+                        run_id=run.id,
+                        conversation_id=conv.id,
+                        kind="schedule.succeeded",
+                        title=row.title,
+                        read_at=now if seen == "read" and i == 0 else None,
+                    )
+                )
+        row.recent_run_ids, row.last_run_id = ids, ids[-1]
+        db.commit()
+    due(task["id"], now)
+    dispatch_schedules(now)
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        pauses = db.scalars(select(Notification).where(Notification.user_id == row.user_id, Notification.kind == "schedule.paused")).all()
+        if seen is None:
+            assert not row.enabled and row.paused_reason == "unread" and row.last_run_id == ids[-1]
+            assert len(pauses) == 1
+        else:
+            assert row.enabled and row.paused_reason is None and row.last_run_id not in ids
+            assert len(row.recent_run_ids) == 3 and not pauses
+
+
+def test_dispatch_start_failures_pause_but_run_now_failure_does_not(guardrail_task):
+    from ailab_platform.models import Notification
+
+    c, auth, task = guardrail_task
+    with SessionLocal() as db:
+        db.get(ScheduledTask, task["id"]).skill = "missing"
+        db.commit()
+    assert c.post(f"/v1/schedules/{task['id']}/run", headers=auth).status_code == 422
+    for i in range(3):
+        due(task["id"], utcnow() + timedelta(days=i))
+        with SessionLocal() as db:
+            row = db.get(ScheduledTask, task["id"])
+            assert row.failure_streak == i + 1
+            assert row.enabled == (i < 2)
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert row.paused_reason == "failures" and row.recent_run_ids == []
+        assert db.scalar(select(func.count()).select_from(Notification).where(Notification.user_id == row.user_id)) == 1
+
+
+def test_terminal_failure_streak_success_reset_and_late_completion_idempotency(guardrail_task):
+    from ailab_platform.models import Notification
+    from ailab_platform.run_state import transition_run
+
+    c, auth, task = guardrail_task
+    for status in ["failed", "succeeded", "failed", "failed", "failed"]:
+        rid = c.post(f"/v1/schedules/{task['id']}/run", headers=auth).json()["run_id"]
+        with SessionLocal() as db:
+            if status == "succeeded":
+                transition_run(db, rid, "running", commit=False)
+            transition_run(db, rid, status, commit=False)
+            transition_run(db, rid, status, commit=False)
+            db.commit()
+            row = db.get(ScheduledTask, task["id"])
+            if status == "succeeded":
+                assert row.failure_streak == 0
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert row.failure_streak == 3 and row.paused_reason == "failures" and not row.enabled
+        assert len(row.recent_run_ids) == 3
+        assert (
+            db.scalar(
+                select(func.count())
+                .select_from(Notification)
+                .where(Notification.user_id == row.user_id, Notification.kind == "schedule.paused")
+            )
+            == 1
+        )
+
+
+@pytest.mark.parametrize("patch", [{"enabled": True}, {"schedule": {"kind": "daily", "time": "10:00"}}, {"ends_on": None}])
+def test_edit_or_reenable_resets_pause_history(guardrail_task, patch):
+    c, auth, task = guardrail_task
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        row.enabled, row.paused_reason, row.failure_streak, row.recent_run_ids = False, "unread", 2, ["a", "b", "c"]
+        db.commit()
+    response = c.patch(f"/v1/schedules/{task['id']}", headers=auth, json=patch)
+    assert response.status_code == 200 and response.json()["paused_reason"] is None
+    with SessionLocal() as db:
+        row = db.get(ScheduledTask, task["id"])
+        assert row.recent_run_ids == [] and row.failure_streak == 0

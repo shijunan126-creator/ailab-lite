@@ -25,6 +25,7 @@ class NotificationOut(InboxUTC):
         "run.waiting",
         "schedule.succeeded",
         "schedule.failed",
+        "schedule.paused",
         "share.received",
         "skill_draft.ready",
         "skill_draft.failed",
