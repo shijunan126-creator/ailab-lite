@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useStateField } from "@openuidev/react-lang";
 import { cn } from "../../../lib/cn";
 import CopyButton from "../../copy-button";
+import TableFrame from "../../table-frame";
 import { IconCheck, IconStar, IconX } from "../../icons";
 import { Sparkline } from "./charts";
 import {
@@ -268,6 +269,7 @@ export function CompareView({ p }: { p: P }) {
   if (!options || !rows || !rows.every((r) => Array.isArray(r.values))) return <Malformed />;
   const recommend = options.indexOf(text(o.recommend));
   return (
+    <TableFrame>
     <div className="md-table gu-table gu-compare">
       <table>
         <thead>
@@ -294,6 +296,7 @@ export function CompareView({ p }: { p: P }) {
         </tbody>
       </table>
     </div>
+    </TableFrame>
   );
 }
 

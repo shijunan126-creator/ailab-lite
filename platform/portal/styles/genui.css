@@ -1,7 +1,19 @@
 /* Generated UI inside answers. It reads as part of the answer: the answer's type scale and colours, one quiet
    surface for things that have edges (metrics, cards, controls), no dashboard skin of its own (HLD §4.6.5). */
 .answer-parts { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-.genui-block { min-width: 0; container-type: inline-size; font-size: var(--text-ui); line-height: var(--leading-ui); color: var(--foreground); }
+.genui-block { position: relative; min-width: 0; container-type: inline-size; font-size: var(--text-ui); line-height: var(--leading-ui); color: var(--foreground); }
+/* picture actions (.float-tools): in the block's corner, inset when a box fills that corner. The innermost object
+   under the pointer owns the actions: over a table or code its own copy shows, not the block's. */
+.genui-tools { top: 0; right: 0; z-index: 4; }
+.genui-block[data-corner="boxed"] > .genui-tools { top: 8px; right: 8px; }
+.genui-tools .icon-btn[data-phase="busy"] svg { animation: genui-pulse .9s ease-in-out infinite; }
+.genui-tools .icon-btn[data-phase="failed"] { color: var(--destructive); }
+@keyframes genui-pulse { 50% { opacity: .3; } }
+@media (hover: hover) {
+  .genui-block:hover > .genui-tools { opacity: 1; translate: 0 0; pointer-events: auto; transition-delay: 120ms; }
+}
+.genui-block[data-touched] > .genui-tools, .genui-tools:has(:focus-visible), .genui-tools[data-held] { opacity: 1; translate: 0 0; pointer-events: auto; }
+.genui-block:has(.table-frame:hover, .md-codeblock:hover, .table-frame[data-touched]) > .genui-tools:not([data-held]) { opacity: 0; pointer-events: none; }
 .genui-skeleton { height: 96px; border-radius: var(--radius); background: linear-gradient(90deg, var(--subtle) 0%, var(--border) 50%, var(--subtle) 100%) 0 0 / 200% 100%; animation: genui-shimmer 1.4s linear infinite; }
 @keyframes genui-shimmer { to { background-position: -200% 0; } }
 .genui-fallback { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 10px 12px; border: 1px dashed var(--border-strong); border-radius: var(--radius-sm); color: var(--muted-foreground); font-size: var(--text-sm); }
@@ -391,7 +403,7 @@ div.gu-divider::before { flex: 0 0 0; }
 }
 @media (prefers-reduced-motion: reduce) { .genui-skeleton { animation: none; } .gu-html-frame { transition: none; } }
 @media print {
-  .genui-skeleton, .gu-tablist, .gu-tip { display: none; }
+  .genui-skeleton, .genui-tools, .gu-tablist, .gu-tip { display: none; }
   .gu-print-only { display: flex; }
   .gu-print-label { display: block; font-size: var(--text-sm); font-weight: 600; }
   .gu-chart, .gu-card, .gu-metric, .gu-fact, .gu-timeline li, .gu-steps li, .gu-ranking li { break-inside: avoid; }

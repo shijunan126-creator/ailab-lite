@@ -6,6 +6,7 @@ import { Fragment, memo, ReactNode, useMemo } from "react";
 import ViewportBlock from "./viewport-block";
 import { markdownChunks } from "../lib/markdown-chunks";
 import CopyButton from "./copy-button";
+import TableFrame from "./table-frame";
 import FileCite from "./file-cite";
 import { urlKey, type Source } from "../lib/work-process";
 
@@ -148,11 +149,13 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
     }
     if (line.trim().startsWith("|") && i + 1 < lines.length && /^\s*\|?\s*:?-{2,}/.test(lines[i + 1])) {
       const head = cells(line);
+      const start = i;
       i += 2;
       const rows: string[][] = [];
       while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
       blocks.push(
-        <div key={k} className="md-table">
+        <TableFrame key={k} markdown={lines.slice(start, i).map((l) => l.trim()).join("\n")}>
+        <div className="md-table">
           <table>
             <thead>
               <tr>{head.map((c, j) => <th key={j}>{inline(c, `${k}h${j}`, cites, onOpenLink)}</th>)}</tr>
@@ -164,6 +167,7 @@ const MarkdownBlock = memo(function MarkdownBlock({ text, streaming, sources, on
             </tbody>
           </table>
         </div>
+        </TableFrame>
       );
       continue;
     }

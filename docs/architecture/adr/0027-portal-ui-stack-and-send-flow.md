@@ -15,6 +15,7 @@
 - **状态**：zustand 只用于跨路由存活的发送队列和上传状态（`lib/outbox.ts`、`lib/uploads.ts`）。会话详情、SSE、翻页锚定保持原有 abort + seq 逻辑。
 - **测试**：`npm test` 改为 Vitest；旧 `node:test` 用例通过 `tests/node-test-compat.mjs` 原样迁移，组件测试按文件声明 jsdom。
 - **浏览器 JavaScript**：`quickjs-emscripten-core` + `@jitl/quickjs-wasmfile-release-sync`（0.32.0，精确锁定）。用途：模型请求的小计算在用户浏览器的 Web Worker 里跑，不占服务端 CPU；首次使用才加载约 0.5 MB Wasm。内存上限靠传入固定 `maximum` 的 `WebAssembly.Memory`（该构建的 `setMemoryLimit` 不生效），超时靠中断处理器加 Worker `terminate()`。
+- **GenUI 存为图片**：`modern-screenshot`（4.7.0，精确锁定）。用途：把 GenUI 块按页面所见画成 PNG 复制或下载；首次点击才加载（约 21 KB gzip），只在用户浏览器运行，无服务端成本。自写 foreignObject 光栅要自己处理伪元素、Safari 解码重画和滚动位置，库已覆盖。
 - **不采用 assistant-ui**：其消息/runtime 模型与以 Run 为中心的版本、过程、排队、插话、ask_user 和 500 轮卸载机制冲突。
 
 本轮**未引入**（没有使用点就不加依赖）：Streamdown（自研 Markdown 已满足 40 万字分块、`ailab-file://`、来源 pill；替换需先做 HLD Spike A 对比）、Recharts（GenUI 图表用自绘 SVG，见 ADR 0028）、Motion、shadcn/Base UI 组件、TanStack Query。各自在对应屏幕重建且有具体行为需要时再引入。

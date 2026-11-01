@@ -224,6 +224,24 @@ input:focus, textarea:focus, select:focus { border-color: var(--ring); box-shado
 .send-failed .link { font-size: var(--text-sm); font-weight: 600; padding: 0; }
 .send-failed .link.muted { color: var(--muted-foreground); font-weight: 500; }
 
+/* Copy actions over an object (a table, a generated block): a small floating group in its corner, there only while the
+   object is pointed at, touched or reached by keyboard; invisible, it takes no clicks from what lies under it. */
+.float-tools {
+  position: absolute; display: flex; gap: 2px; padding: 2px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border); background: color-mix(in srgb, var(--popover) 88%, transparent);
+  box-shadow: var(--shadow-float); -webkit-backdrop-filter: saturate(1.4) blur(8px); backdrop-filter: saturate(1.4) blur(8px);
+  opacity: 0; translate: 0 -3px; pointer-events: none; transition: opacity var(--t) var(--ease), translate var(--t) var(--ease);
+}
+.float-tools .icon-btn { width: 28px; height: 28px; }
+.table-frame { position: relative; min-width: 0; }
+.table-tools { top: 4px; right: 4px; z-index: 3; }
+.table-tools .icon-btn { width: 26px; height: 26px; }
+@media (hover: hover) {
+  .table-frame:hover > .table-tools { opacity: 1; translate: 0 0; pointer-events: auto; transition-delay: 120ms; }
+}
+.table-frame[data-touched] > .table-tools, .table-tools:has(:focus-visible, .done) { opacity: 1; translate: 0 0; pointer-events: auto; }
+@media print { .float-tools { display: none !important; } }
+
 /* back to the newest message: shown only after the reader scrolls up, floating just above the composer */
 .to-bottom {
   position: absolute; left: 0; right: 0; bottom: calc(100% + 6px); z-index: 2; width: 36px; height: 36px; min-height: 0; margin: 0 auto; padding: 0;

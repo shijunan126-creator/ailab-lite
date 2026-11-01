@@ -8,6 +8,7 @@ import { Component, lazy, Suspense, useId, useMemo, useState } from "react";
 import { createLibrary, defineComponent, useIsStreaming, useStateField, useTriggerAction, type ComponentRenderer } from "@openuidev/react-lang";
 import { cn } from "../../../lib/cn";
 import { IconChevronDown } from "../../icons";
+import TableFrame from "../../table-frame";
 import { useGenUIHost } from "../host";
 import {
   ChecklistView, CodeView, CompareView, DetailsView, EntityCardView, GaugeView, HighlightsView, KeyValueView, ListView, MetricView, ProgressView, ProsConsView,
@@ -263,6 +264,7 @@ function TableView({ p, sid }: { p: P; sid?: string }) {
   if (!valid) return <Malformed />;
   return (
     <div className="gu-table-wrap">
+      <TableFrame>
       <div className="md-table gu-table">
         <table>
           <thead>
@@ -282,6 +284,7 @@ function TableView({ p, sid }: { p: P; sid?: string }) {
           </tbody>
         </table>
       </div>
+      </TableFrame>
       {rows.length > sorted.length ? <div className="gu-caption">共 {rows.length} 行，显示前 {sorted.length} 行</div> : null}
     </div>
   );

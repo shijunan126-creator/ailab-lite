@@ -6,6 +6,7 @@ import { createStore, evaluateRoot } from "@openuidev/lang-core";
 import { Renderer, createParser, type ActionEvent, type ParseResult } from "@openuidev/react-lang";
 import { library } from "../catalog/components";
 import { toProgram } from "../catalog/program";
+import { COMPONENT_NAMES } from "../catalog/limits";
 import { componentsOf, nodeToMarkdown } from "../catalog/schema";
 import { BlockPhaseProvider, type BlockPhase, useBlockStates, useGenUIHost } from "../host";
 import { registerMarkdown } from "../markdown-bridge";
@@ -33,6 +34,26 @@ function shows(parsed: ParseResult | null): boolean {
   return visit(parsed?.root);
 }
 
+/** Components that do not make a block worth a picture: layout, controls (a row of buttons is a way to answer),
+ * plain text, and what copies as itself instead: tables as tables, code as text. */
+const NO_PICTURE = new Set([...LAYOUT, "Tab", "Divider", "Heading", "Text", "Table", "Compare", "Code", "Diff", "JsonView", "Select", "Slider", "Toggle", "Input", "Button"]);
+/** Whether a block is offered as a picture. Components built by an expression (@Each, a ternary) are still AST
+ * nodes in the parsed tree and count by name. A generated page runs in its own frame, which cannot be drawn. */
+export function pictured(parsed: ParseResult | null): boolean {
+  const names = new Set<string>();
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) return value.forEach(visit);
+    if (!value || typeof value !== "object") return;
+    const node = value as { type?: unknown; typeName?: unknown; k?: unknown; name?: unknown };
+    if (node.type === "element" && typeof node.typeName === "string") names.add(node.typeName);
+    else if (node.k === "Comp" && typeof node.name === "string") names.add(node.name);
+    Object.values(value).forEach(visit);
+  };
+  visit(parsed?.root);
+  if (names.has("HtmlArtifact")) return false;
+  return [...names].some((name) => COMPONENT_NAMES.includes(name) && !NO_PICTURE.has(name));
+}
+
 const unwrap = (v: unknown) => (v && typeof v === "object" && !Array.isArray(v) && "value" in v ? (v as { value: unknown }).value : v);
 
 /** The block as Markdown, from its evaluated tree: rows built with @Each, sums and `$variable` results are values
@@ -58,7 +79,7 @@ registerMarkdown(sourceToMarkdown);
 
 export type BlockState = "ok" | "empty";
 
-export default function OpenUIBlock({ source, index, streaming, phase, onState }: { source: string; index: number; streaming: boolean; phase: BlockPhase; onState: (state: BlockState) => void }) {
+export default function OpenUIBlock({ source, index, streaming, phase, onState }: { source: string; index: number; streaming: boolean; phase: BlockPhase; onState: (state: BlockState, picture: boolean) => void }) {
   const host = useGenUIHost();
   const states = useBlockStates();
   // read once: later saves must not re-seed the store the reader is changing
@@ -74,7 +95,7 @@ export default function OpenUIBlock({ source, index, streaming, phase, onState }
   const reported = useRef(false);
 
   useEffect(() => {
-    onState(shown ? "ok" : "empty");
+    onState(shown ? "ok" : "empty", !!shown && pictured(shown === program ? parsed : parse(shown)));
     if (streaming || reported.current) return;
     reported.current = true;
     if (shown) {
@@ -82,7 +103,7 @@ export default function OpenUIBlock({ source, index, streaming, phase, onState }
       report("rendered", names[0], performance.now() - started.current);
       for (const name of new Set(names.slice(1))) report("rendered", name);
     } else report("fallback");
-  }, [streaming, shown, parsed, onState]);
+  }, [streaming, shown, program, parsed, onState]);
 
   if (!shown) return null;
   return (

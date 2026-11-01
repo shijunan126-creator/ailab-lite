@@ -186,7 +186,7 @@ label.field .hint { display: block; font-weight: 400; margin-top: 4px; }
 .assistant-body > .md { animation: rise-in var(--t) var(--ease); }
 /* the answer being written: a caret after its last word */
 .md.streaming > :last-child::after { content: ""; display: inline-block; height: 1.05em; margin-left: 2px; vertical-align: -.15em; border-radius: 2px; animation: caret 1s steps(1) infinite; }
-.md.streaming > .md-codeblock:last-child::after, .md.streaming > .md-table:last-child::after { display: none; }
+.md.streaming > .md-codeblock:last-child::after, .md.streaming > .table-frame:last-child::after { display: none; }
 /* small icon actions under a message: quiet until the turn is pointed at; the last turn keeps them */
 .icon-btn.act.busy svg { animation: spin .8s linear infinite reverse; }
 .icon-btn.act .swap { display: grid; animation: pop var(--t) var(--ease); }
