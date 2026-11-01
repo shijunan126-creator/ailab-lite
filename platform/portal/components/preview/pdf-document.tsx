@@ -45,9 +45,11 @@ export default function PdfDocument({ url, title }: { url: string; title: string
       </div>
       <div className="pdf-scroll" ref={box} aria-label={title}>
         {error ? <div className="alert error">{error}</div> : null}
+        {/* suspense={false}: keep the inline loading spinner and error message; react-pdf 11 otherwise throws into an Error Boundary. */}
         <Document
           file={url}
           options={PDF_OPTIONS}
+          suspense={false}
           onLoadSuccess={({ numPages }) => {
             setPages(numPages);
             setError("");

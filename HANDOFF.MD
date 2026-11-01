@@ -1003,3 +1003,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 固定工具目录约 2.8k token，并且计入压缩预算。上下文窗口很小（如 3.3k）的测试夹具放不下任何一轮历史，会报 `history exceeds model budget before compaction`，这是夹具问题，不是产品回归。
 - 前缀缓存不只看 messages/tools 是否仅追加：请求级参数也进提示模板。DeepSeek 实测同一 9.5k 前缀，`thinking: disabled` 或 `tool_choice: none`（后者把工具从模板删掉）都让命中从 9.3k 掉到 1.2k。续写会话的调用（压缩摘要、步数用尽收尾）必须与主循环同形，见 `AgentLoop._answer_without_tools`。用直接调用 API 的小探针隔离参数影响，几分钱即可，不要靠整轮验收猜。
 - 验收用的强制压缩小窗口（如 24k、阈值 0.6）会让 PPT 这类带图片的 Work 任务在两次查看后 BudgetPause 并兜底交付，不能当作 PPT 流程结论；命中率也被频繁压缩拉低，要单列压缩相关调用。交付文件数 = 1 不等于模型主动 `deliver_file` 或 Run succeeded，轮询要识别 interrupted。
+
+## 2026-11-01 PDF 预览依赖
+
+- `pdf-document.tsx` 的 worker 取自顶层 `pdfjs-dist`，API 取自 `react-pdf` 依赖的那份；两者版本不同 PDF.js 拒绝打开所有 PDF。`react-pdf` 精确锁定 pdfjs 版本，所以顶层 `pdfjs-dist` 也写成精确版本，只随 `react-pdf` 一起升级。Dependabot 会分别提两个 PR（如 #100、#101），单独合并任一都会坏，而 CI 没有浏览器打开 PDF 的用例（E2E 的 PDF 断言只在有 LibreOffice 时跑）；`tests/pdf-worker-version.test.mjs` 守这条。
+- `react-pdf` 11 默认 Suspense + Error Boundary；预览组件用 `suspense={false}` 保留原来的内联加载与错误提示。未配置 `cMapUrl`，使用预定义 CMap 的 CJK 字体（如 STSong + UniGB-UCS2-H）那一行不显示，4.8/6.3 一样，是既有缺口。
