@@ -3,18 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { errorMessage, Project } from "../lib/api";
-import { deleteProject, requestBriefEdit } from "../lib/projects";
+import { deleteProject, requestProjectPanel } from "../lib/projects";
 import { placeMenu } from "../lib/menu-place";
-import { IconFilePen, IconMore, IconPencil, IconTrash } from "./icons";
+import { IconFilePen, IconHistory, IconMore, IconPencil, IconTrash } from "./icons";
 
 const MENU_W = 176;
-const MENU_H = 128;
+const MENU_H = 164;
 
-/** "⋯" on a sidebar project: rename it in place, edit its brief, or delete it. */
-export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
+/** "⋯" on a sidebar project: rename it in place, edit its brief or memory, or delete it. */
+export default function ProjectMenu({ project, onRename, onOpen, onDeleted }: {
   project: Project;
   onRename: () => void;
-  onBrief: () => void;
+  onOpen: () => void; // go to the project page, where the requested panel opens
   onDeleted: () => void | Promise<void>;
 }) {
   const [at, setAt] = useState<React.CSSProperties | null>(null);
@@ -76,8 +76,11 @@ export default function ProjectMenu({ project, onRename, onBrief, onDeleted }: {
               <button className="menu-item" role="menuitem" onClick={() => { setAt(null); onRename(); }}>
                 <IconPencil size={15} /> 重命名
               </button>
-              <button className="menu-item" role="menuitem" onClick={() => { setAt(null); requestBriefEdit(project.id); onBrief(); }}>
+              <button className="menu-item" role="menuitem" onClick={() => { setAt(null); requestProjectPanel(project.id, "brief"); onOpen(); }}>
                 <IconFilePen size={15} /> 项目说明
+              </button>
+              <button className="menu-item" role="menuitem" onClick={() => { setAt(null); requestProjectPanel(project.id, "memory"); onOpen(); }}>
+                <IconHistory size={15} /> 记忆
               </button>
               <button className="menu-item danger" role="menuitem" onClick={remove}>
                 <IconTrash size={15} /> 删除项目

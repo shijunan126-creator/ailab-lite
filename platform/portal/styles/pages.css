@@ -33,6 +33,8 @@
 }
 /* admin */
 .admin-section { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; }
+.admin-section > h2 { font-size: var(--text-ui); font-weight: 650; }
+.admin-section > h2:not(:first-child) { margin-top: 20px; }
 .admin-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-height: 36px; }
 .admin-toolbar select { height: 34px; padding-top: 0; padding-bottom: 0; font-size: var(--text-sm); }
 .admin-list { display: flex; flex-direction: column; }

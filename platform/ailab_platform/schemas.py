@@ -155,6 +155,7 @@ class ProjectIn(BaseModel):
 
 
 class ProjectPatch(ProjectIn):
+    memory_mode: Literal["shared", "isolated"] | None = None
     name: str | None = Field(default=None, min_length=1, max_length=120)
     instructions: str | None = Field(default=None, max_length=4000)
 
@@ -166,6 +167,7 @@ class ProjectPatch(ProjectIn):
 
 
 class ProjectOut(UTCModel):
+    memory_mode: Literal["shared", "isolated"] = "shared"
     instructions: str = ""
     id: str
     name: str

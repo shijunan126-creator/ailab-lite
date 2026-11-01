@@ -418,6 +418,7 @@ def test_projects_are_isolated_in_fact_context_history_and_raw_detail():
         me = _user(c)
         uid = _uid(c, me)
         projects = [c.post("/v1/projects", headers=me, json={"name": f"项目{i}"}).json()["id"] for i in range(2)]
+        c.patch(f"/v1/projects/{projects[1]}", headers=me, json={"memory_mode": "isolated"})
         convs = [c.post("/v1/conversations", headers=me, json={"project_id": p}).json()["id"] for p in projects]
         secret = _seed(uid, "BLUEPRINT 项目机密", conversation_id=convs[1])
         put(c, me, [{"content": "BLUEPRINT 项目机密", "project_id": projects[1]}, {"kind": "user", "content": "回答用中文"}])
@@ -428,15 +429,7 @@ def test_projects_are_isolated_in_fact_context_history_and_raw_detail():
         out = c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"query": "BLUEPRINT"}).json()
         assert out["results"] == []
         assert c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"run_id": secret}).status_code == 404
-        doc = c.get("/v1/memory", headers=me).json()
-        assert (
-            c.put(
-                "/v1/memory",
-                headers=me,
-                json={"expected_revision": doc["revision"], "entries": [{"kind": "user", "content": "回答用中文"}], "project_only": True},
-            ).status_code
-            == 200
-        )
+        assert c.patch(f"/v1/projects/{projects[0]}", headers=me, json={"memory_mode": "isolated"}).status_code == 200
         assert c.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()["memory"]["entries"] == []
 
 
@@ -467,9 +460,9 @@ def test_sensitive_inferences_need_user_confirmation_and_history_is_temporal():
             service._apply(db, db.get(User, uid), DreamPlan(changes=[DreamChange(op="add", content="用户患有慢性病")]), {})
             db.commit()
         doc = c.get("/v1/memory", headers=me).json()
-        assert doc["entries"][0]["status"] == "review"
+        assert doc["entries"] == []
         assert model_view(doc)["entries"] == []
-        put(c, me, [{"id": doc["entries"][0]["id"], "content": "用户患有慢性病", "status": "active"}])
+        put(c, me, [{"content": "用户患有慢性病", "status": "active"}])
         assert model_view(c.get("/v1/memory", headers=me).json())["entries"]
         old = {
             "id": "mem_old",
@@ -598,8 +591,8 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"
             calls = list(db.scalars(select(ModelUsage).where(ModelUsage.job_id == did)))
-            assert len(calls) == 2
-            assert len({r.call_id for r in calls}) == 2
+            assert len(calls) == 3
+            assert len({r.call_id for r in calls}) == 3
             assert all(r.subject == "memory_job" and r.status == "settled" and r.weighted_amount > 0 for r in calls)
             assert all(db.get(UsageReservation, r.call_id).status == "settled" for r in calls)
 

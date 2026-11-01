@@ -121,8 +121,10 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
         return {**value, "entries": [next_ for entry in value.get("entries", []) if (next_ := rewrite(entry)) is not None]}
 
     for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
-        dream.before_memory = document(dream.before_memory or {})
-        dream.after_memory = document(dream.after_memory or {})
+        for field in ("before_memory", "after_memory"):
+            value = getattr(dream, field)
+            if value and (updated := document(value)) != value:
+                setattr(dream, field, updated)
         candidates = []
         for entry in (dream.report or {}).get("candidates", []):
             next_ = rewrite(entry)
@@ -130,20 +132,24 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
                 candidates.append(
                     {**next_, "related": [item for related in next_.get("related", []) if (item := rewrite(related)) is not None]}
                 )
-        dream.report = {**(dream.report or {}), "candidates": candidates}
-        dream.plan = {
-            **(dream.plan or {}),
-            "changes": [next_ for entry in (dream.plan or {}).get("changes", []) if (next_ := rewrite(entry)) is not None],
-        }
+        if candidates != (dream.report or {}).get("candidates", []):
+            dream.report = {**(dream.report or {}), "candidates": candidates}
+        changes = [next_ for entry in (dream.plan or {}).get("changes", []) if (next_ := rewrite(entry)) is not None]
+        if changes != (dream.plan or {}).get("changes", []):
+            dream.plan = {**(dream.plan or {}), "changes": changes}
     for item in db.scalars(
         select(MemoryWorkItem).where(MemoryWorkItem.user_id == user_id, MemoryWorkItem.state == "pending").execution_options(yield_per=100)
     ):
-        item.candidates = [next_ for entry in item.candidates or [] if (next_ := rewrite(entry)) is not None]
+        updated = [next_ for entry in item.candidates or [] if (next_ := rewrite(entry)) is not None]
+        if updated != (item.candidates or []):
+            item.candidates = updated
     for delivery in db.scalars(
         select(RunDelivery).join(Run, Run.id == RunDelivery.run_id).where(Run.user_id == user_id).execution_options(yield_per=100)
     ):
         if isinstance(delivery.result, dict) and "entries" in delivery.result:
-            delivery.result = document(delivery.result)
+            updated = document(delivery.result)
+            if updated != delivery.result:
+                delivery.result = updated
 
 
 def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None:
@@ -156,3 +162,20 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
         return entry
 
     _rewrite_copies(db, user_id, rewrite)
+    # Derived human summaries and undo text may contain a removed fact verbatim. Do not
+    # retain them as an alternate read/restore route around the deletion fence.
+    from ..models import MemorySummary
+
+    scopes = {e.get("project_id") for e in removed}
+    for row in db.scalars(select(MemorySummary).where(MemorySummary.user_id == user_id)):
+        if row.project_id in scopes:
+            row.text = ""
+            row.source_digest = ""
+    for dream in db.scalars(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user_id).execution_options(yield_per=100)):
+        report = dict(dream.report or {})
+        report.pop("summary_before", None)
+        report.pop("reply", None)
+        if report != (dream.report or {}):
+            dream.report = report
+        if dream.instruction and not (dream.trigger == "edit" and dream.status in {"pending", "running"}):
+            dream.instruction = ""

@@ -6,6 +6,26 @@
 
 # HANDOFF
 
+## 2026-11-01 记忆摘要与项目记忆模式（后端）
+
+- 摘要是给人看的派生数据，不能加入 bootstrap、工具记忆结果或 checkpoint；事实仍由 `model_view` 决定可见性。摘要 digest 只看本作用域可见事实的 `(id, content)`，不能用 revision 或更新时间替代；生成后提交前重算，竞争时不落库。
+- 事实作用域与历史池不是同一过滤条件：共享项目只读账号及自身事实，但历史可读项目外和所有共享项目；隔离项目两者都只读自身。搜索、按 run id 读原文及相邻轮次必须使用同一历史池策略。共享项目抽取出的账号事实允许有共享项目来源；提交时仍要复核来源及项目模式。
+- 单活动整理约束覆盖融合、编辑和抽取；批次事实/游标与 applied/skipped/failed 必须同事务持久化，摘要不可延迟终态；claimed_until 保留到摘要 finally 结束，模型调用续租，崩溃后自然过期。摘要独立派生刷新，仍以原 job/token、mode=summary 逐调用 reserve/settle（摘要阶段继续续租）；失败后靠 digest 在下一次整理重试，不能重放提取或编辑。模型等待不持有事务/用户锁。
+- 共享转隔离只迁移证据非空且全部来自该项目的账号事实，手写和混合来源保留；查证据不能排除仍有 Run 记录的已删除对话。融合删除重复副本是 housekeeping，不写用户墓碑；证据合并超过已有字段上限时整项目失败并保留待融合标记，不能静默截断证据。
+- 删除谱系优先于撤销：自然语言“忘记”与清空都清除事实、历史快照和摘要副本，因此撤销不能复活已忘记事实；新增/替换可在 revision 围栏内恢复。编辑前摘要含已删除事实时也必须清除，不能把摘要作为绕过删除的副本。普通整理撤销使摘要 digest 过期；编辑新增/替换撤销恢复原作用域摘要。
+- 融合先提交、后续抽取失败时，记录应保留 applied、错误和撤销快照；不能把已提交变更伪装为 failed/no-op。事实编辑成功而摘要调用失败时保留 applied 与 reply，`report.summary_error` 说明摘要仍过期，下次整理重试。
+- 融合成功后抽取失败，首批仍为 applied，因此整理链可能创建第二批 failed。验证首批快照/撤销时必须按 `batch_index` 定位，不能对用户的多条整理记录做无排序 `scalar()`；SQLite 恰好返回首批不代表 PostgreSQL 也会如此。
+- 摘要过期扫描应一次读取有界事实、流式联查项目 id/digest，最多两条查询，不能对每个项目重读文档并查询摘要。用户索引与项目外键索引都需要：`(user_id, project_id)` 的唯一索引不能替代级联删除所需的 `project_id` 索引。EXPLAIN 先 ANALYZE，使用多用户选择性；单用户半表命中时 PG 选择顺序扫描是合理结果。
+- 网关 TCP 验收的 0.5 秒首输出/空闲预算在繁忙机器上会产生额外真实重试与计费记录，或触发标题降级；断流用例也出现过单轮未抛异常。不要删账本行或改变生产重试规则迎合次数断言；应单独保留失败与复查结果，不能把一次重跑通过宣称为稳定修复。
+- macOS 全套测试需让 GNU coreutils/findutils 的 PATH 传到所有子进程；Python PostgreSQL 测试还需 venv 的可选 `psycopg[binary]`。Office 读取测试需要 `vendor/zcode-office-runtime/runner.mjs` 及依赖，缺少时通常表现为多格式解析/后续 OCR 断言失败。后端限域任务可在仓库外构建，并用仅测试环境的 Node resolve hook 映射 mock sandbox 的 runner 入口，避免改 vendor/Portal。
+- golden fixture 的严格项目用 `memory_mode=isolated`；`scripts/evaluate_memory_context.py` 已转发 `case.memory_mode` 到 `model_view(mode=...)`，`tests/test_memory_golden.py` 继续走该 runner（保留无记忆基线断言），不要绕开 runner 另写判定。
+- 摘要/编辑/融合三个提示词是 `memory_dream/prompts.py` 的常量；`MockLLM` 按 system 内容精确匹配它们给确定性回答（`llm._memory_answer`），测试脚本也按常量匹配。改提示词措辞不会破坏匹配，但不要在调用处内联另一份提示词。抽取/判定在常量后追加了每次调用的规则，MockLLM 只能用 `startswith` 匹配（返回空 facts/results）；否则 mock 栈每次整理都走失败路径。
+- 所有活动任务判断共用 `active_job()`：pending/running 或未过期租约；终态摘要阶段也阻止编辑/重复整理。claim/recover 仍只领取 pending/running，不能重放终态批次；Portal 编辑完成需等摘要 GET active 为空再展示回复/撤销。
+- `finally` 的摘要刷新必须覆盖 applied/skipped/failed，而非依赖 running/有效 claim；摘要错误回写需容忍任务删除、撤销或 token 变化。无摘要且无事实不是过期；有明确项目请求时先刷新该作用域，再账号和其他项目，总计仍≤5。编辑只围栏其作用域事实，不能因其他项目或设置 revision 变化拒绝；删除副本只写实际变化，排队/运行中的编辑指令不可清空。
+- Portal 记忆弹窗判断“整理失败”不能只靠观察 `summary.active` 从有到无：mock/快速整理可能在第一次读摘要前已结束。点“立即整理”时记下返回的 run id，active 消失后再查该 run 状态。
+- Portal `Markdown` 会把 `###` 降级渲染成 `h4`；摘要样式用 `.memory-summary .md :is(h1,h2,h3,h4,h5)`，选择器不能只写 h3。
+- `.rich-input.is-empty::before` 曾用 `left: inherit; right: 4px`，绝对定位按内容宽收缩后贴右，占位符显示在输入框右侧；改为 `inset: 0; padding: inherit` 与正文起点对齐。
+
 ## 2026-11-01 GenUI 存图与表格复制
 
 - **浮动操作在 `:hover` 生效的同一刻就可点中**：`pointer-events` 不参与过渡，只有 opacity 有延迟。`pointerenter` 里用 `elementFromPoint` 探测角落会探到操作条自身；用 `elementsFromPoint` 并跳过 `[data-capture-skip]`（`genui/image.tsx` 的 `placeTools`）。

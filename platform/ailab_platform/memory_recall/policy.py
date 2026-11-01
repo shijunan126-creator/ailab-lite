@@ -10,11 +10,11 @@ CONTEXT_CHARS = 4000
 CONTEXT_FACTS = 20
 
 
-def visible(entry: dict, project_id: str | None = None, *, project_only: bool = False, as_of: datetime | None = None) -> bool:
+def visible(entry: dict, project_id: str | None = None, mode: str = "shared", *, as_of: datetime | None = None) -> bool:
     if entry.get("suppressed") or entry.get("status", "active") != "active":
         return False
     scope = entry.get("project_id")
-    if scope != project_id and (scope is not None or project_only):
+    if scope != project_id and (scope is not None or (project_id is not None and mode == "isolated")):
         return False
     if as_of is None:
         return not entry.get("superseded_by") and not entry.get("invalid_at")
@@ -28,15 +28,13 @@ def visible(entry: dict, project_id: str | None = None, *, project_only: bool = 
     return True
 
 
-def model_view(document: dict, project_id: str | None = None, *, query: str | None = None, as_of: datetime | None = None) -> dict:
+def model_view(
+    document: dict, project_id: str | None = None, *, mode: str = "shared", query: str | None = None, as_of: datetime | None = None
+) -> dict:
     entries = (
         []
         if not document.get("enabled", True) or not document.get("read_enabled", True)
-        else [
-            e
-            for e in document.get("entries", [])
-            if visible(e, project_id, project_only=bool(project_id and document.get("project_only")), as_of=as_of)
-        ]
+        else [e for e in document.get("entries", []) if visible(e, project_id, mode=mode, as_of=as_of)]
     )
     if query is not None:
         docs = [text.build_doc(e["id"], (e["content"], 1.0)) for e in entries]
@@ -92,3 +90,44 @@ def source_available(db, run) -> bool:
     if owner is None or not owner.context_source_epoch:
         return owner is not None
     return db.scalar(select(Run.id).where(Run.id == run.id, Run.id.in_(invalid_sources_query(run.user_id)))) is None
+
+
+def project_mode(db, project_id: str | None) -> str:
+    from ..models import Project
+
+    project = db.get(Project, project_id, populate_existing=True) if project_id else None
+    return project.memory_mode if project else "shared"
+
+
+def history_pool(db, user_id, project_id):
+    from sqlalchemy import or_, select
+
+    from ..models import Conversation, Project
+
+    if project_id and project_mode(db, project_id) == "isolated":
+        return Conversation.project_id == project_id
+    shared = select(Project.id).where(Project.user_id == user_id, Project.memory_mode == "shared")
+    return or_(Conversation.project_id.is_(None), Conversation.project_id.in_(shared))
+
+
+def history_pool_reader(db, current):
+    """Freeze project modes once for a direct recall request, including its neighbouring turns."""
+    from sqlalchemy import select
+
+    from ..models import Project
+
+    isolated = set(db.scalars(select(Project.id).where(Project.user_id == current.user_id, Project.memory_mode == "isolated")))
+    left = run_project(db, current)
+
+    def allows(source):
+        right = run_project(db, source)
+        return left == right if left in isolated else right not in isolated
+
+    return allows
+
+
+def same_history_pool(db, current, source):
+    left, right = run_project(db, current), run_project(db, source)
+    if left and project_mode(db, left) == "isolated":
+        return left == right
+    return not right or project_mode(db, right) == "shared"

@@ -840,3 +840,57 @@ def test_lifecycle_limits_backfill_and_roundtrip(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM run_asset_refs")) == 3
         assert conn.scalar(text("SELECT count(*) FROM runs")) == 1
+
+
+@pytest.mark.parametrize("strict", [True, False])
+def test_memory_summary_0046_upgrade_downgrade_reupgrade_data(engine, strict):
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0045")
+    users = sa.table("users", sa.column("id", sa.String), sa.column("settings", sa.JSON))
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            users.update()
+            .where(users.c.id == "u1")
+            .values(
+                settings={
+                    "other": "kept",
+                    "memory": {"revision": 3, "project_only": strict, "entries": [{"id": "mem_a", "content": "保留"}]},
+                }
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO projects (id,user_id,name,name_key,created_at,updated_at) VALUES "
+                "('prj_a','u1','A','a',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP),"
+                "('prj_b','u1','B','b',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)"
+            )
+        )
+    _upgrade_to(engine, "0046")
+    with engine.begin() as conn:
+        assert conn.execute(text("SELECT memory_mode FROM projects ORDER BY id")).scalars().all() == (
+            ["isolated", "isolated"] if strict else ["shared", "shared"]
+        )
+        settings = conn.execute(sa.select(users.c.settings).where(users.c.id == "u1")).scalar_one()
+        assert settings["other"] == "kept" and "project_only" not in settings["memory"]
+        assert settings["memory"]["entries"][0]["content"] == "保留"
+        conn.execute(text("UPDATE projects SET memory_mode='shared' WHERE id='prj_b'"))
+        conn.execute(
+            text(
+                "INSERT INTO memory_summaries (id,user_id,project_id,updated_at) VALUES "
+                "('msum_a','u1',NULL,CURRENT_TIMESTAMP),('msum_b','u1','prj_a',CURRENT_TIMESTAMP)"
+            )
+        )
+        assert conn.execute(text("SELECT text,source_digest FROM memory_summaries WHERE id='msum_a'")).one() == ("", "")
+    _downgrade_to(engine, "0045")
+    with engine.connect() as conn:
+        settings = conn.execute(sa.select(users.c.settings).where(users.c.id == "u1")).scalar_one()
+        assert settings["memory"]["project_only"] is strict
+        assert "memory_summaries" not in inspect(engine).get_table_names()
+    _upgrade_to(engine, "0046")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT memory_mode FROM projects")).scalars().all() == (
+            ["isolated", "isolated"] if strict else ["shared", "shared"]
+        )
+        assert "project_only" not in conn.execute(sa.select(users.c.settings).where(users.c.id == "u1")).scalar_one()["memory"]

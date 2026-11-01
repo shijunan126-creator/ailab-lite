@@ -244,6 +244,41 @@ def _user_prompt(messages: list[dict]) -> str:
     return next((_content_text(m.get("content")) for m in reversed(messages) if m.get("role") == "user"), "")
 
 
+def _memory_answer(system: str, prompt: str) -> str | None:
+    """Deterministic answers to the memory summary/edit/merge prompts, so the mock stack shows a real summary and
+    "忘记…/记住…" works in the browser. Anything else is not a memory maintenance call."""
+    from .memory_dream.prompts import EDIT_SYSTEM, EXTRACT_SYSTEM, JUDGE_SYSTEM, MERGE_SYSTEM, SUMMARY_SYSTEM
+
+    # Extraction and judging append per-call rules to their system prompt. The mock extracts nothing, so a
+    # nightly or manual consolidation on the mock stack takes the normal path rather than failing on prose.
+    if system.startswith(EXTRACT_SYSTEM):
+        return json.dumps({"facts": []})
+    if system.startswith(JUDGE_SYSTEM):
+        return json.dumps({"results": []})
+    if system not in (SUMMARY_SYSTEM, EDIT_SYSTEM, MERGE_SYSTEM):
+        return None
+    try:
+        data = json.loads(prompt)
+    except ValueError:
+        data = {}
+    if system == SUMMARY_SYSTEM:
+        return "### 记得的内容\n" + "\n".join(f"- {fact}" for fact in data.get("facts", []))
+    if system == MERGE_SYSTEM:
+        return json.dumps({"decisions": [{"id": e["id"], "action": "to_account"} for e in data.get("project", [])]}, ensure_ascii=False)
+    instruction = str(data.get("instruction", "")).strip()
+    for verb in ("忘记", "记住"):
+        if instruction.startswith(verb):
+            subject = instruction[len(verb) :].strip(" ：:，,。")
+            break
+    else:
+        return json.dumps({"ops": [], "reply": "没听懂要改什么。"}, ensure_ascii=False)
+    if verb == "记住":
+        return json.dumps({"ops": [{"op": "add", "kind": "memory", "content": subject}], "reply": f"已记住：{subject}"}, ensure_ascii=False)
+    gone = [e for e in data.get("entries", []) if subject and subject in e.get("content", "")]
+    reply = f"已忘记 {len(gone)} 条相关记忆。" if gone else "没有找到相关的记忆。"
+    return json.dumps({"ops": [{"op": "remove", "id": e["id"]} for e in gone], "reply": reply}, ensure_ascii=False)
+
+
 def _wants_ppt(prompt: str) -> bool:
     text = prompt.lower()
     return any(k in text for k in ("ppt", "幻灯片", "演示文稿", "汇报材料", "做个演示"))
@@ -400,6 +435,8 @@ class MockLLM(LLMClient):
         step = _assistant_steps(messages)
         usage = {"prompt_tokens": max(1, len(json.dumps(messages, ensure_ascii=False)) // 4), "completion_tokens": 20}
 
+        if messages and (answer := _memory_answer(str(messages[0].get("content") or ""), prompt)) is not None:
+            return LLMResponse(content=answer, usage=usage)
         if (answer := _genui_answer(prompt)) is not None:
             return LLMResponse(content=answer, usage=usage)
 

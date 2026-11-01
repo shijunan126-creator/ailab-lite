@@ -379,6 +379,23 @@ export type Project = {
   updated_at: string;
   conversations: number;
   files: number;
+  memory_mode?: MemoryMode;
+};
+
+/** shared: the project reads and feeds the account memory; isolated: it only uses its own. */
+export type MemoryMode = "shared" | "isolated";
+
+/** GET /v1/memory/summary: what the AI remembers in one scope (the account, or one project), written for people. */
+export type MemorySummary = {
+  project_id: string | null;
+  text: string; // Markdown, derived from the facts; empty when there is nothing or it has not been written yet
+  generated_at: string | null;
+  stale: boolean; // the facts changed since the text was written
+  enabled: boolean;
+  entries: number;
+  memory_mode: MemoryMode | null; // null for the account
+  merge_pending: boolean; // an isolated project became shared and its facts are waiting to be merged
+  active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
 };
 
 export type EventItem = {

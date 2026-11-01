@@ -40,45 +40,51 @@ export default function AccountPage() {
   }
 
   return (
-    <main className="page page-narrow">
-      <div className="page-head">
+    <main className="page mpage account-page">
+      <div className="mpage-head">
         <h1>账号设置</h1>
-        <p>修改密码后，所有设备上的登录都会失效，需要用新密码重新登录。</p>
       </div>
 
-      <section className="card card-pad">
-        <div className="card-title">账号</div>
-        <dl className="kv-list">
-          <dt>用户名</dt>
-          <dd>{me?.username || "-"}</dd>
-          <dt>邮箱</dt>
-          <dd>{me?.email || "-"}</dd>
-        </dl>
+      <section className="msection">
+        <div className="mlist">
+          <div className="mrow">
+            <span className="mrow-main"><span className="mrow-title"><span>用户名</span></span></span>
+            <span className="account-value">{me?.username || "-"}</span>
+          </div>
+          <div className="mrow">
+            <span className="mrow-main"><span className="mrow-title"><span>邮箱</span></span></span>
+            <span className="account-value">{me?.email || "-"}</span>
+          </div>
+        </div>
       </section>
 
       {me?.username ? (
-        <form className="card card-pad" style={{ marginTop: 16 }} onSubmit={submit}>
-          <div className="card-title">修改密码</div>
-          {error ? <div className="alert error" role="alert" style={{ marginBottom: 14 }}>{error}</div> : null}
-          <label className="field">
-            <span>当前密码</span>
-            <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-          </label>
-          <label className="field">
-            <span>新密码</span>
-            <input type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
-            <span className="hint" style={{ marginTop: 4 }}>至少 8 个字符。</span>
-          </label>
-          <label className="field">
-            <span>再输入一次新密码</span>
-            <input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
-          </label>
-          <button type="submit" disabled={busy || !current || !next || !again}>
-            {busy ? "提交中…" : "修改密码"}
-          </button>
-        </form>
+        <section className="msection">
+          <div className="msection-head"><h2>修改密码</h2></div>
+          <form className="mlist account-form" onSubmit={submit}>
+            {error ? <div className="alert error" role="alert">{error}</div> : null}
+            <label className="field">
+              <span>当前密码</span>
+              <input type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>新密码</span>
+              <input type="password" autoComplete="new-password" placeholder="至少 8 个字符" value={next} onChange={(e) => setNext(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>再输入一次新密码</span>
+              <input type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
+            </label>
+            <div className="account-foot">
+              <span className="hint">修改后，所有设备都要用新密码重新登录</span>
+              <button type="submit" disabled={busy || !current || !next || !again}>
+                {busy ? "提交中…" : "修改密码"}
+              </button>
+            </div>
+          </form>
+        </section>
       ) : me ? (
-        <p className="hint" style={{ marginTop: 16 }}>这个账号没有设置密码登录（使用 API 令牌），无法在这里修改密码。</p>
+        <p className="hint account-note">这个账号没有设置密码登录（使用 API 令牌），无法在这里修改密码。</p>
       ) : null}
     </main>
   );

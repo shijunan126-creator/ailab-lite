@@ -5,11 +5,12 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { api, Conversation, downloadUrl, FileItem, Project } from "../lib/api";
 import { fileStatusText, formatBytes, timeAgo } from "../lib/format";
-import { deleteProject, renameProject } from "../lib/projects";
+import { deleteProject, OPEN_PROJECT_PANEL, renameProject, takeProjectPanel } from "../lib/projects";
 import { conversationsChanged, CONVERSATIONS_CHANGED } from "./app-shell";
-import { IconDownload, IconFolder, IconMore, IconPencil, IconTrash } from "./icons";
+import { IconDownload, IconFolder, IconHistory, IconMore, IconPencil, IconTrash } from "./icons";
 import ConversationMenu from "./conversation-menu";
 import ProjectBrief from "./project-brief";
+import ProjectMemoryDialog from "./memory/project-memory";
 import FileTile from "./library/file-tile";
 import FileViewer from "./preview/file-viewer";
 import { useLibrary } from "./library/use-library";
@@ -22,11 +23,19 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(project.name);
   const [menu, setMenu] = useState(false);
+  const [memory, setMemory] = useState(false);
   const menuBox = useRef<HTMLDivElement | null>(null);
   const [viewing, setViewing] = useState<FileItem | null>(null);
   const { files, loaded } = useLibrary({ category: "all", projectId: project.id }, tab === "files"); // only once opened
 
   useEffect(() => setName(project.name), [project.name]);
+
+  useEffect(() => {
+    const open = () => takeProjectPanel(project.id, "memory") && setMemory(true);
+    open();
+    window.addEventListener(OPEN_PROJECT_PANEL, open);
+    return () => window.removeEventListener(OPEN_PROJECT_PANEL, open);
+  }, [project.id]);
 
   useEffect(() => {
     const load = () =>
@@ -102,6 +111,16 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
               >
                 <IconPencil size={15} /> 重命名
               </button>
+              <button
+                className="menu-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
+                  setMemory(true);
+                }}
+              >
+                <IconHistory size={15} /> 记忆
+              </button>
               <button className="menu-item danger" role="menuitem" onClick={remove}>
                 <IconTrash size={15} /> 删除项目
               </button>
@@ -167,6 +186,7 @@ export default function ProjectHome({ project, composer, error }: { project: Pro
           ))}
         </div>
       )}
+      {memory ? <ProjectMemoryDialog project={project} onClose={() => setMemory(false)} /> : null}
       {viewing ? (
         <FileViewer files={files} file={viewing} onOpen={setViewing} onClose={() => setViewing(null)} chatHref={(f) => `/p/${project.id}?files=${f.id}`} />
       ) : null}
