@@ -3,16 +3,19 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, insert, select, text
+from sqlalchemy.orm import Session
 
 from ailab_platform.api.asset_refs import register_assets
 from ailab_platform.api.brand import save_brand, workspace_input
 from ailab_platform.api.reaper import purge_deleted_conversations, purge_unused_assets, unused_asset_query
 from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
-from ailab_platform.models import FileObject, LifecycleDeletion, Run, RunAssetRef, Template, utcnow
+from ailab_platform.migrate import run_migrations
+from ailab_platform.models import FileObject, LifecycleDeletion, Run, RunAssetRef, Template, User, utcnow
 from ailab_platform.quota import library_bytes
 from ailab_platform.storage import get_storage
+from tests.test_migrations import engine as engine
 from tests.test_projects_brand import api as api
 from tests.test_templates import file_id, ready
 
@@ -144,15 +147,70 @@ def test_gc_rechecks_refs_under_lock(api, monkeypatch):
         assert db.get(FileObject, fid).purged_at is None
 
 
-def test_asset_candidate_query_uses_indexes(api):
-    with SessionLocal() as db:
-        sql = str(unused_asset_query(utcnow()).compile(db.bind, compile_kwargs={"literal_binds": True}))
-        if db.bind.dialect.name == "postgresql":
-            db.execute(text("SET LOCAL enable_seqscan = off"))
-            plan = str(db.execute(text("EXPLAIN " + sql)).all())
+def test_asset_candidate_query_uses_indexes(engine):
+    # Shared API data/stats depend on earlier tests and autoanalyze. Use a selective,
+    # analyzed workload and the reaper's actual ORDER BY/LIMIT, without planner hints.
+    run_migrations(engine)
+    cutoff = utcnow()
+    created = cutoff - timedelta(days=1)
+    with Session(engine) as db:
+        db.add(User(id="asset-owner", email="asset@example.test", display_name="asset"))
+        db.flush()
+        db.add(Run(id="asset-run", user_id="asset-owner", prompt="assets", model="mock"))
+        db.flush()
+        for start in range(0, 10000, 1000):
+            ids = [f"background-{i}" for i in range(start, start + 1000)]
+            db.execute(
+                insert(FileObject),
+                [dict(id=fid, user_id="asset-owner", filename=fid, storage_key=fid, purpose="upload", created_at=created) for fid in ids],
+            )
+            db.execute(insert(RunAssetRef), [dict(run_id="asset-run", file_id=fid, kind="template") for fid in ids])
+            db.execute(
+                insert(Template),
+                [dict(file_id=fid, scope="company", name=fid, created_by="asset-owner") for fid in ids],
+            )
+        db.execute(
+            insert(FileObject),
+            [
+                dict(
+                    id=f"candidate-{i}",
+                    user_id="asset-owner",
+                    filename=f"asset-{i}",
+                    storage_key=f"asset-{i}",
+                    purpose="template" if i % 2 else "brand",
+                    created_at=created,
+                )
+                for i in range(40)
+            ],
+        )
+        db.commit()
+        for table in ("files", "templates", "run_asset_refs"):
+            db.execute(text(f"ANALYZE {table}"))
+        query = unused_asset_query(cutoff).order_by(FileObject.created_at, FileObject.id).limit(settings.gc_batch_size)
+        sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
+        if engine.dialect.name == "postgresql":
+            plan = db.execute(text("EXPLAIN (ANALYZE, FORMAT JSON) " + sql)).scalar_one()[0]["Plan"]
+
+            def nodes(node):
+                yield node
+                for child in node.get("Plans", []):
+                    yield from nodes(child)
+
+            scans = list(nodes(plan))
+            for table, column in (("files", "purpose"), ("templates", "file_id"), ("run_asset_refs", "file_id")):
+                # Any equivalent index is valid; a full index scan is not a lookup.
+                assert any(
+                    node.get("Relation Name") == table
+                    and node["Node Type"] in {"Index Scan", "Index Only Scan", "Bitmap Heap Scan"}
+                    and column in str(node.get("Index Cond", node.get("Recheck Cond", "")))
+                    for node in scans
+                ), plan
+            assert plan["Actual Rows"] == min(40, settings.gc_batch_size), plan
         else:
-            plan = str(db.execute(text("EXPLAIN QUERY PLAN " + sql)).all())
-        assert "ix_files_asset_gc" in plan and "ix_run_asset_refs_file" in plan and "ix_templates_file_id" in plan
+            plan = [row[3] for row in db.execute(text("EXPLAIN QUERY PLAN " + sql))]
+            for table, column in (("files", "purpose"), ("templates", "file_id"), ("run_asset_refs", "file_id")):
+                assert any(f"SEARCH {table} USING " in detail and f"{column}=?" in detail for detail in plan), plan
+        assert len(db.scalars(query).all()) == min(40, settings.gc_batch_size)
 
 
 def test_queued_template_retained_before_its_run_exists(api):
