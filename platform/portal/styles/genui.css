@@ -303,7 +303,7 @@ div.gu-divider::before { flex: 0 0 0; }
 .gu-compare th[scope="row"] { padding: 8px 12px; font-weight: 500; text-align: left; color: var(--muted-foreground); white-space: normal; }
 .gu-compare th, .gu-compare td { vertical-align: middle; }
 .gu-compare thead th { padding: 8px 12px; font-size: var(--text-sm); font-weight: 600; text-align: left; }
-.gu-compare thead th .gu-badge { margin-left: 6px; vertical-align: 1px; }
+.gu-compare thead th .gu-badge { margin-left: 6px; vertical-align: middle; }
 .gu-compare td.gu-best { color: var(--success); font-weight: 650; }
 .gu-compare .gu-pick { background: color-mix(in srgb, var(--success) 6%, transparent); }
 .gu-ranking { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
