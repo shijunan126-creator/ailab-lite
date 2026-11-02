@@ -1,3 +1,12 @@
+# 行内气泡对齐（2026-11-02）
+
+- 分支 `fix/inline-chip-alignment-pr`，发布基线 `origin/main@188afca`（原本地验证基线 `c033664`）；保留进入任务时已有的部署交接、更新记录与其他本地文件。用户已授权提交PR，CI全绿后合并；未授权部署。
+- 网页来源、文件引用、普通网址、技能标签、对比表标题徽章共5处统一按所在文字行居中；数字引用保留角标。最终验证与边界见[记录](updates/2026-11-02-inline-chip-alignment.md)。
+- Portal 138项测试/build、Ruff与Chromium桌面/手机浅深色样式检查通过；Python全套1985 passed / 164 skipped，exit 0。[PR #147](https://github.com/shijunan126-creator/ailab-lite/pull/147) 已提交，下一步：全部CI通过后合并；未授权部署。
+
+
+---
+
 # 记忆 / GenUI / 预览修复：PR 与部署（2026-11-02）
 
 - 分支 `fix/genui-timeline-alignment`，实施基线 `main@82ff8285`，发布前已整合 `origin/main@d7e2058`。用户已追加授权：本线程全部改动提PR，CI通过后merge，并增量部署最新main；无工具模型不在优化范围。
