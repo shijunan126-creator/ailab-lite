@@ -427,7 +427,7 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
         process_file(target, platform=CacheClient(c))
         with SessionLocal() as db:
             file = db.get(FileObject, target)
-            assert file.meta["extract"]["parser"] == "zcode-3c5b227-ailab2"
+            assert file.meta["extract"]["parser"] == "office-a60ba6a-ailab3"
             assert file.meta["ocr_copied_pages"] == 1
             record = db.scalar(select(OcrPageResult).where(OcrPageResult.file_id == target))
             assert record.text_key.startswith(f"derived/{target}/") and record.seconds == 0

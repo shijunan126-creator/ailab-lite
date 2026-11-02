@@ -4,10 +4,11 @@ import hashlib
 import zipfile
 from pathlib import Path
 
-from defusedxml import ElementTree as ET
-
 
 def check(source: Path) -> dict:
+    # This helper executes in the Office image; service startup does not require sandbox libraries.
+    from defusedxml import ElementTree as ET
+
     with source.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
     result = {"sha256": digest, "bytes": source.stat().st_size, "format": source.suffix[1:], "issues": []}

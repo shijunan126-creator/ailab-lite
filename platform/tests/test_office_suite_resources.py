@@ -165,8 +165,8 @@ def test_capability_contract_covers_sources_commands_viewer_and_dependencies(mon
     commands = {e["command"] for e in entries if "command" in e}
     assert {"env.fix", "convert.latex", "form.fill", "pivot", "validate"} <= commands
     assert sum(e["kind"] == "viewer-feature" for e in entries) == 36
-    assert {"reportlab", "pikepdf", "PyMuPDF"} <= set(actual["missing_from_image"]["python"])
-    assert {"playwright", "pdf-lib", "pptxgenjs", "docx"} <= set(actual["missing_from_image"]["npm"])
+    assert not {"reportlab", "pikepdf", "PyMuPDF"} & set(actual["missing_from_image"]["python"])
+    assert not {"playwright", "pdf-lib", "pptxgenjs", "docx"} & set(actual["missing_from_image"]["npm"])
     assert "tectonic" in actual["missing_from_image"]["binary"]
     assert "COPY images/sbx-office/skills/ /opt/skills/" in (ROOT / "images/sbx-office/Dockerfile").read_text()
 
