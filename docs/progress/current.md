@@ -2,7 +2,8 @@
 
 - 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
 - 已定：许可（Apache-2.0/MIT）、命名、vendor 布局、模块读取、可见性、视觉验收与侧栏工具，见计划“实施决策”。
-- 进行中：P0 来源/能力清单 + P1 模块与上下文合同（Codex）。下一步：P1 评审后并行 P2 制作/镜像与 P3 侧栏后端，再做 P4 Portal 与 P5 联合验收。
+- 本次仅实施 P0＋资源构建，未开始 P1：217 个原始文件、113 个完整适配模块、确定性构建/漂移与 hash 闭包回归、336 项能力合同。代码基线 `13d630a`，保留并发进入的侧栏设计提交 `ae996a0`；范围、最终验证与边界见[记录](updates/2026-11-02-office-suite-p0.md)。
+- 下一步：交付本地提交供主任务评审；后续另开 P1 加载/预算任务，先处理两段不可拆代码块超过2048估算token的准入边界。P2依赖、reader迁移、视觉门禁和P3/P4侧栏均未执行。本轮不push、不提PR、不部署。
 
 ---
 

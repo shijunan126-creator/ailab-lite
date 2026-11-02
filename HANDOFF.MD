@@ -1,3 +1,8 @@
+## 2026-11-02 办公原文资源构建
+
+- 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
+- 2048是原文分片打包目标，两个完整代码围栏本身已超限；索引明确 `cap_exception`，不可为凑上限截断围栏，也不能假称全部小于2048。P1须按真实窗口显式准入或拒绝，见[记录](docs/progress/updates/2026-11-02-office-suite-p0.md)。原文目录/代码入库不代表依赖可用；当前reader独立npm目录不保证技能脚本能解析同名包，完整reader迁移留P2。
+
 ## 2026-11-02 办公能力迁移边界
 
 - 全量迁移不能直接替换四个大 SKILL：资源安装状态与当前消息中完整正文可见性分开；轮内/跨轮/无快照压缩都要重算模块可见性。上游 capture_view 是页面工具，离线/后台任务不能假设浏览器在线；选区问答不能沿用全文附件 prepare 重复注入整份文档。见[计划](docs/architecture/design/office-suite/README.md)。
