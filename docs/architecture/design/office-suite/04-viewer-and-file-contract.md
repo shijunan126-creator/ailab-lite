@@ -62,3 +62,15 @@ reveal 命令需要 API 授权、attempt fencing、稳定 command_id 和 outbox/
 上游 `ui/assets.ts:readFileBytes` 虽分块传输，最终仍分配完整 ArrayBuffer；`LoadedDoc` 还持有 bytes，viewer/worker 可能再复制。不能宣称已经流式或恒定内存。按格式设置明确的浏览器 native-view 大小/页数/单元格准入，ArrayBuffer 用 transfer/共享受控引用避免额外完整复制，超过上限走已有服务器分页预览并标明原生选区/对象定位不可用。
 
 普通大文件仍能有界读取和查看，但只有在声明范围内通过 native 四格式交互，才能称完整交互 parity。切后台卸载重 viewer，保留轻量位置；关闭时释放 worker、object URL 和二进制缓存。解析/渲染按同文件版本复用，首屏不下载四套 viewer 或全页图片。新查询有界/索引，UI 高频状态不写大表；资源测量见[05](05-delivery-and-acceptance.md)。
+
+## 接口定稿（2026-11-02，P3/P4 共同依据）
+
+定位语法沿用 runtime anchor：docx `p:N[-M]`、`t:N[/rRcC]`；xlsx `Sheet[!A1[:B2]]`；pptx `slide:N[-M]`、`slide:N/shape:ID`；pdf `page:N[-M]`，1-based，API 用同版本 runtime 的 `check()` 规范化。`version` 指文件内容 hash（`content_revision`），与 `render_revision` 分开。
+
+| 接口 | 合同 |
+| --- | --- |
+| `GET /v1/files/{id}/document` | 文档查看索引（Worker 用 runtime reader 生成并缓存为 `derived/{file_id}/viewer.json`，按 content hash＋parser revision 复用）：`{status: ready\|pending\|failed\|unsupported, file_id, version, parser_revision, kind, title, bytes, units, outline[{at,label,level}], blocks?[{at,text}]（仅 docx，有界）, native: bool, reason?}`。pending 时 Portal 轮询；`native=false` 表示超过原生查看准入（字节/页/单元格上限，P3 定值并测量），Portal 回退现有分页预览。分享页走分享身份的同形接口。字节仍由现有 `/v1/files/{id}/content` 流式提供。 |
+| Work 未交付文件 | `GET /v1/runs/{run_id}/workspace/document?path=` 与 `.../workspace/content?path=`：仅当前用户、当前租约工作区、授权路径；返回同形索引及 `version=content_hash`、`workspace_revision`；交付后 Portal 切换到正式 file_id。 |
+| 消息文档引用 | 发送体新增 `doc_refs: [{file_id, version, at, quote}]`（每条 quote ≤4000 字，最多 8 条），与 `file_ids` 同一 outbox/client_send_id 路径。API 校验读取权限、版本存在、`at` 合法、quote 与该范围正文规范化后匹配，存入新表（不复用 `message_file_refs` 唯一键）；retry/edit/fork/排队继承冻结引用。Agent 收到的用户消息以追加文本块呈现引用（文件名、定位、引文），Chat 仅准备该范围＋必要相邻结构，不触发全文 prepare。 |
+| 查看状态 | `PUT /v1/conversations/{id}/view`：`{view_id, file_id, version, at, selection?{at,text}}`，Portal 去抖（≥500ms）上报，短 TTL（10 分钟）临时存储，不写 RunEvent/业务大表；`DELETE` 于关闭侧栏/切走。按 user+conversation+view_id 隔离。 |
+| 固定工具 `document_view` | Chat/Work 同 schema，`op` ∈ `open\|reveal\|get_view\|capture`。open/reveal：`{file_id\|path, targets?[{at,quote?}], note?}`，API 授权后经 outbox 发 `document.reveal` 事件 `{command_id, file_id\|run_path, version, targets, note}`，结果只表示“已发送”，不声称用户已看到。get_view：返回该会话活跃 view 快照；多个返回候选，无/过期返回 `unavailable`。capture：`{file_id\|path, at, source: viewport\|render}`；`render` 用服务端受限渲染（复用派生页图，按 file_hash+render_revision+范围缓存）；`viewport` 发 `document.capture_request {request_id, view_id, at?}`，Portal 截图后 `POST /v1/runs/{run_id}/captures/{request_id}`（PNG，≤2 MiB，绑定 view_id/version），Agent 等待有 deadline（≤20s），超时返回 `unavailable`，不改用第一页冒充。截图作为有 hash/TTL/所有者的派生物，以图片引用进入上下文与 checkpoint。 |
