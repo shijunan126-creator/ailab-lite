@@ -15,9 +15,10 @@ from .. import web
 from ..config import settings
 from ..contracts.genui import full_prompt, index_for
 from ..domain.answer_parts import for_history
+from ..skill_registry import BASE_SKILLS
 from ..skill_registry import catalog as skills
 
-PLATFORM_PROMPT_VERSION = "2026-10-31-v1"
+PLATFORM_PROMPT_VERSION = "2026-11-02-modules-v1"
 
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
 
@@ -63,7 +64,8 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 - 改完简要说明改了什么。
 
 # 技能
-做下面这些事之前，先调用 load_skill 读取对应技能的完整说明并照做：
+做下面这些事之前，先调用 load_skill 读取导航，再按 resource/cursor 读完任务所需模块的全部分片和依赖；
+压缩摘要中的已读索引只作导航，需要时重读正文：
 {skills}
 
 # 交付
@@ -76,6 +78,10 @@ def load_skill(name: str, *, mode: str = "work") -> str:
     skill = skills().get(name)
     if skill is None:
         raise KeyError(f"unknown skill {name!r}; available: {', '.join(skills())}")
+    if name in BASE_SKILLS:
+        from .skill_modules import read_module
+
+        return read_module(name, mode)["skill"]
     content = skill["path"].read_text(encoding="utf-8")
     if mode == "chat" and name.startswith("platform."):
         content = re.sub(r"<!-- work -->.*?<!-- /work -->", "", content, flags=re.DOTALL)

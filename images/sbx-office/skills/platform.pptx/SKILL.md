@@ -10,7 +10,7 @@ description: PPT 文件读取、定位与处理
 全文任务从头连续遍历并核对 status=ready；query 命中或部分页不能冒充全文。原生文字不包含图表/嵌图语义；非视觉模型不能靠 OCR 猜测图形。按真实预算分批读取，不默认注入整份渲染。
 extract_text/view_attachment 由平台管理等待；不要启动沙箱sleep、循环重复提取或交付中间图片来绕路，不在用户沙箱安装 OCR 权重。权限和删除以每次工具返回为准。
 
-完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。按任务读取匹配模块的全部分片及 deps；模块工具读取待 P1，当前不要假定 resource 参数已可用。
+完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。用 load_skill(name, resource=path, cursor="0") 读取，按 next_cursor 读完所需模块及 deps；预算不足先压缩或缩小范围。
 
 ## 阅读与审阅
 - agents/visual-judge.md

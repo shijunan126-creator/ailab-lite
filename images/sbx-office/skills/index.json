@@ -19,7 +19,7 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "31f10c860842cd6b9de9ed0c027d806a13c59a8ed62386b5179bcdd3f272b016",
+      "sha256": "bbfa3df0767ef811feb9855869c842c6c31651092694e0da4beefb5cba41221e",
       "version": "1.2.0"
     },
     "platform.pdf": {
@@ -31,7 +31,7 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "74ccb51d3376643f3d1aeddf2a1f6bde3f25574d8be36d639ed6abee85ab8bc1",
+      "sha256": "b81f8d70808290694f54c483346633cb4b7e9bf49c0e5bd9c62b1bbeb3fa43b5",
       "version": "1.2.0"
     },
     "platform.pptx": {
@@ -46,7 +46,7 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "5a2bbfc0451bd910324d6a5146459b82cc932f140501e89fe6239d6181815e05",
+      "sha256": "dee6599f7a5b5d7825b2218b761f547348bccdbfff66d76ef7d83f8bb256d577",
       "version": "1.2.0"
     },
     "platform.xlsx": {
@@ -59,7 +59,7 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "0eae0ec956c7be6e72c17a466b7b216410af2c768ddc9eeb7d5e953f9cc4ef18",
+      "sha256": "61a8d7aee6440b16c808a1406e2ff995e4090a02d43d1497ca14da3444268b1c",
       "version": "1.2.0"
     },
     "pptx": {

@@ -1117,3 +1117,168 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
             "/workspace/.ailab/skills/team-skill/SKILL.md",
             f"---\nname: team-skill\ndescription: team rules\n---\nInstructions {'v2' if updated else 'v1'}".encode(),
         ) in broker.put_calls
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
+    from ailab_platform.adapters.runtime import restored_state
+    from ailab_platform.agent.skill_modules import visible_modules
+
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.snapshots = []
+
+        async def put_checkpoint(self, run_id, payload):
+            result = await super().put_checkpoint(run_id, payload)
+            self.snapshots.append(copy.deepcopy(self.checkpoint))
+            return result
+
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
+
+    def load(number, **arguments):
+        return {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": str(number),
+                    "type": "function",
+                    "function": {"name": "load_skill", "arguments": json.dumps({"name": "platform.docx", **arguments})},
+                }
+            ]
+        }
+
+    script = [
+        load(1),
+        load(2, resource="viewer/SKILL.md"),
+        load(3, resource="viewer/SKILL.md"),
+        load(4, resource="missing"),
+        {"content": "done"},
+    ]
+    platform = Platform()
+    with scripted_server(script) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 5
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+        assert before["tool_choice"] == after["tool_choice"] == "auto"
+    results = {m.get("tool_call_id"): json.loads(m["content"]) for m in requests[-1]["messages"] if m["role"] == "tool"}
+    assert results["2"]["complete"] and results["3"]["already_loaded"] and "skill" not in results["3"]
+    assert not results["4"]["ok"]
+    assert visible_modules(requests[-1]["messages"])
+    saved = platform.checkpoint["state"]
+    restored = restored_state(platform.checkpoint)
+    assert restored["messages"] == saved["messages"]
+    assert visible_modules(restored["messages"]) == visible_modules(saved["messages"])
+    platform.checkpoint = next(
+        snapshot
+        for snapshot in platform.snapshots
+        if snapshot["state"]["messages"] == requests[2]["messages"] and not snapshot["state"]["pending"]
+    )
+    with scripted_server(script[2:]) as (url, resumed_requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="resume"))
+    assert resumed_requests[0]["messages"] == requests[2]["messages"]
+    assert resumed_requests[0]["tools"] == requests[2]["tools"]
+    assert resumed_requests[0]["tool_choice"] == requests[2]["tool_choice"]
+    assert platform.statuses[-1][0] == "succeeded"
+    prohibited = bytes((122, 99, 111, 100, 101)).decode()
+    assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
+
+
+@pytest.mark.parametrize("path", ["in_turn", "cross_turn"])
+@pytest.mark.parametrize("keep", [False, True])
+def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
+    from ailab_platform.agent.skill_modules import identity, read_module, visible_modules
+    from tests.test_skill_modules import paired
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=14000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    result = read_module("platform.docx", "work", "viewer/SKILL.md")
+    tools = [next(t for t in tools_for_turn() if t["function"]["name"] == "load_skill")]
+    platform = FakePlatform()
+    with scripted_server([{"content": "summary"}] * 3) as (url, requests):
+        loop = AgentLoop(platform=platform, llm=ModelTransport(url))
+        messages = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}]
+
+        async def checkpoint(*args):
+            pass
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+        loop._states["r"] = {"user_message_index": None, "delivered": {"/workspace/outputs/f.txt": 1}}
+        loop._steps["r"] = 0
+        run = {"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.35}}
+        for generation in range(3):
+            messages.extend([{"role": "user", "content": "history"}, {"role": "assistant", "content": "旧" * 5000}])
+            if keep:
+                messages.extend(
+                    [{"role": "user", "content": "task"}, *paired(result, str(generation)), {"role": "assistant", "content": "continue"}]
+                )
+            else:
+                messages.extend(
+                    [
+                        *paired(result, str(generation)),
+                        {"role": "user", "content": "task"},
+                        {"role": "assistant", "content": "continue"},
+                        {"role": "assistant", "content": "continue"},
+                    ]
+                )
+            original = copy.deepcopy(messages)
+            if path == "in_turn":
+                turn = SimpleNamespace(messages=messages, run=run)
+                asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", tools))
+            else:
+                messages = asyncio.run(
+                    loop._compact_parent_context("r", run, loop.llm, "m", messages, {"role": "user", "content": "next"}, tools)
+                )
+            wire = requests[generation]
+            assert wire["messages"][:-1] == original
+            assert wire["tools"] == tools and wire["tool_choice"] == "auto"
+            assert (identity(result) in visible_modules(messages)) == keep
+            summary = next(m["content"] for m in messages if m["role"] == "system" and "已读模块索引" in m.get("content", ""))
+            assert result["hash"] in summary and result["resource"] in summary
+            assert result["skill"] not in summary
+            assert len([e for e in platform.events if e[0] == "agent.context_boundary"]) == generation + 1
+
+
+def test_office_no_snapshot_rebuild_keeps_navigation_not_visibility(monkeypatch):
+    from ailab_platform.agent.skill_modules import annotate_summary, read_module, visible_modules
+    from ailab_platform.contracts.context_summary import ContextSummary
+    from tests.test_skill_modules import paired
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=14000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    module = read_module("platform.docx", "chat", "viewer/SKILL.md")
+    summary = annotate_summary(ContextSummary().model_dump_json(), paired(module), structured=True)
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, run_id, after=None):
+            return {
+                "summary": summary,
+                "through_run_id": "old",
+                "history": [{"id": "recent", "prompt": "旧" * 6500, "reply": "done"}],
+                "has_more": False,
+            }
+
+        async def save_model_summary(self, run_id, payload):
+            self.saved = payload
+
+    base = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}, {"role": "user", "content": "current"}]
+    with scripted_server([{"content": ContextSummary(objective="continue").model_dump_json()}]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, llm=ModelTransport(url))
+        run = {
+            "_attempt_id": "a",
+            "_fixed_catalog": tools_for_turn()[:1],
+            "context_settings": {"threshold_ratio": 0.35},
+            "options": {"capability_discovery": 1},
+        }
+        result = asyncio.run(loop._assemble_context("r", run, "m", base))
+    assert requests[0]["messages"][:2] == base[:2]
+    assert requests[0]["tool_choice"] == "auto"
+    assert ContextSummary.model_validate_json(platform.saved["summary"]).read_modules[0].hash == module["hash"]
+    assert not visible_modules(result)
+    assert result[-1] == base[-1]
+    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+    assert read_module("platform.docx", "chat", module["resource"])["hash"] == module["hash"]

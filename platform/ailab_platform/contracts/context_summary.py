@@ -26,6 +26,14 @@ class SummaryEntry(BaseModel):
     status: Literal["unverified", "verified", "conflict"] = "unverified"
 
 
+class ReadModule(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(max_length=64)
+    resource: str = Field(max_length=512)
+    cursor: str = Field(max_length=32)
+    hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ContextSummary(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1] = 1
@@ -36,6 +44,8 @@ class ContextSummary(BaseModel):
     open_items: list[SummaryEntry] = Field(default_factory=list, max_length=32)
     next_actions: list[str] = Field(default_factory=list, max_length=20)
     uncertainties: list[str] = Field(default_factory=list, max_length=20)
+
+    read_modules: list[ReadModule] = Field(default_factory=list, max_length=512)
 
     def sources(self):
         return [
