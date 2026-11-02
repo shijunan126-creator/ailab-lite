@@ -286,3 +286,29 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 旧 viewport capture 的授权读取返回410时，替换无法复原的图像为明确 unavailable/过期说明，记录 `agent.context_boundary(reason=rebuilt,cause=capture_expired)` 后持久化，再继续运行；不重试旧 capture_id，不假装旧图仍可见。Chat/Work 从真实 checkpoint 编解码路径恢复后均 succeeded，截图只读一次，后续请求仅追加。403/404/503 和图像内容变化仍保留暂停保护，不把权限/依赖失败冒充TTL。旧实现运行新增四项回归全部失败；修复后四项通过。
 
 真实 `deepseek-flash` 三次调用均首次使用合法 targets，无形状重试；cached/prompt 为512/3456、3456/3636、3584/3782，续轮合计7040/7418（94.90%）。这只是短上下文工具说明检查：工具返回 sent 为装置回应，未证明真实文档定位；未填充上下文，不把供应商尾部计数造成的不足95%隐去。
+
+**Viewer 首屏。** 根因是所有格式共用4,243,581 B脚本，以及路由GET未实际压缩（Next默认gzip并不能证明Route Handler有压缩）。保留既有sandbox/CSP和worker，构建时按上游registry的kind标记生成四份IIFE，只取当前格式；生成br/gzip，按Accept-Encoding含q值协商，返回Vary和immutable。构建version改为哈希完整资产闭包（含worker/wasm/字体），避免仅主脚本变更才失效。无运行时压缩CPU、新依赖、后台任务或准入门槛变更；总产物含三种表示约26 MiB，代价在构建CPU/磁盘。
+
+Chromium/Playwright CDP，1440×1000；同一浏览器同格式先禁缓存冷开，再正常HTTP缓存整页第二开，清除页面内JS缓存影响。相同本轮合成文件：DOCX 2500段/43,944 B，XLSX 19,999×5=99,995 cells/485,615 B。使用实际production资源路由及opaque-origin frame；轻量父桥代替API/Portal布局，文档本地HTTP提供。首屏为首个真实段落/已加载grid可见后50ms，另以trace区分加载壳的Paint与内容渲染；不是P95或Linux整栈历史样本的重测，不能与旧4.26/9.59s直接相减。首次装置等待不存在的data-at超时，改为实际内容节点；初次trace回调累积被发现后移除，最终仅使用修正脚本的完整对照。
+
+| 格式/缓存 | 改前首屏ms → 改后 | 改前传输B → 改后 |
+| --- | ---: | ---: |
+| docx/cold | 784.9 → 430.3 | 4,309,749 → 184,334 |
+| docx/warm | 530.6 → 291.3 | 44,328 → 44,328 |
+| xlsx/cold | 1515.1 → 1455.1 | 9,230,667 → 2,644,192 |
+| xlsx/warm | 1431.9 → 1372.4 | 485,999 → 485,999 |
+
+分阶段墙钟（可并行，不能与CPU项直接相加）：
+
+| 格式/缓存 | 资源到齐ms 前→后 | 脚本注入到host ready ms 前→后 | 文档GET ms 前→后 | 文档到齐至可见+50ms 前→后 |
+| --- | ---: | ---: | ---: | ---: |
+| docx/cold | 135.2→111.5 | 337.1→52.7 | 6.3→3.1 | 251.1→232.7 |
+| docx/warm | 40.1→23.6 | 257.7→38.7 | 2.0→1.9 | 226.2→222.0 |
+| xlsx/cold | 53.3→46.6 | 258.6→176.4 | 4.2→8.9 | 1193.4→1219.1 |
+| xlsx/warm | 34.2→36.8 | 261.9→151.8 | 3.1→3.1 | 1127.4→1176.4 |
+
+传输为loadingFinished.encodedDataLength（含header），blob不算网络。冷DOCX主JS4,243,892→133,605 B（br）；CSS19,754→4,720 B。冷XLSX主JS4,243,892→772,072 B，worker133,406→36,069 B，wasm4,345,746→1,343,651 B（均br）。GET验证gzip与identity解码字节相同；版本资产全有一年immutable，warm资产全部disk cache/0传输，当前manifest仍no-cache。每次打开文档只GET一次；未见重复文档请求；DOCX没有字体、pdf worker或表格worker/wasm请求。
+
+解析边界：DOCX用docx-preview在主线程解析/构建DOM，没有现成worker；XLSX已有classic worker和wasm，但库在worker前仍主线程ZIP/XML preflight并在worker后处理样式/图像，trace看到较长的主线程消息任务，不能把worker存在写成主线程零解析。worker总任务CPU约0.23–0.25s；主线程长消息约0.8s，拆主线程阶段到worker会改库内部合同，超出低风险构建/适配优化，本轮不重写。首屏后的布局/paint也在解析阶段范围内：trace冷DOCX的主脚本EvaluateScript约229→44ms、后台JS parse77→8ms；布局约72→55ms，Paint约5ms。XLSX冷主脚本EvaluateScript约176→126ms、后台parse68→45ms；layout/paint约数ms，剩余主要为运行时预检/wasm载入/解析，而不是网络。CPU项跨线程重叠、含冷启动和首屏后1.5s，不冒充纯解析墙钟。前后不改变admission。
+
+Portal新增回归在旧组件/路由失败：按格式boot请求、压缩字节一致性、Vary/immutable、旧version拒绝；修复后专项通过。浏览器矩阵扩展为Chat/Work各四格式，均检查open/真实选择/quote/reveal/capture；最终结果见下方联合检查。

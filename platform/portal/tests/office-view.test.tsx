@@ -20,7 +20,7 @@ beforeEach(() => {
   request.mockReset().mockResolvedValue(ready);
   onReference.mockClear(); onAsk.mockClear();
   vi.stubGlobal("React", React);
-  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("manifest.json") ? { ok: true, json: async () => ({ version: "v" }) } : { ok: true, text: async () => "bundle", arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.endsWith("manifest.json") ? { ok: true, json: async () => ({ version: "v" }) } : { ok: true, text: async () => `bundle:${url}`, arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer }));
 });
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 async function bridge(current = doc) {
@@ -32,11 +32,12 @@ async function bridge(current = doc) {
   };
   await emit({ t: "boot" });
   await waitFor(() => expect(post.mock.calls.some(([m]) => m.t === "bundle")).toBe(true));
-  const nonce = post.mock.calls.find(([m]) => m.t === "bundle")![0].nonce;
+  const bundle = post.mock.calls.find(([m]) => m.t === "bundle")![0];
+  const nonce = bundle.nonce;
   const send = (data: object) => emit({ nonce, ...data });
   const reply = (id: number) => post.mock.calls.map(([m]) => m).find(m => m.t === "reply" && m.id === id);
   post.mockClear();
-  return { ...view, post, send, emit, reply };
+  return { ...view, post, send, emit, reply, bundle };
 }
 test("channel accepts only typed envelopes", () => {
   for (const value of [null, undefined, 1, "x", {}, { ch: "wrong", t: "call" }, { ch: CHANNEL, t: 1 }]) expect(isChannel(value)).toBe(false);
@@ -121,4 +122,14 @@ test("capture results above the control-message limit still reach the caller", a
   await b.send({ t: "page-tool-result", id: tool.id, ok: true, value: { content: [{ type: "image", data }, { type: "text", text: "库/报告.docx#p:1 (800×600 px)" }] } });
   const outcome = await Promise.race([capture, Promise.resolve("dropped")]);
   expect(outcome).toEqual({ data, width: 800, height: 600, at: "p:1", version: "hash1" });
+});
+
+test.each(["docx", "xlsx", "pptx", "pdf"] as const)("boot only requests the %s renderer", async kind => {
+  // A distinct filename avoids the module-level asset cache from earlier bridge tests.
+  const current = { ...doc, kind, filename: `format.${kind}` };
+  const b = await bridge(current);
+  const calls = vi.mocked(fetch).mock.calls.map(([url]) => String(url));
+  expect(calls.some(url => /viewer\.js$/.test(url))).toBe(false);
+  expect(calls.filter(url => /viewer-.*\.js$/.test(url)).every(url => url.endsWith(`viewer-${kind}.js`))).toBe(true);
+  expect(b.bundle.js).toContain(`viewer-${kind}.js`);
 });

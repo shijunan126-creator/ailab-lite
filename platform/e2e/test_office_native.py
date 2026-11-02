@@ -67,10 +67,11 @@ def _select(page, frame, kind):
     expect(page.locator(".composer-box .quote-chip")).to_be_visible()
 
 
+@pytest.mark.parametrize("mode", ["对话", "工作"])
 @pytest.mark.parametrize("kind,name", [("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx"), ("pdf", "cjk.pdf")])
-def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind, name):
+def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind, name, mode):
     page = logged_in
-    page.get_by_role("radio", name="对话", exact=True).click()
+    page.get_by_role("radio", name=mode, exact=True).click()
     page.set_input_files(".composer-box input[type=file]", str(FIXTURES / name))
     _start_conversation(page, "请确认已收到文件", "test-office-vision")
     _wait_for_turns(page, 1)
@@ -102,13 +103,13 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         ):
             assert time.monotonic() < end
             page.wait_for_timeout(100)
-    if kind == "docx":
+    if kind in {"docx", "xlsx", "pptx", "pdf"}:
         results = []
         page.on(
             "response",
             lambda response: results.append(response) if "/client-calls/" in response.url and response.url.endswith("/result") else None,
         )
-        _send(page, "原生控制 " + file["id"])
+        _send(page, "原生控制 " + file["id"] + " " + kind)
         _wait_for_turns(page, 3)
         assert results and all(r.ok for r in results)
         assert "unavailable" not in page.locator(".turn").last.inner_text()

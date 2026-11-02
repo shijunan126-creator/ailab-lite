@@ -116,7 +116,8 @@ class QuestionThenAnswer(LLMClient):
             views = [json.loads(m["content"]) for m in results if m.get("name") == "document_view"]
             workspace = prompt.startswith("原生工作区")
             target = {"path": "outputs/draft.docx"} if workspace else {"file_id": prompt.split()[1]}
-            at = "p:2"
+            kind = prompt.split()[2] if not workspace and len(prompt.split()) > 2 else "docx"
+            at = {"docx": "p:2", "xlsx": "Revenue!A1:B2", "pptx": "slide:1/shape:2", "pdf": "page:1"}[kind]
             if workspace and not any(m.get("name") == "exec" for m in results):
                 import shlex
 

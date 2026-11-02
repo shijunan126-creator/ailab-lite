@@ -236,7 +236,7 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
       if (JSON.stringify(message).length > limit) return;
       if (message.t === "boot") {
         try {
-          const [css, js] = await Promise.all([asset("panel.css", false), asset("viewer.js", false)]);
+          const [css, js] = await Promise.all([asset("panel.css", false), asset(`viewer-${live.current.doc.kind}.js`, false)]);
           send({ t: "bundle", nonce, css: css as string, js: js as string });
         } catch {
           /* the frame keeps its empty state; a reload retries */

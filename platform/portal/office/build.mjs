@@ -3,6 +3,7 @@
 // stub of @modelcontextprotocol/ext-apps replace the desktop transport, and PATCHES below are the only source edits.
 // Output: office/dist/ (git-ignored), served by app/office-viewer/[...path].
 import { build, transform } from "esbuild";
+import { brotliCompressSync, gzipSync, constants } from "node:zlib";
 import { createHash } from "node:crypto";
 import { cp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -55,6 +56,7 @@ export const PATCHES = [
 ];
 
 const ui = (name) => join(runtime, "ui", name);
+let format;
 const adapters = {
   name: "ailab-office-adapters",
   setup(builder) {
@@ -67,6 +69,9 @@ const adapters = {
       if (!args.path.startsWith(join(runtime, "ui"))) return undefined;
       // Upstream's internal names (font families, a result meta key) carry its product prefix; the bundle uses a neutral one.
       let source = (await readFile(args.path, "utf8")).replace(/\bzcode(?=[-/])/g, "office");
+      // Upstream tags registry lines for per-format plugins.
+      if (args.path.endsWith("viewers/registry.ts"))
+        source = source.split("\n").filter((line) => !line.includes("// kind:") || line.includes(`// kind:${format}`)).join("\n");
       for (const [file, needle, replacement] of PATCHES) {
         if (!args.path.replaceAll("\\", "/").endsWith(file)) continue;
         if (!source.includes(needle)) throw new Error(`office patch for ${file} no longer applies: ${needle.slice(0, 60)}`);
@@ -148,24 +153,21 @@ const xlsxWorker = await build({ ...common, entryPoints: [join(xlsxRoot, "dist/x
 await writeFile(join(dist, "xlsx-worker.js"), xlsxWorker.outputFiles[0].contents);
 await cp(join(xlsxRoot, "dist/duke_sheets_wasm_bg.wasm"), join(dist, "sheets.wasm"));
 
-const app = await build({
-  ...common,
-  plugins: [adapters, xlsxWorkerUrl, pdfjsCanvasFonts],
-  entryPoints: [ui("main.tsx")],
-  format: "iife",
-  outdir: dist,
-});
-const js = app.outputFiles.find((file) => file.path.endsWith(".js")).contents;
-await writeFile(join(dist, "viewer.js"), js);
+const apps = [];
+for (format of ["docx", "xlsx", "pptx", "pdf"]) {
+  const app = await build({ ...common, plugins: [adapters, xlsxWorkerUrl, pdfjsCanvasFonts], entryPoints: [ui("main.tsx")], format: "iife", outdir: dist });
+  apps.push(app);
+  await writeFile(join(dist, `viewer-${format}.js`), app.outputFiles.find((file) => file.path.endsWith(".js")).contents);
+}
 const css = await transform((await readFile(ui("panel.css"), "utf8")).replace(/\bzcode(?=[-/])/g, "office"), { loader: "css", minify: true, legalComments: "none" });
 await writeFile(join(dist, "panel.css"), css.code);
 
-for (const file of ["viewer.js", "panel.css"])
+for (const file of ["viewer-docx.js", "viewer-xlsx.js", "viewer-pptx.js", "viewer-pdf.js", "panel.css"])
   if (/zcode/i.test(await readFile(join(dist, file), "utf8"))) throw new Error(`upstream product name left in ${file}; extend the rename`);
 
 // Licences of every bundled package plus the data files copied verbatim.
 const notices = new Map();
-for (const input of [app.metafile, xlsxWorker.metafile, pdfWorker.metafile].flatMap((meta) => Object.keys(meta.inputs))) {
+for (const input of [...apps.map((app) => app.metafile), xlsxWorker.metafile, pdfWorker.metafile].flatMap((meta) => Object.keys(meta.inputs))) {
   if (!input.includes("node_modules/")) continue;
   let directory = dirname(resolve(portal, input));
   while (directory.includes("node_modules")) {
@@ -191,7 +193,22 @@ for (const [key, { directory, pkg }] of [...notices].sort()) {
 parts.push(`@fontsource/noto-sans-sc (fonts/) — OFL-1.1\n${await readFile(join(cjkFontRoot, "LICENSE"), "utf8")}`);
 await writeFile(join(dist, "THIRD_PARTY_NOTICES.txt"), parts.join("\n\n----------------------------------------\n\n"));
 
-// The version names the asset URL so the browser can cache every file as immutable.
-const version = createHash("sha256").update(js).update(await readFile(join(dist, "panel.css"))).digest("hex").slice(0, 16);
-await writeFile(join(dist, "manifest.json"), JSON.stringify({ version, viewerBytes: js.length }));
-process.stdout.write(`office viewer ${version}: ${(js.length / 1024 / 1024).toFixed(2)} MiB\n`);
+// Include workers, wasm and fonts in the version: immutable URLs must change with any asset byte.
+const digest = createHash("sha256");
+async function finish(directory, prefix = "") {
+  for (const entry of (await readdir(directory, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name))) {
+    const name = prefix + entry.name;
+    if (entry.isDirectory()) { await finish(join(directory, entry.name), name + "/"); continue; }
+    const bytes = await readFile(join(directory, entry.name));
+    digest.update(name).update(bytes);
+    // Compression costs build CPU only; requests only read the selected representation.
+    if (/\.(js|css|json|wasm|txt|bcmap)$/.test(name)) {
+      await writeFile(join(directory, entry.name + ".gz"), gzipSync(bytes, { level: 9 }));
+      await writeFile(join(directory, entry.name + ".br"), brotliCompressSync(bytes, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } }));
+    }
+  }
+}
+await finish(dist);
+const version = digest.digest("hex").slice(0, 16);
+await writeFile(join(dist, "manifest.json"), JSON.stringify({ version }));
+process.stdout.write(`office viewer ${version}: four format bundles\n`);
