@@ -166,19 +166,29 @@ def test_project_memory_mode_moves_and_merges_facts(page, stack, width):
     page.get_by_role("button", name="项目操作", exact=True).click()
     page.get_by_role("menuitem", name="记忆", exact=True).click()
     dialog = summary_dialog(page, "项目记忆")
-    expect(dialog.locator(".memory-summary")).to_contain_text("季报口径以财务部为准", timeout=30000)
-    expect(dialog.locator(".memory-summary")).not_to_contain_text("回答先给结论")
+    expect(dialog.locator(".memory-summary")).to_have_count(0)
+    expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
+    expect(dialog.get_by_role("button", name="立即整理", exact=True)).to_have_count(0)
     switch = dialog.get_by_role("switch", name="仅使用本项目记忆", exact=True)
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="仅用本项目", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "true")
+    expect(dialog.locator(".memory-summary")).to_contain_text("季报口径以财务部为准", timeout=30000)
+    expect(dialog.locator(".memory-summary")).not_to_contain_text("回答先给结论")
+    expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_be_visible()
     assert httpx.get(stack.api + f"/v1/projects/{project['id']}", headers=headers).json()["memory_mode"] == "isolated"
     switch.click()
     page.get_by_role("alertdialog").get_by_role("button", name="互通", exact=True).click()
     expect(switch).to_have_attribute("aria-checked", "false")
     # the merge runs in the background; the mock judges every project fact general, so it moves to the account
-    expect(dialog.locator(".memory-summary-empty")).to_have_text("还没有记忆", timeout=30000)
-    entries = httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]
+    expect(dialog.locator(".memory-summary")).to_have_count(0)
+    expect(dialog.get_by_role("textbox", name="修改记忆", exact=True)).to_have_count(0)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        entries = httpx.get(stack.api + "/v1/memory", headers=headers).json()["entries"]
+        if all(entry["project_id"] is None for entry in entries):
+            break
+        time.sleep(0.1)
     assert {e["content"]: e["project_id"] for e in entries} == {"回答先给结论": None, "季报口径以财务部为准": None}
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     page.screenshot(path=str(stack.log_dir / f"project-memory-{width}.png"), full_page=True, animations="disabled")

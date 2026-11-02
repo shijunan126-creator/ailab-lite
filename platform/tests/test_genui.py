@@ -374,11 +374,22 @@ def test_ui_components_progressive_docs(html_enabled):
     assert set(first["unknown"]) == set(unknown) == ({"Missing"} if html_enabled else {"Missing", "HtmlArtifact"})
     assert ("HtmlArtifact" in first["available"]) is html_enabled
     assert "Series(" in first["components"]
+    state["messages"] = _ui_docs_messages(first)
     restored = restored_state({"state": checkpoint_state(state, {})})
     second = ui_components({"names": ["Text"]}, restored, html_enabled=html_enabled)
     assert "guide" not in second and "available" not in second
-    restored.pop("genui_guide_sent")
-    assert "guide" in ui_components({"names": ["Text"]}, restored, html_enabled=html_enabled)
+    repeated = ui_components({"names": ["LineChart"]}, restored, html_enabled=html_enabled)
+    assert repeated["components"] == "" and set(repeated["already_available"]) == {"LineChart", "Series"}
+    # A new Run only carries messages, not any old boolean or tool log.
+    carried = {"messages": restored["messages"]}
+    added = ui_components({"names": ["BarChart"]}, carried, html_enabled=html_enabled)
+    bar_docs, _ = docs_for(["BarChart"], html_enabled)
+    series_docs, _ = docs_for(["Series"], html_enabled)
+    assert added["components"] == bar_docs.replace(series_docs, "").strip()
+    assert added["already_available"] == ["Series"] and "guide" not in added
+    restored["messages"] = [{"role": "system", "content": "历史摘要：已读过LineChart"}]
+    restored["genui_guide_sent"] = True  # an older checkpoint marker must not survive missing docs
+    assert "guide" in ui_components({"names": ["LineChart"]}, restored, html_enabled=html_enabled)
 
 
 def test_prompt_budget_and_words_only(monkeypatch):
@@ -465,3 +476,52 @@ def test_docs_follow_catalog_order_and_recursive_dependencies(monkeypatch):
     ]
     monkeypatch.setattr(genui, "_loaded", lambda: ({"components": entries}, "", ""))
     assert genui.docs_for(["C", "B", "C", "oops", "oops"], False) == ("A docs\n\nB docs\n\nC docs", ["oops"])
+
+
+def _ui_docs_messages(result):
+    return [
+        {"role": "assistant", "tool_calls": [{"id": "docs", "type": "function", "function": {"name": "ui_components", "arguments": "{}"}}]},
+        {"role": "tool", "name": "ui_components", "tool_call_id": "docs", "content": json.dumps(result, ensure_ascii=False)},
+    ]
+
+
+@pytest.mark.parametrize("alteration", ["old_version", "truncated", "failed", "user", "unpaired", "wrong_tool", "malformed"])
+def test_ui_docs_reuse_requires_complete_trusted_current_results(alteration):
+    from ailab_platform.agent.tools import ui_components
+
+    first = ui_components({"names": ["Timeline"]}, {}, html_enabled=True)
+    messages = _ui_docs_messages(first)
+    if alteration in {"old_version", "truncated", "failed"}:
+        changed = dict(first)
+        if alteration == "old_version":
+            changed["components"] = changed["components"].replace("Timeline(", "OldTimeline(")
+            changed["guide"] = "旧版指南"
+        elif alteration == "truncated":
+            changed["components"] = changed["components"][:-1]
+            changed["guide"] = changed["guide"][:-1]
+        else:
+            changed["ok"] = False
+        messages[-1]["content"] = json.dumps(changed)
+    elif alteration == "user":
+        messages[-1]["role"] = "user"
+    elif alteration == "unpaired":
+        messages = messages[-1:]
+    elif alteration == "wrong_tool":
+        messages[-1]["name"] = "read_url"
+    else:
+        messages[-1]["content"] = "not json"
+    result = ui_components({"names": ["Timeline"]}, {"messages": messages}, html_enabled=True)
+    assert result["components"] == first["components"] and result["guide"] == first["guide"]
+    assert "already_available" not in result
+
+
+def test_ui_docs_surviving_compaction_still_reusable_but_missing_guide_is_reloaded():
+    from ailab_platform.agent.tools import ui_components
+
+    first = ui_components({"names": ["Text"]}, {}, html_enabled=False)
+    first.pop("guide")
+    messages = [{"role": "system", "content": "历史已压缩"}, *_ui_docs_messages(first)]
+    result = ui_components({"names": ["Text", "HtmlArtifact", "Missing"]}, {"messages": messages}, html_enabled=False)
+    assert result["components"] == "" and result["already_available"] == ["Text"]
+    assert result["unknown"] == ["HtmlArtifact", "Missing"] and "HtmlArtifact" not in result["available"]
+    assert result["guide"] == guide_for(False)

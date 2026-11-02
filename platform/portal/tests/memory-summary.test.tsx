@@ -64,3 +64,17 @@ test("edit reply and undo wait for the final summary lease to be released", asyn
   assert.ok(screen.getByText("修改完成"));
   assert.ok(screen.getByText("撤销"));
 });
+
+test("edit submits the exact visible summary as its reference", async () => {
+  Element.prototype.scrollIntoView = vi.fn();
+  vi.mocked(api).mockResolvedValue({ ...summary, stale: false, text: "### 偏好\n你喜欢中文。" });
+  render(<MemoryDialog projectId={null} title="你的记忆" onClose={() => {}} />);
+  await waitFor(() => assert.ok(screen.getByText("### 偏好 你喜欢中文。")));
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByLabelText("修改记忆"), { target: { value: "删掉这段" } });
+  await act(async () => { fireEvent.submit(screen.getByLabelText("修改记忆").closest("form")!); });
+  const call = vi.mocked(api).mock.calls.find(([path]) => path === "/v1/memory/summary/edit");
+  assert.deepEqual(JSON.parse(call![1]!.body as string), {
+    project_id: null, instruction: "删掉这段", summary_text: "### 偏好\n你喜欢中文。",
+  });
+});

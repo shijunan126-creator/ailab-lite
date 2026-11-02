@@ -99,6 +99,13 @@ def test_dream_budget_and_active_queries_have_indexed_paths(engine):
             .where(MemoryDreamRun.user_id == "user", MemoryDreamRun.local_date == "2026-10-30", MemoryDreamRun.trigger == "cron")
             .limit(6),
             select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == users[0].id, service.active_job(now)).limit(1),
+            select(MemoryDreamRun).where(MemoryDreamRun.user_id == users[0].id, MemoryDreamRun.project_id.is_(None)),
+            select(MemoryDreamRun).where(
+                MemoryDreamRun.user_id == users[0].id,
+                MemoryDreamRun.project_id.is_(None),
+                MemoryDreamRun.trigger == "edit",
+                MemoryDreamRun.status.in_(("pending", "running")),
+            ),
         ]
         indexes = {i["name"] for i in inspect(engine).get_indexes("memory_dream_runs")}
         assert {"uq_memory_dream_user_active", "ix_memory_dream_user_date_trigger"} <= indexes

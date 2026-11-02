@@ -5,6 +5,7 @@ import { api, errorMessage, MemoryMode, Project } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
 import { projectsChanged } from "../../lib/projects";
 import Switch from "../switch";
+import Modal from "../library/modal";
 import { MemoryDialog } from "./memory-summary";
 
 /** A project's memory: whether it keeps to itself, and what it remembers. */
@@ -13,7 +14,7 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  async function change(isolated: boolean, reload: () => void) {
+  async function change(isolated: boolean) {
     const ok = await confirmDialog(
       isolated
         ? {
@@ -35,7 +36,6 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
       const saved = await api<Project>(`/v1/projects/${project.id}`, { method: "PATCH", body: JSON.stringify({ memory_mode: next }) });
       setMode(saved.memory_mode || next);
       projectsChanged();
-      reload(); // the summary moves, and a merge may have started
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -43,24 +43,23 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
     }
   }
 
-  return (
-    <MemoryDialog
-      projectId={project.id}
-      title="项目记忆"
-      onClose={onClose}
-      top={(reload) => (
-        <>
-          <div className="mlist memory-mode">
-            <div className="mrow">
-              <div className="mrow-main"><span className="mrow-title"><span>仅使用本项目记忆</span></span></div>
-              <div className="mrow-trail">
-                <Switch on={mode === "isolated"} label="仅使用本项目记忆" disabled={busy} onChange={(on) => change(on, reload)} />
-              </div>
-            </div>
+  const controls = (
+    <>
+      <div className="mlist memory-mode">
+        <div className="mrow">
+          <div className="mrow-main"><span className="mrow-title"><span>仅使用本项目记忆</span></span></div>
+          <div className="mrow-trail">
+            <Switch on={mode === "isolated"} label="仅使用本项目记忆" disabled={busy} onChange={(on) => change(on)} />
           </div>
-          {error ? <div className="alert error">{error}</div> : null}
-        </>
-      )}
-    />
+        </div>
+      </div>
+      {error ? <div className="alert error">{error}</div> : null}
+    </>
+  );
+
+  return mode === "isolated" ? (
+    <MemoryDialog projectId={project.id} title="项目记忆" onClose={onClose} top={() => controls} />
+  ) : (
+    <Modal title="项目记忆" onClose={onClose} className="memory-dialog">{controls}</Modal>
   );
 }

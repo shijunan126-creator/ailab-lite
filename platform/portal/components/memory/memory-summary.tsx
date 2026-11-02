@@ -234,7 +234,7 @@ export function MemoryDialog({ projectId, title, onClose, top }: { projectId: st
     try {
       const run = await api<{ id: string }>("/v1/memory/summary/edit", {
         method: "POST",
-        body: JSON.stringify({ project_id: projectId, instruction }),
+        body: JSON.stringify({ project_id: projectId, instruction, summary_text: summary?.text || "" }),
       });
       const asked = ++keys.current;
       const key = ++keys.current;
@@ -247,6 +247,7 @@ export function MemoryDialog({ projectId, title, onClose, top }: { projectId: st
       follow(run.id, key);
     } catch (e) {
       setError(errorMessage(e));
+      await load();
     } finally {
       if (alive.current) setBusy(false);
       field.current?.focus();
