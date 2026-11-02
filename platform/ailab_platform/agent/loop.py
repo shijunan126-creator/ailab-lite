@@ -1420,6 +1420,9 @@ class AgentLoop:
             raise TokenLimit(_token_limit_error(turn.run))
 
     async def _user_content(self, run_id, run, model):
+        from ..contracts.document_view import text_block
+
+        run = {**run, "prompt": run["prompt"] + text_block(run.get("doc_refs"))}
         files = run.get("input_files") or []
         images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
@@ -1835,6 +1838,7 @@ class AgentLoop:
                     **turn.run,
                     "prompt": row["prompt"],
                     "input_files": row.get("input_files") or [],
+                    "doc_refs": row.get("doc_refs") or [],
                     "options": {**(turn.run.get("options") or {}), "skills": selections},
                 }
                 content = await self._user_content(run_id, message_run, turn.run.get("model"))
@@ -1974,6 +1978,53 @@ class AgentLoop:
                     run_id, {"status": RunStatus.WAITING_USER, "question": q, "result": {"sources": state["sources"]}}
                 )
                 raise RunPaused()
+        elif call.name == "document_view":
+            if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
+                return {"status": "unavailable"}
+            args = call.arguments
+            spec = get_catalog().get(turn.run.get("model"))
+            if args.get("op") == "capture" and (not spec or not spec.supports({"vision"})):
+                return {"status": "unavailable", "reason": "model_vision_required"}
+            identity = delivery_id_var.set(f"{run_id}:{invocation}")
+            try:
+                result = await self.platform.document_view(run_id, args)
+                if result.get("status") == "capture":
+                    view = result["view"]
+
+                    async def capture():
+                        reply = await self.platform.create_client_call(
+                            run_id,
+                            {
+                                "call_id": f"{run_id}:{invocation}",
+                                "kind": "capture_view",
+                                "payload": {
+                                    "input": {
+                                        "view_id": view["view_id"],
+                                        **({"at": args["at"]} if args.get("at") else {}),
+                                        "max_width": args.get("max_width", 1600),
+                                    },
+                                    "timeout_ms": 10000,
+                                },
+                            },
+                        )
+                        deadline = time.monotonic() + 20
+                        while reply["status"] in {"pending", "claimed"} and time.monotonic() < deadline:
+                            await asyncio.sleep(0.25)
+                            reply = await self.platform.get_client_call(run_id, f"{run_id}:{invocation}")
+                        response = reply.get("result") or {}
+                        return response.get("value") if response.get("ok") else {"status": "unavailable"}
+
+                    result = await self._interruptible(run_id, asyncio.wait_for(capture(), timeout=20))
+                if result.get("status") == "ready" and result.get("capture_id"):
+                    file = {"capture_id": result["capture_id"], "filename": "文档截图", "page": 1, "content_type": "image/png"}
+                    parts = await self._image_content(run_id, turn.run, file, spec)
+                    if not any(p.get("type") == "image_url" for p in parts):
+                        return {"status": "unavailable", "reason": "capture_expired"}
+                    state.setdefault("pending_image_inputs", []).append(parts)
+            except (ClientError, TimeoutError):
+                result = {"status": "unavailable"}
+            finally:
+                delivery_id_var.reset(identity)
         elif call.name == "run_js":
             if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
                 return {"ok": False, "error": {"type": "unavailable", "message": "当前运行没有可用的浏览器执行环境"}}

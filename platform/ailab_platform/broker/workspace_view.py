@@ -55,14 +55,14 @@ def jpeg_dimensions(data: bytes) -> tuple[int, int]:
     return dimensions
 
 
-def view(manager, lease_id: str, path: str, selected) -> dict:
+def view(manager, lease_id: str, path: str, selected, *, trusted_snapshot=False) -> dict:
     if not isinstance(path, str) or any(part == ".." for part in path.split("/")):
         raise ValueError("invalid_workspace_path")
     try:
         path = normalize_path(path)
     except PathError as exc:
         raise ValueError("invalid_workspace_path") from exc
-    if path == "/workspace" or path.startswith("/workspace/.ailab/"):
+    if path == "/workspace" or (path.startswith("/workspace/.ailab/") and not trusted_snapshot):
         raise ValueError("invalid_workspace_path")
     if selected is None:
         selected = [1]

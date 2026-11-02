@@ -24,14 +24,14 @@ router = APIRouter(tags=["client-calls"])
 
 
 class Payload(BaseModel):
-    code: str
+    code: str = ""
     input: Any = None
     timeout_ms: int = 2000
 
 
 class CreateCall(BaseModel):
     call_id: str = Field(min_length=1, max_length=160)
-    kind: Literal["js"]
+    kind: Literal["js", "capture_view"]
     payload: Payload
 
 
@@ -48,10 +48,10 @@ class Stats(BaseModel):
 class Result(BaseModel):
     claim_token: str = Field(min_length=1, max_length=64)
     ok: bool
-    value: str | None = None
+    value: str | dict | None = None
     logs: str | None = None
-    error: Error | None = None
-    stats: Stats
+    error: Error | str | None = None
+    stats: Stats = Field(default_factory=lambda: Stats(ms=0))
 
 
 def size(value):
@@ -78,6 +78,8 @@ def expire(db, call, run):
 
 def serialize(call):
     result = call.result
+    if result and "_capture" in result:
+        result = None
     if call.status == "canceled":
         result = {"ok": False, "error": {"type": "unavailable", "message": "运行已取消，浏览器执行已停止"}}
     return {"call_id": call.call_id, "kind": call.kind, "status": call.status, "deadline": utc(call.deadline).isoformat(), "result": result}
@@ -95,7 +97,8 @@ def create_call(run_id: str, body: CreateCall, x_run_attempt: str | None = Heade
         raise HTTPException(422, "invalid client input") from None
     if size(payload.code) > settings.client_js_code_max_bytes or input_bytes > settings.client_js_input_max_bytes:
         raise HTTPException(413, "client call exceeds limit")
-    if not 100 <= payload.timeout_ms <= settings.client_js_max_timeout_ms:
+    maximum = 10000 if body.kind == "capture_view" else settings.client_js_max_timeout_ms
+    if not 100 <= payload.timeout_ms <= maximum:
         raise HTTPException(422, "invalid timeout")
     with fenced_run(db, run, x_run_attempt):
         existing = db.get(ClientCall, (run_id, body.call_id))
@@ -103,7 +106,21 @@ def create_call(run_id: str, body: CreateCall, x_run_attempt: str | None = Heade
             expire(db, existing, run)
             db.commit()
             return serialize(existing)
-        if run.status != RunStatus.RUNNING or (run.options or {}).get("client") != "portal" or not settings.client_js_enabled:
+        capture_binding = None
+        if body.kind == "capture_view":
+            from .routes_document_view import active_views
+
+            if not isinstance(payload.input, dict) or set(payload.input) - {"view_id", "at", "max_width"}:
+                raise HTTPException(422, "invalid capture request")
+            states = [v for v in active_views(db, run) if v["view_id"] == payload.input.get("view_id")]
+            if len(states) != 1:
+                raise HTTPException(409, "view unavailable")
+            capture_binding = states[0]
+        if (
+            run.status != RunStatus.RUNNING
+            or (run.options or {}).get("client") != "portal"
+            or (body.kind == "js" and not settings.client_js_enabled)
+        ):
             raise HTTPException(409, "client call unavailable")
         now = datetime.now(UTC)
         call = ClientCall(
@@ -112,8 +129,12 @@ def create_call(run_id: str, body: CreateCall, x_run_attempt: str | None = Heade
             kind=body.kind,
             status="pending",
             created_at=now,
-            claim_deadline=now + timedelta(seconds=settings.client_js_claim_timeout_seconds),
+            claim_deadline=now
+            + timedelta(
+                seconds=min(5, payload.timeout_ms / 1000) if body.kind == "capture_view" else settings.client_js_claim_timeout_seconds
+            ),
             deadline=now + timedelta(seconds=payload.timeout_ms / 1000 + 10),
+            result={"_capture": capture_binding} if capture_binding else None,
         )
         db.add(call)
         db.flush()
@@ -175,29 +196,59 @@ def claim_call(run_id: str, call_id: str, user: User = Depends(current_user), db
 
 @router.post("/v1/runs/{run_id}/client-calls/{call_id}/result")
 def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    if (
-        (body.value is not None and size(body.value) > settings.client_js_value_max_bytes)
-        or (body.logs is not None and size(body.logs) > settings.client_js_logs_max_bytes)
-        or (body.error is not None and size(body.error.message) > settings.client_js_error_max_bytes)
-    ):
-        raise HTTPException(413, "client result exceeds limit")
-    if body.value is not None:
-        try:
-            json.loads(body.value, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
-        except ValueError:
-            raise HTTPException(422, "invalid JSON value") from None
-    if body.ok == (body.error is not None):
-        raise HTTPException(422, "invalid client result")
     run = _get_owned_run(db, run_id, user)
     with user_critical_section(db, user.id):
         db.refresh(run)
         call = db.get(ClientCall, (run_id, call_id))
         if not call:
             raise HTTPException(404, "client call not found")
+        if call.kind == "js":
+            if not isinstance(body.value, (str, type(None))) or not isinstance(body.error, (Error, type(None))):
+                raise HTTPException(422, "invalid JS result")
+            if (
+                (body.value is not None and size(body.value) > settings.client_js_value_max_bytes)
+                or (body.logs is not None and size(body.logs) > settings.client_js_logs_max_bytes)
+                or (body.error is not None and size(body.error.message) > settings.client_js_error_max_bytes)
+            ):
+                raise HTTPException(413, "client result exceeds limit")
+            if body.value is not None:
+                try:
+                    json.loads(body.value, parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
+                except ValueError:
+                    raise HTTPException(422, "invalid JSON value") from None
+            if body.ok == (body.error is not None):
+                raise HTTPException(422, "invalid client result")
         expire(db, call, run)
         if call.status != "claimed" or call.claim_token != body.claim_token:
             db.commit()
             raise HTTPException(409, "client call unavailable")
+        if call.kind == "capture_view":
+            from . import view_state
+            from .routes_document_view import authorize_state
+            from .viewer_captures import save, validate_png
+
+            binding = (call.result or {}).get("_capture")
+            states = view_state.views(user.id, run.conversation_id)
+            current = next((v for v in states if binding and v["view_id"] == binding["view_id"]), None)
+            if (
+                not current
+                or current.get("version") != binding["version"]
+                or current.get("file_id") != binding.get("file_id")
+                or current.get("path") != binding.get("path")
+            ):
+                raise HTTPException(409, "view version changed")
+            authorize_state(db, user, binding)
+            if body.ok:
+                data = validate_png(body.value)
+                if body.value.get("version") != binding["version"]:
+                    raise HTTPException(409, "capture version changed")
+                captured = save(db, run, call.call_id, {**binding, "source": "viewport"}, data)
+                result = {"ok": True, "value": captured}
+            else:
+                result = {"ok": False, "error": {"type": "unavailable", "message": "viewport capture unavailable"}}
+            call.status, call.result = "completed", result
+            db.commit()
+            return {"status": "completed"}
         call.status = "completed"
         call.result = (
             {"ok": True, "value": body.value, "logs": body.logs, "ms": body.stats.ms, "source": "browser"}

@@ -131,6 +131,9 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
     from .document_sources import history_manifests
 
     manifests = history_manifests(db, list(rows.values()))
+    from ..contracts.document_view import text_block
+    from .document_view import output as document_refs
+
     history, chars = [], 0
     for id_ in page:
         row = rows[id_]
@@ -140,6 +143,7 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         prompts = (
             {
                 item.id: render_skill_mentions(item.prompt, (item.options or {}).get("skills"))
+                + text_block(document_refs(db, "queued_message", item.id))
                 for item in db.execute(
                     select(QueuedMessage.id, QueuedMessage.prompt, QueuedMessage.options).where(
                         QueuedMessage.run_id == id_, QueuedMessage.state == "steered"
@@ -152,7 +156,7 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
         steers = [prompts[qid] for qid in applied if qid in prompts]
         item = {
             "id": id_,
-            "prompt": row.prompt,
+            "prompt": row.prompt + text_block(document_refs(db, "run_prompt", id_)),
             "skills": (row.options or {}).get("skills")
             or (
                 [{"name": (row.options or {}).get("skill"), "title": (row.options or {}).get("skill_title")}]

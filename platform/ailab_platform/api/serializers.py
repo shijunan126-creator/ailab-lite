@@ -66,7 +66,10 @@ def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: boo
         from ..memory_recall.policy import source_available
 
         source_invalid = not source_available(db, run)
+    from .document_view import output as document_refs
+
     out = {
+        "doc_refs": document_refs(db, "run_prompt", run.id),
         "id": run.id,
         "retry_of": run.retry_of,
         "edited_from": run.edited_from,
@@ -174,7 +177,13 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
     result = []
     for run in runs:
         out = run_dict(db, run, source_invalid=run.id in invalid)
-        out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
+        from .document_view import output as document_refs
+
+        out["steered"] = [
+            {"id": qid, "prompt": prompts[(run.id, qid)], "doc_refs": document_refs(db, "queued_message", qid)}
+            for qid in applied[run.id]
+            if (run.id, qid) in prompts
+        ]
         out["artifacts"] = artifacts.get(run.id, [])
         deleted_artifacts = {item["file_id"]: item["filename"] for item in out["artifacts"] if item["deleted"]}
         if deleted_artifacts and "artifacts" in out["result"]:

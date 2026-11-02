@@ -351,6 +351,19 @@ async def reject_oversized_body(request: Request, call_next):
     return await call_next(request)
 
 
+@router.post("/runs/{run_id}/workspace/{operation}", dependencies=[Depends(require_scope("sandbox:view_workspace"))])
+def workspace_document(run_id: str, operation: str, body: dict):
+    from .viewer import workspace
+
+    if (
+        operation not in {"document", "content", "check", "render"}
+        or not {"user_id", "path"} <= set(body)
+        or set(body) - {"user_id", "path", "selections", "version"}
+    ):
+        raise HTTPException(422, "invalid workspace request")
+    return workspace(get_manager(), run_id, body["user_id"], body["path"], operation, body.get("selections"), body.get("version"))
+
+
 app.include_router(router)
 from .routes_skills import router as skills_router  # noqa: E402
 

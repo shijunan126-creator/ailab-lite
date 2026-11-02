@@ -13,6 +13,21 @@ def copy_message_sources(db, old, new, steers):
     from .document_sources import bind_refs
 
     identities = {old.id: new.id, **steers}
+    from ..models import MessageDocRef
+
+    for ref in db.scalars(select(MessageDocRef).where(MessageDocRef.run_id == old.id)):
+        if ref.message_id in identities:
+            db.add(
+                MessageDocRef(
+                    run_id=new.id,
+                    message_kind=ref.message_kind,
+                    message_id=identities[ref.message_id],
+                    ordinal=ref.ordinal,
+                    file_id=ref.file_id,
+                    target=dict(ref.target),
+                    filename=ref.filename,
+                )
+            )
     refs = db.scalars(select(MessageFileRef).where(MessageFileRef.run_id == old.id)).all()
     for ref in refs:
         message_id = new_id("art") if ref.message_kind == "artifact" else identities.get(ref.message_id)

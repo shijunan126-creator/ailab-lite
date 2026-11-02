@@ -461,8 +461,44 @@ RUN_JS = {
 }
 
 
+DOCUMENT_VIEW = {
+    "type": "function",
+    "function": {
+        "name": "document_view",
+        "description": "打开或定位文档侧栏、读取查看状态、获取视口或范围截图。sent仅表示发送；离线或无法精确定位返回unavailable。",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "op": {"type": "string", "enum": ["open", "reveal", "get_view", "capture"]},
+                "file_id": {"type": "string"},
+                "path": {"type": "string"},
+                "version": {"type": "string"},
+                "view_id": {"type": "string"},
+                "at": {"type": "string"},
+                "source": {"type": "string", "enum": ["viewport", "render"]},
+                "max_width": {"type": "integer", "minimum": 320, "maximum": 2400},
+                "note": {"type": "string", "maxLength": 1000},
+                "targets": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {"at": {"type": "string"}, "quote": {"type": "string", "maxLength": 4000}},
+                        "required": ["at"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["op"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 def tools_for_turn() -> list[dict]:
     return [
+        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,
@@ -484,6 +520,7 @@ def tools_for_turn() -> list[dict]:
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
     return [
+        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,

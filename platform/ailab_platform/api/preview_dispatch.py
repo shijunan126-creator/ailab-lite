@@ -7,7 +7,7 @@ import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import delete, or_, select, update
 
 from ..config import settings
 from ..contracts.jobs import JobEnvelope
@@ -80,6 +80,15 @@ def _dispatch_batch(queue, job_id, now):
         for message in messages:
             if time.monotonic() >= deadline:
                 break
+            if message.topic == "viewer.event":
+                from ..events import append_event
+
+                if not db.execute(delete(OutboxMessage).where(OutboxMessage.id == message.id)).rowcount:
+                    continue
+                append_event(db, message.payload["run_id"], message.payload["type"], message.payload["payload"], commit=False)
+                db.flush()
+                sent += 1
+                continue
             observed_at, observed_token = message.next_attempt_at, message.claim_token
             values = {}
             payload = message.payload

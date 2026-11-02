@@ -20,7 +20,18 @@ SEARCH = {
 }
 # Version 1 is intentionally fixed: selection does not depend on prompt, user, or prior tool calls.
 REDUCED_V1 = frozenset(
-    {"search_capabilities", "load_skill", "memory", "recall_history", "ask_user", "update_plan", "exec", "exec_wait", "deliver_file"}
+    {
+        "document_view",
+        "search_capabilities",
+        "load_skill",
+        "memory",
+        "recall_history",
+        "ask_user",
+        "update_plan",
+        "exec",
+        "exec_wait",
+        "deliver_file",
+    }
 )
 
 
