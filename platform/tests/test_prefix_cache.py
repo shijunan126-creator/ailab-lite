@@ -825,7 +825,7 @@ def test_delivery_note_preserves_delivered_filename():
     assert "final.txt：/workspace/outputs/source.txt" in note["content"]
 
 
-def test_summary_keeps_request_shape_and_refuses_tools_only_after_a_tool_call(monkeypatch):
+def test_summary_keeps_request_shape_and_appends_paired_tool_refusals(monkeypatch):
     """tool_choice=none or a reasoning toggle re-renders the provider prompt and loses the cached prefix."""
     spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
@@ -846,7 +846,10 @@ def test_summary_keeps_request_shape_and_refuses_tools_only_after_a_tool_call(mo
             )
         )
     assert requests[0]["tool_choice"] == "auto" and "thinking" not in requests[0]
-    assert requests[1]["tool_choice"] == "none" and "thinking" not in requests[1]
+    assert requests[1]["tool_choice"] == "auto" and "thinking" not in requests[1]
+    assert_extension(requests[0], requests[1])
+    refused = next(m for m in requests[1]["messages"] if m.get("tool_call_id") == "c1")
+    assert not json.loads(refused["content"])["ok"]
     assert result[2]["content"].endswith("summary")
 
 
@@ -1282,3 +1285,17 @@ def test_office_no_snapshot_rebuild_keeps_navigation_not_visibility(monkeypatch)
     assert result[-1] == base[-1]
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
     assert read_module("platform.docx", "chat", module["resource"])["hash"] == module["hash"]
+
+
+def test_no_snapshot_rebuild_preserves_existing_revocation_boundary():
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "parent_run_id": "parent", "context_boundary": "access_revoked"}
+
+    platform = Platform()
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
+    assert ("agent.context_boundary", {"reason": "rebuilt"}) not in platform.events
+    assert requests[0]["tool_choice"] == "auto"

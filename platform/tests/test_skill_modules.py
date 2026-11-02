@@ -111,7 +111,9 @@ def test_budget_refusal_and_group_cumulative_admission(monkeypatch):
         turn.messages[:] = paired(first)
         duplicate = await loop._run_tool(turn, "r", ToolCall("third", "load_skill", arguments), 0)
         assert duplicate["already_loaded"] and "skill" not in duplicate
-        turn.messages[:] = [{"role": "system", "content": "summary"}]
+        # A boundary can replace the prefix without changing list length or the last object.
+        turn.messages[:] = [{"role": "system", "content": "summary"}, turn.messages[-1]]
+        await loop._event("r", "agent.context_boundary", {"reason": "compacted"})
         reread = await loop._run_tool(turn, "r", ToolCall("fourth", "load_skill", arguments), 0)
         assert reread["skill"] == first["skill"]  # installed state cannot suppress a read
         error = await loop._run_tool(turn, "r", ToolCall("bad", "load_skill", {"name": "platform.nope"}), 0)
@@ -159,5 +161,29 @@ def test_oversize_chunk_is_whole_or_refused_by_small_window(monkeypatch):
             turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource, "cursor": cursor}), 0
         )
         assert not result["ok"] and "cannot fit" in result["error"] and "skill" not in result
+
+    asyncio.run(exercise())
+
+
+def test_legacy_skill_visibility_also_survives_only_with_paired_body():
+    async def exercise():
+        loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
+        turn = _Turn({"options": {"mode": "work"}, "_fixed_catalog": [LOAD_SKILL]})
+        turn.messages = []
+        loop._states["r"] = {"messages": turn.messages}
+        call = ToolCall("one", "load_skill", {"name": "pptx"})
+        first = await loop._run_tool(turn, "r", call, 0)
+        assert first["ok"] and first["skill"]
+        turn.messages.extend(
+            [
+                {"role": "assistant", "tool_calls": [{"id": "one", "function": {"name": "load_skill", "arguments": '{"name":"pptx"}'}}]},
+                tool_result_message("one", "load_skill", first),
+            ]
+        )
+        assert (await loop._run_tool(turn, "r", call, 0))["already_loaded"]
+        invalid = await loop._run_tool(turn, "r", ToolCall("bad", "load_skill", {"name": "pptx", "resource": "missing"}), 0)
+        assert not invalid["ok"]
+        turn.messages[:] = [{"role": "system", "content": "summary"}]
+        assert (await loop._run_tool(turn, "r", call, 0))["skill"] == first["skill"]
 
     asyncio.run(exercise())
