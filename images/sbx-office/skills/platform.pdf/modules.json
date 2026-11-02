@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "45fe2196767164d3d5f53f08deb7aed606ada42f1f15abcd37c46b19482d93ea",
+  "adapter_revision": "86ac66442a767f5d55d796b4f8197ab46a2a61cb3cc668d0f53a79675fec58b9",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -397,17 +397,18 @@
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/html2poster.js"
       ],
-      "estimated_tokens": 8237,
+      "estimated_tokens": 8251,
       "logical_path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
       "modes": [
         "work"
       ],
       "patches": [
         "002-execution-contracts.json",
-        "005-offline-production.json"
+        "005-offline-production.json",
+        "006-output-and-offline-errors.json"
       ],
       "path": "scripts/html2pdf-next.js",
-      "sha256": "1c230f30779cfcfbeb8fe83a54d6eb25e1723b59e8ca1ec3325b9b107523ff66"
+      "sha256": "70ccd01d1dc8c778aff48da13c4e22560efc5dd5107c0815b73b2fd0ec04db29"
     },
     {
       "deps": [
@@ -429,17 +430,18 @@
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/toc_validate.py"
       ],
-      "estimated_tokens": 29451,
+      "estimated_tokens": 28785,
       "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
       "modes": [
         "work"
       ],
       "patches": [
         "002-execution-contracts.json",
-        "005-offline-production.json"
+        "005-offline-production.json",
+        "006-output-and-offline-errors.json"
       ],
       "path": "scripts/pdf.py",
-      "sha256": "9b9a0c8ffe3a79f17a0270e9d0e413d9b206a006f8a859ec44bdc0147f36527c"
+      "sha256": "1dee3eb620b9ab076aae9d45fb39c3188b6e36de4d85e0037e9b03c88aec2b1e"
     },
     {
       "deps": [],

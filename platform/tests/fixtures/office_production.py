@@ -5,6 +5,7 @@ import json
 import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from pptx import Presentation
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
 
+STARTED = time.monotonic()
 FORMAT = sys.argv[1]
 OUT = Path("/workspace/outputs")
 INPUTS = Path("/workspace/inputs")
@@ -137,6 +139,9 @@ print(
             "created_bytes": created.stat().st_size,
             "edited_bytes": edited.stat().st_size,
             "readback_units": manifest["total_units"],
+            "seconds": round(time.monotonic() - STARTED, 3),
+            "cgroup_peak_bytes": int(Path("/sys/fs/cgroup/memory.peak").read_text()),
+            "cpu_stat": Path("/sys/fs/cgroup/cpu.stat").read_text(),
         }
     )
 )

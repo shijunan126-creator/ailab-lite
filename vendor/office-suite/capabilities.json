@@ -12527,8 +12527,8 @@
     }
   ],
   "dependency_notes": [
-    "Python absence is measured against the hash-locked image dependency closure; dynamic imports still require execution evidence.",
-    "Reader modules stay private to /opt/ailab-office; production scripts resolve the pinned /opt/office-production closure via NODE_PATH.",
+    "Python absence uses the hash-locked image closure; dynamic imports still need execution evidence.",
+    "Reader modules stay in /opt/ailab-office; production scripts use /opt/office-production via NODE_PATH.",
     "Windows COM/VBA execution requires external Windows Excel and is blocked on the Linux image; native VBA preservation is separate.",
     "P2 image installs the offline production closure at build time; no new resident service or runtime package installation."
   ],

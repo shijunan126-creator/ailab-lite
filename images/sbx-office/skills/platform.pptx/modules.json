@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "45fe2196767164d3d5f53f08deb7aed606ada42f1f15abcd37c46b19482d93ea",
+  "adapter_revision": "86ac66442a767f5d55d796b4f8197ab46a2a61cb3cc668d0f53a79675fec58b9",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {

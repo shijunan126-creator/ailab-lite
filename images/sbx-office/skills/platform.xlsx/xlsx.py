@@ -1284,7 +1284,7 @@ Run 'python3 xlsx.py <command> --help' for command-specific options.
 def main() -> int:
     # AILab: commands such as recalc are in-place; callers must copy the source to outputs first.
     for value in sys.argv[1:]:
-        if Path(value).is_absolute() and Path(value).resolve().is_relative_to("/workspace/inputs"):
+        if Path(value).resolve().is_relative_to("/workspace/inputs"):
             if len(sys.argv) > 1 and sys.argv[1] in {"recalc", "pivot"}:
                 print("Read-only input: copy the original to /workspace/outputs before editing", file=sys.stderr)
                 return 2

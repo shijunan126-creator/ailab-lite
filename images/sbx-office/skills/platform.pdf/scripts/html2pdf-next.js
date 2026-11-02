@@ -132,7 +132,7 @@ Options:
 
   if (!outputFile) {
     const p = path.parse(inputFile);
-    outputFile = path.join(p.dir || '.', p.name + '.pdf');
+    outputFile = path.join('/workspace/outputs', p.name + '.pdf');
   }
 
   return { inputFile, outputFile, customCSS, width, height, mergeFiles, title };
@@ -180,20 +180,20 @@ async function preRenderHooks(page) {
     raw: /\$[^$]+\$|\$\$[^$]+\$\$|\\\(.*?\\\)|\\\[.*?\\\]/.test(document.body.innerText),
   }));
 
-  // Auto-inject KaTeX CDN if raw math detected but library not loaded
+  // Auto-inject preinstalled KaTeX if raw math detected but library not loaded
   if (!katexStatus.lib && katexStatus.raw && !katexStatus.rendered) {
-    console.log('  ⏳ Auto-injecting KaTeX CDN (math formulas detected but KaTeX not loaded)...');
+    console.log('  ⏳ Auto-injecting preinstalled KaTeX (math formulas detected but KaTeX not loaded)...');
     await page.addStyleTag({ path: require.resolve('katex/dist/katex.min.css') });
     await page.addScriptTag({ path: require.resolve('katex/dist/katex.min.js') });
     await page.addScriptTag({ path: require.resolve('katex/dist/contrib/auto-render.min.js') });
-    await sleep(2000); // Wait for CDN scripts to load
+    await sleep(2000); // Wait for local scripts to load
     // Re-check
     const recheckLib = await page.evaluate(() => typeof renderMathInElement === 'function');
     if (recheckLib) {
-      console.log('  ✓ KaTeX CDN loaded successfully');
+      console.log('  ✓ preinstalled KaTeX loaded successfully');
     } else {
-      console.log('  ⚠ KaTeX CDN failed to load — math will render as raw text');
-      warnings.push('KaTeX CDN injection failed; math formulas may appear as raw LaTeX code');
+      console.log('  ⚠ preinstalled KaTeX failed to load — math will render as raw text');
+      warnings.push('preinstalled KaTeX injection failed; math formulas may appear as raw LaTeX code');
     }
   }
 

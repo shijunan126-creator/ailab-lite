@@ -18,5 +18,9 @@
   {
     "file": "005-offline-production.json",
     "reason": "Use preinstalled Chromium/KaTeX and offline XeLaTeX; refuse in-place Excel source edits."
+  },
+  {
+    "file": "006-output-and-offline-errors.json",
+    "reason": "Default converted output stays in outputs; missing dependencies never instruct runtime installation; probe the installed offline TeX engine."
   }
 ]

@@ -71,6 +71,7 @@ def test_real_create_edit_convert_and_preserve_original(office_image, fmt):
         )
         assert result.returncode == 0, (result.stdout + result.stderr).decode(errors="replace")[-8000:]
         report = json.loads(result.stdout.splitlines()[-1])
+        print(json.dumps(report))
         assert report["original_unchanged"] and report["readback_units"] > 0
         assert report["created_bytes"] > 100 and report["edited_bytes"] > 100
     finally:

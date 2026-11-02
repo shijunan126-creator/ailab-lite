@@ -283,15 +283,7 @@ def _probe_libreoffice() -> tuple[str, str]:
 
 
 def _probe_tectonic() -> tuple[str, str]:
-    home_bin = Path.home() / "tectonic"
-    if home_bin.exists() and os.access(home_bin, os.X_OK):
-        return ("ok", "")
-    tec_local = _SCRIPT_DIR / "tectonic"
-    if tec_local.exists() and os.access(tec_local, os.X_OK):
-        return ("ok", "")
-    if shutil.which("tectonic"):
-        return ("ok", "")
-    return ("missing", "")
+    return ("ok", "offline XeLaTeX") if shutil.which("xelatex") else ("missing", "offline XeLaTeX")
 
 
 def _find_npm() -> str | None:
@@ -1788,22 +1780,10 @@ def convert_office(argv: list):
         Output.error(
             "DependencyMissing",
             'LibreOffice not found. Dependency must be preinstalled; report the missing dependency. Do not install at runtime.',
-            hint=(
-                "FORBIDDEN: using Word / WPS / Keynote / Pages / any program already on this "
-                "machine INSTEAD of installing LibreOffice. FORBIDDEN: deciding the download is "
-                "too large to bother with — being large is NOT a reason to skip it. FORBIDDEN: "
-                "asking the user whether to use Word instead. "
-                "REQUIRED, in order: (1) explain to the user that LibreOffice is the engine that "
-                "preserves themes, layouts, master slides, fonts and pagination faithfully; "
-                "(2) tell them the package is large (several hundred MB) and may take a while — "
-                "this is information for them, not a decision point for you; "
-                "(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. "
-                "ONLY after that install has been attempted AND failed may you use another "
-                "program — report the failure. No install attempt = no substitute program."
-            ),
+            hint="Office dependencies must be present in the image; report the missing dependency without installing.",
         )
 
-    target_dir = Path(out_path).parent if out_path else src.parent
+    target_dir = Path(out_path).parent if out_path else Path("/workspace/outputs")
     target_dir.mkdir(parents=True, exist_ok=True)
 
     cmd_list = [binary, "--headless", "--convert-to", "pdf", "--outdir", str(target_dir), str(src)]
@@ -1867,30 +1847,6 @@ _NOISE_RE = re.compile(
     r"|Skipped writing .* intermediate files"
     r")"
 )
-
-
-def _find_tectonic() -> str | None:
-    """Locate the tectonic binary.
-
-    Search order:
-      1. scripts/ dir  (bundled binary — macOS arm64 only)
-      2. ~/tectonic     (user-placed binary)
-      3. System PATH    (package-manager install)
-
-    NOTE: The bundled binary at scripts/tectonic is a macOS arm64 (Apple
-    Silicon) Mach-O executable.  It will NOT run on Linux or Windows.
-    On other platforms, install tectonic via the system package manager
-    or download the correct binary — see the error message in
-    convert_latex() for instructions.
-    """
-    local_bin = _SCRIPT_DIR / "tectonic"
-    if local_bin.exists() and os.access(local_bin, os.X_OK):
-        return str(local_bin)
-    home_bin = Path.home() / "tectonic"
-    if home_bin.exists() and os.access(home_bin, os.X_OK):
-        return str(home_bin)
-    system_bin = shutil.which("tectonic")
-    return system_bin
 
 
 def _human_size(nbytes: int) -> str:
