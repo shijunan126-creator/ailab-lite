@@ -47,7 +47,7 @@ AILab 目前复用的是 上游 Office Runtime 读取核心及 viewer 指导，�
 | [$UPSTREAM/adapters/src/skills/index.ts]($UPSTREAM/adapters/src/skills/index.ts) | 技能发现、元数据解析、禁用过滤和正文读取实现。 |
 | [$UPSTREAM/adapters/src/skills/roots.ts]($UPSTREAM/adapters/src/skills/roots.ts) | 决定从用户目录、项目目录及额外根目录查找技能。 |
 
-注意：这些是上游源码路径，不是 AILab 沙箱内可直接调用的安装路径。AILab 现有复用代码位于 `/Users/michael/Developer/ailab-lite/vendor/upstream-office-runtime/`，四基础技能位于 `/Users/michael/Developer/ailab-lite/images/sbx-office/skills/platform.docx/`、`platform.xlsx/`、`platform.pptx/`、`platform.pdf/`。
+注意：这些是上游源码路径，不是 AILab 沙箱内可直接调用的安装路径。AILab 现有复用代码位于 `vendor/upstream-office-runtime/`，四基础技能位于 `images/sbx-office/skills/platform.docx/`、`platform.xlsx/`、`platform.pptx/`、`platform.pdf/`。
 
 ## 上游结构与执行顺序
 

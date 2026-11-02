@@ -219,6 +219,5 @@
     "spreadsheets-plugin/skills/xlsx/templates/palettes.py": "88323f71eaf603ecaa37bf39f31f6e30645ebb1b5bc392ae8f31b21f4ee5d9a9",
     "spreadsheets-plugin/skills/xlsx/xlsx.py": "30a077cd57678f729d870a747a0b16f4bb58fb412a4b54b3fb91fd174051d5c6"
   },
-  "repository": "https://github.com/zai-org/ZCode",
-  "source": "/Users/michael/AILabDisk/extra/AILab/ZCode/apps/zcode-cli/packages"
+  "repository": "https://github.com/zai-org/ZCode"
 }

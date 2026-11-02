@@ -1,6 +1,6 @@
 # P3：文档查看后端（2026-11-02）
 
-基线 `feat/office-suite@4872682`；工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-ae9a6e21`，分支 `feat/office-suite-p3`。只实施 P3，不修改 `images/`、`vendor/` 或 Portal，不 push、不建 PR、不部署。实现 `a12aa42`，复核修正 `5219aa8`、`513fe28`，回归 `ff5b0eb`、`db8bdc7`；最终产品代码基线 `513fe28`。
+基线 `feat/office-suite@4872682`；工作树 仓库外临时路径，分支 `feat/office-suite-p3`。只实施 P3，不修改 `images/`、`vendor/` 或 Portal，不 push、不建 PR、不部署。实现 `a12aa42`，复核修正 `5219aa8`、`513fe28`，回归 `ff5b0eb`、`db8bdc7`；最终产品代码基线 `513fe28`。
 
 ## 合同与实现
 
@@ -43,7 +43,7 @@ macOS ARM64、Node 26.11.1 上四个代表性样本（含 Python 隔离进程启
 - Python 全套仅一次：`a12aa42` 加当时测试工作树，`pytest tests -q --junitxml=/tmp/ailab-p3-full.xml`，396.959 秒，2052 passed / 165 skipped / 7 failed。全套发现的实际产品根因是列表逐轮查引用（20 轮从 10 增至 30 reads）及临时复制 run 导致图片引用登记丢失；已改为批量 outer join 读取和只构造追加 prompt、保留原 run 图片身份。另更新迁移 head/固定工具旧断言，消除 fixture 文件名碰撞。
 - 随后仅运行 7 个原失败项及修正涉及的 client-call/缓存/断线/前缀专项：前 15 项已逐项完成通过，但新增 ASGI 断线模拟的 receive 无限立即返回使该次复核忙循环，未产生最终 XML；中断后修正测试的 ASGI 2.4 scope，尚未完成的 4 项独立复核 4 passed，1.950 秒。另新增超限拒绝解析回归 4 passed，0.782 秒。未重跑全套，也不把首轮报告改写为最终全绿全套。当前无已知失败项。
 - Ruff check、format（530 files）与 git diff --check 最终通过。真实四格式 runtime、work workspace、引用冻结、SQLite 迁移/EXPLAIN 和 recorded-request 测试均在首轮或对应专项完成。PostgreSQL 未设置，相关项跳过。
-- 测试 runtime 在仓库外构建；旧 reader 的 mock 路径仅通过测试 Node resolve hook 指向外部构建，未在 vendor 写入构建物。最终检查环境：`PATH=/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/opt/findutils/libexec/gnubin:$PATH`、`NODE_OPTIONS=--import=/Users/michael/.cache/ailab-p3-reader/hook.mjs`、`AILAB_VIEWER_READER_PATH=/Users/michael/.cache/ailab-p3-reader/viewer-reader.mjs`，Python `/Users/michael/.cache/ailab-p3-venv/bin/python`；运行日志/XML 均在 `/tmp/ailab-p3-*`，不提交原始输出。
+- 测试 runtime 在仓库外构建；旧 reader 的 mock 路径仅通过测试 Node resolve hook 指向外部构建，未在 vendor 写入构建物。最终检查环境：`PATH=/opt/homebrew/opt/coreutils/libexec/gnubin:/opt/homebrew/opt/findutils/libexec/gnubin:$PATH`、`NODE_OPTIONS=--import=/Users/michael/.cache/ailab-p3-reader/hook.mjs`、`AILAB_VIEWER_READER_PATH=/Users/michael/.cache/ailab-p3-reader/viewer-reader.mjs`，Python 仓库外临时路径；运行日志/XML 均在 `/tmp/ailab-p3-*`，不提交原始输出。
 - 未运行 Portal build/浏览器（未改 Portal）、Docker 镜像构建、真实模型缓存比例、真实 Redis/PG 和五服务联合验收；不据 recorded-request 测试宣称供应商缓存指标达标。
 
 ## 后续边界

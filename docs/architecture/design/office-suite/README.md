@@ -27,7 +27,7 @@ Chat 获得读取、搜索、结构/选区引用、视觉理解和侧栏协作�
 
 ## 基线与证据
 
-- AILab 本机工作树：`/Users/michael/Developer/ailab-lite`，`fix/source-pill-alignment@c033664c4d9d5837283193f44fbd9ce2ede306e9`，含进入任务前已有 UI/交接等未提交修改，均保留；origin 为 `https://github.com/shijunan126-creator/ailab-lite.git`。本轮未 fetch，实施前重新核对远端基线。
+- AILab 本机工作树：仓库根目录，`fix/source-pill-alignment@c033664c4d9d5837283193f44fbd9ce2ede306e9`，含进入任务前已有 UI/交接等未提交修改，均保留；origin 为 `https://github.com/shijunan126-creator/ailab-lite.git`。本轮未 fetch，实施前重新核对远端基线。
 - 上游：`$UPSTREAM_REPO`，干净 `main@a60ba6a7e5a06742270ca605f5d2cc2766afa7e1`；完整绝对路径和用途见[源码调研](../../../reviews/2026-11-02-office-skills-research.md)。本计划源码均指该固定本地版本。
 - AILab 已有 vendor 固定 `3c5b227649371507ddc4eb46ac5133afe6db1cab`。两提交办公相关目录差异集中在 runtime 状态/会话、文件访问、server 与 viewer 指导；不可直接覆盖现有 AILab patch。制作技能在这两个提交间未见差异，不把当前不足归因为“只差一次升级”。
 - 本轮静态审查了请求构造、技能加载、三类压缩、附件准入、checkpoint、子任务、预览和上游 UI bridge。未执行运行时复现、测试、构建、浏览器或模型实验；下文缺口是源码路径判断，性能和效果均待实施验收。
