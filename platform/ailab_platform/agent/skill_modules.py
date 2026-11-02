@@ -4,13 +4,12 @@ import hashlib
 import json
 from pathlib import PurePosixPath
 
-from ..model_policy import estimator
 from ..skill_registry import BASE_SKILLS, catalog, resolve_name
 
 SUMMARY_MARKER = "\n已读模块索引（仅供导航，正文须按需重读）："
 
 
-def read_module(name, mode, resource=None, cursor=None):
+def read_module(name, mode, resource=None):
     entry = catalog()[name]
     root = entry["path"].parent
     manifest = json.loads((root / "modules.json").read_text())
@@ -19,8 +18,6 @@ def read_module(name, mode, resource=None, cursor=None):
     if mode == "work":
         common["base_path"] = f"/opt/skills/{name}"
     if resource is None:
-        if cursor is not None:
-            raise ValueError("cursor requires resource")
         text = entry["path"].read_text()
         if mode == "chat":
             import re
@@ -28,45 +25,32 @@ def read_module(name, mode, resource=None, cursor=None):
             text = re.sub(r"<!-- work -->.*?<!-- /work -->", "", text, flags=re.DOTALL)
         if mode == "chat":
             text += "\n当前对话不能运行脚本、创建或交付文件。"
-        if estimator.raw(text) > 1024:
-            raise ValueError("module directory exceeds navigation budget")
         return {**common, "skill": text, "navigation": True, "hash": hashlib.sha256(text.encode()).hexdigest()}
     if not isinstance(resource, str) or PurePosixPath(resource).is_absolute() or ".." in PurePosixPath(resource).parts:
         raise ValueError("invalid resource")
     module = next((m for m in modules if m["path"] == resource), None)
     if module is None:
         raise ValueError("unknown or unavailable resource for this mode")
-    cursor = "0" if cursor is None else cursor
-    chunk = next((c for c in module["chunks"] if c["id"] == cursor), None)
-    if chunk is None:
-        raise ValueError("unknown cursor")
     path = root / resource
     if any(p.is_symlink() for p in [path, *path.parents]) or not path.resolve().is_relative_to(root.resolve()):
         raise ValueError("invalid resource path")
-    with path.open("rb") as source:
-        source.seek(chunk["byte_offset"])
-        data = source.read(chunk["byte_length"])
-    if hashlib.sha256(data).hexdigest() != chunk["sha256"]:
+    data = path.read_bytes()
+    if hashlib.sha256(data).hexdigest() != module["sha256"]:
         raise ValueError("resource hash mismatch; rebuild context with the installed package")
-    index = module["chunks"].index(chunk)
     return {
         **common,
         "resource": resource,
-        "cursor": cursor,
-        "chunk_id": cursor,
-        "hash": chunk["sha256"],
+        "hash": module["sha256"],
         "module_hash": module["sha256"],
-        "estimated_tokens": chunk["estimated_tokens"],
-        "range": [chunk["start_line"], chunk["end_line"]],
+        "estimated_tokens": module["estimated_tokens"],
         "deps": module["deps"],
         "complete": True,
-        "next_cursor": module["chunks"][index + 1]["id"] if index + 1 < len(module["chunks"]) else None,
         "skill": data.decode(),
     }
 
 
 def identity(result):
-    return tuple(result.get(k) for k in ("name", "resource", "cursor", "hash", "version", "package_hash", "mode"))
+    return tuple(result.get(k) for k in ("name", "resource", "hash", "version", "package_hash", "mode"))
 
 
 def visible_modules(messages, *, calls=None, visible=None):
@@ -93,7 +77,7 @@ def visible_modules(messages, *, calls=None, visible=None):
                 continue
             if result.get("name") not in BASE_SKILLS or resolve_name(args.get("name", "")) != result["name"]:
                 continue
-            if args.get("resource") != result.get("resource") or (args.get("cursor") or "0") != result.get("cursor", "0"):
+            if args.get("resource") != result.get("resource"):
                 continue
             if not (result.get("navigation") or result.get("complete")):
                 continue
@@ -103,7 +87,7 @@ def visible_modules(messages, *, calls=None, visible=None):
 
 
 def module_summary(messages):
-    entries = {(r["name"], r["resource"], r["cursor"], r["hash"]) for r in visible_modules(messages).values() if r.get("resource")}
+    entries = {(r["name"], r["resource"], r["hash"]) for r in visible_modules(messages).values() if r.get("resource")}
     for message in messages:
         content = message.get("content")
         if message.get("role") == "system" and isinstance(content, str) and SUMMARY_MARKER in content:
@@ -114,7 +98,7 @@ def module_summary(messages):
         elif message.get("role") == "system" and isinstance(content, str) and "历史摘要（仅作背景）：\n" in content:
             try:
                 parsed = json.loads(content.split("历史摘要（仅作背景）：\n", 1)[1])
-                entries.update(tuple(item[k] for k in ("name", "resource", "cursor", "hash")) for item in parsed.get("read_modules", []))
+                entries.update(tuple(item[k] for k in ("name", "resource", "hash")) for item in parsed.get("read_modules", []))
             except (ValueError, TypeError, KeyError, AttributeError):
                 pass
     return SUMMARY_MARKER + json.dumps(sorted(entries), ensure_ascii=False) if entries else ""
@@ -125,7 +109,7 @@ def annotate_summary(summary, messages, *, structured=False):
     if not structured:
         return summary + note
     parsed = json.loads(summary)
-    keys = ("name", "resource", "cursor", "hash")
+    keys = ("name", "resource", "hash")
     entries = json.loads(note.split(SUMMARY_MARKER)[1]) if note else []
     parsed["read_modules"] = [dict(zip(keys, item, strict=True)) for item in entries]
     return json.dumps(parsed, ensure_ascii=False)

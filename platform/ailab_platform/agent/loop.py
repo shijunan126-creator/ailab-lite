@@ -1582,6 +1582,8 @@ class AgentLoop:
                 deadline = waits.setdefault(key, time.time() + (settings.ocr_deadline_seconds if call.name == "extract_text" else 150))
                 if time.time() >= deadline:
                     raise ToolError("文件处理超过截止时间，已停止等待；不要sleep或重复提取，请告知用户处理失败")
+            if call.name == "load_skill" and "cursor" in call.arguments:
+                raise ToolError("load_skill reads whole files; cursor is unsupported")
             if wanted in BASE_SKILLS:
                 mode = (turn.run.get("options") or {}).get("mode", "work")
                 installed = next((item for item in self._states[run_id].get("loaded_skills", []) if item["name"] == wanted), {})
@@ -1592,7 +1594,7 @@ class AgentLoop:
                 if call.arguments.get("version") not in (None, skills()[wanted]["version"]):
                     raise ToolError("requested skill version is unavailable; rebuild context explicitly")
                 try:
-                    result = read_module(wanted, mode, call.arguments.get("resource"), call.arguments.get("cursor"))
+                    result = read_module(wanted, mode, call.arguments.get("resource"))
                 except (ValueError, OSError) as exc:
                     raise ToolError(str(exc)) from exc
                 if module_identity(result) in self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages):
@@ -1606,9 +1608,9 @@ class AgentLoop:
                         tokens = estimator.estimate(spec.id, {"messages": candidate, "tools": current_catalog})
                         reserve = min(2048, spec.max_output_tokens) + 256
                         if tokens + reserve >= ModelPolicy.input_budget(spec):
-                            result = {"ok": False, "error": "cannot fit；请先压缩上下文或读取更窄的 resource", "name": wanted}
-            elif call.name == "load_skill" and (call.arguments.get("resource") is not None or call.arguments.get("cursor") is not None):
-                raise ToolError("resource/cursor is unavailable for this skill")
+                            result = {"ok": False, "error": "cannot fit: compact first；整文件无法放入剩余上下文，请先压缩，不能截断", "name": wanted}
+            elif call.name == "load_skill" and call.arguments.get("resource") is not None:
+                raise ToolError("resource is unavailable for this skill")
             elif wanted and _full_skill_visible(turn, wanted):
                 result = {"ok": True, "name": wanted, "already_loaded": True}
             elif call.name == "view_attachment":

@@ -30,7 +30,6 @@ class ReadModule(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(max_length=64)
     resource: str = Field(max_length=512)
-    cursor: str = Field(max_length=32)
     hash: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 

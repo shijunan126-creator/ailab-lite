@@ -1168,6 +1168,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
         assert_extension(before, after)
         assert before["tool_choice"] == after["tool_choice"] == "auto"
     results = {m.get("tool_call_id"): json.loads(m["content"]) for m in requests[-1]["messages"] if m["role"] == "tool"}
+    assert "cursor" not in results["2"] and "next_cursor" not in results["2"]
     assert results["2"]["complete"] and results["3"]["already_loaded"] and "skill" not in results["3"]
     assert not results["4"]["ok"]
     assert visible_modules(requests[-1]["messages"])

@@ -1,22 +1,10 @@
 {
-  "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
-  "chunk_token_hard_limit": 12288,
-  "chunk_token_target": 8192,
+  "adapter_revision": "7a74650d54fd01ba8b68df7b319eb76ecd1ff917c5b173cc75f116a0d392ab0a",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
-      "chunks": [
-        {
-          "byte_length": 5585,
-          "byte_offset": 0,
-          "end_line": 49,
-          "estimated_tokens": 1455,
-          "id": "0",
-          "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1455,
       "logical_path": "pdf-plugin/agents/visual-judge.md",
       "modes": [
         "chat",
@@ -29,18 +17,8 @@
       "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 3644,
-          "byte_offset": 0,
-          "end_line": 37,
-          "estimated_tokens": 956,
-          "id": "0",
-          "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 956,
       "logical_path": "pdf-plugin/skills/pdf-viewer/SKILL.md",
       "modes": [
         "chat",
@@ -53,35 +31,6 @@
       "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 31556,
-          "byte_offset": 0,
-          "end_line": 463,
-          "estimated_tokens": 8175,
-          "id": "0",
-          "sha256": "7f89ef7f1220323d320377759a138eac8254ee9e85d1012225a0f9b21ba0e471",
-          "start_line": 1
-        },
-        {
-          "byte_length": 31481,
-          "byte_offset": 31556,
-          "end_line": 888,
-          "estimated_tokens": 8067,
-          "id": "1",
-          "sha256": "38f279cf9cb1db5ee904777eeaa2f42219af760e2666d52e7ceae6e8935f1184",
-          "start_line": 464
-        },
-        {
-          "byte_length": 8124,
-          "byte_offset": 63037,
-          "end_line": 971,
-          "estimated_tokens": 2107,
-          "id": "2",
-          "sha256": "95d30fca1a9e9a137653fb7a8bb26ce2cd2df90c2f88b16ce7d22121beb46897",
-          "start_line": 889
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/academic.md",
         "pdf-plugin/skills/pdf/briefs/creative.md",
@@ -103,6 +52,7 @@
         "pdf-plugin/skills/pdf/typesetting/palette.md",
         "pdf-plugin/skills/pdf/typesetting/typography.md"
       ],
+      "estimated_tokens": 18283,
       "logical_path": "pdf-plugin/skills/pdf/SKILL.md",
       "modes": [
         "work"
@@ -116,26 +66,6 @@
       "sha256": "80ada8812e46fdba2b022f7b03c1286eae3590fd55017c05972e95f9eaaa648c"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 31075,
-          "byte_offset": 0,
-          "end_line": 695,
-          "estimated_tokens": 8189,
-          "id": "0",
-          "sha256": "5add5173bbe405b5fb07352131aa2d54d5d25929f63c155d81e2ab8f04c4209d",
-          "start_line": 1
-        },
-        {
-          "byte_length": 14387,
-          "byte_offset": 31075,
-          "end_line": 1039,
-          "estimated_tokens": 3809,
-          "id": "1",
-          "sha256": "bbacf3bdbf490c5fdca6ee5e78bce1b6dff4e6dd6dac769cc840c95141446e72",
-          "start_line": 696
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/briefs/report.md",
@@ -143,6 +73,7 @@
         "pdf-plugin/skills/pdf/typesetting/cover.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 11965,
       "logical_path": "pdf-plugin/skills/pdf/briefs/academic.md",
       "modes": [
         "work"
@@ -155,26 +86,6 @@
       "sha256": "30787d339f76d61af71a7390afb521aebf64992555324ce9a8eb94ef1231a222"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30827,
-          "byte_offset": 0,
-          "end_line": 549,
-          "estimated_tokens": 8040,
-          "id": "0",
-          "sha256": "65db7528de0477df63658f25e870f35b5ed576b4be193076565bb7d010b42bae",
-          "start_line": 1
-        },
-        {
-          "byte_length": 18961,
-          "byte_offset": 30827,
-          "end_line": 850,
-          "estimated_tokens": 4913,
-          "id": "1",
-          "sha256": "5bcab88cba5d84d72c224b2535f9acb5b942ebd76276357ae0bc24dd20437d8f",
-          "start_line": 550
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/briefs/creative-flow.md",
@@ -184,6 +95,7 @@
         "pdf-plugin/skills/pdf/typesetting/cover.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 12920,
       "logical_path": "pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
       "modes": [
         "work"
@@ -195,21 +107,11 @@
       "sha256": "10278ca3f193204d39120dcfc33ea1f3a834c42a3eb9842fbd9af9e7282ca689"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 10959,
-          "byte_offset": 0,
-          "end_line": 257,
-          "estimated_tokens": 2862,
-          "id": "0",
-          "sha256": "46d459f5c1f7e73096170ff50e6da5f1d60bc79fe5fe914d8a9fdfca1093f1e6",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/creative.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 2862,
       "logical_path": "pdf-plugin/skills/pdf/briefs/creative-flow.md",
       "modes": [
         "work"
@@ -221,26 +123,6 @@
       "sha256": "46d459f5c1f7e73096170ff50e6da5f1d60bc79fe5fe914d8a9fdfca1093f1e6"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30342,
-          "byte_offset": 0,
-          "end_line": 545,
-          "estimated_tokens": 7917,
-          "id": "0",
-          "sha256": "b394711577dab91eff5a4d191ec968a8dad0d98e0a91a021c5685899fa3a1254",
-          "start_line": 1
-        },
-        {
-          "byte_length": 15979,
-          "byte_offset": 30342,
-          "end_line": 775,
-          "estimated_tokens": 4145,
-          "id": "1",
-          "sha256": "a500c0ecbec7a857dcdd1a5114520805d473ec7bbe6e6ee8ef7d617fecdd6338",
-          "start_line": 546
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/configs/components.md",
@@ -249,6 +131,7 @@
         "pdf-plugin/skills/pdf/typesetting/cover.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 12029,
       "logical_path": "pdf-plugin/skills/pdf/briefs/creative.md",
       "modes": [
         "work"
@@ -261,31 +144,12 @@
       "sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 31319,
-          "byte_offset": 0,
-          "end_line": 658,
-          "estimated_tokens": 8105,
-          "id": "0",
-          "sha256": "72e0bac44873620fc5493633d422413e71d724e4e51ac386e1fbf7844e0f1fa7",
-          "start_line": 1
-        },
-        {
-          "byte_length": 2707,
-          "byte_offset": 31319,
-          "end_line": 707,
-          "estimated_tokens": 732,
-          "id": "1",
-          "sha256": "462fd7a83ff1a66df29948e919e9d428eb5d98f52ab3c651499aa8238910d2b1",
-          "start_line": 659
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/briefs/creative.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 8804,
       "logical_path": "pdf-plugin/skills/pdf/briefs/poster.md",
       "modes": [
         "work"
@@ -298,20 +162,10 @@
       "sha256": "481b6aff099e1e2e107cb0b0fd8f71b3f3b0525a6ec3e9f459c6ab8ec0f25810"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 7912,
-          "byte_offset": 0,
-          "end_line": 283,
-          "estimated_tokens": 2114,
-          "id": "0",
-          "sha256": "c4ee69bbc82601b38ef10784dd7dca5f1d9447d793e7ebc1614309e1a34b7676",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/process.md"
       ],
+      "estimated_tokens": 2114,
       "logical_path": "pdf-plugin/skills/pdf/briefs/process-advanced.md",
       "modes": [
         "work"
@@ -323,23 +177,13 @@
       "sha256": "c4ee69bbc82601b38ef10784dd7dca5f1d9447d793e7ebc1614309e1a34b7676"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 13736,
-          "byte_offset": 0,
-          "end_line": 344,
-          "estimated_tokens": 3632,
-          "id": "0",
-          "sha256": "a63dba443c39ad641b52652b70291fa3b8dc6e2b3cf75d48d832f0142fe6055b",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/creative.md",
         "pdf-plugin/skills/pdf/briefs/process-advanced.md",
         "pdf-plugin/skills/pdf/briefs/report.md",
         "pdf-plugin/skills/pdf/typesetting/palette.md"
       ],
+      "estimated_tokens": 3632,
       "logical_path": "pdf-plugin/skills/pdf/briefs/process.md",
       "modes": [
         "work"
@@ -352,35 +196,6 @@
       "sha256": "a63dba443c39ad641b52652b70291fa3b8dc6e2b3cf75d48d832f0142fe6055b"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30257,
-          "byte_offset": 0,
-          "end_line": 632,
-          "estimated_tokens": 7854,
-          "id": "0",
-          "sha256": "6144d862f51df7fac2b31b3dbeccefff7a76047541be3fb574adb5daa8353141",
-          "start_line": 1
-        },
-        {
-          "byte_length": 30823,
-          "byte_offset": 30257,
-          "end_line": 1386,
-          "estimated_tokens": 7987,
-          "id": "1",
-          "sha256": "a9c640f24b5248dd589c5642043a526c4d10ddb60d8bf8cce43c46d5a81bfcff",
-          "start_line": 633
-        },
-        {
-          "byte_length": 10788,
-          "byte_offset": 61080,
-          "end_line": 1640,
-          "estimated_tokens": 2824,
-          "id": "2",
-          "sha256": "33ffb8333cf185385ffd0f338fdb0024608499e9b880012eb31442c08c4b8660",
-          "start_line": 1387
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/briefs/creative.md",
@@ -390,6 +205,7 @@
         "pdf-plugin/skills/pdf/typesetting/overflow.md",
         "pdf-plugin/skills/pdf/typesetting/palette.md"
       ],
+      "estimated_tokens": 18599,
       "logical_path": "pdf-plugin/skills/pdf/briefs/report.md",
       "modes": [
         "work"
@@ -401,18 +217,8 @@
       "sha256": "67b3c407d42b448145cbe2269e5805751c3c26f87873652ac0e46927ed4e844e"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 10783,
-          "byte_offset": 0,
-          "end_line": 229,
-          "estimated_tokens": 2807,
-          "id": "0",
-          "sha256": "f163004a7e0709585e3a6171a3e7233d84242d8559065b9a62f737349c917b5a",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 2807,
       "logical_path": "pdf-plugin/skills/pdf/briefs/resume.md",
       "modes": [
         "work"
@@ -424,18 +230,8 @@
       "sha256": "f163004a7e0709585e3a6171a3e7233d84242d8559065b9a62f737349c917b5a"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 5210,
-          "byte_offset": 0,
-          "end_line": 153,
-          "estimated_tokens": 1409,
-          "id": "0",
-          "sha256": "efae6b5ac32fd2fa9bd567df474bdb20bc9c8b8c3e8b51e5b7aa596220cbef7f",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1409,
       "logical_path": "pdf-plugin/skills/pdf/configs/components.md",
       "modes": [
         "work"
@@ -445,18 +241,8 @@
       "sha256": "efae6b5ac32fd2fa9bd567df474bdb20bc9c8b8c3e8b51e5b7aa596220cbef7f"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 3471,
-          "byte_offset": 0,
-          "end_line": 90,
-          "estimated_tokens": 928,
-          "id": "0",
-          "sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 928,
       "logical_path": "pdf-plugin/skills/pdf/configs/fonts.md",
       "modes": [
         "work"
@@ -468,20 +254,10 @@
       "sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 12845,
-          "byte_offset": 0,
-          "end_line": 263,
-          "estimated_tokens": 3373,
-          "id": "0",
-          "sha256": "a5771a77feb28e99bca5f2e5651a47d3588098672a7636c16889e830fd40c13f",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/creative.md"
       ],
+      "estimated_tokens": 3373,
       "logical_path": "pdf-plugin/skills/pdf/configs/visual_framework.md",
       "modes": [
         "work"
@@ -491,20 +267,10 @@
       "sha256": "a5771a77feb28e99bca5f2e5651a47d3588098672a7636c16889e830fd40c13f"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 3788,
-          "byte_offset": 0,
-          "end_line": 61,
-          "estimated_tokens": 1027,
-          "id": "0",
-          "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/env_setup/setup.md"
       ],
+      "estimated_tokens": 1027,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/env_check.sh",
       "modes": [
         "work"
@@ -514,18 +280,8 @@
       "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 4811,
-          "byte_offset": 0,
-          "end_line": 82,
-          "estimated_tokens": 1256,
-          "id": "0",
-          "sha256": "bb83907b4495b46c9dafc5db72e3d585c8eb1f76a4f804cc58ce9ca1b8b6dc51",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1256,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/font_list.txt",
       "modes": [
         "work"
@@ -535,20 +291,10 @@
       "sha256": "bb83907b4495b46c9dafc5db72e3d585c8eb1f76a4f804cc58ce9ca1b8b6dc51"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 12697,
-          "byte_offset": 0,
-          "end_line": 302,
-          "estimated_tokens": 3314,
-          "id": "0",
-          "sha256": "7b7b9726351285d76222d35e6cfa188e7c2d4535727663f4179b23419523c556",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/cover_render.py"
       ],
+      "estimated_tokens": 3314,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/setup.md",
       "modes": [
         "work"
@@ -561,18 +307,8 @@
       "sha256": "7b7b9726351285d76222d35e6cfa188e7c2d4535727663f4179b23419523c556"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 13326,
-          "byte_offset": 0,
-          "end_line": 376,
-          "estimated_tokens": 3591,
-          "id": "0",
-          "sha256": "7e894908afaf2ae99d0f5c9e5a8906e822b956f7fbaa10dafdc3d30da804fd6c",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 3591,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
       "modes": [
         "work"
@@ -584,18 +320,8 @@
       "sha256": "7e894908afaf2ae99d0f5c9e5a8906e822b956f7fbaa10dafdc3d30da804fd6c"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 13454,
-          "byte_offset": 0,
-          "end_line": 343,
-          "estimated_tokens": 3584,
-          "id": "0",
-          "sha256": "dd2ac23c7088574a58e1d3995545d8f8b0a3f6925db0ee1752a9313cfa2c72b2",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 3584,
       "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
       "modes": [
         "work"
@@ -607,18 +333,8 @@
       "sha256": "dd2ac23c7088574a58e1d3995545d8f8b0a3f6925db0ee1752a9313cfa2c72b2"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 4807,
-          "byte_offset": 0,
-          "end_line": 130,
-          "estimated_tokens": 1341,
-          "id": "0",
-          "sha256": "004fb82e7720d6a116f5a56a063981584e5da731dfe804d8a3f8c1d8a44f112a",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1341,
       "logical_path": "pdf-plugin/skills/pdf/references/resume-academic.tex",
       "modes": [
         "work"
@@ -628,18 +344,8 @@
       "sha256": "004fb82e7720d6a116f5a56a063981584e5da731dfe804d8a3f8c1d8a44f112a"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 6183,
-          "byte_offset": 0,
-          "end_line": 190,
-          "estimated_tokens": 1741,
-          "id": "0",
-          "sha256": "1e41b45b8778482e5208b8216d092fa0968507919d31bd97cf683a5d890f28ef",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1741,
       "logical_path": "pdf-plugin/skills/pdf/references/resume-altacv.tex",
       "modes": [
         "work"
@@ -649,18 +355,8 @@
       "sha256": "1e41b45b8778482e5208b8216d092fa0968507919d31bd97cf683a5d890f28ef"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 26223,
-          "byte_offset": 0,
-          "end_line": 487,
-          "estimated_tokens": 7091,
-          "id": "0",
-          "sha256": "30d90b4f8d6c209700c2d9d91d76c8af6eb9354db20fca256614aa30738af209",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 7091,
       "logical_path": "pdf-plugin/skills/pdf/scripts/cover_render.py",
       "modes": [
         "work"
@@ -670,21 +366,11 @@
       "sha256": "30d90b4f8d6c209700c2d9d91d76c8af6eb9354db20fca256614aa30738af209"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 12957,
-          "byte_offset": 0,
-          "end_line": 367,
-          "estimated_tokens": 3377,
-          "id": "0",
-          "sha256": "3d8f79e9df7d3ea95e2d8e666c8c037508ac86e82190e255fbc6bf04b109c39b",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
         "pdf-plugin/skills/pdf/scripts/html2poster.js"
       ],
+      "estimated_tokens": 3377,
       "logical_path": "pdf-plugin/skills/pdf/scripts/cover_validate.js",
       "modes": [
         "work"
@@ -696,54 +382,8 @@
       "sha256": "3d8f79e9df7d3ea95e2d8e666c8c037508ac86e82190e255fbc6bf04b109c39b"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30169,
-          "byte_offset": 0,
-          "end_line": 631,
-          "estimated_tokens": 8098,
-          "id": "0",
-          "sha256": "9596976a0145dd2b9b26b5d0f80ee42667e932eebbfaa65ccb1d196a775141aa",
-          "start_line": 1
-        },
-        {
-          "byte_length": 29920,
-          "byte_offset": 30169,
-          "end_line": 1301,
-          "estimated_tokens": 8055,
-          "id": "1",
-          "sha256": "e77d52a1e486ed88d141d8b98efd60efaa7ddaddaf54dddd02fb75b38def057a",
-          "start_line": 632
-        },
-        {
-          "byte_length": 30672,
-          "byte_offset": 60089,
-          "end_line": 2113,
-          "estimated_tokens": 8117,
-          "id": "2",
-          "sha256": "510e05af798251884c2dc2523e4240601a858ec8922e73e7e2c935d033ef7a87",
-          "start_line": 1302
-        },
-        {
-          "byte_length": 30261,
-          "byte_offset": 90761,
-          "end_line": 2789,
-          "estimated_tokens": 8020,
-          "id": "3",
-          "sha256": "a5234ebae462915d99fc814db2e29641ec3b7d2f3cf40e5e3948b956d0d8e2cc",
-          "start_line": 2114
-        },
-        {
-          "byte_length": 1120,
-          "byte_offset": 121022,
-          "end_line": 2816,
-          "estimated_tokens": 329,
-          "id": "4",
-          "sha256": "3ab42650194e9b92a351ae1b297c94edccdfb6ca36e540848c788e8281168224",
-          "start_line": 2790
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 32488,
       "logical_path": "pdf-plugin/skills/pdf/scripts/design_engine.py",
       "modes": [
         "work"
@@ -753,30 +393,11 @@
       "sha256": "08a71da2be73f15231fcf4a49af990c0a288ca7297bc896a7b68ddcd9a224ea2"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30483,
-          "byte_offset": 0,
-          "end_line": 736,
-          "estimated_tokens": 8108,
-          "id": "0",
-          "sha256": "470f95a0235618b4a0ddc0a009848f311d0e2bd00155e0aaf37d7da956b99f58",
-          "start_line": 1
-        },
-        {
-          "byte_length": 747,
-          "byte_offset": 30483,
-          "end_line": 754,
-          "estimated_tokens": 258,
-          "id": "1",
-          "sha256": "0114e7e6acb8247c0fff6a903be4ac81ec2706c2aa29ecdb8c72713f44487e97",
-          "start_line": 737
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/html2poster.js"
       ],
+      "estimated_tokens": 8333,
       "logical_path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
       "modes": [
         "work"
@@ -788,20 +409,10 @@
       "sha256": "32eeb06095761458e6d868ba6d62e2a052c37ab0e5f8109a77321ac205fd3627"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 10463,
-          "byte_offset": 0,
-          "end_line": 288,
-          "estimated_tokens": 2737,
-          "id": "0",
-          "sha256": "897357079b8e513cae0737a2b3f87753d8b97e2158517a5b21e9bfa590628a75",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/html2pdf-next.js"
       ],
+      "estimated_tokens": 2737,
       "logical_path": "pdf-plugin/skills/pdf/scripts/html2poster.js",
       "modes": [
         "work"
@@ -813,48 +424,11 @@
       "sha256": "897357079b8e513cae0737a2b3f87753d8b97e2158517a5b21e9bfa590628a75"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30065,
-          "byte_offset": 0,
-          "end_line": 837,
-          "estimated_tokens": 8133,
-          "id": "0",
-          "sha256": "9d1e8027dad143e0aaa8578023c23c0fecf13a33bfd137f930d999414926d201",
-          "start_line": 1
-        },
-        {
-          "byte_length": 30542,
-          "byte_offset": 30065,
-          "end_line": 1702,
-          "estimated_tokens": 8161,
-          "id": "1",
-          "sha256": "dad6dacba2a7045921fb9298f27286f7df1381a1a149d736ed822a386c854ba6",
-          "start_line": 838
-        },
-        {
-          "byte_length": 30791,
-          "byte_offset": 60607,
-          "end_line": 2506,
-          "estimated_tokens": 8187,
-          "id": "2",
-          "sha256": "dd7802020e0866f05403f91b1746813414ea262727f12b2c89c0ff080bb5caa8",
-          "start_line": 1703
-        },
-        {
-          "byte_length": 20096,
-          "byte_offset": 91398,
-          "end_line": 3032,
-          "estimated_tokens": 5457,
-          "id": "3",
-          "sha256": "5866ff1be2a0880e19e7f0c2842e444af9e23c69f6ae1fd12aa8eb24630203ab",
-          "start_line": 2507
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/toc_validate.py"
       ],
+      "estimated_tokens": 29839,
       "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
       "modes": [
         "work"
@@ -866,18 +440,8 @@
       "sha256": "16e3b10e0ef2cb49e39c249d23c9b2ad382b12c27a1fde5ae37604d11f302d75"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30682,
-          "byte_offset": 0,
-          "end_line": 899,
-          "estimated_tokens": 8080,
-          "id": "0",
-          "sha256": "207a4a09eb72f1d3c4a4b3e74f3ca42e0717807048cbe4ff44b4998bdd881a36",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 8080,
       "logical_path": "pdf-plugin/skills/pdf/scripts/pdf_qa.py",
       "modes": [
         "work"
@@ -887,30 +451,11 @@
       "sha256": "207a4a09eb72f1d3c4a4b3e74f3ca42e0717807048cbe4ff44b4998bdd881a36"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 30848,
-          "byte_offset": 0,
-          "end_line": 711,
-          "estimated_tokens": 8127,
-          "id": "0",
-          "sha256": "e705e5f638ea3fbdd817c69ffcd4e93b7f5871eb0b36fa4ecbb2c32faedd276a",
-          "start_line": 1
-        },
-        {
-          "byte_length": 27498,
-          "byte_offset": 30848,
-          "end_line": 1335,
-          "estimated_tokens": 7275,
-          "id": "1",
-          "sha256": "532b88c3af40c9932834abad38f264b41ae204719c6e822a6c3da12fdbeb72d2",
-          "start_line": 712
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/SKILL.md",
         "pdf-plugin/skills/pdf/scripts/html2poster.js"
       ],
+      "estimated_tokens": 15370,
       "logical_path": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
       "modes": [
         "work"
@@ -922,20 +467,10 @@
       "sha256": "27a7692635315a531b6ba990a3f8be569d3741e979a0cec3499abf1ed3477c67"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 11675,
-          "byte_offset": 0,
-          "end_line": 297,
-          "estimated_tokens": 3142,
-          "id": "0",
-          "sha256": "fe6acbb0e1a4788b9d57d4daa2f78e4e0cf976e9623cd77af600de0e9d98f754",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/pdf.py"
       ],
+      "estimated_tokens": 3142,
       "logical_path": "pdf-plugin/skills/pdf/scripts/setup.sh",
       "modes": [
         "work"
@@ -947,36 +482,8 @@
       "sha256": "fe6acbb0e1a4788b9d57d4daa2f78e4e0cf976e9623cd77af600de0e9d98f754"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 31313,
-          "byte_offset": 0,
-          "end_line": 886,
-          "estimated_tokens": 8177,
-          "id": "0",
-          "sha256": "69274e2b226131960280faa6f12bddb66cadaca20683b36e0c246740dbf977d1",
-          "start_line": 1
-        },
-        {
-          "byte_length": 31417,
-          "byte_offset": 31313,
-          "end_line": 1695,
-          "estimated_tokens": 8178,
-          "id": "1",
-          "sha256": "e411796620a9c3471826ef71e2567cdead2231989ceb721c005d1a3c94e65f3a",
-          "start_line": 887
-        },
-        {
-          "byte_length": 15335,
-          "byte_offset": 62730,
-          "end_line": 2069,
-          "estimated_tokens": 4011,
-          "id": "2",
-          "sha256": "abc89858bafdeacb3a4c5d2a83f0ba6f00cd4c860a73ce28a4a599bf10154fa6",
-          "start_line": 1696
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 20300,
       "logical_path": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
       "modes": [
         "work"
@@ -988,18 +495,8 @@
       "sha256": "ededf2cd01ced419a8c1929e39a9eaf880b205bbdaa17c6efed7dbfcd9c19bb2"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 12144,
-          "byte_offset": 0,
-          "end_line": 320,
-          "estimated_tokens": 3168,
-          "id": "0",
-          "sha256": "b100fa44d94ad3d9e1244e5de8bf92ac429ef0f07859157ee3191161f772bd64",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 3168,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/charts.md",
       "modes": [
         "work"
@@ -1011,21 +508,11 @@
       "sha256": "b100fa44d94ad3d9e1244e5de8bf92ac429ef0f07859157ee3191161f772bd64"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 16222,
-          "byte_offset": 0,
-          "end_line": 384,
-          "estimated_tokens": 4217,
-          "id": "0",
-          "sha256": "344dc880dd50aac4ae250f4f5f396c3435672fbd7ce58079fb6f95b1c3e7af33",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/scripts/cover_render.py",
         "pdf-plugin/skills/pdf/typesetting/geometry.md"
       ],
+      "estimated_tokens": 4217,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
       "modes": [
         "work"
@@ -1035,22 +522,12 @@
       "sha256": "344dc880dd50aac4ae250f4f5f396c3435672fbd7ce58079fb6f95b1c3e7af33"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 14219,
-          "byte_offset": 0,
-          "end_line": 236,
-          "estimated_tokens": 3688,
-          "id": "0",
-          "sha256": "4b0ee306d7cb741b0ac36a1d9a56c69352b9582ed5189802697407a89d335100",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/briefs/creative.md",
         "pdf-plugin/skills/pdf/briefs/report.md",
         "pdf-plugin/skills/pdf/scripts/cover_render.py"
       ],
+      "estimated_tokens": 3688,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/cover.md",
       "modes": [
         "work"
@@ -1062,23 +539,13 @@
       "sha256": "4b0ee306d7cb741b0ac36a1d9a56c69352b9582ed5189802697407a89d335100"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 20115,
-          "byte_offset": 0,
-          "end_line": 527,
-          "estimated_tokens": 5426,
-          "id": "0",
-          "sha256": "e3078ebe11fe0d853e26d356c5c8ea93acc84786a07c67aa721bff0fb5ecc794",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/typesetting/cover.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md",
         "pdf-plugin/skills/pdf/typesetting/pagination.md",
         "pdf-plugin/skills/pdf/typesetting/typography.md"
       ],
+      "estimated_tokens": 5426,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
       "modes": [
         "work"
@@ -1088,18 +555,8 @@
       "sha256": "e3078ebe11fe0d853e26d356c5c8ea93acc84786a07c67aa721bff0fb5ecc794"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 5655,
-          "byte_offset": 0,
-          "end_line": 142,
-          "estimated_tokens": 1563,
-          "id": "0",
-          "sha256": "5159bb842397dbc88a55eb687276e424b7858c065b5672ca9ffc47a4f8262a8d",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1563,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/geometry.md",
       "modes": [
         "work"
@@ -1109,21 +566,11 @@
       "sha256": "5159bb842397dbc88a55eb687276e424b7858c065b5672ca9ffc47a4f8262a8d"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 22215,
-          "byte_offset": 0,
-          "end_line": 630,
-          "estimated_tokens": 5834,
-          "id": "0",
-          "sha256": "144efd3c9ea99dbe64eed8a84b223d58f429c69f9f3c235b2ae881eca4fe6024",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
         "pdf-plugin/skills/pdf/typesetting/pagination.md"
       ],
+      "estimated_tokens": 5834,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/overflow.md",
       "modes": [
         "work"
@@ -1133,21 +580,11 @@
       "sha256": "144efd3c9ea99dbe64eed8a84b223d58f429c69f9f3c235b2ae881eca4fe6024"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 13300,
-          "byte_offset": 0,
-          "end_line": 367,
-          "estimated_tokens": 3479,
-          "id": "0",
-          "sha256": "f9f4b2116d2348221920d58526899bb80a75d0d5ff407ab75d3516289a7be120",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
         "pdf-plugin/skills/pdf/typesetting/overflow.md"
       ],
+      "estimated_tokens": 3479,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/pagination.md",
       "modes": [
         "work"
@@ -1157,18 +594,8 @@
       "sha256": "f9f4b2116d2348221920d58526899bb80a75d0d5ff407ab75d3516289a7be120"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 7344,
-          "byte_offset": 0,
-          "end_line": 219,
-          "estimated_tokens": 1952,
-          "id": "0",
-          "sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1952,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/palette.md",
       "modes": [
         "work"
@@ -1180,20 +607,10 @@
       "sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 297,
-          "byte_offset": 0,
-          "end_line": 20,
-          "estimated_tokens": 112,
-          "id": "0",
-          "sha256": "03f6101f53128b13a19acac521ffe6cb00a3cd6f2becee85b75dedb863ab5519",
-          "start_line": 1
-        }
-      ],
       "deps": [
         "pdf-plugin/skills/pdf/typesetting/pagination.md"
       ],
+      "estimated_tokens": 112,
       "logical_path": "pdf-plugin/skills/pdf/typesetting/typography.md",
       "modes": [
         "work"

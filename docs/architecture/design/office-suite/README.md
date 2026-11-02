@@ -11,7 +11,7 @@
 | D1 许可 | 四制作技能 frontmatter 写 “Proprietary. LICENSE.txt has complete terms”，而 LICENSE.txt 全文为 Apache-2.0，按完整条款 Apache-2.0 分发；office-runtime 为 MIT。原 LICENSE 文件原样保留在 vendor，NOTICE 记录来源与修改；每个生成技能包随附 Apache-2.0 LICENSE 和 NOTICE，第三方图标目录随附其 LICENSE-lucide.txt，由构建生成并纳入漂移检查；镜像新增依赖逐项登记许可。 |
 | D2 命名 | 模型可见文本（技能正文、模块、工具描述/结果、提示词）不出现上游产品名、`ZCODE_*` 变量或其 citation 标签；适配补丁替换为 AILab 工具与语法，测试对生成资源树与录制请求做大小写不敏感断言。许可与来源文件不改。 |
 | D3 布局 | `vendor/office-suite/upstream/` 原样存放固定提交的四插件 skills/agents 与 office-runtime；`vendor/office-suite/patches/` 有序显式补丁；`vendor/office-suite/build.py` 生成 `images/sbx-office/skills/platform.{docx,xlsx,pptx,pdf}/` 及模块索引。生成物入库，测试重建并比对漂移。旧 `vendor/zcode-office-runtime` reader 迁到同一 runtime 版本后删除，不长期并存两套 parser。 |
-| D4 模块读取 | 固定 schema 扩展 `load_skill(name, resource?, cursor?)`；无 resource 返回 ≤1024 token 的格式导航（含模块目录）。模块索引在构建时生成：逻辑路径、chunk 边界、hash、估算 token、依赖、`modes`（chat/work）。分片目标 ≤8192 估算 token；单段落/完整代码围栏不可拆，允许 ≤12288，超过12288构建失败；超目标仅标记 `oversize: true`。2048目标使42个Word模块中27个需多轮读取却不节省上下文，故提高页面大小；75k–282k token的整包仍禁止一次加载。Chat 只见可读模块，不见脚本执行步骤。 |
+| D4 整文件读取 | 固定 `load_skill(name, resource?)`；不传 resource 返回完整 SKILL.md 导航和文件目录，传 resource 一次返回白名单中的完整文件。manifest 按文件记录 path/hash/estimated_tokens/modes/deps；无分片、cursor、大小硬限或截断。Chat 不见脚本执行材料。整文件放不下剩余上下文时明确返回 cannot fit, compact first；当前配对消息中已有同 hash 完整文件才省略重读。 |
 | D5 可见性 | “模型已读”只由当前 messages 中配对成功、完整、同 hash 的结果推导；`loaded_skills` 仅表示安装/登记，不再用于拒绝重读。三类压缩与恢复后重算。 |
 | D6 视觉验收 | 上游视觉角色引用的系统级 delivery protocol 不在源码中，不宣称迁移；AILab 自写视觉门禁流程，标为本地适配。固定工具 `review_artifact`：同模型时复制主请求前缀并追加角色与页图，执行只读。 |
 | D7 侧栏工具 | 固定工具 `document_view`（op: open/get_view/reveal/capture），Chat/Work 同 schema；选区以消息 `doc_refs` 经 outbox 发送，API 复核。 |

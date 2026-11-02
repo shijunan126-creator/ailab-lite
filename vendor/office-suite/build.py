@@ -19,8 +19,6 @@ from ailab_platform.model_policy import TokenEstimator  # noqa: E402
 from ailab_platform.skill_index import build_index  # noqa: E402
 
 PACKAGES = {"documents-plugin": "docx", "spreadsheets-plugin": "xlsx", "presentations-plugin": "pptx", "pdf-plugin": "pdf"}
-TARGET = 8192
-HARD_LIMIT = 12288
 ESTIMATOR = TokenEstimator()
 
 
@@ -89,37 +87,6 @@ def atoms(text: str) -> list[str]:
             pending.append(line)
     if pending:
         result.append("".join(pending))
-    return result
-
-
-def chunks(text: str) -> list[dict]:
-    groups, pending = [], ""
-    for block in atoms(text):
-        if pending and tokens(pending + block) > TARGET:
-            groups.append(pending)
-            pending = ""
-        pending += block
-    if pending:
-        groups.append(pending)
-    result, line, offset = [], 1, 0
-    for i, content in enumerate(groups):
-        size = len(content.encode())
-        item = {
-            "id": str(i),
-            "start_line": line,
-            "end_line": line + content.count("\n") - int(content.endswith("\n")),
-            "byte_offset": offset,
-            "byte_length": size,
-            "sha256": sha(content.encode()),
-            "estimated_tokens": tokens(content),
-        }
-        if item["estimated_tokens"] > HARD_LIMIT:
-            raise ValueError(f"indivisible block exceeds hard limit of {HARD_LIMIT} estimated tokens: {item['estimated_tokens']}")
-        if item["estimated_tokens"] > TARGET:
-            item["oversize"] = True
-        result.append(item)
-        line += content.count("\n")
-        offset += size
     return result
 
 
@@ -211,7 +178,7 @@ def navigation(fmt: str, modules: list[dict]) -> str:
     text += "extract_text/view_attachment 由平台管理等待；不要启动沙箱sleep、循环重复提取或交付中间图片来绕路，"
     text += "不在用户沙箱安装 OCR 权重。权限和删除以每次工具返回为准。\n\n"
     text += "完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。"
-    text += "用 load_skill(name, resource=path, cursor=\"0\") 读取，按 next_cursor 读完所需模块及 deps；预算不足先压缩或缩小范围。\n\n"
+    text += "用 load_skill(name, resource=path) 一次读取完整文件及所需 deps；整文件放不下时先压缩，绝不截断。\n\n"
     text += "## 阅读与审阅\n"
     for m in modules:
         if "chat" in m["modes"]:
@@ -230,8 +197,6 @@ def navigation(fmt: str, modules: list[dict]) -> str:
         if "chat" not in m["modes"]:
             text += f"- {m['path']}\n"
     text += "<!-- /work -->\n"
-    if tokens(text) > 1024:
-        raise ValueError(f"navigation exceeds cap: {fmt}={tokens(text)}")
     return text
 
 
@@ -271,7 +236,7 @@ def build(output: Path) -> None:
                 "logical_path": name,
                 "path": relative,
                 "sha256": sha(data),
-                "chunks": chunks(text),
+                "estimated_tokens": tokens(text),
                 "deps": sorted(set(references)),
                 "modes": modes(name, text),
                 "patches": trace.get(name, []),
@@ -292,8 +257,6 @@ def build(output: Path) -> None:
                 "package_id": f"platform.{fmt}",
                 "upstream_commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
                 "adapter_revision": sha(b"".join(p.read_bytes() for p in sorted((BASE / "patches").glob("*.json")))),
-                "chunk_token_target": TARGET,
-                "chunk_token_hard_limit": HARD_LIMIT,
                 "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
                 "modules": entries,
             },

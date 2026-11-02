@@ -10,7 +10,7 @@ description: PDF 文件读取、定位与处理
 全文任务从头连续遍历并核对 status=ready；query 命中或部分页不能冒充全文。原生文字不包含图表/嵌图语义；非视觉模型不能靠 OCR 猜测图形。按真实预算分批读取，不默认注入整份渲染。
 extract_text/view_attachment 由平台管理等待；不要启动沙箱sleep、循环重复提取或交付中间图片来绕路，不在用户沙箱安装 OCR 权重。权限和删除以每次工具返回为准。
 
-完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。用 load_skill(name, resource=path, cursor="0") 读取，按 next_cursor 读完所需模块及 deps；预算不足先压缩或缩小范围。
+完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。用 load_skill(name, resource=path) 一次读取完整文件及所需 deps；整文件放不下时先压缩，绝不截断。
 
 ## 阅读与审阅
 - agents/visual-judge.md

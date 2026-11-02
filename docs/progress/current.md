@@ -2,9 +2,9 @@
 
 - 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
 - 已定：许可（Apache-2.0/MIT）、命名、vendor 布局、模块读取、可见性、视觉验收与侧栏工具，见计划“实施决策”。
-- P0资源基线 `5da37fa`；本轮仅实施P1后端，代码提交 `8800615`、`0a48b72`：固定 `load_skill(name, resource?, cursor?)`、Chat模式过滤、模块分片/hash、消息配对可见性、ModelPolicy预算拒绝，以及三类压缩的导航索引与按需重读。没有启动P2/P3或改Portal。
+- P0资源基线 `5da37fa`；本轮仅实施P1后端，代码提交 `8800615`、`0a48b72`：固定 `load_skill(name, resource?)`、Chat模式过滤、整文件/hash、消息配对可见性、ModelPolicy预算拒绝，以及三类压缩的导航索引与按需重读。没有启动P2/P3或改Portal。
 - 验证命令、计数、基线与未测边界统一见[P1记录](updates/2026-11-02-office-suite-p1.md)。本地实现不等于真模型缓存验收；真实 `cached_tokens/prompt_tokens` 检查明确属于P5。
-- 本轮已授权P2，进入基线 `4872682`；Step 0先独立提高模块目标8192/硬限12288，原因及验证见[P2记录](updates/2026-11-02-office-suite-p2.md)。P3在另一worktree并行，本轮不改引用/查看状态合同。下一步：完成P2镜像、脚本与视觉评审及集中验证；不push、不提PR、不部署。
+- 当前 P2 进入基线 `d8ed0f9`；用户最新决定替代8192打包：按文件完整读取，不分页、不截断，剩余预算不足先压缩。取消运行的部分改动正在核查；详情见 [P2记录](updates/2026-11-02-office-suite-p2.md)。下一步完成制作镜像、脚本、固定评审与集中验证。P3在另一worktree，不改其文档引用/查看状态合同；不push、PR、部署。
 
 ---
 

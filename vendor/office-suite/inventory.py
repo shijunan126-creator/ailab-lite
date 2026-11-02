@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from build import BASE, PACKAGES, ROOT, adapted, chunks, dependencies, destination, dump, modes, originals, sha
+from build import BASE, PACKAGES, ROOT, adapted, dependencies, destination, dump, modes, originals, sha
 
 # Import names whose distribution or executable spelling differs.
 DISTRIBUTIONS = {
@@ -133,10 +133,6 @@ def inventory() -> dict:
             "status": status,
             "reason": reason,
         }
-        if dest:
-            oversized = [c for c in chunks(adapted_files[name].decode()) if c.get("oversize")]
-            if oversized:
-                entry["oversize_chunks"] = oversized
         if name.endswith("scenes/vba.md"):
             entry.update(
                 status="blocked",
@@ -218,24 +214,12 @@ def inventory() -> dict:
             ),
         }
     )
-    oversized_sources = [e for e in entries if "oversize_chunks" in e]
-    entries.append(
-        {
-            "id": "module-chunk-limits",
-            "kind": "resource-boundary",
-            "source": [e["source"] for e in oversized_sources],
-            "modes": ["work"],
-            "runtime_location": "Resource build validation",
-            "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
-            "missing_from_image": {"npm": [], "python": [], "binary": []},
-            "acceptance_case_id": "OFFICE-CHUNK-LIMITS",
-            "status": "implemented",
-            "reason": (
-                f"{len(oversized_sources)} indivisible blocks exceed the 8192 estimated-token packing target and remain whole. "
-                "The build enforces a hard limit of 12288 estimated tokens; oversize markers are informational."
-            ),
-        }
-    )
+    entries.append({
+        "id": "whole-file-reads", "kind": "resource-boundary", "source": [], "modes": ["chat", "work"],
+        "runtime_location": "Agent ModelPolicy admission", "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
+        "missing_from_image": {"npm": [], "python": [], "binary": []}, "acceptance_case_id": "OFFICE-WHOLE-FILE",
+        "status": "implemented", "reason": "Whole-file reads only; reject insufficient remaining context explicitly, never truncate."
+    })
     return {
         "schema_version": 1,
         "upstream_commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],

@@ -13059,7 +13059,7 @@
       "status": "blocked"
     },
     {
-      "acceptance_case_id": "OFFICE-CHUNK-LIMITS",
+      "acceptance_case_id": "OFFICE-WHOLE-FILE",
       "dependencies": {
         "binary": [],
         "dynamic": [],
@@ -13067,7 +13067,7 @@
         "npm": [],
         "python": []
       },
-      "id": "module-chunk-limits",
+      "id": "whole-file-reads",
       "kind": "resource-boundary",
       "missing_from_image": {
         "binary": [],
@@ -13075,10 +13075,11 @@
         "python": []
       },
       "modes": [
+        "chat",
         "work"
       ],
-      "reason": "0 indivisible blocks exceed the 8192 estimated-token packing target and remain whole. The build enforces a hard limit of 12288 estimated tokens; oversize markers are informational.",
-      "runtime_location": "Resource build validation",
+      "reason": "Whole-file reads only; reject insufficient remaining context explicitly, never truncate.",
+      "runtime_location": "Agent ModelPolicy admission",
       "source": [],
       "status": "implemented"
     }

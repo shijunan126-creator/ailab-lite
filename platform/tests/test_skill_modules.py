@@ -21,7 +21,7 @@ from tests.test_agent_loop import FakeBroker, FakePlatform
 def paired(result, call_id="read"):
     arguments = {"name": result["name"]}
     if result.get("resource"):
-        arguments.update(resource=result["resource"], cursor=result["cursor"])
+        arguments.update(resource=result["resource"])
     return [
         {"role": "assistant", "tool_calls": [{"id": call_id, "function": {"name": "load_skill", "arguments": json.dumps(arguments)}}]},
         tool_result_message(call_id, "load_skill", result),
@@ -30,7 +30,7 @@ def paired(result, call_id="read"):
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
 @pytest.mark.parametrize("name", BASE_SKILLS)
-def test_navigation_and_complete_cursor_walk(name, mode):
+def test_navigation_and_whole_file_reads(name, mode):
     navigation = read_module(name, mode)
     assert estimator.raw(navigation["skill"]) <= 1024
     root = catalog()[name]["path"].parent
@@ -41,25 +41,18 @@ def test_navigation_and_complete_cursor_walk(name, mode):
                 read_module(name, mode, module["path"])
             continue
         assert module["path"] in navigation["skill"]
-        cursor, chunks = None, []
-        while True:
-            result = read_module(name, mode, module["path"], cursor)
-            assert result["complete"] and estimator.raw(result["skill"]) == result["estimated_tokens"]
-            assert hashlib.sha256(result["skill"].encode()).hexdigest() == result["hash"]
-            chunks.append(result["skill"])
-            cursor = result["next_cursor"]
-            if cursor is None:
-                break
-        assert "".join(chunks) == (root / module["path"]).read_text()
+        result = read_module(name, mode, module["path"])
+        assert result["complete"] and estimator.raw(result["skill"]) == result["estimated_tokens"]
+        assert hashlib.sha256(result["skill"].encode()).hexdigest() == result["hash"]
+        assert result["skill"] == (root / module["path"]).read_text()
+        assert "cursor" not in result and "next_cursor" not in result
 
 
-@pytest.mark.parametrize(
-    "resource,cursor",
-    [(None, "1"), ("/etc/passwd", None), ("../SKILL.md", None), ("absent", None), ("viewer/SKILL.md", "bad"), ("viewer/SKILL.md", 0)],
-)
-def test_invalid_reads_never_fall_back(resource, cursor):
+
+@pytest.mark.parametrize("resource", ["/etc/passwd", "../SKILL.md", "absent"])
+def test_invalid_reads_never_fall_back(resource):
     with pytest.raises(ValueError):
-        read_module("platform.docx", "work", resource, cursor)
+        read_module("platform.docx", "work", resource)
 
 
 def test_visibility_requires_paired_complete_current_text():
@@ -141,12 +134,12 @@ def test_package_drift_and_symlinks_refuse_reads(tmp_path, monkeypatch):
         read_module("platform.docx", "work", "viewer/SKILL.md")
 
 
-def test_large_chunk_is_whole_or_refused_by_small_window(monkeypatch):
+def test_large_file_is_whole_or_refused_by_small_window(monkeypatch):
     spec = ModelSpec("m", "m", provider="mock", context_tokens=2000, max_output_tokens=256, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     manifest = json.loads((catalog()["platform.docx"]["path"].parent / "modules.json").read_text())
-    resource, cursor = next((m["path"], c["id"]) for m in manifest["modules"] for c in m["chunks"] if c["estimated_tokens"] > 2048)
-    module = read_module("platform.docx", "work", resource, cursor)
+    resource = next(m["path"] for m in manifest["modules"] if m["estimated_tokens"] > 2048)
+    module = read_module("platform.docx", "work", resource)
     assert module["estimated_tokens"] > 2048
     assert module["skill"].endswith("\n")
 
@@ -158,7 +151,7 @@ def test_large_chunk_is_whole_or_refused_by_small_window(monkeypatch):
         turn.messages = [{"role": "system", "content": "rules"}]
         loop._states["r"] = {"messages": turn.messages}
         result = await loop._run_tool(
-            turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource, "cursor": cursor}), 0
+            turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource}), 0
         )
         assert not result["ok"] and "cannot fit" in result["error"] and "skill" not in result
 

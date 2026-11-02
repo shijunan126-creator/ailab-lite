@@ -1,22 +1,10 @@
 {
-  "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
-  "chunk_token_hard_limit": 12288,
-  "chunk_token_target": 8192,
+  "adapter_revision": "7a74650d54fd01ba8b68df7b319eb76ecd1ff917c5b173cc75f116a0d392ab0a",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
-      "chunks": [
-        {
-          "byte_length": 5590,
-          "byte_offset": 0,
-          "end_line": 49,
-          "estimated_tokens": 1457,
-          "id": "0",
-          "sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1457,
       "logical_path": "presentations-plugin/agents/visual-judge.md",
       "modes": [
         "chat",
@@ -29,18 +17,8 @@
       "sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 4090,
-          "byte_offset": 0,
-          "end_line": 43,
-          "estimated_tokens": 1068,
-          "id": "0",
-          "sha256": "7dd128d12127a441daa7ec819430a21e3ce48b2076cff70d483109a6581eb597",
-          "start_line": 1
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 1068,
       "logical_path": "presentations-plugin/skills/pptx-viewer/SKILL.md",
       "modes": [
         "chat",
@@ -53,27 +31,8 @@
       "sha256": "7dd128d12127a441daa7ec819430a21e3ce48b2076cff70d483109a6581eb597"
     },
     {
-      "chunks": [
-        {
-          "byte_length": 31536,
-          "byte_offset": 0,
-          "end_line": 490,
-          "estimated_tokens": 8173,
-          "id": "0",
-          "sha256": "e3545c71b630a85adcccc9146533c201307ec3faf736cad39609ee013f01c64f",
-          "start_line": 1
-        },
-        {
-          "byte_length": 19185,
-          "byte_offset": 31536,
-          "end_line": 724,
-          "estimated_tokens": 4938,
-          "id": "1",
-          "sha256": "970d63092c7ec6a5bc2f551c7036b86e43174bf1eb7bf8f08a1dcaf39b58737c",
-          "start_line": 491
-        }
-      ],
       "deps": [],
+      "estimated_tokens": 13079,
       "logical_path": "presentations-plugin/skills/pptx/SKILL.md",
       "modes": [
         "work"

@@ -187,13 +187,12 @@ LOAD_SKILL = {
     "type": "function",
     "function": {
         "name": "load_skill",
-        "description": "读取技能导航；办公模块用 resource 与 cursor 分片读取，按 next_cursor 读完所需模块。",
+        "description": "读取完整技能导航；resource 指定包内文件，一次返回完整文件。放不下时先压缩，绝不截断。",
         "parameters": {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "maxLength": 64},
                 "resource": {"type": "string"},
-                "cursor": {"type": "string"},
                 "version": {"type": "string"},
             },
             "required": ["name"],
