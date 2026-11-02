@@ -5,7 +5,6 @@ import time
 
 import httpx
 import pytest
-from playwright.sync_api import expect
 
 from .conftest import PLATFORM
 from .test_portal import _send, _start_conversation, _wait_for_turns
@@ -41,6 +40,8 @@ def _frame(page, name):
 
 
 def _select(page, frame, kind):
+    from playwright.sync_api import expect
+
     if kind == "xlsx":
         expect(frame.get_by_role("tab", name="Revenue", exact=True)).to_be_visible(timeout=20000)
         canvas = frame.locator(".xlsx-grid")
@@ -76,6 +77,8 @@ def _select(page, frame, kind):
 @pytest.mark.parametrize("mode", ["对话", "工作"])
 @pytest.mark.parametrize("kind,name", [("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx"), ("pdf", "cjk.pdf")])
 def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind, name, mode):
+    from playwright.sync_api import expect
+
     page = logged_in
     page.get_by_role("radio", name=mode, exact=True).click()
     page.set_input_files(".composer-box input[type=file]", str(FIXTURES / name))
@@ -126,6 +129,8 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
 
 
 def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
+    from playwright.sync_api import expect
+
     page = logged_in
     results = []
     view_updates = []

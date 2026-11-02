@@ -40,6 +40,10 @@ cd platform
 
 ## 浏览器失败诊断
 
+e2e job 上限为 20 分钟：Linux 完整浏览器步骤实测约 12.4 分钟，另需安装 Chromium/Office 视觉页依赖，15 分钟会挤掉失败诊断与产物收集余量。
+
+原生 Office 用例的 mock fixture 从当前 checkout 构建生产 viewer adapter，复用工作流安装的固定 runtime 依赖，不依赖宿主 `/opt` reader；索引 failed/unsupported 或界面回退时立即报告原因。正文读取与原生索引是两个入口，须按同一个 file_id 核对 trace/派生元数据。Linux 复现与本轮耗时见[记录](../docs/progress/updates/2026-11-03-office-linux-e2e.md)。
+
 E2E 仍只构建一次 Portal。`portal-tests.log`、`portal-build.log` 和服务日志流式落盘，构建失败或超时也可下载。每个浏览器 context 记录 trace，成功立即丢弃，失败保存 `failure-<node-id-hash>.zip` 和视口截图；用 `playwright show-trace` 查看。仅使用隔离账号、离线模型与一次性数据，产物保留 7 天，不能指向真实用户环境。trace 是测试侧开销，不改变线上包；本机 61 项 E2E（含生产构建）约 158 秒，不代表 GitHub runner 或目标机性能。
 
 ## 重型与外部边界

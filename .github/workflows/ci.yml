@@ -248,7 +248,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     services:
       redis:
         image: redis:7-alpine
@@ -280,7 +280,7 @@ jobs:
       - name: Office reader for isolated browser fixtures
         working-directory: vendor/office-suite/runtime
         run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
-      - name: Chromium
+      - name: Chromium and Office visual fixtures
         working-directory: platform
         run: |
           # The Azure HTTP mirror can consume the job budget before browser tests start.
@@ -288,6 +288,8 @@ jobs:
             sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           fi
           playwright install --with-deps chromium
+          # Chat vision admission and the paged-preview contract need real Office-to-PDF rendering.
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-impress poppler-utils fonts-noto-cjk
       - name: Browser tests (includes Portal tests/build)
         working-directory: platform
         run: pytest e2e -ra --durations=10 --junitxml=test-results/e2e.xml
