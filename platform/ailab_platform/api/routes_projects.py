@@ -134,6 +134,9 @@ def rename_project(
                 project.memory_merge_requested_at = None
             else:
                 project.memory_merge_requested_at = utcnow()
+                from ..memory_recall.lineage import cancel_memory_edits
+
+                cancel_memory_edits(db, user.id, project.id, "项目已改为共享记忆，本次修改已取消")
             project.memory_mode = body.memory_mode
             record_audit(db, "project.memory_mode", "project", project.id, actor_id=user.id, detail={"memory_mode": body.memory_mode})
         if body.instructions is not None:
@@ -184,6 +187,9 @@ def delete_project(project_id: str, user: User = Depends(current_user), db: Sess
                 ),
                 "user",
             )
+        from ..memory_recall.lineage import clear_memory_scope_copies
+
+        clear_memory_scope_copies(db, user.id, project.id)
         # Retain the soft-deleted threads and their run history without a dangling project FK.
         db.execute(update(Conversation).where(Conversation.project_id == project.id).values(project_id=None, deleted_at=utcnow()))
         while lineages := list(

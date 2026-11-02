@@ -695,6 +695,7 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
 class SummaryEdit(BaseModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=40)
     instruction: str = Field(min_length=1, max_length=500)
+    summary_text: str | None = Field(default=None, max_length=1200)
 
 
 @router.get("/v1/memory/summary")
@@ -736,15 +737,19 @@ def edit_summary(body: SummaryEdit, background: BackgroundTasks, user: User = De
     with user_critical_section(db, user.id):
         db.refresh(user)
         if body.project_id:
-            owned_project(db, body.project_id, user)
+            project = owned_project(db, body.project_id, user)
+            if project.memory_mode != "isolated":
+                raise HTTPException(409, "共享项目不单独修改记忆，请在记忆页管理")
         if not memory_for(user)["enabled"]:
             raise HTTPException(409, "记忆未开启")
         if db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1)):
             raise HTTPException(409, "正在整理记忆，请稍后再试")
         zone = dream_settings(user).timezone or settings.memory_dream_default_timezone
-        from ..memory_dream.summary import summary_row
+        from ..memory_dream.summary import digest, scope_entries, summary_row
 
         summary = summary_row(db, user.id, body.project_id)
+        if body.summary_text is not None and body.summary_text != (summary.text if summary else ""):
+            raise HTTPException(409, "摘要已更新，请重新读取后再修改")
         summary_before = {
             "text": summary.text if summary else "",
             "source_digest": summary.source_digest if summary else "",
@@ -752,7 +757,7 @@ def edit_summary(body: SummaryEdit, background: BackgroundTasks, user: User = De
         }
         run = MemoryDreamRun(
             before_memory=memory_for(user),
-            report={"summary_before": summary_before},
+            report={"summary_before": summary_before, "edit_source_digest": digest(scope_entries(user, body.project_id))},
             user_id=user.id,
             local_date=datetime.now(UTC).astimezone(ZoneInfo(zone)).date().isoformat(),
             timezone=zone,
@@ -794,5 +799,8 @@ def clear_summary_scope(
         row = summary_row(db, user.id, project_id)
         if row:
             db.delete(row)
+        from ..memory_recall.lineage import clear_memory_scope_copies
+
+        clear_memory_scope_copies(db, user.id, project_id)
         db.commit()
     return get_summary(project_id, user, db)

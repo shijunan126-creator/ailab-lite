@@ -1,7 +1,7 @@
 // The GenUI contract, generated from the catalog so what the model is told is exactly what the Portal renders. Three
 // parts, disclosed progressively (design 2026-10-30-genui-registry-v2 §3):
 // - index: in every system prompt; when a UI helps and which component fits what, by name only.
-// - guide: the language and the rules; the Agent returns it with the first `ui_components` call of a run.
+// - guide: the language and the rules; the Agent returns it when the complete guide is absent from the retained context.
 // - docs: one per component, signature, notes and an example; returned for the names asked for.
 // The output is committed under platform/ailab_platform/contracts/genui/ and a test regenerates it byte for byte.
 // Every line of the index and guide that names HtmlArtifact stands alone: the Agent drops such lines when generated
@@ -26,7 +26,7 @@ const PICK = [
 
 const INDEX = `## 回答中的界面（GenUI）
 
-回答里可以插入界面块（以 \`\`\`openui 开头、以 \`\`\` 结束的围栏），帮用户看懂趋势、对比、构成、过程，或就地试算。写界面块之前先调用 ui_components，names 填打算使用的组件名，按返回的签名和示例写；没有读过说明的组件不要写。
+回答里可以插入界面块（以 \`\`\`openui 开头、以 \`\`\` 结束的围栏），帮用户看懂趋势、对比、构成、过程，或就地试算。当前上下文已有完整说明的组件可直接使用；缺少说明时先调用 ui_components，names 填打算使用的组件名，按返回的签名和示例写；没有读过说明的组件不要写。
 
 不用界面：简单事实、概念解释、翻译、改写、闲聊、单个数值，或用户要求纯文字时。数据不足时说明缺口，不凑图。
 
@@ -82,7 +82,7 @@ const RULES = [
   "让布局表达层次，省去多余的二级标签和说明；必要的单位、图例和数据限制不能省略。不为装饰增加卡片、Tabs 或按钮；用户没有要后续操作时不放按钮。",
   `每个回答最多 ${MAX_BLOCKS} 个界面块，每块不超过 60 条语句、${MAX_BLOCK_CHARS} 个字符。界面块里不写 URL；组件的文字参数里不写 HTML、CSS 或 JavaScript。`,
   "在 Work 模式中，界面块只放在最终回答里，不放在工具调用之前的过程说明中。",
-  "用户要求修改上一轮的界面时，先用 ui_components 读取要用的组件，再输出修改后的完整界面块（包含 root），不要只输出变化的语句；改完核对列、字段和单位仍然一一对应。目录做不到的要求直接说明，不声称已经做到。",
+  "用户要求修改上一轮的界面时，复用当前上下文中已有的组件说明，缺少说明再用 ui_components 读取；输出修改后的完整界面块（包含 root），不要只输出变化的语句；改完核对列、字段和单位仍然一一对应。目录做不到的要求直接说明，不声称已经做到。",
 ];
 
 const SYNTAX = `## 语法

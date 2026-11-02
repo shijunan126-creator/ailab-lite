@@ -1,8 +1,8 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "4f3023502183552a52ef567ea0cd4c4380f679cc370041018ccd7e65016a5be4",
-  "guide_sha256": "582d94f72fd59cb066134df491ee1d02da8712cd61d76a8bc8e681e4940c6111",
+  "index_sha256": "3cb3d752ac0436d1874a9aedaaec3e48f00a5f99a6f701181a39e87e0dce9961",
+  "guide_sha256": "ab909682ce3749e823d0b0a2cf4d2a833077d50534ec650004bd439e3595e332",
   "groups": [
     {
       "name": "布局",

@@ -1,4 +1,4 @@
-"""Human-facing derived summaries; never included in the model's memory context."""
+"""Human-facing derived summaries; ordinary agent conversations consume facts rather than this view."""
 
 import asyncio
 import hashlib

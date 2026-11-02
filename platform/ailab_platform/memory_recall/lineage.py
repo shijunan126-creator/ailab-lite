@@ -154,10 +154,10 @@ def _rewrite_copies(db: Session, user_id: str, rewrite) -> None:
 
 def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None:
     ids = {e["id"] for e in removed}
-    hashes = {fact_hash(e["content"]) for e in removed}
+    hashes = {(e.get("project_id"), fact_hash(e["content"])) for e in removed}
 
     def rewrite(entry):
-        if entry.get("id") in ids or fact_hash(entry.get("content", entry.get("text", ""))) in hashes:
+        if entry.get("id") in ids or (entry.get("project_id"), fact_hash(entry.get("content", entry.get("text", "")))) in hashes:
             return None
         return entry
 
@@ -179,3 +179,36 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
             dream.report = report
         if dream.instruction and not (dream.trigger == "edit" and dream.status in {"pending", "running"}):
             dream.instruction = ""
+
+
+def clear_memory_scope_copies(db: Session, user_id: str, project_id: str | None) -> None:
+    """Clear the whole scope, including old snapshots and explicit edits queued before an empty clear."""
+    _rewrite_copies(db, user_id, lambda entry: None if entry.get("project_id") == project_id else entry)
+    for dream in db.scalars(
+        select(MemoryDreamRun)
+        .where(MemoryDreamRun.user_id == user_id, MemoryDreamRun.project_id == project_id)
+        .execution_options(yield_per=100)
+    ):
+        report = dict(dream.report or {})
+        report.pop("summary_before", None)
+        report.pop("reply", None)
+        dream.report = report
+        dream.instruction = ""
+    cancel_memory_edits(db, user_id, project_id, "记忆已清空或项目已删除，本次修改已取消")
+
+
+def cancel_memory_edits(db: Session, user_id: str, project_id: str | None, reason: str) -> None:
+    """A scope boundary fences old explicit instructions even if the user later switches back."""
+    for dream in db.scalars(
+        select(MemoryDreamRun).where(
+            MemoryDreamRun.user_id == user_id,
+            MemoryDreamRun.project_id == project_id,
+            MemoryDreamRun.trigger == "edit",
+            MemoryDreamRun.status.in_(("pending", "running")),
+        )
+    ):
+        dream.status = "failed"
+        dream.error = reason
+        dream.claim_token = None
+        dream.claimed_until = None
+        dream.finished_at = utcnow()

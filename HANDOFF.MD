@@ -1,3 +1,17 @@
+## 2026-11-02 GenUI 说明复用
+
+- “读过”必须根据当前保留的配对成功工具结果判断，不能只认Run/checkpoint里的永久布尔标记或tool_log。完整当前文档文本才可复用；摘要、截断、旧版、用户/其他工具结果都不能代替。压缩保留组可复用、丢组则重读；只减少新增结果，不能为去重重写旧消息或工具schema。生成提示词修改从Portal源重建契约，升级首次仍有明确上下文边界，见[记录](docs/progress/updates/2026-11-02-genui-doc-reuse.md)。
+
+## 2026-11-02 记忆生命周期复核
+
+- 摘要中“第二段”一类指令需要编辑调用携带显示快照及事实id；摘要只定位，不能作为新增事实来源。提交需校验摘要仍一致，排队编辑的原始事实digest不能被删除谱系对文字快照的清理一起改掉。共享项目不要挂载摘要组件，不能只隐藏编辑框；切共享时取消旧编辑，开始和提交都检查模式。
+- 清空和删项目不能只遍历当前事实：空作用域也可能有旧快照/排队新增。按作用域清理副本并取消迟到编辑；同文本匹配带project_id，防止删掉其他项目的快照。允许其他作用域在模型等待时更新，撤销快照就必须取最终提交前的当前文档。见[审查](docs/reviews/2026-11-02-memory-lifecycle-audit.md)。
+- MockSandbox 会重写命令中的 `/tmp`；Python venv 放在 `/tmp` 时，使用 `sys.executable` 的 exec 测试会把解释器路径重写到沙箱，输出为空/exit非零。测试解释器用仓库或用户cache路径，不要改产品的/tmp隔离规则。
+
+## 2026-11-02 GenUI 时间线
+
+- 列表各行独立定义 `max-content` 日期列会随日期长度错位；需要父 grid 统一轨道、行用 subgrid，窄屏在父 grid 切为单列。只验证等长日期会漏掉此问题。记录见[本轮核对](docs/progress/updates/2026-11-02-genui-timeline.md)。
+- react-pdf 的 Page 不是 `.pdf-scroll` 的直接子元素，Document 会包一层；外层 `gap` 不会产生页间距。页间距应加在 `.pdf-scroll > .react-pdf__Document`，保留滚动容器自身的 padding 和其他状态间距。
 ## 2026-11-02 文件技能跨轮缓存与验收
 
 - 个人/广场技能与内置技能走不同版本标识：以 file_id + mode 确认完整成功 load_skill 结果仍在历史中，不能只比较名称或套用内置 version。复用时只登记到 loaded_skills，不在 run 开始时读文件：租沙箱时按 run 绑定读取并安装随包文件，读不到只警告；Chat 无沙箱不读。新版本只追加新加载结果。旧结果缺 mode 时保守重载一次。见[矩阵](docs/progress/updates/2026-11-02-prefix-cache-matrix.md)。

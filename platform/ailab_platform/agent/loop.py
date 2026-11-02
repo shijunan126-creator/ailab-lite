@@ -1367,7 +1367,6 @@ class AgentLoop:
         after = estimator.estimate(model, {"messages": messages, "tools": tools})
         state["compaction"] = {"after": after, "limit": limit, "threshold": threshold, "summary": response.content}
         state.pop("compaction_work", None)
-        state.pop("genui_guide_sent", None)
         await self._checkpoint(run_id, turn)
         await self._event(run_id, "agent.context_boundary", {"reason": "compacted"})
         await self._event(run_id, "agent.context_compacted", {"scope": "run", "messages": cut - 2})

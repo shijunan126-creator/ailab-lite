@@ -16,7 +16,7 @@ from ..memory_recall import guard
 from ..memory_recall.policy import visible
 from ..models import Project, User, utcnow
 from .prompts import EDIT_SYSTEM, MERGE_SYSTEM
-from .summary import _facts, regenerate, scope_entries, stale_scopes, summary_row
+from .summary import _facts, digest, regenerate, scope_entries, stale_scopes, summary_row
 
 log = logging.getLogger("ailab.memory")
 LOST_CLAIM = "整理任务已由其他进程接手"
@@ -66,7 +66,13 @@ async def edit(run_id, token):
                 db.refresh(user)
                 if user.disabled_at or not memory_for(user)["enabled"]:
                     raise DreamError("记忆未开启")
+                if run.project_id:
+                    project = db.get(Project, run.project_id, populate_existing=True)
+                    if not project or project.memory_mode != "isolated":
+                        raise DreamError("项目已删除或已改为共享记忆，不能单独修改")
                 entries = scope_entries(user, run.project_id)
+                if (run.report or {}).get("edit_source_digest", digest(entries)) != digest(entries):
+                    raise DreamError("记忆已变化，请重试")
                 before = memory_for(user)
                 if run.before_memory and _facts(run.before_memory, run.project_id) != entries:
                     raise DreamError("记忆已变化，请重试")
@@ -79,14 +85,16 @@ async def edit(run_id, token):
                 run.before_memory = before
                 run.report = run.report or {"summary_before": snapshot}
                 db.commit()
-                return user, run.project_id, run.instruction, entries
+                return user, run.project_id, run.instruction, entries, run.report.get("summary_before", snapshot).get("text", "")
 
     snapshot = await asyncio.to_thread(prepare)
     if snapshot is None:
         return
-    user, pid, instruction, entries = snapshot
+    user, pid, instruction, entries, summary = snapshot
     result, usage = await call(
-        user, EDIT_SYSTEM, {"instruction": instruction, "entries": [{k: e[k] for k in ("id", "kind", "content")} for e in entries]}
+        user,
+        EDIT_SYSTEM,
+        {"instruction": instruction, "summary": summary, "entries": [{k: e[k] for k in ("id", "kind", "content")} for e in entries]},
     )
 
     def apply():
@@ -99,6 +107,8 @@ async def edit(run_id, token):
                     raise DreamError("记忆已变化，请重试")
                 if owner.disabled_at or not current["enabled"] or (pid and not db.get(Project, pid)):
                     raise DreamError("记忆未开启或项目已删除")
+                if pid and db.get(Project, pid, populate_existing=True).memory_mode != "isolated":
+                    raise DreamError("项目已改为共享记忆，不能单独修改")
                 allowed = {e["id"] for e in entries}
                 modified = copy.deepcopy(current["entries"])
                 refused = False
@@ -139,6 +149,9 @@ async def edit(run_id, token):
                                     counts["replaced"] += 1
                 changed = modified != current["entries"]
                 try:
+                    # Other scopes/settings may change while the model waits. Undo must restore the
+                    # document just before this commit, rather than overwrite those concurrent changes.
+                    run.before_memory = current
                     after = save(db, owner, current, modified, explicit=True, tombstones=True) if changed else current
                 except ValueError:
                     raise DreamError("记忆已满，先忘记一些内容再试")
