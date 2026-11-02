@@ -12,31 +12,31 @@
     },
     "platform.docx": {
       "description": "Word 文件读取、定位与处理",
-      "license": "NOASSERTION",
+      "license": "Apache-2.0 AND MIT",
       "name": "platform.docx",
       "requires": [
         "python-docx",
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "7eb8b3882aea0179c0e8a0905f25b3e5d514412659f0de74f4bf60b158920dbb",
-      "version": "1.1.0"
+      "sha256": "6293b5100814a424f3e3ace2688356e0c19ddc5a7c9cf5536149ae08209af533",
+      "version": "1.2.0"
     },
     "platform.pdf": {
       "description": "PDF 文件读取、定位与处理",
-      "license": "NOASSERTION",
+      "license": "Apache-2.0 AND MIT",
       "name": "platform.pdf",
       "requires": [
         "pypdf",
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "f98e8685a7f15b41f04e56679a89a31a4614e7e6c4c814d95c5e33fa124a69c6",
-      "version": "1.1.0"
+      "sha256": "902b573ca14ae70ace91c206883bdb847349ff801c9cb6e93f1a50b905e5ce39",
+      "version": "1.2.0"
     },
     "platform.pptx": {
       "description": "PPT 文件读取、定位与处理",
-      "license": "NOASSERTION",
+      "license": "Apache-2.0 AND MIT",
       "name": "platform.pptx",
       "requires": [
         "python-pptx",
@@ -46,12 +46,12 @@
         "pdftoppm"
       ],
       "roles": [],
-      "sha256": "0fc7c38ab67e14db056ec58844f262c8d941572b5ab07796768ec21b1f50f154",
-      "version": "1.1.0"
+      "sha256": "670c6c4c49bf1e9a307a4bdb7018a31dc1563d7e9b0351f1f3083650b7d8da9b",
+      "version": "1.2.0"
     },
     "platform.xlsx": {
       "description": "Excel 文件读取、定位与处理",
-      "license": "NOASSERTION",
+      "license": "Apache-2.0 AND MIT",
       "name": "platform.xlsx",
       "requires": [
         "openpyxl",
@@ -59,8 +59,8 @@
         "libreoffice"
       ],
       "roles": [],
-      "sha256": "5b11c9be33d9bf9a39fba0f5ec4b6ae312e40ff4c4d2c746179239bd7af52507",
-      "version": "1.1.0"
+      "sha256": "938c5b613adaf3a190697523a2824f74af355a291a7d444ccdadacc316f2e13e",
+      "version": "1.2.0"
     },
     "pptx": {
       "description": "演示逻辑、故事线、版式与视觉设计",

@@ -1,0 +1,10 @@
+[
+  {
+    "file": "001-tools-and-roots.json",
+    "reason": "Map platform tools, immutable skill roots, references and role settings; explicitly label pending viewer operations."
+  },
+  {
+    "file": "002-execution-contracts.json",
+    "reason": "Keep originals read-only and text faithful, remove model defaults, and replace host/network installation with preinstalled dependency contracts while retaining production recipes."
+  }
+]

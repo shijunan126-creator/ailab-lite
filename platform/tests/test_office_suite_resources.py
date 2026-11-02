@@ -1,0 +1,186 @@
+"""P0 source preservation, deterministic resource builds, modes and attestation closure."""
+
+import asyncio
+import importlib.util
+import json
+import re
+import shutil
+import sys
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from ailab_platform.agent import skill_verification
+from ailab_platform.skill_index import build_index, checked_index
+
+ROOT = Path(__file__).resolve().parents[2]
+VENDOR = ROOT / "vendor/office-suite"
+SKILLS = ROOT / "images/sbx-office/skills"
+spec = importlib.util.spec_from_file_location("office_resource_build", VENDOR / "build.py")
+office = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(office)
+
+
+def tree(root):
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+
+
+def test_pinned_originals_have_complete_hash_closure():
+    manifest = json.loads((VENDOR / "UPSTREAM.json").read_text())
+    assert manifest["commit"] == "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+    originals = office.originals()
+    assert len(originals) == 217
+    assert set(originals) == set(manifest["files"])
+    for package, fmt in office.PACKAGES.items():
+        assert b"Apache License" in originals[f"{package}/skills/{fmt}/LICENSE.txt"]
+        assert any(name.startswith(f"{package}/.") and name.endswith("plugin.json") for name in originals)
+    assert b"MIT License" in originals["office-runtime/LICENSE"]
+    assert any(name.startswith("office-runtime/fixtures/") for name in originals)
+    assert any(name.startswith("office-runtime/scripts/") for name in originals)
+
+
+def test_rebuild_reproduces_every_generated_byte(tmp_path):
+    office.build(tmp_path)
+    adapted, _ = office.adapted()
+    for fmt in office.PACKAGES.values():
+        package = f"platform.{fmt}"
+        assert tree(tmp_path / package) == tree(SKILLS / package)
+        index = json.loads((tmp_path / package / "modules.json").read_text())
+        expected = {name for name in adapted if (dest := office.destination(name)) and dest[0] == fmt}
+        assert {m["logical_path"] for m in index["modules"]} == expected
+        for module in index["modules"]:
+            assert (tmp_path / package / module["path"]).read_bytes() == adapted[module["logical_path"]]
+    checked_index(SKILLS)
+
+
+def test_generated_resources_are_platform_only_and_installers_are_disabled():
+    for fmt in office.PACKAGES.values():
+        package = SKILLS / f"platform.{fmt}"
+        for path in package.rglob("*"):
+            if path.is_file():
+                data = path.read_bytes()
+                assert b"zcode" not in data.lower(), path
+                assert b"account:" not in data and b"GLM" not in data, path
+                assert not re.search(r"LICENSE|NOTICE", path.name, re.I), path
+                if path.suffix == ".py":
+                    compile(data, str(path), "exec")
+        for setup in package.rglob("setup*.sh"):
+            assert setup.read_text().splitlines()[1:4][-1] == "exit 1"
+    pdf = (SKILLS / "platform.pdf/scripts/pdf.py").read_text()
+    body = pdf.split("def env_fix(argv: list):", 1)[1].split("# ═", 1)[0]
+    assert "DependencyMissing" in body and "subprocess.run" not in body
+
+
+def test_modules_are_lossless_hashed_bounded_and_mode_safe():
+    exceptions = []
+    for fmt in office.PACKAGES.values():
+        package = SKILLS / f"platform.{fmt}"
+        assert office.tokens((package / "SKILL.md").read_text()) <= 1024
+        index = json.loads((package / "modules.json").read_text())
+        logical_paths = set(office.originals())
+        for module in index["modules"]:
+            data = (package / module["path"]).read_bytes()
+            assert office.sha(data) == module["sha256"]
+            boundaries, boundary = {0}, 0
+            for block in office.atoms(data.decode()):
+                boundary += len(block.encode())
+                boundaries.add(boundary)
+            rebuilt, position = b"", 0
+            for chunk in module["chunks"]:
+                assert chunk["byte_offset"] == position
+                piece = data[position : position + chunk["byte_length"]]
+                assert office.sha(piece) == chunk["sha256"]
+                assert office.tokens(piece.decode()) == chunk["estimated_tokens"]
+                if chunk["estimated_tokens"] > 2048:
+                    assert chunk["cap_exception"]
+                    # An over-cap chunk consists of exactly one unsplittable source block.
+                    assert len(office.atoms(piece.decode())) == 1
+                    exceptions.append(module["logical_path"])
+                else:
+                    assert "cap_exception" not in chunk
+                # No chunk ends inside a Markdown code fence.
+                assert position + len(piece) in boundaries
+                rebuilt += piece
+                position += len(piece)
+            assert rebuilt == data
+            assert set(module["deps"]) <= logical_paths
+            if module["path"].endswith((".py", ".sh", ".ps1", ".js", ".tex")):
+                assert module["modes"] == ["work"]
+            if module["path"].startswith("viewer/"):
+                assert module["modes"] == ["chat", "work"]
+    assert set(exceptions) == {
+        "documents-plugin/skills/docx/references/decorations.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "pdf-plugin/skills/pdf/SKILL.md",
+    }
+
+
+def test_native_template_and_cover_workflows_are_not_summarized():
+    original = office.originals()["presentations-plugin/skills/pptx/SKILL.md"].decode()
+    adapted = (SKILLS / "platform.pptx/resources/SKILL.md").read_text()
+    start = original.index("  • Write a short plan first:")
+    end = original.index("## Editing an existing PowerPoint", start)
+    assert original[start:end] in adapted
+    pdf = (SKILLS / "platform.pdf/resources/SKILL.md").read_text()
+    assert "templates 01–05 report, 06–08 academic dark, 09 institutional" in pdf
+    assert "**Fallback**: If Report brief content has emoji → reroute to Creative." in pdf
+    setup = (SKILLS / "platform.pdf/env_setup/setup.md").read_text()
+    assert "| **Core** Python pkg | pikepdf | PDF manipulation (merge/split/encrypt) |" in setup
+
+
+def test_chunk_boundaries_preserve_fences_headings_and_unicode():
+    code = "```python\n" + "print('中文')\n" * 900 + "```\n"
+    source = "# Intro\n\n" + "paragraph\n\n" * 800 + code + "\n# End\n\nfinal\n"
+    data = source.encode()
+    chunks = office.chunks(source)
+    parts = [data[c["byte_offset"] : c["byte_offset"] + c["byte_length"]].decode() for c in chunks]
+    assert "".join(parts) == source
+    assert code in parts
+    assert sum(p.count("```python") for p in parts) == 1
+    assert sum("cap_exception" in c for c in chunks) == 1
+
+
+@pytest.mark.parametrize("resource", ["modules.json", "briefs/report.md", "scripts/pdf.py"])
+def test_nested_resource_and_index_metadata_are_in_attestation_closure(tmp_path, monkeypatch, resource):
+    shutil.copytree(SKILLS, tmp_path / "skills")
+    root = tmp_path / "skills"
+    expected = checked_index(root)
+    target = root / "platform.pdf" / resource
+    target.write_bytes(target.read_bytes() + b"\n")
+    assert build_index(root)["skills"]["platform.pdf"]["sha256"] != expected["skills"]["platform.pdf"]["sha256"]
+    monkeypatch.setattr(skill_verification, "settings", SimpleNamespace(skills_path=root))
+
+    class Broker:
+        def _req(self, *args, **kwargs):
+            return None
+
+        async def _send(self, req):
+            return SimpleNamespace(
+                json=lambda: {"verified": True, "lease_id": "lease", "provider_ref": "provider", "image_ref": "image", "index": expected}
+            )
+
+    with pytest.raises(skill_verification.SkillRefused):
+        asyncio.run(skill_verification.verify_sandbox_skills(Broker(), "lease"))
+
+
+def test_capability_contract_covers_sources_commands_viewer_and_dependencies(monkeypatch):
+    monkeypatch.setitem(sys.modules, "build", office)
+    spec = importlib.util.spec_from_file_location("office_inventory", VENDOR / "inventory.py")
+    inventory = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(inventory)
+    actual = inventory.inventory()
+    assert actual == json.loads((VENDOR / "capabilities.json").read_text())
+    entries = actual["capabilities"]
+    assert {e["source"] for e in entries if e["kind"] in {"source-file", "route", "scene"}} == set(office.originals())
+    assert len({e["id"] for e in entries}) == len(entries)
+    for item in entries:
+        assert item["reason"] and item["acceptance_case_id"] and item["runtime_location"]
+        assert item["status"] in {"implemented", "blocked", *{f"planned:P{i}" for i in range(1, 6)}}
+    commands = {e["command"] for e in entries if "command" in e}
+    assert {"env.fix", "convert.latex", "form.fill", "pivot", "validate"} <= commands
+    assert sum(e["kind"] == "viewer-feature" for e in entries) == 36
+    assert {"reportlab", "pikepdf", "PyMuPDF"} <= set(actual["missing_from_image"]["python"])
+    assert {"playwright", "pdf-lib", "pptxgenjs", "docx"} <= set(actual["missing_from_image"]["npm"])
+    assert "tectonic" in actual["missing_from_image"]["binary"]
+    assert "COPY images/sbx-office/skills/ /opt/skills/" in (ROOT / "images/sbx-office/Dockerfile").read_text()

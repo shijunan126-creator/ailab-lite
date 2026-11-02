@@ -1,0 +1,1551 @@
+{
+  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "chunk_token_cap": 2048,
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "chunks": [
+        {
+          "byte_length": 5590,
+          "byte_offset": 0,
+          "end_line": 49,
+          "estimated_tokens": 1457,
+          "id": "0",
+          "sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/agents/visual-judge.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4023,
+          "byte_offset": 0,
+          "end_line": 43,
+          "estimated_tokens": 1052,
+          "id": "0",
+          "sha256": "129773de2ab5a46777e301771391394a725698b03b09b675e108ed1dc1530a79",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "129773de2ab5a46777e301771391394a725698b03b09b675e108ed1dc1530a79"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7710,
+          "byte_offset": 0,
+          "end_line": 133,
+          "estimated_tokens": 2013,
+          "id": "0",
+          "sha256": "e3a70aae5413176062af1fc2056764df2a53436f2aaf0ba2b2521f59b09d48e1",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7523,
+          "byte_offset": 7710,
+          "end_line": 243,
+          "estimated_tokens": 1962,
+          "id": "1",
+          "sha256": "b3ef340fa5485baf904b0006a1e342404e9c18acd767c4a58fe21022f32498da",
+          "start_line": 134
+        },
+        {
+          "byte_length": 1960,
+          "byte_offset": 15233,
+          "end_line": 270,
+          "estimated_tokens": 537,
+          "id": "2",
+          "sha256": "e5611cdfb25a1f2251fb7dea353a74e1d8ac999ef6d918e225ef12f097f1d154",
+          "start_line": 244
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/chart-templates.md",
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/docx-js-core.md",
+        "documents-plugin/skills/docx/references/math-formulas.md",
+        "documents-plugin/skills/docx/references/ooxml.md",
+        "documents-plugin/skills/docx/references/toc.md",
+        "documents-plugin/skills/docx/routes/comment.md",
+        "documents-plugin/skills/docx/routes/create.md",
+        "documents-plugin/skills/docx/routes/edit.md",
+        "documents-plugin/skills/docx/routes/format.md",
+        "documents-plugin/skills/docx/routes/read.md",
+        "documents-plugin/skills/docx/scenes/academic.md",
+        "documents-plugin/skills/docx/scenes/contract.md",
+        "documents-plugin/skills/docx/scenes/copywriting.md",
+        "documents-plugin/skills/docx/scenes/exam.md",
+        "documents-plugin/skills/docx/scenes/official-doc.md",
+        "documents-plugin/skills/docx/scenes/report.md",
+        "documents-plugin/skills/docx/scenes/resume.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "67406550ee1c75a8f794011740a720117c0b49e9e4e96ded66679a37cf76065e"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2654,
+          "byte_offset": 0,
+          "end_line": 41,
+          "estimated_tokens": 725,
+          "id": "0",
+          "sha256": "41c99b416ac569381f5e91752dfd7c6f788d13dc3d6b9fddf8d660757a824543",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/env_setup/setup.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "41c99b416ac569381f5e91752dfd7c6f788d13dc3d6b9fddf8d660757a824543"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4682,
+          "byte_offset": 0,
+          "end_line": 80,
+          "estimated_tokens": 1223,
+          "id": "0",
+          "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7743,
+          "byte_offset": 0,
+          "end_line": 199,
+          "estimated_tokens": 2029,
+          "id": "0",
+          "sha256": "ab02038ead84b34c881bea22cc71e4c35dae32e31e48c4a627006ddc0bc22ad2",
+          "start_line": 1
+        },
+        {
+          "byte_length": 3611,
+          "byte_offset": 7743,
+          "end_line": 276,
+          "estimated_tokens": 974,
+          "id": "1",
+          "sha256": "80afc6a2a24a116f7b2e3e49ac0d86f127d69d7e0904c403471f44323d296e28",
+          "start_line": 200
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "af2d5bf3bd1b522901263ee2e86e003a4eb5535069cdf91118816551963765b2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7337,
+          "byte_offset": 0,
+          "end_line": 225,
+          "estimated_tokens": 2001,
+          "id": "0",
+          "sha256": "161e959fc5abe00ee69cc9bcd5c68ceb2a60f118d4a9b2963446054372db6486",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2129,
+          "byte_offset": 7337,
+          "end_line": 288,
+          "estimated_tokens": 599,
+          "id": "1",
+          "sha256": "54dec29e6875f75095b060ee5401fca55df8d8c23b34dd651c26c0154ac58c5f",
+          "start_line": 226
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "6cc4602183905dbe8506699927ac963ede39dea77dd102ac6f5224df29af5921"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7351,
+          "byte_offset": 0,
+          "end_line": 220,
+          "estimated_tokens": 1981,
+          "id": "0",
+          "sha256": "e8dd8ab8b64873668663c3caa01ef20180038a85476d349a0f9e9e88b4d44b45",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2142,
+          "byte_offset": 7351,
+          "end_line": 276,
+          "estimated_tokens": 596,
+          "id": "1",
+          "sha256": "131f275491bc6bca42852898f5b7eed7fb0cbbfcc890a7c6c41d193a13a1c642",
+          "start_line": 221
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "619570b89034c9b245128da6320021bb24c0fc43870f19facef9af6fb2cad3e4"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7186,
+          "byte_offset": 0,
+          "end_line": 219,
+          "estimated_tokens": 1938,
+          "id": "0",
+          "sha256": "aca690f977a7f8c550207f155e374daba8428280be57fd372d5262fba67f847e",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6135,
+          "byte_offset": 7186,
+          "end_line": 386,
+          "estimated_tokens": 1639,
+          "id": "1",
+          "sha256": "77ea01ef82aec7bf234031c4e9bd2f6151868a654a7bfa313bdb2c7d3805870d",
+          "start_line": 220
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/references/chart-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/chart-templates.md",
+      "sha256": "2f4cd7569765300da356c83cd3bfb14c85bdb7d97301cf15af29dc7705e2aa7c"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7302,
+          "byte_offset": 0,
+          "end_line": 174,
+          "estimated_tokens": 1920,
+          "id": "0",
+          "sha256": "e0939d4ab22e3c643b46f1825e617eb1e55a68d150d09d688259a285b05e5194",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7720,
+          "byte_offset": 7302,
+          "end_line": 257,
+          "estimated_tokens": 2008,
+          "id": "1",
+          "sha256": "f5e0b13f4ba176993b07aa50e92cb91d9ecd8ff80678fdb8ed35bc7bddddc41c",
+          "start_line": 175
+        },
+        {
+          "byte_length": 7322,
+          "byte_offset": 15022,
+          "end_line": 382,
+          "estimated_tokens": 1910,
+          "id": "2",
+          "sha256": "690858ba15660b9dab044f9031eb19ea06a553c052742b6ac939a8e409f89b61",
+          "start_line": 258
+        },
+        {
+          "byte_length": 2105,
+          "byte_offset": 22344,
+          "end_line": 419,
+          "estimated_tokens": 574,
+          "id": "3",
+          "sha256": "9dc7a8cbd4427906c2d0ae5860800f6a78aa8676eb3f0dc492818e06e8dcea49",
+          "start_line": 383
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/references/common-rules.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/common-rules.md",
+      "sha256": "6f59abd233ec73aca8fc1404ed53c7a24ad04e731db5eb45bb4f17cbb5831f44"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 621,
+          "byte_offset": 0,
+          "end_line": 15,
+          "estimated_tokens": 193,
+          "id": "0",
+          "sha256": "d543e1fedcd921ccf080acd7dad4fcc396ad3ec12cf9e6e80bc6ae545cc8c0c1",
+          "start_line": 1
+        },
+        {
+          "byte_length": 8333,
+          "byte_offset": 621,
+          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
+          "end_line": 220,
+          "estimated_tokens": 2219,
+          "id": "1",
+          "sha256": "db4f8da25e3871d937cbaf463ed88dc5420c8678652a0a1edccf511cfa4adcc5",
+          "start_line": 16
+        },
+        {
+          "byte_length": 7711,
+          "byte_offset": 8954,
+          "end_line": 448,
+          "estimated_tokens": 2042,
+          "id": "2",
+          "sha256": "63b0587232eb6e9091857260913ba491721b2d7f492f1bf7b803c5c54087afe4",
+          "start_line": 221
+        },
+        {
+          "byte_length": 3341,
+          "byte_offset": 16665,
+          "end_line": 537,
+          "estimated_tokens": 901,
+          "id": "3",
+          "sha256": "fabb391974ecb1b8baa3f5d96ff68137c004436bc2ac268bc8331742e3b89093",
+          "start_line": 449
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/references/decorations.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/decorations.md",
+      "sha256": "73176f05ea0fa003ee712646f5c76cf063bf3fc6ab3533c619082df8a94b66c7"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7675,
+          "byte_offset": 0,
+          "end_line": 194,
+          "estimated_tokens": 2045,
+          "id": "0",
+          "sha256": "f464f761fb29a3fcf840d661d34fda05f3a7c119fc593c4c0c3fad44d76f0765",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6544,
+          "byte_offset": 7675,
+          "end_line": 374,
+          "estimated_tokens": 1731,
+          "id": "1",
+          "sha256": "70aeac503bc70599a4ed6ae4c34592ecc56df646d36364f0f2810f06921fb3af",
+          "start_line": 195
+        },
+        {
+          "byte_length": 6704,
+          "byte_offset": 14219,
+          "end_line": 479,
+          "estimated_tokens": 1844,
+          "id": "2",
+          "sha256": "30c9c75dfeedf461be20ea4e54a16fa2dff1fd3c4cba527b86aff9035ccf672b",
+          "start_line": 375
+        },
+        {
+          "byte_length": 6856,
+          "byte_offset": 20923,
+          "end_line": 617,
+          "estimated_tokens": 1832,
+          "id": "3",
+          "sha256": "20be4105b59e3faadc257a41e8adcb9ba62e02e3aaeebfdd3f8b3d84dc970ddc",
+          "start_line": 480
+        },
+        {
+          "byte_length": 7346,
+          "byte_offset": 27779,
+          "end_line": 729,
+          "estimated_tokens": 1933,
+          "id": "4",
+          "sha256": "0150ad7dc4f3ba864021679a2ea9b3e5c83a5edd3a30b4897f9a4fcd09e5d7c0",
+          "start_line": 618
+        },
+        {
+          "byte_length": 7737,
+          "byte_offset": 35125,
+          "end_line": 927,
+          "estimated_tokens": 2031,
+          "id": "5",
+          "sha256": "a1b7e3f82d44b0d9040d0e8b6233d2183fb4c477047932b0a063e00ef70dbc14",
+          "start_line": 730
+        },
+        {
+          "byte_length": 7239,
+          "byte_offset": 42862,
+          "end_line": 1099,
+          "estimated_tokens": 1900,
+          "id": "6",
+          "sha256": "828c06ee91edce5a703e2ed6e18366ef2f794e2099b66658f2a9e20a606e115a",
+          "start_line": 928
+        },
+        {
+          "byte_length": 4217,
+          "byte_offset": 50101,
+          "end_line": 1210,
+          "estimated_tokens": 1125,
+          "id": "7",
+          "sha256": "ab4ec0cff8e9eebaf85eb7adc73c88b71cee4d8787e1f7e38e35bb0578444cc8",
+          "start_line": 1100
+        },
+        {
+          "byte_length": 4597,
+          "byte_offset": 54318,
+          "end_line": 1325,
+          "estimated_tokens": 1220,
+          "id": "8",
+          "sha256": "38ed31695e262670782a361ed1623261308238e699aafa2efa245bcbfde0199c",
+          "start_line": 1211
+        },
+        {
+          "byte_length": 6322,
+          "byte_offset": 58915,
+          "end_line": 1462,
+          "estimated_tokens": 1667,
+          "id": "9",
+          "sha256": "d6f32506cd2ab34b58db30f05217cf15be7353a9cb734b1e828177e5fdb015c6",
+          "start_line": 1326
+        },
+        {
+          "byte_length": 7936,
+          "byte_offset": 65237,
+          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
+          "end_line": 1653,
+          "estimated_tokens": 2089,
+          "id": "10",
+          "sha256": "3d5bcf2b856fa116f79e733f827ba6dfe5bf733fb1cde9db94007b2be7619ae5",
+          "start_line": 1463
+        },
+        {
+          "byte_length": 5560,
+          "byte_offset": 73173,
+          "end_line": 1797,
+          "estimated_tokens": 1478,
+          "id": "11",
+          "sha256": "2700df7b80704ceb7f72ae275382bd7f640e6c2416a4b65c487986ae12fa730e",
+          "start_line": 1654
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/decorations.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/references/design-system.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/design-system.md",
+      "sha256": "7ba481e58dfeb3ef96ab25ca9c65459bbcb83fc459799ffa966ac8d7605ae2cc"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6206,
+          "byte_offset": 0,
+          "end_line": 179,
+          "estimated_tokens": 1687,
+          "id": "0",
+          "sha256": "5b2679d29efa6dccbe4e258a9902060f7fbff1a87c8cf8a12541fd513f206371",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2312,
+          "byte_offset": 6206,
+          "end_line": 259,
+          "estimated_tokens": 633,
+          "id": "1",
+          "sha256": "e16ac31397b77107adcb20daa1241b3c43ac125dd3166c60fbcf71087a73f698",
+          "start_line": 180
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/references/docx-js-advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/docx-js-advanced.md",
+      "sha256": "5bf71d15034285c817577cff142c8e142e60612baf587c877c44bef9c10ae16f"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7563,
+          "byte_offset": 0,
+          "end_line": 243,
+          "estimated_tokens": 2017,
+          "id": "0",
+          "sha256": "13e621ff101e056c9c72ecac67293a26c496eb547d8ed1d07c0bc8e365bcd557",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2167,
+          "byte_offset": 7563,
+          "end_line": 332,
+          "estimated_tokens": 610,
+          "id": "1",
+          "sha256": "b5b952087652174b42a0155e713bb3f02d20fb226c0d07e1874dbea229a8ebd7",
+          "start_line": 244
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/references/docx-js-core.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/docx-js-core.md",
+      "sha256": "5d064f57f65d4bd93777890c82f8581f51907c79f57e993452355c69fcdc5474"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7583,
+          "byte_offset": 0,
+          "end_line": 227,
+          "estimated_tokens": 2035,
+          "id": "0",
+          "sha256": "d8982be5310180a1616dcb3a40b5ba3db64c1122b49cd85e8116d2cd5d613541",
+          "start_line": 1
+        },
+        {
+          "byte_length": 4336,
+          "byte_offset": 7583,
+          "end_line": 323,
+          "estimated_tokens": 1160,
+          "id": "1",
+          "sha256": "7b0d6a24ea9d87f52aad848186ddd68467db8dc7ebc04233e1a92494136c453a",
+          "start_line": 228
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/references/faq.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/faq.md",
+      "sha256": "4d3d0ff068b525500c0152c3ad2d2f5d509f00efd01996dde71500602c0790ac"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7286,
+          "byte_offset": 0,
+          "end_line": 256,
+          "estimated_tokens": 2039,
+          "id": "0",
+          "sha256": "6c710a075e0b74e975c0c5b25bfc78495121895e69db5129c603aefac64092bf",
+          "start_line": 1
+        },
+        {
+          "byte_length": 557,
+          "byte_offset": 7286,
+          "end_line": 276,
+          "estimated_tokens": 179,
+          "id": "1",
+          "sha256": "f0348295c5716902029c65d6099a574a24183dde0f4d4cf7f88a924a62367326",
+          "start_line": 257
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/references/math-formulas.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/math-formulas.md",
+      "sha256": "b387667d03b84093f91867fa47c4b2adec7e35dcebb6cb2c3478d801fda188e9"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7470,
+          "byte_offset": 0,
+          "end_line": 190,
+          "estimated_tokens": 2006,
+          "id": "0",
+          "sha256": "3054930634feda01b283c0a9dcef832e50b99846276c66406eee27b0fed7a85f",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2064,
+          "byte_offset": 7470,
+          "end_line": 229,
+          "estimated_tokens": 567,
+          "id": "1",
+          "sha256": "b9e123a67d19c751906fd3fe9686110c9e76dd0d10e551d95885d1f4f7f5adbe",
+          "start_line": 191
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/references/ooxml.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/ooxml.md",
+      "sha256": "a6b9be9a5f678d16e047575c4c16b67dd1ec0325d4c35ff123c2baf0857cf67c"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7633,
+          "byte_offset": 0,
+          "end_line": 208,
+          "estimated_tokens": 2031,
+          "id": "0",
+          "sha256": "22df54142e6d1ddb1e205abe3715ff2d1c02f002ac5cf67acb3a43e278888b70",
+          "start_line": 1
+        },
+        {
+          "byte_length": 3429,
+          "byte_offset": 7633,
+          "end_line": 264,
+          "estimated_tokens": 914,
+          "id": "1",
+          "sha256": "1a9425b7ff08086917394b4bea4ea1d51178f8fbf7e8e4878634671c37a1740a",
+          "start_line": 209
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/references/toc.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/toc.md",
+      "sha256": "9faa92483107ce1bcd8dd9c6abc9631d382463630324b0979f1d78a4d69f54fb"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2656,
+          "byte_offset": 0,
+          "end_line": 92,
+          "estimated_tokens": 735,
+          "id": "0",
+          "sha256": "6d494f1e5ab2e375fb49489d37c9573060e48427a832a44edcb2feb803d9164a",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/routes/comment.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/comment.md",
+      "sha256": "6d494f1e5ab2e375fb49489d37c9573060e48427a832a44edcb2feb803d9164a"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5202,
+          "byte_offset": 0,
+          "end_line": 90,
+          "estimated_tokens": 1372,
+          "id": "0",
+          "sha256": "17de7a42cb837a6a512687a7dee96609b98d7feed5a1102419b08e1c623df1f9",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6621,
+          "byte_offset": 5202,
+          "end_line": 207,
+          "estimated_tokens": 1770,
+          "id": "1",
+          "sha256": "ebafa296a2b04cc3ceb8ed44c351021d2b82a2d32b6a2f65b4bb980e2aa189e8",
+          "start_line": 91
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/chart-templates.md",
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/references/docx-js-core.md",
+        "documents-plugin/skills/docx/references/math-formulas.md",
+        "documents-plugin/skills/docx/references/toc.md",
+        "documents-plugin/skills/docx/scenes/academic.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/routes/create.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "routes/create.md",
+      "sha256": "e6b41c02e0b788723e6c8529d37c34f3f51a1759ab3ad989c0d4cf4bf52b9dc0"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4219,
+          "byte_offset": 0,
+          "end_line": 125,
+          "estimated_tokens": 1130,
+          "id": "0",
+          "sha256": "7a5f9e8aa0d9ddc4cfdf5aae3324db21bd719f8fbbfcb641d0e228a3537cf863",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/ooxml.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/routes/edit.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/edit.md",
+      "sha256": "7a5f9e8aa0d9ddc4cfdf5aae3324db21bd719f8fbbfcb641d0e228a3537cf863"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3797,
+          "byte_offset": 0,
+          "end_line": 125,
+          "estimated_tokens": 1025,
+          "id": "0",
+          "sha256": "b777d611fcbb42991248cfe58befe5eb91d0db5c33fdd065d54be29983552682",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/routes/edit.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/routes/format.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/format.md",
+      "sha256": "b777d611fcbb42991248cfe58befe5eb91d0db5c33fdd065d54be29983552682"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2946,
+          "byte_offset": 0,
+          "end_line": 116,
+          "estimated_tokens": 811,
+          "id": "0",
+          "sha256": "815e1aa0870b4022528addaabf7486c43c16dc818c848c4d1bad540a1ef55169",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/routes/read.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/read.md",
+      "sha256": "815e1aa0870b4022528addaabf7486c43c16dc818c848c4d1bad540a1ef55169"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7376,
+          "byte_offset": 0,
+          "end_line": 206,
+          "estimated_tokens": 1962,
+          "id": "0",
+          "sha256": "2ff09d677f786cea7bfeaa71b97e155e19f53d6d15cd1bbeee84bcec17681450",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7287,
+          "byte_offset": 7376,
+          "end_line": 364,
+          "estimated_tokens": 1936,
+          "id": "1",
+          "sha256": "63d0ea178af6b9e651735afdf2917ef9db549742d5409d44923f537c83c5b54c",
+          "start_line": 207
+        },
+        {
+          "byte_length": 6586,
+          "byte_offset": 14663,
+          "end_line": 510,
+          "estimated_tokens": 1751,
+          "id": "2",
+          "sha256": "9158472bbaf98ac48fafff40a64670c62ebeb25245af6cbd26c4b0c06cb7d07d",
+          "start_line": 365
+        },
+        {
+          "byte_length": 7649,
+          "byte_offset": 21249,
+          "end_line": 691,
+          "estimated_tokens": 2010,
+          "id": "3",
+          "sha256": "7de8f92500ff108ffc1a1b0209ad09360034d67585c6b5cc0db4d04aafd8e827",
+          "start_line": 511
+        },
+        {
+          "byte_length": 4410,
+          "byte_offset": 28898,
+          "end_line": 783,
+          "estimated_tokens": 1170,
+          "id": "4",
+          "sha256": "ab41bbc5fca637ff54402b4b583bf04c8871f1fe0e7a5993c1c9d447a511d71b",
+          "start_line": 692
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/academic.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/academic.md",
+      "sha256": "9e4685e7c0679c8872ce46d4e5d853bd766f0d38be2d02088eeed69beae82d41"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6623,
+          "byte_offset": 0,
+          "end_line": 165,
+          "estimated_tokens": 1760,
+          "id": "0",
+          "sha256": "afc41381a699f0ddb07670af673bfa3a5c8c9787c7d75577fc8c5f65fcb8f3b1",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6738,
+          "byte_offset": 6623,
+          "end_line": 308,
+          "estimated_tokens": 1779,
+          "id": "1",
+          "sha256": "7acc3e2dfd6024e5650f563983edac25844f451c82f5d47d2dd35a41e0abca24",
+          "start_line": 166
+        },
+        {
+          "byte_length": 6917,
+          "byte_offset": 13361,
+          "end_line": 463,
+          "estimated_tokens": 1840,
+          "id": "2",
+          "sha256": "ed721e7adef9d95bb25ff89175da60f9ac5acebb7f7c871394cb307829230a57",
+          "start_line": 309
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/contract.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/contract.md",
+      "sha256": "d654599c0bebfa595f64e185f753fed4d8a0ecd03aeb0eedad793c36a2c84262"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5504,
+          "byte_offset": 0,
+          "end_line": 139,
+          "estimated_tokens": 1472,
+          "id": "0",
+          "sha256": "0cad3fcb0cbf4ee6701c3abcb74c630155837e78d5b52addfe3e3564dbc2dafa",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/copywriting.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/copywriting.md",
+      "sha256": "0cad3fcb0cbf4ee6701c3abcb74c630155837e78d5b52addfe3e3564dbc2dafa"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7744,
+          "byte_offset": 0,
+          "end_line": 220,
+          "estimated_tokens": 2048,
+          "id": "0",
+          "sha256": "c72eec76f13958efbe94aa95d1059750c695fcfe2745c88526648608c82fe030",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7623,
+          "byte_offset": 7744,
+          "end_line": 429,
+          "estimated_tokens": 2027,
+          "id": "1",
+          "sha256": "36c81f89257cd56dd65c8526c414110dbf1f5944ffc812c0a39b5b193f7b0f0a",
+          "start_line": 221
+        },
+        {
+          "byte_length": 7038,
+          "byte_offset": 15367,
+          "end_line": 619,
+          "estimated_tokens": 1877,
+          "id": "2",
+          "sha256": "2935d07139071793972d3aeb4c54919d79ac4b134343b2f1823384f4ba4aeaec",
+          "start_line": 430
+        },
+        {
+          "byte_length": 3289,
+          "byte_offset": 22405,
+          "end_line": 698,
+          "estimated_tokens": 880,
+          "id": "3",
+          "sha256": "71f94e8cb1d4387399f89c4810020c0a0f4948bd20f3e459fd7b8b4dacd79c29",
+          "start_line": 620
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/math-formulas.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/exam.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/exam.md",
+      "sha256": "fba41f30631965e6ceb0d0454b913d128a71e52c96bcf75ed66aa1b3f08b4085"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7638,
+          "byte_offset": 0,
+          "end_line": 199,
+          "estimated_tokens": 2025,
+          "id": "0",
+          "sha256": "9035ee0997a3d989dbcfb63b40a66872a9d4c422a19da02f9278800aabf34d0f",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7212,
+          "byte_offset": 7638,
+          "end_line": 400,
+          "estimated_tokens": 1915,
+          "id": "1",
+          "sha256": "90691734bc364a382a379fdfb5ded0ae558b0f114c9e4a8f74aff97b90b61583",
+          "start_line": 200
+        },
+        {
+          "byte_length": 775,
+          "byte_offset": 14850,
+          "end_line": 411,
+          "estimated_tokens": 234,
+          "id": "2",
+          "sha256": "af973a80fe18969d137933a911d983e4ead4a8d4697416cc2bb181ed9d28271b",
+          "start_line": 401
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/official-doc.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/official-doc.md",
+      "sha256": "e7c2702b26c6d869cf7fe5c42d3cf4fdf8f702940448e71922c5483890c2cf46"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7799,
+          "byte_offset": 0,
+          "end_line": 162,
+          "estimated_tokens": 2046,
+          "id": "0",
+          "sha256": "0a4fccf0d7a434e8cbdd24f9b81534bff9449a526824401fa802a341fa69aeb7",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7252,
+          "byte_offset": 7799,
+          "end_line": 340,
+          "estimated_tokens": 1905,
+          "id": "1",
+          "sha256": "049a5e974277e71951c2146e7f0d20f474e6fd1c992b53f00044139269f96d5e",
+          "start_line": 163
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/report.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/report.md",
+      "sha256": "93306045fff076387e39919612b6580267996bed9862de1b9b81d846b05db31a"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7343,
+          "byte_offset": 0,
+          "end_line": 152,
+          "estimated_tokens": 1929,
+          "id": "0",
+          "sha256": "9c82c913414066a4c3d78cf718664b66a46c78772928307a3670726aacd637a4",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7137,
+          "byte_offset": 7343,
+          "end_line": 334,
+          "estimated_tokens": 1994,
+          "id": "1",
+          "sha256": "8a5dcf87f85fa544ccd3b3ed9a6c66843ef7fa28050efbf234ac656badb2cac5",
+          "start_line": 153
+        },
+        {
+          "byte_length": 7203,
+          "byte_offset": 14480,
+          "end_line": 534,
+          "estimated_tokens": 1908,
+          "id": "2",
+          "sha256": "ba1ab5f3cb86f0ec22c71fd41d74d71a5610da8b5c5d72d04b62f206f53ba7e7",
+          "start_line": 335
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scenes/resume.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/resume.md",
+      "sha256": "1ac3669d0b2ce017cf368bc5932b3e3da37dc4deb1c10d4e2c0748319af51e8d"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 65,
+          "byte_offset": 0,
+          "end_line": 1,
+          "estimated_tokens": 49,
+          "id": "0",
+          "sha256": "83e262a425814b72add701272b99ddcf9635251c5d4672bf9fc38d2b03f00d85",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/__init__.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/__init__.py",
+      "sha256": "83e262a425814b72add701272b99ddcf9635251c5d4672bf9fc38d2b03f00d85"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7671,
+          "byte_offset": 0,
+          "end_line": 211,
+          "estimated_tokens": 2038,
+          "id": "0",
+          "sha256": "93e05a20bf6c89b19693fa7fbcf1d9990d2bb383bd05f495582e56043c670c9d",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7373,
+          "byte_offset": 7671,
+          "end_line": 415,
+          "estimated_tokens": 1972,
+          "id": "1",
+          "sha256": "04c78321b5ceff8f8efa09f71cc8cf00f6a732c3088a8f1f68314175ccd962ae",
+          "start_line": 212
+        },
+        {
+          "byte_length": 7698,
+          "byte_offset": 15044,
+          "end_line": 615,
+          "estimated_tokens": 2030,
+          "id": "2",
+          "sha256": "c38bb52bfd4c379a35ae2937bd0ec89ffbbe83dfaa36bd304110bb5b2d1fb436",
+          "start_line": 416
+        },
+        {
+          "byte_length": 5206,
+          "byte_offset": 22742,
+          "end_line": 748,
+          "estimated_tokens": 1377,
+          "id": "3",
+          "sha256": "b2796b43474f9e5cbb1e2c98daecb124f86288b86aa6adb56c7384be1e19ef9c",
+          "start_line": 616
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/add_toc_placeholders.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/add_toc_placeholders.py",
+      "sha256": "329dff233d5ce06749facd0dda9af92a7b74febd804117d5e9532e5fcc5405e0"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7494,
+          "byte_offset": 0,
+          "end_line": 194,
+          "estimated_tokens": 1998,
+          "id": "0",
+          "sha256": "0beb7913637d34dd6cc5e3c7faedc04c6aed0b8e03f02c3dd06dd826f97aede3",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7648,
+          "byte_offset": 7494,
+          "end_line": 373,
+          "estimated_tokens": 2029,
+          "id": "1",
+          "sha256": "4c3ac029c9ed533a89087e3455a04d82b266da4f62b8f3c29cc61c9b416b31b9",
+          "start_line": 195
+        },
+        {
+          "byte_length": 7701,
+          "byte_offset": 15142,
+          "end_line": 565,
+          "estimated_tokens": 2033,
+          "id": "2",
+          "sha256": "cd4ae4c25554db8641a59fecff198df7bc9446e9ed057335b8eff2b9e4d617a5",
+          "start_line": 374
+        },
+        {
+          "byte_length": 7670,
+          "byte_offset": 22843,
+          "end_line": 758,
+          "estimated_tokens": 2033,
+          "id": "3",
+          "sha256": "c035f6fdbaf4bf096e7591760a8314159276d71158237697e7ca2158d1725558",
+          "start_line": 566
+        },
+        {
+          "byte_length": 7506,
+          "byte_offset": 30513,
+          "end_line": 964,
+          "estimated_tokens": 1987,
+          "id": "4",
+          "sha256": "b8a0b955627dab2c8e7da0410814a013e4c768b3136cc759224b0d7319653bf0",
+          "start_line": 759
+        },
+        {
+          "byte_length": 7150,
+          "byte_offset": 38019,
+          "end_line": 1132,
+          "estimated_tokens": 1893,
+          "id": "5",
+          "sha256": "5b20b9b6d31e3881746484cced5e1413d58f91ae227c9d8ebe21d105e9e71c75",
+          "start_line": 965
+        },
+        {
+          "byte_length": 6899,
+          "byte_offset": 45169,
+          "end_line": 1306,
+          "estimated_tokens": 1853,
+          "id": "6",
+          "sha256": "88cca49aea8860b8c6b034cb4b8c00e7f159ce666be7f99d9dedc39be5d29a7b",
+          "start_line": 1133
+        },
+        {
+          "byte_length": 980,
+          "byte_offset": 52068,
+          "end_line": 1331,
+          "estimated_tokens": 289,
+          "id": "7",
+          "sha256": "dbb10a5c4abf4ed83a9598072e4eb634a20bbe55c8c5e0c8371b3143dc100654",
+          "start_line": 1307
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/document.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/document.py",
+      "sha256": "0daeed76c27f961fde591d0411dcaeb8ca2b0dd30e79dfced796838af52c9f7b"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7520,
+          "byte_offset": 0,
+          "end_line": 217,
+          "estimated_tokens": 2026,
+          "id": "0",
+          "sha256": "5a1ea393290f8da5b5791b24fce6244a1b7793d64b4ef2672e58d74b4735742f",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2479,
+          "byte_offset": 7520,
+          "end_line": 285,
+          "estimated_tokens": 679,
+          "id": "1",
+          "sha256": "c9d45a0e63688e7dcdd4b7588a4163869fc0d400f7cbad387e20ae493f07f735",
+          "start_line": 218
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/fix_footer_fields.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/fix_footer_fields.py",
+      "sha256": "67b6e7f44c5dae9ad3a5687e1276619efc3283e7eb94ecd7427f6a17f2ae1095"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7485,
+          "byte_offset": 0,
+          "end_line": 176,
+          "estimated_tokens": 1993,
+          "id": "0",
+          "sha256": "6393fc35a12e2b34721a5f3a965b4326bac487698638472585426c6171d3ad2b",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7432,
+          "byte_offset": 7485,
+          "end_line": 371,
+          "estimated_tokens": 1979,
+          "id": "1",
+          "sha256": "baf048ffb05453f50b6d68bb15fb40d9bdf3ebba9b25c4cdd4fd654146cd2193",
+          "start_line": 177
+        },
+        {
+          "byte_length": 7300,
+          "byte_offset": 14917,
+          "end_line": 580,
+          "estimated_tokens": 1974,
+          "id": "2",
+          "sha256": "a18b09a4fe0f83e4b6cf56e2aa8af752090f34135084dceee58a1483280699f0",
+          "start_line": 372
+        },
+        {
+          "byte_length": 7651,
+          "byte_offset": 22217,
+          "end_line": 773,
+          "estimated_tokens": 2039,
+          "id": "3",
+          "sha256": "d284a1e23ea831641500cb3e8001548febf29d0caf5aead076c45f8ed656a1a5",
+          "start_line": 581
+        },
+        {
+          "byte_length": 1138,
+          "byte_offset": 29868,
+          "end_line": 808,
+          "estimated_tokens": 333,
+          "id": "4",
+          "sha256": "4c48e9ef071a6be22ea24542a8129bb09c8739e3f6ca58b4e2b859ce871cb847",
+          "start_line": 774
+        }
+      ],
+      "deps": [
+        "documents-plugin/skills/docx/scripts/add_toc_placeholders.py"
+      ],
+      "logical_path": "documents-plugin/skills/docx/scripts/postcheck.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/postcheck.py",
+      "sha256": "5fe34427fd2d790e09ecf58e5fb6c22482fbc8ddf47c9fb86027649fda65fbce"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2635,
+          "byte_offset": 0,
+          "end_line": 3,
+          "estimated_tokens": 712,
+          "id": "0",
+          "sha256": "87e218a3a295016ec855f2cd74495c416072f29c4846e86b527aec0a4d93ba21",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/comments.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/comments.xml",
+      "sha256": "87e218a3a295016ec855f2cd74495c416072f29c4846e86b527aec0a4d93ba21"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2643,
+          "byte_offset": 0,
+          "end_line": 3,
+          "estimated_tokens": 714,
+          "id": "0",
+          "sha256": "86bf401354c111102033ed147763faccb82479598f17777a3384c2f3e9fa0014",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsExtended.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsExtended.xml",
+      "sha256": "86bf401354c111102033ed147763faccb82479598f17777a3384c2f3e9fa0014"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2739,
+          "byte_offset": 0,
+          "end_line": 3,
+          "estimated_tokens": 738,
+          "id": "0",
+          "sha256": "af5d057e16462ca172cea845e502bafb4f3e1b474a8d5848ffe92214853a4935",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsExtensible.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsExtensible.xml",
+      "sha256": "af5d057e16462ca172cea845e502bafb4f3e1b474a8d5848ffe92214853a4935"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2651,
+          "byte_offset": 0,
+          "end_line": 3,
+          "estimated_tokens": 716,
+          "id": "0",
+          "sha256": "20168f7b237af091332f8348c548eb7f755f583185bb198359c5978155099d67",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsIds.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsIds.xml",
+      "sha256": "20168f7b237af091332f8348c548eb7f755f583185bb198359c5978155099d67"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 147,
+          "byte_offset": 0,
+          "end_line": 3,
+          "estimated_tokens": 72,
+          "id": "0",
+          "sha256": "61db9900b579acd4c4f84ff7f40df47e77e9e780c40d5f5ef6a7beba41d62ec5",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/people.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/people.xml",
+      "sha256": "61db9900b579acd4c4f84ff7f40df47e77e9e780c40d5f5ef6a7beba41d62ec5"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7318,
+          "byte_offset": 0,
+          "end_line": 191,
+          "estimated_tokens": 1947,
+          "id": "0",
+          "sha256": "cceb9f5a15c1e1a55c1733a0edf2b4c9d6fcd0e218235bb17cc97c3cb4845fae",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6326,
+          "byte_offset": 7318,
+          "end_line": 373,
+          "estimated_tokens": 1680,
+          "id": "1",
+          "sha256": "82c44bc6c480b540ca72b272803d5172d97cc536d94d1f99f45f5726e4065b20",
+          "start_line": 192
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/scripts/utilities.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/utilities.py",
+      "sha256": "d87a5a2d1cd0859d554c832613b7b19e2bb6cd1987411c405d24429ef4ae49e7"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5697,
+          "byte_offset": 0,
+          "end_line": 174,
+          "estimated_tokens": 1561,
+          "id": "0",
+          "sha256": "caee2982eb705dc505b96c9c3191a56cc34040ca4b1ee209392d8f051cd9623f",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2474,
+          "byte_offset": 5697,
+          "end_line": 217,
+          "estimated_tokens": 682,
+          "id": "1",
+          "sha256": "be21ecc869e31a031c6d3cb0f793fd6f9d73b5ba4bddfa3649ab9a48f0660f70",
+          "start_line": 175
+        }
+      ],
+      "deps": [],
+      "logical_path": "documents-plugin/skills/docx/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "setup.sh",
+      "sha256": "4ad4950a8be992a3baf3dc3fe21ceabf934ea3625571534f518db2a859c6ae13"
+    }
+  ],
+  "package_id": "platform.docx",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

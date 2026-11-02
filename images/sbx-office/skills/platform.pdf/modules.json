@@ -1,0 +1,2126 @@
+{
+  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "chunk_token_cap": 2048,
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "chunks": [
+        {
+          "byte_length": 5585,
+          "byte_offset": 0,
+          "end_line": 49,
+          "estimated_tokens": 1455,
+          "id": "0",
+          "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/agents/visual-judge.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3644,
+          "byte_offset": 0,
+          "end_line": 37,
+          "estimated_tokens": 956,
+          "id": "0",
+          "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7462,
+          "byte_offset": 0,
+          "end_line": 99,
+          "estimated_tokens": 2028,
+          "id": "0",
+          "sha256": "aef4406ffec0a584272a957a337cc1f49a3360884f138157752cd475e1de4f5a",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7231,
+          "byte_offset": 7462,
+          "end_line": 191,
+          "estimated_tokens": 1873,
+          "id": "1",
+          "sha256": "1b96f696dac3cfd3200881e021ed0075b3f44d9eff5c600cf377a38a4ba62bdd",
+          "start_line": 100
+        },
+        {
+          "byte_length": 7771,
+          "byte_offset": 14693,
+          "end_line": 299,
+          "estimated_tokens": 2014,
+          "id": "2",
+          "sha256": "0d21b1a78c1ceefb177978c3b4d8c3bedfd666ebec19051fce0b26006b38329e",
+          "start_line": 192
+        },
+        {
+          "byte_length": 7634,
+          "byte_offset": 22464,
+          "end_line": 436,
+          "estimated_tokens": 1986,
+          "id": "3",
+          "sha256": "18311a5f1890bb1039e899d556dd25c6088066965341b712f8501ebcba653e67",
+          "start_line": 300
+        },
+        {
+          "byte_length": 7703,
+          "byte_offset": 30098,
+          "end_line": 578,
+          "estimated_tokens": 2007,
+          "id": "4",
+          "sha256": "7d0829597ba8b125a752a82df76e6a682d8effbc1e935abccc3342041256034e",
+          "start_line": 437
+        },
+        {
+          "byte_length": 7667,
+          "byte_offset": 37801,
+          "end_line": 691,
+          "estimated_tokens": 1994,
+          "id": "5",
+          "sha256": "bf9ba0db64b5a8fdfb17b462bf9f5895cff8c4a332b770e7613be72e8b8b836e",
+          "start_line": 579
+        },
+        {
+          "byte_length": 5292,
+          "byte_offset": 45468,
+          "end_line": 778,
+          "estimated_tokens": 1395,
+          "id": "6",
+          "sha256": "5cc534c71f674b0f56ae8f8e58ca662f3f7db4a6133f585a63146f6d14b12da8",
+          "start_line": 692
+        },
+        {
+          "byte_length": 18219,
+          "byte_offset": 50760,
+          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
+          "end_line": 939,
+          "estimated_tokens": 4654,
+          "id": "7",
+          "sha256": "5652ce4977d98045b79638f3839a9f57caf81aeb4b90154386d6a1a594f498f0",
+          "start_line": 779
+        },
+        {
+          "byte_length": 2186,
+          "byte_offset": 68979,
+          "end_line": 972,
+          "estimated_tokens": 596,
+          "id": "8",
+          "sha256": "ae1b60ce3d893ce8d60267b4b2fb745ab67e45b28e90060f87a76c857ff8dd98",
+          "start_line": 940
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/academic.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/poster.md",
+        "pdf-plugin/skills/pdf/briefs/process.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/configs/fonts.md",
+        "pdf-plugin/skills/pdf/configs/visual_framework.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/scripts/pdf.py",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/geometry.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md",
+        "pdf-plugin/skills/pdf/typesetting/typography.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "ba619d9a720b204e9eea4c2f965f5237ef25de57cf97b4627ef2a7602ae33383"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7062,
+          "byte_offset": 0,
+          "end_line": 153,
+          "estimated_tokens": 1882,
+          "id": "0",
+          "sha256": "d95c59ffc7bb744d6996daab8256a7d129116a98a47da260856edf748503e380",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7629,
+          "byte_offset": 7062,
+          "end_line": 286,
+          "estimated_tokens": 2006,
+          "id": "1",
+          "sha256": "4a7c281303eb60ded8c972929c99b0df1091d9bf1b49fdd2e11fef8c0731a3ca",
+          "start_line": 154
+        },
+        {
+          "byte_length": 7614,
+          "byte_offset": 14691,
+          "end_line": 457,
+          "estimated_tokens": 2046,
+          "id": "2",
+          "sha256": "5f818de094cfbd69528552cd2e654ff96c99df5709a788b2f6c16cb378869a2a",
+          "start_line": 287
+        },
+        {
+          "byte_length": 7559,
+          "byte_offset": 22305,
+          "end_line": 660,
+          "estimated_tokens": 2033,
+          "id": "3",
+          "sha256": "e3015d351478d755eb255e2d8d3d8c862e2061487562d6ae47457eed2afc5cd0",
+          "start_line": 458
+        },
+        {
+          "byte_length": 7549,
+          "byte_offset": 29864,
+          "end_line": 874,
+          "estimated_tokens": 2048,
+          "id": "4",
+          "sha256": "463b96b82537f15d91e79d7df8eb6a8c38284707bbc96590d5d05a343dfcaec3",
+          "start_line": 661
+        },
+        {
+          "byte_length": 7700,
+          "byte_offset": 37413,
+          "end_line": 1027,
+          "estimated_tokens": 2024,
+          "id": "5",
+          "sha256": "ed745220a21e7bc6de53fd8cb846302791513e9aa433e1cfac0fd4c63ed17850",
+          "start_line": 875
+        },
+        {
+          "byte_length": 349,
+          "byte_offset": 45113,
+          "end_line": 1039,
+          "estimated_tokens": 123,
+          "id": "6",
+          "sha256": "cd6e2fcc47f3af047cfed8d8eacb7f6b92b09847b31bd9b1c40ed306a3db7a7c",
+          "start_line": 1028
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/academic.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/academic.md",
+      "sha256": "30787d339f76d61af71a7390afb521aebf64992555324ce9a8eb94ef1231a222"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7385,
+          "byte_offset": 0,
+          "end_line": 109,
+          "estimated_tokens": 1924,
+          "id": "0",
+          "sha256": "140324d6904bc769449a4a67613aa174cf4287f399a64b291ddcadec6314b3b5",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7261,
+          "byte_offset": 7385,
+          "end_line": 217,
+          "estimated_tokens": 1897,
+          "id": "1",
+          "sha256": "a90dbfb6d7eace77dd6e29af87f32b8a4a7a2ffd356cfa42dc897ec6b3c5bae7",
+          "start_line": 110
+        },
+        {
+          "byte_length": 7615,
+          "byte_offset": 14646,
+          "end_line": 353,
+          "estimated_tokens": 2009,
+          "id": "2",
+          "sha256": "411fa143e92bbb1b551be5bc3a93a47490467660f691d4ca3b37fbfd781b003d",
+          "start_line": 218
+        },
+        {
+          "byte_length": 6157,
+          "byte_offset": 22261,
+          "end_line": 469,
+          "estimated_tokens": 1647,
+          "id": "3",
+          "sha256": "1c518f47999ca7c3f2ab40cd819d025baae7fa26f2215de678572a42c919c0fb",
+          "start_line": 354
+        },
+        {
+          "byte_length": 5110,
+          "byte_offset": 28418,
+          "end_line": 632,
+          "estimated_tokens": 1431,
+          "id": "4",
+          "sha256": "2da3ca489244a797b11bdd6b3af2382f186644ea6074f589db365babfaa88d09",
+          "start_line": 470
+        },
+        {
+          "byte_length": 7633,
+          "byte_offset": 33528,
+          "end_line": 714,
+          "estimated_tokens": 1973,
+          "id": "5",
+          "sha256": "cc596eb639c05c57a921d514aa277fecfc428f323e37225e4e74d3dccc810402",
+          "start_line": 633
+        },
+        {
+          "byte_length": 7489,
+          "byte_offset": 41161,
+          "end_line": 835,
+          "estimated_tokens": 1947,
+          "id": "6",
+          "sha256": "84a097cedd42f1bfe1bc8fe2433665b92253c5d018f1e4815ee014779ac5301e",
+          "start_line": 715
+        },
+        {
+          "byte_length": 1138,
+          "byte_offset": 48650,
+          "end_line": 850,
+          "estimated_tokens": 322,
+          "id": "7",
+          "sha256": "8568e5088d97808ff9e0a06a7dd7f692068eabc658dd16417329880b4139d2bc",
+          "start_line": 836
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative-flow.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/creative-fixed-canvas.md",
+      "sha256": "10278ca3f193204d39120dcfc33ea1f3a834c42a3eb9842fbd9af9e7282ca689"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7630,
+          "byte_offset": 0,
+          "end_line": 202,
+          "estimated_tokens": 2011,
+          "id": "0",
+          "sha256": "2d3b7f1f0d3601967bce2e0a72f2eba6537209bde88b44574225381992c3301a",
+          "start_line": 1
+        },
+        {
+          "byte_length": 3329,
+          "byte_offset": 7630,
+          "end_line": 257,
+          "estimated_tokens": 884,
+          "id": "1",
+          "sha256": "48847621e7972f8b6eab0751f82a211d632b66ad8521de683eedeca58b7fc7d4",
+          "start_line": 203
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative-flow.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/creative-flow.md",
+      "sha256": "46d459f5c1f7e73096170ff50e6da5f1d60bc79fe5fe914d8a9fdfca1093f1e6"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7753,
+          "byte_offset": 0,
+          "end_line": 116,
+          "estimated_tokens": 2023,
+          "id": "0",
+          "sha256": "867140ab06008c47058c92addb37e2476ae8de50d47d07f2eba123631f2f8932",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6502,
+          "byte_offset": 7753,
+          "end_line": 213,
+          "estimated_tokens": 1699,
+          "id": "1",
+          "sha256": "a23726a35723d20cfcfec4c5f123874442eff19328a3e4efb10d782d253af36c",
+          "start_line": 117
+        },
+        {
+          "byte_length": 7583,
+          "byte_offset": 14255,
+          "end_line": 349,
+          "estimated_tokens": 2001,
+          "id": "2",
+          "sha256": "60941640cd5928621c5a21c801d7855238bae3c12dc3582e5f6ab0140db80c4f",
+          "start_line": 214
+        },
+        {
+          "byte_length": 6095,
+          "byte_offset": 21838,
+          "end_line": 465,
+          "estimated_tokens": 1632,
+          "id": "3",
+          "sha256": "7f9beb9e19ca37b8917738f7d936a6f080c34f25ee52271449347c24b873e33f",
+          "start_line": 350
+        },
+        {
+          "byte_length": 5110,
+          "byte_offset": 27933,
+          "end_line": 628,
+          "estimated_tokens": 1431,
+          "id": "4",
+          "sha256": "2da3ca489244a797b11bdd6b3af2382f186644ea6074f589db365babfaa88d09",
+          "start_line": 466
+        },
+        {
+          "byte_length": 7916,
+          "byte_offset": 33043,
+          "end_line": 709,
+          "estimated_tokens": 2044,
+          "id": "5",
+          "sha256": "82ad09ed0eb7d857f26300c386a1335671a924870ee95d43ca13bce7ccc65e9c",
+          "start_line": 629
+        },
+        {
+          "byte_length": 5362,
+          "byte_offset": 40959,
+          "end_line": 775,
+          "estimated_tokens": 1398,
+          "id": "6",
+          "sha256": "adb7ca4cb827329a7794d77bdeae5e757506591c9202690277b0cc343c721db3",
+          "start_line": 710
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/creative.md",
+      "sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7094,
+          "byte_offset": 0,
+          "end_line": 153,
+          "estimated_tokens": 1868,
+          "id": "0",
+          "sha256": "91d850a192e5fd36a3ae8d32df368d37c96f5ef029d55d20c99677a41986d7e7",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7352,
+          "byte_offset": 7094,
+          "end_line": 286,
+          "estimated_tokens": 1924,
+          "id": "1",
+          "sha256": "87590b04c66dbdf18d57145ecf46bbeb7424eff014ae6740de59d56c2161ba05",
+          "start_line": 154
+        },
+        {
+          "byte_length": 7809,
+          "byte_offset": 14446,
+          "end_line": 430,
+          "estimated_tokens": 2031,
+          "id": "2",
+          "sha256": "bd8d7d2d73f4ce960312ae2d07cd797d15463b834a50ac93ceb9e585784e6d2f",
+          "start_line": 287
+        },
+        {
+          "byte_length": 7469,
+          "byte_offset": 22255,
+          "end_line": 631,
+          "estimated_tokens": 1973,
+          "id": "3",
+          "sha256": "1a106b7e4e5fb44152e6cd452c9f5f718af17d7c0dd8d5feaba85a7d04a53f2c",
+          "start_line": 431
+        },
+        {
+          "byte_length": 4302,
+          "byte_offset": 29724,
+          "end_line": 707,
+          "estimated_tokens": 1139,
+          "id": "4",
+          "sha256": "78d23bec43556e5fcffee7f592a1bf2a60fdfa2bdb4b2091e8fd225ac5cc7389",
+          "start_line": 632
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/poster.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/poster.md",
+      "sha256": "481b6aff099e1e2e107cb0b0fd8f71b3f3b0525a6ec3e9f459c6ab8ec0f25810"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7262,
+          "byte_offset": 0,
+          "end_line": 272,
+          "estimated_tokens": 1949,
+          "id": "0",
+          "sha256": "f8b48bc088b47ec019b5502fc52867e066e47db92e83bf71f7e4bed02a125104",
+          "start_line": 1
+        },
+        {
+          "byte_length": 650,
+          "byte_offset": 7262,
+          "end_line": 283,
+          "estimated_tokens": 198,
+          "id": "1",
+          "sha256": "abad16e6f5bc8201b4cdfe63564c1b14541902f2467ff77cb6ed3e8e9c246a3c",
+          "start_line": 273
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/process.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/process-advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/process-advanced.md",
+      "sha256": "c4ee69bbc82601b38ef10784dd7dca5f1d9447d793e7ebc1614309e1a34b7676"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7598,
+          "byte_offset": 0,
+          "end_line": 201,
+          "estimated_tokens": 2044,
+          "id": "0",
+          "sha256": "aa631ea5f63d28efe4aa689722be7c50538f83ebff8586d90b96c3ae5452675c",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6138,
+          "byte_offset": 7598,
+          "end_line": 344,
+          "estimated_tokens": 1622,
+          "id": "1",
+          "sha256": "f612bb05c6ba18d71eff06fb08f4b4849f7e2ac819b1a3c4f3126b7320126498",
+          "start_line": 202
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/process-advanced.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/process.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/process.md",
+      "sha256": "a63dba443c39ad641b52652b70291fa3b8dc6e2b3cf75d48d832f0142fe6055b"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7422,
+          "byte_offset": 0,
+          "end_line": 150,
+          "estimated_tokens": 1947,
+          "id": "0",
+          "sha256": "667656a4a5f508ffcfc305cae0f2ed9670d62e55a979f695839d68d2e0e0e937",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7675,
+          "byte_offset": 7422,
+          "end_line": 317,
+          "estimated_tokens": 2021,
+          "id": "1",
+          "sha256": "739c23620a75d51d3a21834240ff3ccd4e281a9db224206f7c96a00cde88574e",
+          "start_line": 151
+        },
+        {
+          "byte_length": 7005,
+          "byte_offset": 15097,
+          "end_line": 463,
+          "estimated_tokens": 1854,
+          "id": "2",
+          "sha256": "0fb116d44c2b893185e67dd14065ca16413d9775059d1831882be362e1549df9",
+          "start_line": 318
+        },
+        {
+          "byte_length": 7823,
+          "byte_offset": 22102,
+          "end_line": 627,
+          "estimated_tokens": 2045,
+          "id": "3",
+          "sha256": "5ee907e18aab393103556d8f0c91f2e001ecc7d7d30c046bca7d4473c623504e",
+          "start_line": 464
+        },
+        {
+          "byte_length": 6810,
+          "byte_offset": 29925,
+          "end_line": 794,
+          "estimated_tokens": 1792,
+          "id": "4",
+          "sha256": "5d46d8addfbe4a8417b5091ef991eb77805c9b5d2addd01d29cbb299a59f89b0",
+          "start_line": 628
+        },
+        {
+          "byte_length": 7706,
+          "byte_offset": 36735,
+          "end_line": 993,
+          "estimated_tokens": 2020,
+          "id": "5",
+          "sha256": "20f0a41dcdfdc163bb6149927b040fb8f9288873a2e1d86cee3001728afd5f45",
+          "start_line": 795
+        },
+        {
+          "byte_length": 7204,
+          "byte_offset": 44441,
+          "end_line": 1172,
+          "estimated_tokens": 1896,
+          "id": "6",
+          "sha256": "88271869582fdef4b46d51141fec7c7077cec66ae38c843c0312d9cb5c8f1fd2",
+          "start_line": 994
+        },
+        {
+          "byte_length": 2769,
+          "byte_offset": 51645,
+          "end_line": 1202,
+          "estimated_tokens": 739,
+          "id": "7",
+          "sha256": "144f27e48aa18e393ad2a9a3392497654d70dcf8a3143f1fe8368a1a168f4c39",
+          "start_line": 1173
+        },
+        {
+          "byte_length": 6666,
+          "byte_offset": 54414,
+          "end_line": 1386,
+          "estimated_tokens": 1757,
+          "id": "8",
+          "sha256": "484a37682b4d949a7462564be32ec47dd8a5bb1e6b9b9db640c5b70651ddecf3",
+          "start_line": 1203
+        },
+        {
+          "byte_length": 7707,
+          "byte_offset": 61080,
+          "end_line": 1576,
+          "estimated_tokens": 2032,
+          "id": "9",
+          "sha256": "db26ddd473227be37b1c108ecefefedb83c632f5e9774f0060e1f3e75f5d495d",
+          "start_line": 1387
+        },
+        {
+          "byte_length": 3081,
+          "byte_offset": 68787,
+          "end_line": 1640,
+          "estimated_tokens": 825,
+          "id": "10",
+          "sha256": "d73b546f86f2d761b83751fa76af0d9963c8d542083ff74f359d2907d3a768bd",
+          "start_line": 1577
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/report.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/report.md",
+      "sha256": "67b3c407d42b448145cbe2269e5805751c3c26f87873652ac0e46927ed4e844e"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3652,
+          "byte_offset": 0,
+          "end_line": 46,
+          "estimated_tokens": 966,
+          "id": "0",
+          "sha256": "269c24838373c6f3866f9cde5c840c0849a5d6b8f801fbf343fdcc3594fbf7d4",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7131,
+          "byte_offset": 3652,
+          "end_line": 229,
+          "estimated_tokens": 1873,
+          "id": "1",
+          "sha256": "571e04b8d5034da7a167087f3c85a0ce7eaf19b6ab4bb714870ca107ea2ae592",
+          "start_line": 47
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/briefs/resume.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/resume.md",
+      "sha256": "f163004a7e0709585e3a6171a3e7233d84242d8559065b9a62f737349c917b5a"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5210,
+          "byte_offset": 0,
+          "end_line": 153,
+          "estimated_tokens": 1409,
+          "id": "0",
+          "sha256": "efae6b5ac32fd2fa9bd567df474bdb20bc9c8b8c3e8b51e5b7aa596220cbef7f",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/configs/components.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "configs/components.md",
+      "sha256": "efae6b5ac32fd2fa9bd567df474bdb20bc9c8b8c3e8b51e5b7aa596220cbef7f"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3471,
+          "byte_offset": 0,
+          "end_line": 90,
+          "estimated_tokens": 928,
+          "id": "0",
+          "sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/configs/fonts.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "configs/fonts.md",
+      "sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7653,
+          "byte_offset": 0,
+          "end_line": 169,
+          "estimated_tokens": 2042,
+          "id": "0",
+          "sha256": "a748286f8d851850b11a6a82b9fd240140036c5aca670ca3093ddb0b78a3e73c",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5192,
+          "byte_offset": 7653,
+          "end_line": 263,
+          "estimated_tokens": 1363,
+          "id": "1",
+          "sha256": "effbd05b516667aa2a2f0a39166991f0d64e53c50b26623e529c93bca496ac9a",
+          "start_line": 170
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/configs/visual_framework.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "configs/visual_framework.md",
+      "sha256": "a5771a77feb28e99bca5f2e5651a47d3588098672a7636c16889e830fd40c13f"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3788,
+          "byte_offset": 0,
+          "end_line": 61,
+          "estimated_tokens": 1027,
+          "id": "0",
+          "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/env_setup/setup.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4811,
+          "byte_offset": 0,
+          "end_line": 82,
+          "estimated_tokens": 1256,
+          "id": "0",
+          "sha256": "bb83907b4495b46c9dafc5db72e3d585c8eb1f76a4f804cc58ce9ca1b8b6dc51",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "bb83907b4495b46c9dafc5db72e3d585c8eb1f76a4f804cc58ce9ca1b8b6dc51"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7456,
+          "byte_offset": 0,
+          "end_line": 198,
+          "estimated_tokens": 1957,
+          "id": "0",
+          "sha256": "fe22777b9dbff67f26fea1d74485848ca2a6f7e1f5d6b81ae13477fd72320eff",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5241,
+          "byte_offset": 7456,
+          "end_line": 302,
+          "estimated_tokens": 1390,
+          "id": "1",
+          "sha256": "ce0f40627368711eae8d8e0ce24135eadc94c3de5d6b58211bfcb4ba585b6d2b",
+          "start_line": 199
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/cover_render.py"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "7b7b9726351285d76222d35e6cfa188e7c2d4535727663f4179b23419523c556"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6871,
+          "byte_offset": 0,
+          "end_line": 218,
+          "estimated_tokens": 1882,
+          "id": "0",
+          "sha256": "a26df188c7a40f3963b03eedd4ff81ac14391e34c3aad51f5f4d696393f0ae75",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6455,
+          "byte_offset": 6871,
+          "end_line": 376,
+          "estimated_tokens": 1742,
+          "id": "1",
+          "sha256": "733ca16b260c8bc67c4c647336dd340f77b829758c96e4e42b85e60745ee2d0b",
+          "start_line": 219
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "7e894908afaf2ae99d0f5c9e5a8906e822b956f7fbaa10dafdc3d30da804fd6c"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7342,
+          "byte_offset": 0,
+          "end_line": 210,
+          "estimated_tokens": 1982,
+          "id": "0",
+          "sha256": "69712f7c9a6d9bfd5d27d57d54e0328ff9ff350adefac41b1bdc5fb430eec19b",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6112,
+          "byte_offset": 7342,
+          "end_line": 343,
+          "estimated_tokens": 1635,
+          "id": "1",
+          "sha256": "60b8c4400eed55af9851cc1ac618cd520d628cee3a80f28a653d4bf8ccde6a4b",
+          "start_line": 211
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "dd2ac23c7088574a58e1d3995545d8f8b0a3f6925db0ee1752a9313cfa2c72b2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4807,
+          "byte_offset": 0,
+          "end_line": 130,
+          "estimated_tokens": 1341,
+          "id": "0",
+          "sha256": "004fb82e7720d6a116f5a56a063981584e5da731dfe804d8a3f8c1d8a44f112a",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/references/resume-academic.tex",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/resume-academic.tex",
+      "sha256": "004fb82e7720d6a116f5a56a063981584e5da731dfe804d8a3f8c1d8a44f112a"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6183,
+          "byte_offset": 0,
+          "end_line": 190,
+          "estimated_tokens": 1741,
+          "id": "0",
+          "sha256": "1e41b45b8778482e5208b8216d092fa0968507919d31bd97cf683a5d890f28ef",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/references/resume-altacv.tex",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/resume-altacv.tex",
+      "sha256": "1e41b45b8778482e5208b8216d092fa0968507919d31bd97cf683a5d890f28ef"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7314,
+          "byte_offset": 0,
+          "end_line": 151,
+          "estimated_tokens": 2006,
+          "id": "0",
+          "sha256": "fd6d7bacc40f72a992bd44d598e6ffe440e52a9cf41cf8dbe370ef7085d1a963",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6220,
+          "byte_offset": 7314,
+          "end_line": 261,
+          "estimated_tokens": 1687,
+          "id": "1",
+          "sha256": "cbdd704ecb65e2c11c25c4ee8ab07fb20e81a943836ef9506731df07ef35efd0",
+          "start_line": 152
+        },
+        {
+          "byte_length": 6832,
+          "byte_offset": 13534,
+          "end_line": 383,
+          "estimated_tokens": 1814,
+          "id": "2",
+          "sha256": "e547ba4dbd2c5cd72c896ff6fed501466f6c2c14eb470b3ab9c9cbb8a6272f4a",
+          "start_line": 262
+        },
+        {
+          "byte_length": 5857,
+          "byte_offset": 20366,
+          "end_line": 487,
+          "estimated_tokens": 1683,
+          "id": "3",
+          "sha256": "1e6bd8363c3ef6c6e3395a18104fdd48248da9bf16098a9a323544e4af211944",
+          "start_line": 384
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/cover_render.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/cover_render.py",
+      "sha256": "30d90b4f8d6c209700c2d9d91d76c8af6eb9354db20fca256614aa30738af209"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7742,
+          "byte_offset": 0,
+          "end_line": 210,
+          "estimated_tokens": 2028,
+          "id": "0",
+          "sha256": "eb170311a06f8c3cd9dea5f2e0f3e2ff9438e243614c162bb8846cc21914eeb0",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5215,
+          "byte_offset": 7742,
+          "end_line": 367,
+          "estimated_tokens": 1382,
+          "id": "1",
+          "sha256": "5ac9a97d51567b71a840f8a21085d8f375b03e9e42e907bff068e94c3b806114",
+          "start_line": 211
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/cover_validate.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/cover_validate.js",
+      "sha256": "3d8f79e9df7d3ea95e2d8e666c8c037508ac86e82190e255fbc6bf04b109c39b"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7209,
+          "byte_offset": 0,
+          "end_line": 146,
+          "estimated_tokens": 2030,
+          "id": "0",
+          "sha256": "01b5c2c8155bfed3b7b8286f2d29039c18414c16df447dbfef45181db065e0a2",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7582,
+          "byte_offset": 7209,
+          "end_line": 288,
+          "estimated_tokens": 1985,
+          "id": "1",
+          "sha256": "cf3b4b68d884d2fd4265d39e999d80af84fa9f6a9432066a05d713d738e5840f",
+          "start_line": 147
+        },
+        {
+          "byte_length": 7448,
+          "byte_offset": 14791,
+          "end_line": 462,
+          "estimated_tokens": 2012,
+          "id": "2",
+          "sha256": "bd4fb35ce92ff33280d3214229d919d387fa7de113538554282d953aa70cf226",
+          "start_line": 289
+        },
+        {
+          "byte_length": 6387,
+          "byte_offset": 22239,
+          "end_line": 603,
+          "estimated_tokens": 1755,
+          "id": "3",
+          "sha256": "136753864ba27d5cc30b31e840e6f9ab157a9c8c58f302a069badef34e53663b",
+          "start_line": 463
+        },
+        {
+          "byte_length": 7309,
+          "byte_offset": 28626,
+          "end_line": 756,
+          "estimated_tokens": 2006,
+          "id": "4",
+          "sha256": "3a30a330d1ef718e143c20dbc6f6b1e849f809c0154b70cafb316f53c230f4ba",
+          "start_line": 604
+        },
+        {
+          "byte_length": 7616,
+          "byte_offset": 35935,
+          "end_line": 932,
+          "estimated_tokens": 2046,
+          "id": "5",
+          "sha256": "3ea8ca8f5366409165409f4b42cbb9f894e4c6007c2952470c6a7c9ba57ea9a0",
+          "start_line": 757
+        },
+        {
+          "byte_length": 7128,
+          "byte_offset": 43551,
+          "end_line": 1094,
+          "estimated_tokens": 1910,
+          "id": "6",
+          "sha256": "4e622e80f216929c91e51edfdae2bed0b6fc05d6cce72c6fd560c8d9a833f833",
+          "start_line": 933
+        },
+        {
+          "byte_length": 6811,
+          "byte_offset": 50679,
+          "end_line": 1249,
+          "estimated_tokens": 1894,
+          "id": "7",
+          "sha256": "584b90f14d72e7b122d6b99872b01daa03e5796d26292cf23586f65672f4ac40",
+          "start_line": 1095
+        },
+        {
+          "byte_length": 7394,
+          "byte_offset": 57490,
+          "end_line": 1392,
+          "estimated_tokens": 2037,
+          "id": "8",
+          "sha256": "4cc90c2de193a365d8c5dbcc950fa7d002ee963bf2b82078ee16dd6396a804cd",
+          "start_line": 1250
+        },
+        {
+          "byte_length": 5308,
+          "byte_offset": 64884,
+          "end_line": 1506,
+          "estimated_tokens": 1471,
+          "id": "9",
+          "sha256": "00b441f07b0f1efb53edcb924e631e850c3678b92802c466e4d2906c2f73eafd",
+          "start_line": 1393
+        },
+        {
+          "byte_length": 7273,
+          "byte_offset": 70192,
+          "end_line": 1727,
+          "estimated_tokens": 1914,
+          "id": "10",
+          "sha256": "86ae384838655e18628ebc41c188b20937638af30eda86bc81fa3d176c708244",
+          "start_line": 1507
+        },
+        {
+          "byte_length": 7373,
+          "byte_offset": 77465,
+          "end_line": 1956,
+          "estimated_tokens": 1953,
+          "id": "11",
+          "sha256": "7048f7f246ae465372611083381cf9af62056d6ed323aa6eb25497231368f7ba",
+          "start_line": 1728
+        },
+        {
+          "byte_length": 7561,
+          "byte_offset": 84838,
+          "end_line": 2153,
+          "estimated_tokens": 2019,
+          "id": "12",
+          "sha256": "6f22e8575c4804eac3b063891f1c3503fe2e5c68a980c703951f2e4984b6b892",
+          "start_line": 1957
+        },
+        {
+          "byte_length": 7327,
+          "byte_offset": 92399,
+          "end_line": 2330,
+          "estimated_tokens": 1948,
+          "id": "13",
+          "sha256": "b44e2cda3dbd7e874847da734e0612fa2193b39c212faea90eb4fe9cd5291c37",
+          "start_line": 2154
+        },
+        {
+          "byte_length": 7586,
+          "byte_offset": 99726,
+          "end_line": 2490,
+          "estimated_tokens": 2040,
+          "id": "14",
+          "sha256": "57e5f36aa3b80256208b3f2b7357060b006b1c883982cf6ac60ec755c65340ec",
+          "start_line": 2331
+        },
+        {
+          "byte_length": 7558,
+          "byte_offset": 107312,
+          "end_line": 2648,
+          "estimated_tokens": 2043,
+          "id": "15",
+          "sha256": "e8a9313142cbb1fd57e2d849f13be8205f019c47a2c09a082d767f431a1a80d3",
+          "start_line": 2491
+        },
+        {
+          "byte_length": 7272,
+          "byte_offset": 114870,
+          "end_line": 2816,
+          "estimated_tokens": 1950,
+          "id": "16",
+          "sha256": "b3defb3ad130daf058690953bf2f4f5b8b0e8a8c2d87f5393d9be4519c8815c1",
+          "start_line": 2649
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/design_engine.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/design_engine.py",
+      "sha256": "08a71da2be73f15231fcf4a49af990c0a288ca7297bc896a7b68ddcd9a224ea2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7254,
+          "byte_offset": 0,
+          "end_line": 166,
+          "estimated_tokens": 2023,
+          "id": "0",
+          "sha256": "31f5f61e280ce2c7a5c6934b9138676559d0299f336fcaed8cf7e1aa03bccb8c",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7564,
+          "byte_offset": 7254,
+          "end_line": 350,
+          "estimated_tokens": 1986,
+          "id": "1",
+          "sha256": "46263f96c6e82df02f8eb4cfab098172278be607e4951bed8f8a4bc009766808",
+          "start_line": 167
+        },
+        {
+          "byte_length": 7409,
+          "byte_offset": 14818,
+          "end_line": 523,
+          "estimated_tokens": 1999,
+          "id": "2",
+          "sha256": "456e1767b9c861871e19189f921fa13b5f9e215c90903a59fb999e88827abafd",
+          "start_line": 351
+        },
+        {
+          "byte_length": 7669,
+          "byte_offset": 22227,
+          "end_line": 715,
+          "estimated_tokens": 2044,
+          "id": "3",
+          "sha256": "ba17aa04f329210868990af680234759aab0fbeb33b5305b837e0848ab851a86",
+          "start_line": 524
+        },
+        {
+          "byte_length": 1334,
+          "byte_offset": 29896,
+          "end_line": 754,
+          "estimated_tokens": 412,
+          "id": "4",
+          "sha256": "46bc0f06f2f8ad5753e0a5c70e32a524649816b4e23b1c4155347eea4f9b0107",
+          "start_line": 716
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/design_engine.py",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/html2pdf-next.js",
+      "sha256": "32eeb06095761458e6d868ba6d62e2a052c37ab0e5f8109a77321ac205fd3627"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7680,
+          "byte_offset": 0,
+          "end_line": 212,
+          "estimated_tokens": 2015,
+          "id": "0",
+          "sha256": "930e8bb0879cc503e581237e0446810f12bf0c82780377f67fd885dd930afcd1",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2783,
+          "byte_offset": 7680,
+          "end_line": 288,
+          "estimated_tokens": 754,
+          "id": "1",
+          "sha256": "5d57f3d32130538272b787f333d41a0291991c6853c1f02d2ee48f062d617365",
+          "start_line": 213
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/html2pdf-next.js"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/html2poster.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/html2poster.js",
+      "sha256": "897357079b8e513cae0737a2b3f87753d8b97e2158517a5b21e9bfa590628a75"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7284,
+          "byte_offset": 0,
+          "end_line": 210,
+          "estimated_tokens": 2006,
+          "id": "0",
+          "sha256": "8442b87aa7639431f8b70871b1e13c20a10c9313ab27a40c40836178ce22717a",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7428,
+          "byte_offset": 7284,
+          "end_line": 411,
+          "estimated_tokens": 2021,
+          "id": "1",
+          "sha256": "7e3ea929223b05ea923e20da09356c3ec640b7d75afffd4b9dbc7b02b8b07b8f",
+          "start_line": 211
+        },
+        {
+          "byte_length": 7348,
+          "byte_offset": 14712,
+          "end_line": 604,
+          "estimated_tokens": 2040,
+          "id": "2",
+          "sha256": "69abc7ebbe3e937e3420e7bfcffacdcbeefc8308c3dfe34c5b1e26a32ecec9be",
+          "start_line": 412
+        },
+        {
+          "byte_length": 7432,
+          "byte_offset": 22060,
+          "end_line": 825,
+          "estimated_tokens": 2000,
+          "id": "3",
+          "sha256": "3c3a9b63077ebbf65c33fc27779bc9ae8edbbbd8514a737fe5f988dd94344a90",
+          "start_line": 605
+        },
+        {
+          "byte_length": 6921,
+          "byte_offset": 29492,
+          "end_line": 1037,
+          "estimated_tokens": 1929,
+          "id": "4",
+          "sha256": "b5cbe6e4d02a74684c8f7e31c9b3d5681082fd6ca5fa01c50bc6f2592d61d6fb",
+          "start_line": 826
+        },
+        {
+          "byte_length": 6886,
+          "byte_offset": 36413,
+          "end_line": 1237,
+          "estimated_tokens": 1871,
+          "id": "5",
+          "sha256": "e441f5506f0386b89319bce0e7485ef85463f793236af514eb51d24b9e81697e",
+          "start_line": 1038
+        },
+        {
+          "byte_length": 7084,
+          "byte_offset": 43299,
+          "end_line": 1418,
+          "estimated_tokens": 1895,
+          "id": "6",
+          "sha256": "9d8c7adb7d1549e4e2549cb27e241bcecd1bc946a2050fb23f122b36969f0430",
+          "start_line": 1238
+        },
+        {
+          "byte_length": 7605,
+          "byte_offset": 50383,
+          "end_line": 1639,
+          "estimated_tokens": 2041,
+          "id": "7",
+          "sha256": "3aaa15ce951621e74cd55970c00d77b515e762964011df2edbd91ba737224ac9",
+          "start_line": 1419
+        },
+        {
+          "byte_length": 5782,
+          "byte_offset": 57988,
+          "end_line": 1785,
+          "estimated_tokens": 1590,
+          "id": "8",
+          "sha256": "bfcd900d03d36e6542f4ce5394bb899f9a8956ad5acaf036658784e396d23457",
+          "start_line": 1640
+        },
+        {
+          "byte_length": 7361,
+          "byte_offset": 63770,
+          "end_line": 1962,
+          "estimated_tokens": 1970,
+          "id": "9",
+          "sha256": "1b11568b38227fd26fd41c8dc3b81ca5667ef5a5c517626d0629624276c03319",
+          "start_line": 1786
+        },
+        {
+          "byte_length": 7604,
+          "byte_offset": 71131,
+          "end_line": 2138,
+          "estimated_tokens": 2033,
+          "id": "10",
+          "sha256": "d4efaf7601e2b6521b5d9d5c544f927b9235edb670ba16b369d67b61397d4c00",
+          "start_line": 1963
+        },
+        {
+          "byte_length": 7373,
+          "byte_offset": 78735,
+          "end_line": 2347,
+          "estimated_tokens": 1998,
+          "id": "11",
+          "sha256": "f25b8606dd4a052600d780d84a71438949d60de0bd7f8ae6b0f3862a0a7b15ad",
+          "start_line": 2139
+        },
+        {
+          "byte_length": 7636,
+          "byte_offset": 86108,
+          "end_line": 2574,
+          "estimated_tokens": 2027,
+          "id": "12",
+          "sha256": "53ce874534bb763d2ce284c07f7d4d4fc4ab1a56b652acfe8b5c9f24edee4e55",
+          "start_line": 2348
+        },
+        {
+          "byte_length": 7316,
+          "byte_offset": 93744,
+          "end_line": 2748,
+          "estimated_tokens": 2047,
+          "id": "13",
+          "sha256": "e7c712395e362a6fc4cb77b2142e986e694e96fc1e98bff88bcffb1c6affb187",
+          "start_line": 2575
+        },
+        {
+          "byte_length": 7185,
+          "byte_offset": 101060,
+          "end_line": 2926,
+          "estimated_tokens": 1939,
+          "id": "14",
+          "sha256": "095c2bd4cb7ca7c7fd899a7f4c088f9120943538ea6066321a58aee2ed12531e",
+          "start_line": 2749
+        },
+        {
+          "byte_length": 3249,
+          "byte_offset": 108245,
+          "end_line": 3032,
+          "estimated_tokens": 924,
+          "id": "15",
+          "sha256": "75dc8a42539465bc0b557d85a8bd22204275faf53487eca612bf7c5a82793a12",
+          "start_line": 2927
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/design_engine.py",
+        "pdf-plugin/skills/pdf/scripts/toc_validate.py"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/pdf.py",
+      "sha256": "16e3b10e0ef2cb49e39c249d23c9b2ad382b12c27a1fde5ae37604d11f302d75"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7526,
+          "byte_offset": 0,
+          "end_line": 219,
+          "estimated_tokens": 2013,
+          "id": "0",
+          "sha256": "2e547df35af9f8c6d96c406403c5d65871350ce4eceeb91c32f1c3e36bee3ebd",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7012,
+          "byte_offset": 7526,
+          "end_line": 425,
+          "estimated_tokens": 1859,
+          "id": "1",
+          "sha256": "9462eadb5e6bb266ade8c81a8e6392fd57518f8f3438e40fba0baa172db52093",
+          "start_line": 220
+        },
+        {
+          "byte_length": 7249,
+          "byte_offset": 14538,
+          "end_line": 627,
+          "estimated_tokens": 1927,
+          "id": "2",
+          "sha256": "168a3e67d6e2d4db52e5fdf5ce37211aff272ac6a777b795c1ce8e294e41b924",
+          "start_line": 426
+        },
+        {
+          "byte_length": 7467,
+          "byte_offset": 21787,
+          "end_line": 851,
+          "estimated_tokens": 2006,
+          "id": "3",
+          "sha256": "7fdcd717fd4d0f3f7a9ae81f0f9e278b937d1f3020ee37368f75c5d06de5063f",
+          "start_line": 628
+        },
+        {
+          "byte_length": 1428,
+          "byte_offset": 29254,
+          "end_line": 899,
+          "estimated_tokens": 407,
+          "id": "4",
+          "sha256": "6290d2ad54f3c668f10688a5fbcef91cd58ccb83fe5a1a1708fc03e045f72c06",
+          "start_line": 852
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/pdf_qa.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/pdf_qa.py",
+      "sha256": "207a4a09eb72f1d3c4a4b3e74f3ca42e0717807048cbe4ff44b4998bdd881a36"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7464,
+          "byte_offset": 0,
+          "end_line": 216,
+          "estimated_tokens": 2038,
+          "id": "0",
+          "sha256": "7345509f03e53760c894be2f9a122b5326d29dc249f413e86adc8a311f61094c",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5846,
+          "byte_offset": 7464,
+          "end_line": 350,
+          "estimated_tokens": 1553,
+          "id": "1",
+          "sha256": "6f0f016ec6bcb3dffb85499043c94bbb8a218aa79a7ee7dc17f5cbab7cef5bb0",
+          "start_line": 217
+        },
+        {
+          "byte_length": 7468,
+          "byte_offset": 13310,
+          "end_line": 506,
+          "estimated_tokens": 1988,
+          "id": "2",
+          "sha256": "24eedc96ecf4051e005f3a25833a8805ab9d2eef365fde830c7133e23cbd5574",
+          "start_line": 351
+        },
+        {
+          "byte_length": 6417,
+          "byte_offset": 20778,
+          "end_line": 642,
+          "estimated_tokens": 1702,
+          "id": "3",
+          "sha256": "28246030a0e1d99d27bdf48cc35a1cc7903ad6658e4e325302a923752262dfce",
+          "start_line": 507
+        },
+        {
+          "byte_length": 3971,
+          "byte_offset": 27195,
+          "end_line": 719,
+          "estimated_tokens": 1061,
+          "id": "4",
+          "sha256": "58b59433f00a0d6e096f7c5b9a12a7e670098da0222068e8a7e0665d2c5d62d9",
+          "start_line": 643
+        },
+        {
+          "byte_length": 7517,
+          "byte_offset": 31166,
+          "end_line": 885,
+          "estimated_tokens": 2002,
+          "id": "5",
+          "sha256": "ef90360e7d1a0d0f277ab2c7fd27eeec2b1b85d0c100dcf0712eb5f7345ddca8",
+          "start_line": 720
+        },
+        {
+          "byte_length": 7422,
+          "byte_offset": 38683,
+          "end_line": 1063,
+          "estimated_tokens": 1995,
+          "id": "6",
+          "sha256": "e34d06ea074b5d0c8881295d1638cf20c0ad55742eed24fae5d4f536c3837426",
+          "start_line": 886
+        },
+        {
+          "byte_length": 6948,
+          "byte_offset": 46105,
+          "end_line": 1202,
+          "estimated_tokens": 1863,
+          "id": "7",
+          "sha256": "5169e941937990ebf3862d39e41da16cb03ab7738042770d33ed28d221ad7154",
+          "start_line": 1064
+        },
+        {
+          "byte_length": 5293,
+          "byte_offset": 53053,
+          "end_line": 1335,
+          "estimated_tokens": 1428,
+          "id": "8",
+          "sha256": "a8e444aed0ed1b1781e3daa7b105f725bab7aa29a8f0d4b0c5decc9999a22a2c",
+          "start_line": 1203
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/poster_validate.py",
+      "sha256": "27a7692635315a531b6ba990a3f8be569d3741e979a0cec3499abf1ed3477c67"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6613,
+          "byte_offset": 0,
+          "end_line": 189,
+          "estimated_tokens": 1804,
+          "id": "0",
+          "sha256": "e5c543ebf8c70fa96baa2d7d933bf334df70af4e98c53232b2ab89107f5569b1",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5062,
+          "byte_offset": 6613,
+          "end_line": 297,
+          "estimated_tokens": 1371,
+          "id": "1",
+          "sha256": "99b62b84655d306fc9b56f02af561c665be1335bfb31ae996f39577432cb646f",
+          "start_line": 190
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/pdf.py"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/setup.sh",
+      "sha256": "fe6acbb0e1a4788b9d57d4daa2f78e4e0cf976e9623cd77af600de0e9d98f754"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7497,
+          "byte_offset": 0,
+          "end_line": 233,
+          "estimated_tokens": 2003,
+          "id": "0",
+          "sha256": "a7991098c0eba7fa44683626c2a3ef73b9a2d0c056b501931726412eaf5b55c9",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7663,
+          "byte_offset": 7497,
+          "end_line": 457,
+          "estimated_tokens": 2018,
+          "id": "1",
+          "sha256": "1d36e2f625e9126564dfab4128cb5406b2822de1379aa1254b696bcf21b2fe55",
+          "start_line": 234
+        },
+        {
+          "byte_length": 7431,
+          "byte_offset": 15160,
+          "end_line": 652,
+          "estimated_tokens": 1955,
+          "id": "2",
+          "sha256": "8f40b075282cae5bdf7d7e335830f12cbb0f943739e5afd520a7a92826fc7559",
+          "start_line": 458
+        },
+        {
+          "byte_length": 7692,
+          "byte_offset": 22591,
+          "end_line": 857,
+          "estimated_tokens": 2029,
+          "id": "3",
+          "sha256": "8c7daed4ccb6d5cbf61365696d5742fc17ca2c3d4f2b54fa56d8446fc16b6ecf",
+          "start_line": 653
+        },
+        {
+          "byte_length": 7331,
+          "byte_offset": 30283,
+          "end_line": 1051,
+          "estimated_tokens": 1934,
+          "id": "4",
+          "sha256": "4a9ad06588522a2f36ce6dddabb6587718e7fc564d0ed44f1b561963ae704bd7",
+          "start_line": 858
+        },
+        {
+          "byte_length": 7260,
+          "byte_offset": 37614,
+          "end_line": 1235,
+          "estimated_tokens": 1936,
+          "id": "5",
+          "sha256": "effb4a4e263922c8ccb7888da7284b85c63069fb3043d5973fa6b5ae622f772e",
+          "start_line": 1052
+        },
+        {
+          "byte_length": 7643,
+          "byte_offset": 44874,
+          "end_line": 1413,
+          "estimated_tokens": 2012,
+          "id": "6",
+          "sha256": "53426c05fcbea4a7421541b67229a66eaf03740dc16354f07f811438433fd249",
+          "start_line": 1236
+        },
+        {
+          "byte_length": 7476,
+          "byte_offset": 52517,
+          "end_line": 1635,
+          "estimated_tokens": 1963,
+          "id": "7",
+          "sha256": "45fed02beebf7d3e82306ce574916c77c75f611d20749abfca3828ef98a9bc98",
+          "start_line": 1414
+        },
+        {
+          "byte_length": 7698,
+          "byte_offset": 59993,
+          "end_line": 1822,
+          "estimated_tokens": 2033,
+          "id": "8",
+          "sha256": "bfda76b83c23457a2ce76ae4d7fb151f6939031e40c2cf17ba09310122611171",
+          "start_line": 1636
+        },
+        {
+          "byte_length": 7606,
+          "byte_offset": 67691,
+          "end_line": 1998,
+          "estimated_tokens": 1994,
+          "id": "9",
+          "sha256": "007a07892ac0b704973b4ebd8283aebdc6e03fffac8b2e4ccd9dfb5c005b2df7",
+          "start_line": 1823
+        },
+        {
+          "byte_length": 2768,
+          "byte_offset": 75297,
+          "end_line": 2069,
+          "estimated_tokens": 751,
+          "id": "10",
+          "sha256": "cb6303f0ec1a50672305723c09af315c325b88a70cd3393756781fd0ab18ab7d",
+          "start_line": 1999
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/toc_validate.py",
+      "sha256": "ededf2cd01ced419a8c1929e39a9eaf880b205bbdaa17c6efed7dbfcd9c19bb2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7738,
+          "byte_offset": 0,
+          "end_line": 194,
+          "estimated_tokens": 2031,
+          "id": "0",
+          "sha256": "e59b02466d272c52fe96a56b6b26a603d380a1ede15e9d8f5a0146f1e829e135",
+          "start_line": 1
+        },
+        {
+          "byte_length": 4406,
+          "byte_offset": 7738,
+          "end_line": 320,
+          "estimated_tokens": 1170,
+          "id": "1",
+          "sha256": "08382fc1a258610ef6c6be996929e46b4ed2a2b9b1b654fd7eff10131c2581de",
+          "start_line": 195
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/charts.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "typesetting/charts.md",
+      "sha256": "b100fa44d94ad3d9e1244e5de8bf92ac429ef0f07859157ee3191161f772bd64"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7091,
+          "byte_offset": 0,
+          "end_line": 162,
+          "estimated_tokens": 1861,
+          "id": "0",
+          "sha256": "861d37d58a44ffd0ce46b54f501355020e10d1c3d0fc576586d55f6e121b9d4e",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7334,
+          "byte_offset": 7091,
+          "end_line": 349,
+          "estimated_tokens": 1930,
+          "id": "1",
+          "sha256": "0d074c6aa30a4c24690abb957b81983096e23f4079bb7b3b45f35d369817086f",
+          "start_line": 163
+        },
+        {
+          "byte_length": 1797,
+          "byte_offset": 14425,
+          "end_line": 384,
+          "estimated_tokens": 491,
+          "id": "2",
+          "sha256": "05c0e9d7c793c4a006459c12f18f760691d298b782d21ba1d677b0388de100ff",
+          "start_line": 350
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/geometry.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/cover-backgrounds.md",
+      "sha256": "344dc880dd50aac4ae250f4f5f396c3435672fbd7ce58079fb6f95b1c3e7af33"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7562,
+          "byte_offset": 0,
+          "end_line": 128,
+          "estimated_tokens": 1977,
+          "id": "0",
+          "sha256": "ac43b7f8d476d128783818dea269f4f776d905ec8dd26ec6cc010792a8935c6f",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6657,
+          "byte_offset": 7562,
+          "end_line": 236,
+          "estimated_tokens": 1744,
+          "id": "1",
+          "sha256": "28eed8e12b2855b3cd89ca771a90d92e5c826c11fea675508923c40219c976a9",
+          "start_line": 129
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/cover.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "typesetting/cover.md",
+      "sha256": "4b0ee306d7cb741b0ac36a1d9a56c69352b9582ed5189802697407a89d335100"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7580,
+          "byte_offset": 0,
+          "end_line": 217,
+          "estimated_tokens": 2010,
+          "id": "0",
+          "sha256": "db3156dd8467ec5743016930fc13ed27572c5a10c5d0ea59b2704f60f7ff367c",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6056,
+          "byte_offset": 7580,
+          "end_line": 384,
+          "estimated_tokens": 1638,
+          "id": "1",
+          "sha256": "8986ae85e79ea0f23f756cb6c2107a7da14e6d51eb16e9e2ba1734b832acc842",
+          "start_line": 218
+        },
+        {
+          "byte_length": 6479,
+          "byte_offset": 13636,
+          "end_line": 527,
+          "estimated_tokens": 1844,
+          "id": "2",
+          "sha256": "c4238c3647f54c39987c76bcdc05a26856c032e4d17e891a09a0b307056aa1b6",
+          "start_line": 385
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md",
+        "pdf-plugin/skills/pdf/typesetting/typography.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/fill-engine.md",
+      "sha256": "e3078ebe11fe0d853e26d356c5c8ea93acc84786a07c67aa721bff0fb5ecc794"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5655,
+          "byte_offset": 0,
+          "end_line": 142,
+          "estimated_tokens": 1563,
+          "id": "0",
+          "sha256": "5159bb842397dbc88a55eb687276e424b7858c065b5672ca9ffc47a4f8262a8d",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/geometry.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/geometry.md",
+      "sha256": "5159bb842397dbc88a55eb687276e424b7858c065b5672ca9ffc47a4f8262a8d"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7702,
+          "byte_offset": 0,
+          "end_line": 222,
+          "estimated_tokens": 2031,
+          "id": "0",
+          "sha256": "6f2f840ff49c2692be49ae25ada9a6969dd067c32a0e9edd5a3e10b7572182dd",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7619,
+          "byte_offset": 7702,
+          "end_line": 442,
+          "estimated_tokens": 2028,
+          "id": "1",
+          "sha256": "de767380b83d19f993c5e43b9f37395b6d9171ce593bd4009d5634cdb62a1a9a",
+          "start_line": 223
+        },
+        {
+          "byte_length": 6894,
+          "byte_offset": 15321,
+          "end_line": 630,
+          "estimated_tokens": 1841,
+          "id": "2",
+          "sha256": "c908349d409b94747af921c7053fab1c7d4a8c5b600131c9f3072ba1f624fd2e",
+          "start_line": 443
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/overflow.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/overflow.md",
+      "sha256": "144efd3c9ea99dbe64eed8a84b223d58f429c69f9f3c235b2ae881eca4fe6024"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7650,
+          "byte_offset": 0,
+          "end_line": 221,
+          "estimated_tokens": 2017,
+          "id": "0",
+          "sha256": "e4ca173dc3365260adfbd0956786cf92fbd387fe21f95b8b5d5e4fe955900b89",
+          "start_line": 1
+        },
+        {
+          "byte_length": 5650,
+          "byte_offset": 7650,
+          "end_line": 367,
+          "estimated_tokens": 1495,
+          "id": "1",
+          "sha256": "fc75310a3a35086d1bca65ecfdc4ee547ce87c304a286a58245ac033ac7da883",
+          "start_line": 222
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/pagination.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/pagination.md",
+      "sha256": "f9f4b2116d2348221920d58526899bb80a75d0d5ff407ab75d3516289a7be120"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7344,
+          "byte_offset": 0,
+          "end_line": 219,
+          "estimated_tokens": 1952,
+          "id": "0",
+          "sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/palette.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "typesetting/palette.md",
+      "sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 297,
+          "byte_offset": 0,
+          "end_line": 20,
+          "estimated_tokens": 112,
+          "id": "0",
+          "sha256": "03f6101f53128b13a19acac521ffe6cb00a3cd6f2becee85b75dedb863ab5519",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/pagination.md"
+      ],
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/typography.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/typography.md",
+      "sha256": "03f6101f53128b13a19acac521ffe6cb00a3cd6f2becee85b75dedb863ab5519"
+    }
+  ],
+  "package_id": "platform.pdf",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

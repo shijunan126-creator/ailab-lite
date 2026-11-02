@@ -1,0 +1,897 @@
+{
+  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "chunk_token_cap": 2048,
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "chunks": [
+        {
+          "byte_length": 5590,
+          "byte_offset": 0,
+          "end_line": 49,
+          "estimated_tokens": 1457,
+          "id": "0",
+          "sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4222,
+          "byte_offset": 0,
+          "end_line": 46,
+          "estimated_tokens": 1103,
+          "id": "0",
+          "sha256": "97a58cfa64606f97475408f463b1c766ed63f938a4279d9296cb6fd8b1e42dbd",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "97a58cfa64606f97475408f463b1c766ed63f938a4279d9296cb6fd8b1e42dbd"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7356,
+          "byte_offset": 0,
+          "end_line": 146,
+          "estimated_tokens": 2024,
+          "id": "0",
+          "sha256": "6976c4fcf5255d39b1b2cea0d230da5d0c67d0caf2b45e3a5a3c1ff69fa7a707",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7627,
+          "byte_offset": 7356,
+          "end_line": 295,
+          "estimated_tokens": 1992,
+          "id": "1",
+          "sha256": "afaea5c8cf921c62f42623e62ff919bde71f9bdfb88b421a4328bf42470066b7",
+          "start_line": 147
+        },
+        {
+          "byte_length": 1027,
+          "byte_offset": 14983,
+          "end_line": 312,
+          "estimated_tokens": 301,
+          "id": "2",
+          "sha256": "d64861a3902c7d095415cef1ac0d3c213b02a552ee42e3b4fd4fa7b4832a101a",
+          "start_line": 296
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart.md",
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md",
+        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+        "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/advanced.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/convert.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/create.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance_lite.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "8591f5a64d2abc00d9763226ed56161b86c91b425172b77a43aed57415825252"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4786,
+          "byte_offset": 0,
+          "end_line": 164,
+          "estimated_tokens": 1282,
+          "id": "0",
+          "sha256": "8db3418424205eb5fec7d0826a18ceac6354c6765f3011000f5b5f74348bd538",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/chart-templates.md",
+      "sha256": "8db3418424205eb5fec7d0826a18ceac6354c6765f3011000f5b5f74348bd538"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3273,
+          "byte_offset": 0,
+          "end_line": 87,
+          "estimated_tokens": 884,
+          "id": "0",
+          "sha256": "e213750aa568e3fb52dc220c25d347e280b9ca5ab8071f957aeba5e74b96ad0e",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/chart.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/chart.md",
+      "sha256": "e213750aa568e3fb52dc220c25d347e280b9ca5ab8071f957aeba5e74b96ad0e"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6763,
+          "byte_offset": 0,
+          "end_line": 147,
+          "estimated_tokens": 1799,
+          "id": "0",
+          "sha256": "b070416feee8dd70cd1b2ee4e7ae2f42b163b47c6747e2d2bdaa162d225b6566",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7535,
+          "byte_offset": 6763,
+          "end_line": 347,
+          "estimated_tokens": 1990,
+          "id": "1",
+          "sha256": "4dde71b00b31493efb88d5d2d02971f1ef19efb38b4ad5adce9edbd10f3676d8",
+          "start_line": 148
+        },
+        {
+          "byte_length": 7659,
+          "byte_offset": 14298,
+          "end_line": 589,
+          "estimated_tokens": 2020,
+          "id": "2",
+          "sha256": "778963289041383f0772f16401dea603b363c081b48c1fd07a8a78e74c51be84",
+          "start_line": 348
+        },
+        {
+          "byte_length": 769,
+          "byte_offset": 21957,
+          "end_line": 602,
+          "estimated_tokens": 229,
+          "id": "3",
+          "sha256": "12d553028f66ac4487bfda518b9077061c8763eaf2c1eeea8791ed12810f178f",
+          "start_line": 590
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/templates/palettes.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/design.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/design.md",
+      "sha256": "f060c1c5dd20ab1e7001af58488d685b95443d6b7c2f602c81af709b43a770a2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5208,
+          "byte_offset": 0,
+          "end_line": 179,
+          "estimated_tokens": 1400,
+          "id": "0",
+          "sha256": "b596753cda20725dc6cbf5b73f66e6276f76e67c85dc17a35bc148dbf9214adc",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6963,
+          "byte_offset": 5208,
+          "end_line": 396,
+          "estimated_tokens": 1844,
+          "id": "1",
+          "sha256": "5888fcdac3977b4ddd7503139c0bd3e51c60bbda92ec9471265e045cb002172e",
+          "start_line": 180
+        },
+        {
+          "byte_length": 1219,
+          "byte_offset": 12171,
+          "end_line": 435,
+          "estimated_tokens": 351,
+          "id": "2",
+          "sha256": "108c3141b044dbf852c154b775640acea6ab9ae2a54e3b1aa6adc455949227b8",
+          "start_line": 397
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/vba-templates.md",
+      "sha256": "d6cbf6c9f9657ef8cc4f503c7520678f6bccc862f3b9a3912b47e73db1803fba"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 2649,
+          "byte_offset": 0,
+          "end_line": 41,
+          "estimated_tokens": 725,
+          "id": "0",
+          "sha256": "903a785d085dca4277e7d6121af174eb4d5c9223319d11f4e461e424c9251c0b",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "903a785d085dca4277e7d6121af174eb4d5c9223319d11f4e461e424c9251c0b"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4682,
+          "byte_offset": 0,
+          "end_line": 80,
+          "estimated_tokens": 1223,
+          "id": "0",
+          "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7443,
+          "byte_offset": 0,
+          "end_line": 195,
+          "estimated_tokens": 1954,
+          "id": "0",
+          "sha256": "d4d519e5b1f99c8787d7e234395fee27f4708ff8745079f3716775841b75dc54",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2880,
+          "byte_offset": 7443,
+          "end_line": 257,
+          "estimated_tokens": 785,
+          "id": "1",
+          "sha256": "304d6d7838bc6b52c495044af18fa546dc28e9bc2d7e009e8b0599e8c8c0f91e",
+          "start_line": 196
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "e3ffb5fd786ec1a4546523b11547883d989b04e5f225e72bf2e020d13dbae5b3"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7529,
+          "byte_offset": 0,
+          "end_line": 211,
+          "estimated_tokens": 2041,
+          "id": "0",
+          "sha256": "10123b78080310d5eb117c43402d0ab43e06605bc1bebceb8244853a4b8e6514",
+          "start_line": 1
+        },
+        {
+          "byte_length": 875,
+          "byte_offset": 7529,
+          "end_line": 242,
+          "estimated_tokens": 269,
+          "id": "1",
+          "sha256": "c8476cbdeceb88f7cd1b0a82b0343e7b7404fa6720b3d59d97bc0a1348d6b06a",
+          "start_line": 212
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "1236c2eda4e3700c9c0b98f924eac27330ce3ff08f116fc87bbf4ac3abba82bb"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7595,
+          "byte_offset": 0,
+          "end_line": 190,
+          "estimated_tokens": 2037,
+          "id": "0",
+          "sha256": "989b19145586a9867e72075de185c0e564160bc68eb35777e25401f59c2f15bc",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2552,
+          "byte_offset": 7595,
+          "end_line": 258,
+          "estimated_tokens": 702,
+          "id": "1",
+          "sha256": "35cc55676c22a046175b06f66441ff55d3131407c4ecbf7ced34693866a07e82",
+          "start_line": 191
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "2f04a4c7cf4f5063e6d0696cf5f9693c57a1b3f9932a55faab6b4490800108b6"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6008,
+          "byte_offset": 0,
+          "end_line": 134,
+          "estimated_tokens": 1615,
+          "id": "0",
+          "sha256": "9bb9f48aa5e24a95ba3675d9681ad284d782d50e943f740c18c2a0e0e835db43",
+          "start_line": 1
+        },
+        {
+          "byte_length": 3936,
+          "byte_offset": 6008,
+          "end_line": 202,
+          "estimated_tokens": 1049,
+          "id": "1",
+          "sha256": "6480a8381bf6e2a56e9b94e1e43ae8c261651fce5e5ab1c059fdc52509babb40",
+          "start_line": 135
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/SKILL.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "quality/pipeline.md",
+      "sha256": "2742a5bc43007d89348aedaac3563a1bd389934bff80235dfd9303fd0eabbd52"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6762,
+          "byte_offset": 0,
+          "end_line": 271,
+          "estimated_tokens": 1806,
+          "id": "0",
+          "sha256": "567e113d678e4dec1794d85dd643f6180b3ad49f170790976c5629747937919c",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/advanced.md",
+      "sha256": "567e113d678e4dec1794d85dd643f6180b3ad49f170790976c5629747937919c"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6838,
+          "byte_offset": 0,
+          "end_line": 236,
+          "estimated_tokens": 1829,
+          "id": "0",
+          "sha256": "df2f6aab2f38107addb4ae36100437422eb607ba0a263e8665651a3f2555b9f2",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "scenes/analyze-recipes.md",
+      "sha256": "df2f6aab2f38107addb4ae36100437422eb607ba0a263e8665651a3f2555b9f2"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4017,
+          "byte_offset": 0,
+          "end_line": 97,
+          "estimated_tokens": 1077,
+          "id": "0",
+          "sha256": "60d543f9f061b7c405a12f088462328a960c946a7ae91c40718849e789b53996",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "scenes/analyze.md",
+      "sha256": "60d543f9f061b7c405a12f088462328a960c946a7ae91c40718849e789b53996"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3934,
+          "byte_offset": 0,
+          "end_line": 133,
+          "estimated_tokens": 1056,
+          "id": "0",
+          "sha256": "74103abb3fd192de1442e62dd87d5c34d4e52e0877688104e0c507eeaf18081c",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/convert.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/convert.md",
+      "sha256": "74103abb3fd192de1442e62dd87d5c34d4e52e0877688104e0c507eeaf18081c"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 3060,
+          "byte_offset": 0,
+          "end_line": 105,
+          "estimated_tokens": 830,
+          "id": "0",
+          "sha256": "2609cdecbeeca271836a040fde1903ceb34ced7f5485b1a7a7ed27629535dc68",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/create.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/create.md",
+      "sha256": "2609cdecbeeca271836a040fde1903ceb34ced7f5485b1a7a7ed27629535dc68"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7234,
+          "byte_offset": 0,
+          "end_line": 221,
+          "estimated_tokens": 1910,
+          "id": "0",
+          "sha256": "7da8e329c76a81eabc6f8086a92fa984811445a2e871a6dfafcfff25e0bbab26",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/edit-patterns.md",
+      "sha256": "7da8e329c76a81eabc6f8086a92fa984811445a2e871a6dfafcfff25e0bbab26"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7303,
+          "byte_offset": 0,
+          "end_line": 198,
+          "estimated_tokens": 1923,
+          "id": "0",
+          "sha256": "2ac13b6774523ba25305c6e37ec78499b1a0dbe41a8d49242ef0f43202404922",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "scenes/edit.md",
+      "sha256": "2ac13b6774523ba25305c6e37ec78499b1a0dbe41a8d49242ef0f43202404922"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7204,
+          "byte_offset": 0,
+          "end_line": 240,
+          "estimated_tokens": 1917,
+          "id": "0",
+          "sha256": "a05f631d13b76bf8cd00dccb4c03d1fa2bf87a5190da6ffe01271faa1ad2ab13",
+          "start_line": 1
+        },
+        {
+          "byte_length": 2465,
+          "byte_offset": 7204,
+          "end_line": 318,
+          "estimated_tokens": 674,
+          "id": "1",
+          "sha256": "a9cc70fc98f2af438a4e8cd0ae1ef15032ec56b07db1257e1e1b54c43ef8efa6",
+          "start_line": 241
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/finance.md",
+      "sha256": "22502aff110524eb5e16ff86aa9895628abf92f5b48a96b94b6c4e97af08fb02"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 5252,
+          "byte_offset": 0,
+          "end_line": 192,
+          "estimated_tokens": 1460,
+          "id": "0",
+          "sha256": "4b34bbcde90e49ca06254cd78450e2f0475ed820354ddaec63ecf8ee33030f14",
+          "start_line": 1
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/finance_lite.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/finance_lite.md",
+      "sha256": "4b34bbcde90e49ca06254cd78450e2f0475ed820354ddaec63ecf8ee33030f14"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7607,
+          "byte_offset": 0,
+          "end_line": 287,
+          "estimated_tokens": 2018,
+          "id": "0",
+          "sha256": "d314a4bb4aa7745fc049fb218f193ba52dfaf4f4c1bfaf1be3f6b0a1ed3b4ae7",
+          "start_line": 1
+        },
+        {
+          "byte_length": 323,
+          "byte_offset": 7607,
+          "end_line": 298,
+          "estimated_tokens": 119,
+          "id": "1",
+          "sha256": "9dc6db2581cfc50b6df87a95da2d31f2215e7acc20efbdf970ce65ad690673b9",
+          "start_line": 288
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/vba.md",
+      "sha256": "949fde2bb874fbdc6251c98358885df3cd1301035992ccf5932d167a0de245ef"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 6286,
+          "byte_offset": 0,
+          "end_line": 161,
+          "estimated_tokens": 1704,
+          "id": "0",
+          "sha256": "ab22cd1fa8f179d829ce3c51344f3029140cf80b8813c4975ecdb4dbc99327af",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "setup.sh",
+      "sha256": "ab22cd1fa8f179d829ce3c51344f3029140cf80b8813c4975ecdb4dbc99327af"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7525,
+          "byte_offset": 0,
+          "end_line": 220,
+          "estimated_tokens": 2033,
+          "id": "0",
+          "sha256": "2e631ef85f0404abbbbc11fb567b22bc51699a52603ed3924d26b702dd75c3b0",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7519,
+          "byte_offset": 7525,
+          "end_line": 429,
+          "estimated_tokens": 2010,
+          "id": "1",
+          "sha256": "143127a88e575641aee483d8948bb7bee3e48d55805922e08a57d5703318ce29",
+          "start_line": 221
+        },
+        {
+          "byte_length": 7425,
+          "byte_offset": 15044,
+          "end_line": 641,
+          "estimated_tokens": 1969,
+          "id": "2",
+          "sha256": "273574189d02a1bdb5ea3d24d3f5c28cf900f254a1c5ff53bb50fe49a4d23e8c",
+          "start_line": 430
+        },
+        {
+          "byte_length": 4382,
+          "byte_offset": 22469,
+          "end_line": 750,
+          "estimated_tokens": 1160,
+          "id": "3",
+          "sha256": "9d0d169b963e148e4e4b66cd656a111967aa31366ce240a7036fc3451c2e9316",
+          "start_line": 642
+        }
+      ],
+      "deps": [],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/templates/base.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "templates/base.py",
+      "sha256": "91383a2079f173ec0100b14d80804185d175932f6686d3f0811c1af7492b3170"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7377,
+          "byte_offset": 0,
+          "end_line": 265,
+          "estimated_tokens": 2037,
+          "id": "0",
+          "sha256": "5d670679afc82983d0f06f1aa104bbbf2a0d661d2ca7774110cf3a46fed20700",
+          "start_line": 1
+        },
+        {
+          "byte_length": 6888,
+          "byte_offset": 7377,
+          "end_line": 449,
+          "estimated_tokens": 2039,
+          "id": "1",
+          "sha256": "249ed53b86e27a78d7800162707919b55bc10356261f29d2a70e32d066177bff",
+          "start_line": 266
+        },
+        {
+          "byte_length": 2344,
+          "byte_offset": 14265,
+          "end_line": 521,
+          "estimated_tokens": 667,
+          "id": "2",
+          "sha256": "b4da708683f3fc94f9145eb977f0bbf0b9cc7f6cbe5971e2845b3db8c3ff7776",
+          "start_line": 450
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/templates/palettes.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "templates/palettes.py",
+      "sha256": "88323f71eaf603ecaa37bf39f31f6e30645ebb1b5bc392ae8f31b21f4ee5d9a9"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7304,
+          "byte_offset": 0,
+          "end_line": 198,
+          "estimated_tokens": 2014,
+          "id": "0",
+          "sha256": "ffd251842aa09bcaa38c5d8693a6bf567dd07259bc06eaad26c238d0ba48b4f0",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7247,
+          "byte_offset": 7304,
+          "end_line": 389,
+          "estimated_tokens": 1963,
+          "id": "1",
+          "sha256": "b541dfa8e304071a41b5b125f93d03b6016073d516461234e1d2772027a36dad",
+          "start_line": 199
+        },
+        {
+          "byte_length": 7454,
+          "byte_offset": 14551,
+          "end_line": 556,
+          "estimated_tokens": 2000,
+          "id": "2",
+          "sha256": "3f776159cb6b905d01e01dbbcb375bed8cb3ae62691f59d3aa04ab21b3c273cb",
+          "start_line": 390
+        },
+        {
+          "byte_length": 7158,
+          "byte_offset": 22005,
+          "end_line": 739,
+          "estimated_tokens": 1978,
+          "id": "3",
+          "sha256": "596475f0ec6b5393bf1dd27ece81c1b4a81b7b74b6ddeb7ba241b64a34c72e96",
+          "start_line": 557
+        },
+        {
+          "byte_length": 7566,
+          "byte_offset": 29163,
+          "end_line": 922,
+          "estimated_tokens": 1996,
+          "id": "4",
+          "sha256": "9b1bb8bef137c1d19b16eb1421756ac50edf5f5cb285b33a5b2ee19f290a1fb5",
+          "start_line": 740
+        },
+        {
+          "byte_length": 7518,
+          "byte_offset": 36729,
+          "end_line": 1114,
+          "estimated_tokens": 2016,
+          "id": "5",
+          "sha256": "9749b10d0068e2d10eaff880c9d653d60b6babdabedcf8ec155a7970b1d1cf1a",
+          "start_line": 923
+        },
+        {
+          "byte_length": 7460,
+          "byte_offset": 44247,
+          "end_line": 1283,
+          "estimated_tokens": 2043,
+          "id": "6",
+          "sha256": "7813b482e11a25d70899e9e95eed6fea9159061eb148c4600d36aff62c2ae2dd",
+          "start_line": 1115
+        },
+        {
+          "byte_length": 436,
+          "byte_offset": 51707,
+          "end_line": 1302,
+          "estimated_tokens": 149,
+          "id": "7",
+          "sha256": "d8be4450ebeae0e504d039733188d1895bac66c332393db70a4da6e9295d28e3",
+          "start_line": 1284
+        }
+      ],
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "logical_path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "xlsx.py",
+      "sha256": "2a9e23d2ba52df391850661943ba88b8f56a842f4e2e504df07bdcf21267161d"
+    }
+  ],
+  "package_id": "platform.xlsx",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

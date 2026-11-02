@@ -1,6 +1,6 @@
 name = "platform.docx"
-version = "1.1.0"
+version = "1.2.0"
 description = "Word 文件读取、定位与处理"
-license = "NOASSERTION"
+license = "Apache-2.0 AND MIT"
 requires = ["python-docx", "libreoffice"]
 roles = []

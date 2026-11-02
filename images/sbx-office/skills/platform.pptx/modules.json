@@ -1,0 +1,136 @@
+{
+  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "chunk_token_cap": 2048,
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "chunks": [
+        {
+          "byte_length": 5590,
+          "byte_offset": 0,
+          "end_line": 49,
+          "estimated_tokens": 1457,
+          "id": "0",
+          "sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "presentations-plugin/agents/visual-judge.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 4090,
+          "byte_offset": 0,
+          "end_line": 43,
+          "estimated_tokens": 1068,
+          "id": "0",
+          "sha256": "7dd128d12127a441daa7ec819430a21e3ce48b2076cff70d483109a6581eb597",
+          "start_line": 1
+        }
+      ],
+      "deps": [],
+      "logical_path": "presentations-plugin/skills/pptx-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "7dd128d12127a441daa7ec819430a21e3ce48b2076cff70d483109a6581eb597"
+    },
+    {
+      "chunks": [
+        {
+          "byte_length": 7471,
+          "byte_offset": 0,
+          "end_line": 84,
+          "estimated_tokens": 1945,
+          "id": "0",
+          "sha256": "93c0a9300c40fbcc330be850eded4c214f29d0e19cacc4589b024d23dcacffd9",
+          "start_line": 1
+        },
+        {
+          "byte_length": 7845,
+          "byte_offset": 7471,
+          "end_line": 150,
+          "estimated_tokens": 2040,
+          "id": "1",
+          "sha256": "30ebdcb9eedbd3b49117add18ba80dce1b883111679d020f196adfbb1572ff26",
+          "start_line": 85
+        },
+        {
+          "byte_length": 7030,
+          "byte_offset": 15316,
+          "end_line": 283,
+          "estimated_tokens": 1856,
+          "id": "2",
+          "sha256": "dfad75c344e99dfd50a422b8e169d64bfc4fb172132475a1016d80913ae8d720",
+          "start_line": 151
+        },
+        {
+          "byte_length": 7578,
+          "byte_offset": 22346,
+          "end_line": 465,
+          "estimated_tokens": 2014,
+          "id": "3",
+          "sha256": "11780da213f73cb8daeb1b338782384a74884c7dd1dc5cdce3cf894aab889c92",
+          "start_line": 284
+        },
+        {
+          "byte_length": 7611,
+          "byte_offset": 29924,
+          "end_line": 525,
+          "estimated_tokens": 1976,
+          "id": "4",
+          "sha256": "b46cd1c2a63c9fc50a6e5b927cbad541ba9a64ff4d76ac2e89da516bbe3283e4",
+          "start_line": 466
+        },
+        {
+          "byte_length": 7742,
+          "byte_offset": 37535,
+          "end_line": 639,
+          "estimated_tokens": 2018,
+          "id": "5",
+          "sha256": "8292b505c14fb0991f34f8abbab54fc79f5e4d74d03750f6a6c5c43161f909a2",
+          "start_line": 526
+        },
+        {
+          "byte_length": 5444,
+          "byte_offset": 45277,
+          "end_line": 724,
+          "estimated_tokens": 1429,
+          "id": "6",
+          "sha256": "60bebd86bd5d511b0bd5bfd586efe8c969ab00f52e38a8b2795f1a12d3e0867c",
+          "start_line": 640
+        }
+      ],
+      "deps": [],
+      "logical_path": "presentations-plugin/skills/pptx/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "05fd1cb4f47e32d794c4a13071e3a3604135a904ac2622c9b475dd41360c4c13"
+    }
+  ],
+  "package_id": "platform.pptx",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}
