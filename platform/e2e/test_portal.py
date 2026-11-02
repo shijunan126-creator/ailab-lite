@@ -216,7 +216,7 @@ def test_the_workbench_offers_the_platforms_models_and_the_quota(logged_in) -> N
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     options = page.get_by_role("listbox", name="模型", exact=True).get_by_role("option")
-    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast"]
+    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast", "Office Vision"]
     assert options.nth(0).get_attribute("aria-selected") == "true"
     assert options.nth(1).get_attribute("aria-selected") == "false"
     menu.click()

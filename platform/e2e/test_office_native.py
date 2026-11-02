@@ -120,22 +120,28 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
 def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     page = logged_in
     results = []
+    view_updates = []
+    page.on(
+        "response",
+        lambda response: (
+            view_updates.append(response) if response.request.method == "PUT" and response.url.endswith("/view") and response.ok else None
+        ),
+    )
     page.on(
         "response",
         lambda response: results.append(response) if "/client-calls/" in response.url and response.url.endswith("/result") else None,
     )
     page.get_by_role("radio", name="工作", exact=True).click()
-    conversation = _start_conversation(page, "原生工作区验收", "test-office-vision")
+    _start_conversation(page, "原生工作区验收", "test-office-vision")
     try:
         frame = _frame(page, "draft.docx")
         expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=25000)
         expect(frame.locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
         end = time.monotonic() + 15
-        while not page.request.get(f"{stack.portal}/api/v1/conversations/{conversation}").json().get("previews"):
+        while not view_updates:
             assert time.monotonic() < end
             page.wait_for_timeout(150)
         expect(_frame(page, "draft.docx").locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
-        page.wait_for_timeout(900)  # The viewer state uses a 600 ms debounce.
     finally:
         httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
     _wait_for_turns(page, 1)

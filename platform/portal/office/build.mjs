@@ -21,6 +21,12 @@ const cjkFontRoot = dirname(require.resolve("@fontsource/noto-sans-sc/package.js
 /** Text edits to upstream files: [file suffix, needle, replacement, reason]. A missing needle fails the build. */
 export const PATCHES = [
   [
+    "ui/main.tsx",
+    'if (path) void load(path);\n      else for (const result of buffered)',
+    'const reveal = buffered.findLast((result) => !result.isError && (result.structuredContent as ViewerSnapshot | undefined)?.reveal && (!path || (result.structuredContent as ViewerSnapshot).document?.path === path));\n      if (reveal) applySnapshot(reveal.structuredContent as ViewerSnapshot);\n      else if (path) void load(path);\n      else for (const result of buffered)',
+    "An authorized live reveal must survive startup; restoring the same document path must not discard its buffered targets.",
+  ],
+  [
     "ui/viewers/XlsxView.tsx",
     'formula && single ? `${displayValue} (=${formula.replace(/^=/, "")})` : displayValue,',
     'formula ? `=${formula.replace(/^=/, "")}` : displayValue,',
