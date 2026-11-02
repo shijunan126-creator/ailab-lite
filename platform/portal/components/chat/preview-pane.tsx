@@ -41,8 +41,9 @@ function officeDocOf(preview: PanePreview, delivered: Record<string, string>): O
   if (preview.libraryFileId) return { path: officePath("库", preview.filename), filename: preview.filename, kind, source: { fileId: preview.libraryFileId } };
   const fileId = delivered[preview.filename];
   if (fileId) return { path: officePath("库", preview.filename), filename: preview.filename, kind, source: { fileId } };
-  if (!preview.run_id) return null;
-  return { path: officePath("工作区", preview.filename), filename: preview.filename, kind, source: { runId: preview.run_id, path: preview.filename } };
+  if (!preview.run_id || !preview.path) return null;
+  const path = preview.path.replace(/^\/workspace\//, "");
+  return { path: officePath("工作区", path), filename: preview.filename, kind, source: { runId: preview.run_id, path } };
 }
 
 function NativePane({ doc, office, reveal, fallback }: { doc: OfficeDoc; office: PaneOffice; reveal?: OfficeReveal; fallback: React.ReactNode }) {

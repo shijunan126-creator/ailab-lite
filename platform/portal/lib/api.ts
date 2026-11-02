@@ -62,6 +62,7 @@ export type Run = {
 /** A rendered preview of an office file a run produced (see the Broker's refresh_previews). */
 export type Preview = {
   filename: string;
+  path?: string; // authorized workspace source, distinct from the display filename
   version: number;
   run_id?: string;
   kind?: "pages" | "sheets" | "html" | "pdf";

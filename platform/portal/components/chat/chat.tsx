@@ -807,8 +807,18 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       setReveals((prev) => ({ ...prev, [`file:${payload.file_id}`]: reveal }));
       showLibraryFile({ file_id: payload.file_id, filename });
     } else if (typeof payload?.path === "string") {
-      setReveals((prev) => ({ ...prev, [payload.path]: reveal }));
-      if (previews.some((p) => !p.libraryFileId && p.filename === payload.path && p.run_id === runId)) showFile(payload.path);
+      const filename = String(payload.filename || payload.path.split("/").pop());
+      setReveals((prev) => ({ ...prev, [filename]: reveal }));
+      // Reveal is authorized independently of the slower paged-preview job. Keep its source path
+      // so a newly created file opens natively as soon as the command arrives.
+      setLivePreviews((previous) => {
+        if (previous.some((p) => p.run_id === runId && p.filename === filename && p.path)) return previous;
+        return [...previous.filter((p) => p.filename !== filename), {
+          filename, path: payload.path, run_id: runId, version: 0,
+          kind: /\.xlsx$/i.test(filename) ? "sheets" : "pages",
+        }];
+      });
+      showFile(filename);
     }
   };
   const quotes = quotesKey(id, projectId);
