@@ -1,3 +1,10 @@
+# 办公套件：PR 与合并（2026-11-03）
+
+- 分支 `feat/office-suite`，base `origin/main`（已 fetch，无落后）。用户授权：提 PR，CI 全绿后 merge；未授权部署。
+- 内容：P0–P5 全部实施与验收，结论、计数和未验边界见[P5记录](updates/2026-11-02-office-suite-p5.md)与[整合记录](updates/2026-11-02-office-suite-integration.md)。本次另在 AGENTS.md 第 11 节写入 PR 规范并新增 `.github/pull_request_template.md`。
+- 剩余未验证：VBA/Windows 实际执行、Microsoft Office 保真、长期/更高并发、多浏览器。下一步：PR CI 全绿后 merge；部署需用户另行授权（需重建 sbx-office 与 Portal 镜像并执行迁移 0048）。
+
+---
 # 办公 P5 最终修复与联合检查（2026-11-03）
 
 - 工作树 `.worktrees/office-suite`，分支 `feat/office-suite`，进入干净 `52abb97`，base `origin/main@bf0af4f`（未fetch）。仅引入指定两个测试提交；最终产品基线`ae39e10`，其后只补文档。本轮未push、PR或部署。
