@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import OfficeView, { docRefOf, type OfficeDoc } from "../components/preview/office-view";
 import { api } from "../lib/api";
+import { captureView } from "../lib/office-views";
 import { CHANNEL, isChannel, MAX_MESSAGE_CHARS } from "../office/protocol";
 
 vi.mock("../lib/api", () => ({ api: vi.fn(), downloadUrl: (p: string) => p }));
@@ -47,6 +48,7 @@ test("parent ignores wrong source, channel, nonce and oversized calls", async ()
   await b.emit({ ch: "wrong", t: "error" });
   await b.send({ t: "call", id: 2, name: "get_viewer", args: { padding: "x".repeat(MAX_MESSAGE_CHARS) } });
   await act(async () => { window.dispatchEvent(new MessageEvent("message", { source: window, data: { ch: CHANNEL, t: "error" } })); });
+  await b.emit({ t: "error", message: "x".repeat(MAX_MESSAGE_CHARS) });
   expect(b.post).not.toHaveBeenCalled();
   expect(screen.queryByText("fallback")).toBeNull();
 });
@@ -108,4 +110,15 @@ test("pending index polls then opens native; unmount cancels polling", async () 
   const pending = mount(); await act(async () => {}); pending.unmount();
   await vi.advanceTimersByTimeAsync(3000);
   expect(request).toHaveBeenCalledTimes(1);
+});
+
+test("capture results above the control-message limit still reach the caller", async () => {
+  const b = await bridge();
+  await b.send({ t: "ready", viewId: "capture-view" });
+  const capture = captureView("capture-view", "p:1")!;
+  const tool = b.post.mock.calls.map(([m]) => m).find(m => m.t === "page-tool");
+  const data = "x".repeat(MAX_MESSAGE_CHARS + 1);
+  await b.send({ t: "page-tool-result", id: tool.id, ok: true, value: { content: [{ type: "image", data }, { type: "text", text: "库/报告.docx#p:1 (800×600 px)" }] } });
+  const outcome = await Promise.race([capture, Promise.resolve("dropped")]);
+  expect(outcome).toEqual({ data, width: 800, height: 600, at: "p:1", version: "hash1" });
 });

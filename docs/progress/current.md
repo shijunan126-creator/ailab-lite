@@ -1,8 +1,8 @@
 # Office Portal 测试交接（2026-11-02）
 
-- 当前测试范围：`feat/office-suite-portal`，worktree `.worktrees/office-portal`，实施基线 `7d226ab`，共同 base `origin/main@bf0af4f`。用户仅授权 Portal 测试及真实缺陷小修复；不 push/PR/部署、不修改其他 worktree。
-- 已补消息桥、索引轮询/回退、引用 store、outbox、截图 client-call 和字体适配测试；进展与最终验证统一见[测试记录](updates/2026-11-02-office-portal-tests.md)。正在完成浏览器验收及截图消息上限修复，下一步完成最终检查、独立提交修复并交还主任务。
-- `app/office-test/` 是用户提供的未提交手工页，始终不进入提交。后端合同、真实 API 授权及联合验收仍由主任务负责，不能由 fixture 页面通过推断。
+- `feat/office-suite-portal`（worktree `.worktrees/office-portal`），实施基线 `7d226ab`，共同 base `origin/main@bf0af4f`。本轮仅授权Portal测试与真实缺陷小修复；无 push/PR/部署，其他worktree未修改。
+- 已完成：23项新增回归，截图响应误用256 KiB控制消息上限的根因修复；34文件/161测试、build、tsc通过；真实浏览器四格式×浅深色×桌面/手机16组，以及reveal、capture、DOCX/XLSX鼠标选区引用和ask通过。完整证据/基线/未测边界见[测试记录](updates/2026-11-02-office-portal-tests.md)。
+- 手工页 `app/office-test/` 保持未提交；dev server已停、截图已清理。下一步交还主任务整合P3/P4及联合验收；真实API授权、索引生成与完整聊天链路仍未在本子任务验证，不自动继续发布。
 
 ---
 

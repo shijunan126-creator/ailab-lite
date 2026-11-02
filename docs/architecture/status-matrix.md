@@ -1,5 +1,7 @@
 # 单机能力状态
 
+2026-11-02 原生Office Portal：分支 `feat/office-suite-portal` 已通过fixture浏览器四格式、浅深色、桌面/手机、选区引用/ask与reveal/capture；161项Portal测试/build/tsc通过，截图消息长度根因已修复。仅前端本地验收，真实API授权、索引和聊天联合链路未验，未合并/部署；见[测试记录](../progress/updates/2026-11-02-office-portal-tests.md)。
+
 2026-11-02 GenUI说明按实际历史复用已本地实施：配对成功工具结果中的完整当前文本可复用；仅补新增组件/依赖，压缩丢失后重新读取，无持久标记；真实Chat/Work多轮缓存检查通过。范围、冷启动边界与检查见[记录](../progress/updates/2026-11-02-genui-doc-reuse.md)，未发布部署。
 
 2026-11-02 本地记忆生命周期复核：摘要编辑有显示快照参照，共享项目隐藏独立管理并围栏迟到编辑，清空/删项目覆盖空作用域历史副本，删除按作用域匹配，撤销保留并发更新；未发布部署。验收与边界见[审查](../reviews/2026-11-02-memory-lifecycle-audit.md)。

@@ -43,8 +43,10 @@ export type HostMessage =
   | { ch: typeof CHANNEL; t: "snapshot"; snapshot: unknown }
   | { ch: typeof CHANNEL; t: "page-tool"; id: number; name: string; args: Record<string, unknown> };
 
-/** Upper bound for one structured message (bytes travel as transferred ArrayBuffers, not inside this). */
+/** Upper bound for a control message (file bytes travel as transferred ArrayBuffers). */
 export const MAX_MESSAGE_CHARS = 256 * 1024;
+/** PNG replies need room for an initial capture before the client-call handler shrinks it to its 2 MiB budget. */
+export const MAX_CAPTURE_MESSAGE_CHARS = 16 * 1024 * 1024;
 
 export function isChannel(data: unknown): data is { ch: typeof CHANNEL; t: string } {
   return !!data && typeof data === "object" && (data as { ch?: unknown }).ch === CHANNEL && typeof (data as { t?: unknown }).t === "string";

@@ -1,3 +1,8 @@
+## 2026-11-02 原生文档viewer测试
+
+- DOCX原生文字选择依赖索引blocks映射data-at；手工fixture只有bytes/units会导致“可选文字、没有引用栏”。补真实blocks，不要伪造reference消息替代鼠标验收。XLSX先核对实际sheet名称，canvas高亮不能按DOM class计数。详见[测试记录](docs/progress/updates/2026-11-02-office-portal-tests.md)。
+- 截图PNG的base64响应不能套256 KiB控制消息限制：会在2 MiB结果预算的缩窄重拍之前被丢弃。父桥截图传输有独立上限，测试须从captureView贯穿page-tool-result；仅mock captureView不能守住此缺陷。
+
 ## 2026-11-02 办公能力迁移边界
 
 - 全量迁移不能直接替换四个大 SKILL：资源安装状态与当前消息中完整正文可见性分开；轮内/跨轮/无快照压缩都要重算模块可见性。上游 capture_view 是页面工具，离线/后台任务不能假设浏览器在线；选区问答不能沿用全文附件 prepare 重复注入整份文档。见[计划](docs/architecture/design/office-suite/README.md)。

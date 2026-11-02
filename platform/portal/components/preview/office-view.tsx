@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, downloadUrl, type DocRef, type DocumentIndex, type OfficeKind } from "../../lib/api";
 import { registerView, type OfficeCapture } from "../../lib/office-views";
-import { CHANNEL, isChannel, MAX_MESSAGE_CHARS, type FrameMessage, type HostMessage, type ViewerReference } from "../../office/protocol";
+import { CHANNEL, isChannel, MAX_CAPTURE_MESSAGE_CHARS, MAX_MESSAGE_CHARS, type FrameMessage, type HostMessage, type ViewerReference } from "../../office/protocol";
 
 /** A document the side pane can open natively: a library file, or a file still in a Work run's workspace. */
 export type OfficeDoc = {
@@ -230,6 +230,10 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
     const onMessage = async (event: MessageEvent) => {
       if (event.source !== element.contentWindow || !isChannel(event.data)) return;
       const message = event.data as FrameMessage;
+      // Screenshots are base64 PNGs, unlike control messages. Keep their transport bounded while
+      // allowing the client-call handler to shrink images exceeding its 2 MiB result budget.
+      const limit = message.t === "page-tool-result" ? MAX_CAPTURE_MESSAGE_CHARS : MAX_MESSAGE_CHARS;
+      if (JSON.stringify(message).length > limit) return;
       if (message.t === "boot") {
         try {
           const [css, js] = await Promise.all([asset("panel.css", false), asset("viewer.js", false)]);
@@ -245,7 +249,6 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
         return;
       }
       if (!("nonce" in message) || message.nonce !== nonce) return;
-      if (JSON.stringify(message).length > MAX_MESSAGE_CHARS) return;
       const reply = async (id: number, work: () => Promise<{ value: unknown; transfer?: Transferable[] }>) => {
         try {
           const { value, transfer } = await work();
