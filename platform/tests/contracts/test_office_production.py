@@ -81,17 +81,20 @@ def test_real_create_edit_convert_and_preserve_original(office_image, fmt):
 def test_real_offline_html_and_latex(office_image):
     program = r"""
 import subprocess
+import unicodedata
 from pathlib import Path
 from pypdf import PdfReader
 out=Path('/workspace/outputs')
 html=out/'poster.html'
 html.write_text('<html><body><h1>Offline poster</h1><p>Production review</p></body></html>')
 subprocess.run(['node','/opt/skills/platform.pdf/scripts/html2pdf-next.js',str(html),'-o',str(out/'poster.pdf')],check=True,timeout=100)
-assert 'Offline poster' in PdfReader(out/'poster.pdf').pages[0].extract_text()
+text = PdfReader(out/'poster.pdf').pages[0].extract_text()
+assert 'Offline poster' in unicodedata.normalize('NFKC', text), repr(text)
 tex=out/'paper.tex'
 tex.write_text(r'\documentclass{article}\begin{document}Offline academic $a^2+b^2=c^2$.\end{document}')
 subprocess.run(['python','/opt/skills/platform.pdf/scripts/pdf.py','convert.latex',str(tex)],check=True,timeout=150)
-assert 'Offline academic' in PdfReader(out/'paper.pdf').pages[0].extract_text()
+text = PdfReader(out/'paper.pdf').pages[0].extract_text()
+assert 'Offline academic' in unicodedata.normalize('NFKC', text), repr(text)
 """
     name = "c3-office-p2-" + uuid4().hex[:12]
     try:

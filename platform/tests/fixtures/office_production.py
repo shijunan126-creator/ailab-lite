@@ -25,7 +25,8 @@ PDF = "/opt/skills/platform.pdf/scripts/pdf.py"
 
 
 def run(*args):
-    subprocess.run(args, check=True, timeout=120, capture_output=True)
+    result = subprocess.run(args, timeout=120, capture_output=True)
+    assert result.returncode == 0, (args, (result.stdout + result.stderr).decode(errors="replace")[-6000:])
 
 
 def digest(path):
