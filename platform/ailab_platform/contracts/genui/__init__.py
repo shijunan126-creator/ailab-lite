@@ -83,7 +83,7 @@ def guide_for(html_enabled: bool) -> str:
     return _filter(_loaded()[2], html_enabled)
 
 
-def docs_for(names: list[str], html_enabled: bool) -> tuple[str, list[str]]:
+def component_docs_for(names: list[str], html_enabled: bool) -> tuple[dict[str, str], list[str]]:
     components = _loaded()[0]["components"]
     available = {c["name"]: c for c in components if html_enabled or c["name"] != "HtmlArtifact"}
     selected, unknown = set(), []
@@ -99,7 +99,12 @@ def docs_for(names: list[str], html_enabled: bool) -> tuple[str, list[str]]:
 
     for name in names:
         include(name)
-    return "\n\n".join(c["doc"] for c in components if c["name"] in selected), unknown
+    return {c["name"]: c["doc"] for c in components if c["name"] in selected}, unknown
+
+
+def docs_for(names: list[str], html_enabled: bool) -> tuple[str, list[str]]:
+    documents, unknown = component_docs_for(names, html_enabled)
+    return "\n\n".join(documents.values()), unknown
 
 
 def full_prompt(html_enabled: bool) -> str:

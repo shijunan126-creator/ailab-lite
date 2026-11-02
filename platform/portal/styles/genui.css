@@ -265,14 +265,14 @@ div.gu-divider::before { flex: 0 0 0; }
 .gu-fact[data-sign="bad"] dd { color: var(--destructive); }
 
 /* process */
-.gu-timeline { position: relative; display: flex; flex-direction: column; gap: 14px; margin: 0; padding: 0 0 0 22px; list-style: none; }
+.gu-timeline { position: relative; display: grid; grid-template-columns: minmax(64px, max-content) minmax(0, 1fr); gap: 14px; margin: 0; padding: 0 0 0 22px; list-style: none; }
 .gu-timeline::before { content: ""; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 2px; border-radius: 1px; background: var(--border); }
-.gu-timeline li { position: relative; display: grid; grid-template-columns: minmax(64px, max-content) minmax(0, 1fr); gap: 2px 14px; }
+.gu-timeline li { position: relative; display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; gap: 2px 14px; }
 .gu-timeline li::before { content: ""; position: absolute; left: -22px; top: 5px; width: 12px; height: 12px; border-radius: 50%; background: var(--popover); border: 2px solid var(--tone, var(--primary)); box-sizing: border-box; }
 .gu-timeline time { color: var(--muted-foreground); font-size: var(--text-sm); font-variant-numeric: tabular-nums; line-height: 1.5; white-space: nowrap; }
 .gu-timeline strong { font-weight: 600; overflow-wrap: anywhere; }
 .gu-timeline p, .gu-steps p { margin: 2px 0 0; color: var(--muted-foreground); font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }
-@container (max-width: 420px) { .gu-timeline li { grid-template-columns: minmax(0, 1fr); } }
+@container (max-width: 420px) { .gu-timeline { grid-template-columns: minmax(0, 1fr); } }
 .gu-steps { display: flex; flex-direction: column; gap: 0; margin: 0; padding: 0; list-style: none; }
 .gu-steps li { position: relative; display: flex; gap: 12px; min-width: 0; padding-bottom: 16px; }
 .gu-steps li:last-child { padding-bottom: 0; }

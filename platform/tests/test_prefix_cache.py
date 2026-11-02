@@ -897,3 +897,168 @@ def test_carried_skill_must_match_version_and_mode():
     assert not _carried_skills(messages, {"platform.pptx": "v1"}, "chat")
     failed = [messages[0], tool_result_message("c1", "load_skill", {"ok": False, "error": "x"})]
     assert not _carried_skills(failed, {"platform.pptx": "v1"}, "work")
+
+
+def test_memory_editor_receives_displayed_snapshot_without_adding_it_to_chat(monkeypatch):
+    from datetime import UTC, datetime
+
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api.main import app
+    from ailab_platform.api.routes_memory import memory_for
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.memory_dream import service
+    from ailab_platform.memory_dream.prompts import EDIT_SYSTEM
+    from ailab_platform.memory_dream.summary import digest
+    from ailab_platform.models import MemorySummary, User
+    from tests.test_memory_hardening import put
+    from tests.test_memory_recall import _uid
+    from tests.test_skill_settings import _user
+
+    requests = []
+
+    async def chat(messages, model, user):
+        requests.append(copy.deepcopy(messages))
+        return json.dumps({"ops": [], "reply": "请明确要修改的内容。"}), {}
+
+    monkeypatch.setattr(service, "_chat", chat)
+    with TestClient(app) as c:
+        me = _user(c)
+        uid = _uid(c, me)
+        doc = put(c, me, [{"content": "喜欢中文回答"}])
+        snapshot = "### 偏好\n- 中文回答。\n### 工作\n- 摘要中的旧信息。"
+        with SessionLocal() as db:
+            db.add(MemorySummary(user_id=uid, text=snapshot, source_digest=digest(doc["entries"]), generated_at=datetime.now(UTC)))
+            db.commit()
+        wrong = c.post("/v1/memory/summary/edit", headers=me, json={"instruction": "删除第二段", "summary_text": "另一个摘要"})
+        assert wrong.status_code == 409 and requests == []
+        response = c.post("/v1/memory/summary/edit", headers=me, json={"instruction": "删除第二段", "summary_text": snapshot})
+        assert response.status_code == 202
+        assert len(requests) == 1
+        assert requests[0][0] == {"role": "system", "content": EDIT_SYSTEM}
+        payload = json.loads(requests[0][1]["content"])
+        assert payload["summary"] == snapshot and payload["instruction"] == "删除第二段"
+        assert payload["entries"] == [{k: doc["entries"][0][k] for k in ("id", "kind", "content")}]
+        with SessionLocal() as db:
+            context = memory_prompt(memory_for(db.get(User, uid), for_model=True))
+        assert "摘要中的旧信息" not in context and snapshot not in context
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_ui_docs_deduplicate_across_calls_and_runs_without_rewriting_prefix(monkeypatch, mode):
+    from ailab_platform.config import settings
+    from ailab_platform.contracts.genui import docs_for, guide_for
+
+    monkeypatch.setattr(settings, "genui_enabled", True)
+    monkeypatch.setattr(settings, "genui_html_enabled", False)
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=65536, max_output_tokens=512, capabilities=frozenset({"tools", "genui"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            assert payload["expected_step"] == step
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "options": {"mode": mode}, "prompt": run_id}
+            if run_id == "second":
+                state = self.checkpoints["first"]["state"]
+                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+            return run
+
+    def call(identity, names):
+        return {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": identity,
+                    "type": "function",
+                    "function": {"name": "ui_components", "arguments": json.dumps({"names": names})},
+                }
+            ]
+        }
+
+    responses = [
+        call("first-docs", ["LineChart"]),
+        call("repeat", ["LineChart"]),
+        call("new-docs", ["BarChart"]),
+        {"content": "完成"},
+        call("next-run", ["LineChart", "BarChart"]),
+        {"content": "已修改"},
+    ]
+    with scripted_server(responses) as (url, requests):
+        platform = Platform()
+        broker = FakeBroker()
+        loop = AgentLoop(platform=platform, broker=broker, llm=ModelTransport(url))
+        asyncio.run(loop.process("first", attempt_id="a"))
+        asyncio.run(loop.process("second", attempt_id="b"))
+    assert len(requests) == 6
+    for previous, current in pairwise(requests):
+        assert_extension(previous, current)
+    results = {
+        message["tool_call_id"]: json.loads(message["content"])
+        for message in requests[-1]["messages"]
+        if message.get("name") == "ui_components" and message.get("role") == "tool"
+    }
+    assert results["first-docs"]["guide"] == guide_for(False)
+    assert results["first-docs"]["components"] == docs_for(["LineChart"], False)[0]
+    assert results["repeat"]["components"] == "" and "guide" not in results["repeat"]
+    assert results["new-docs"]["already_available"] == ["Series"]
+    assert "BarChart(" in results["new-docs"]["components"]
+    assert docs_for(["Series"], False)[0] not in results["new-docs"]["components"]
+    assert results["next-run"]["components"] == "" and "guide" not in results["next-run"]
+    assert broker.leases == 0
+
+
+@pytest.mark.parametrize("retained", [False, True])
+def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, retained):
+    from ailab_platform.agent.tools import tool_result_message, ui_components
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=12000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    docs = ui_components({"names": ["Text"]}, {}, html_enabled=False)
+    pair = [
+        {
+            "role": "assistant",
+            "tool_calls": [{"id": "docs", "type": "function", "function": {"name": "ui_components", "arguments": '{"names":["Text"]}'}}],
+        },
+        tool_result_message("docs", "ui_components", docs),
+    ]
+    old = {"role": "assistant", "content": "旧" * 5000}
+    recent = {"role": "assistant", "content": "近期回答"}
+    body = [old, *pair, recent] if retained else [*pair, old, recent, recent]
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "当前任务"},
+        *body,
+    ]
+    original = copy.deepcopy(messages)
+    with scripted_server([{"content": "历史摘要：读取过Text，继续当前任务"}]) as (url, requests):
+        platform = FakePlatform()
+        loop = AgentLoop(platform=platform, llm=ModelTransport(url))
+        loop._states["r"] = {"messages": messages, "user_message_index": 2, "delivered": {}}
+        loop._steps["r"] = 0
+
+        async def checkpoint(*args):
+            pass
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+        turn = SimpleNamespace(
+            messages=messages, run={"_attempt_id": "a", "_ledger_tokens": 0, "context_settings": {"threshold_ratio": 0.4}}
+        )
+        asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
+    assert requests[0]["messages"][:-1] == original
+    result = ui_components({"names": ["Text"]}, {"messages": messages}, html_enabled=False)
+    assert (result["components"] == "") is retained
+    assert ("guide" in result) is not retained
+    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events

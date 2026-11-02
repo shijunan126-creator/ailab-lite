@@ -11,7 +11,7 @@ from typing import Any
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
-from ..contracts.genui import component_names, docs_for, guide_for
+from ..contracts.genui import component_docs_for, component_names, guide_for
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools, subtasks
@@ -212,15 +212,37 @@ UI_COMPONENTS = {
 
 
 def ui_components(args: dict, state: dict, *, html_enabled: bool) -> dict:
-    """Read local docs; the caller persists the guide marker with its tool result."""
+    """Only append docs absent from successful tool results still visible to the model."""
     names = args.get("names")
     if set(args) != {"names"} or not isinstance(names, list) or not 1 <= len(names) <= 16 or not all(isinstance(n, str) for n in names):
         raise ToolError("ui_components requires names: 1–16 strings and no other parameters")
-    text, unknown = docs_for(names, html_enabled)
-    result = {"ok": True, "components": text, "unknown": unknown}
-    if not state.get("genui_guide_sent"):
-        result["guide"] = guide_for(html_enabled)
-        state["genui_guide_sent"] = True
+    documents, unknown = component_docs_for(names, html_enabled)
+    guide = guide_for(html_enabled)
+    known, calls, guide_present = set(), set(), False
+    for message in state.get("messages", []):
+        if message.get("role") == "assistant":
+            calls.update(
+                c["id"] for c in message.get("tool_calls", []) if c.get("id") and c.get("function", {}).get("name") == "ui_components"
+            )
+        elif message.get("role") == "tool" and message.get("name") == "ui_components" and message.get("tool_call_id") in calls:
+            try:
+                prior = json.loads(message.get("content", ""))
+            except (ValueError, TypeError):
+                continue
+            if not isinstance(prior, dict) or prior.get("ok") is not True:
+                continue
+            # Exact current text doubles as a conservative version check. A summary,
+            # an old version or a clipped result cannot stand in for complete docs.
+            guide_present |= prior.get("guide") == guide
+            text = prior.get("components")
+            if isinstance(text, str):
+                known.update(name for name, doc in documents.items() if doc in text)
+    result = {"ok": True, "components": "\n\n".join(doc for name, doc in documents.items() if name not in known), "unknown": unknown}
+    if known:
+        result["already_available"] = [name for name in documents if name in known]
+        result["note"] = "这些组件的完整说明仍在当前上下文中，可直接使用。"
+    if not guide_present:
+        result["guide"] = guide
     if unknown:
         result["available"] = sorted(n for n in component_names() if html_enabled or n != "HtmlArtifact")
     return result

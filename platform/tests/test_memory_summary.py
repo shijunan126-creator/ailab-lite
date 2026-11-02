@@ -135,7 +135,7 @@ def test_digest_stale_empty_and_auto_save_off(api, monkeypatch):
 
 def test_edit_replace_revert_restores_summary_and_scope(api, monkeypatch):
     c, me, uid = api
-    pid = project(c, me)
+    pid = project(c, me, "isolated")
     doc = put(c, me, [{"kind": "user", "content": "中文回答"}, {"content": "项目旧偏好", "project_id": pid}])
     with SessionLocal() as db:
         entries = scope_entries(db.get(User, uid), pid)
@@ -791,6 +791,14 @@ def test_edit_conflict_depends_on_scope_facts_only(api, monkeypatch, change):
         assert doc["entries"][1]["content"] == "竞争写入的新事实"
     if change == "settings":
         assert not doc["reference_history"]
+    if change != "own_scope":
+        assert c.post(f"/v1/memory/dreams/{result['id']}/revert", headers=me).status_code == 200
+        restored = c.get("/v1/memory", headers=me).json()
+        assert not any(e["content"] == "明确新增" for e in restored["entries"])
+        if change == "other_scope":
+            assert restored["entries"][1]["content"] == "竞争写入的新事实"
+        else:
+            assert not restored["reference_history"]
 
 
 def test_requested_scope_first_and_empty_projects_not_stale(api, monkeypatch):
@@ -978,3 +986,152 @@ def test_expired_final_summary_lease_is_inactive_but_never_reclaimed(api):
     with SessionLocal() as db:
         run = db.get(MemoryDreamRun, did)
         assert run.status == "applied" and run.cursor_run_id == "completed-source"
+
+
+def test_shared_project_editor_rejected_at_request_and_commit(api, monkeypatch):
+    c, me, _uid = api
+    pid = project(c, me)
+    response = c.post("/v1/memory/summary/edit", headers=me, json={"project_id": pid, "instruction": "记住"})
+    assert response.status_code == 409
+    c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "isolated"})
+
+    def switch(system, user):
+        if system == EDIT_SYSTEM:
+            with SessionLocal() as db:
+                db.get(Project, pid).memory_mode = "shared"
+                db.commit()
+
+    scripted(monkeypatch, ops=[{"op": "add", "content": "迟到写入"}], before=switch)
+    result = edit(c, me, pid=pid)
+    assert result["status"] == "failed" and "共享" in result["error"]
+    assert not c.get("/v1/memory", headers=me).json()["entries"]
+
+
+@pytest.mark.parametrize("operation", ["clear", "delete_project"])
+def test_empty_scope_clear_fences_queued_edits_and_old_snapshots(api, monkeypatch, operation):
+    c, me, uid = api
+    pid = project(c, me, "isolated") if operation == "delete_project" else None
+    # The current scope is empty, but historical copies and a queued explicit add still exist.
+    old = {"id": "mem_old", "kind": "memory", "content": "旧事实", "project_id": pid}
+    with SessionLocal() as db:
+        queued = MemoryDreamRun(
+            user_id=uid,
+            project_id=pid,
+            local_date="2026-11-02",
+            timezone="UTC",
+            trigger="edit",
+            status="pending",
+            instruction="记住旧事实",
+            before_memory={"entries": []},
+        )
+        past = MemoryDreamRun(
+            user_id=uid,
+            project_id=pid,
+            local_date="2026-11-01",
+            timezone="UTC",
+            trigger="edit",
+            status="applied",
+            before_memory={"entries": [old]},
+            report={"summary_before": {"text": "旧事实"}},
+        )
+        db.add_all([queued, past])
+        db.commit()
+        queued_id, past_id = queued.id, past.id
+    if operation == "clear":
+        assert c.delete("/v1/memory/entries", headers=me).status_code == 200
+    else:
+        assert c.delete(f"/v1/projects/{pid}", headers=me).status_code == 204
+    calls = scripted(monkeypatch, ops=[{"op": "add", "content": "旧事实"}])
+    asyncio.run(service.process_dream(queued_id))
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, queued_id).status == "failed"
+        assert db.get(MemoryDreamRun, queued_id).instruction == ""
+        assert db.get(MemoryDreamRun, past_id).before_memory["entries"] == []
+        assert "summary_before" not in db.get(MemoryDreamRun, past_id).report
+    assert calls == []
+    assert not c.get("/v1/memory", headers=me).json()["entries"]
+
+
+def test_forgetting_one_scope_preserves_same_text_in_other_scope_snapshots(api):
+    c, me, uid = api
+    pid = project(c, me)
+    doc = put(c, me, [{"content": "同一偏好"}, {"content": "同一偏好", "project_id": pid}])
+    with SessionLocal() as db:
+        old = MemoryDreamRun(user_id=uid, local_date="2026-11-01", timezone="UTC", status="applied", before_memory=doc, after_memory=doc)
+        db.add(old)
+        db.commit()
+        old_id = old.id
+    c.delete("/v1/memory/entries", headers=me)
+    with SessionLocal() as db:
+        for field in ("before_memory", "after_memory"):
+            entries = getattr(db.get(MemoryDreamRun, old_id), field)["entries"]
+            assert [e["project_id"] for e in entries] == [pid]
+    assert [e["project_id"] for e in c.get("/v1/memory", headers=me).json()["entries"]] == [pid]
+
+
+def test_queued_edit_digest_survives_fact_redaction(api, monkeypatch):
+    c, me, uid = api
+    doc = put(c, me, [{"content": "待忘记的事实"}])
+    with SessionLocal() as db:
+        queued = MemoryDreamRun(
+            user_id=uid,
+            local_date="2026-11-02",
+            timezone="UTC",
+            trigger="edit",
+            status="pending",
+            instruction="改成另一个事实",
+            before_memory=doc,
+            report={"edit_source_digest": digest(doc["entries"])},
+        )
+        db.add(queued)
+        db.commit()
+        queued_id = queued.id
+    # An ordinary deletion scrubs the queued job's textual snapshot as well.
+    put(c, me, [])
+    calls = scripted(monkeypatch, ops=[{"op": "add", "content": "不应重建"}])
+    asyncio.run(service.process_dream(queued_id))
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, queued_id).status == "failed"
+    assert not calls
+    assert not c.get("/v1/memory", headers=me).json()["entries"]
+
+
+def test_clear_during_model_wait_cancels_explicit_add(api, monkeypatch):
+    c, me, _ = api
+
+    def clear(system, user):
+        if system == EDIT_SYSTEM:
+            assert c.delete("/v1/memory/entries", headers=me).status_code == 200
+
+    scripted(monkeypatch, ops=[{"op": "add", "content": "清空前排队的新增"}], before=clear)
+    result = edit(c, me)
+    assert result["status"] == "failed"
+    assert not c.get("/v1/memory", headers=me).json()["entries"]
+
+
+def test_mode_roundtrip_does_not_replay_a_queued_isolated_edit(api, monkeypatch):
+    c, me, uid = api
+    pid = project(c, me, "isolated")
+    with SessionLocal() as db:
+        queued = MemoryDreamRun(
+            user_id=uid,
+            project_id=pid,
+            local_date="2026-11-02",
+            timezone="UTC",
+            trigger="edit",
+            status="pending",
+            instruction="记住旧的项目要求",
+            before_memory={"entries": []},
+        )
+        db.add(queued)
+        db.commit()
+        queued_id = queued.id
+    calls = scripted(monkeypatch, ops=[{"op": "add", "content": "不应恢复的指令"}])
+    assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "shared"}).status_code == 200
+    assert c.patch(f"/v1/projects/{pid}", headers=me, json={"memory_mode": "isolated"}).status_code == 200
+    calls.clear()
+    asyncio.run(service.process_dream(queued_id))
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, queued_id).status == "failed"
+    assert calls == []
+    assert not c.get("/v1/memory", headers=me).json()["entries"]

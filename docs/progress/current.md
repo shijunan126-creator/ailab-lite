@@ -1,3 +1,12 @@
+# GenUI 说明跨轮复用（2026-11-02）
+
+- 分支 `fix/genui-timeline-alignment`，base `main@82ff8285`；本地 `origin/main@d7e2058` 多3提交，未混入。用户已追加授权：本线程全部改动提PR，CI通过后merge，并增量部署最新main；无工具模型不在优化范围。
+- 已实现：按实际保留的配对工具结果识别完整当前说明；重复读取只返回短提示，新组件只补缺失依赖，压缩/恢复后按实际内容重判。保持旧消息与工具定义不变，不增加长期状态。前序记忆、时间线与预览间距修复保留。
+- 验证与升级边界见[本轮记录](updates/2026-11-02-genui-doc-reuse.md)。Portal138项/build、Ruff、真实压缩2例、真实Chat/Work四轮检查通过；后续累计缓存命中分别96.20%/97.24%，具体冷启动排除范围与局限见记录。Python全套1964通过/163跳过，最后追加的两种压缩边界另行通过。
+- 前序范围和验收只链接：[记忆审查](../reviews/2026-11-02-memory-lifecycle-audit.md)、[时间线/预览](updates/2026-11-02-genui-timeline.md)。下一步：提交本线程改动、整合origin/main，创建PR，绿后merge并部署。原有.DS_Store和.github本地文件保留，不入PR；部署仅更新平台/Portal，无备份、无额外测试。
+
+---
+
 # Portal 滚动锚定、页面宽度、技能广场：交接（2026-11-01）
 
 - 分支 `fix/composer-scroll-anchor`，base `origin/main@1d3d8d5`。用户本轮：前端由 Claude 做；后端 view_workspace_file 反复失败、联网搜索为空、广场目录内容交给 Codex（gpt-6.1-sol medium，各自 worktree/PR，不部署）。
