@@ -26,7 +26,14 @@ FEATURE_TITLE = "集成测试生成标题"
 feature_versions: dict[str, int] = {}
 title_release = asyncio.Event()
 workspace_release = asyncio.Event()
+office_release = asyncio.Event()
 workspace_seen: dict[str, list[dict]] = {}
+
+
+@app.post("/e2e/office-release")
+async def release_office():
+    office_release.set()
+    return {"ok": True}
 
 
 @app.post("/e2e/workspace-release")
@@ -99,6 +106,48 @@ class QuestionThenAnswer(LLMClient):
             ),
             "",
         )
+        if prompt.startswith(("原生控制 ", "原生工作区")):
+            turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
+            results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
+            views = [json.loads(m["content"]) for m in results if m.get("name") == "document_view"]
+            workspace = prompt.startswith("原生工作区")
+            target = {"path": "outputs/draft.docx"} if workspace else {"file_id": prompt.split()[1]}
+            at = "p:2"
+            if workspace and not any(m.get("name") == "exec" for m in results):
+                import base64
+                from pathlib import Path
+
+                source = Path(__file__).resolve().parents[2] / "vendor/office-suite/runtime/fixtures/report.docx"
+                payload = base64.b64encode(source.read_bytes()).decode()
+                import shlex
+
+                script = f"import base64; open('/workspace/outputs/draft.docx','wb').write(base64.b64decode('{payload}'))"
+                command = "mkdir -p /workspace/outputs && python -c " + shlex.quote(script)
+                office_release.clear()
+                return LLMResponse(tool_calls=[ToolCall("office_create", "exec", {"cmd": command})])
+            if not views:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(
+                            "office_reveal", "document_view", {"op": "reveal", **target, "targets": [{"at": at}], "note": "原生定位验收"}
+                        )
+                    ]
+                )
+            if len(views) == 1:
+                if workspace:
+                    await asyncio.wait_for(office_release.wait(), timeout=45)
+                return LLMResponse(tool_calls=[ToolCall("office_views", "document_view", {"op": "get_view"})])
+            if len(views) == 2:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall("office_capture", "document_view", {"op": "capture", **target, "source": "viewport", "max_width": 800})
+                    ]
+                )
+            capture = views[-1]
+            return LLMResponse(
+                content="原生截图结果："
+                + json.dumps({k: v for k, v in capture.items() if k not in {"image", "images"}}, ensure_ascii=False)
+            )
         if prompt.startswith("PPT模板链路"):
             current_turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
             results = [
