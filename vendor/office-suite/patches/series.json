@@ -22,5 +22,9 @@
   {
     "file": "006-output-and-offline-errors.json",
     "reason": "Default converted output stays in outputs; missing dependencies never instruct runtime installation; probe the installed offline TeX engine."
+  },
+  {
+    "file": "007-readable-resource-limits.json",
+    "reason": "Preserve Python AST while fitting complete readable scripts within loader line limits."
   }
 ]

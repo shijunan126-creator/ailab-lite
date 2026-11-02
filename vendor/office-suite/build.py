@@ -200,6 +200,20 @@ def navigation(fmt: str, modules: list[dict]) -> str:
     return text
 
 
+def validate_readable_resource(path: str, data: bytes) -> None:
+    """Reject files a loader would truncate; binary assets are installed, not read as text."""
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return
+    skill = Path(path).name == "SKILL.md"
+    limit = 100_000 if skill else 256 * 1024
+    if len(data) > limit:
+        raise ValueError(f"readable resource exceeds {limit} bytes: {path}")
+    if not skill and len(text.splitlines()) > 2000:
+        raise ValueError(f"readable resource exceeds 2000 lines: {path}")
+
+
 def build(output: Path) -> None:
     files, trace = adapted()
     modules: dict[str, list] = {fmt: [] for fmt in PACKAGES.values()}
@@ -223,6 +237,7 @@ def build(output: Path) -> None:
         if b"zcode" in data.lower():
             raise ValueError(f"unadapted product name: {name}")
         path.parent.mkdir(parents=True, exist_ok=True)
+        validate_readable_resource(relative, data)
         path.write_bytes(data)
         text = data.decode("utf-8", errors="strict")
         references = []
@@ -261,6 +276,11 @@ def build(output: Path) -> None:
                 "modules": entries,
             },
         )
+    for fmt in modules:
+        directory = output / f"platform.{fmt}"
+        for path in directory.rglob("*"):
+            if path.is_file() and path.name not in {"modules.json"}:
+                validate_readable_resource(path.relative_to(directory).as_posix(), path.read_bytes())
     # The existing verifier hashes every byte beneath each package, including module metadata.
     if all((output / name / "skill.toml").exists() for name in ("pptx", "auto-skill")):
         dump(output / "index.json", build_index(output))

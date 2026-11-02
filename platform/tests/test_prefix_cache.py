@@ -1353,6 +1353,7 @@ def test_artifact_review_keeps_recorded_prefix_and_discloses_visual_availability
     ]
     assert bool(images) == vision
 
+
 def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
     from ailab_platform.agent.tools import tools_for_chat
 

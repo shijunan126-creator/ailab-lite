@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "86ac66442a767f5d55d796b4f8197ab46a2a61cb3cc668d0f53a79675fec58b9",
+  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -382,14 +382,16 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 32488,
+      "estimated_tokens": 26088,
       "logical_path": "pdf-plugin/skills/pdf/scripts/design_engine.py",
       "modes": [
         "work"
       ],
-      "patches": [],
+      "patches": [
+        "007-readable-resource-limits.json"
+      ],
       "path": "scripts/design_engine.py",
-      "sha256": "08a71da2be73f15231fcf4a49af990c0a288ca7297bc896a7b68ddcd9a224ea2"
+      "sha256": "4e2bcd0f5ff534662489f349eac5240c23d049dfc67ea63fca5b61254da7e005"
     },
     {
       "deps": [
@@ -429,7 +431,7 @@
         "pdf-plugin/skills/pdf/scripts/design_engine.py",
         "pdf-plugin/skills/pdf/scripts/toc_validate.py"
       ],
-      "estimated_tokens": 28785,
+      "estimated_tokens": 23619,
       "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
       "modes": [
         "work"
@@ -437,10 +439,11 @@
       "patches": [
         "002-execution-contracts.json",
         "005-offline-production.json",
-        "006-output-and-offline-errors.json"
+        "006-output-and-offline-errors.json",
+        "007-readable-resource-limits.json"
       ],
       "path": "scripts/pdf.py",
-      "sha256": "1dee3eb620b9ab076aae9d45fb39c3188b6e36de4d85e0037e9b03c88aec2b1e"
+      "sha256": "8168a9c128b2bdc285d1fa44c19d9a2d69fcb3402616c98c1dbb3382f68cf0e9"
     },
     {
       "deps": [],
@@ -486,16 +489,17 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 20300,
+      "estimated_tokens": 16194,
       "logical_path": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "007-readable-resource-limits.json"
       ],
       "path": "scripts/toc_validate.py",
-      "sha256": "ededf2cd01ced419a8c1929e39a9eaf880b205bbdaa17c6efed7dbfcd9c19bb2"
+      "sha256": "15fc99e7f9008023609828b12e3487a9f399cbb65f154cb9b82cb4e9246aa5d4"
     },
     {
       "deps": [],

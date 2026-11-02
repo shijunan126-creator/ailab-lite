@@ -67,7 +67,9 @@ def test_generated_resources_are_platform_only_and_installers_are_disabled():
         for setup in package.rglob("setup*.sh"):
             assert setup.read_text().splitlines()[1:4][-1] == "exit 1"
     pdf = (SKILLS / "platform.pdf/scripts/pdf.py").read_text()
-    body = pdf.split("def env_fix(argv: list):", 1)[1].split("# ═", 1)[0]
+    import ast
+
+    body = ast.unparse(next(node for node in ast.parse(pdf).body if isinstance(node, ast.FunctionDef) and node.name == "env_fix"))
     assert "DependencyMissing" in body and "subprocess.run" not in body
 
 
@@ -180,3 +182,44 @@ def test_runtime_rebase_is_reproducible_and_keeps_original_sources(tmp_path):
     }
     assert tree(tmp_path / "runtime") == expected
     assert office.originals() == before
+
+
+@pytest.mark.parametrize(
+    ("path", "data", "error"),
+    [
+        ("SKILL.md", b"a" * 100_000, None),
+        ("resources/SKILL.md", b"a" * 100_001, "100000 bytes"),
+        ("reference.md", b"a" * (256 * 1024), None),
+        ("reference.md", b"a" * (256 * 1024 + 1), "262144 bytes"),
+        ("reference.md", b"a\n" * 2000, None),
+        ("reference.md", b"a\n" * 2001, "2000 lines"),
+        ("SKILL.md", b"a\n" * 2001, None),
+        ("reference.md", "中".encode() * 87382, "262144 bytes"),
+        ("asset.png", b"\xff" * 300_000, None),
+    ],
+)
+def test_readable_resource_loader_boundaries(path, data, error):
+    if error:
+        with pytest.raises(ValueError, match=error):
+            office.validate_readable_resource(path, data)
+    else:
+        office.validate_readable_resource(path, data)
+
+
+def test_build_rejects_oversized_resource_before_manifest(tmp_path, monkeypatch):
+    files, trace = office.adapted()
+    files["documents-plugin/skills/docx/references/oversized.md"] = b"line\n" * 2001
+    monkeypatch.setattr(office, "adapted", lambda: (files, trace))
+    with pytest.raises(ValueError, match="2000 lines"):
+        office.build(tmp_path)
+    assert not (tmp_path / "platform.docx/modules.json").exists()
+
+
+def test_line_limit_adaptation_preserves_executable_python_ast():
+    import ast
+
+    patches = json.loads((VENDOR / "patches/007-readable-resource-limits.json").read_text())
+    for change in patches:
+        edit = change["edits"][0]
+        assert ast.dump(ast.parse(edit["before"])) == ast.dump(ast.parse(edit["after"]))
+        assert len(edit["after"].splitlines()) <= 2000
