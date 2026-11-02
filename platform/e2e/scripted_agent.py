@@ -107,21 +107,23 @@ class QuestionThenAnswer(LLMClient):
             "",
         )
         if prompt.startswith(("原生控制 ", "原生工作区")):
-            turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
+            turn = next(
+                i
+                for i in range(len(messages) - 1, -1, -1)
+                if messages[i].get("role") == "user" and isinstance(messages[i].get("content"), str)
+            )
             results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
             views = [json.loads(m["content"]) for m in results if m.get("name") == "document_view"]
             workspace = prompt.startswith("原生工作区")
             target = {"path": "outputs/draft.docx"} if workspace else {"file_id": prompt.split()[1]}
             at = "p:2"
             if workspace and not any(m.get("name") == "exec" for m in results):
-                import base64
-                from pathlib import Path
-
-                source = Path(__file__).resolve().parents[2] / "vendor/office-suite/runtime/fixtures/report.docx"
-                payload = base64.b64encode(source.read_bytes()).decode()
                 import shlex
 
-                script = f"import base64; open('/workspace/outputs/draft.docx','wb').write(base64.b64decode('{payload}'))"
+                script = (
+                    "from docx import Document; d=Document(); d.add_paragraph('Native workspace'); "
+                    "d.add_paragraph('Workspace quote for integration'); d.save('/workspace/outputs/draft.docx')"
+                )
                 command = "mkdir -p /workspace/outputs && python -c " + shlex.quote(script)
                 office_release.clear()
                 return LLMResponse(tool_calls=[ToolCall("office_create", "exec", {"cmd": command})])

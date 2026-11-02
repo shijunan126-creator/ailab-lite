@@ -299,9 +299,13 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
         surface = page.locator(".preview-pane, .viewer")
         expect(surface).to_have_count(1)
-        page_image = surface.locator("img, .pdf-page canvas").first
+        page_image = surface.locator("iframe.office-frame, img, .pdf-page canvas").first
         expect(page_image).to_be_visible(timeout=15000)
-        if page_image.evaluate("el => el.tagName === 'IMG'"):
+        if page_image.evaluate("el => el.tagName === 'IFRAME'"):
+            slide = page_image.content_frame.locator(".slide-frame").first
+            expect(slide).to_be_visible(timeout=20000)
+            assert slide.inner_text().strip()
+        elif page_image.evaluate("el => el.tagName === 'IMG'"):
             expect(page_image).to_have_js_property("complete", True)
             assert page_image.evaluate("el => el.naturalWidth > 0 && el.naturalHeight > 0")
         else:

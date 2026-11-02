@@ -146,6 +146,11 @@ def stack(tmp_path_factory):
     tag = uuid.uuid4().hex[:8]
     ports = {"api": BASE_PORT, "broker": BASE_PORT + 1, "agent": BASE_PORT + 2, "worker": BASE_PORT + 3}
     data = work / "data"
+    models_path = work / "models.toml"
+    models_path.write_text(
+        (PLATFORM / "tests/models.test.toml").read_text()
+        + '\n[[models]]\nid = "test-office-vision"\nname = "Office Vision"\nprovider = "mock"\ncapabilities = ["tools", "vision"]\n'
+    )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AILAB_")}
     env.update(
         AILAB_ENV="test",
@@ -158,9 +163,10 @@ def stack(tmp_path_factory):
         AILAB_FILE_QUEUE=f"ailab:stream:e2e-files-{tag}",
         AILAB_SANDBOX_PROVIDER=provider,
         AILAB_IMAGE_SEARCH_PROVIDER="mock",
-        AILAB_MODELS_FILE=str(PLATFORM / "tests" / "models.test.toml"),
+        AILAB_MODELS_FILE=str(models_path),
         AILAB_API_BASE_URL=f"http://127.0.0.1:{ports['api']}",
         AILAB_BROKER_BASE_URL=f"http://127.0.0.1:{ports['broker']}",
+        AILAB_WORKER_BASE_URL=f"http://127.0.0.1:{ports['worker']}",
         AILAB_DEV_TOKEN=TOKEN,
         AILAB_ADMIN_USERNAME=USERNAME,
         AILAB_ADMIN_PASSWORD=PASSWORD,
@@ -325,7 +331,7 @@ def wait_models(page):
 def select_model(page, model):
     from playwright.sync_api import expect
 
-    name = {"test-fast": "Test Fast", "test-pro": "Test Pro"}[model]
+    name = {"test-fast": "Test Fast", "test-pro": "Test Pro", "test-office-vision": "Office Vision"}[model]
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text=name).click()

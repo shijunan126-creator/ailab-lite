@@ -36,7 +36,8 @@ def _frame(page, name):
 
 def _select(page, frame, kind):
     if kind == "xlsx":
-        canvas = frame.locator("canvas").first
+        expect(frame.get_by_role("tab", name="Revenue", exact=True)).to_be_visible(timeout=20000)
+        canvas = frame.locator(".xlsx-grid")
         expect(canvas).to_be_visible(timeout=20000)
         box = canvas.bounding_box()
         assert box
@@ -46,10 +47,20 @@ def _select(page, frame, kind):
         page.mouse.move(box["x"] + 280, box["y"] + 90, steps=12)
         page.mouse.up()
     else:
-        selector = {"docx": '.docx [data-at="p:2"]', "pdf": ".textLayer span", "pptx": ".pptx-slide svg text"}[kind]
-        text = frame.locator(selector).first
+        selector = {"docx": '[data-at="p:2"]', "pdf": ".textLayer span", "pptx": ".pptx-slide svg text"}[kind]
+        text = frame.get_by_text("Product Launch", exact=True).first if kind == "pptx" else frame.locator(selector).first
         expect(text).to_be_visible(timeout=25000)
-        text.dblclick()
+        if kind == "pdf":
+            text.click(click_count=3)
+            selection = frame.locator("body").evaluate("() => document.getSelection()?.toString()")
+            assert selection and selection.strip(), "real PDF text selection was empty"
+        box = text.bounding_box()
+        assert box
+        if kind != "pdf":
+            page.mouse.move(box["x"] + 2, box["y"] + min(box["height"] / 2, 8))
+            page.mouse.down()
+            page.mouse.move(box["x"] + min(box["width"] - 2, 160), box["y"] + min(box["height"] / 2, 8), steps=12)
+            page.mouse.up()
     add = frame.get_by_role("button", name=re.compile("^添加(到对话)?$"))
     expect(add).to_be_visible(timeout=10000)
     add.click()
@@ -61,7 +72,7 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
     page = logged_in
     page.get_by_role("radio", name="对话", exact=True).click()
     page.set_input_files(".composer-box input[type=file]", str(FIXTURES / name))
-    _start_conversation(page, "请确认已收到文件")
+    _start_conversation(page, "请确认已收到文件", "test-office-vision")
     _wait_for_turns(page, 1)
     chip = page.locator(".turn .attach-chip.open").filter(has_text=name).first
     chip.click()
@@ -76,8 +87,24 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
     _wait_for_turns(page, 2)
     sent = page.locator(".turn .quote-chip").last
     expect(sent).to_contain_text(quote)
+    if kind == "xlsx":
+        frame.get_by_role("tab", name="Notes", exact=True).click()
     sent.click()
-    expect(_frame(page, name).locator(".agent-mark")).to_be_visible(timeout=10000)
+    revealed = _frame(page, name)
+    if kind == "docx":
+        end = time.monotonic() + 10
+        while not revealed.locator("body").evaluate("() => Boolean(CSS.highlights.get('office-reveal')?.size)"):
+            assert time.monotonic() < end
+            page.wait_for_timeout(100)
+    elif kind == "pptx":
+        expect(revealed.locator(".shape-revealed")).to_be_visible(timeout=10000)
+    elif kind == "pdf":
+        assert revealed.locator("body").evaluate(
+            "() => Boolean(CSS.highlights.get('office-reveal')?.size) || document.querySelector('.revealed') !== null"
+        )
+    else:
+        # The canvas highlight is not a DOM element; the persisted location proves the reveal target.
+        expect(revealed.get_by_role("tab", name="Revenue", exact=True)).to_have_attribute("aria-selected", "true")
     if kind == "docx":
         results = []
         page.on(
@@ -89,6 +116,8 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         assert results and all(r.ok for r in results)
         assert "unavailable" not in page.locator(".turn").last.inner_text()
         expect(page.locator(".turn").last).to_contain_text("原生截图结果")
+    expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
+    expect(page.locator(".turn").last).to_contain_text("capture_id")
 
 
 def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
@@ -99,11 +128,11 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
         lambda response: results.append(response) if "/client-calls/" in response.url and response.url.endswith("/result") else None,
     )
     page.get_by_role("radio", name="工作", exact=True).click()
-    _start_conversation(page, "原生工作区验收")
+    _start_conversation(page, "原生工作区验收", "test-office-vision")
     try:
         frame = _frame(page, "draft.docx")
-        expect(frame.locator('.docx [data-at="p:2"]')).to_be_visible(timeout=25000)
-        expect(frame.locator(".agent-mark")).to_be_visible(timeout=10000)
+        expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=25000)
+        expect(frame.locator(".callout")).to_be_visible(timeout=10000)
         page.wait_for_timeout(900)  # The viewer state uses a 600 ms debounce.
     finally:
         httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
@@ -111,3 +140,5 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     assert results and all(r.ok for r in results)
     assert "unavailable" not in page.locator(".turn").last.inner_text()
     expect(page.locator(".turn").last).to_contain_text("原生截图结果")
+    expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
+    expect(page.locator(".turn").last).to_contain_text("capture_id")
