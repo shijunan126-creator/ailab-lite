@@ -1,3 +1,11 @@
+## 2026-11-02 文档查看后端
+
+- Portal `7d226ab` 是前端合同权威：引用可为 file 或 run/path；reveal 必带 filename；截图走 `client.call kind=capture_view`，成功 value 是对象，JS 的 value 仍是 JSON 字符串。查看状态的 at 可以是 null；不另建 capture_request 事件/上传路由。
+- 引用关系与普通附件分开存，文件来源另记 agent_read 才能进入删除/撤权围栏；排队/插话换 Run 时同时迁移引用 run_id。不要在出队时取实时选区，也不要触发全文附件准备。
+- pdf.js 拒绝 Node Buffer；用共享 buffer 的 Uint8Array view，不能为了类型转换额外复制整份文件。V8 的虚拟地址空间不能用小 RLIMIT_AS 限制；viewer 用 RSS watchdog、heap/CPU/文件大小和总期限共同限制。原生单元格/对象 locator 必须让同版本 runtime check() 校验，结构位置不能猜 LO 物理页。
+- 用户提示加入引用时保留原 run 对象的图片登记，不能浅复制后把 `_image_files` 留在副本；列表序列化必须批量取引用（outer join 当前文件围栏），不能每轮查一次。ASGI 断线测试不能让 receive 无 await 无限返回 http.request，会饿死事件循环；用明确 spec_version/断线事件。
+- 新迁移测试回到历史 revision 后，最终 metadata 漂移比较应再升到 head；单行表的 EXPLAIN 可以合理选扫描，用有代表性的基数验证索引。实现和测量边界见 [P3 记录](docs/progress/updates/2026-11-02-office-suite-p3.md)。
+
 ## 2026-11-02 办公模块上下文
 
 - 办公 `loaded_skills` 只管安装/登记；去重必须认当前段中配对成功且正文hash一致的 `load_skill` 结果。派生索引不进checkpoint；压缩丢正文后可重读，摘要中的模块身份不代表正文仍可见。

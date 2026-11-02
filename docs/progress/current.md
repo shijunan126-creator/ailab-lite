@@ -1,10 +1,9 @@
-# 办公能力完整迁移：实施（2026-11-02）
+# 办公能力完整迁移：P3 后端（2026-11-02）
 
-- 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
-- 已定：许可（Apache-2.0/MIT）、命名、vendor 布局、模块读取、可见性、视觉验收与侧栏工具，见计划“实施决策”。
-- P0资源基线 `5da37fa`；本轮仅实施P1后端，代码提交 `8800615`、`0a48b72`：固定 `load_skill(name, resource?, cursor?)`、Chat模式过滤、模块分片/hash、消息配对可见性、ModelPolicy预算拒绝，以及三类压缩的导航索引与按需重读。没有启动P2/P3或改Portal。
-- 验证命令、计数、基线与未测边界统一见[P1记录](updates/2026-11-02-office-suite-p1.md)。本地实现不等于真模型缓存验收；真实 `cached_tokens/prompt_tokens` 检查明确属于P5。
-- 下一步：主任务审查P1提交与测试证据；P2/P3须主任务另行安排。本轮不push、不提PR、不部署。
+- 当前分支 `feat/office-suite-p3`，base `feat/office-suite@4872682`，工作树 `/Users/michael/.t3/worktrees/ailab-lite/t3-ae9a6e21`。本轮只授权 P3 实现、验证和本地提交；不 push、不建 PR、不部署；P2 并行资源目录和 Portal 未修改。
+- 已实现代码 `a12aa42`，修正 `5219aa8`/`513fe28`，回归 `ff5b0eb`/`db8bdc7`：原生查看索引与分享身份、live workspace 受控流、冻结 doc_refs、临时查看状态、固定 document_view、outbox reveal 和 client.call viewport capture。按 Portal `7d226ab` 修订合同；具体边界、性能和检查见 [P3 记录](updates/2026-11-02-office-suite-p3.md)。
+- 唯一一次 Python 全套 2052 passed / 165 skipped / 7 failed；7 项修复后定向复核通过，新增修正回归通过。Ruff/format/差异检查通过；无已知失败。没有再次运行全套；复核中测试自身忙循环的中断与修正、PG/Redis/Linux/真模型等未测边界明确记录于 P3 记录。P0/P1 的历史证据分别见 [P0](updates/2026-11-02-office-suite-p0.md)、[P1](updates/2026-11-02-office-suite-p1.md)。
+- 下一步：由主任务整合并审查 P2/P3/P4，核对 P3 viewer 构建入口和 P2 制作 reader 的依赖层；P5 真模型、Linux 容量与联合验收不自动开展。
 
 ---
 
