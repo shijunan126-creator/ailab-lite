@@ -1197,6 +1197,70 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
     assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
 
 
+@pytest.mark.parametrize("context_tokens, refused", [(17000, True), (64000, False)])
+def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatch, context_tokens, refused):
+    from ailab_platform.agent.skill_modules import read_module
+    from ailab_platform.agent.tools import tool_result_message
+    from ailab_platform.model_policy import ModelPolicy, estimator
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=context_tokens, max_output_tokens=512, capabilities=["tools"])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "options": {"mode": "work"},
+                "context_settings": {"auto_compact": False},
+            }
+
+    def call(index, call_id, resource=None):
+        arguments = {"name": "platform.docx"}
+        if resource:
+            arguments["resource"] = resource
+        return {
+            "index": index,
+            "id": call_id,
+            "type": "function",
+            "function": {"name": "load_skill", "arguments": json.dumps(arguments)},
+        }
+
+    first, second = "references/common-rules.md", "references/decorations.md"
+    batch = [call(0, "first", first), call(1, "second", second), call(2, "duplicate", first)]
+    platform = Platform()
+    with scripted_server([{"tool_calls": [call(0, "navigation")]}, {"tool_calls": batch}, {"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 3  # no model round trip between resources
+    navigation = json.loads(next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "navigation"))
+    assert "同一次回复里并列调用 load_skill" in navigation["skill"]
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+        assert json.dumps(after["messages"][: len(before["messages"])], ensure_ascii=False) == json.dumps(
+            before["messages"], ensure_ascii=False
+        )
+        assert {k: v for k, v in before.items() if k != "messages"} == {k: v for k, v in after.items() if k != "messages"}
+    appended = requests[-1]["messages"][len(requests[-2]["messages"]) :]
+    assert [c["id"] for c in appended[0]["tool_calls"]] == ["first", "second", "duplicate"]
+    assert [m["role"] for m in appended] == ["assistant", "tool", "tool", "tool"]
+    assert [m["tool_call_id"] for m in appended[1:]] == ["first", "second", "duplicate"]
+    results = [json.loads(m["content"]) for m in appended[1:]]
+    assert results[0]["complete"] and results[0]["skill"] == read_module("platform.docx", "work", first)["skill"]
+    assert results[2]["already_loaded"] and "skill" not in results[2]
+    candidate = tool_result_message("second", "load_skill", read_module("platform.docx", "work", second))
+    prefix = [*requests[-2]["messages"], appended[0]]
+    reserve = min(2048, spec.max_output_tokens) + 256
+    alone = estimator.estimate("m", {"messages": [*prefix, candidate], "tools": requests[-1]["tools"]}) + reserve
+    cumulative = estimator.estimate("m", {"messages": [*prefix, appended[1], candidate], "tools": requests[-1]["tools"]}) + reserve
+    assert alone < ModelPolicy.input_budget(spec)  # second resource fits without the first result
+    if refused:
+        assert cumulative >= ModelPolicy.input_budget(spec)
+        assert not results[1]["ok"] and "cannot fit" in results[1]["error"] and "skill" not in results[1]
+    else:
+        assert cumulative < ModelPolicy.input_budget(spec)
+        assert results[1]["complete"] and results[1]["skill"] == read_module("platform.docx", "work", second)["skill"]
+
+
 @pytest.mark.parametrize("path", ["in_turn", "cross_turn"])
 @pytest.mark.parametrize("keep", [False, True])
 def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
