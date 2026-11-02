@@ -110,6 +110,7 @@ def test_chat_mode_offers_no_sandbox_tools_and_never_starts_a_sandbox() -> None:
     assert [[t["function"]["name"] for t in offered] for offered in llm.offered] == [
         [
             "search_capabilities",
+            "document_view",
             "memory",
             "recall_history",
             "extract_text",

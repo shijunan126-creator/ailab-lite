@@ -61,5 +61,5 @@ def test_confirmed_steers_bounded_checkpoint_order_and_index(api):  # noqa: F811
         assert "ix_queued_messages_run_state" in plan or "queued_messages_pkey" in plan or "sqlite_autoindex_queued_messages" in plan
     result = api.get("/v1/runs/" + run, headers=AUTH).json()["steered"]
     # Five is the pending queue capacity, not the cumulative number of acknowledged steers.
-    assert result == [{"id": qid, "prompt": f"steer-{5 - i}"} for i, qid in enumerate(order)]
+    assert result == [{"id": qid, "prompt": f"steer-{5 - i}", "doc_refs": []} for i, qid in enumerate(order)]
     assert detail(api, conv)["turns"][0]["steered"] == result
