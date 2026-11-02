@@ -38,11 +38,11 @@ from .routes_inbox import router as inbox_router
 from .routes_internal import router as internal_router
 from .routes_library_summary import router as library_summary_router
 from .routes_library_tools import router as library_tools_router
-from .routes_market import router as market_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
 from .routes_ocr import extraction_router, preparation_router, vision_router
 from .routes_ocr import router as ocr_router
+from .routes_platform_skills import router as platform_skills_router
 from .routes_projects import router as projects_router
 from .routes_reader import router as reader_router
 from .routes_runs import router as runs_router
@@ -162,7 +162,7 @@ app.include_router(genui_router)
 app.include_router(skill_drafts_router)
 app.include_router(skill_drafts_internal_router)
 app.include_router(skills_router)
-app.include_router(market_router)
+app.include_router(platform_skills_router)
 app.include_router(memory_router)
 app.include_router(library_tools_router)
 app.include_router(files_router)

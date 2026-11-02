@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import tempfile
 import zipfile
+from contextlib import nullcontext
 from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -48,6 +49,10 @@ def _owned(db, user, draft_id):
     row = db.get(SkillDraft, draft_id, populate_existing=True)
     if not row or row.user_id != user.id:
         raise HTTPException(404, "草稿不存在")
+    if row.origin == "platform_admin":
+        from .routes_skills import _admin
+
+        _admin(user)
     return row
 
 
@@ -90,6 +95,8 @@ def _output(db, row, include_files=True):
             "result",
         )
     }
+    if row.origin == "platform_admin" and row.status != "confirmed":
+        result["result"] = None
     conv = db.get(Conversation, row.conversation_id) if row.conversation_id else None
     result["conversation_title"] = conv.title if conv and not conv.deleted_at else None
     result["base"] = {"name": row.base_name, "kind": row.base_kind, "file_id": row.base_file_id} if row.base_name else None
@@ -271,7 +278,10 @@ def discard(draft_id: str, expected_revision: int, user: User = Depends(current_
 @router.post("/v1/skill-drafts/{draft_id}/confirm")
 def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
     storage = get_storage()
-    with user_critical_section(db, user.id):
+    from .brand import brand_lock
+
+    draft = _owned(db, user, draft_id)
+    with brand_lock(db) if draft.origin in {"platform", "platform_admin"} else nullcontext(), user_critical_section(db, user.id):
         row = _owned(db, user, draft_id)
         if row.status == "confirmed" and row.result:
             return row.result
@@ -286,6 +296,23 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
         except skillfiles.SkillFileError as exc:
             raise HTTPException(422, str(exc)) from exc
         name = info["name"]
+        from .platform_skills import SYSTEM_OWNER, active_skill, check_name, subscription
+
+        platform_sub = None
+        platform_admin = row.origin == "platform_admin"
+        if platform_admin:
+            platform_skill = active_skill(db, row.target)
+            if name != platform_skill.name:
+                raise HTTPException(422, "平台技能不能更改名称")
+        elif row.origin == "platform":
+            platform_skill = active_skill(db, row.target)
+            platform_sub = subscription(db, user.id, platform_skill.id)
+            if name != platform_skill.name:
+                raise HTTPException(422, "自定义技能不能更改名称")
+            if row.action == "create" and platform_sub.custom_lineage_id:
+                raise HTTPException(409, "技能已自定义，请重新打开")
+        else:
+            check_name(db, name)
         from ..agent.prompts import skills
 
         if name in skills():
@@ -295,7 +322,7 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
         if row.action == "update":
             if (
                 not parent
-                or not parent.is_head
+                or (not parent.is_head and not platform_admin)
                 or parent.deleted_at
                 or parent.purged_at
                 or parent.status != FileStatus.READY
@@ -304,6 +331,10 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
                 raise HTTPException(409, "技能已被修改，请重新打开最新版本")
         elif heads:
             raise HTTPException(409, "已有同名个人技能")
+        if platform_admin:
+            head = db.scalar(select(FileObject).where(FileObject.lineage_id == parent.lineage_id, FileObject.is_head == 1))
+            if not head or head.id != (row.result or {}).get("expected_head_file_id") or platform_skill.current_file_id != row.base_file_id:
+                raise HTTPException(409, "平台版本已改变，请重新打开草稿")
         is_zip = len(files) != 1 or bool(parent and parent.filename.lower().endswith(".zip"))
         with tempfile.NamedTemporaryFile() as tmp:
             if is_zip:
@@ -324,32 +355,46 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
                 settings.max_upload_bytes, settings.max_sandbox_read_bytes, skillfiles.MAX_ZIP if is_zip else skillfiles.MAX_SKILL_MD
             ):
                 raise HTTPException(413, "技能包超过大小限制")
-            enforce_library_quota(db, user.id, size)
+            if not platform_admin:
+                enforce_library_quota(db, user.id, size)
             tmp.seek(0)
             digest = hashlib.file_digest(tmp, "sha256").hexdigest()
             file_id = new_id("fil")
             filename = name + (".zip" if is_zip else ".md")
-            key = f"skills/{user.id}/{file_id}/{filename}"
+            owner_id = SYSTEM_OWNER if platform_admin else user.id
+            key = f"skills/{owner_id}/{file_id}/{filename}"
             content_type = "application/zip" if is_zip else "text/markdown"
             storage.put_file(key, tmp.name, content_type)
             try:
                 file = FileObject(
                     id=file_id,
-                    user_id=user.id,
+                    user_id=owner_id,
                     filename=filename,
                     content_type=content_type,
                     size=size,
                     sha256=digest,
                     storage_key=key,
                     status=FileStatus.PENDING,
-                    purpose="skill",
-                    meta={"processing": "queued", "skill_claim": name, "source": "draft"},
+                    purpose="platform_skill" if platform_admin else "skill",
+                    meta={
+                        "processing": "queued",
+                        "skill_claim": name,
+                        "source": "draft",
+                        **({"platform_skill_id": platform_skill.id} if platform_admin else {}),
+                    },
                 )
                 assign_file_version(db, file, parent)
                 db.add(file)
                 stale = trim_file_versions(db, file)
                 db.flush()
                 stage_job(db, "file", file_id=file.id)
+                if platform_sub is not None:
+                    platform_sub.custom_lineage_id = file.lineage_id
+                    platform_sub.base_file_id = platform_sub.base_file_id or row.base_file_id
+                if platform_admin:
+                    from ..audit import record_audit
+
+                    record_audit(db, "platform_skills.version", "skill", platform_skill.id, actor_id=user.id, detail={"file_id": file.id})
                 row.result = {"file_id": file.id, "name": name, "version": file.version}
                 row.status, row.stage = "confirmed", None
                 db.commit()
@@ -364,7 +409,12 @@ def confirm(draft_id: str, body: RevisionIn, user: User = Depends(current_user),
 @router.post("/v1/skills/{name}/drafts", status_code=202)
 def open_skill(name: str, response: Response, user: User = Depends(current_user), db: Session = Depends(get_db)):
     from ..skill_index import checked_index
+    from .platform_skills import platform_name
+    from .routes_platform_skills import customize
 
+    platform = platform_name(db, name)
+    if platform:
+        return customize(platform.id, response, user, db)
     storage = get_storage()
     with user_critical_section(db, user.id):
         personal = next((s for s in personal_skills(db, user) if s["name"] == name and not s.get("error")), None)

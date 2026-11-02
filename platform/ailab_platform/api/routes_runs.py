@@ -126,7 +126,11 @@ def validate_run_input(
         candidate = None
         if item.get("file_id"):
             source = db.get(FileObject, item["file_id"])
-            if source and source.user_id == user.id and source.purpose == "skill":
+            if source and source.purpose == "platform_skill":
+                candidate = next(
+                    (s for s in personal if s.get("platform") and s.get("id") == (source.meta or {}).get("platform_skill_id")), None
+                )
+            elif source and source.user_id == user.id and source.purpose == "skill":
                 candidate = next((s for s in personal if s.get("lineage_id") == source.lineage_id), None)
             if candidate is None:
                 raise HTTPException(400, f"技能「{item['name']}」不存在或已删除")
@@ -140,7 +144,7 @@ def validate_run_input(
             raise HTTPException(400, f"技能「{title}」不存在或已删除")
         if name in off and name not in BASE_SKILLS:
             raise HTTPException(400, f"技能「{title}」已关闭")
-        if name in denied or (candidate and not platform and personal_policy == "disabled"):
+        if name in denied or (candidate and not platform and not candidate.get("platform") and personal_policy == "disabled"):
             raise HTTPException(400, f"技能「{title}」已被管理员停用")
         if candidate and not platform and (name not in allowed or allowed[name]["file_id"] != candidate["file_id"]):
             approval = db.get(SkillApproval, candidate["file_id"])
@@ -159,7 +163,13 @@ def validate_run_input(
         frozen = {
             "name": name,
             "title": title,
-            "kind": "base" if name in BASE_SKILLS else "builtin" if platform else "personal",
+            "kind": "base"
+            if name in BASE_SKILLS
+            else "builtin"
+            if platform
+            else "platform"
+            if candidate and candidate.get("platform")
+            else "personal",
             "at": position,
         }
         if candidate and not platform:
@@ -328,6 +338,9 @@ def start_run(
             input_file_ids=inputs,
             options={**options, **({"client": client} if client else {})},
         )
+        from .platform_skills import usable_platform
+
+        run.runtime_meta = {"platform_skills": list(usable_platform(db, user).values())}
         db.add(run)
         if conversation is not None:
             conversation.model = model_id

@@ -182,14 +182,20 @@ def trim_file_versions(db: Session, file: FileObject) -> list[str]:
 
     db.flush()
     request_ready_preview(db, file)
-    oldest = list(
-        db.scalars(
-            select(FileObject)
-            .where(FileObject.lineage_id == file.lineage_id, FileObject.purged_at.is_(None))
-            .order_by(FileObject.version.desc())
-            .offset(settings.max_file_versions)
-        )
-    )
+    query = select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.purged_at.is_(None))
+    if file.purpose == "platform_skill":
+        from .models import PlatformSkill, RunAssetRef, SkillDraft, UserPlatformSkill
+
+        # Correlated index probes: do not load every run/subscription/draft in the platform to retain one lineage.
+        for source, predicate in (
+            (PlatformSkill, PlatformSkill.current_file_id == FileObject.id),
+            (UserPlatformSkill, UserPlatformSkill.base_file_id == FileObject.id),
+            (RunAssetRef, RunAssetRef.file_id == FileObject.id),
+            (SkillDraft, (SkillDraft.base_file_id == FileObject.id) & SkillDraft.status.in_(["preparing", "ready", "failed"])),
+        ):
+            query = query.where(~select(1).select_from(source).where(predicate).exists())
+        query = query.limit(settings.gc_batch_size)
+    oldest = list(db.scalars(query.order_by(FileObject.version.desc()).offset(settings.max_file_versions)))
     return delete_file_rows(db, oldest, tombstone=True)
 
 

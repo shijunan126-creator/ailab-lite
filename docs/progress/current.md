@@ -1,9 +1,36 @@
 # GenUI 说明跨轮复用（2026-11-02）
 
-- 分支 `fix/genui-timeline-alignment`，base `main@82ff8285`；本地 `origin/main@d7e2058` 多3提交，未混入。用户已追加授权：本线程全部改动提PR，CI通过后merge，并增量部署最新main；无工具模型不在优化范围。
+- 分支 `fix/genui-timeline-alignment`，实施基线 `main@82ff8285`，发布前已整合 `origin/main@d7e2058`。用户已追加授权：本线程全部改动提PR，CI通过后merge，并增量部署最新main；无工具模型不在优化范围。
 - 已实现：按实际保留的配对工具结果识别完整当前说明；重复读取只返回短提示，新组件只补缺失依赖，压缩/恢复后按实际内容重判。保持旧消息与工具定义不变，不增加长期状态。前序记忆、时间线与预览间距修复保留。
 - 验证与升级边界见[本轮记录](updates/2026-11-02-genui-doc-reuse.md)。Portal138项/build、Ruff、真实压缩2例、真实Chat/Work四轮检查通过；后续累计缓存命中分别96.20%/97.24%，具体冷启动排除范围与局限见记录。Python全套1964通过/163跳过，最后追加的两种压缩边界另行通过。
-- 前序范围和验收只链接：[记忆审查](../reviews/2026-11-02-memory-lifecycle-audit.md)、[时间线/预览](updates/2026-11-02-genui-timeline.md)。下一步：提交本线程改动、整合origin/main，创建PR，绿后merge并部署。原有.DS_Store和.github本地文件保留，不入PR；部署仅更新平台/Portal，无备份、无额外测试。
+- 前序范围和验收只链接：[记忆审查](../reviews/2026-11-02-memory-lifecycle-audit.md)、[时间线/预览](updates/2026-11-02-genui-timeline.md)。下一步：创建PR并由CI验证整合后的最终代码，绿后merge并部署。原有.DS_Store和.github本地文件保留，不入PR；部署仅更新平台/Portal，无备份、无额外测试。
+
+---
+
+# 本机部署与六个广场技能发布：交接（2026-11-02）
+
+- 文档分支 `docs/deploy-41dc893`，base `origin/main@41dc893`；本轮明确授权本机部署、管理员 API 导入、文档 PR，不自动合并或追加验收。下方旧交接中的未部署/待合并状态为历史记录：#143/#144 已包含在本次基线。
+- 已完成：后端共享、Portal、Office 均切到 `release-41dc893`；迁移 0046→0047；12 服务 running、10 项健康检查 healthy，Portal HTTP 200。六个技能全部经部署后的管理员 API 新建、上传并发布；结果、命令和边界见[部署记录](updates/2026-11-02-prefix-cache-matrix.md#部署2026-11-02)。其余镜像、VM 与服务资源限额复用。
+- 本轮未备份，未跑部署后测试套件、浏览器或真模型。gongwen 尚未在新沙箱镜像复测；字体别名使用 Noto 替代，不代表标准公文字体或合规验收。此前矩阵为隔离栈历史证据。
+- 剩余与下一步：审阅本次文档 PR，之后由用户使用反馈；仅另获授权才复测 gongwen 或继续实施。部署命令详情保留本机 AILab-local 的 `state/deploy-release-41dc893/report.md`，私有配置与凭据未入库。
+
+---
+
+# 前缀缓存矩阵与首批广场技能：历史实施交接（2026-11-02）
+
+- 分支 `test/prefix-cache-matrix`，base `origin/main@c308ed7`。用户授权：测试子代理自行启动隔离临时栈、真实模型多轮矩阵、导入并试用六个 ZIP、修复缓存缺口、回归与完整 pytest、提交 PR；不部署、不合并。下方管理员技能旧交接的“待 PR/合并”已由 #143 取代。
+- 已完成：文件技能按 file_id/模式跨轮复用正文，只登记到 loaded_skills；租沙箱时按 run 绑定读取并安装随包文件（读不到只警告），Chat 不再读文件；四项录制请求回归。审查时去掉了 run 开始的额外读取（Chat 每轮多一次读、读失败会整轮失败）。29 组多轮与六个真实技能任务，逐调用计数、首处差异、边界和限制统一见[矩阵](updates/2026-11-02-prefix-cache-matrix.md)。广场稳定续轮 Chat/Work 98.14%/98.49%；不宣称全场景 ≥95%，短 Chat 供应商限制、新版与压缩冷段均保留实测。
+- 六包扫描发布并以普通用户添加全部通过；五个任务通过，gongwen 因缺 zip/unzip、标准字体而受限失败（Noto 替代 DOCX 已交付，但不合规且步数耗尽）。本 PR 给 sbx-office 镜像加 zip/unzip，并把仿宋/楷体/黑体/小标宋映射到 Noto（标准字体有商业许可不进镜像）；需重建镜像后复测 gongwen。六包在仓库外 `/private/tmp/skills-pkg/`，未向部署环境导入。
+- 验证：Ruff 与前缀专项 42 通过；完整 Python 1963 passed / 164 skipped / 2 failed，修复网关测试 500ms 期限后该组21通过，未重复整套；未改 Portal，不跑 build。具体基线、未测边界和开销见矩阵。
+- 临时栈已停止，六端口空闲、沙箱0残留。已提交 [PR #144](https://github.com/shijunan126-creator/ailab-lite/pull/144)。下一步：CI 全绿后 merge；部署需用户授权，部署后在管理后台「技能广场」导入六包（gongwen 待重建镜像后复测）。不要把短 Chat 相同正文复放仍不足95%的供应商计数当成消息改写继续修补。
+
+---
+
+# 管理员平台技能与技能广场：历史交接（已合并为 main@c308ed7）
+
+- 分支 `feat/admin-platform-skills`（worktree `.worktrees/platform-skills`），base `origin/main@82ff828`。用户要求：删掉自写八个技能（#140 已关闭）；广场改放高 star、许可可再分发的办公技能；管理员可增删改平台技能（不含基础技能）并同步所有用户，未修改的随平台更新、修改过的不更新，可恢复默认；以后所有 agent 设计考虑前缀缓存（已写入 AGENTS.md，#142）。
+- 已完成：设计 [design](../architecture/design/2026-11-02-admin-platform-skills.md)；后端（Codex，迁移 0047）与 Portal（Claude），记录见[本轮记录](updates/2026-11-02-admin-platform-skills.md)。
+- 下一步：① 本分支全套检查后提 PR、CI 全绿后 merge；② 管理后台可用后按调研首批（gongwen 公文排版、公文写作、humanizer-zh、audit-xls、process-doc、financial-analyst，保留 LICENSE 与来源）导入并用真模型试用；③ 用户要求：完成后交 Codex 用真实模型测文件/图片/技能/压缩/多轮等场景的前缀缓存命中（目标 ≥95%），有问题修复。未授权部署。
 
 ---
 
