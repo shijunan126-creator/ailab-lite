@@ -1,3 +1,8 @@
+## 2026-11-03 Viewer 调用与截图恢复
+
+- 模型可见工具 schema 应简述每个 op 的形状；reveal 的 quote 属于 targets 内，filename 不是目标身份。durable tool 分支的参数错误应返回配对工具结果，不能抛出未被该层捕获的 ToolError 令整轮 failed。
+- 过期 viewport capture 的410是显式重建边界：用 unavailable 文字替换已不可复原图像并记录边界后保存 checkpoint；不要对旧 capture_id 反复恢复。403/404/503及digest变化不按TTL降级。依据见[P5最终修复](docs/progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。
+
 ## 2026-11-02 办公能力整合
 
 - 工作区交付名与资料库冲突后的显示名不是同一个身份。artifact metadata 保留 `artifact_filename`，同一会话祖先链按该名字找父版本，旧记录无该字段时才回退历史原名，并继承父版本显示名；否则上传模板占用原名后，后续同名交付会不断变成新 lineage。回归覆盖原件/两版字节保留与 SQLite/PostgreSQL。

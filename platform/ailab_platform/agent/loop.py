@@ -1460,8 +1460,11 @@ class AgentLoop:
         import base64
         import hashlib
 
+        from .multimodal import CaptureExpired
+
         spec = get_catalog().get(run.get("model"))
         legacy = False
+        expired = False
         pending = [{"content": parts} for parts in state.get("pending_image_inputs", [])]
         for message in [*state["messages"], *pending]:
             if not isinstance(message.get("content"), list):
@@ -1469,7 +1472,18 @@ class AgentLoop:
             parts = []
             for part in message["content"]:
                 if part.get("type") == "ailab_image":
-                    restored = await self._image_content(run_id, run, part["file"], spec)
+                    try:
+                        restored = await self._image_content(run_id, run, part["file"], spec)
+                    except CaptureExpired:
+                        # TTL is a recorded rebuild boundary: never pretend the previous image is still visible.
+                        parts.append(
+                            {
+                                "type": "text",
+                                "text": "文档截图 unavailable（capture_expired）：先前视口截图已过期，不能查看或验证其视觉内容。需要时请求新的截图；不要重试旧capture_id。",
+                            }
+                        )
+                        expired = True
+                        continue
                     images = [item for item in restored if item.get("type") == "image_url"]
                     if len(images) != 1:
                         raise BudgetPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
@@ -1489,7 +1503,9 @@ class AgentLoop:
             message["content"] = parts
         if pending:
             state["pending_image_inputs"] = [message["content"] for message in pending]
-        return legacy
+        if expired:
+            await self._event(run_id, "agent.context_boundary", {"reason": "rebuilt", "cause": "capture_expired"})
+        return legacy or expired
 
     async def _ensure_skill(self, turn, run_id, name, reason, file_id=None):
         name = resolve_name(name)
@@ -2003,7 +2019,22 @@ class AgentLoop:
         elif call.name == "document_view":
             if call.name not in {t["function"]["name"] for t in _tools_for_run(turn.run)}:
                 return {"status": "unavailable"}
+            from pydantic import ValidationError
+
+            from ..contracts.document_view import DocumentView
+
             args = call.arguments
+            try:
+                DocumentView.model_validate(args)
+                if args.get("op") != "get_view" and bool(args.get("file_id")) == bool(args.get("path")):
+                    raise ValueError("document target required")
+                if args.get("op") == "reveal" and not args.get("targets"):
+                    raise ValueError("reveal targets required")
+            except (ValidationError, ValueError):
+                return {
+                    "error": "document_view: open需file_id或path；reveal需file_id或path + targets[{at, quote?}]，"
+                    "quote放在targets内，不传filename；get_view可选view_id；capture需file_id或path + view_id/at/source"
+                }
             spec = get_catalog().get(turn.run.get("model"))
             if args.get("op") == "capture" and (not spec or not spec.supports({"vision"})):
                 return {"status": "unavailable", "reason": "model_vision_required"}
@@ -2039,7 +2070,12 @@ class AgentLoop:
                     result = await self._interruptible(run_id, asyncio.wait_for(capture(), timeout=20))
                 if result.get("status") == "ready" and result.get("capture_id"):
                     file = {"capture_id": result["capture_id"], "filename": "文档截图", "page": 1, "content_type": "image/png"}
-                    parts = await self._image_content(run_id, turn.run, file, spec)
+                    from .multimodal import CaptureExpired
+
+                    try:
+                        parts = await self._image_content(run_id, turn.run, file, spec)
+                    except CaptureExpired:
+                        return {"status": "unavailable", "reason": "capture_expired"}
                     if not any(p.get("type") == "image_url" for p in parts):
                         return {"status": "unavailable", "reason": "capture_expired"}
                     state.setdefault("pending_image_inputs", []).append(parts)

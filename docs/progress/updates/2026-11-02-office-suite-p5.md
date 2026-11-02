@@ -275,3 +275,14 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 本轮指定四项已有上述真实证据，**P5 总体仍为部分验证**：Windows/VBA 实际执行、Microsoft Office 保真、更多复杂模板特性、长时/更大并发、移动端多浏览器合流、旧 viewport 图像 TTL 后成功恢复均不能由本样本推定；部分本就不在此次指定样本中。下一步由主任务审阅本地修复与本节证据、统一最终全套，再决定未验项；不自动推进发布。
 
 清理完成：本轮 c3-p5 容器、卷、网络均为0，四服务/Portal/Redis/两转发/临时 PostgreSQL 共9端口全部关闭，内置浏览器测试页已关闭；个人栈12容器及镜像标签与进入时一致，未操作。构建镜像保留供主任务复用；本轮仓库外请求、日志、数据库、模板/成品及截图在摘要落库后全部清理，不留另一份原始输出。
+
+
+### P5 最终修复与联合检查（2026-11-03）
+
+进入干净 `feat/office-suite@52abb97`，base 仍为 `origin/main@bf0af4f`，未 fetch。仅 cherry-pick 指定 `ff3804b` / `0a0f672`，本地对应 `76fd601` / `c76f046`；保留办公交接为当前任务，测试隔离历史证据链接[原记录](2026-11-02-suite-test-isolation.md)。本次不 push、PR 或部署。
+
+**调用与恢复。** 固定工具描述列明四种 op 的最短调用形状；Agent 在调用内部 API 前检查 DTO 和 reveal targets，错误直接返回可复制的 `file_id或path + targets[{at, quote?}]`，解释 quote 的位置及不传 filename。错误形状不再退化为泛化 unavailable，也不会因抛出未捕获异常终止 Run。Chat/Work 录制请求回归均验证一次纠正成功及工具目录/已有消息保持不变。
+
+旧 viewport capture 的授权读取返回410时，替换无法复原的图像为明确 unavailable/过期说明，记录 `agent.context_boundary(reason=rebuilt,cause=capture_expired)` 后持久化，再继续运行；不重试旧 capture_id，不假装旧图仍可见。Chat/Work 从真实 checkpoint 编解码路径恢复后均 succeeded，截图只读一次，后续请求仅追加。403/404/503 和图像内容变化仍保留暂停保护，不把权限/依赖失败冒充TTL。旧实现运行新增四项回归全部失败；修复后四项通过。
+
+真实 `deepseek-flash` 三次调用均首次使用合法 targets，无形状重试；cached/prompt 为512/3456、3456/3636、3584/3782，续轮合计7040/7418（94.90%）。这只是短上下文工具说明检查：工具返回 sent 为装置回应，未证明真实文档定位；未填充上下文，不把供应商尾部计数造成的不足95%隐去。

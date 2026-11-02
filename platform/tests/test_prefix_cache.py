@@ -1501,3 +1501,104 @@ def test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint(monkeypatch,
     assert next_requests[0]["messages"][0]["content"] == "new deployment"
     assert next_requests[0]["tools"] != old_tools
     assert ("agent.context_boundary", {"reason": "model_changed"}) in platform.events
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_document_reveal_shape_error_allows_one_retry_with_fixed_recorded_tools(mode):
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
+
+        async def document_view(self, run_id, payload):
+            assert payload == {"op": "reveal", "file_id": "file", "targets": [{"at": "page:1", "quote": "text"}]}
+            return {"status": "sent"}
+
+    def reveal(ident, args):
+        return {
+            "tool_calls": [
+                {"index": 0, "id": ident, "type": "function", "function": {"name": "document_view", "arguments": json.dumps(args)}}
+            ]
+        }
+
+    bad = {"op": "reveal", "file_id": "file", "filename": "report.pdf", "quote": "text"}
+    good = {"op": "reveal", "file_id": "file", "targets": [{"at": "page:1", "quote": "text"}]}
+    with scripted_server([reveal("bad", bad), reveal("retry", good), {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 3
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    tool = next(t["function"] for t in requests[0]["tools"] if t["function"]["name"] == "document_view")
+    assert "targets[{at, quote?}]" in tool["description"]
+    error = next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "bad")
+    assert "targets[{at, quote?}]" in error and "filename" in error
+    result = next(m["content"] for m in requests[2]["messages"] if m.get("tool_call_id") == "retry")
+    assert json.loads(result)["status"] == "sent"
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_expired_capture_checkpoint_resumes_once_with_unavailable_note_and_boundary(monkeypatch, mode):
+    from ailab_platform.clients import ClientError
+
+    class Platform(FakePlatform):
+        reads = 0
+
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode}}
+
+        async def get_capture_image(self, run_id, capture_id):
+            self.reads += 1
+            raise ClientError("GET", "/capture", 410, "capture expired")
+
+        async def document_view(self, run_id, payload):
+            return {"status": "unavailable", "views": []}
+
+    monkeypatch.setattr(
+        "ailab_platform.agent.loop.get_catalog",
+        lambda: Catalog([ModelSpec("m", "m", provider="mock", capabilities=frozenset({"tools", "vision"}))]),
+    )
+    file = {"capture_id": "expired", "filename": "文档截图", "page": 1, "content_type": "image/png"}
+    original = image_part(b"\x89PNG\r\n\x1a\noriginal", "image/png")
+    state = fresh_state()
+    state["messages"] = [
+        {"role": "system", "content": system_prompt_for(mode)},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": [original]},
+    ]
+    state["tool_catalog_v1"] = _tools_for_run({"model": "m", "options": {"mode": mode}})
+    state["user_message_index"] = 2
+    platform = Platform()
+    platform.checkpoint = {"step": 1, "state": checkpoint_state(state, {original["image_url"]["url"]: file})}
+    call = {"index": 0, "id": "view", "type": "function", "function": {"name": "document_view", "arguments": '{"op":"get_view"}'}}
+    with scripted_server([{"tool_calls": [call]}, {"content": "截图已过期，可重新打开文档。"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="resume"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert platform.reads == 1 and len(requests) == 2
+    assert_extension(*requests)
+    assert "capture_expired" in json.dumps(requests[0]["messages"], ensure_ascii=False)
+    assert "image_url" not in json.dumps(requests[0]["messages"])
+    assert ("agent.context_boundary", {"reason": "rebuilt", "cause": "capture_expired"}) in platform.events
+    assert "ailab_image" not in json.dumps(platform.checkpoint)
+
+
+@pytest.mark.parametrize("status", [403, 404, 503])
+def test_capture_restore_does_not_treat_authorization_or_dependency_failure_as_expiry(monkeypatch, status):
+    from ailab_platform.clients import ClientError
+
+    class Platform(FakePlatform):
+        async def get_capture_image(self, run_id, capture_id):
+            raise ClientError("GET", "/capture", status, "unavailable")
+
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([ModelSpec("m", "m", capabilities=["vision"])]))
+    state = fresh_state()
+    state["messages"] = [
+        {
+            "role": "user",
+            "content": [{"type": "ailab_image", "file": {"capture_id": "c", "filename": "capture", "content_type": "image/png"}}],
+        }
+    ]
+    platform = Platform()
+    with pytest.raises(BudgetPause, match="图片无法按原内容恢复"):
+        asyncio.run(AgentLoop(platform=platform)._restore_images("r", {"model": "m"}, state))
+    assert not platform.events
