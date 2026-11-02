@@ -112,7 +112,6 @@ def test_modules_are_lossless_hashed_bounded_and_mode_safe():
     assert set(exceptions) == {
         "documents-plugin/skills/docx/references/decorations.md",
         "documents-plugin/skills/docx/references/design-system.md",
-        "pdf-plugin/skills/pdf/SKILL.md",
     }
 
 
@@ -123,6 +122,7 @@ def test_native_template_and_cover_workflows_are_not_summarized():
     end = original.index("## Editing an existing PowerPoint", start)
     assert original[start:end] in adapted
     pdf = (SKILLS / "platform.pdf/resources/SKILL.md").read_text()
+    assert "\n```\n\n### Content Centering" not in pdf
     assert "templates 01–05 report, 06–08 academic dark, 09 institutional" in pdf
     assert "**Fallback**: If Report brief content has emoji → reroute to Creative." in pdf
     setup = (SKILLS / "platform.pdf/env_setup/setup.md").read_text()
@@ -139,6 +139,9 @@ def test_chunk_boundaries_preserve_fences_headings_and_unicode():
     assert code in parts
     assert sum(p.count("```python") for p in parts) == 1
     assert sum("cap_exception" in c for c in chunks) == 1
+    # An info string cannot close a fence; only a bare fence may close it.
+    nested = "```python\nvalue = 1\n```not-a-close\nvalue = 2\n```\n"
+    assert office.atoms(nested) == [nested]
 
 
 @pytest.mark.parametrize("resource", ["modules.json", "briefs/report.md", "scripts/pdf.py"])

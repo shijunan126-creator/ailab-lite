@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
   "chunk_token_cap": 2048,
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [

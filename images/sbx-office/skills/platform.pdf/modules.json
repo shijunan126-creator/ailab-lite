@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "1bf589e8dbefe5192085f597c4a1b3b859680b4cfe438113c77d655e7be56133",
+  "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
   "chunk_token_cap": 2048,
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
@@ -90,50 +90,58 @@
           "start_line": 300
         },
         {
-          "byte_length": 7703,
+          "byte_length": 7550,
           "byte_offset": 30098,
-          "end_line": 578,
-          "estimated_tokens": 2007,
+          "end_line": 573,
+          "estimated_tokens": 1968,
           "id": "4",
-          "sha256": "7d0829597ba8b125a752a82df76e6a682d8effbc1e935abccc3342041256034e",
+          "sha256": "c7b9c1b8042c122c963426257ffd01a44bce3403f5fe2832fca8f3c813cbbaa8",
           "start_line": 437
         },
         {
-          "byte_length": 7667,
-          "byte_offset": 37801,
-          "end_line": 691,
-          "estimated_tokens": 1994,
+          "byte_length": 7812,
+          "byte_offset": 37648,
+          "end_line": 689,
+          "estimated_tokens": 2031,
           "id": "5",
-          "sha256": "bf9ba0db64b5a8fdfb17b462bf9f5895cff8c4a332b770e7613be72e8b8b836e",
-          "start_line": 579
+          "sha256": "affae0d1089761a2b97f55deb5950a2e6c113be5763454d8db0f1700cd5cb476",
+          "start_line": 574
         },
         {
-          "byte_length": 5292,
-          "byte_offset": 45468,
-          "end_line": 778,
-          "estimated_tokens": 1395,
+          "byte_length": 7358,
+          "byte_offset": 45460,
+          "end_line": 801,
+          "estimated_tokens": 1919,
           "id": "6",
-          "sha256": "5cc534c71f674b0f56ae8f8e58ca662f3f7db4a6133f585a63146f6d14b12da8",
-          "start_line": 692
+          "sha256": "6a24e63efaf184bb5639a38058d9da1023a9df7a39d54f06f4fcc22e5c735114",
+          "start_line": 690
         },
         {
-          "byte_length": 18219,
-          "byte_offset": 50760,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
-          "end_line": 939,
-          "estimated_tokens": 4654,
+          "byte_length": 7290,
+          "byte_offset": 52818,
+          "end_line": 862,
+          "estimated_tokens": 1879,
           "id": "7",
-          "sha256": "5652ce4977d98045b79638f3839a9f57caf81aeb4b90154386d6a1a594f498f0",
-          "start_line": 779
+          "sha256": "f2021736264bb4241501515f370d9a8ebf90f58a75708fc29891b1548360fb46",
+          "start_line": 802
         },
         {
-          "byte_length": 2186,
-          "byte_offset": 68979,
-          "end_line": 972,
-          "estimated_tokens": 596,
+          "byte_length": 7827,
+          "byte_offset": 60108,
+          "end_line": 926,
+          "estimated_tokens": 2019,
           "id": "8",
-          "sha256": "ae1b60ce3d893ce8d60267b4b2fb745ab67e45b28e90060f87a76c857ff8dd98",
-          "start_line": 940
+          "sha256": "0be2c88a7c60b18a97ce3cd8113d0ce35bd4fb713380da3016aa7fcebd1fe304",
+          "start_line": 863
+        },
+        {
+          "byte_length": 3226,
+          "byte_offset": 67935,
+          "end_line": 971,
+          "estimated_tokens": 861,
+          "id": "9",
+          "sha256": "79021eac3c7eaeb71d5f1afdbf6a422ac757ba72a754c9be364b745268d4940a",
+          "start_line": 927
         }
       ],
       "deps": [
@@ -163,10 +171,11 @@
       ],
       "patches": [
         "001-tools-and-roots.json",
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "003-markdown-boundary.json"
       ],
       "path": "resources/SKILL.md",
-      "sha256": "ba619d9a720b204e9eea4c2f965f5237ef25de57cf97b4627ef2a7602ae33383"
+      "sha256": "80ada8812e46fdba2b022f7b03c1286eae3590fd55017c05972e95f9eaaa648c"
     },
     {
       "chunks": [
@@ -2043,22 +2052,22 @@
     {
       "chunks": [
         {
-          "byte_length": 7650,
+          "byte_length": 7643,
           "byte_offset": 0,
-          "end_line": 221,
-          "estimated_tokens": 2017,
+          "end_line": 220,
+          "estimated_tokens": 2015,
           "id": "0",
-          "sha256": "e4ca173dc3365260adfbd0956786cf92fbd387fe21f95b8b5d5e4fe955900b89",
+          "sha256": "f44ba44bf9ec9cd0f6b60baf762b8ade2924368e540b12423269e349d21b97e9",
           "start_line": 1
         },
         {
-          "byte_length": 5650,
-          "byte_offset": 7650,
+          "byte_length": 5657,
+          "byte_offset": 7643,
           "end_line": 367,
-          "estimated_tokens": 1495,
+          "estimated_tokens": 1497,
           "id": "1",
-          "sha256": "fc75310a3a35086d1bca65ecfdc4ee547ce87c304a286a58245ac033ac7da883",
-          "start_line": 222
+          "sha256": "70e446c7da5bf2f5b4f2c4193c11f5e83af016aa4786c53de3c439d88ec74af5",
+          "start_line": 221
         }
       ],
       "deps": [

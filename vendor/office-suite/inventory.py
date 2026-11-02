@@ -231,7 +231,7 @@ def inventory() -> dict:
             "acceptance_case_id": "OFFICE-CHUNK-CAP",
             "status": "blocked",
             "reason": (
-                "Three original fenced blocks exceed 2048 estimated tokens. Preserve fences; "
+                f"{len(oversized_sources)} original fenced blocks exceed 2048 estimated tokens. Preserve fences; "
                 "P1 must explicitly admit or reject indivisible blocks within the real model budget."
             ),
         }

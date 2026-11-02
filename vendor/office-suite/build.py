@@ -72,7 +72,7 @@ def atoms(text: str) -> list[str]:
         marker = re.match(r"^\s{0,3}(`{3,}|~{3,})", line)
         if fence:
             pending.append(line)
-            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence):
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= len(fence) and not line[marker.end() :].strip():
                 result.append("".join(pending))
                 pending, fence = [], None
         elif marker:

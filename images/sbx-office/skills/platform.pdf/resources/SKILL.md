@@ -456,7 +456,6 @@ html, body {
 - The gap is <1px — even on white pages, the dark body at the extreme pixel edge is imperceptible after anti-aliasing.
 
 **Rule: when generating multi-page HTML with mixed backgrounds, always set `html, body { background }` to the darkest page's background color.** If all pages are light/white, use the lightest content background (e.g. `#f8fafc`). Never leave `body` background unset (browser default = white = guaranteed white edges on dark pages).
-```
 
 ### Content Centering (No Left/Right Drift)
 

@@ -6,5 +6,9 @@
   {
     "file": "002-execution-contracts.json",
     "reason": "Keep originals read-only and text faithful, remove model defaults, and replace host/network installation with preinstalled dependency contracts while retaining production recipes."
+  },
+  {
+    "file": "003-markdown-boundary.json",
+    "reason": "Remove one unmatched PDF Markdown fence so prose sections remain navigable and no operational text is lost or misclassified as code."
   }
 ]

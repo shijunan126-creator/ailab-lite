@@ -5128,18 +5128,6 @@
     },
     {
       "acceptance_case_id": "OFFICE-02d70291fa1b",
-      "chunk_cap_exceptions": [
-        {
-          "byte_length": 18219,
-          "byte_offset": 50760,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
-          "end_line": 939,
-          "estimated_tokens": 4654,
-          "id": "7",
-          "sha256": "5652ce4977d98045b79638f3839a9f57caf81aeb4b90154386d6a1a594f498f0",
-          "start_line": 779
-        }
-      ],
       "dependencies": {
         "binary": [
           "convert",
@@ -13113,12 +13101,11 @@
       "modes": [
         "work"
       ],
-      "reason": "Three original fenced blocks exceed 2048 estimated tokens. Preserve fences; P1 must explicitly admit or reject indivisible blocks within the real model budget.",
+      "reason": "2 original fenced blocks exceed 2048 estimated tokens. Preserve fences; P1 must explicitly admit or reject indivisible blocks within the real model budget.",
       "runtime_location": "Agent module budget admission (planned:P1)",
       "source": [
         "documents-plugin/skills/docx/references/decorations.md",
-        "documents-plugin/skills/docx/references/design-system.md",
-        "pdf-plugin/skills/pdf/SKILL.md"
+        "documents-plugin/skills/docx/references/design-system.md"
       ],
       "status": "blocked"
     }
