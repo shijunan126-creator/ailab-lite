@@ -11,7 +11,7 @@
 | D1 许可 | 四制作技能 frontmatter 写 “Proprietary. LICENSE.txt has complete terms”，而 LICENSE.txt 全文为 Apache-2.0，按完整条款 Apache-2.0 分发；office-runtime 为 MIT。原 LICENSE 文件原样保留在 vendor，NOTICE 记录来源与修改；每个生成技能包随附 Apache-2.0 LICENSE 和 NOTICE，第三方图标目录随附其 LICENSE-lucide.txt，由构建生成并纳入漂移检查；镜像新增依赖逐项登记许可。 |
 | D2 命名 | 模型可见文本（技能正文、模块、工具描述/结果、提示词）不出现上游产品名、上游专用环境变量或其 citation 标签；适配补丁替换为 AILab 工具与语法，测试对生成资源树与录制请求做大小写不敏感断言。许可与来源文件不改。 |
 | D3 布局 | `vendor/office-suite/upstream/` 原样存放固定提交的四插件 skills/agents 与 office-runtime；`vendor/office-suite/patches/` 有序显式补丁；`vendor/office-suite/build.py` 生成 `images/sbx-office/skills/platform.{docx,xlsx,pptx,pdf}/` 及模块索引。生成物入库，测试重建并比对漂移。旧 reader 目录 迁到同一 runtime 版本后删除，不长期并存两套 parser。 |
-| D4 整文件读取 | 固定 `load_skill(name, resource?)`；不传 resource 返回完整 SKILL.md 导航和文件目录，传 resource 一次返回白名单中的完整文件。manifest 按文件记录 path/hash/estimated_tokens/modes/deps；无分片、cursor、大小硬限或截断。Chat 不见脚本执行材料。整文件放不下剩余上下文时明确返回 cannot fit, compact first；当前配对消息中已有同 hash 完整文件才省略重读。 |
+| D4 整文件读取 | 固定 `load_skill(name, resource?)`；不传 resource 返回完整 SKILL.md 导航和文件目录，传 resource 一次返回白名单中的完整文件。manifest 按文件记录 path/hash/estimated_tokens/modes/deps；无分片、cursor或截断；构建拒绝SKILL.md >100,000 bytes，其他可读资源 >256 KiB或>2000行。Chat 不见脚本执行材料。整文件放不下剩余上下文时明确返回 cannot fit, compact first；当前配对消息中已有同 hash 完整文件才省略重读。 |
 | D5 可见性 | “模型已读”只由当前 messages 中配对成功、完整、同 hash 的结果推导；`loaded_skills` 仅表示安装/登记，不再用于拒绝重读。三类压缩与恢复后重算。 |
 | D6 视觉验收 | 系统级 delivery protocol 未取得，不宣称迁移；AILab 本地固定 `review_artifact` 在受限沙箱渲染成品并返回结构证据与最多4页图，主模型在同一固定工具目录和追加消息中审阅。工具结果始终 pending_model_judgment，工具本身不判质量通过；tools-only 返回结构文字和明确 no visual review。独立视觉模型仍是后续联合验收边界。 |
 | D7 侧栏工具 | 固定工具 `document_view`（op: open/get_view/reveal/capture），Chat/Work 同 schema；选区以消息 `doc_refs` 经 outbox 发送，API 复核。 |
@@ -62,4 +62,4 @@ Chat 获得读取、搜索、结构/选区引用、视觉理解和侧栏协作�
 
 本计划是四办公插件完整能力迁移的维护入口；既有[09 上游复用](../file-context-ocr/09-upstream-reuse.md)保留历史读取接入依据并链接此处。[Prefix Cache 设计](../2026-10-31-prefix-cache.md)和[ADR 0030](../../adr/0030-prefix-stable-model-requests.md)继续约束请求构造；旧能力发现文档中的动态增删 schema 已被后续固定目录合同取代，不能据旧 plan 回退。实施时若修改已采纳合同，须同步 ADR、测试和状态矩阵。
 
-构建合同整合修订（2026-11-02）：整文件读取不变；为匹配loader，构建拒绝 SKILL.md >100,000 bytes，其他可读取资源 >256 KiB 或 >2000行。运行时不以截断规避，取代本页早期“无大小硬限”的描述。
+构建限额与整合验收见[整合记录](../../../progress/updates/2026-11-02-office-suite-integration.md)。

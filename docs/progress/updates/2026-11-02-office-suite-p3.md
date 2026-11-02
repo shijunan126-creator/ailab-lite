@@ -49,3 +49,5 @@ macOS ARM64、Node 26.11.1 上四个代表性样本（含 Python 隔离进程启
 ## 后续边界
 
 P2 reader/制作镜像迁移和 P4 Portal 不在本提交范围；整合时保留本 viewer 的 parser revision 与构建入口，不用旧 context reader 的 revision 冒充。P4 联合验收应覆盖真实 PNG 回传、多标签页认领、分享页，以及范围无法映射时的 unavailable。真实模型缓存指标、Linux 总 RSS 与准入上沿属于 P5；本轮无部署。
+
+整合合同复核（2026-11-02）：已与 Portal `6fe23e9` 和实际后端代码核对，最终 [04 合同](../../architecture/design/office-suite/04-viewer-and-file-contract.md#接口定稿2026-11-02p3p4-共同依据) 使用 client.call 截图与 file/run-path 两种引用。工作区索引 version 为内容hash，不另返回 workspace_revision；Agent 追加冻结引用，不自动加载相邻结构。整合修复与验证另见[整合记录](2026-11-02-office-suite-integration.md)。

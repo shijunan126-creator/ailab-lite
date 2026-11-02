@@ -19,7 +19,7 @@ frame 不持模型/服务凭据，不直连 `/internal`；父 Portal 只通过�
 
 文档引用候选结构：`file_id + file_version + content_revision/derivation_id + locator + quote_hash`；物理页定位另带 render_revision，quote 为有界引用片段，不是授权依据。Word p/t、Excel sheet/range、PPT slide/shape、PDF page 的精确支持按 parser/viewer 映射能力声明，不能伪造 object_id。
 
-Work 尚未交付的文件使用 `run_id + workspace_revision + authorized_path + content_hash`；路径只允许当前租约工作区，UI 只取得受控渲染/内容绑定。交付后替换为正式 file_id/版本。旧版本引用不自动指向最新 head；同名重建必须生成新内容身份并取消旧加载/截图。
+Work 尚未交付的文件使用 `run_id + authorized_path + version(content_hash)`；路径只允许当前租约工作区，UI 只取得受控渲染/内容绑定。交付后替换为正式 file_id/版本。旧版本引用不自动指向最新 head；同名重建必须生成新内容身份并取消旧加载/截图。
 
 对于 Word 分页和 XLSX 打印页，结构 anchor 与 LO 物理页不等价：原生 viewer 选择映射使用 parser 的结构身份，服务端截图使用 render 版本。不能确认对应关系时返回无法精确定位，不能猜测页码或高亮错误位置。浏览器原生 Office 预览与 LO/PDF 版式可能不同，最终交付视觉验收以实际导出版本为准。
 
@@ -70,13 +70,15 @@ reveal 命令需要 API 授权、attempt fencing、稳定 command_id 和 outbox/
 | 接口 | 合同 |
 | --- | --- |
 | `GET /v1/files/{id}/document` | 文档查看索引（Worker 用 runtime reader 生成并缓存为 `derived/{file_id}/viewer.json`，按 content hash＋parser revision 复用）：`{status: ready\|pending\|failed\|unsupported, file_id, version, parser_revision, kind, title, bytes, units, outline[{at,label,level}], blocks?[{at,text}]（仅 docx，有界）, native: bool, reason?}`。pending 时 Portal 轮询；`native=false` 表示超过原生查看准入（字节/页/单元格上限，P3 定值并测量），Portal 回退现有分页预览。分享页走分享身份的同形接口。字节仍由现有 `/v1/files/{id}/content` 流式提供。 |
-| Work 未交付文件 | `GET /v1/runs/{run_id}/workspace/document?path=` 与 `.../workspace/content?path=`：仅当前用户、当前租约工作区、授权路径；返回同形索引及 `version=content_hash`、`workspace_revision`；交付后 Portal 切换到正式 file_id。 |
-| 消息文档引用 | 发送体新增 `doc_refs: [{file_id, version, at, quote}]` 或 `[{run_id, path, version, at, quote}]`（每条 quote ≤4000 字，最多 8 条），与 `file_ids` 同一 outbox/client_send_id 路径。API 校验读取权限、版本存在、`at` 合法、quote 与该范围正文规范化后匹配，存入新表（不复用 `message_file_refs` 唯一键）；retry/edit/fork/排队继承冻结引用。Agent 收到的用户消息以追加文本块呈现引用（文件名、定位、引文），Chat 仅准备该范围＋必要相邻结构，不触发全文 prepare。 |
-| 查看状态 | `PUT /v1/conversations/{id}/view`：`{view_id, file_id, version, at, selection?{at,text}}`，Portal 去抖（≥500ms）上报，短 TTL（10 分钟）临时存储，不写 RunEvent/业务大表；`DELETE` 于关闭侧栏/切走。按 user+conversation+view_id 隔离。 |
+| Work 未交付文件 | `GET /v1/runs/{run_id}/workspace/document?path=` 与 `.../workspace/content?path=`：仅当前用户、当前租约工作区、授权路径；返回同形索引及 `version=content_hash`；交付后 Portal 切换到正式 file_id。 |
+| 消息文档引用 | 发送体新增 `doc_refs: [{file_id, version, at, quote}]` 或 `[{run_id, path, version, at, quote}]`（每条 quote ≤4000 字，最多 8 条），与 `file_ids` 同一 outbox/client_send_id 路径。API 校验读取权限、版本存在、`at` 合法、quote 与该范围正文规范化后匹配，存入新表（不复用 `message_file_refs` 唯一键）；retry/edit/fork/排队继承冻结引用。Agent 收到的用户消息以追加文本块呈现引用（文件名、定位、引文），Agent 仅追加冻结引用正文；不触发全文 prepare，额外相邻结构需模型另行读取。 |
+| 查看状态 | `PUT /v1/conversations/{id}/view`：`{view_id, file_id? | run_id+path, version, at: string|null, selection?{at,text}}`，Portal 去抖（≥500ms）上报，短 TTL（10 分钟）临时存储，不写 RunEvent/业务大表；`DELETE` 于关闭侧栏/切走。按 user+conversation+view_id 隔离。 |
 | 固定工具 `document_view` | Chat/Work 同 schema，`op` ∈ `open\|reveal\|get_view\|capture`。open/reveal：`{file_id\|path, targets?[{at,quote?}], note?}`，API 授权后经 outbox 发 `document.reveal` 事件 `{command_id, file_id?\|path?, filename, version, targets, note?}`，结果只表示“已发送”，不声称用户已看到。get_view：返回该会话活跃 view 快照；多个返回候选，无/过期返回 `unavailable`。capture：`{file_id\|path, at, source: viewport\|render}`；`render` 用服务端受限渲染（复用派生页图，按 file_hash+render_revision+范围缓存）；`viewport` 发 `client.call {call_id, kind: "capture_view", input: {view_id, at?, max_width?}, timeout_ms, deadline}`，Portal 通过现有 client-calls claim/result 回传（成功 value 为 `{image, mime_type:"image/png", width, height, at, version}` 对象，≤2 MiB decoded，绑定 view_id/version），Agent 等待有 deadline（≤20s），超时返回 `unavailable`，不改用第一页冒充。截图作为有 hash/TTL/所有者的派生物，以图片引用进入上下文与 checkpoint。 |
 
 ### 前端实现带来的修订（2026-11-02，以此为准）
 
-- **引用两种目标**：`doc_refs` 每项为 `{file_id, version, at, quote}` 或 `{run_id, path, version, at, quote}`（Work 未交付文件；`path` 与该 Run 预览/工作区里的文件名一致）。轮次输出 `doc_refs` 时每项附 `filename`，Portal 在用户消息下渲染为可点击的引文，点击即在侧栏打开并定位。
-- **`document.reveal` 载荷**：`{command_id, file_id? | path?, filename, version, targets[{at, quote?}], note?}`；`path` 为工作区文件名，对应发出事件的 Run。Portal 按 `command_id` 去重。
+- **引用两种目标**：`doc_refs` 每项为 `{file_id, version, at, quote}` 或 `{run_id, path, version, at, quote}`（Work 未交付文件；`path` 是授权工作区源路径，如 `outputs/draft.docx`；与显示名 `filename` 分离）。轮次输出 `doc_refs` 时每项附 `filename`，Portal 在用户消息下渲染为可点击的引文，点击即在侧栏打开并定位。
+- **`document.reveal` 载荷**：`{command_id, file_id? | path?, filename, version, targets[{at, quote?}], note?}`；`path` 为授权工作区源路径，对应发出事件的 Run；显示名另用 `filename`，原生打开不等待分页预览生成。Portal 按 `command_id` 去重。
 - **视口截图复用 `client.call`**，不新增 capture_request 事件与上传端点：Agent 发 `client.call {call_id, kind: "capture_view", input: {view_id, at?, max_width?}, timeout_ms, deadline}`；只有正显示该 `view_id` 的标签页会认领（其余标签页不 claim），结果经现有 `POST /v1/runs/{run_id}/client-calls/{call_id}/result` 回传：成功 `{ok: true, value: {image: <PNG base64>, mime_type: "image/png", width, height, at, version}}`，base64 ≤ 2 MiB×4/3（超出时 Portal 自动缩窄重拍），失败 `{ok: false, error}`。API 校验 `version` 与 view 状态一致、图片大小与格式，再作为派生物进入上下文；超时与无人认领沿用 client.call 合同返回 `unavailable`。
+
+整合实现补充：XLSX选区引用以TSV承载值和原始公式；后端从同一runtime的授权范围解析结果中移除阅读用表头/行号，保留单元格内容。公式两端均引用原表达式，不把浏览器临时计算的未缓存值当作源文件内容。Work原生源路径通过preview.path保留，reveal可在分页预览完成前建立原生标签；没有源路径的历史预览沿用分页回退。

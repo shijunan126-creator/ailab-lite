@@ -1,35 +1,39 @@
-## 2026-11-02 办公制作与评审
+## 2026-11-02 办公能力整合
+
+### 制作与评审
 
 - `review_artifact` 的结构证据/页图始终不是质量判定：返回 pending_model_judgment；tools-only 必须明确 no visual review。最多4页是单批限制，不能声称未检查页已验收；公式缓存需重算，WARN/exit0/文件存在均不能单独说明完成。
 - 全部制作依赖在镜像构建期固定；学术路线用离线XeLaTeX并禁shell escape，输出默认 `/workspace/outputs`。旧脚本的缺依赖提示也必须适配，不能一边禁止联网一边提示立即安装。输入只读使用，修改生成新文件后再deliver_file。
 - Docker构建报 “No matching distribution” 前先检查是否实际为DNS失败；保留已完成的大依赖层，只重试失败层，不改daemon或触碰现有用户服务。构建/测试证据见[P2](docs/progress/updates/2026-11-02-office-suite-p2.md)。
 
-## 2026-11-02 文档查看后端
+### 文档查看与选区
 
-- Portal `7d226ab` 是前端合同权威：引用可为 file 或 run/path；reveal 必带 filename；截图走 `client.call kind=capture_view`，成功 value 是对象，JS 的 value 仍是 JSON 字符串。查看状态的 at 可以是 null；不另建 capture_request 事件/上传路由。
+- 前后端共同合同见 [04](docs/architecture/design/office-suite/04-viewer-and-file-contract.md)：引用可为 file 或 run/path；reveal 必带 filename；截图走 `client.call kind=capture_view`，成功 value 是对象，JS 的 value 仍是 JSON 字符串。查看状态的 at 可以是 null；不另建 capture_request 事件/上传路由。
 - 引用关系与普通附件分开存，文件来源另记 agent_read 才能进入删除/撤权围栏；排队/插话换 Run 时同时迁移引用 run_id。不要在出队时取实时选区，也不要触发全文附件准备。
 - pdf.js 拒绝 Node Buffer；用共享 buffer 的 Uint8Array view，不能为了类型转换额外复制整份文件。V8 的虚拟地址空间不能用小 RLIMIT_AS 限制；viewer 用 RSS watchdog、heap/CPU/文件大小和总期限共同限制。原生单元格/对象 locator 必须让同版本 runtime check() 校验，结构位置不能猜 LO 物理页。
 - 用户提示加入引用时保留原 run 对象的图片登记，不能浅复制后把 `_image_files` 留在副本；列表序列化必须批量取引用（outer join 当前文件围栏），不能每轮查一次。ASGI 断线测试不能让 receive 无 await 无限返回 http.request，会饿死事件循环；用明确 spec_version/断线事件。
 - 新迁移测试回到历史 revision 后，最终 metadata 漂移比较应再升到 head；单行表的 EXPLAIN 可以合理选扫描，用有代表性的基数验证索引。实现和测量边界见 [P3 记录](docs/progress/updates/2026-11-02-office-suite-p3.md)。
 
-## 2026-11-02 办公模块上下文
+- DOCX原生文字选择依赖索引blocks映射data-at；手工fixture只有bytes/units会导致“可选文字、没有引用栏”。补真实blocks，不要伪造reference消息替代鼠标验收。XLSX先核对实际sheet名称，canvas高亮不能按DOM class计数。详见[测试记录](docs/progress/updates/2026-11-02-office-portal-tests.md)。
+- 截图PNG的base64响应不能套256 KiB控制消息限制：会在2 MiB结果预算的缩窄重拍之前被丢弃。父桥截图传输有独立上限，测试须从captureView贯穿page-tool-result；仅mock captureView不能守住此缺陷。
+
+- XLSX引用是TSV，不是reader的Markdown表格；校验只能从同一授权范围中提取单元格正文，不能把表头/行号算成引用，不能跳过quote匹配。公式统一引用原始表达式，不能接受浏览器临时计算但源文件没有缓存的值。复杂数字/日期格式显示值仍需专门验收。Work源路径和显示文件名分开；reveal不能依赖异步分页预览先完成。
+- E2E 临时Portal须复制 `office/` 并保留 `platform/portal` 与 `vendor/office-suite/upstream/office-runtime` 的相对布局；API选区校验还需临时Worker的 `AILAB_WORKER_BASE_URL`。不能用真实部署默认8083验证非默认端口的隔离栈。
+
+### 模块与上下文
 
 - 办公 `loaded_skills` 只管安装/登记；去重必须认当前段中配对成功且正文hash一致的 `load_skill` 结果。派生索引不进checkpoint；压缩丢正文后可重读，摘要中的模块身份不代表正文仍可见。
 - 模块预算按整个待完成工具组累计；每个结果追加后再准入下一个，不在call/result中间压缩，放不下明确拒绝，不能截断后标完整。包内容身份须带递归hash，不能只用可能未变的semver。
 - 显式上下文边界必须丢弃可见性派生索引；仅凭列表长度/末尾对象识别压缩会漏掉等长替换。摘要重试拒绝工具时追加配对结果，不切tool_choice；摘要指令/schema增长后用实际请求估算准入，不能只信旧固定余量。
 - 无快照重建的结构化摘要仍须是合法JSON：已读身份放 `read_modules`，不要在JSON后拼说明导致摘要API拒绝。无历史工具正文/索引时不猜已读，可重新按需加载；详细证据见[P1记录](docs/progress/updates/2026-11-02-office-suite-p1.md)。
 
-## 2026-11-02 办公原文资源构建
+### 原文资源构建
 
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
-- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
+- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。`SKILL.md` ≤100,000 bytes，其他可读资源 ≤256 KiB/2000行；超限失败，不在loader截断。大Python资源用显式补丁压缩排版，并校验AST等价，原始源码不改。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
 - 生产脚本的npm闭包在 `/opt/office-production/node_modules`，reader在 `/opt/ailab-office/node_modules`；依赖解析依靠镜像NODE_PATH，不能按宿主node_modules可用推断沙箱已安装。runtime由build.py的 `--runtime-output vendor/office-suite/runtime` 从原始源码＋补丁＋adapter生成；每次重生成runtime都会清除本地node_modules/runner.mjs，必须在最后一次重生成之后再执行npm ci与npm run build，然后才能跑完整后端套件；不能以早先构建成功推断前置仍在。
 - 构建复制兼容资源时不能过滤 `LICENSE*`/`NOTICE*`：四基础包必须带固定来源的Apache-2.0 LICENSE与vendor NOTICE，第三方素材保留同目录许可；许可不列为模块，但参与生成漂移与递归hash。
 
-## 2026-11-02 原生文档viewer测试
-
-- DOCX原生文字选择依赖索引blocks映射data-at；手工fixture只有bytes/units会导致“可选文字、没有引用栏”。补真实blocks，不要伪造reference消息替代鼠标验收。XLSX先核对实际sheet名称，canvas高亮不能按DOM class计数。详见[测试记录](docs/progress/updates/2026-11-02-office-portal-tests.md)。
-- 截图PNG的base64响应不能套256 KiB控制消息限制：会在2 MiB结果预算的缩窄重拍之前被丢弃。父桥截图传输有独立上限，测试须从captureView贯穿page-tool-result；仅mock captureView不能守住此缺陷。
 
 ## 2026-11-02 办公能力迁移边界
 

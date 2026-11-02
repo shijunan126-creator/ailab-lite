@@ -1,8 +1,9 @@
 # 办公能力整合（2026-11-02）
 
-- 分支 `feat/office-suite`，base `origin/main@bf0af4f`，进入基线 `12e6c86`。授权本地整合 P3 与 Portal、构建限额和集中验收；不 push、PR、部署。
-- P0–P2 与 P3 后端已整合；Portal 合并、完整验证和原生查看器端到端待完成。历史检查分别见 [P1](updates/2026-11-02-office-suite-p1.md)、[P2](updates/2026-11-02-office-suite-p2.md)、[P3](updates/2026-11-02-office-suite-p3.md)。
-- 下一步：整合 Portal 并核对前后端合同，增加构建限额，再集中验证。真实模型缓存指标保持 P5 边界。
+- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`，进入 `12e6c86`。P3 `c0d6166` 与 Portal `6fe23e9` 已合并，合并点 `1df0de7`，最终产品/测试代码基线 `93cb215`。本轮授权本地整合、构建限额和集中验证；无 push、PR、部署；未提交的 office-test 页面未触碰。
+- 已完成：技能构建限额与 AST 等价适配；统一 P3/Portal 合同；修复 Excel TSV/公式引用校验、Work 源路径及异步预览耦合、viewer 启动丢失首次 reveal。四格式真实 Chat 上传/原生查看/选区发送/引文定位，以及 Work 原生文件、模型 reveal 和 Chat/Work capture_view 往返均通过。
+- 验证、精确基线、失败与逐项复跑统一见 [整合记录](updates/2026-11-02-office-suite-integration.md)。Ruff、Portal 161项/build通过；SQLite全套2075通过/168跳过/1失败、PG/Redis全套2184通过/59跳过/1失败，各只复跑失败项后通过。完整E2E154通过/6跳过/6失败，修复后逐次只复跑失败项，全部用户链路最终通过；未声称最终HEAD重新全套首次全绿。
+- 剩余阻塞：Docker daemon不可达，Portal镜像构建和容器方式PG/Redis未完成；替代临时本机双服务的验证已结束并清理。下一步仅在Docker可用时补这两项；P5真模型缓存/视觉质量、Linux容量及复杂显示格式等边界保留，不自动部署或继续下一阶段。截图、trace、临时服务及本轮E2E临时树已清理。
 
 ---
 
