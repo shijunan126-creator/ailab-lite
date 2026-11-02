@@ -1,5 +1,7 @@
 # 办公能力 P5 Docker 恢复续验（2026-11-02）
 
+- 本次进入 `92c0259`：全局统一技能加载规则、删除四包重复规则并重建hash；补Chat/Work旧checkpoint恢复及部署文本变化边界的录制回归。真实模型并列加载基础+广场技能成功；新Chat压缩后三轮及各三次同文/205、523、960-token自然对话复放已完成。系统/摘要/旧消息前缀字节稳定，供应商热尾部134–237 tokens，128阶梯但存在非整块边界值；不填充，不改压缩逻辑。详见[P5全局规则与缓存定界](updates/2026-11-02-office-suite-p5.md#全局技能加载与-chat-压缩后缓存定界2026-11-02)。专用镜像/5生产合同、163专项、Ruff/Portal build通过；完整Python2078通过/174跳过/1既有内存阈值失败，该失败独立复跑1通过；保留flake。下一步提交本地小提交交主任务审阅，不push/PR/部署。
+
 - 最新补充：进入 `e363cbe`，批量资源导航及录制请求测试基线 `01379e8`；四生成包/index同步，专用镜像增量构建、离线生产合同与一次真模型批量加载成功；Ruff/Portal build通过，完整Python唯一内存阈值失败独立复跑通过（保留flake记录）。详见[P5资源批量读取补充](updates/2026-11-02-office-suite-p5.md#资源批量读取导航补充2026-11-02)。P5保持部分验证，下一步由主任务审阅本地提交与验收边界，不自动发布。
 
 - 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，进入HEAD `d226ea5`、base `origin/main@bf0af4f`；本次最终测试代码 `7e30b7dd2dbcbe01a12ced78b37b4141a634c057`（截图祖先授权/收尾reasoning两个修复）。未fetch、push、PR或部署；个人栈未动。

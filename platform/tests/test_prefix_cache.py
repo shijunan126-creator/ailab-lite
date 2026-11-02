@@ -1233,7 +1233,9 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
     assert platform.statuses[-1][0] == "succeeded"
     assert len(requests) == 3  # no model round trip between resources
     navigation = json.loads(next(m["content"] for m in requests[1]["messages"] if m.get("tool_call_id") == "navigation"))
-    assert "同一次回复里并列调用 load_skill" in navigation["skill"]
+    assert "同一次回复里并列调用 load_skill" in system_prompt_for("work")
+    assert "同一次回复" not in navigation["skill"]
+    assert "deps" in navigation["skill"]
     for before, after in pairwise(requests):
         assert_extension(before, after)
         assert json.dumps(after["messages"][: len(before["messages"])], ensure_ascii=False) == json.dumps(
@@ -1452,3 +1454,50 @@ def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
     chat = next(t for t in tools_for_chat() if t["function"]["name"] == "document_view")
     work = next(t for t in tools_for_turn() if t["function"]["name"] == "document_view")
     assert chat == work
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_deploy_prompt_and_tool_changes_preserve_resumed_checkpoint(monkeypatch, mode):
+    from ailab_platform.agent import loop as loop_module
+
+    platform = FakePlatform()
+    state = fresh_state()
+    old_system = system_prompt_for(mode) + "\nold deployment"
+    old_tools = copy.deepcopy(_tools_for_run({"model": "m", "options": {"mode": mode}}))
+    next(t for t in old_tools if t["function"]["name"] == "load_skill")["function"]["description"] = "old loader description"
+    state["messages"] = [
+        {"role": "system", "content": old_system},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": "continue"},
+    ]
+    state["tool_catalog_v1"] = old_tools
+    state["user_message_index"] = 2
+    platform.checkpoint = {"step": 1, "state": state}
+    monkeypatch.setattr(loop_module, "system_prompt_for", lambda *a, **kw: "new deployment")
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="resume"))
+    assert requests[0]["messages"] == state["messages"]
+    assert requests[0]["tools"] == old_tools
+    assert not any(e[0] == "agent.context_boundary" for e in platform.events)
+
+    # A new run can adopt a deployment's rules only through a recorded boundary.
+    previous = copy.deepcopy(platform.checkpoint["state"])
+    platform.checkpoint = None
+
+    async def next_run(run_id):
+        return {
+            "id": run_id,
+            "user_id": "fixture",
+            "model": "m",
+            "status": "queued",
+            "prompt": "next turn",
+            "options": {"mode": mode},
+            "previous_model_context": {"messages": previous["messages"], "tools": old_tools},
+        }
+
+    platform.get_run = next_run
+    with scripted_server([{"content": "next answer"}]) as (url, next_requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("next", attempt_id="next"))
+    assert next_requests[0]["messages"][0]["content"] == "new deployment"
+    assert next_requests[0]["tools"] != old_tools
+    assert ("agent.context_boundary", {"reason": "model_changed"}) in platform.events

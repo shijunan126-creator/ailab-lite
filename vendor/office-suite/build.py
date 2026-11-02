@@ -178,8 +178,7 @@ def navigation(fmt: str, modules: list[dict]) -> str:
     text += "extract_text/view_attachment 由平台管理等待；不要启动沙箱sleep、循环重复提取或交付中间图片来绕路，"
     text += "不在用户沙箱安装 OCR 权重。权限和删除以每次工具返回为准。\n\n"
     text += "完整原文见 modules.json：logical_path 对应上游布局，path 是包内资源路径。"
-    text += "先看下方清单，再在同一次回复里并列调用 load_skill(name, resource=path)，读取本任务需要的全部资源及其 deps；"
-    text += "每份返回完整文件，不需要的不读；整文件放不下时先压缩，绝不截断。\n\n"
+    text += "按下方清单选择任务所需资源，并读取其 deps。\n\n"
     text += "## 阅读与审阅\n"
     for m in modules:
         if "chat" in m["modes"]:

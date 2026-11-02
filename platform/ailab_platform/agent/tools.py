@@ -211,7 +211,10 @@ LOAD_SKILL = {
     "type": "function",
     "function": {
         "name": "load_skill",
-        "description": "读取完整技能导航；resource 指定包内文件，一次返回完整文件。放不下时先压缩，绝不截断。",
+        "description": (
+            "读取完整技能导航或正文；resource 可选，指定包内文件。"
+            "需要多个技能或资源时在同一次回复里并列调用，每份返回完整文件；放不下先压缩，绝不截断。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {

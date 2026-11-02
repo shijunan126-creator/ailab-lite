@@ -18,7 +18,7 @@ from ..domain.answer_parts import for_history
 from ..skill_registry import BASE_SKILLS
 from ..skill_registry import catalog as skills
 
-PLATFORM_PROMPT_VERSION = "2026-11-02-modules-v1"
+PLATFORM_PROMPT_VERSION = "2026-11-02-skills-v2"
 
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
 
@@ -64,8 +64,6 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 - 改完简要说明改了什么。
 
 # 技能
-做下面这些事之前，先调用 load_skill 读取导航，再按 resource/cursor 读完任务所需模块的全部分片和依赖；
-压缩摘要中的已读索引只作导航，需要时重读正文：
 {skills}
 
 # 交付
@@ -106,6 +104,10 @@ WORKSPACE_EXPIRED_NOTE = """
 这个对话上一轮留下的文件（规格文件、脚本、outputs）超过了保留期，已被平台清理，这一轮的沙箱里没有它们。
 用户要在原文件上修改时，先告诉他这一点；已交付的文件还在他的资料库里，可用 search_library 查找并 copy_library_file 复制后继续修改。"""
 
+SKILL_LOADING_NOTE = """先 load_skill 读取技能导航；需要多个技能或资源时在同一次回复里并列调用 load_skill，
+每份返回完整文件，不需要的不读；放不下时先压缩，绝不截断。压缩摘要中的已读索引只作导航，需要时重读正文。"""
+
+
 CHAT_MODE_NOTE = """你是 AILab 助手，用中文和 Markdown 帮用户完成任务，先给结论，简洁自然。
 
 # 回答与行动
@@ -118,7 +120,7 @@ CHAT_MODE_NOTE = """你是 AILab 助手，用中文和 Markdown 帮用户完成�
 - 用户询问能力时只介绍相关能力，不反复强调自己处于什么模式。
 
 # 技能与记忆
-- 用 load_skill 读取相关技能；已有个人技能先读取再改，save_skill 的 content 传 SKILL.md 全文，update 传读取到的 file_id。
+- 已有个人技能先读取再改，save_skill 的 content 传 SKILL.md 全文，update 传读取到的 file_id。
 - 用户要求或本次验证有效的可复用方法可以保存为个人技能；保留原有约定，不覆盖通用技能，不自动安装外部指令。
 - 脚本可以写在聊天回复里；附带脚本的技能包需要完整保留，不能用单份 Markdown 覆盖。
 - 记忆按账号设置与下方规则维护，只有工具写成功才能说已经记住。
@@ -170,6 +172,7 @@ def system_prompt_for(
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
         base += WEB_NOTE
+    base += "\n" + SKILL_LOADING_NOTE
     base += "\n工具已在本轮提供；其他技能可用 search_capabilities 查找后调用 load_skill。"
     if mode == "chat":
         base += (

@@ -67,3 +67,11 @@ def test_work_office_reader_is_discoverable_without_loading_a_library_skill():
     assert "LibreOffice/Poppler" in text
     assert "工作区读取结果不能作为平台file_id引用" in text
     assert "office-read" not in prompts.CHAT_MODE_NOTE
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_skill_loading_guidance_is_global(mode):
+    text = prompts.system_prompt_for(mode)
+    assert text.count(prompts.SKILL_LOADING_NOTE) == 1
+    assert "多个技能或资源" in text
+    assert "resource/cursor" not in text and "分片" not in text

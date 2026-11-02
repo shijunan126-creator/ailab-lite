@@ -36,9 +36,11 @@
 - 显式上下文边界必须丢弃可见性派生索引；仅凭列表长度/末尾对象识别压缩会漏掉等长替换。摘要重试拒绝工具时追加配对结果，不切tool_choice；摘要指令/schema增长后用实际请求估算准入，不能只信旧固定余量。
 - 无快照重建的结构化摘要仍须是合法JSON：已读身份放 `read_modules`，不要在JSON后拼说明导致摘要API拒绝。无历史工具正文/索引时不猜已读，可重新按需加载；详细证据见[P1记录](docs/progress/updates/2026-11-02-office-suite-p1.md)。
 
+- 同文请求复放仍有尾部时先比较实际HTTP正文和供应商usage；128-token阶梯是实测粒度，不是所有模型的固定取整公式。请求边界缓存单元、写盘时机和计数边界也会影响结果；保留首发和热复放，不填充上下文。见[P5定界](docs/progress/updates/2026-11-02-office-suite-p5.md#全局技能加载与-chat-压缩后缓存定界2026-11-02)。
+
 ### 原文资源构建
 
-- 需要多份办公资源时，同一assistant回复可并列多个 `load_skill`；循环逐份追加，后续去重和cannot-fit必须看见同批先前结果，不能仅按批次开始时的messages检查。录制合同见 `test_office_resource_batch_wire_order_dedup_and_cumulative_budget`；导航只能改生成器后重建并同步index。
+- 需要多份办公资源时，同一assistant回复可并列多个 `load_skill`；循环逐份追加，后续去重和cannot-fit必须看见同批先前结果，不能仅按批次开始时的messages检查。录制合同见 `test_office_resource_batch_wire_order_dedup_and_cumulative_budget`；批量加载规则统一在Chat/Work共用系统提示，不能复制到每包导航；导航只保留包清单/deps，改生成器后重建并同步index。
 
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
 - 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。`SKILL.md` ≤100,000 bytes，其他可读资源 ≤256 KiB/2000行；超限失败，不在loader截断。大Python资源用显式补丁压缩排版，并校验AST等价，原始源码不改。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
