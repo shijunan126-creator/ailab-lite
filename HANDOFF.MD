@@ -1,3 +1,8 @@
+## 2026-11-02 办公能力迁移边界
+
+- 全量迁移不能直接替换四个大 SKILL：资源安装状态与当前消息中完整正文可见性分开；轮内/跨轮/无快照压缩都要重算模块可见性。上游 capture_view 是页面工具，离线/后台任务不能假设浏览器在线；选区问答不能沿用全文附件 prepare 重复注入整份文档。见[计划](docs/architecture/design/office-suite/README.md)。
+- 上游四制作技能 frontmatter 写 Proprietary，但指向的 LICENSE.txt 全文是 Apache-2.0；视觉评审角色引用的 “delivery protocol” 不在上游源码中，不能声称原样迁移。模型可见文本不得出现上游产品名、`ZCODE_*` 变量与其 citation 标签。
+
 ## 2026-11-02 行内气泡垂直对齐
 
 - 带 `overflow: hidden` 的 inline-block 会按底边参与基线对齐；再用正数 `vertical-align` 会继续上抬。正文来源/文件/网址、输入技能标签与表头徽章统一用 `vertical-align: middle` 跟随所在文字行，不用固定像素补偿；数字引用角标保留上标语义。

@@ -1,5 +1,7 @@
 # 开发路线图
 
+2026-11-02 已授权实施办公能力完整迁移（P0–P5），见[计划](../architecture/design/office-suite/README.md)与[current](current.md)；不含部署。
+
 2026-11-02 用户追加授权GenUI说明精简复用实施（只考虑支持工具的模型）；当前进度与后续见[current](current.md)，证据见[记录](updates/2026-11-02-genui-doc-reuse.md)。不自动发布或部署。
 
 2026-11-02 当前授权为记忆生命周期审查与共享项目管理UI修复；本地修复验证，不开启组件文档去重实施或发布部署。结果与下一步见[当前交接](current.md)及[审查](../reviews/2026-11-02-memory-lifecycle-audit.md)。
