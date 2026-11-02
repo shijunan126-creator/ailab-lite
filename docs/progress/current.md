@@ -1,9 +1,9 @@
-# 办公能力整合（2026-11-02）
+# 办公能力 P5 验收（2026-11-02）
 
-- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`，进入 `12e6c86`。P3 `c0d6166` 与 Portal `6fe23e9` 已合并，合并点 `1df0de7`，最终产品/测试代码基线 `93cb215`。本轮授权本地整合、构建限额和集中验证；无 push、PR、部署；未提交的 office-test 页面未触碰。
-- 已完成：技能构建限额与 AST 等价适配；统一 P3/Portal 合同；修复 Excel TSV/公式引用校验、Work 源路径及异步预览耦合、viewer 启动丢失首次 reveal。四格式真实 Chat 上传/原生查看/选区发送/引文定位，以及 Work 原生文件、模型 reveal 和 Chat/Work capture_view 往返均通过。
-- 验证、精确基线、失败与逐项复跑统一见 [整合记录](updates/2026-11-02-office-suite-integration.md)。Ruff、Portal 161项/build通过；SQLite全套2075通过/168跳过/1失败、PG/Redis全套2184通过/59跳过/1失败，各只复跑失败项后通过。完整E2E154通过/6跳过/6失败，修复后逐次只复跑失败项，全部用户链路最终通过；未声称最终HEAD重新全套首次全绿。
-- 剩余阻塞：Docker daemon不可达，Portal镜像构建和容器方式PG/Redis未完成；替代临时本机双服务的验证已结束并清理。下一步仅在Docker可用时补这两项；P5真模型缓存/视觉质量、Linux容量及复杂显示格式等边界保留，不自动部署或继续下一阶段。截图、trace、临时服务及本轮E2E临时树已清理。
+- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`；本轮产品/测试基线 `26316e1769627ddad7397970980c2a98e74b4674`。仅本地验收及文档提交，无 push、PR、部署，未改产品代码。
+- P5 **部分验证，未完成验收**。真实模型 Agent 请求矩阵覆盖技能导航/完整资源、受控DocRef、压缩与checkpoint恢复；稳定续轮总值Chat/Work均≥95%，但Chat压缩后子组94.378%未达标。API/Broker为测试替身，capture在模型矩阵中明确不可用，不能写成真实五服务成功矩阵。
+- 四格式宿主spot check可打开、源hash未变、结构检查通过；Excel经LO重算。真实浏览器Work reveal/capture一例通过，claim到result为96.26ms。前缀/review等61通过、真实容器5跳过；Portal161项/build通过。当前bundle `18ef356ab076b7e1`，viewer.js约4.047MiB。逐调用指标、全部准备调用、精确边界和资源统一见[P5记录](updates/2026-11-02-office-suite-p5.md)；P0–P4历史证据见[整合记录](updates/2026-11-02-office-suite-integration.md)。
+- 剩余：默认和专用Docker socket均不可达，真实离线四格式Work交付、sbx-office体积与Portal镜像构建仍阻塞；没有启动VM或改daemon。下一步在Docker恢复后补这些项，再把真实模型与API/在线浏览器合流，定位Chat短前缀缓存边界；不自动部署。临时服务/原始日志/产物已清理，未重跑完整Python或完整E2E。
 
 ---
 

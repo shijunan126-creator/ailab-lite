@@ -8,6 +8,10 @@
 
 ### 文档查看与选区
 
+- opaque-origin 的 sandboxed iframe 不能启动 blob URL 的 module worker；PDF/XLSX worker 必须构建为 classic worker，不能只在同源普通页面验证。
+- pdf.js 标准字体的 CSS url() 在 CSP 下也须重写成受控 blob URL；只改 worker URL 或主字体请求仍会漏掉标准字体加载。
+- 内置浏览器自动化不能可靠选择进程外 Office frame 中的文字；原生选区验收用 Playwright page.mouse，以真实可视坐标拖选并检查 quote/reveal，不伪造选区消息。
+
 - 前后端共同合同见 [04](docs/architecture/design/office-suite/04-viewer-and-file-contract.md)：引用可为 file 或 run/path；reveal 必带 filename；截图走 `client.call kind=capture_view`，成功 value 是对象，JS 的 value 仍是 JSON 字符串。查看状态的 at 可以是 null；不另建 capture_request 事件/上传路由。
 - 引用关系与普通附件分开存，文件来源另记 agent_read 才能进入删除/撤权围栏；排队/插话换 Run 时同时迁移引用 run_id。不要在出队时取实时选区，也不要触发全文附件准备。
 - pdf.js 拒绝 Node Buffer；用共享 buffer 的 Uint8Array view，不能为了类型转换额外复制整份文件。V8 的虚拟地址空间不能用小 RLIMIT_AS 限制；viewer 用 RSS watchdog、heap/CPU/文件大小和总期限共同限制。原生单元格/对象 locator 必须让同版本 runtime check() 校验，结构位置不能猜 LO 物理页。
