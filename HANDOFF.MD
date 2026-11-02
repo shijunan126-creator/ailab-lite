@@ -1,11 +1,14 @@
 ## 2026-11-03 Viewer 资产与性能
 
+- 派生preview.version不是原生文档内容身份。用它作iframe的React key会在同字节渲染结果迟到时打断capture；按来源稳定挂载，revision触发可取消的索引复核，只有内容hash变化才换frame。共享用户的上传回归应读取实际附件身份，不能假定未被冲突改名。
+
 - Next默认compress不证明Route Handler GET压缩，检查实际Content-Encoding。Office资产预压缩在build，协商返回Vary；immutable版本必须哈希worker/wasm/字体在内的完整闭包。注册表已有kind标记可生成单格式bundle，无需改vendor runtime。
 - Chromium cold/warm用禁缓存首次与正常HTTP缓存第二次；不要用请求拦截（会关闭HTTP缓存）模拟文档。全页重开可排除JS内存缓存；blob不算网络传输。壳的first paint不是文档首屏，worker存在也不代表没有主线程XML preflight。详细边界见[P5记录](docs/progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。
 
 ## 2026-11-03 Viewer 调用与截图恢复
 
 - 模型可见工具 schema 应简述每个 op 的形状；reveal 的 quote 属于 targets 内，filename 不是目标身份。durable tool 分支的参数错误应返回配对工具结果，不能抛出未被该层捕获的 ToolError 令整轮 failed。
+- 宿主故障注入若读取既有容器env，先将skills/models等容器内路径覆盖成宿主路径；启动前失败不作模型/产品失败。
 - 过期 viewport capture 的410是显式重建边界：用 unavailable 文字替换已不可复原图像并记录边界后保存 checkpoint；不要对旧 capture_id 反复恢复。403/404/503及digest变化不按TTL降级。依据见[P5最终修复](docs/progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。
 
 ## 2026-11-02 办公能力整合

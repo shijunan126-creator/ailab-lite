@@ -26,6 +26,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.unstubAllGlobals(); vi.resto
 async function bridge(current = doc) {
   const view = mount(current);
   const frame = await screen.findByTitle(current.filename) as HTMLIFrameElement;
+  await act(async () => {});
   const post = vi.spyOn(frame.contentWindow!, "postMessage").mockImplementation(() => {});
   const emit = async (data: object, source = frame.contentWindow) => {
     await act(async () => { window.dispatchEvent(new MessageEvent("message", { source, data: { ch: CHANNEL, ...data } })); });
@@ -132,4 +133,23 @@ test.each(["docx", "xlsx", "pptx", "pdf"] as const)("boot only requests the %s r
   expect(calls.some(url => /viewer\.js$/.test(url))).toBe(false);
   expect(calls.filter(url => /viewer-.*\.js$/.test(url)).every(url => url.endsWith(`viewer-${kind}.js`))).toBe(true);
   expect(b.bundle.js).toContain(`viewer-${kind}.js`);
+});
+
+test("same native hash refresh preserves an in-flight capture; a new content hash replaces the frame", async () => {
+  const b = await bridge();
+  const original = screen.getByTitle(doc.filename);
+  await b.send({ t: "ready", viewId: "refresh-view" });
+  const capture = captureView("refresh-view", "p:1")!;
+  const tool = b.post.mock.calls.map(([m]) => m).find(m => m.t === "page-tool");
+  const props = { doc, docs: [doc], onOpen: vi.fn(), onReference, onAsk, fallback: <div>fallback</div> };
+  request.mockResolvedValue({ ...ready });
+  const initialCalls = request.mock.calls.length;
+  b.rerender(<OfficeView {...props} revision={1} />);
+  await waitFor(() => expect(request.mock.calls.length).toBe(initialCalls + 1));
+  expect(screen.getByTitle(doc.filename)).toBe(original);
+  await b.send({ t: "page-tool-result", id: tool.id, ok: true, value: { content: [{ type: "image", data: "png" }, { type: "text", text: "库/报告.docx#p:1 (800×600 px)" }] } });
+  expect(await capture).toMatchObject({ data: "png", version: "hash1" });
+  request.mockResolvedValue({ ...ready, version: "changed" });
+  b.rerender(<OfficeView {...props} revision={2} />);
+  await waitFor(() => expect(screen.getByTitle(doc.filename)).not.toBe(original));
 });

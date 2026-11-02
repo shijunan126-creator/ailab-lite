@@ -106,6 +106,11 @@ class QuestionThenAnswer(LLMClient):
             ),
             "",
         )
+        if prompt.startswith("原生收件验收") or (
+            prompt.startswith("请解释这段引用")
+            and any("原生收件验收" in str(m.get("content", "")) for m in messages if m.get("role") == "user")
+        ):
+            return LLMResponse(content="已收到并核对文档引用。")
         if prompt.startswith(("原生控制 ", "原生工作区")):
             turn = next(
                 i

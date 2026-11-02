@@ -46,10 +46,11 @@ function officeDocOf(preview: PanePreview, delivered: Record<string, string>): O
   return { path: officePath("工作区", path), filename: preview.filename, kind, source: { runId: preview.run_id, path } };
 }
 
-function NativePane({ doc, office, reveal, fallback }: { doc: OfficeDoc; office: PaneOffice; reveal?: OfficeReveal; fallback: React.ReactNode }) {
+function NativePane({ doc, revision, office, reveal, fallback }: { doc: OfficeDoc; revision: number; office: PaneOffice; reveal?: OfficeReveal; fallback: React.ReactNode }) {
   return (
     <OfficeView
       doc={doc}
+      revision={revision}
       docs={office.docs}
       conversationId={office.conversationId}
       reveal={reveal}
@@ -267,10 +268,10 @@ export default function PreviewPane({
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>
       ) : current ? (
-        <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}${office && currentDoc ? " office-pane" : ""}`} key={previewTabKey(current) + (current.file_id || "") + (currentDoc ? `:${JSON.stringify(currentDoc.source)}:${current.version}` : "")}>
+        <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}${office && currentDoc ? " office-pane" : ""}`} key={currentDoc ? `${previewTabKey(current)}:${JSON.stringify(currentDoc.source)}` : previewTabKey(current) + (current.file_id || "")}>
           {(() => {
             const paged = current.libraryFileId ? <LibraryPane fileId={current.libraryFileId} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null;
-            return office && currentDoc ? <NativePane doc={currentDoc} office={office} reveal={revealOf(current)} fallback={paged} /> : paged;
+            return office && currentDoc ? <NativePane doc={currentDoc} revision={current.version} office={office} reveal={revealOf(current)} fallback={paged} /> : paged;
           })()}
         </div>
       ) : null}

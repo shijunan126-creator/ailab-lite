@@ -75,13 +75,17 @@ function useDark() {
 }
 
 /** The viewer index of a document, polled while it is being made; null until known, "fallback" when not native. */
-function useDocumentIndex(doc: OfficeDoc): DocumentIndex | "fallback" | null {
+function useDocumentIndex(doc: OfficeDoc, revision?: number): DocumentIndex | "fallback" | null {
   const [index, setIndex] = useState<DocumentIndex | "fallback" | null>(null);
   const key = JSON.stringify(doc.source);
+  const previousKey = useRef<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    setIndex(null);
+    // A rendered-preview revision can change without the native file changing. Recheck in place;
+    // only a different document identity blanks the viewer while its index is loading.
+    if (previousKey.current !== key) setIndex(null);
+    previousKey.current = key;
     const ask = () =>
       api<DocumentIndex>(indexUrl(doc.source), { signal: controller.signal })
         .then((value) => {
@@ -97,12 +101,13 @@ function useDocumentIndex(doc: OfficeDoc): DocumentIndex | "fallback" | null {
       clearTimeout(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [key]);
+  }, [key, revision]);
   return index;
 }
 
 type Props = {
   doc: OfficeDoc;
+  revision?: number;
   /** Every document open in the pane, for the viewer's switch menu. */
   docs: OfficeDoc[];
   conversationId?: string | null;
@@ -117,10 +122,12 @@ type Props = {
 };
 
 /** The native Word/Excel/PowerPoint/PDF viewer in a sandboxed frame (app/frame/office), driven over postMessage. */
-export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, onReference, onAsk, fallback }: Props) {
-  const loaded = useDocumentIndex(doc);
+export default function OfficeView({ doc, revision, docs, conversationId, reveal, onOpen, onReference, onAsk, fallback }: Props) {
+  const loaded = useDocumentIndex(doc, revision);
   // the viewer failed before it was up (bundle error): show the paged preview instead of an empty frame
   const [broken, setBroken] = useState(false);
+  const indexedVersion = loaded && loaded !== "fallback" ? loaded.version : null;
+  useEffect(() => setBroken(false), [indexedVersion]);
   const index = broken ? "fallback" : loaded;
   const dark = useDark();
   const frame = useRef<HTMLIFrameElement>(null);
@@ -129,6 +136,7 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
   const channel = useRef<{ nonce: string; viewId: string | null; send(message: Outgoing, transfer?: Transferable[]): void } | null>(null);
   const sentReveal = useRef(0);
   const ready = index !== null && index !== "fallback";
+  const contentVersion = ready ? index.version : null;
 
   useEffect(() => {
     const element = frame.current;
@@ -331,7 +339,7 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
       for (const waiter of captures.values()) waiter.reject(new Error("查看器已关闭"));
       channel.current = null;
     };
-  }, [ready]);
+  }, [ready, contentVersion]);
 
   // Theme follows the Portal; the frame keeps its document.
   useEffect(() => {
@@ -359,5 +367,5 @@ export default function OfficeView({ doc, docs, conversationId, reveal, onOpen, 
   if (index === "fallback") return <>{fallback}</>;
   if (index === null) return <div className="hint" role="status">正在加载</div>;
   // allow-scripts only: an opaque origin with no cookies, storage or same-origin access to the Portal
-  return <iframe ref={frame} className="office-frame" src="/frame/office" sandbox="allow-scripts" title={doc.filename} />;
+  return <iframe key={contentVersion} ref={frame} className="office-frame" src="/frame/office" sandbox="allow-scripts" title={doc.filename} />;
 }

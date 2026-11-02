@@ -149,7 +149,8 @@ def stack(tmp_path_factory):
     models_path = work / "models.toml"
     models_path.write_text(
         (PLATFORM / "tests/models.test.toml").read_text()
-        + '\n[[models]]\nid = "test-office-vision"\nname = "Office Vision"\nprovider = "mock"\ncapabilities = ["tools", "vision"]\n'
+        + '\n[[models]]\nid = "test-office-vision"\nname = "Office Vision"\nprovider = "mock"\n'
+        'context_tokens = 131072\nmax_output_tokens = 8192\ncapabilities = ["tools", "vision"]\n'
     )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AILAB_")}
     env.update(

@@ -283,7 +283,7 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 
 **调用与恢复。** 固定工具描述列明四种 op 的最短调用形状；Agent 在调用内部 API 前检查 DTO 和 reveal targets，错误直接返回可复制的 `file_id或path + targets[{at, quote?}]`，解释 quote 的位置及不传 filename。错误形状不再退化为泛化 unavailable，也不会因抛出未捕获异常终止 Run。Chat/Work 录制请求回归均验证一次纠正成功及工具目录/已有消息保持不变。
 
-旧 viewport capture 的授权读取返回410时，替换无法复原的图像为明确 unavailable/过期说明，记录 `agent.context_boundary(reason=rebuilt,cause=capture_expired)` 后持久化，再继续运行；不重试旧 capture_id，不假装旧图仍可见。Chat/Work 从真实 checkpoint 编解码路径恢复后均 succeeded，截图只读一次，后续请求仅追加。403/404/503 和图像内容变化仍保留暂停保护，不把权限/依赖失败冒充TTL。旧实现运行新增四项回归全部失败；修复后四项通过。
+旧 viewport capture 的授权读取返回410时，替换无法复原的图像为明确 unavailable/过期说明，记录 `agent.context_boundary(reason=rebuilt,cause=capture_expired)` 后持久化，再继续运行；不重试旧 capture_id，不假装旧图仍可见。Chat/Work 从真实 checkpoint 编解码路径恢复后均 succeeded，截图只读一次，后续请求仅追加。403/404/503 和图像内容变化仍保留暂停保护，不把权限/依赖失败冒充TTL。旧实现运行新增四项回归全部失败；修复后四项通过。另用真实deepseek-flash+AgentLoop恢复同类checkpoint，capture读取故障注入410：只读一次、记录重建边界、无工具调用、Run succeeded；输入/输出3384/155 tokens、cached896。此项不是生产截图接口端到端验收。两次装置准备因沿用容器内skills/models路径而在模型调用前失败，覆盖为宿主有效路径后仅重跑受影响检查；没有产品修复。
 
 真实 `deepseek-flash` 三次调用均首次使用合法 targets，无形状重试；cached/prompt 为512/3456、3456/3636、3584/3782，续轮合计7040/7418（94.90%）。这只是短上下文工具说明检查：工具返回 sent 为装置回应，未证明真实文档定位；未填充上下文，不把供应商尾部计数造成的不足95%隐去。
 
@@ -307,8 +307,26 @@ Chromium/Playwright CDP，1440×1000；同一浏览器同格式先禁缓存冷�
 | xlsx/cold | 53.3→46.6 | 258.6→176.4 | 4.2→8.9 | 1193.4→1219.1 |
 | xlsx/warm | 34.2→36.8 | 261.9→151.8 | 3.1→3.1 | 1127.4→1176.4 |
 
-传输为loadingFinished.encodedDataLength（含header），blob不算网络。冷DOCX主JS4,243,892→133,605 B（br）；CSS19,754→4,720 B。冷XLSX主JS4,243,892→772,072 B，worker133,406→36,069 B，wasm4,345,746→1,343,651 B（均br）。GET验证gzip与identity解码字节相同；版本资产全有一年immutable，warm资产全部disk cache/0传输，当前manifest仍no-cache。每次打开文档只GET一次；未见重复文档请求；DOCX没有字体、pdf worker或表格worker/wasm请求。
+传输为loadingFinished.encodedDataLength（含header），blob不算网络。冷DOCX主JS4,243,940→133,605 B（br）；CSS19,800→4,720 B。冷XLSX主JS4,243,940→772,072 B，worker133,453→36,069 B，wasm4,345,794→1,343,651 B（均br）。GET验证gzip与identity解码字节相同；版本资产全有一年immutable，warm资产全部disk cache/0传输，当前manifest仍no-cache。每次打开文档只GET一次；未见重复文档请求；DOCX没有字体、pdf worker或表格worker/wasm请求。
 
-解析边界：DOCX用docx-preview在主线程解析/构建DOM，没有现成worker；XLSX已有classic worker和wasm，但库在worker前仍主线程ZIP/XML preflight并在worker后处理样式/图像，trace看到较长的主线程消息任务，不能把worker存在写成主线程零解析。worker总任务CPU约0.23–0.25s；主线程长消息约0.8s，拆主线程阶段到worker会改库内部合同，超出低风险构建/适配优化，本轮不重写。首屏后的布局/paint也在解析阶段范围内：trace冷DOCX的主脚本EvaluateScript约229→44ms、后台JS parse77→8ms；布局约72→55ms，Paint约5ms。XLSX冷主脚本EvaluateScript约176→126ms、后台parse68→45ms；layout/paint约数ms，剩余主要为运行时预检/wasm载入/解析，而不是网络。CPU项跨线程重叠、含冷启动和首屏后1.5s，不冒充纯解析墙钟。前后不改变admission。
+解析边界：DOCX用docx-preview在主线程解析/构建DOM，没有现成worker；XLSX已有classic worker和wasm，但库在worker前仍主线程ZIP/XML preflight并在worker后处理样式/图像，trace看到较长的主线程消息任务，不能把worker存在写成主线程零解析。worker总任务CPU约0.23–0.25s；主线程长消息约0.8s，拆主线程阶段到worker会改库内部合同，超出低风险构建/适配优化，本轮不重写。首屏后的布局/paint也在解析阶段范围内：trace冷DOCX的主脚本EvaluateScript约229→47ms、后台JS parse77→7ms；布局约72→58ms，Paint约5ms。XLSX冷主脚本EvaluateScript约176→127ms、后台parse68→44ms；layout/paint约数ms，剩余主要为运行时预检/wasm载入/解析，而不是网络。CPU项跨线程重叠、含冷启动和首屏后1.5s，不冒充纯解析墙钟。trace中DOCX首次真实`viewer-scroll docx-scroll` Paint为冷676.4→336.6ms、暖416.6→189.1ms（点击事件为零点）；不能把之前约0.2–0.5s的父页/壳Paint当正文。XLSX在最终canvas就绪附近的文档Paint约冷1420.9→1376.9ms、暖1358.7→1296.7ms，标为grid就绪附近的合成时刻，不宣称纯解析结束时间。暖frame创建新的blob脚本，HTTP缓存并不消除parse/eval。前后不改变admission。
 
 Portal新增回归在旧组件/路由失败：按格式boot请求、压缩字节一致性、Vary/immutable、旧version拒绝；修复后专项通过。浏览器矩阵扩展为Chat/Work各四格式，均检查open/真实选择/quote/reveal/capture；最终结果见下方联合检查。
+
+**最终联合检查。** 启动基线`a9bad16`；Ruff首轮指出两处说明字符串超行，提交`5276075`仅换行，Python AST逐文件相同（消息字节不变）。其后没有产品逻辑变化。完整命令各执行一次，Ruff只复跑失败的check；Portal测试/build先完成，E2E通过仓库外pytest插件复用该production build，未触发夹具内部重复npm检查。完整套件串行，未与性能剖析并发。
+
+| 最终检查 | 结果 |
+| --- | --- |
+| `.venv/bin/ruff check .` / `ruff format --check .` | 首轮2条E501；只做字符串换行后check通过；format首轮535 files通过 |
+| `cd platform/portal && npm test && npm run build` | 172 passed / 35 files；production build通过（9.00/7.25s） |
+| `.venv/bin/pytest tests -q`（SQLite） | 2093 passed / 169 skipped / 0 failed；389.23s（命令总时间） |
+| 同命令 + 完整PG/Redis环境 | 2203 passed / 59 skipped / 0 failed；445.12s |
+| `AILAB_E2E=1 pytest e2e -q` | 首轮158 passed / 6 failed / 6 skipped，677.78s；6项根因与定点复跑见下文 |
+
+PG16使用`initdb -A trust -U ailab -E UTF8 --no-locale`，独立目录，仅监听127.0.0.1:15594；测试库`ailab_test`、迁移库`ailab_migrations`。Redis127.0.0.1:16594/15、关闭持久化；环境变量为`AILAB_TEST_DATABASE_URL`、`AILAB_TEST_POSTGRES_URL`、`AILAB_TEST_REDIS_URL`。E2E独立端口18190–18193/13190，viewer-reader使用本分支源码在宿主构建，没有默认跳过原生reader。SQLite跳过主要是缺PG/Redis URL；双后端59跳过包括未配置Docker/OpenSandbox/S3/crawler、Linux隔离与其他外部合同，不能宣称这些已验。未启动Docker，不操作个人栈。
+
+**E2E根因与追加修复。** 四个Work用例在共享用户下再次上传相同文件，平台正确分配`(2)`名，测试却仍按旧显示名点击；改为从实际附件身份取名并绑定文件ID。Mock Work默认制作行为也不应混入Viewer交互验收，收件/引用用显式确认脚本。PPT capture把32k测试模型推入未实现结构化压缩的Mock路径；此Viewer模型夹具改为128k/8192，未改变产品窗口或native admission，不能据此宣称压缩验收。
+
+真实产品缺陷：工作区原生frame的React key含派生preview.version；capture claim期间，版本0的reveal占位被同内容哈希的渲染预览替换为版本1，产生DELETE view、iframe关闭、capture结果409（view version changed）。API拒绝失效视图正确，不放宽授权。现按来源稳定保留原生pane，preview revision变化仅后台重查索引；哈希相同保留frame/在途capture，实际哈希改变才替换frame。新增两项组件回归在旧实现均失败，修复后相关19项通过；模拟boot先等待React订阅生效，避免装置早于监听发消息。代价为每次预览revision变化一次可取消的既有索引请求，同哈希不再重复传文件/重建运行时。
+
+追加改动仅Portal与E2E夹具，不改Python产品逻辑；不重跑双库全套。Portal最终测试/build及首轮失败的6个E2E结果待补。本轮原生临时PG/Redis第一轮结束后已停止，定点E2E使用另启的相同独立Redis端口，结束后再清理。

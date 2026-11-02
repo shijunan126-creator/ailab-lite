@@ -73,13 +73,14 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
     page = logged_in
     page.get_by_role("radio", name=mode, exact=True).click()
     page.set_input_files(".composer-box input[type=file]", str(FIXTURES / name))
-    _start_conversation(page, "请确认已收到文件", "test-office-vision")
+    _start_conversation(page, "原生收件验收", "test-office-vision")
     _wait_for_turns(page, 1)
-    chip = page.locator(".turn .attach-chip.open").filter(has_text=name).first
+    chip = page.locator(".turn .attach-chip.open").first
+    filename = chip.inner_text().strip()
     chip.click()
-    frame = _frame(page, name)
+    frame = _frame(page, filename)
     source = page.request.get(stack.portal + "/api/v1/files").json()
-    file = next(item for item in source if item["filename"] == name)
+    file = next(item for item in source if item["filename"] == filename)
     _index(page, stack, file["id"])
     _select(page, frame, kind)
     quote = page.locator(".composer-box .quote-chip-text").inner_text()
@@ -91,7 +92,7 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
     if kind == "xlsx":
         frame.get_by_role("tab", name="Notes", exact=True).click()
     sent.click()
-    revealed = _frame(page, name)
+    revealed = _frame(page, filename)
     if kind == "xlsx":
         # Switching away before clicking the quote proves that reveal restores its worksheet.
         expect(revealed.get_by_role("tab", name="Revenue", exact=True)).to_have_attribute("aria-selected", "true")
