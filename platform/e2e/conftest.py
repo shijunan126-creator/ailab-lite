@@ -132,6 +132,39 @@ def _build_portal(workdir: Path) -> Path:
     return dst
 
 
+def _viewer_reader(workdir: Path, provider: str) -> Path:
+    override = os.environ.get("AILAB_VIEWER_READER_PATH")
+    if override or provider != "mock":
+        reader = Path(override or "/opt/ailab-viewer/reader.mjs")
+        if not reader.is_file():
+            raise RuntimeError(f"E2E viewer reader is missing: {reader}")
+        return reader
+    runtime = PLATFORM.parent / "vendor/office-suite/runtime"
+    if not (runtime / "runner.mjs").is_file() or not (runtime / "node_modules").is_dir():
+        raise RuntimeError("E2E office runtime is missing: run `npm ci --ignore-scripts && npm run build` in vendor/office-suite/runtime")
+    # The native index has a different argv/output contract from office-read's runner.
+    # Build the production adapter from this checkout, using the same pinned external packages.
+    target = workdir / "viewer"
+    target.mkdir()
+    (target / "node_modules").symlink_to(runtime / "node_modules", target_is_directory=True)
+    reader = target / "reader.mjs"
+    _run_logged(
+        [
+            str(runtime / "node_modules/.bin/esbuild"),
+            str(PLATFORM / "ailab_platform/sandbox_tools/viewer-reader.ts"),
+            "--bundle",
+            "--platform=node",
+            "--format=esm",
+            "--packages=external",
+            f"--outfile={reader}",
+        ],
+        PLATFORM.parent,
+        LOG_DIR / "viewer-build.log",
+        30,
+    )
+    return reader
+
+
 @pytest.fixture(scope="session")
 def stack(tmp_path_factory):
     import redis
@@ -143,6 +176,7 @@ def stack(tmp_path_factory):
     if provider != "mock" and not image:
         raise RuntimeError("real E2E sandbox requires AILAB_E2E_SANDBOX_IMAGE matching this checkout")
     work = tmp_path_factory.mktemp("e2e")
+    reader = _viewer_reader(work, provider)
     tag = uuid.uuid4().hex[:8]
     ports = {"api": BASE_PORT, "broker": BASE_PORT + 1, "agent": BASE_PORT + 2, "worker": BASE_PORT + 3}
     data = work / "data"
@@ -178,7 +212,7 @@ def stack(tmp_path_factory):
         ),
         AILAB_RUN_TIMEOUT_SECONDS="120",
         AILAB_REAPER_INTERVAL_SECONDS="3600",
-        AILAB_VIEWER_READER_PATH=os.environ.get("AILAB_VIEWER_READER_PATH", "/opt/ailab-viewer/reader.mjs"),
+        AILAB_VIEWER_READER_PATH=str(reader),
         AILAB_BROKER_OWNER=f"e2e-{tag}",
     )
     if provider != "mock":

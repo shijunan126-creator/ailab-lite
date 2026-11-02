@@ -21,6 +21,7 @@ def _index(page, stack, file_id):
         response = page.request.get(f"{stack.portal}/api/v1/files/{file_id}/document")
         assert response.ok, response.text()
         value = response.json()
+        assert value.get("status") not in {"failed", "unsupported"}, f"Native document index failed for {file_id}: {value}"
         if value.get("status") == "ready":
             assert value["native"], value
             return value
@@ -30,7 +31,12 @@ def _index(page, stack, file_id):
 
 def _frame(page, name):
     frame = page.frame_locator(f'iframe.office-frame[title="{name}"]')
-    expect(frame.locator(".canvas")).to_be_visible(timeout=30000)
+    end = time.monotonic() + 30
+    while not frame.locator(".canvas").is_visible():
+        failure = page.locator(".viewer-state").filter(has_text="无法预览")
+        assert not failure.count(), f"Native viewer failed for {name}: {failure.all_inner_texts()}"
+        assert time.monotonic() < end, f"Native viewer did not open for {name}"
+        page.wait_for_timeout(150)
     return frame
 
 
@@ -78,10 +84,10 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
     chip = page.locator(".turn .attach-chip.open").first
     filename = chip.inner_text().strip()
     chip.click()
-    frame = _frame(page, filename)
     source = page.request.get(stack.portal + "/api/v1/files").json()
     file = next(item for item in source if item["filename"] == filename)
     _index(page, stack, file["id"])
+    frame = _frame(page, filename)
     _select(page, frame, kind)
     quote = page.locator(".composer-box .quote-chip-text").inner_text()
     assert quote.strip()
