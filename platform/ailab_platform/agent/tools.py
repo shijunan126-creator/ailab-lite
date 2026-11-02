@@ -113,6 +113,30 @@ TOOLS: list[dict] = [
     },
 ]
 
+# Fixed for both vision and tools-only Work models; results disclose the available review evidence.
+TOOLS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "review_artifact",
+            "description": (
+                "交付前检查 /workspace/outputs 下的四格式成品，返回结构证据及最多4页图。"
+                "逐批检查全部页面，判断内容、公式和视觉质量；文件存在、exit0或WARN均不算通过。"
+                "无视觉能力时明确返回未视觉验收。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 4},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    }
+)
+
 for _name, _description in (
     (
         "exec_wait",
@@ -305,6 +329,7 @@ READ_URL = {
 
 # Tools that need a sandbox: the first call to one of them starts it.
 SANDBOX_TOOLS = {
+    "review_artifact",
     "view_workspace_file",
     "copy_library_file",
     "list_files",

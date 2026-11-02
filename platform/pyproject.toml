@@ -30,7 +30,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov>=5", "ruff==0.17.1"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff==0.17.1", "defusedxml==0.7.1"]
 opensandbox = ["opensandbox==1.1.1"]
 postgres = ["psycopg[binary]>=3.2"]
 e2e = ["playwright>=1.49"]

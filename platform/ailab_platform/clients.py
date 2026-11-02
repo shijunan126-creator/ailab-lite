@@ -553,6 +553,10 @@ class AsyncBrokerClient(_Service):
         req = self._req("POST", f"/internal/leases/{lease_id}/view-workspace-file", timeout=80, json={"path": path, "pages": pages})
         return (await self._send(req)).json()
 
+    async def review_artifact(self, lease_id: str, path: str, pages: list[int] | None = None) -> dict:
+        req = self._req("POST", f"/internal/leases/{lease_id}/review-artifact", timeout=80, json={"path": path, "pages": pages})
+        return (await self._send(req)).json()
+
     async def warm_workspace_view(self, lease_id: str) -> dict:
         return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/view-warm", timeout=30))).json()
 

@@ -1300,3 +1300,55 @@ def test_no_snapshot_rebuild_preserves_existing_revocation_boundary():
     assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
     assert ("agent.context_boundary", {"reason": "rebuilt"}) not in platform.events
     assert requests[0]["tool_choice"] == "auto"
+
+
+@pytest.mark.parametrize("vision", [False, True])
+def test_artifact_review_keeps_recorded_prefix_and_discloses_visual_availability(monkeypatch, vision):
+    import base64
+
+    from ailab_platform.catalog import get_catalog
+
+    monkeypatch.setitem(
+        get_catalog().models,
+        "m",
+        ModelSpec("m", "m", provider="mock", context_tokens=200000, capabilities=frozenset({"tools", "vision"} if vision else {"tools"})),
+    )
+
+    class Broker(FakeBroker):
+        async def review_artifact(self, lease_id, path, pages):
+            return {
+                "pages": pages or [1],
+                "images": [base64.b64encode(b"\xff\xd8\xffreview\xff\xd9").decode()],
+                "structural": {"issues": [], "sha256": "a" * 64},
+                "page_count": 2,
+                "coverage": {"reviewed_pages": pages or [1], "complete": False},
+                "quality_gate": "pending_model_judgment",
+            }
+
+    def review(ident, page):
+        return {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": ident,
+                    "type": "function",
+                    "function": {"name": "review_artifact", "arguments": json.dumps({"path": "/workspace/outputs/a.pdf", "pages": [page]})},
+                }
+            ]
+        }
+
+    with scripted_server([review("one", 1), review("two", 2), {"content": "reviewed"}]) as (url, requests):
+        platform = FakePlatform()
+        asyncio.run(AgentLoop(platform=platform, broker=Broker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert len(requests) == 3
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    assert all(any(t["function"]["name"] == "review_artifact" for t in r["tools"]) for r in requests)
+    result = next(m for m in requests[1]["messages"] if m.get("tool_call_id") == "one")
+    evidence = json.loads(result["content"])
+    assert evidence["quality_gate"] == "pending_model_judgment"
+    assert evidence["visual_review"] == ("pending_model_judgment" if vision else "no visual review available")
+    images = [
+        m for m in requests[1]["messages"] if isinstance(m.get("content"), list) and any(p.get("type") == "image_url" for p in m["content"])
+    ]
+    assert bool(images) == vision

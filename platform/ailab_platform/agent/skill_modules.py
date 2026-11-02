@@ -10,7 +10,9 @@ SUMMARY_MARKER = "\n已读模块索引（仅供导航，正文须按需重读）
 
 
 def read_module(name, mode, resource=None):
-    entry = catalog()[name]
+    entry = catalog().get(name)
+    if entry is None:
+        raise ValueError("unknown skill")
     root = entry["path"].parent
     manifest = json.loads((root / "modules.json").read_text())
     modules = [m for m in manifest["modules"] if mode in m["modes"]]

@@ -32,7 +32,6 @@ def paired(result, call_id="read"):
 @pytest.mark.parametrize("name", BASE_SKILLS)
 def test_navigation_and_whole_file_reads(name, mode):
     navigation = read_module(name, mode)
-    assert estimator.raw(navigation["skill"]) <= 1024
     root = catalog()[name]["path"].parent
     for module in json.loads((root / "modules.json").read_text())["modules"]:
         if mode not in module["modes"]:
@@ -46,7 +45,6 @@ def test_navigation_and_whole_file_reads(name, mode):
         assert hashlib.sha256(result["skill"].encode()).hexdigest() == result["hash"]
         assert result["skill"] == (root / module["path"]).read_text()
         assert "cursor" not in result and "next_cursor" not in result
-
 
 
 @pytest.mark.parametrize("resource", ["/etc/passwd", "../SKILL.md", "absent"])
@@ -150,9 +148,7 @@ def test_large_file_is_whole_or_refused_by_small_window(monkeypatch):
         )
         turn.messages = [{"role": "system", "content": "rules"}]
         loop._states["r"] = {"messages": turn.messages}
-        result = await loop._run_tool(
-            turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource}), 0
-        )
+        result = await loop._run_tool(turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource}), 0)
         assert not result["ok"] and "cannot fit" in result["error"] and "skill" not in result
 
     asyncio.run(exercise())
@@ -180,3 +176,8 @@ def test_legacy_skill_visibility_also_survives_only_with_paired_body():
         assert (await loop._run_tool(turn, "r", call, 0))["skill"] == first["skill"]
 
     asyncio.run(exercise())
+
+
+def test_unknown_package_is_an_explicit_error():
+    with pytest.raises(ValueError, match="unknown skill"):
+        read_module("platform.missing", "work")

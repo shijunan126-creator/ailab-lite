@@ -75,7 +75,8 @@ def normalize(path: Path) -> bytes:
 
 
 def main() -> None:
-    root, path, output, selection = sys.argv[1:]
+    root, path, output, selection = sys.argv[1:5]
+    review = sys.argv[5:] == ["review"]
     selected = json.loads(selection)
     suffix = Path(path).suffix.lower()
     if suffix not in {".png", ".jpg", ".jpeg", ".pdf", ".docx", ".pptx", ".xlsx"}:
@@ -89,6 +90,11 @@ def main() -> None:
         source = work / ("input" + suffix)
         copy_source(root, path, source)
         render_preview.check_archive(source)
+        checks = None
+        if review:
+            from artifact_checks import check
+
+            checks = check(source)
         if suffix in {".png", ".jpg", ".jpeg"}:
             if selected != [1]:
                 raise ValueError("page_out_of_range")
@@ -120,6 +126,13 @@ def main() -> None:
         if sum(map(len, images)) > MAX_TOTAL:
             raise ValueError("output_limit")
         payload = {"pages": selected, "images": [base64.b64encode(image).decode("ascii") for image in images]}
+        if review:
+            payload.update(
+                structural=checks,
+                page_count=result["page_count"],
+                coverage={"reviewed_pages": selected, "complete": len(selected) == result["page_count"]},
+                quality_gate="pending_model_judgment",
+            )
         Path(output).write_text(json.dumps(payload, separators=(",", ":")), encoding="ascii")
 
 

@@ -207,6 +207,23 @@ def view_workspace_file(lease_id: str, body: dict) -> dict:
         raise HTTPException(502, "view_unavailable") from exc
 
 
+@router.post("/leases/{lease_id}/review-artifact", dependencies=[Depends(require_scope("sandbox:use"))])
+def review_artifact(lease_id: str, body: dict) -> dict:
+    from .workspace_view import view
+
+    if set(body) - {"path", "pages"} or "path" not in body:
+        raise HTTPException(422, "invalid_review_arguments")
+    try:
+        manager = get_manager()
+        lease = manager.get(lease_id)
+        with manager.render_activity(lease["user_id"], priority=0):
+            return view(manager, lease_id, body["path"], body.get("pages"), review=True)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except SandboxError as exc:
+        raise HTTPException(502, "review_unavailable") from exc
+
+
 @router.post("/leases/{lease_id}/view-warm", dependencies=[Depends(require_scope("sandbox:use"))])
 def warm_workspace_view(lease_id: str) -> dict:
     from .workspace_view import warm
