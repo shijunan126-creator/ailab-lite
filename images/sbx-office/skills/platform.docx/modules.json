@@ -1,6 +1,7 @@
 {
   "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
-  "chunk_token_cap": 2048,
+  "chunk_token_hard_limit": 4096,
+  "chunk_token_target": 2048,
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -352,10 +353,10 @@
         {
           "byte_length": 8333,
           "byte_offset": 621,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
           "end_line": 220,
           "estimated_tokens": 2219,
           "id": "1",
+          "oversize": true,
           "sha256": "db4f8da25e3871d937cbaf463ed88dc5420c8678652a0a1edccf511cfa4adcc5",
           "start_line": 16
         },
@@ -482,10 +483,10 @@
         {
           "byte_length": 7936,
           "byte_offset": 65237,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
           "end_line": 1653,
           "estimated_tokens": 2089,
           "id": "10",
+          "oversize": true,
           "sha256": "3d5bcf2b856fa116f79e733f827ba6dfe5bf733fb1cde9db94007b2be7619ae5",
           "start_line": 1463
         },

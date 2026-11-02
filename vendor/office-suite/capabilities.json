@@ -506,18 +506,6 @@
     },
     {
       "acceptance_case_id": "OFFICE-7fed5f13caef",
-      "chunk_cap_exceptions": [
-        {
-          "byte_length": 8333,
-          "byte_offset": 621,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
-          "end_line": 220,
-          "estimated_tokens": 2219,
-          "id": "1",
-          "sha256": "db4f8da25e3871d937cbaf463ed88dc5420c8678652a0a1edccf511cfa4adcc5",
-          "start_line": 16
-        }
-      ],
       "dependencies": {
         "binary": [],
         "dynamic": [],
@@ -535,6 +523,18 @@
       "modes": [
         "work"
       ],
+      "oversize_chunks": [
+        {
+          "byte_length": 8333,
+          "byte_offset": 621,
+          "end_line": 220,
+          "estimated_tokens": 2219,
+          "id": "1",
+          "oversize": true,
+          "sha256": "db4f8da25e3871d937cbaf463ed88dc5420c8678652a0a1edccf511cfa4adcc5",
+          "start_line": 16
+        }
+      ],
       "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/decorations.md",
       "source": "documents-plugin/skills/docx/references/decorations.md",
@@ -542,18 +542,6 @@
     },
     {
       "acceptance_case_id": "OFFICE-1802e5522174",
-      "chunk_cap_exceptions": [
-        {
-          "byte_length": 7936,
-          "byte_offset": 65237,
-          "cap_exception": "Indivisible paragraph or fenced code block; preserve original content and fence boundaries.",
-          "end_line": 1653,
-          "estimated_tokens": 2089,
-          "id": "10",
-          "sha256": "3d5bcf2b856fa116f79e733f827ba6dfe5bf733fb1cde9db94007b2be7619ae5",
-          "start_line": 1463
-        }
-      ],
       "dependencies": {
         "binary": [
           "convert"
@@ -580,6 +568,18 @@
       },
       "modes": [
         "work"
+      ],
+      "oversize_chunks": [
+        {
+          "byte_length": 7936,
+          "byte_offset": 65237,
+          "end_line": 1653,
+          "estimated_tokens": 2089,
+          "id": "10",
+          "oversize": true,
+          "sha256": "3d5bcf2b856fa116f79e733f827ba6dfe5bf733fb1cde9db94007b2be7619ae5",
+          "start_line": 1463
+        }
       ],
       "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
       "runtime_location": "/opt/skills/platform.docx/references/design-system.md",
@@ -13083,7 +13083,7 @@
       "status": "blocked"
     },
     {
-      "acceptance_case_id": "OFFICE-CHUNK-CAP",
+      "acceptance_case_id": "OFFICE-CHUNK-LIMITS",
       "dependencies": {
         "binary": [],
         "dynamic": [],
@@ -13091,7 +13091,7 @@
         "npm": [],
         "python": []
       },
-      "id": "module-chunk-cap",
+      "id": "module-chunk-limits",
       "kind": "resource-boundary",
       "missing_from_image": {
         "binary": [],
@@ -13101,13 +13101,13 @@
       "modes": [
         "work"
       ],
-      "reason": "2 original fenced blocks exceed 2048 estimated tokens. Preserve fences; P1 must explicitly admit or reject indivisible blocks within the real model budget.",
-      "runtime_location": "Agent module budget admission (planned:P1)",
+      "reason": "2 indivisible blocks exceed the 2048 estimated-token packing target and remain whole. The build enforces a hard limit of 4096 estimated tokens; oversize markers are informational.",
+      "runtime_location": "Resource build validation",
       "source": [
         "documents-plugin/skills/docx/references/decorations.md",
         "documents-plugin/skills/docx/references/design-system.md"
       ],
-      "status": "blocked"
+      "status": "implemented"
     }
   ],
   "dependency_notes": [

@@ -1,6 +1,7 @@
 {
   "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
-  "chunk_token_cap": 2048,
+  "chunk_token_hard_limit": 4096,
+  "chunk_token_target": 2048,
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {

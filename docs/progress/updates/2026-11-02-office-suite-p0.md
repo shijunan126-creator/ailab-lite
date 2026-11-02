@@ -5,7 +5,7 @@
 ## 产物
 
 - `vendor/office-suite/upstream/` 原样保存217个固定提交文件（含四插件技能、角色、manifest及runtime源码/UI/脚本/fixture/测试/许可证），`UPSTREAM.json`为完整SHA-256闭包；NOTICE记录Apache-2.0/MIT与本地补丁义务。
-- 三份有序精确补丁及`build.py`生成四基础技能：113个完整原文模块，按UTF-8字节范围/源行段/hash/token/modes/deps建索引，保留模板、路由、场景、质量检查、viewer与视觉评审说明。导航515–775估算token；旧JSON规格生成器/检查器/图标由compatibility输入重建，公共路径不变。生成树无上游产品名、账户/模型默认值及许可/NOTICE文件。
+- 三份有序精确补丁及`build.py`生成四基础技能：113个完整原文模块，按UTF-8字节范围/源行段/hash/token/modes/deps建索引，保留模板、路由、场景、质量检查、viewer与视觉评审说明。导航515–775估算token；旧JSON规格生成器/检查器/图标由compatibility输入重建，公共路径不变。生成树无上游产品名、账户/模型默认值；随包携带 Apache-2.0 LICENSE、NOTICE 及图标目录许可。
 - `capabilities.json`为336项静态机器契约：逐源文件、CLI命令/文档API、manifest命令、四格式各9项viewer特性及两个跨功能边界。列出Python/npm/二进制与动态调用表达式、镜像缺口、目标模式/位置和验收ID；不能把静态扫描当运行闭包已验收。
 - 既有skill index已递归包含完整目录，无需改变算法；新回归证明模块正文、深层脚本和模块元数据任一漂移都会改变hash并使Agent证明失败。Dockerfile已有整树COPY，无需改镜像或安装依赖。未修改registry/loader/loop、固定工具schema、模型请求构造或Portal。
 
@@ -22,10 +22,16 @@
 
 ## 未完成边界与下一步
 
-能力状态：6 implemented（许可来源留存），54 planned:P1，182 planned:P2，36 planned:P3，36 planned:P4，22 blocked。这里的implemented不是制作/侧栏功能已验收。
+能力状态：7 implemented（许可来源留存与分片构建边界），54 planned:P1，182 planned:P2，36 planned:P3，36 planned:P4，21 blocked。这里的implemented不是制作/侧栏功能已验收。
 
-blocked包括禁用宿主/网络安装的环境路线（含环境说明/字体清单）、`env.fix`、Linux缺Windows Excel/COM执行、未取得的系统级delivery protocol，以及分片上限边界。镜像缺少ReportLab、PyMuPDF、pikepdf、pdfplumber、defusedxml、相关npm制作/渲染依赖、Chromium、Pandoc、Tectonic等；完整列表与动态表达式仅维护在能力合同。P2需许可/离线资源闭包和实际制作验收，不能让任务运行时自动安装；视觉门禁须明确本地实现。
+blocked包括禁用宿主/网络安装的环境路线（含环境说明/字体清单）、`env.fix`、Linux缺Windows Excel/COM执行、未取得的系统级delivery protocol。镜像缺少ReportLab、PyMuPDF、pikepdf、pdfplumber、defusedxml、相关npm制作/渲染依赖、Chromium、Pandoc、Tectonic等；完整列表与动态表达式仅维护在能力合同。P2需许可/离线资源闭包和实际制作验收，不能让任务运行时自动安装；视觉门禁须明确本地实现。
 
-2048估算token是打包目标，两个原文完整围栏分别为2219、2089估算token（Word decorations/design-system）。保留完整围栏，索引标注`cap_exception`且`OFFICE-CHUNK-CAP`阻塞。**严格“所有分片≤2048”未满足**；按不切碎围栏/不删原文的要求，P1需显式预算准入或返回无法容纳，不能静默截断。
+2048估算token是打包目标，两个原文完整围栏分别为2219、2089估算token（Word decorations/design-system）。按已确认的D4保留完整围栏，索引仅标注`oversize: true`作为信息；单段落/围栏硬限制为4096，超过则构建失败。两个现有块均满足边界，不再阻塞P0；运行时真实窗口预算仍留P1，不在本轮实现。
 
 未运行新runtime构建/新镜像、PostgreSQL/Redis外部合同、浏览器、Portal tests/build或真模型验收；本轮未改这些运行/前端/请求路径。下一步交主任务评审本地提交，再由后续P1任务实现受控resource/cursor读取、实际可见性及窗口准入；资源存在不授权继续P1–P5。
+
+## P0 小幅跟进（2026-11-02）
+
+进入基线 `b5c0933`；仅修改分片构建规则与随包许可，不开始P1。构建清单明确2048目标/4096硬限制；能力合同将分片边界从blocked改为implemented，保留336项总数。四包LICENSE来自固定原始来源，NOTICE来自vendor，138个图标保留同目录LICENSE；递归hash同步更新，许可文件不作为模块索引项。
+
+验证基线为 `b5c0933` 加本节对应工作树改动：在 `platform/` 执行 `.venv/bin/ruff check --config pyproject.toml ../vendor/office-suite/build.py ../vendor/office-suite/inventory.py tests/test_office_suite_resources.py` 及同范围 `ruff format --check`，3个Python文件通过。资源专项21项（含逐字节重建漂移、许可闭包与2048/2049/4096/4097边界）和 `tests/test_prefix_cache.py` 47项合计首轮67 passed / 1 failed；唯一失败是测试围栏样例1462估算token未达到其“独立超目标块”断言，改为2887后仅复跑该项，1 passed。全部68个唯一用例已通过，未重复整组；不是整组首次全绿。漂移用例已包含在资源专项内，不重复运行。保留既有docstring转义及Starlette弃用警告。未运行全套、Portal、外部服务、浏览器或真模型；未改模型请求路径，无新增依赖、常驻服务或运行计算，仅增加随包文本及递归hash输入。下一步交主任务评审本地提交；不push、PR或部署，P1保持未开始。

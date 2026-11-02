@@ -134,9 +134,9 @@ def inventory() -> dict:
             "reason": reason,
         }
         if dest:
-            oversized = [c for c in chunks(adapted_files[name].decode()) if "cap_exception" in c]
+            oversized = [c for c in chunks(adapted_files[name].decode()) if c.get("oversize")]
             if oversized:
-                entry["chunk_cap_exceptions"] = oversized
+                entry["oversize_chunks"] = oversized
         if name.endswith("scenes/vba.md"):
             entry.update(
                 status="blocked",
@@ -218,21 +218,21 @@ def inventory() -> dict:
             ),
         }
     )
-    oversized_sources = [e for e in entries if "chunk_cap_exceptions" in e]
+    oversized_sources = [e for e in entries if "oversize_chunks" in e]
     entries.append(
         {
-            "id": "module-chunk-cap",
+            "id": "module-chunk-limits",
             "kind": "resource-boundary",
             "source": [e["source"] for e in oversized_sources],
             "modes": ["work"],
-            "runtime_location": "Agent module budget admission (planned:P1)",
+            "runtime_location": "Resource build validation",
             "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
             "missing_from_image": {"npm": [], "python": [], "binary": []},
-            "acceptance_case_id": "OFFICE-CHUNK-CAP",
-            "status": "blocked",
+            "acceptance_case_id": "OFFICE-CHUNK-LIMITS",
+            "status": "implemented",
             "reason": (
-                f"{len(oversized_sources)} original fenced blocks exceed 2048 estimated tokens. Preserve fences; "
-                "P1 must explicitly admit or reject indivisible blocks within the real model budget."
+                f"{len(oversized_sources)} indivisible blocks exceed the 2048 estimated-token packing target and remain whole. "
+                "The build enforces a hard limit of 4096 estimated tokens; oversize markers are informational."
             ),
         }
     )

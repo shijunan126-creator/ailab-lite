@@ -19,7 +19,8 @@ from ailab_platform.model_policy import TokenEstimator  # noqa: E402
 from ailab_platform.skill_index import build_index  # noqa: E402
 
 PACKAGES = {"documents-plugin": "docx", "spreadsheets-plugin": "xlsx", "presentations-plugin": "pptx", "pdf-plugin": "pdf"}
-CAP = 2048
+TARGET = 2048
+HARD_LIMIT = 4096
 ESTIMATOR = TokenEstimator()
 
 
@@ -94,7 +95,7 @@ def atoms(text: str) -> list[str]:
 def chunks(text: str) -> list[dict]:
     groups, pending = [], ""
     for block in atoms(text):
-        if pending and tokens(pending + block) > CAP:
+        if pending and tokens(pending + block) > TARGET:
             groups.append(pending)
             pending = ""
         pending += block
@@ -112,8 +113,10 @@ def chunks(text: str) -> list[dict]:
             "sha256": sha(content.encode()),
             "estimated_tokens": tokens(content),
         }
-        if item["estimated_tokens"] > CAP:
-            item["cap_exception"] = "Indivisible paragraph or fenced code block; preserve original content and fence boundaries."
+        if item["estimated_tokens"] > HARD_LIMIT:
+            raise ValueError(f"indivisible block exceeds hard limit of {HARD_LIMIT} estimated tokens: {item['estimated_tokens']}")
+        if item["estimated_tokens"] > TARGET:
+            item["oversize"] = True
         result.append(item)
         line += content.count("\n")
         offset += size
@@ -242,7 +245,7 @@ def build(output: Path) -> None:
         shutil.copytree(
             BASE / "compatibility" / f"platform.{fmt}",
             directory,
-            ignore=shutil.ignore_patterns("SKILL.md", "LICENSE*", "NOTICE*", "__pycache__", "*.pyc"),
+            ignore=shutil.ignore_patterns("SKILL.md", "__pycache__", "*.pyc"),
         )
     for name, data in sorted(files.items()):
         dest = destination(name)
@@ -276,6 +279,9 @@ def build(output: Path) -> None:
         )
     for fmt, entries in modules.items():
         directory = output / f"platform.{fmt}"
+        package = next(name for name, value in PACKAGES.items() if value == fmt)
+        (directory / "LICENSE").write_bytes(files[f"{package}/skills/{fmt}/LICENSE.txt"])
+        (directory / "NOTICE").write_bytes((BASE / "NOTICE").read_bytes())
         manifest = (directory / "skill.toml").read_text().replace('version = "1.1.0"', 'version = "1.2.0"')
         (directory / "skill.toml").write_text(manifest.replace('license = "NOASSERTION"', 'license = "Apache-2.0 AND MIT"'))
         (directory / "SKILL.md").write_text(navigation(fmt, entries))
@@ -286,7 +292,8 @@ def build(output: Path) -> None:
                 "package_id": f"platform.{fmt}",
                 "upstream_commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
                 "adapter_revision": sha(b"".join(p.read_bytes() for p in sorted((BASE / "patches").glob("*.json")))),
-                "chunk_token_cap": CAP,
+                "chunk_token_target": TARGET,
+                "chunk_token_hard_limit": HARD_LIMIT,
                 "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
                 "modules": entries,
             },

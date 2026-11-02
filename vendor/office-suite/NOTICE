@@ -3,5 +3,7 @@ The four plugin skills are Apache-2.0 under their unmodified skills/*/LICENSE.tx
 (their frontmatter labels differ). Office runtime is MIT under office-runtime/LICENSE.
 Original copyright and license notices are retained in upstream/.
 AILab modifies these resources through ordered, explicit patches; see patches/series.json.
-Compatibility assets are the existing AILab generators; icon license is retained with those sources.
-No license or provenance documents are installed as model-visible skill resources.
+Compatibility assets are the existing AILab generators; icon license is retained alongside shipped icons.
+Each generated skill carries its Apache-2.0 LICENSE and this NOTICE.
+See vendor/office-suite/UPSTREAM.json and patches/series.json in the source distribution
+for the pinned source and local changes; these provenance files are not skill modules.
