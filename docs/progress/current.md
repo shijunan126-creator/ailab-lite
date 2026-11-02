@@ -3,6 +3,7 @@
 - 分支 `feat/office-suite`、工作树 `.worktrees/office-suite`，进入干净 `5c216bf`，base `origin/main@bf0af4f`，未 fetch。产品与回归提交 `155d02f`，其后只补证据文档；本轮不 push/PR/部署，个人栈未改。
 - 指定四项已补真实证据：Chat/Work 四格式选区 viewport 到模型、引用/原生 reveal、关闭/无视图期限；四格式模板/品牌两轮 8 份原生复核、同名版本与原件 hash；PDF 容量暂停后重启 resume；同模型 4 份/8 页视觉对照；Linux 3任务均成功（111/203/292 s，含队列）与大 DOCX/XLSX 首屏/heap。边界与失败准备调用均见 [P5记录](updates/2026-11-02-office-suite-p5.md)。
 - 修复交付冲突改名造成下一轮脱离 lineage；SQLite/PostgreSQL 各 38 项、Ruff 通过。独立复核另修正生成 PDF 的文本渲染模式残留/低对比页脚，v3 字形对比度9.61:1且原版保留；没有额外平台/依赖改动。
+- 已引入生命周期测试隔离修复 `ff3804b`，历史双库证据见[测试记录](updates/2026-11-02-suite-test-isolation.md)；本分支最终检查仍待执行。
 - 下一具体动作：主任务审阅本地提交与 P5 证据，执行约定最终全套。P5 不标全面完成：宏/VBA、微软 Office、长期容量、旧截图 TTL 后成功恢复等边界仍未证明。本轮 c3-p5 容器/卷/网络均0，9端口及浏览器页关闭，原始产物清理；构建镜像保留。清理与失败口径见 P5 记录，不追加发布授权。
 
 ---

@@ -63,6 +63,11 @@
 
 - 带 `overflow: hidden` 的 inline-block 会按底边参与基线对齐；再用正数 `vertical-align` 会继续上抬。正文来源/文件/网址、输入技能标签与表头徽章统一用 `vertical-align: middle` 跟随所在文字行，不用固定像素补偿；数字引用角标保留上标语义。
 
+## 2026-11-02 生命周期测试隔离
+
+- CPython 3.12 的 pathlib 会调用 `sys.intern`；进程全局 intern 表扩容可被 tracemalloc 记成单笔约 7.33 MiB（旧表在开始跟踪前分配，释放不抵扣），触发时机受前序测试影响。渲染记录测试应预热完整生命周期、GC 后按相关代码的分配位置比较快照，并单独检查记录/缓存为空和句柄/回调弱引用失效；不能用整个解释器增长代表 Broker 泄漏，也不能提高门限掩盖。
+- EXPLAIN 不要对共享 API 测试库强制索引名或关闭顺序扫描。使用独立库、足量低选择率背景数据、ANALYZE 与生产排序/分页，检查访问条件上的索引查找；等价索引（包括 SQLite skip-scan）有效。复现和验证见[记录](docs/progress/updates/2026-11-02-suite-test-isolation.md)。
+
 ## 2026-11-02 GenUI 说明复用
 
 - “读过”必须根据当前保留的配对成功工具结果判断，不能只认Run/checkpoint里的永久布尔标记或tool_log。完整当前文档文本才可复用；摘要、截断、旧版、用户/其他工具结果都不能代替。压缩保留组可复用、丢组则重读；只减少新增结果，不能为去重重写旧消息或工具schema。生成提示词修改从Portal源重建契约，升级首次仍有明确上下文边界，见[记录](docs/progress/updates/2026-11-02-genui-doc-reuse.md)。
