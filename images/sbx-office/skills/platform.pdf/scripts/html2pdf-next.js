@@ -85,14 +85,6 @@ function resolveChromium(chromiumObj, allowInstall = false) {
     if (fs.existsSync(c)) return { status: 'fallback', executablePath: c };
   }
 
-  if (allowInstall) {
-    const r = spawnSync('npx', ['playwright', 'install', 'chromium'], { stdio: 'inherit', shell: true });
-    if (r.status === 0) {
-      try { exe = chromiumObj.executablePath(); } catch (_) {}
-      if (exe && fs.existsSync(exe)) return { status: 'installed', executablePath: exe };
-    }
-  }
-
   return { status: 'missing', executablePath: exe || '' };
 }
 
@@ -191,9 +183,9 @@ async function preRenderHooks(page) {
   // Auto-inject KaTeX CDN if raw math detected but library not loaded
   if (!katexStatus.lib && katexStatus.raw && !katexStatus.rendered) {
     console.log('  ⏳ Auto-injecting KaTeX CDN (math formulas detected but KaTeX not loaded)...');
-    await page.addStyleTag({ url: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css' });
-    await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js' });
-    await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js' });
+    await page.addStyleTag({ path: require.resolve('katex/dist/katex.min.css') });
+    await page.addScriptTag({ path: require.resolve('katex/dist/katex.min.js') });
+    await page.addScriptTag({ path: require.resolve('katex/dist/contrib/auto-render.min.js') });
     await sleep(2000); // Wait for CDN scripts to load
     // Re-check
     const recheckLib = await page.evaluate(() => typeof renderMathInElement === 'function');

@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 
-from build import BASE, PACKAGES, ROOT, adapted, dependencies, destination, dump, modes, originals, sha
+from build import BASE, PACKAGES, ROOT, dependencies, destination, dump, modes, originals, sha
 
 # Import names whose distribution or executable spelling differs.
 DISTRIBUTIONS = {
@@ -24,11 +24,12 @@ DISTRIBUTIONS = {
 
 def inventory() -> dict:
     files = originals()
-    adapted_files, _ = adapted()
     docker = (ROOT / "images/sbx-office/Dockerfile").read_text()
-    python_installed = set(re.findall(r"([\w-]+)==[\d.]+", docker))
+    python_lock = (ROOT / "images/sbx-office/requirements.lock").read_text()
+    python_installed = {name.lower().replace("_", "-") for name in re.findall(r"([\w-]+)==[\d.]+", python_lock)}
+    production_npm = json.loads((ROOT / "images/sbx-office/package.json").read_text())["dependencies"]
     # Declared runtime dependencies are isolated under /opt/ailab-office/node_modules.
-    runtime_npm = json.loads((ROOT / "vendor/zcode-office-runtime/package.json").read_text())["dependencies"]
+    runtime_npm = json.loads((ROOT / "vendor/office-suite/runtime/package.json").read_text())["dependencies"]
     bins = {
         "python",
         "python3",
@@ -44,6 +45,12 @@ def inventory() -> dict:
         "pdfinfo",
         "fc-list",
         "fc-match",
+        "chromium",
+        "pandoc",
+        "xelatex",
+        "latexmk",
+        "tesseract",
+        "convert",
     }
     entries, all_missing = [], {"python": set(), "npm": set(), "binary": set()}
     for name, data in sorted(files.items()):
@@ -85,8 +92,10 @@ def inventory() -> dict:
             deps["npm"].remove("@zcode/office-runtime")
             deps["local"].append("office-runtime")
         missing = {
-            "python": sorted(DISTRIBUTIONS.get(n, n) for n in deps["python"] if DISTRIBUTIONS.get(n, n) not in python_installed),
-            "npm": sorted(n for n in deps["npm"] if not name.startswith("office-runtime/") or n not in runtime_npm),
+            "python": sorted(
+                DISTRIBUTIONS.get(n, n) for n in deps["python"] if DISTRIBUTIONS.get(n, n).lower().replace("_", "-") not in python_installed
+            ),
+            "npm": sorted(n for n in deps["npm"] if n not in (runtime_npm if name.startswith("office-runtime/") else production_npm)),
             "binary": sorted(n for n in deps["binary"] if n not in bins),
         }
         for kind, values in missing.items():
@@ -214,12 +223,20 @@ def inventory() -> dict:
             ),
         }
     )
-    entries.append({
-        "id": "whole-file-reads", "kind": "resource-boundary", "source": [], "modes": ["chat", "work"],
-        "runtime_location": "Agent ModelPolicy admission", "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
-        "missing_from_image": {"npm": [], "python": [], "binary": []}, "acceptance_case_id": "OFFICE-WHOLE-FILE",
-        "status": "implemented", "reason": "Whole-file reads only; reject insufficient remaining context explicitly, never truncate."
-    })
+    entries.append(
+        {
+            "id": "whole-file-reads",
+            "kind": "resource-boundary",
+            "source": [],
+            "modes": ["chat", "work"],
+            "runtime_location": "Agent ModelPolicy admission",
+            "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
+            "missing_from_image": {"npm": [], "python": [], "binary": []},
+            "acceptance_case_id": "OFFICE-WHOLE-FILE",
+            "status": "implemented",
+            "reason": "Whole-file reads only; reject insufficient remaining context explicitly, never truncate.",
+        }
+    )
     return {
         "schema_version": 1,
         "upstream_commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
@@ -230,13 +247,13 @@ def inventory() -> dict:
             "dynamic sites carry expressions for P2 review."
         ),
         "dependency_notes": [
-            "Python absence is measured against explicit Dockerfile pins; transitive modules still need P2 license/version closure.",
-            "Existing reader npm modules are private to /opt/ailab-office; skill scripts cannot assume NODE_PATH resolution.",
+            "Python absence uses the hash-locked image closure; dynamic imports still need execution evidence.",
+            "Reader modules stay in /opt/ailab-office; production scripts use /opt/office-production via NODE_PATH.",
             (
                 "Windows COM/VBA execution requires external Windows Excel and is blocked on the Linux image; "
                 "native VBA preservation is separate."
             ),
-            "No new dependency, resident service or image layer is installed by P0.",
+            "P2 image installs the offline production closure at build time; no new resident service or runtime package installation.",
         ],
         "missing_from_image": {key: sorted(value) for key, value in all_missing.items()},
         "capabilities": entries,

@@ -8,7 +8,7 @@ import tarfile
 
 from .isolate import IsolationError
 
-PARSER_VERSION = "zcode-3c5b227-ailab2"
+PARSER_VERSION = "office-a60ba6a-ailab3"
 KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx"}
 log = logging.getLogger("ailab.worker.office")
 

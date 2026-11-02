@@ -13,7 +13,7 @@ import office_benchmark_process as office
 from ailab_platform.worker.isolate import execute
 
 root = Path(__file__).resolve().parents[2]
-fixtures = root / "vendor/zcode-office-runtime/fixtures"
+fixtures = root / "vendor/office-suite/runtime/fixtures"
 rows = []
 for kind, name in [("pdf", "paper.pdf"), ("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx")]:
     source = fixtures / name
@@ -31,7 +31,7 @@ for kind, name in [("pdf", "paper.pdf"), ("docx", "report.docx"), ("xlsx", "budg
             digest.update((tmp / "new" / unit["name"]).read_bytes())
         persistent_ms = (time.perf_counter() - started) * 1000
         hot = json.loads(
-            subprocess.check_output(["node", str(root / "vendor/zcode-office-runtime/bench.mjs"), str(source), kind], text=True)
+            subprocess.check_output(["node", str(root / "vendor/office-suite/runtime/bench.mjs"), str(source), kind], text=True)
         )
         legacy_hot = json.loads(
             subprocess.check_output([sys.executable, str(root / "platform/scripts/bench_legacy.py"), str(source)], text=True)

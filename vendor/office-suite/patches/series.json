@@ -10,5 +10,13 @@
   {
     "file": "003-markdown-boundary.json",
     "reason": "Remove one unmatched PDF Markdown fence so prose sections remain navigable and no operational text is lost or misclassified as code."
+  },
+  {
+    "file": "004-runtime-reader.json",
+    "reason": "Rebase bounded AILab parser coverage and visual-presence patches onto the pinned runtime."
+  },
+  {
+    "file": "005-offline-production.json",
+    "reason": "Use preinstalled Chromium/KaTeX and offline XeLaTeX; refuse in-place Excel source edits."
   }
 ]

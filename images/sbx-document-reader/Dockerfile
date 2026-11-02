@@ -1,10 +1,10 @@
 # Build from the repository root. Dedicated system reader, never a user's Work lease.
 FROM node:24.11.1-bookworm-slim AS runtime
 WORKDIR /opt/ailab-office
-COPY vendor/zcode-office-runtime/package.json vendor/zcode-office-runtime/package-lock.json ./
+COPY vendor/office-suite/runtime/package.json vendor/office-suite/runtime/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY vendor/zcode-office-runtime/src ./src
-COPY vendor/zcode-office-runtime/runner.ts vendor/zcode-office-runtime/LICENSE vendor/zcode-office-runtime/APACHE-2.0 vendor/zcode-office-runtime/UPSTREAM.json ./
+COPY vendor/office-suite/runtime/src ./src
+COPY vendor/office-suite/runtime/runner.ts vendor/office-suite/runtime/LICENSE vendor/office-suite/runtime/APACHE-2.0 vendor/office-suite/runtime/UPSTREAM.json ./
 RUN node_modules/.bin/esbuild runner.ts --bundle --platform=node --format=esm --packages=external --outfile=runner.mjs \
  && npm prune --omit=dev --ignore-scripts \
  && sha256sum runner.mjs > runtime.sha256

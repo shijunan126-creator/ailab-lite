@@ -41,7 +41,7 @@ for (let unit = 0; unit < anchors.length; unit++) {
 }
 if (doc.hasVisuals && !visualUnits.length) visualUnits.push({anchor:'document', unit_number:1});
 await writeFile(join(output,'manifest.json'), JSON.stringify({
-  version:1, parser:'zcode-3c5b227-ailab2', kind, title:doc.title, total_units:doc.units,
+  version:1, parser:'office-a60ba6a-ailab3', kind, title:doc.title, total_units:doc.units,
   status:kind==='pdf' && doc.units>3000?'partial':'ready',
   coverage:anchors, units, chars, visual_units:visualUnits, outline:doc.outline,
   limitations:['Native text only; embedded media, charts and layout require visual review.'],

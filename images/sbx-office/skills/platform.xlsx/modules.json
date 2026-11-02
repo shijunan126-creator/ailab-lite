@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "7a74650d54fd01ba8b68df7b319eb76ecd1ff917c5b173cc75f116a0d392ab0a",
+  "adapter_revision": "45fe2196767164d3d5f53f08deb7aed606ada42f1f15abcd37c46b19482d93ea",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -383,16 +383,17 @@
       "deps": [
         "spreadsheets-plugin/skills/xlsx/templates/base.py"
       ],
-      "estimated_tokens": 13929,
+      "estimated_tokens": 14043,
       "logical_path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
       "modes": [
         "work"
       ],
       "patches": [
-        "002-execution-contracts.json"
+        "002-execution-contracts.json",
+        "005-offline-production.json"
       ],
       "path": "xlsx.py",
-      "sha256": "2a9e23d2ba52df391850661943ba88b8f56a842f4e2e504df07bdcf21267161d"
+      "sha256": "486414bf41384dcbb1757d3c7b42121339ba46c93ddf667f15d9c68f5ade09ee"
     }
   ],
   "package_id": "platform.xlsx",

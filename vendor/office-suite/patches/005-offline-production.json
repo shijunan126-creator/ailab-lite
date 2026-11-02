@@ -1,0 +1,155 @@
+[
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+    "before_sha256": "32eeb06095761458e6d868ba6d62e2a052c37ab0e5f8109a77321ac205fd3627",
+    "after_sha256": "1c230f30779cfcfbeb8fe83a54d6eb25e1723b59e8ca1ec3325b9b107523ff66",
+    "edits": [
+      {
+        "start": 3412,
+        "end": 3730,
+        "before": "\n  }\n\n  if (allowInstall) {\n    const r = spawnSync('npx', ['playwright', 'install', 'chromium'], { stdio: 'inherit', shell: true });\n    if (r.status === 0) {\n      try { exe = chromiumObj.executablePath(); } catch (_) {}\n      if (exe && fs.existsSync(exe)) return { status: 'installed', executablePath: exe };\n    }",
+        "after": ""
+      },
+      {
+        "start": 7388,
+        "end": 7391,
+        "before": "url",
+        "after": "path"
+      },
+      {
+        "start": 7393,
+        "end": 7400,
+        "before": "'https:",
+        "after": "require.resolve('katex"
+      },
+      {
+        "start": 7401,
+        "end": 7422,
+        "before": "/cdn.jsdelivr.net/npm",
+        "after": "dist"
+      },
+      {
+        "start": 7428,
+        "end": 7436,
+        "before": "@0.16.22",
+        "after": ".min.css') });\n    await page.addScriptTag({ path: require.resolve('katex"
+      },
+      {
+        "start": 7452,
+        "end": 7456,
+        "before": "css'",
+        "after": "js')"
+      },
+      {
+        "start": 7491,
+        "end": 7494,
+        "before": "url",
+        "after": "path"
+      },
+      {
+        "start": 7496,
+        "end": 7515,
+        "before": "'https://cdn.jsdeli",
+        "after": "require.resol"
+      },
+      {
+        "start": 7516,
+        "end": 7526,
+        "before": "r.net/npm/",
+        "after": "e('"
+      },
+      {
+        "start": 7531,
+        "end": 7641,
+        "before": "@0.16.22/dist/katex.min.js' });\n    await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/katex@0.16.22",
+        "after": ""
+      },
+      {
+        "start": 7674,
+        "end": 7674,
+        "before": "",
+        "after": ")"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+    "before_sha256": "16e3b10e0ef2cb49e39c249d23c9b2ad382b12c27a1fde5ae37604d11f302d75",
+    "after_sha256": "9b9a0c8ffe3a79f17a0270e9d0e413d9b206a006f8a859ec44bdc0147f36527c",
+    "edits": [
+      {
+        "start": 74183,
+        "end": 74209,
+        "before": "tectonic = _find_tectonic(",
+        "after": "# AILab: TeX Live is baked into the image; no runtime package downloads or shell escape.\n    tectonic = shutil.which(\"xelatex\""
+      },
+      {
+        "start": 74244,
+        "end": 74260,
+        "before": "import platform\n",
+        "after": "Output.error(\"MissingDependency\", \"Offline XeLaTeX must be preinstalled\")\n    output_dir = Path(\"/workspace/outputs\")\n    output_dir.mkdir(parents=True, exist_ok=True)\n\n    all_lines = []\n    ok = False\n    for _ in range(runs):\n        try:\n            proc = subprocess.run(\n                [tectonic, \"-no-shell-escape\", \"-interaction=nonstopmode\", \"-halt-on-error\",\n                 \"-output-directory=\" + str(output_dir), str(tex.resolve())],\n                capture_output=True, text=True, timeout=120,\n            )\n            all_lines.extend((proc.stdout + proc.stderr).splitlines())\n            ok = proc.returncode == 0\n            if not ok:\n                break\n        except subprocess.TimeoutExpired:\n    "
+      },
+      {
+        "start": 74291,
+        "end": 74981,
+        "before": "tectonic command not found\")\n        print()\n        print(\"The bundled scripts/tectonic binary is macOS arm64 only.\")\n        print(\"Install tectonic for your platform:\\n\")\n        sys_name = platform.system()\n        if sys_name == \"Darwin\":\n            print(\"  macOS (Homebrew):  brew install tectonic\")\n            print(\"  macOS (binary):    curl -sSL https://drop-sh.fullyjustified.net | sh\")\n            print(\"                     mv tectonic ~/tectonic && chmod +x ~/tectonic\")\n        elif sys_name == \"Linux\":\n            print(\"  Debian/Ubuntu:     apt install tectonic         (if available)\")\n            print(\"  Arch Linux:        pacman -S tectonic\")\n            print(\"  ",
+        "after": ""
+      },
+      {
+        "start": 74983,
+        "end": 76083,
+        "before": "nda:             conda install -c conda-forge tectonic\")\n            print(\"  Binary download:   curl -sSL https://drop-sh.fullyjustified.net | sh\")\n            print(\"                     mv tectonic ~/tectonic && chmod +x ~/tectonic\")\n        elif sys_name == \"Windows\":\n            print(\"  Windows (scoop):   scoop install tectonic\")\n            print(\"  Windows (choco):   choco install tectonic\")\n            print(\"  Conda:             conda install -c conda-forge tectonic\")\n        else:\n            print(\"  See: https://tectonic-typesetting.github.io/\")\n        print()\n        print(\"After installing, verify with: tectonic --version\")\n        print()\n        print(\"Quick check \u2014 is tectonic already installed somewhere?\")\n        print(f\"  which tectonic:    {shutil.which('tectonic') or 'not found'}\")\n        print(f\"  ~/tectonic:        {'exists' if (Path.home() / 'tectonic').exists() else 'not found'}\")\n        print(f\"  scripts/tectonic:  {'exists' if (_SCRIPT_DIR / 'tectonic').exists() else 'not found'}\")\n        print(f\"  Platform:          {sys_name} {platform.machine()}\")\n",
+        "after": "mpilation timeout (>2 minutes)\")\n    "
+      },
+      {
+        "start": 76111,
+        "end": 76269,
+        "before": "\n    all_lines = []\n    ok = False\n    for _ in range(runs):\n        try:\n            proc = subprocess.run(\n                [tectonic, \"-X\", \"compile\", str(t",
+        "after": "        "
+      },
+      {
+        "start": 76271,
+        "end": 76537,
+        "before": ")],\n                capture_output=True, text=True, timeout=120,\n            )\n            all_lines.extend((proc.stdout + proc.stderr).splitlines())\n            ok = proc.returncode == 0\n            if not ok:\n                break\n        except subprocess.Timeout",
+        "after": "cept "
+      },
+      {
+        "start": 76539,
+        "end": 76564,
+        "before": "pired:\n            print(",
+        "after": "ception as exc:\n            print(f"
+      },
+      {
+        "start": 76581,
+        "end": 76613,
+        "before": "Compilation timeout (>2 minutes)",
+        "after": "{exc}"
+      },
+      {
+        "start": 76648,
+        "end": 76757,
+        "before": "        except Exception as exc:\n            print(f\"\\n\\u2717 Error: {exc}\")\n            raise SystemExit(1)\n",
+        "after": ""
+      },
+      {
+        "start": 77111,
+        "end": 77121,
+        "before": "tex.parent",
+        "after": "output_dir"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
+    "before_sha256": "2a9e23d2ba52df391850661943ba88b8f56a842f4e2e504df07bdcf21267161d",
+    "after_sha256": "486414bf41384dcbb1757d3c7b42121339ba46c93ddf667f15d9c68f5ade09ee",
+    "edits": [
+      {
+        "start": 49398,
+        "end": 49398,
+        "before": "",
+        "after": "# AILab: commands such as recalc are in-place; callers must copy the source to outputs first.\n    for value in sys.argv[1:]:\n        if Path(value).is_absolute() and Path(value).resolve().is_relative_to(\"/workspace/inputs\"):\n            if len(sys.argv) > 1 and sys.argv[1] in {\"recalc\", \"pivot\"}:\n                print(\"Read-only input: copy the original to /workspace/outputs before editing\", file=sys.stderr)\n                return 2\n    "
+      }
+    ]
+  }
+]

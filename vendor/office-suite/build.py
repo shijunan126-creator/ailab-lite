@@ -266,11 +266,41 @@ def build(output: Path) -> None:
         dump(output / "index.json", build_index(output))
 
 
+def build_runtime(output: Path) -> None:
+    """One pinned parser plus explicit reader adapter; no second parser version."""
+    files, _ = adapted()
+    if output.exists():
+        shutil.rmtree(output)
+    for name, data in files.items():
+        if name.endswith("/CONTRACT.md"):
+            continue
+        if not (
+            name.startswith(("office-runtime/src/adapters/parse/", "office-runtime/src/domain/"))
+            or name in {"office-runtime/src/adapters/parsers.ts", "office-runtime/LICENSE"}
+            or (name.startswith("office-runtime/src/") and len(Path(name).parts) == 3)
+        ):
+            continue
+        path = output / name.removeprefix("office-runtime/")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    shutil.copytree(BASE / "runtime-adapter", output, dirs_exist_ok=True)
+    dump(
+        output / "UPSTREAM.json",
+        {
+            "commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
+            "adapter_revision": sha((BASE / "patches/004-runtime-reader.json").read_bytes()),
+        },
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=ROOT / "images/sbx-office/skills")
+    parser.add_argument("--runtime-output", type=Path)
     args = parser.parse_args()
     build(args.output.resolve())
+    if args.runtime_output:
+        build_runtime(args.runtime_output.resolve())
 
 
 if __name__ == "__main__":

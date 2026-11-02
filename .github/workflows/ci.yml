@@ -104,9 +104,9 @@ jobs:
         with:
           node-version: "24.11.1"
           cache: npm
-          cache-dependency-path: vendor/zcode-office-runtime/package-lock.json
+          cache-dependency-path: vendor/office-suite/runtime/package-lock.json
       - name: Build and verify the pinned Office reader
-        working-directory: vendor/zcode-office-runtime
+        working-directory: vendor/office-suite/runtime
         run: npm ci --ignore-scripts --no-audit --no-fund && npm run build && npm test
       - name: PostgreSQL client and migration database
         if: matrix.database == 'postgres'
@@ -278,7 +278,7 @@ jobs:
         working-directory: platform/portal
         run: npm ci --no-audit --no-fund
       - name: Office reader for isolated browser fixtures
-        working-directory: vendor/zcode-office-runtime
+        working-directory: vendor/office-suite/runtime
         run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
       - name: Chromium
         working-directory: platform

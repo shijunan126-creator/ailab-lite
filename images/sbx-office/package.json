@@ -1,0 +1,14 @@
+{
+  "name": "ailab-office-production-tools",
+  "private": true,
+  "dependencies": {
+    "docx": "9.5.1",
+    "pptxgenjs": "4.0.1",
+    "sharp": "0.34.5",
+    "image-size": "2.0.2",
+    "pdf-lib": "1.17.1",
+    "playwright": "1.56.1",
+    "katex": "0.16.25",
+    "mermaid": "11.12.1"
+  }
+}

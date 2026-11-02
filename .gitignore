@@ -12,8 +12,8 @@ node_modules/
 logs/
 demo-output/
 tests/local.sh
-vendor/zcode-office-runtime/runner.mjs
-vendor/zcode-office-runtime/bench.mjs
+vendor/office-suite/runtime/runner.mjs
+vendor/office-suite/runtime/bench.mjs
 
 # Review runs keep summaries and minimal reproductions, not raw output.
 /docs/reviews/**/*.json

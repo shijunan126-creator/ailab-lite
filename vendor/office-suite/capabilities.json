@@ -211,9 +211,7 @@
       "id": "source:documents-plugin/skills/docx-viewer/SKILL.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
@@ -221,10 +219,10 @@
         "chat",
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/viewer/SKILL.md",
       "source": "documents-plugin/skills/docx-viewer/SKILL.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-aff3b3eab265",
@@ -270,20 +268,17 @@
       "id": "source:documents-plugin/skills/docx/SKILL.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert",
-          "pandoc"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/resources/SKILL.md",
       "source": "documents-plugin/skills/docx/SKILL.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-873a85466db0",
@@ -393,9 +388,7 @@
           "brew",
           "npm"
         ],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -424,9 +417,7 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -459,22 +450,16 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "image-size"
-        ],
-        "python": [
-          "Pillow",
-          "numpy",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/chart-templates.md",
       "source": "documents-plugin/skills/docx/references/chart-templates.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-d77ab951e95a",
@@ -491,18 +476,16 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/common-rules.md",
       "source": "documents-plugin/skills/docx/references/common-rules.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-7fed5f13caef",
@@ -546,21 +529,17 @@
       "id": "source:documents-plugin/skills/docx/references/design-system.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
-        "npm": [
-          "image-size"
-        ],
+        "binary": [],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/design-system.md",
       "source": "documents-plugin/skills/docx/references/design-system.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-187afd127513",
@@ -581,21 +560,17 @@
       "id": "source:documents-plugin/skills/docx/references/docx-js-advanced.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
-        "npm": [
-          "docx"
-        ],
+        "binary": [],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/docx-js-advanced.md",
       "source": "documents-plugin/skills/docx/references/docx-js-advanced.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-e65230f6d78a",
@@ -614,18 +589,16 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/docx-js-core.md",
       "source": "documents-plugin/skills/docx/references/docx-js-core.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-ce6e523caaed",
@@ -670,18 +643,16 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/math-formulas.md",
       "source": "documents-plugin/skills/docx/references/math-formulas.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-15b7059ea8b7",
@@ -705,17 +676,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "Pillow"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/ooxml.md",
       "source": "documents-plugin/skills/docx/references/ooxml.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-6e4db464327f",
@@ -735,18 +704,16 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/references/toc.md",
       "source": "documents-plugin/skills/docx/references/toc.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-04d3d0513b16",
@@ -795,18 +762,16 @@
       "kind": "route",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/routes/create.md",
       "source": "documents-plugin/skills/docx/routes/create.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-6defb83e20d1",
@@ -829,20 +794,17 @@
       "id": "source:documents-plugin/skills/docx/routes/edit.md",
       "kind": "route",
       "missing_from_image": {
-        "binary": [
-          "convert",
-          "pandoc"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/routes/edit.md",
       "source": "documents-plugin/skills/docx/routes/edit.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-e9305a063769",
@@ -863,20 +825,17 @@
       "id": "source:documents-plugin/skills/docx/routes/format.md",
       "kind": "route",
       "missing_from_image": {
-        "binary": [
-          "convert",
-          "pandoc"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/routes/format.md",
       "source": "documents-plugin/skills/docx/routes/format.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-236fd6f9cb5e",
@@ -900,22 +859,17 @@
       "id": "source:documents-plugin/skills/docx/routes/read.md",
       "kind": "route",
       "missing_from_image": {
-        "binary": [
-          "convert",
-          "pandoc"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/routes/read.md",
       "source": "documents-plugin/skills/docx/routes/read.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-fd68b8e567e3",
@@ -932,18 +886,16 @@
       "kind": "scene",
       "missing_from_image": {
         "binary": [],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/scenes/academic.md",
       "source": "documents-plugin/skills/docx/scenes/academic.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-ed75257326e7",
@@ -1132,17 +1084,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "lxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/scripts/add_toc_placeholders.py",
       "source": "documents-plugin/skills/docx/scripts/add_toc_placeholders.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-ff641ce4ad6c",
@@ -1164,21 +1114,17 @@
       "id": "source:documents-plugin/skills/docx/scripts/document.py",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-7a9a5f4c938a",
@@ -1201,18 +1147,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.add_comment",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1238,18 +1180,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.reply_to_comment",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1275,18 +1213,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.save",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1312,18 +1246,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#Document.validate",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1349,18 +1279,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.append_to",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1386,18 +1312,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.insert_after",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1423,18 +1345,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.insert_before",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1460,18 +1378,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.replace_node",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1497,18 +1411,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.revert_deletion",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1534,18 +1444,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.revert_insertion",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1571,18 +1477,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.suggest_deletion",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1608,18 +1510,14 @@
       "id": "command:documents-plugin/skills/docx/scripts/document.py#DocxXMLEditor.suggest_paragraph",
       "kind": "python-api",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.docx/scripts/document.py",
       "source": "documents-plugin/skills/docx/scripts/document.py",
       "status": "planned:P2"
@@ -1669,17 +1567,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "Pillow"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/scripts/postcheck.py",
       "source": "documents-plugin/skills/docx/scripts/postcheck.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-01d6b052a6fa",
@@ -1819,21 +1715,17 @@
       "id": "source:documents-plugin/skills/docx/scripts/utilities.py",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "defusedxml"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.docx/scripts/utilities.py",
       "source": "documents-plugin/skills/docx/scripts/utilities.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-b56dd5647e29",
@@ -1860,9 +1752,7 @@
           "brew",
           "npm"
         ],
-        "npm": [
-          "docx"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -2103,9 +1993,7 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "chat",
@@ -2655,9 +2543,7 @@
       "id": "source:office-runtime/scripts/e2e.mjs",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "chromium"
-        ],
+        "binary": [],
         "npm": [
           "@modelcontextprotocol/ext-apps",
           "@modelcontextprotocol/sdk",
@@ -5121,19 +5007,17 @@
       "id": "source:pdf-plugin/skills/pdf/SKILL.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/resources/SKILL.md",
       "source": "pdf-plugin/skills/pdf/SKILL.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-e50730437c12",
@@ -5157,7 +5041,6 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [
-          "convert",
           "tectonic"
         ],
         "npm": [],
@@ -5187,19 +5070,17 @@
       "id": "source:pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/creative-fixed-canvas.md",
       "source": "pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-2d59197ab70b",
@@ -5245,20 +5126,17 @@
       "id": "source:pdf-plugin/skills/pdf/briefs/creative.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "chromium",
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/creative.md",
       "source": "pdf-plugin/skills/pdf/briefs/creative.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-4cabd85c5294",
@@ -5275,19 +5153,17 @@
       "id": "source:pdf-plugin/skills/pdf/briefs/poster.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/poster.md",
       "source": "pdf-plugin/skills/pdf/briefs/poster.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-1a7d9ca27a33",
@@ -5311,24 +5187,17 @@
       "id": "source:pdf-plugin/skills/pdf/briefs/process-advanced.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "pdf2image",
-          "pdfplumber",
-          "pypdfium2",
-          "pytesseract"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/process-advanced.md",
       "source": "pdf-plugin/skills/pdf/briefs/process-advanced.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-23a11199bf91",
@@ -5348,19 +5217,17 @@
       "id": "source:pdf-plugin/skills/pdf/briefs/process.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/process.md",
       "source": "pdf-plugin/skills/pdf/briefs/process.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-25f583be372e",
@@ -5386,18 +5253,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "Pillow",
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/report.md",
       "source": "pdf-plugin/skills/pdf/briefs/report.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-3ab752c14102",
@@ -5417,17 +5281,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/briefs/resume.md",
       "source": "pdf-plugin/skills/pdf/briefs/resume.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-abda1c82c279",
@@ -5469,17 +5331,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/configs/fonts.md",
       "source": "pdf-plugin/skills/pdf/configs/fonts.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-712c9675bceb",
@@ -5529,9 +5389,7 @@
         "binary": [
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -5588,7 +5446,6 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [
-          "chromium",
           "tectonic"
         ],
         "npm": [],
@@ -5627,13 +5484,10 @@
       "missing_from_image": {
         "binary": [
           "brew",
-          "chromium",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -5666,12 +5520,9 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [
-          "chromium",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -5751,17 +5602,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/cover_render.py",
       "source": "pdf-plugin/skills/pdf/scripts/cover_render.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-9a8b032d47cb",
@@ -5781,11 +5630,8 @@
       "id": "source:pdf-plugin/skills/pdf/scripts/cover_validate.js",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "chromium"
-        ],
+        "binary": [],
         "npm": [
-          "playwright",
           "playwright-core"
         ],
         "python": []
@@ -6059,23 +5905,17 @@
       "id": "source:pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "chromium",
-          "convert"
-        ],
-        "npm": [
-          "pdf-lib",
-          "playwright"
-        ],
+        "binary": [],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/html2pdf-next.js",
       "source": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-e71d52873938",
@@ -6092,19 +5932,17 @@
       "id": "source:pdf-plugin/skills/pdf/scripts/html2poster.js",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "chromium"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/html2poster.js",
       "source": "pdf-plugin/skills/pdf/scripts/html2poster.js",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-8302a002c768",
@@ -6199,22 +6037,11 @@
       "kind": "source-file",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6318,22 +6145,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6437,22 +6253,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6556,22 +6361,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6675,22 +6469,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6794,22 +6577,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -6913,22 +6685,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7032,22 +6793,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7151,22 +6901,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7270,22 +7009,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7389,22 +7117,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7508,22 +7225,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7627,22 +7333,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7746,22 +7441,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7865,22 +7549,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -7984,22 +7657,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8103,22 +7765,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8222,22 +7873,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8341,22 +7981,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8460,22 +8089,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8579,22 +8197,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8698,22 +8305,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8817,22 +8413,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -8936,22 +8521,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9055,22 +8629,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9174,22 +8737,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9293,22 +8845,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9412,22 +8953,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9531,22 +9061,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9650,22 +9169,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9769,22 +9277,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9888,22 +9385,11 @@
       "kind": "cli-command",
       "missing_from_image": {
         "binary": [
-          "chromium",
-          "convert",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
-        "python": [
-          "Pillow",
-          "PyMuPDF",
-          "pdf2image",
-          "pdfplumber",
-          "pikepdf",
-          "reportlab"
-        ]
+        "npm": [],
+        "python": []
       },
       "modes": [
         "work"
@@ -9932,18 +9418,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "PyMuPDF",
-          "pymupdf"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/pdf_qa.py",
       "source": "pdf-plugin/skills/pdf/scripts/pdf_qa.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-a9383ab43b8f",
@@ -9963,17 +9446,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "pdfplumber"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/poster_validate.py",
       "source": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-1f5494aeafbc",
@@ -9994,14 +9475,12 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "pdfplumber"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/poster_validate.py",
       "source": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
       "status": "planned:P2"
@@ -10025,14 +9504,12 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "pdfplumber"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/poster_validate.py",
       "source": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
       "status": "planned:P2"
@@ -10056,14 +9533,12 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "pdfplumber"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "CLI/API retained but command behavior requires P2 execution acceptance.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/poster_validate.py",
       "source": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
       "status": "planned:P2"
@@ -10093,13 +9568,10 @@
       "missing_from_image": {
         "binary": [
           "brew",
-          "chromium",
           "npm",
           "tectonic"
         ],
-        "npm": [
-          "playwright"
-        ],
+        "npm": [],
         "python": []
       },
       "modes": [
@@ -10131,19 +9603,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "lxml",
-          "pdfplumber",
-          "pikepdf"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/scripts/toc_validate.py",
       "source": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-4723d48c63bd",
@@ -10162,21 +9630,17 @@
       "id": "source:pdf-plugin/skills/pdf/typesetting/charts.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "adjustText"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/typesetting/charts.md",
       "source": "pdf-plugin/skills/pdf/typesetting/charts.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-44c087836009",
@@ -10244,17 +9708,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/typesetting/fill-engine.md",
       "source": "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-fff418b464c2",
@@ -10296,17 +9758,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/typesetting/overflow.md",
       "source": "pdf-plugin/skills/pdf/typesetting/overflow.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-f12e3f79db0b",
@@ -10324,17 +9784,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "reportlab"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pdf/typesetting/pagination.md",
       "source": "pdf-plugin/skills/pdf/typesetting/pagination.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-b338defad480",
@@ -10652,21 +10110,17 @@
       "id": "source:presentations-plugin/skills/pptx/SKILL.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
-        "npm": [
-          "pptxgenjs"
-        ],
+        "binary": [],
+        "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.pptx/resources/SKILL.md",
       "source": "presentations-plugin/skills/pptx/SKILL.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-c461b154e2a5",
@@ -10683,9 +10137,7 @@
       "id": "source:spreadsheets-plugin/.zcode-plugin/plugin.json",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
@@ -10693,10 +10145,10 @@
         "chat",
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "vendor/office-suite/upstream/spreadsheets-plugin/.zcode-plugin/plugin.json",
       "source": "spreadsheets-plugin/.zcode-plugin/plugin.json",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-a3c6a3e8225d",
@@ -10935,19 +10387,17 @@
       "id": "source:spreadsheets-plugin/skills/xlsx/SKILL.md",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.xlsx/resources/SKILL.md",
       "source": "spreadsheets-plugin/skills/xlsx/SKILL.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-42d82ef15a4c",
@@ -10969,17 +10419,15 @@
       "missing_from_image": {
         "binary": [],
         "npm": [],
-        "python": [
-          "Pillow"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.xlsx/engines/chart-templates.md",
       "source": "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-dd952a5eb741",
@@ -11326,21 +10774,17 @@
       "id": "source:spreadsheets-plugin/skills/xlsx/scenes/convert.md",
       "kind": "scene",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
-        "python": [
-          "pdfplumber"
-        ]
+        "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.xlsx/scenes/convert.md",
       "source": "spreadsheets-plugin/skills/xlsx/scenes/convert.md",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-47701fa395ed",
@@ -11547,19 +10991,17 @@
       "id": "source:spreadsheets-plugin/skills/xlsx/templates/base.py",
       "kind": "source-file",
       "missing_from_image": {
-        "binary": [
-          "convert"
-        ],
+        "binary": [],
         "npm": [],
         "python": []
       },
       "modes": [
         "work"
       ],
-      "reason": "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
+      "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
       "runtime_location": "/opt/skills/platform.xlsx/templates/base.py",
       "source": "spreadsheets-plugin/skills/xlsx/templates/base.py",
-      "status": "planned:P2"
+      "status": "planned:P1"
     },
     {
       "acceptance_case_id": "OFFICE-f9539fa7efca",
@@ -13085,21 +12527,18 @@
     }
   ],
   "dependency_notes": [
-    "Python absence is measured against explicit Dockerfile pins; transitive modules still need P2 license/version closure.",
-    "Existing reader npm modules are private to /opt/ailab-office; skill scripts cannot assume NODE_PATH resolution.",
+    "Python absence is measured against the hash-locked image dependency closure; dynamic imports still require execution evidence.",
+    "Reader modules stay private to /opt/ailab-office; production scripts resolve the pinned /opt/office-production closure via NODE_PATH.",
     "Windows COM/VBA execution requires external Windows Excel and is blocked on the Linux image; native VBA preservation is separate.",
-    "No new dependency, resident service or image layer is installed by P0."
+    "P2 image installs the offline production closure at build time; no new resident service or runtime package installation."
   ],
   "dependency_scan": "Python AST imports/calls, JS/TS literal imports, Markdown examples, shell probes and package manifests; dynamic sites carry expressions for P2 review.",
-  "image_baseline_sha256": "9488df9272c356bcb2b9ce2692c8fe29407c138b9d2842cd3e7aa59a6263b67c",
+  "image_baseline_sha256": "bfd3e723c5ffb6c9d19f73a25b1afccfd2e062851d33b649def17aca2d11da98",
   "missing_from_image": {
     "binary": [
       "brew",
-      "chromium",
-      "convert",
       "gtimeout",
       "npm",
-      "pandoc",
       "tectonic"
     ],
     "npm": [
@@ -13112,35 +12551,16 @@
       "@types/node",
       "@types/react",
       "@types/react-dom",
-      "docx",
       "docx-preview",
       "esbuild",
-      "image-size",
-      "pdf-lib",
-      "playwright",
       "playwright-core",
-      "pptxgenjs",
       "react",
       "react-dom",
       "typescript",
       "vitest",
       "zod"
     ],
-    "python": [
-      "Pillow",
-      "PyMuPDF",
-      "adjustText",
-      "defusedxml",
-      "lxml",
-      "numpy",
-      "pdf2image",
-      "pdfplumber",
-      "pikepdf",
-      "pymupdf",
-      "pypdfium2",
-      "pytesseract",
-      "reportlab"
-    ]
+    "python": []
   },
   "schema_version": 1,
   "scope": "P0 static resource contract, not runtime acceptance",

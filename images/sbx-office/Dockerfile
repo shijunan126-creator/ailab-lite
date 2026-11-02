@@ -1,48 +1,53 @@
 # sbx-office:lite — 精简版沙箱镜像，结构对齐 AILab 文档 08 的 L0～L6 分层
-# 不装 Chromium；Office reader 按需启动，不常驻 Node 进程。
+# Chromium、TeX 仅按需运行；无常驻 Office/Node/浏览器服务。
 # 必须 buildx 双架构构建（amd64 + arm64），见 tests/t1_image.sh。
 # Build from the repository root; use the same pinned parser as the system reader.
-FROM node:24.11.1-bookworm-slim AS runtime
+FROM node:24.11.1-bookworm-slim@sha256:48abc13a19400ca3985071e287bd405a1d99306770eb81d61202fb6b65cf0b57 AS runtime
 WORKDIR /opt/ailab-office
-COPY vendor/zcode-office-runtime/package.json vendor/zcode-office-runtime/package-lock.json ./
+COPY vendor/office-suite/runtime/package.json vendor/office-suite/runtime/package-lock.json ./
 RUN npm ci --ignore-scripts
-COPY vendor/zcode-office-runtime/src ./src
-COPY vendor/zcode-office-runtime/runner.ts vendor/zcode-office-runtime/LICENSE vendor/zcode-office-runtime/APACHE-2.0 vendor/zcode-office-runtime/UPSTREAM.json ./
+COPY vendor/office-suite/runtime/src ./src
+COPY vendor/office-suite/runtime/runner.ts vendor/office-suite/runtime/LICENSE vendor/office-suite/runtime/APACHE-2.0 vendor/office-suite/runtime/UPSTREAM.json ./
 RUN node_modules/.bin/esbuild runner.ts --bundle --platform=node --format=esm --packages=external --outfile=runner.mjs \
  && npm prune --omit=dev --ignore-scripts \
  && sha256sum runner.mjs > runtime.sha256
 
-FROM python:3.12-slim-trixie
+FROM node:24.11.1-bookworm-slim@sha256:48abc13a19400ca3985071e287bd405a1d99306770eb81d61202fb6b65cf0b57 AS production-node
+WORKDIR /opt/office-production
+COPY images/sbx-office/package.json images/sbx-office/package-lock.json ./
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
-# L1 系统工具 + L5 中文字体
-RUN apt-get update \
+FROM python:3.12-slim-trixie@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+
+# Snapshot fixes the complete system/font/TeX dependency closure, independently of skill changes.
+ARG DEBIAN_SNAPSHOT=20261101T000000Z
+RUN rm -f /etc/apt/sources.list.d/* \
+ && echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main" > /etc/apt/sources.list \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
       libreoffice-impress-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
-      poppler-utils fonts-noto-cjk fontconfig tini libatomic1 libstdc++6 python3-uno zip unzip \
+      poppler-utils fonts-noto-cjk fonts-noto-core fonts-wqy-zenhei fontconfig tini \
+      libatomic1 libstdc++6 python3-uno zip unzip chromium pandoc imagemagick tesseract-ocr \
+      texlive-xetex texlive-latex-extra texlive-science texlive-lang-chinese texlive-fonts-recommended \
  && rm -rf /var/lib/apt/lists/*
 
-# L3 Python 办公库（版本锁定）
-RUN pip install --no-cache-dir \
-      python-pptx==1.0.2 python-docx==1.2.0 openpyxl==3.1.5 \
-      matplotlib==3.10.7 pandas==2.3.3 pypdf==6.1.3
+# Python closure is fully pinned and hash verified; changes do not invalidate the larger system layer.
+COPY images/sbx-office/requirements.lock /opt/office-production/requirements.lock
+RUN pip install --no-cache-dir --require-hashes -r /opt/office-production/requirements.lock
+COPY --from=production-node /opt/office-production /opt/office-production
+COPY --from=runtime /usr/local/bin/node /usr/local/bin/node
+COPY --from=runtime /opt/ailab-office /opt/ailab-office
+ENV NODE_PATH=/opt/office-production/node_modules:/opt/ailab-office/node_modules \
+    PLAYWRIGHT_CHROMIUM_PATH=/usr/bin/chromium PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-# 字体映射：模型和模板里写“微软雅黑/宋体/仿宋”等，实际落到 Noto CJK；zip/unzip 供技能脚本打包 docx 等
 COPY images/sbx-office/fonts-local.conf /etc/fonts/local.conf
 RUN fc-cache -f
-
-# 同一固定读取核心供工作区检查使用；平台权威索引仍走系统 reader。
-COPY --from=runtime /usr/local/bin/node /usr/local/bin/node
-COPY --from=runtime /opt/ailab-office/package.json /opt/ailab-office/runner.mjs /opt/ailab-office/runtime.sha256 /opt/ailab-office/LICENSE /opt/ailab-office/APACHE-2.0 /opt/ailab-office/UPSTREAM.json /opt/ailab-office/
-COPY --from=runtime /opt/ailab-office/node_modules /opt/ailab-office/node_modules
 COPY images/sbx-office/office-read /usr/local/bin/office-read
-
-# L6 Skills 与工具
 COPY images/sbx-office/skills/ /opt/skills/
 COPY images/sbx-office/skill_index.py /opt/ailab-tools/skill_index.py
 RUN python /opt/ailab-tools/skill_index.py /opt/skills --check --requirements
 COPY images/sbx-office/smoke/ /opt/ailab-tools/smoke/
 
-# 运行时约定：非 root、/workspace/{inputs,outputs}
 RUN useradd -u 10001 -m -d /home/sandbox sandbox \
  && mkdir -p /workspace/inputs /workspace/outputs \
  && chown -R 10001:10001 /workspace

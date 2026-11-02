@@ -2077,46 +2077,20 @@ def convert_latex(argv: list):
     if runs > 1:
         print(f"Running {runs} passes (for cross-references)", flush=True)
 
-    tectonic = _find_tectonic()
+    # AILab: TeX Live is baked into the image; no runtime package downloads or shell escape.
+    tectonic = shutil.which("xelatex")
     if tectonic is None:
-        import platform
-        print("\n\u2717 Error: tectonic command not found")
-        print()
-        print("The bundled scripts/tectonic binary is macOS arm64 only.")
-        print("Install tectonic for your platform:\n")
-        sys_name = platform.system()
-        if sys_name == "Darwin":
-            print("  macOS (Homebrew):  brew install tectonic")
-            print("  macOS (binary):    curl -sSL https://drop-sh.fullyjustified.net | sh")
-            print("                     mv tectonic ~/tectonic && chmod +x ~/tectonic")
-        elif sys_name == "Linux":
-            print("  Debian/Ubuntu:     apt install tectonic         (if available)")
-            print("  Arch Linux:        pacman -S tectonic")
-            print("  Conda:             conda install -c conda-forge tectonic")
-            print("  Binary download:   curl -sSL https://drop-sh.fullyjustified.net | sh")
-            print("                     mv tectonic ~/tectonic && chmod +x ~/tectonic")
-        elif sys_name == "Windows":
-            print("  Windows (scoop):   scoop install tectonic")
-            print("  Windows (choco):   choco install tectonic")
-            print("  Conda:             conda install -c conda-forge tectonic")
-        else:
-            print("  See: https://tectonic-typesetting.github.io/")
-        print()
-        print("After installing, verify with: tectonic --version")
-        print()
-        print("Quick check — is tectonic already installed somewhere?")
-        print(f"  which tectonic:    {shutil.which('tectonic') or 'not found'}")
-        print(f"  ~/tectonic:        {'exists' if (Path.home() / 'tectonic').exists() else 'not found'}")
-        print(f"  scripts/tectonic:  {'exists' if (_SCRIPT_DIR / 'tectonic').exists() else 'not found'}")
-        print(f"  Platform:          {sys_name} {platform.machine()}")
-        raise SystemExit(1)
+        Output.error("MissingDependency", "Offline XeLaTeX must be preinstalled")
+    output_dir = Path("/workspace/outputs")
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     all_lines = []
     ok = False
     for _ in range(runs):
         try:
             proc = subprocess.run(
-                [tectonic, "-X", "compile", str(tex)],
+                [tectonic, "-no-shell-escape", "-interaction=nonstopmode", "-halt-on-error",
+                 "-output-directory=" + str(output_dir), str(tex.resolve())],
                 capture_output=True, text=True, timeout=120,
             )
             all_lines.extend((proc.stdout + proc.stderr).splitlines())
@@ -2139,7 +2113,7 @@ def convert_latex(argv: list):
     errors, warnings, layout, pdf_note = _classify_lines(all_lines)
     noted_name, noted_size = _parse_writing_note(pdf_note)
     pdf_name = noted_name or (tex.stem + ".pdf")
-    pdf_path = tex.parent / pdf_name
+    pdf_path = output_dir / pdf_name
 
     print()
     if ok:

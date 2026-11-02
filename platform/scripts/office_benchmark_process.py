@@ -9,7 +9,7 @@ from pathlib import Path
 
 from ailab_platform.worker.isolate import IsolationError
 
-RUNTIME = Path(os.environ.get("AILAB_OFFICE_RUNTIME", Path(__file__).resolve().parents[2] / "vendor" / "zcode-office-runtime"))
+RUNTIME = Path(os.environ.get("AILAB_OFFICE_RUNTIME", Path(__file__).resolve().parents[2] / "vendor" / "office-suite" / "runtime"))
 PARSER_VERSION = "zcode-3c5b227-ailab1"
 KINDS = {".pdf": "pdf", ".docx": "docx", ".pptx": "pptx", ".xlsx": "xlsx"}
 

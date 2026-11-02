@@ -169,3 +169,14 @@ def test_capability_contract_covers_sources_commands_viewer_and_dependencies(mon
     assert {"playwright", "pdf-lib", "pptxgenjs", "docx"} <= set(actual["missing_from_image"]["npm"])
     assert "tectonic" in actual["missing_from_image"]["binary"]
     assert "COPY images/sbx-office/skills/ /opt/skills/" in (ROOT / "images/sbx-office/Dockerfile").read_text()
+
+
+def test_runtime_rebase_is_reproducible_and_keeps_original_sources(tmp_path):
+    before = office.originals()
+    office.build_runtime(tmp_path / "runtime")
+    expected = tree(VENDOR / "runtime")
+    expected = {
+        name: data for name, data in expected.items() if not name.startswith("node_modules/") and name not in {"runner.mjs", "bench.mjs"}
+    }
+    assert tree(tmp_path / "runtime") == expected
+    assert office.originals() == before
