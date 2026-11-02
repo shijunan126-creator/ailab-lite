@@ -492,7 +492,10 @@ DOCUMENT_VIEW = {
     "type": "function",
     "function": {
         "name": "document_view",
-        "description": "open: file_id或path；reveal: file_id或path + targets[{at, quote?}]；get_view: view_id可选；capture: file_id或path + view_id/at/source。sent仅表示发送；不可用返回unavailable。",
+        "description": (
+            "open: file_id或path；reveal: file_id或path + targets[{at, quote?}]；get_view: view_id可选；"
+            "capture: file_id或path + view_id/at/source。sent仅表示发送；不可用返回unavailable。"
+        ),
         "parameters": {
             "type": "object",
             "properties": {

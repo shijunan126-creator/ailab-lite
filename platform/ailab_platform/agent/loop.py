@@ -1479,7 +1479,10 @@ class AgentLoop:
                         parts.append(
                             {
                                 "type": "text",
-                                "text": "文档截图 unavailable（capture_expired）：先前视口截图已过期，不能查看或验证其视觉内容。需要时请求新的截图；不要重试旧capture_id。",
+                                "text": (
+                                    "文档截图 unavailable（capture_expired）：先前视口截图已过期，不能查看或验证其视觉内容。"
+                                    "需要时请求新的截图；不要重试旧capture_id。"
+                                ),
                             }
                         )
                         expired = True
