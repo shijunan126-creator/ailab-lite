@@ -214,9 +214,64 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 前缀/技能/目录/提示相关组合 **163 passed**；Ruff check/format、Portal production build通过。完整Python在同一源码基线上为 **2078 passed、174 skipped、1 failed**（577.52秒）；唯一失败仍为既有 `test_render_lifecycle_does_not_retain_records_after_1000_cycles`，tracemalloc增长7722435 bytes超过6 MiB。只复跑该失败项 **1 passed**（28.47秒），未改实现/阈值；保留进程/分组相关flake风险，不称全套首次全绿。未跑PostgreSQL/Redis合同或浏览器E2E；没有UI改动。临时四服务/Redis/模型转发已停止，六个临时端口关闭，本轮c3容器无残留，镜像保留。精确请求/供应商响应仅在仓库外受限临时目录保留，不保存密钥/认证头；仓库只存摘要。P5总体仍部分验证，在线viewport真模型、Linux并发上沿与复杂模板/宏/模型效果等边界不变。
 
 
-### 在线合流与真实成品补验（2026-11-02，进行中）
+### P5 剩余项补验（2026-11-02/03）
 
-进入干净的 `feat/office-suite@5c216bf2bb73480d9e542b34c32c0bb167277e2e`，base `origin/main@bf0af4f`，未 fetch。用户授权补在线 viewport、复杂模板/品牌/多轮、视觉对照与 Linux 资源/并发，发现缺陷修复并只复跑受影响检查；最终全套由主任务稍后统一执行，不 push/PR/部署。
+本节是此次用户指定四项剩余验收的最终结果，旧段落保持历史口径。进入干净的 `feat/office-suite@5c216bf2bb73480d9e542b34c32c0bb167277e2e`，base `origin/main@bf0af4f`，未 fetch；最终产品/回归源码为 `155d02f3ac4fc22bb5fdbcbb7c691e8b7e4d1cee`，其后仅文档。未 push、PR 或部署。全套最终验证按用户指令留给主任务。
 
-- 修复模板同名冲突后的交付身份丢失：原先资料库把首次成品改名 `out (2).txt`，下一轮仍交付工作区 `out.txt` 时，按显示名找不到父版，错误生成新 lineage。API 保存原交付名并仅在同 owner、同会话当前祖先链匹配；新版本继承父版显示名；有持久交付身份的记录不再按显示别名匹配，避免另一个真实工作区文件误接该 lineage，旧记录无身份字段时才回退原显示名。原件与历史版均不改写。新回归在旧实现失败，受影响版本/命名空间组合 SQLite **38 passed**、临时 PostgreSQL **38 passed**；两文件 Ruff check/format 与 diff check 通过。没有请求构造改动、新依赖或后台任务；在既有 run/Artifact 索引筛选内增加 metadata 名称匹配。
-- 专用 Linux API/Agent/Worker/Broker 与真实 Docker Office、真实供应商、真实 Portal/Chromium 已启动；4 格式选区 viewport 截图已到真实模型请求，在线详细验收、下载独立复核、同模型对照和资源结果仍在本轮进行，不能将这段中间记录当作 P5 完成。准备阶段的混合宿主/VM 存储配置、录制转发缓冲/压缩问题单列为验证装置问题，不修改产品绕过。
+**真实链路与基线。** 专用 Docker 的 Linux VM 实际为 **2 CPU / 6,197,882,880 bytes（5.77 GiB）**，与个人栈共享；只创建/操作本轮 `c3-p5-*`。API/Broker/Worker 分别限 384 MiB、Agent 256 MiB；CPU 为 0.5/0.5/0.3/0.3，Office 用户沙箱仍为 1 CPU/1536 MiB，总预算/保留槽不提高。真实 API/Agent/Broker/Worker、SQLite、Redis、Portal production、Chromium/Playwright、真实 `deepseek-flash`、无网 Office 镜像组成测试链路；扫描器为 test stub，不作为杀毒验收。
+
+- Office `c3-p5-office:5c216bf` 的 image ID 为 `f69490f6e00e`（技能内容与此前构建相同，复用全部层）；Portal `82d39e4c8169` 与进入基线无源码差异；平台 `9afb58776aae`，Broker 仅增 Linux Docker CLI。最终 API `c3-p5-api:155d02f` 为平台镜像叠加本次 API 文件，容器/源码 SHA256 均为 `f8ce475cc2159c72ff16f3c3395042bc35e347d37d87640f7adaf0eecfd3cef9`。Agent/Worker 无本轮产品改动。
+- 凭据仅从已有本机配置读入，不入库。最初测试 catalog 为 65,536 context / 8,192 output；Word 对照发生一次 `finish_reason=length`，PDF 首轮因安全容量正常暂停。之后恢复已有 catalog 的 1,048,576 context / 393,216 output，只替换记录转发地址，重启 Agent 后通过公开 resume 完成同一 PDF Run；资源/并发阶段使用恢复后的配置。四个效果对照样本均使用前一组相同设置，失败首样保留在下述口径中。
+
+**1. 在线选区、截图、引用：通过。** Chat DOCX/XLSX、Work PPTX/PDF 四个真实上传样本，用实际鼠标选择、添加引用并发送；每个成功 Run 的实际请求均有 `source=viewport` 的 ready capture 和后续 **1 张 PNG image_url**，回答正确使用可见文字、颜色及布局，不以 render 替代。文件页码引用四项可点击打开；另用真实模型 `document_view reveal` 验证 PPT `slide:1/shape:2`、PDF `page:1` 原生高亮。PDF 首次模型误传顶层 quote/filename 被拒，合法 targets 重试通过，不当作产品修复。
+
+- 关闭标签后留下的真实旧 view：capture client-call 在 **5 s claim deadline** 到期为 expired，**5.114 s** 内进入携带 unavailable 的下一次模型请求；整轮 **11.20 s**。从未有 view 的 capture 整轮 **4.08 s**，不创建浏览器调用；两项均明确不可用，无猜图或挂死。
+- 另观察到超过 10 分钟的旧 viewport 图像无法原样恢复时，Run 明确 interrupted；本轮没有证明该过期图像能继续恢复，原生 reveal 用新会话冻结引用补验，不能把它记成旧截图 TTL 后恢复成功。
+
+**2. 模板、品牌、多轮与恢复：通过本次指定样本。** 四格式两轮共 **8 份**下载，原生 office-read 全部 ready；LibreOffice 原生打开/导出及 Poppler 检查全部成功。8 份均运行真实模型结构/页图评审；四组同名、同 lineage、版本递增，所有可用输入和旧版本下载 hash 不变。
+
+| 格式 | 独立复核的关键证据 |
+| --- | --- |
+| Word | 用户模板的 19 个 ZIP 部件、styles/theme、TOC/PAGE 字段、页眉、两分节保留；两页均检查。第二轮只有 `word/document.xml` 内容改变。TOC 原始字段无缓存，原样保留，不宣称已更新目录。 |
+| Excel | 故意 `F2=1/0` 被真实 recalc/audit 捕获，再改 IFERROR 并重算。两轮缓存 D2/D4=255/355、265/365，F2=0；SUM 公式和 Notes 表保留。 |
+| PPT | 用户三页深青/白字/金色模板填充；第二轮仅 `ppt/slides/slide2.xml` 改变，第三页和其他样式部件不变，三页均检查。 |
+| PDF | ReportLab 中文一页，WenQuanYi Zen Hei TrueType **emb/sub/uni 均 yes**，Unicode 文本可提取；第二轮改指定句。首轮容量暂停后，重启 Agent、公开 resume 同一 Run，134.12 s 完成，再续轮 30.46 s 成功。 |
+
+**两处修复。**
+
+1. 产品：首次输出因模板占名成为 `out (2).txt` 后，后续工作区 `out.txt` 原先找不到父版，错误开新 lineage。API 持久化 `artifact_filename`，在当前 owner/会话祖先链按交付身份匹配，旧记录无该字段才退回显示名；后续继承父版显示名，另一个真实工作区文件不能误接显示别名。新回归在旧实现失败，覆盖两版/原件字节、同名续版与不同文件隔离。SQLite/PostgreSQL EXPLAIN 均使用已有索引，无新表/后台任务/依赖；现有 run/Artifact/owner 围栏不变。
+2. 成品：独立视觉复核发现 PDF 小页脚近乎不可读；真实模型定位到 ReportLab `Tr` 跨 BT/ET 残留，新 text object 的 setTextRenderMode(0) 被默认值去重，浅色描边冲淡字形。生成脚本改为明确重置文本渲染模式并加深该页脚，结构/页图再验后交付同名 **v3**。独立回归比较前后提取文字、bbox、字号、字体完全一致；页脚 span `#134E4A`，600 dpi 字形实色 **(19,77,73)**，对白对比度 **9.61:1**，CJK 仍嵌入；v1/v2 hash 不变。这是模型生成脚本修正，没有修改平台或 ReportLab 依赖。
+
+**3. 同模型视觉对照：完成，不能推导普遍优越性。** 相同两份任务规格，各独立生成结构-only/页图版本；记录请求证明结构-only **0 图像**，页图 PPT 3 次 review_artifact、DOCX 2 次 review_artifact 加 11 次 view_workspace_file。独立导出并检查最终共 **8 页**：四份均未见裁切、溢出、重叠或缺字；字体统一，未见替换。
+
+| 格式 | 评审 | 关联供应商调用数 | 秒（含排队） | cached/prompt tokens | completion tokens |
+| --- | --- | ---: | ---: | ---: | ---: |
+| PPT | 结构-only | 9 | 63.08 | 185728/203964 | 9233 |
+| PPT | 页图 | 16 | 100.59 | 335104/365574 | 13003 |
+| DOCX | 结构-only，失败后仅复跑此项 | 50 | 298.59 | 1326720/1363899 | 39556 |
+| DOCX | 页图 | 46 | 347.98 | 1004288/1088430 | 38871 |
+
+页图路径确实引发 PPT 行距、面板对齐、字号/描边对比，以及 Word 留白、单元格边距和孤行调整；结构-only 也通过数值几何检查自行修正布局。没有观察到“仅页图发现并修复的严重裁切”，不能只凭模型自述或更紧凑就判更好。独立生成存在布局随机性，且运行含排队，不能将时长差当纯评审开销；报告正文为合成版面样本，不作为其中业务事实的实测证据。初次 Word 结构-only 截断 157.24 s，单列失败，不计入成功四份也不隐去。
+
+**4. Linux 资源与浏览器：限定样本通过。** /proc VmRSS 合计与 cgroup memory/current/peak、cpu.stat 约每 2–3 s 读取；CPU 为相邻样本 usage_usec 增量，1 核=100%，不是瞬时 CPU 上界。单任务为 PDF 制作/续轮阶段（早期载入未采样，第二轮完整覆盖）；并发阶段无额外制作/审阅作业混入。
+
+| 组件 | 单任务 RSS MiB / CPU 峰值 | 三任务 RSS MiB / CPU 峰值 | 内存 / CPU 上限 |
+| --- | ---: | ---: | ---: |
+| 单沙箱最大 | 237.4 / 28.8% | 461.5 / 54.0% | 1536 MiB / 100% |
+| API | 241.6 / 17.3% | 259.1 / 20.4% | 384 MiB / 50% |
+| Agent | 132.0 / 8.2% | 148.8 / 7.5% | 256 MiB / 30% |
+| Worker | 202.0 / 23.6% | 105.1 / 2.1% | 384 MiB / 30% |
+| Broker | 155.3 / 12.8% | 150.4 / 24.1% | 384 MiB / 50% |
+
+- 三个独立用户同时提交 office Work，**3/3 succeeded**；总用时 **111.04/202.60/292.05 s**。Agent 两执行槽，第三个排队 **110.56 s**；沙箱仍受总内存/保留槽约束，不能声称三个重沙箱全速并行。一次无必要 npm CLI 探针 exit127，模型使用预装 Node/docx 后完成；无 Run 失败。API/Agent/Worker 的 memory.events max/oom/oom_kill 均 0。
+- 并发采样 cgroup memory.current 最大：API 307.5、Agent 123.9、Worker 84.5、Broker 153.6、单沙箱188.9 MiB；这些组件与沙箱按 3 s 桶采样合计最大 **920.5 MiB**，不含 Portal/Redis/个人栈。cgroup memory.peak 为容器整个寿命（池复用包含先前任务），不能冒充当前单任务峰值。VmRSS 重复计共享页，与 cgroup 不可直接相减或相加。本样本未超限，不能证明完整整栈 8 GiB 容量或长期并发上沿。
+- Chromium 1440×1000，禁缓存后从点击到首个真实内容；bytes 为点击后至首屏+1.5 s 的 CDP encodedDataLength（含格式 chunk/字体/索引等），heap 是 usedJSHeapSize，父页/frame 同一 heap 不相加。DOCX 2500段 / 44,686 B：**4263.8 ms / 4,725,095 B / 69,773,213 B heap**。XLSX 19,999×5=99,995 cells / 726,273 B：**9592.7 ms / 9,494,872 B / 68,273,381 B heap**。
+- 20,001×5=100,005 cells 的 XLSX 按明确准入规则回退前 200 行，**132.1 ms / 28,850 B / 14,140,345 B heap**；初次脚本误等原生 grid 120 s 已纠正为分别测准入/回退，不改产品阈值，不将快回退当完整查看。小样本单次值，不是 P95；浏览器首屏慢于数秒仍是实际成本，无预设时延门槛故不编造“性能达标”。
+
+**检查、失败口径与收尾。** `.venv/bin/pytest tests/test_file_versions.py tests/test_library_namespaces.py -q` 最终 SQLite **38 passed**，独立临时 PostgreSQL 同组合 **38 passed**；两文件 Ruff check/format、diff check 通过。最终 coalesce 身份匹配及显示别名隔离也纳入这两组，未重复无关检查；没有 Portal 源码修改，不重跑 build。未跑最终全 Python、Redis 全合同或浏览器全套，按本轮规则由主任务稍后统一执行，历史全套/flakes不当作当前结果。
+
+准备失败还包括混合宿主/VM local storage 未真正共享及 Broker UID 不同，改为 Linux 命名卷/一致 UID；记录转发先缓冲流、后漏解 gzip，造成超时/不完整流，修复验证装置后只重跑受影响项。它们不是产品修复，不作成功验收。记录实际发送 **550** 次（含准备、标题/摘要、失败与重试），**531** 次有完整可读 usage：已知 prompt **13,932,060**、cached **13,307,517**、completion **293,935**；19次缺完整usage不当0、不是完整账单，未有价格快照不编金额。
+
+本轮指定四项已有上述真实证据，**P5 总体仍为部分验证**：Windows/VBA 实际执行、Microsoft Office 保真、更多复杂模板特性、长时/更大并发、移动端多浏览器合流、旧 viewport 图像 TTL 后成功恢复均不能由本样本推定；部分本就不在此次指定样本中。下一步由主任务审阅本地修复与本节证据、统一最终全套，再决定未验项；不自动推进发布。
+
+清理完成：本轮 c3-p5 容器、卷、网络均为0，四服务/Portal/Redis/两转发/临时 PostgreSQL 共9端口全部关闭，内置浏览器测试页已关闭；个人栈12容器及镜像标签与进入时一致，未操作。构建镜像保留供主任务复用；本轮仓库外请求、日志、数据库、模板/成品及截图在摘要落库后全部清理，不留另一份原始输出。
