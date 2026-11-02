@@ -91,20 +91,17 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         frame.get_by_role("tab", name="Notes", exact=True).click()
     sent.click()
     revealed = _frame(page, name)
-    if kind == "docx":
+    if kind == "xlsx":
+        # Switching away before clicking the quote proves that reveal restores its worksheet.
+        expect(revealed.get_by_role("tab", name="Revenue", exact=True)).to_have_attribute("aria-selected", "true")
+    else:
         end = time.monotonic() + 10
-        while not revealed.locator("body").evaluate("() => Boolean(CSS.highlights.get('office-reveal')?.size)"):
+        while not revealed.locator("body").evaluate(
+            "() => Boolean(CSS.highlights.get('office-reveal')?.size) || "
+            "document.querySelector('.office-revealed, .shape-revealed, .revealed') !== null"
+        ):
             assert time.monotonic() < end
             page.wait_for_timeout(100)
-    elif kind == "pptx":
-        expect(revealed.locator(".shape-revealed")).to_be_visible(timeout=10000)
-    elif kind == "pdf":
-        assert revealed.locator("body").evaluate(
-            "() => Boolean(CSS.highlights.get('office-reveal')?.size) || document.querySelector('.revealed') !== null"
-        )
-    else:
-        # The canvas highlight is not a DOM element; the persisted location proves the reveal target.
-        expect(revealed.get_by_role("tab", name="Revenue", exact=True)).to_have_attribute("aria-selected", "true")
     if kind == "docx":
         results = []
         page.on(
@@ -116,8 +113,8 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         assert results and all(r.ok for r in results)
         assert "unavailable" not in page.locator(".turn").last.inner_text()
         expect(page.locator(".turn").last).to_contain_text("原生截图结果")
-    expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
-    expect(page.locator(".turn").last).to_contain_text("capture_id")
+        expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
+        expect(page.locator(".turn").last).to_contain_text("capture_id")
 
 
 def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
@@ -128,11 +125,16 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
         lambda response: results.append(response) if "/client-calls/" in response.url and response.url.endswith("/result") else None,
     )
     page.get_by_role("radio", name="工作", exact=True).click()
-    _start_conversation(page, "原生工作区验收", "test-office-vision")
+    conversation = _start_conversation(page, "原生工作区验收", "test-office-vision")
     try:
         frame = _frame(page, "draft.docx")
         expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=25000)
-        expect(frame.locator(".callout")).to_be_visible(timeout=10000)
+        expect(frame.locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
+        end = time.monotonic() + 15
+        while not page.request.get(f"{stack.portal}/api/v1/conversations/{conversation}").json().get("previews"):
+            assert time.monotonic() < end
+            page.wait_for_timeout(150)
+        expect(_frame(page, "draft.docx").locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
         page.wait_for_timeout(900)  # The viewer state uses a 600 ms debounce.
     finally:
         httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
