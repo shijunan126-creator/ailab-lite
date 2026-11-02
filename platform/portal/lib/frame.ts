@@ -7,8 +7,10 @@
 //   genui-preview  a generated page still being written: its markup shows, no script of its own can run
 //                  (the policy admits only the shell, by hash; inline handlers and javascript: URLs are blocked).
 //   genui-run      a complete generated page: its scripts run, nothing reaches the network.
+//   office         the side-pane document viewer (office/): the Portal hands it its bundle and the document bytes;
+//                  it runs only that bundle (from a blob URL it creates) and reaches no network.
 
-export const FRAME_KINDS = ["doc", "genui-preview", "genui-run"] as const;
+export const FRAME_KINDS = ["doc", "genui-preview", "genui-run", "office"] as const;
 export type FrameKind = (typeof FRAME_KINDS)[number];
 
 /** Messages a frame sends its host. Only these, and only from the frame's own window, are acted on. */
@@ -43,11 +45,24 @@ addEventListener("message",function(e){if(e.source!==parent||!e.data||typeof e.d
 if(typeof MutationObserver!=="undefined")new MutationObserver(function(){watch();height()}).observe(document.documentElement,{childList:true,subtree:true,characterData:true});
 addEventListener("load",function(){watch();height()});addEventListener("resize",height);watch();height()})()</script>`;
 
+/** Office viewer loader: asks for its bundle, then runs it. The bundle (office/host.ts) takes over the channel. */
+export const OFFICE_SHELL = `(function(){var done=false;
+function fail(m){parent.postMessage({ch:"ailab-office",t:"error",message:String(m).slice(0,500)},"*")}
+addEventListener("error",function(e){fail(e.message||e.type)});
+addEventListener("securitypolicyviolation",function(e){fail("csp "+e.effectiveDirective+" "+e.blockedURI)});
+addEventListener("message",function(e){var d=e.data;if(done||e.source!==parent||!d||d.ch!=="ailab-office"||d.t!=="bundle")return;done=true;
+window.__officeNonce=d.nonce;var s=document.createElement("style");s.textContent=d.css;document.head.appendChild(s);
+var c=document.createElement("script");c.onerror=function(){fail("bundle did not load")};c.src=URL.createObjectURL(new Blob([d.js],{type:"text/javascript"}));document.body.appendChild(c)});
+parent.postMessage({ch:"ailab-office",t:"boot"},"*")})()`;
+
 const NO_NETWORK = "default-src 'none'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'";
 
 export function framePolicy(kind: FrameKind, shellHash: string): string {
   if (kind === "genui-preview") return `${NO_NETWORK}; script-src '${shellHash}'`;
   if (kind === "genui-run") return `${NO_NETWORK}; script-src 'unsafe-inline'`;
+  // pdf.js and the sheet engine run wasm; workers, fonts and page images are blob/data URLs the bundle makes
+  if (kind === "office")
+    return `${NO_NETWORK.replace("font-src data:", "font-src data: blob:")}; script-src '${shellHash}' blob: 'wasm-unsafe-eval'; worker-src blob:; connect-src blob: data:`;
   // a delivered file keeps what it had as srcdoc: it may reference fonts, images and scripts; it still cannot
   // submit forms or be framed elsewhere
   return "default-src * data: blob: 'unsafe-inline' 'unsafe-eval'; form-action 'none'; base-uri 'self'; frame-ancestors 'self'";

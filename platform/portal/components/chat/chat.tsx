@@ -4,7 +4,7 @@ import type { SkillPick } from "../../lib/message-parts";
 import { useCallback, useEffect, useMemo, useLayoutEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { api, Conversation, ConversationDetail, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
+import { api, Conversation, ConversationDetail, DocRef, downloadUrl, errorCode, errorMessage, EventItem, filesByIds, MAX_ATTACHMENTS, ModelInfo, Preview, Project, QueuedMessage, Run, streamRun } from "../../lib/api";
 import { createBatcher } from "../../lib/stream/batcher";
 import { useFollow } from "../../lib/use-follow";
 import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
@@ -21,6 +21,8 @@ import ProjectHome from "../project-home";
 import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
 import PendingMessage from "./pending-message";
 import { enqueue, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
+import { addQuote, quotesKey } from "../../lib/doc-refs";
+import type { OfficeReveal } from "../preview/office-view";
 import { useShallow } from "zustand/react/shallow";
 import ModeToggle, { useChatMode } from "./mode-toggle";
 import PreviewPane, { previewTabKey, type PanePreview, type PaneSources } from "./preview-pane";
@@ -241,6 +243,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           if (event.type === "run.status" || event.type === "artifact.created") refreshRun(run.id);
           // the model asked this page to run a small program: claim it, run it in a worker, report back
           if (event.type === "client.call" && event.payload?.call_id) void handleClientCall(run.id, event.payload as ClientCall);
+          if (event.type === "document.reveal") revealRef.current(run.id, event.payload);
           if (["run.completed", "run.failed", "run.canceled"].includes(event.type)) {
             batch.flush();
             loadDetail();
@@ -786,6 +789,51 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   // Stable identities for what every turn receives: a stream event re-renders only the turn it belongs to.
   const showFileRef = useRef(showFile);
   showFileRef.current = showFile;
+
+  // The model pointed at places in a document (document_view): open its tab and mark them. Each event gets a new
+  // sequence number, so a replayed stream does not mark the same places twice in a viewer that has moved on.
+  const [reveals, setReveals] = useState<Record<string, OfficeReveal>>({});
+  const revealSeq = useRef(0);
+  const revealRef = useRef((_runId: string, _payload: any) => {});
+  const seenReveals = useRef(new Set<string>());
+  revealRef.current = (runId: string, payload: any) => {
+    const command = String(payload?.command_id || "");
+    if (!command || seenReveals.current.has(command)) return;
+    seenReveals.current.add(command);
+    const targets = Array.isArray(payload?.targets) ? payload.targets.filter((t: any) => typeof t?.at === "string").slice(0, 20) : [];
+    const reveal: OfficeReveal = { seq: ++revealSeq.current, targets, note: typeof payload?.note === "string" ? payload.note : null };
+    if (typeof payload?.file_id === "string") {
+      const filename = String(payload.filename || "");
+      setReveals((prev) => ({ ...prev, [`file:${payload.file_id}`]: reveal }));
+      showLibraryFile({ file_id: payload.file_id, filename });
+    } else if (typeof payload?.path === "string") {
+      setReveals((prev) => ({ ...prev, [payload.path]: reveal }));
+      if (previews.some((p) => !p.libraryFileId && p.filename === payload.path && p.run_id === runId)) showFile(payload.path);
+    }
+  };
+  const quotes = quotesKey(id, projectId);
+  const paneReference = useStable((ref: DocRef, label: string) => addQuote(quotes, { ref, label }));
+  const paneAsk = useStable(async (question: string, ref: DocRef) => {
+    await submit({ prompt: question, attachments: [], options: { mode }, steer: false, docRefs: [ref] });
+  });
+  const delivered = useMemo(() => {
+    const out: Record<string, string> = {};
+    for (const t of detail?.turns || []) for (const a of t.artifacts || []) if (!a.deleted) out[a.filename] = a.file_id;
+    return out;
+  }, [detail]);
+  const revealClicks = useRef(0);
+  const turnRevealRef = useStable((run: Run, index: number) => {
+    const ref = run.doc_refs?.[index];
+    if (!ref) return;
+    const target = "file_id" in ref ? { file_id: ref.file_id } : { path: ref.path };
+    revealRef.current("run_id" in ref ? ref.run_id : run.id, {
+      command_id: `quote:${run.id}:${index}:${++revealClicks.current}`,
+      ...target,
+      filename: ref.filename,
+      version: ref.version,
+      targets: [{ at: ref.at, quote: ref.quote }],
+    });
+  });
   const turnPreview = useStable(showFile);
   const turnPreviewFile = useStable(showLibraryFile);
   const turnPreviewKey = useStable(previewKey);
@@ -812,10 +860,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   /** The composer's message: answers a waiting question directly; anything else goes out through the outbox, which
    * shows it at once and asks the model only when its files are ready. */
   async function submit(message: Outgoing): Promise<boolean> {
-    if (waiting && question && !message.attachments.length) return send(message.prompt, [], message.options);
+    if (waiting && question && !message.attachments.length && !message.docRefs?.length) return send(message.prompt, [], message.options);
     const info = models.find((m) => m.id === model);
     enqueue({
-      conversationId: id, projectId: projectId, prompt: message.prompt, attachments: message.attachments, options: message.options,
+      conversationId: id, projectId: projectId, prompt: message.prompt, attachments: message.attachments, options: message.options, docRefs: message.docRefs,
       model, vision: !!info?.capabilities?.includes("vision"), steer: message.steer, queued: running && !!id && !question,
     });
     stick.current = true;
@@ -850,6 +898,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       projectId={projectId}
       initialFiles={initialFiles}
       context={detail?.context ? { used: detail.context.used_tokens, compactAt: detail.context.compact_at_tokens } : undefined}
+      quotesKey={quotesKey(id, projectId)}
     />
     </>
   );
@@ -943,6 +992,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     previewKey={turnPreviewKey}
                     onPreview={turnPreview}
                     onPreviewFile={turnPreviewFile}
+                    onRevealRef={turnRevealRef}
                     onResume={turnResume}
                     onAnswer={turnAnswer}
                     onRetry={running ? undefined : turnRetry}
@@ -1010,6 +1060,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
           onClose={() => setPaneOpen(false)}
           live={!!streaming && running}
           downloads={downloads}
+          conversationId={id}
+          reveals={reveals}
+          delivered={delivered}
+          onReference={paneReference}
+          onAsk={paneAsk}
         />
       ) : null}
       {sheetSources ? <SourcesSheet sources={sheetSources.sources} answer={sheetSources.answer} onClose={() => setSheetSources(null)} /> : null}

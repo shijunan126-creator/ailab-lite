@@ -40,6 +40,7 @@ export type Run = {
   work_ms?: number | null;
   artifacts?: Artifact[];
   input_files?: { file_id: string; filename: string; deleted?: boolean }[]; // deleted: trashed or purged; a purged one has lost its name
+  doc_refs?: SentDocRef[]; // places the user quoted from the side-pane viewer with this message
   options?: { mode?: "chat" | "work"; skill?: string; skill_title?: string; skills?: SentSkill[] };
   template?: { name: string; source: "template" | "file" } | null;
   result?: {
@@ -382,6 +383,32 @@ export type FileItem = {
   purge_at?: string | null; // removed for good at
   purged?: boolean; // an old version whose content is gone
 };
+
+/** Formats the side-pane document viewer opens natively. */
+export type OfficeKind = "docx" | "xlsx" | "pptx" | "pdf";
+
+/** The viewer index of one exact file version (GET /v1/files/{id}/document, …/workspace/document). */
+export type DocumentIndex = {
+  status: "ready" | "pending" | "failed" | "unsupported";
+  file_id?: string;
+  version?: string; // content hash: locators and quotes bind to it
+  parser_revision?: string;
+  workspace_revision?: string;
+  kind?: OfficeKind;
+  title?: string | null;
+  bytes?: number;
+  units?: number;
+  outline?: { at: string; label: string; level: number }[];
+  blocks?: { at: string; text: string }[]; // docx only
+  native?: boolean; // false: over the native viewer's limits, show the paged preview
+  reason?: string;
+};
+
+/** A quoted location in a document, sent with a message (`doc_refs`); the API checks it against the version. A file
+ * still in a Work run's workspace is named by run and path until it is delivered. */
+export type DocRef = ({ file_id: string } | { run_id: string; path: string }) & { version: string; at: string; quote: string };
+/** A quote as stored on the turn: the reference plus the document's name at the time. */
+export type SentDocRef = DocRef & { filename: string };
 
 /** How a library file can be shown in place (GET /v1/files/{id}/preview). Rendered once, on first open, then cached. */
 export type FilePreview = {
