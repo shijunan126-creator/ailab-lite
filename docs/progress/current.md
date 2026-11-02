@@ -1,8 +1,9 @@
-# 办公套件：PR 与合并（2026-11-03）
+# Office Linux CI e2e 修复（2026-11-03）
 
-- 分支 `feat/office-suite`，base `origin/main`（已 fetch，无落后）。用户授权：提 PR，CI 全绿后 merge；未授权部署。
-- 内容：P0–P5 全部实施与验收，结论、计数和未验边界见[P5记录](updates/2026-11-02-office-suite-p5.md)与[整合记录](updates/2026-11-02-office-suite-integration.md)。本次另在 AGENTS.md 第 11 节写入 PR 规范并新增 `.github/pull_request_template.md`。
-- 剩余未验证：VBA/Windows 实际执行、Microsoft Office 保真、长期/更高并发、多浏览器。下一步：PR CI 全绿后 merge；部署需用户另行授权（需重建 sbx-office 与 Portal 镜像并执行迁移 0048）。
+- 分支 `feat/office-suite`，进入 `1455630`，base `origin/main@bf0af4f`；本轮仅授权复现、修复、检查与本地提交，用户审阅后自行 push。旧记录的 PR/merge 授权不适用于本轮；未部署。
+- 已确认并修复：checkout fixture 依赖宿主 `/opt` viewer reader，导致正文成功但原生索引 failed；现从当前源码构建独立 adapter，索引/界面终态快速报错。代码 `c5e9639`，依据见[Linux 记录](updates/2026-11-03-office-linux-e2e.md)。
+- 完整 Linux e2e：162 passed / 1 failed / 7 skipped，12 分 22.75 秒；随后补齐 CI Office/Poppler/字体依赖，唯一失败及原跳过的 Office 页面预览 2 项复核通过，未重复整套。Portal174项/build、本机Python2091 passed/175 skipped、Ruff、导入、CI选择器28项、ShellCheck通过；actionlint不可用。CI job改为20分钟，原因/成本/精确基线见同一记录。
+- 本轮 c3 容器/两个临时镜像已清理。下一具体动作：用户审阅本地提交并推送 PR #148，核对最终 Actions；不自动 push/merge/部署。其他 P5 未验边界沿用[P5记录](updates/2026-11-02-office-suite-p5.md)。
 
 ---
 # 办公 P5 最终修复与联合检查（2026-11-03）
