@@ -1,3 +1,21 @@
+# Office Linux CI e2e 修复（2026-11-03）
+
+- 分支 `feat/office-suite`，进入 `1455630`，base `origin/main@bf0af4f`；本轮仅授权复现、修复、检查与本地提交，用户审阅后自行 push。旧记录的 PR/merge 授权不适用于本轮；未部署。
+- 已确认并修复：checkout fixture 依赖宿主 `/opt` viewer reader，导致正文成功但原生索引 failed；现从当前源码构建独立 adapter，索引/界面终态快速报错。代码 `c5e9639`，依据见[Linux 记录](updates/2026-11-03-office-linux-e2e.md)。
+- 完整 Linux e2e：162 passed / 1 failed / 7 skipped，12 分 22.75 秒；随后补齐 CI Office/Poppler/字体依赖，唯一失败及原跳过的 Office 页面预览 2 项复核通过，未重复整套。Portal174项/build、本机Python2091 passed/175 skipped、Ruff、导入、CI选择器28项、ShellCheck通过；actionlint不可用。CI job改为20分钟，原因/成本/精确基线见同一记录。
+- 本轮 c3 容器/两个临时镜像已清理。下一具体动作：用户审阅本地提交并推送 PR #148，核对最终 Actions；不自动 push/merge/部署。其他 P5 未验边界沿用[P5记录](updates/2026-11-02-office-suite-p5.md)。
+
+---
+# 办公 P5 最终修复与联合检查（2026-11-03）
+
+- 工作树 `.worktrees/office-suite`，分支 `feat/office-suite`，进入干净 `52abb97`，base `origin/main@bf0af4f`（未fetch）。仅引入指定两个测试提交；最终产品基线`ae39e10`，其后只补文档。本轮未push、PR或部署。
+- 已修复：document_view形状说明及可纠正错误；410 capture过期的显式重建/继续运行；单格式Viewer与构建时br/gzip；同哈希派生预览刷新重建frame打断capture的真实UI根因。四格式Chat/Work及活跃工作区交互有浏览器成功证据。
+- Ruff、SQLite与PG/Redis完整套件、最终Portal测试/build通过；E2E全量首轮6项失败已定位并修复，仅这6项复跑通过，未重复全套。精确基线、计数、跳过、冷暖分解、失败及清理统一见[P5本轮记录](updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。所有本轮服务/原生数据库/浏览器已退出，9端口无监听，无容器变更。
+- 剩余未验证边界：VBA/Windows实际执行、Microsoft Office保真、更多复杂模板、长期/更高并发、移动端多浏览器、真实时间流逝/GC后的长期恢复。410故障注入已验证，其他不可用/授权失败仍保护性暂停；短上下文缓存与XLSX运行时成本见记录，不宣称P5全面外部验收。
+- 下一具体动作：审阅本地提交后向main提PR；本轮按用户限制只交接，不执行push/PR/部署。
+
+---
+
 # 行内气泡对齐（2026-11-02）
 
 - 分支 `fix/inline-chip-alignment-pr`，发布基线 `origin/main@188afca`（原本地验证基线 `c033664`）；保留进入任务时已有的部署交接、更新记录与其他本地文件。用户已授权提交PR，CI全绿后合并；未授权部署。

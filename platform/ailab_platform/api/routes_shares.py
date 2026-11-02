@@ -492,6 +492,9 @@ def file_content(
         result = routes_files.download_file(file_id, owner, db)
     elif action == "thumbnail":
         result = routes_files.download_thumbnail(file_id, if_none_match, owner, db)
+    elif action == "document":
+        response.headers["Cache-Control"] = "private, no-store"
+        return routes_files.get_document(file_id, owner, db)
     elif action == "preview":
         response.headers["Cache-Control"] = "private, no-store"
         return routes_files.get_preview(file_id, owner, db)

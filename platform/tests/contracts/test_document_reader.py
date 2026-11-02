@@ -26,7 +26,7 @@ def test_real_reader_formats_and_two_concurrent_users(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "sandbox_runtime", "runc")
     monkeypatch.setattr(settings, "sandbox_render_reserved_slots", 2)
     monkeypatch.setattr(settings, "max_sandboxes", 4)
-    fixtures = Path(__file__).resolve().parents[3] / "vendor/zcode-office-runtime/fixtures"
+    fixtures = Path(__file__).resolve().parents[3] / "vendor/office-suite/runtime/fixtures"
     names = {"fdocx": "report.docx", "fpdf": "paper.pdf", "fxlsx": "budget.xlsx", "fpptx": "launch.pptx"}
     storage = LocalStorage(tmp_path / "objects")
 

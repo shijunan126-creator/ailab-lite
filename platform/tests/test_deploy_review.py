@@ -18,7 +18,7 @@ def test_image_import_compares_configuration_ids_not_manifest_digests(tmp_path):
     sandbox = tmp_path / "images" / "sbx-office"
     sandbox.mkdir(parents=True)
     (sandbox / "Dockerfile").write_text("FROM test")
-    (tmp_path / "vendor/zcode-office-runtime").mkdir(parents=True)
+    (tmp_path / "vendor/office-suite/runtime").mkdir(parents=True)
     script = (
         _functions("build_images")
         + r"""

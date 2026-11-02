@@ -72,6 +72,7 @@ class Settings(BaseSettings):
     otel_endpoint: str = ""  # Full OTLP/HTTP traces URL; empty means no SDK/exporter is loaded.
     otel_sample_ratio: float = Field(default=0.05, ge=0, le=1)
     api_base_url: str = "http://127.0.0.1:8080"
+    viewer_reader_path: Path = Path("/opt/ailab-viewer/reader.mjs")
     broker_base_url: str = "http://127.0.0.1:8081"
     agent_base_url: str = "http://127.0.0.1:8082"
     worker_base_url: str = "http://127.0.0.1:8083"

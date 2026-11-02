@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, downloadUrl, errorMessage, FileItem, Preview, previewUrl, readerRenderUrl } from "../../lib/api";
+import { api, downloadUrl, errorMessage, FileItem, Preview, previewUrl, readerRenderUrl, type DocRef } from "../../lib/api";
+import OfficeView, { officeKind, type OfficeDoc, type OfficeReveal } from "../preview/office-view";
 import { IconDownload, IconPanelRight, IconX } from "../icons";
 import { FilePreviewBody } from "../preview/file-viewer";
 import Sheets from "../preview/sheets";
@@ -19,6 +20,47 @@ function Pages({ preview }: { preview: Preview }) {
 
 export type PanePreview = Preview & { libraryFileId?: string };
 export const previewTabKey = (preview: PanePreview) => preview.libraryFileId ? `file:${preview.libraryFileId}` : preview.filename;
+
+/** What the native viewer needs from the pane: the documents open in it and where quotes and questions go. */
+export type PaneOffice = {
+  docs: OfficeDoc[];
+  conversationId?: string | null;
+  reveals: Record<string, OfficeReveal>;
+  onOpen: (path: string) => void;
+  onReference: (ref: DocRef, label: string) => void;
+  onAsk: (question: string, ref: DocRef, label: string) => Promise<void>;
+};
+
+/** The viewer key of a pane document: where it lives, then its name (shown in the viewer, used in its anchors). */
+const officePath = (where: "库" | "工作区", filename: string) => `${where}/${filename}`;
+
+/** A pane tab as a native-viewer document, when its format has one. */
+function officeDocOf(preview: PanePreview, delivered: Record<string, string>): OfficeDoc | null {
+  const kind = officeKind(preview.filename);
+  if (!kind) return null;
+  if (preview.libraryFileId) return { path: officePath("库", preview.filename), filename: preview.filename, kind, source: { fileId: preview.libraryFileId } };
+  const fileId = delivered[preview.filename];
+  if (fileId) return { path: officePath("库", preview.filename), filename: preview.filename, kind, source: { fileId } };
+  if (!preview.run_id || !preview.path) return null;
+  const path = preview.path.replace(/^\/workspace\//, "");
+  return { path: officePath("工作区", path), filename: preview.filename, kind, source: { runId: preview.run_id, path } };
+}
+
+function NativePane({ doc, revision, office, reveal, fallback }: { doc: OfficeDoc; revision: number; office: PaneOffice; reveal?: OfficeReveal; fallback: React.ReactNode }) {
+  return (
+    <OfficeView
+      doc={doc}
+      revision={revision}
+      docs={office.docs}
+      conversationId={office.conversationId}
+      reveal={reveal}
+      onOpen={office.onOpen}
+      onReference={office.onReference}
+      onAsk={office.onAsk}
+      fallback={fallback}
+    />
+  );
+}
 
 /** Reuse library rendering without its fullscreen shell; cancel superseded file loads. */
 function LibraryPane({ fileId }: { fileId: string }) {
@@ -84,6 +126,11 @@ export default function PreviewPane({
   onClose,
   live,
   downloads,
+  conversationId,
+  reveals = {},
+  delivered = {},
+  onReference,
+  onAsk,
 }: {
   previews: PanePreview[];
   selected: string | null;
@@ -102,6 +149,12 @@ export default function PreviewPane({
   onClose: () => void;
   live: boolean;
   downloads: Record<string, string>;
+  conversationId?: string | null;
+  reveals?: Record<string, OfficeReveal>;
+  /** Delivered files by name: a delivered office file opens from the library, its exact version. */
+  delivered?: Record<string, string>;
+  onReference?: (ref: DocRef, label: string) => void;
+  onAsk?: (question: string, ref: DocRef, label: string) => Promise<void>;
 }) {
   // Keep recent documents mounted for instant switches, bound third-party DOM/frame memory.
   const [recentReaders, setRecentReaders] = useState<string[]>([]);
@@ -158,6 +211,20 @@ export default function PreviewPane({
     if (rect.left < box.left || rect.right > box.right) tabs.scrollLeft += rect.left - box.left;
   }, [readerUrl, readerOn, selected, sourcesOn]);
   const current = useMemo(() => previews.find((p) => previewTabKey(p) === selected) || previews[previews.length - 1], [previews, selected]);
+  const officeDocs = useMemo(() => previews.map((p) => ({ key: previewTabKey(p), doc: officeDocOf(p, delivered) })), [previews, delivered]);
+  const office: PaneOffice | null = onReference && onAsk ? {
+    docs: officeDocs.flatMap((d) => (d.doc ? [d.doc] : [])),
+    conversationId,
+    reveals,
+    onOpen: (path) => {
+      const hit = officeDocs.find((d) => d.doc?.path === path);
+      if (hit) onSelect(hit.key);
+    },
+    onReference,
+    onAsk,
+  } : null;
+  const currentDoc = current ? officeDocs.find((d) => d.key === previewTabKey(current))?.doc ?? null : null;
+  const revealOf = (preview: PanePreview) => reveals[previewTabKey(preview)];
   const reader = readers.find((r) => r.url === readerUrl);
   const showReader = !!reader && readerOn;
   const showSources = !!sources && !showReader && (sourcesOn || !current);
@@ -201,8 +268,11 @@ export default function PreviewPane({
           <SourcesList sources={sources!.sources} answer={sources!.answer} onRead={onRead} />
         </div>
       ) : current ? (
-        <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}`} key={previewTabKey(current) + (current.file_id || "")}>
-          {current.libraryFileId ? <LibraryPane fileId={current.libraryFileId} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null}
+        <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}${office && currentDoc ? " office-pane" : ""}`} key={currentDoc ? `${previewTabKey(current)}:${JSON.stringify(currentDoc.source)}` : previewTabKey(current) + (current.file_id || "")}>
+          {(() => {
+            const paged = current.libraryFileId ? <LibraryPane fileId={current.libraryFileId} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null;
+            return office && currentDoc ? <NativePane doc={currentDoc} revision={current.version} office={office} reveal={revealOf(current)} fallback={paged} /> : paged;
+          })()}
         </div>
       ) : null}
     </aside>

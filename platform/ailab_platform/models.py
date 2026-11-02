@@ -1167,3 +1167,34 @@ class RunAssetRef(Base):
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
     file_id: Mapped[str] = mapped_column(String(40))
     kind: Mapped[str] = mapped_column(String(16))
+
+
+class MessageDocRef(Base):
+    __tablename__ = "message_doc_refs"
+    __table_args__ = (
+        UniqueConstraint("message_kind", "message_id", "ordinal", name="uq_message_doc_ref_ordinal"),
+        Index("ix_message_doc_refs_run", "run_id"),
+        Index("ix_message_doc_refs_file", "file_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dref"))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
+    message_kind: Mapped[str] = mapped_column(String(30))
+    message_id: Mapped[str] = mapped_column(String(40))
+    ordinal: Mapped[int] = mapped_column(Integer)
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target: Mapped[dict] = mapped_column(JSON)
+    filename: Mapped[str] = mapped_column(String(500))
+
+
+class ViewerCapture(Base):
+    __tablename__ = "viewer_captures"
+    __table_args__ = (Index("ix_viewer_captures_expiry", "expires_at"), Index("ix_viewer_captures_run", "run_id"))
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"))
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    target: Mapped[dict] = mapped_column(JSON)
+    storage_key: Mapped[str] = mapped_column(String(600))
+    digest: Mapped[str] = mapped_column(String(64))
+    content_type: Mapped[str] = mapped_column(String(50))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

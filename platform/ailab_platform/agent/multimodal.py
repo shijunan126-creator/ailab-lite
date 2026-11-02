@@ -8,6 +8,11 @@ import base64
 
 from ..config import settings
 
+
+class CaptureExpired(RuntimeError):
+    """An authorized ephemeral viewport is gone; it cannot be replayed as evidence."""
+
+
 IMAGE_TYPES = frozenset({"image/jpeg", "image/png", "image/webp"})
 
 
@@ -54,18 +59,25 @@ async def input_content(platform, run_id: str, file: dict, spec, *, text: str = 
 
         try:
             image = (
-                (await platform.get_file_page_image(file["id"], run_id, file["page"]))
-                if file.get("page")
-                else (await platform.get_file_image(file["id"], run_id))
+                (await platform.get_capture_image(run_id, file["capture_id"]))
+                if file.get("capture_id")
+                else (
+                    (await platform.get_file_page_image(file["id"], run_id, file["page"]))
+                    if file.get("page")
+                    else (await platform.get_file_image(file["id"], run_id))
+                )
             )
-        except (ClientError, ValueError):
+        except ClientError as exc:
+            if file.get("capture_id") and exc.status == 410:
+                raise CaptureExpired() from None
+        except ValueError:
             pass
     return attachment_content(
         file,
         vision=spec.supports({"vision"}),
         image=image,
         content_type=("image/png" if image and image.startswith(b"\x89PNG\r\n\x1a\n") else "image/jpeg")
-        if file.get("page")
+        if file.get("page") or file.get("capture_id")
         else "image/webp",
         text=text,
     )

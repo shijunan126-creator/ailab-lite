@@ -575,3 +575,10 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 
 /* admin 技能广场: two short fields side by side */
 .admin-form .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+
+/* Side-pane native document viewer (components/preview/office-view.tsx) and the quotes taken from it */
+.preview-body.office-pane { background: var(--background); }
+.office-frame { flex: 1; min-height: 0; width: 100%; border: 0; display: block; background: transparent; }
+.attach-chip.quote-chip { gap: 6px; height: 32px; padding: 0 4px 0 10px; border-radius: 10px; max-width: min(100%, 320px); color: var(--foreground); border-left: 2px solid var(--primary); }
+.quote-chip-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quote-chip-at { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }

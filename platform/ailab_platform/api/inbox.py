@@ -36,7 +36,12 @@ def _create_notification(db, user_id, kind, title, conversation_id=None, run_id=
 
 
 def queue_output(row):
+    from sqlalchemy.orm import object_session
+
+    from .document_view import output
+
     return {
+        "doc_refs": output(object_session(row), "queued_message", row.id),
         "id": row.id,
         "prompt": row.prompt,
         "file_ids": row.file_ids,
@@ -60,6 +65,7 @@ def pending_query(conversation_id):
 
 
 def dispatch_next(db, conv, *, raise_admission=False):
+    from .document_view import output as document_refs
     from .routes_runs import start_run
 
     row = db.scalar(pending_query(conv.id).limit(1))
@@ -81,14 +87,20 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 locked=True,
                 commit=False,
                 frozen_template=row.options.get("template"),
+                frozen_doc_refs=document_refs(db, "queued_message", row.id, visible=False),
                 client="portal",
             )
             db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()
             from sqlalchemy import update
 
-            from ..models import AppliedMessagePosition, MessageFileRef
+            from ..models import AppliedMessagePosition, MessageDocRef, MessageFileRef
 
+            db.execute(
+                update(MessageDocRef)
+                .where(MessageDocRef.message_kind == "queued_message", MessageDocRef.message_id == row.id)
+                .values(run_id=run.id)
+            )
             db.execute(
                 update(MessageFileRef)
                 .where(MessageFileRef.message_kind == "queued_message", MessageFileRef.message_id == row.id)
@@ -193,8 +205,13 @@ def acknowledge_steers(db, run, state):
                 raise HTTPException(422, "steer message missing")
             from sqlalchemy import update
 
-            from ..models import AppliedMessagePosition, MessageFileRef
+            from ..models import AppliedMessagePosition, MessageDocRef, MessageFileRef
 
+            db.execute(
+                update(MessageDocRef)
+                .where(MessageDocRef.message_kind == "queued_message", MessageDocRef.message_id == qid)
+                .values(run_id=run.id)
+            )
             db.execute(
                 update(MessageFileRef)
                 .where(MessageFileRef.message_kind == "queued_message", MessageFileRef.message_id == qid)

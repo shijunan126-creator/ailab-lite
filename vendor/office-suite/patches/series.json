@@ -1,0 +1,30 @@
+[
+  {
+    "file": "001-tools-and-roots.json",
+    "reason": "Map platform tools, immutable skill roots, references and role settings; explicitly label pending viewer operations."
+  },
+  {
+    "file": "002-execution-contracts.json",
+    "reason": "Keep originals read-only and text faithful, remove model defaults, and replace host/network installation with preinstalled dependency contracts while retaining production recipes."
+  },
+  {
+    "file": "003-markdown-boundary.json",
+    "reason": "Remove one unmatched PDF Markdown fence so prose sections remain navigable and no operational text is lost or misclassified as code."
+  },
+  {
+    "file": "004-runtime-reader.json",
+    "reason": "Rebase bounded AILab parser coverage and visual-presence patches onto the pinned runtime."
+  },
+  {
+    "file": "005-offline-production.json",
+    "reason": "Use preinstalled Chromium/KaTeX and offline XeLaTeX; refuse in-place Excel source edits."
+  },
+  {
+    "file": "006-output-and-offline-errors.json",
+    "reason": "Default converted output stays in outputs; missing dependencies never instruct runtime installation; probe the installed offline TeX engine."
+  },
+  {
+    "file": "007-readable-resource-limits.json",
+    "reason": "Preserve Python AST while fitting complete readable scripts within loader line limits."
+  }
+]

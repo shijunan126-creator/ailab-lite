@@ -1,0 +1,927 @@
+[
+  {
+    "path": "documents-plugin/package.json",
+    "before_sha256": "8c620e111595e2507d72b7987b93e5248b896368b164b6895cc93414cb4fac3f",
+    "after_sha256": "1ea27eee76c9cb0bfba5b3f283984375a7f635621bdc6faaa52204c9c7d60a47",
+    "edits": [
+      {
+        "start": 60,
+        "end": 97,
+        "before": "  \"name\": \"@zcode/documents-plugin\",\n",
+        "after": "  \"name\": \"@AILab/documents-plugin\",\n"
+      },
+      {
+        "start": 138,
+        "end": 254,
+        "before": "  \"description\": \"DOCX document production skills and a Word viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"DOCX document production skills and a Word viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 565,
+        "end": 608,
+        "before": "    \"@zcode/office-runtime\": \"workspace:*\"\n",
+        "after": "    \"@AILab/office-runtime\": \"workspace:*\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/package.json",
+    "before_sha256": "2ccccf3f68100d30434c8bc4200e5fbdb94407589cf5f773017d9e22db5904fd",
+    "after_sha256": "10a6334e29dc9cd814e7ccc2e7b075f942a1eafcf2de34d6f9b8c697ffa1b379",
+    "edits": [
+      {
+        "start": 60,
+        "end": 91,
+        "before": "  \"name\": \"@zcode/pdf-plugin\",\n",
+        "after": "  \"name\": \"@AILab/pdf-plugin\",\n"
+      },
+      {
+        "start": 132,
+        "end": 237,
+        "before": "  \"description\": \"PDF production skills and a PDF viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"PDF production skills and a PDF viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 548,
+        "end": 591,
+        "before": "    \"@zcode/office-runtime\": \"workspace:*\"\n",
+        "after": "    \"@AILab/office-runtime\": \"workspace:*\"\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/package.json",
+    "before_sha256": "4e3ece90cfd89765a39985d95376ed5d5e02be15ee4b2a284dc50bc1541cbddd",
+    "after_sha256": "bd48dbefc131774e46e4dcda8191e57988481563b2cf2e6d025ee80a1a5d8c2a",
+    "edits": [
+      {
+        "start": 60,
+        "end": 101,
+        "before": "  \"name\": \"@zcode/presentations-plugin\",\n",
+        "after": "  \"name\": \"@AILab/presentations-plugin\",\n"
+      },
+      {
+        "start": 142,
+        "end": 268,
+        "before": "  \"description\": \"PPTX presentation production skills and a PowerPoint viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"PPTX presentation production skills and a PowerPoint viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 579,
+        "end": 622,
+        "before": "    \"@zcode/office-runtime\": \"workspace:*\"\n",
+        "after": "    \"@AILab/office-runtime\": \"workspace:*\"\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/package.json",
+    "before_sha256": "5dacf452bfc6206efc2f204b368cbdef31a3f9a4a331be9d1b61b267f4f208df",
+    "after_sha256": "264b20cbe00d714708a0782e58d5897c4f9a87def60e564739c19a27d4cde7a5",
+    "edits": [
+      {
+        "start": 60,
+        "end": 100,
+        "before": "  \"name\": \"@zcode/spreadsheets-plugin\",\n",
+        "after": "  \"name\": \"@AILab/spreadsheets-plugin\",\n"
+      },
+      {
+        "start": 141,
+        "end": 262,
+        "before": "  \"description\": \"XLSX spreadsheet production skills and an Excel viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"XLSX spreadsheet production skills and an Excel viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 573,
+        "end": 616,
+        "before": "    \"@zcode/office-runtime\": \"workspace:*\"\n",
+        "after": "    \"@AILab/office-runtime\": \"workspace:*\"\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/.zcode-plugin/plugin.json",
+    "before_sha256": "8cfc3cab357c219ae1b3c7e0f83d1a9e84345b34c2bd7263b817b2372e6e5227",
+    "after_sha256": "b83677b8694e1cdcfe8d8424ee903314a6af16449f5e1040fdd5e2b2d2fc3f47",
+    "edits": [
+      {
+        "start": 47,
+        "end": 163,
+        "before": "  \"description\": \"DOCX document production skills and a Word viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"DOCX document production skills and a Word viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 706,
+        "end": 799,
+        "before": "      \"args\": [\"${ZCODE_PLUGIN_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${ZCODE_PROJECT_DIR}\",\n",
+        "after": "      \"args\": [\"${AILAB_SKILL_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${AILAB_SKILL_ROOT}\",\n"
+      },
+      {
+        "start": 814,
+        "end": 869,
+        "before": "        \"ZCODE_WORKSPACE_ROOT\": \"${ZCODE_PROJECT_DIR}\"\n",
+        "after": "        \"AILAB_SKILL_ROOT\": \"${AILAB_SKILL_ROOT}\"\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/agents/visual-judge.md",
+    "before_sha256": "2bba129a9bc4184f306d780cec12b92e41d164b0317d44890e4bee83df32a399",
+    "after_sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637",
+    "edits": [
+      {
+        "start": 23,
+        "end": 1237,
+        "before": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only Read pre-rendered page PNGs (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the delivery protocol's visual gate in your system prompt.\"\n",
+        "after": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\n"
+      },
+      {
+        "start": 1251,
+        "end": 1350,
+        "before": "model: account:bigmodel-individual-coding-plan/GLM-5.3-Flash\nthoughtLevel: max\ntools: [Read, Bash]\n",
+        "after": "tools: [view_workspace_file]\n"
+      },
+      {
+        "start": 1354,
+        "end": 1354,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.docx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.docx\" DOCX_SKILL_DIR=\"/opt/skills/platform.docx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.docx\"; outputs under /workspace/outputs.\n\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx-viewer/SKILL.md",
+    "before_sha256": "695439c5e90063a7e1772684e85f6838cfd52d233ba28717e935870f11f68b89",
+    "after_sha256": "129773de2ab5a46777e301771391394a725698b03b09b675e108ed1dc1530a79",
+    "edits": [
+      {
+        "start": 1089,
+        "end": 2228,
+        "before": "1. `open_document(path, at?)` opens the file in the panel and returns its outline. Open the document before discussing it so the user sees what you see.\n2. `read_document(anchor, cursor?)` returns the paragraphs and tables (as markdown) of a location. Read the relevant part before answering; follow the `cursor` hint for long content instead of guessing.\n3. `search_document(path, query)` finds text and returns paragraph and table anchors.\n4. `show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific places, e.g. after finding the clauses you discuss. Add `quote` (exact text inside the paragraph) to highlight a phrase in a long paragraph. Keep `note` to one short sentence.\n5. `get_view()` tells you what the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"the selected …\" or similar without an anchor.\n6. `capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered location. Use it when layout, images or formatting matter. The document must already be open in the panel.\n",
+        "after": "1. `resolve_attachment` (file identity; panel open is planned:P3) opens the file in the panel and returns its outline. Open the document before discussing it so the user sees what you see.\n2. `read_library_file` (file_id, anchor, next_cursor) returns the paragraphs and tables (as markdown) of a location. Read the relevant part before answering; follow the `cursor` hint for long content instead of guessing.\n3. `read_library_file` (file_id, query) finds text and returns paragraph and table anchors.\n4. `planned:P3 show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific places, e.g. after finding the clauses you discuss. Add `quote` (exact text inside the paragraph) to highlight a phrase in a long paragraph. Keep `note` to one short sentence.\n5. `planned:P3 get_view()` tells you what the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"the selected …\" or similar without an anchor.\n6. `planned:P3 capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered location. Use it when layout, images or formatting matter. The document must already be open in the panel.\n"
+      },
+      {
+        "start": 2229,
+        "end": 2365,
+        "before": "After you produce or change a document with the `docx` skill, open it with `open_document` so the user can look at the result with you.\n",
+        "after": "After you produce or change a document with the `docx` skill, open it with `planned:P3 open_document` so the user can look at the result with you.\n"
+      },
+      {
+        "start": 2395,
+        "end": 2785,
+        "before": "When the user clicks or selects something and chooses **Add to chat**, the next message carries context like `- report.docx#p:4: \"Revenue grew by 12 percent…\"`. Treat those anchors as precise pointers: read them with `read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n",
+        "after": "When the user clicks or selects something and chooses **Add to chat**, the next message carries context like `- report.docx#p:4: \"Revenue grew by 12 percent…\"`. Treat those anchors as precise pointers: read them with `planned:P3 read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n"
+      },
+      {
+        "start": 2786,
+        "end": 2958,
+        "before": "`show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n",
+        "after": "`planned:P3 show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n"
+      },
+      {
+        "start": 3112,
+        "end": 3560,
+        "before": "- The panel renders the document close to, but not exactly like, Microsoft Word. Use `capture_view` before you comment on fine layout.\n- Do not paste whole documents into the chat; quote briefly and point with `show_in_viewer`.\n- The panel only works in ZCode Desktop local workspaces. Elsewhere, still open the document with `open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n",
+        "after": "- The panel renders the document close to, but not exactly like, Microsoft Word. Use `planned:P3 capture_view` before you comment on fine layout.\n- Do not paste whole documents into the chat; quote briefly and point with `planned:P3 show_in_viewer`.\n- The source panel host is not available in AILab until P3/P4; use read_library_file and view_attachment today. Elsewhere, still open the document with `planned:P3 open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n\nAILab adaptation: panel open/reveal/get_view/capture and selection actions above describe preserved source semantics, planned:P3/P4, not currently callable tools. Use only returned file_id and anchors; do not fabricate path-based authorization.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/SKILL.md",
+    "before_sha256": "48b5737f2ffd30fdec1332f1b7183161d09a70ff0b19ba524356edaf78bd13c5",
+    "after_sha256": "e528c69f9103b72734a2b5ad037717267f0bfd24b4394373932f526a71b5d33f",
+    "edits": [
+      {
+        "start": 728,
+        "end": 728,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.docx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.docx\" DOCX_SKILL_DIR=\"/opt/skills/platform.docx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.docx\"; outputs under /workspace/outputs.\n\n"
+      },
+      {
+        "start": 3007,
+        "end": 3088,
+        "before": "DOCX_SCRIPTS=\"<skill_directory>/scripts\"   # ← parent directory of this SKILL.md\n",
+        "after": "DOCX_SCRIPTS=\"/opt/skills/platform.docx/scripts\"   # ← parent directory of this SKILL.md\n"
+      },
+      {
+        "start": 3352,
+        "end": 3412,
+        "before": "DOCX_SCRIPTS = os.path.join(\"<skill_directory>\", \"scripts\")\n",
+        "after": "DOCX_SCRIPTS = os.path.join(\"/opt/skills/platform.docx\", \"scripts\")\n"
+      },
+      {
+        "start": 16577,
+        "end": 16730,
+        "before": "Place `::zcode-file-citation{...}` inline in prose, not in a trailing list. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n",
+        "after": "Use plain source references (actual file_id/anchor and page/sheet/slide) inline in prose; for outputs use deliver_file returned references. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n"
+      },
+      {
+        "start": 16731,
+        "end": 17077,
+        "before": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a plain output citation. Summarize representative changes; do not cite every section/page or add a separate filename, path, or Markdown link. Example: `Created ::zcode-file-citation{path=\"/abs/path/launch-plan.docx\" purpose=\"output\"}, highlighting the rollout and owners.`\n",
+        "after": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a platform deliver_file reference. Summarize representative changes; do not cite every section/page; use the platform delivery reference. Example: `Created [file reference: path=\"/workspace/outputs/launch-plan.docx\" purpose=\"output\"], highlighting the rollout and owners.`\n"
+      },
+      {
+        "start": 17656,
+        "end": 17762,
+        "before": "::zcode-file-citation{path=\"/abs/path/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4}\n",
+        "after": "[file reference: path=\"/workspace/outputs/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4]\n"
+      },
+      {
+        "start": 18716,
+        "end": 19022,
+        "before": "::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3}\n::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3]\n[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"]\n"
+      },
+      {
+        "start": 19553,
+        "end": 19679,
+        "before": "::zcode-file-citation{path=\"/abs/path/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"]\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/env_setup/setup.md",
+    "before_sha256": "8b799410084c6e8c47935ab1b1e8966556e94e4f267c52302e7cd0d6b1813b89",
+    "after_sha256": "99a18a62c580876f6c658017adddaeeffba6e3b7a9d5ae31dca5ce2c58d01e1e",
+    "edits": [
+      {
+        "start": 410,
+        "end": 445,
+        "before": "DOCX_SKILL_DIR=\"<skill_directory>\"\n",
+        "after": "DOCX_SKILL_DIR=\"/opt/skills/platform.docx\"\n"
+      },
+      {
+        "start": 654,
+        "end": 696,
+        "before": "$env:DOCX_SKILL_DIR = \"<skill_directory>\"\n",
+        "after": "$env:DOCX_SKILL_DIR = \"/opt/skills/platform.docx\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/.zcode-plugin/plugin.json",
+    "before_sha256": "f8822823602a617830951a0e0729a664fc0da14acabff5b9d27db7ef6c1fabe1",
+    "after_sha256": "3e41800fcae5cc8059b866595d1ef331cabd40e14ca93d52786236ae17f9925f",
+    "edits": [
+      {
+        "start": 41,
+        "end": 146,
+        "before": "  \"description\": \"PDF production skills and a PDF viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"PDF production skills and a PDF viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 669,
+        "end": 762,
+        "before": "      \"args\": [\"${ZCODE_PLUGIN_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${ZCODE_PROJECT_DIR}\",\n",
+        "after": "      \"args\": [\"${AILAB_SKILL_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${AILAB_SKILL_ROOT}\",\n"
+      },
+      {
+        "start": 777,
+        "end": 832,
+        "before": "        \"ZCODE_WORKSPACE_ROOT\": \"${ZCODE_PROJECT_DIR}\"\n",
+        "after": "        \"AILAB_SKILL_ROOT\": \"${AILAB_SKILL_ROOT}\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/agents/visual-judge.md",
+    "before_sha256": "2bba129a9bc4184f306d780cec12b92e41d164b0317d44890e4bee83df32a399",
+    "after_sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db",
+    "edits": [
+      {
+        "start": 23,
+        "end": 1237,
+        "before": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only Read pre-rendered page PNGs (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the delivery protocol's visual gate in your system prompt.\"\n",
+        "after": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\n"
+      },
+      {
+        "start": 1251,
+        "end": 1350,
+        "before": "model: account:bigmodel-individual-coding-plan/GLM-5.3-Flash\nthoughtLevel: max\ntools: [Read, Bash]\n",
+        "after": "tools: [view_workspace_file]\n"
+      },
+      {
+        "start": 1354,
+        "end": 1354,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/SKILL.md",
+    "before_sha256": "4419d2ea33e7627f04f6defde3a83fa6664c886f6a5d1d7ea3fb70bba1ef8317",
+    "after_sha256": "1546dd66cc22af0a37c878d8fb17e46f62e0b1f3bbe21a76b3432b8ec86561f3",
+    "edits": [
+      {
+        "start": 894,
+        "end": 894,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n\n"
+      },
+      {
+        "start": 50221,
+        "end": 50295,
+        "before": "PDF_SKILL_DIR=\"<skill_directory>\"   # ← parent directory of this SKILL.md\n",
+        "after": "PDF_SKILL_DIR=\"/opt/skills/platform.pdf\"   # ← parent directory of this SKILL.md\n"
+      },
+      {
+        "start": 50982,
+        "end": 51018,
+        "before": "PDF_SKILL_DIR = \"<skill_directory>\"\n",
+        "after": "PDF_SKILL_DIR = \"/opt/skills/platform.pdf\"\n"
+      },
+      {
+        "start": 69054,
+        "end": 69207,
+        "before": "Place `::zcode-file-citation{...}` inline in prose, not in a trailing list. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n",
+        "after": "Use plain source references (actual file_id/anchor and page/sheet/slide) inline in prose; for outputs use deliver_file returned references. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n"
+      },
+      {
+        "start": 69208,
+        "end": 69554,
+        "before": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a plain output citation. Summarize representative changes; do not cite every section/page or add a separate filename, path, or Markdown link. Example: `Created ::zcode-file-citation{path=\"/abs/path/launch-plan.docx\" purpose=\"output\"}, highlighting the rollout and owners.`\n",
+        "after": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a platform deliver_file reference. Summarize representative changes; do not cite every section/page; use the platform delivery reference. Example: `Created [file reference: path=\"/workspace/outputs/launch-plan.docx\" purpose=\"output\"], highlighting the rollout and owners.`\n"
+      },
+      {
+        "start": 70030,
+        "end": 70136,
+        "before": "::zcode-file-citation{path=\"/abs/path/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4}\n",
+        "after": "[file reference: path=\"/workspace/outputs/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4]\n"
+      },
+      {
+        "start": 71193,
+        "end": 71499,
+        "before": "::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3}\n::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3]\n[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"]\n"
+      },
+      {
+        "start": 72030,
+        "end": 72156,
+        "before": "::zcode-file-citation{path=\"/abs/path/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"]\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf-viewer/SKILL.md",
+    "before_sha256": "0149a5f0b92348b184b6511f0222f7797bfdd2860ed8e6b7250d54451bb2c0b5",
+    "after_sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b",
+    "edits": [
+      {
+        "start": 926,
+        "end": 2044,
+        "before": "1. `open_document(path, at?)` opens the file in the panel and returns its outline. Open the document before discussing it so the user sees what you see.\n2. `read_document(anchor, cursor?)` returns the text of a page or range. Read the relevant part before answering; follow the `cursor` hint for long content instead of guessing.\n3. `search_document(path, query)` finds text and returns page anchors.\n4. `show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific places. Add `quote` (exact text on the page) to highlight a phrase rather than the whole page. Keep `note` to one short sentence.\n5. `get_view()` tells you what the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"the selected …\" or similar without an anchor.\n6. `capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered page. Use it when layout, figures or formatting matter, or when text extraction comes back empty (for example scanned PDFs). The document must already be open in the panel.\n",
+        "after": "1. `resolve_attachment` (file identity; panel open is planned:P3) opens the file in the panel and returns its outline. Open the document before discussing it so the user sees what you see.\n2. `read_library_file` (file_id, anchor, next_cursor) returns the text of a page or range. Read the relevant part before answering; follow the `cursor` hint for long content instead of guessing.\n3. `read_library_file` (file_id, query) finds text and returns page anchors.\n4. `planned:P3 show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific places. Add `quote` (exact text on the page) to highlight a phrase rather than the whole page. Keep `note` to one short sentence.\n5. `planned:P3 get_view()` tells you what the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"the selected …\" or similar without an anchor.\n6. `planned:P3 capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered page. Use it when layout, figures or formatting matter, or when text extraction comes back empty (for example scanned PDFs). The document must already be open in the panel.\n"
+      },
+      {
+        "start": 2045,
+        "end": 2165,
+        "before": "After you produce a PDF with the `pdf` skill, open it with `open_document` so the user can look at the result with you.\n",
+        "after": "After you produce a PDF with the `pdf` skill, open it with `planned:P3 open_document` so the user can look at the result with you.\n"
+      },
+      {
+        "start": 2195,
+        "end": 2588,
+        "before": "When the user selects text or clicks a page and chooses **Add to chat**, the next message carries context like `- paper.pdf#page:4: \"Latency fell by 40 percent…\"`. Treat those anchors as precise pointers: read them with `read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n",
+        "after": "When the user selects text or clicks a page and chooses **Add to chat**, the next message carries context like `- paper.pdf#page:4: \"Latency fell by 40 percent…\"`. Treat those anchors as precise pointers: read them with `planned:P3 read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n"
+      },
+      {
+        "start": 2589,
+        "end": 2761,
+        "before": "`show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n",
+        "after": "`planned:P3 show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n"
+      },
+      {
+        "start": 2879,
+        "end": 3192,
+        "before": "- Do not paste whole documents into the chat; quote briefly and point with `show_in_viewer`.\n- The panel only works in ZCode Desktop local workspaces. Elsewhere, still open the document with `open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n",
+        "after": "- Do not paste whole documents into the chat; quote briefly and point with `planned:P3 show_in_viewer`.\n- The source panel host is not available in AILab until P3/P4; use read_library_file and view_attachment today. Elsewhere, still open the document with `planned:P3 open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n\nAILab adaptation: panel open/reveal/get_view/capture and selection actions above describe preserved source semantics, planned:P3/P4, not currently callable tools. Use only returned file_id and anchors; do not fabricate path-based authorization.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/env_setup/setup.md",
+    "before_sha256": "a9acdf4824a097097b3c33100dcd0b3a50b3f6701b57844a89c3238301be92db",
+    "after_sha256": "4a43c6523f90786c0aa889745fcd6651be92fe92736f8de2ba3cb0d782dfe61e",
+    "edits": [
+      {
+        "start": 408,
+        "end": 442,
+        "before": "PDF_SKILL_DIR=\"<skill_directory>\"\n",
+        "after": "PDF_SKILL_DIR=\"/opt/skills/platform.pdf\"\n"
+      },
+      {
+        "start": 650,
+        "end": 691,
+        "before": "$env:PDF_SKILL_DIR = \"<skill_directory>\"\n",
+        "after": "$env:PDF_SKILL_DIR = \"/opt/skills/platform.pdf\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/typesetting/cover.md",
+    "before_sha256": "36d7f8d71ede9682c78c1a3f0b787eb7a5e2fb449fcd96dfbb7c7f26ee664572",
+    "after_sha256": "4b0ee306d7cb741b0ac36a1d9a56c69352b9582ed5189802697407a89d335100",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/typesetting/palette.md",
+    "before_sha256": "176e8e112fab42b9019283f011f789f7fa63e4a4b82a6a24f37ba700bcd8a156",
+    "after_sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/academic.md",
+    "before_sha256": "3dd2bf8c3d04b0fc80d77f6a95a40e0e3f70fa3328a0e7d117c24b88cbd5039c",
+    "after_sha256": "e6cb5d35eb884b5b4355e43bae56d47731e43116ecdadfd0c24be01ddc824aeb",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      },
+      {
+        "start": 22416,
+        "end": 22695,
+        "before": "> 2. **If Tectonic is missing, do NOT auto-install.** Use the **AskUserQuestion** tool to ask whether to install it, and warn clearly: *installing Tectonic and downloading the LaTeX package/font set on first run can take several minutes to tens of minutes depending on network.*\n",
+        "after": "> 2. **If Tectonic is missing, do NOT auto-install.** Use the **user clarification** tool to ask whether to install it, and warn clearly: *installing Tectonic and downloading the LaTeX package/font set on first run can take several minutes to tens of minutes depending on network.*\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/creative.md",
+    "before_sha256": "ae8f7dfc4a9971970e814e3aeb51548c4c46bfb3b4dc3bdd83d60cdae800eb47",
+    "after_sha256": "65d7a7d5f7254c1a8fa8f69773234d8b975ef7dcf06c793f810897a5a1738733",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      },
+      {
+        "start": 494,
+        "end": 1099,
+        "before": "> 2. **If Playwright or Chromium is missing, do NOT auto-install — and do NOT work around it on your own.** Use the **AskUserQuestion** tool to ask whether to install, and warn clearly: *installing Playwright and downloading the Chromium browser can take several minutes and ~150–300 MB; on a slow network it may take much longer.* Finding a no-install workaround does not excuse skipping this question — using a system Chrome/Chromium (`--headless --print-to-pdf` or an `executablePath` override), hand-writing a renderer, or quietly switching to ReportLab are all forbidden before the user has decided.\n",
+        "after": "> 2. **If Playwright or Chromium is missing, do NOT auto-install — and do NOT work around it on your own.** Use the **user clarification** tool to ask whether to install, and warn clearly: *installing Playwright and downloading the Chromium browser can take several minutes and ~150–300 MB; on a slow network it may take much longer.* Finding a no-install workaround does not excuse skipping this question — using a system Chrome/Chromium (`--headless --print-to-pdf` or an `executablePath` override), hand-writing a renderer, or quietly switching to ReportLab are all forbidden before the user has decided.\n"
+      },
+      {
+        "start": 33940,
+        "end": 34174,
+        "before": "0a. **🚨 PLAYWRIGHT/CHROMIUM PREFLIGHT:** Did I run `env.check`? If `node`/`playwright`/`chromium` were not all ✓, did I ask the user via AskUserQuestion instead of picking a fallback myself? See the preflight at the top of this file.\n",
+        "after": "0a. **🚨 PLAYWRIGHT/CHROMIUM PREFLIGHT:** Did I run `env.check`? If `node`/`playwright`/`chromium` were not all ✓, did I ask the user via user clarification instead of picking a fallback myself? See the preflight at the top of this file.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/creative-flow.md",
+    "before_sha256": "abd8e583f2d0000090d581bb94ef2dd94a694874ae1af8559f51a8491c934970",
+    "after_sha256": "46d459f5c1f7e73096170ff50e6da5f1d60bc79fe5fe914d8a9fdfca1093f1e6",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/process.md",
+    "before_sha256": "cbc8c4f2794d5bd6a92f9fa7524e5aa313e578289d985fe73c2e4fd82bad8941",
+    "after_sha256": "7d4ff81c037cf02901b41bce5320b2ba1efcccb5727b2b0862ae77609abb180a",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      },
+      {
+        "start": 214,
+        "end": 532,
+        "before": "> 🟡 **Playwright preflight (optional engine).** **Playwright/Chromium** (HTML→PDF `convert.html`, xlsx/pptx→HTML fallback) is genuinely optional: do NOT auto-install it — use the **AskUserQuestion** tool to warn about the install/download time and get confirmation first. See `briefs/creative.md` top for the pattern.\n",
+        "after": "> 🟡 **Playwright preflight (optional engine).** **Playwright/Chromium** (HTML→PDF `convert.html`, xlsx/pptx→HTML fallback) is genuinely optional: do NOT auto-install it — use the **user clarification** tool to warn about the install/download time and get confirmation first. See `briefs/creative.md` top for the pattern.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/poster.md",
+    "before_sha256": "a5d717ace4badc3c01a00aefc33ac09ab897b41ecbaef5962ba15125de72d49f",
+    "after_sha256": "9f8ac441658e442e2bcaa0de9def8a22398e41a4b4ec1bebab2dfe5e82d822eb",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      },
+      {
+        "start": 72,
+        "end": 397,
+        "before": "> 🟡 **Playwright/Chromium preflight applies here too.** Posters render via Playwright/Chromium (optional deps). Before rendering, probe availability and — if missing — use **AskUserQuestion** to warn about the long install/download and get confirmation before installing. See `briefs/creative.md` top for the full preflight.\n",
+        "after": "> 🟡 **Playwright/Chromium preflight applies here too.** Posters render via Playwright/Chromium (optional deps). Before rendering, probe availability and — if missing — use **user clarification** to warn about the long install/download and get confirmation before installing. See `briefs/creative.md` top for the full preflight.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/report.md",
+    "before_sha256": "4260a9fcceeecfb65d6f416cb2f7f021f5e3664202db53393cb3600fe39074af",
+    "after_sha256": "67b3c407d42b448145cbe2269e5805751c3c26f87873652ac0e46927ed4e844e",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      },
+      {
+        "start": 48273,
+        "end": 48307,
+        "before": "PDF_SKILL_DIR=\"<skill_directory>\"\n",
+        "after": "PDF_SKILL_DIR=\"/opt/skills/platform.pdf\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/resume.md",
+    "before_sha256": "d747f5ed351856b6b8cf1c0f16f562c999de2430a9ad054544ad753ab439475b",
+    "after_sha256": "f163004a7e0709585e3a6171a3e7233d84242d8559065b9a62f737349c917b5a",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
+    "before_sha256": "c654699b0538479c7339d23ef0e9b4a11de5ac06e266b166975f8a3f29892654",
+    "after_sha256": "10278ca3f193204d39120dcfc33ea1f3a834c42a3eb9842fbd9af9e7282ca689",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pdf`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pdf\" PDF_SKILL_DIR=\"/opt/skills/platform.pdf\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pdf\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/.zcode-plugin/plugin.json",
+    "before_sha256": "78275901f165a741a625db71d2fd55df9f8a1937d3896ec385c27772233a0290",
+    "after_sha256": "e52c7721cee9d689b28ebef202c6e289221c364a982dee1dd574b07ebb6759dd",
+    "edits": [
+      {
+        "start": 51,
+        "end": 177,
+        "before": "  \"description\": \"PPTX presentation production skills and a PowerPoint viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"PPTX presentation production skills and a PowerPoint viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 708,
+        "end": 801,
+        "before": "      \"args\": [\"${ZCODE_PLUGIN_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${ZCODE_PROJECT_DIR}\",\n",
+        "after": "      \"args\": [\"${AILAB_SKILL_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${AILAB_SKILL_ROOT}\",\n"
+      },
+      {
+        "start": 816,
+        "end": 871,
+        "before": "        \"ZCODE_WORKSPACE_ROOT\": \"${ZCODE_PROJECT_DIR}\"\n",
+        "after": "        \"AILAB_SKILL_ROOT\": \"${AILAB_SKILL_ROOT}\"\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/agents/visual-judge.md",
+    "before_sha256": "2bba129a9bc4184f306d780cec12b92e41d164b0317d44890e4bee83df32a399",
+    "after_sha256": "e3d0876411b50e0007f199e4f16ac4226feab56e6f4e720ef6aab42800811ff3",
+    "edits": [
+      {
+        "start": 23,
+        "end": 1237,
+        "before": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only Read pre-rendered page PNGs (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the delivery protocol's visual gate in your system prompt.\"\n",
+        "after": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\n"
+      },
+      {
+        "start": 1251,
+        "end": 1350,
+        "before": "model: account:bigmodel-individual-coding-plan/GLM-5.3-Flash\nthoughtLevel: max\ntools: [Read, Bash]\n",
+        "after": "tools: [view_workspace_file]\n"
+      },
+      {
+        "start": 1354,
+        "end": 1354,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.pptx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.pptx\" PPTX_SKILL_DIR=\"/opt/skills/platform.pptx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.pptx\"; outputs under /workspace/outputs.\n\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/skills/pptx-viewer/SKILL.md",
+    "before_sha256": "d63fb6aeeac83681cee7763401b007fddbbfa097ba104eb7a66be7cd2a7e6d92",
+    "after_sha256": "7dd128d12127a441daa7ec819430a21e3ce48b2076cff70d483109a6581eb597",
+    "edits": [
+      {
+        "start": 1158,
+        "end": 2242,
+        "before": "1. `open_document(path, at?)` opens the deck in the panel and returns its outline. Open it before discussing it so the user sees what you see.\n2. `read_document(anchor, cursor?)` returns the slides of a location with their shapes' text and speaker notes. Read the relevant slides before answering; follow the `cursor` hint for long decks instead of guessing.\n3. `search_document(path, query)` finds text and returns shape anchors.\n4. `show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific slides or shapes, e.g. when you point out inconsistent numbers. Keep `note` to one short sentence.\n5. `get_view()` tells you which slide the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"this slide\" or similar without an anchor.\n6. `capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered slide. Use it when layout, images, charts or visual design matter, which on slides is often. The deck must already be open in the panel.\n",
+        "after": "1. `resolve_attachment` (file identity; panel open is planned:P3) opens the deck in the panel and returns its outline. Open it before discussing it so the user sees what you see.\n2. `read_library_file` (file_id, anchor, next_cursor) returns the slides of a location with their shapes' text and speaker notes. Read the relevant slides before answering; follow the `cursor` hint for long decks instead of guessing.\n3. `read_library_file` (file_id, query) finds text and returns shape anchors.\n4. `planned:P3 show_in_viewer(targets, note?)` scrolls the panel to the targets and highlights them. Use it whenever your answer is about specific slides or shapes, e.g. when you point out inconsistent numbers. Keep `note` to one short sentence.\n5. `planned:P3 get_view()` tells you which slide the user is looking at and what they selected. Call it when the user says \"this\", \"here\", \"this slide\" or similar without an anchor.\n6. `planned:P3 capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered slide. Use it when layout, images, charts or visual design matter, which on slides is often. The deck must already be open in the panel.\n"
+      },
+      {
+        "start": 2243,
+        "end": 2375,
+        "before": "After you produce or change a deck with the `pptx` skill, open it with `open_document` so the user can look at the result with you.\n",
+        "after": "After you produce or change a deck with the `pptx` skill, open it with `planned:P3 open_document` so the user can look at the result with you.\n"
+      },
+      {
+        "start": 2405,
+        "end": 2794,
+        "before": "When the user clicks a shape or selects text and chooses **Add to chat**, the next message carries context like `- launch.pptx#slide:2/shape:4: \"Owner: Dana\"`. Treat those anchors as precise pointers: read them with `read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n",
+        "after": "When the user clicks a shape or selects text and chooses **Add to chat**, the next message carries context like `- launch.pptx#slide:2/shape:4: \"Owner: Dana\"`. Treat those anchors as precise pointers: read them with `planned:P3 read_document` if you need more than the quoted text, and answer about exactly those places. **Ask** sends a question that already includes the anchor and the quoted text.\n"
+      },
+      {
+        "start": 2795,
+        "end": 2967,
+        "before": "`show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n",
+        "after": "`planned:P3 show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n"
+      },
+      {
+        "start": 3087,
+        "end": 3631,
+        "before": "- The panel renders slides close to, but not exactly like, PowerPoint; fonts missing on the machine fall back to similar ones. Use `capture_view` before you comment on fine layout, and say when a difference may come from the renderer.\n- Do not paste whole decks into the chat; quote briefly and point with `show_in_viewer`.\n- The panel only works in ZCode Desktop local workspaces. Elsewhere, still open the document with `open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n",
+        "after": "- The panel renders slides close to, but not exactly like, PowerPoint; fonts missing on the machine fall back to similar ones. Use `planned:P3 capture_view` before you comment on fine layout, and say when a difference may come from the renderer.\n- Do not paste whole decks into the chat; quote briefly and point with `planned:P3 show_in_viewer`.\n- The source panel host is not available in AILab until P3/P4; use read_library_file and view_attachment today. Elsewhere, still open the document with `planned:P3 open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n\nAILab adaptation: panel open/reveal/get_view/capture and selection actions above describe preserved source semantics, planned:P3/P4, not currently callable tools. Use only returned file_id and anchors; do not fabricate path-based authorization.\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/skills/pptx/SKILL.md",
+    "before_sha256": "2413861abb79f6d30f03de24417af0ddcdadab024dfdb192352033111e17e6df",
+    "after_sha256": "2eff06e9eecd5307ba2d5256cf2d409e263c27bd79583026ba1738cc45193894",
+    "edits": [
+      {
+        "start": 52304,
+        "end": 52457,
+        "before": "Place `::zcode-file-citation{...}` inline in prose, not in a trailing list. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n",
+        "after": "Use plain source references (actual file_id/anchor and page/sheet/slide) inline in prose; for outputs use deliver_file returned references. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n"
+      },
+      {
+        "start": 52458,
+        "end": 52797,
+        "before": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a plain output citation. Summarize representative changes; do not cite every slide or add a separate filename, path, or Markdown link. Example: `Created ::zcode-file-citation{path=\"/abs/path/launch-deck.pptx\" purpose=\"output\"}, highlighting the rollout and owners.`\n",
+        "after": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a platform deliver_file reference. Summarize representative changes; do not cite every slide; use the platform delivery reference. Example: `Created [file reference: path=\"/workspace/outputs/launch-deck.pptx\" purpose=\"output\"], highlighting the rollout and owners.`\n"
+      },
+      {
+        "start": 53381,
+        "end": 53687,
+        "before": "::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3}\n::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3]\n[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"]\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/.zcode-plugin/plugin.json",
+    "before_sha256": "b7e15b0b7b0c0ae598cd94ce9149736a3451b18ad77ad7d47eade68cf6d361ac",
+    "after_sha256": "534a48ae3895e734e0fd5b06e3fc40d03cb96a97ac2cbd39142f1c57ba0b3641",
+    "edits": [
+      {
+        "start": 50,
+        "end": 171,
+        "before": "  \"description\": \"XLSX spreadsheet production skills and an Excel viewer panel, published as an official ZCode plugin.\",\n",
+        "after": "  \"description\": \"XLSX spreadsheet production skills and an Excel viewer panel, published as an official AILab plugin.\",\n"
+      },
+      {
+        "start": 702,
+        "end": 795,
+        "before": "      \"args\": [\"${ZCODE_PLUGIN_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${ZCODE_PROJECT_DIR}\",\n",
+        "after": "      \"args\": [\"${AILAB_SKILL_ROOT}/dist/server.mjs\"],\n      \"cwd\": \"${AILAB_SKILL_ROOT}\",\n"
+      },
+      {
+        "start": 810,
+        "end": 865,
+        "before": "        \"ZCODE_WORKSPACE_ROOT\": \"${ZCODE_PROJECT_DIR}\"\n",
+        "after": "        \"AILAB_SKILL_ROOT\": \"${AILAB_SKILL_ROOT}\"\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/agents/visual-judge.md",
+    "before_sha256": "2bba129a9bc4184f306d780cec12b92e41d164b0317d44890e4bee83df32a399",
+    "after_sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015",
+    "edits": [
+      {
+        "start": 23,
+        "end": 1237,
+        "before": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only Read pre-rendered page PNGs (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the delivery protocol's visual gate in your system prompt.\"\n",
+        "after": "description: \"THE single visual acceptance pass for a rendered deliverable of these types only — pptx, docx, xlsx, pdf, poster, chart; for anything else, do not use it. Use it *instead of* looking at the page images yourself, never in addition: pick one gate — spawn visual-judge, or (only if visual-judge is unavailable) inspect the images yourself — and do not pre-screen the pages before dispatching, because a preliminary look followed by a visual-judge call duplicates the same review and wastes a full render pass. Its bar is user acceptance: it judges everything the user will see on its assigned pages — visual asset quality and layout & composition — and returns one JSON verdict line per page (pass/fail + evidence-backed issues; a clean programmatic/script check is no cover and no substitute). It is read-only and edits nothing; it can only inspect pre-rendered page PNGs via view_workspace_file (never pptx/docx/HTML/PDF opened as images), so render the pages to PNG, hand visual-judge the paths, and act on its verdicts — those verdicts are the visual gate's result, not an input to your own re-judging. Dispatch grouping, what to pass in, and the repair loop follow the AILab visual gate (planned:P2; the source delivery protocol is not supplied).\"\n"
+      },
+      {
+        "start": 1251,
+        "end": 1350,
+        "before": "model: account:bigmodel-individual-coding-plan/GLM-5.3-Flash\nthoughtLevel: max\ntools: [Read, Bash]\n",
+        "after": "tools: [view_workspace_file]\n"
+      },
+      {
+        "start": 1354,
+        "end": 1354,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/SKILL.md",
+    "before_sha256": "1b21b9071a436151fdb3917ba7be900decc6443f3d86ef48301f2e442eabbaf8",
+    "after_sha256": "50c6c495c9cfb5c2b8ce9320520abf9862635748469519b8d4ea08670a9a68f2",
+    "edits": [
+      {
+        "start": 870,
+        "end": 870,
+        "before": "",
+        "after": "AILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n\n\n"
+      },
+      {
+        "start": 1042,
+        "end": 1092,
+        "before": "source \"<skill_directory>/env_setup/env_check.sh\"\n",
+        "after": "source \"/opt/skills/platform.xlsx/env_setup/env_check.sh\"\n"
+      },
+      {
+        "start": 8535,
+        "end": 8610,
+        "before": "XLSX_SKILL_DIR=\"<skill_directory>\"   # ← parent directory of this SKILL.md\n",
+        "after": "XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\"   # ← parent directory of this SKILL.md\n"
+      },
+      {
+        "start": 8968,
+        "end": 9005,
+        "before": "XLSX_SKILL_DIR = \"<skill_directory>\"\n",
+        "after": "XLSX_SKILL_DIR = \"/opt/skills/platform.xlsx\"\n"
+      },
+      {
+        "start": 14524,
+        "end": 14677,
+        "before": "Place `::zcode-file-citation{...}` inline in prose, not in a trailing list. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n",
+        "after": "Use plain source references (actual file_id/anchor and page/sheet/slide) inline in prose; for outputs use deliver_file returned references. Use `purpose=\"source\"` for Q&A/no-op and `purpose=\"output\"` for create/edit.\n"
+      },
+      {
+        "start": 14678,
+        "end": 15024,
+        "before": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a plain output citation. Summarize representative changes; do not cite every section/page or add a separate filename, path, or Markdown link. Example: `Created ::zcode-file-citation{path=\"/abs/path/launch-plan.docx\" purpose=\"output\"}, highlighting the rollout and owners.`\n",
+        "after": "- [HARD REQUIREMENT] Create/edit: cite each final file exactly once with a platform deliver_file reference. Summarize representative changes; do not cite every section/page; use the platform delivery reference. Example: `Created [file reference: path=\"/workspace/outputs/launch-plan.docx\" purpose=\"output\"], highlighting the rollout and owners.`\n"
+      },
+      {
+        "start": 15500,
+        "end": 15606,
+        "before": "::zcode-file-citation{path=\"/abs/path/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4}\n",
+        "after": "[file reference: path=\"/workspace/outputs/file.docx\" purpose=\"source\" artifact_kind=\"document\" page_number=4]\n"
+      },
+      {
+        "start": 16560,
+        "end": 16866,
+        "before": "::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3}\n::zcode-file-citation{path=\"/abs/path/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=3]\n[file reference: path=\"/workspace/outputs/deck.pptx\" purpose=\"source\" artifact_kind=\"presentation\" slide_number=1 slide_id=\"sl/gs5z1kshq0xv\" object_id=\"ch/pz9t1r3ka8vn\" label=\"ARR by segment chart\"]\n"
+      },
+      {
+        "start": 17397,
+        "end": 17523,
+        "before": "::zcode-file-citation{path=\"/abs/path/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"}\n",
+        "after": "[file reference: path=\"/workspace/outputs/book.xlsx\" purpose=\"source\" artifact_kind=\"workbook\" sheet=\"Revenue Model\" range=\"C27\"]\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
+    "before_sha256": "06a3f37c2d635d6d723d7ba4b520e421c36f8d83622ef29e9c0585e46246b72c",
+    "after_sha256": "97a58cfa64606f97475408f463b1c766ed63f938a4279d9296cb6fd8b1e42dbd",
+    "edits": [
+      {
+        "start": 1068,
+        "end": 2169,
+        "before": "1. `open_document(path, at?)` opens the workbook in the panel and returns its sheets. Open it before discussing it so the user sees what you see.\n2. `read_document(anchor, cursor?)` returns the cells of a sheet or range as a grid and lists their formulas. Read the relevant range before answering; follow the `cursor` hint for large sheets instead of guessing.\n3. `search_document(path, query)` finds text and returns cell anchors.\n4. `show_in_viewer(targets, note?)` switches to the sheet, scrolls to the ranges and highlights them. Use it whenever your answer is about specific cells, e.g. the inputs that feed a total. Keep `note` to one short sentence.\n5. `get_view()` tells you which sheet the user is looking at and which cells they selected, with the values the panel shows. Call it when the user says \"this\", \"here\", \"these cells\" or similar without an anchor.\n6. `capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered sheet area. Use it when formatting, charts or the computed values matter. The workbook must already be open in the panel.\n",
+        "after": "1. `resolve_attachment` (file identity; panel open is planned:P3) opens the workbook in the panel and returns its sheets. Open it before discussing it so the user sees what you see.\n2. `read_library_file` (file_id, anchor, next_cursor) returns the cells of a sheet or range as a grid and lists their formulas. Read the relevant range before answering; follow the `cursor` hint for large sheets instead of guessing.\n3. `read_library_file` (file_id, query) finds text and returns cell anchors.\n4. `planned:P3 show_in_viewer(targets, note?)` switches to the sheet, scrolls to the ranges and highlights them. Use it whenever your answer is about specific cells, e.g. the inputs that feed a total. Keep `note` to one short sentence.\n5. `planned:P3 get_view()` tells you which sheet the user is looking at and which cells they selected, with the values the panel shows. Call it when the user says \"this\", \"here\", \"these cells\" or similar without an anchor.\n6. `planned:P3 capture_view(anchor?)` (a panel tool, available while the panel is open) returns an image of the rendered sheet area. Use it when formatting, charts or the computed values matter. The workbook must already be open in the panel.\n"
+      },
+      {
+        "start": 2170,
+        "end": 2306,
+        "before": "After you produce or change a workbook with the `xlsx` skill, open it with `open_document` so the user can look at the result with you.\n",
+        "after": "After you produce or change a workbook with the `xlsx` skill, open it with `planned:P3 open_document` so the user can look at the result with you.\n"
+      },
+      {
+        "start": 2331,
+        "end": 2667,
+        "before": "`read_document` shows the values stored in the file and lists each cell's formula. A formula marked \"not calculated in file\" has no stored result (files written by scripts often lack them); the panel computes and shows a value for it. To see computed values, use `capture_view`, or ask the user to select the range and call `get_view`.\n",
+        "after": "`planned:P3 read_document` shows the values stored in the file and lists each cell's formula. A formula marked \"not calculated in file\" has no stored result (files written by scripts often lack them); the panel computes and shows a value for it. To see computed values, use `planned:P3 capture_view`, or ask the user to select the range and call `planned:P3 get_view`.\n"
+      },
+      {
+        "start": 2697,
+        "end": 3070,
+        "before": "When the user selects cells and chooses **Add to chat**, the next message carries context like `- budget.xlsx#Revenue!B2:D4: \"100 110 120…\"`. Treat those anchors as precise pointers: read them with `read_document` if you need formulas or neighbouring cells, and answer about exactly those cells. **Ask** sends a question that already includes the anchor and the cell text.\n",
+        "after": "When the user selects cells and chooses **Add to chat**, the next message carries context like `- budget.xlsx#Revenue!B2:D4: \"100 110 120…\"`. Treat those anchors as precise pointers: read them with `planned:P3 read_document` if you need formulas or neighbouring cells, and answer about exactly those cells. **Ask** sends a question that already includes the anchor and the cell text.\n"
+      },
+      {
+        "start": 3071,
+        "end": 3243,
+        "before": "`show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n",
+        "after": "`planned:P3 show_in_viewer` marks every target and shows your `note` beside the first one; the user can step through the targets in order, so list them in the order you discuss them.\n"
+      },
+      {
+        "start": 3411,
+        "end": 3739,
+        "before": "- Do not paste whole sheets into the chat; quote the few cells that matter and point with `show_in_viewer`.\n- The panel only works in ZCode Desktop local workspaces. Elsewhere, still open the document with `open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n",
+        "after": "- Do not paste whole sheets into the chat; quote the few cells that matter and point with `planned:P3 show_in_viewer`.\n- The source panel host is not available in AILab until P3/P4; use read_library_file and view_attachment today. Elsewhere, still open the document with `planned:P3 open_document`: the read and search tools work without the visual panel. Tell the user the visual viewer is unavailable.\n\nAILab adaptation: panel open/reveal/get_view/capture and selection actions above describe preserved source semantics, planned:P3/P4, not currently callable tools. Use only returned file_id and anchors; do not fabricate path-based authorization.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+    "before_sha256": "e6d745a27f2cbe4b5d4cf2227abe0e9b63e63cb7610593cdb9750e07a52e07ce",
+    "after_sha256": "df2f6aab2f38107addb4ae36100437422eb607ba0a263e8665651a3f2555b9f2",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
+    "before_sha256": "26bad213514b18c7e973bda9237d6c29dfd90236a26a44cc3d32a229a3207f3d",
+    "after_sha256": "60d543f9f061b7c405a12f088462328a960c946a7ae91c40718849e789b53996",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+    "before_sha256": "6545ecd4e8bf1d3a57b69dfa030f1d00846a16e1a0138c638172e0fafef53dc6",
+    "after_sha256": "80d3548a97a9ec1ed85dadcf4f352be66dc44ddbe8fec80106bc7f77c7c55e7b",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+    "before_sha256": "a01c684df1f1af00dc8dcb8b5762e27a94ad6bdd015f7a64f03d4ad7ecb51e8e",
+    "after_sha256": "dc87ac0409c6d4c93054e6b8dac12d17e98eb7e00caabb7bfd48410d81d6e848",
+    "edits": [
+      {
+        "start": 410,
+        "end": 445,
+        "before": "XLSX_SKILL_DIR=\"<skill_directory>\"\n",
+        "after": "XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\"\n"
+      },
+      {
+        "start": 654,
+        "end": 696,
+        "before": "$env:XLSX_SKILL_DIR = \"<skill_directory>\"\n",
+        "after": "$env:XLSX_SKILL_DIR = \"/opt/skills/platform.xlsx\"\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+    "before_sha256": "517986581d1765d553e37e6253646a121a99e566055b4fb724d1ab6ed71f0a85",
+    "after_sha256": "2ecee0300aafead7002b140ef166c55a6923f7c0a6e585428bfafa7ee8a286b0",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "\nAILab resource root: `/opt/skills/platform.xlsx`. Work shell: export SKILL_DIR=\"/opt/skills/platform.xlsx\" XLSX_SKILL_DIR=\"/opt/skills/platform.xlsx\" AILAB_SKILL_ROOT=\"/opt/skills/platform.xlsx\"; outputs under /workspace/outputs.\n"
+      }
+    ]
+  }
+]

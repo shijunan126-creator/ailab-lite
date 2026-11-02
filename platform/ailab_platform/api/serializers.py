@@ -59,14 +59,17 @@ def artifact_dict(artifact: Artifact, file: FileObject) -> dict:
     }
 
 
-def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: bool | None = None) -> dict:
+def run_dict(db: Session, run: Run, detail: bool = False, *, source_invalid: bool | None = None, doc_refs=None) -> dict:
     if detail:
         return run_dicts(db, [run])[0]
     if source_invalid is None:
         from ..memory_recall.policy import source_available
 
         source_invalid = not source_available(db, run)
+    from .document_view import output as document_refs
+
     out = {
+        "doc_refs": document_refs(db, "run_prompt", run.id) if doc_refs is None else doc_refs,
         "id": run.id,
         "retry_of": run.retry_of,
         "edited_from": run.edited_from,
@@ -171,10 +174,18 @@ def run_dicts(db: Session, runs: list[Run]) -> list[dict]:
         owner = db.get(User, uid)
         if owner and owner.context_source_epoch:
             invalid.update(db.scalars(select(Run.id).where(Run.id.in_(ids), Run.id.in_(invalid_sources_query(uid)))))
+    from .document_view import output_map
+
+    references = output_map(db, [("run_prompt", rid) for rid in ids] + [("queued_message", qid) for qid in steer_ids])
     result = []
     for run in runs:
-        out = run_dict(db, run, source_invalid=run.id in invalid)
-        out["steered"] = [{"id": qid, "prompt": prompts[(run.id, qid)]} for qid in applied[run.id] if (run.id, qid) in prompts]
+        out = run_dict(db, run, source_invalid=run.id in invalid, doc_refs=references.get(("run_prompt", run.id), []))
+
+        out["steered"] = [
+            {"id": qid, "prompt": prompts[(run.id, qid)], "doc_refs": references.get(("queued_message", qid), [])}
+            for qid in applied[run.id]
+            if (run.id, qid) in prompts
+        ]
         out["artifacts"] = artifacts.get(run.id, [])
         deleted_artifacts = {item["file_id"]: item["filename"] for item in out["artifacts"] if item["deleted"]}
         if deleted_artifacts and "artifacts" in out["result"]:

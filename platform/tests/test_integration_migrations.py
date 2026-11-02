@@ -13,7 +13,7 @@ from tests.test_migrations import engine as engine
 
 def test_integrated_feature_chain_up_down_reup(engine):
     scripts = ScriptDirectory.from_config(alembic_config())
-    assert scripts.get_heads() == ["0047"]
+    assert scripts.get_heads() == ["0048"]
     revisions = (
         "0022",
         "0023",
@@ -41,6 +41,7 @@ def test_integrated_feature_chain_up_down_reup(engine):
         "0045",
         "0046",
         "0047",
+        "0048",
     )
     assert [scripts.get_revision(rev).down_revision for rev in revisions] == [
         "0021",
@@ -69,6 +70,7 @@ def test_integrated_feature_chain_up_down_reup(engine):
         "0044",
         "0045",
         "0046",
+        "0047",
     ]
     if engine.dialect.name == "sqlite":
         with engine.connect() as conn:

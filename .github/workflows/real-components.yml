@@ -8,7 +8,7 @@ on:
       - .github/fixtures/**
       - platform/scripts/ci_wait_component.py
       - images/sbx-office/**
-      - vendor/zcode-office-runtime/**
+      - vendor/office-suite/runtime/**
   schedule:
     - cron: "41 4 * * 2"
   workflow_dispatch:

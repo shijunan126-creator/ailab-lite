@@ -136,40 +136,61 @@ def test_reuse_job_limit_releases_the_sandbox(monkeypatch):
 def test_render_lifecycle_does_not_retain_records_after_1000_cycles(monkeypatch):
     import gc
     import tracemalloc
+    import weakref
+    from pathlib import Path
 
     # No heartbeat runs in this test; under coverage 1000 cycles outlast the default ownership lease.
     monkeypatch.setattr(settings, "broker_lock_ttl_seconds", 3600)
     manager, provider, spec, first = warmed(monkeypatch)
     manager.release(first)
-    provider.released.clear()
-    provider.acquired_ttl.clear()
+
+    def cycle(i):
+        lease_id = manager.create_standby(spec)
+        prepare = lambda lease: None  # noqa: E731
+        handle = manager.adopt_standby(spec, LeasePrincipal(f"user_{i}", f"preview:{i}", system=True), prepare)
+        assert handle and complete(manager, handle, f"preview:{i}")
+        manager.release(lease_id)
+        provider.released.clear()
+        provider.acquired_ttl.clear()
+        return weakref.ref(handle), weakref.ref(prepare)
+
+    # Warm the complete lifecycle, including adoption/finish metrics, before measuring.
+    for i in range(10):
+        cycle(i)
+    root = Path(__file__).resolve().parents[1] / "ailab_platform"
+    filters = [tracemalloc.Filter(True, str(root / part / "*")) for part in ("broker", "adapters", "domain", "sandbox")]
+    filters.extend(tracemalloc.Filter(True, path) for path in (__file__, str(Path(__file__).with_name("fakes.py"))))
+
+    def snapshot():
+        gc.collect()
+        # Allocation site only: all_frames=True would count pathlib's process-global
+        # intern-table resizes merely because a sandbox operation called it.
+        return tracemalloc.take_snapshot().filter_traces(filters)
+
+    def growth(after, before):
+        diff = after.compare_to(before, "lineno")
+        return sum(stat.size_diff for stat in diff), str(diff[:5])
+
     tracemalloc.start()
     try:
-        gc.collect()
-        before = tracemalloc.get_traced_memory()[0]
-        midpoint = before
+        before = snapshot()
+        references = []
         for i in range(1000):
-            lease_id = manager.create_standby(spec)
-            handle = manager.adopt_standby(spec, LeasePrincipal(f"user_{i}", f"preview:{i}", system=True), lambda lease: None)
-            assert handle and complete(manager, handle, f"preview:{i}")
-            manager.release(lease_id)
-            provider.released.clear()
-            provider.acquired_ttl.clear()
+            references.extend(cycle(i))
             if i == 499:
-                gc.collect()
-                midpoint = tracemalloc.get_traced_memory()[0]
-                midpoint_snapshot = tracemalloc.take_snapshot()
-        gc.collect()
-        after = tracemalloc.get_traced_memory()[0]
-        assert after - before < 6 * 1024 * 1024
-        growth = tracemalloc.take_snapshot().compare_to(midpoint_snapshot, "lineno")[:5]
-        # pathlib interns unique MockSandbox path components; CPython may resize
-        # that global table once by about 3.7 MiB during this measurement.
-        assert after - midpoint < 5 * 1024 * 1024, str(growth)
+                midpoint = snapshot()
+        after = snapshot()
+        total, details = growth(after, before)
+        tail, tail_details = growth(after, midpoint)
+        assert total < 6 * 1024 * 1024, details
+        assert tail < 5 * 1024 * 1024, tail_details
+        assert all(ref() is None for ref in references)
         assert not manager.store.all()
         assert not manager._render_birth and not manager._activity and not manager._operations and not manager.admission.queue
+        assert not manager._renewed and not manager._inflight and not provider._processes
     finally:
         tracemalloc.stop()
+        manager.close()
 
 
 @pytest.mark.parametrize("lose_record", [False, True])

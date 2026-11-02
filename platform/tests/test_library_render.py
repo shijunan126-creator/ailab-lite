@@ -87,7 +87,7 @@ def test_failed_renderer_releases_and_job_id_is_bound(tmp_path):
 
 @pytest.mark.skipif(not all(shutil.which(x) for x in ["node", "pdftoppm", "pdfinfo", "timeout"]), reason="reader tools unavailable")
 def test_parse_reuses_same_user_sandbox_and_job_binding(tmp_path):
-    source = Path(__file__).resolve().parents[2] / "vendor/zcode-office-runtime/fixtures/paper.pdf"
+    source = Path(__file__).resolve().parents[2] / "vendor/office-suite/runtime/fixtures/paper.pdf"
     manager, renderer, storage = setup_renderer(tmp_path, source.read_bytes(), "paper.pdf")
     preview = renderer.render("file", "job")
     published(manager, preview)

@@ -93,10 +93,21 @@ def _build_portal(workdir: Path) -> Path:
     if not (PORTAL_SRC / "node_modules").is_dir():
         raise RuntimeError("platform/portal/node_modules is missing: run `npm ci` there first")
     _run_logged(["npm", "test"], PORTAL_SRC, LOG_DIR / "portal-tests.log", 60)
-    dst = workdir / "portal"
-    dst.mkdir()
+    dst = workdir / "platform" / "portal"
+    dst.mkdir(parents=True)
     # "middleware.ts" was renamed "proxy.ts" in Next 16; copy whichever exists
-    names = ("app", "components", "lib", "styles", "middleware.ts", "proxy.ts", "next.config.mjs", "postcss.config.mjs", "tsconfig.json")
+    names = (
+        "app",
+        "components",
+        "lib",
+        "styles",
+        "office",
+        "middleware.ts",
+        "proxy.ts",
+        "next.config.mjs",
+        "postcss.config.mjs",
+        "tsconfig.json",
+    )
     for name in (*names, "package.json", "package-lock.json", "next-env.d.ts"):
         src = PORTAL_SRC / name
         if not src.exists():
@@ -111,8 +122,47 @@ def _build_portal(workdir: Path) -> Path:
     if linked.returncode != 0:
         shutil.rmtree(dst / "node_modules", ignore_errors=True)
         shutil.copytree(PORTAL_SRC / "node_modules", dst / "node_modules", symlinks=True)
+    # Preserve the repository layout used by the viewer build's default source path.
+    shutil.copytree(
+        PLATFORM.parent / "vendor/office-suite/upstream/office-runtime",
+        workdir / "vendor/office-suite/upstream/office-runtime",
+        ignore=shutil.ignore_patterns("node_modules"),
+    )
     _run_logged(["npm", "run", "build"], dst, LOG_DIR / "portal-build.log", 600)
     return dst
+
+
+def _viewer_reader(workdir: Path, provider: str) -> Path:
+    override = os.environ.get("AILAB_VIEWER_READER_PATH")
+    if override or provider != "mock":
+        reader = Path(override or "/opt/ailab-viewer/reader.mjs")
+        if not reader.is_file():
+            raise RuntimeError(f"E2E viewer reader is missing: {reader}")
+        return reader
+    runtime = PLATFORM.parent / "vendor/office-suite/runtime"
+    if not (runtime / "runner.mjs").is_file() or not (runtime / "node_modules").is_dir():
+        raise RuntimeError("E2E office runtime is missing: run `npm ci --ignore-scripts && npm run build` in vendor/office-suite/runtime")
+    # The native index has a different argv/output contract from office-read's runner.
+    # Build the production adapter from this checkout, using the same pinned external packages.
+    target = workdir / "viewer"
+    target.mkdir()
+    (target / "node_modules").symlink_to(runtime / "node_modules", target_is_directory=True)
+    reader = target / "reader.mjs"
+    _run_logged(
+        [
+            str(runtime / "node_modules/.bin/esbuild"),
+            str(PLATFORM / "ailab_platform/sandbox_tools/viewer-reader.ts"),
+            "--bundle",
+            "--platform=node",
+            "--format=esm",
+            "--packages=external",
+            f"--outfile={reader}",
+        ],
+        PLATFORM.parent,
+        LOG_DIR / "viewer-build.log",
+        30,
+    )
+    return reader
 
 
 @pytest.fixture(scope="session")
@@ -126,9 +176,16 @@ def stack(tmp_path_factory):
     if provider != "mock" and not image:
         raise RuntimeError("real E2E sandbox requires AILAB_E2E_SANDBOX_IMAGE matching this checkout")
     work = tmp_path_factory.mktemp("e2e")
+    reader = _viewer_reader(work, provider)
     tag = uuid.uuid4().hex[:8]
     ports = {"api": BASE_PORT, "broker": BASE_PORT + 1, "agent": BASE_PORT + 2, "worker": BASE_PORT + 3}
     data = work / "data"
+    models_path = work / "models.toml"
+    models_path.write_text(
+        (PLATFORM / "tests/models.test.toml").read_text()
+        + '\n[[models]]\nid = "test-office-vision"\nname = "Office Vision"\nprovider = "mock"\n'
+        'context_tokens = 131072\nmax_output_tokens = 8192\ncapabilities = ["tools", "vision"]\n'
+    )
     env = {k: v for k, v in os.environ.items() if not k.startswith("AILAB_")}
     env.update(
         AILAB_ENV="test",
@@ -141,9 +198,10 @@ def stack(tmp_path_factory):
         AILAB_FILE_QUEUE=f"ailab:stream:e2e-files-{tag}",
         AILAB_SANDBOX_PROVIDER=provider,
         AILAB_IMAGE_SEARCH_PROVIDER="mock",
-        AILAB_MODELS_FILE=str(PLATFORM / "tests" / "models.test.toml"),
+        AILAB_MODELS_FILE=str(models_path),
         AILAB_API_BASE_URL=f"http://127.0.0.1:{ports['api']}",
         AILAB_BROKER_BASE_URL=f"http://127.0.0.1:{ports['broker']}",
+        AILAB_WORKER_BASE_URL=f"http://127.0.0.1:{ports['worker']}",
         AILAB_DEV_TOKEN=TOKEN,
         AILAB_ADMIN_USERNAME=USERNAME,
         AILAB_ADMIN_PASSWORD=PASSWORD,
@@ -154,6 +212,7 @@ def stack(tmp_path_factory):
         ),
         AILAB_RUN_TIMEOUT_SECONDS="120",
         AILAB_REAPER_INTERVAL_SECONDS="3600",
+        AILAB_VIEWER_READER_PATH=str(reader),
         AILAB_BROKER_OWNER=f"e2e-{tag}",
     )
     if provider != "mock":
@@ -307,7 +366,7 @@ def wait_models(page):
 def select_model(page, model):
     from playwright.sync_api import expect
 
-    name = {"test-fast": "Test Fast", "test-pro": "Test Pro"}[model]
+    name = {"test-fast": "Test Fast", "test-pro": "Test Pro", "test-office-vision": "Office Vision"}[model]
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     page.get_by_role("listbox", name="模型", exact=True).get_by_role("option").filter(has_text=name).click()

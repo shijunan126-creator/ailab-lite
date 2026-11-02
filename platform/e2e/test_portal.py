@@ -216,7 +216,7 @@ def test_the_workbench_offers_the_platforms_models_and_the_quota(logged_in) -> N
     menu = page.get_by_role("button", name="模型", exact=True)
     menu.click()
     options = page.get_by_role("listbox", name="模型", exact=True).get_by_role("option")
-    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast"]
+    assert [text.replace("\n", "") for text in options.all_inner_texts()] == ["Test Pro×3", "Test Fast", "Office Vision"]
     assert options.nth(0).get_attribute("aria-selected") == "true"
     assert options.nth(1).get_attribute("aria-selected") == "false"
     menu.click()
@@ -299,9 +299,13 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
         surface = page.locator(".preview-pane, .viewer")
         expect(surface).to_have_count(1)
-        page_image = surface.locator("img, .pdf-page canvas").first
+        page_image = surface.locator("iframe.office-frame, img, .pdf-page canvas").first
         expect(page_image).to_be_visible(timeout=15000)
-        if page_image.evaluate("el => el.tagName === 'IMG'"):
+        if page_image.evaluate("el => el.tagName === 'IFRAME'"):
+            slide = page_image.content_frame.locator(".slide-frame").first
+            expect(slide).to_be_visible(timeout=20000)
+            assert slide.inner_text().strip()
+        elif page_image.evaluate("el => el.tagName === 'IMG'"):
             expect(page_image).to_have_js_property("complete", True)
             assert page_image.evaluate("el => el.naturalWidth > 0 && el.naturalHeight > 0")
         else:

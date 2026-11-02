@@ -782,3 +782,23 @@ def empty_trash(user: User = Depends(current_user), db: Session = Depends(get_db
         delete_storage_objects(keys)
         count += len(lineages)
     return {"count": count}
+
+
+@router.get("/{file_id}/document")
+def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from ..contracts.document_view import PARSER_REVISION
+    from .document_view import index
+
+    file = _owned_file(db, file_id, user)
+    if file.deleted_at or file.purged_at or file.purpose != "library":
+        raise HTTPException(404, "document unavailable")
+    if file.status != FileStatus.READY:
+        return {"status": "pending" if file.status == FileStatus.PENDING else "failed", "file_id": file.id, "native": False}
+    result = index(file)
+    if result["status"] == "pending" or (result["status"] == "failed" and not result.get("reason")):
+        with user_critical_section(db, user.id):
+            job_id = "viewer_" + hashlib.sha256((file.id + file.sha256 + PARSER_REVISION).encode()).hexdigest()[:32]
+            stage_job(db, "viewer", file_id=file.id, job_id=job_id)
+            db.commit()
+        return {**result, "status": "pending"}
+    return result

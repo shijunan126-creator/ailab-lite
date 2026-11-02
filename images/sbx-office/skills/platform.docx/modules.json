@@ -1,0 +1,578 @@
+{
+  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "deps": [],
+      "estimated_tokens": 1457,
+      "logical_path": "documents-plugin/agents/visual-judge.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "36730c9b37ca2460172618daeb23b5d208fa93b5a9e2c01eee8361d141dc8637"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1052,
+      "logical_path": "documents-plugin/skills/docx-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "129773de2ab5a46777e301771391394a725698b03b09b675e108ed1dc1530a79"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/chart-templates.md",
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/docx-js-core.md",
+        "documents-plugin/skills/docx/references/math-formulas.md",
+        "documents-plugin/skills/docx/references/ooxml.md",
+        "documents-plugin/skills/docx/references/toc.md",
+        "documents-plugin/skills/docx/routes/comment.md",
+        "documents-plugin/skills/docx/routes/create.md",
+        "documents-plugin/skills/docx/routes/edit.md",
+        "documents-plugin/skills/docx/routes/format.md",
+        "documents-plugin/skills/docx/routes/read.md",
+        "documents-plugin/skills/docx/scenes/academic.md",
+        "documents-plugin/skills/docx/scenes/contract.md",
+        "documents-plugin/skills/docx/scenes/copywriting.md",
+        "documents-plugin/skills/docx/scenes/exam.md",
+        "documents-plugin/skills/docx/scenes/official-doc.md",
+        "documents-plugin/skills/docx/scenes/report.md",
+        "documents-plugin/skills/docx/scenes/resume.md"
+      ],
+      "estimated_tokens": 4446,
+      "logical_path": "documents-plugin/skills/docx/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "67406550ee1c75a8f794011740a720117c0b49e9e4e96ded66679a37cf76065e"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/env_setup/setup.md"
+      ],
+      "estimated_tokens": 725,
+      "logical_path": "documents-plugin/skills/docx/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "41c99b416ac569381f5e91752dfd7c6f788d13dc3d6b9fddf8d660757a824543"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1223,
+      "logical_path": "documents-plugin/skills/docx/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2971,
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "af2d5bf3bd1b522901263ee2e86e003a4eb5535069cdf91118816551963765b2"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2567,
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "6cc4602183905dbe8506699927ac963ede39dea77dd102ac6f5224df29af5921"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2544,
+      "logical_path": "documents-plugin/skills/docx/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "619570b89034c9b245128da6320021bb24c0fc43870f19facef9af6fb2cad3e4"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 3544,
+      "logical_path": "documents-plugin/skills/docx/references/chart-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/chart-templates.md",
+      "sha256": "2f4cd7569765300da356c83cd3bfb14c85bdb7d97301cf15af29dc7705e2aa7c"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "estimated_tokens": 6313,
+      "logical_path": "documents-plugin/skills/docx/references/common-rules.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/common-rules.md",
+      "sha256": "6f59abd233ec73aca8fc1404ed53c7a24ad04e731db5eb45bb4f17cbb5831f44"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 5255,
+      "logical_path": "documents-plugin/skills/docx/references/decorations.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/decorations.md",
+      "sha256": "73176f05ea0fa003ee712646f5c76cf063bf3fc6ab3533c619082df8a94b66c7"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/decorations.md"
+      ],
+      "estimated_tokens": 20534,
+      "logical_path": "documents-plugin/skills/docx/references/design-system.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/design-system.md",
+      "sha256": "7ba481e58dfeb3ef96ab25ca9c65459bbcb83fc459799ffa966ac8d7605ae2cc"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "estimated_tokens": 2288,
+      "logical_path": "documents-plugin/skills/docx/references/docx-js-advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/docx-js-advanced.md",
+      "sha256": "5bf71d15034285c817577cff142c8e142e60612baf587c877c44bef9c10ae16f"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "estimated_tokens": 2595,
+      "logical_path": "documents-plugin/skills/docx/references/docx-js-core.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/docx-js-core.md",
+      "sha256": "5d064f57f65d4bd93777890c82f8581f51907c79f57e993452355c69fcdc5474"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/toc.md"
+      ],
+      "estimated_tokens": 3162,
+      "logical_path": "documents-plugin/skills/docx/references/faq.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/faq.md",
+      "sha256": "4d3d0ff068b525500c0152c3ad2d2f5d509f00efd01996dde71500602c0790ac"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2186,
+      "logical_path": "documents-plugin/skills/docx/references/math-formulas.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/math-formulas.md",
+      "sha256": "b387667d03b84093f91867fa47c4b2adec7e35dcebb6cb2c3478d801fda188e9"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2541,
+      "logical_path": "documents-plugin/skills/docx/references/ooxml.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "references/ooxml.md",
+      "sha256": "a6b9be9a5f678d16e047575c4c16b67dd1ec0325d4c35ff123c2baf0857cf67c"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2913,
+      "logical_path": "documents-plugin/skills/docx/references/toc.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/toc.md",
+      "sha256": "9faa92483107ce1bcd8dd9c6abc9631d382463630324b0979f1d78a4d69f54fb"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 735,
+      "logical_path": "documents-plugin/skills/docx/routes/comment.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/comment.md",
+      "sha256": "6d494f1e5ab2e375fb49489d37c9573060e48427a832a44edcb2feb803d9164a"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/chart-templates.md",
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md",
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/references/docx-js-core.md",
+        "documents-plugin/skills/docx/references/math-formulas.md",
+        "documents-plugin/skills/docx/references/toc.md",
+        "documents-plugin/skills/docx/scenes/academic.md"
+      ],
+      "estimated_tokens": 3110,
+      "logical_path": "documents-plugin/skills/docx/routes/create.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "routes/create.md",
+      "sha256": "e6b41c02e0b788723e6c8529d37c34f3f51a1759ab3ad989c0d4cf4bf52b9dc0"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/ooxml.md"
+      ],
+      "estimated_tokens": 1130,
+      "logical_path": "documents-plugin/skills/docx/routes/edit.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/edit.md",
+      "sha256": "7a5f9e8aa0d9ddc4cfdf5aae3324db21bd719f8fbbfcb641d0e228a3537cf863"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/SKILL.md",
+        "documents-plugin/skills/docx/references/docx-js-advanced.md",
+        "documents-plugin/skills/docx/routes/edit.md"
+      ],
+      "estimated_tokens": 1025,
+      "logical_path": "documents-plugin/skills/docx/routes/format.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/format.md",
+      "sha256": "b777d611fcbb42991248cfe58befe5eb91d0db5c33fdd065d54be29983552682"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 811,
+      "logical_path": "documents-plugin/skills/docx/routes/read.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "routes/read.md",
+      "sha256": "815e1aa0870b4022528addaabf7486c43c16dc818c848c4d1bad540a1ef55169"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "estimated_tokens": 8698,
+      "logical_path": "documents-plugin/skills/docx/scenes/academic.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/academic.md",
+      "sha256": "9e4685e7c0679c8872ce46d4e5d853bd766f0d38be2d02088eeed69beae82d41"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "estimated_tokens": 5313,
+      "logical_path": "documents-plugin/skills/docx/scenes/contract.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/contract.md",
+      "sha256": "d654599c0bebfa595f64e185f753fed4d8a0ecd03aeb0eedad793c36a2c84262"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "estimated_tokens": 1472,
+      "logical_path": "documents-plugin/skills/docx/scenes/copywriting.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/copywriting.md",
+      "sha256": "0cad3fcb0cbf4ee6701c3abcb74c630155837e78d5b52addfe3e3564dbc2dafa"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/math-formulas.md"
+      ],
+      "estimated_tokens": 6734,
+      "logical_path": "documents-plugin/skills/docx/scenes/exam.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/exam.md",
+      "sha256": "fba41f30631965e6ceb0d0454b913d128a71e52c96bcf75ed66aa1b3f08b4085"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "estimated_tokens": 4108,
+      "logical_path": "documents-plugin/skills/docx/scenes/official-doc.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/official-doc.md",
+      "sha256": "e7c2702b26c6d869cf7fe5c42d3cf4fdf8f702940448e71922c5483890c2cf46"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md",
+        "documents-plugin/skills/docx/references/design-system.md"
+      ],
+      "estimated_tokens": 3918,
+      "logical_path": "documents-plugin/skills/docx/scenes/report.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/report.md",
+      "sha256": "93306045fff076387e39919612b6580267996bed9862de1b9b81d846b05db31a"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/references/common-rules.md"
+      ],
+      "estimated_tokens": 5765,
+      "logical_path": "documents-plugin/skills/docx/scenes/resume.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/resume.md",
+      "sha256": "1ac3669d0b2ce017cf368bc5932b3e3da37dc4deb1c10d4e2c0748319af51e8d"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 49,
+      "logical_path": "documents-plugin/skills/docx/scripts/__init__.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/__init__.py",
+      "sha256": "83e262a425814b72add701272b99ddcf9635251c5d4672bf9fc38d2b03f00d85"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 7319,
+      "logical_path": "documents-plugin/skills/docx/scripts/add_toc_placeholders.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/add_toc_placeholders.py",
+      "sha256": "329dff233d5ce06749facd0dda9af92a7b74febd804117d5e9532e5fcc5405e0"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 13886,
+      "logical_path": "documents-plugin/skills/docx/scripts/document.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/document.py",
+      "sha256": "0daeed76c27f961fde591d0411dcaeb8ca2b0dd30e79dfced796838af52c9f7b"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2672,
+      "logical_path": "documents-plugin/skills/docx/scripts/fix_footer_fields.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/fix_footer_fields.py",
+      "sha256": "67b6e7f44c5dae9ad3a5687e1276619efc3283e7eb94ecd7427f6a17f2ae1095"
+    },
+    {
+      "deps": [
+        "documents-plugin/skills/docx/scripts/add_toc_placeholders.py"
+      ],
+      "estimated_tokens": 8187,
+      "logical_path": "documents-plugin/skills/docx/scripts/postcheck.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/postcheck.py",
+      "sha256": "5fe34427fd2d790e09ecf58e5fb6c22482fbc8ddf47c9fb86027649fda65fbce"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 712,
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/comments.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/comments.xml",
+      "sha256": "87e218a3a295016ec855f2cd74495c416072f29c4846e86b527aec0a4d93ba21"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 714,
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsExtended.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsExtended.xml",
+      "sha256": "86bf401354c111102033ed147763faccb82479598f17777a3384c2f3e9fa0014"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 738,
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsExtensible.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsExtensible.xml",
+      "sha256": "af5d057e16462ca172cea845e502bafb4f3e1b474a8d5848ffe92214853a4935"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 716,
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/commentsIds.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/commentsIds.xml",
+      "sha256": "20168f7b237af091332f8348c548eb7f755f583185bb198359c5978155099d67"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 72,
+      "logical_path": "documents-plugin/skills/docx/scripts/templates/people.xml",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/templates/people.xml",
+      "sha256": "61db9900b579acd4c4f84ff7f40df47e77e9e780c40d5f5ef6a7beba41d62ec5"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 3594,
+      "logical_path": "documents-plugin/skills/docx/scripts/utilities.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/utilities.py",
+      "sha256": "d87a5a2d1cd0859d554c832613b7b19e2bb6cd1987411c405d24429ef4ae49e7"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2210,
+      "logical_path": "documents-plugin/skills/docx/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "setup.sh",
+      "sha256": "4ad4950a8be992a3baf3dc3fe21ceabf934ea3625571534f518db2a859c6ae13"
+    }
+  ],
+  "package_id": "platform.docx",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

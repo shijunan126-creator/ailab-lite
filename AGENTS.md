@@ -129,9 +129,25 @@ Tests build their own isolated settings (`tests/conftest.py`). Never point a tes
 ## 10. Workflow
 
 - Work on a branch; keep unrelated user changes (e.g. `.DS_Store`) untouched.
-- Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`).
+- Small, reviewable commits with conventional messages (`feat(ledger): …`, `fix(broker): …`). PR descriptions follow section 11.
 - Maintain the continuity records in section 0 with every meaningful change. Add reusable traps to `HANDOFF.MD`, update `docs/architecture/status-matrix.md` when a capability changes state, and record decisions that diverge from the target architecture as ADRs in `docs/architecture/adr/`. A handoff is incomplete if only the chat response contains its outcome or next step.
 - Before saying "done": lint, full Python suite, Portal build, and for UI changes a real browser check (see HANDOFF for the Playwright route).
+
+## 11. Pull requests
+
+A PR description is read by a reviewer who did not follow the work. Write it so they can decide in five minutes what changed, why, how it was proven and what to watch. Detailed evidence lives in the dated update; the PR links it and does not replace it.
+
+- **Title**: conventional prefix plus one plain Chinese sentence about the outcome (`feat(office): Chat/Work 原生查看并引用 Office 文档`). No internal codenames, ticket jargon or upstream product names.
+- **Body**, in this order, short sentences and bullets, no wall of text:
+  1. `## 做了什么` — 1–3 sentences on the user-visible result and why it was needed.
+  2. `## 主要改动` — grouped by area (Agent/API/Broker/Worker/Portal/镜像/文档), one line each: what changed and the reason. Call out new dependencies, migrations, config/env changes, and vendored or generated directories (say they are generated and from what, so reviewers skip them).
+  3. `## 怎么验证的` — the commands/checks actually run with result counts (`2093 passed / 169 skipped`), real-model or browser checks with the key numbers. Say which failures happened and their root cause; never claim green you did not see.
+  4. `## 没覆盖到 / 风险` — untested boundaries, known limits, follow-ups. An empty section must say “无”.
+  5. `## 成本与部署` — CPU/RSS/disk/latency/image size impact (§6), migration and rollout order, whether a deploy is needed. Not deployed unless the user asked.
+  6. `## 参考` — links to the design, ADR and dated update.
+- Use tables only for comparisons (before/after numbers). Keep the body under about 60 lines; link anything longer.
+- Never paste logs, stack traces, raw JSON or full test output; never include secrets, tokens, signed URLs, personal paths or data.
+- Keep the description true after follow-up pushes: edit it when scope or results change. Before merging, confirm the required `CI` check is green on the final head and the description still matches the diff.
 
 ## 用户测试环境约定（2026-10-29）
 

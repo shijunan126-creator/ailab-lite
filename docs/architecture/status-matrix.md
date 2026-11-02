@@ -1,5 +1,11 @@
 # 单机能力状态
 
+2026-11-03 PR #148 的 Linux CI 原生索引故障修复与本轮检查见[Linux E2E 记录](../progress/updates/2026-11-03-office-linux-e2e.md)。此次修正 checkout 测试装置，不改变下方产品能力与外部验收边界；尚未推送或部署。
+
+2026-11-03 办公P5完成本轮本地修复与联合检查，**总体仍为有限样本验证、未全面外部验收**。工具调用形状/410截图恢复、Viewer分格式与预压缩、同哈希预览刷新打断capture均已修复；Chat/Work四格式及活跃工作区浏览器合同有成功证据。双库完整套件、最终Portal测试/build通过；完整E2E首轮失败按根因修复，仅失败项定点复跑通过，具体基线/计数/跳过与冷暖性能见[P5最终记录](../progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。此前模板/品牌两轮、视觉对照与Linux三任务证据仍按P5原节限定范围。VBA、Microsoft Office保真、复杂模板上沿、长期容量、多浏览器及真实流逝/GC恢复未验；不宣称全场景缓存≥95%或XLSX解析成本已消除。下一步向main提PR；未push、PR或部署。
+
+2026-11-02 办公P0–P4已本地整合到 `feat/office-suite`（代码 `93cb215`）：完整技能文件按loader上限构建，固定离线制作/评审、原生文档索引/冻结引用及Portal四格式viewer保留；真实Chat四格式选区发送/引文定位、Work原生打开/首次reveal、Chat/Work截图往返通过。修复TSV/源公式校验、工作区路径及启动定位丢失。完整套件各执行一次，失败与定点复核、未验边界统一见[整合记录](../progress/updates/2026-11-02-office-suite-integration.md)。此整合基线当时Docker不可达；镜像、真实服务与本次PG续验已由上方P5记录补充，Linux并发容量仍未验；未发布部署。
+
 2026-11-02 GenUI说明按实际历史复用已本地实施：配对成功工具结果中的完整当前文本可复用；仅补新增组件/依赖，压缩丢失后重新读取，无持久标记；真实Chat/Work多轮缓存检查通过。范围、冷启动边界与检查见[记录](../progress/updates/2026-11-02-genui-doc-reuse.md)，未发布部署。
 
 2026-11-02 本地记忆生命周期复核：摘要编辑有显示快照参照，共享项目隐藏独立管理并围栏迟到编辑，清空/删项目覆盖空作用域历史副本，删除按作用域匹配，撤销保留并发更新；未发布部署。验收与边界见[审查](../reviews/2026-11-02-memory-lifecycle-audit.md)。
@@ -142,7 +148,7 @@
 |---|---|---|
 | 扫描（T04） | Scanner 端口；ClamAV TCP/Unix INSTREAM；扫描器不可用时文件保持 pending、退避重试、最终标记，绝不当作干净 | 2026-10-23 原生 ARM64 ClamAV 1.5.4：契约 1 passed、EICAR rejected/clean ready、故障 30.03 s fail closed / 36.86 s 恢复；容器空闲 RSS 1045.9 MiB；冷启动签名重载峰值未验 |
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
-| Work 本地 Office 读取 | 镜像预装固定 Node/ZCode reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |
+| Work 本地 Office 读取 | 镜像预装固定 Node reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |
 | 资料库预览 | 首次打开时生成并永久缓存：PDF/Word/PPT 页面、Excel/CSV 表格、图片（≤2048 px 显示图）、文本/Markdown/代码。Office/PDF 在 Broker 的 render 保留槽沙箱中渲染，xlsx/csv 在 Worker 受限进程中处理；ETag/304/CSP；删除时清理 | 2026-10-23 k3s→OSB render 保留槽 DOCX 8.12 s ready，中文 DOCX/PPTX JPEG 已看图；真实 OSB+S3 联合部署未验 |
 | 渲染沙箱（按用户复用） | 用户绑定的 render 沙箱常驻 LibreOffice listener，同用户预览与解析复用；首页先发布，其余页批量光栅化后逐页发布；1 槽 / 768 MiB（ADR 0032） | 2026-11-01 runsc：15 页 PPTX 全页 2.5 s、7 页 DOCX 3.2 s、首页约 1.0 s，交替用户冷启动首页 4.2–4.6 s；见 [C4](../progress/updates/2026-10-31-prefix-cache-render.md#c4-收尾2026-11-01claude) |
 | 对话发送附件预览 | 复用资料库渲染内容，以file_id建立侧栏标签；同名文件独立、切换/关闭/下载；手机保留带标签整屏侧栏 | 2026-10-29 本机Portal独立更新，真实DOCX/表格/图片及1440/390浏览器通过；[记录](../progress/updates/2026-10-29-chat-attachment-tabs.md)，非全站E2E重验 |

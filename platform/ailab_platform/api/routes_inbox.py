@@ -145,6 +145,9 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             from .asset_refs import register_asset
 
             register_asset(db, leaf.id, options["template"]["file_id"], "template")
+        from .document_view import validate_refs
+
+        references = validate_refs(db, user, body.doc_refs)
         row = QueuedMessage(
             conversation_id=conv.id,
             user_id=user.id,
@@ -162,6 +165,9 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             from .document_sources import bind_refs
 
             bind_refs(db, "queued_message", row.id, files)
+            from .document_view import bind
+
+            bind(db, "queued_message", row.id, references)
             db.commit()
         except IntegrityError:
             db.rollback()
@@ -256,6 +262,13 @@ def claim_steers(run_id: str, x_run_attempt: str | None = Header(default=None), 
 
         rows = []
         for row in steers_for_run(db, run, exclude=applied):
+            from ..models import MessageDocRef
+
+            db.execute(
+                update(MessageDocRef)
+                .where(MessageDocRef.message_kind == "queued_message", MessageDocRef.message_id == row.id)
+                .values(run_id=run.id)
+            )
             item = queue_output(row)
             item["input_files"] = input_files(db, run, file_ids=row.file_ids, message_id=row.id, message_kind="queued_message")
             rows.append(item)

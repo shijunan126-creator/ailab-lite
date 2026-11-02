@@ -113,6 +113,30 @@ TOOLS: list[dict] = [
     },
 ]
 
+# Fixed for both vision and tools-only Work models; results disclose the available review evidence.
+TOOLS.append(
+    {
+        "type": "function",
+        "function": {
+            "name": "review_artifact",
+            "description": (
+                "交付前检查 /workspace/outputs 下的四格式成品，返回结构证据及最多4页图。"
+                "逐批检查全部页面，判断内容、公式和视觉质量；文件存在、exit0或WARN均不算通过。"
+                "无视觉能力时明确返回未视觉验收。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string"},
+                    "pages": {"type": "array", "items": {"type": "integer", "minimum": 1}, "minItems": 1, "maxItems": 4},
+                },
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    }
+)
+
 for _name, _description in (
     (
         "exec_wait",
@@ -187,10 +211,17 @@ LOAD_SKILL = {
     "type": "function",
     "function": {
         "name": "load_skill",
-        "description": "读取一个技能（如 pptx、xlsx）的完整说明。做对应任务前先读。",
+        "description": (
+            "读取完整技能导航或正文；resource 可选，指定包内文件。"
+            "需要多个技能或资源时在同一次回复里并列调用，每份返回完整文件；放不下先压缩，绝不截断。"
+        ),
         "parameters": {
             "type": "object",
-            "properties": {"name": {"type": "string", "maxLength": 64}, "version": {"type": "string"}},
+            "properties": {
+                "name": {"type": "string", "maxLength": 64},
+                "resource": {"type": "string"},
+                "version": {"type": "string"},
+            },
             "required": ["name"],
         },
     },
@@ -301,6 +332,7 @@ READ_URL = {
 
 # Tools that need a sandbox: the first call to one of them starts it.
 SANDBOX_TOOLS = {
+    "review_artifact",
     "view_workspace_file",
     "copy_library_file",
     "list_files",
@@ -456,8 +488,47 @@ RUN_JS = {
 }
 
 
+DOCUMENT_VIEW = {
+    "type": "function",
+    "function": {
+        "name": "document_view",
+        "description": (
+            "open: file_id或path；reveal: file_id或path + targets[{at, quote?}]；get_view: view_id可选；"
+            "capture: file_id或path + view_id/at/source。sent仅表示发送；不可用返回unavailable。"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "op": {"type": "string", "enum": ["open", "reveal", "get_view", "capture"]},
+                "file_id": {"type": "string"},
+                "path": {"type": "string"},
+                "version": {"type": "string"},
+                "view_id": {"type": "string"},
+                "at": {"type": "string"},
+                "source": {"type": "string", "enum": ["viewport", "render"]},
+                "max_width": {"type": "integer", "minimum": 320, "maximum": 2400},
+                "note": {"type": "string", "maxLength": 1000},
+                "targets": {
+                    "type": "array",
+                    "maxItems": 8,
+                    "items": {
+                        "type": "object",
+                        "properties": {"at": {"type": "string"}, "quote": {"type": "string", "maxLength": 4000}},
+                        "required": ["at"],
+                        "additionalProperties": False,
+                    },
+                },
+            },
+            "required": ["op"],
+            "additionalProperties": False,
+        },
+    },
+}
+
+
 def tools_for_turn() -> list[dict]:
     return [
+        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,
@@ -479,6 +550,7 @@ def tools_for_turn() -> list[dict]:
 def tools_for_chat() -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
     return [
+        DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
         RECALL,

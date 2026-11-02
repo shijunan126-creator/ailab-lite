@@ -250,7 +250,7 @@ build_images() {
   step "sandbox image ($SANDBOX_IMAGE)"
   # Hash both the Office image and the pinned reader; ignore local dependency/build artifacts.
   local want have
-  want=$(cd "$ROOT" && find images/sbx-office vendor/zcode-office-runtime -type f -not -path '*/__pycache__/*' -not -path '*/node_modules/*' -not -name runner.mjs -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
+  want=$(cd "$ROOT" && find images/sbx-office vendor/office-suite/runtime -type f -not -path '*/__pycache__/*' -not -path '*/node_modules/*' -not -name runner.mjs -print0 | sort -z | xargs -0 sha256sum | sha256sum | cut -c1-16)
   have=$(docker image inspect --format '{{index .Config.Labels "ailab.content-hash"}}' "$SANDBOX_IMAGE" 2>/dev/null || true)
   if [ "$have" = "$want" ]; then ok "up to date ($want)"
   elif [ "$SKIP_BUILD" = 1 ]; then

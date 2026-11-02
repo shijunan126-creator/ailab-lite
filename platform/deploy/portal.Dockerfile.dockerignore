@@ -1,6 +1,9 @@
 *
 !platform/portal
+!vendor/office-suite/upstream/office-runtime
 platform/portal/node_modules
 platform/portal/.next
+platform/portal/office/dist
+vendor/office-suite/upstream/office-runtime/fixtures
 platform/portal/tests
 platform/portal/*.tsbuildinfo

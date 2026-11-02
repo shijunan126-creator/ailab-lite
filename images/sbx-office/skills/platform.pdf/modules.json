@@ -1,0 +1,633 @@
+{
+  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "deps": [],
+      "estimated_tokens": 1455,
+      "logical_path": "pdf-plugin/agents/visual-judge.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "1465bac1cc259740da8fea23cf64e47cbf0dcd716586b9389f09623443d988db"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 956,
+      "logical_path": "pdf-plugin/skills/pdf-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/academic.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/poster.md",
+        "pdf-plugin/skills/pdf/briefs/process.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/configs/fonts.md",
+        "pdf-plugin/skills/pdf/configs/visual_framework.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/scripts/pdf.py",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/geometry.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md",
+        "pdf-plugin/skills/pdf/typesetting/typography.md"
+      ],
+      "estimated_tokens": 18283,
+      "logical_path": "pdf-plugin/skills/pdf/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json",
+        "003-markdown-boundary.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "80ada8812e46fdba2b022f7b03c1286eae3590fd55017c05972e95f9eaaa648c"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 11965,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/academic.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/academic.md",
+      "sha256": "30787d339f76d61af71a7390afb521aebf64992555324ce9a8eb94ef1231a222"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative-flow.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 12920,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative-fixed-canvas.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/creative-fixed-canvas.md",
+      "sha256": "10278ca3f193204d39120dcfc33ea1f3a834c42a3eb9842fbd9af9e7282ca689"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 2862,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative-flow.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/creative-flow.md",
+      "sha256": "46d459f5c1f7e73096170ff50e6da5f1d60bc79fe5fe914d8a9fdfca1093f1e6"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/configs/components.md",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 12029,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/creative.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/creative.md",
+      "sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 8804,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/poster.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/poster.md",
+      "sha256": "481b6aff099e1e2e107cb0b0fd8f71b3f3b0525a6ec3e9f459c6ab8ec0f25810"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/process.md"
+      ],
+      "estimated_tokens": 2114,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/process-advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/process-advanced.md",
+      "sha256": "c4ee69bbc82601b38ef10784dd7dca5f1d9447d793e7ebc1614309e1a34b7676"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/process-advanced.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md"
+      ],
+      "estimated_tokens": 3632,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/process.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "briefs/process.md",
+      "sha256": "a63dba443c39ad641b52652b70291fa3b8dc6e2b3cf75d48d832f0142fe6055b"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/charts.md",
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/palette.md"
+      ],
+      "estimated_tokens": 18599,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/report.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/report.md",
+      "sha256": "67b3c407d42b448145cbe2269e5805751c3c26f87873652ac0e46927ed4e844e"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2807,
+      "logical_path": "pdf-plugin/skills/pdf/briefs/resume.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "briefs/resume.md",
+      "sha256": "f163004a7e0709585e3a6171a3e7233d84242d8559065b9a62f737349c917b5a"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1409,
+      "logical_path": "pdf-plugin/skills/pdf/configs/components.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "configs/components.md",
+      "sha256": "efae6b5ac32fd2fa9bd567df474bdb20bc9c8b8c3e8b51e5b7aa596220cbef7f"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 928,
+      "logical_path": "pdf-plugin/skills/pdf/configs/fonts.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "configs/fonts.md",
+      "sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md"
+      ],
+      "estimated_tokens": 3373,
+      "logical_path": "pdf-plugin/skills/pdf/configs/visual_framework.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "configs/visual_framework.md",
+      "sha256": "a5771a77feb28e99bca5f2e5651a47d3588098672a7636c16889e830fd40c13f"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/env_setup/setup.md"
+      ],
+      "estimated_tokens": 1027,
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "08454b18d14ff2f0e1e1159f788f79d9ae9e1f7ee3245c63fcc78737b2ee53a9"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1256,
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "bb83907b4495b46c9dafc5db72e3d585c8eb1f76a4f804cc58ce9ca1b8b6dc51"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/cover_render.py"
+      ],
+      "estimated_tokens": 3314,
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "7b7b9726351285d76222d35e6cfa188e7c2d4535727663f4179b23419523c556"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 3591,
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "7e894908afaf2ae99d0f5c9e5a8906e822b956f7fbaa10dafdc3d30da804fd6c"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 3584,
+      "logical_path": "pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "dd2ac23c7088574a58e1d3995545d8f8b0a3f6925db0ee1752a9313cfa2c72b2"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1341,
+      "logical_path": "pdf-plugin/skills/pdf/references/resume-academic.tex",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/resume-academic.tex",
+      "sha256": "004fb82e7720d6a116f5a56a063981584e5da731dfe804d8a3f8c1d8a44f112a"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1741,
+      "logical_path": "pdf-plugin/skills/pdf/references/resume-altacv.tex",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "references/resume-altacv.tex",
+      "sha256": "1e41b45b8778482e5208b8216d092fa0968507919d31bd97cf683a5d890f28ef"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 7091,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/cover_render.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/cover_render.py",
+      "sha256": "30d90b4f8d6c209700c2d9d91d76c8af6eb9354db20fca256614aa30738af209"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "estimated_tokens": 3377,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/cover_validate.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/cover_validate.js",
+      "sha256": "3d8f79e9df7d3ea95e2d8e666c8c037508ac86e82190e255fbc6bf04b109c39b"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 26088,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/design_engine.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "007-readable-resource-limits.json"
+      ],
+      "path": "scripts/design_engine.py",
+      "sha256": "4e2bcd0f5ff534662489f349eac5240c23d049dfc67ea63fca5b61254da7e005"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/design_engine.py",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "estimated_tokens": 8251,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json",
+        "005-offline-production.json",
+        "006-output-and-offline-errors.json"
+      ],
+      "path": "scripts/html2pdf-next.js",
+      "sha256": "70ccd01d1dc8c778aff48da13c4e22560efc5dd5107c0815b73b2fd0ec04db29"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/html2pdf-next.js"
+      ],
+      "estimated_tokens": 2737,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/html2poster.js",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/html2poster.js",
+      "sha256": "897357079b8e513cae0737a2b3f87753d8b97e2158517a5b21e9bfa590628a75"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/design_engine.py",
+        "pdf-plugin/skills/pdf/scripts/toc_validate.py"
+      ],
+      "estimated_tokens": 23619,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json",
+        "005-offline-production.json",
+        "006-output-and-offline-errors.json",
+        "007-readable-resource-limits.json"
+      ],
+      "path": "scripts/pdf.py",
+      "sha256": "8168a9c128b2bdc285d1fa44c19d9a2d69fcb3402616c98c1dbb3382f68cf0e9"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 8080,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/pdf_qa.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scripts/pdf_qa.py",
+      "sha256": "207a4a09eb72f1d3c4a4b3e74f3ca42e0717807048cbe4ff44b4998bdd881a36"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/SKILL.md",
+        "pdf-plugin/skills/pdf/scripts/html2poster.js"
+      ],
+      "estimated_tokens": 15370,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/poster_validate.py",
+      "sha256": "27a7692635315a531b6ba990a3f8be569d3741e979a0cec3499abf1ed3477c67"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/pdf.py"
+      ],
+      "estimated_tokens": 3142,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "scripts/setup.sh",
+      "sha256": "fe6acbb0e1a4788b9d57d4daa2f78e4e0cf976e9623cd77af600de0e9d98f754"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 16194,
+      "logical_path": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json",
+        "007-readable-resource-limits.json"
+      ],
+      "path": "scripts/toc_validate.py",
+      "sha256": "15fc99e7f9008023609828b12e3487a9f399cbb65f154cb9b82cb4e9246aa5d4"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 3168,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/charts.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "typesetting/charts.md",
+      "sha256": "b100fa44d94ad3d9e1244e5de8bf92ac429ef0f07859157ee3191161f772bd64"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/scripts/cover_render.py",
+        "pdf-plugin/skills/pdf/typesetting/geometry.md"
+      ],
+      "estimated_tokens": 4217,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/cover-backgrounds.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/cover-backgrounds.md",
+      "sha256": "344dc880dd50aac4ae250f4f5f396c3435672fbd7ce58079fb6f95b1c3e7af33"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/briefs/creative.md",
+        "pdf-plugin/skills/pdf/briefs/report.md",
+        "pdf-plugin/skills/pdf/scripts/cover_render.py"
+      ],
+      "estimated_tokens": 3688,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/cover.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "typesetting/cover.md",
+      "sha256": "4b0ee306d7cb741b0ac36a1d9a56c69352b9582ed5189802697407a89d335100"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/cover.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md",
+        "pdf-plugin/skills/pdf/typesetting/typography.md"
+      ],
+      "estimated_tokens": 5426,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/fill-engine.md",
+      "sha256": "e3078ebe11fe0d853e26d356c5c8ea93acc84786a07c67aa721bff0fb5ecc794"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1563,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/geometry.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/geometry.md",
+      "sha256": "5159bb842397dbc88a55eb687276e424b7858c065b5672ca9ffc47a4f8262a8d"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/pagination.md"
+      ],
+      "estimated_tokens": 5834,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/overflow.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/overflow.md",
+      "sha256": "144efd3c9ea99dbe64eed8a84b223d58f429c69f9f3c235b2ae881eca4fe6024"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/fill-engine.md",
+        "pdf-plugin/skills/pdf/typesetting/overflow.md"
+      ],
+      "estimated_tokens": 3479,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/pagination.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/pagination.md",
+      "sha256": "f9f4b2116d2348221920d58526899bb80a75d0d5ff407ab75d3516289a7be120"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1952,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/palette.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "typesetting/palette.md",
+      "sha256": "657a8ddb192f4d1a3d22e5ed3aa58815e1e36451a26c4b03b22b865d8b563ac7"
+    },
+    {
+      "deps": [
+        "pdf-plugin/skills/pdf/typesetting/pagination.md"
+      ],
+      "estimated_tokens": 112,
+      "logical_path": "pdf-plugin/skills/pdf/typesetting/typography.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "typesetting/typography.md",
+      "sha256": "03f6101f53128b13a19acac521ffe6cb00a3cd6f2becee85b75dedb863ab5519"
+    }
+  ],
+  "package_id": "platform.pdf",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

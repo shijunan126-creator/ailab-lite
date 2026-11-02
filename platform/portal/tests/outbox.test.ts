@@ -54,3 +54,12 @@ test("a rejected attachment prevents dispatch; deleting its message releases its
   discard(id);
   expect(useUploads.getState().uploads[key]).toBeUndefined();
 });
+
+ test.each([{ docRefs: undefined }, { docRefs: [] }, { docRefs: [{ file_id: "f", version: "v", at: "p:1", quote: "text" }] }])("doc_refs sent only when populated: %j", async ({ docRefs }) => {
+  request.mockResolvedValue({ id: "run" });
+  const id = enqueue({ ...message("quote"), docRefs });
+  await vi.waitFor(() => expect(stage(id)).toBe("sent"));
+  const body = JSON.parse(request.mock.calls.at(-1)![1]!.body as string);
+  if (docRefs?.length) expect(body.doc_refs).toEqual(docRefs);
+  else expect(body).not.toHaveProperty("doc_refs");
+});

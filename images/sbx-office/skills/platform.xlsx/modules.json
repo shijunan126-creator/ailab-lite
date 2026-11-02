@@ -1,0 +1,402 @@
+{
+  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
+  "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
+  "modules": [
+    {
+      "deps": [],
+      "estimated_tokens": 1457,
+      "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "agents/visual-judge.md",
+      "sha256": "af70849f74ec1d740f8514a30991782b324ec327601a274ee0287ab4e11ac015"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1103,
+      "logical_path": "spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
+      "modes": [
+        "chat",
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "viewer/SKILL.md",
+      "sha256": "97a58cfa64606f97475408f463b1c766ed63f938a4279d9296cb6fd8b1e42dbd"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart.md",
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md",
+        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+        "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/advanced.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/convert.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/create.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance_lite.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "estimated_tokens": 4251,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/SKILL.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "resources/SKILL.md",
+      "sha256": "8591f5a64d2abc00d9763226ed56161b86c91b425172b77a43aed57415825252"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart.md"
+      ],
+      "estimated_tokens": 1282,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/chart-templates.md",
+      "sha256": "8db3418424205eb5fec7d0826a18ceac6354c6765f3011000f5b5f74348bd538"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/chart-templates.md",
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "estimated_tokens": 884,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/chart.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/chart.md",
+      "sha256": "e213750aa568e3fb52dc220c25d347e280b9ca5ab8071f957aeba5e74b96ad0e"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/templates/palettes.py"
+      ],
+      "estimated_tokens": 5939,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/design.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/design.md",
+      "sha256": "f060c1c5dd20ab1e7001af58488d685b95443d6b7c2f602c81af709b43a770a2"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md"
+      ],
+      "estimated_tokens": 3529,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "engines/vba-templates.md",
+      "sha256": "d6cbf6c9f9657ef8cc4f503c7520678f6bccc862f3b9a3912b47e73db1803fba"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/env_setup/setup.md"
+      ],
+      "estimated_tokens": 725,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/env_check.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/env_check.sh",
+      "sha256": "903a785d085dca4277e7d6121af174eb4d5c9223319d11f4e461e424c9251c0b"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1223,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/font_list.txt",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "env_setup/font_list.txt",
+      "sha256": "7ed6413cf9a17f739fd98776858e4b467301d9cc863097e4e681eb9ffaaa6906"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2706,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup.md",
+      "sha256": "e3ffb5fd786ec1a4546523b11547883d989b04e5f225e72bf2e020d13dbae5b3"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2278,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_mac_linux.sh",
+      "sha256": "1236c2eda4e3700c9c0b98f924eac27330ce3ff08f116fc87bbf4ac3abba82bb"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 2706,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "env_setup/setup_windows.ps1",
+      "sha256": "2f04a4c7cf4f5063e6d0696cf5f9693c57a1b3f9932a55faab6b4490800108b6"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/SKILL.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "estimated_tokens": 2631,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "quality/pipeline.md",
+      "sha256": "2742a5bc43007d89348aedaac3563a1bd389934bff80235dfd9303fd0eabbd52"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "estimated_tokens": 1806,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/advanced.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/advanced.md",
+      "sha256": "567e113d678e4dec1794d85dd643f6180b3ad49f170790976c5629747937919c"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "estimated_tokens": 1829,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "scenes/analyze-recipes.md",
+      "sha256": "df2f6aab2f38107addb4ae36100437422eb607ba0a263e8665651a3f2555b9f2"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/scenes/analyze-recipes.md",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "estimated_tokens": 1077,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/analyze.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json"
+      ],
+      "path": "scenes/analyze.md",
+      "sha256": "60d543f9f061b7c405a12f088462328a960c946a7ae91c40718849e789b53996"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "estimated_tokens": 1056,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/convert.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/convert.md",
+      "sha256": "74103abb3fd192de1442e62dd87d5c34d4e52e0877688104e0c507eeaf18081c"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md"
+      ],
+      "estimated_tokens": 830,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/create.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/create.md",
+      "sha256": "2609cdecbeeca271836a040fde1903ceb34ced7f5485b1a7a7ed27629535dc68"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1910,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/edit-patterns.md",
+      "sha256": "7da8e329c76a81eabc6f8086a92fa984811445a2e871a6dfafcfff25e0bbab26"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/edit-patterns.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py",
+        "spreadsheets-plugin/skills/xlsx/xlsx.py"
+      ],
+      "estimated_tokens": 1923,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "001-tools-and-roots.json",
+        "002-execution-contracts.json"
+      ],
+      "path": "scenes/edit.md",
+      "sha256": "2ac13b6774523ba25305c6e37ec78499b1a0dbe41a8d49242ef0f43202404922"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md"
+      ],
+      "estimated_tokens": 2558,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/finance.md",
+      "sha256": "22502aff110524eb5e16ff86aa9895628abf92f5b48a96b94b6c4e97af08fb02"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/design.md",
+        "spreadsheets-plugin/skills/xlsx/scenes/finance.md",
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "estimated_tokens": 1460,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/finance_lite.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/finance_lite.md",
+      "sha256": "4b34bbcde90e49ca06254cd78450e2f0475ed820354ddaec63ecf8ee33030f14"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/engines/vba-templates.md"
+      ],
+      "estimated_tokens": 2105,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/scenes/vba.md",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "scenes/vba.md",
+      "sha256": "949fde2bb874fbdc6251c98358885df3cd1301035992ccf5932d167a0de245ef"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 1704,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/setup.sh",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json"
+      ],
+      "path": "setup.sh",
+      "sha256": "ab22cd1fa8f179d829ce3c51344f3029140cf80b8813c4975ecdb4dbc99327af"
+    },
+    {
+      "deps": [],
+      "estimated_tokens": 7073,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/templates/base.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "templates/base.py",
+      "sha256": "91383a2079f173ec0100b14d80804185d175932f6686d3f0811c1af7492b3170"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "estimated_tokens": 4676,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/templates/palettes.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [],
+      "path": "templates/palettes.py",
+      "sha256": "88323f71eaf603ecaa37bf39f31f6e30645ebb1b5bc392ae8f31b21f4ee5d9a9"
+    },
+    {
+      "deps": [
+        "spreadsheets-plugin/skills/xlsx/templates/base.py"
+      ],
+      "estimated_tokens": 14035,
+      "logical_path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
+      "modes": [
+        "work"
+      ],
+      "patches": [
+        "002-execution-contracts.json",
+        "005-offline-production.json",
+        "006-output-and-offline-errors.json"
+      ],
+      "path": "xlsx.py",
+      "sha256": "78609c0f4f92bb3835f11d1169a53e9b7f005b0b949358f1299a2ec887f9c662"
+    }
+  ],
+  "package_id": "platform.xlsx",
+  "schema_version": 1,
+  "upstream_commit": "a60ba6a7e5a06742270ca605f5d2cc2766afa7e1"
+}

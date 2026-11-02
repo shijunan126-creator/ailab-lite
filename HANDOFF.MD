@@ -1,6 +1,86 @@
+## 2026-11-03 Viewer 资产与性能
+
+- 派生preview.version不是原生文档内容身份。用它作iframe的React key会在同字节渲染结果迟到时打断capture；按来源稳定挂载，revision触发可取消的索引复核，只有内容hash变化才换frame。共享用户的上传回归应读取实际附件身份，不能假定未被冲突改名。
+
+- Next默认compress不证明Route Handler GET压缩，检查实际Content-Encoding。Office资产预压缩在build，协商返回Vary；immutable版本必须哈希worker/wasm/字体在内的完整闭包。注册表已有kind标记可生成单格式bundle，无需改vendor runtime。
+- Chromium cold/warm用禁缓存首次与正常HTTP缓存第二次；不要用请求拦截（会关闭HTTP缓存）模拟文档。全页重开可排除JS内存缓存；blob不算网络传输。壳的first paint不是文档首屏，worker存在也不代表没有主线程XML preflight。详细边界见[P5记录](docs/progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。
+
+## 2026-11-03 Viewer 调用与截图恢复
+
+- 模型可见工具 schema 应简述每个 op 的形状；reveal 的 quote 属于 targets 内，filename 不是目标身份。durable tool 分支的参数错误应返回配对工具结果，不能抛出未被该层捕获的 ToolError 令整轮 failed。
+- 宿主故障注入若读取既有容器env，先将skills/models等容器内路径覆盖成宿主路径；启动前失败不作模型/产品失败。
+- 过期 viewport capture 的410是显式重建边界：用 unavailable 文字替换已不可复原图像并记录边界后保存 checkpoint；不要对旧 capture_id 反复恢复。403/404/503及digest变化不按TTL降级。依据见[P5最终修复](docs/progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。
+
+## 2026-11-02 办公能力整合
+
+- 工作区交付名与资料库冲突后的显示名不是同一个身份。artifact metadata 保留 `artifact_filename`，同一会话祖先链按该名字找父版本，旧记录无该字段时才回退历史原名，并继承父版本显示名；否则上传模板占用原名后，后续同名交付会不断变成新 lineage。回归覆盖原件/两版字节保留与 SQLite/PostgreSQL。
+
+- Linux 容器与宿主 Broker 的 local storage 必须是真正共同可见的挂载、且写入 UID 一致；不能把看似相同的宿主路径当作 VM 已共享。隔离验收优先共同 Linux 卷。录制 SSE 需边读边转发；若解压响应，不能再把压缩 bytes 当明文流转发，避免将装置错误误判产品失败。
+- XLSX 原生准入既看 bytes 也看 cells（当前100000）；大文件首屏须分别测准入内原生与超限回退。父页/同进程 frame 的 performance.memory 可能是同一 heap，不可相加；cgroup memory.peak 跨池复用，不等于当前作业峰值。
+- ReportLab 的文本 `Tr` 是跨 BT/ET 的图形状态；新 text object 对 setTextRenderMode(0) 的默认值去重可能漏写 `0 Tr`，使前段描边模式污染后段小字。绘制助手须隔离/明确恢复图形状态，回归检查实际字形像素，span 的 fillColor 正确仍不足以证明可读。实例与独立颜色/几何回归见 P5 记录。
+
+- “Docker not reachable”通常是专用Colima VM停止：先查 `COLIMA_HOME=/Users/michael/AILabDisk/local/colima colima list`；确认后用同一COLIMA_HOME执行 `colima start ailab-verify --activate=false`，再用专用socket/config重试，不能直接宣布Docker阻塞。daemon与个人栈共享，仅操作本次c3资源；镜像构建成功后再启动依赖该标签的验收，未知创建结果会保留容量直到创建截止，不能把这次启动顺序问题当泄漏。
+- capture的checkpoint图像绑定原run，后续run恢复必须经API验证当前同owner对话祖先链、源版本/授权、TTL和digest；只按当前run等值匹配会把成功截图后的下一轮暂停。步数收尾的assistant也必须保存原reasoning_content（包括空值），否则thinking供应商在resume返回400。真实根因、录制请求及双库回归见[P5续验](docs/progress/updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。
+- Worker native viewer必须用sandbox_tools/viewer-reader.ts生成的reader；不能把office-read的runner入口当viewer-reader，两者argv/输出合同不同。API文档索引和预览就绪是render capture前提，file ready不代表native索引已准备。
+- E2E 的 mock 服务运行在 checkout，不在平台镜像里；不能默认依赖宿主 `/opt/ailab-viewer/reader.mjs`。fixture 用已安装的 runtime 构建独立 viewer adapter，并在等待 frame 前检查索引终态。排查 CI 时用 trace 的实际 file_id 对齐：正文 `meta.extract` ready 与原生 `viewer.json` failed 可以同时存在，其他测试的坏文件解析错误不能代替该原生测试的根因。见[Linux CI 复现](docs/progress/updates/2026-11-03-office-linux-e2e.md)。
+
+
+### 制作与评审
+
+- `review_artifact` 的结构证据/页图始终不是质量判定：返回 pending_model_judgment；tools-only 必须明确 no visual review。最多4页是单批限制，不能声称未检查页已验收；公式缓存需重算，WARN/exit0/文件存在均不能单独说明完成。
+- 全部制作依赖在镜像构建期固定；学术路线用离线XeLaTeX并禁shell escape，输出默认 `/workspace/outputs`。旧脚本的缺依赖提示也必须适配，不能一边禁止联网一边提示立即安装。输入只读使用，修改生成新文件后再deliver_file。
+- Docker构建报 “No matching distribution” 前先检查是否实际为DNS失败；保留已完成的大依赖层，只重试失败层，不改daemon或触碰现有用户服务。构建/测试证据见[P2](docs/progress/updates/2026-11-02-office-suite-p2.md)。
+
+### 文档查看与选区
+
+- opaque-origin 的 sandboxed iframe 不能启动 blob URL 的 module worker；PDF/XLSX worker 必须构建为 classic worker，不能只在同源普通页面验证。
+- pdf.js 标准字体的 CSS url() 在 CSP 下也须重写成受控 blob URL；只改 worker URL 或主字体请求仍会漏掉标准字体加载。
+- 内置浏览器自动化不能可靠选择进程外 Office frame 中的文字；原生选区验收用 Playwright page.mouse，以真实可视坐标拖选并检查 quote/reveal，不伪造选区消息。
+
+- 前后端共同合同见 [04](docs/architecture/design/office-suite/04-viewer-and-file-contract.md)：引用可为 file 或 run/path；reveal 必带 filename；截图走 `client.call kind=capture_view`，成功 value 是对象，JS 的 value 仍是 JSON 字符串。查看状态的 at 可以是 null；不另建 capture_request 事件/上传路由。
+- 引用关系与普通附件分开存，文件来源另记 agent_read 才能进入删除/撤权围栏；排队/插话换 Run 时同时迁移引用 run_id。不要在出队时取实时选区，也不要触发全文附件准备。
+- pdf.js 拒绝 Node Buffer；用共享 buffer 的 Uint8Array view，不能为了类型转换额外复制整份文件。V8 的虚拟地址空间不能用小 RLIMIT_AS 限制；viewer 用 RSS watchdog、heap/CPU/文件大小和总期限共同限制。原生单元格/对象 locator 必须让同版本 runtime check() 校验，结构位置不能猜 LO 物理页。
+- 用户提示加入引用时保留原 run 对象的图片登记，不能浅复制后把 `_image_files` 留在副本；列表序列化必须批量取引用（outer join 当前文件围栏），不能每轮查一次。ASGI 断线测试不能让 receive 无 await 无限返回 http.request，会饿死事件循环；用明确 spec_version/断线事件。
+- 新迁移测试回到历史 revision 后，最终 metadata 漂移比较应再升到 head；单行表的 EXPLAIN 可以合理选扫描，用有代表性的基数验证索引。实现和测量边界见 [P3 记录](docs/progress/updates/2026-11-02-office-suite-p3.md)。
+
+- DOCX原生文字选择依赖索引blocks映射data-at；手工fixture只有bytes/units会导致“可选文字、没有引用栏”。补真实blocks，不要伪造reference消息替代鼠标验收。XLSX先核对实际sheet名称，canvas高亮不能按DOM class计数。详见[测试记录](docs/progress/updates/2026-11-02-office-portal-tests.md)。
+- 截图PNG的base64响应不能套256 KiB控制消息限制：会在2 MiB结果预算的缩窄重拍之前被丢弃。父桥截图传输有独立上限，测试须从captureView贯穿page-tool-result；仅mock captureView不能守住此缺陷。
+
+- XLSX引用是TSV，不是reader的Markdown表格；校验只能从同一授权范围中提取单元格正文，不能把表头/行号算成引用，不能跳过quote匹配。公式统一引用原始表达式，不能接受浏览器临时计算但源文件没有缓存的值。复杂数字/日期格式显示值仍需专门验收。Work源路径和显示文件名分开；reveal不能依赖异步分页预览先完成。
+- E2E 临时Portal须复制 `office/` 并保留 `platform/portal` 与 `vendor/office-suite/upstream/office-runtime` 的相对布局；API选区校验还需临时Worker的 `AILAB_WORKER_BASE_URL`。不能用真实部署默认8083验证非默认端口的隔离栈。
+
+### 模块与上下文
+
+- 办公 `loaded_skills` 只管安装/登记；去重必须认当前段中配对成功且正文hash一致的 `load_skill` 结果。派生索引不进checkpoint；压缩丢正文后可重读，摘要中的模块身份不代表正文仍可见。
+- 模块预算按整个待完成工具组累计；每个结果追加后再准入下一个，不在call/result中间压缩，放不下明确拒绝，不能截断后标完整。包内容身份须带递归hash，不能只用可能未变的semver。
+- 显式上下文边界必须丢弃可见性派生索引；仅凭列表长度/末尾对象识别压缩会漏掉等长替换。摘要重试拒绝工具时追加配对结果，不切tool_choice；摘要指令/schema增长后用实际请求估算准入，不能只信旧固定余量。
+- 无快照重建的结构化摘要仍须是合法JSON：已读身份放 `read_modules`，不要在JSON后拼说明导致摘要API拒绝。无历史工具正文/索引时不猜已读，可重新按需加载；详细证据见[P1记录](docs/progress/updates/2026-11-02-office-suite-p1.md)。
+
+- 同文请求复放仍有尾部时先比较实际HTTP正文和供应商usage；128-token阶梯是实测粒度，不是所有模型的固定取整公式。请求边界缓存单元、写盘时机和计数边界也会影响结果；保留首发和热复放，不填充上下文。见[P5定界](docs/progress/updates/2026-11-02-office-suite-p5.md#全局技能加载与-chat-压缩后缓存定界2026-11-02)。
+
+### 原文资源构建
+
+- 需要多份办公资源时，同一assistant回复可并列多个 `load_skill`；循环逐份追加，后续去重和cannot-fit必须看见同批先前结果，不能仅按批次开始时的messages检查。录制合同见 `test_office_resource_batch_wire_order_dedup_and_cumulative_budget`；批量加载规则统一在Chat/Work共用系统提示，不能复制到每包导航；导航只保留包清单/deps，改生成器后重建并同步index。
+
+- 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
+- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。`SKILL.md` ≤100,000 bytes，其他可读资源 ≤256 KiB/2000行；超限失败，不在loader截断。大Python资源用显式补丁压缩排版，并校验AST等价，原始源码不改。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
+- 生产脚本的npm闭包在 `/opt/office-production/node_modules`，reader在 `/opt/ailab-office/node_modules`；依赖解析依靠镜像NODE_PATH，不能按宿主node_modules可用推断沙箱已安装。runtime由build.py的 `--runtime-output vendor/office-suite/runtime` 从原始源码＋补丁＋adapter生成；每次重生成runtime都会清除本地node_modules/runner.mjs，必须在最后一次重生成之后再执行npm ci与npm run build，然后才能跑完整后端套件；不能以早先构建成功推断前置仍在。
+- 构建复制兼容资源时不能过滤 `LICENSE*`/`NOTICE*`：四基础包必须带固定来源的Apache-2.0 LICENSE与vendor NOTICE，第三方素材保留同目录许可；许可不列为模块，但参与生成漂移与递归hash。
+
+
+## 2026-11-02 办公能力迁移边界
+
+- 全量迁移不能直接替换四个大 SKILL：资源安装状态与当前消息中完整正文可见性分开；轮内/跨轮/无快照压缩都要重算模块可见性。上游 capture_view 是页面工具，离线/后台任务不能假设浏览器在线；选区问答不能沿用全文附件 prepare 重复注入整份文档。见[计划](docs/architecture/design/office-suite/README.md)。
+- 上游四制作技能 frontmatter 写 Proprietary，但指向的 LICENSE.txt 全文是 Apache-2.0；视觉评审角色引用的 “delivery protocol” 不在上游源码中，不能声称原样迁移。模型可见文本不得出现上游产品名、上游专用环境变量与其 citation 标签。
+
 ## 2026-11-02 行内气泡垂直对齐
 
 - 带 `overflow: hidden` 的 inline-block 会按底边参与基线对齐；再用正数 `vertical-align` 会继续上抬。正文来源/文件/网址、输入技能标签与表头徽章统一用 `vertical-align: middle` 跟随所在文字行，不用固定像素补偿；数字引用角标保留上标语义。
+
+## 2026-11-02 生命周期测试隔离
+
+- CPython 3.12 的 pathlib 会调用 `sys.intern`；进程全局 intern 表扩容可被 tracemalloc 记成单笔约 7.33 MiB（旧表在开始跟踪前分配，释放不抵扣），触发时机受前序测试影响。渲染记录测试应预热完整生命周期、GC 后按相关代码的分配位置比较快照，并单独检查记录/缓存为空和句柄/回调弱引用失效；不能用整个解释器增长代表 Broker 泄漏，也不能提高门限掩盖。
+- EXPLAIN 不要对共享 API 测试库强制索引名或关闭顺序扫描。使用独立库、足量低选择率背景数据、ANALYZE 与生产排序/分页，检查访问条件上的索引查找；等价索引（包括 SQLite skip-scan）有效。复现和验证见[记录](docs/progress/updates/2026-11-02-suite-test-isolation.md)。
 
 ## 2026-11-02 GenUI 说明复用
 
@@ -57,7 +137,7 @@
 - 融合成功后抽取失败，首批仍为 applied，因此整理链可能创建第二批 failed。验证首批快照/撤销时必须按 `batch_index` 定位，不能对用户的多条整理记录做无排序 `scalar()`；SQLite 恰好返回首批不代表 PostgreSQL 也会如此。
 - 摘要过期扫描应一次读取有界事实、流式联查项目 id/digest，最多两条查询，不能对每个项目重读文档并查询摘要。用户索引与项目外键索引都需要：`(user_id, project_id)` 的唯一索引不能替代级联删除所需的 `project_id` 索引。EXPLAIN 先 ANALYZE，使用多用户选择性；单用户半表命中时 PG 选择顺序扫描是合理结果。
 - 网关 TCP 验收的 0.5 秒首输出/空闲预算在繁忙机器上会产生额外真实重试与计费记录，或触发标题降级；断流用例也出现过单轮未抛异常。不要删账本行或改变生产重试规则迎合次数断言；应单独保留失败与复查结果，不能把一次重跑通过宣称为稳定修复。
-- macOS 全套测试需让 GNU coreutils/findutils 的 PATH 传到所有子进程；Python PostgreSQL 测试还需 venv 的可选 `psycopg[binary]`。Office 读取测试需要 `vendor/zcode-office-runtime/runner.mjs` 及依赖，缺少时通常表现为多格式解析/后续 OCR 断言失败。后端限域任务可在仓库外构建，并用仅测试环境的 Node resolve hook 映射 mock sandbox 的 runner 入口，避免改 vendor/Portal。
+- macOS 全套测试需让 GNU coreutils/findutils 的 PATH 传到所有子进程；Python PostgreSQL 测试还需 venv 的可选 `psycopg[binary]`。Office 读取测试需要 `vendor/office-suite/runtime/runner.mjs` 及依赖，缺少时通常表现为多格式解析/后续 OCR 断言失败。后端限域任务可在仓库外构建，并用仅测试环境的 Node resolve hook 映射 mock sandbox 的 runner 入口，避免改 vendor/Portal。
 - golden fixture 的严格项目用 `memory_mode=isolated`；`scripts/evaluate_memory_context.py` 已转发 `case.memory_mode` 到 `model_view(mode=...)`，`tests/test_memory_golden.py` 继续走该 runner（保留无记忆基线断言），不要绕开 runner 另写判定。
 - 摘要/编辑/融合三个提示词是 `memory_dream/prompts.py` 的常量；`MockLLM` 按 system 内容精确匹配它们给确定性回答（`llm._memory_answer`），测试脚本也按常量匹配。改提示词措辞不会破坏匹配，但不要在调用处内联另一份提示词。抽取/判定在常量后追加了每次调用的规则，MockLLM 只能用 `startswith` 匹配（返回空 facts/results）；否则 mock 栈每次整理都走失败路径。
 - 所有活动任务判断共用 `active_job()`：pending/running 或未过期租约；终态摘要阶段也阻止编辑/重复整理。claim/recover 仍只领取 pending/running，不能重放终态批次；Portal 编辑完成需等摘要 GET active 为空再展示回复/撤销。
@@ -232,7 +312,7 @@
 - ready 后预渲染只在原事务写 outbox，不同步调沙箱；20MiB 默认阈值、原渲染槽和 pending/终态幂等必须一起保留。产物创建时 ORM 默认 purpose 尚可能未落地，需 flush 后判断 library。
 - OCR 选页不能当全文预览缓存；仅复用页数已知且完整覆盖前 min(40,总页数)、资产属于同 file 的清单。
 - client_send_id 按用户唯一，重试须先于附件/额度/会话忙碌检查；参数化测试共用数据库，同用户不同发送必须使用不同 ID。Docker 默认 socket 不存在时复用个人 shim；Mac 未共享路径的 bind 会在 VM 变空目录，基准脚本/合成文件改用 stdin 注入。
-- 新worktree跑文档/OCR测试前先在vendor/zcode-office-runtime执行npm ci --ignore-scripts与npm run build；缺runner.mjs会让整组原生文档索引/覆盖测试失败，不能误判为业务逻辑回归。
+- 新worktree跑文档/OCR测试前先在vendor/office-suite/runtime执行npm ci --ignore-scripts与npm run build；缺runner.mjs会让整组原生文档索引/覆盖测试失败，不能误判为业务逻辑回归。
 
 ## 2026-10-29 GenUI 历史与摘要
 

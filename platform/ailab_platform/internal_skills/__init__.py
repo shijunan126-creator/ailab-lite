@@ -2,7 +2,7 @@
 
 from ..skill_registry import ALIASES
 
-VERSION = "zcode-3c5b227-ailab2"
+VERSION = "office-a60ba6a-ailab3"
 TOOLS = ["resolve_attachment", "search_library", "read_library_file", "copy_library_file", "view_attachment", "extract_text"]
 
 

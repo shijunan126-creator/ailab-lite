@@ -152,6 +152,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 
     invalid = invalid_history(db, [turn.id for turn in earlier] + [run.id])
     history = []
+    from ..contracts.document_view import text_block
+    from .document_view import output as document_refs
+
     for turn in earlier[-HISTORY_TURNS:]:
         reply = "（文件来源已失效）" if turn.id in invalid else turn.summary or (f"（这一轮失败了：{turn.error}）" if turn.error else "")
         if turn.status == RunStatus.CANCELED:
@@ -165,11 +168,15 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         applied = (turn.runtime_meta or {}).get("steer_ids", [])
         from ..agent.prompts import render_skill_mentions
 
-        steers = [render_skill_mentions(row.prompt, row.options.get("skills")) for row in steers_for_run(db, turn) if row.id in applied]
+        steers = [
+            render_skill_mentions(row.prompt, row.options.get("skills")) + text_block(document_refs(db, "queued_message", row.id))
+            for row in steers_for_run(db, turn)
+            if row.id in applied
+        ]
         history.append(
             {
                 **({"steers": steers} if steers else {}),
-                "prompt": turn.prompt,
+                "prompt": turn.prompt + text_block(document_refs(db, "run_prompt", turn.id)),
                 "skills": (turn.options or {}).get("skills")
                 or (
                     [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]
@@ -205,6 +212,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         ]
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
+    from .document_view import output as document_refs
+
+    out["doc_refs"] = document_refs(db, "run_prompt", run.id)
     owner = db.get(User, run.user_id)
     from .routes_memory import memory_for_run
 
@@ -445,7 +455,11 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
     existing = db.execute(
         select(Artifact, FileObject)
         .join(FileObject, Artifact.file_id == FileObject.id)
-        .where(Artifact.run_id == run.id, FileObject.filename == filename, FileObject.sha256 == body.sha256)
+        .where(
+            Artifact.run_id == run.id,
+            func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
+            FileObject.sha256 == body.sha256,
+        )
     ).first()
     if existing is not None:
         storage.delete(body.staging_key)
@@ -502,7 +516,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         sha256=digest,
         storage_key=final_key,
         status=FileStatus.READY,
-        meta={"source": "sandbox", "run_id": run.id},
+        meta={"source": "sandbox", "run_id": run.id, "artifact_filename": filename},
     )
     parent = None
     if run.conversation_id:
@@ -514,7 +528,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
                 Run.conversation_id == run.conversation_id,
                 Run.id.in_([*path_ids(db, run.conversation_id, run.parent_run_id), run.id]),
                 FileObject.user_id == run.user_id,
-                FileObject.filename == filename,
+                func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
                 FileObject.deleted_at.is_(None),
                 FileObject.purged_at.is_(None),
             )
@@ -523,6 +537,9 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         )
     artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role)
     try:
+        if parent is not None:
+            # Library collision suffixes are display names, not the workspace delivery identity.
+            file.filename = parent.filename
         assign_file_version(db, file, parent)
         db.add(file)
         db.add(artifact)
@@ -895,7 +912,7 @@ def _bound_file(
 
 
 FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview", "files:read_for_document")
-FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill"]
+FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill", "viewer"]
 
 
 @router.get("/files/{file_id}", response_model=InternalFileOut, response_model_exclude_unset=True)

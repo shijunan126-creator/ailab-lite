@@ -4,7 +4,7 @@ from sqlalchemy import select
 
 from ..models import FileObject
 
-PARSER_VERSION = "zcode-3c5b227-ailab2"
+PARSER_VERSION = "office-a60ba6a-ailab3"
 
 
 def reuse(db, file):

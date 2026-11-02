@@ -88,7 +88,7 @@ def _child(spec: dict) -> None:
     import resource
 
     memory = spec["memory_mb"] * 1024 * 1024
-    if sys.platform.startswith("linux"):
+    if sys.platform.startswith("linux") and spec["operation"] != "viewer":
         resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
     resource.setrlimit(resource.RLIMIT_CPU, (spec["cpu_seconds"], spec["cpu_seconds"] + 1))
     output_limit = spec.get("output_limit", MAX_OUTPUT_BYTES)

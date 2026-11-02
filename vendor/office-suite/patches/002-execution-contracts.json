@@ -1,0 +1,1099 @@
+[
+  {
+    "path": "documents-plugin/skills/docx/SKILL.md",
+    "before_sha256": "e528c69f9103b72734a2b5ad037717267f0bfd24b4394373932f526a71b5d33f",
+    "after_sha256": "67406550ee1c75a8f794011740a720117c0b49e9e4e96ded66679a37cf76065e",
+    "edits": [
+      {
+        "start": 1017,
+        "end": 1329,
+        "before": "```bash\nbash \"$SKILL_DIR/setup.sh\"    # Interactive environment check + install\n```\n\n> **Local-font-first.** Inspect fonts available in the user's local environment and prefer a suitable\n> installed font. Use bundled or downloaded fonts only as fallbacks; do not install fonts without the\n> user's confirmation.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 1513,
+        "end": 1778,
+        "before": "User-provided input files are read-only by default. Deliverables go to new files\n(`<stem>_updated.docx` next to the input); edit an original in place only when the user explicitly\nasks — and then copy it to `<stem>_backup.docx` next to it (never `/tmp`) first. See\n",
+        "after": "User-provided inputs are always read-only. Use copy_library_file to /workspace/inputs; save a new version under /workspace/outputs and deliver_file. Never create a backup beside the original. See\n"
+      },
+      {
+        "start": 11312,
+        "end": 11517,
+        "before": "- [ ] The user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts\n",
+        "after": "- [ ] The user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.\n"
+      },
+      {
+        "start": 13031,
+        "end": 13420,
+        "before": "- **pandoc**: Text extraction\n- **docx**: `bun add docx` or `npm install docx` (creating)\n- **LibreOffice**: PDF conversion, .doc support — install from the Tsinghua mirror\n  (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, see below)\n- **Poppler**: PDF to image (`pdftoppm`)\n- **defusedxml**: Secure XML parsing\n- **python-docx**: Simple comment operations\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 13591,
+        "end": 13671,
+        "before": "**If LibreOffice is not installed, you MUST install it. This is not a choice.**\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 13672,
+        "end": 14290,
+        "before": "**FORBIDDEN — do not do any of these:**\n- ❌ Using Microsoft Word, WPS Office, Pages, or any other program already on the user's machine\n  *instead of* installing LibreOffice.\n- ❌ Deciding on the user's behalf that the download is \"too large\", \"too slow\", or \"not worth it\".\n  **The package being large is NOT a reason to skip the install.** It is expected to be large.\n- ❌ Asking the user \"should I use Word instead to save time?\" — that is the same violation dressed\n  up as a question. Do not offer the substitution.\n- ❌ Silently degrading (skipping the PDF check, skipping visual verification) to avoid installing.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 14349,
+        "end": 16605,
+        "before": "1. **Explain the necessity to the user.** LibreOffice is the conversion engine that preserves the\n   document's styles, layout, fonts, and page breaks faithfully — no other tool reproduces the same\n   output, so substituting it degrades fidelity.\n2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is\n   information for the user, **not** a decision point for you — state it and proceed to install.\n3. **Install it now.** **Preferred source — Tsinghua TUNA mirror** (fast in China, current build):\n   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — pick the\n   subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`,\n   `mac/x86_64`, `win/x86_64`, `win/aarch64`) and download the main package from it. If 26.8.0 is no\n   longer there, list `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and take\n   the newest version. Full per-platform download-and-install commands: `env_setup/setup.md` →\n   *\"LibreOffice — Recommended Download Source\"*.\n   Package-manager fallback, only if the mirror is unreachable:\n   - macOS: `brew install --cask libreoffice`\n   - Linux (Debian/Ubuntu): `sudo apt install libreoffice-core`\n   - Windows: `winget install TheDocumentFoundation.LibreOffice`\n4. **Register the binary on `PATH`, then re-verify.** An install that leaves `soffice` off the\n   executable search path looks identical to \"not installed\" on the next probe — that is what causes\n   the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS**\n   (Linux/macOS: symlink into `/usr/local/bin`; Windows: append the program dir to the user `PATH`\n   with `setx`). Full per-OS commands: `env_setup/setup.md` → *\"Register the binary on PATH\"*.\n   Re-run `soffice --version` and only continue once it prints a version. Corollary: **probe before\n   installing** — if the binary already exists on disk but off-`PATH`, register it instead of\n   reinstalling.\n5. **Only after that install has actually been attempted AND failed** may you use software already\n   on the user's machine (Word, WPS, Pages). Report the install failure and what you switched to,\n   and warn that output fidelity may differ.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 16606,
+        "end": 16795,
+        "before": "> **The gate is simple: no install attempt = no substitute program.** If you have not run the\n> install command and seen it fail, using Word/WPS/Pages/Keynote is a violation of this skill.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/env_setup/setup.md",
+    "before_sha256": "99a18a62c580876f6c658017adddaeeffba6e3b7a9d5ae31dca5ce2c58d01e1e",
+    "after_sha256": "af2d5bf3bd1b522901263ee2e86e003a4eb5535069cdf91118816551963765b2",
+    "edits": [
+      {
+        "start": 1060,
+        "end": 1557,
+        "before": "| Category | Package | Purpose |\n|----------|---------|---------|\n| Runtime | Node.js + npm | DOCX generation (docx-js) |\n| npm pkg | docx | Word document creation library |\n| Runtime | Python 3 + pip | Post-processing scripts |\n| Python pkg | defusedxml | Safe XML parsing for validation |\n| On demand (not substitutable) | LibreOffice | `.doc`→`.docx`, DOCX→PDF, visual verification — install it; do not swap in local Word/WPS/Pages |\n| Font | CJK fonts (from CDN) | Chinese text in documents |\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 1602,
+        "end": 1805,
+        "before": "```bash\nbrew install node python3\nnpm install -g docx\npython3 -m pip install defusedxml\n# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)\nbrew install --cask libreoffice\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 1834,
+        "end": 2061,
+        "before": "```bash\nsudo apt install nodejs npm python3 python3-pip\nnpm install -g docx\npython3 -m pip install defusedxml\n# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)\nsudo apt install libreoffice-core\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 2089,
+        "end": 2355,
+        "before": "```powershell\nwinget install OpenJS.NodeJS.LTS\nwinget install Python.Python.3.11\nnpm install -g docx\npython -m pip install defusedxml\n# On demand, not substitutable: LibreOffice (prefer the Tsinghua mirror below)\nwinget install TheDocumentFoundation.LibreOffice\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 5100,
+        "end": 5174,
+        "before": "```bash\nnpm install -g docx --registry https://registry.npmmirror.com\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 5202,
+        "end": 5341,
+        "before": "```bash\npython3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \\\n  --trusted-host pypi.tuna.tsinghua.edu.cn \\\n  defusedxml\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 5382,
+        "end": 5580,
+        "before": "```powershell\nnpm install -g docx --registry https://registry.npmmirror.com\npython -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn defusedxml\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 5870,
+        "end": 5938,
+        "before": "## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 7769,
+        "end": 8355,
+        "before": "```bash\nLO_VER=26.8.0\ncase \"$(uname -m)\" in x86_64) LO_ARCH=x86_64; LO_TAG=x86-64 ;; aarch64|arm64) LO_ARCH=aarch64; LO_TAG=aarch64 ;; esac\nBASE=\"https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/$LO_VER/deb/$LO_ARCH\"\n\ncd /tmp\ncurl -fSLO \"$BASE/LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\ntar -xzf \"LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\nsudo dpkg -i LibreOffice_${LO_VER}*/DEBS/*.deb\nsudo apt-get install -f -y     # resolve any missing dependencies\nsoffice --version              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 8480,
+        "end": 8643,
+        "before": "`sudo apt install libreoffice-core` from the distro repo remains an acceptable fallback if the\nmirror is unreachable — it is older, but sufficient for conversion.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 9214,
+        "end": 9295,
+        "before": "\n`brew install --cask libreoffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (libreoffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 9951,
+        "end": 10049,
+        "before": "\n`winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (LibreOffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 10533,
+        "end": 10687,
+        "before": "Before installing anything, probe first — if the binary already exists somewhere on disk, you need\nonly the registration step below, **not** a reinstall:\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/env_setup/setup_mac_linux.sh",
+    "before_sha256": "0c27b0c38634d78dda4d73a6f499542bdfee6aedabb7d124db9b1fab99db5ce1",
+    "after_sha256": "6cc4602183905dbe8506699927ac963ede39dea77dd102ac6f5224df29af5921",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/env_setup/setup_windows.ps1",
+    "before_sha256": "5f03e53b0e4f1414f0d6156f92c0adc1bf0f531cd8013bd405ca718baa527ccc",
+    "after_sha256": "619570b89034c9b245128da6320021bb24c0fc43870f19facef9af6fb2cad3e4",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "throw \"Dependencies must be preinstalled; if missing report the dependency (P2).\"\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/references/chart-templates.md",
+    "before_sha256": "38abaf161f0cf9033212680bbdf634d169d490536ecbc166f31022b99ee450ba",
+    "after_sha256": "2f4cd7569765300da356c83cd3bfb14c85bdb7d97301cf15af29dc7705e2aa7c",
+    "edits": [
+      {
+        "start": 71,
+        "end": 136,
+        "before": "GLM uses **matplotlib as the primary chart engine**. Advantages:\n",
+        "after": "AILab uses **matplotlib as the primary chart engine**. Advantages:\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/references/design-system.md",
+    "before_sha256": "52a476d7bf94ba8f1f77574cd60876393cac76a32069c5df625d230c6cc7c738",
+    "after_sha256": "7ba481e58dfeb3ef96ab25ca9c65459bbcb83fc459799ffa966ac8d7605ae2cc",
+    "edits": [
+      {
+        "start": 51,
+        "end": 178,
+        "before": "GLM uses a **mood-driven dynamic color system** instead of fixed named palettes. Colors are constructed from three dimensions:\n",
+        "after": "AILab uses a **mood-driven dynamic color system** instead of fixed named palettes. Colors are constructed from three dimensions:\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/references/docx-js-advanced.md",
+    "before_sha256": "894df6903e7bb51fe1e13096d8053d303f0fe6440eb4890032c51e00435f07c0",
+    "after_sha256": "5bf71d15034285c817577cff142c8e142e60612baf587c877c44bef9c10ae16f",
+    "edits": [
+      {
+        "start": 7362,
+        "end": 8649,
+        "before": "> 🔴 **LibreOffice not installed? You MUST install it — do not substitute.** Using Word/WPS *instead\n> of* installing is forbidden, and a large download is **not** a reason to skip it. Required: explain\n> the necessity to the user (it preserves styles, layout, fonts and pagination faithfully), say the\n> package is large, then install it — **preferred source is the Tsinghua TUNA mirror**\n> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the\n> platform/arch subdirectory; if that version is gone, take the newest under\n> `.../libreoffice/stable/`; full commands in `env_setup/setup.md`), with\n> `brew install --cask libreoffice` / `sudo apt install libreoffice-core` /\n> `winget install TheDocumentFoundation.LibreOffice` as fallbacks. Only\n> after an install attempt has **failed** may you use another program. **No install attempt = no\n> substitute program.** After installing, **register `soffice` on `PATH` and re-verify\n> `soffice --version`** (per-OS commands: `env_setup/setup.md` → *\"Register the binary on PATH\"*) —\n> an install left off the search path reads as \"not installed\" next time and gets reinstalled\n> needlessly. Note this is separate from the TOC rule below, which is about field\n> recalculation, not about avoiding LibreOffice.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/references/math-formulas.md",
+    "before_sha256": "82caec1fc7d98fb421be56ef30910af7d01ecd39334fd13aa2a02abbcba86f5c",
+    "after_sha256": "b387667d03b84093f91867fa47c4b2adec7e35dcebb6cb2c3478d801fda188e9",
+    "edits": [
+      {
+        "start": 65,
+        "end": 160,
+        "before": "GLM uses **LaTeX as the formula input syntax**, internally converting to docx-js Math objects.\n",
+        "after": "AILab uses **LaTeX as the formula input syntax**, internally converting to docx-js Math objects.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/references/ooxml.md",
+    "before_sha256": "b88b0d4a3934a6b8a7a427d14044c5fad3de578d5d2885656a109f08399ef49e",
+    "after_sha256": "a6b9be9a5f678d16e047575c4c16b67dd1ec0325d4c35ff123c2baf0857cf67c",
+    "edits": [
+      {
+        "start": 9207,
+        "end": 9295,
+        "before": "The validator ensures document text matches the original after reverting GLM's changes:\n",
+        "after": "The validator ensures document text matches the original after reverting AILab's changes:\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/routes/comment.md",
+    "before_sha256": "f5909d5ff2ee1716d4eb7a9af0be35bb2d5595c745a10da26613c32f23217f3f",
+    "after_sha256": "6d494f1e5ab2e375fb49489d37c9573060e48427a832a44edcb2feb803d9164a",
+    "edits": [
+      {
+        "start": 23,
+        "end": 373,
+        "before": "> **Output rule — decide this before you modify anything.** Adding comments edits an existing\n> document, so by default write to a NEW sibling file (`<stem>_updated.docx`) and never touch the\n> input; overwrite in place ONLY if the user explicitly asks to edit their own file — then first copy\n> it to `<stem>_backup.docx` next to it (never `/tmp`).\n",
+        "after": "Originals remain read-only. Work on a copy in /workspace; save and deliver a new version under /workspace/outputs.\n"
+      },
+      {
+        "start": 552,
+        "end": 622,
+        "before": "def add_comment(paragraph, comment_text, author=\"GLM\", initials=\"G\"):\n",
+        "after": "def add_comment(paragraph, comment_text, author=\"AILab\", initials=\"G\"):\n"
+      },
+      {
+        "start": 2477,
+        "end": 2542,
+        "before": "# Pack to a NEW sibling file — never to the user's original path\n",
+        "after": "# Pack to a NEW file under /workspace/outputs — never to the user's original path\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/routes/edit.md",
+    "before_sha256": "bd60ea401a9d886a3863c5ca259e6cd4e17c7dd460c1853d9f00cd3c51109f76",
+    "after_sha256": "7a5f9e8aa0d9ddc4cfdf5aae3324db21bd719f8fbbfcb641d0e228a3537cf863",
+    "edits": [
+      {
+        "start": 206,
+        "end": 484,
+        "before": "5. OUTPUT → By default pack to a NEW sibling file (`<stem>_updated.docx`),\n            never touch the input; overwrite in place ONLY if the user explicitly\n            asks to edit their own file — then first copy it to `<stem>_backup.docx`\n            next to it (never /tmp)\n",
+        "after": "5. OUTPUT → By default pack to a NEW file under /workspace/outputs (`<stem>_updated.docx`),\n            never touch the input; originals remain read-only. Write a NEW version under /workspace/outputs\n"
+      },
+      {
+        "start": 975,
+        "end": 1747,
+        "before": "\n> 🔴 **If `libreoffice` is not installed, you MUST install it — do not substitute.** Using Word, WPS,\n> or Pages *instead of* installing is forbidden, and a large download is **not** a reason to skip it.\n> Required: explain the necessity to the user (only engine that converts legacy `.doc` while\n> preserving styles and layout), tell them the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only after an\n> install attempt has actually **failed** may you use another program. **No install attempt = no\n> substitute program.** See the HARD REQUIREMENT block in `SKILL.md`.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (libreoffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 2995,
+        "end": 3060,
+        "before": "# Pack to a NEW sibling file — never to the user's original path\n",
+        "after": "# Pack to a NEW file under /workspace/outputs — never to the user's original path\n"
+      },
+      {
+        "start": 3294,
+        "end": 3802,
+        "before": "\n> 🔴 **LibreOffice missing? You MUST install it — do not substitute.** Explain its necessity, say the\n> package is large (not a reason to skip), then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Word/WPS is permitted **only** after an\n> install attempt has failed. **No install attempt = no substitute program.** See `SKILL.md`.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (LibreOffice, libreoffice). Do not install packages or download engines/fonts during a task.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/routes/format.md",
+    "before_sha256": "e73ca9e0eda9fabfd15561d1391e3a197e75d5c3a69b38dcda00d7293bc47beb",
+    "after_sha256": "b777d611fcbb42991248cfe58befe5eb91d0db5c33fdd065d54be29983552682",
+    "edits": [
+      {
+        "start": 153,
+        "end": 431,
+        "before": "3. OUTPUT → By default save to a NEW sibling file (`<stem>_updated.docx`),\n            never touch the input; overwrite in place ONLY if the user explicitly\n            asks to edit their own file — then first copy it to `<stem>_backup.docx`\n            next to it (never /tmp)\n",
+        "after": "3. OUTPUT → By default save to a NEW file under /workspace/outputs (`<stem>_updated.docx`),\n            never touch the input; originals remain read-only. Write a NEW version under /workspace/outputs\n"
+      },
+      {
+        "start": 3672,
+        "end": 4671,
+        "before": "> 🔴 **If LibreOffice is not installed, you MUST install it — do not verify with whatever Office suite\n> the user happens to have.** That substitution is forbidden, and a large download is **not** a reason\n> to skip the install. Required: explain the necessity (faithful rendering of styles and pagination),\n> say the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only after an install attempt has **failed** may you\n> verify with Word/WPS, and you must say so. **No install attempt = no substitute program.**\n> After installing, **register `soffice` on `PATH` and re-verify `soffice --version`** (per-OS\n> commands: `env_setup/setup.md` → *\"Register the binary on PATH\"*) — an install left off the search\n> path reads as \"not installed\" next time and gets reinstalled needlessly.\n> See `SKILL.md`.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime."
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/routes/read.md",
+    "before_sha256": "77e5e0cdef83831ebb6a4913cf7f2cdc191b0b71057729210e9657035db25a9e",
+    "after_sha256": "815e1aa0870b4022528addaabf7486c43c16dc818c848c4d1bad540a1ef55169",
+    "edits": [
+      {
+        "start": 1971,
+        "end": 3014,
+        "before": "> 🔴 **This route needs LibreOffice — if it is missing you MUST install it, not substitute it.**\n> Using Word/WPS/Pages to make the preview *instead of* installing is forbidden, and a large download\n> is **not** a reason to skip. Required: explain the necessity (it renders the document exactly as\n> laid out, which is the whole point of a visual check), say the package is large, then install it **from the Tsinghua TUNA mirror** (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, or the newest version under `.../libreoffice/stable/`; package-manager commands are the fallback). Only\n> after an install attempt has **failed** may you use another program, and you must say so.\n> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`\n> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *\"Register the binary\n> on PATH\"*) — an install left off the search path reads as \"not installed\" next time and gets\n> reinstalled needlessly. See `SKILL.md`.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "documents-plugin/skills/docx/setup.sh",
+    "before_sha256": "64b769645c2ed7f280f10dd315d759eda1fbfb15e77be5609c15a25b62d1a1e3",
+    "after_sha256": "4ad4950a8be992a3baf3dc3fe21ceabf934ea3625571534f518db2a859c6ae13",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/SKILL.md",
+    "before_sha256": "1546dd66cc22af0a37c878d8fb17e46f62e0b1f3bbe21a76b3432b8ec86561f3",
+    "after_sha256": "ba619d9a720b204e9eea4c2f965f5237ef25de57cf97b4627ef2a7602ae33383",
+    "edits": [
+      {
+        "start": 1177,
+        "end": 1470,
+        "before": "```bash\nbash \"$PDF_SKILL_DIR/scripts/setup.sh\"          # Interactive environment check + install\npython3 \"$PDF_SKILL_DIR/scripts/pdf.py\" env.check  # Detailed dependency status (JSON: add -j)\npython3 \"$PDF_SKILL_DIR/scripts/pdf.py\" env.fix     # Auto-install missing CORE Python packages\n```\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies.\n"
+      },
+      {
+        "start": 1776,
+        "end": 2085,
+        "before": "> (Academic/LaTeX) are **optional** — do NOT install them at first run. Install them **on demand, and\n> only after asking the user** (they are large downloads / long first-run waits). See the per-route\n> preflight blocks in `briefs/creative.md`, `briefs/poster.md`, `briefs/process.md`, `briefs/academic.md`.\n",
+        "after": "> (Academic/LaTeX) are **optional**. Engines must be preinstalled; report missing dependencies.\n"
+      },
+      {
+        "start": 2086,
+        "end": 2313,
+        "before": "> **Local-font-first.** Inspect fonts available in the user's local environment and prefer a suitable\n> installed font. Use bundled or downloaded fonts only as fallbacks; do not install fonts without the\n> user's confirmation.\n",
+        "after": "> **Local-font-first.** Inspect available fonts and prefer a suitable installed font. Report missing font coverage; do not install fonts during a task.\n"
+      },
+      {
+        "start": 3598,
+        "end": 4091,
+        "before": "4. **Character Safety Check** - Before writing any content string, scan for Japanese kana (の、が、は etc.), unusual Unicode symbols, or non-CJK characters that may corrupt during encoding transit ( Especially when code is written via heredoc/base64/LLM output). Replace with plain Chinese equivalents: `の`→`之/的/缔`, `々`→omit or write full character. **If content must preserve Japanese, use only standard CJK Unified Ideographs (U+4E00-U+9FFF) and common kana; avoid rare/private-use codepoints.**\n",
+        "after": "4. **Character Safety Check** - Before writing any content string, scan for Japanese kana (の、が、は etc.), unusual Unicode symbols, or non-CJK characters that may corrupt during encoding transit ( Especially when code is written via heredoc/base64/LLM output). Preserve the original Japanese and all user-supplied text exactly; fix encoding and choose fonts with the required glyphs. **Never replace user text to work around rendering: report unsupported glyphs and select a suitable font.**\n"
+      },
+      {
+        "start": 14755,
+        "end": 15143,
+        "before": "- **Original file preserved**: User-provided input files are read-only by default. Deliverables go to new files (`<stem>_updated.pdf` next to the input); edit an original in place only when the user explicitly asks — and then copy it to `<stem>_backup.pdf` next to it (never `/tmp`) first. Every `-o` target must be a new path; never pass the input path to `-o`. See `briefs/process.md`.\n",
+        "after": "- **Original file preserved**: User-provided inputs are always read-only. Use copy_library_file to /workspace/inputs; save a new version under /workspace/outputs and deliver_file. Never create a backup beside the original. Every `-o` target must be a new path; never pass the input path to `-o`. See `briefs/process.md`.\n"
+      },
+      {
+        "start": 37202,
+        "end": 37310,
+        "before": "# Environment\nenv.check                    # Check deps\nenv.fix                      # Auto-install missing\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency. Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 44220,
+        "end": 44815,
+        "before": "| Brief | Primary Tool | Secondary | Emoji Support | Custom Page Size |\n|-------|-------------|-----------|---------------|-----------------|\n| Report | ReportLab + pypdf | **ReportLab cover (`cover_render.py`)** | ❌ (tofu □) | Manual pagination |\n| Creative | Playwright *(optional)* | html2pdf-next.js (pdf-lib for post-processing) | ✅ native | ✅ any size |\n| Academic | Tectonic *(optional)* + pypdf | **ReportLab cover (`cover_render.py`)** | ❌ (dropped) | Template-dependent |\n| Process | pikepdf, pdfplumber | LibreOffice (soffice) *(install on demand — not substitutable)* | N/A | N/A |\n\n",
+        "after": ""
+      },
+      {
+        "start": 45230,
+        "end": 46911,
+        "before": "> **Optional engines**: Playwright/Chromium (Creative/poster/HTML→PDF) and Tectonic (Academic/LaTeX)\n> are optional — probe first and ask the user before installing (large downloads / long waits).\n>\n> **LibreOffice (Office→PDF) is different — you MUST install it, not substitute it.** Using Word,\n> WPS, Keynote or Pages *instead of* installing is forbidden, and a large download is **not** a reason\n> to skip it. Required: explain the necessity to the user (only engine that preserves\n> themes/layouts/master slides faithfully), say the package is large, then install it — **preferred\n> source is the Tsinghua TUNA mirror**\n> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the\n> platform/arch subdirectory; if that version is gone, take the newest under\n> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /\n> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as\n> fallbacks. **Then register the binary on `PATH` and re-verify `soffice --version`** — an install\n> left off the executable search path reads as \"not installed\" to the next probe and causes a\n> redundant multi-hundred-MB reinstall; the mechanism differs per OS (Linux/macOS symlink into\n> `/usr/local/bin`, Windows `setx` the program dir onto the user `PATH`). So **probe before\n> installing**: a binary already on disk but off-`PATH` needs registering, not reinstalling.\n> Another program is permitted **only after** an\n> install attempt has actually failed. **No install attempt = no substitute program.**\n> See `briefs/process.md` and `env_setup/setup.md` (→ *\"Register the binary on PATH\"*) for the full\n> procedure.\n>\n",
+        "after": "> Engines must be preinstalled; report any missing dependency.\n"
+      },
+      {
+        "start": 46984,
+        "end": 46984,
+        "before": "",
+        "after": "\n\nDependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 52226,
+        "end": 52367,
+        "before": "> **Dependency**: Requires `pymupdf` (`pip install pymupdf`). If not installed, skip automated detection and use the manual checklist below.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 68885,
+        "end": 69120,
+        "before": "- [ ] **Original input untouched**: the user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts\n",
+        "after": "- [ ] **Original input untouched**: the user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/academic.md",
+    "before_sha256": "e6cb5d35eb884b5b4355e43bae56d47731e43116ecdadfd0c24be01ddc824aeb",
+    "after_sha256": "30787d339f76d61af71a7390afb521aebf64992555324ce9a8eb94ef1231a222",
+    "edits": [
+      {
+        "start": 22319,
+        "end": 23157,
+        "before": "> ### 🟡 Tectonic preflight — ASK BEFORE INSTALLING (MANDATORY)\n> The LaTeX engine (Tectonic) is an **optional** dependency and may not be installed. Before compiling:\n> 1. Probe it: `python3 \"$PDF_SKILL_DIR/scripts/pdf.py\" env.check` (look at the `tectonic` line), or check for a `tectonic` binary on PATH / in `scripts/`.\n> 2. **If Tectonic is missing, do NOT auto-install.** Use the **user clarification** tool to ask whether to install it, and warn clearly: *installing Tectonic and downloading the LaTeX package/font set on first run can take several minutes to tens of minutes depending on network.*\n> 3. Only after the user confirms, install it (see `env_setup/setup.md` → optional Tectonic), then compile.\n> 4. If the user declines, offer the **Report route (ReportLab)** as a no-LaTeX alternative for non-math documents, or stop.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 42857,
+        "end": 43308,
+        "before": "| Platform | Install Command |\n|----------|----------------|\n| macOS (Homebrew) | `brew install tectonic` |\n| macOS (binary) | `curl -sSL https://drop-sh.fullyjustified.net \\| sh` |\n| Debian / Ubuntu | `apt install tectonic` (if available) or conda/binary |\n| Arch Linux | `pacman -S tectonic` |\n| Conda (any OS) | `conda install -c conda-forge tectonic` |\n| Windows (scoop) | `scoop install tectonic` |\n| Windows (choco) | `choco install tectonic` |\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/creative.md",
+    "before_sha256": "65d7a7d5f7254c1a8fa8f69773234d8b975ef7dcf06c793f810897a5a1738733",
+    "after_sha256": "a8c0f7ad0f2451d0f0bce6e531f8a83fada1a6ca81af42f052ae748f14923e71",
+    "edits": [
+      {
+        "start": 286,
+        "end": 1692,
+        "before": "> ### 🟡 Playwright/Chromium preflight — ASK BEFORE INSTALLING **OR FALLING BACK** (MANDATORY)\n> The Creative pipeline renders via **Playwright + Chromium**, which are **optional** dependencies and may not be installed. Before generating any HTML→PDF output (`convert.blueprint`, `html2pdf-next.js`, `html2poster.js`):\n> 1. Probe them: `python3 \"$PDF_SKILL_DIR/scripts/pdf.py\" env.check` (look at the `playwright` / `chromium` lines).\n> 2. **If Playwright or Chromium is missing, do NOT auto-install — and do NOT work around it on your own.** Use the **user clarification** tool to ask whether to install, and warn clearly: *installing Playwright and downloading the Chromium browser can take several minutes and ~150–300 MB; on a slow network it may take much longer.* Finding a no-install workaround does not excuse skipping this question — using a system Chrome/Chromium (`--headless --print-to-pdf` or an `executablePath` override), hand-writing a renderer, or quietly switching to ReportLab are all forbidden before the user has decided.\n> 3. Only after the user confirms, install (see `env_setup/setup.md` → optional Playwright/Chromium), then render.\n> 4. **Only after the user declines**: for a text/report-style document, offer the **Report route (ReportLab, no browser)** instead; for a genuinely visual design (poster/infographic with emoji), explain it cannot proceed without Chromium and stop.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/poster.md",
+    "before_sha256": "9f8ac441658e442e2bcaa0de9def8a22398e41a4b4ec1bebab2dfe5e82d822eb",
+    "after_sha256": "481b6aff099e1e2e107cb0b0fd8f71b3f3b0525a6ec3e9f459c6ab8ec0f25810",
+    "edits": [
+      {
+        "start": 298,
+        "end": 626,
+        "before": "> 🟡 **Playwright/Chromium preflight applies here too.** Posters render via Playwright/Chromium (optional deps). Before rendering, probe availability and — if missing — use **user clarification** to warn about the long install/download and get confirmation before installing. See `briefs/creative.md` top for the full preflight.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/process-advanced.md",
+    "before_sha256": "03caa89500f5099929d5dfea4f5b8ed077697639c896bc4e32b838cc7509ad19",
+    "after_sha256": "c4ee69bbc82601b38ef10784dd7dca5f1d9447d793e7ebc1614309e1a34b7676",
+    "edits": [
+      {
+        "start": 4752,
+        "end": 4841,
+        "before": "\nPrerequisites: `pip install pdf2image pytesseract` + install Tesseract OCR and poppler.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (Tesseract, pdf2image, poppler, pytesseract). Do not install packages or download engines/fonts during a task.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/briefs/process.md",
+    "before_sha256": "7d4ff81c037cf02901b41bce5320b2ba1efcccb5727b2b0862ae77609abb180a",
+    "after_sha256": "a63dba443c39ad641b52652b70291fa3b8dc6e2b3cf75d48d832f0142fe6055b",
+    "edits": [
+      {
+        "start": 440,
+        "end": 4425,
+        "before": "> 🟡 **Playwright preflight (optional engine).** **Playwright/Chromium** (HTML→PDF `convert.html`, xlsx/pptx→HTML fallback) is genuinely optional: do NOT auto-install it — use the **user clarification** tool to warn about the install/download time and get confirmation first. See `briefs/creative.md` top for the pattern.\n>\n> **LibreOffice/soffice (Office→PDF) is NOT in that category** — do not treat it as an optional engine you may route around. See the hard requirement immediately below.\n>\n> 🔴 **HARD REQUIREMENT — LibreOffice is missing.** Office→PDF (`convert.office`, `soffice`) and the 5-step DOCX pipeline depend on LibreOffice. **If it is not installed, you MUST install it. This is not a choice.**\n>\n> **FORBIDDEN:** ❌ using Microsoft Word/Excel/PowerPoint, WPS Office, Keynote, Pages, or any other program already on the user's machine *instead of* installing LibreOffice. ❌ Deciding for the user that the download is \"too large\"/\"too slow\" — **the package being large is NOT a reason to skip the install**; it is expected to be large. ❌ Asking \"should I use Word instead to save time?\" — that is the same violation dressed up as a question. ❌ Jumping straight to the python-pptx/python-docx + HTML + Playwright fallback to avoid installing.\n>\n> **REQUIRED sequence, no steps skipped:**\n>\n> 1. **Explain the necessity to the user.** LibreOffice is the conversion engine that preserves themes, layouts, master slides, fonts, and pagination faithfully; other tools produce visibly lower-fidelity PDFs.\n> 2. **Tell them the download is large** (several hundred MB) and may take a while — this is information for the user, **not** a decision point for you. State it and proceed.\n> 3. **Install it now.** **Preferred source — Tsinghua TUNA mirror:** `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — choose the subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`, `mac/x86_64`, `win/x86_64`, `win/aarch64`) and install the main package from it (Linux deb: `tar -xzf` then `sudo dpkg -i LibreOffice_26.8.0*/DEBS/*.deb && sudo apt-get install -f -y`; macOS: mount the `.dmg` and copy `LibreOffice.app` to `/Applications`; Windows: `msiexec /i <pkg>.msi /qn`). If 26.8.0 is gone, list `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/` and use the newest version. Full commands in `env_setup/setup.md` → *\"LibreOffice — Recommended Download Source\"*. Package-manager fallback if the mirror is unreachable: macOS `brew install --cask libreoffice`; Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`; Windows `winget install TheDocumentFoundation.LibreOffice`.\n> 4. **Register the binary on `PATH`, then re-verify `soffice --version`.** An install that leaves `soffice` off the executable search path is indistinguishable from \"not installed\" to the next probe — that is what causes the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS:** Linux `sudo ln -sf /opt/libreoffice*/program/soffice /usr/local/bin/soffice`; macOS `sudo ln -sf /Applications/LibreOffice.app/Contents/MacOS/soffice /usr/local/bin/soffice` (or `/opt/homebrew/bin` on Apple Silicon); Windows `setx PATH \"$([Environment]::GetEnvironmentVariable('PATH','User'));C:\\Program Files\\LibreOffice\\program\"` (affects only new shells — use the full `soffice.exe` path for the rest of the session). Full commands in `env_setup/setup.md` → *\"Register the binary on PATH\"*. **Probe before installing**: a binary already on disk but off-`PATH` needs registering, not reinstalling.\n> 5. **Only after that install has actually been attempted AND failed** may you use software already on the user's machine, or the Playwright fallback route. Report the install failure and that fidelity will be lower.\n>\n> **The gate is simple: no install attempt = no substitute program.** If you have not run the install command and seen it fail, reaching for Word/WPS/Keynote is a violation of this skill.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 5445,
+        "end": 5730,
+        "before": "3. OUTPUT   → By default write to a NEW sibling file (`<stem>_updated.pdf`),\n              never touch the input; overwrite in place ONLY if the user explicitly\n              asks to edit their own file — then first copy it to `<stem>_backup.pdf`\n              next to it (never /tmp)\n",
+        "after": "3. OUTPUT   → By default write to a NEW file under /workspace/outputs (`<stem>_updated.pdf`),\n              never touch the input; originals remain read-only. Write a NEW version under /workspace/outputs\n"
+      },
+      {
+        "start": 6177,
+        "end": 6324,
+        "before": "  (unless in-place editing was explicitly requested); any backup you created stays next to it —\n  these are **NOT** temp/retry artifacts to sweep.\n",
+        "after": "  (originals are read-only); deliver a new version under /workspace/outputs.\n"
+      },
+      {
+        "start": 6414,
+        "end": 6508,
+        "before": "\nReports availability but does **not** auto-install. Required: Python 3, pikepdf, pdfplumber.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (pdfplumber, pikepdf). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 14258,
+        "end": 14972,
+        "before": "**Priority**: Always use soffice for Office→PDF (preserves themes, layouts, master slides). If soffice is not installed, **you MUST install it** — follow the **HARD REQUIREMENT** block at the top of this brief: explain the necessity to the user, tell them the package is large (not a reason to skip), then install. The user's local Word/WPS/Keynote and the python-pptx/python-docx + HTML + Playwright route are permitted **only after an install attempt has actually failed** — fidelity will be lower, and you must say so. **No install attempt = no substitute program.** After installing, register `soffice` on `PATH` and re-verify `soffice --version` (step 4 of that block) so the next probe doesn't reinstall it.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 15054,
+        "end": 15184,
+        "before": "Use this **only** when the LibreOffice install attempt has failed. Use openpyxl + HTML + Playwright. Let data shape drive layout:\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/configs/fonts.md",
+    "before_sha256": "35f42fb706c347960b1d1e4b84d6b389e32cd7a6e466614f599f0d8ec5477690",
+    "after_sha256": "278e0bc20d4bacdd35aa77e7f802c5132b7ebf81ff968edf3a7ddcca0fecf8de",
+    "edits": [
+      {
+        "start": 2132,
+        "end": 2370,
+        "before": "All Creative pipeline font stacks include emoji fallback:\n- **macOS**: `Apple Color Emoji` (system default, full color emoji)\n- **Windows**: `Segoe UI Emoji`\n- **Linux**: `Noto Color Emoji` (install: `apt install fonts-noto-color-emoji`)\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/env_setup/setup.md",
+    "before_sha256": "4a43c6523f90786c0aa889745fcd6651be92fe92736f8de2ba3cb0d782dfe61e",
+    "after_sha256": "7b7b9726351285d76222d35e6cfa188e7c2d4535727663f4179b23419523c556",
+    "edits": [
+      {
+        "start": 1902,
+        "end": 2023,
+        "before": "| On demand (not substitutable) | LibreOffice | Office-to-PDF conversion — install it; do not swap in local Office/WPS |\n",
+        "after": "| On demand (not substitutable) | LibreOffice | Office-to-PDF conversion — preinstalled; report if missing |\n"
+      },
+      {
+        "start": 2299,
+        "end": 3387,
+        "before": "> Install these optional engines **on demand, after asking the user** (they involve large\n> downloads / long first-run waits) — do not install them up front.\n>\n> **Once an Office→PDF task is requested, LibreOffice MUST be installed — not substituted.** Using\n> the user's already-installed Word/WPS/Keynote/Pages *instead of* installing it is **forbidden**, and\n> the package being large (several hundred MB) is **not** a reason to skip the install. Required:\n> explain the necessity to the user (only engine that preserves themes, layouts, master slides and\n> pagination faithfully), tell them the download is large, then install it — **preferring the\n> Tsinghua TUNA mirror** documented in *\"LibreOffice — Recommended Download Source\"* at the end of\n> this file (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`), falling\n> back to the platform package manager command below. Another program is permitted **only after** an install attempt has actually failed, and that\n> failure must be reported to the user. **No install attempt = no substitute program.**\n",
+        "after": "\nDependencies must be preinstalled; report missing dependencies.\n"
+      },
+      {
+        "start": 3432,
+        "end": 4134,
+        "before": "```bash\n# ── Core (always) ──\nbrew install python3\npython3 -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber\n\n# ── Optional: Creative/HTML pipeline (install on demand, with user's OK — large Chromium download) ──\nbrew install node\nnpm install -g playwright@1.50.0 && npx playwright install chromium\n# Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version\n\n# ── Optional: Academic/LaTeX (install on demand — downloads packages on first run) ──\nbrew install tectonic\n# ── On demand, not substitutable: Office-to-PDF ──\n# Preferred: Tsinghua mirror — see \"LibreOffice — Recommended Download Source\" below\nbrew install --cask libreoffice   # fallback if the mirror is unreachable\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 4163,
+        "end": 4928,
+        "before": "```bash\n# ── Core (always) ──\nsudo apt install python3 python3-pip\npython3 -m pip install reportlab pypdf PyMuPDF pikepdf pdfplumber\n\n# ── Optional: Creative/HTML pipeline (install on demand, with user's OK) ──\nsudo apt install nodejs npm\nnpm install -g playwright@1.50.0 && npx playwright install chromium && npx playwright install-deps\n\n# ── Optional: Academic/LaTeX (install on demand) ──\nconda install -c conda-forge tectonic   # use Tsinghua mirror: conda config --add channels https://mirrors.tuna.tsinghua.edu.cn/anaconda/cloud/conda-forge/\n# ── On demand, not substitutable: Office-to-PDF ──\n# Preferred: Tsinghua mirror — see \"LibreOffice — Recommended Download Source\" below\nsudo apt install libreoffice-core   # fallback if the mirror is unreachable\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 4956,
+        "end": 5464,
+        "before": "```powershell\nwinget install Python.Python.3.11\nwinget install OpenJS.NodeJS.LTS\npython -m pip install pikepdf pdfplumber pypdf reportlab PyMuPDF\nnpm install -g playwright@1.50.0\n# Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version\nnpx playwright install chromium\n# optional:\nscoop install tectonic                           # LaTeX\n# on demand, not substitutable: prefer the Tsinghua mirror (see section below)\nwinget install TheDocumentFoundation.LibreOffice  # Office-to-PDF fallback\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 8260,
+        "end": 8431,
+        "before": "```bash\npython3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \\\n  --trusted-host pypi.tuna.tsinghua.edu.cn \\\n  pikepdf pdfplumber pypdf reportlab PyMuPDF\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 8453,
+        "end": 8610,
+        "before": "```bash\nnpm install -g playwright@1.50.0 --registry https://registry.npmmirror.com\n# Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 8808,
+        "end": 9229,
+        "before": "```powershell\npython -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn pikepdf pdfplumber pypdf reportlab PyMuPDF\nnpm install -g playwright@1.50.0 --registry https://registry.npmmirror.com\n# Pinned to 1.50.0 — npmmirror has Chromium rev 1155 for this version\n$env:PLAYWRIGHT_DOWNLOAD_HOST = \"https://npmmirror.com/mirrors/playwright/\"\nnpx playwright install chromium\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 9519,
+        "end": 9587,
+        "before": "## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 11418,
+        "end": 12004,
+        "before": "```bash\nLO_VER=26.8.0\ncase \"$(uname -m)\" in x86_64) LO_ARCH=x86_64; LO_TAG=x86-64 ;; aarch64|arm64) LO_ARCH=aarch64; LO_TAG=aarch64 ;; esac\nBASE=\"https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/$LO_VER/deb/$LO_ARCH\"\n\ncd /tmp\ncurl -fSLO \"$BASE/LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\ntar -xzf \"LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\nsudo dpkg -i LibreOffice_${LO_VER}*/DEBS/*.deb\nsudo apt-get install -f -y     # resolve any missing dependencies\nsoffice --version              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 12129,
+        "end": 12292,
+        "before": "`sudo apt install libreoffice-core` from the distro repo remains an acceptable fallback if the\nmirror is unreachable — it is older, but sufficient for conversion.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 12863,
+        "end": 12944,
+        "before": "\n`brew install --cask libreoffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (libreoffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 13600,
+        "end": 13698,
+        "before": "\n`winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (LibreOffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 14182,
+        "end": 14336,
+        "before": "Before installing anything, probe first — if the binary already exists somewhere on disk, you need\nonly the registration step below, **not** a reinstall:\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/env_setup/setup_mac_linux.sh",
+    "before_sha256": "16486f0949c37c32f3a75ddbb3f96d130e05408b66d298a6fad504e001518a92",
+    "after_sha256": "7e894908afaf2ae99d0f5c9e5a8906e822b956f7fbaa10dafdc3d30da804fd6c",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/env_setup/setup_windows.ps1",
+    "before_sha256": "801ff0bbad5693bb6bec5f62c29715da9940ede499f66cd873de9e1bc37f3aca",
+    "after_sha256": "dd2ac23c7088574a58e1d3995545d8f8b0a3f6925db0ee1752a9313cfa2c72b2",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "throw \"Dependencies must be preinstalled; if missing report the dependency (P2).\"\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/cover_validate.js",
+    "before_sha256": "519d5fadb0d918f3455f58f4b742814475e3b4a25f8a60026b82aeeb171a8f94",
+    "after_sha256": "3d8f79e9df7d3ea95e2d8e666c8c037508ac86e82190e255fbc6bf04b109c39b",
+    "edits": [
+      {
+        "start": 10708,
+        "end": 10796,
+        "before": "    console.error('✗ No Chromium found. Install via: npx playwright install chromium');\n",
+        "after": "    console.error('✗ No Chromium found. Dependency must be preinstalled; report it if missing.');\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+    "before_sha256": "6c4f4666bd3797e1a0b7c3c02782af33230671d52a70241765376a71d1743462",
+    "after_sha256": "32eeb06095761458e6d868ba6d62e2a052c37ab0e5f8109a77321ac205fd3627",
+    "edits": [
+      {
+        "start": 2136,
+        "end": 2215,
+        "before": "  throw new Error('Playwright not found. Install: npm install -g playwright');\n",
+        "after": "  throw new Error('Playwright not found. Dependency must be preinstalled; report it if missing.');\n"
+      },
+      {
+        "start": 2581,
+        "end": 2654,
+        "before": "  throw new Error('pdf-lib not found. Install: npm install -g pdf-lib');\n",
+        "after": "  throw new Error('pdf-lib not found. Dependency must be preinstalled; report it if missing.');\n"
+      },
+      {
+        "start": 21892,
+        "end": 21977,
+        "before": "    console.error('\\n✗ Chromium not found. Run: npx playwright install chromium\\n');\n",
+        "after": "    console.error('\\n✗ Chromium not found. Dependency must be preinstalled; report it if missing.');\n"
+      },
+      {
+        "start": 23229,
+        "end": 23327,
+        "before": "      console.error('\\n✗ Missing system libraries. Run: npx playwright install-deps chromium\\n');\n",
+        "after": "      console.error('\\n✗ Missing system libraries. Dependency must be preinstalled; report it if missing.');\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/html2poster.js",
+    "before_sha256": "791fe68470762d97fd22fc185a875e3d480d73e107328fd1f75bedc10b8934b6",
+    "after_sha256": "897357079b8e513cae0737a2b3f87753d8b97e2158517a5b21e9bfa590628a75",
+    "edits": [
+      {
+        "start": 5706,
+        "end": 5791,
+        "before": "    console.error('Error: No Chromium found. Run: npx playwright install chromium');\n",
+        "after": "    console.error('Error: No Chromium found. Dependency must be preinstalled; report it if missing.');\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+    "before_sha256": "92136d47b5ab7d636bd95d67704991cb1cd6038f240d7c59058782919808f0a7",
+    "after_sha256": "16e3b10e0ef2cb49e39c249d23c9b2ad382b12c27a1fde5ae37604d11f302d75",
+    "edits": [
+      {
+        "start": 10300,
+        "end": 10356,
+        "before": "    \"\"\"Check if playwright npm package is installed.\"\"\"\n",
+        "after": "    'Check if playwright Dependency must be preinstalled; report it if missing.'\n"
+      },
+      {
+        "start": 16196,
+        "end": 17401,
+        "before": "    print(\"\\n=== Install Commands (optional engines \\u2014 install only when a route needs them, with the user's OK) ===\")\n    print(\"  Core Python: pip install reportlab pypdf PyMuPDF pikepdf pdfplumber\")\n    print(\"  Node.js:     brew install node (macOS) / apt install nodejs (Ubuntu)\")\n    print(\"  Playwright:  npm install -g playwright && npx playwright install chromium   # large download, minutes\")\n    print(\"  LibreOffice: PREFERRED \\u2192 Tsinghua mirror https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/\")\n    print(\"               (pick deb/rpm/mac/win subdir for your arch; newest version if 26.8.0 is gone)\")\n    print(\"               fallback: brew install --cask libreoffice (macOS) / sudo apt install libreoffice-core (Linux)\")\n    print(\"               ↳ MUST be installed, never substituted. Using Word/WPS/Keynote instead\")\n    print(\"                 is forbidden; a large download is NOT a reason to skip it. Explain the\")\n    print(\"                 necessity to the user, then install. No install attempt = no substitute.\")\n    print(\"  Tectonic:    curl -fsSL https://drop-sh.fullyjustified.net | sh            # downloads LaTeX packages on first run\")\n",
+        "after": "    print(\"Dependencies must be preinstalled; report each missing dependency. Do not install at runtime.\")\n"
+      },
+      {
+        "start": 17469,
+        "end": 18900,
+        "before": "    \"\"\"Auto-install missing CORE Python dependencies only.\n    Browser engines (Playwright/Chromium) and LaTeX (Tectonic) are OPTIONAL and are\n    NEVER auto-installed here — install them on demand, with the user's confirmation,\n    only when a route needs them (they involve large downloads / long waits).\"\"\"\n    modules = {\n        \"reportlab\": \"reportlab\",\n        \"pypdf\": \"pypdf\",\n        \"fitz\": \"PyMuPDF\",\n        \"pikepdf\": \"pikepdf\",\n        \"pdfplumber\": \"pdfplumber\",\n        \"pdf2image\": \"pdf2image\",\n        \"PIL\": \"Pillow\",\n    }\n    installed = []\n    for mod, pkg in modules.items():\n        s, _ = _probe_python_module(mod)\n        if s == \"missing\":\n            print(f\"Installing {pkg}...\")\n            for attempt in (\n                [sys.executable, \"-m\", \"pip\", \"install\", \"-q\", pkg],\n                [sys.executable, \"-m\", \"pip\", \"install\", \"-q\", \"--user\", pkg],\n                [sys.executable, \"-m\", \"pip\", \"install\", \"-q\", \"--break-system-packages\", pkg],\n            ):\n                result = subprocess.run(attempt, capture_output=True, text=True)\n                if result.returncode == 0:\n                    installed.append(pkg)\n                    break\n            else:\n                print(f\"  Failed to install {pkg}\")\n\n    if installed:\n        print(f\"\\nInstalled: {', '.join(installed)}\")\n    else:\n        print(\"All Python dependencies are already installed.\")\n    raise SystemExit(0)\n",
+        "after": "    Output.error(\"DependencyMissing\", \"Dependencies must be preinstalled; report missing packages. Runtime installation is disabled.\")\n"
+      },
+      {
+        "start": 29212,
+        "end": 29301,
+        "before": "        Output.error(\"DependencyMissing\", \"pdfplumber required: pip install pdfplumber\")\n",
+        "after": "        Output.error(\"DependencyMissing\", 'pdfplumber required: Dependency must be preinstalled; report it if missing.')\n"
+      },
+      {
+        "start": 30307,
+        "end": 30390,
+        "before": "        Output.error(\"DependencyMissing\", \"pikepdf required: pip install pikepdf\")\n",
+        "after": "        Output.error(\"DependencyMissing\", 'pikepdf required: Dependency must be preinstalled; report it if missing.')\n"
+      },
+      {
+        "start": 64391,
+        "end": 64469,
+        "before": "            \"LibreOffice not found — you MUST install it, not substitute it\",\n",
+        "after": "            'LibreOffice not found. Dependency must be preinstalled; report the missing dependency. Do not install at runtime.',\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/poster_validate.py",
+    "before_sha256": "bd87e6a213c57c512ddffccfba6d417b39080e8745806e3282e5ec6d5b164290",
+    "after_sha256": "27a7692635315a531b6ba990a3f8be569d3741e979a0cec3499abf1ed3477c67",
+    "edits": [
+      {
+        "start": 37872,
+        "end": 38000,
+        "before": "            \"pdfplumber is not installed. Cannot perform PDF text checks. \"\n            \"Install with: pip install pdfplumber\",\n",
+        "after": "            'pdfplumber is not installed. Cannot perform PDF text checks. Dependency must be preinstalled; report it if missing.',\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/setup.sh",
+    "before_sha256": "4293ba1ae3e881bddf2af62e15082a205a3e0ccd8260042467baaae5954329ab",
+    "after_sha256": "fe6acbb0e1a4788b9d57d4daa2f78e4e0cf976e9623cd77af600de0e9d98f754",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/toc_validate.py",
+    "before_sha256": "2fe96a4ca6620830e395dcd69fcaa43c2068992d5ab44b610b22a8f92e0ec628",
+    "after_sha256": "ededf2cd01ced419a8c1929e39a9eaf880b205bbdaa17c6efed7dbfcd9c19bb2",
+    "edits": [
+      {
+        "start": 24313,
+        "end": 24411,
+        "before": "                                      \"pdfplumber is not installed. Run: pip install pdfplumber\",\n",
+        "after": "                                      'pdfplumber is not installed. Dependency must be preinstalled; report it if missing.',\n"
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/typesetting/charts.md",
+    "before_sha256": "3d0488f65bdd3d03afac2ff72bc36126829b0cf9da4cf78b84507bf93d263688",
+    "after_sha256": "b100fa44d94ad3d9e1244e5de8bf92ac429ef0f07859157ee3191161f772bd64",
+    "edits": [
+      {
+        "start": 1506,
+        "end": 1567,
+        "before": "from adjustText import adjust_text  # pip install adjustText\n",
+        "after": "from adjustText import adjust_text  # dependency must be preinstalled\n"
+      }
+    ]
+  },
+  {
+    "path": "presentations-plugin/skills/pptx/SKILL.md",
+    "before_sha256": "2eff06e9eecd5307ba2d5256cf2d409e263c27bd79583026ba1738cc45193894",
+    "after_sha256": "05fd1cb4f47e32d794c4a13071e3a3604135a904ac2622c9b475dd41360c4c13",
+    "edits": [
+      {
+        "start": 1428,
+        "end": 1775,
+        "before": "**Original file preserved:** user-provided decks are read-only by default. Deliverables go to new files\n(`<stem>_updated.pptx` next to the input); edit an original in place only when the user explicitly\nasks — and then copy it to `<stem>_backup.pptx` next to it (never `/tmp`) first. See *\"Editing an\nexisting PowerPoint presentation\"* in Part 2.\n",
+        "after": "Originals remain read-only. Work on a copy in /workspace; save and deliver a new version under /workspace/outputs.\n"
+      },
+      {
+        "start": 15870,
+        "end": 16265,
+        "before": "**Output QA (before handing the deck over):** the user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts. The deliverable is a new file (`<stem>_updated.pptx`), and intermediate renders (the PDF and per-slide PNGs from the commands below) are cleaned up.\n",
+        "after": "**Output QA (before handing the deck over):** the user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.\n"
+      },
+      {
+        "start": 16667,
+        "end": 17350,
+        "before": "\n> If `soffice` is only available under a full path (macOS:\n> `/Applications/LibreOffice.app/Contents/MacOS/soffice`), call it there. Only one LibreOffice\n> instance may run at a time — if a conversion hangs, add\n> `--env:UserInstallation=file:///tmp/libreoffice_tmp`.\n>\n> 🔴 **`soffice` not installed? You MUST install it, not substitute it** — using PowerPoint/Keynote/WPS\n> to render instead is forbidden, and a large download is not a reason to skip. Once installed,\n> **register it on `PATH` and re-verify `soffice --version`** so the next probe doesn't reinstall it\n> (step 4 of the hard requirement). See\n> [HARD REQUIREMENT](#-hard-requirement--libreoffice-is-missing) below.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (LibreOffice, libreoffice, soffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 17510,
+        "end": 17547,
+        "before": "```bash\nnpm install -g pptxgenjs\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 36058,
+        "end": 36449,
+        "before": "  • **Decide the output path BEFORE you modify anything.** By default save to a NEW sibling file\n    (`<stem>_updated.pptx`), never touch the input; overwrite in place ONLY if the user explicitly\n    asks to edit their own file — then first copy it to `<stem>_backup.pptx` next to it (never\n    `/tmp`). `Presentation.save(path)` clobbers whatever path you name, so never pass it the user's\n",
+        "after": "  • **Decide the output path BEFORE you modify anything.** By default save to a NEW file under /workspace/outputs\n    (`<stem>_updated.pptx`), never touch the input; originals remain read-only; deliver a new version under /workspace/outputs. `Presentation.save(path)` clobbers whatever path you name, so never pass it the user's\n"
+      },
+      {
+        "start": 39387,
+        "end": 39692,
+        "before": "> **Output first, modify second.** By default save edits to a NEW sibling file (`<stem>_updated.pptx`),\n> never touch the input; overwrite in place ONLY if the user explicitly asks to edit their own file —\n> then first copy it to `<stem>_backup.pptx` next to it (never `/tmp`). \"Work on a copy\" means the\n",
+        "after": "> **Output first, modify second.** By default save edits to a NEW file under /workspace/outputs (`<stem>_updated.pptx`),\n> never touch the input; originals remain read-only; deliver a new version under /workspace/outputs. \"Work on a copy\" means the\n"
+      },
+      {
+        "start": 46411,
+        "end": 47063,
+        "before": "- **markitdown**: `pip install \"markitdown[pptx]\"` (text extraction)\n- **pptxgenjs**: `npm install -g pptxgenjs` (creating presentations)\n- **playwright**: `npm install -g playwright@1.50.0` (HTML rendering)\n- **sharp**: `npm install -g sharp` (SVG rasterization and image processing)\n- **LibreOffice**: PDF conversion — install from the Tsinghua mirror\n  (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`, see the hard\n  requirement below); `sudo apt-get install libreoffice` only as a fallback\n- **Poppler**: `sudo apt-get install poppler-utils` (pdftoppm)\n- **defusedxml**: `pip install defusedxml` (secure XML parsing)\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 47208,
+        "end": 47288,
+        "before": "**If LibreOffice is not installed, you MUST install it. This is not a choice.**\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 47289,
+        "end": 47919,
+        "before": "**FORBIDDEN — do not do any of these:**\n- ❌ Using Keynote, Microsoft PowerPoint, WPS Office, or any other program already on the user's\n  machine *instead of* installing LibreOffice.\n- ❌ Deciding on the user's behalf that the download is \"too large\", \"too slow\", or \"not worth it\".\n  **The package being large is NOT a reason to skip the install.** It is expected to be large.\n- ❌ Asking the user \"should I use Keynote/PowerPoint instead to save time?\" — that is the same\n  violation dressed up as a question. Do not offer the substitution.\n- ❌ Silently degrading (shipping the deck without the render check) to avoid installing.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 47978,
+        "end": 48762,
+        "before": "1. **Explain the necessity to the user.** LibreOffice is what renders the deck's real layout —\n   master slides, themes, placeholder geometry — so it is the only way to verify slides actually\n   fit before delivery. Substituting it means shipping an unverified deck.\n2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is\n   information for the user, **not** a decision point for you — state it and proceed to install.\n3. **Install it now.** **Preferred source — Tsinghua TUNA mirror** (fast in China, current build):\n   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`. Pick the\n   subdirectory matching the OS and CPU arch (`uname -m` / `$env:PROCESSOR_ARCHITECTURE`) and\n   download the main package from it:\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 49986,
+        "end": 50664,
+        "before": "   Package-manager fallback, only if the mirror is unreachable:\n   - macOS: `brew install --cask libreoffice`\n   - Linux (Debian/Ubuntu): `sudo apt-get install libreoffice`\n   - Windows: `winget install TheDocumentFoundation.LibreOffice`\n4. **Register the binary on `PATH`, then re-verify.** Do this as part of the install, not as an\n   afterthought: an install that leaves `soffice` off the executable search path is\n   indistinguishable from \"not installed\" to the next `command -v soffice` probe — which re-triggers\n   this whole block and makes you download several hundred MB you already have. **The mechanism\n   differs per OS — use the one for the platform you are on:**\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 51180,
+        "end": 52079,
+        "before": "   Notes: on Apple Silicon `/usr/local/bin` is not always on `PATH` — if the verify still fails, link\n   into `/opt/homebrew/bin` instead. On Windows `setx` only affects **newly launched** shells, so for\n   the rest of the current session call `soffice.exe` by its full path. Only continue once the verify\n   prints a version. Corollary: **probe before installing** — if the binary already exists on disk\n   but off-`PATH` (check `/opt/libreoffice*/program/soffice`,\n   `/Applications/LibreOffice.app/Contents/MacOS/soffice`,\n   `C:\\Program Files\\LibreOffice\\program\\soffice.exe`), register it instead of reinstalling.\n5. **Only after that install has actually been attempted AND failed** may you use software already\n   on the user's machine (Keynote, PowerPoint, WPS). Report the install failure and what you\n   switched to, and warn that the rendering may differ from this skill's normal checks.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 52080,
+        "end": 52269,
+        "before": "> **The gate is simple: no install attempt = no substitute program.** If you have not run the\n> install command and seen it fail, using Keynote/PowerPoint/WPS is a violation of this skill.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/SKILL.md",
+    "before_sha256": "50c6c495c9cfb5c2b8ce9320520abf9862635748469519b8d4ea08670a9a68f2",
+    "after_sha256": "8591f5a64d2abc00d9763226ed56161b86c91b425172b77a43aed57415825252",
+    "edits": [
+      {
+        "start": 1603,
+        "end": 2075,
+        "before": "> 🔴 **LibreOffice is install-on-demand and NOT substitutable.** `env_check.sh` reports it as\n> `on-demand MISSING` without failing, so a passing check does **not** mean it is present. The moment\n> a task needs `recalc`, `.xlsx`→PDF, or `.csv`→`.xlsx`, you **MUST install it** — using the user's\n> Excel/WPS/Numbers instead is forbidden, and a large download is not a reason to skip.\n> See [HARD REQUIREMENT](#-hard-requirement--libreoffice-is-missing) under Quality Gate.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 2342,
+        "end": 2569,
+        "before": "> **Local-font-first.** Inspect fonts available in the user's local environment and prefer a suitable\n> installed font. Use bundled or downloaded fonts only as fallbacks; do not install fonts without the\n> user's confirmation.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 10496,
+        "end": 10698,
+        "before": "`recalc` (formula recalculation), `.xlsx` → PDF, and `.csv` → `.xlsx` all run through\nLibreOffice/`soffice`. It is *install-on-demand* only in the sense that it is installed the moment a\ntask needs it.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 10699,
+        "end": 10779,
+        "before": "**If LibreOffice is not installed, you MUST install it. This is not a choice.**\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 10780,
+        "end": 11387,
+        "before": "**FORBIDDEN — do not do any of these:**\n- ❌ Using Microsoft Excel, WPS Office, Numbers, or any other program already on the user's machine\n  *instead of* installing LibreOffice.\n- ❌ Deciding on the user's behalf that the download is \"too large\", \"too slow\", or \"not worth it\".\n  **The package being large is NOT a reason to skip the install.** It is expected to be large.\n- ❌ Asking the user \"should I just use Excel instead to save time?\" — that is the same violation\n  dressed up as a question. Do not offer the substitution.\n- ❌ Skipping recalculation or the release gate altogether to avoid installing.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 11446,
+        "end": 13616,
+        "before": "1. **Explain the necessity to the user.** LibreOffice is what actually recalculates the formulas so\n   errors (`#REF!`, `#DIV/0!`, `#VALUE!`) surface before delivery — without it, formula results are\n   unverified and the Live Formula Guarantee cannot be honored.\n2. **Tell them the download is large** (roughly several hundred MB) and may take a while. This is\n   information for the user, **not** a decision point for you — state it and proceed to install.\n3. **Install it now.** **Preferred source — Tsinghua TUNA mirror:**\n   `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` — pick the\n   subdirectory for the platform/arch (`deb/x86_64`, `deb/aarch64`, `rpm/x86_64`, `mac/aarch64`,\n   `mac/x86_64`, `win/x86_64`, `win/aarch64`) and install the main package from it. If 26.8.0 is\n   gone, use the newest version under `.../libreoffice/stable/`. Full per-platform commands:\n   [`env_setup/setup.md`](env_setup/setup.md) → *\"LibreOffice — Recommended Download Source\"*.\n   Package-manager fallback, only if the mirror is unreachable: macOS\n   `brew install --cask libreoffice`; Linux (Debian/Ubuntu) `sudo apt install libreoffice-core`;\n   Windows `winget install TheDocumentFoundation.LibreOffice`.\n4. **Register the binary on `PATH`, then re-verify.** An install that leaves `soffice` off the\n   executable search path looks identical to \"not installed\" on the next probe — that is what causes\n   the same several-hundred-MB package to be downloaded twice. **The mechanism differs per OS**\n   (Linux/macOS: symlink into `/usr/local/bin`; Windows: append the program dir to the user `PATH`\n   with `setx`). Full per-OS commands: [`env_setup/setup.md`](env_setup/setup.md) → *\"Register the\n   binary on PATH\"*. Re-run `soffice --version` and only continue once it prints a version.\n   Corollary: **probe before installing** — if the binary already exists on disk but off-`PATH`,\n   register it instead of reinstalling.\n5. **Only after that install has actually been attempted AND failed** may you use software already\n   on the user's machine (Excel, WPS, Numbers). Report the install failure and which verification\n   steps were skipped.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 13617,
+        "end": 13801,
+        "before": "> **The gate is simple: no install attempt = no substitute program.** If you have not run the\n> install command and seen it fail, using Excel/WPS/Numbers is a violation of this skill.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/env_setup/setup.md",
+    "before_sha256": "dc87ac0409c6d4c93054e6b8dac12d17e98eb7e00caabb7bfd48410d81d6e848",
+    "after_sha256": "e3ffb5fd786ec1a4546523b11547883d989b04e5f225e72bf2e020d13dbae5b3",
+    "edits": [
+      {
+        "start": 1060,
+        "end": 1527,
+        "before": "| Category | Package | Purpose |\n|----------|---------|---------|\n| Runtime | Python 3 + pip | Spreadsheet generation and processing |\n| Python pkg | openpyxl | Read/write .xlsx files |\n| Python pkg | XlsxWriter | High-performance .xlsx creation |\n| On demand (not substitutable) | LibreOffice | recalc, .xlsx-to-PDF, .csv-to-.xlsx — install it; do not swap in local Excel/WPS |\n| Font | CJK fonts (pre-installed in /usr/share/fonts) | Chinese text in spreadsheets |\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 1572,
+        "end": 1749,
+        "before": "```bash\nbrew install python3\npython3 -m pip install openpyxl XlsxWriter\nbrew install --cask libreoffice   # on demand (not substitutable) — prefer the Tsinghua mirror below\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 1778,
+        "end": 1973,
+        "before": "```bash\nsudo apt install python3 python3-pip\npython3 -m pip install openpyxl XlsxWriter\nsudo apt install libreoffice-core   # on demand (not substitutable) — prefer the Tsinghua mirror below\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 2001,
+        "end": 2213,
+        "before": "```powershell\nwinget install Python.Python.3.11\npython -m pip install openpyxl XlsxWriter\nwinget install TheDocumentFoundation.LibreOffice   # on demand (not substitutable) — prefer the Tsinghua mirror below\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 2304,
+        "end": 4579,
+        "before": "> 🔴 **HARD REQUIREMENT.** LibreOffice is \"on demand\" only in the sense that it is installed when a\n> task needs it. Once a task does need it (formula recalculation via `recalc`, .xlsx→PDF, .csv→.xlsx),\n> **you MUST install it. This is not a choice.**\n>\n> **FORBIDDEN:**\n> - ❌ Using Microsoft Excel, WPS Office, Numbers, or any other program already on the user's machine\n>   *instead of* installing LibreOffice.\n> - ❌ Deciding on the user's behalf that the download is \"too large\" or \"too slow\".\n>   **The package being large is NOT a reason to skip the install** — it is expected to be large.\n> - ❌ Asking \"should I just use Excel instead to save time?\" — same violation, phrased as a question.\n> - ❌ Skipping recalculation/verification altogether to avoid installing.\n>\n> **REQUIRED sequence, no steps skipped:**\n>\n> 1. **Explain the necessity to the user.** LibreOffice is the engine that recalculates formulas and\n>    renders the workbook faithfully — without it, formula results cannot be verified and PDF output\n>    loses layout fidelity.\n> 2. **Tell them the download is large** (several hundred MB) and may take a while — information for\n>    the user, **not** a decision point for you. State it and proceed.\n> 3. **Install it now** — prefer the **Tsinghua TUNA mirror** documented in *\"LibreOffice —\n>    Recommended Download Source\"* at the end of this file\n>    (`https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/`); fall back to the\n>    platform package manager command above if the mirror is unreachable.\n> 4. **Register the binary on `PATH`, then re-verify `soffice --version`.** An install left off the\n>    executable search path reads as \"not installed\" to the next probe and causes the same\n>    several-hundred-MB package to be downloaded twice. The mechanism differs per OS — see\n>    *\"Register the binary on PATH\"* at the end of this file. **Probe before installing**: a binary\n>    already on disk but off-`PATH` needs registering, not reinstalling.\n> 5. **Only after that install has actually been attempted AND failed** may you use software already\n>    on the user's machine (Excel, WPS, Numbers). Report the failure and which checks were skipped.\n>\n> **The gate is simple: no install attempt = no substitute program.**\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 6262,
+        "end": 6410,
+        "before": "```bash\npython3 -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple \\\n  --trusted-host pypi.tuna.tsinghua.edu.cn \\\n  openpyxl XlsxWriter\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 6451,
+        "end": 6596,
+        "before": "```powershell\npython -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn openpyxl XlsxWriter\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 6836,
+        "end": 6904,
+        "before": "## LibreOffice — Recommended Download Source (Tsinghua TUNA mirror)\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 8735,
+        "end": 9321,
+        "before": "```bash\nLO_VER=26.8.0\ncase \"$(uname -m)\" in x86_64) LO_ARCH=x86_64; LO_TAG=x86-64 ;; aarch64|arm64) LO_ARCH=aarch64; LO_TAG=aarch64 ;; esac\nBASE=\"https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/$LO_VER/deb/$LO_ARCH\"\n\ncd /tmp\ncurl -fSLO \"$BASE/LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\ntar -xzf \"LibreOffice_${LO_VER}_Linux_${LO_TAG}_deb.tar.gz\"\nsudo dpkg -i LibreOffice_${LO_VER}*/DEBS/*.deb\nsudo apt-get install -f -y     # resolve any missing dependencies\nsoffice --version              # verify (binary lands in /usr/bin or /opt/libreoffice*/program)\n```\n",
+        "after": "Dependencies are preinstalled in the Office image; check availability and report missing dependencies. Do not run setup or install packages.\n"
+      },
+      {
+        "start": 9446,
+        "end": 9609,
+        "before": "`sudo apt install libreoffice-core` from the distro repo remains an acceptable fallback if the\nmirror is unreachable — it is older, but sufficient for conversion.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 10180,
+        "end": 10261,
+        "before": "\n`brew install --cask libreoffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (libreoffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 10917,
+        "end": 11015,
+        "before": "\n`winget install TheDocumentFoundation.LibreOffice` is the fallback if the mirror is unreachable.\n",
+        "after": "Dependencies are preinstalled; if missing report the dependency (LibreOffice). Do not install packages or download engines/fonts during a task.\n"
+      },
+      {
+        "start": 11499,
+        "end": 11653,
+        "before": "Before installing anything, probe first — if the binary already exists somewhere on disk, you need\nonly the registration step below, **not** a reinstall:\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_mac_linux.sh",
+    "before_sha256": "64bdea1798fa5b2d5237f6ad0d7d72740eb249fb0e825545b89d362cc9d6dbcd",
+    "after_sha256": "1236c2eda4e3700c9c0b98f924eac27330ce3ff08f116fc87bbf4ac3abba82bb",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/env_setup/setup_windows.ps1",
+    "before_sha256": "3dfbe89f62915c7fd5825a95656da0087c6aed445e78bee394f24ac7c6a1596a",
+    "after_sha256": "2f04a4c7cf4f5063e6d0696cf5f9693c57a1b3f9932a55faab6b4490800108b6",
+    "edits": [
+      {
+        "start": 0,
+        "end": 0,
+        "before": "",
+        "after": "throw \"Dependencies must be preinstalled; if missing report the dependency (P2).\"\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/quality/pipeline.md",
+    "before_sha256": "2ecee0300aafead7002b140ef166c55a6923f7c0a6e585428bfafa7ee8a286b0",
+    "after_sha256": "2742a5bc43007d89348aedaac3563a1bd389934bff80235dfd9303fd0eabbd52",
+    "edits": [
+      {
+        "start": 1391,
+        "end": 2674,
+        "before": "> 🔴 **`recalc` needs LibreOffice — if it is missing you MUST install it, not substitute it.**\n> Forbidden: skipping recalculation, or handing the workbook to the user's Excel/WPS/Numbers *instead\n> of* installing. A large download is **not** a reason to skip. Required: explain the necessity (it is\n> what actually recalculates the formulas so errors surface), say the package is large, then install\n> it — **preferred source is the Tsinghua TUNA mirror**\n> `https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/` (pick the\n> platform/arch subdirectory; if that version is gone, take the newest under\n> `.../libreoffice/stable/`), with `brew install --cask libreoffice` /\n> `sudo apt install libreoffice-core` / `winget install TheDocumentFoundation.LibreOffice` as\n> fallbacks. Only after an install attempt has **failed**\n> may you use another program, and you must report which verification steps were skipped.\n> **No install attempt = no substitute program.** After installing, **register `soffice` on `PATH`\n> and re-verify `soffice --version`** (per-OS commands: `env_setup/setup.md` → *\"Register the binary\n> on PATH\"*) — an install left off the search path reads as \"not installed\" next time and gets\n> reinstalled needlessly. See `env_setup/setup.md`.\n",
+        "after": "Dependencies must be preinstalled; report missing dependencies and stop the affected route. Do not install or download engines, packages or fonts at runtime.\n"
+      },
+      {
+        "start": 10271,
+        "end": 10476,
+        "before": "- [ ] The user's original input file is untouched at its original path (unless the user explicitly asked for in-place editing); any backup you created stays next to it — these are NOT temp/retry artifacts\n",
+        "after": "- [ ] The user's original input file is untouched at its original path (originals are read-only); deliver a new version under /workspace/outputs.\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/scenes/edit.md",
+    "before_sha256": "80d3548a97a9ec1ed85dadcf4f352be66dc44ddbe8fec80106bc7f77c7c55e7b",
+    "after_sha256": "2ac13b6774523ba25305c6e37ec78499b1a0dbe41a8d49242ef0f43202404922",
+    "edits": [
+      {
+        "start": 1086,
+        "end": 1382,
+        "before": "3. OUTPUT    → By default save edits to a NEW sibling file (`<stem>_updated.xlsx`),\n               never touch the input; overwrite in place ONLY if the user explicitly\n               asks to edit their own file — then first copy it to `<stem>_backup.xlsx`\n               next to it (never /tmp)\n",
+        "after": "3. OUTPUT    → By default save edits to a NEW file under /workspace/outputs (`<stem>_updated.xlsx`),\n               never touch the input; originals remain read-only. Write a NEW version under /workspace/outputs\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/setup.sh",
+    "before_sha256": "02419bee2d5f8dbcf21da2903a68cc1c648a8e3f2594a4d81ed9d5dc24ab510f",
+    "after_sha256": "ab22cd1fa8f179d829ce3c51344f3029140cf80b8813c4975ecdb4dbc99327af",
+    "edits": [
+      {
+        "start": 20,
+        "end": 20,
+        "before": "",
+        "after": "# AILab: dependencies belong to the image; never install during a task.\necho \"Dependencies must be preinstalled; if missing report the dependency (P2).\" >&2\nexit 1\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
+    "before_sha256": "30a077cd57678f729d870a747a0b16f4bb58fb412a4b54b3fb91fd174051d5c6",
+    "after_sha256": "2a9e23d2ba52df391850661943ba88b8f56a842f4e2e504df07bdcf21267161d",
+    "edits": [
+      {
+        "start": 1199,
+        "end": 1285,
+        "before": "    print(\"Error: openpyxl required. Install: pip install openpyxl\", file=sys.stderr)\n",
+        "after": "    print('Error: openpyxl required. Dependency must be preinstalled; report it if missing.', file=sys.stderr)\n"
+      },
+      {
+        "start": 7968,
+        "end": 9496,
+        "before": "            \"LibreOffice not found — you MUST install it, not substitute it. \"\n            \"FORBIDDEN: using Excel / WPS / Numbers / any program already on this machine INSTEAD \"\n            \"of installing LibreOffice. FORBIDDEN: deciding the download is too large to bother \"\n            \"with — being large is NOT a reason to skip it. FORBIDDEN: skipping recalculation. \"\n            \"REQUIRED, in order: (1) explain to the user that LibreOffice is what actually \"\n            \"recalculates the formulas so errors surface; (2) tell them the package is large \"\n            \"(several hundred MB) and may take a while — information for them, not a decision \"\n            \"point for you; \"\n            \"(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. \"\n            \"ONLY after that install has been attempted AND failed may you use another program — \"\n            \"report the failure and which checks were skipped. \"\n            \"No install attempt = no substitute program.\"\n",
+        "after": "            'LibreOffice not found. Dependency must be preinstalled; report the missing dependency. Do not install at runtime.'\n"
+      }
+    ]
+  }
+]

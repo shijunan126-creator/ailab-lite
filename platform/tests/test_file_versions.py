@@ -406,6 +406,48 @@ def test_same_name_in_later_turn_versions_only_within_its_conversation(api):
     assert api.get(first["download_url"]).content == b"turn one"
 
 
+def test_collision_renamed_artifact_keeps_lineage_and_name_on_later_turn(api):
+    from tests.test_projects import artifact
+
+    original = ready(api, "out.txt", b"user template")
+    conversation = api.post("/v1/conversations", json={}).json()
+    outputs = []
+    for data in (b"first edit", b"second edit"):
+        run = api.post(f"/v1/conversations/{conversation['id']}/messages", json={"prompt": "edit out.txt"}).json()
+        headers = attempt_headers(api, run["id"])
+        api.post(f"/internal/runs/{run['id']}/status", headers=headers, json={"status": "running"})
+        result = artifact(api, run["id"], data)
+        outputs.append(api.get(f"/v1/files/{result['file_id']}").json())
+        api.post(f"/internal/runs/{run['id']}/status", headers=headers, json={"status": "succeeded"})
+    first, second = outputs
+    assert first["filename"] == second["filename"] == "out (2).txt"
+    assert first["lineage_id"] == second["lineage_id"] != original["lineage_id"]
+    assert second["version"] == 2
+    for file, expected in ((original, b"user template"), (first, b"first edit"), (second, b"second edit")):
+        assert api.get(file["download_url"]).content == expected
+
+    # A different workspace filename must not accidentally adopt the earlier display alias.
+    run = api.post(f"/v1/conversations/{conversation['id']}/messages", json={"prompt": "create a separate file"}).json()
+    headers = attempt_headers(api, run["id"])
+    api.post(f"/internal/runs/{run['id']}/status", headers=headers, json={"status": "running"})
+    key, data = f"staging/{run['id']}/separate", b"separate output"
+    get_storage().put_bytes(key, data)
+    result = api.post(
+        "/internal/artifacts",
+        headers=delivery_headers(headers, run["id"], key),
+        json={
+            "run_id": run["id"],
+            "staging_key": key,
+            "filename": second["filename"],
+            "size": len(data),
+            "sha256": hashlib.sha256(data).hexdigest(),
+        },
+    )
+    assert result.status_code == 200, result.text
+    separate = api.get(f"/v1/files/{result.json()['file_id']}").json()
+    assert separate["lineage_id"] != second["lineage_id"] and separate["version"] == 1
+
+
 def test_purge_between_page_id_selection_and_detail_fetch_is_ignored(api):
     from sqlalchemy import event
 

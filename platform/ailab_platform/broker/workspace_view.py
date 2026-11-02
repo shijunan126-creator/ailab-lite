@@ -55,15 +55,17 @@ def jpeg_dimensions(data: bytes) -> tuple[int, int]:
     return dimensions
 
 
-def view(manager, lease_id: str, path: str, selected) -> dict:
+def view(manager, lease_id: str, path: str, selected, *, review: bool = False, trusted_snapshot=False) -> dict:
     if not isinstance(path, str) or any(part == ".." for part in path.split("/")):
         raise ValueError("invalid_workspace_path")
     try:
         path = normalize_path(path)
     except PathError as exc:
         raise ValueError("invalid_workspace_path") from exc
-    if path == "/workspace" or path.startswith("/workspace/.ailab/"):
+    if path == "/workspace" or (path.startswith("/workspace/.ailab/") and not trusted_snapshot):
         raise ValueError("invalid_workspace_path")
+    if review and (not path.startswith("/workspace/outputs/") or Path(path).suffix.lower() not in {".docx", ".xlsx", ".pptx", ".pdf"}):
+        raise ValueError("invalid_review_path")
     if selected is None:
         selected = [1]
     if (
@@ -84,7 +86,11 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
         manager.put_file(lease_id, f"{directory}/work_view_listener.py", LISTENER.read_bytes())
         manager.put_file(lease_id, f"{directory}/uno_convert.py", UNO_CLIENT.read_bytes())
+        if review:
+            manager.put_file(lease_id, f"{directory}/artifact_checks.py", HELPER.with_name("artifact_checks.py").read_bytes())
         args = " ".join(shlex.quote(s) for s in (helper, "/workspace", path, result_path, json.dumps(selected)))
+        if review:
+            args += " review"
         result = manager.exec(
             lease_id,
             f"AILAB_LO_CLIENT={shlex.quote(directory + '/uno_convert.py')} AILAB_LO_RSS_LIMIT={settings.render_work_listener_rss_bytes} "
@@ -118,6 +124,8 @@ def view(manager, lease_id: str, path: str, selected) -> dict:
             if len(data) > 512 * 1024 or total > MAX_TOTAL:
                 raise ValueError("invalid_view_output")
             jpeg_dimensions(data)
+        if review and (not isinstance(payload.get("structural"), dict) or payload.get("quality_gate") != "pending_model_judgment"):
+            raise ValueError("invalid_view_output")
         return payload
     finally:
         try:

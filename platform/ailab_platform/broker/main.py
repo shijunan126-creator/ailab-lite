@@ -207,6 +207,23 @@ def view_workspace_file(lease_id: str, body: dict) -> dict:
         raise HTTPException(502, "view_unavailable") from exc
 
 
+@router.post("/leases/{lease_id}/review-artifact", dependencies=[Depends(require_scope("sandbox:use"))])
+def review_artifact(lease_id: str, body: dict) -> dict:
+    from .workspace_view import view
+
+    if set(body) - {"path", "pages"} or "path" not in body:
+        raise HTTPException(422, "invalid_review_arguments")
+    try:
+        manager = get_manager()
+        lease = manager.get(lease_id)
+        with manager.render_activity(lease["user_id"], priority=0):
+            return view(manager, lease_id, body["path"], body.get("pages"), review=True)
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except SandboxError as exc:
+        raise HTTPException(502, "review_unavailable") from exc
+
+
 @router.post("/leases/{lease_id}/view-warm", dependencies=[Depends(require_scope("sandbox:use"))])
 def warm_workspace_view(lease_id: str) -> dict:
     from .workspace_view import warm
@@ -349,6 +366,19 @@ async def reject_oversized_body(request: Request, call_next):
         if request.method in {"POST", "PUT", "PATCH"} and size > limit + 64 * 1024:
             return JSONResponse(status_code=413, content={"detail": f"request body exceeds {limit} bytes"})
     return await call_next(request)
+
+
+@router.post("/runs/{run_id}/workspace/{operation}", dependencies=[Depends(require_scope("sandbox:view_workspace"))])
+def workspace_document(run_id: str, operation: str, body: dict):
+    from .viewer import workspace
+
+    if (
+        operation not in {"document", "content", "check", "render"}
+        or not {"user_id", "path"} <= set(body)
+        or set(body) - {"user_id", "path", "selections", "version"}
+    ):
+        raise HTTPException(422, "invalid workspace request")
+    return workspace(get_manager(), run_id, body["user_id"], body["path"], operation, body.get("selections"), body.get("version"))
 
 
 app.include_router(router)

@@ -31,6 +31,7 @@ from .routes_auth import router as auth_router
 from .routes_brand import router as brand_router
 from .routes_client_calls import router as client_calls_router
 from .routes_conversations import router as conversations_router
+from .routes_document_view import router as document_view_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_genui import router as genui_router
@@ -55,6 +56,7 @@ from .routes_skill_drafts import router as skill_drafts_router
 from .routes_skill_drafts_internal import router as skill_drafts_internal_router
 from .routes_skills import router as skills_router
 from .routes_templates import router as templates_router
+from .workspace_documents import router as workspace_documents_router
 
 setup_logging("api")
 log = logging.getLogger("ailab.api")
@@ -178,6 +180,10 @@ app.include_router(model_context_router)
 app.include_router(jobs_router)
 app.include_router(runtime_router)
 app.include_router(client_calls_router)
+
+app.include_router(workspace_documents_router)
+
+app.include_router(document_view_router)
 app.include_router(schedules_router)
 
 

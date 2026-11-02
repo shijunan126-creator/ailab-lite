@@ -1,0 +1,259 @@
+[
+  {
+    "path": "office-runtime/src/domain/model.ts",
+    "before_sha256": "15a77f7bc6108e045e5b58c873385ec18135ee8d656a1d04357ff966ebaf0511",
+    "after_sha256": "5c25b3a889ba3c746825fb17f2c703ad64be980699aaae5c48c0c5bbe3395e38",
+    "edits": [
+      {
+        "start": 1193,
+        "end": 1193,
+        "before": "",
+        "after": "  /** AILab: source content facts, independent of model-facing headings/placeholders. */\n  hasVisuals?: boolean;\n  contentInfo?(anchor: string): { has_text: boolean; visual: boolean };\n"
+      },
+      {
+        "start": 2275,
+        "end": 2275,
+        "before": "",
+        "after": "// AILab: preserve every character of an oversized unit. The continuation cursor\n  // addresses these stable chunks, rather than consuming an unread middle.\n  const chunks = units.flatMap((unit) => {\n    const parts: string[] = [];\n    let rest = unit;\n    while (Buffer.byteLength(rest) > budget) {\n      const part = truncateBytes(rest, budget);\n      parts.push(part);\n      rest = rest.slice(part.length);\n    }\n    parts.push(rest);\n    return parts;\n  });\n  "
+      },
+      {
+        "start": 2371,
+        "end": 2371,
+        "before": "",
+        "after": "ch"
+      },
+      {
+        "start": 2373,
+        "end": 2375,
+        "before": "it",
+        "after": "k"
+      },
+      {
+        "start": 2413,
+        "end": 2413,
+        "before": "",
+        "after": "ch"
+      },
+      {
+        "start": 2415,
+        "end": 2417,
+        "before": "it",
+        "after": "k"
+      },
+      {
+        "start": 2526,
+        "end": 2711,
+        "before": "if (size > budget) {\n      parts.push(\n        `${truncateBytes(unit, budget)}\\n[\u2026 truncated; read a narrower location to see the rest]`,\n      );\n      index++;\n      break;\n    }\n    ",
+        "after": ""
+      },
+      {
+        "start": 2806,
+        "end": 2806,
+        "before": "",
+        "after": "ch"
+      },
+      {
+        "start": 2808,
+        "end": 2810,
+        "before": "it",
+        "after": "k"
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/pptx.ts",
+    "before_sha256": "c0b6e331468264f2ae6e271d0b557e431464dbf2c9222a9ba1fcbc3e33731bad",
+    "after_sha256": "e884866cef41ec74cdb69a3ea969288c9541bd0cb59ba8fdc52d0469fd0d94ad",
+    "edits": [
+      {
+        "start": 7107,
+        "end": 7107,
+        "before": "",
+        "after": "contentInfo(anchor) {\n      const slide = slides[Number(anchor.split(\":\")[1])-1];\n      return {has_text: !!slide && (!!slide.notes.trim() || slide.shapes.some(s => s.kind === \"text\" && !!s.text.trim() || s.kind === \"table\" && !!s.rows?.flat().join(\"\").trim())),\n        visual: !!slide?.shapes.length};\n    },\n    "
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/xlsx.ts",
+    "before_sha256": "60435b5599e75eb84f97930a4c8d0ba112d385c393172bfe95aa896bd02ee331",
+    "after_sha256": "fd823df6c671584e15ba36f1af466232dc34b845a8518550a80fb024ce72dfe5",
+    "edits": [
+      {
+        "start": 28,
+        "end": 28,
+        "before": "",
+        "after": "\";\nimport JSZip from \"jszip"
+      },
+      {
+        "start": 108,
+        "end": 108,
+        "before": "",
+        "after": "\n  parseLocator,"
+      },
+      {
+        "start": 2198,
+        "end": 2198,
+        "before": "",
+        "after": "// AILab: full-sheet reads must cover horizontal ranges as well as rows.\n  if (bounds.right - bounds.left >= MAX_COLS) {\n    "
+      },
+      {
+        "start": 2204,
+        "end": 2204,
+        "before": "",
+        "after": "batches: string[] = [];\n    for (let left = bounds.left; left <= bounds."
+      },
+      {
+        "start": 2209,
+        "end": 2209,
+        "before": "",
+        "after": ";"
+      },
+      {
+        "start": 2210,
+        "end": 2210,
+        "before": "",
+        "after": "left +"
+      },
+      {
+        "start": 2211,
+        "end": 2211,
+        "before": "",
+        "after": " MAX_COLS) {\n      batches.push(...renderRange(sheet, {...bounds, left, right:"
+      },
+      {
+        "start": 2235,
+        "end": 2242,
+        "before": "bounds.",
+        "after": ""
+      },
+      {
+        "start": 2262,
+        "end": 2262,
+        "before": "",
+        "after": "}, intro));\n    }\n    return batches;\n  }\n  const right = bounds.right"
+      },
+      {
+        "start": 3469,
+        "end": 3469,
+        "before": "",
+        "after": "const pkg = "
+      },
+      {
+        "start": 3563,
+        "end": 3563,
+        "before": "",
+        "after": "packageVisuals = pkg.paths().some(p => /^xl\\/(drawings|charts|media)\\//.test(p));\n  // Read cells independently of drawing interoperability. For example, openpyxl\n  // emits an unprefixed wsDr that ExcelJS 4.4 cannot reconcile. Originals remain\n  // unchanged and the system visual renderer consumes their full package.\n  let textBytes = bytes;\n  if (packageVisuals) {\n    const textPackage = await JSZip.loadAsync(bytes);\n    for (const path of pkg.paths()) if (/^xl\\/(drawings|charts|media)\\//.test(path)) textPackage.remove(path);\n    textBytes = await textPackage.generateAsync({type:\"uint8array\", compression:\"DEFLATE\"});\n  }\n  const "
+      },
+      {
+        "start": 3642,
+        "end": 3643,
+        "before": "b",
+        "after": "textB"
+      },
+      {
+        "start": 3661,
+        "end": 3662,
+        "before": "b",
+        "after": "textB"
+      },
+      {
+        "start": 3679,
+        "end": 3680,
+        "before": "b",
+        "after": "textB"
+      },
+      {
+        "start": 3698,
+        "end": 3699,
+        "before": "b",
+        "after": "textB"
+      },
+      {
+        "start": 3730,
+        "end": 3730,
+        "before": "",
+        "after": ",\n      // Drawing relationships from other producers are not consistently supported by\n      // ExcelJS. Preserve them as visual coverage, never feed them to its text reader.\n      {ignoreNodes: [\"drawing\"]}"
+      },
+      {
+        "start": 3934,
+        "end": 3934,
+        "before": "",
+        "after": ";\n  const parseSheetAnchor = (anchor: string) => { const loc = parseLocator(\"xlsx\", anchor); if (loc.kind !== \"xlsx\") throw new Error(\"invalid sheet\"); return loc.sheet; }"
+      },
+      {
+        "start": 6673,
+        "end": 6673,
+        "before": "",
+        "after": "contentInfo(anchor) {\n      const locator = parseSheetAnchor(anchor);\n      const sheet = findSheet(locator);\n      return {has_text: !!usedBounds(sheet), visual: sheet.getImages().length > 0 || packageVisuals};\n    },\n    "
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/pdf.ts",
+    "before_sha256": "fc35f2ebebbd7a8b936e536cf27cec7c937227f74348f23bab956a0e928c1130",
+    "after_sha256": "6d364d57f8f4a717381fac46a7ba993171ab924c2f6275d4804027474f59bc8f",
+    "edits": [
+      {
+        "start": 1368,
+        "end": 1368,
+        "before": "",
+        "after": ", OPS"
+      },
+      {
+        "start": 1994,
+        "end": 1994,
+        "before": "",
+        "after": "const visuals: boolean[] = [];\n    "
+      },
+      {
+        "start": 2395,
+        "end": 2395,
+        "before": "",
+        "after": ")));\n      const operators = await page.getOperatorList();\n      visuals.push(operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.constructPath, OPS.shadingFill].includes(op"
+      },
+      {
+        "start": 4127,
+        "end": 4127,
+        "before": "",
+        "after": "contentInfo(anchor) { const n = Number(anchor.split(\":\")[1]) - 1; return {has_text: !!pages[n]?.trim(), visual: !!visuals[n]}; },\n      "
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/docx.ts",
+    "before_sha256": "6c3cc9cc508f0a016593129755c6781509c8260f142a98398352458dd046d9e7",
+    "after_sha256": "0bd0f04fb823d70a9af65a6f26581da54c11320af64454413e50546ffd4db4e9",
+    "edits": [
+      {
+        "start": 4296,
+        "end": 4296,
+        "before": "",
+        "after": "visuals = new Set<string>();\n  const "
+      },
+      {
+        "start": 5178,
+        "end": 5178,
+        "before": "",
+        "after": "if ([\"w:drawing\", \"w:pict\", \"w:object\"].some(tag => find(kids(node), tag))) visuals.add(paragraph.at);\n        "
+      },
+      {
+        "start": 5478,
+        "end": 5478,
+        "before": "",
+        "after": ";\n        if ([\"w:drawing\", \"w:pict\", \"w:object\"].some(tag => find(kids(node), tag))) visuals.add(table.at)"
+      },
+      {
+        "start": 7250,
+        "end": 7250,
+        "before": "",
+        "after": "const byAnchor = new Map(blocks.map(block => [block.at, block]));\n  "
+      },
+      {
+        "start": 7275,
+        "end": 7275,
+        "before": "",
+        "after": ",\n    hasVisuals: pkg.paths().some(p => /^word\\/(media|charts|diagrams)\\//.test(p)),\n    contentInfo(anchor) { const block = byAnchor.get(anchor); return {has_text: !!block && !!blockText(block).trim(), visual: visuals.has(anchor)}; }"
+      }
+    ]
+  }
+]

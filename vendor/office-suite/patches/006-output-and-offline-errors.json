@@ -1,0 +1,89 @@
+[
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/pdf.py",
+    "before_sha256": "9b9a0c8ffe3a79f17a0270e9d0e413d9b206a006f8a859ec44bdc0147f36527c",
+    "after_sha256": "1dee3eb620b9ab076aae9d45fb39c3188b6e36de4d85e0037e9b03c88aec2b1e",
+    "edits": [
+      {
+        "start": 9482,
+        "end": 9821,
+        "before": "    home_bin = Path.home() / \"tectonic\"\n    if home_bin.exists() and os.access(home_bin, os.X_OK):\n        return (\"ok\", \"\")\n    tec_local = _SCRIPT_DIR / \"tectonic\"\n    if tec_local.exists() and os.access(tec_local, os.X_OK):\n        return (\"ok\", \"\")\n    if shutil.which(\"tectonic\"):\n        return (\"ok\", \"\")\n    return (\"missing\", \"\")\n",
+        "after": "    return (\"ok\", \"offline XeLaTeX\") if shutil.which(\"xelatex\") else (\"missing\", \"offline XeLaTeX\")\n"
+      },
+      {
+        "start": 62218,
+        "end": 63783,
+        "before": "            hint=(\n                \"FORBIDDEN: using Word / WPS / Keynote / Pages / any program already on this \"\n                \"machine INSTEAD of installing LibreOffice. FORBIDDEN: deciding the download is \"\n                \"too large to bother with — being large is NOT a reason to skip it. FORBIDDEN: \"\n                \"asking the user whether to use Word instead. \"\n                \"REQUIRED, in order: (1) explain to the user that LibreOffice is the engine that \"\n                \"preserves themes, layouts, master slides, fonts and pagination faithfully; \"\n                \"(2) tell them the package is large (several hundred MB) and may take a while — \"\n                \"this is information for them, not a decision point for you; \"\n                \"(3) install it NOW — PREFERRED source is the Tsinghua TUNA mirror 'https://mirrors.tuna.tsinghua.edu.cn/libreoffice/libreoffice/stable/26.8.0/': pick the subdirectory for this platform/arch (deb/x86_64, deb/aarch64, rpm/x86_64, mac/aarch64, mac/x86_64, win/x86_64, win/aarch64) and install the main package from it; if 26.8.0 is gone, use the newest version under '.../libreoffice/stable/'. Package-manager FALLBACK only if the mirror is unreachable: macOS 'brew install --cask libreoffice'; Debian/Ubuntu 'sudo apt install libreoffice-core'; Windows 'winget install TheDocumentFoundation.LibreOffice'. \"\n                \"ONLY after that install has been attempted AND failed may you use another \"\n                \"program — report the failure. No install attempt = no substitute program.\"\n            ),\n",
+        "after": "            hint=\"Office dependencies must be present in the image; report the missing dependency without installing.\",\n"
+      },
+      {
+        "start": 63794,
+        "end": 63861,
+        "before": "    target_dir = Path(out_path).parent if out_path else src.parent\n",
+        "after": "    target_dir = Path(out_path).parent if out_path else Path(\"/workspace/outputs\")\n"
+      },
+      {
+        "start": 66035,
+        "end": 66929,
+        "before": "\n\ndef _find_tectonic() -> str | None:\n    \"\"\"Locate the tectonic binary.\n\n    Search order:\n      1. scripts/ dir  (bundled binary — macOS arm64 only)\n      2. ~/tectonic     (user-placed binary)\n      3. System PATH    (package-manager install)\n\n    NOTE: The bundled binary at scripts/tectonic is a macOS arm64 (Apple\n    Silicon) Mach-O executable.  It will NOT run on Linux or Windows.\n    On other platforms, install tectonic via the system package manager\n    or download the correct binary — see the error message in\n    convert_latex() for instructions.\n    \"\"\"\n    local_bin = _SCRIPT_DIR / \"tectonic\"\n    if local_bin.exists() and os.access(local_bin, os.X_OK):\n        return str(local_bin)\n    home_bin = Path.home() / \"tectonic\"\n    if home_bin.exists() and os.access(home_bin, os.X_OK):\n        return str(home_bin)\n    system_bin = shutil.which(\"tectonic\")\n    return system_bin\n",
+        "after": ""
+      }
+    ]
+  },
+  {
+    "path": "pdf-plugin/skills/pdf/scripts/html2pdf-next.js",
+    "before_sha256": "1c230f30779cfcfbeb8fe83a54d6eb25e1723b59e8ca1ec3325b9b107523ff66",
+    "after_sha256": "70ccd01d1dc8c778aff48da13c4e22560efc5dd5107c0815b73b2fd0ec04db29",
+    "edits": [
+      {
+        "start": 5095,
+        "end": 5154,
+        "before": "    outputFile = path.join(p.dir || '.', p.name + '.pdf');\n",
+        "after": "    outputFile = path.join('/workspace/outputs', p.name + '.pdf');\n"
+      },
+      {
+        "start": 6802,
+        "end": 6873,
+        "before": "  // Auto-inject KaTeX CDN if raw math detected but library not loaded\n",
+        "after": "  // Auto-inject preinstalled KaTeX if raw math detected but library not loaded\n"
+      },
+      {
+        "start": 6943,
+        "end": 7041,
+        "before": "    console.log('  ⏳ Auto-injecting KaTeX CDN (math formulas detected but KaTeX not loaded)...');\n",
+        "after": "    console.log('  ⏳ Auto-injecting preinstalled KaTeX (math formulas detected but KaTeX not loaded)...');\n"
+      },
+      {
+        "start": 7304,
+        "end": 7359,
+        "before": "    await sleep(2000); // Wait for CDN scripts to load\n",
+        "after": "    await sleep(2000); // Wait for local scripts to load\n"
+      },
+      {
+        "start": 7490,
+        "end": 7546,
+        "before": "      console.log('  ✓ KaTeX CDN loaded successfully');\n",
+        "after": "      console.log('  ✓ preinstalled KaTeX loaded successfully');\n"
+      },
+      {
+        "start": 7559,
+        "end": 7736,
+        "before": "      console.log('  ⚠ KaTeX CDN failed to load — math will render as raw text');\n      warnings.push('KaTeX CDN injection failed; math formulas may appear as raw LaTeX code');\n",
+        "after": "      console.log('  ⚠ preinstalled KaTeX failed to load — math will render as raw text');\n      warnings.push('preinstalled KaTeX injection failed; math formulas may appear as raw LaTeX code');\n"
+      }
+    ]
+  },
+  {
+    "path": "spreadsheets-plugin/skills/xlsx/xlsx.py",
+    "before_sha256": "486414bf41384dcbb1757d3c7b42121339ba46c93ddf667f15d9c68f5ade09ee",
+    "after_sha256": "78609c0f4f92bb3835f11d1169a53e9b7f005b0b949358f1299a2ec887f9c662",
+    "edits": [
+      {
+        "start": 49523,
+        "end": 49623,
+        "before": "        if Path(value).is_absolute() and Path(value).resolve().is_relative_to(\"/workspace/inputs\"):\n",
+        "after": "        if Path(value).resolve().is_relative_to(\"/workspace/inputs\"):\n"
+      }
+    ]
+  }
+]

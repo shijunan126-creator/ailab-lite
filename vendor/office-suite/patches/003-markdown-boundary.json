@@ -1,0 +1,15 @@
+[
+  {
+    "path": "pdf-plugin/skills/pdf/SKILL.md",
+    "before_sha256": "ba619d9a720b204e9eea4c2f965f5237ef25de57cf97b4627ef2a7602ae33383",
+    "after_sha256": "80ada8812e46fdba2b022f7b03c1286eae3590fd55017c05972e95f9eaaa648c",
+    "edits": [
+      {
+        "start": 30423,
+        "end": 30427,
+        "before": "```\n",
+        "after": ""
+      }
+    ]
+  }
+]

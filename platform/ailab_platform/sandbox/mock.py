@@ -123,7 +123,7 @@ class MockSandbox(SandboxProvider):
             "/tmp": root / "tmp",
             "/workspace": root / "workspace",
             "/opt/skills": SKILLS,
-            "/opt/ailab-office": BASE_DIR.parent / "vendor" / "zcode-office-runtime",
+            "/opt/ailab-office": BASE_DIR.parent / "vendor" / "office-suite" / "runtime",
             "/opt/ailab-tools": TOOLS,
         }
         pattern = "|".join(re.escape(prefix) for prefix in mapping)
