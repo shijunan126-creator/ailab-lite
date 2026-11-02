@@ -21,6 +21,12 @@ const cjkFontRoot = dirname(require.resolve("@fontsource/noto-sans-sc/package.js
 /** Text edits to upstream files: [file suffix, needle, replacement, reason]. A missing needle fails the build. */
 export const PATCHES = [
   [
+    "ui/viewers/XlsxView.tsx",
+    'formula && single ? `${displayValue} (=${formula.replace(/^=/, "")})` : displayValue,',
+    'formula ? `=${formula.replace(/^=/, "")}` : displayValue,',
+    "Quote source formulas consistently with server validation; browser-calculated results may have no cached source value.",
+  ],
+  [
     "ui/main.tsx",
     'const result = await host.app.sendMessage({\n          role: "user",',
     'const result = await host.app.sendMessage({\n          ailabRef: { question, anchor, text },\n          role: "user",',

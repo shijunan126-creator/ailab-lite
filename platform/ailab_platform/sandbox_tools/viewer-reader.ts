@@ -28,15 +28,22 @@ const selections = (request.selections ?? []).map((at: string) => {
     if (page.next !== null && page.next <= cursor) throw Error('cursor_stalled');
     cursor = page.next;
   } while (cursor !== null);
-  // The viewer quotes TSV cell values. Model-facing tables contain row labels and Markdown
+  // The viewer quotes TSV values and source formulas, not uncached browser calculations.
+  // Model-facing tables contain row labels and Markdown
   // separators, which are not part of the selected cells and must not invalidate that quote.
   if (locator.kind === 'xlsx') {
-    const formula = /\nFormulas:\n[A-Z]+[1-9]\d*: (=.*?)(?:\n|$)/.exec(text);
-    const rows = text.split('\n').filter(line => /^\| [1-9]\d* \| /.test(line));
-    text = rows.map(line => line.slice(2, -2).split(/(?<!\\)\|/).slice(1)
-      .map(cell => cell.trim().replace(/\\\|/g, '|')).join('\t')).join('\n');
-    if (formula && locator.range && locator.range.start.row === locator.range.end.row
-      && locator.range.start.col === locator.range.end.col) text += ` (${formula[1]})`;
+    const formulas = new Map([...text.matchAll(/^([A-Z]+[1-9]\d*): (=[^\n]*)$/gm)]
+      .map(match => [match[1], match[2].replace(/  → \(not calculated in file\)$/, '')]));
+    let columns: string[] = [];
+    const rows: string[] = [];
+    for (const line of text.split('\n')) {
+      if (!line.startsWith('| ') || !line.endsWith(' |')) continue;
+      const cells = line.slice(2, -2).split(/(?<!\\)\|/).map(cell => cell.trim().replace(/\\\|/g, '|'));
+      const row = cells.shift()!;
+      if (!row && cells.every(cell => /^[A-Z]+$/.test(cell))) columns = cells;
+      else if (/^[1-9]\d*$/.test(row)) rows.push(cells.map((cell, i) => formulas.get(columns[i] + row) ?? cell).join('\t'));
+    }
+    text = rows.join('\n');
   }
   return {at: formatLocator(locator), text};
 });

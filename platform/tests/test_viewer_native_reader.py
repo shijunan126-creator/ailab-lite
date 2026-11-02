@@ -225,11 +225,20 @@ def test_spreadsheet_selection_text_matches_viewer_tsv_without_table_labels(tmp_
     workbook.active.title = "Revenue"
     workbook.active.append(["North | South", 100, 110])
     workbook.active.append(["East", 80, 90])
+    workbook.active.append(["Total", "=SUM(B1:B2)", "=SUM(C1:C2)"])
     workbook.save(source)
     parsed = execute(
-        "viewer", source, tmp_path / "selection", timeout=22, reader=str(settings.viewer_reader_path), selections=["Revenue!A1:C2"]
+        "viewer",
+        source,
+        tmp_path / "selection",
+        timeout=22,
+        reader=str(settings.viewer_reader_path),
+        selections=["Revenue!A1:C2", "Revenue!A3:C3", "Revenue!B3"],
     )
     selected = normalized(parsed["selections"][0]["text"])
     assert selected == normalized("North | South\t100\t110\nEast\t80\t90")
     assert normalized("North | South\t999\t110") not in selected
     assert normalized("1\tNorth | South") not in selected
+
+    assert parsed["selections"][1]["text"] == "Total\t=SUM(B1:B2)\t=SUM(C1:C2)"
+    assert parsed["selections"][2]["text"] == "=SUM(B1:B2)"
