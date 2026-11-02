@@ -2547,7 +2547,7 @@ class AgentLoop:
                         messages.append({"role": "user", "content": OUT_OF_STEPS_NOTE})
                         await self._apply_steers(run_id, turn, pending=run_id in self._steer_pending)
                         response = await self._answer_without_tools(llm, run_id, run, model, messages, settings.max_agent_steps, offered)
-                        messages.append({"role": "assistant", "content": response.content})
+                        messages.append({"role": "assistant", "content": response.content, "reasoning_content": response.reasoning_content})
                         state["final_summary"] = response.content
                         metrics.record_genui(
                             response.content or "",

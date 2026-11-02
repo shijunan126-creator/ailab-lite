@@ -597,7 +597,8 @@ def test_failed_model_request_retry_reuses_identical_body(monkeypatch):
     assert_extension(requests[1], requests[2])
 
 
-def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch):
+@pytest.mark.parametrize("reasoning", ["wrap-up reasoning", ""])
+def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch, reasoning):
     from ailab_platform.config import settings
 
     class Platform(FakePlatform):
@@ -607,9 +608,12 @@ def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch):
             return {**await super().get_run(run_id), "budget_window_id": self.window}
 
     platform = Platform()
-    with scripted_server([_plan_call(1), {"content": "paused summary"}, {"content": "done"}]) as (url, requests):
+    with scripted_server([_plan_call(1), {"content": "paused summary", "reasoning_content": reasoning}, {"content": "done"}]) as (
+        url,
+        requests,
+    ):
         monkeypatch.setattr(settings, "max_agent_steps", 1)
-        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url, echo_reasoning=True))
         asyncio.run(loop.process("r", attempt_id="first"))
         assert platform.paused is not None
         platform.window = "second"
@@ -619,6 +623,8 @@ def test_checkpoint_continue_keeps_previous_request_prefix(monkeypatch):
     assert_extension(requests[0], requests[1])
     assert requests[1]["tool_choice"] == "auto" and "thinking" not in requests[1]  # same shape as the run's calls
     assert_extension(requests[1], requests[2])
+    summary = next(message for message in requests[2]["messages"] if message.get("content") == "paused summary")
+    assert summary["reasoning_content"] == reasoning
     assert any("此前收尾限制已解除" in str(m.get("content")) for m in requests[2]["messages"])
 
 

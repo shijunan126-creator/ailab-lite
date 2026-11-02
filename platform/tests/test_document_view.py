@@ -274,6 +274,33 @@ def test_capture_rejects_view_switched_in_flight(api):  # noqa: F811
     )
 
 
+def test_capture_is_inherited_only_by_authorized_descendant(api):  # noqa: F811
+    rid, cid, fid, _version, token, value = capture_setup(api)
+    assert (
+        api.post(
+            f"/v1/runs/{rid}/client-calls/capture/result", headers=AUTH, json={"claim_token": token, "ok": True, "value": value}
+        ).status_code
+        == 200
+    )
+    capture = api.get(f"/internal/runs/{rid}/client-calls/capture", headers=SERVICE).json()["result"]["value"]["capture_id"]
+    child, _, _ = owned(api)
+    unrelated, _, _ = owned(api)
+    with SessionLocal() as db:
+        run = db.get(Run, child)
+        run.conversation_id, run.parent_run_id = cid, rid
+        db.get(Run, unrelated).conversation_id = cid
+        db.commit()
+    path = f"/internal/runs/{child}/captures/{capture}"
+    original = api.get(f"/internal/runs/{rid}/captures/{capture}", headers=SERVICE)
+    inherited = api.get(path, headers=SERVICE)
+    assert inherited.status_code == 200 and inherited.content == original.content
+    assert api.get(f"/internal/runs/{unrelated}/captures/{capture}", headers=SERVICE).status_code == 404
+    with SessionLocal() as db:
+        db.get(FileObject, fid).deleted_at = datetime.now(UTC)
+        db.commit()
+    assert api.get(path, headers=SERVICE).status_code == 404
+
+
 def test_native_admission_has_explicit_byte_and_unit_bounds():
     manifest = {"kind": "pdf", "units": 300}
     assert build("f", "hash", "test.pdf", 20 * 1024**2, manifest)["native"]

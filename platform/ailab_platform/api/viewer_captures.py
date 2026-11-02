@@ -149,8 +149,22 @@ def render_capture(db, run, body, identity):
 def image(db, run_id, capture_id):
     capture = db.get(ViewerCapture, capture_id)
     run = db.get(Run, run_id)
-    if not run or not capture or capture.run_id != run.id:
+    if not run or not capture:
         raise HTTPException(404, "capture unavailable")
+    if capture.run_id != run.id:
+        from ..conversation_tree import ancestor_query
+
+        # Checkpoints keep the exact image across turns, but only the selected
+        # conversation branch may inherit its originating run's capture.
+        origin = db.get(Run, capture.run_id)
+        ancestors = ancestor_query(run.conversation_id, run.parent_run_id)
+        if (
+            not origin
+            or origin.user_id != run.user_id
+            or not run.conversation_id
+            or not db.scalar(select(ancestors.c.id).where(ancestors.c.id == capture.run_id).limit(1))
+        ):
+            raise HTTPException(404, "capture unavailable")
     expiry = capture.expires_at.replace(tzinfo=UTC) if capture.expires_at.tzinfo is None else capture.expires_at
     if expiry <= datetime.now(UTC):
         raise HTTPException(410, "capture expired")
