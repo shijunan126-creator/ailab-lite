@@ -1,5 +1,7 @@
 ## 2026-11-02 办公能力整合
 
+- 工作区交付名与资料库冲突后的显示名不是同一个身份。artifact metadata 保留 `artifact_filename`，同一会话祖先链按该名字找父版本，旧记录无该字段时才回退历史原名，并继承父版本显示名；否则上传模板占用原名后，后续同名交付会不断变成新 lineage。回归覆盖原件/两版字节保留与 SQLite/PostgreSQL。
+
 - “Docker not reachable”通常是专用Colima VM停止：先查 `COLIMA_HOME=/Users/michael/AILabDisk/local/colima colima list`；确认后用同一COLIMA_HOME执行 `colima start ailab-verify --activate=false`，再用专用socket/config重试，不能直接宣布Docker阻塞。daemon与个人栈共享，仅操作本次c3资源；镜像构建成功后再启动依赖该标签的验收，未知创建结果会保留容量直到创建截止，不能把这次启动顺序问题当泄漏。
 - capture的checkpoint图像绑定原run，后续run恢复必须经API验证当前同owner对话祖先链、源版本/授权、TTL和digest；只按当前run等值匹配会把成功截图后的下一轮暂停。步数收尾的assistant也必须保存原reasoning_content（包括空值），否则thinking供应商在resume返回400。真实根因、录制请求及双库回归见[P5续验](docs/progress/updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。
 - Worker native viewer必须用sandbox_tools/viewer-reader.ts生成的reader；不能把office-read的runner入口当viewer-reader，两者argv/输出合同不同。API文档索引和预览就绪是render capture前提，file ready不代表native索引已准备。

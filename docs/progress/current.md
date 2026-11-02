@@ -1,13 +1,8 @@
-# 办公能力 P5 Docker 恢复续验（2026-11-02）
+# 办公能力 P5 剩余边界补验（2026-11-02）
 
-- 本次进入 `92c0259`，产品/测试已提交 `706ff73`：全局统一技能加载规则、删除四包重复规则并重建hash；补Chat/Work旧checkpoint恢复及部署文本变化边界的录制回归。真实模型并列加载基础+广场技能成功；新Chat压缩后三轮及各三次同文/205、523、960-token自然对话复放已完成。系统/摘要/旧消息前缀字节稳定，供应商热尾部134–237 tokens，128阶梯但存在非整块边界值；不填充，不改压缩逻辑。详见[P5全局规则与缓存定界](updates/2026-11-02-office-suite-p5.md#全局技能加载与-chat-压缩后缓存定界2026-11-02)。专用镜像/5生产合同、163专项、Ruff/Portal build通过；完整Python2078通过/174跳过/1既有内存阈值失败，该失败独立复跑1通过；保留flake。下一步由主任务审阅本地提交及P5未验边界，不push/PR/部署。
-
-
-- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，进入HEAD `d226ea5`、base `origin/main@bf0af4f`；本次最终测试代码 `7e30b7dd2dbcbe01a12ced78b37b4141a634c057`（截图祖先授权/收尾reasoning两个修复）。未fetch、push、PR或部署；个人栈未动。
-- Office/Portal镜像均构建成功并保留；四格式真实无网Work的load_skill、review_artifact和业务交付成功，原件hash未变、下载成品原生复核通过。真实Chat覆盖Worker索引、DocRef冻结、成功render capture和后续checkpoint恢复；Work真实压缩及重启Agent后resume成功。
-- 修复capture跨run读取404、步数收尾遗漏reasoning_content导致恢复400。专项78通过，PostgreSQL截图合同16通过、真实离线容器合同5通过，Ruff通过；镜像体积、逐调用总账和失败准备调用见[P5续验](updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。本次未重复完整Python/无关浏览器套件。
-- Chat压缩后稳定3轮与Work正常阈值稳定3轮均≥95%；三份相同请求复放的154/229/176 token固定尾部支持供应商缓存分块/计数边界。历史94.4%原请求已被上轮清理，未能复放历史原件，不把推断写成精确重放完成。
-- P5仍为部分验证：剩余历史原件复放、真实模型在线viewport合流、Linux并发容量、复杂模板/宏与模型效果对照；下一步由主任务审阅两项修复及本次证据后决定后续验收，不自动部署。临时c3容器0残留，7个临时端口关闭，两个构建镜像保留，原始证据清理完成。
+- 分支 `feat/office-suite`、工作树 `.worktrees/office-suite`，进入 `5c216bf`，base `origin/main@bf0af4f`，未 fetch。用户已授权本轮继续真实模型/浏览器/专用 Docker 验收、根因修复、回归、小提交；不 push/PR/部署。个人栈不动，只操作 c3 资源。
+- 已修复资料库冲突改名导致工作区同名多轮交付脱离 lineage；新回归先失败后通过，SQLite/PostgreSQL 各 38 项受影响检查通过，Ruff 通过。四格式真实选区 viewport 已成功传模；复杂模板、多轮、视觉对照、资源与并发正在补证，尚未收尾。
+- 下一具体动作：完成本轮正在运行的 P5 验收、下载独立复核及资源汇总，清理本轮容器/服务后更新最终结论。完整最终验证按用户要求留给主任务。历史缓存/制作/恢复证据与本轮结果统一见 [P5记录](updates/2026-11-02-office-suite-p5.md)。
 
 ---
 

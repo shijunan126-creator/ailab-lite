@@ -212,3 +212,11 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 **镜像、检查与清理。** 显式使用指定 Docker socket/config，增量构建 `c3-office-global:92c0259`，image ID `f69490f6e00e`；系统/Python/npm依赖层复用，生成包及后续层更新，镜像内hash/依赖校验和宿主 check_skills 通过。真实无网生产合同 **5 passed、0 skipped**，含四格式原件hash保留、制作/修改/转换/评审及 HTML/LaTeX。Word/Excel/PPT/PDF耗时15.454/15.903/15.167/1.087秒，cgroup峰值319176704/270553088/257626112/135770112 bytes；和并行宿主检查同机，单样本不作性能回归对照。规则调整没有新依赖、后台任务或运行时额外调用。
 
 前缀/技能/目录/提示相关组合 **163 passed**；Ruff check/format、Portal production build通过。完整Python在同一源码基线上为 **2078 passed、174 skipped、1 failed**（577.52秒）；唯一失败仍为既有 `test_render_lifecycle_does_not_retain_records_after_1000_cycles`，tracemalloc增长7722435 bytes超过6 MiB。只复跑该失败项 **1 passed**（28.47秒），未改实现/阈值；保留进程/分组相关flake风险，不称全套首次全绿。未跑PostgreSQL/Redis合同或浏览器E2E；没有UI改动。临时四服务/Redis/模型转发已停止，六个临时端口关闭，本轮c3容器无残留，镜像保留。精确请求/供应商响应仅在仓库外受限临时目录保留，不保存密钥/认证头；仓库只存摘要。P5总体仍部分验证，在线viewport真模型、Linux并发上沿与复杂模板/宏/模型效果等边界不变。
+
+
+### 在线合流与真实成品补验（2026-11-02，进行中）
+
+进入干净的 `feat/office-suite@5c216bf2bb73480d9e542b34c32c0bb167277e2e`，base `origin/main@bf0af4f`，未 fetch。用户授权补在线 viewport、复杂模板/品牌/多轮、视觉对照与 Linux 资源/并发，发现缺陷修复并只复跑受影响检查；最终全套由主任务稍后统一执行，不 push/PR/部署。
+
+- 修复模板同名冲突后的交付身份丢失：原先资料库把首次成品改名 `out (2).txt`，下一轮仍交付工作区 `out.txt` 时，按显示名找不到父版，错误生成新 lineage。API 保存原交付名并仅在同 owner、同会话当前祖先链匹配；新版本继承父版显示名；有持久交付身份的记录不再按显示别名匹配，避免另一个真实工作区文件误接该 lineage，旧记录无身份字段时才回退原显示名。原件与历史版均不改写。新回归在旧实现失败，受影响版本/命名空间组合 SQLite **38 passed**、临时 PostgreSQL **38 passed**；两文件 Ruff check/format 与 diff check 通过。没有请求构造改动、新依赖或后台任务；在既有 run/Artifact 索引筛选内增加 metadata 名称匹配。
+- 专用 Linux API/Agent/Worker/Broker 与真实 Docker Office、真实供应商、真实 Portal/Chromium 已启动；4 格式选区 viewport 截图已到真实模型请求，在线详细验收、下载独立复核、同模型对照和资源结果仍在本轮进行，不能将这段中间记录当作 P5 完成。准备阶段的混合宿主/VM 存储配置、录制转发缓冲/压缩问题单列为验证装置问题，不修改产品绕过。

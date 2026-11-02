@@ -455,7 +455,11 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
     existing = db.execute(
         select(Artifact, FileObject)
         .join(FileObject, Artifact.file_id == FileObject.id)
-        .where(Artifact.run_id == run.id, FileObject.filename == filename, FileObject.sha256 == body.sha256)
+        .where(
+            Artifact.run_id == run.id,
+            func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
+            FileObject.sha256 == body.sha256,
+        )
     ).first()
     if existing is not None:
         storage.delete(body.staging_key)
@@ -512,7 +516,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         sha256=digest,
         storage_key=final_key,
         status=FileStatus.READY,
-        meta={"source": "sandbox", "run_id": run.id},
+        meta={"source": "sandbox", "run_id": run.id, "artifact_filename": filename},
     )
     parent = None
     if run.conversation_id:
@@ -524,7 +528,7 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
                 Run.conversation_id == run.conversation_id,
                 Run.id.in_([*path_ids(db, run.conversation_id, run.parent_run_id), run.id]),
                 FileObject.user_id == run.user_id,
-                FileObject.filename == filename,
+                func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
                 FileObject.deleted_at.is_(None),
                 FileObject.purged_at.is_(None),
             )
@@ -533,6 +537,9 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         )
     artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role)
     try:
+        if parent is not None:
+            # Library collision suffixes are display names, not the workspace delivery identity.
+            file.filename = parent.filename
         assign_file_version(db, file, parent)
         db.add(file)
         db.add(artifact)
