@@ -164,7 +164,9 @@ def test_snapshot_response_cleans_spool_when_send_fails(tmp_path):
         raise RuntimeError("client disconnected")
 
     with pytest.raises(RuntimeError, match="client disconnected"):
-        asyncio.run(response({"type": "http", "method": "GET", "headers": [], "extensions": {}}, receive, send))
+        asyncio.run(
+            response({"type": "http", "method": "GET", "headers": [], "extensions": {}, "asgi": {"spec_version": "2.4"}}, receive, send)
+        )
     assert not local.exists()
 
 
