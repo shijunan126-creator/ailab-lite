@@ -172,6 +172,7 @@ export default memo(function Turn({
   previewKey,
   onPreview,
   onPreviewFile,
+  onRevealRef,
   onResume,
   onAnswer,
   onRetry,
@@ -195,6 +196,8 @@ export default memo(function Turn({
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
   onPreviewFile: (file: { file_id: string; filename: string }) => void;
+  /** Show a quoted place in the side pane. */
+  onRevealRef?: (run: Run, index: number) => void;
   onResume?: (run: Run) => void;
   onAnswer?: (run: Run, questionId: string, answer: string) => Promise<void>;
   onRetry?: (run: Run) => Promise<void>;
@@ -287,6 +290,16 @@ export default memo(function Turn({
             <span className="attach-chip" title={run.template.name}>
               <IconTemplate size={13} /> {run.template.name}
             </span>
+          </div>
+        ) : null}
+        {run.doc_refs?.length ? (
+          <div className="attach-row">
+            {run.doc_refs.map((ref, i) => (
+              <button key={i} className="attach-chip quote-chip open" title={ref.quote} onClick={() => onRevealRef?.(run, i)}>
+                <span className="quote-chip-text">{ref.quote}</span>
+                <span className="quote-chip-at">{ref.filename} · {ref.at}</span>
+              </button>
+            ))}
           </div>
         ) : null}
         {run.input_files?.length ? (

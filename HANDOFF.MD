@@ -22,9 +22,14 @@
 ## 2026-11-02 办公原文资源构建
 
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
-- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片、cursor或构建期大小硬限。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
+- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
 - 生产脚本的npm闭包在 `/opt/office-production/node_modules`，reader在 `/opt/ailab-office/node_modules`；依赖解析依靠镜像NODE_PATH，不能按宿主node_modules可用推断沙箱已安装。runtime由build.py的 `--runtime-output vendor/office-suite/runtime` 从原始源码＋补丁＋adapter生成；每次重生成runtime都会清除本地node_modules/runner.mjs，必须在最后一次重生成之后再执行npm ci与npm run build，然后才能跑完整后端套件；不能以早先构建成功推断前置仍在。
 - 构建复制兼容资源时不能过滤 `LICENSE*`/`NOTICE*`：四基础包必须带固定来源的Apache-2.0 LICENSE与vendor NOTICE，第三方素材保留同目录许可；许可不列为模块，但参与生成漂移与递归hash。
+
+## 2026-11-02 原生文档viewer测试
+
+- DOCX原生文字选择依赖索引blocks映射data-at；手工fixture只有bytes/units会导致“可选文字、没有引用栏”。补真实blocks，不要伪造reference消息替代鼠标验收。XLSX先核对实际sheet名称，canvas高亮不能按DOM class计数。详见[测试记录](docs/progress/updates/2026-11-02-office-portal-tests.md)。
+- 截图PNG的base64响应不能套256 KiB控制消息限制：会在2 MiB结果预算的缩窄重拍之前被丢弃。父桥截图传输有独立上限，测试须从captureView贯穿page-tool-result；仅mock captureView不能守住此缺陷。
 
 ## 2026-11-02 办公能力迁移边界
 

@@ -75,7 +75,8 @@ reveal 命令需要 API 授权、attempt fencing、稳定 command_id 和 outbox/
 | 查看状态 | `PUT /v1/conversations/{id}/view`：`{view_id, file_id, version, at, selection?{at,text}}`，Portal 去抖（≥500ms）上报，短 TTL（10 分钟）临时存储，不写 RunEvent/业务大表；`DELETE` 于关闭侧栏/切走。按 user+conversation+view_id 隔离。 |
 | 固定工具 `document_view` | Chat/Work 同 schema，`op` ∈ `open\|reveal\|get_view\|capture`。open/reveal：`{file_id\|path, targets?[{at,quote?}], note?}`，API 授权后经 outbox 发 `document.reveal` 事件 `{command_id, file_id?\|path?, filename, version, targets, note?}`，结果只表示“已发送”，不声称用户已看到。get_view：返回该会话活跃 view 快照；多个返回候选，无/过期返回 `unavailable`。capture：`{file_id\|path, at, source: viewport\|render}`；`render` 用服务端受限渲染（复用派生页图，按 file_hash+render_revision+范围缓存）；`viewport` 发 `client.call {call_id, kind: "capture_view", input: {view_id, at?, max_width?}, timeout_ms, deadline}`，Portal 通过现有 client-calls claim/result 回传（成功 value 为 `{image, mime_type:"image/png", width, height, at, version}` 对象，≤2 MiB decoded，绑定 view_id/version），Agent 等待有 deadline（≤20s），超时返回 `unavailable`，不改用第一页冒充。截图作为有 hash/TTL/所有者的派生物，以图片引用进入上下文与 checkpoint。 |
 
+### 前端实现带来的修订（2026-11-02，以此为准）
 
-### P3 对齐说明
-
-前端 `feat/office-suite-portal@7d226ab` 的类型与 client-calls 实现修订了原接口表；上表已同步两种引用目标、reveal 的 filename/path 和截图复用 client.call。Portal 与旧表不一致时以前端为准，不新增独立截图上传端点。原生字节/页数/单元格准入、受限解析进程、测量样本和未验边界统一见 [P3 记录](../../../progress/updates/2026-11-02-office-suite-p3.md)。
+- **引用两种目标**：`doc_refs` 每项为 `{file_id, version, at, quote}` 或 `{run_id, path, version, at, quote}`（Work 未交付文件；`path` 与该 Run 预览/工作区里的文件名一致）。轮次输出 `doc_refs` 时每项附 `filename`，Portal 在用户消息下渲染为可点击的引文，点击即在侧栏打开并定位。
+- **`document.reveal` 载荷**：`{command_id, file_id? | path?, filename, version, targets[{at, quote?}], note?}`；`path` 为工作区文件名，对应发出事件的 Run。Portal 按 `command_id` 去重。
+- **视口截图复用 `client.call`**，不新增 capture_request 事件与上传端点：Agent 发 `client.call {call_id, kind: "capture_view", input: {view_id, at?, max_width?}, timeout_ms, deadline}`；只有正显示该 `view_id` 的标签页会认领（其余标签页不 claim），结果经现有 `POST /v1/runs/{run_id}/client-calls/{call_id}/result` 回传：成功 `{ok: true, value: {image: <PNG base64>, mime_type: "image/png", width, height, at, version}}`，base64 ≤ 2 MiB×4/3（超出时 Portal 自动缩窄重拍），失败 `{ok: false, error}`。API 校验 `version` 与 view 状态一致、图片大小与格式，再作为派生物进入上下文；超时与无人认领沿用 client.call 合同返回 `unavailable`。

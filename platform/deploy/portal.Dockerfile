@@ -4,6 +4,8 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1 NODE_OPTIONS=--max-old-space-size=1536 AILAB_STANDALONE=1
 COPY platform/portal/package.json platform/portal/package-lock.json ./
 RUN npm ci --no-audit --no-fund
+# office/build.mjs bundles the side-pane document viewer from the vendored runtime UI (default path ../../vendor/...).
+COPY vendor/office-suite/upstream/office-runtime/ /vendor/office-suite/upstream/office-runtime/
 COPY platform/portal/ ./
 RUN npm run build
 

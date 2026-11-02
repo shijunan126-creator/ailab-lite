@@ -37,6 +37,9 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "office/dist",
+    "office/assets.ts",
+    "office/profile.ts", "office/pdf-fonts.ts"
   ]
 }

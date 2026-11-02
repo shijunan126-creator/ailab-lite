@@ -4,10 +4,11 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FileItem, ModelInfo, Skill, SkillKind, api, skillKind } from "../../lib/api";
 import { MAX_SKILLS, matchSkills, plainText, skillsOf, toPayload, type Part } from "../../lib/message-parts";
 import type { SendOptions } from "../../lib/outbox";
+import { clearQuotes, removeQuote, useQuotes, type Quote } from "../../lib/doc-refs";
 import { canRetry, existingUpload, forgetUpload, retryUpload, startUpload, useUploads } from "../../lib/uploads";
 import { usePopover } from "../../lib/use-popover";
 import AttachmentChip from "./attachment-chip";
-import { IconArrowUp, IconCheck, IconChevronRight, IconFileText, IconLibrary, IconPlus, IconQueue, IconSearch, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
+import { IconArrowUp, IconCheck, IconX, IconChevronRight, IconFileText, IconLibrary, IconPlus, IconQueue, IconSearch, IconSheet, IconSlides, IconSparkles, IconStop, IconUpload } from "../icons";
 import LibraryPicker from "../library/library-picker";
 import ContextMeter, { estimateTokens } from "./context-meter";
 import type { Mode } from "./mode-toggle";
@@ -18,7 +19,9 @@ import TemplatePicker, { TemplateChoice } from "./template-picker";
 export type Attachment = Pick<FileItem, "id" | "filename" | "status" | "content_type" | "size">;
 export type { SendOptions };
 /** What the composer hands over: the message, frozen at the moment of sending (HLD §16.2). */
-export type Outgoing = { prompt: string; attachments: string[]; options: SendOptions; steer: boolean };
+export type Outgoing = { prompt: string; attachments: string[]; options: SendOptions; steer: boolean; docRefs?: Quote["ref"][] };
+
+const NO_QUOTES: Quote[] = [];
 
 const LINE = 24; // px: the message box's line height
 const VISIBLE_SKILLS = 3; // in the + menu; the rest behind 更多技能, searchable once the list is long
@@ -69,6 +72,7 @@ export default function Composer({
   projectId,
   initialFiles,
   context,
+  quotesKey,
 }: {
   mode: Mode;
   onMode: (next: Mode) => void;
@@ -88,7 +92,9 @@ export default function Composer({
   projectId?: string | null; // uploads from here go into this project
   initialFiles?: Attachment[]; // e.g. "talk about these" from the library
   context?: { used: number | null; compactAt: number | null }; // the conversation so far, for the context meter
+  quotesKey?: string; // quotes taken from the side-pane viewer go out with this composer's next message
 }) {
+  const quotes = useQuotes((st) => (quotesKey && st.quotes[quotesKey]) || NO_QUOTES);
   const [parts, setParts] = useState<Part[]>([]);
   const [files, setFiles] = useState<string[]>([]); // upload keys, in the order attached
   const uploads = useUploads((st) => st.uploads);
@@ -225,12 +231,13 @@ export default function Composer({
     if (overImages) { setError("每轮最多附加5张图片"); return; }
     const { prompt, skills: picks } = toPayload(parts);
     const options: SendOptions = { mode, ...(picks.length ? { skills: picks } : {}), ...(activeTemplate ? { template: activeTemplate.ref } : {}) };
-    const message: Outgoing = { prompt, attachments: files, options, steer };
+    const message: Outgoing = { prompt, attachments: files, options, steer, ...(quotes.length ? { docRefs: quotes.map((q) => q.ref) } : {}) };
     // the message is handed over and the box is free for the next one at once; its files go with it
     const ok = await onSubmit(message);
     if (ok) {
       input.current?.clear();
       setFiles([]);
+      if (quotesKey) clearQuotes(quotesKey);
       setTemplateState(null); // skills and their template are for one message; the mode stays
       setError("");
     }
@@ -265,8 +272,15 @@ export default function Composer({
         upload(e.dataTransfer.files);
       }}
     >
-      {files.length ? (
+      {files.length || quotes.length ? (
         <div className="attach-row composer-attachments">
+          {quotes.map((q, i) => (
+            <span key={`${q.label}:${i}`} className="attach-chip quote-chip" title={q.ref.quote || q.label}>
+              <span className="quote-chip-text">{q.ref.quote ? q.ref.quote.replace(/\s+/g, " ") : q.label}</span>
+              <span className="quote-chip-at">{q.label}</span>
+              <button type="button" className="link att-x" aria-label={`移除引用 ${q.label}`} onClick={() => quotesKey && removeQuote(quotesKey, i)}><IconX size={12} /></button>
+            </span>
+          ))}
           {files.map((key) => (
             <AttachmentChip key={key} uploadKey={key} onRemove={() => removeFile(key)} onRetry={canRetry(key) ? () => retryUpload(key, projectId) : undefined} />
           ))}

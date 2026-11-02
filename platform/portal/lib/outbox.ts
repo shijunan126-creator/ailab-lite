@@ -2,7 +2,7 @@
 // finish uploading and checking in the background, and only when all of them are ready (and Chat's preparation has
 // passed) is the model asked to answer. Kept outside React so it survives navigation from the new-chat page.
 import { create } from "zustand";
-import { api, errorCode, errorMessage, type Conversation, type QueuedMessage, type Run, type TemplateRef } from "./api";
+import { api, errorCode, errorMessage, type Conversation, type DocRef, type QueuedMessage, type Run, type TemplateRef } from "./api";
 import type { SkillPick } from "./message-parts";
 import { canRetry, forgetUpload, getUpload, retryUpload, settle } from "./uploads";
 
@@ -15,6 +15,7 @@ export type Pending = {
   projectId: string | null;
   prompt: string;
   attachments: string[]; // upload keys, in the order the user attached them
+  docRefs?: DocRef[]; // quotes from the side-pane viewer, checked by the API against the exact version
   options: SendOptions;
   model: string;
   vision: boolean; // the chosen model reads images itself; otherwise their text is prepared first
@@ -109,7 +110,7 @@ async function turnOf(p: Pending) {
 
 async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]> {
   const skills = p.options.skills?.map(({ name, file_id, at }) => ({ name, file_id, at }));
-  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, ...p.options, ...(skills ? { skills } : {}) };
+  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
     conversation = await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model: p.model, project_id: p.projectId || undefined }) });
