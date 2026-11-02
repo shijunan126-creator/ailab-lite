@@ -1918,7 +1918,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/.gitignore",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/.gitignore",
       "source": "office-runtime/.gitignore",
       "status": "planned:P2"
     },
@@ -1943,7 +1943,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/CONTRACT.md",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/CONTRACT.md",
       "source": "office-runtime/CONTRACT.md",
       "status": "planned:P2"
     },
@@ -1968,7 +1968,7 @@
         "work"
       ],
       "reason": "Unmodified license retained with source provenance; not model-visible.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/LICENSE",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/LICENSE",
       "source": "office-runtime/LICENSE",
       "status": "implemented"
     },
@@ -1993,7 +1993,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/contract.example.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/contract.example.ts",
       "source": "office-runtime/contract.example.ts",
       "status": "planned:P2"
     },
@@ -2024,7 +2024,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/contract.test.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/contract.test.ts",
       "source": "office-runtime/contract.test.ts",
       "status": "planned:P2"
     },
@@ -2053,7 +2053,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/contract.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/contract.ts",
       "source": "office-runtime/contract.ts",
       "status": "planned:P2"
     },
@@ -2078,7 +2078,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/budget.xlsx",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/budget.xlsx",
       "source": "office-runtime/fixtures/budget.xlsx",
       "status": "planned:P2"
     },
@@ -2103,7 +2103,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/cjk.pdf",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/cjk.pdf",
       "source": "office-runtime/fixtures/cjk.pdf",
       "status": "planned:P2"
     },
@@ -2136,7 +2136,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/generate.py",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/generate.py",
       "source": "office-runtime/fixtures/generate.py",
       "status": "planned:P2"
     },
@@ -2164,7 +2164,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/generate_cjk.py",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/generate_cjk.py",
       "source": "office-runtime/fixtures/generate_cjk.py",
       "status": "planned:P2"
     },
@@ -2189,7 +2189,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/launch.pptx",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/launch.pptx",
       "source": "office-runtime/fixtures/launch.pptx",
       "status": "planned:P2"
     },
@@ -2214,7 +2214,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/paper.pdf",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/paper.pdf",
       "source": "office-runtime/fixtures/paper.pdf",
       "status": "planned:P2"
     },
@@ -2239,7 +2239,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/fixtures/report.docx",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/fixtures/report.docx",
       "source": "office-runtime/fixtures/report.docx",
       "status": "planned:P2"
     },
@@ -2264,7 +2264,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/index.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/index.ts",
       "source": "office-runtime/index.ts",
       "status": "planned:P2"
     },
@@ -2289,7 +2289,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/module.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/module.ts",
       "source": "office-runtime/module.ts",
       "status": "planned:P2"
     },
@@ -2356,7 +2356,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/package.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/package.json",
       "source": "office-runtime/package.json",
       "status": "planned:P2"
     },
@@ -2423,7 +2423,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/package.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/package.json",
       "source": "office-runtime/package.json",
       "status": "planned:P2"
     },
@@ -2490,7 +2490,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/package.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/package.json",
       "source": "office-runtime/package.json",
       "status": "planned:P2"
     },
@@ -2557,7 +2557,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/package.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/package.json",
       "source": "office-runtime/package.json",
       "status": "planned:P2"
     },
@@ -2624,7 +2624,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/package.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/package.json",
       "source": "office-runtime/package.json",
       "status": "planned:P2"
     },
@@ -2655,7 +2655,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/build.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/build.mjs",
       "source": "office-runtime/scripts/build.mjs",
       "status": "planned:P2"
     },
@@ -2695,7 +2695,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/e2e.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/e2e.mjs",
       "source": "office-runtime/scripts/e2e.mjs",
       "status": "planned:P2"
     },
@@ -2720,7 +2720,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/kind-filter.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/kind-filter.mjs",
       "source": "office-runtime/scripts/kind-filter.mjs",
       "status": "planned:P2"
     },
@@ -2751,7 +2751,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/kind-filter.test.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/kind-filter.test.mjs",
       "source": "office-runtime/scripts/kind-filter.test.mjs",
       "status": "planned:P2"
     },
@@ -2778,7 +2778,7 @@
         "work"
       ],
       "reason": "Unmodified license retained with source provenance; not model-visible.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/licenses.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/licenses.mjs",
       "source": "office-runtime/scripts/licenses.mjs",
       "status": "implemented"
     },
@@ -2805,7 +2805,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/plugin-name.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/plugin-name.mjs",
       "source": "office-runtime/scripts/plugin-name.mjs",
       "status": "planned:P2"
     },
@@ -2836,7 +2836,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/scripts/smoke.mjs",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/scripts/smoke.mjs",
       "source": "office-runtime/scripts/smoke.mjs",
       "status": "planned:P2"
     },
@@ -2861,7 +2861,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/CONTRACT.md",
+      "runtime_location": "/opt/ailab-office/src/CONTRACT.md (planned:P2)",
       "source": "office-runtime/src/CONTRACT.md",
       "status": "planned:P2"
     },
@@ -2892,7 +2892,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/assets.test.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/assets.test.ts (planned:P2)",
       "source": "office-runtime/src/adapters/assets.test.ts",
       "status": "planned:P2"
     },
@@ -2917,7 +2917,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/assets.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/assets.ts (planned:P2)",
       "source": "office-runtime/src/adapters/assets.ts",
       "status": "planned:P2"
     },
@@ -2950,7 +2950,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/files.test.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/files.test.ts (planned:P2)",
       "source": "office-runtime/src/adapters/files.test.ts",
       "status": "planned:P2"
     },
@@ -2979,7 +2979,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/files.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/files.ts (planned:P2)",
       "source": "office-runtime/src/adapters/files.ts",
       "status": "planned:P2"
     },
@@ -3012,7 +3012,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/main.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/main.ts (planned:P2)",
       "source": "office-runtime/src/adapters/main.ts",
       "status": "planned:P2"
     },
@@ -3041,7 +3041,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/docx.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/docx.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/docx.ts",
       "status": "planned:P2"
     },
@@ -3066,7 +3066,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/dommatrix.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/dommatrix.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/dommatrix.ts",
       "status": "planned:P2"
     },
@@ -3099,7 +3099,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/ooxml.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/ooxml.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/ooxml.ts",
       "status": "planned:P2"
     },
@@ -3132,7 +3132,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/parse.test.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/parse.test.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/parse.test.ts",
       "status": "planned:P2"
     },
@@ -3159,7 +3159,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/pdf.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/pdf.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/pdf.ts",
       "status": "planned:P2"
     },
@@ -3188,7 +3188,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/pptx.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/pptx.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/pptx.ts",
       "status": "planned:P2"
     },
@@ -3219,7 +3219,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parse/xlsx.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parse/xlsx.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parse/xlsx.ts",
       "status": "planned:P2"
     },
@@ -3246,7 +3246,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/parsers.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/parsers.ts (planned:P2)",
       "source": "office-runtime/src/adapters/parsers.ts",
       "status": "planned:P2"
     },
@@ -3281,7 +3281,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/server.test.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/server.test.ts (planned:P2)",
       "source": "office-runtime/src/adapters/server.test.ts",
       "status": "planned:P2"
     },
@@ -3316,7 +3316,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/adapters/server.ts",
+      "runtime_location": "/opt/ailab-office/src/adapters/server.ts (planned:P2)",
       "source": "office-runtime/src/adapters/server.ts",
       "status": "planned:P2"
     },
@@ -3345,7 +3345,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/app/documents.ts",
+      "runtime_location": "/opt/ailab-office/src/app/documents.ts (planned:P2)",
       "source": "office-runtime/src/app/documents.ts",
       "status": "planned:P2"
     },
@@ -3378,7 +3378,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/app/sessions.test.ts",
+      "runtime_location": "/opt/ailab-office/src/app/sessions.test.ts (planned:P2)",
       "source": "office-runtime/src/app/sessions.test.ts",
       "status": "planned:P2"
     },
@@ -3411,7 +3411,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/app/views.test.ts",
+      "runtime_location": "/opt/ailab-office/src/app/views.test.ts (planned:P2)",
       "source": "office-runtime/src/app/views.test.ts",
       "status": "planned:P2"
     },
@@ -3440,7 +3440,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/contract.ts",
+      "runtime_location": "/opt/ailab-office/src/contract.ts (planned:P2)",
       "source": "office-runtime/src/contract.ts",
       "status": "planned:P2"
     },
@@ -3471,7 +3471,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/anchor.test.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/anchor.test.ts (planned:P2)",
       "source": "office-runtime/src/domain/anchor.test.ts",
       "status": "planned:P2"
     },
@@ -3498,7 +3498,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/anchor.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/anchor.ts (planned:P2)",
       "source": "office-runtime/src/domain/anchor.ts",
       "status": "planned:P2"
     },
@@ -3529,7 +3529,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/cjk.test.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/cjk.test.ts (planned:P2)",
       "source": "office-runtime/src/domain/cjk.test.ts",
       "status": "planned:P2"
     },
@@ -3554,7 +3554,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/cjk.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/cjk.ts (planned:P2)",
       "source": "office-runtime/src/domain/cjk.ts",
       "status": "planned:P2"
     },
@@ -3581,7 +3581,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/model.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/model.ts (planned:P2)",
       "source": "office-runtime/src/domain/model.ts",
       "status": "planned:P2"
     },
@@ -3612,7 +3612,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/text.test.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/text.test.ts (planned:P2)",
       "source": "office-runtime/src/domain/text.test.ts",
       "status": "planned:P2"
     },
@@ -3637,7 +3637,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/domain/text.ts",
+      "runtime_location": "/opt/ailab-office/src/domain/text.ts (planned:P2)",
       "source": "office-runtime/src/domain/text.ts",
       "status": "planned:P2"
     },
@@ -3662,7 +3662,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/kinds.ts",
+      "runtime_location": "/opt/ailab-office/src/kinds.ts (planned:P2)",
       "source": "office-runtime/src/kinds.ts",
       "status": "planned:P2"
     },
@@ -3689,7 +3689,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/profile.ts",
+      "runtime_location": "/opt/ailab-office/src/profile.ts (planned:P2)",
       "source": "office-runtime/src/profile.ts",
       "status": "planned:P2"
     },
@@ -3714,7 +3714,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/types.d.ts",
+      "runtime_location": "/opt/ailab-office/src/types.d.ts (planned:P2)",
       "source": "office-runtime/src/types.d.ts",
       "status": "planned:P2"
     },
@@ -3741,7 +3741,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/src/wording.ts",
+      "runtime_location": "/opt/ailab-office/src/wording.ts (planned:P2)",
       "source": "office-runtime/src/wording.ts",
       "status": "planned:P2"
     },
@@ -3768,7 +3768,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/tsconfig.json",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/tsconfig.json",
       "source": "office-runtime/tsconfig.json",
       "status": "planned:P2"
     },
@@ -3796,7 +3796,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/assets.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/assets.ts",
       "status": "planned:P3"
     },
@@ -3824,7 +3824,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/bootstrap.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/bootstrap.ts",
       "status": "planned:P3"
     },
@@ -3851,7 +3851,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/cjkFontRuntime.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/cjkFontRuntime.ts",
       "status": "planned:P3"
     },
@@ -3882,7 +3882,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/cjkFonts.test.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/cjkFonts.test.ts",
       "status": "planned:P3"
     },
@@ -3907,7 +3907,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/cjkFonts.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/cjkFonts.ts",
       "status": "planned:P3"
     },
@@ -3934,7 +3934,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/dom.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/dom.ts",
       "status": "planned:P3"
     },
@@ -3966,7 +3966,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/host.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/host.ts",
       "status": "planned:P3"
     },
@@ -3997,7 +3997,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/i18n.test.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/i18n.test.ts",
       "status": "planned:P3"
     },
@@ -4024,7 +4024,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/i18n.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/i18n.ts",
       "status": "planned:P3"
     },
@@ -4049,7 +4049,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/icons.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/icons.tsx",
       "status": "planned:P3"
     },
@@ -4085,7 +4085,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/main.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/main.tsx",
       "status": "planned:P3"
     },
@@ -4110,7 +4110,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/panel.css",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/panel.css",
       "status": "planned:P3"
     },
@@ -4135,7 +4135,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/panel.html",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/panel.html",
       "status": "planned:P3"
     },
@@ -4166,7 +4166,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/profile.test.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/profile.test.ts",
       "status": "planned:P3"
     },
@@ -4193,7 +4193,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/raster.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/raster.ts",
       "status": "planned:P3"
     },
@@ -4221,7 +4221,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/rpc.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/rpc.ts",
       "status": "planned:P3"
     },
@@ -4252,7 +4252,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/float.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/float.ts",
       "status": "planned:P3"
     },
@@ -4284,7 +4284,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/inline.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/inline.tsx",
       "status": "planned:P3"
     },
@@ -4312,7 +4312,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/menus.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/menus.tsx",
       "status": "planned:P3"
     },
@@ -4344,7 +4344,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/panes.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/panes.tsx",
       "status": "planned:P3"
     },
@@ -4375,7 +4375,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/parts.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/parts.tsx",
       "status": "planned:P3"
     },
@@ -4407,7 +4407,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/state.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/state.ts",
       "status": "planned:P3"
     },
@@ -4439,7 +4439,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/useCaptureView.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/useCaptureView.ts",
       "status": "planned:P3"
     },
@@ -4470,7 +4470,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/useFind.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/useFind.ts",
       "status": "planned:P3"
     },
@@ -4501,7 +4501,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/useOffscreenTargets.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/useOffscreenTargets.ts",
       "status": "planned:P3"
     },
@@ -4532,7 +4532,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/shell/useShellKeys.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/shell/useShellKeys.ts",
       "status": "planned:P3"
     },
@@ -4566,7 +4566,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/DocxView.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/DocxView.tsx",
       "status": "planned:P3"
     },
@@ -4601,7 +4601,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/PdfView.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/PdfView.tsx",
       "status": "planned:P3"
     },
@@ -4637,7 +4637,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/PptxView.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/PptxView.tsx",
       "status": "planned:P3"
     },
@@ -4671,7 +4671,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/XlsxView.tsx",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/XlsxView.tsx",
       "status": "planned:P3"
     },
@@ -4702,7 +4702,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/align.test.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/align.test.ts",
       "status": "planned:P3"
     },
@@ -4729,7 +4729,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/align.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/align.ts",
       "status": "planned:P3"
     },
@@ -4761,7 +4761,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/registry.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/registry.ts",
       "status": "planned:P3"
     },
@@ -4788,7 +4788,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/viewers/types.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/viewers/types.ts",
       "status": "planned:P3"
     },
@@ -4819,7 +4819,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/windowStorage.test.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/windowStorage.test.ts",
       "status": "planned:P3"
     },
@@ -4846,7 +4846,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/ui/windowStorage.ts",
+      "runtime_location": "Portal isolated viewer bundle (planned:P4)",
       "source": "office-runtime/ui/windowStorage.ts",
       "status": "planned:P3"
     },
@@ -4875,7 +4875,7 @@
         "work"
       ],
       "reason": "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
-      "runtime_location": "vendor/office-suite/upstream/office-runtime/vitest.config.ts",
+      "runtime_location": "build/test only: vendor/office-suite/upstream/office-runtime/vitest.config.ts",
       "source": "office-runtime/vitest.config.ts",
       "status": "planned:P2"
     },

@@ -94,6 +94,14 @@ def inventory() -> dict:
         dest = destination(name)
         target_modes = modes(name, text) if dest else ["chat", "work"]
         location = f"/opt/skills/platform.{dest[0]}/{dest[1]}" if dest else f"vendor/office-suite/upstream/{name}"
+        if name.startswith("office-runtime/"):
+            relative = path.relative_to("office-runtime").as_posix()
+            if relative.startswith("ui/"):
+                location = "Portal isolated viewer bundle (planned:P4)"
+            elif relative.startswith("src/"):
+                location = f"/opt/ailab-office/{relative} (planned:P2)"
+            else:
+                location = f"build/test only: vendor/office-suite/upstream/{name}"
         if "LICENSE" in path.name.upper() or path.name == "LICENSE":
             status, reason = "implemented", "Unmodified license retained with source provenance; not model-visible."
         elif name.startswith("office-runtime/"):
