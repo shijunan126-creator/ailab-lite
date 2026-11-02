@@ -1,8 +1,8 @@
 # 单机能力状态
 
-2026-11-02 办公P5为**部分验证、未完成验收**：真实模型Agent请求矩阵的稳定续轮Chat/Work加权总值均≥95%，但Chat压缩后短续轮94.378%未达标；业务API/Broker为受控替身、模型capture不可用。四格式宿主结构/源不变检查和真实浏览器Work截图一例通过（96.26ms）；viewer.js约4.047MiB。Docker仍不可达，真实离线Work交付、sbx-office体积、Portal镜像构建及真实模型五服务合流仍阻塞。逐调用指标、准备调用与边界见[P5记录](../progress/updates/2026-11-02-office-suite-p5.md)。未改产品代码、未发布部署。
+2026-11-02 办公P5续验仍为**部分验证、未全部外部验收**：Docker恢复，Office/Portal镜像构建、5项真实离线制作合同及四格式真实模型Work评审/业务交付/源hash/下载复核通过；真实Chat/Work API/Broker覆盖DocRef、load_skill、成功render capture、压缩与checkpoint恢复。修复截图跨run授权和步数收尾reasoning丢失；专项78、PostgreSQL16通过。Chat压缩后/Work正常阈值稳定3轮均≥95%，三份同文复放证实固定供应商尾部；历史94.4%精确原请求已清理，归因为有对照支持的推断。在线viewport真模型合流、Linux并发上沿与复杂模型效果仍未验；镜像精确体积、逐调用计数及失败边界见[P5续验](../progress/updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。未发布部署。
 
-2026-11-02 办公P0–P4已本地整合到 `feat/office-suite`（代码 `93cb215`）：完整技能文件按loader上限构建，固定离线制作/评审、原生文档索引/冻结引用及Portal四格式viewer保留；真实Chat四格式选区发送/引文定位、Work原生打开/首次reveal、Chat/Work截图往返通过。修复TSV/源公式校验、工作区路径及启动定位丢失。完整套件各执行一次，失败与定点复核、未验边界统一见[整合记录](../progress/updates/2026-11-02-office-suite-integration.md)。Docker不可达，镜像与容器方式PG/Redis仍阻塞；P5真模型缓存/质量和Linux容量未验，未发布部署。
+2026-11-02 办公P0–P4已本地整合到 `feat/office-suite`（代码 `93cb215`）：完整技能文件按loader上限构建，固定离线制作/评审、原生文档索引/冻结引用及Portal四格式viewer保留；真实Chat四格式选区发送/引文定位、Work原生打开/首次reveal、Chat/Work截图往返通过。修复TSV/源公式校验、工作区路径及启动定位丢失。完整套件各执行一次，失败与定点复核、未验边界统一见[整合记录](../progress/updates/2026-11-02-office-suite-integration.md)。此整合基线当时Docker不可达；镜像、真实服务与本次PG续验已由上方P5记录补充，Linux并发容量仍未验；未发布部署。
 
 2026-11-02 GenUI说明按实际历史复用已本地实施：配对成功工具结果中的完整当前文本可复用；仅补新增组件/依赖，压缩丢失后重新读取，无持久标记；真实Chat/Work多轮缓存检查通过。范围、冷启动边界与检查见[记录](../progress/updates/2026-11-02-genui-doc-reuse.md)，未发布部署。
 

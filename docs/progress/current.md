@@ -1,9 +1,10 @@
-# 办公能力 P5 验收（2026-11-02）
+# 办公能力 P5 Docker 恢复续验（2026-11-02）
 
-- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`；本轮产品/测试基线 `26316e1769627ddad7397970980c2a98e74b4674`。仅本地验收及文档提交，无 push、PR、部署，未改产品代码。
-- P5 **部分验证，未完成验收**。真实模型 Agent 请求矩阵覆盖技能导航/完整资源、受控DocRef、压缩与checkpoint恢复；稳定续轮总值Chat/Work均≥95%，但Chat压缩后子组94.378%未达标。API/Broker为测试替身，capture在模型矩阵中明确不可用，不能写成真实五服务成功矩阵。
-- 四格式宿主spot check可打开、源hash未变、结构检查通过；Excel经LO重算。真实浏览器Work reveal/capture一例通过，claim到result为96.26ms。前缀/review等61通过、真实容器5跳过；Portal161项/build通过。当前bundle `18ef356ab076b7e1`，viewer.js约4.047MiB。逐调用指标、全部准备调用、精确边界和资源统一见[P5记录](updates/2026-11-02-office-suite-p5.md)；P0–P4历史证据见[整合记录](updates/2026-11-02-office-suite-integration.md)。
-- 剩余：默认和专用Docker socket均不可达，真实离线四格式Work交付、sbx-office体积与Portal镜像构建仍阻塞；没有启动VM或改daemon。下一步在Docker恢复后补这些项，再把真实模型与API/在线浏览器合流，定位Chat短前缀缓存边界；不自动部署。临时服务/原始日志/产物已清理，未重跑完整Python或完整E2E。
+- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，进入HEAD `d226ea5`、base `origin/main@bf0af4f`；本次最终测试代码 `7e30b7dd2dbcbe01a12ced78b37b4141a634c057`（截图祖先授权/收尾reasoning两个修复）。未fetch、push、PR或部署；个人栈未动。
+- Office/Portal镜像均构建成功并保留；四格式真实无网Work的load_skill、review_artifact和业务交付成功，原件hash未变、下载成品原生复核通过。真实Chat覆盖Worker索引、DocRef冻结、成功render capture和后续checkpoint恢复；Work真实压缩及重启Agent后resume成功。
+- 修复capture跨run读取404、步数收尾遗漏reasoning_content导致恢复400。专项78通过，PostgreSQL截图合同16通过、真实离线容器合同5通过，Ruff通过；镜像体积、逐调用总账和失败准备调用见[P5续验](updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。本次未重复完整Python/无关浏览器套件。
+- Chat压缩后稳定3轮与Work正常阈值稳定3轮均≥95%；三份相同请求复放的154/229/176 token固定尾部支持供应商缓存分块/计数边界。历史94.4%原请求已被上轮清理，未能复放历史原件，不把推断写成精确重放完成。
+- P5仍为部分验证：剩余历史原件复放、真实模型在线viewport合流、Linux并发容量、复杂模板/宏与模型效果对照；下一步由主任务审阅两项修复及本次证据后决定后续验收，不自动部署。临时c3容器0残留，7个临时端口关闭，两个构建镜像保留，原始证据清理完成。
 
 ---
 
