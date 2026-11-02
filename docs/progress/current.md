@@ -1,10 +1,10 @@
-# 办公能力完整迁移：实施（2026-11-02）
+# 办公能力完整迁移：P2 本地实施（2026-11-02）
 
-- 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
-- 已定：许可（Apache-2.0/MIT）、命名、vendor 布局、模块读取、可见性、视觉验收与侧栏工具，见计划“实施决策”。
-- P0资源基线 `5da37fa`；本轮仅实施P1后端，代码提交 `8800615`、`0a48b72`：固定 `load_skill(name, resource?)`、Chat模式过滤、整文件/hash、消息配对可见性、ModelPolicy预算拒绝，以及三类压缩的导航索引与按需重读。没有启动P2/P3或改Portal。
-- 验证命令、计数、基线与未测边界统一见[P1记录](updates/2026-11-02-office-suite-p1.md)。本地实现不等于真模型缓存验收；真实 `cached_tokens/prompt_tokens` 检查明确属于P5。
-- 当前 P2 进入基线 `d8ed0f9`；用户最新决定替代8192打包：按文件完整读取，不分页、不截断，剩余预算不足先压缩。取消运行的部分改动正在核查；详情见 [P2记录](updates/2026-11-02-office-suite-p2.md)。下一步完成制作镜像、脚本、固定评审与集中验证。P3在另一worktree，不改其文档引用/查看状态合同；不push、PR、部署。
+- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`；进入基线 `d8ed0f9`，当前代码/测试基线 `e978848`。用户授权完成整文件读取与P2，核查取消运行的部分改动；不push、PR、部署。P3在另一worktree，本轮未改doc refs/view state/document_view。
+- 已实现：整文件 `load_skill(name, resource?)`（不分页、不截断、预算不足先压缩）、模式白名单与配对正文重读规则；固定离线制作依赖、reader补丁重基、输出与原件隔离，以及固定 `review_artifact` 结构/有界页图证据。工具本身不判质量通过，tools-only明确无视觉验收。
+- 本地专项132项、reader19项通过；四格式真实ARM64/断网镜像创建/编辑/转换/保原件/重读/评审通过，HTML/LaTeX失败断言修正后定点通过。最终镜像 `52efc1239e95` 与成功测试镜像执行代码一致、index匹配当前源树；大小、构建失败/重试与资源成本统一见[P2记录](updates/2026-11-02-office-suite-p2.md)。
+- 完整Python仅一次：2012通过/167跳过/20失败；补齐最后重生成后的runner构建、修正沙箱导入/过时断言后，仅复跑失败20项全部通过，Ruff通过。不是最终全套首次全绿；详见P2记录。下一步由主任务评审本地提交，再与独立P3/P4/P5整合。真实模型视觉判断/供应商缓存、复杂模板/品牌交付、五服务端到端、P3/P4/P5联合验收尚未完成，不能据基础镜像合同宣称完整迁移已验收。
+
 
 ---
 

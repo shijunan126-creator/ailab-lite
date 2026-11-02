@@ -1,3 +1,9 @@
+## 2026-11-02 办公制作与评审
+
+- `review_artifact` 的结构证据/页图始终不是质量判定：返回 pending_model_judgment；tools-only 必须明确 no visual review。最多4页是单批限制，不能声称未检查页已验收；公式缓存需重算，WARN/exit0/文件存在均不能单独说明完成。
+- 全部制作依赖在镜像构建期固定；学术路线用离线XeLaTeX并禁shell escape，输出默认 `/workspace/outputs`。旧脚本的缺依赖提示也必须适配，不能一边禁止联网一边提示立即安装。输入只读使用，修改生成新文件后再deliver_file。
+- Docker构建报 “No matching distribution” 前先检查是否实际为DNS失败；保留已完成的大依赖层，只重试失败层，不改daemon或触碰现有用户服务。构建/测试证据见[P2](docs/progress/updates/2026-11-02-office-suite-p2.md)。
+
 ## 2026-11-02 办公模块上下文
 
 - 办公 `loaded_skills` 只管安装/登记；去重必须认当前段中配对成功且正文hash一致的 `load_skill` 结果。派生索引不进checkpoint；压缩丢正文后可重读，摘要中的模块身份不代表正文仍可见。
@@ -8,13 +14,14 @@
 ## 2026-11-02 办公原文资源构建
 
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
-- 8192是原文分片打包目标，完整段落/代码围栏允许到12288，超目标仅标 `oversize: true`，超过12288必须构建失败；不可为凑目标截断围栏。P1须按真实窗口显式准入或拒绝，见[记录](docs/progress/updates/2026-11-02-office-suite-p0.md)。原文目录/代码入库不代表依赖可用；当前reader独立npm目录不保证技能脚本能解析同名包，完整reader迁移留P2。
+- 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片、cursor或构建期大小硬限。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
+- 生产脚本的npm闭包在 `/opt/office-production/node_modules`，reader在 `/opt/ailab-office/node_modules`；依赖解析依靠镜像NODE_PATH，不能按宿主node_modules可用推断沙箱已安装。runtime由build.py的 `--runtime-output vendor/office-suite/runtime` 从原始源码＋补丁＋adapter生成；每次重生成runtime都会清除本地node_modules/runner.mjs，必须在最后一次重生成之后再执行npm ci与npm run build，然后才能跑完整后端套件；不能以早先构建成功推断前置仍在。
 - 构建复制兼容资源时不能过滤 `LICENSE*`/`NOTICE*`：四基础包必须带固定来源的Apache-2.0 LICENSE与vendor NOTICE，第三方素材保留同目录许可；许可不列为模块，但参与生成漂移与递归hash。
 
 ## 2026-11-02 办公能力迁移边界
 
 - 全量迁移不能直接替换四个大 SKILL：资源安装状态与当前消息中完整正文可见性分开；轮内/跨轮/无快照压缩都要重算模块可见性。上游 capture_view 是页面工具，离线/后台任务不能假设浏览器在线；选区问答不能沿用全文附件 prepare 重复注入整份文档。见[计划](docs/architecture/design/office-suite/README.md)。
-- 上游四制作技能 frontmatter 写 Proprietary，但指向的 LICENSE.txt 全文是 Apache-2.0；视觉评审角色引用的 “delivery protocol” 不在上游源码中，不能声称原样迁移。模型可见文本不得出现上游产品名、`ZCODE_*` 变量与其 citation 标签。
+- 上游四制作技能 frontmatter 写 Proprietary，但指向的 LICENSE.txt 全文是 Apache-2.0；视觉评审角色引用的 “delivery protocol” 不在上游源码中，不能声称原样迁移。模型可见文本不得出现上游产品名、上游专用环境变量与其 citation 标签。
 
 ## 2026-11-02 行内气泡垂直对齐
 
@@ -75,7 +82,7 @@
 - 融合成功后抽取失败，首批仍为 applied，因此整理链可能创建第二批 failed。验证首批快照/撤销时必须按 `batch_index` 定位，不能对用户的多条整理记录做无排序 `scalar()`；SQLite 恰好返回首批不代表 PostgreSQL 也会如此。
 - 摘要过期扫描应一次读取有界事实、流式联查项目 id/digest，最多两条查询，不能对每个项目重读文档并查询摘要。用户索引与项目外键索引都需要：`(user_id, project_id)` 的唯一索引不能替代级联删除所需的 `project_id` 索引。EXPLAIN 先 ANALYZE，使用多用户选择性；单用户半表命中时 PG 选择顺序扫描是合理结果。
 - 网关 TCP 验收的 0.5 秒首输出/空闲预算在繁忙机器上会产生额外真实重试与计费记录，或触发标题降级；断流用例也出现过单轮未抛异常。不要删账本行或改变生产重试规则迎合次数断言；应单独保留失败与复查结果，不能把一次重跑通过宣称为稳定修复。
-- macOS 全套测试需让 GNU coreutils/findutils 的 PATH 传到所有子进程；Python PostgreSQL 测试还需 venv 的可选 `psycopg[binary]`。Office 读取测试需要 `vendor/zcode-office-runtime/runner.mjs` 及依赖，缺少时通常表现为多格式解析/后续 OCR 断言失败。后端限域任务可在仓库外构建，并用仅测试环境的 Node resolve hook 映射 mock sandbox 的 runner 入口，避免改 vendor/Portal。
+- macOS 全套测试需让 GNU coreutils/findutils 的 PATH 传到所有子进程；Python PostgreSQL 测试还需 venv 的可选 `psycopg[binary]`。Office 读取测试需要 `vendor/office-suite/runtime/runner.mjs` 及依赖，缺少时通常表现为多格式解析/后续 OCR 断言失败。后端限域任务可在仓库外构建，并用仅测试环境的 Node resolve hook 映射 mock sandbox 的 runner 入口，避免改 vendor/Portal。
 - golden fixture 的严格项目用 `memory_mode=isolated`；`scripts/evaluate_memory_context.py` 已转发 `case.memory_mode` 到 `model_view(mode=...)`，`tests/test_memory_golden.py` 继续走该 runner（保留无记忆基线断言），不要绕开 runner 另写判定。
 - 摘要/编辑/融合三个提示词是 `memory_dream/prompts.py` 的常量；`MockLLM` 按 system 内容精确匹配它们给确定性回答（`llm._memory_answer`），测试脚本也按常量匹配。改提示词措辞不会破坏匹配，但不要在调用处内联另一份提示词。抽取/判定在常量后追加了每次调用的规则，MockLLM 只能用 `startswith` 匹配（返回空 facts/results）；否则 mock 栈每次整理都走失败路径。
 - 所有活动任务判断共用 `active_job()`：pending/running 或未过期租约；终态摘要阶段也阻止编辑/重复整理。claim/recover 仍只领取 pending/running，不能重放终态批次；Portal 编辑完成需等摘要 GET active 为空再展示回复/撤销。
@@ -250,7 +257,7 @@
 - ready 后预渲染只在原事务写 outbox，不同步调沙箱；20MiB 默认阈值、原渲染槽和 pending/终态幂等必须一起保留。产物创建时 ORM 默认 purpose 尚可能未落地，需 flush 后判断 library。
 - OCR 选页不能当全文预览缓存；仅复用页数已知且完整覆盖前 min(40,总页数)、资产属于同 file 的清单。
 - client_send_id 按用户唯一，重试须先于附件/额度/会话忙碌检查；参数化测试共用数据库，同用户不同发送必须使用不同 ID。Docker 默认 socket 不存在时复用个人 shim；Mac 未共享路径的 bind 会在 VM 变空目录，基准脚本/合成文件改用 stdin 注入。
-- 新worktree跑文档/OCR测试前先在vendor/zcode-office-runtime执行npm ci --ignore-scripts与npm run build；缺runner.mjs会让整组原生文档索引/覆盖测试失败，不能误判为业务逻辑回归。
+- 新worktree跑文档/OCR测试前先在vendor/office-suite/runtime执行npm ci --ignore-scripts与npm run build；缺runner.mjs会让整组原生文档索引/覆盖测试失败，不能误判为业务逻辑回归。
 
 ## 2026-10-29 GenUI 历史与摘要
 
