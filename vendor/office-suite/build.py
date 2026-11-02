@@ -146,7 +146,7 @@ def dependencies(name: str, data: bytes) -> dict:
 
 
 def modes(name: str, text: str) -> list[str]:
-    if "-viewer/" in name or "/agents/visual-judge.md" in name:
+    if "-viewer/" in name:
         return ["chat", "work"]
     if name.endswith(".md") and "/references/" in name and not re.search(r"```|\b(?:exec|python|node|bash)\b", text):
         return ["chat", "work"]

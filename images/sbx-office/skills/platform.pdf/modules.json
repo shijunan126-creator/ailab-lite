@@ -7,7 +7,6 @@
       "estimated_tokens": 1455,
       "logical_path": "pdf-plugin/agents/visual-judge.md",
       "modes": [
-        "chat",
         "work"
       ],
       "patches": [

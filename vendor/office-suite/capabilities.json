@@ -44,7 +44,6 @@
         "python": []
       },
       "modes": [
-        "chat",
         "work"
       ],
       "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
@@ -4785,7 +4784,6 @@
         "python": []
       },
       "modes": [
-        "chat",
         "work"
       ],
       "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
@@ -9888,7 +9886,6 @@
         "python": []
       },
       "modes": [
-        "chat",
         "work"
       ],
       "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
@@ -10167,7 +10164,6 @@
         "python": []
       },
       "modes": [
-        "chat",
         "work"
       ],
       "reason": "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",

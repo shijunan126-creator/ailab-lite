@@ -181,3 +181,8 @@ def test_legacy_skill_visibility_also_survives_only_with_paired_body():
 def test_unknown_package_is_an_explicit_error():
     with pytest.raises(ValueError, match="unknown skill"):
         read_module("platform.missing", "work")
+
+
+def test_chat_cannot_read_work_review_role_with_shell_setup():
+    with pytest.raises(ValueError, match="unavailable"):
+        read_module("platform.docx", "chat", "agents/visual-judge.md")

@@ -1684,7 +1684,12 @@ class AgentLoop:
                     result.update(
                         visual_review="pending_model_judgment" if vision else "no visual review available",
                         input="image" if vision else "structural_text",
-                        instruction="按原始任务逐项审阅内容、结构、公式与页图；只报告实际检查范围。未完成视觉验收须明确告知，不能声明质量通过。",
+                        instruction=(
+                            "按原始任务检查每页：内容/数据/公式是否正确，图表是否与文字一致；图片比例、文字清晰度、"
+                            "重叠/裁切/溢出、空白与分页、标题/页码/字体连续性。结合结构检查，逐页报告pass/fail/Unverified及具体证据。"
+                            "只报告实际检查范围；修复失败项后重新检查。无视觉能力时只报告结构证据并明确no visual review，"
+                            "不能把exit0、WARN、文件存在或结构通过当成全部质量通过。"
+                        ),
                     )
             elif call.name == "extract_text":
                 result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))

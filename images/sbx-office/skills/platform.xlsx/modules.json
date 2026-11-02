@@ -7,7 +7,6 @@
       "estimated_tokens": 1457,
       "logical_path": "spreadsheets-plugin/agents/visual-judge.md",
       "modes": [
-        "chat",
         "work"
       ],
       "patches": [
