@@ -211,3 +211,25 @@ def test_oversize_native_view_falls_back_without_download_or_parse(tmp_path, mon
     assert result["status"] == "ready" and result["native"] is False
     assert result["reason"] == "native_admission_limit"
     assert storage.exists("derived/large/viewer.json")
+
+
+def test_spreadsheet_selection_text_matches_viewer_tsv_without_table_labels(tmp_path):
+    from openpyxl import Workbook
+
+    from ailab_platform.api.document_view import normalized
+
+    if not settings.viewer_reader_path.exists():
+        pytest.skip("build the viewer reader or set AILAB_VIEWER_READER_PATH")
+    source = tmp_path / "quote.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "Revenue"
+    workbook.active.append(["North | South", 100, 110])
+    workbook.active.append(["East", 80, 90])
+    workbook.save(source)
+    parsed = execute(
+        "viewer", source, tmp_path / "selection", timeout=22, reader=str(settings.viewer_reader_path), selections=["Revenue!A1:C2"]
+    )
+    selected = normalized(parsed["selections"][0]["text"])
+    assert selected == normalized("North | South\t100\t110\nEast\t80\t90")
+    assert normalized("North | South\t999\t110") not in selected
+    assert normalized("1\tNorth | South") not in selected

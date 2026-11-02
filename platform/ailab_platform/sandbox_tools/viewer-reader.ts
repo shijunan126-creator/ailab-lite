@@ -28,6 +28,16 @@ const selections = (request.selections ?? []).map((at: string) => {
     if (page.next !== null && page.next <= cursor) throw Error('cursor_stalled');
     cursor = page.next;
   } while (cursor !== null);
+  // The viewer quotes TSV cell values. Model-facing tables contain row labels and Markdown
+  // separators, which are not part of the selected cells and must not invalidate that quote.
+  if (locator.kind === 'xlsx') {
+    const formula = /\nFormulas:\n[A-Z]+[1-9]\d*: (=.*?)(?:\n|$)/.exec(text);
+    const rows = text.split('\n').filter(line => /^\| [1-9]\d* \| /.test(line));
+    text = rows.map(line => line.slice(2, -2).split(/(?<!\\)\|/).slice(1)
+      .map(cell => cell.trim().replace(/\\\|/g, '|')).join('\t')).join('\n');
+    if (formula && locator.range && locator.range.start.row === locator.range.end.row
+      && locator.range.start.col === locator.range.end.col) text += ` (${formula[1]})`;
+  }
   return {at: formatLocator(locator), text};
 });
 const blocks = [];
