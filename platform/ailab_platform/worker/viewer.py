@@ -60,6 +60,21 @@ def process_viewer(platform, file_id):
         cached = json.loads(storage.get_bytes(key))
         if cached.get("version") == file["sha256"] and cached.get("parser_revision") == PARSER_REVISION:
             return cached
+    kind = Path(file["filename"]).suffix.lower().removeprefix(".")
+    if file["size"] > NATIVE_BYTES[kind]:
+        result = {
+            "status": "ready",
+            "file_id": file_id,
+            "version": file["sha256"],
+            "parser_revision": PARSER_REVISION,
+            "kind": kind,
+            "title": file["filename"],
+            "bytes": file["size"],
+            "native": False,
+            "reason": "native_admission_limit",
+        }
+        storage.put_bytes(key, json.dumps(result).encode(), "application/json")
+        return result
     with tempfile.TemporaryDirectory(prefix="ailab-viewer-") as directory:
         source = Path(directory) / ("source" + Path(file["filename"]).suffix.lower())
         download(platform, file_id, source, 20 * 1024**2, job="viewer")

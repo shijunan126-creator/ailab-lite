@@ -190,3 +190,22 @@ def test_workspace_upstream_is_closed_before_first_byte_on_disconnect():
     stream = WorkspaceStream(response, client)
     stream.close()
     assert response.closed and client.closed
+
+
+@pytest.mark.parametrize("kind", ["docx", "xlsx", "pptx", "pdf"])
+def test_oversize_native_view_falls_back_without_download_or_parse(tmp_path, monkeypatch, kind):
+    from ailab_platform.contracts.document_view import NATIVE_BYTES
+    from ailab_platform.storage import LocalStorage
+    from ailab_platform.worker.viewer import process_viewer
+
+    storage = LocalStorage(tmp_path / "storage")
+    monkeypatch.setattr("ailab_platform.storage.get_storage", lambda: storage)
+
+    class Platform:
+        def get_file(self, file_id, **kwargs):
+            return {"id": file_id, "sha256": "hash", "filename": "large." + kind, "size": NATIVE_BYTES[kind] + 1}
+
+    result = process_viewer(Platform(), "large")
+    assert result["status"] == "ready" and result["native"] is False
+    assert result["reason"] == "native_admission_limit"
+    assert storage.exists("derived/large/viewer.json")
