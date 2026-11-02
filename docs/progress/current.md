@@ -1,3 +1,11 @@
+# Office Portal 测试交接（2026-11-02）
+
+- 当前测试范围：`feat/office-suite-portal`，worktree `.worktrees/office-portal`，实施基线 `7d226ab`，共同 base `origin/main@bf0af4f`。用户仅授权 Portal 测试及真实缺陷小修复；不 push/PR/部署、不修改其他 worktree。
+- 已补消息桥、索引轮询/回退、引用 store、outbox、截图 client-call 和字体适配测试；进展与最终验证统一见[测试记录](updates/2026-11-02-office-portal-tests.md)。正在完成浏览器验收及截图消息上限修复，下一步完成最终检查、独立提交修复并交还主任务。
+- `app/office-test/` 是用户提供的未提交手工页，始终不进入提交。后端合同、真实 API 授权及联合验收仍由主任务负责，不能由 fixture 页面通过推断。
+
+---
+
 # 办公能力完整迁移：实施（2026-11-02）
 
 - 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
