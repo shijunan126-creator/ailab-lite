@@ -168,3 +168,13 @@ Chat：真实Worker索引、DocRef选区校验/冻结、load_skill、成功PDF `
 - 初始配置误用office-read runner作native viewer reader已改为从本分支viewer-reader.ts构建的真实入口；驱动分页limit1000改为API上限500；重复准备客户端触发临时账号并发限制，按实际状态继续。以上均未通过改产品绕过。
 - 两个镜像保留。清理仅限本轮c3容器、临时服务、Redis/PostgreSQL及仓库外请求/日志/产物；不触碰个人栈。清理确认：本轮c3容器0残留，四服务/转发/Redis/PostgreSQL共7个临时端口均关闭；两个镜像仍在。仓库外原始请求、日志、数据库及生成产物均已清理。
 - 本次补齐真实镜像、四格式离线Work交付、真实Chat/Work API/Broker、DocRef/load_skill/capture/render、压缩与恢复。**P5仍不能标为全部外部验收完成**：历史94.4%原请求逐字节复放、真实模型与在线viewport浏览器合流、Linux并发/资源上沿、复杂模板/宏及模型效果对照仍未验证；截图10分钟TTL后的继承恢复也未验。不扩大本次授权、不部署。
+
+
+### 资源批量读取导航补充（2026-11-02）
+
+进入基线 `e363cbe`，本次产品/录制请求测试基线 `01379e810b8315f187525ebfdca1236844775c59`，同一 worktree/branch，base 仍为 `origin/main@bf0af4f`，未 fetch。生成器明确要求同一回复并列调用所需资源；四基础导航由 `build.py` 重建，根 index 递归 hash 同步。未改 Agent 循环：两种窗口的录制请求证实同批三调用顺序追加、前缀/tools/settings不变、同批重复返回 already_loaded，且第二资源单独能装下时仍会因先前结果占用而拒绝；不截断。
+
+- 专用 Docker 增量 `docker build -t c3-office-batch:e363cbe -f images/sbx-office/Dockerfile .` 成功，image ID `4cb99a358897`；系统/Python/npm 依赖层复用，仅重建资源及其后续层。`AILAB_TEST_OFFICE_IMAGE=c3-office-batch:e363cbe .venv/bin/pytest tests/contracts/test_office_production.py -q -s`：**5 passed、0 skipped**，四格式原件hash不变，含HTML/LaTeX离线生产路径。四格式耗时12.404/12.726/12.111/0.738秒，cgroup峰值237,404,160/242,184,192/234,770,432/119,795,712 bytes（单样本，不作性能分位数）。镜像构建内实际hash/依赖校验通过，宿主 `scripts/check_skills.py` 通过。
+- 真模型 `deepseek-flash`：真实临时 API/SQLite、AgentLoop、持久 checkpoint/usage 与供应商，Work 先加载 `platform.docx`，任务要求阅读 `routes/create.md` 和 `references/docx-js-core.md` 做操作规划；用户提示未要求批量。模型第一条回复即并列调用两份资源，下一条回复完成，run succeeded；记录请求前缀、tools和设置不变。两次 cached/prompt 分别 **6,016/7,198、7,296/14,313**，合计 **13,312/21,511 = 61.8846%**；含新资源正文的两调用短样本，不代表稳态≥95%。此次只测加载/规划，未启动沙箱制作；不能替代上方真实交付/视觉验收。
+- Ruff check/format 与 Portal build 通过。资源/技能/目录/前缀专项初次仅mock租约快照因macOS `stat -c`失败；按仓库要求补GNU工具PATH，纳入下面最终完整套件验证，不改产品绕过。最终按 GNU 工具PATH运行 `.venv/bin/pytest tests -q`：**2074 passed、174 skipped、1 failed**（391.639秒，exit 1）；其中受影响前缀/资源/技能/catalog/hash/租约组合 **150 passed、2 skipped**，包含新两项录制与mock租约合同。唯一失败是既有 `test_render_lifecycle_does_not_retain_records_after_1000_cycles`，tracemalloc增长7,723,460 bytes超过6 MiB；不改实现或阈值，仅该失败项独立复跑 **1 passed**（25.197秒，exit 0），保留分组/进程状态相关flake风险，不声称最终全套首次全绿。未另跑PostgreSQL/Redis/浏览器E2E；174项按默认测试门禁跳过，真实Office合同另行启用并通过。
+- 导航多出少量固定文本，无新依赖/后台任务；同批读取仍顺序执行，资源总正文和累计窗口准入不变，只减少潜在模型往返，本次未做对照时延测量。P5总体仍部分验证，未测边界沿用上节；本次不push、PR或部署。临时API已停止，18396端口关闭，本次c3容器0残留，镜像保留。

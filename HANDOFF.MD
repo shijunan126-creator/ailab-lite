@@ -38,6 +38,8 @@
 
 ### 原文资源构建
 
+- 需要多份办公资源时，同一assistant回复可并列多个 `load_skill`；循环逐份追加，后续去重和cannot-fit必须看见同批先前结果，不能仅按批次开始时的messages检查。录制合同见 `test_office_resource_batch_wire_order_dedup_and_cumulative_budget`；导航只能改生成器后重建并同步index。
+
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
 - 最新产品合同是整文件读取：manifest只记录文件身份/估算/modes/deps，不做token分片或cursor；构建时按loader上限拒绝过大文件。`SKILL.md` ≤100,000 bytes，其他可读资源 ≤256 KiB/2000行；超限失败，不在loader截断。大Python资源用显式补丁压缩排版，并校验AST等价，原始源码不改。放不下剩余模型窗口时先压缩；空上下文也放不下须明确容量边界，不能截断。reader的文档分页是另一个合同，不能一起删除。
 - 生产脚本的npm闭包在 `/opt/office-production/node_modules`，reader在 `/opt/ailab-office/node_modules`；依赖解析依靠镜像NODE_PATH，不能按宿主node_modules可用推断沙箱已安装。runtime由build.py的 `--runtime-output vendor/office-suite/runtime` 从原始源码＋补丁＋adapter生成；每次重生成runtime都会清除本地node_modules/runner.mjs，必须在最后一次重生成之后再执行npm ci与npm run build，然后才能跑完整后端套件；不能以早先构建成功推断前置仍在。

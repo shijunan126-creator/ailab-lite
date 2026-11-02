@@ -1,5 +1,7 @@
 # 办公能力 P5 Docker 恢复续验（2026-11-02）
 
+- 最新补充：进入 `e363cbe`，批量资源导航及录制请求测试基线 `01379e8`；四生成包/index同步，专用镜像增量构建、离线生产合同与一次真模型批量加载成功；Ruff/Portal build通过，完整Python唯一内存阈值失败独立复跑通过（保留flake记录）。详见[P5资源批量读取补充](updates/2026-11-02-office-suite-p5.md#资源批量读取导航补充2026-11-02)。P5保持部分验证，下一步由主任务审阅本地提交与验收边界，不自动发布。
+
 - 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，进入HEAD `d226ea5`、base `origin/main@bf0af4f`；本次最终测试代码 `7e30b7dd2dbcbe01a12ced78b37b4141a634c057`（截图祖先授权/收尾reasoning两个修复）。未fetch、push、PR或部署；个人栈未动。
 - Office/Portal镜像均构建成功并保留；四格式真实无网Work的load_skill、review_artifact和业务交付成功，原件hash未变、下载成品原生复核通过。真实Chat覆盖Worker索引、DocRef冻结、成功render capture和后续checkpoint恢复；Work真实压缩及重启Agent后resume成功。
 - 修复capture跨run读取404、步数收尾遗漏reasoning_content导致恢复400。专项78通过，PostgreSQL截图合同16通过、真实离线容器合同5通过，Ruff通过；镜像体积、逐调用总账和失败准备调用见[P5续验](updates/2026-11-02-office-suite-p5.md#docker-恢复后的续验本次结果替代上方旧阻塞结论)。本次未重复完整Python/无关浏览器套件。
