@@ -318,7 +318,7 @@ Portal新增回归在旧组件/路由失败：按格式boot请求、压缩字节
 | 最终检查 | 结果 |
 | --- | --- |
 | `.venv/bin/ruff check .` / `ruff format --check .` | 首轮2条E501；只做字符串换行后check通过；format首轮535 files通过 |
-| `cd platform/portal && npm test && npm run build` | 172 passed / 35 files；production build通过（9.00/7.25s） |
+| `cd platform/portal && npm test && npm run build` | 初次172 passed / 35 files；发现UI缺陷并修复后最终174 passed / 36 files、production build通过 |
 | `.venv/bin/pytest tests -q`（SQLite） | 2093 passed / 169 skipped / 0 failed；389.23s（命令总时间） |
 | 同命令 + 完整PG/Redis环境 | 2203 passed / 59 skipped / 0 failed；445.12s |
 | `AILAB_E2E=1 pytest e2e -q` | 首轮158 passed / 6 failed / 6 skipped，677.78s；6项根因与定点复跑见下文 |
@@ -329,4 +329,10 @@ PG16使用`initdb -A trust -U ailab -E UTF8 --no-locale`，独立目录，仅监
 
 真实产品缺陷：工作区原生frame的React key含派生preview.version；capture claim期间，版本0的reveal占位被同内容哈希的渲染预览替换为版本1，产生DELETE view、iframe关闭、capture结果409（view version changed）。API拒绝失效视图正确，不放宽授权。现按来源稳定保留原生pane，preview revision变化仅后台重查索引；哈希相同保留frame/在途capture，实际哈希改变才替换frame。新增两项组件回归在旧实现均失败，修复后相关19项通过；模拟boot先等待React订阅生效，避免装置早于监听发消息。代价为每次预览revision变化一次可取消的既有索引请求，同哈希不再重复传文件/重建运行时。
 
-追加改动仅Portal与E2E夹具，不改Python产品逻辑；不重跑双库全套。Portal最终测试/build及首轮失败的6个E2E结果待补。本轮原生临时PG/Redis第一轮结束后已停止，定点E2E使用另启的相同独立Redis端口，结束后再清理。
+追加修复基线`ae39e10`，只改Portal与E2E夹具，不改Python产品逻辑；没有重跑双库全套。Portal最终**174 passed / 36 files**、production build通过，E2E仅复跑首轮失败的**6项全部passed（58.27s）**，无剩余已知失败。三项初轮已通过的Chat格式与复跑用例合计证明Chat/Work四格式open/select/quote/reveal/capture，以及活跃Work工作区原生reveal/capture；是确定性模型+真实四服务/Redis/浏览器/限时子进程的合同验证，不是本轮真实模型质量评测。完整E2E的6 skip均为未设置`AILAB_PERF=1`的独立性能基准；本轮Viewer CDP剖析单列，不冒充它们通过。首轮失败不是无证据flake，未把定点复跑写成“完整套件首次全绿”。
+
+最终检查覆盖关系：Python全套基线`a9bad16`，过程`5276075`只换行且AST相同；之后产品变化只有上述Portal修复，已更新完整Portal测试/build和失败E2E，后端未重复。性能对照使用同一资产版本`4403535890ecff41`；最后UI身份修复不改bundle/解析器，未重跑测速。最终文档提交仅汇总证据，未重复产品检查。
+
+清理：临时原生PG/Redis已停止（第一轮及定点轮均收尾），四服务/Portal/Chromium已退出；23100/23101、15594/16594、18190–18193/13190共9端口均无监听，本轮内置浏览器页关闭。未启动任何容器或部署、push/PR，个人栈未操作。仓库外请求/日志/trace/JUnit、临时数据库、合成大文档及宿主生成reader在提炼摘要后清理；构建产物保留在既有ignored目录。
+
+**最终边界与下一步。** P5仍是有限样本本地验证，不能推导VBA/Windows实际执行、Microsoft Office保真、任意复杂模板、长期/更高并发容量或移动端多浏览器；短上下文真模型续轮缓存合计94.90%，不声称全面≥95%。410恢复有录制及真实模型故障注入证据，403/404/503仍按保护合同暂停；未做真实时间流逝/GC后的额外长期恢复验收。XLSX仍有运行时主线程预检及worker成本，本次未重写vendored runtime或修改准入阈值。下一步：审阅本地提交后向main提PR；本轮不执行发布。

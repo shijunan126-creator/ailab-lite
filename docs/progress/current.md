@@ -1,8 +1,10 @@
 # 办公 P5 最终修复与联合检查（2026-11-03）
 
-- 指定工作树 `.worktrees/office-suite`，分支 `feat/office-suite`，进入干净 `52abb97`，base `origin/main@bf0af4f`。已仅引入两个指定测试修复提交；不 push、PR 或部署。
-- 已修复 document_view 形状说明/可纠正错误，以及410截图过期后的显式上下文重建；红绿录制请求和真模型说明检查见[P5本轮记录](updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。Viewer分格式脚本/构建时预压缩已完成对照；双库全套通过。E2E首轮发现同哈希预览刷新重建frame打断capture，已修复并补红绿回归，正在更新Portal检查和定点复跑6个失败项。
-- P5仍为部分验证：VBA/Microsoft Office保真、更多复杂模板、长时/更高并发、移动端多浏览器等未由当前样本证明。当前下一动作：完成本次最终检查、记录结果并清理所有临时资源；之后下一步为向main提PR（本轮不执行）。
+- 工作树 `.worktrees/office-suite`，分支 `feat/office-suite`，进入干净 `52abb97`，base `origin/main@bf0af4f`（未fetch）。仅引入指定两个测试提交；最终产品基线`ae39e10`，其后只补文档。本轮未push、PR或部署。
+- 已修复：document_view形状说明及可纠正错误；410 capture过期的显式重建/继续运行；单格式Viewer与构建时br/gzip；同哈希派生预览刷新重建frame打断capture的真实UI根因。四格式Chat/Work及活跃工作区交互有浏览器成功证据。
+- Ruff、SQLite与PG/Redis完整套件、最终Portal测试/build通过；E2E全量首轮6项失败已定位并修复，仅这6项复跑通过，未重复全套。精确基线、计数、跳过、冷暖分解、失败及清理统一见[P5本轮记录](updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。所有本轮服务/原生数据库/浏览器已退出，9端口无监听，无容器变更。
+- 剩余未验证边界：VBA/Windows实际执行、Microsoft Office保真、更多复杂模板、长期/更高并发、移动端多浏览器、真实时间流逝/GC后的长期恢复。410故障注入已验证，其他不可用/授权失败仍保护性暂停；短上下文缓存与XLSX运行时成本见记录，不宣称P5全面外部验收。
+- 下一具体动作：审阅本地提交后向main提PR；本轮按用户限制只交接，不执行push/PR/部署。
 
 ---
 
