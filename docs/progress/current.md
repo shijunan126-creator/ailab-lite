@@ -2,8 +2,9 @@
 
 - 分支 `feat/office-suite`（worktree `.worktrees/office-suite`），base `origin/main@bf0af4f`。用户授权按[迁移计划](../architecture/design/office-suite/README.md)实施；后端实现与全部测试交 Codex（gpt-6.1-sol medium），Portal 由 Claude 实现，Claude 评审把关。模型可见内容与文档、PR 不提上游产品名。未授权部署。
 - 已定：许可（Apache-2.0/MIT）、命名、vendor 布局、模块读取、可见性、视觉验收与侧栏工具，见计划“实施决策”。
-- 本次仅实施 P0＋资源构建，未开始 P1：217 个原始文件、113 个完整适配模块、确定性构建/漂移与 hash 闭包回归、336 项能力合同。初轮代码基线 `13d630a`；本轮从 `b5c0933` 跟进2048目标/4096硬限制与随包许可，两个现有大围栏满足D4，保留并发进入的侧栏设计提交 `ae996a0`；范围、最终验证与边界见[记录](updates/2026-11-02-office-suite-p0.md)。
-- 下一步：交付本地提交供主任务评审；P1 加载/预算保持未开始，须由主任务另行安排。P2依赖、reader迁移、视觉门禁和P3/P4侧栏均未执行。本轮不push、不提PR、不部署。
+- P0资源基线 `5da37fa`；本轮仅实施P1后端，代码提交 `8800615`、`0a48b72`：固定 `load_skill(name, resource?, cursor?)`、Chat模式过滤、模块分片/hash、消息配对可见性、ModelPolicy预算拒绝，以及三类压缩的导航索引与按需重读。没有启动P2/P3或改Portal。
+- 验证命令、计数、基线与未测边界统一见[P1记录](updates/2026-11-02-office-suite-p1.md)。本地实现不等于真模型缓存验收；真实 `cached_tokens/prompt_tokens` 检查明确属于P5。
+- 下一步：主任务审查P1提交与测试证据；P2/P3须主任务另行安排。本轮不push、不提PR、不部署。
 
 ---
 
