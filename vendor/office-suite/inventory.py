@@ -231,8 +231,8 @@ def inventory() -> dict:
             "acceptance_case_id": "OFFICE-CHUNK-LIMITS",
             "status": "implemented",
             "reason": (
-                f"{len(oversized_sources)} indivisible blocks exceed the 2048 estimated-token packing target and remain whole. "
-                "The build enforces a hard limit of 4096 estimated tokens; oversize markers are informational."
+                f"{len(oversized_sources)} indivisible blocks exceed the 8192 estimated-token packing target and remain whole. "
+                "The build enforces a hard limit of 12288 estimated tokens; oversize markers are informational."
             ),
         }
     )

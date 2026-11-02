@@ -1,7 +1,7 @@
 {
   "adapter_revision": "64c35b90b059781d667746eb960c98f652ed81e15bda4c163f61a94f6af87aed",
-  "chunk_token_hard_limit": 4096,
-  "chunk_token_target": 2048,
+  "chunk_token_hard_limit": 12288,
+  "chunk_token_target": 8192,
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -55,67 +55,22 @@
     {
       "chunks": [
         {
-          "byte_length": 7471,
+          "byte_length": 31536,
           "byte_offset": 0,
-          "end_line": 84,
-          "estimated_tokens": 1945,
+          "end_line": 490,
+          "estimated_tokens": 8173,
           "id": "0",
-          "sha256": "93c0a9300c40fbcc330be850eded4c214f29d0e19cacc4589b024d23dcacffd9",
+          "sha256": "e3545c71b630a85adcccc9146533c201307ec3faf736cad39609ee013f01c64f",
           "start_line": 1
         },
         {
-          "byte_length": 7845,
-          "byte_offset": 7471,
-          "end_line": 150,
-          "estimated_tokens": 2040,
-          "id": "1",
-          "sha256": "30ebdcb9eedbd3b49117add18ba80dce1b883111679d020f196adfbb1572ff26",
-          "start_line": 85
-        },
-        {
-          "byte_length": 7030,
-          "byte_offset": 15316,
-          "end_line": 283,
-          "estimated_tokens": 1856,
-          "id": "2",
-          "sha256": "dfad75c344e99dfd50a422b8e169d64bfc4fb172132475a1016d80913ae8d720",
-          "start_line": 151
-        },
-        {
-          "byte_length": 7578,
-          "byte_offset": 22346,
-          "end_line": 465,
-          "estimated_tokens": 2014,
-          "id": "3",
-          "sha256": "11780da213f73cb8daeb1b338782384a74884c7dd1dc5cdce3cf894aab889c92",
-          "start_line": 284
-        },
-        {
-          "byte_length": 7611,
-          "byte_offset": 29924,
-          "end_line": 525,
-          "estimated_tokens": 1976,
-          "id": "4",
-          "sha256": "b46cd1c2a63c9fc50a6e5b927cbad541ba9a64ff4d76ac2e89da516bbe3283e4",
-          "start_line": 466
-        },
-        {
-          "byte_length": 7742,
-          "byte_offset": 37535,
-          "end_line": 639,
-          "estimated_tokens": 2018,
-          "id": "5",
-          "sha256": "8292b505c14fb0991f34f8abbab54fc79f5e4d74d03750f6a6c5c43161f909a2",
-          "start_line": 526
-        },
-        {
-          "byte_length": 5444,
-          "byte_offset": 45277,
+          "byte_length": 19185,
+          "byte_offset": 31536,
           "end_line": 724,
-          "estimated_tokens": 1429,
-          "id": "6",
-          "sha256": "60bebd86bd5d511b0bd5bfd586efe8c969ab00f52e38a8b2795f1a12d3e0867c",
-          "start_line": 640
+          "estimated_tokens": 4938,
+          "id": "1",
+          "sha256": "970d63092c7ec6a5bc2f551c7036b86e43174bf1eb7bf8f08a1dcaf39b58737c",
+          "start_line": 491
         }
       ],
       "deps": [],

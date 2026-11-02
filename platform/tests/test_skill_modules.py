@@ -141,11 +141,11 @@ def test_package_drift_and_symlinks_refuse_reads(tmp_path, monkeypatch):
         read_module("platform.docx", "work", "viewer/SKILL.md")
 
 
-def test_oversize_chunk_is_whole_or_refused_by_small_window(monkeypatch):
+def test_large_chunk_is_whole_or_refused_by_small_window(monkeypatch):
     spec = ModelSpec("m", "m", provider="mock", context_tokens=2000, max_output_tokens=256, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     manifest = json.loads((catalog()["platform.docx"]["path"].parent / "modules.json").read_text())
-    resource, cursor = next((m["path"], c["id"]) for m in manifest["modules"] for c in m["chunks"] if c.get("oversize"))
+    resource, cursor = next((m["path"], c["id"]) for m in manifest["modules"] for c in m["chunks"] if c["estimated_tokens"] > 2048)
     module = read_module("platform.docx", "work", resource, cursor)
     assert module["estimated_tokens"] > 2048
     assert module["skill"].endswith("\n")

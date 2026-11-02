@@ -77,8 +77,8 @@ def test_modules_are_lossless_hashed_bounded_and_mode_safe():
         package = SKILLS / f"platform.{fmt}"
         assert office.tokens((package / "SKILL.md").read_text()) <= 1024
         index = json.loads((package / "modules.json").read_text())
-        assert index["chunk_token_target"] == 2048
-        assert index["chunk_token_hard_limit"] == 4096
+        assert index["chunk_token_target"] == 8192
+        assert index["chunk_token_hard_limit"] == 12288
         logical_paths = set(office.originals())
         for module in index["modules"]:
             data = (package / module["path"]).read_bytes()
@@ -93,8 +93,8 @@ def test_modules_are_lossless_hashed_bounded_and_mode_safe():
                 piece = data[position : position + chunk["byte_length"]]
                 assert office.sha(piece) == chunk["sha256"]
                 assert office.tokens(piece.decode()) == chunk["estimated_tokens"]
-                assert chunk["estimated_tokens"] <= 4096
-                if chunk["estimated_tokens"] > 2048:
+                assert chunk["estimated_tokens"] <= 12288
+                if chunk["estimated_tokens"] > 8192:
                     assert chunk["oversize"] is True
                     # An oversized chunk consists of exactly one unsplittable source block.
                     assert len(office.atoms(piece.decode())) == 1
@@ -111,25 +111,22 @@ def test_modules_are_lossless_hashed_bounded_and_mode_safe():
                 assert module["modes"] == ["work"]
             if module["path"].startswith("viewer/"):
                 assert module["modes"] == ["chat", "work"]
-    assert set(oversized) == {
-        "documents-plugin/skills/docx/references/decorations.md",
-        "documents-plugin/skills/docx/references/design-system.md",
-    }
+    assert not oversized
 
 
 @pytest.mark.parametrize("fenced", [False, True], ids=["paragraph", "fence"])
-@pytest.mark.parametrize("estimate", [2048, 2049, 4096, 4097])
+@pytest.mark.parametrize("estimate", [8192, 8193, 12288, 12289])
 def test_indivisible_chunk_target_and_hard_limit(monkeypatch, fenced, estimate):
     source = "```text\nwhole block\n```\n" if fenced else "whole paragraph\n"
     monkeypatch.setattr(office, "tokens", lambda text: estimate)
-    if estimate > 4096:
-        with pytest.raises(ValueError, match="hard limit of 4096"):
+    if estimate > 12288:
+        with pytest.raises(ValueError, match="hard limit of 12288"):
             office.chunks(source)
     else:
         chunks = office.chunks(source)
         assert len(chunks) == 1
         assert chunks[0]["byte_length"] == len(source.encode())
-        assert chunks[0].get("oversize", False) == (estimate > 2048)
+        assert chunks[0].get("oversize", False) == (estimate > 8192)
 
 
 def test_generated_skills_and_shipped_asset_directories_carry_notices(tmp_path):
@@ -168,7 +165,7 @@ def test_native_template_and_cover_workflows_are_not_summarized():
 
 
 def test_chunk_boundaries_preserve_fences_headings_and_unicode():
-    code = "```python\n" + "print('中文')\n" * 600 + "```\n"
+    code = "```python\n" + "print('中文')\n" * 1800 + "```\n"
     source = "# Intro\n\n" + "paragraph\n\n" * 800 + code + "\n# End\n\nfinal\n"
     data = source.encode()
     chunks = office.chunks(source)

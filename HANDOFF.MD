@@ -8,7 +8,7 @@
 ## 2026-11-02 办公原文资源构建
 
 - 四基础包由 `vendor/office-suite/build.py` 重建；改原文适配必须改有序补丁，旧JSON生成器改 `compatibility/` 输入，不能只改生成树。`modules.json` 和所有深层文件已在既有递归hash/租约证明闭包中，修改后须同步根 `index.json`。
-- 2048是原文分片打包目标，完整段落/代码围栏允许到4096，超目标仅标 `oversize: true`，超过4096必须构建失败；不可为凑目标截断围栏。P1须按真实窗口显式准入或拒绝，见[记录](docs/progress/updates/2026-11-02-office-suite-p0.md)。原文目录/代码入库不代表依赖可用；当前reader独立npm目录不保证技能脚本能解析同名包，完整reader迁移留P2。
+- 8192是原文分片打包目标，完整段落/代码围栏允许到12288，超目标仅标 `oversize: true`，超过12288必须构建失败；不可为凑目标截断围栏。P1须按真实窗口显式准入或拒绝，见[记录](docs/progress/updates/2026-11-02-office-suite-p0.md)。原文目录/代码入库不代表依赖可用；当前reader独立npm目录不保证技能脚本能解析同名包，完整reader迁移留P2。
 - 构建复制兼容资源时不能过滤 `LICENSE*`/`NOTICE*`：四基础包必须带固定来源的Apache-2.0 LICENSE与vendor NOTICE，第三方素材保留同目录许可；许可不列为模块，但参与生成漂移与递归hash。
 
 ## 2026-11-02 办公能力迁移边界

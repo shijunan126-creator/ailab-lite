@@ -19,8 +19,8 @@ from ailab_platform.model_policy import TokenEstimator  # noqa: E402
 from ailab_platform.skill_index import build_index  # noqa: E402
 
 PACKAGES = {"documents-plugin": "docx", "spreadsheets-plugin": "xlsx", "presentations-plugin": "pptx", "pdf-plugin": "pdf"}
-TARGET = 2048
-HARD_LIMIT = 4096
+TARGET = 8192
+HARD_LIMIT = 12288
 ESTIMATOR = TokenEstimator()
 
 
