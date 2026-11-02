@@ -1,0 +1,13 @@
+{
+  "name": "ailab-viewer-reader",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "exceljs": "4.4.0",
+    "fast-xml-parser": "5.11.2",
+    "jszip": "3.10.1",
+    "pdfjs-dist": "5.4.296"
+  },
+  "devDependencies": {"esbuild": "0.25.12"},
+  "overrides": {"uuid": "11.1.1"}
+}

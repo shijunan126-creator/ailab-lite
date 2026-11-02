@@ -21,6 +21,8 @@ SEARCH = {
 # Version 1 is intentionally fixed: selection does not depend on prompt, user, or prior tool calls.
 REDUCED_V1 = frozenset(
     {
+
+        "document_view",
         "search_capabilities",
         "load_skill",
         "memory",
@@ -31,6 +33,7 @@ REDUCED_V1 = frozenset(
         "exec_wait",
         "deliver_file",
         "review_artifact",
+
     }
 )
 

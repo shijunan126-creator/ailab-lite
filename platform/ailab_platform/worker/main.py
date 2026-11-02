@@ -13,6 +13,7 @@ from dataclasses import replace
 
 from fastapi import Depends, FastAPI, Response
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from .. import metrics, obs
 from ..clients import ClientError, PlatformClient
@@ -22,6 +23,7 @@ from ..deps import metrics_auth
 from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue, job_topic
+from ..service_auth import require_scope
 from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
@@ -83,7 +85,12 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
 
             identity = attempt_id_var.set(token)
             try:
-                if envelope.kind == "skill_unpack":
+                if envelope.kind == "viewer":
+                    from .viewer import process_viewer
+
+                    process_viewer(client, file_id)
+                    completion.ack()
+                elif envelope.kind == "skill_unpack":
                     from .skill_unpack import process_skill_unpack
 
                     process_skill_unpack(client, envelope.draft_id, envelope.job_id, token)
@@ -341,3 +348,29 @@ def readyz() -> Response:
 @app.get("/metrics", include_in_schema=False, dependencies=[Depends(metrics_auth)])
 def metrics_endpoint() -> Response:
     return metrics_response()
+
+
+_viewer_slots = threading.BoundedSemaphore(1)
+
+
+class ViewerCheck(BaseModel):
+    file_id: str = Field(min_length=1, max_length=100)
+    version: str = Field(min_length=1, max_length=100)
+    selections: list[str] = Field(min_length=1, max_length=8)
+
+
+@app.post("/internal/viewer/check", dependencies=[Depends(require_scope("worker:dispatch"))])
+def check_viewer(body: ViewerCheck):
+    from fastapi import HTTPException
+
+    from .viewer import check
+
+    if not _viewer_slots.acquire(blocking=False):
+        raise HTTPException(503, "viewer busy")
+    try:
+        with PlatformClient(service="worker") as platform:
+            return check(platform, body.file_id, body.version, body.selections)
+    except Exception:
+        raise HTTPException(422, "document locator unavailable") from None
+    finally:
+        _viewer_slots.release()

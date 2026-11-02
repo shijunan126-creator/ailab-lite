@@ -377,6 +377,12 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
 
+    async def document_view(self, run_id: str, payload: dict) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/document-view", timeout=100, json=payload))).json()
+
+    async def get_capture_image(self, run_id: str, capture_id: str) -> bytes:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/captures/{capture_id}", timeout=10))).content
+
     async def create_client_call(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/client-calls", timeout=5, json=payload))).json()
 

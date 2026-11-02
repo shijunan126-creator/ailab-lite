@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from .contracts.document_view import DocRef
 from .contracts.inbox import QueuedMessageOut
 from .contracts.skills import SkillSelection
 from .contracts.templates import TemplateSelection
@@ -73,6 +74,7 @@ class PromptRequest(BaseModel):
 
 
 class RunCreate(PromptRequest):
+    doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
     title: str | None = Field(default=None, max_length=200)
@@ -90,6 +92,7 @@ class RunVersions(BaseModel):
 
 
 class RunOut(ORMModel):
+    doc_refs: list[dict] = Field(default_factory=list)
     template: dict | None = None
     parent_run_id: str | None = None
     edited_from: str | None = None
@@ -117,6 +120,7 @@ class RunOut(ORMModel):
 
 
 class SteeredMessage(BaseModel):
+    doc_refs: list[dict] = Field(default_factory=list)
     id: str
     prompt: str
 
@@ -210,6 +214,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
+    doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
     file_ids: list[str] = Field(default_factory=list, max_length=50)  # the Portal's MAX_ATTACHMENTS
@@ -245,6 +250,7 @@ class ConversationActive(BaseModel):
 
 
 class RunEdit(PromptRequest):
+    doc_refs: list[DocRef] | None = Field(default=None, max_length=8)
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
     file_ids: list[str] | None = Field(default=None, max_length=50)

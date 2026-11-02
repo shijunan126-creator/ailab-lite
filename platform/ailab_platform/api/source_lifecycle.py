@@ -203,8 +203,11 @@ def _drain_invalidation(db, file_id, limit):
         schedule_object_deletion(db, f"workspaces/{run.id}/", "file_source", prefix=True)
         for key in db.scalars(select(RunCheckpoint.state_key).where(RunCheckpoint.run_id == run.id)):
             schedule_object_deletion(db, key, "file_source")
-        from ..models import ClientCall
+        from ..models import ClientCall, ViewerCapture
 
+        for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id == run.id)):
+            schedule_object_deletion(db, key, "file_source")
+        db.execute(delete(ViewerCapture).where(ViewerCapture.run_id == run.id))
         db.execute(delete(ClientCall).where(ClientCall.run_id == run.id))
         db.execute(delete(RunCheckpoint).where(RunCheckpoint.run_id == run.id))
         if run.conversation_id:

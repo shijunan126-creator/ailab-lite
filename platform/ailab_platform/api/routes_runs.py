@@ -249,6 +249,8 @@ def start_run(
     frozen_template: dict | None = None,
     client_send_id: str | None = None,
     client: str | None = None,
+    doc_refs=None,
+    frozen_doc_refs=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -267,6 +269,7 @@ def start_run(
                         "prompt": prompt,
                         "model": model,
                         "file_ids": file_ids,
+                        "doc_refs": [r.model_dump(exclude_none=True) if hasattr(r, "model_dump") else r for r in doc_refs or []],
                         "title": title,
                         "conversation_id": conversation.id if conversation else None,
                         "mode": mode,
@@ -299,6 +302,11 @@ def start_run(
             conversation=conversation,
             turn_mode=(sibling_of.options or {}).get("mode", "work") if sibling_of else None,
         )
+        from .document_view import validate_refs
+
+        references = validate_refs(db, user, doc_refs) if frozen_doc_refs is None else frozen_doc_refs
+        if frozen_doc_refs is not None:
+            validate_refs(db, user, [{k: v for k, v in ref.items() if k != "filename"} for ref in frozen_doc_refs if ref.get("file_id")])
         if send_digest is not None:
             options["client_send_digest"] = send_digest
         if frozen_template:
@@ -352,6 +360,9 @@ def start_run(
         from .document_sources import bind_refs
 
         bind_refs(db, "run_prompt", run.id, inputs, run.id)
+        from .document_view import bind
+
+        bind(db, "run_prompt", run.id, references, run.id)
         from ..models import AppliedMessagePosition
 
         db.add(AppliedMessagePosition(run_id=run.id, message_kind="run_prompt", message_id=run.id, application_seq=0))
@@ -388,6 +399,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         skill=body.skill,
         selections=body.skills,
         template=body.template,
+        doc_refs=body.doc_refs,
         client_send_id=body.client_send_id,
         client="portal",
     )
@@ -605,6 +617,8 @@ def _new_version(db, user, run_id, body, editing=False):
                 or file.purpose != "library"
             ):
                 raise HTTPException(422, "附件已不可用")
+        from .document_view import output as document_refs
+
         options = dict(old.options or {})
         new = start_run(
             db,
@@ -633,6 +647,8 @@ def _new_version(db, user, run_id, body, editing=False):
             commit=False,
             sibling_of=old,
             frozen_template=options.get("template"),
+            doc_refs=body.doc_refs if editing and body.doc_refs is not None else None,
+            frozen_doc_refs=None if editing and body.doc_refs is not None else document_refs(db, "run_prompt", old.id, visible=False),
             client="portal",
         )
         new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills"}}, **new.options}

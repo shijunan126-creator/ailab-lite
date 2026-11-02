@@ -926,6 +926,49 @@ def test_platform_skills_roundtrip_and_run_lookup_plan(engine):
     assert "platform_skills" not in inspect(engine).get_table_names()
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
-    _upgrade_to(engine, "0047")
+    _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_document_refs_and_captures_roundtrip_and_index_plans(engine):
+    _upgrade_to(engine, "0047")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0048")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO message_doc_refs (id,run_id,message_kind,message_id,ordinal,file_id,target,filename) "
+                "VALUES ('dr','r1','run_prompt','r1',0,'f','{}','report.docx')"
+            )
+        )
+        conn.execute(
+            text(
+                "INSERT INTO message_doc_refs (id,run_id,message_kind,message_id,ordinal,file_id,target,filename) "
+                "VALUES (:id,NULL,'run_prompt',:id,0,:id,'{}','other.docx')"
+            ),
+            [{"id": f"other-{i}"} for i in range(2000)],
+        )
+        conn.execute(text("ANALYZE message_doc_refs"))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        if engine.dialect.name == "postgresql":
+            conn.execute(text("SET LOCAL enable_seqscan=off"))
+        queries = [
+            (
+                "SELECT * FROM message_doc_refs WHERE message_kind='run_prompt' AND message_id='r1' ORDER BY ordinal LIMIT 8",
+                "uq_message_doc_ref_ordinal",
+            ),
+            ("SELECT * FROM message_doc_refs WHERE run_id='r1'", "ix_message_doc_refs_run"),
+            ("SELECT * FROM message_doc_refs WHERE file_id='f'", "ix_message_doc_refs_file"),
+            ("SELECT * FROM viewer_captures WHERE expires_at <= '2026-01-01' ORDER BY expires_at LIMIT 100", "ix_viewer_captures_expiry"),
+        ]
+        for query, index in queries:
+            plan = str(conn.execute(text(prefix + query)).all())
+            assert index in plan or (index == "uq_message_doc_ref_ordinal" and "sqlite_autoindex_message_doc_refs" in plan), plan
+    _downgrade_to(engine, "0047")
+    assert "message_doc_refs" not in inspect(engine).get_table_names()
+    assert "viewer_captures" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
+    _upgrade_to(engine, "head")

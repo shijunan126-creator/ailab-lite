@@ -13,7 +13,7 @@ from .config import settings
 from .ports.service_auth import ServiceAuthenticator, ServicePrincipal
 
 SERVICE_SCOPES: dict[str, frozenset[str]] = {
-    "api": frozenset({"agent:dispatch", "worker:dispatch"}),
+    "api": frozenset({"agent:dispatch", "worker:dispatch", "sandbox:view_workspace"}),
     "agent": frozenset(
         {
             "jobs:run",

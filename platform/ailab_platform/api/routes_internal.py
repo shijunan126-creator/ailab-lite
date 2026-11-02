@@ -152,6 +152,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
 
     invalid = invalid_history(db, [turn.id for turn in earlier] + [run.id])
     history = []
+    from ..contracts.document_view import text_block
+    from .document_view import output as document_refs
+
     for turn in earlier[-HISTORY_TURNS:]:
         reply = "（文件来源已失效）" if turn.id in invalid else turn.summary or (f"（这一轮失败了：{turn.error}）" if turn.error else "")
         if turn.status == RunStatus.CANCELED:
@@ -165,11 +168,15 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         applied = (turn.runtime_meta or {}).get("steer_ids", [])
         from ..agent.prompts import render_skill_mentions
 
-        steers = [render_skill_mentions(row.prompt, row.options.get("skills")) for row in steers_for_run(db, turn) if row.id in applied]
+        steers = [
+            render_skill_mentions(row.prompt, row.options.get("skills")) + text_block(document_refs(db, "queued_message", row.id))
+            for row in steers_for_run(db, turn)
+            if row.id in applied
+        ]
         history.append(
             {
                 **({"steers": steers} if steers else {}),
-                "prompt": turn.prompt,
+                "prompt": turn.prompt + text_block(document_refs(db, "run_prompt", turn.id)),
                 "skills": (turn.options or {}).get("skills")
                 or (
                     [{"name": (turn.options or {}).get("skill"), "title": (turn.options or {}).get("skill_title")}]
@@ -205,6 +212,9 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
         ]
     out["history"] = history
     out["input_files"] = _attachment_texts(db, run)
+    from .document_view import output as document_refs
+
+    out["doc_refs"] = document_refs(db, "run_prompt", run.id)
     owner = db.get(User, run.user_id)
     from .routes_memory import memory_for_run
 
@@ -895,7 +905,7 @@ def _bound_file(
 
 
 FILE_READ = require_scope("files:read_for_run", "files:read_pending", "files:read_for_preview", "files:read_for_document")
-FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill"]
+FileJob = Literal["processing", "thumbnail", "preview", "brand", "template", "document", "skill", "viewer"]
 
 
 @router.get("/files/{file_id}", response_model=InternalFileOut, response_model_exclude_unset=True)

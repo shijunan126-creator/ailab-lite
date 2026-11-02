@@ -1352,3 +1352,32 @@ def test_artifact_review_keeps_recorded_prefix_and_discloses_visual_availability
         m for m in requests[1]["messages"] if isinstance(m.get("content"), list) and any(p.get("type") == "image_url" for p in m["content"])
     ]
     assert bool(images) == vision
+
+def test_document_view_and_frozen_quotes_are_append_only_in_recorded_requests():
+    from ailab_platform.agent.tools import tools_for_chat
+
+    ref = {"file_id": "file", "version": "content-hash", "at": "p:2", "quote": "frozen selection", "filename": "report.docx"}
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "doc_refs": [ref], "options": {"mode": "chat"}}
+
+        async def document_view(self, run_id, payload):
+            assert payload == {"op": "get_view"}
+            return {"status": "unavailable", "views": []}
+
+    call = {"index": 0, "id": "view", "type": "function", "function": {"name": "document_view", "arguments": '{"op":"get_view"}'}}
+    with scripted_server([{"tool_calls": [call]}, {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 2
+    assert_extension(*requests)
+    first = requests[0]
+    user = next(m for m in first["messages"] if m["role"] == "user")
+    assert "report.docx (p:2)" in user["content"] and "frozen selection" in user["content"]
+    assert "frozen selection" not in json.dumps(first["tools"], ensure_ascii=False)
+    assert "frozen selection" not in first["messages"][0]["content"]
+    chat = next(t for t in tools_for_chat() if t["function"]["name"] == "document_view")
+    work = next(t for t in tools_for_turn() if t["function"]["name"] == "document_view")
+    assert chat == work

@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
+from .document_view import DocRef
 from .skills import SkillSelection
 from .templates import TemplateSelection
 
@@ -62,6 +63,7 @@ class NotificationRead(BaseModel):
 
 
 class QueueCreate(BaseModel):
+    doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     template: TemplateSelection | None = None
     prompt: str = Field(min_length=1, max_length=8000)
     file_ids: list[str] = Field(default_factory=list, max_length=50)
@@ -96,6 +98,7 @@ class QueuePatch(BaseModel):
 
 
 class QueuedMessageOut(InboxUTC):
+    doc_refs: list[dict] = Field(default_factory=list)
     input_files: list[dict] = Field(default_factory=list)
     template: dict | None = None
     id: str

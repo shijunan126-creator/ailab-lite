@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-11-02 办公P0–P2（`feat/office-suite`）：来源/许可与四基础包hash闭包保留。最新 `load_skill(name, resource?)` 按白名单完整文件读取，无token分片/cursor；配对同hash正文去重、压缩后重读和ModelPolicy预算拒绝保持。P2已实现固定离线生产依赖、reader补丁重基、四格式真实镜像合同与固定 `review_artifact`（有界结构证据/页图；tools-only明确无视觉验收），集中结果及未测路线见[P2记录](../progress/updates/2026-11-02-office-suite-p2.md)。基础四格式、断网HTML/LaTeX与录制请求已验证；一次Python为2012通过/167跳过/20失败，修复后仅复跑失败20项均通过；完整复杂路线尚未验收，未合并/部署；P3/P4原生侧栏与P5真实缓存、联合质量/容量验收保持独立。
+2026-11-02 办公P0–P2（`feat/office-suite`）：来源/许可与四基础包hash闭包保留。最新 `load_skill(name, resource?)` 按白名单完整文件读取，无token分片/cursor；配对同hash正文去重、压缩后重读和ModelPolicy预算拒绝保持。P2已实现固定离线生产依赖、reader补丁重基、四格式真实镜像合同与固定 `review_artifact`（有界结构证据/页图；tools-only明确无视觉验收），集中结果及未测路线见[P2记录](../progress/updates/2026-11-02-office-suite-p2.md)。基础四格式、断网HTML/LaTeX与录制请求已验证；一次Python为2012通过/167跳过/20失败，修复后仅复跑失败20项均通过；完整复杂路线尚未验收，未合并/部署；P3/P4原生侧栏与P5真实缓存、联合质量/容量验收保持独立。 P3后端已整合，合同及历史检查见[P3](../progress/updates/2026-11-02-office-suite-p3.md)；当前整合验收进行中。
 
 2026-11-02 GenUI说明按实际历史复用已本地实施：配对成功工具结果中的完整当前文本可复用；仅补新增组件/依赖，压缩丢失后重新读取，无持久标记；真实Chat/Work多轮缓存检查通过。范围、冷启动边界与检查见[记录](../progress/updates/2026-11-02-genui-doc-reuse.md)，未发布部署。
 

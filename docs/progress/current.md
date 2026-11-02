@@ -1,10 +1,8 @@
-# 办公能力完整迁移：P2 本地实施（2026-11-02）
+# 办公能力整合（2026-11-02）
 
-- 分支 `feat/office-suite`，worktree `.worktrees/office-suite`，base `origin/main@bf0af4f`；进入基线 `d8ed0f9`，当前代码/测试基线 `e978848`。用户授权完成整文件读取与P2，核查取消运行的部分改动；不push、PR、部署。P3在另一worktree，本轮未改doc refs/view state/document_view。
-- 已实现：整文件 `load_skill(name, resource?)`（不分页、不截断、预算不足先压缩）、模式白名单与配对正文重读规则；固定离线制作依赖、reader补丁重基、输出与原件隔离，以及固定 `review_artifact` 结构/有界页图证据。工具本身不判质量通过，tools-only明确无视觉验收。
-- 本地专项132项、reader19项通过；四格式真实ARM64/断网镜像创建/编辑/转换/保原件/重读/评审通过，HTML/LaTeX失败断言修正后定点通过。最终镜像 `52efc1239e95` 与成功测试镜像执行代码一致、index匹配当前源树；大小、构建失败/重试与资源成本统一见[P2记录](updates/2026-11-02-office-suite-p2.md)。
-- 完整Python仅一次：2012通过/167跳过/20失败；补齐最后重生成后的runner构建、修正沙箱导入/过时断言后，仅复跑失败20项全部通过，Ruff通过。不是最终全套首次全绿；详见P2记录。下一步由主任务评审本地提交，再与独立P3/P4/P5整合。真实模型视觉判断/供应商缓存、复杂模板/品牌交付、五服务端到端、P3/P4/P5联合验收尚未完成，不能据基础镜像合同宣称完整迁移已验收。
-
+- 分支 `feat/office-suite`，base `origin/main@bf0af4f`，进入基线 `12e6c86`。授权本地整合 P3 与 Portal、构建限额和集中验收；不 push、PR、部署。
+- P0–P2 与 P3 后端已整合；Portal 合并、完整验证和原生查看器端到端待完成。历史检查分别见 [P1](updates/2026-11-02-office-suite-p1.md)、[P2](updates/2026-11-02-office-suite-p2.md)、[P3](updates/2026-11-02-office-suite-p3.md)。
+- 下一步：整合 Portal 并核对前后端合同，增加构建限额，再集中验证。真实模型缓存指标保持 P5 边界。
 
 ---
 

@@ -369,9 +369,11 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
 
                 purge_episodes_for_runs(db, ids)
                 # the usage ledger stays: what these runs cost still counts
-                from ..models import ClientCall
+                from ..models import ClientCall, ViewerCapture
 
-                for model in (RunEvent, Artifact, ClientCall):
+                for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids))):
+                    _schedule_delete(db, key, "conversation")
+                for model in (RunEvent, Artifact, ClientCall, ViewerCapture):
                     db.execute(delete(model).where(model.run_id.in_(ids)))
                 db.execute(delete(Run).where(Run.id.in_(ids)))
                 remaining -= len(ids)
@@ -447,9 +449,11 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
     storage = storage or get_storage()
     now = now or datetime.now(UTC)
     from .source_lifecycle import drain_invalidations
+    from .viewer_captures import purge as purge_captures
 
     stats = {}
     for kind, job in (
+        ("viewer_captures", lambda: purge_captures(db, storage, now)),
         ("file_sources", lambda: drain_invalidations(db)),
         ("presign", lambda: purge_expired_presigns(db, storage, now)),
         ("orphan", lambda: purge_orphan_objects(db, storage, now)),

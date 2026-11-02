@@ -151,6 +151,10 @@ def extract_path(data: Path, filename: str, content_type: str) -> dict:
 
 
 def run(operation: str, source: Path, output: Path, options: dict) -> dict:
+    if operation == "viewer":
+        from .viewer_reader import read
+
+        return read(source, output, options)
     filename = options.get("filename", source.name)
     if operation == "skill_unpack":
         import zipfile

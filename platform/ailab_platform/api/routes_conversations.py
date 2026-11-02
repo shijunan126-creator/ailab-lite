@@ -235,6 +235,7 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         skill=body.skill,
         selections=body.skills,
         template=body.template,
+        doc_refs=body.doc_refs,
         client_send_id=body.client_send_id,
         client="portal",
     )
