@@ -29,7 +29,9 @@ export async function handleClientCall(runId: string, call: ClientCall): Promise
   }
   let body: Record<string, unknown>;
   if (capture) {
-    body = { claim_token: token, ...(await takeCapture(capture.view_id as string, capture.at, capture.max_width)) };
+    // the run stops waiting at its deadline (else after timeout_ms); a reply after that is wasted
+    const until = call.deadline ? Date.parse(call.deadline) : Date.now() + call.timeout_ms;
+    body = { claim_token: token, ...(await takeCapture(capture.view_id as string, capture.at, capture.max_width, until)) };
   } else {
     const reply = await runJs({ code: call.code!, input: call.input, timeout_ms: call.timeout_ms, limits: call.limits });
     body = reply.ok
@@ -43,11 +45,15 @@ export async function handleClientCall(runId: string, call: ClientCall): Promise
   }
 }
 
-async function takeCapture(viewId: string, at: unknown, maxWidth: unknown): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
+async function takeCapture(viewId: string, at: unknown, maxWidth: unknown, until: number): Promise<{ ok: true; value: unknown } | { ok: false; error: string }> {
   let width = typeof maxWidth === "number" && maxWidth >= 320 ? Math.min(Math.floor(maxWidth), 2400) : 1600;
   try {
     for (;;) {
-      const shot = await captureView(viewId, typeof at === "string" && at ? at : null, width);
+      const left = until - Date.now();
+      if (left <= 0) return { ok: false, error: "截图超时" };
+      const pending = captureView(viewId, typeof at === "string" && at ? at : null, width);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const shot = pending && (await Promise.race([pending, new Promise<never>((_, reject) => (timer = setTimeout(() => reject(new Error("截图超时")), left)))]).finally(() => clearTimeout(timer)));
       if (!shot) return { ok: false, error: "查看器已关闭" };
       if (shot.data.length <= MAX_CAPTURE_CHARS) return { ok: true, value: { image: shot.data, mime_type: "image/png", width: shot.width, height: shot.height, at: shot.at, version: shot.version } };
       if (width <= 480) return { ok: false, error: "截图过大" };
