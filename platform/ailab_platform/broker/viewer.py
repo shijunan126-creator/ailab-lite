@@ -3,11 +3,11 @@
 import json
 import shlex
 import tempfile
+import threading
 from pathlib import Path
 from uuid import uuid4
 
 from fastapi import HTTPException
-from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
 from ..config import settings
@@ -15,11 +15,24 @@ from ..contracts.document_view import PARSER_REVISION
 from ..paths import normalize_path
 from ..worker.viewer import build
 
+_reader_slot = threading.BoundedSemaphore(1)
+
+
+class SnapshotResponse(FileResponse):
+    async def __call__(self, scope, receive, send):
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            Path(self.path).unlink(missing_ok=True)
+
 
 def workspace(manager, run_id, user_id, path, operation, selections=None, version=None):
     if not path or ".." in path.split("/") or "\\" in path:
         raise HTTPException(422, "invalid workspace path")
-    path = normalize_path(path if path.startswith("/") else "/workspace/" + path)
+    try:
+        path = normalize_path(path if path.startswith("/") else "/workspace/" + path)
+    except ValueError:
+        raise HTTPException(422, "invalid workspace path") from None
     if ".ailab" in path.split("/"):
         raise HTTPException(422, "invalid workspace path")
     lease = next(
@@ -28,6 +41,9 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
     if not lease:
         raise HTTPException(410, "live workspace unavailable")
     lease = manager.get(lease["lease_id"])
+    claimed = operation != "content"
+    if claimed and not _reader_slot.acquire(blocking=False):
+        raise HTTPException(503, "viewer busy")
     ident = uuid4().hex
     directory = f"/workspace/.ailab/viewer-{ident}"
     source = f"{directory}/source{Path(path).suffix.lower()}"
@@ -47,11 +63,10 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
             target = Path(local.name)
             try:
                 manager._download(lease, source, target, 20 * 1024**2)
-                return FileResponse(
+                return SnapshotResponse(
                     target,
                     media_type="application/octet-stream",
                     headers={"ETag": '"' + identity["version"] + '"'},
-                    background=BackgroundTask(target.unlink, missing_ok=True),
                 )
             except BaseException:
                 target.unlink(missing_ok=True)
@@ -78,6 +93,8 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
             captured = {"version": identity["version"], "at": at, "image": rendered["images"][0], "mime_type": "image/jpeg"}
             manager.storage.put_bytes(cache_key, json.dumps(captured).encode(), "application/json")
             return captured
+        if not settings.viewer_reader_path.exists():
+            return {"status": "failed", "version": identity["version"], "native": False, "reason": "viewer_reader_unavailable"}
         executor = helper.with_name("office_exec.py")
         manager.put_file(lease["lease_id"], directory + "/office_exec.py", executor.read_bytes())
         manager.put_file(lease["lease_id"], directory + "/reader.mjs", settings.viewer_reader_path.read_bytes())
@@ -106,3 +123,6 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
             manager.exec(lease["lease_id"], f"rm -rf -- {shlex.quote(directory)}", 5)
         except Exception:
             pass
+        finally:
+            if claimed:
+                _reader_slot.release()

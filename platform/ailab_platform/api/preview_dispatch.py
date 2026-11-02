@@ -12,7 +12,7 @@ from sqlalchemy import delete, or_, select, update
 from ..config import settings
 from ..contracts.jobs import JobEnvelope
 from ..db import SessionLocal
-from ..models import FileObject, OutboxMessage
+from ..models import FileObject, OutboxMessage, Run
 from ..queue import get_queue, job_topic
 
 log = logging.getLogger("ailab.api.jobs")
@@ -84,6 +84,21 @@ def _dispatch_batch(queue, job_id, now):
                 from ..events import append_event
 
                 if not db.execute(delete(OutboxMessage).where(OutboxMessage.id == message.id)).rowcount:
+                    continue
+                run = db.get(Run, message.payload["run_id"])
+                target = message.payload["payload"]
+                file = db.get(FileObject, target["file_id"]) if target.get("file_id") else None
+                if not run or (
+                    target.get("file_id")
+                    and (
+                        not file
+                        or file.user_id != run.user_id
+                        or file.deleted_at
+                        or file.purged_at
+                        or file.status != "ready"
+                        or file.sha256 != target["version"]
+                    )
+                ):
                     continue
                 append_event(db, message.payload["run_id"], message.payload["type"], message.payload["payload"], commit=False)
                 db.flush()

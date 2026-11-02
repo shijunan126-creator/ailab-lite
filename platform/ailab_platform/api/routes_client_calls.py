@@ -51,7 +51,7 @@ class Result(BaseModel):
     value: str | dict | None = None
     logs: str | None = None
     error: Error | str | None = None
-    stats: Stats = Field(default_factory=lambda: Stats(ms=0))
+    stats: Stats | None = None
 
 
 def size(value):
@@ -91,6 +91,8 @@ def create_call(run_id: str, body: CreateCall, x_run_attempt: str | None = Heade
     if not run:
         raise HTTPException(404, "run not found")
     payload = body.payload
+    if body.kind == "js" and "code" not in payload.model_fields_set:
+        raise HTTPException(422, "JS code required")
     try:
         input_bytes = size(json.dumps(payload.input, ensure_ascii=False, allow_nan=False))
     except (ValueError, TypeError, UnicodeError):
@@ -202,7 +204,11 @@ def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(
         call = db.get(ClientCall, (run_id, call_id))
         if not call:
             raise HTTPException(404, "client call not found")
+        if body.ok == (body.error is not None):
+            raise HTTPException(422, "invalid client result")
         if call.kind == "js":
+            if body.stats is None:
+                raise HTTPException(422, "JS stats required")
             if not isinstance(body.value, (str, type(None))) or not isinstance(body.error, (Error, type(None))):
                 raise HTTPException(422, "invalid JS result")
             if (

@@ -306,10 +306,7 @@ def start_run(
 
         references = validate_refs(db, user, doc_refs) if frozen_doc_refs is None else frozen_doc_refs
         if frozen_doc_refs is not None:
-            for ref in frozen_doc_refs:
-                if ref.get("file_id"):
-                    validate_refs(db, user, [{k: v for k, v in ref.items() if k != "filename"}])
-
+            validate_refs(db, user, [{k: v for k, v in ref.items() if k != "filename"} for ref in frozen_doc_refs if ref.get("file_id")])
         if send_digest is not None:
             options["client_send_digest"] = send_digest
         if frozen_template:

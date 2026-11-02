@@ -1422,17 +1422,17 @@ class AgentLoop:
     async def _user_content(self, run_id, run, model):
         from ..contracts.document_view import text_block
 
-        run = {**run, "prompt": run["prompt"] + text_block(run.get("doc_refs"))}
+        prompt = run["prompt"] + text_block(run.get("doc_refs"))
         files = run.get("input_files") or []
         images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
         if not images and not document_pages:
-            return user_prompt(render_skill_mentions(run["prompt"], (run.get("options") or {}).get("skills")), files)
+            return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files)
         parts = [
             {
                 "type": "text",
                 "text": user_prompt(
-                    render_skill_mentions(run["prompt"], (run.get("options") or {}).get("skills")),
+                    render_skill_mentions(prompt, (run.get("options") or {}).get("skills")),
                     [file for file in files if file not in images],
                 ),
             }

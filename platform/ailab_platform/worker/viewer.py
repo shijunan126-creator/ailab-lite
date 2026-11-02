@@ -54,10 +54,16 @@ def process_viewer(platform, file_id):
     from .pipeline import download
 
     file = platform.get_file(file_id, job="viewer")
+    storage = get_storage()
+    key = f"derived/{file_id}/viewer.json"
+    if storage.exists(key) and storage.size(key) <= 4 * 1024**2:
+        cached = json.loads(storage.get_bytes(key))
+        if cached.get("version") == file["sha256"] and cached.get("parser_revision") == PARSER_REVISION:
+            return cached
     with tempfile.TemporaryDirectory(prefix="ailab-viewer-") as directory:
         source = Path(directory) / ("source" + Path(file["filename"]).suffix.lower())
         download(platform, file_id, source, 20 * 1024**2, job="viewer")
-        return derive(file, source, get_storage(), Path(directory) / "read")
+        return derive(file, source, storage, Path(directory) / "read")
 
 
 def derive(file, source, storage, output):

@@ -5,7 +5,7 @@ import unicodedata
 from pathlib import PurePath
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from ..contracts.document_view import PARSER_REVISION, DocRef
 from ..models import FileObject, MessageDocRef, MessageFileRef
@@ -140,17 +140,35 @@ def bind(db, kind, message_id, refs, run_id=None):
             db.flush()
 
 
-def output(db, kind, message_id, *, visible=True):
-    refs = db.scalars(
+def output_map(db, identities, *, visible=True):
+    by_kind = {}
+    for kind, ident in identities:
+        by_kind.setdefault(kind, []).append(ident)
+    if not by_kind:
+        return {}
+    query = (
         select(MessageDocRef)
-        .where(MessageDocRef.message_kind == kind, MessageDocRef.message_id == message_id)
-        .order_by(MessageDocRef.ordinal)
-        .limit(8)
+        .outerjoin(FileObject, FileObject.id == MessageDocRef.file_id)
+        .where(or_(*(and_(MessageDocRef.message_kind == kind, MessageDocRef.message_id.in_(ids)) for kind, ids in by_kind.items())))
     )
-    result = []
-    for ref in refs:
-        file = db.get(FileObject, ref.file_id) if ref.file_id else None
-        if visible and ref.file_id and (not file or file.deleted_at or file.purged_at or file.status != "ready"):
-            continue
-        result.append({**ref.target, "filename": ref.filename})
+    if visible:
+        query = query.where(
+            or_(
+                MessageDocRef.file_id.is_(None),
+                and_(
+                    FileObject.id.is_not(None),
+                    FileObject.deleted_at.is_(None),
+                    FileObject.purged_at.is_(None),
+                    FileObject.status == "ready",
+                ),
+            )
+        )
+    query = query.order_by(MessageDocRef.message_kind, MessageDocRef.message_id, MessageDocRef.ordinal).limit(8 * len(identities))
+    result = {}
+    for ref in db.scalars(query):
+        result.setdefault((ref.message_kind, ref.message_id), []).append({**ref.target, "filename": ref.filename})
     return result
+
+
+def output(db, kind, message_id, *, visible=True):
+    return output_map(db, [(kind, message_id)], visible=visible).get((kind, message_id), [])

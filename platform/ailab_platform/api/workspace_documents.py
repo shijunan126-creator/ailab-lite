@@ -31,6 +31,10 @@ class WorkspaceStream:
 
 def request_workspace(db, user, run_id, path, operation, selections=None, version=None):
     run = _get_owned_run(db, run_id, user)
+    if run.conversation_id:
+        from .routes_conversations import _owned
+
+        _owned(db, run.conversation_id, user)
     if run.status != "running":
         raise HTTPException(410, "live workspace unavailable")
     client = httpx.Client(timeout=httpx.Timeout(90, connect=3), trust_env=False)
