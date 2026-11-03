@@ -181,7 +181,8 @@ def test_admission_accounts_batch_args_results_images_and_whole_file():
         messages.append(tool_result_message(call.id, call.name, result))
         state["pending"].pop(0)
     assert accepted[0]["ok"]
-    assert not accepted[1]["ok"] and accepted[1]["reason"] == "batch_budget" and "skill" not in accepted[1]
+    assert accepted[1]["ok"]
+    assert not accepted[2]["ok"] and accepted[2]["reason"] == "batch_budget" and "skill" not in accepted[2]
     assert band.cost(messages[3:]) < 64000
     protocol_groups(messages)
     huge = ToolCall("huge", "read_file", {})
@@ -189,7 +190,7 @@ def test_admission_accounts_batch_args_results_images_and_whole_file():
         band, [*PREFIX, CURRENT, pair("huge")[0]], [], {"user_message_index": 2}, huge, {"ok": True, "text": "汉" * 80000}
     )
     assert not result["ok"] and "text" not in result
-    image_state = {"user_message_index": 2, "pending_image_inputs": [[{"type": "image_url", "image_url": {"url": "x"}}] * 16]}
+    image_state = {"user_message_index": 2, "pending_image_inputs": [[{"type": "image_url", "image_url": {"url": "x"}}] * 64]}
     result = admit_tool_result(band, [*PREFIX, CURRENT, pair("huge")[0]], [], image_state, huge, {"ok": True})
     assert not result["ok"] and image_state["pending_image_inputs"] == []
 
@@ -438,3 +439,59 @@ def test_legacy_module_marker_is_replaced_not_retained_as_latest_group():
     assert not any(SUMMARY_MARKER in message.get("content", "") for message in staged.messages if isinstance(message.get("content"), str))
     assert any(message.get("tool_call_id") == "latest" for message in staged.messages)
     assert staged.measurements["after_tokens"] <= 48000
+
+
+@pytest.mark.parametrize("window", [128000, 300000, 1000000])
+@pytest.mark.parametrize("mode", ["work", "chat"])
+def test_every_packaged_resource_fits_whole_single_call_and_next_boundary(window, mode):
+    from ailab_platform.agent.prompts import system_prompt_for
+    from ailab_platform.agent.skill_modules import read_module
+    from ailab_platform.agent.tools import tools_for_chat, tools_for_turn
+    from ailab_platform.skill_registry import BASE_SKILLS, catalog
+
+    band = band_for(window)
+    prefix = [{"role": "system", "content": system_prompt_for(mode)}, PREFIX[1]]
+    tools = tools_for_turn() if mode == "work" else tools_for_chat()
+    for name in BASE_SKILLS:
+        manifest = json.loads((catalog()[name]["path"].parent / "modules.json").read_text())
+        resources = [None, *(m["path"] for m in manifest["modules"] if mode in m["modes"])]
+        for resource in resources:
+            args = {"name": name, **({"resource": resource} if resource else {})}
+            call = ToolCall("whole", "load_skill", args)
+            assistant = {
+                "role": "assistant",
+                "tool_calls": [{"id": call.id, "function": {"name": call.name, "arguments": json.dumps(args)}}],
+            }
+            messages = [*prefix, CURRENT, assistant]
+            state = {"user_message_index": 2, "pending": [{"id": call.id, "name": call.name}]}
+            original = read_module(name, mode, resource)
+            result = admit_tool_result(band, messages, tools, state, call, original)
+            assert result is original, (window, mode, name, resource)
+            messages.append(tool_result_message(call.id, call.name, result))
+            staged = stage_context(band, prefix, ContextSummary(), messages, state, tools, {2})
+            assert staged.measurements["after_tokens"] <= band.ceiling
+            assert messages[-1] in staged.messages
+            protocol_groups(staged.messages)
+
+
+@pytest.mark.parametrize("window", WINDOWS)
+def test_batch_capacity_uses_real_floor_and_preserves_latest_unit(window):
+    from ailab_platform.agent.context_band import batch_budget
+
+    band = band_for(window)
+    call = ToolCall("capacity", "read_file", {})
+    messages = [*PREFIX, CURRENT, pair(call.id)[0]]
+    state = {"user_message_index": 2}
+    budget = batch_budget(band, messages, [], state)
+    floor = band.cost({"messages": [*PREFIX, CURRENT, bounded_runtime(band, state)], "tools": []})
+    assert budget == band.ceiling - floor - band.summary_budget - band.allocation(2000, 0.04)
+    # Price the serialized envelope rather than guessing a payload threshold.
+    envelope = band.cost([messages[-1], tool_result_message(call.id, call.name, {"ok": True, "text": ""})])
+    original = {"ok": True, "text": "汉" * (budget - envelope - band.cost([]))}
+    assert admit_tool_result(band, messages, [], state, call, original) is original
+    messages.append(tool_result_message(call.id, call.name, original))
+    staged = stage_context(band, PREFIX, ContextSummary(), messages, state, [], {2})
+    assert messages[-1] in staged.messages
+    assert staged.measurements["after_tokens"] <= band.ceiling <= 64000
+    rejected = admit_tool_result(band, messages[:-1], [], state, call, {"ok": True, "text": "汉" * (budget + 1)})
+    assert rejected["ok"] is False and rejected["reason"] == "batch_budget" and "text" not in rejected

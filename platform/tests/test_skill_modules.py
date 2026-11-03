@@ -89,7 +89,7 @@ def test_budget_refusal_and_group_cumulative_admission(monkeypatch):
 
     async def exercise():
         from ailab_platform.adapters.runtime import fresh_state
-        from ailab_platform.agent.context_band import ContextBand, admit_tool_result
+        from ailab_platform.agent.context_band import ContextBand, admit_tool_result, batch_budget
 
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
         turn = _Turn({"model": "m", "options": {"mode": "chat"}, "_fixed_catalog": [LOAD_SKILL]})
@@ -108,7 +108,7 @@ def test_budget_refusal_and_group_cumulative_admission(monkeypatch):
         assert first["ok"] and first["skill"]
         turn.messages.append(tool_result_message("first", "load_skill", first))
         # A second complete file would exceed the new pending-batch budget.
-        oversized = {**first, "skill": "大" * 5000}
+        oversized = {**first, "skill": "大" * batch_budget(ContextBand.for_model(spec), turn.messages, [LOAD_SKILL], state)}
         refused = admit_tool_result(ContextBand.for_model(spec), turn.messages, [LOAD_SKILL], state, calls[1], oversized)
         assert not refused["ok"] and "cannot fit" in refused["error"] and "skill" not in refused
         turn.messages.append(tool_result_message("second", "load_skill", refused))

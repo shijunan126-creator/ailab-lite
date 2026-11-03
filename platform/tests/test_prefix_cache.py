@@ -1245,7 +1245,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
 
 
-@pytest.mark.parametrize("context_tokens, refused", [(32000, True), (64000, False)])
+@pytest.mark.parametrize("context_tokens, refused", [(24000, True), (32000, False), (64000, False)])
 def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatch, context_tokens, refused):
     from ailab_platform.agent.skill_modules import read_module
     from ailab_platform.agent.tools import tool_result_message

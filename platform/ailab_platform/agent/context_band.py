@@ -363,4 +363,6 @@ def batch_budget(band, messages, tools, state):
     )
     essentials = [*messages[:2], *(messages[i] for i in sorted(protected)), bounded_runtime(band, state)]
     floor = band.cost({"messages": essentials, "tools": tools}) + band.summary_budget + band.allocation(2000, 0.04)
-    return max(0, min(band.allocation(24000, 0.40), band.ceiling - floor))
+    # The newest complete batch must survive the next boundary alongside every
+    # mandatory component. A window fraction rejects files that actually fit.
+    return max(0, band.ceiling - floor)
