@@ -369,3 +369,24 @@ def test_boundary_capacity_failure_keeps_old_epoch_and_never_commits(monkeypatch
     with pytest.raises(BudgetPause):
         asyncio.run(loop._event("r", "agent.context_boundary", {"reason": "access_revoked"}))
     assert state == before
+
+
+def test_build_preserves_checkpoint_committed_before_capacity_pause(monkeypatch):
+    from ailab_platform.agent.loop import _Turn
+
+    loop = AgentLoop(FakePlatform())
+    state = {**fresh_state(), "messages": [{"role": "user", "content": "original"}]}
+    loop._states["r"] = state
+    loop._steps["r"] = 1
+    turn = _Turn({})
+
+    async def committed(*args):
+        state.update(checkpoint_capacity_exceeded=True, messages=[])
+        loop._steps["r"] = 2
+        raise BudgetPause("capacity")
+
+    context = loop._context("r")
+    monkeypatch.setattr(context, "_build", committed)
+    with pytest.raises(BudgetPause):
+        asyncio.run(context.build({}, turn, "m", None))
+    assert state["checkpoint_capacity_exceeded"] and state["messages"] == []

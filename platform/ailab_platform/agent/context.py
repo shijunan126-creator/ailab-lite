@@ -499,13 +499,16 @@ class ContextManager:
 
     async def build(self, run, turn, model, llm):
         original = deepcopy(self.state)
+        original_step = self.runtime._steps.get(self.run_id, 0)
         try:
             await self._build(run, turn, model, llm)
         except Exception:
-            # No partially assembled prefix may be persisted by the pause path.
-            self.state.clear()
-            self.state.update(original)
-            turn.messages = self.state["messages"]
+            # A capacity pause can follow a successful frozen checkpoint. That
+            # committed state is authoritative; only uncommitted assembly rolls back.
+            if self.runtime._steps.get(self.run_id, 0) == original_step:
+                self.state.clear()
+                self.state.update(original)
+                turn.messages = self.state["messages"]
             raise
 
     async def _build(self, run, turn, model, llm):

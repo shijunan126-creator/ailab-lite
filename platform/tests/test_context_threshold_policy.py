@@ -53,8 +53,10 @@ def test_history_threshold_boundary_and_model_change(monkeypatch, mode, context,
     asyncio.run(exercise())
 
 
-@pytest.mark.parametrize("context,used,compacts", [(10000, 8999, False), (10000, 9000, True), (20000, 9000, False)])
-def test_work_execution_uses_same_threshold(monkeypatch, context, used, compacts):
+@pytest.mark.parametrize(
+    "context,used,compacts", [(10000, 8374, False), (10000, 8375, True), (10000, 8999, True), (10000, 9000, True), (20000, 9000, False)]
+)
+def test_work_execution_reserves_summary_capacity_before_threshold(monkeypatch, context, used, compacts):
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=context, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: used if "OLDER" in json.dumps(value) else 100)
