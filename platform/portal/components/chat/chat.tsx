@@ -300,7 +300,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     loadDetail().then(async (d) => {
       if (disposed) return;
       const last = d?.turns[d.turns.length - 1];
-      if (last && (!isTerminal(last.status, !!last.result?.file_wait) || last.status === "interrupted")) {
+      if (last && !isTerminal(last.status, !!last.result?.file_wait)) {
         if (startedHere.delete(last.id)) answerFrom(last.id);
         controller = follow(last);
       }

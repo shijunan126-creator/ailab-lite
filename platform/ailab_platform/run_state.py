@@ -109,6 +109,8 @@ def _transition_run(
     from .api.inbox import on_transition
 
     on_transition(db, run)
+    if new_status in {*RunStatus.TERMINAL, RunStatus.INTERRUPTED}:
+        db.info.setdefault("process_snapshot_runs", set()).add(run.id)
     if commit:
         db.commit()
     return run, True

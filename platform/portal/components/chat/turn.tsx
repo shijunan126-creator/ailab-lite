@@ -1,8 +1,8 @@
 "use client";
 
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { api, downloadUrl, errorMessage, EventItem, quotaMessage, Run } from "../../lib/api";
+import { api, downloadUrl, errorMessage, ProcessView, quotaMessage, Run } from "../../lib/api";
 import { formatBytes, isTerminal } from "../../lib/format";
 import { placeMenu } from "../../lib/menu-place";
 import { startingState } from "../../lib/ui-state";
@@ -21,7 +21,7 @@ import { useFileViewer } from "../preview/file-viewer";
 
 export { reduceEvent } from "../../lib/work-process";
 export type { Item } from "../../lib/work-process";
-import { reduceEvent, type Item } from "../../lib/work-process";
+import { type Item } from "../../lib/work-process";
 import { SourcesButton } from "./sources";
 import WorkProcess from "./work-process";
 import { useViewport } from "../viewport-block";
@@ -226,9 +226,16 @@ export default memo(function Turn({
   const [retrying, setRetrying] = useState(false);
   const [editing, setEditing] = useState<true | null>(null);
   const [switching, setSwitching] = useState(false);
-  const historyCursor = useRef(0);
   const historyRequest = useRef<AbortController | null>(null);
-  useEffect(() => () => historyRequest.current?.abort(), []);
+  useLayoutEffect(() => {
+    historyRequest.current?.abort();
+    historyRequest.current = null;
+    setHistory(null);
+    setLoadingHistory(false);
+    setHistoryError("");
+    setMoreHistory(false);
+    return () => historyRequest.current?.abort();
+  }, [run.id, run.status]);
   const files = useFileViewer();
   const shown = items ?? history;
   const terminal = isTerminal(run.status, !!run.result?.file_wait);
@@ -241,21 +248,20 @@ export default memo(function Turn({
     setLoadingHistory(true);
     setHistoryError("");
     try {
-      const events = await api<EventItem[]>(`/v1/runs/${run.id}/events/history?after=${historyCursor.current}&limit=200`, { signal: controller.signal });
+      const view = await api<ProcessView>(`/v1/runs/${run.id}/process`, { signal: controller.signal });
       if (controller.signal.aborted) return;
-      setHistory((previous) => events.reduce(reduceEvent, previous || []));
-      if (events.length) historyCursor.current = events[events.length - 1].seq;
-      setMoreHistory(events.length === 200);
+      setHistory(view.items);
+      setMoreHistory(false);
     } catch (error: any) {
       if (!controller.signal.aborted) setHistoryError(errorMessage(error));
     } finally {
       if (!controller.signal.aborted) setLoadingHistory(false);
-      historyRequest.current = null;
+      if (historyRequest.current === controller) historyRequest.current = null;
     }
   }
-  const { process, answer: streamed } = useMemo(() => splitTurn(shown), [shown]);
+  const { process, answer: streamed } = useMemo(() => items ? splitTurn(items) : { process: history || [], answer: "" }, [items, history]);
   // the confirmed answer once the run is over; until then whatever the model has written after its last step
-  const answer = (terminal && run.status !== "interrupted" ? run.summary?.trim() : "") || streamed;
+  const answer = (terminal ? run.summary?.trim() : "") || streamed;
   const visibleAnswer = useSmoothText(answer, live && !terminal);
   // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);

@@ -1,23 +1,7 @@
 import type { EventItem, Run } from "./api";
 
-export type Source = { title: string; url: string; site: string };
-export type Step = {
-  name: string;
-  label: string;
-  detail?: string;
-  status: "running" | "ok" | "failed" | "note";
-  output?: string;
-  modelStep?: number;
-  sources?: Source[];
-};
-export type PlanStep = { id: string; title: string; status: "pending" | "running" | "done" | "skipped" | "failed" };
-export type Item =
-  | { kind: "plan"; steps: PlanStep[] }
-  | { kind: "ask"; id: string; question: string; options: string[]; allowText: boolean; answer?: string }
-  | { kind: "text"; step: number; text: string }
-  | { kind: "thinking"; step: number; text: string; seconds: number; done: boolean }
-  | { kind: "steps"; steps: Step[] }
-  | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
+export type { Source, Step, PlanStep, ProcessItem as Item } from "./api";
+import type { Source, Step, PlanStep, ProcessItem as Item } from "./api";
 
 /** Platform skill titles, for runs and steps recorded without one. */
 export const SKILL_TITLES: Record<string, string> = {

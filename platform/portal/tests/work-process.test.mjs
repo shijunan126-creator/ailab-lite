@@ -171,3 +171,8 @@ test('a skill read through load_skill shows one step, named by its title; a skil
  const steps=items.flatMap(it=>it.kind==='steps'?it.steps:[]);
  assert.deepEqual(steps.map(s=>[s.label,s.detail,s.status]),[['读取技能','周报助手','ok'],['读取技能','gone','failed'],['已加载技能','别的','ok']]);
 });
+
+test('ProcessView V1 API projection stays identical to the live SSE display', async () => {
+ const fixture = JSON.parse(await readFile(new URL('../../tests/fixtures/process_view_v1.json', import.meta.url), 'utf8'));
+ assert.deepEqual(JSON.parse(JSON.stringify(splitTurn(fixture.events.reduce(reduceEvent, [])).process)), fixture.items);
+});
