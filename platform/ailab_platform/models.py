@@ -29,6 +29,7 @@ from sqlalchemy import (
     func,
     text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from . import naming
@@ -372,6 +373,19 @@ class RunEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     run: Mapped[Run] = relationship(back_populates="events")
+
+
+class RunProcessSnapshot(Base):
+    __tablename__ = "run_process_snapshots"
+
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    schema_version: Mapped[int] = mapped_column(Integer)
+    through_seq: Mapped[int] = mapped_column(Integer)
+    items: Mapped[list] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    item_count: Mapped[int] = mapped_column(Integer)
+    uncompressed_bytes: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class FileObject(Base):
