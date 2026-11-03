@@ -2096,6 +2096,7 @@ class AgentLoop:
                     await self._checkpoint(run_id, turn)
                 if not state["pending"]:
                     for parts in state.pop("pending_image_inputs", []):
+                        state.setdefault("tool_image_indices", []).append(len(messages))
                         messages.append({"role": "user", "content": parts})
                     if note := state.pop("time_note_pending", None):
                         messages.append({"role": "user", "content": note})
@@ -2212,6 +2213,9 @@ class AgentLoop:
                     await self._checkpoint(run_id, turn)
                     if changed:
                         await self._workspace_checkpoint(run_id, turn)
+                for parts in state.pop("pending_image_inputs", []):
+                    state.setdefault("tool_image_indices", []).append(len(messages))
+                    messages.append({"role": "user", "content": parts})
                 for office_name in state.get("pending_office_skills", []):
                     await self._ensure_skill(turn, run_id, office_name, "office")
                 state["pending_office_skills"] = []

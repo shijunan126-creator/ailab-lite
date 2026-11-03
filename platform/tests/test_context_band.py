@@ -274,9 +274,19 @@ def test_two_compactions_refresh_memory_no_stale_blocks_and_cas_rollback(monkeyp
         pass
 
     monkeypatch.setattr(loop, "_checkpoint", saved)
+
+    def grow(label):
+        band = band_for(64000)
+        target = band.trigger + 100
+        i = 0
+        while band.cost({"messages": state["messages"], "tools": []}) < target:
+            remaining = target - band.cost({"messages": state["messages"], "tools": []})
+            state["messages"].extend(pair(f"{label}-{i}", min(2000, max(1, remaining - 70))))
+            i += 1
+
     for iteration in range(2):
         if iteration:
-            state["messages"].extend(m for i in range(30) for m in pair(f"next-{i}"))
+            grow("next")
         asyncio.run(manager.compact("r", turn, loop.llm, "band", []))
         contents = [m.get("content", "") for m in state["messages"] if m.get("role") == "system"]
         assert all(
@@ -287,7 +297,7 @@ def test_two_compactions_refresh_memory_no_stale_blocks_and_cas_rollback(monkeyp
         before = copy.deepcopy(state["messages"])
         asyncio.run(manager.refresh_memory("r", state["messages"]))
         assert state["messages"] == before and state["memory_observed"]["revision"] == 2
-    state["messages"].extend(m for i in range(30) for m in pair(f"cas-{i}"))
+    grow("cas")
     before = copy.deepcopy(state)
 
     async def conflict(*args):

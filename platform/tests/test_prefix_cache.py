@@ -198,13 +198,13 @@ def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeyp
 
 
 def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypatch):
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=8000, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
         {"role": "user", "content": "旧" * 5300},
-        {"role": "assistant", "content": "old"},
+        {"role": "assistant", "content": "旧" * 1200},
         {
             "role": "assistant",
             "content": "recent one",
@@ -1085,7 +1085,7 @@ def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, ret
     ]
     old = {"role": "assistant", "content": "旧" * 5000}
     recent = {"role": "assistant", "content": "近期回答"}
-    body = [old, *pair, recent] if retained else [*pair, old, recent, recent]
+    body = [old, *pair, recent] if retained else [*pair, {"role": "user", "content": "later task"}, old, recent, recent]
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
@@ -1245,7 +1245,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     assert prohibited not in json.dumps(requests, ensure_ascii=False).lower()
 
 
-@pytest.mark.parametrize("context_tokens, refused", [(17000, True), (64000, False)])
+@pytest.mark.parametrize("context_tokens, refused", [(32000, True), (64000, False)])
 def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatch, context_tokens, refused):
     from ailab_platform.agent.skill_modules import read_module
     from ailab_platform.agent.tools import tool_result_message
@@ -1304,7 +1304,11 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
     cumulative = estimator.estimate("m", {"messages": [*prefix, appended[1], candidate], "tools": requests[-1]["tools"]}) + reserve
     assert alone < ModelPolicy.input_budget(spec)  # second resource fits without the first result
     if refused:
-        assert cumulative >= ModelPolicy.input_budget(spec)
+        from ailab_platform.agent.context_band import ContextBand, batch_budget
+
+        band = ContextBand.for_model(spec, {"auto_compact": False})
+        budget = batch_budget(band, prefix, requests[-1]["tools"], {"user_message_index": 2})
+        assert band.cost([appended[0], appended[1], candidate]) > budget
         assert not results[1]["ok"] and "cannot fit" in results[1]["error"] and "skill" not in results[1]
     else:
         assert cumulative < ModelPolicy.input_budget(spec)

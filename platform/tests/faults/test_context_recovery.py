@@ -133,6 +133,7 @@ def test_compaction_discards_rejected_epoch_messages_and_memory(monkeypatch, con
             {"role": "system", "content": "boundary"},
             {"role": "user", "content": "task"},
             {"role": "assistant", "content": "OLDER"},
+            {"role": "assistant", "content": "latest complete response"},
         ],
     }
     loop._states["r"], loop._steps["r"] = state, 1

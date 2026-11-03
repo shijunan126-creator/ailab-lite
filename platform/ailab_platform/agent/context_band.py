@@ -92,6 +92,8 @@ class ContextBand:
 def _select(band, name, items, budget, *, required=False):
     """Bound presentation only; authoritative operational state is never sliced."""
     selected = []
+    if not items:
+        return {"items": [], "omitted_count": 0}
     for item in items:
         candidate = block(name, {"items": [*selected, item], "omitted_count": len(items) - len(selected) - 1})
         if band.cost(candidate) > budget:
@@ -162,26 +164,17 @@ def semantic_groups(messages, protected=()):
         content = message.get("content")
         image = message.get("role") == "user" and isinstance(content, list) and any(p.get("type") == "image_url" for p in content)
         continuation = message.get("role") == "assistant" and not message.get("tool_calls")
-        if (
-            groups
-            and start not in protected
-            and (image or continuation)
-            and any(m.get("tool_calls") for m in messages[groups[-1][0] : groups[-1][1]])
-        ):
+        if groups and start not in protected and (image or continuation) and messages[groups[-1][0]].get("tool_calls"):
             groups[-1] = (groups[-1][0], end)
         else:
             groups.append((start, end))
     return groups
 
 
-def active_users(messages, first):
+def active_users(messages, first, tool_images=()):
     if not isinstance(first, int):
         return set()
-    return {
-        i
-        for i in range(first, len(messages))
-        if messages[i].get("role") == "user" and (i == first or not isinstance(messages[i].get("content"), list))
-    }
+    return {i for i in range(first, len(messages)) if messages[i].get("role") == "user" and (i == first or i not in tool_images)}
 
 
 @dataclass
@@ -334,7 +327,9 @@ def admit_tool_result(band, messages, tools, state, call, result, *, image_start
 
 
 def batch_budget(band, messages, tools, state):
-    protected = active_users(messages, state.get("user_message_index")) | set(state.get("active_user_indices") or [])
+    protected = active_users(messages, state.get("user_message_index"), state.get("tool_image_indices") or []) | set(
+        state.get("active_user_indices") or []
+    )
     essentials = [*messages[:2], *(messages[i] for i in sorted(protected)), bounded_runtime(band, state)]
     floor = band.cost({"messages": essentials, "tools": tools}) + band.summary_budget + band.allocation(2000, 0.04)
     return max(0, min(band.allocation(24000, 0.40), band.ceiling - floor))

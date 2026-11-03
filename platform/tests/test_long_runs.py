@@ -205,7 +205,11 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     assert turn.messages[2] == {"role": "user", "content": "original constraints"}
     assert "<conversation_checkpoint>" in turn.messages[3]["content"]
     assert "<runtime_state>" in turn.messages[4]["content"]
-    assert [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"] == ["3", "4"]
+    kept = [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"]
+    assert kept[-2:] == ["3", "4"] and len(kept) < 5
+    from ailab_platform.agent.context_band import ContextBand
+
+    assert state["compaction"]["after"] <= ContextBand.for_model(catalog.get("m"), turn.run["context_settings"]).ceiling
     assert platform.checkpoint and platform.reservations
 
 
@@ -301,7 +305,7 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[state["user_message_index"]] == task
-    assert state["user_message_index"] > 4
+    assert state["user_message_index"] == 2
     for i in (5, 6, 7):
         turn.messages.extend(group(i))
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
