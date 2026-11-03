@@ -1,9 +1,9 @@
-# 文件身份修复（2026-11-03）
+# 文件身份修复：已推送与部署（2026-11-03）
 
-- 最新授权：以远端最新main实施文件重复根因修复；本轮不含Git发布、部署或历史业务数据清理。
-- 已在独立分支 `fix/file-identity-repair`、base `origin/main@fc63e5f` 实现上传操作幂等/READY内容复用/显式副本、输出槽与持久修订身份、完整枚举和旧来源预演工具。原工作区改动保留。产品合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)，本轮检查、成本与边界统一见[记录](updates/2026-11-03-file-identity-repair.md)。
-- 已完成真实模型三轮同大小AA→BB→AA与Docker、Chromium上传路径；SQLite全套2125 passed/187 skipped，PG/Redis全套2244 passed/69 skipped；末轮审查增量专项已通过，Portal229项/build、Ruff/导入通过。真实S3下载源不可用，OpenSandbox/目标机联合容量未验。历史诊断文件未删除、真实metadata未回填。
-- 下一步：用户审阅隔离分支；另行授权后才发布/部署或处理历史回填清理；其他暂停路线图保持。
+- 最新授权：用户追加“推送及部署”。产品提交 `e05d9a8` 已推送至 `origin/fix/file-identity-repair`，base `origin/main@fc63e5f`；未建PR或合并main。原工作区改动保持。
+- 已部署该固定分支快照：平台四服务与Portal为 `release-e05d9a8`，API迁移0048→0049；12 running/10 healthcheck healthy。只构建变化组件并复用依赖层，资源限额及其他镜像不变。未备份、重复功能验收或运行历史回填/删除。
+- 实施检查和部署结果统一见[记录](updates/2026-11-03-file-identity-repair.md)，合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)。SQLite2125/187跳过、PG2244/69跳过及末轮专项/Portal/真实模型/Docker/浏览器是部署前的分阶段证据；本次只确认构建、迁移和启动健康。
+- 下一步：用户刷新体验；后续PR/合并、历史清理/回填仍需单独授权。Docker余约592MiB，本次只删除自己测试的Postgres镜像；真实S3/OpenSandbox/目标机容量边界保持。其他暂停路线图不自动推进。
 
 ---
 

@@ -1,6 +1,6 @@
 # 文件上传与成果身份修复（2026-11-03）
 
-用户授权从远端最新main修复。基线 `origin/main@fc63e5f019f3c5b42e8f8b19cdc78d9c45163cce`，分支 `fix/file-identity-repair`，独立worktree；原工作区dirty修改保持。问题证据见[首次诊断](2026-11-03-library-duplicate-diagnosis.md)，产品合同和实现取舍见[设计](../../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)。未发布、部署或清理业务数据。
+用户授权从远端最新main修复。基线 `origin/main@fc63e5f019f3c5b42e8f8b19cdc78d9c45163cce`，分支 `fix/file-identity-repair`，独立worktree；原工作区dirty修改保持。问题证据见[首次诊断](2026-11-03-library-duplicate-diagnosis.md)，产品合同和实现取舍见[设计](../../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)。实施阶段未发布/部署；后续本轮已授权推送及部署，结果见文末；未清理业务数据。
 
 ## 改动
 
@@ -37,4 +37,17 @@ API v1无key的旧客户端仍不能获得操作级幂等，不同操作同时�
 
 本轮临时Redis/PostgreSQL、Docker沙箱与浏览器子服务均在检查结束后清理，未操作业务服务。
 
-下一步：审阅本分支改动；另获授权后才发布/部署与执行历史回填/清理。新版本需要后端迁移/API/Broker/Agent与Portal同步发布。
+下一步：用户体验反馈；历史回填/清理仍另行授权。
+
+
+## 推送与部署（2026-11-03）
+
+用户追加授权“推送及部署”。已推送 `fix/file-identity-repair@e05d9a8079b1816162627405b5b3790e68a6cc39`；fetch确认远端main仍为fc63e5f，本次直接部署修复分支，未创建PR或合并main。
+
+- 固定e05d9a8的干净Git快照，只增量构建平台与Portal为release-e05d9a8；Python/npm/vendor依赖层命中缓存，Office/系统reader/OCR/crawler及其他服务保持原镜像，CPU/RSS配置限额不变。
+- API启动日志确认0048→0049，五个目标服务协调stop后up --no-deps --no-build --wait均exit0；12服务running，10项已配置healthcheck全部healthy。构建/迁移/健康只证明部署，不追加产品验收声明。
+- Docker初始只剩265MiB，定向删除本任务隔离测试创建且无容器引用的Postgres镜像后657MiB，部署后592MiB。没有清理其他镜像/缓存/卷，没有备份。
+- 本地部署脚本的无关配置保护检查误写x-backend，实际公共配置为x-platform；在任何配置写入和切换前中止。修正为对x-platform只允许image变更、逐字段保留其他服务后，复用已完成构建继续成功。
+- 未重复测试、浏览器、模型、额外HTTP或业务数据库功能验收；未运行历史原名回填或删除已有编号文件。个人配置、凭据、私有命令日志和发布快照保持仓库外；构建/同步入口和部署状态已持久化。
+
+下一步：刷新Portal使用新上传/交付合同；分支仍待后续PR/合并授权。现存历史文件不会因本次部署自动删除。
