@@ -1,3 +1,12 @@
+# 上下文压缩 HLD 与运行过程快照（2026-11-04）
+
+- 授权：按 HLD v4 实施并更新文档；Claude 编排与文档，Codex 实施/测试/修复；随后授权提 PR、CI 绿后合并、由 Codex 部署。追加决定：压缩后 10K–48K / 上限 64K，计数以模型返回的实际 token 为准，最终版本不再测真实模型。差异与决定见 [ADR 0033](../architecture/adr/0033-context-epoch-band-process-snapshot.md)。
+- 分支 `feat/context-hld-usage`，base `origin/main@ab31537`，最终产品 SHA `f23e470`；迁移 0050（过程快照）、0051（0.85→0.90）。
+- 验证（`f23e470`）：SQLite 2314/201 跳过，PG+Redis 2446/69 跳过，Portal 237+build，E2E 184/6 跳过。真实模型 300K 压缩（`92cffa8`）：Work 293K→23.8K、Chat 299K→21.7K，6 条事实全对。详情、未测边界见[记录](updates/2026-11-04-context-hld.md)。
+- 下一步：提 PR → CI 全绿后 squash 合并 → Codex 增量部署（0049→0051），结果补入记录。
+
+---
+
 # 文件身份修复：已推送与部署（2026-11-03）
 
 - 最新授权：用户追加“提pr和merge”。分支 `fix/file-identity-repair`、base `origin/main@fc63e5f`；产品提交e05d9a8及部署记录已推送。[PR #152](https://github.com/shijunan126-creator/ailab-lite/pull/152) 首轮PostgreSQL因共享OCR测试夹具复用READY文件失败，已修为显式copy并补固定payload回归；双库五模块各57通过。等待新head全部CI与评审检查成功后squash；原工作区改动保持。

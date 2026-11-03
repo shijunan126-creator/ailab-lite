@@ -1,5 +1,8 @@
 # 开发路线图
 
+2026-11-04 已授权实施上下文压缩 HLD v4（含用户修订的 10K–48K/64K 区间与实际值计数）并提 PR、合并、部署；状态见 [current](current.md) 与[记录](updates/2026-11-04-context-hld.md)。
+
+
 2026-11-03 已授权从最新main实施文件身份修复：上传幂等与明确内容复用、自动交付修订、旧来源预演；合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md)，状态以[current](current.md)与[实施记录](updates/2026-11-03-file-identity-repair.md)为准。历史清理和部署单独授权。
 
 2026-11-02 已授权实施办公能力完整迁移（P0–P5），见[计划](../architecture/design/office-suite/README.md)与[current](current.md)；不含部署。
