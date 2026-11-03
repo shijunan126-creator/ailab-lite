@@ -3,6 +3,9 @@
 from pydantic import BaseModel, Field
 
 
+CONTEXT_ABI_VERSION = 1
+
+
 class SummaryUpdate(BaseModel):
     revalidation_ids: list[str] = Field(default_factory=list, max_length=16)
     source_epoch: int = Field(default=0, ge=0)

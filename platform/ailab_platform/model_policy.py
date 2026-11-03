@@ -95,4 +95,4 @@ class ModelPolicy:
         budget = ModelPolicy.input_budget(spec)
         if not config.get("auto_compact", True):
             return budget
-        return min(budget, int(spec.context_tokens * config.get("threshold_ratio", 0.85)))
+        return min(budget, int(spec.context_tokens * config.get("threshold_ratio", 0.90)))

@@ -74,6 +74,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                             out["context_boundary"] = "model_changed"
                         else:
                             out["previous_model_context"] = {
+                                "context_abi_version": state.get("context_abi_version"),
+                                "context_epoch": state.get("context_epoch", 0),
                                 "messages": state["messages"],
                                 "tools": state["tool_catalog_v1"],
                                 "delivered": state.get("delivered", {}),

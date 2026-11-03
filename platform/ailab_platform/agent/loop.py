@@ -26,6 +26,7 @@ from ..clients import AsyncBrokerClient, AsyncPlatformClient, ClientError
 from ..config import settings
 from ..contracts.genui import CATALOG_VERSION, FORMAT
 from ..contracts.jobs import RunStatus
+from ..contracts.model_context import CONTEXT_ABI_VERSION
 from ..contracts.usage import UsageStatus
 from ..domain.answer_parts import for_history
 from ..domain.answer_parts import inspect as inspect_answer
@@ -41,6 +42,7 @@ from .background_exec import background_exec
 from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .file_dependencies import FileDependencyPending
+from .context_protocol import validate_safe_compaction_point
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
     WORKSPACE_EXPIRED_NOTE,
@@ -394,6 +396,10 @@ class AgentLoop:
     async def _event(self, run_id: str, type_: str, payload: dict) -> None:
         if type_ == "agent.context_boundary":
             self._module_views.pop(run_id, None)
+            state = self._states.get(run_id)
+            if state is not None:
+                state["context_epoch"] = state.get("context_epoch", 0) + 1
+                state["context_abi_version"] = CONTEXT_ABI_VERSION
         try:
             await self.platform.append_event(run_id, type_, payload)
             if budget := self._budgets.get(run_id):
@@ -1237,6 +1243,7 @@ class AgentLoop:
             "只能记下曾查询过的主题，需了解详情时再次调用 recall_history。"
             "不要摘要技能正文，已读模块索引只供导航。只输出摘要，不调用工具。）",
         }
+        validate_safe_compaction_point(prior, {})
         prompt = [*prior, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= policy.input_budget(spec):
             raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
@@ -1388,6 +1395,7 @@ class AgentLoop:
         if estimator.estimate(model, {"messages": messages, "tools": tools}) < threshold:
             return
         state = self._states[run_id]
+        validate_safe_compaction_point(messages, state)
         prior = state.get("compaction", {})
         if prior.get("after", 0) >= threshold and prior.get("threshold") == threshold:
             raise BudgetPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
@@ -2338,7 +2346,10 @@ class AgentLoop:
             if state.get("checkpoint_capacity_exceeded"):
                 raise BudgetPause(CAPACITY_NOTE)
             saved_messages = state["messages"]
+            abi_mismatch = state.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION)
             legacy = bool(saved_messages) and (
+                abi_mismatch
+                or
                 "<ailab_memory>" in str(saved_messages[0].get("content", ""))
                 or len(saved_messages) < 2
                 or saved_messages[1].get("role") != "system"
@@ -2377,6 +2388,8 @@ class AgentLoop:
                     {"role": "user", "content": await self._user_content(run_id, run, model)},
                 ]
                 previous = run.get("previous_model_context") if not legacy else None
+                if previous:
+                    state["context_epoch"] = previous.get("context_epoch", 0)
                 if legacy:
                     skip = int(saved_messages[0].get("role") == "system")
                     if skip and len(saved_messages) > 1 and saved_messages[1].get("role") == "system":
@@ -2385,20 +2398,23 @@ class AgentLoop:
                     if isinstance(state.get("user_message_index"), int):
                         state["user_message_index"] += 2 - skip
                     state["memory_observed"] = run.get("memory") or {}
-                    run["context_boundary"] = "rebuilt"
+                    run["context_boundary"] = "context_abi_changed" if abi_mismatch else "rebuilt"
                 elif previous and await self._revoked_recall_results(run_id, previous.get("messages", [])):
                     state["memory_observed"] = run.get("memory") or {}
                     state["messages"] = await self._assemble_context(run_id, run, model, messages)
                     run["context_boundary"] = "access_revoked"
                 elif previous and (
-                    len(previous.get("messages", [])) < 2
+                    previous.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION)
+                    or len(previous.get("messages", [])) < 2
                     or previous["messages"][1].get("role") != "system"
                     or "<ailab_memory>" in str(previous["messages"][0].get("content", ""))
                     or ("<ailab_memory>" in str(previous["messages"][1].get("content", "")) and "memory_observed" not in previous)
                 ):
                     state["memory_observed"] = run.get("memory") or {}
                     state["messages"] = await self._assemble_context(run_id, run, model, messages)
-                    run["context_boundary"] = "rebuilt"
+                    run["context_boundary"] = (
+                        "context_abi_changed" if previous.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION) else "rebuilt"
+                    )
                 elif previous and previous.get("tools") == state["tool_catalog_v1"] and previous.get("messages", [{}])[0] == messages[0]:
                     prior = {"messages": previous["messages"]}
                     await self._restore_images(run_id, run, prior)
@@ -2426,6 +2442,7 @@ class AgentLoop:
                 if not legacy:
                     state["user_message_index"] = len(state["messages"]) - 1
                 await self._checkpoint(run_id, turn)
+            state["context_abi_version"] = CONTEXT_ABI_VERSION
             messages = state["messages"]
             turn.messages = messages
             if not state.get("skill_initialization_done"):
