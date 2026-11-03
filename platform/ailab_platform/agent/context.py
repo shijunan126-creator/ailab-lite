@@ -218,21 +218,35 @@ class ContextManager:
     async def _assemble_context(self, run_id, run, model, base):
         if len(base) < 2 or base[1].get("role") != "system":
             base = [base[0], {"role": "system", "content": ""}, *base[1:]]
-        if not hasattr(self.platform, "get_model_context"):
-            return base
         policy = ModelPolicy(self.catalog())
         spec = self.catalog().get(model)
+        if spec is None:  # Injected transports have no model policy.
+            return base
         budget = policy.input_budget(spec)
         config = run.get("context_settings") or {}
         threshold = policy.compaction_threshold(spec, config)
         fixed = [*base[:2], base[-1]] if len(base) > 2 and base[1].get("role") == "system" else [base[0], base[-1]]
         context_tools = self.tools_for_run(run)
         if estimator.estimate(model, {"messages": fixed, "tools": context_tools}) >= budget:
-            raise LLMError("system, skills and current input exceed context budget")
-        page = await self.platform.get_model_context(run_id)
+            raise ContextPause("固定上下文和当前输入超过模型容量，已暂停")
+        page = (
+            await self.platform.get_model_context(run_id)
+            if hasattr(self.platform, "get_model_context")
+            else {"summary": "", "through_run_id": None, "history": run.get("history") or [], "has_more": False}
+        )
+        if (
+            not page["history"]
+            and not page["summary"]
+            and not page["has_more"]
+            and not run.get("context_boundary")
+            and not run.get("parent_run_id")
+        ):
+            return base
         summary, through = _summary_input(page["summary"]), page["through_run_id"]
         revalidation = _summary_input(list(page.get("summary_evidence") or []))
         pending = []
+        rendered = []
+        summary_rendered = []
         staged_history = None
         band = self._band(model, run)
 
@@ -252,14 +266,14 @@ class ContextManager:
             return memory
 
         def assemble():
-            if staged_history is not None and not pending:
-                return staged_history.messages
+            if staged_history is not None:
+                return [*staged_history.messages[:-1], *[m for group in rendered for m in group], fixed[-1]]
             memory = summary_blocks()
             runtime = {**self.state}
             if not runtime.get("workspace") and run.get("workspace_restore_key"):
                 runtime["workspace"] = {"available": True}
             memory.insert(1 if memory else 0, bounded_runtime(band, runtime))
-            return [*fixed[:-1], *memory, *history_messages(pending), fixed[-1]]
+            return [*fixed[:-1], *memory, *[m for group in rendered for m in group], fixed[-1]]
 
         instruction = {
             "role": "user",
@@ -272,13 +286,13 @@ class ContextManager:
             prefix = [*fixed[:-1]]
             if summary:
                 prefix.extend(summary_blocks())
-            prefix.extend(history_messages(_summary_input(pending)))
+            prefix.extend(m for group in summary_rendered for m in group)
             return prefix
 
         async def compact():
-            nonlocal summary, through, pending, revalidation, staged_history
+            nonlocal summary, through, pending, revalidation, staged_history, rendered, summary_rendered
             if not pending:
-                raise LLMError("summary and current input exceed context budget")
+                raise ContextPause("摘要和当前输入超过安全容量，已暂停")
             prefix = summary_prefix()
             self.validate_safe_boundary(prefix, {})
             evidence = list(revalidation)
@@ -312,10 +326,11 @@ class ContextManager:
                     band,
                     [fixed[0], context],
                     semantic,
-                    [*fixed[:-1], *stored_summary_messages(summary), *history_messages(pending)],
+                    [*fixed[:-1], *stored_summary_messages(summary), *[m for group in rendered for m in group]],
                     self.state,
                     context_tools,
                     current=[fixed[-1]],
+                    keep_latest=False,
                 )
             except ContextPause:
                 self.state["failed_compaction_digest"] = attempt_digest
@@ -338,6 +353,7 @@ class ContextManager:
             self.state["context_compaction_metrics"] = staged_history.measurements
             self._measure_stage(staged_history, "rebuild")
             count, pending, revalidation = len(pending), [], []
+            rendered, summary_rendered = [], []
             await self.runtime._event(
                 run_id, "agent.context_compacted", {"turns": count, "scope": "rebuild", **staged_history.measurements}
             )
@@ -348,46 +364,80 @@ class ContextManager:
             if run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
                 raise LLMError("token limit reached during context compaction")
 
+        # Immutable turn projections are rendered and priced once. Running sums
+        # deliberately overestimate framing; only completed candidates are measured.
+        overhead = band.cost([])
+        reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
+
+        def planning_base():
+            handles = source_handles(summary=summary, evidence=revalidation)
+            if sum(map(len, handles.values())) > 2048:
+                raise ContextPause("摘要来源句柄超过安全容量，已暂停")
+            note = {**instruction, "content": summary_instruction(instruction["content"], handles)}
+            cost = band.cost({"messages": [*fixed[:-1], *summary_blocks(), note], "tools": context_tools})
+            return handles, cost
+
+        handles, planned = planning_base()
+        pending_cost = 0
         for _ in range(1000):
             for turn in page["history"]:
-                # Compact before adding a turn that cannot fit alongside the instruction.
-                pending.append(turn)
-                planning_handles = source_handles(
-                    run_ids=[item["id"] for item in pending],
-                    attachments=[f for item in pending for f in item.get("attachments", [])],
-                    summary=summary,
-                )
-                planning_instruction = {**instruction, "content": summary_instruction(instruction["content"], planning_handles)}
-                summary_tokens = estimator.estimate(model, {"messages": [*summary_prefix(), planning_instruction], "tools": context_tools})
-                reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
-                if len(pending) > 1 and summary_tokens + reserve > spec.context_tokens:
-                    last = pending.pop()
-                    await compact()
-                    pending.append(last)
-                if estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) >= budget:
-                    last = pending.pop()
+                group = history_messages([turn])
+                clean_group = history_messages([_summary_input(turn)])
+                group_cost = max(band.cost(group), band.cost(clean_group)) - overhead + 2
+                turn_handles = source_handles(run_ids=[turn["id"]], attachments=turn.get("attachments", []))
+                while True:
+                    additions = {key: values - handles[key] for key, values in turn_handles.items()}
+                    count = sum(map(len, handles.values())) + sum(map(len, additions.values()))
+                    handle_cost = sum(band.cost([value]) - overhead + 2 for values in additions.values() for value in values)
+                    if count <= 2048 and planned + pending_cost + group_cost + handle_cost + reserve < spec.context_tokens:
+                        break
                     if not pending:
-                        raise LLMError("a history turn exceeds model budget")
+                        raise ContextPause("单轮历史或来源句柄超过安全容量，已暂停")
                     await compact()
-                    pending.append(last)
-                if estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) >= threshold:
+                    handles, planned = planning_base()
+                    pending_cost = 0
+                pending.append(turn)
+                rendered.append(group)
+                summary_rendered.append(clean_group)
+                pending_cost += group_cost
+                planned += handle_cost
+                for key, values in additions.items():
+                    handles[key].update(values)
+                if planned + pending_cost >= threshold:
                     await compact()
+                    handles, planned = planning_base()
+                    pending_cost = 0
             if not page["has_more"]:
-                if staged_history is not None and pending:
+                candidate = assemble()
+                # Rebuild is a prefix replacement, not ordinary append-only growth.
+                # Summarize before the shared planner can omit any raw history.
+                unsummarized = [*fixed[:-1], *summary_blocks(), *[m for group in rendered for m in group], fixed[-1]]
+                if pending and band.cost({"messages": unsummarized, "tools": context_tools}) > min(band.aim, band.upper):
+                    await compact()
+                    candidate = assemble()
+                try:
+                    semantic = ContextSummary.model_validate_json(summary) if summary else ContextSummary()
+                except ValueError:
+                    # Legacy free text is evidence for a new structured summary.
+                    if not pending:
+                        raise ContextPause("旧摘要需要重新整理，已暂停；请新建对话") from None
+                    await compact()
                     semantic = ContextSummary.model_validate_json(summary)
-                    staged_history = stage_context(
-                        band,
-                        fixed[:-1],
-                        semantic,
-                        [*staged_history.messages[:-1], *history_messages(pending)],
-                        self.state,
-                        context_tools,
-                        current=[fixed[-1]],
-                    )
-                    return staged_history.messages
-                return assemble()
+                    candidate = assemble()
+                staged_history = stage_context(
+                    band,
+                    fixed[:-1],
+                    semantic,
+                    candidate[:-1],
+                    self.state,
+                    context_tools,
+                    current=[fixed[-1]],
+                    keep_latest=False,
+                )
+                self.state["context_compaction_metrics"] = staged_history.measurements
+                return staged_history.messages
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
-        raise LLMError("context pagination limit reached")
+        raise ContextPause("历史分页超过安全容量，已暂停")
 
     @staticmethod
     def _compacted_recent(messages):
@@ -457,7 +507,7 @@ class ContextManager:
         original = deepcopy(self.state)
         try:
             staged = stage_context(
-                band, [prior[0], context], semantic, self._compacted_recent(prior), operational, tools, current=[current]
+                band, [prior[0], context], semantic, self._compacted_recent(prior), operational, tools, current=[current], keep_latest=False
             )
         except ContextPause:
             self.state.clear()
@@ -474,7 +524,7 @@ class ContextManager:
         run["context_boundary"] = "compacted"
         return staged.messages
 
-    async def compact(self, run_id, turn, llm, model, offered):
+    async def compact(self, run_id, turn, llm, model, offered, *, rebuild=False):
         from .loop import TokenLimit, _token_limit_error
 
         messages = turn.messages
@@ -484,7 +534,7 @@ class ContextManager:
         limit = ModelPolicy(self.catalog()).input_budget(spec)
         threshold = ModelPolicy.compaction_threshold(spec, turn.run.get("context_settings"))
         tools = tools_for_turn() if offered is None else offered
-        if not self.should_compact(model, messages, tools, turn.run.get("context_settings")):
+        if not rebuild and not self.should_compact(model, messages, tools, turn.run.get("context_settings")):
             return
         state = self.state
         barrier_started = time.perf_counter()
@@ -559,11 +609,12 @@ class ContextManager:
         state.pop("compaction_work", None)
         state["context_compaction_metrics"] = staged.measurements
         try:
-            await self.runtime._event(
-                run_id,
-                "agent.context_boundary",
-                {**staged.measurements, "policy_reason": staged.measurements["reason"], "reason": "compacted"},
-            )
+            if not rebuild:
+                await self.runtime._event(
+                    run_id,
+                    "agent.context_boundary",
+                    {**staged.measurements, "policy_reason": staged.measurements["reason"], "reason": "compacted"},
+                )
         except Exception:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("persistence").inc()
             messages[:] = original_messages
@@ -658,6 +709,26 @@ class ContextManager:
                     state["user_message_index"] += 2 - skip
                 state["memory_observed"] = boundary_memory
                 run["context_boundary"] = "context_abi_changed" if abi_mismatch else "rebuilt"
+                turn.messages = state["messages"]
+                if self.catalog().get(model):
+                    band = self._band(model, run)
+                    inherited_summary = any(
+                        message.get("role") == "system"
+                        and str(message.get("content", "")).startswith(("<conversation_checkpoint>", "历史摘要（仅作背景）："))
+                        for message in turn.messages[2:]
+                    )
+                    if inherited_summary or band.cost({"messages": turn.messages, "tools": state["tool_catalog_v1"]}) > min(
+                        band.aim, band.upper
+                    ):
+                        await self.compact(run_id, turn, llm, model, state["tool_catalog_v1"], rebuild=True)
+                    else:
+                        protected = active_users(turn.messages, state.get("user_message_index"), state.get("tool_image_indices") or [])
+                        staged = stage_context(
+                            band, turn.messages[:2], ContextSummary(), turn.messages, state, state["tool_catalog_v1"], protected
+                        )
+                        state["messages"] = staged.messages
+                        state["user_message_index"] = staged.current_indices[0] if staged.current_indices else None
+                        state["active_user_indices"] = staged.current_indices
             elif previous and await self._revoked_recall_results(run_id, previous.get("messages", [])):
                 state["memory_observed"] = boundary_memory
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)

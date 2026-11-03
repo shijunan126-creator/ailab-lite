@@ -1953,8 +1953,11 @@ class AgentLoop:
         if preserve_jobs and state.get("background_jobs") and turn.lease_id:
             # Broker retains bounded ownership until its original TTL/max lifetime;
             # a resumed run reacquires the same active lease. Never renew forever.
-            await self.broker.renew(turn.lease_id)
-            turn.lease_id = None
+            lease_id, turn.lease_id = turn.lease_id, None
+            try:
+                await self.broker.renew(lease_id)
+            except Exception:
+                log.warning("retained pause renewal failed run=%s", run_id, exc_info=True)
 
     async def process(self, run_id: str, attempt: int = 1, *, attempt_id: str | None = None, checkpoint: dict | None = None) -> None:
         if not attempt_id:

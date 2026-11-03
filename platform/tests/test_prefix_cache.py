@@ -332,7 +332,7 @@ def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
         loop._states["next_run"] = {**fresh_state(), "messages": messages}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "next_run", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert json.loads(messages[0]["content"]) == {"ok": False, "error": "引用的历史已不可用"}
-        assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
+        assert any(kind == "agent.context_boundary" and payload["reason"] == "access_revoked" for kind, payload in platform.events)
 
     asyncio.run(exercise())
 
@@ -501,7 +501,7 @@ def test_revoked_parent_rebuilds_valid_history_without_replaying_tools(monkeypat
         platform, broker = Platform(), FakeBroker()
         asyncio.run(AgentLoop(platform=platform, broker=broker, llm=ModelTransport(url)).process("r", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
-    assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
+    assert any(kind == "agent.context_boundary" and payload["reason"] == "access_revoked" for kind, payload in platform.events)
     assert "secret" not in json.dumps(requests[0], ensure_ascii=False)
     assert any(m.get("content") == "valid" for m in requests[0]["messages"])
     assert broker.leases == 0 and not broker.put_calls
@@ -686,14 +686,14 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
     from ailab_platform.agent.loop import estimator
 
     monkeypatch.setattr(estimator, "factors", {})
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=32000, max_output_tokens=8192, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     old = {"revision": 1, "entries": [{"id": "old", "content": "旧专属事实"}]}
     new = {"revision": 2, "entries": [{"id": "new", "content": "最新"}]}
     prior = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "project" + memory_prompt(old)},
-        {"role": "user", "content": "旧" * 4850},
+        {"role": "user", "content": "旧" * 26000},
         {"role": "assistant", "content": "done"},
     ]
 
@@ -1433,7 +1433,7 @@ def test_no_snapshot_rebuild_preserves_existing_revocation_boundary():
     with scripted_server([{"content": "done"}]) as (url, requests):
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
-    assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
+    assert any(kind == "agent.context_boundary" and payload["reason"] == "access_revoked" for kind, payload in platform.events)
     assert ("agent.context_boundary", {"reason": "rebuilt"}) not in platform.events
     assert requests[0]["tool_choice"] == "auto"
 
@@ -1895,3 +1895,63 @@ def test_band_boundary_wire_changes_are_confined_to_new_epoch(monkeypatch, scope
     assert {key: value for key, value in requests[1].items() if key not in {"messages", "max_tokens"}} == {
         key: value for key, value in requests[2].items() if key not in {"messages", "max_tokens"}
     }
+
+
+@pytest.mark.parametrize("reason", ["model_changed", "context_abi_changed", "rebuilt", "access_revoked"])
+@pytest.mark.parametrize("page_size", [3, 20])
+def test_below_trigger_rebuild_validates_checkpoint_and_first_wire_request(monkeypatch, reason, page_size):
+    from ailab_platform.agent.context_band import ContextBand
+    from ailab_platform.clients import ClientError
+    from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=1000000, max_output_tokens=8192, capabilities={"tools"})
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    history = [{"id": str(i), "prompt": "汉" * 10000, "reply": "ok"} for i in range(10)]
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "parent_run_id": "old", "options": {"mode": "chat"}}
+            if reason != "rebuilt":
+                prior = [{"role": "system", "content": "old model rules"}, {"role": "system", "content": "context"}]
+                if reason == "access_revoked":
+                    prior += [{"role": "tool", "name": "recall_history", "content": '{"run_id":"gone"}'}]
+                run["previous_model_context"] = {
+                    "messages": prior,
+                    "tools": [],
+                    "context_epoch": 7,
+                    "context_abi_version": 0 if reason == "context_abi_changed" else CONTEXT_ABI_VERSION,
+                }
+            return run
+
+        async def recall(self, *args):
+            raise ClientError("POST", "/recall", 404, "gone")
+
+        async def get_model_context(self, run_id, after=None):
+            start = int(after) + 1 if after else 0
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": history[start : start + page_size],
+                "has_more": start + page_size < 10,
+            }
+
+        async def save_model_summary(self, run_id, payload):
+            self.saved_summary = payload
+
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="goal"))}, _plan_call(1), {"content": "done"}]) as (
+        url,
+        requests,
+    ):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 3
+    band = ContextBand.for_model(spec)
+    for messages in (requests[1]["messages"], platform.checkpoint["state"]["messages"]):
+        total = band.cost({"messages": messages, "tools": requests[1]["tools"]})
+        assert band.lower <= total <= band.upper <= band.ceiling
+    assert platform.saved_summary
+    boundaries = [payload for kind, payload in platform.events if kind == "agent.context_boundary"]
+    assert boundaries[0]["reason"] == reason
+    assert boundaries[0]["after_tokens"] <= band.upper
+    assert_extension(requests[1], requests[2])

@@ -28,12 +28,15 @@ CANNOT_FIT_RESULT = {
 
 
 def bounded_memory(band, memory):
+    from .prompts import memory_prompt
+
     snapshot = deepcopy(memory)
-    while band.cost(snapshot.get("entries") or []) > band.memory_budget:
-        if snapshot.get("entries"):
-            snapshot["entries"].pop()
-        else:
+    while band.cost(memory_prompt(snapshot)) > band.memory_budget:
+        entries = snapshot.get("entries") or []
+        optional = next((i for i in range(len(entries) - 1, -1, -1) if entries[i].get("kind") != "user"), None)
+        if optional is None:
             raise ContextPause("记忆固定结构超过上下文预算，已暂停")
+        entries.pop(optional)
     return snapshot
 
 
@@ -215,7 +218,7 @@ class StagedContext:
     measurements: dict
 
 
-def stage_context(band, prefix, semantic, prior, state, tools, protected=(), current=()):
+def stage_context(band, prefix, semantic, prior, state, tools, protected=(), current=(), *, keep_latest=True):
     """Pack newest-first, then validate the exact staged wire request before CAS.
 
     Optional history may never raise a candidate above U. Latest complete unit is
@@ -260,9 +263,12 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
     if mandatory > band.ceiling:
         # Only irreducible current input can exceed H; optional navigation has
         # already yielded. Re-enter ordinary latest-unit retention when it fits.
-        without_input = cost([*prefix, *blocks])
+        latest = groups[-1] if groups and keep_latest else []
+        without_input = cost([*prefix, *blocks, *latest])
         if not raw_current or without_input > band.ceiling:
             raise ContextPause("固定上下文和活动状态超过安全容量，已暂停")
+        if latest:
+            selected = [latest]
         reason = "over_ceiling_current_input"
     elif groups:
         latest = groups[-1]

@@ -3,6 +3,7 @@
 import json
 
 from ..contracts.context_summary import ContextSummary, canonical_summary, format_instructions, validate_summary
+from .budgets import ContextPause
 from .skill_modules import SUMMARY_MARKER, module_summary
 
 
@@ -39,7 +40,7 @@ def source_handles(value=None, *, run_ids=(), attachments=(), evidence=(), summa
 
 def summary_instruction(text, allowed):
     if sum(map(len, allowed.values())) > 2048:
-        raise ValueError("summary source handles exceed boundary budget")
+        raise ContextPause("摘要来源句柄超过安全容量，已暂停")
     handles = {key: sorted(value) for key, value in allowed.items()}
     return (
         text

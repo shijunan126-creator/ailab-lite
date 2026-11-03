@@ -391,3 +391,76 @@ def test_build_preserves_checkpoint_committed_before_capacity_pause(monkeypatch)
     with pytest.raises(BudgetPause):
         asyncio.run(context.build({}, turn, "m", None))
     assert state["checkpoint_capacity_exceeded"] and state["messages"] == []
+
+
+@pytest.mark.parametrize("failure", ["timeout", "503", "cancel", "pause"])
+def test_retained_pause_transfers_lease_before_optional_renewal(monkeypatch, failure):
+    from ailab_platform.agent.budgets import WorkBudget
+    from ailab_platform.agent.loop import _Turn
+    from ailab_platform.clients import ClientError
+    from tests.test_agent_loop import FakeBroker
+
+    class Platform(FakePlatform):
+        async def pause_run(self, *args):
+            if failure == "pause":
+                raise ClientError("POST", "/pause", 503, "unavailable")
+            return await super().pause_run(*args)
+
+    class Broker(FakeBroker):
+        async def renew(self, lease_id):
+            assert turn.lease_id is None
+            if failure == "cancel":
+                raise asyncio.CancelledError()
+            if failure == "503":
+                raise ClientError("POST", "/renew", 503, "unavailable")
+            raise TimeoutError()
+
+        async def release(self, lease_id):
+            released.append(lease_id)
+
+    released = []
+    loop = AgentLoop(Platform(), Broker())
+    state = {**fresh_state(), "context_epoch": 7, "background_jobs": ["job"]}
+    loop._states["r"] = state
+    loop._budgets["r"] = WorkBudget(state, "window")
+    turn = _Turn({})
+    turn.lease_id = "lease"
+
+    async def exercise():
+        try:
+            await loop._budget_pause("r", turn, "capacity", pause={"kind": "context"}, preserve_jobs=True)
+        except (ClientError, asyncio.CancelledError):
+            assert failure in {"cancel", "pause"}
+        finally:
+            await loop._release_turn(turn)
+
+    asyncio.run(exercise())
+    assert released == (["lease"] if failure == "pause" else [])
+    assert state["context_epoch"] == 7 and state["background_jobs"] == ["job"]
+
+
+def test_below_trigger_rebuild_failure_preserves_old_epoch_and_jobs(monkeypatch):
+    from ailab_platform.agent.loop import _Turn
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=1000000, max_output_tokens=8192)
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, *args, **kwargs):
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [{"id": str(i), "prompt": "汉" * 10000, "reply": "ok"} for i in range(10)],
+                "has_more": False,
+            }
+
+    loop = AgentLoop(Platform(), llm=ScriptedLLM([LLMResponse(content="invalid summary")]))
+    state = {**fresh_state(), "context_epoch": 7, "background_jobs": ["live"], "tool_catalog_v1": []}
+    loop._states["r"] = state
+    before = copy.deepcopy(state)
+    run = {"model": "m", "prompt": "continue", "_attempt_id": "a", "_fixed_catalog": [], "parent_run_id": "old"}
+    turn = _Turn(run)
+    with pytest.raises(BudgetPause):
+        asyncio.run(loop._context("r").build(run, turn, "m", loop.llm))
+    assert state == before
+    assert not any(kind == "agent.context_boundary" for kind, _ in loop.platform.events)

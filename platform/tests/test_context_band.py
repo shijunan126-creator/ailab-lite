@@ -3,6 +3,7 @@
 import asyncio
 import copy
 import json
+from itertools import pairwise
 from types import SimpleNamespace
 
 import pytest
@@ -139,7 +140,8 @@ def test_irreducible_current_and_all_steers_docrefs(window, chars, expected):
         staged = stage_context(band, PREFIX, ContextSummary(), messages, {}, [], protected)
         assert staged.measurements["reason"] == expected
         assert band.ceiling < staged.measurements["after_tokens"] < band.trigger
-        assert staged.measurements["retained_groups"] == 0
+        assert staged.measurements["retained_groups"] == 1
+        assert any(m.get("tool_call_id") == "2" for m in staged.messages)
         assert current in staged.messages and steer in staged.messages
 
 
@@ -256,7 +258,11 @@ def test_plan_input_maximum_ids_and_extra_keys(monkeypatch, extra, id_length, va
 
 def test_two_compactions_refresh_memory_no_stale_blocks_and_cas_rollback(monkeypatch):
     cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=64000, max_output_tokens=8192)])
-    latest_memory = {"enabled": True, "revision": 2, "entries": [{"id": str(i), "kind": "user", "content": "汉" * 1000} for i in range(20)]}
+    latest_memory = {
+        "enabled": True,
+        "revision": 2,
+        "entries": [{"id": str(i), "kind": "memory", "content": "汉" * 1000} for i in range(20)],
+    }
 
     class Platform(FakePlatform):
         async def get_memory_context(self, run_id):
@@ -389,7 +395,9 @@ def test_uncompacted_rebuild_bounds_deterministic_blocks_without_changing_trigge
 
     loop = AgentLoop(platform=Platform(), llm=ScriptedLLM([]))
     loop._states["r"] = {**fresh_state(), "plan": [{"id": str(i), "title": "汉" * 500, "status": "pending"} for i in range(100)]}
-    result = asyncio.run(loop._assemble_context("r", {"model": "band", "_fixed_catalog": []}, "band", [*PREFIX, CURRENT]))
+    result = asyncio.run(
+        loop._assemble_context("r", {"model": "band", "_attempt_id": "a", "_fixed_catalog": []}, "band", [*PREFIX, CURRENT])
+    )
     nav = next(message for message in result if message.get("content", "").startswith("<loaded_modules>"))
     assert band_for(1000000).cost(nav) <= 2000
     runtime = next(message for message in result if message.get("content", "").startswith("<runtime_state>"))
@@ -495,3 +503,128 @@ def test_batch_capacity_uses_real_floor_and_preserves_latest_unit(window):
     assert staged.measurements["after_tokens"] <= band.ceiling <= 64000
     rejected = admit_tool_result(band, messages[:-1], [], state, call, {"ok": True, "text": "汉" * (budget + 1)})
     assert rejected["ok"] is False and rejected["reason"] == "batch_budget" and "text" not in rejected
+
+
+@pytest.mark.parametrize("kind", ["memory", "user"])
+def test_memory_prices_rendered_projection_and_protects_preferences(kind):
+    from ailab_platform.agent.context_band import bounded_memory
+    from ailab_platform.agent.prompts import memory_prompt
+    from ailab_platform.api.routes_memory import _entry
+
+    band = band_for(1000000)
+    memory = {
+        "revision": 1,
+        "entries": [
+            *[_entry({"id": str(i), "kind": kind, "content": "note", "source_quote": "证" * 1000}) for i in range(3)],
+            _entry({"id": "explicit", "kind": "user", "content": "Always require approval before publication"}),
+        ],
+    }
+    assert band.cost(memory_prompt(memory)) < band.memory_budget
+    assert bounded_memory(band, memory) == memory
+    oversized = {"entries": [{"id": str(i), "kind": kind, "content": "汉" * 1000} for i in range(5)] + memory["entries"][-1:]}
+    if kind == "user":
+        with pytest.raises(ContextPause):
+            bounded_memory(band, oversized)
+    else:
+        assert bounded_memory(band, oversized)["entries"][-1]["id"] == "explicit"
+
+
+@pytest.mark.parametrize("keep_latest", [True, False])
+def test_current_exception_keeps_in_run_latest_and_rejects_saturated_base(keep_latest):
+    band = band_for(1000000)
+    current = {"role": "user", "content": "汉" * 70000}
+    prior = [*PREFIX, current, *pair("latest", 1000)]
+    staged = stage_context(band, PREFIX, ContextSummary(), prior, {}, [], {2}, keep_latest=keep_latest)
+    assert staged.measurements["reason"] == "over_ceiling_current_input"
+    assert any(m.get("tool_call_id") == "latest" for m in staged.messages) == keep_latest
+    saturated = [{"role": "system", "content": "汉" * 65000}, PREFIX[1]]
+    with pytest.raises(ContextPause):
+        stage_context(band, saturated, ContextSummary(), [*saturated, current], {}, [], {2}, keep_latest=keep_latest)
+    with pytest.raises(ContextPause):
+        stage_context(band, PREFIX, ContextSummary(), [*PREFIX, current, *pair("too-big", 65000)], {}, [], {2})
+
+
+@pytest.mark.parametrize("attachments,total", [(0, 2050), (12, 175), (2050, 1)])
+def test_rebuild_source_cardinality_chunks_before_crossing(monkeypatch, attachments, total):
+    from ailab_platform.agent.context_rendering import source_handles
+
+    cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=1000000, max_output_tokens=8192)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, run_id, after=None):
+            start = int(after) + 1 if after else 0
+            stop = min(start + 100, total)
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [
+                    {"id": str(i), "prompt": "p", "reply": "ok", "attachments": [{"file_id": f"f{i}-{j}"} for j in range(attachments)]}
+                    for i in range(start, stop)
+                ],
+                "has_more": stop < total,
+            }
+
+        async def save_model_summary(self, run_id, payload):
+            self.saved.append(payload)
+
+    platform = Platform()
+    platform.saved = []
+    loop = AgentLoop(platform=platform, llm=ScriptedLLM([LLMResponse(content=canonical_summary(ContextSummary()))] * 10))
+    loop._states["r"] = fresh_state()
+    run = {"model": "band", "_attempt_id": "a", "_fixed_catalog": []}
+    if attachments > 2048:
+        with pytest.raises(ContextPause):
+            asyncio.run(loop._assemble_context("r", run, "band", [*PREFIX, CURRENT]))
+        assert not loop.llm.seen_messages
+    else:
+        result = asyncio.run(loop._assemble_context("r", run, "band", [*PREFIX, CURRENT]))
+        assert platform.saved
+        assert band_for(1000000).cost({"messages": result, "tools": []}) <= 48000
+        for messages in loop.llm.seen_messages:
+            handles = json.loads(messages[-1]["content"].split("只可引用以下来源句柄；没有来源的判断放入uncertainties：")[1])
+            assert sum(map(len, handles.values())) <= 2048
+            assert source_handles(run_ids=handles["run_id"], attachments=[{"file_id": x} for x in handles["file_id"]])
+
+
+def test_rebuild_rendering_and_estimation_visit_linear_bytes(monkeypatch, record_property):
+    from ailab_platform.agent import context as context_module
+    from ailab_platform.model_policy import estimator
+
+    cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=1000000, max_output_tokens=8192)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
+    counts = []
+    raw = estimator.raw
+    render = context_module.history_messages
+    for total in (200, 400, 800):
+        visited = {"bytes": 0, "groups": 0}
+
+        def measured(value):
+            visited["bytes"] += len(json.dumps(value, ensure_ascii=False))
+            return raw(value)
+
+        def rendered(history):
+            visited["groups"] += len(history or [])
+            return render(history)
+
+        class Platform(FakePlatform):
+            async def get_model_context(self, *args, **kwargs):
+                return {
+                    "summary": "",
+                    "through_run_id": None,
+                    "history": [{"id": str(i), "prompt": "x" * 1000, "reply": "ok"} for i in range(total)],
+                    "has_more": False,
+                }
+
+            async def save_model_summary(self, *args):
+                pass
+
+        monkeypatch.setattr(estimator, "raw", measured)
+        monkeypatch.setattr(context_module, "history_messages", rendered)
+        loop = AgentLoop(platform=Platform(), llm=ScriptedLLM([LLMResponse(content=canonical_summary(ContextSummary()))]))
+        loop._states["r"] = fresh_state()
+        asyncio.run(loop._assemble_context("r", {"model": "band", "_attempt_id": "a", "_fixed_catalog": []}, "band", [*PREFIX, CURRENT]))
+        counts.append(visited.copy())
+    assert [count["groups"] for count in counts] == [400, 800, 1600]
+    record_property("rendered_scaling", json.dumps(counts))
+    assert all(b["bytes"] < a["bytes"] * 2.6 for a, b in pairwise(counts)), counts
