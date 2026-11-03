@@ -366,7 +366,7 @@ class ContextManager:
 
         # Immutable turn projections are rendered and priced once. Running sums
         # deliberately overestimate framing; only completed candidates are measured.
-        overhead = band.cost([])
+        raw_overhead = estimator.raw([])
         reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
 
         def planning_base():
@@ -383,15 +383,24 @@ class ContextManager:
             for turn in page["history"]:
                 group = history_messages([turn])
                 clean_group = history_messages([_summary_input(turn)])
-                group_cost = max(band.cost(group), band.cost(clean_group)) - overhead + 2
+                group_raw = max(estimator.raw(group), estimator.raw(clean_group)) - raw_overhead
                 turn_handles = source_handles(run_ids=[turn["id"]], attachments=turn.get("attachments", []))
                 while True:
+                    group_cost = int((group_raw + 1) * estimator.factors.get(model, 1.0)) + 1
                     additions = {key: values - handles[key] for key, values in turn_handles.items()}
                     count = sum(map(len, handles.values())) + sum(map(len, additions.values()))
-                    handle_cost = sum(band.cost([value]) - overhead + 2 for values in additions.values() for value in values)
+                    handle_cost = sum(band.cost([value]) - band.cost([]) + 2 for values in additions.values() for value in values)
                     if count <= 2048 and planned + pending_cost + group_cost + handle_cost + reserve < spec.context_tokens:
                         break
                     if not pending:
+                        # Conservative incremental framing may overprice a single
+                        # unit at the edge. Check that irreducible unit exactly.
+                        if count <= 2048:
+                            combined = {key: handles[key] | values for key, values in additions.items()}
+                            note = {**instruction, "content": summary_instruction(instruction["content"], combined)}
+                            exact = band.cost({"messages": [*summary_prefix(), *clean_group, note], "tools": context_tools})
+                            if exact < budget and exact + reserve <= spec.context_tokens:
+                                break
                         raise ContextPause("单轮历史或来源句柄超过安全容量，已暂停")
                     await compact()
                     handles, planned = planning_base()
@@ -418,12 +427,9 @@ class ContextManager:
                 try:
                     semantic = ContextSummary.model_validate_json(summary) if summary else ContextSummary()
                 except ValueError:
-                    # Legacy free text is evidence for a new structured summary.
-                    if not pending:
-                        raise ContextPause("旧摘要需要重新整理，已暂停；请新建对话") from None
-                    await compact()
-                    semantic = ContextSummary.model_validate_json(summary)
-                    candidate = assemble()
+                    # Legacy free text has no typed provenance. Preserve it as
+                    # unverified background within the same semantic budget.
+                    semantic = ContextSummary(uncertainties=[summary[i : i + 2000] for i in range(0, len(summary), 2000)])
                 staged_history = stage_context(
                     band,
                     fixed[:-1],

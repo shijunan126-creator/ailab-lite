@@ -24,8 +24,8 @@ def test_threshold_uses_full_model_window_independent_of_maximum_output(context,
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-@pytest.mark.parametrize("context,used,compacts", [(10000, 8999, False), (10000, 9000, True), (20000, 9000, False)])
-def test_history_threshold_boundary_and_model_change(monkeypatch, mode, context, used, compacts):
+@pytest.mark.parametrize("context,used,compacts", [(10000, 8999, True), (10000, 9000, True), (20000, 9000, False)])
+def test_rebuild_uses_boundary_band_below_growth_trigger(monkeypatch, mode, context, used, compacts):
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=context, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: used if "OLDER" in json.dumps(value) else 100)
