@@ -298,7 +298,9 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
     ):
         raise ContextPause("摘要和当前输入超过安全容量，已暂停；请缩小任务范围")
     protocol_groups(replacement)
-    images = sum(p.get("type") == "image_url" for m in recent for p in (m.get("content") if isinstance(m.get("content"), list) else []))
+    images = sum(
+        p.get("type") == "image_url" for m in replacement for p in (m.get("content") if isinstance(m.get("content"), list) else [])
+    )
     measures = {
         "before_tokens": cost([*prior, *current]),
         "after_tokens": total,

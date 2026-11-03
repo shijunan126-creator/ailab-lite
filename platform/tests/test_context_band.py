@@ -334,6 +334,7 @@ def test_all_active_multimodal_users_protected_with_tool_images_distinguished():
     protected = active_users(messages, 2, {5})
     assert protected == {2, 6}
     staged = stage_context(band_for(128000), PREFIX, ContextSummary(), messages, {}, [], protected)
+    assert staged.measurements["retained_images"] == 3
     assert all(message in staged.messages for message in (first, steer))
     assert any(message.get("tool_call_id") == "2" for message in staged.messages)
     protocol_groups(staged.messages)
