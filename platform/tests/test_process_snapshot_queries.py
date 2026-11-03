@@ -84,7 +84,14 @@ def test_healthy_stopped_corpus_examines_only_the_next_page(engine, monkeypatch)
         conn.execute(
             RunProcessSnapshot.__table__.insert(),
             [
-                dict(run_id=f"healthy-{i:06}", schema_version=1, through_seq=0, items=[], item_count=0, uncompressed_bytes=2)
+                dict(
+                    run_id=f"healthy-{i:06}",
+                    schema_version=ps.PROCESS_SNAPSHOT_SCHEMA_VERSION,
+                    through_seq=0,
+                    items=[],
+                    item_count=0,
+                    uncompressed_bytes=2,
+                )
                 for i in range(3000)
             ],
         )

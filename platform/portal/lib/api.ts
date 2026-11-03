@@ -699,4 +699,4 @@ export type ProcessItem =
   | { kind: "steps"; steps: Step[] }
   | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
 
-export type ProcessView = { schema_version: 1; source: "snapshot" | "events"; items: ProcessItem[] };
+export type ProcessView = { schema_version: 2; source: "snapshot" | "events"; items: ProcessItem[] };

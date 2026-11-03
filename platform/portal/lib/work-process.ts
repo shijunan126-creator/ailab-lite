@@ -360,8 +360,8 @@ export function reconcileTerminal(items: Item[] | null | undefined, status: stri
   if (!["succeeded", "failed", "canceled"].includes(status)) return items || [];
   const label = status === "canceled" ? "已取消" : status === "failed" ? "已失败" : "已结束";
   return (items || []).map((item): Item => item.kind === "thinking" && !item.done ? { ...item, done: true } : item.kind === "steps" ? {
-    ...item, steps: item.steps.map((step): Step => step.background || step.status === "running" ? {
-      ...step, background: undefined, label: step.label + " · " + label, status: status === "succeeded" ? "ok" : "failed",
+    ...item, steps: item.steps.map((step): Step => step.background || step.status === "running" || step.label.endsWith(" · 仍在运行") ? {
+      ...step, background: undefined, label: step.label.replace(/ · 仍在运行$/, "") + " · " + label, status: status === "succeeded" ? "ok" : "failed",
     } : step),
   } : item);
 }

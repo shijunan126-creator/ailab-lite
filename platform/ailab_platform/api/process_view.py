@@ -6,7 +6,7 @@ semantics to this projection, including the final-answer/narration boundary.
 
 import re
 
-PROCESS_SNAPSHOT_SCHEMA_VERSION = 1
+PROCESS_SNAPSHOT_SCHEMA_VERSION = 2
 PROCESS_EVENT_TYPES = frozenset(
     {
         "agent.thinking",
@@ -266,9 +266,11 @@ def reconcile_terminal(items, status):
             item["done"] = True
         elif item["kind"] == "steps":
             for step in item["steps"]:
-                if step.get("background") or step["status"] == "running":
+                legacy_running = step["label"].endswith(" · 仍在运行")
+                if step.get("background") or step["status"] == "running" or legacy_running:
                     step.pop("background", None)
-                    step.update(label=step["label"] + " · " + label, status="ok" if status == "succeeded" else "failed")
+                    base = step["label"].removesuffix(" · 仍在运行")
+                    step.update(label=base + " · " + label, status="ok" if status == "succeeded" else "failed")
     return items
 
 

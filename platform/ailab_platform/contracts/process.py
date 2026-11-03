@@ -71,6 +71,6 @@ class ProcessSteer(TypedDict):
 
 
 class ProcessView(BaseModel):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = 2
     source: Literal["snapshot", "events"]
     items: list[ProcessPlan | ProcessAsk | ProcessText | ProcessThinking | ProcessSteps | ProcessSteer]

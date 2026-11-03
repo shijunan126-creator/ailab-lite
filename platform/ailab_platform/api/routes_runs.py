@@ -462,9 +462,10 @@ def get_process(run_id: str, user: User = Depends(current_user), db: Session = D
     from ..memory_recall.policy import source_available
     from ..models import RunProcessSnapshot
     from .process_snapshots import STOPPED, ProcessTooLarge, derive, latest_seq, valid_snapshot
+    from .process_view import PROCESS_SNAPSHOT_SCHEMA_VERSION
 
     if not source_available(db, run):
-        return {"schema_version": 1, "source": "events", "items": []}
+        return {"schema_version": PROCESS_SNAPSHOT_SCHEMA_VERSION, "source": "events", "items": []}
     snapshot = db.get(RunProcessSnapshot, run_id)
     if run.status in STOPPED and valid_snapshot(snapshot, db.scalar(select(latest_seq()).select_from(Run).where(Run.id == run_id))):
         return {"schema_version": snapshot.schema_version, "source": "snapshot", "items": snapshot.items}
@@ -477,7 +478,7 @@ def get_process(run_id: str, user: User = Depends(current_user), db: Session = D
         # also finds this run after a failed attempt or API restart.
         db.info.setdefault("process_snapshot_runs", set()).add(run_id)
         db.commit()
-    return {"schema_version": 1, "source": "events", "items": items}
+    return {"schema_version": PROCESS_SNAPSHOT_SCHEMA_VERSION, "source": "events", "items": items}
 
 
 @router.get("/runs/{run_id}/events/history", response_model=list[EventOut])

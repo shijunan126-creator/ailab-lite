@@ -224,7 +224,7 @@ def test_process_http_contract_and_cross_user_404(db):
     with TestClient(main.app) as client:
         response = client.get(f"/v1/runs/{run.id}/process", headers={"Authorization": "Bearer test-token"})
         assert response.status_code == 200, response.text
-        assert response.json() == {"schema_version": 1, "source": "snapshot", "items": FIXTURE["items"]}
+        assert response.json() == {"schema_version": 2, "source": "snapshot", "items": FIXTURE["items"]}
         denied = client.get(f"/v1/runs/{run.id}/process", headers={"Authorization": "Bearer " + token})
         assert denied.status_code == 404
         detail = client.get(f"/v1/runs/{run.id}", headers={"Authorization": "Bearer test-token"}).json()
@@ -286,3 +286,24 @@ def test_shared_process_lifecycle_fixture():
     for event in fixture["events"]:
         reduce_event(items, event["type"], event["payload"])
     assert reconcile_terminal(items, fixture["status"]) == fixture["items"]
+
+
+@pytest.mark.parametrize("gc", [False, True])
+def test_legacy_snapshot_upgrades_without_erasing_gc_history(db, gc):
+    run, user = make_run(db, summary="old summary")
+    append_event(db, run.id, "agent.delta", {"step": 1, "text": "recoverable new partial"})
+    transition_run(db, run.id, RunStatus.CANCELED)
+    snapshot = db.get(RunProcessSnapshot, run.id)
+    snapshot.schema_version = 1
+    snapshot.items = [{"kind": "steps", "steps": [{"name": "exec", "label": "运行命令 · 仍在运行", "status": "note"}]}]
+    db.commit()
+    if gc:
+        db.execute(delete(RunEvent).where(RunEvent.run_id == run.id))
+        db.commit()
+    view = get_process(run.id, user, db)
+    assert view["schema_version"] == 2
+    if gc:
+        assert view["items"][0]["steps"][0]["label"] == "运行命令 · 已取消"
+    else:
+        assert "recoverable new partial" in json.dumps(view)
+    assert db.get(RunProcessSnapshot, run.id).schema_version == 2

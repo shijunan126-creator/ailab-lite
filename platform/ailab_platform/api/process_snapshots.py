@@ -42,16 +42,15 @@ def derive(db, run_id):
     through_seq = 0
     snapshot = db.get(RunProcessSnapshot, run_id, populate_existing=True)
     first = db.scalar(select(RunEvent.seq).where(RunEvent.run_id == run_id).order_by(RunEvent.seq).limit(1))
-    if valid_snapshot(snapshot) and (first is None or first > 1):
+    if snapshot is not None and snapshot.schema_version in {1, PROCESS_SNAPSHOT_SCHEMA_VERSION} and (first is None or first > 1):
         # GC may already have removed a prefix of the trace. A later public
         # event must extend the durable projection, not erase that prefix.
         items = copy.deepcopy(snapshot.items)
         through_seq = snapshot.through_seq
     input_bytes = 0
     count = 0
-    # Keyset pages bound ORM row retention. Ignore answer chunks: agent.message
-    # contains the confirmed full text, including narration before a later action.
-    # Read unconfirmed deltas only for stopped runs that lack that answer.
+    # Coalesce every stream, then remove only its matching confirmed answer.
+    # Keyset pages bound ORM retention; legacy snapshots seed only GC'd prefixes.
     while True:
         rows = db.execute(
             select(RunEvent.seq, RunEvent.type, RunEvent.payload)
