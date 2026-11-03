@@ -30,7 +30,7 @@ def _index(page, stack, file_id):
 
 
 def _frame(page, name):
-    frame = page.frame_locator(f'iframe.office-frame[title="{name}"]')
+    frame = page.frame_locator(f'iframe.office-frame[aria-label="{name}"]')
     end = time.monotonic() + 30
     while not frame.locator(".canvas").is_visible():
         failure = page.locator(".viewer-state").filter(has_text="无法预览")

@@ -14,6 +14,7 @@ import Sheets from "./sheets";
 import DocumentPages from "./pages";
 import DocLoading, { loadingShape } from "./doc-loading";
 import OfficeView, { MAX_NATIVE_BYTES, officeKind, type OfficeDoc, type OfficeReveal } from "./office-view";
+import { DocTools, DocToolsSlot } from "./doc-tools";
 
 const POLL_MS = 1500;
 
@@ -110,14 +111,16 @@ function HtmlView({ file, preview }: { file: FileItem; preview: FilePreview }) {
   const [mode, setMode] = useState<"render" | "code">("render");
   return (
     <div className="viewer-html">
-      <div className="viewer-modes" role="tablist" aria-label="预览方式">
-        <button type="button" role="tab" aria-selected={mode === "render"} className={`viewer-mode ${mode === "render" ? "on" : ""}`} onClick={() => setMode("render")}>
-          渲染
-        </button>
-        <button type="button" role="tab" aria-selected={mode === "code"} className={`viewer-mode ${mode === "code" ? "on" : ""}`} onClick={() => setMode("code")}>
-          源码
-        </button>
-      </div>
+      <DocTools>
+        <div className="viewer-modes" role="tablist" aria-label="预览方式">
+          <button type="button" role="tab" aria-selected={mode === "render"} className={`viewer-mode ${mode === "render" ? "on" : ""}`} onClick={() => setMode("render")}>
+            渲染
+          </button>
+          <button type="button" role="tab" aria-selected={mode === "code"} className={`viewer-mode ${mode === "code" ? "on" : ""}`} onClick={() => setMode("code")}>
+            源码
+          </button>
+        </div>
+      </DocTools>
       {mode === "render" ? (
         <HtmlDocView url={downloadUrl(file.download_url)} title={file.filename} renderError={(reason) => <Unavailable file={file} reason={reason} />} />
       ) : (
@@ -275,6 +278,7 @@ export default function FileViewer({
   const [restoreError, setRestoreError] = useState("");
   const [sharing, setSharing] = useState(false);
   const own = useContext(FileSourceContext) === LIBRARY; // a file shared to this user is theirs to read, not to pass on
+  const [toolSlot, setToolSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     setVersion(null);
     setRestoreError("");
@@ -350,6 +354,7 @@ export default function FileViewer({
             恢复
           </button>
         ) : null}
+        <span className="doc-tools" ref={setToolSlot} />
         {shown.status === "ready" ? (
           <>
             {chatHref && !version && !trashed ? (
@@ -373,7 +378,9 @@ export default function FileViewer({
       </header>
       {sharing ? <ShareDialog target={{ kind: "file", fileId: file.id }} title={file.filename} onClose={() => setSharing(false)} /> : null}
       <div className="viewer-stage" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <FilePreviewBody key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
+        <DocToolsSlot.Provider value={toolSlot}>
+          <FilePreviewBody key={shown.id} file={shown} page={shown.id === file.id ? page : undefined} />
+        </DocToolsSlot.Provider>
         {prev ? (
           <button className="viewer-nav prev" onClick={() => onOpen(prev)} aria-label="上一个文件">
             <IconChevronRight size={22} />

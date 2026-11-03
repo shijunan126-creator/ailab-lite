@@ -61,5 +61,5 @@ export function SandboxFrame({ kind, html, title, className, sandbox = "allow-sc
     if (kind === "genui-run" && theme && ready.current) ref.current?.contentWindow?.postMessage({ theme }, "*");
   }, [kind, theme]);
 
-  return <iframe ref={ref} key={kind} src={`/frame/${kind}`} sandbox={sandbox} referrerPolicy="no-referrer" title={title} className={className} style={style} />;
+  return <iframe ref={ref} key={kind} src={`/frame/${kind}`} sandbox={sandbox} referrerPolicy="no-referrer" aria-label={title} className={className} style={style} />;
 }

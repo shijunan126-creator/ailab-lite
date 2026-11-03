@@ -14,7 +14,7 @@ test("viewer assets that cannot load fall back to the paged preview instead of a
   vi.stubGlobal("fetch", vi.fn(async () => ({ ok: false, status: 503 })));
   const doc: OfficeDoc = { path: "库/离线.pptx", filename: "离线.pptx", kind: "pptx", source: { fileId: "f1" } };
   render(<OfficeView doc={doc} docs={[doc]} onOpen={vi.fn()} onReference={vi.fn()} onAsk={vi.fn()} fallback={<div>fallback</div>} />);
-  const frame = (await screen.findByTitle(doc.filename)) as HTMLIFrameElement;
+  const frame = (await screen.findByLabelText(doc.filename)) as HTMLIFrameElement;
   expect(screen.getByRole("status", { name: "正在加载" })).toBeTruthy();
   await act(async () => {}); // the frame's listener is registered in an effect
   await act(async () => {

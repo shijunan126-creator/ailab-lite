@@ -612,3 +612,27 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .attach-chip.quote-chip { gap: 6px; height: 32px; padding: 0 4px 0 10px; border-radius: 10px; max-width: min(100%, 320px); color: var(--foreground); border-left: 2px solid var(--primary); }
 .quote-chip-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-chip-at { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }
+
+/* One title bar per preview (components/preview/doc-tools.tsx): the side pane's or the full-screen viewer's bar names
+   the file once and also holds the open document's own controls, which the preview portals into .doc-tools. */
+.doc-tools { flex: none; display: flex; align-items: center; gap: 2px; }
+.doc-tools:empty { display: none; }
+.preview-head .icon-btn[aria-pressed="true"] { background: var(--selected); color: var(--primary); }
+.viewer-bar .icon-btn[aria-pressed="true"] { background: rgb(255 255 255 / 16%); color: #fff; }
+/* Document controls first, then what acts on the file: a hairline keeps the two groups apart in the viewer's bar. */
+.viewer-bar .doc-tools::after { content: ""; width: 1px; height: 18px; margin-left: 8px; background: rgb(255 255 255 / 16%); }
+.viewer-bar .doc-tools svg { width: 18px; height: 18px; }
+/* Render / source switch of an HTML file: a segmented control in the bar, legible on the light pane and the dark viewer. */
+.viewer-modes { display: flex; gap: 2px; padding: 2px; border-radius: 8px; background: color-mix(in srgb, currentColor 8%, transparent); }
+.viewer-modes .viewer-mode { padding: 3px 10px; border: 0; border-radius: 6px; background: none; color: inherit; opacity: .7; font-size: var(--text-sm); font-weight: 500; }
+.viewer-modes .viewer-mode:hover { background: color-mix(in srgb, currentColor 8%, transparent); color: inherit; opacity: 1; }
+.viewer-modes .viewer-mode.on { background: color-mix(in srgb, currentColor 14%, transparent); opacity: 1; font-weight: 600; }
+.viewer-stage > .viewer-html { height: auto; margin-bottom: 24px; }
+@media (max-width: 720px) { .viewer-stage > .viewer-html { margin-bottom: 12px; } }
+/* A Work PDF's page count and zoom float over its pages instead of adding a second bar under the pane's. */
+.pdf-pill { position: absolute; left: 50%; bottom: 16px; translate: -50% 0; z-index: 2; display: flex; align-items: center; gap: 2px; padding: 2px 4px 2px 12px; border-radius: 999px; background: rgb(0 0 0 / 65%); color: #fff; font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.pdf-pill > span:first-child { margin-right: 6px; }
+.pdf-pill button { width: 26px; height: 26px; padding: 0; border: 0; border-radius: 999px; background: none; color: inherit; font-size: var(--text-md); line-height: 1; }
+.pdf-pill button:hover:not(:disabled) { background: rgb(255 255 255 / 16%); color: #fff; }
+.pdf-pill button:disabled { opacity: .4; }
+.pdf-zoom { min-width: 40px; text-align: center; }

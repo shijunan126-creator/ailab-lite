@@ -1,3 +1,8 @@
+## 2026-11-03 预览标题栏
+
+- 预览外壳（侧栏标签栏、全屏查看器顶栏）是唯一标题栏。预览自己的文档控件通过 `components/preview/doc-tools.tsx` 的插槽 portal 进去，不要在预览内部再画一行工具栏；上游查看器 docbar 由 `office/build.mjs` 的补丁去掉，控件状态走 `tools`/`command` 消息。
+- iframe 的 `title` 会在 Chromium 中作为悬停提示盖在整页文档上；预览 frame 用 `aria-label` 命名，e2e 用 `iframe.office-frame[aria-label=…]` 定位。
+
 ## 2026-11-03 Viewer 完整性审查
 
 - 工具注册与联通不代表模型指导接通：核对实际load_skill返回，四格式viewer可能仍带早期“planned/不可用”提示；修有序patch并重建，不单改生成文件。查看状态TTL也要核对静止在线续期，版本检查轮询不等于续期。见[审查](docs/reviews/2026-11-03-office-sidebar-completeness.md)。

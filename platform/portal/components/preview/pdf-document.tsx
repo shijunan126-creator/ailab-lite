@@ -42,17 +42,6 @@ export default function PdfDocument({ url, title }: { url: string; title: string
   const shown = Math.min(pages, 40);
   return (
     <div className="pdf-preview">
-      <div className="pdf-toolbar">
-        <span className="hint">{pages ? `${pages} 页` : ""}</span>
-        <span className="spacer" />
-        <button type="button" className="link" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label="缩小">
-          −
-        </button>
-        <span className="pdf-zoom">{Math.round(zoom * 100)}%</span>
-        <button type="button" className="link" onClick={() => setZoom((value) => Math.min(2, Math.round((value + 0.1) * 10) / 10))} aria-label="放大">
-          +
-        </button>
-      </div>
       <div className="pdf-scroll" ref={box} aria-label={title}>
         {error ? <div className="alert error">{error}</div> : null}
         {/* suspense={false}: keep the inline loading spinner and error message; react-pdf 11 otherwise throws into an Error Boundary. */}
@@ -82,6 +71,19 @@ export default function PdfDocument({ url, title }: { url: string; title: string
         </Document>
         {pages > shown ? <div className="hint" style={{ padding: 12 }}>只显示前 {shown} 页，共 {pages} 页。</div> : null}
       </div>
+      {/* Floats over the pages, like the native viewer's page control: the pane's title bar is the only bar. */}
+      {pages ? (
+        <div className="pdf-pill">
+          <span>{pages} 页</span>
+          <button type="button" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label="缩小" disabled={zoom <= 0.6}>
+            −
+          </button>
+          <span className="pdf-zoom">{Math.round(zoom * 100)}%</span>
+          <button type="button" onClick={() => setZoom((value) => Math.min(2, Math.round((value + 0.1) * 10) / 10))} aria-label="放大" disabled={zoom >= 2}>
+            +
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,3 +1,11 @@
+# 预览单标题栏（2026-11-03）
+
+- 分支 `fix/preview-header-chrome`（worktree `.worktrees/preview-chrome`），基线 `origin/main@3cd5a61`。用户反馈侧栏 / 全屏查看器里 Office 文件有两条叠加的标题栏、文件名重复、首次使用看不懂，要求重新设计并排查其他预览位置。用户未要求合并或部署。
+- 已完成：每个预览只有一条标题栏；原生查看器的 docbar 由构建补丁去掉，页面与目录、查找放进外壳标题栏；HTML 渲染/源码改为标题栏中的分段控件；Work PDF 缩放改为浮动胶囊；预览 iframe 不再显示 title 悬停提示；下载 / 外链统一为图标按钮。设计、检查与边界见[记录](updates/2026-11-03-preview-title-bar.md)。
+- 下一步：PR CI 全绿后由用户决定是否合并、部署；之后看用户使用反馈。
+
+---
+
 # 办公侧栏与原生预览：PR和部署（2026-11-03）
 
 - 当前分支`t3/sidebar-office-file-features`，发布前已fetch核对`origin/main@8cbc216`，产品56文件摘要与[最终修复记录](updates/2026-11-03-office-review-fixes.md)一致。用户本轮明确授权：全部修改提PR，最终CI全绿后合并，增量部署最新main；不做备份或部署后重复测试/浏览器/真模型。

@@ -89,6 +89,18 @@ export const PATCHES = [
     '  agent: "AILab",\n  agentOf: (index, total) => `AILab · 第 ${index} 处，共 ${total} 处`,',
     "The Portal names the assistant AILab in Chinese UI.",
   ],
+  [
+    "ui/main.tsx",
+    '      ) : (\n        <header className="docbar">',
+    '      ) : host.titleBar === "portal" ? null : (\n        <header className="docbar">',
+    "The Portal's title bar already names the file and holds the document controls; a second bar repeated the name and stacked two rows of look-alike icons.",
+  ],
+  [
+    "ui/main.tsx",
+    "  useShellKeys({\n    docRef,",
+    "  useEffect(\n    () =>\n      host.onCommand((name) => {\n        if (name === \"drawer\") drawerAvailable && setDrawer((state) => ({ ...state, open: !state.open }));\n        else if (find.open) closeFind();\n        else openFind();\n      }),\n    [drawerAvailable, find.open, openFind, closeFind],\n  );\n  const findAvailable = Boolean(doc && ready && !failure);\n  useEffect(() => {\n    host.reportTools({ drawer: drawerAvailable ? drawer.open : null, find: findAvailable ? find.open : null });\n  }, [drawerAvailable, drawer.open, findAvailable, find.open]);\n  useShellKeys({\n    docRef,",
+    "The pages/outline drawer and find are pressed from the Portal's title bar, which shows whether each applies and is on.",
+  ],
 ];
 
 const ui = (name) => join(runtime, "ui", name);

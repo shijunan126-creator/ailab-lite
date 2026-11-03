@@ -67,7 +67,7 @@ def test_a_workbook_previews_as_sheets(logged_in, stack, tmp_path) -> None:
     name = f"sales-{uuid.uuid4().hex[:6]}.xlsx"
     _upload(page, stack, tmp_path, name, data.getvalue())
     _open(page, name)
-    frame = page.frame_locator(f'iframe.office-frame[title="{name}"]')
+    frame = page.frame_locator(f'iframe.office-frame[aria-label="{name}"]')
     frame.locator(".xlsx-grid canvas").first.wait_for(timeout=30000)
     _shot(page, "viewer-sheets")
     page.keyboard.press("Escape")

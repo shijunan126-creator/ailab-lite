@@ -25,6 +25,10 @@ export interface RecentDocument {
   kind: "docx" | "xlsx" | "pptx" | "pdf";
 }
 
+/** The viewer draws no title bar of its own: the Portal's bar already names the file, so its two document controls live there. */
+export type ViewerCommand = "drawer" | "find";
+export type ViewerTools = Record<ViewerCommand, boolean | null>;
+
 export type FrameMessage =
   | { ch: typeof CHANNEL; t: "boot" }
   | { ch: typeof CHANNEL; t: "error"; message: string }
@@ -38,6 +42,8 @@ export type FrameMessage =
   | { ch: typeof CHANNEL; t: "reference"; nonce: string; id: number; reference: ViewerReference }
   | { ch: typeof CHANNEL; t: "ask"; nonce: string; id: number; question: string; reference: ViewerReference }
   | { ch: typeof CHANNEL; t: "link"; nonce: string; url: string }
+  /** The document controls the Portal shows in its own title bar: null when the control does not apply, else whether it is on. */
+  | { ch: typeof CHANNEL; t: "tools"; nonce: string; tools: ViewerTools }
   | { ch: typeof CHANNEL; t: "page-tool-result"; nonce: string; id: number; ok: boolean; value?: unknown; error?: string };
 
 export type HostMessage =
@@ -46,7 +52,9 @@ export type HostMessage =
   | { ch: typeof CHANNEL; t: "reply"; id: number; ok: false; error: { message: string; code?: string } }
   | { ch: typeof CHANNEL; t: "context"; context: HostContext; recent: RecentDocument[]; open?: string }
   | { ch: typeof CHANNEL; t: "snapshot"; snapshot: unknown }
-  | { ch: typeof CHANNEL; t: "page-tool"; id: number; name: string; args: Record<string, unknown> };
+  | { ch: typeof CHANNEL; t: "page-tool"; id: number; name: string; args: Record<string, unknown> }
+  /** A press of one of those controls in the Portal's title bar. */
+  | { ch: typeof CHANNEL; t: "command"; name: ViewerCommand };
 
 /** Upper bound for a control message (file bytes travel as transferred ArrayBuffers). */
 export const MAX_MESSAGE_CHARS = 256 * 1024;
