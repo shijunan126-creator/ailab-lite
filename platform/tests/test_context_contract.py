@@ -194,7 +194,8 @@ def test_one_valid_nonconverging_compaction_pauses_without_a_second_summary(monk
     for _ in range(2):
         with pytest.raises(BudgetPause):
             asyncio.run(loop._compact_work_context("r", turn, model, "m", []))
-    assert state["context_epoch"] == 3
+    assert state["context_epoch"] == 2
+    assert state["failed_compaction_digest"]
     assert len(model.seen_messages) == 1
 
 

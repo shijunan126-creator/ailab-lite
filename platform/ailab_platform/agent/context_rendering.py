@@ -90,7 +90,11 @@ def loaded_modules(messages):
     for message in messages:
         text = message.get("content")
         if message.get("role") == "system" and isinstance(text, str) and text.startswith("<loaded_modules>\n"):
-            entries.update(tuple(item[key] for key in ("name", "resource", "hash")) for item in json.loads(text.split("\n")[1]))
+            value = json.loads(text.split("\n")[1])
+            entries.update(
+                tuple(item[key] for key in ("name", "resource", "hash"))
+                for item in (value.get("items", []) if isinstance(value, dict) else value)
+            )
     return [dict(zip(("name", "resource", "hash"), item, strict=True)) for item in sorted(entries)]
 
 

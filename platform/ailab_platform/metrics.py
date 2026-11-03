@@ -279,3 +279,14 @@ CONTEXT_OPERATIONAL_TOKENS = Histogram(
 )
 CONTEXT_BARRIER_WAIT_SECONDS = Histogram("ailab_context_barrier_wait_seconds", "Synchronous barrier validation time", buckets=_FAST)
 CONTEXT_BARRIER_PENDING_TOOLS = Histogram("ailab_context_barrier_pending_tools", "Pending tools at barrier", buckets=(0, 1, 2, 4, 8, 16))
+
+CONTEXT_COMPONENT_TOKENS = Histogram(
+    "ailab_context_component_tokens", "Staged component estimates", ("scope", "component"), buckets=(256, 1024, 6000, 30000, 64000)
+)
+CONTEXT_COMPACTION_TOTALS = Histogram(
+    "ailab_context_compaction_total_tokens",
+    "Staged whole request estimates",
+    ("scope", "phase"),
+    buckets=(10000, 30000, 48000, 64000, 300000, 1000000),
+)
+CONTEXT_COMPACTION_REASONS = Counter("ailab_context_compaction_reasons_total", "Post-boundary policy outcomes", ("scope", "reason"))

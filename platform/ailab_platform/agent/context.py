@@ -21,10 +21,9 @@ from ..domain.answer_parts import for_history
 from ..llm import LLMError, llm_for
 from ..model_policy import ModelPolicy, estimator
 from .budgets import ContextPause
+from .context_band import ContextBand, active_users, stage_context
 from .context_protocol import validate_safe_compaction_point
 from .context_rendering import (
-    boundary_messages,
-    loaded_modules,
     operational_context_message,
     parse_summary,
     source_handles,
@@ -171,10 +170,16 @@ class ContextManager:
                 validated.append(source_id)
         return revoked
 
-    async def _refresh_boundary_memory(self, run_id, context):
+    async def _refresh_boundary_memory(self, run_id, context, band=None):
         if not hasattr(self.platform, "get_memory_context") or not isinstance(context.get("content"), str):
             return context
-        latest = await self.platform.get_memory_context(run_id)
+        latest = deepcopy(await self.platform.get_memory_context(run_id))
+        if band:
+            while band.cost(memory_prompt(latest)) > band.memory_budget:
+                if latest.get("entries"):
+                    latest["entries"].pop()
+                else:
+                    raise ContextPause("记忆固定结构超过上下文预算，已暂停")
         content = context["content"]
         start = content.find("<ailab_memory>")
         if start >= 0:
@@ -186,6 +191,22 @@ class ContextManager:
             content += memory_prompt(latest)
         self.state["memory_observed"] = latest
         return {**context, "content": content}
+
+    def _band(self, model, run):
+        return ContextBand.for_model(self.catalog().get(model), run.get("context_settings"))
+
+    def _attempt_digest(self, band, messages, runtime, tools):
+        digest = band.digest(self.state.get("context_epoch", 0), messages, runtime, tools)
+        if self.state.get("failed_compaction_digest") == digest:
+            raise ContextPause("相同输入仍超过上下文安全容量，已暂停；请缩小任务范围")
+        return digest
+
+    def _measure_stage(self, staged, scope):
+        for component in ("checkpoint", "runtime", "modules", "recent", "current_input"):
+            metrics.CONTEXT_COMPONENT_TOKENS.labels(scope, component).observe(staged.measurements[f"{component}_tokens"])
+        metrics.CONTEXT_COMPACTION_TOTALS.labels(scope, "before").observe(staged.measurements["before_tokens"])
+        metrics.CONTEXT_COMPACTION_TOTALS.labels(scope, "after").observe(staged.measurements["after_tokens"])
+        metrics.CONTEXT_COMPACTION_REASONS.labels(scope, staged.measurements["reason"]).inc()
 
     async def _assemble_context(self, run_id, run, model, base):
         if len(base) < 2 or base[1].get("role") != "system":
@@ -205,8 +226,12 @@ class ContextManager:
         summary, through = _summary_input(page["summary"]), page["through_run_id"]
         revalidation = _summary_input(list(page.get("summary_evidence") or []))
         pending = []
+        staged_history = None
+        band = self._band(model, run)
 
         def assemble():
+            if staged_history is not None and not pending:
+                return staged_history.messages
             memory = stored_summary_messages(summary)
             runtime = {**self.state}
             if not runtime.get("workspace") and run.get("workspace_restore_key"):
@@ -230,7 +255,7 @@ class ContextManager:
             return prefix
 
         async def compact():
-            nonlocal summary, through, pending, revalidation
+            nonlocal summary, through, pending, revalidation, staged_history
             if not pending:
                 raise LLMError("summary and current input exceed context budget")
             prefix = summary_prefix()
@@ -253,34 +278,48 @@ class ContextManager:
                     evidence.pop()
                     continue
                 raise ContextPause("已有历史无法安全整理，旧进度已保留；请新建对话")
+            attempt_digest = self._attempt_digest(band, [*prefix, fixed[-1]], self.state, context_tools)
             response = await self._summary_response(self.llm or llm_for(model), run_id, run, model, prompt, -1, context_tools)
             try:
                 semantic = parse_summary(response, allowed)
-                # The existing durable JSON envelope carries module metadata; it is
-                # rendered as a separate program-owned block at each new boundary.
-                from ..contracts.context_summary import ReadModule
-
-                semantic.read_modules = [ReadModule(**entry) for entry in loaded_modules(prefix)]
-                new_summary = canonical_summary(semantic)
-                if len(new_summary.encode("utf-8")) > 16000:
-                    raise ValueError("summary and module metadata exceed budget")
             except ValueError as exc:
                 metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
                 raise ContextPause("上下文整理未返回有效摘要，旧进度已保留") from exc
+            memory_before = deepcopy(self.state.get("memory_observed"))
+            try:
+                context = await self._refresh_boundary_memory(run_id, fixed[1], band)
+                staged_history = stage_context(
+                    band,
+                    [fixed[0], context],
+                    semantic,
+                    [*fixed[:-1], *stored_summary_messages(summary), *history_messages(pending)],
+                    self.state,
+                    context_tools,
+                    current=[fixed[-1]],
+                )
+            except ContextPause:
+                self.state["memory_observed"] = memory_before
+                self.state["failed_compaction_digest"] = attempt_digest
+                raise
             await self.platform.save_model_summary(
                 run_id,
                 {
                     "expected_through_run_id": through,
                     "through_run_id": pending[-1]["id"],
-                    "summary": new_summary,
+                    "summary": canonical_summary(staged_history.semantic),
                     "source_epoch": page.get("source_epoch", 0),
                     "revalidation_ids": [item["evidence_id"] for item in evidence],
                 },
             )
             self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
-            summary, through = new_summary, pending[-1]["id"]
+            fixed[1] = context
+            summary, through = canonical_summary(staged_history.semantic), pending[-1]["id"]
+            self.state.pop("failed_compaction_digest", None)
+            self._measure_stage(staged_history, "rebuild")
             count, pending, revalidation = len(pending), [], []
-            await self.runtime._event(run_id, "agent.context_compacted", {"turns": count})
+            await self.runtime._event(
+                run_id, "agent.context_compacted", {"turns": count, "scope": "rebuild", **staged_history.measurements}
+            )
             run.setdefault("context_boundary", "compacted")
             if estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) >= threshold:
                 metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
@@ -313,7 +352,39 @@ class ContextManager:
                 if estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) >= threshold:
                     await compact()
             if not page["has_more"]:
-                return assemble()
+                if staged_history is not None and pending:
+                    semantic = ContextSummary.model_validate_json(summary)
+                    staged_history = stage_context(
+                        band,
+                        fixed[:-1],
+                        semantic,
+                        [*staged_history.messages[:-1], *history_messages(pending)],
+                        self.state,
+                        context_tools,
+                        current=[fixed[-1]],
+                    )
+                    return staged_history.messages
+                assembled = assemble()
+                if summary or pending:
+                    try:
+                        semantic = ContextSummary.model_validate_json(summary) if summary else ContextSummary()
+                    except ValueError:
+                        # Legacy prose must be summarized, never silently dropped.
+                        if pending:
+                            await compact()
+                            return staged_history.messages
+                        raise ContextPause("旧摘要需要重建，已暂停；请新建对话") from None
+                    context = await self._refresh_boundary_memory(run_id, fixed[1], band)
+                    staged = stage_context(
+                        band, [fixed[0], context], semantic, assembled[:-1], self.state, context_tools, current=[fixed[-1]]
+                    )
+                    raw_history = history_messages(pending)
+                    if pending and any(message not in staged.messages for message in raw_history):
+                        await compact()
+                        return staged_history.messages
+                    self._measure_stage(staged, "rebuild")
+                    return staged.messages
+                return assembled
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
         raise LLMError("context pagination limit reached")
 
@@ -343,7 +414,6 @@ class ContextManager:
         if spec is None:
             return [*prior, current]
         policy = ModelPolicy(self.catalog())
-        threshold = policy.compaction_threshold(spec, run.get("context_settings"))
         if not self.should_compact(model, [*prior, current], tools, run.get("context_settings")):
             return [*prior, current]
         instruction = {
@@ -368,6 +438,8 @@ class ContextManager:
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= policy.input_budget(spec):
             metrics.CONTEXT_COMPACTION_FAILURES.labels("input_budget").inc()
             raise ContextPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
+        band = self._band(model, run)
+        attempt_digest = self._attempt_digest(band, [*prior, current], runtime_state or {}, tools)
         response = await self._summary_response(llm, run_id, run, model, prompt, -3, tools)
         try:
             semantic = parse_summary(response, allowed)
@@ -375,18 +447,24 @@ class ContextManager:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
             raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
         operational = {**(runtime_state or {}), "delivered": delivered or {}, "delivery_names": delivery_names or {}}
-        base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), *boundary_messages(semantic, prior, operational)]
-        last_user = next((i for i in range(len(prior) - 1, 1, -1) if prior[i].get("role") == "user"), len(prior))
-        recent = self._compacted_recent(prior[last_user:])
-        if estimator.estimate(model, {"messages": [*base, *recent, current], "tools": tools}) < threshold:
-            base.extend(recent)
-        result = [*base, current]
-        if estimator.estimate(model, {"messages": result, "tools": tools}) >= threshold:
-            metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
-            raise ContextPause("摘要和当前输入超过模型窗口，请缩小任务范围")
-        self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
+        band = self._band(model, run)
+        original = deepcopy(self.state)
+        try:
+            context = await self._refresh_boundary_memory(run_id, prior[1], band)
+            staged = stage_context(
+                band, [prior[0], context], semantic, self._compacted_recent(prior), operational, tools, current=[current]
+            )
+        except ContextPause:
+            self.state.clear()
+            self.state.update(original)
+            self.state["failed_compaction_digest"] = attempt_digest
+            raise
+        self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged.semantic.sources()]
+        self.state["compaction"] = {**staged.measurements, "after": staged.measurements["after_tokens"], "threshold": band.trigger}
+        self.state.pop("failed_compaction_digest", None)
+        self._measure_stage(staged, "parent")
         run["context_boundary"] = "compacted"
-        return result
+        return staged.messages
 
     async def compact(self, run_id, turn, llm, model, offered):
         from .loop import TokenLimit, _token_limit_error
@@ -404,36 +482,15 @@ class ContextManager:
         barrier_started = time.perf_counter()
         metrics.CONTEXT_BARRIER_PENDING_TOOLS.observe(len(state.get("pending") or []))
         try:
-            groups = self.validate_safe_boundary(messages, state)
+            self.validate_safe_boundary(messages, state)
         except ValueError:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("unsafe_barrier").inc()
             raise
         finally:
             metrics.CONTEXT_BARRIER_WAIT_SECONDS.observe(time.perf_counter() - barrier_started)
-        prior = state.get("compaction", {})
-        if prior.get("after", 0) >= threshold and prior.get("threshold") == threshold:
-            raise ContextPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
-        user_index = state.get("user_message_index")
-        user = messages[user_index] if isinstance(user_index, int) and 0 <= user_index < len(messages) else None
-        fixed = [*messages[:2], *([user] if user is not None and user_index >= 2 else [])]
-        # Cost each complete group once; rescanning every suffix would make
-        # planning quadratic in a long tool trace on the small target machine.
-        raw_overhead = estimator.estimate(model, [])
-        costs = [max(0, estimator.estimate(model, messages[start:end]) - raw_overhead) for start, end in groups]
-        remaining = sum(costs)
-        fixed_cost = estimator.estimate(
-            model, {"messages": [*fixed, *boundary_messages(ContextSummary(), messages, state)[1:]], "tools": tools}
-        )
-        cut = None
-        for (start, end), cost in zip(groups, costs, strict=True):
-            remaining -= cost
-            if start < 2 or (user_index is not None and start <= user_index < end):
-                continue
-            cut = end
-            if fixed_cost + remaining + min(2048, spec.max_output_tokens) <= min(int(spec.context_tokens * 0.55), threshold - 1):
-                break
-        if cut is None:
-            raise ContextPause("当前输入和固定上下文无法安全整理，请缩小任务范围")
+        band = self._band(model, turn.run)
+        attempt_digest = self._attempt_digest(band, messages, state, tools)
+        protected = active_users(messages, state.get("user_message_index")) | set(state.get("active_user_indices") or [])
         instruction = {
             "role": "user",
             "content": (
@@ -459,41 +516,41 @@ class ContextManager:
         except ValueError as exc:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
             raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
-        recent = self._compacted_recent(messages[cut:])
-        original = dict(state)
-        context = await self._refresh_boundary_memory(run_id, messages[1])
-        base = [messages[0], context]
-        blocks = boundary_messages(semantic, messages, state)
-        if user is not None and user_index >= 2 and user_index < cut:
-            base.append(user)
-            next_user_index = 2
-        elif isinstance(user_index, int) and user_index >= cut:
-            next_user_index = len(base) + len(blocks) + user_index - cut
-        else:
-            next_user_index = user_index
-        replacement = [*base, *blocks, *recent]
-        after = estimator.estimate(model, {"messages": replacement, "tools": tools})
-        metrics.CONTEXT_CHECKPOINT_TOKENS.observe(estimator.estimate(model, blocks[:1]))
-        metrics.CONTEXT_OPERATIONAL_TOKENS.observe(estimator.estimate(model, blocks[1:]))
-        metrics.CONTEXT_RECENT_TOKENS.observe(estimator.estimate(model, recent))
+        original = deepcopy(state)
         original_messages = list(messages)
-        messages[:] = replacement
-        state["user_message_index"] = next_user_index
-        state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
-        state["compaction"] = {"after": after, "limit": limit, "threshold": threshold, "summary": canonical_summary(semantic)}
+        try:
+            context = await self._refresh_boundary_memory(run_id, messages[1], band)
+            staged = stage_context(band, [messages[0], context], semantic, self._compacted_recent(messages), state, tools, protected)
+        except ContextPause:
+            state.clear()
+            state.update(original)
+            state["messages"] = messages
+            state["failed_compaction_digest"] = attempt_digest
+            raise
+        messages[:] = staged.messages
+        state["user_message_index"] = staged.current_indices[0] if staged.current_indices else None
+        state["active_user_indices"] = staged.current_indices
+        state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged.semantic.sources()]
+        state["compaction"] = {
+            **staged.measurements,
+            "after": staged.measurements["after_tokens"],
+            "limit": limit,
+            "threshold": threshold,
+            "summary": canonical_summary(staged.semantic),
+        }
+        state.pop("failed_compaction_digest", None)
         state.pop("compaction_work", None)
         try:
-            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted"})
+            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted", **staged.measurements})
         except Exception:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("persistence").inc()
             messages[:] = original_messages
             state.clear()
             state.update(original)
+            state["messages"] = messages
             raise
-        await self.runtime._event(run_id, "agent.context_compacted", {"scope": "run", "messages": cut - 2})
-        if after >= threshold:
-            metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
-            raise ContextPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
+        self._measure_stage(staged, "run")
+        await self.runtime._event(run_id, "agent.context_compacted", {"scope": "run", **staged.measurements})
         if turn.run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
             raise TokenLimit(_token_limit_error(turn.run))
 
@@ -506,8 +563,11 @@ class ContextManager:
             # A capacity pause can follow a successful frozen checkpoint. That
             # committed state is authoritative; only uncommitted assembly rolls back.
             if self.runtime._steps.get(self.run_id, 0) == original_step:
+                failed_digest = self.state.get("failed_compaction_digest")
                 self.state.clear()
                 self.state.update(original)
+                if failed_digest:
+                    self.state["failed_compaction_digest"] = failed_digest
                 turn.messages = self.state["messages"]
             raise
 
@@ -615,7 +675,7 @@ class ContextManager:
             if not legacy:
                 state["user_message_index"] = len(state["messages"]) - 1
             if reason := run.get("context_boundary"):
-                await self.runtime._event(run_id, "agent.context_boundary", {"reason": reason})
+                await self.runtime._event(run_id, "agent.context_boundary", {"reason": reason, **state.get("compaction", {})})
             else:
                 await self.runtime._checkpoint(run_id, turn)
         state["context_abi_version"] = CONTEXT_ABI_VERSION

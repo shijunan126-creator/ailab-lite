@@ -39,10 +39,11 @@ from ..telemetry import span
 from ..title_text import normalize_title
 from . import discovery, net_tools, subtasks, watchdog
 from .background_exec import background_exec
-from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, QuotaPause, WorkBudget
+from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, QuotaPause, WorkBudget
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
 from .context import _summary_input as _summary_input
+from .context_band import ContextBand, admit_tool_result, batch_budget
 from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
@@ -1256,6 +1257,7 @@ class AgentLoop:
             )
 
     async def _run_tool(self, turn: _Turn, run_id: str, call, step: int) -> dict:
+        image_start = len(self._states[run_id].get("pending_image_inputs", []))
         await self._event(run_id, "agent.tool_call", {"step": step, "name": call.name, "arguments": _clip_arguments(call.arguments)})
         tool = metrics.tool_label(call.name)
         tool_started = time.perf_counter()
@@ -1306,19 +1308,6 @@ class AgentLoop:
                 if module_identity(result) in self._module_views.setdefault(run_id, ModuleVisibility()).read(turn.messages):
                     result = {k: v for k, v in result.items() if k != "skill"}
                     result.update(already_loaded=True, note="already shown above；正文已在当前上下文中")
-                else:
-                    spec = get_catalog().get(turn.run.get("model"))
-                    if spec:
-                        # Include all prior results in this pending group and leave room for compaction and output.
-                        candidate = [*turn.messages, tool_result_message(call.id, call.name, result)]
-                        tokens = estimator.estimate(spec.id, {"messages": candidate, "tools": current_catalog})
-                        reserve = min(2048, spec.max_output_tokens) + 256
-                        if tokens + reserve >= ModelPolicy.input_budget(spec):
-                            result = {
-                                "ok": False,
-                                "error": "cannot fit: compact first；整文件无法放入剩余上下文，请先压缩，不能截断",
-                                "name": wanted,
-                            }
             elif call.name == "load_skill" and call.arguments.get("resource") is not None:
                 raise ToolError("resource is unavailable for this skill")
             elif wanted and _full_skill_visible(turn, wanted):
@@ -1558,6 +1547,23 @@ class AgentLoop:
             if isinstance(path, str):
                 turn.delivered[path] = {"sha256": result["sha256"], "size": result["size"]}
                 self._states[run_id].setdefault("delivery_names", {})[path] = result.get("filename") or path.rsplit("/", 1)[-1]
+        if call.name in {"view_attachment", "extract_text"}:
+            from .stuck import fingerprint
+
+            self._states[run_id].setdefault("file_wait_deadlines", {}).pop(
+                fingerprint({"name": call.name, "arguments": call.arguments}), None
+            )
+        spec = get_catalog().get(turn.run.get("model"))
+        if spec:
+            result = admit_tool_result(
+                ContextBand.for_model(spec, turn.run.get("context_settings")),
+                turn.messages,
+                _tools_for_run(turn.run),
+                self._states[run_id],
+                call,
+                result,
+                image_start=image_start,
+            )
         return result
 
     async def _apply_steers(self, run_id: str, turn: _Turn, *, pending: bool | None = None) -> None:
@@ -1583,6 +1589,7 @@ class AgentLoop:
                 }
                 content = await self._user_content(run_id, message_run, turn.run.get("model"))
                 turn.run.setdefault("_image_files", {}).update(message_run.get("_image_files") or {})
+                state.setdefault("active_user_indices", []).append(len(state["messages"]))
                 self._context(run_id).append({"role": "user", "content": content})
                 applied.append(row["id"])
                 required = [(item["name"], "picked", item.get("file_id")) for item in selections]
@@ -1825,11 +1832,14 @@ class AgentLoop:
         elif call.name == "update_plan":
             steps = call.arguments.get("steps")
             if (
-                not isinstance(steps, list)
+                set(call.arguments) != {"steps"}
+                or not isinstance(steps, list)
                 or len(steps) > 100
                 or not all(
                     isinstance(s, dict)
+                    and set(s) == {"id", "title", "status"}
                     and isinstance(s.get("id"), str)
+                    and 1 <= len(s["id"]) <= 64
                     and isinstance(s.get("title"), str)
                     and len(s["title"]) <= 500
                     and s.get("status") in {"pending", "running", "done", "skipped", "failed"}
@@ -2135,6 +2145,13 @@ class AgentLoop:
                         assistant["reasoning_content"] = response.reasoning_content
                         turn.thinking.append(response.reasoning_content)
                         turn.thinking_seconds += response.thinking_seconds
+                    if calls and spec:
+                        band = ContextBand.for_model(spec, run.get("context_settings"))
+                        placeholders = [tool_result_message(c.id, c.name, {"ok": False, "reason": "batch_budget"}) for c in calls]
+                        if band.cost([assistant, *placeholders]) > batch_budget(band, messages, offered, state):
+                            messages.extend([assistant, *placeholders])
+                            await self._checkpoint(run_id, turn)
+                            raise ContextPause("工具参数超过完整批次预算，未执行工具；请缩小任务范围")
                     messages.append(assistant)
                     if response.content:
                         state["final_summary"] = response.content
@@ -2149,7 +2166,18 @@ class AgentLoop:
                     data = state["pending"][0]
                     call = ToolCall(data["id"], data["name"], data["arguments"])
                     invocation = f"{step}:{data['ordinal']}"
+                    image_start = len(state.get("pending_image_inputs", []))
                     result = await self._durable_tool(turn, run_id, call, step, invocation)
+                    if spec:
+                        result = admit_tool_result(
+                            ContextBand.for_model(spec, run.get("context_settings")),
+                            messages,
+                            offered,
+                            state,
+                            call,
+                            result,
+                            image_start=image_start,
+                        )
                     if call.name in {"web_search", "read_url"}:
                         seen = {source["url"] for source in state["sources"]}
                         for source in web_sources(result):

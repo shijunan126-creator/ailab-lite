@@ -1825,3 +1825,69 @@ def test_summary_wire_failure_preserves_epoch_and_running_handle(monkeypatch, fa
     assert all(request["messages"][:-1] == before["messages"] for request in requests)
     assert all(request["max_tokens"] >= 4096 for request in requests)
     assert not any(kind == "agent.context_boundary" for kind, _ in loop.platform.events)
+
+
+@pytest.mark.parametrize("scope", ["run", "parent", "rebuild"])
+def test_band_boundary_wire_changes_are_confined_to_new_epoch(monkeypatch, scope):
+    from ailab_platform.agent.context_band import ContextBand
+    from tests.test_context_band import CURRENT, PREFIX, fixture
+
+    spec = ModelSpec("band", "band", provider="mock", context_tokens=64000, max_output_tokens=8192, capabilities={"tools"})
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, *args, **kwargs):
+            return {
+                "summary": "",
+                "through_run_id": None,
+                "history": [{"id": str(i), "prompt": "汉" * 1900, "reply": "reply"} for i in range(32)],
+                "has_more": False,
+            }
+
+        async def save_model_summary(self, *args):
+            pass
+
+    with scripted_server(
+        [{"content": canonical_summary(ContextSummary(objective="checkpoint"))}, {"content": "first"}, {"content": "second"}]
+    ) as (url, requests):
+        loop = AgentLoop(platform=Platform(), llm=ModelTransport(url))
+        messages = fixture(64000)
+        original = copy.deepcopy(messages)
+        state = {**fresh_state(), "messages": messages, "user_message_index": 2}
+        loop._states["r"] = state
+        run = {"model": "band", "_attempt_id": "a", "_fixed_catalog": tools}
+        manager = loop._context("r")
+
+        async def checkpoint(*args):
+            pass
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+
+        async def exercise():
+            nonlocal messages
+            if scope == "run":
+                await manager.compact("r", SimpleNamespace(messages=messages, run=run), loop.llm, "band", tools)
+            elif scope == "parent":
+                messages = await manager._compact_parent_context("r", run, loop.llm, "band", messages, CURRENT, tools)
+            else:
+                messages = await manager._assemble_context("r", run, "band", [*PREFIX, CURRENT])
+            await loop._call_model(loop.llm, "r", run, "band", messages, 1, tools=tools)
+            messages.extend([{"role": "assistant", "content": "first"}, {"role": "user", "content": "continue"}])
+            await loop._call_model(loop.llm, "r", run, "band", messages, 2, tools=tools)
+
+        asyncio.run(exercise())
+    assert len(requests) == 3
+    if scope != "rebuild":
+        assert requests[0]["messages"][:-1] == original  # summary is an exact extension of the old epoch
+    assert requests[1]["tools"] == requests[0]["tools"] == requests[2]["tools"] == tools
+    assert requests[0]["tool_choice"] == requests[1]["tool_choice"] == requests[2]["tool_choice"] == "auto"
+    assert requests[1]["messages"][:2] == PREFIX
+    assert ContextBand.for_model(spec).cost({"messages": requests[1]["messages"], "tools": tools}) <= 48000
+    assert_extension(requests[1], requests[2])
+    # Every intentional replacement is boundary-owned: bounded semantic/runtime/module
+    # blocks, current-user placement, selected complete raw groups, refreshed memory.
+    # No tool-schema, tool-choice or reasoning-policy change is used to make it fit.
+    assert {key: value for key, value in requests[1].items() if key not in {"messages", "max_tokens"}} == {
+        key: value for key, value in requests[2].items() if key not in {"messages", "max_tokens"}
+    }
