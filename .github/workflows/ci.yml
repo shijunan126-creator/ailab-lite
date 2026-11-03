@@ -288,8 +288,8 @@ jobs:
             sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/apt-mirrors.txt
           fi
           playwright install --with-deps chromium
-          # Chat vision admission and the paged-preview contract need real Office-to-PDF rendering.
-          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-impress poppler-utils fonts-noto-cjk
+          # Real page previews need Writer/Impress; workspace XLSX fallback recalculation also needs Calc.
+          sudo apt-get install -y --no-install-recommends libreoffice-writer libreoffice-impress libreoffice-calc poppler-utils fonts-noto-cjk
       - name: Browser tests (includes Portal tests/build)
         working-directory: platform
         run: pytest e2e -ra --durations=10 --junitxml=test-results/e2e.xml

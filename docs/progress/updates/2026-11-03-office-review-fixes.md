@@ -43,3 +43,10 @@
 ## 发布授权（2026-11-03）
 
 用户追加授权本线程全部修改提PR、最终CI绿后合并及增量部署最新main。发布前fetch确认origin/main仍为8cbc216，56个产品/测试文件摘要未变化；无依赖/迁移变动。后端/Portal和Office技能包需更新，其他运行时/服务复用；视图存储格式统一切换API版本，新Portal先兼容上线。部署不追加备份、测试套件、浏览器或真模型验收，只记录构建/启动结果；实际merge/deploy状态以current及本机私有记录为准。
+
+
+## PR #149 Linux CI依赖补齐
+
+最终head `93a4611`的CI run `41573264218`：E2E 180 passed / 2 failed / 6 skipped，1002.29秒；其余Python/质量/真实组件合同均成功。失败都是Work的XLSX服务器回退（直接准入回退、握手后renderer失败回退），trace分别显示真实workspace/preview返回422，Broker相应调用约1.4秒结束，非等待/截图超时。安装日志只有Writer/Impress/Draw，没有Calc；`render_preview.sheets(recalculate=True)`在发现soffice后必须使用Calc过滤器重新导出XLSX。本机完整LibreOffice包含Calc，因此本地未暴露该CI环境缺口。
+
+修复只为E2E runner补`libreoffice-calc`；不改产品、断言、超时或重试，不将其当成旧活动工作区间歇失败的根因。保留CI artifact和下载的关键日志/trace到复核结论明确；不提交原始输出。最终CI复核待运行，绿后继续merge和已授权增量部署。

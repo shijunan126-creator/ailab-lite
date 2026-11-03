@@ -1195,3 +1195,5 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 - frame ready只证明握手完成，load/prepare/renderer捕获的终态错误必须显式桥接给宿主；全局error监听收不到被setFailure吞掉的异常。索引unsupported的E2E不能证明握手后失败也会回退。
 - fetch abort使客户端Promise先结算，不会撤销同步API中的授权/解析；finally追加DELETE仍可早于旧PUT落地。关闭/选区排序必须由服务端原子generation/sequence围栏和有界关闭标记保证，客户端双DELETE不能替代。最小复现与方案见[独立报告](docs/reviews/2026-11-03-office-sidebar-independent-review.md)；后续已用begin/commit/close围栏、新view绑定身份及终态消息[修复验证](docs/progress/updates/2026-11-03-office-review-fixes.md)，保留这条作为不可依赖客户端abort的原因。
+
+- Linux mock E2E只装Writer/Impress仍会使新Work XLSX回退失败：render_preview检测到soffice后会用Calc重算/导出XLSX，必须同时安装libreoffice-calc。不能因soffice存在就认为所有格式可转换；Mac完整Office包会掩盖这个缺口。见[PR149修复记录](docs/progress/updates/2026-11-03-office-review-fixes.md#pr-149-linux-ci依赖补齐)。
