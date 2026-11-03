@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import io
 import json
-import shutil
 
+import pytest
+from fastapi import HTTPException
 from openpyxl import Workbook
 
 from ailab_platform.adapters.lease_store_memory import MemoryLeaseStore
@@ -83,38 +84,75 @@ def test_a_broken_snapshot_costs_continuity_not_the_turn(tmp_path) -> None:
     assert manager.exec(lease["lease_id"], "echo ok").stdout.strip() == "ok"
 
 
-def test_previews_are_rendered_once_per_change(tmp_path) -> None:
-    manager, _, storage = _manager(tmp_path)
+@pytest.mark.parametrize("extension", ["docx", "xlsx", "pptx", "pdf"])
+def test_discovery_announces_sources_without_rendering_or_prewarming(tmp_path, monkeypatch, extension):
+    manager, _, _ = _manager(tmp_path)
     lease = manager.create("run_p")["lease_id"]
     assert manager.refresh_previews(lease) == []
+    path = f"/workspace/outputs/source.{extension}"
+    manager.put_file(lease, path, b"unfinished document")
+    calls = []
+    original = manager._provider_call
 
-    manager.put_file(lease, "/workspace/outputs/sales.xlsx", _xlsx(100))
+    def record(method, *args, **kwargs):
+        calls.append((method, args))
+        return original(method, *args, **kwargs)
+
+    monkeypatch.setattr(manager, "_provider_call", record)
+    monkeypatch.setattr(manager, "request_prewarm", lambda: pytest.fail("discovery must not prewarm render sandboxes"))
     [first] = manager.refresh_previews(lease)
-    assert first["filename"] == "sales.xlsx" and first["kind"] == "sheets" and first["version"] == 1
+    assert first == {"filename": f"source.{extension}", "path": path, "kind": "native", "version": 1}
+    assert manager.refresh_previews(lease) == []
+    assert not any(method in {"put_file", "get_file", "get_file_to_path"} for method, _ in calls)
+    assert not any("render_preview" in str(args) for _, args in calls)
+    assert not list((tmp_path / "store").rglob("*.pdf"))
+    manager.put_file(lease, path, b"changed document")
+    assert manager.refresh_previews(lease)[0]["version"] == 2
+
+
+def test_fallback_renders_once_per_content_and_refreshes_after_change(tmp_path, monkeypatch):
+    from ailab_platform.broker.viewer import workspace
+
+    manager, _, storage = _manager(tmp_path)
+    lease = manager.create("run_p")["lease_id"]
+    path = "/workspace/outputs/sales.xlsx"
+    manager.put_file(lease, path, _xlsx(100))
+    manager.refresh_previews(lease)
+    first = workspace(manager, "run_p", "user_test", "outputs/sales.xlsx", "preview")
+    assert first["kind"] == "sheets" and first["version"] == 2
     data = json.loads(storage.get_bytes(f"previews/run_p/{first['data']}"))
     cells = [[c["v"] for c in row] for row in data["sheets"][0]["rows"]]
     assert cells[1] == ["华东", "100"]
-    assert manager.refresh_previews(lease) == []  # unchanged: nothing to do
+    original = manager._render_preview
+    monkeypatch.setattr(manager, "_render_preview", lambda *_: pytest.fail("unchanged fallback rendered twice"))
+    prewarm = manager.request_prewarm
+    monkeypatch.setattr(manager, "request_prewarm", lambda: pytest.fail("cached fallback must not prewarm"))
+    assert workspace(manager, "run_p", "user_test", "outputs/sales.xlsx", "preview") == first
+    monkeypatch.setattr(manager, "_render_preview", original)
+    monkeypatch.setattr(manager, "request_prewarm", prewarm)
+    manager.put_file(lease, path, _xlsx(250))
+    second = workspace(manager, "run_p", "user_test", "outputs/sales.xlsx", "preview")
+    assert second["version"] == 3 and second["data"] != first["data"]
+    # Immutable old assets retain the first version's values.
+    assert json.loads(storage.get_bytes(f"previews/run_p/{first['data']}")) == data
+    with pytest.raises(HTTPException) as error:
+        workspace(manager, "run_p", "other-user", "outputs/sales.xlsx", "preview")
+    assert error.value.status_code == 410
+    with pytest.raises(HTTPException) as error:
+        workspace(manager, "run_p", "user_test", "../sales.xlsx", "preview")
+    assert error.value.status_code == 422
 
-    manager.put_file(lease, "/workspace/outputs/sales.xlsx", _xlsx(250) + b"")
-    manager.exec(lease, "touch -d '+1 minute' /workspace/outputs/sales.xlsx")
-    [second] = manager.refresh_previews(lease)
-    assert second["version"] == 2
-    assert not storage.exists("workspaces/run_p.tgz")
 
+def test_failed_fallback_releases_temporary_files_and_keeps_discovery_usable(tmp_path, monkeypatch):
+    from ailab_platform.broker.viewer import workspace
 
-def test_a_preview_that_cannot_be_rendered_is_reported_not_retried(tmp_path, monkeypatch) -> None:
-    # Keep the GNU find selected by the test environment (on macOS it is outside /usr/bin), while excluding LibreOffice.
-    tools = tmp_path / "tools"
-    tools.mkdir()
-    (tools / "find").symlink_to(shutil.which("find"))
-    monkeypatch.setenv("PATH", f"{tools}:/usr/bin:/bin")
     manager, _, _ = _manager(tmp_path)
     lease = manager.create("run_e")["lease_id"]
-    manager.put_file(lease, "/workspace/outputs/deck.pptx", b"not really a deck")
-    [failed] = manager.refresh_previews(lease)
-    assert failed["filename"] == "deck.pptx" and failed["error"]
-    assert manager.refresh_previews(lease) == []
+    manager.put_file(lease, "/workspace/outputs/sales.xlsx", b"invalid workbook")
+    failed = workspace(manager, "run_e", "user_test", "outputs/sales.xlsx", "preview")
+    assert failed["error"]
+    assert not any("/.ailab/viewer-" in f["path"] or "/.ailab/preview/" in f["path"] for f in manager.list_files(lease, "/workspace"))
+    assert manager.refresh_previews(lease)[0]["kind"] == "native"
 
 
 def test_preview_cache_update_preserves_concurrent_heartbeat(tmp_path, monkeypatch) -> None:
@@ -144,6 +182,8 @@ def test_office_previews_are_kept_as_a_pdf_for_pdfjs(tmp_path) -> None:
     payload = io.BytesIO()
     writer.write(payload)
     manager.put_file(lease, "/workspace/outputs/report.pdf", payload.getvalue())
-    [preview] = manager.refresh_previews(lease)
+    from ailab_platform.broker.viewer import workspace
+
+    preview = workspace(manager, "run_pdf", "user_test", "outputs/report.pdf", "preview")
     assert preview["kind"] == "pdf" and preview["pdf"].endswith("/document.pdf")
     assert storage.get_bytes(f"previews/run_pdf/{preview['pdf']}").startswith(b"%PDF")

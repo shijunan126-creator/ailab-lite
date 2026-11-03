@@ -1,3 +1,9 @@
+## 2026-11-03 Viewer 完整性审查
+
+- 工具注册与联通不代表模型指导接通：核对实际load_skill返回，四格式viewer可能仍带早期“planned/不可用”提示；修有序patch并重建，不单改生成文件。查看状态TTL也要核对静止在线续期，版本检查轮询不等于续期。见[审查](docs/reviews/2026-11-03-office-sidebar-completeness.md)。
+- 续期频率低不等于后端成本低：Work视图的完整授权路径会经Broker复制/hash文件；重复且未过期的同快照续期可只复核归属/Run，首次/变化/过期和消费时仍校验版本。前端PUT须有deadline与隐藏期间的去抖守卫，避免挂起请求阻塞后续选区或隐藏后继续更新；关闭也要处理已在途请求迟到。见[修复记录](docs/progress/updates/2026-11-03-office-sidebar-fixes.md)。
+- 测试原始日志留在仓库外，但必须读完失败并保留必要根因摘要后再清理；不能因最后一次通过就删去先前失败证据。pytest中文参数ID通常转义，定点选择先确认实际collected/nodeid，避免`-k 工作`只选到其他无参数用例。
+
 ## 2026-11-03 Viewer 资产与性能
 
 - 派生preview.version不是原生文档内容身份。用它作iframe的React key会在同字节渲染结果迟到时打断capture；按来源稳定挂载，revision触发可取消的索引复核，只有内容hash变化才换frame。共享用户的上传回归应读取实际附件身份，不能假定未被冲突改名。
@@ -1177,3 +1183,17 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 定时任务的跳过（上一轮未结束）必须排在“无人理会”判断之后才不会永远跳过：等待回复/中断超过 7 天直接按无人查看暂停。
 - API 事件循环上不能做阻塞工作（SQLAlchemy/SQLite、`user_critical_section` 的 RLock、存储 I/O）。SQLite 下会死锁：线程池里的同步请求持写锁（如 `fence_attempt` 的 UPDATE），事务要等依赖 teardown 关闭会话才释放，而 teardown 需要事件循环调度；此时协程在循环上等 SQLite，双方卡满 30 s busy timeout（CI 中 async `login` 与 `/internal/runs/{id}/memory` 撞上）。async 处理器和 lifespan 后台协程里的数据库/锁整段放进 `run_in_threadpool`/`asyncio.to_thread`，测试套件有守卫：在服务事件循环上执行 SQL 即失败。
 - 查询数预算测试若在 engine 上挂监听，只计调用线程的语句（`threading.get_ident()`），否则会算进前面测试遗留的后台循环。
+
+## 2026-11-03 原生优先与按需分页
+
+- 只把UI换成native不会省后台导出：检查API ready/delivery的request_ready_preview及Broker refresh_previews。四格式常规文件跳过eager分页，Work只公告native源；刷新不进入render_activity，否则finally的request_prewarm仍会唤醒服务器渲染预热。OCR/模板/成品检查继续独立服务端路径。
+- Work回退必须先快照再按hash/格式/renderer版本缓存，消费时重验当前源；不可把文件名或mtime当内容缓存身份。数字资产版本先预留，失败后也不得重用URL。前端换版本等待时清除旧回退画面，避免旧内容被当成新版。
+- 原生XLSX仅一张表时不会渲染sheet tabs，E2E应等待实际grid canvas。平台默认销售表含图表，ExcelJS reader当前可稳定报`reading anchors`并走正确的sheets回退；不能把“必须native”的断言套在允许解析失败回退的用例上。基本四格式native入口和复杂格式回退分别保留真实链路覆盖。
+- 本机一次性PG用`initdb --no-locale`时须显式`--encoding=UTF8`，或createdb从template0以UTF8建库；SQL_ASCII使psycopg的server_version返回bytes，SQLAlchemy初始化在conftest就失败，不应当成产品测试失败或改连接代码。
+
+## 2026-11-03 独立审查：viewer失败与迟到上报
+
+- frame ready只证明握手完成，load/prepare/renderer捕获的终态错误必须显式桥接给宿主；全局error监听收不到被setFailure吞掉的异常。索引unsupported的E2E不能证明握手后失败也会回退。
+- fetch abort使客户端Promise先结算，不会撤销同步API中的授权/解析；finally追加DELETE仍可早于旧PUT落地。关闭/选区排序必须由服务端原子generation/sequence围栏和有界关闭标记保证，客户端双DELETE不能替代。最小复现与方案见[独立报告](docs/reviews/2026-11-03-office-sidebar-independent-review.md)；后续已用begin/commit/close围栏、新view绑定身份及终态消息[修复验证](docs/progress/updates/2026-11-03-office-review-fixes.md)，保留这条作为不可依赖客户端abort的原因。
+
+- Linux mock E2E只装Writer/Impress仍会使新Work XLSX回退失败：render_preview检测到soffice后会用Calc重算/导出XLSX，必须同时安装libreoffice-calc。不能因soffice存在就认为所有格式可转换；Mac完整Office包会掩盖这个缺口。见[PR149修复记录](docs/progress/updates/2026-11-03-office-review-fixes.md#pr-149-linux-ci依赖补齐)。

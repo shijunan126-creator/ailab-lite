@@ -90,6 +90,16 @@ def content(
     return request_workspace(db, user, run_id, path, "content")
 
 
+@router.get("/v1/runs/{run_id}/workspace/preview")
+def preview(
+    run_id: str, path: str = Query(min_length=1, max_length=1000), user: User = Depends(current_user), db: Session = Depends(get_db)
+):
+    manifest = request_workspace(db, user, run_id, path, "preview")
+    if manifest.get("error"):
+        raise HTTPException(422, "预览生成失败")
+    return manifest
+
+
 def workspace_reference(db, user, ref):
     index = request_workspace(db, user, ref.run_id, ref.path, "check", [ref.at], ref.version)
     if index.get("version") != ref.version:

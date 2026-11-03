@@ -185,6 +185,7 @@ class LeaseManager:
         self._fenced = False
         self._inflight: set[str] = set()
         self._pending_runs: set[str] = set()
+        self._preview_lock = threading.Lock()
         self._render_jobs = 0
         self._render_waiters = 0
         self._render_tickets: dict[str, tuple[str, int]] = {}
@@ -1003,35 +1004,48 @@ class LeaseManager:
 
     @_operation
     def refresh_previews(self, lease_id: str) -> list[dict]:
-        lease = self._load(lease_id)
-        with self.render_activity(lease["user_id"], priority=2):
+        # Discovery must not reserve render capacity or replenish warm render sandboxes.
+        with self._preview_lock:
             return self._refresh_previews(lease_id)
 
     def _refresh_previews(self, lease_id: str) -> list[dict]:
-        """Render previews of office files in /workspace/outputs that are new or changed since the last call.
+        """Announce changed native-viewer sources without parsing, copying or exporting their contents.
 
-        Pages become JPEGs and spreadsheets a JSON of cell values, stored under previews/<run>/<n>/ where the
-        API serves them to the run's owner. Returns one manifest per rendered file (or one with an "error").
+        The browser opens the owner-bound source. Server previews are rendered only on explicit fallback.
         """
         lease = self._load(lease_id)
-        sandbox_id, run_id = lease["sandbox_id"], lease["run_id"]
+        sandbox_id = lease["sandbox_id"]
         current = self._fingerprints(sandbox_id)
         seen: dict[str, str] = lease.get("preview_fp") or {}
         changed = [p for p, fp in sorted(current.items()) if seen.get(p) != fp][:MAX_PREVIEWS_PER_CALL]
         if not changed:
             return []
-        if not lease.get("preview_tool"):
-            self._provider_call("put_file", sandbox_id, PREVIEW_SCRIPT, RENDER_PREVIEW.read_bytes())
-            lease["preview_tool"] = True
         manifests = []
         for path in changed:
             seq = int(lease.get("preview_seq", 0)) + 1
             lease["preview_seq"] = seq
-            seen[path] = current[path]  # even when rendering fails: do not retry the same bytes forever
-            outdir = f"{TOOL_DIR}/preview/{seq}"
+            seen[path] = current[path]
+            manifests.append({"filename": Path(path).name, "path": path, "version": seq, "kind": "native"})
+        lease["preview_fp"] = seen
+        with self._stripe(lease_id):
+            # Discovery does not block heartbeats. Merge only preview fields into
+            # the latest lease version, preserving renew/release decisions.
+            latest = self._load(lease_id)
+            latest.update({key: lease[key] for key in ("preview_fp", "preview_seq") if key in lease})
+            self._provider_call("update_metadata", latest["provider_ref"], self._metadata(latest))
+            self._save(latest)
+        return manifests
+
+    def _render_preview(self, lease: dict, path: str, seq: int) -> dict:
+        sandbox_id, run_id = lease["sandbox_id"], lease["run_id"]
+        self._provider_call("put_file", sandbox_id, PREVIEW_SCRIPT, RENDER_PREVIEW.read_bytes())
+        outdir = f"{TOOL_DIR}/preview/{seq}"
+        try:
             filename = Path(path).name
             started = time.perf_counter()
-            res = self._provider_call("exec", sandbox_id, f"python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir} --pdf", 300)
+            res = self._provider_call(
+                "exec", sandbox_id, f"timeout -k 2 65s python {PREVIEW_SCRIPT} {shlex.quote(path)} {outdir} --pdf", 70
+            )
             try:
                 result = json.loads((res.stdout.strip().splitlines() or ["{}"])[-1])
             except json.JSONDecodeError:
@@ -1085,17 +1099,36 @@ class LeaseManager:
                 log.warning("storing preview %s of %s failed", seq, path, exc_info=True)
                 manifest["error"] = f"could not store the preview: {exc}"[:300]
             manifest["seconds"] = round(time.perf_counter() - started, 1)
-            self._provider_call("exec", sandbox_id, f"rm -rf {outdir}", 30)
-            manifests.append(manifest)
-        lease["preview_fp"] = seen
-        with self._stripe(lease_id):
-            # Rendering does not block heartbeats. Merge only preview fields into
-            # the latest lease version, preserving renew/release decisions.
-            latest = self._load(lease_id)
-            latest.update({key: lease[key] for key in ("preview_fp", "preview_seq", "preview_tool") if key in lease})
-            self._provider_call("update_metadata", latest["provider_ref"], self._metadata(latest))
-            self._save(latest)
-        return manifests
+            return manifest
+        finally:
+            self._provider_call("exec", sandbox_id, f"rm -rf {outdir}", 5)
+
+    @_operation
+    def render_workspace_preview(self, lease_id: str, snapshot: str, filename: str, version: str) -> dict:
+        """Render an immutable authorized snapshot only after the browser needs its fallback."""
+        lease = self._load(lease_id)
+        revision = hashlib.sha256(RENDER_PREVIEW.read_bytes() + str(lease.get("spec", {}).get("image", "")).encode()).hexdigest()[:20]
+        key = f"previews/{lease['run_id']}/fallback/{version}-{Path(filename).suffix.lower()}-{revision}.json"
+        if self.storage.exists(key):
+            return {**json.loads(self.storage.get_bytes(key)), "filename": filename}
+        with self.render_activity(lease["user_id"], priority=1, wait_seconds=2):
+            if self.storage.exists(key):
+                return {**json.loads(self.storage.get_bytes(key)), "filename": filename}
+            # Reserve before rendering: failed transfers may leave immutable assets,
+            # and a later render must never overwrite their URLs with different bytes.
+            with self._preview_lock, self._stripe(lease_id):
+                latest = self._load(lease_id)
+                seq = int(latest.get("preview_seq", 0)) + 1
+                latest["preview_seq"] = seq
+                self._provider_call("update_metadata", latest["provider_ref"], self._metadata(latest))
+                self._save(latest)
+            manifest = self._render_preview(latest, snapshot, seq)
+            manifest.update(filename=filename)
+            manifest.pop("path", None)
+            # A failed dependency may recover by the next explicit open.
+            if not manifest.get("error"):
+                self.storage.put_bytes(key, json.dumps(manifest).encode(), "application/json")
+            return manifest
 
     def _finish(self, lease: dict, state: str, reason: str) -> None:
         lease.update(state=state, reason=reason, closed_at=datetime.now(UTC).isoformat())

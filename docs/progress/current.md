@@ -1,3 +1,29 @@
+# 办公侧栏与原生预览：PR和部署（2026-11-03）
+
+- 当前分支`t3/sidebar-office-file-features`，发布前已fetch核对`origin/main@8cbc216`，产品56文件摘要与[最终修复记录](updates/2026-11-03-office-review-fixes.md)一致。用户本轮明确授权：全部修改提PR，最终CI全绿后合并，增量部署最新main；不做备份或部署后重复测试/浏览器/真模型。
+- 范围：四格式viewer指导/能力清单、侧栏选区续期/直问/骨架、文件库/分享原生优先、Work按需分页，以及独立审查两项P2的终态失败回退与原子视图顺序围栏。最终Portal226项/build、PG/Redis2228 passed/67 skipped、Office26＋2项E2E通过；前序SQLite与整体183项E2E的阶段基线/失败修复详见原记录，不混称相同最终树全量重跑。
+- 已提交[PR #149](https://github.com/shijunan126-creator/ailab-lite/pull/149)，产品提交`0b901bf`；CI首轮E2E 180通过/2失败/6跳过，已定位runner缺Calc导致两项XLSX回退失败，正补齐工作流依赖；其他检查成功。接下来等待修复后最终head的全部CI和审查状态，绿后merge，再固定最新main增量部署。当前尚未merge/部署，产品摘要与本地验证一致；旧活动工作区间歇失败未复现且根因仍未知，真实模型/真实Docker长时边界见记录。私有部署资料只留本机配置目录。
+
+---
+
+# 浏览器原生预览统一（2026-11-03）
+
+- 用户已明确授权落实文件库/聊天原生优先、减少Work重复导出、保留OCR/缩略图/成品视觉检查，并在整合后跑整体E2E、定位遗留间歇失败。分支 `t3/sidebar-office-file-features`，HEAD/base `8cbc216`，保留前序未提交修复，不push/PR/部署。
+- 新的Claude Opus 5.5 medium任务已完成Portal设计实施；主代理完成API/Broker、测试/E2E及文档。文件库/分享复用隔离原生viewer；四格式不提前排分页，Work变化只公告native源；原生失败才由owner-bound workspace/preview固定快照渲染，以内容/renderer版本缓存，缓存命中不触发预热。
+- 追加独立review（gpt-6.1-sol high）曾确认两项P2：握手后的renderer终态错误未触发回退；服务端缺PUT/DELETE顺序围栏，abort后迟到写入可复活view/覆盖新选区。主代理核对代码后认可，根因方案与最小复现见[独立报告](../reviews/2026-11-03-office-sidebar-independent-review.md)。用户已追加授权全部修复；后端begin/commit/close围栏与前端终态失败/新绑定身份均已实施，Portal226项/build、SQLite2111/182、最终PG/Redis2228/67与26＋2项E2E通过，最终Ruff/diff通过（阶段基线区别见记录）。最终基线、阶段区别和边界见[修复记录](updates/2026-11-03-office-review-fixes.md)。两项P2已本地修复/验证，本轮临时服务/输出已清理、七端口无监听；下一步用户审阅实现，发布需另行指令，保留前序未提交更改，不自动发布/部署。
+- 已本地验证：完整SQLite、PG/Redis、Portal211项/类型/build、整体183项E2E及失败定点复核；精确计数/最终53文件基线、两处断言更新错误、PG临时集群编码失败和后续复核，统一见[本轮记录](updates/2026-11-03-browser-native-preview.md)，不把复核冒充第二遍整套全绿。旧活动工作区间歇失败本轮未复现，根因仍未定位；含图表XLSX当前可能回退。本轮临时服务/原始输出已清理，七端口无监听。下一步用户审阅实现；发布需另行指令。前序修复见[记录](updates/2026-11-03-office-sidebar-fixes.md)。
+
+---
+
+# 办公侧栏修复与加载体验（2026-11-03）
+
+- 分支`t3/sidebar-office-file-features`，基线/base为已fetch的`origin/main@8cbc216`（含#148）。用户追加授权修复[审查](../reviews/2026-11-03-office-sidebar-completeness.md)全部缺口，指定Claude Opus 5.5 medium全权负责前端设计实施；不push/PR/部署。
+- 已改：patch008统一四格式viewer实际工具指导并重建技能；能力清单区分资源已提供、命令未逐项验收与外部blocked，链接现有证据；同一工作区快照续期只复核权限/Run，避免每次Broker复制/hash/解析，消费时仍校验当前版本。
+- 前端由Claude实施共用骨架、低频可见续期/隐藏/15秒超时/迟到清理与四格式直问。专项117项、Ruff、完整SQLite2096 passed/177 skipped、完整PG/Redis2206 passed/67 skipped通过；Portal最终203项/tsc/build、内置浏览器浅深色/全屏通过；原生E2E先14项、后受影响5项通过。真实模型合成选区探针8组通过，续调用缓存96.80%，不是完整UI真模型链路。[最终记录](updates/2026-11-03-office-sidebar-fixes.md)区分基线、重复检查、误选、跳过与成本；临时服务/原始输出已清理。
+- 活动工作区E2E曾间歇失败1次，失败日志过早清理导致根因无法确认，三次成功不抵消失败；未做浏览器真实静止10分钟/隐藏恢复验收。下一步按用户发布指令走PR/CI；如该例再现，先保留证据定位，不加retry/skip。文件库原生viewer迁移仅讨论，未授权实施。下方#148待push/合并为历史记录，现已在main；本轮未提交/push/PR/部署。
+
+---
+
 # Office Linux CI e2e 修复（2026-11-03）
 
 - 分支 `feat/office-suite`，进入 `1455630`，base `origin/main@bf0af4f`；本轮仅授权复现、修复、检查与本地提交，用户审阅后自行 push。旧记录的 PR/merge 授权不适用于本轮；未部署。

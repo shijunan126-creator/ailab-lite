@@ -164,9 +164,17 @@ def test_capability_contract_covers_sources_commands_viewer_and_dependencies(mon
     for item in entries:
         assert item["reason"] and item["acceptance_case_id"] and item["runtime_location"]
         assert item["status"] in {"implemented", "blocked", *{f"planned:P{i}" for i in range(1, 6)}}
+        if item["kind"] == "viewer-feature":
+            assert item["status"] == "implemented"
+            assert all((ROOT / evidence).is_file() for evidence in item["evidence"])
+            assert "planned" not in item["runtime_location"]
+        if item["kind"] in {"cli-command", "python-api"}:
+            assert item["status"] in {"planned:P5", "blocked"}
     commands = {e["command"] for e in entries if "command" in e}
     assert {"env.fix", "convert.latex", "form.fill", "pivot", "validate"} <= commands
     assert sum(e["kind"] == "viewer-feature" for e in entries) == 36
+    assert next(e for e in entries if e["id"] == "visual-gate:delivery-protocol")["status"] == "blocked"
+    assert next(e for e in entries if e["id"] == "visual-gate:ailab-review")["status"] == "implemented"
     assert not {"reportlab", "pikepdf", "PyMuPDF"} & set(actual["missing_from_image"]["python"])
     assert not {"playwright", "pdf-lib", "pptxgenjs", "docx"} & set(actual["missing_from_image"]["npm"])
     assert "tectonic" in actual["missing_from_image"]["binary"]

@@ -1,14 +1,11 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import DocLoading from "./doc-loading";
 
 const PdfDocument = dynamic(() => import("./pdf-document"), {
   ssr: false,
-  loading: () => (
-    <div className="viewer-state">
-      <span className="viewer-spinner" aria-label="正在加载 PDF" />
-    </div>
-  ),
+  loading: () => <DocLoading shape="page" />,
 });
 
 export default PdfDocument;

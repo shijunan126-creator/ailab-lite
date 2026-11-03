@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 from datetime import UTC, datetime
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -187,6 +188,50 @@ def test_view_state_ttl_isolation_and_no_events(api, monkeypatch):  # noqa: F811
     assert api.delete(f"/v1/conversations/{cid}/view?view_id=view", headers=AUTH).status_code == 204
 
 
+def test_workspace_heartbeat_is_cheap_but_consumers_revalidate_current_bytes(api, monkeypatch):  # noqa: F811
+    rid, _, headers = owned(api)
+    cid = conv(api)
+    with SessionLocal() as db:
+        run = db.get(Run, rid)
+        run.conversation_id = cid
+        owner = run.user_id
+        db.commit()
+    requests = []
+
+    def workspace(*args):
+        requests.append(args)
+        return {"version": "v1"}
+
+    monkeypatch.setattr("ailab_platform.api.workspace_documents.request_workspace", workspace)
+    now = [1000]
+    monkeypatch.setattr(view_state, "time", SimpleNamespace(time=lambda: now[0]))
+    state = {"view_id": "workspace", "run_id": rid, "path": "outputs/a.docx", "version": "v1", "at": "p:1"}
+    url = f"/v1/conversations/{cid}/view"
+    assert api.put(url, headers=AUTH, json=state).status_code == 200
+    assert len(requests) == 1
+    for _ in range(4):
+        now[0] += 180
+        assert api.put(url, headers=AUTH, json=state).status_code == 200
+    assert view_state.views(owner, cid) == [state]
+    assert len(requests) == 1  # no Broker snapshots, hashing, parsing or rendering for unchanged heartbeats
+    response = api.post(f"/internal/runs/{rid}/document-view", headers=headers, json={"op": "get_view"})
+    assert response.status_code == 200 and response.json()["views"] == [state]
+    assert len(requests) == 2
+    assert api.put(url, headers=AUTH, json={**state, "at": "p:2"}).status_code == 200
+    assert len(requests) == 3
+    assert api.put(url, headers=AUTH, json={**state, "version": "v2"}).status_code == 409
+    assert len(requests) == 4
+    state["at"] = "p:2"
+    now[0] += 601
+    assert api.put(url, headers=AUTH, json=state).status_code == 200
+    assert len(requests) == 5  # expired state must pass full validation again
+    with SessionLocal() as db:
+        db.get(Run, rid).status = "succeeded"
+        db.commit()
+    assert api.put(url, headers=AUTH, json=state).status_code == 410
+    assert len(requests) == 5
+
+
 def test_reveal_outbox_is_fenced_and_redelivery_is_idempotent(api):  # noqa: F811
     fid, version, _ = document(api)
     rid, _, headers = owned(api)
@@ -352,10 +397,12 @@ def test_workspace_document_requires_owner_and_live_run(api, monkeypatch):  # no
     cid = conv(api)
     run = send(api, cid, []).json()
     assert api.get(f"/v1/runs/{run['id']}/workspace/document?path=a.docx", headers=AUTH).status_code == 410
+    assert api.get(f"/v1/runs/{run['id']}/workspace/preview?path=a.docx", headers=AUTH).status_code == 410
     from tests.test_conversations import _other_user
 
     other = _other_user(api)
     assert api.get(f"/v1/runs/{run['id']}/workspace/content?path=a.docx", headers=other).status_code == 404
+    assert api.get(f"/v1/runs/{run['id']}/workspace/preview?path=a.docx", headers=other).status_code == 404
 
 
 def test_file_share_viewer_keeps_existing_share_fence(api):  # noqa: F811
@@ -371,3 +418,48 @@ def test_file_share_viewer_keeps_existing_share_fence(api):  # noqa: F811
     assert response.status_code == 200 and response.json()["version"] == version
     assert api.delete(f"/v1/shares/{share.json()['id']}", headers=AUTH).status_code == 204
     assert api.get(url, headers=recipient).status_code == 404
+
+
+def test_workspace_report_is_not_resurrected_after_close_or_reordered(api, monkeypatch):  # noqa: F811
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi import HTTPException
+
+    from ailab_platform.api import routes_document_view as route
+    from ailab_platform.contracts.document_view import ViewState
+
+    entered, resume = threading.Event(), threading.Event()
+    user = SimpleNamespace(id=uuid4().hex)
+    cid = uuid4().hex
+    body = ViewState(view_id="blocked", run_id="r", path="outputs/a.docx", version="v", at="p:1", sequence=1)
+    monkeypatch.setattr(route, "_owned", lambda *_: None)
+
+    def authorize(_db, _user, value):
+        if value["at"] == "p:1":
+            entered.set()
+            assert resume.wait(5)
+
+    monkeypatch.setattr(route, "authorize_state", authorize)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(route.put_view, cid, body, user, None)
+        assert entered.wait(5)
+        route.delete_view(cid, "blocked", user, None)
+        route.delete_view(cid, "blocked", user, None)
+        resume.set()
+        with pytest.raises(HTTPException) as error:
+            pending.result(timeout=5)
+        assert error.value.status_code == 409
+    assert view_state.views(user.id, cid) == []
+    entered.clear()
+    resume.clear()
+    body = body.model_copy(update={"view_id": "ordered"})
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(route.put_view, cid, body, user, None)
+        assert entered.wait(5)
+        assert route.put_view(cid, body.model_copy(update={"at": "p:2", "sequence": 2}), user, None) == {"status": "ready"}
+        resume.set()
+        with pytest.raises(HTTPException) as error:
+            pending.result(timeout=5)
+        assert error.value.status_code == 409
+    assert view_state.views(user.id, cid)[0]["at"] == "p:2"

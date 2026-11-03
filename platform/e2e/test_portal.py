@@ -266,7 +266,8 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     _wait_for_turns(page, 1)
     assert page.locator(".preview-pane, .viewer").count() == 0
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
-    # A renderer-backed Run opens its live sheet tab; otherwise the delivered file opens in the viewer.
+    # This generated workbook has a chart unsupported by the native reader;
+    # its server fallback must still open, preserve values and reopen correctly.
     surface = page.locator(".preview-pane, .viewer")
     surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
     assert surface.count() == 1

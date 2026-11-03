@@ -46,12 +46,6 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject
 from ailab_platform.storage import get_storage
 fid=sys.argv[1];storage=get_storage();names=[];assets={}
-# A host with LibreOffice renders the upload for real; let that finish so it cannot overwrite these pages.
-deadline=time.monotonic()+60
-while time.monotonic()<deadline:
- with SessionLocal() as db:
-  if ((db.get(FileObject,fid).meta or {}).get('preview') or {}).get('status') in ('ready','failed'): break
- time.sleep(0.5)
 for i in range(1,5):
  image=Image.new('RGB',(800,1100),'white');ImageDraw.Draw(image).text((50,50),f'Page {i}',fill='black')
  body=io.BytesIO();image.save(body,format='JPEG');name=f'p-{i:02d}.jpg';names.append(name)
@@ -68,6 +62,7 @@ with SessionLocal() as db:
 """
     subprocess.run([sys.executable, "-c", script, fid], env=stack.env, check=True, timeout=75)
     # Open the library only now, so the list it loads already carries the pages written above.
+    page.route("**/api/v1/files/*/document", lambda route: route.fulfill(json={"status": "unsupported", "native": False}))
     page.goto(stack.portal + "/files")
     row = page.locator(".lib-row", has_text=name)
     row.get_by_role("link", name=f"下载 {name}", exact=True).wait_for(timeout=30000)

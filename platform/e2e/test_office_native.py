@@ -2,6 +2,7 @@
 
 import re
 import time
+import uuid
 
 import httpx
 import pytest
@@ -39,7 +40,8 @@ def _frame(page, name):
     return frame
 
 
-def _select(page, frame, kind):
+def _select(page, frame, kind, question=None):
+    """Select real text with the mouse, then add it to the composer, or ask about it right there."""
     from playwright.sync_api import expect
 
     if kind == "xlsx":
@@ -68,6 +70,18 @@ def _select(page, frame, kind):
             page.mouse.down()
             page.mouse.move(box["x"] + min(box["width"] - 2, 160), box["y"] + min(box["height"] / 2, 8), steps=12)
             page.mouse.up()
+    if question:
+        ask = frame.get_by_role("button", name="提问", exact=True)
+        expect(ask).to_be_visible(timeout=10000)
+        ask.click()
+        box = frame.get_by_role("textbox", name="就这里提问…")
+        expect(box).to_be_focused()
+        box.fill(question)
+        box.press("Enter")
+        # sent through the outbox as a reference, not left in the composer
+        expect(box).to_be_hidden(timeout=10000)
+        expect(page.locator(".composer-box .quote-chip")).to_have_count(0)
+        return
     add = frame.get_by_role("button", name=re.compile("^添加(到对话)?$"))
     expect(add).to_be_visible(timeout=10000)
     add.click()
@@ -128,6 +142,32 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         expect(page.locator(".turn").last).to_contain_text("capture_id")
 
 
+@pytest.mark.parametrize("mode", ["对话", "工作"])
+@pytest.mark.parametrize("kind,name", [("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx"), ("pdf", "cjk.pdf")])
+def test_native_selection_direct_ask(logged_in, stack, kind, name, mode):
+    """Ask in the viewer: the question and its exact reference go out as one message, and the model sees both."""
+    from playwright.sync_api import expect
+
+    page = logged_in
+    page.get_by_role("radio", name=mode, exact=True).click()
+    page.set_input_files(".composer-box input[type=file]", str(FIXTURES / name))
+    _start_conversation(page, "原生收件验收", "test-office-vision")
+    _wait_for_turns(page, 1)
+    chip = page.locator(".turn .attach-chip.open").first
+    filename = chip.inner_text().strip()
+    chip.click()
+    file = next(item for item in page.request.get(stack.portal + "/api/v1/files").json() if item["filename"] == filename)
+    _index(page, stack, file["id"])
+    frame = _frame(page, filename)
+    _select(page, frame, kind, question="就这里直接提问：这段说的是什么？")
+    _wait_for_turns(page, 2)
+    turn = page.locator(".turn").last
+    expect(turn).to_contain_text("就这里直接提问：这段说的是什么？")
+    expect(turn.locator(".quote-chip")).to_have_count(1)
+    # the scripted model answers with the reference block it received: the file and the selected location
+    expect(turn).to_contain_text(f"直接提问引用：{filename} (", timeout=30000)
+
+
 def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     from playwright.sync_api import expect
 
@@ -163,3 +203,160 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     expect(page.locator(".turn").last).to_contain_text("原生截图结果")
     expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
     expect(page.locator(".turn").last).to_contain_text("capture_id")
+
+
+@pytest.mark.parametrize("kind,name", [("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx"), ("pdf", "cjk.pdf")])
+def test_library_native_view_does_not_request_server_preview(logged_in, stack, tmp_path, kind, name):
+    from playwright.sync_api import expect
+
+    from .test_library_ui import _open, _upload
+
+    page = logged_in
+    requests = []
+    page.on(
+        "request",
+        lambda request: requests.append(request.url) if re.search(r"/files/[^/]+/preview(?:[/?]|$)|/view$", request.url) else None,
+    )
+    data = (FIXTURES / name).read_bytes()
+    name = f"native-{uuid.uuid4().hex[:8]}.{kind}"
+    _upload(page, stack, tmp_path, name, data)
+    file = next(item for item in page.request.get(stack.portal + "/api/v1/files").json() if item["filename"] == name)
+    viewer = _open(page, name)
+    frame = _frame(page, name)
+    if kind == "xlsx":
+        expect(frame.get_by_role("tab", name="Revenue", exact=True)).to_be_visible()
+    elif kind == "docx":
+        text = frame.locator('[data-at="p:2"]')
+        expect(text).to_be_visible()
+        text.click(click_count=3)
+        expect(frame.get_by_role("button", name="提问", exact=True)).to_have_count(0)
+        expect(frame.get_by_role("button", name=re.compile("^添加(到对话)?$"))).to_have_count(0)
+    elif kind == "pptx":
+        expect(frame.get_by_text("Product Launch", exact=True).first).to_be_visible()
+    else:
+        expect(frame.locator(".textLayer span").first).to_be_visible()
+    assert not requests, requests
+    # No HTTP request is not enough: readiness must also avoid background preview jobs.
+    metadata = page.request.get(stack.portal + f"/api/v1/files/{file['id']}")
+    assert metadata.ok, metadata.text()
+    assert not metadata.json().get("meta", {}).get("preview_job_id")
+    expect(viewer.locator(".document-scroll img")).to_have_count(0)
+    viewer.get_by_role("button", name="关闭预览", exact=True).click()
+
+
+def test_work_native_unavailable_renders_workspace_only_on_fallback(logged_in, stack):
+    from playwright.sync_api import expect
+
+    page = logged_in
+    # Force only the browser's admission decision. The workspace snapshot, render,
+    # cache and asset delivery still traverse the actual API/Broker/sandbox chain.
+    page.route("**/api/v1/runs/*/workspace/document?*", lambda route: route.fulfill(json={"status": "unsupported", "native": False}))
+    calls = []
+    page.on("response", lambda response: calls.append(response) if "/workspace/preview?" in response.url else None)
+    page.get_by_role("radio", name="工作", exact=True).click()
+    _start_conversation(page, "原生表格回退验收", "test-office-vision")
+    try:
+        pane = page.get_by_role("complementary", name="侧栏")
+        expect(pane.locator(".sheet-grid td", has_text="华东")).to_be_visible(timeout=30000)
+        assert len(calls) == 1 and calls[0].ok
+        first = calls[0].json()
+        # A second explicit request takes a fresh source snapshot but reuses the
+        # same immutable server assets, instead of exporting the workbook again.
+        cached = page.request.get(calls[0].url)
+        assert cached.ok and cached.json() == first
+        expect(pane.get_by_role("tab", name="fallback.xlsx")).to_be_visible()
+    finally:
+        httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
+    _wait_for_turns(page, 1)
+
+
+@pytest.mark.parametrize("surface", ["library", "share", "workspace"])
+def test_native_renderer_failure_after_index_uses_authorized_fallback(logged_in, stack, tmp_path, surface):
+    """A valid index followed by corrupt browser bytes must exercise the actual frame error bridge.
+
+    The original remains intact in API/Broker storage: only its browser download is corrupted.
+    The fallback therefore reads/render the real authorized source, rather than the injected bytes.
+    """
+    from playwright.sync_api import expect
+
+    from .test_library_ui import _open, _upload
+
+    page = logged_in
+    native_downloads, fallback_requests = [], []
+
+    def corrupt(route):
+        native_downloads.append(route.request.url)
+        response = route.fetch()
+        assert response.ok, response.text()
+        # Keep length and version headers intact: this is a renderer failure,
+        # not a source-version/partial-download error (which must not export).
+        route.fulfill(response=response, body=b"x" * len(response.body()))
+
+    page.on(
+        "request",
+        lambda req: (
+            fallback_requests.append(req.url)
+            if re.search(r"/(?:workspace/)?preview\?", req.url) or re.search(r"/files/[^/]+/preview$", req.url)
+            else None
+        ),
+    )
+    if surface == "workspace":
+        page.route("**/api/v1/runs/*/workspace/content?*", corrupt)
+        page.get_by_role("radio", name="工作", exact=True).click()
+        _start_conversation(page, "原生表格回退验收", "test-office-vision")
+        try:
+            pane = page.get_by_role("complementary", name="侧栏")
+            expect(pane.locator(".sheet-grid td", has_text="华东")).to_be_visible(timeout=30000)
+            assert native_downloads
+            assert len(fallback_requests) == 1, fallback_requests
+            expect(pane.locator("iframe.office-frame")).to_have_count(0)
+        finally:
+            httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
+        _wait_for_turns(page, 1)
+        return
+    name = f"renderer-failure-{surface}-{uuid.uuid4().hex[:8]}.docx"
+    _upload(page, stack, tmp_path, name, (FIXTURES / "report.docx").read_bytes())
+    file = next(item for item in page.request.get(stack.portal + "/api/v1/files").json() if item["filename"] == name)
+    _index(page, stack, file["id"])
+    if surface == "share":
+        share = page.request.post(stack.portal + "/api/v1/shares", data={"kind": "file", "file_id": file["id"], "audience": "everyone"})
+        assert share.ok, share.text()
+        sid = share.json()["id"]
+        page.route(f"**/api/v1/shares/{sid}/files/{file['id']}/content", corrupt)
+        page.goto(stack.portal + f"/s/{sid}")
+    else:
+        page.route(f"**/api/v1/files/{file['id']}/content", corrupt)
+        _open(page, name)
+    image = page.locator(".document-scroll img").first
+    expect(image).to_be_visible(timeout=90000)
+    page.wait_for_function("img => img.complete && img.naturalWidth > 0", arg=image.element_handle())
+    assert native_downloads
+    assert fallback_requests
+    expect(page.locator("iframe.office-frame")).to_have_count(0)
+
+
+@pytest.mark.parametrize("failure", ["access", "size"])
+def test_native_content_access_failure_does_not_start_server_render(logged_in, stack, tmp_path, failure):
+    from playwright.sync_api import expect
+
+    from .test_library_ui import _open, _upload
+
+    page = logged_in
+    name = f"denied-content-{uuid.uuid4().hex[:8]}.docx"
+    _upload(page, stack, tmp_path, name, (FIXTURES / "report.docx").read_bytes())
+    file = next(item for item in page.request.get(stack.portal + "/api/v1/files").json() if item["filename"] == name)
+    _index(page, stack, file["id"])
+    requests = []
+    page.on("request", lambda req: requests.append(req.url) if f"/files/{file['id']}/preview" in req.url else None)
+    if failure == "access":
+        page.route(f"**/api/v1/files/{file['id']}/content", lambda route: route.fulfill(status=403, json={"detail": "access revoked"}))
+    else:
+        page.route(
+            f"**/api/v1/files/{file['id']}/content", lambda route: route.fulfill(body=b"truncated", content_type="application/octet-stream")
+        )
+    viewer = _open(page, name)
+    expect(viewer.get_by_role("alert")).to_contain_text(
+        "文件不存在或无权访问" if failure == "access" else "文件已更新，请重新打开", timeout=30000
+    )
+    expect(viewer.locator("iframe.office-frame")).to_have_count(0)
+    assert not requests, requests

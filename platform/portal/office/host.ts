@@ -124,7 +124,7 @@ function createHost() {
     async requestDisplayMode() {
       return {};
     },
-    getHostCapabilities: () => ({ message: {} }),
+    getHostCapabilities: () => (context.chat === false ? {} : { message: {} }),
     getHostContext: () => ({ theme: context.theme, locale: context.locale, displayMode: "fullscreen" as const }),
   };
 
@@ -141,6 +141,15 @@ function createHost() {
       opened = path;
     },
     takeResults: () => results.splice(0, results.length),
+    /** The document at `revision` failed to load or render (office/build.mjs routes upstream's terminal failures here).
+     * Without a revision the failure was the Portal's own answer to load_document, which it already knows. */
+    fail(stage: "load" | "render", error: unknown, revision: string | undefined) {
+      if (!revision) return;
+      const failure = error as { message?: unknown; code?: unknown; name?: unknown } | null;
+      const code = typeof failure?.code === "string" ? failure.code : failure?.name === "PasswordException" ? "password" : undefined;
+      const message = String(failure?.message ?? error).slice(0, 500);
+      post({ t: "failed", stage, version: revision, message, ...(code ? { code } : {}) });
+    },
     handleTool(name: string, handler: PageToolHandler) {
       handlers.set(name, handler);
       for (const wake of waiters) wake();

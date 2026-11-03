@@ -3,13 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 
 /** Native scrolling is shared by the work pane and the full-screen viewer. */
-export default function DocumentPages({ pages, src, documentKey, total = pages.length, thumbnails = false, initialPage, children }: {
+export default function DocumentPages({ pages, src, documentKey, total = pages.length, thumbnails = false, initialPage, pending = false, children }: {
   pages: string[];
   initialPage?: number; // 1-based: shown first (a citation of that page)
   src: (name: string) => string;
   documentKey: string;
   total?: number;
   thumbnails?: boolean;
+  pending?: boolean; // more pages are still being rendered
   children?: React.ReactNode;
 }) {
   const box = useRef<HTMLDivElement | null>(null);
@@ -69,6 +70,7 @@ export default function DocumentPages({ pages, src, documentKey, total = pages.l
               setRatios((previous) => previous[name] === ratio ? previous : { ...previous, [name]: ratio });
             }} />
         ))}
+        {pending ? <div className="doc-loading-next" role="status" aria-label="正在加载" style={{ aspectRatio: ratios[pages[0]] || "1 / 1.414" }} /> : null}
         {children}
       </div>
       {pages.length > 1 ? <span className="document-counter" aria-live="off">{index + 1} / {total}</span> : null}

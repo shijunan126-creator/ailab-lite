@@ -9,6 +9,8 @@ export type Theme = "light" | "dark";
 export interface HostContext {
   theme: Theme;
   locale: string;
+  /** False where there is no conversation to quote into (library, shares): the selection bar stays hidden. */
+  chat?: boolean;
 }
 
 /** A reference the user made in the viewer: `path` is the viewer's document key, `at` its locator. */
@@ -27,6 +29,9 @@ export type FrameMessage =
   | { ch: typeof CHANNEL; t: "boot" }
   | { ch: typeof CHANNEL; t: "error"; message: string }
   | { ch: typeof CHANNEL; t: "ready"; nonce: string; viewId: string }
+  /** The viewer could not open or draw `version` (its load, prepare or renderer failed). Terminal for that version;
+   * recoverable warnings are not sent. The Portal decides whether the source or the renderer was at fault. */
+  | { ch: typeof CHANNEL; t: "failed"; nonce: string; version: string; stage: "load" | "render"; message: string; code?: string }
   | { ch: typeof CHANNEL; t: "call"; nonce: string; id: number; name: string; args: Record<string, unknown> }
   | { ch: typeof CHANNEL; t: "asset"; nonce: string; id: number; name: string; binary: boolean }
   | { ch: typeof CHANNEL; t: "bytes"; nonce: string; id: number; token: string }

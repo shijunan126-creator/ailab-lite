@@ -65,7 +65,9 @@ export type Preview = {
   path?: string; // authorized workspace source, distinct from the display filename
   version: number;
   run_id?: string;
-  kind?: "pages" | "sheets" | "html" | "pdf";
+  // "native": a Work file the browser draws itself from the workspace (path); nothing was rendered for it. Where the
+  // native viewer cannot show it, GET /v1/runs/{run_id}/workspace/preview?path= renders one of the other kinds.
+  kind?: "pages" | "sheets" | "html" | "pdf" | "native";
   pages?: string[]; // "<n>/p-01.jpg", relative to the run's previews
   pdf?: string; // "<n>/document.pdf"
   page_count?: number | null;

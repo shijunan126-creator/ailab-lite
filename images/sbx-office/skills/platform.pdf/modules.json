@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
+  "adapter_revision": "e54be524f120c2d10ed2cd35516550cd875e04cf6152f08c55ba60bf63ee1334",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -17,17 +17,18 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 956,
+      "estimated_tokens": 1537,
       "logical_path": "pdf-plugin/skills/pdf-viewer/SKILL.md",
       "modes": [
         "chat",
         "work"
       ],
       "patches": [
-        "001-tools-and-roots.json"
+        "001-tools-and-roots.json",
+        "008-viewer-tool-contract.json"
       ],
       "path": "viewer/SKILL.md",
-      "sha256": "eb29f9f4e025185f671e5d3b151ca7f495e7cab0b11b6fd0593abff7d627a87b"
+      "sha256": "ab71475639f7b82d75622ca798d268053e7a04dcb9617e115ba3408fa2f3ccee"
     },
     {
       "deps": [

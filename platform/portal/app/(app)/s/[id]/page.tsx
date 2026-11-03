@@ -56,6 +56,7 @@ export default function SharedPage() {
     () => ({
       preview: (fileId) => `/v1/shares/${id}/files/${fileId}/preview`,
       asset: (fileId, name) => `${API_BASE}/v1/shares/${id}/files/${fileId}/preview/${encodeURIComponent(name)}`,
+      shareId: id,
     }),
     [id]
   );

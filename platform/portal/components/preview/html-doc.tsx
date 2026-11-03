@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { SandboxFrame } from "../sandbox-frame";
+import DocLoading from "./doc-loading";
 
 // Injected into the fetched document, before any script of its own: the pane resizes this frame
 // while it is open, and documents that rebuild their layout on every resize (fixed-canvas decks
@@ -74,11 +75,6 @@ export function HtmlDocView({ url, title, renderError }: { url: string; title: s
   const { html, error } = useDocText(url);
   const doc = useMemo(() => (html ? withResizeGuard(html) : null), [html]);
   if (error) return renderError ? renderError(error) : <div className="hint" style={{ margin: 16 }}>无法加载：{error}</div>;
-  if (doc === null)
-    return (
-      <div className="viewer-state">
-        <span className="viewer-spinner" aria-label="正在加载" />
-      </div>
-    );
+  if (doc === null) return <DocLoading shape="page" />;
   return <SandboxFrame kind="doc" className="viewer-frame" sandbox="allow-scripts allow-popups allow-modals" html={doc} title={title} />;
 }
