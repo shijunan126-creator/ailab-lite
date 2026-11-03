@@ -71,6 +71,8 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
             except BaseException:
                 target.unlink(missing_ok=True)
                 raise
+        if operation == "preview":
+            return manager.render_workspace_preview(lease["lease_id"], source, Path(path).name, identity["version"])
         cache_key = f"previews/{run_id}/viewer/{identity['version']}-{PARSER_REVISION}.json"
         if operation == "document" and manager.storage.exists(cache_key) and manager.storage.size(cache_key) <= 4 * 1024**2:
             return json.loads(manager.storage.get_bytes(cache_key))

@@ -66,9 +66,9 @@ def test_a_workbook_previews_as_sheets(logged_in, stack, tmp_path) -> None:
     book.save(data)
     name = f"sales-{uuid.uuid4().hex[:6]}.xlsx"
     _upload(page, stack, tmp_path, name, data.getvalue())
-    viewer = _open(page, name)
-    viewer.locator(".viewer-sheet td", has_text="华东").wait_for(timeout=30000)  # rendered by the Worker on first open
-    assert viewer.get_by_role("button", name="销售").is_visible()
+    _open(page, name)
+    frame = page.frame_locator(f'iframe.office-frame[title="{name}"]')
+    frame.locator(".xlsx-grid canvas").first.wait_for(timeout=30000)
     _shot(page, "viewer-sheets")
     page.keyboard.press("Escape")
 
@@ -83,7 +83,7 @@ def test_a_document_previews_as_pages_rendered_in_a_sandbox(logged_in, stack, tm
     doc.add_paragraph("本周完成了资料库预览。")
     data = io.BytesIO()
     doc.save(data)
-    name = f"weekly-{uuid.uuid4().hex[:6]}.docx"
+    name = f"weekly-{uuid.uuid4().hex[:6]}.doc"
     _upload(page, stack, tmp_path, name, data.getvalue())
     viewer = _open(page, name)
     image = viewer.locator(".document-scroll img").first

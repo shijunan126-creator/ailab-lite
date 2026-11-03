@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, downloadUrl, errorMessage, FileItem, FilePreview, filePreviewUrl, filesByIds } from "../../lib/api";
 import { IconCheck, IconChevronRight, IconDownload, IconHistory, IconMessage, IconShare, IconX } from "../icons";
@@ -12,11 +12,13 @@ import { formatBytes, timeAgo } from "../../lib/format";
 import Markdown from "../markdown";
 import Sheets from "./sheets";
 import DocumentPages from "./pages";
+import DocLoading, { loadingShape } from "./doc-loading";
+import OfficeView, { MAX_NATIVE_BYTES, officeKind, type OfficeDoc, type OfficeReveal } from "./office-view";
 
 const POLL_MS = 1500;
 
-/** Where a viewed file's preview comes from: the user's own library, or a share someone opened to them. */
-export type FileSource = { preview: (fileId: string) => string; asset: (fileId: string, name: string) => string };
+/** Where a viewed file's preview comes from: the user's own library, or a share someone opened to them (`shareId`). */
+export type FileSource = { preview: (fileId: string) => string; asset: (fileId: string, name: string) => string; shareId?: string };
 const LIBRARY: FileSource = { preview: (id) => `/v1/files/${id}/preview`, asset: filePreviewUrl };
 export const FileSourceContext = createContext<FileSource>(LIBRARY);
 
@@ -53,7 +55,7 @@ function PageScroll({ file, preview, page }: { file: FileItem; preview: FilePrev
   const source = useContext(FileSourceContext);
   const pages = preview.pages || [];
   const total = preview.page_count || pages.length;
-  return <DocumentPages pages={pages} src={(name) => source.asset(file.id, name)} documentKey={file.id} total={total} initialPage={page}>
+  return <DocumentPages pages={pages} src={(name) => source.asset(file.id, name)} documentKey={file.id} total={total} initialPage={page} pending={preview.status === "pending"}>
     {preview.status === "ready" && total > pages.length ? <a className="viewer-more" href={downloadUrl(file.download_url)}>
       <IconDownload size={15} /> 下载查看全部 {total} 页
     </a> : null}
@@ -76,7 +78,7 @@ function TextView({ file, preview }: { file: FileItem; preview: FilePreview }) {
     };
   }, [file.id, preview.text]);
   if (error) return <Unavailable file={file} reason={error} />;
-  if (text === null) return <Waiting />;
+  if (text === null) return <DocLoading shape="text" />;
   return (
     <div className="viewer-paper">
       {preview.format === "markdown" ? (
@@ -136,14 +138,6 @@ function ImageView({ file, preview }: { file: FileItem; preview: FilePreview }) 
   );
 }
 
-function Waiting() {
-  return (
-    <div className="viewer-state">
-      <span className="viewer-spinner" aria-label="正在生成预览" />
-    </div>
-  );
-}
-
 function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
   return (
     <div className="viewer-state">
@@ -159,12 +153,30 @@ function Unavailable({ file, reason }: { file: FileItem; reason?: string }) {
   );
 }
 
+/** A Word/Excel/PowerPoint/PDF file opens in the native viewer: drawn in the browser from the file itself. The paged
+ * preview (a server render) is only asked for when the native viewer cannot show it: over its limits, not indexed,
+ * or the viewer failed. A citation's page is exact for PDF pages and slides; a Word or Excel "page" is a printed
+ * page of the server render, so such a citation opens the paged preview where that page exists. */
 export function FilePreviewBody({ file, page }: { file: FileItem; page?: number }) {
+  const source = useContext(FileSourceContext);
+  const kind = officeKind(file.filename);
+  const native = !!kind && file.status === "ready" && !file.deleted_at && file.size <= MAX_NATIVE_BYTES && !(page && (kind === "docx" || kind === "xlsx"));
+  const doc = useMemo<OfficeDoc | null>(
+    () => (native && kind ? { path: file.filename, filename: file.filename, kind, source: { fileId: file.id, ...(source.shareId ? { shareId: source.shareId } : {}) } } : null),
+    [native, kind, file.id, file.filename, source.shareId],
+  );
+  const reveal = useMemo<OfficeReveal | null>(() => (page && kind === "pdf" ? { seq: 1, targets: [{ at: `page:${page}` }] } : page && kind === "pptx" ? { seq: 1, targets: [{ at: `slide:${page}` }] } : null), [page, kind]);
+  if (doc) return <OfficeView doc={doc} reveal={reveal} fallback={<PagedPreview file={file} page={page} />} />;
+  return <PagedPreview file={file} page={page} />;
+}
+
+/** The server-rendered preview of a file: pages, sheets, text or image. */
+export function PagedPreview({ file, page }: { file: FileItem; page?: number }) {
   const source = useContext(FileSourceContext);
   const preview = usePreview(file);
   const canPreview = file.status === "ready" || (file.status === "pending" && file.meta?.scan?.verdict === "clean");
   if (!canPreview) return <Unavailable file={file} />;
-  if (!preview || (preview.status === "pending" && !(preview.kind === "pages" && preview.pages?.length))) return <Waiting />;
+  if (!preview || (preview.status === "pending" && !(preview.kind === "pages" && preview.pages?.length))) return <DocLoading shape={loadingShape(file.filename)} />;
   if (preview.status === "pending" && preview.kind === "pages") return <PageScroll file={file} preview={preview} page={page} />;
   if (preview.status !== "ready") return <Unavailable file={file} reason={preview.status === "failed" ? preview.reason : undefined} />;
   switch (preview.kind) {

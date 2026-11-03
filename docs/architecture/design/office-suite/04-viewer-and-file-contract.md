@@ -47,6 +47,13 @@ Chat 新增显式范围准备路径：选区问答只注入该范围和必要相
 
 用户滚动/换页/选中位置只更新短 TTL 查看状态，不逐事件落 RunEvent、不推给模型、不增长历史。`get_view` 仅在模型显式调用时取快照并追加结果；新消息中用户说“这里”时可附发送瞬间的 view 引用快照。浏览器只是状态来源，不是权限权威。
 
+在线续期使用当前可见Office视图的低频有界快照，不新增后台渲染、模型消息或数据库事件。前端交互去抖上报；静止时约每3分钟续期，页面隐藏停止，恢复可见重新同步，关闭/卸载清理。后端仍保持10分钟TTL以回收失联视图。同一已授权工作区快照的重复续期只复核会话/Run归属及运行状态；首次、过期或快照变化走完整验证。`get_view`/capture使用前仍核对工作区当前版本，续期不把旧选区升级为已验证的新版本。
+
+续期写入有服务端顺序合同：Portal为一次会话绑定生成独立view_id，切会话、释放后重开或新frame使用新身份，capture registry同步切换；所有实际PUT携带递增sequence。API在授权/快照前登记token/序号，授权后只允许最新token在120秒内提交；DELETE原子关闭并保留600秒有界记录，不以客户端abort/第二次DELETE推断服务器已停止。内存锁与Redis Lua语义一致；活跃16、总generation记录128，满额拒绝新身份且不驱逐有效围栏。sequence不进入get_view或模型上下文，旧客户端省略时仅按接收顺序兼容。记录无业务表或逐事件模型消息。
+
+
+普通主输入框不自动附当前选区：模型需按viewer技能指导调用`document_view(op="get_view")`；显式“添加到对话”或“提问”则携带冻结doc_refs，优先于后来变化的查看状态。指导必须使用实际固定工具名，不能继续保留早期planned:P3/P4禁用说明。
+
 查看状态按 user/conversation/client/view 绑定，view_id 不由模型任意选择别人的；多端多视图不能靠全局 last-write-wins。UI ack 和截图通过 request_id+revision 关联，超时或版本已切换则旧响应忽略；所有等待有 deadline，刷新/关闭/断线触发不可用。
 
 ## 无浏览器、恢复和删除
@@ -58,6 +65,21 @@ reveal 命令需要 API 授权、attempt fencing、稳定 command_id 和 outbox/
 来源删除/撤权/回收站/分享访问沿用现有 API 围栏：禁止再次读取、清理截图和引用副本的可见性；运行上下文按既有 access_revoked 重建。截图是派生文件，有内容 hash、TTL、所有者和引用保留，不能无主地留在 workspace/对象存储或作为普通最终产物交付。
 
 ## 性能限制
+
+### 当前预览与渲染路径
+
+| 入口 | 执行位置和复用 |
+| --- | --- |
+| 聊天四格式原生侧栏 | Worker受限子进程生成/缓存viewer索引，Portal读取原件，在隔离frame内按格式绘制；不是把每页从LibreOffice渲染沙箱取回。超准入/索引失败走既有分页回退。上传正文解析仍可使用Broker系统沙箱，与浏览器绘制是不同工作。 |
+| 文件库/分享 | 四格式FilePreviewBody优先复用隔离原生viewer，索引/脚本失败或超准入才挂载PagedPreview并请求preview；无会话时隐藏提问/引用且不上传查看状态，正文仍可选中复制。Word/Excel的物理分页引用直接走分页，PDF页/PPT slide可原生定位。 |
+| 分页回退 | API幂等outbox→Worker；Word/PPT/PDF等页面走Broker按用户复用渲染沙箱，结果存derived缓存。原生四格式普通library文件不再在ready/交付时提前排分页作业；显式回退、OCR/视觉页请求和模板缩略图仍保留服务端生成及复用。legacy格式继续既有有界预生成。 |
+| Work正在制作的实时预览 | Broker只扫描变化文件并发kind=native的源身份/版本通知，不自动复制/解析/导出，也不占用render调度或触发预热。原生通过workspace/document、content打开；原生不可用时才请求workspace/preview，在当前Run沙箱按不可变快照生成PDF/页图/表格，并按内容hash＋格式＋renderer/镜像版本缓存。交付后切正式file_id入口。 |
+| view_workspace_file / review_artifact | 当前Work沙箱按指定范围受限渲染，后者另返回结构证据，质量由模型判断；不是借用文件库的按用户渲染租约。 |
+| 视觉附件/OCR、服务端capture | 文件页图优先复用派生预览；缺失范围按既有作业请求。render capture只支持可证明物理页映射的范围；工作区范围在当前沙箱渲染并按内容hash缓存。viewport capture由当前浏览器截图，不启动服务器渲染。 |
+
+索引ready/native只代表准入，不代表浏览器renderer已成功。隔离frame的load/prepare和renderer onError经构建适配发送带nonce、revision的终态failed；宿主只处理当前window/nonce/revision，释放frame/下载/截图注册后进入既有授权回退。普通警告和旧文档错误不触发导出。原件访问拒绝、版本/字节数变化、网络错误或加密明确显示错误，不把它们当兼容性问题启动服务器渲染。详见[审查修复](../../../progress/updates/2026-11-03-office-review-fixes.md)。
+
+这些路径共享权限/版本/资源限制和部分渲染脚本，尚非单一执行流水线。加载反馈可以共用UI组件，不应为了动画触发额外解析或重复导出。
 
 上游 `ui/assets.ts:readFileBytes` 虽分块传输，最终仍分配完整 ArrayBuffer；`LoadedDoc` 还持有 bytes，viewer/worker 可能再复制。不能宣称已经流式或恒定内存。按格式设置明确的浏览器 native-view 大小/页数/单元格准入，ArrayBuffer 用 transfer/共享受控引用避免额外完整复制，超过上限走已有服务器分页预览并标明原生选区/对象定位不可用。
 
@@ -74,6 +96,10 @@ reveal 命令需要 API 授权、attempt fencing、稳定 command_id 和 outbox/
 | 消息文档引用 | 发送体新增 `doc_refs: [{file_id, version, at, quote}]` 或 `[{run_id, path, version, at, quote}]`（每条 quote ≤4000 字，最多 8 条），与 `file_ids` 同一 outbox/client_send_id 路径。API 校验读取权限、版本存在、`at` 合法、quote 与该范围正文规范化后匹配，存入新表（不复用 `message_file_refs` 唯一键）；retry/edit/fork/排队继承冻结引用。Agent 收到的用户消息以追加文本块呈现引用（文件名、定位、引文），Agent 仅追加冻结引用正文；不触发全文 prepare，额外相邻结构需模型另行读取。 |
 | 查看状态 | `PUT /v1/conversations/{id}/view`：`{view_id, file_id? | run_id+path, version, at: string|null, selection?{at,text}}`，Portal 去抖（≥500ms）上报，短 TTL（10 分钟）临时存储，不写 RunEvent/业务大表；`DELETE` 于关闭侧栏/切走。按 user+conversation+view_id 隔离。 |
 | 固定工具 `document_view` | Chat/Work 同 schema，`op` ∈ `open\|reveal\|get_view\|capture`。open/reveal：`{file_id\|path, targets?[{at,quote?}], note?}`，API 授权后经 outbox 发 `document.reveal` 事件 `{command_id, file_id?\|path?, filename, version, targets, note?}`，结果只表示“已发送”，不声称用户已看到。get_view：返回该会话活跃 view 快照；多个返回候选，无/过期返回 `unavailable`。capture：`{file_id\|path, at, source: viewport\|render}`；`render` 用服务端受限渲染（复用派生页图，按 file_hash+render_revision+范围缓存）；`viewport` 发 `client.call {call_id, kind: "capture_view", input: {view_id, at?, max_width?}, timeout_ms, deadline}`，Portal 通过现有 client-calls claim/result 回传（成功 value 为 `{image, mime_type:"image/png", width, height, at, version}` 对象，≤2 MiB decoded，绑定 view_id/version），Agent 等待有 deadline（≤20s），超时返回 `unavailable`，不改用第一页冒充。截图作为有 hash/TTL/所有者的派生物，以图片引用进入上下文与 checkpoint。 |
+
+### Work按需分页回退（2026-11-03）
+
+`GET /v1/runs/{run_id}/workspace/preview?path=`复用workspace/document的API归属、会话、运行中状态与Broker路径/租约验证。Broker先以拒绝符号链接、文件大小和变化检查的快照固定版本，再按内容hash、扩展名、render脚本/镜像版本缓存；命中仍先核对当前源身份。返回既有Preview的kind/pdf/pages/data及数字version，通过既有owner-bound run previews资产端点读取。只在原生失败/超准入的回退组件挂载时请求，切版本/关闭取消旧请求，切版本先清除旧画面。缓存和资产随既有Run预览生命周期回收，无业务表/迁移/新事件类型。渲染沿用受限工作区，队列等待2秒、导出65秒超时、快照上限20MiB和输出上限不放宽；更大活动文件明确不可用，交付后可按文件库准入处理。原生渲染不消除正文解析、索引、下载带宽、Work视觉检查和既有listener预热的成本。
 
 ### 前端实现带来的修订（2026-11-02，以此为准）
 

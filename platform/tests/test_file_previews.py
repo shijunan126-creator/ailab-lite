@@ -132,7 +132,7 @@ def upload(api, name, data=b"hello", mime="application/octet-stream", *, process
     fid = r.json()["id"]
     if process:
         process_file(fid, platform=ApiClient(api))
-        # Simulate the asynchronous dispatcher; readiness now stages office/PDF jobs eagerly.
+        # Simulate asynchronous dispatch of eager legacy-format jobs.
         from ailab_platform.api.preview_dispatch import dispatch_preview_jobs
 
         dispatch_preview_jobs()
@@ -439,6 +439,7 @@ def test_eager_pages_are_available_to_visual_requests_without_another_render(api
     from ailab_platform.api.routes_library_tools import document_images
 
     fid = upload(api, "eager.pdf")
+    preview(api, fid)
     job = ApiClient(api).get_file(fid)["meta"]["preview_job_id"]
     process_preview(fid, job, platform=ApiClient(api))
     with SessionLocal() as db:

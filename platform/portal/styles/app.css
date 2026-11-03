@@ -578,7 +578,37 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 
 /* Side-pane native document viewer (components/preview/office-view.tsx) and the quotes taken from it */
 .preview-body.office-pane { background: var(--background); }
+.office-stage { position: relative; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.office-stage > .doc-loading { position: absolute; inset: 0; z-index: 1; background: var(--background); }
 .office-frame { flex: 1; min-height: 0; width: 100%; border: 0; display: block; background: transparent; }
+/* The full-screen library viewer shows the native viewer as a card between its file arrows, like its sheets. */
+.viewer-stage > .office-stage { flex: none; width: calc(100% - 160px); margin-bottom: 24px; border-radius: 10px; overflow: hidden; background: var(--background); color: var(--foreground); }
+@media (max-width: 720px) { .viewer-stage > .office-stage { width: calc(100% - 24px); margin-bottom: 12px; } }
+
+/* A preview that is still on its way (components/preview/doc-loading.tsx): the document's outline, drawn in the
+   surrounding text colour so it sits on the light pane, the dark theme and the full-screen viewer alike. */
+.doc-loading { --doc-ink: color-mix(in srgb, currentColor 9%, transparent); flex: 1; min-height: 0; width: 100%; overflow: hidden; display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 16px; animation: fade var(--t) var(--ease) var(--doc-loading-delay, 180ms) both; }
+.doc-loading-paper { flex: none; width: 100%; max-width: 760px; aspect-ratio: 1 / 1.294; display: flex; flex-direction: column; gap: 9px; padding: 9%; border: 1px solid color-mix(in srgb, currentColor 8%, transparent); border-radius: 4px; background: color-mix(in srgb, currentColor 3%, transparent); }
+.doc-loading[data-shape="slide"] .doc-loading-paper { aspect-ratio: 16 / 9; padding: 6%; }
+.doc-loading[data-shape="text"] .doc-loading-paper { aspect-ratio: auto; padding: 28px 32px; }
+.doc-loading-paper > i { height: 7px; border-radius: 4px; background: var(--doc-ink); }
+.doc-loading-paper > .title { width: 56%; height: 11px; margin-bottom: 8px; }
+.doc-loading-paper > .short { width: 82%; }
+.doc-loading-paper > .mid { width: 64%; }
+.doc-loading-paper > .gap { visibility: hidden; height: 4px; }
+.doc-loading-grid { align-self: stretch; flex: 1; margin: -16px; background:
+  linear-gradient(var(--doc-ink), var(--doc-ink)) 0 0 / 100% 28px no-repeat,
+  linear-gradient(90deg, var(--doc-ink), var(--doc-ink)) 0 0 / 44px 100% no-repeat,
+  repeating-linear-gradient(transparent 0 27px, var(--doc-ink) 27px 28px),
+  repeating-linear-gradient(90deg, transparent 0 43px, var(--doc-ink) 43px 44px, transparent 44px 140px); }
+.doc-loading-media { flex: none; width: min(100%, 640px); aspect-ratio: 4 / 3; margin: auto 0; border-radius: 8px; background: var(--doc-ink); }
+.doc-loading-paper > i, .doc-loading-grid, .doc-loading-media, .document-scroll > .doc-loading-next { animation: doc-loading-pulse 1.6s ease-in-out var(--doc-loading-phase, 0ms) infinite; }
+/* the next page of a preview that is still being rendered */
+.document-scroll > .doc-loading-next { flex: none; width: 100%; max-width: 960px; border-radius: 4px; background: color-mix(in srgb, currentColor 7%, transparent); }
+@keyframes doc-loading-pulse { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) {
+  .doc-loading-paper > i, .doc-loading-grid, .doc-loading-media, .document-scroll > .doc-loading-next { animation: none; }
+}
 .attach-chip.quote-chip { gap: 6px; height: 32px; padding: 0 4px 0 10px; border-radius: 10px; max-width: min(100%, 320px); color: var(--foreground); border-left: 2px solid var(--primary); }
 .quote-chip-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quote-chip-at { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); }

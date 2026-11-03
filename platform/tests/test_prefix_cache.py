@@ -1129,7 +1129,8 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
+@pytest.mark.parametrize("fmt", ["docx", "xlsx", "pptx", "pdf"])
+def test_office_module_wire_load_reread_and_checkpoint_prefix(mode, fmt):
     from ailab_platform.adapters.runtime import restored_state
     from ailab_platform.agent.skill_modules import visible_modules
 
@@ -1153,7 +1154,7 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
                     "index": 0,
                     "id": str(number),
                     "type": "function",
-                    "function": {"name": "load_skill", "arguments": json.dumps({"name": "platform.docx", **arguments})},
+                    "function": {"name": "load_skill", "arguments": json.dumps({"name": f"platform.{fmt}", **arguments})},
                 }
             ]
         }
@@ -1176,6 +1177,12 @@ def test_office_module_wire_load_reread_and_checkpoint_prefix(mode):
     results = {m.get("tool_call_id"): json.loads(m["content"]) for m in requests[-1]["messages"] if m["role"] == "tool"}
     assert "cursor" not in results["2"] and "next_cursor" not in results["2"]
     assert results["2"]["complete"] and results["3"]["already_loaded"] and "skill" not in results["3"]
+    viewer = results["2"]["skill"]
+    assert '"op":"get_view"' in viewer and '"op":"reveal"' in viewer
+    assert "planned:P" not in viewer and "not currently callable" not in viewer
+    assert "Ordinary composer messages do not automatically include the current selection" in viewer
+    assert "file_id" in viewer and "targets" in viewer and 'source="viewport"' in viewer
+    assert any(tool["function"]["name"] == "document_view" for tool in requests[0]["tools"])
     assert not results["4"]["ok"]
     assert visible_modules(requests[-1]["messages"])
     saved = platform.checkpoint["state"]

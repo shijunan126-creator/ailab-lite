@@ -1,5 +1,5 @@
 {
-  "adapter_revision": "c514ee40f9fcd83a834c21302c8a3349300769a67610a23294903612fe7257cf",
+  "adapter_revision": "e54be524f120c2d10ed2cd35516550cd875e04cf6152f08c55ba60bf63ee1334",
   "estimator": "ailab_platform.model_policy.TokenEstimator.raw (text)",
   "modules": [
     {
@@ -17,17 +17,18 @@
     },
     {
       "deps": [],
-      "estimated_tokens": 1103,
+      "estimated_tokens": 1693,
       "logical_path": "spreadsheets-plugin/skills/xlsx-viewer/SKILL.md",
       "modes": [
         "chat",
         "work"
       ],
       "patches": [
-        "001-tools-and-roots.json"
+        "001-tools-and-roots.json",
+        "008-viewer-tool-contract.json"
       ],
       "path": "viewer/SKILL.md",
-      "sha256": "97a58cfa64606f97475408f463b1c766ed63f938a4279d9296cb6fd8b1e42dbd"
+      "sha256": "f4aa89aad596af94c60480025d702230d0ea9c09d1960892401c5b5395be4e6c"
     },
     {
       "deps": [

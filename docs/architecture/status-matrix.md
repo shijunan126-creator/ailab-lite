@@ -1,5 +1,11 @@
 # 单机能力状态
 
+
+2026-11-03 追加[独立审查](../reviews/2026-11-03-office-sidebar-independent-review.md)曾确认两项P2：原生握手后终态失败回退桥、view关闭/更新顺序围栏；现已[本地修复并验证](../progress/updates/2026-11-03-office-review-fixes.md)，Portal226项、最终PG/Redis2228项与26＋2项Office E2E通过。顺序race用确定性API/真实Redis回归验证，未做真实Broker长延迟注入；其他未验边界保留。
+
+2026-11-03 浏览器原生优先已本地实施/验证：文件库/分享复用隔离viewer，无会话不展示提问/引用；四格式library ready/交付不再提前排分页，Work自动变化只公告native源、失败按需快照渲染并按内容/renderer版本缓存。本轮完整套件、E2E/失败复核与兼容性限制见[追加记录](../progress/updates/2026-11-03-browser-native-preview.md)，不声称真实模型/真实Docker全面验收；入口合同见[预览路径](design/office-suite/04-viewer-and-file-contract.md#当前预览与渲染路径)。
+2026-11-03 `main@8cbc216`已含#148，下方未合并状态为历史记录。[完整性审查](../reviews/2026-11-03-office-sidebar-completeness.md)发现的模型viewer指导、在线视图续期及能力账本缺口已在`t3/sidebar-office-file-features`本地修复，并统一加载骨架；双库完整套件、Portal203项/build与定点原生E2E通过。活动工作区曾间歇失败1次且日志缺失，保留未定位；真实浏览器长时静止/隐藏恢复未验。基线、计数、成本与下一步统一见[修复记录](../progress/updates/2026-11-03-office-sidebar-fixes.md)。本轮未发布、未部署，不改变P5复杂格式/长期容量等未验边界。
+
 2026-11-03 PR #148 的 Linux CI 原生索引故障修复与本轮检查见[Linux E2E 记录](../progress/updates/2026-11-03-office-linux-e2e.md)。此次修正 checkout 测试装置，不改变下方产品能力与外部验收边界；尚未推送或部署。
 
 2026-11-03 办公P5完成本轮本地修复与联合检查，**总体仍为有限样本验证、未全面外部验收**。工具调用形状/410截图恢复、Viewer分格式与预压缩、同哈希预览刷新打断capture均已修复；Chat/Work四格式及活跃工作区浏览器合同有成功证据。双库完整套件、最终Portal测试/build通过；完整E2E首轮失败按根因修复，仅失败项定点复跑通过，具体基线/计数/跳过与冷暖性能见[P5最终记录](../progress/updates/2026-11-02-office-suite-p5.md#p5-最终修复与联合检查2026-11-03)。此前模板/品牌两轮、视觉对照与Linux三任务证据仍按P5原节限定范围。VBA、Microsoft Office保真、复杂模板上沿、长期容量、多浏览器及真实流逝/GC恢复未验；不宣称全场景缓存≥95%或XLSX解析成本已消除。下一步向main提PR；未push、PR或部署。

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/TextLayer.css";
+import DocLoading from "./doc-loading";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
 
@@ -42,7 +43,7 @@ export default function PdfDocument({ url, title }: { url: string; title: string
   return (
     <div className="pdf-preview">
       <div className="pdf-toolbar">
-        <span className="hint">{pages ? `${pages} 页` : "加载中…"}</span>
+        <span className="hint">{pages ? `${pages} 页` : ""}</span>
         <span className="spacer" />
         <button type="button" className="link" onClick={() => setZoom((value) => Math.max(0.6, Math.round((value - 0.1) * 10) / 10))} aria-label="缩小">
           −
@@ -64,7 +65,7 @@ export default function PdfDocument({ url, title }: { url: string; title: string
             setError("");
           }}
           onLoadError={(reason) => setError(`PDF 加载失败：${reason?.message || reason}`)}
-          loading={<div className="viewer-state"><span className="viewer-spinner" aria-label="正在加载 PDF" /></div>}
+          loading={<DocLoading shape="page" />}
         >
           {Array.from({ length: shown }, (_, index) => (
             <Page

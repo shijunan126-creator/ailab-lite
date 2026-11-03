@@ -4,11 +4,12 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, errorMessage, FileItem, Preview, previewUrl, readerRenderUrl, type DocRef } from "../../lib/api";
 import OfficeView, { officeKind, type OfficeDoc, type OfficeReveal } from "../preview/office-view";
 import { IconDownload, IconPanelRight, IconX } from "../icons";
-import { FilePreviewBody } from "../preview/file-viewer";
+import { PagedPreview } from "../preview/file-viewer";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
 import PdfDocument from "../preview/pdf";
 import { HtmlDocView } from "../preview/html-doc";
+import DocLoading, { loadingShape } from "../preview/doc-loading";
 import type { Source } from "../../lib/work-process";
 import { SourcesList } from "./sources";
 
@@ -63,7 +64,7 @@ function NativePane({ doc, revision, office, reveal, fallback }: { doc: OfficeDo
 }
 
 /** Reuse library rendering without its fullscreen shell; cancel superseded file loads. */
-function LibraryPane({ fileId }: { fileId: string }) {
+function LibraryPane({ fileId, filename }: { fileId: string; filename: string }) {
   const [file, setFile] = useState<FileItem | null>(null);
   const [error, setError] = useState("");
   useEffect(() => {
@@ -76,7 +77,42 @@ function LibraryPane({ fileId }: { fileId: string }) {
     return () => controller.abort();
   }, [fileId]);
   if (error) return <div className="alert error">{error}</div>;
-  return file ? <FilePreviewBody file={file} /> : <div className="hint" role="status">正在加载</div>;
+  return file ? <PagedPreview file={file} /> : <DocLoading shape={loadingShape(filename)} />;
+}
+
+const WORKSPACE_POLL_MS = 1500;
+
+/** A Work file the native viewer cannot show: rendered on the server from the run's workspace, asked for only when
+ * this fallback is actually on screen, and again when the file changes (`version`). */
+function WorkspacePreview({ preview }: { preview: Preview }) {
+  const [rendered, setRendered] = useState<Preview | null>(null);
+  const [error, setError] = useState("");
+  const { run_id: runId, path, version } = preview;
+  useEffect(() => {
+    if (!runId || !path) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    setError("");
+    setRendered(null);
+    const ask = () =>
+      api<Preview & { status?: string }>(`/v1/runs/${runId}/workspace/preview?path=${encodeURIComponent(path.replace(/^\/workspace\//, ""))}`, { signal: controller.signal })
+        .then((value) => {
+          if (controller.signal.aborted) return;
+          if (value.status === "pending") timer = setTimeout(ask, WORKSPACE_POLL_MS);
+          else if (value.error) setError(value.error);
+          else setRendered({ ...value, run_id: value.run_id || runId });
+        })
+        .catch((reason) => !controller.signal.aborted && setError(errorMessage(reason)));
+    ask();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [runId, path, version]);
+  if (!runId || !path) return <div className="hint">没有可显示的文档</div>;
+  if (error) return <div className="alert error">无法预览：{error}</div>;
+  if (!rendered) return <DocLoading shape={loadingShape(preview.filename)} />;
+  return rendered.kind === "pdf" ? <PdfPane preview={rendered} /> : rendered.kind === "sheets" ? <Sheets src={rendered.data ? previewUrl(rendered.run_id!, rendered.data) : null} /> : rendered.kind === "pages" ? <Pages preview={rendered} /> : <div className="hint">没有可显示的文档</div>;
 }
 
 export type PaneSources = { runId: string; sources: Source[]; answer: string };
@@ -270,7 +306,8 @@ export default function PreviewPane({
       ) : current ? (
         <div className={`preview-body${current.libraryFileId ? " library-pane" : ""}${office && currentDoc ? " office-pane" : ""}`} key={currentDoc ? `${previewTabKey(current)}:${JSON.stringify(currentDoc.source)}` : previewTabKey(current) + (current.file_id || "")}>
           {(() => {
-            const paged = current.libraryFileId ? <LibraryPane fileId={current.libraryFileId} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null;
+            const deliveredId = current.kind === "native" ? delivered[current.filename] : undefined;
+            const paged = current.libraryFileId || deliveredId ? <LibraryPane fileId={(current.libraryFileId || deliveredId)!} filename={current.filename} /> : current.kind === "native" ? <WorkspacePreview preview={current} /> : current.kind === "pages" ? <Pages preview={current} /> : current.kind === "pdf" ? <PdfPane preview={current} /> : current.kind === "sheets" ? <Sheets src={current.run_id && current.data ? previewUrl(current.run_id, current.data) : null} /> : current.kind === "html" && current.file_id ? <HtmlPane preview={current} /> : null;
             return office && currentDoc ? <NativePane doc={currentDoc} revision={current.version} office={office} reveal={revealOf(current)} fallback={paged} /> : paged;
           })()}
         </div>

@@ -45,6 +45,42 @@ export const PATCHES = [
     "new Worker(url)",
     "Module workers from blob URLs do not start in an opaque-origin frame; the pdf.js worker is built as a classic script.",
   ],
+  [
+    "ui/main.tsx",
+    "const current = docRef.current;\n    if (!current || !picked) return;\n    const anchor = formatAnchor(current.info.path, picked.selection.at);\n    const text = picked.selection.text;\n    const next = [",
+    "const current = docRef.current;\n    if (!current || !picked || !host.capabilities?.message) return;\n    const anchor = formatAnchor(current.info.path, picked.selection.at);\n    const text = picked.selection.text;\n    const next = [",
+    "Without a conversation (library, shares) there is nothing to add a reference to; ⌘/Ctrl+Enter does nothing.",
+  ],
+  [
+    "ui/main.tsx",
+    "{doc && ready && !failure && picked?.detail.user ? (",
+    "{doc && ready && !failure && picked?.detail.user && host.capabilities?.message ? (",
+    "Without a conversation the selection bar would offer actions that cannot work; the text layer still copies natively.",
+  ],
+  [
+    "ui/main.tsx",
+    "const mine = ++loadSeq.current;",
+    "const mine = ++loadSeq.current;\n      let revision: string | undefined;",
+    "Remember which version a load was for, so its failure can be reported against that version.",
+  ],
+  [
+    "ui/main.tsx",
+    '}>("load_document", { path: target });',
+    '}>("load_document", { path: target });\n        revision = loaded.info.revision;',
+    "Remember which version a load was for, so its failure can be reported against that version.",
+  ],
+  [
+    "ui/main.tsx",
+    "setFailure(describeFailure(t, error, target));\n      } finally {",
+    'host.fail("load", error, revision);\n        setFailure(describeFailure(t, error, target));\n      } finally {',
+    "A failed byte read or renderer prepare is terminal for that version: the Portal shows its paged preview or the source error.",
+  ],
+  [
+    "ui/main.tsx",
+    "onError: (error: Error) =>\n              setFailure(describeFailure(t, error, docRef.current?.info.path ?? null)),",
+    'onError: (error: Error) => {\n              host.fail("render", error, docRef.current?.info.revision);\n              setFailure(describeFailure(t, error, docRef.current?.info.path ?? null));\n            },',
+    "A renderer that cannot draw the document is terminal for that version; the Portal shows its paged preview instead.",
+  ],
   ["ui/i18n.ts", 'contextFailed: "ZCode did not accept the reference.",', 'contextFailed: "The reference was not added.",', "Host-neutral wording."],
   ["ui/i18n.ts", 'contextFailed: "ZCode 未接受该引用。",', 'contextFailed: "未能添加引用。",', "Host-neutral wording."],
   [

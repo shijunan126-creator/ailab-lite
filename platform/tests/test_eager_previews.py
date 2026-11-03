@@ -27,7 +27,7 @@ def preview_jobs(db, fid):
 
 
 def test_clean_scan_stages_preview_before_parse_and_exposes_only_scanned_file(api):
-    fid = upload(api, "early.pdf", process=False)
+    fid = upload(api, "early.doc", process=False)
     assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).status_code == 404
     p = ApiClient(api)
     p.patch_file(fid, meta={"scan": {"verdict": "clean", "ok": True}})
@@ -57,7 +57,7 @@ def test_worker_publishes_clean_scan_before_office_parse(api, monkeypatch):
             file = db.get(FileObject, file_id)
             assert file.status == "pending"
             assert file.meta["scan"]["verdict"] == "clean"
-            assert len(preview_jobs(db, file_id)) == 1
+            assert len(preview_jobs(db, file_id)) == 0
         raise IsolationError("test parser failure")
 
     monkeypatch.setattr(office, "read", parse)
@@ -85,7 +85,7 @@ def test_waiting_page_promotes_an_already_published_background_job(api):
     from ailab_platform.api.routes_ocr import request_page_render
     from ailab_platform.queue import get_queue, job_topic
 
-    fid = upload(api, "promote.pdf")
+    fid = upload(api, "promote.doc")
     with SessionLocal() as db:
         job = db.get(FileObject, fid).meta["preview_job_id"]
     dispatch_preview_jobs(job)
@@ -101,7 +101,7 @@ def test_waiting_page_promotes_an_already_published_background_job(api):
     assert any(msg["job_id"] == job for msg in get_queue().outstanding(job_topic("preview", priority=True)))
 
 
-@pytest.mark.parametrize("name", ["a.docx", "a.pptx", "a.xlsx", "a.pdf", "a.xls"])
+@pytest.mark.parametrize("name", ["a.doc", "a.ppt", "a.xls", "a.ods", "a.rtf"])
 def test_readiness_stages_preview_without_a_click_and_without_rendering(api, name):
     fid = upload(api, name)
     with SessionLocal() as db:
@@ -113,7 +113,7 @@ def test_readiness_stages_preview_without_a_click_and_without_rendering(api, nam
         db.commit()
         assert len(preview_jobs(db, fid)) == 1
     p = ApiClient(api)
-    if name.endswith((".pdf", ".docx", ".pptx", ".xls")):
+    if name.endswith((".doc", ".ppt", ".xls", ".ods", ".rtf")):
         process_preview(fid, p.get_file(fid)["meta"]["preview_job_id"], p)
         assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "ready"
         assert p.renders == 1
@@ -122,7 +122,7 @@ def test_readiness_stages_preview_without_a_click_and_without_rendering(api, nam
 @pytest.mark.parametrize("condition", ["large", "disabled", "pending", "deleted", "purged", "text", "failed", "ready"])
 def test_eager_admission_and_cached_terminal_states(api, monkeypatch, condition):
     monkeypatch.setattr(settings, "preview_eager_max_bytes", 0)
-    fid = upload(api, "a.txt" if condition == "text" else "a.pdf", process=condition != "pending")
+    fid = upload(api, "a.txt" if condition == "text" else "a.doc", process=condition != "pending")
     monkeypatch.setattr(settings, "preview_eager_max_bytes", 0 if condition == "disabled" else 20)
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
@@ -139,7 +139,7 @@ def test_eager_admission_and_cached_terminal_states(api, monkeypatch, condition)
         assert preview_jobs(db, fid) == []
 
 
-def test_office_artifact_delivery_stages_one_preview_in_delivery_transaction(api):
+def test_office_artifact_delivery_does_not_speculate_page_exports(api):
     from tests.run_claims import attempt_headers, delivery_headers
 
     run = api.post("/v1/runs", headers=AUTH, json={"prompt": "office artifact"}).json()
@@ -160,7 +160,32 @@ def test_office_artifact_delivery_stages_one_preview_in_delivery_transaction(api
     assert api.post("/internal/artifacts", headers=headers, json=body).json() == first.json()
     with SessionLocal() as db:
         fid = first.json()["file_id"]
-        assert db.get(FileObject, fid).meta["preview"]["status"] == "pending"
+        assert not (db.get(FileObject, fid).meta or {}).get("preview")
+        assert len(preview_jobs(db, fid)) == 0
+
+
+@pytest.mark.parametrize(
+    "name,mime",
+    [
+        ("a.DOCX", "application/octet-stream"),
+        ("a.xlsx", "application/octet-stream"),
+        ("a.pptx", "application/octet-stream"),
+        ("a.pdf", "application/pdf"),
+        ("download", "application/pdf"),
+    ],
+)
+def test_native_files_export_only_when_the_fallback_is_requested(api, name, mime):
+    fid = upload(api, name, mime=mime)
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        request_ready_preview(db, file)
+        db.commit()
+        assert preview_jobs(db, fid) == []
+        assert "preview_job_id" not in (file.meta or {})
+    # Existing explicit fallback preserves its transactional and idempotent contract.
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "pending"
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "pending"
+    with SessionLocal() as db:
         assert len(preview_jobs(db, fid)) == 1
 
 
@@ -177,6 +202,7 @@ def page_cache(fid, count=2, pages=None):
 
 def test_complete_ocr_pages_reused_without_a_sandbox_and_old_manifest_still_valid(api):
     fid = upload(api, "reuse.pdf")
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "pending"
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.meta = {**file.meta, **page_cache(fid)}

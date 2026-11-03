@@ -106,6 +106,38 @@ class QuestionThenAnswer(LLMClient):
             ),
             "",
         )
+        if prompt == "原生表格回退验收":
+            import shlex
+
+            turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
+            results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
+            if not any(m.get("name") == "exec" for m in results):
+                office_release.clear()
+                source = (
+                    "from openpyxl import Workbook; w=Workbook(); s=w.active; s.title='销售'; "
+                    "s.append(['地区','金额']); s.append(['华东',1200]); w.save('/workspace/outputs/fallback.xlsx')"
+                )
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall("fallback_create", "exec", {"cmd": "mkdir -p /workspace/outputs && python -c " + shlex.quote(source)})
+                    ]
+                )
+            if not any(m.get("name") == "document_view" for m in results):
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(
+                            "fallback_open",
+                            "document_view",
+                            {"op": "reveal", "path": "outputs/fallback.xlsx", "targets": [{"at": "销售!A1:B2"}]},
+                        )
+                    ]
+                )
+            await asyncio.wait_for(office_release.wait(), timeout=45)
+            return LLMResponse(content="回退预览验收完成。")
+        if prompt.startswith("就这里直接提问"):
+            refs = prompt.split("<document_references>\n", 1)
+            first = refs[1].split("\n", 1)[0] if len(refs) > 1 else "无"
+            return LLMResponse(content="直接提问引用：" + first)
         if prompt.startswith("原生收件验收") or (
             prompt.startswith("请解释这段引用")
             and any("原生收件验收" in str(m.get("content", "")) for m in messages if m.get("role") == "user")

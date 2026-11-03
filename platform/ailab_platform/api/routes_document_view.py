@@ -52,12 +52,28 @@ def active_views(db, run):
 @router.put("/v1/conversations/{conversation_id}/view")
 def put_view(conversation_id: str, body: ViewState, user: User = Depends(current_user), db: Session = Depends(get_db)):
     _owned(db, conversation_id, user)
-    state = body.model_dump(exclude_none=True)
-    authorize_state(db, user, state)
+    state = body.model_dump(exclude_none=True, exclude={"sequence"})
     try:
-        view_state.put(user.id, conversation_id, state)
+        ticket = view_state.begin(user.id, conversation_id, body.view_id, body.sequence)
     except ValueError:
-        raise HTTPException(422, "too many active views") from None
+        raise HTTPException(422, "too many view generations") from None
+    if ticket is None:
+        raise HTTPException(409, "view report superseded or closed")
+    prior = next((v for v in view_state.views(user.id, conversation_id) if v["view_id"] == body.view_id), None)
+    if body.run_id and prior == state:
+        # An unchanged heartbeat extends only an already authorized hint. Recheck the run
+        # cheaply here; get_view/capture still verify current workspace bytes before use.
+        from .routes_runs import _get_owned_run
+
+        run = _get_owned_run(db, body.run_id, user)
+        if run.conversation_id:
+            _owned(db, run.conversation_id, user)
+        if run.status != "running":
+            raise HTTPException(410, "live workspace unavailable")
+    else:
+        authorize_state(db, user, state)
+    if not view_state.commit(user.id, conversation_id, state, ticket):
+        raise HTTPException(409, "view report superseded or closed")
     return {"status": "ready"}
 
 
@@ -69,7 +85,10 @@ def delete_view(
     db: Session = Depends(get_db),
 ):
     _owned(db, conversation_id, user)
-    view_state.delete(user.id, conversation_id, view_id)
+    try:
+        view_state.delete(user.id, conversation_id, view_id)
+    except ValueError:
+        raise HTTPException(422, "too many view generations") from None
     return Response(status_code=204)
 
 

@@ -26,6 +26,9 @@ def request_ready_preview(db, file):
     if (meta.get("preview") or {}).get("status") == "pending" and meta.get("preview_job_id"):
         return
     suffix = Path(file.filename).suffix.lower()
+    # Native viewers draw originals in the browser; export only on explicit fallback.
+    if suffix in {".docx", ".xlsx", ".pptx", ".pdf"} or file.content_type.split(";")[0] == "application/pdf":
+        return
     if suffix in PAGES | LOCAL_SHEETS | SANDBOX_SHEETS or file.content_type.split(";")[0] == "application/pdf":
         request_preview(db, file, retry_stale=False)
 

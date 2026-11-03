@@ -26,5 +26,9 @@
   {
     "file": "007-readable-resource-limits.json",
     "reason": "Preserve Python AST while fitting complete readable scripts within loader line limits."
+  },
+  {
+    "file": "008-viewer-tool-contract.json",
+    "reason": "Replace early planned viewer guidance with the implemented document_view identity, selection, reveal and capture contract in both modes."
   }
 ]

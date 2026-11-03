@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import DocLoading from "./doc-loading";
 
 type Cell = { v: string; b?: 1; bg?: string; fg?: string; n?: 1; f?: string };
 type Sheet = { name: string; rows: Cell[][]; widths: (number | null)[]; truncated: boolean; size: [number, number]; charts: number };
@@ -28,7 +29,7 @@ export default function Sheets({ src }: { src: string | null }) {
     };
   }, [src]);
   if (error) return <div className="alert error">预览加载失败：{error}</div>;
-  if (!data) return <div className="hint">加载中…</div>;
+  if (!data) return <DocLoading shape="sheet" />;
   const sheet = data.sheets[Math.min(tab, data.sheets.length - 1)];
   if (!sheet) return <div className="hint">空工作簿</div>;
   const cols = Math.max(0, ...sheet.rows.map((r) => r.length));

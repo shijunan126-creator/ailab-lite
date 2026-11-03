@@ -7,7 +7,7 @@ vi.mock("../components/preview/office-view", () => ({
   default: ({ doc, revision }: { doc: { filename: string }; revision: number }) => <iframe title={doc.filename} data-revision={revision} />,
 }));
 vi.mock("../components/preview/pdf", () => ({ default: () => null }));
-vi.mock("../components/preview/file-viewer", () => ({ FilePreviewBody: () => null }));
+vi.mock("../components/preview/file-viewer", () => ({ PagedPreview: () => null }));
 import PreviewPane from "../components/chat/preview-pane";
 afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 

@@ -1,4 +1,4 @@
-"""Static capability/dependency contract; no runtime probing or installation."""
+"""Implementation inventory with explicit execution evidence; no runtime probing or installation."""
 
 from __future__ import annotations
 
@@ -20,6 +20,9 @@ DISTRIBUTIONS = {
     "bs4": "beautifulsoup4",
     "win32com": "pywin32",
 }
+
+P5_EVIDENCE = "docs/progress/updates/2026-11-02-office-suite-p5.md"
+VIEWER_EVIDENCE = "docs/progress/updates/2026-11-02-office-portal-tests.md"
 
 
 def inventory() -> dict:
@@ -106,29 +109,24 @@ def inventory() -> dict:
         if name.startswith("office-runtime/"):
             relative = path.relative_to("office-runtime").as_posix()
             if relative.startswith("ui/"):
-                location = "Portal isolated viewer bundle (planned:P4)"
+                location = "platform/portal/office/build.mjs -> isolated per-format viewer bundle"
             elif relative.startswith("src/"):
-                location = f"/opt/ailab-office/{relative} (planned:P2)"
+                location = f"/opt/ailab-office/{relative}"
             else:
                 location = f"build/test only: vendor/office-suite/upstream/{name}"
         if "LICENSE" in path.name.upper() or path.name == "LICENSE":
             status, reason = "implemented", "Unmodified license retained with source provenance; not model-visible."
         elif name.startswith("office-runtime/"):
             status, reason = (
-                "planned:P3" if "/ui/" in name else "planned:P2",
-                "Source pinned only; reader adapter migration and viewer integration remain separate acceptance work.",
+                "implemented",
+                "Runtime integrated through Portal/reader adapters; local samples do not prove full Office fidelity.",
             )
         elif "env_setup" in name or "setup.sh" in name:
-            status, reason = "blocked", "Host/network installation is disabled; P2 must supply and license offline image dependencies."
-        elif any(missing.values()) or deps["dynamic"]:
-            status, reason = (
-                "planned:P2",
-                "Resources retained; missing or dynamic dependencies require image closure and execution acceptance in P2.",
-            )
+            status, reason = "blocked", "Installation disabled; use preinstalled dependencies, never run these installers."
         else:
             status, reason = (
-                "planned:P1",
-                "Resource built and hashed; module loading is intentionally deferred to P1; execution acceptance remains P2/P5.",
+                "implemented",
+                "Packaged, hashed and mode-gated through load_skill; individual recipes require execution acceptance.",
             )
         entry = {
             "id": "source:" + name,
@@ -141,11 +139,13 @@ def inventory() -> dict:
             "acceptance_case_id": "OFFICE-" + sha(name.encode())[:12],
             "status": status,
             "reason": reason,
+            "evidence": [P5_EVIDENCE],
+            "execution_validation": "not individually accepted; static missing/dynamic dependencies require task-specific verification",
         }
         if name.endswith("scenes/vba.md"):
             entry.update(
                 status="blocked",
-                reason="Windows Excel/COM macro execution is unavailable in the Linux image; native VBA preservation remains P2.",
+                reason="Windows Excel/COM macro execution is unavailable in the Linux image; preserving VBA is separate from execution.",
             )
         entries.append(entry)
         commands = set(json.loads(text).get("scripts", {})) if path.name == "package.json" else set()
@@ -174,8 +174,11 @@ def inventory() -> dict:
                     status="blocked",
                     reason="Runtime dependency installation deliberately disabled; report missing preinstalled dependencies instead.",
                 )
-            elif status == "planned:P1":
-                item.update(status="planned:P2", reason="CLI/API retained but command behavior requires P2 execution acceptance.")
+            elif status != "blocked":
+                item.update(
+                    status="planned:P5",
+                    reason="Command shipped; representative flows passed, but this command lacks individual execution acceptance.",
+                )
             entries.append(item)
     for fmt in PACKAGES.values():
         for feature in (
@@ -196,14 +199,14 @@ def inventory() -> dict:
                     "kind": "viewer-feature",
                     "source": f"office-runtime/ui/viewers/{fmt.title()}View.tsx",
                     "modes": ["chat", "work"],
-                    "runtime_location": "Portal isolated viewer frame (planned)",
+                    "runtime_location": "platform/portal/components/preview/office-view.tsx -> isolated per-format viewer frame",
                     "dependencies": {"npm": sorted(runtime_npm), "python": [], "binary": [], "dynamic": [], "local": []},
                     "missing_from_image": {"npm": [], "python": [], "binary": []},
                     "acceptance_case_id": "OFFICE-" + sha(key.encode())[:12],
-                    "status": "planned:P4",
-                    "reason": (
-                        "Requires P3 document identity/session/tool contract and P4 Portal host integration; no browser side effects in P0."
-                    ),
+                    "status": "implemented",
+                    "reason": "Native viewer and document_view connected; verification covers recorded local samples.",
+                    "evidence": [VIEWER_EVIDENCE, P5_EVIDENCE],
+                    "execution_validation": "limited local samples; no claim of all browsers, long-duration or full format fidelity",
                 }
             )
     entries.append(
@@ -212,15 +215,31 @@ def inventory() -> dict:
             "kind": "external-contract",
             "source": "presentations-plugin/agents/visual-judge.md",
             "modes": ["work"],
-            "runtime_location": "Agent read-only visual review (planned)",
+            "runtime_location": "Upstream system delivery protocol (not supplied)",
             "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
             "missing_from_image": {"npm": [], "python": [], "binary": []},
             "acceptance_case_id": "OFFICE-VISUAL-GATE",
             "status": "blocked",
             "reason": (
-                "Source system delivery protocol is absent. P2 must implement the explicitly local AILab gate; "
-                "copying the role is not parity."
+                "Source system delivery protocol is absent. The implemented local AILab review_artifact contract is separate; "
+                "copying the role is not upstream parity."
             ),
+        }
+    )
+    entries.append(
+        {
+            "id": "visual-gate:ailab-review",
+            "kind": "local-contract",
+            "source": "platform/ailab_platform/agent/tools.py",
+            "modes": ["work"],
+            "runtime_location": "review_artifact -> Broker -> active Work sandbox",
+            "dependencies": {"npm": [], "python": [], "binary": [], "dynamic": [], "local": []},
+            "missing_from_image": {"npm": [], "python": [], "binary": []},
+            "acceptance_case_id": "OFFICE-AILAB-VISUAL-REVIEW",
+            "status": "implemented",
+            "reason": "Bounded structural/page-image evidence; pending_model_judgment is not an automatic quality pass.",
+            "evidence": [P5_EVIDENCE],
+            "execution_validation": "representative DOCX/XLSX/PPTX/PDF tasks, not every recipe or independent visual model",
         }
     )
     entries.append(
@@ -241,7 +260,7 @@ def inventory() -> dict:
         "schema_version": 1,
         "upstream_commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
         "image_baseline_sha256": sha(docker.encode()),
-        "scope": "P0 static resource contract, not runtime acceptance",
+        "scope": "Implementation inventory; resource availability, command acceptance and external prerequisites are distinct.",
         "dependency_scan": (
             "Python AST imports/calls, JS/TS literal imports, Markdown examples, shell probes and package manifests; "
             "dynamic sites carry expressions for P2 review."
