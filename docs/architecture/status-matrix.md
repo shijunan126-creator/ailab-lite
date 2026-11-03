@@ -1,6 +1,6 @@
 # 单机能力状态
 
-2026-11-04 上下文压缩 HLD 已本地实施并验证（`feat/context-hld-usage@f23e470`，待 PR）：上下文纪元/ABI、原子边界、安全压缩点、三路径结构化摘要；90% 触发，压缩/重建后整份请求 10K–48K、上限 64K；计数锚定供应商 prompt_tokens；ContextPause 保留后台任务；RunProcessSnapshot 让历史过程不依赖 30 天事件保留。300K 真实压缩为历史 SHA 证据，最终 SHA 未测真实模型。见 [ADR 0033](adr/0033-context-epoch-band-process-snapshot.md) 与[记录](../progress/updates/2026-11-04-context-hld.md)。
+2026-11-04 上下文压缩 HLD 已合并为 `main@db7e2e1` 并部署本机 `release-db7e2e1`：上下文纪元/ABI、原子边界、安全压缩点、三路径结构化摘要；90% 触发，压缩/重建后整份请求 10K–48K、上限 64K；计数锚定供应商 prompt_tokens；ContextPause 保留后台任务；RunProcessSnapshot 让历史过程不依赖 30 天事件保留。300K 真实压缩为历史 SHA 证据，最终 SHA 未测真实模型。见 [ADR 0033](adr/0033-context-epoch-band-process-snapshot.md) 与[记录](../progress/updates/2026-11-04-context-hld.md)。
 
 
 
