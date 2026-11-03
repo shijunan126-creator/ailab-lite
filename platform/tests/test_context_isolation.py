@@ -80,6 +80,16 @@ def test_catalog_fingerprint_distinguishes_permissions_with_identical_tool_names
     assert tool_catalog_fingerprint(files) == tool_catalog_fingerprint(reordered_keys)
     assert tool_catalog_fingerprint(files) != tool_catalog_fingerprint(github)
     assert tool_catalog_fingerprint(files) != tool_catalog_fingerprint([*files, *github])
+    loop = AgentLoop(FakePlatform())
+    prefix = [{"role": "system", "content": "platform"}, {"role": "system", "content": "boundary"}]
+    for run_id, catalog in [("files", files), ("github", github)]:
+        loop._states[run_id] = {**fresh_state(), "messages": copy.deepcopy(prefix), "tool_catalog_v1": catalog}
+        turn = _Turn({"options": {"mode": "work"}})
+        asyncio.run(loop._context(run_id).build(turn.run, turn, "m", loop.llm))
+        saved = loop._context(run_id).snapshot({})
+        assert saved["tool_catalog_fingerprint"] == tool_catalog_fingerprint(catalog)
+        assert saved["messages"] == prefix and saved["tool_catalog_v1"] == catalog
+    assert loop._states["files"]["tool_catalog_fingerprint"] != loop._states["github"]["tool_catalog_fingerprint"]
     # Execution authorization still uses the offered catalog, never this digest.
     assert files[0]["function"]["parameters"]["enum"] == ["files"]
 
