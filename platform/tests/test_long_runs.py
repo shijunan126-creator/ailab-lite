@@ -179,11 +179,11 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=10000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
     monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     platform = FakePlatform()
-    model = ScriptedLLM([LLMResponse(content="已执行前三步，后台句柄abc；保留文件 /workspace/a") for _ in range(10)])
+    model = ScriptedLLM([LLMResponse(content='{"schema_version":1,"objective":"已执行前三步"}') for _ in range(10)])
     loop = AgentLoop(platform, FakeBroker(), model)
     state = fresh_state()
     state["messages"] = [
@@ -196,7 +196,7 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
         state["messages"].extend(
             [
                 {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
-                {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
+                {"role": "tool", "tool_call_id": str(i), "content": "x" * 7200},
             ]
         )
     loop._states["run_1"], loop._steps["run_1"] = state, 0
@@ -205,8 +205,8 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[1]["content"] == "context"
     assert turn.messages[2] == {"role": "user", "content": "original constraints"}
-    assert "本轮执行摘要" in turn.messages[3]["content"]
-    assert "平台已确认交付" in turn.messages[4]["content"]
+    assert "<conversation_checkpoint>" in turn.messages[3]["content"]
+    assert "<runtime_state>" in turn.messages[4]["content"]
     assert [m["tool_call_id"] for m in turn.messages if m["role"] == "tool"] == ["3", "4"]
     assert platform.checkpoint and platform.reservations
 
@@ -276,16 +276,16 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
     from ailab_platform.catalog import Catalog, ModelSpec
     from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=11000)])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=10000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
     monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
-    model = ScriptedLLM([LLMResponse(content="摘要") for _ in range(10)])
+    model = ScriptedLLM([LLMResponse(content='{"schema_version":1,"objective":"摘要"}') for _ in range(10)])
     loop = AgentLoop(FakePlatform(), FakeBroker(), model)
 
     def group(i):
         return [
             {"role": "assistant", "tool_calls": [{"id": str(i), "type": "function", "function": {"name": "exec", "arguments": "{}"}}]},
-            {"role": "tool", "tool_call_id": str(i), "content": "x" * 7600},
+            {"role": "tool", "tool_call_id": str(i), "content": "x" * 7200},
         ]
 
     state = fresh_state()

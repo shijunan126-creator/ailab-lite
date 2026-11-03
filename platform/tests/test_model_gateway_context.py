@@ -242,9 +242,12 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
         async def chat(self, messages, tools, model, user_id=None):
             call = model_call.get()
             spec = cat.get(model)
-            assert call.max_output_tokens == min(2048, spec.max_output_tokens)
+            assert 0 < call.max_output_tokens <= min(2048, spec.max_output_tokens)
             assert estimator.estimate(model, {"messages": messages, "tools": tools}) + call.max_output_tokens <= spec.context_tokens
-            return LLMResponse(content="记住用户要求与已交付文件。", usage={"prompt_tokens": 50, "completion_tokens": 15})
+            return LLMResponse(
+                content='{"schema_version":1,"objective":"记住用户要求与已交付文件。"}',
+                usage={"prompt_tokens": 50, "completion_tokens": 15},
+            )
 
     class Context(FakePlatform):
         def __init__(self):
@@ -277,7 +280,7 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
         base = [{"role": "system", "content": "系统"}, {"role": "user", "content": "当前问题"}]
         messages = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
         assert estimator.estimate("summary", {"messages": messages, "tools": []}) <= ModelPolicy.input_budget(cat.get("summary"))
-        assert any("历史摘要" in m["content"] for m in messages)
+        assert any("conversation_checkpoint" in m["content"] for m in messages)
         calls = len(bridge.reservations)
         assert calls > 0 and calls == len(bridge.settlements) == len(bridge.saved)
         again = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)

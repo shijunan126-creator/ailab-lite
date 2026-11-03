@@ -264,3 +264,18 @@ def record_genui(text: str, mode: str, *, max_blocks: int = 8, max_block_chars: 
     for component, count in report["components"].items():
         GENUI_COMPONENTS.labels(component).inc(count)
     return report
+
+
+# Aggregate observations across runs; epoch numbers and tenant IDs are never labels.
+CONTEXT_COMPACTIONS = Counter("ailab_context_compactions_total", "Activated compaction boundaries")
+CONTEXT_COMPACTION_FAILURES = Counter("ailab_context_compaction_failures_total", "Compaction failures", ["reason"])
+CONTEXT_REBUILDS = Counter("ailab_context_rebuilds_total", "Non-compaction boundaries", ["reason"])
+CONTEXT_EPOCH = Histogram("ailab_context_epoch", "Activated context epoch", buckets=(0, 1, 2, 4, 8, 16, 32, 64))
+CONTEXT_INPUT_TOKENS = Histogram("ailab_context_input_tokens", "Main request input estimate", buckets=(1024, 4096, 16384, 65536, 262144))
+CONTEXT_CHECKPOINT_TOKENS = Histogram("ailab_context_checkpoint_tokens", "Semantic checkpoint estimate", buckets=(256, 1024, 4096, 16384))
+CONTEXT_RECENT_TOKENS = Histogram("ailab_context_recent_tokens", "Retained raw tail estimate", buckets=(1024, 4096, 16384, 65536))
+CONTEXT_OPERATIONAL_TOKENS = Histogram(
+    "ailab_context_operational_tokens", "Operational boundary estimate", buckets=(256, 1024, 4096, 16384)
+)
+CONTEXT_BARRIER_WAIT_SECONDS = Histogram("ailab_context_barrier_wait_seconds", "Synchronous barrier validation time", buckets=_FAST)
+CONTEXT_BARRIER_PENDING_TOOLS = Histogram("ailab_context_barrier_pending_tools", "Pending tools at barrier", buckets=(0, 1, 2, 4, 8, 16))

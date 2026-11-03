@@ -137,7 +137,7 @@ def test_context_threshold_triggers_before_overflow(monkeypatch, enabled):
 
     class Summary(LLMClient):
         async def chat(self, *args, **kwargs):
-            return LLMResponse(content="摘要")
+            return LLMResponse(content='{"schema_version":1,"objective":"摘要"}')
 
     async def run():
         p = Context()

@@ -219,7 +219,9 @@ def test_compaction_inputs_strip_ui_before_serializing(monkeypatch):
         async def chat(self, messages, tools, model, user_id=None):
             seen.append(messages)
             assert "root =" not in json.dumps(messages, ensure_ascii=False)
-            return LLMResponse(content="保留事实。", usage={"prompt_tokens": 50, "completion_tokens": 10})
+            return LLMResponse(
+                content='{"schema_version":1,"objective":"保留事实。"}', usage={"prompt_tokens": 50, "completion_tokens": 10}
+            )
 
     class Context(FakePlatform):
         async def get_model_context(self, run_id, after=None):
@@ -272,11 +274,11 @@ def test_work_compaction_preserves_genui_prefix_in_summary_request(monkeypatch):
             assert "root =" in messages[2]["content"]
             assert "只输出摘要" in messages[-1]["content"]
             seen.append(messages)
-            return LLMResponse(content="执行摘要", usage={"prompt_tokens": 10, "completion_tokens": 5})
+            return LLMResponse(content='{"schema_version":1,"objective":"执行摘要"}', usage={"prompt_tokens": 10, "completion_tokens": 5})
 
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
-    monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: 8500 if "OLDER" in json.dumps(value) else 100)
+    monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: 9000 if "OLDER" in json.dumps(value) else 100)
     loop = AgentLoop(FakePlatform(), FakeBroker(), SummaryLLM())
     state = fresh_state()
     state["messages"] = [

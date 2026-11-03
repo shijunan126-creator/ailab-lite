@@ -13,6 +13,7 @@ from ailab_platform.agent.multimodal import image_part
 from ailab_platform.agent.prompts import PLATFORM_PROMPT_VERSION, memory_prompt, system_prompt_for
 from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.catalog import Catalog, ModelSpec
+from ailab_platform.contracts.context_summary import ContextSummary, canonical_summary
 from ailab_platform.llm import LLMResponse
 from ailab_platform.model_transport import ModelTransport
 from tests.prefix_harness import assert_extension, scripted_server
@@ -139,12 +140,12 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
     previous = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": "旧" * 4700},
+        {"role": "user", "content": "旧" * 4850},
         {"role": "assistant", "content": "done"},
     ]
     current = {"role": "user", "content": "新" * 500}
     tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
-    with scripted_server([{"content": "summary"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = FakePlatform()
         llm = ModelTransport(url)
         run = {"_attempt_id": "attempt", "options": {"mode": "chat"}}
@@ -164,8 +165,8 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
         )
     assert requests[0]["messages"][:-1] == previous
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
-    assert result[:2] == previous[:2] and result[2]["content"].endswith("summary") and result[-1] == current
-    assert "final.txt：/workspace/outputs/source.txt" in result[3]["content"]
+    assert result[:2] == previous[:2] and result[2]["content"].startswith("<conversation_checkpoint>\n") and result[-1] == current
+    assert "final.txt" in result[3]["content"] and "/workspace/outputs/source.txt" in result[3]["content"]
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
 
 
@@ -175,18 +176,22 @@ def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeyp
     prior = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": "旧" * 4700},
+        {"role": "user", "content": "旧" * 4850},
         {"role": "assistant", "content": "old answer"},
         {"role": "user", "content": "recent"},
-        {"role": "assistant", "content": "other message"},
+        {
+            "role": "assistant",
+            "content": "other message",
+            "tool_calls": [{"id": "recall", "function": {"name": "recall_history", "arguments": "{}"}}],
+        },
         {"role": "tool", "name": "recall_history", "tool_call_id": "recall", "content": "secret recall content"},
     ]
     current = {"role": "user", "content": "新" * 500}
-    with scripted_server([{"content": "曾查询历史主题"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="曾查询历史主题"))}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
         result = asyncio.run(loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, current, []))
     assert "不要把 recall_history 的原文" in requests[0]["messages"][-1]["content"]
-    assert {"role": "assistant", "content": "other message"} in result
+    assert any(m.get("content") == "other message" for m in result)
     recall = next(message for message in result if message.get("name") == "recall_history")
     assert json.loads(recall["content"]) == {"ok": False, "error": "历史已整理；需要详情请重新调用 recall_history"}
     assert "secret recall content" not in json.dumps(result, ensure_ascii=False)
@@ -198,15 +203,19 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": "旧" * 5100},
+        {"role": "user", "content": "旧" * 5300},
         {"role": "assistant", "content": "old"},
-        {"role": "assistant", "content": "recent one"},
+        {
+            "role": "assistant",
+            "content": "recent one",
+            "tool_calls": [{"id": "x", "function": {"name": "recall_history", "arguments": "{}"}}],
+        },
         {"role": "tool", "name": "recall_history", "tool_call_id": "x", "content": "secret recall content"},
         {"role": "assistant", "content": "recent two"},
     ]
     original = copy.deepcopy(messages)
     tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
-    with scripted_server([{"content": "summary"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = FakePlatform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
         loop._states["r"] = {"user_message_index": 2, "delivered": {"/workspace/outputs/report.txt": 12}}
@@ -224,10 +233,9 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     assert requests[0]["messages"][:-1] == original
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert messages[:3] == original[:3]
-    assert messages[3]["content"].endswith("summary")
+    assert messages[3]["content"].startswith("<conversation_checkpoint>\n")
     assert "report.txt" in messages[4]["content"] and "/workspace/outputs/report.txt" in messages[4]["content"]
-    assert messages[5] == original[-3] and messages[7] == original[-1]
-    assert json.loads(messages[6]["content"]) == {"ok": False, "error": "历史已整理；需要详情请重新调用 recall_history"}
+    assert messages[5]["content"].startswith("<loaded_modules>")
     assert "secret recall content" not in json.dumps(messages, ensure_ascii=False)
     assert loop._states["r"]["user_message_index"] == 2
     assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
@@ -512,13 +520,13 @@ def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypat
 
     tools = [{"type": "function", "function": {"name": "example", "parameters": {"type": "object"}}}]
     base = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}, {"role": "user", "content": "current"}]
-    with scripted_server([{"content": "summary"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = Platform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
         result = asyncio.run(loop._assemble_context("r", {"_attempt_id": "a", "_fixed_catalog": tools}, "m", base))
     assert requests[0]["messages"][:-1] == [*base[:2], {"role": "user", "content": "旧" * 5300}, {"role": "assistant", "content": "done"}]
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
-    assert result[:2] == base[:2] and result[-1] == base[-1] and result[2]["content"].endswith("summary")
+    assert result[:2] == base[:2] and result[-1] == base[-1] and result[2]["content"].startswith("<conversation_checkpoint>\n")
     assert platform.saved["through_run_id"] == "old"
 
 
@@ -673,7 +681,7 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
     prior = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "project" + memory_prompt(old)},
-        {"role": "user", "content": "旧" * 4700},
+        {"role": "user", "content": "旧" * 4850},
         {"role": "assistant", "content": "done"},
     ]
 
@@ -681,7 +689,7 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
         async def get_memory_context(self, run_id):
             return new
 
-    with scripted_server([{"content": "summary"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         loop = AgentLoop(platform=Platform(), llm=ModelTransport(url))
         result = asyncio.run(
             loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, {"role": "user", "content": "新" * 500}, [])
@@ -703,16 +711,20 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": [{"type": "text", "text": "旧" * 5100}, old_image]},
+        {"role": "user", "content": [{"type": "text", "text": "旧" * 5300}, old_image]},
         {"role": "user", "content": "current task"},
         {"role": "assistant", "content": "old"},
-        {"role": "assistant", "content": "recent one"},
+        {
+            "role": "assistant",
+            "content": "recent one",
+            "tool_calls": [{"id": "x", "function": {"name": "recall_history", "arguments": "{}"}}],
+        },
         {"role": "tool", "tool_call_id": "x", "content": "result"},
         {"role": "assistant", "content": "recent two"},
         {"role": "user", "content": [recent_image]},
     ]
     original = copy.deepcopy(messages)
-    with scripted_server([{"content": "summary"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
         loop._states["r"] = {"user_message_index": 3}
 
@@ -722,8 +734,8 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
         asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run={"_attempt_id": "a"}), loop.llm, "m", []))
     assert requests[0]["messages"][:-1] == original
-    assert messages[2] == {"role": "user", "content": "current task"}
-    assert messages[5:] == original[-4:]
+    assert messages[loop._states["r"]["user_message_index"]] == {"role": "user", "content": "current task"}
+    assert messages[-1]["content"] == [recent_image]
     assert old_image not in [part for m in messages if isinstance(m.get("content"), list) for part in m["content"]]
     assert messages[-1]["content"] == [recent_image]
 
@@ -784,7 +796,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
         calls.append((model, step, kwargs["tool_choice"]))
         if len(calls) == 1:
             raise LLMError("temporary", retryable=True)
-        return LLMResponse(content="summary")
+        return LLMResponse(content=canonical_summary(ContextSummary(objective="summary")))
 
     async def checkpoint(*args):
         pass
@@ -794,7 +806,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": "旧" * 5100},
+        {"role": "user", "content": "旧" * 5300},
         {"role": "assistant", "content": "a"},
         {"role": "assistant", "content": "b"},
         {"role": "assistant", "content": "c"},
@@ -803,6 +815,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
     if scope == "parent":
         asyncio.run(loop._compact_parent_context("r", run, loop.llm, "m", messages, {"role": "user", "content": "新" * 500}, []))
     else:
+        messages[2]["content"] = "旧" * 5500
         loop._states["r"] = {"user_message_index": 2}
         with pytest.raises(BudgetPause):
             asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run=run), loop.llm, "m", []))
@@ -838,12 +851,12 @@ def test_summary_keeps_request_shape_and_appends_paired_tool_refusals(monkeypatc
     previous = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
-        {"role": "user", "content": "旧" * 4700},
+        {"role": "user", "content": "旧" * 4850},
         {"role": "assistant", "content": "a"},
     ]
     tools = [{"type": "function", "function": {"name": "noop", "parameters": {"type": "object"}}}]
     call = {"tool_calls": [{"index": 0, "id": "c1", "type": "function", "function": {"name": "noop", "arguments": "{}"}}]}
-    with scripted_server([call, {"content": "summary"}]) as (url, requests):
+    with scripted_server([call, {"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         transport = ModelTransport(url, disable_reasoning_for_quiet=True)
         loop = AgentLoop(platform=FakePlatform(), llm=transport)
         result = asyncio.run(
@@ -856,7 +869,7 @@ def test_summary_keeps_request_shape_and_appends_paired_tool_refusals(monkeypatc
     assert_extension(requests[0], requests[1])
     refused = next(m for m in requests[1]["messages"] if m.get("tool_call_id") == "c1")
     assert not json.loads(refused["content"])["ok"]
-    assert result[2]["content"].endswith("summary")
+    assert result[2]["content"].startswith("<conversation_checkpoint>\n")
 
 
 def test_office_skill_loaded_earlier_in_the_conversation_is_not_sent_again():
@@ -1052,7 +1065,7 @@ def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, ret
         *body,
     ]
     original = copy.deepcopy(messages)
-    with scripted_server([{"content": "历史摘要：读取过Text，继续当前任务"}]) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="继续当前任务"))}]) as (url, requests):
         platform = FakePlatform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
         loop._states["r"] = {"messages": messages, "user_message_index": 2, "delivered": {}}
@@ -1281,7 +1294,7 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
     result = read_module("platform.docx", "work", "viewer/SKILL.md")
     tools = [next(t for t in tools_for_turn() if t["function"]["name"] == "load_skill")]
     platform = FakePlatform()
-    with scripted_server([{"content": "summary"}] * 3) as (url, requests):
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}] * 3) as (url, requests):
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
         messages = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}]
 
@@ -1293,7 +1306,9 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
         loop._steps["r"] = 0
         run = {"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.35}}
         for generation in range(3):
-            messages.extend([{"role": "user", "content": "history"}, {"role": "assistant", "content": "旧" * 5000}])
+            messages.extend([{"role": "user", "content": "history"}])
+            if keep:
+                messages.append({"role": "assistant", "content": "旧" * 5000})
             if keep:
                 messages.extend(
                     [{"role": "user", "content": "task"}, *paired(result, str(generation)), {"role": "assistant", "content": "continue"}]
@@ -1302,6 +1317,7 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
                 messages.extend(
                     [
                         *paired(result, str(generation)),
+                        {"role": "assistant", "content": "旧" * 5000},
                         {"role": "user", "content": "task"},
                         {"role": "assistant", "content": "continue"},
                         {"role": "assistant", "content": "continue"},
@@ -1319,7 +1335,7 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
             assert wire["messages"][:-1] == original
             assert wire["tools"] == tools and wire["tool_choice"] == "auto"
             assert (identity(result) in visible_modules(messages)) == keep
-            summary = next(m["content"] for m in messages if m["role"] == "system" and "已读模块索引" in m.get("content", ""))
+            summary = next(m["content"] for m in messages if m["role"] == "system" and "<loaded_modules>" in m.get("content", ""))
             assert result["hash"] in summary and result["resource"] in summary
             assert result["skill"] not in summary
             assert len([e for e in platform.events if e[0] == "agent.context_boundary"]) == generation + 1
@@ -1609,3 +1625,126 @@ def test_capture_restore_does_not_treat_authorization_or_dependency_failure_as_e
     with pytest.raises(BudgetPause, match="图片无法按原内容恢复"):
         asyncio.run(AgentLoop(platform=platform)._restore_images("r", {"model": "m"}, state))
     assert not platform.events
+
+
+def test_chat_ten_turns_reuses_exact_epoch_wire_bytes():
+    from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
+
+    class Platform(FakePlatform):
+        async def get_checkpoint(self, run_id):
+            return None
+
+        async def put_checkpoint(self, run_id, payload):
+            self.last_state = copy.deepcopy(payload["state"])
+            return {"step": payload["expected_step"] + 1}
+
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "options": {"mode": "chat"}, "prompt": run_id}
+            if hasattr(self, "last_state"):
+                state = self.last_state
+                run["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "context_epoch": state["context_epoch"],
+                    "context_abi_version": state["context_abi_version"],
+                }
+            return run
+
+    with scripted_server([{"content": f"answer {i}"} for i in range(10)]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        for i in range(10):
+            asyncio.run(loop.process(f"turn {i}", attempt_id=f"a{i}"))
+            assert platform.last_state["context_epoch"] == 0
+            assert platform.last_state["context_abi_version"] == CONTEXT_ABI_VERSION
+    assert len(requests) == 10
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    assert not any(kind == "agent.context_boundary" for kind, _ in platform.events)
+
+
+def test_work_twenty_steps_strictly_extend_wire_bytes():
+    calls = [_plan_call(i) for i in range(20)]
+    for i, call in enumerate(calls):
+        call["tool_calls"][0]["function"]["arguments"] = json.dumps({"steps": [f"step {i}"]})
+    with scripted_server([*calls, {"content": "done"}]) as (url, requests):
+        platform = FakePlatform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 21
+    for before, after in pairwise(requests):
+        assert_extension(before, after)
+    assert platform.checkpoint["state"]["context_epoch"] == 0
+
+
+@pytest.mark.parametrize("abi", [None, 1, 999])
+def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            run = {**await super().get_run(run_id), "options": {"mode": "chat"}}
+            run["previous_model_context"] = {
+                "messages": [
+                    {"role": "system", "content": system_prompt_for("chat", None, frozenset(), [], None, genui=False, genui_tools=False)},
+                    {"role": "system", "content": ""},
+                    {"role": "user", "content": "first"},
+                    {"role": "assistant", "content": "answer"},
+                ],
+                "tools": _tools_for_run(run),
+                "context_epoch": 8,
+            }
+            if abi is not None:
+                run["previous_model_context"]["context_abi_version"] = abi
+            self.previous = copy.deepcopy(run["previous_model_context"])
+            return run
+
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, llm=ModelTransport(url)).process("r", attempt_id="a"))
+    state = platform.checkpoint["state"]
+    assert state["context_abi_version"] == 1
+    if abi in (None, 1):
+        assert requests[0]["messages"][:-1] == platform.previous["messages"]
+        assert state["context_epoch"] == 8
+    else:
+        assert state["context_epoch"] == 9
+        assert ("agent.context_boundary", {"reason": "context_abi_changed"}) in platform.events
+
+
+def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
+    from ailab_platform.agent.loop import estimator
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    monkeypatch.setattr(estimator, "factors", {})
+    messages = [
+        {"role": "system", "content": "rules"},
+        {"role": "system", "content": "context"},
+        {"role": "user", "content": "task"},
+        {"role": "assistant", "content": "旧" * 9000},
+        {"role": "assistant", "content": "recent"},
+    ]
+    with scripted_server([{"content": canonical_summary(ContextSummary(objective="goal"))}, *[{"content": "next"}] * 6]) as (url, requests):
+        loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
+        state = {**fresh_state(), "messages": messages, "user_message_index": 2, "context_epoch": 3}
+        loop._states["r"] = state
+
+        async def checkpoint(*args):
+            assert state["context_epoch"] == 4
+
+        monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+        run = {"_attempt_id": "a"}
+        tools = []
+
+        async def exercise():
+            await loop._compact_work_context("r", SimpleNamespace(messages=messages, run=run), loop.llm, "m", tools)
+            assert state["context_epoch"] == 4
+            for step in range(6):
+                response = await loop._call_model(loop.llm, "r", run, "m", messages, step, tools)
+                messages.extend([{"role": "assistant", "content": response.content}, {"role": "user", "content": f"continue {step}"}])
+
+        asyncio.run(exercise())
+    assert len(requests) == 7
+    assert requests[1]["messages"] != requests[0]["messages"][: len(requests[1]["messages"])]
+    for before, after in pairwise(requests[1:]):
+        assert_extension(before, after)
+    assert all(request.get("tools") == requests[0].get("tools") for request in requests)

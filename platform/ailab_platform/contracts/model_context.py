@@ -2,7 +2,6 @@
 
 from pydantic import BaseModel, Field
 
-
 CONTEXT_ABI_VERSION = 1
 
 

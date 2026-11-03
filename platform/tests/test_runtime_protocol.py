@@ -117,9 +117,26 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
     with SessionLocal() as db:
         lifecycle_once(db, now=datetime.now(UTC) + timedelta(days=8))
         assert db.get(RunCheckpoint, (parent["id"], 1)).expires_at is None
+    from sqlalchemy import delete
+
+    from ailab_platform.models import RunEvent
+
+    with SessionLocal() as db:
+        db.execute(delete(RunEvent).where(RunEvent.run_id == parent["id"]))
+        db.commit()
     child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "second"}).json()
     result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
     assert result["previous_model_context"] == {
+        "context_abi_version": 1,
+        "context_epoch": 0,
+        "operational_state": {
+            "background_jobs": None,
+            "plan": [],
+            "workspace_dirty": False,
+            "file_wait_deadlines": None,
+            "pending": [],
+            "workspace": None,
+        },
         "messages": state["messages"],
         "tools": [],
         "delivered": state["delivered"],
@@ -143,6 +160,9 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         query = text(prefix + "SELECT * FROM run_checkpoints WHERE run_id = :rid AND expires_at IS NULL")
         plan = str(db.execute(query, {"rid": parent["id"]}).all())
         assert "INDEX" in plan.upper() or "Bitmap" in plan
+    rebuilt_history = api.get(f"/internal/runs/{child['id']}/model-context", headers=SERVICE).json()
+    assert rebuilt_history["history"][0]["id"] == parent["id"]
+    assert rebuilt_history["history"][0]["prompt"] == "first"
     edited = api.post(f"/v1/runs/{child['id']}/edit", headers=AUTH, json={"prompt": "different"}).json()
     rebuilt = api.get(f"/internal/runs/{edited['id']}/model-input", headers=SERVICE).json()
     assert rebuilt["context_boundary"] == "rebuilt" and "previous_model_context" not in rebuilt

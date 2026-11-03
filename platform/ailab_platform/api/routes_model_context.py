@@ -80,6 +80,11 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 "tools": state["tool_catalog_v1"],
                                 "delivered": state.get("delivered", {}),
                                 "delivery_names": state.get("delivery_names", {}),
+                                "operational_state": {
+                                    key: state.get(key)
+                                    for key in ("background_jobs", "plan", "workspace_dirty", "file_wait_deadlines", "pending")
+                                }
+                                | {"workspace": {"available": True} if state.get("workspace") else None},
                             }
                             if "memory_observed" in state:
                                 out["previous_model_context"]["memory_observed"] = state["memory_observed"]
@@ -278,40 +283,38 @@ def _save_model_summary(db, run, body, x_run_attempt):
     conversation.summary_frame_id = frame.id
     covered = ids[: ids.index(body.through_run_id) + 1]
     sources = set()
-    if (run.options or {}).get("capability_discovery") == 1:
-        from ..contracts.context_summary import ContextSummary
-        from ..models import DocumentBlock, FileDerivation, FileObject
+    from ..contracts.context_summary import ContextSummary
+    from ..models import DocumentBlock, FileDerivation, FileObject
 
-        try:
-            semantic = ContextSummary.model_validate_json(body.summary)
-        except ValueError as exc:
-            raise HTTPException(422, "invalid summary schema") from exc
-        allowed = set(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
-        for source in semantic.sources():
-            if source.run_id and source.run_id not in covered:
-                raise HTTPException(422, "invalid summary run source")
-            if source.file_id:
-                if source.file_id not in allowed:
-                    raise HTTPException(422, "invalid summary file source")
-                file = db.get(FileObject, source.file_id, populate_existing=True)
-                if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at:
-                    raise HTTPException(409, "summary source unavailable")
-                sources.add(source.file_id)
-            if source.block_id:
-                fid = db.scalar(
-                    select(FileDerivation.file_id)
-                    .join(DocumentBlock, DocumentBlock.derivation_id == FileDerivation.id)
-                    .where(DocumentBlock.id == source.block_id)
-                )
-                if not fid or fid not in allowed or (source.file_id and fid != source.file_id):
-                    raise HTTPException(422, "invalid summary block source")
-                sources.add(fid)
-            if source.run_id:
-                sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id == source.run_id)))
-    else:
-        sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
-        for legacy in db.scalars(select(Run.input_file_ids).where(Run.id.in_(covered))):
-            sources.update(legacy or [])
+    try:
+        semantic = ContextSummary.model_validate_json(body.summary)
+    except ValueError as exc:
+        raise HTTPException(422, "invalid summary schema") from exc
+    allowed = set(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
+    for source in semantic.sources():
+        if source.run_id and source.run_id not in covered:
+            raise HTTPException(422, "invalid summary run source")
+        if source.file_id:
+            if source.file_id not in allowed:
+                raise HTTPException(422, "invalid summary file source")
+            file = db.get(FileObject, source.file_id, populate_existing=True)
+            if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at:
+                raise HTTPException(409, "summary source unavailable")
+            sources.add(source.file_id)
+        if source.block_id:
+            fid = db.scalar(
+                select(FileDerivation.file_id)
+                .join(DocumentBlock, DocumentBlock.derivation_id == FileDerivation.id)
+                .where(DocumentBlock.id == source.block_id)
+            )
+            if not fid or fid not in allowed or (source.file_id and fid != source.file_id):
+                raise HTTPException(422, "invalid summary block source")
+            sources.add(fid)
+        if source.run_id:
+            sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id == source.run_id)))
+    sources.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(covered))))
+    for legacy in db.scalars(select(Run.input_file_ids).where(Run.id.in_(covered))):
+        sources.update(legacy or [])
     for file_id in sources:
         db.add(ContextSummarySource(frame_id=frame.id, file_id=file_id))
     from sqlalchemy import delete
