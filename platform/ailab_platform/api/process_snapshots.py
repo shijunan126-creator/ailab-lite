@@ -37,6 +37,11 @@ def valid_snapshot(snapshot, through_seq=0):
 
 
 def derive(db, run_id):
+    run = db.get(Run, run_id)
+    # A canceled/failed stream can have visible text without a confirmed answer.
+    # Keep that fallback in product history only; never rewrite Run.summary or
+    # feed projection side effects back into model context.
+    preserve_answer = run is not None and run.status in STOPPED and not (run.summary or "").strip()
     items = []
     through_seq = 0
     snapshot = db.get(RunProcessSnapshot, run_id, populate_existing=True)
@@ -50,6 +55,7 @@ def derive(db, run_id):
     count = 0
     # Keyset pages bound ORM row retention. Ignore answer chunks: agent.message
     # contains the confirmed full text, including narration before a later action.
+    # Read unconfirmed deltas only for stopped runs that lack that answer.
     while True:
         rows = db.execute(
             select(RunEvent.seq, RunEvent.type, RunEvent.payload)
@@ -64,7 +70,7 @@ def derive(db, run_id):
             count += 1
             if count > MAX_EVENTS:
                 raise ProcessTooLarge("process event limit exceeded")
-            if type_ not in PROCESS_EVENT_TYPES or type_ == "agent.delta":
+            if type_ not in PROCESS_EVENT_TYPES or (type_ == "agent.delta" and not preserve_answer):
                 # Non-display events still end a thinking block, like live SSE.
                 if items and items[-1]["kind"] == "thinking":
                     items[-1]["done"] = True
@@ -75,7 +81,7 @@ def derive(db, run_id):
             reduce_event(items, type_, payload)
             if len(items) > MAX_ITEMS:
                 raise ProcessTooLarge("process item limit exceeded")
-    items = ProcessView(source="events", items=process_items(items)).items
+    items = ProcessView(source="events", items=process_items(items, preserve_answer=preserve_answer)).items
     size = len(json.dumps(items, ensure_ascii=False, separators=(",", ":")).encode())
     if size > MAX_SNAPSHOT_BYTES:
         raise ProcessTooLarge("process snapshot limit exceeded")

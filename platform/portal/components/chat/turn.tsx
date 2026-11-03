@@ -259,7 +259,7 @@ export default memo(function Turn({
       if (historyRequest.current === controller) historyRequest.current = null;
     }
   }
-  const { process, answer: streamed } = useMemo(() => items ? splitTurn(items) : { process: history || [], answer: "" }, [items, history]);
+  const { process, answer: streamed } = useMemo(() => splitTurn(items ?? history), [items, history]);
   // the confirmed answer once the run is over; until then whatever the model has written after its last step
   const answer = (terminal ? run.summary?.trim() : "") || streamed;
   const visibleAnswer = useSmoothText(answer, live && !terminal);

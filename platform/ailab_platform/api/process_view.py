@@ -244,8 +244,10 @@ def reduce_event(items, type_, p):
         note("已存入资料库", p.get("filename"))
 
 
-def process_items(items):
-    """Match splitTurn: trailing answer text is not public process narration."""
+def process_items(items, *, preserve_answer=False):
+    """Match splitTurn; retain an unconfirmed answer only when Run.summary cannot."""
+    if preserve_answer:
+        return items
     cut = len(items)
     while cut:
         item = items[cut - 1]

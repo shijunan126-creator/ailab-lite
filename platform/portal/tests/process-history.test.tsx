@@ -66,3 +66,12 @@ test("a historical durable pause loads ProcessView and keeps its saved answer", 
  expect(screen.getByText("已完成的部分")).toBeTruthy();
  expect(fetcher.mock.calls[0][0]).toContain("/v1/runs/pause/process");
 });
+
+test("canceled stream fallback survives historical reload outside the process region", async () => {
+ setup(vi.fn(async () => response([{ kind: "text", step: 0, text: "取消前可见的文字" }])));
+ render(<Turn run={{ ...run("canceled"), status: "canceled", summary: "" }} live={false} />);
+ fireEvent.click(screen.getByRole("button", { name: /已取消/ }));
+ await waitFor(() => expect(screen.getByText("取消前可见的文字")).toBeTruthy());
+ expect(screen.getByText("取消前可见的文字").closest(".work-process")).toBeNull();
+ expect(screen.getByText("没有可显示的过程")).toBeTruthy();
+});

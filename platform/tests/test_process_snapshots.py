@@ -212,7 +212,7 @@ def test_process_http_contract_and_cross_user_404(db):
 
     run, _ = make_run(db)
     seed(db, run)
-    transition_run(db, run.id, RunStatus.SUCCEEDED)
+    transition_run(db, run.id, RunStatus.SUCCEEDED, summary="confirmed final answer")
     other = User(email=new_id("other") + "@process.test", display_name="Other")
     db.add(other)
     db.flush()
@@ -227,3 +227,25 @@ def test_process_http_contract_and_cross_user_404(db):
         assert denied.status_code == 404
         detail = client.get(f"/v1/runs/{run.id}", headers={"Authorization": "Bearer test-token"}).json()
         assert "process" not in detail and "items" not in detail
+
+
+@pytest.mark.parametrize("status", [RunStatus.CANCELED, RunStatus.FAILED, RunStatus.INTERRUPTED])
+@pytest.mark.parametrize("summary", ["", "confirmed answer"])
+def test_stopped_stream_retains_unconfirmed_visible_answer_without_context_side_effects(db, status, summary):
+    run, user = make_run(db, summary=summary, runtime_meta={"context_snapshot": {"messages": [{"role": "user", "content": "frozen"}]}})
+    original_context = json.dumps(run.runtime_meta, sort_keys=True)
+    append_event(db, run.id, "agent.delta", {"step": 0, "text": "visible "}, commit=False)
+    append_event(db, run.id, "agent.delta", {"step": 0, "text": "partial answer"}, commit=False)
+    transition_run(db, run.id, status)
+    before = get_process(run.id, user, db)
+    assert before["source"] == "snapshot"
+    if summary:
+        assert before["items"] == []
+    else:
+        assert before["items"] == [{"kind": "text", "step": 0, "text": "visible partial answer"}]
+    assert run.summary == summary
+    assert json.dumps(run.runtime_meta, sort_keys=True) == original_context
+    db.execute(delete(RunEvent).where(RunEvent.run_id == run.id))
+    db.commit()
+    assert get_process(run.id, user, db) == before
+    assert run.summary == summary
