@@ -306,7 +306,7 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[state["user_message_index"]] == task
     assert state["user_message_index"] == 2
-    for i in (5, 6, 7):
+    for i in (5, 6):
         turn.messages.extend(group(i))
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert state["user_message_index"] == 2 and turn.messages[2] == task

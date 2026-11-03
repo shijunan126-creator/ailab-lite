@@ -323,3 +323,29 @@ def test_unchanged_irreducible_retry_does_not_spend_again(monkeypatch):
             asyncio.run(loop._context("r").compact("r", turn, loop.llm, "band", []))
     assert len(loop.llm.seen_messages) == 1
     assert state["context_epoch"] == 0 and state["failed_compaction_digest"]
+
+
+def test_all_active_multimodal_users_protected_with_tool_images_distinguished():
+    image = {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,eA=="}}
+    first = {"role": "user", "content": [{"type": "text", "text": "current attachment"}, image]}
+    steer = {"role": "user", "content": [image]}
+    tool_image = {"role": "user", "content": [{"type": "text", "text": "tool page"}, image]}
+    messages = [*PREFIX, first, *pair(1, 10), tool_image, steer, *pair(2, 10)]
+    protected = active_users(messages, 2, {5})
+    assert protected == {2, 6}
+    staged = stage_context(band_for(128000), PREFIX, ContextSummary(), messages, {}, [], protected)
+    assert all(message in staged.messages for message in (first, steer))
+    assert any(message.get("tool_call_id") == "2" for message in staged.messages)
+    protocol_groups(staged.messages)
+
+
+def test_plan_rejects_unknown_top_level_keys(monkeypatch):
+    loop = AgentLoop(platform=FakePlatform(), llm=ScriptedLLM([]))
+    loop._states["r"] = fresh_state()
+
+    async def noop(*args):
+        pass
+
+    monkeypatch.setattr(loop, "_checkpoint", noop)
+    result = asyncio.run(loop._durable_tool(_Turn({}), "r", ToolCall("p", "update_plan", {"steps": [], "extra": "x"}), 1, "1:0"))
+    assert not result["ok"]

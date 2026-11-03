@@ -691,7 +691,11 @@ class ContextManager:
                     "agent.context_boundary",
                     {
                         **state.get("context_compaction_metrics", {}),
-                        "policy_reason": state.get("context_compaction_metrics", {}).get("reason"),
+                        **(
+                            {"policy_reason": state["context_compaction_metrics"]["reason"]}
+                            if state.get("context_compaction_metrics")
+                            else {}
+                        ),
                         "reason": reason,
                     },
                 )

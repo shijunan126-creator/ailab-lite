@@ -746,7 +746,7 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
     original = copy.deepcopy(messages)
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
-        loop._states["r"] = {**fresh_state(), "messages": messages, "user_message_index": 3}
+        loop._states["r"] = {**fresh_state(), "messages": messages, "user_message_index": 3, "tool_image_indices": [8]}
 
         async def checkpoint(*args):
             pass
