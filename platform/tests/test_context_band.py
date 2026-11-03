@@ -628,3 +628,33 @@ def test_rebuild_rendering_and_estimation_visit_linear_bytes(monkeypatch, record
     assert [count["groups"] for count in counts] == [400, 800, 1600]
     record_property("rendered_scaling", json.dumps(counts))
     assert all(b["bytes"] < a["bytes"] * 2.6 for a, b in pairwise(counts)), counts
+
+
+def test_rebuild_never_drops_unsummarized_turns_for_runtime_framing(monkeypatch):
+    cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=1000000, max_output_tokens=8192)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
+    history = [{"id": str(i), "prompt": f"unique-fact-{i}" + "汉" * 7300, "reply": "ok"} for i in range(4)]
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, *args, **kwargs):
+            return {"summary": "", "through_run_id": None, "history": history, "has_more": False}
+
+        async def save_model_summary(self, run_id, payload):
+            self.saved = payload
+
+    platform = Platform()
+    loop = AgentLoop(
+        platform=platform, llm=ScriptedLLM([LLMResponse(content=canonical_summary(ContextSummary(objective="covered four turns")))])
+    )
+    loop._states["r"] = {
+        **fresh_state(),
+        "plan": [{"id": str(i), "title": "汉" * 1400, "status": "pending"} for i in range(2)],
+        "delivered": {"/workspace/outputs/" + str(i) + "x" * 100: {} for i in range(50)},
+    }
+    result = asyncio.run(
+        loop._assemble_context("r", {"model": "band", "_attempt_id": "a", "_fixed_catalog": []}, "band", [*PREFIX, CURRENT])
+    )
+    assert platform.saved["through_run_id"] == "3"
+    assert len(loop.llm.seen_messages) == 1
+    assert all(f"unique-fact-{i}" in json.dumps(loop.llm.seen_messages[0], ensure_ascii=False) for i in range(4))
+    assert band_for(1000000).cost({"messages": result, "tools": []}) <= 48000

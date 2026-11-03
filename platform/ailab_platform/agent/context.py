@@ -440,6 +440,22 @@ class ContextManager:
                     current=[fixed[-1]],
                     keep_latest=False,
                 )
+                # Raw turns become optional only after their semantic coverage
+                # has been saved. Let the shared planner decide exact capacity,
+                # including runtime/framing that incremental admission omits.
+                retained = {id(message) for message in staged_history.messages}
+                if any(id(message) not in retained for group in rendered for message in group):
+                    await compact()
+                    staged_history = stage_context(
+                        band,
+                        fixed[:-1],
+                        staged_history.semantic,
+                        staged_history.messages[:-1],
+                        self.state,
+                        context_tools,
+                        current=[fixed[-1]],
+                        keep_latest=False,
+                    )
                 self.state["context_compaction_metrics"] = staged_history.measurements
                 return staged_history.messages
             page = await self.platform.get_model_context(run_id, after=page["history"][-1]["id"])
