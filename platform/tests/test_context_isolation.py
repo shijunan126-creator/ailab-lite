@@ -33,6 +33,7 @@ def test_concurrent_users_share_only_platform_prefix_bytes():
             return {
                 **await super().get_run(run_id),
                 "user_id": run_id,
+                "model": "test-fast",
                 "conversation_id": "conversation-" + run_id,
                 "prompt": "prompt-" + run_id,
                 "memory": {"enabled": True, "entries": [{"id": run_id, "kind": "user", "content": "memory-" + run_id}]},
@@ -143,6 +144,7 @@ def conversation_candidate(api):  # noqa: F811
         db.commit()
         parent_id = parent.id
     headers = owned_headers(api, current)
+    assert api.post(f"/internal/runs/{current}/transition", headers=headers, json={"status": "running"}).status_code == 200
     page = api.get(f"/internal/runs/{current}/model-context", headers=SERVICE).json()
     return (
         conv,
@@ -193,23 +195,42 @@ def test_fork_siblings_share_ancestor_bytes_but_advance_epochs_independently(api
     assert save(api, parent, headers, state=state).status_code == 200
     assert api.post(f"/internal/runs/{parent}/transition", headers=headers, json={"status": "succeeded"}).status_code == 200
     children = []
+    first = None
     for label in ["A", "B"]:
-        fork = api.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": parent, "mode": "work"})
-        assert fork.status_code == 201, fork.text
-        rid = api.post(f"/v1/conversations/{fork.json()['id']}/messages", headers=AUTH, json={"prompt": label}).json()["id"]
+        response = (
+            api.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": label})
+            if first is None
+            else api.post(f"/v1/runs/{first}/retry", headers=AUTH, json={})
+        )
+        assert response.status_code == 201, response.text
+        rid = response.json()["id"]
         prior = api.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()["previous_model_context"]
         assert wire(prior["messages"]) == wire(ancestor) and prior["context_epoch"] == 7
         owner = owned_headers(api, rid)
         assert api.post(f"/internal/runs/{rid}/transition", headers=owner, json={"status": "running"}).status_code == 200
         child_state = {**fresh_state(), "messages": [*prior["messages"], {"role": "user", "content": label}], "context_epoch": 7}
         assert save(api, rid, owner, state=child_state).status_code == 200
-        children.append((rid, owner, child_state))
-    rid, owner, child_state = children[0]
-    child_state.update(context_epoch=8, messages=[{"role": "system", "content": "A-compacted"}])
-    assert save(api, rid, owner, step=1, state=child_state).status_code == 200
+        if first is None:
+            first = rid
+            child_state.update(context_epoch=8, messages=[{"role": "system", "content": "A-compacted"}])
+            assert save(api, rid, owner, step=1, state=child_state).status_code == 200
+            assert api.post(f"/internal/runs/{rid}/transition", headers=owner, json={"status": "succeeded"}).status_code == 200
+        children.append((rid, child_state))
     sibling = api.get(f"/internal/runs/{children[1][0]}/checkpoint", headers=SERVICE).json()["state"]
     assert sibling["context_epoch"] == 7 and sibling["messages"][:-1] == ancestor
+    assert api.get(f"/internal/runs/{first}/checkpoint", headers=SERVICE).json()["state"]["context_epoch"] == 8
     assert api.get(f"/internal/runs/{parent}/checkpoint", headers=SERVICE).json()["state"] == state
+    # The separate copy-conversation operation deliberately rebuilds. Its copied
+    # ancestor is immutable history, not a live reference to either sibling.
+    for label in ["copy-A", "copy-B"]:
+        fork = api.post(f"/v1/conversations/{conv}/fork", headers=AUTH, json={"run_id": parent, "mode": "work"})
+        assert fork.status_code == 201, fork.text
+        rid = api.post(f"/v1/conversations/{fork.json()['id']}/messages", headers=AUTH, json={"prompt": label}).json()["id"]
+        bootstrap = api.get(f"/internal/runs/{rid}/model-input", headers=SERVICE).json()
+        assert "previous_model_context" not in bootstrap
+        history = api.get(f"/internal/runs/{rid}/model-context", headers=SERVICE).json()["history"]
+        assert [item["prompt"] for item in history] == ["parent"]
+        assert "A-compacted" not in wire(history).decode()
 
 
 def test_rebuild_revalidates_deleted_file_before_reusing_checkpoint(api):  # noqa: F811

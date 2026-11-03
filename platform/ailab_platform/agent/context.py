@@ -56,7 +56,7 @@ def _summary_input(value):
 class ContextManager:
     """One run only; never retain this object across process() invocations."""
 
-    def __init__(self, runtime, run_id, *, catalog=get_catalog, tools_for_run=None):
+    def __init__(self, runtime, run_id, *, catalog=get_catalog, tools_for_run=None, prompt_for=system_prompt_for):
         self.runtime = runtime
         self.run_id = run_id
         self.state = runtime._states.setdefault(run_id, {})
@@ -64,6 +64,7 @@ class ContextManager:
         self.llm = runtime.llm
         self.catalog = catalog
         self.tools_for_run = tools_for_run
+        self.prompt_for = prompt_for
 
     def record_boundary(self, reason, *, advance=True):
         if advance:
@@ -465,7 +466,7 @@ class ContextManager:
             messages: list[dict] = [
                 {
                     "role": "system",
-                    "content": system_prompt_for(
+                    "content": self.prompt_for(
                         mode,
                         skill,
                         turn.disabled_skills,
@@ -548,3 +549,90 @@ class ContextManager:
         messages = state["messages"]
         turn.messages = messages
         state["tool_catalog_fingerprint"] = tool_catalog_fingerprint(state["tool_catalog_v1"])
+
+    async def refresh_memory(self, run_id, messages):
+        latest = await self.platform.get_memory_context(run_id)
+        state = self.state
+        observed = state.get("memory_observed")
+        if observed is not None and observed.get("revision") != latest.get("revision"):
+            before = {entry["id"]: entry for entry in observed.get("entries", []) if entry.get("id")}
+            selected = {entry["id"]: entry for entry in latest.get("entries", []) if entry.get("id")}
+            visible = await self.platform.memory(run_id, {"action": "list"})
+            all_visible = {entry["id"]: entry for entry in visible.get("entries", []) if entry.get("id")}
+            after = {entry_id: all_visible[entry_id] for entry_id in before.keys() & all_visible.keys()}
+            after.update(selected)
+            changes = [f"记忆 {entry_id} 已删除，不得再使用" for entry_id in sorted(before.keys() - all_visible.keys())]
+            changes += [
+                f"记忆 {entry_id}：{after[entry_id].get('content', '')}"
+                for entry_id in sorted(after)
+                if entry_id not in before or after[entry_id].get("content") != before[entry_id].get("content")
+            ]
+            if changes:
+                messages.append({"role": "user", "content": "（平台记忆更新：\n" + "\n".join(changes) + "）"})
+            state["memory_observed"] = {**latest, "revision": visible.get("revision"), "entries": list(after.values())}
+        else:
+            state.setdefault("memory_observed", latest)
+
+    async def revalidate_recall(self, run_id, messages):
+        revoked = await self._revoked_recall_results(run_id, messages)
+        if revoked:
+            for index in revoked:
+                messages[index] = {
+                    **messages[index],
+                    "content": json.dumps({"ok": False, "error": "引用的历史已不可用"}, ensure_ascii=False, separators=(",", ":")),
+                }
+            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "access_revoked"})
+
+    async def _restore_images(self, run_id, run, state):
+        import base64
+        import hashlib
+
+        from .multimodal import CaptureExpired
+
+        spec = self.catalog().get(run.get("model"))
+        legacy = False
+        expired = False
+        pending = [{"content": parts} for parts in state.get("pending_image_inputs", [])]
+        for message in [*state["messages"], *pending]:
+            if not isinstance(message.get("content"), list):
+                continue
+            parts = []
+            for part in message["content"]:
+                if part.get("type") == "ailab_image":
+                    try:
+                        restored = await self.runtime._image_content(run_id, run, part["file"], spec)
+                    except CaptureExpired:
+                        # TTL is a recorded rebuild boundary: never pretend the previous image is still visible.
+                        parts.append(
+                            {
+                                "type": "text",
+                                "text": (
+                                    "文档截图 unavailable（capture_expired）：先前视口截图已过期，不能查看或验证其视觉内容。"
+                                    "需要时请求新的截图；不要重试旧capture_id。"
+                                ),
+                            }
+                        )
+                        expired = True
+                        continue
+                    images = [item for item in restored if item.get("type") == "image_url"]
+                    if len(images) != 1:
+                        raise BudgetPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
+                    image = images[0]["image_url"]
+                    header, data = image["url"].split(",", 1)
+                    if not part.get("sha256"):
+                        legacy = True
+                    elif (
+                        header != part.get("header")
+                        or image.get("detail") != part.get("detail")
+                        or hashlib.sha256(base64.b64decode(data, validate=True)).hexdigest() != part["sha256"]
+                    ):
+                        raise BudgetPause("附件图片内容已变化，已暂停；请重新开始任务")
+                    parts.append(images[0])
+                else:
+                    parts.append(part)
+            message["content"] = parts
+        if pending:
+            state["pending_image_inputs"] = [message["content"] for message in pending]
+        if expired:
+            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "rebuilt", "cause": "capture_expired"})
+        return legacy or expired
