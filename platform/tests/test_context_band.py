@@ -357,9 +357,15 @@ def test_pending_batch_reserves_real_cannot_fit_messages():
     assistant = {"role": "assistant", "tool_calls": [{"id": call.id, "function": {"name": call.name, "arguments": "{}"}} for call in calls]}
     messages = [*PREFIX, CURRENT, assistant]
     state = {"user_message_index": 2, "pending": [{"id": call.id, "name": call.name} for call in calls]}
+    from ailab_platform.agent.context_band import CANNOT_FIT_RESULT, batch_budget
+
+    reserve = band.cost([tool_result_message(call.id, call.name, CANNOT_FIT_RESULT) for call in calls[1:]])
+    envelope = band.cost([assistant, tool_result_message(calls[0].id, calls[0].name, {"ok": True, "text": ""})])
+    payload_tokens = batch_budget(band, messages, [], state) - reserve - envelope + 1
+    assert payload_tokens > 0
     first = None
     for index, call in enumerate(calls):
-        result = admit_tool_result(band, messages, [], state, call, {"ok": True, "text": "汉" * (21500 if index == 0 else 80000)})
+        result = admit_tool_result(band, messages, [], state, call, {"ok": True, "text": "汉" * (payload_tokens if index == 0 else 80000)})
         first = result if first is None else first
         messages.append(tool_result_message(call.id, call.name, result))
         state["pending"].pop(0)
@@ -407,3 +413,15 @@ def test_compaction_before_measurement_includes_recall_body(monkeypatch):
         loop._context("r").compact("r", SimpleNamespace(messages=messages, run={"model": "band", "_attempt_id": "a"}), loop.llm, "band", [])
     )
     assert loop._states["r"]["compaction"]["before_tokens"] == before
+
+
+@pytest.mark.parametrize("prefix_tokens", [61500, 62500])
+def test_optional_navigation_yields_before_latest_complete_unit(prefix_tokens):
+    band = band_for(128000)
+    prefix = [{"role": "system", "content": "汉" * prefix_tokens}, PREFIX[1]]
+    modules = [{"name": "n" * 64, "resource": f"{i:03}" + "r" * 509, "hash": "a" * 64} for i in range(512)]
+    prior = [*prefix, block("loaded_modules", modules), CURRENT, *pair("latest", 1000)]
+    staged = stage_context(band, prefix, ContextSummary(), prior, {}, [], {3})
+    assert staged.measurements["reason"] == "band"
+    assert staged.measurements["after_tokens"] <= band.ceiling
+    assert any(message.get("tool_call_id") == "latest" for message in staged.messages)

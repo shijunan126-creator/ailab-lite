@@ -248,16 +248,21 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
         groups.append(group)
     selected = []
     if mandatory > band.ceiling:
-        # Prove that current input is the cause; no other component can invoke
-        # this exception. Navigation is optional under this exceptional policy.
         blocks = blocks[:2]
         fixed = compose(blocks)
+        mandatory = cost(fixed)
+    if mandatory > band.ceiling:
+        # Only irreducible current input can exceed H; optional navigation has
+        # already yielded. Re-enter ordinary latest-unit retention when it fits.
         without_input = cost([*prefix, *blocks])
         if not raw_current or without_input > band.ceiling:
             raise ContextPause("固定上下文和活动状态超过安全容量，已暂停")
-        reason = "over_ceiling_current_input" if cost(fixed) > band.ceiling else "band"
+        reason = "over_ceiling_current_input"
     elif groups:
         latest = groups[-1]
+        if cost([*fixed, *latest]) > band.ceiling and len(blocks) > 2:
+            blocks = blocks[:2]
+            fixed = compose(blocks)
         if cost([*fixed, *latest]) > band.ceiling:
             raise ContextPause("最近完整工具组超过安全容量，已暂停；请缩小读取批次")
         selected = [latest]
