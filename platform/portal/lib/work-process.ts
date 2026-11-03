@@ -128,10 +128,11 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       let at = -1;
       for (let i = next.length - 1; i >= 0; i--) {
         const it = next[i];
+        if (it.kind === "steps" && it.steps.some((s) => s.name === "run.resumed")) break;
         if (it.kind === "text" && it.step === p.step) { at = i; break; }
       }
-      if (at >= 0) next[at] = { ...(next[at] as Extract<Item, { kind: "text" }>), text: p.content || "" };
-      else next.push({ kind: "text", step: p.step, text: p.content || "" });
+      if (at >= 0) next[at] = { ...(next[at] as Extract<Item, { kind: "text" }>), text: p.content || "", confirmed: true };
+      else next.push({ kind: "text", step: p.step, text: p.content || "", confirmed: true });
       break;
     }
     case "agent.tool_call": {
@@ -140,6 +141,15 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
       break;
     }
     case "agent.tool_result": {
+      if (p.job_key && p.running === false) {
+        for (let i = 0; i < next.length; i++) {
+          const item = next[i];
+          if (item.kind === "steps" && item.steps.some((s) => s.jobKey === p.job_key && s.background)) {
+            next[i] = { ...item, steps: item.steps.map((s) => s.jobKey === p.job_key && s.background
+              ? { ...s, background: undefined, status: p.ok ? "ok" : "failed" } : s) };
+          }
+        }
+      }
       search: for (let i = next.length - 1; i >= 0; i--) {
         const it = next[i];
         if (it.kind !== "steps") continue;
@@ -147,9 +157,10 @@ export function reduceEvent(items: Item[], event: EventItem): Item[] {
           const s = it.steps[j];
           if (s.name !== p.name || s.status !== "running" || (p.step !== undefined && s.modelStep !== p.step)) continue;
           const step: Step = { ...s, status: p.ok ? "ok" : "failed", output: [p.error, p.stdout, p.stderr].filter(Boolean).join("\n").slice(0, 1500) };
+          if (p.job_key) step.jobKey = p.job_key;
           // a command still going after its first wait: the model comes back to it with exec_wait
           if (p.running) {
-            step.label = `${step.label} · 仍在运行`;
+            step.background = true;
             step.status = "note"; // not finished: no tick until a later look sees it end
           }
           if (Array.isArray(p.sources)) step.sources = p.sources.filter((x: any) => x && /^https?:\/\//.test(x.url || "")).slice(0, 10);
@@ -343,4 +354,22 @@ export function siteOf(url: string): string {
   } catch {
     return url;
   }
+}
+
+export function reconcileTerminal(items: Item[] | null | undefined, status: string): Item[] {
+  if (!["succeeded", "failed", "canceled"].includes(status)) return items || [];
+  const label = status === "canceled" ? "已取消" : status === "failed" ? "已失败" : "已结束";
+  return (items || []).map((item): Item => item.kind === "thinking" && !item.done ? { ...item, done: true } : item.kind === "steps" ? {
+    ...item, steps: item.steps.map((step): Step => step.background || step.status === "running" ? {
+      ...step, background: undefined, label: step.label + " · " + label, status: status === "succeeded" ? "ok" : "failed",
+    } : step),
+  } : item);
+}
+
+/** An unmatched visible stream is newer evidence than a summary saved before resume. */
+export function turnAnswer(items: Item[] | null | undefined, summary: string | null | undefined, terminal: boolean): string {
+  const { answer } = splitTurn(items);
+  const latest = (items || []).findLast((item) => item.kind === "text");
+  if (answer && latest?.kind === "text" && !latest.confirmed) return answer;
+  return (terminal ? summary?.trim() : "") || answer;
 }

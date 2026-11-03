@@ -69,3 +69,39 @@ def test_process_queries_use_indexed_run_and_event_access(engine, monkeypatch):
     event_plans = [p.lower() for (stmt, _), p in zip(statements, plans, strict=True) if "run_events" in stmt]
     assert all("index" in p and ("run_events" in p or "uq_run_event_seq" in p) for p in event_plans), combined
     assert not any("seq scan on run_events" in p or ("scan run_events" in p and "using" not in p) for p in event_plans), combined
+
+
+def test_healthy_stopped_corpus_examines_only_the_next_page(engine, monkeypatch):
+    from ailab_platform.models import RunProcessSnapshot
+
+    run_migrations(engine)
+    with engine.begin() as conn:
+        conn.execute(User.__table__.insert().values(id="healthy-user", email="healthy@example.test", display_name="Q"))
+        conn.execute(
+            Run.__table__.insert(),
+            [dict(id=f"healthy-{i:06}", user_id="healthy-user", prompt="p", status="succeeded") for i in range(3000)],
+        )
+        conn.execute(
+            RunProcessSnapshot.__table__.insert(),
+            [
+                dict(run_id=f"healthy-{i:06}", schema_version=1, through_seq=0, items=[], item_count=0, uncompressed_bytes=2)
+                for i in range(3000)
+            ],
+        )
+        conn.exec_driver_sql("ANALYZE")
+    monkeypatch.setattr(ps, "_repair_cursor", "")
+    monkeypatch.setattr(ps.settings, "gc_batch_size", 10)
+    examined = []
+    original = ps.valid_snapshot
+
+    def count(snapshot, seq=0):
+        examined.append(snapshot.run_id)
+        return original(snapshot, seq)
+
+    monkeypatch.setattr(ps, "valid_snapshot", count)
+    with Session(engine) as db:
+        assert ps.repair_snapshots(db) == 0
+        assert sorted(examined) == [f"healthy-{i:06}" for i in range(10)]
+        examined.clear()
+        assert ps.repair_snapshots(db) == 0
+        assert sorted(examined) == [f"healthy-{i:06}" for i in range(10, 20)]

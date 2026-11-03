@@ -19,6 +19,8 @@ class ProcessStep(TypedDict):
     detail: NotRequired[str]
     output: NotRequired[str]
     modelStep: NotRequired[int]
+    background: NotRequired[bool]
+    jobKey: NotRequired[str]
     sources: NotRequired[list[ProcessSource]]
 
 
@@ -43,6 +45,7 @@ class ProcessAsk(TypedDict):
 
 
 class ProcessText(TypedDict):
+    confirmed: NotRequired[bool]
     kind: Literal["text"]
     step: int
     text: str

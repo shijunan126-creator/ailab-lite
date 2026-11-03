@@ -4,13 +4,13 @@ import copy
 import json
 import logging
 
-from sqlalchemy import event, func, or_, select
+from sqlalchemy import event, func, select
 from sqlalchemy.orm import Session
 
 from ..config import settings
 from ..contracts.process import ProcessView
 from ..models import Run, RunEvent, RunProcessSnapshot, RunStatus, utcnow
-from .process_view import PROCESS_EVENT_TYPES, PROCESS_SNAPSHOT_SCHEMA_VERSION, process_items, reduce_event
+from .process_view import PROCESS_EVENT_TYPES, PROCESS_SNAPSHOT_SCHEMA_VERSION, process_items, reconcile_terminal, reduce_event
 
 log = logging.getLogger(__name__)
 STOPPED = (*RunStatus.TERMINAL, RunStatus.INTERRUPTED)
@@ -38,10 +38,6 @@ def valid_snapshot(snapshot, through_seq=0):
 
 def derive(db, run_id):
     run = db.get(Run, run_id)
-    # A canceled/failed stream can have visible text without a confirmed answer.
-    # Keep that fallback in product history only; never rewrite Run.summary or
-    # feed projection side effects back into model context.
-    preserve_answer = run is not None and run.status in STOPPED and not (run.summary or "").strip()
     items = []
     through_seq = 0
     snapshot = db.get(RunProcessSnapshot, run_id, populate_existing=True)
@@ -70,7 +66,7 @@ def derive(db, run_id):
             count += 1
             if count > MAX_EVENTS:
                 raise ProcessTooLarge("process event limit exceeded")
-            if type_ not in PROCESS_EVENT_TYPES or (type_ == "agent.delta" and not preserve_answer):
+            if type_ not in PROCESS_EVENT_TYPES:
                 # Non-display events still end a thinking block, like live SSE.
                 if items and items[-1]["kind"] == "thinking":
                     items[-1]["done"] = True
@@ -81,7 +77,9 @@ def derive(db, run_id):
             reduce_event(items, type_, payload)
             if len(items) > MAX_ITEMS:
                 raise ProcessTooLarge("process item limit exceeded")
-    items = ProcessView(source="events", items=process_items(items, preserve_answer=preserve_answer)).items
+    items = ProcessView(
+        source="events", items=process_items(reconcile_terminal(items, run.status if run else ""), summary=run.summary if run else "")
+    ).items
     size = len(json.dumps(items, ensure_ascii=False, separators=(",", ":")).encode())
     if size > MAX_SNAPSHOT_BYTES:
         raise ProcessTooLarge("process snapshot limit exceeded")
@@ -144,28 +142,24 @@ def clear_pending(db):
 
 def repair_snapshots(db):
     global _repair_cursor
-    # Existing (status,id) and unique (run_id,seq) indexes support this keyset
-    # scan and its correlated coverage lookup. Rotate past failures each pass.
-    ids = list(
-        db.scalars(
-            select(Run.id)
-            .outerjoin(RunProcessSnapshot, RunProcessSnapshot.run_id == Run.id)
-            .where(
-                Run.status.in_(STOPPED),
-                Run.id > _repair_cursor,
-                or_(
-                    RunProcessSnapshot.run_id.is_(None),
-                    RunProcessSnapshot.schema_version != PROCESS_SNAPSHOT_SCHEMA_VERSION,
-                    RunProcessSnapshot.through_seq < latest_seq(),
-                ),
-            )
-            .order_by(Run.id)
-            .limit(min(settings.gc_batch_size, 10))
-        )
-    )
+    # Page before inspecting coverage: healthy history must cost one bounded page.
+    ids = list(db.scalars(select(Run.id).where(Run.id > _repair_cursor).order_by(Run.id).limit(min(settings.gc_batch_size, 10))))
     _repair_cursor = ids[-1] if ids else ""
+    candidates = (
+        list(
+            db.execute(
+                select(Run.id, latest_seq(), RunProcessSnapshot)
+                .outerjoin(RunProcessSnapshot, RunProcessSnapshot.run_id == Run.id)
+                .where(Run.id.in_(ids), Run.status.in_(STOPPED))
+            )
+        )
+        if ids
+        else []
+    )
     repaired = 0
-    for run_id in ids:
+    for run_id, seq, snapshot in candidates:
+        if valid_snapshot(snapshot, seq):
+            continue
         repaired += try_materialize(db, run_id) is not None
         db.commit()
     return repaired

@@ -131,15 +131,19 @@ def reduce_event(items, type_, p):
         )
     elif type_ in {"agent.delta", "agent.message"}:
         text = p.get("content" if type_ == "agent.message" else "text") or ""
-        old = (
-            next((i for i in reversed(items) if i["kind"] == "text" and i.get("step") == p.get("step")), None)
-            if type_ == "agent.message"
-            else None
-        )
+        old = None
+        if type_ == "agent.message":
+            for item in reversed(items):
+                if item["kind"] == "steps" and any(s["name"] == "run.resumed" for s in item["steps"]):
+                    break
+                if item["kind"] == "text" and item.get("step") == p.get("step"):
+                    old = item
+                    break
         if old is not None:
             old["text"] = text
+            old["confirmed"] = True
         else:
-            items.append({"kind": "text", "step": p.get("step"), "text": text})
+            items.append({"kind": "text", "step": p.get("step"), "text": text, **({"confirmed": True} if type_ == "agent.message" else {})})
     elif type_ == "agent.tool_call":
         push_step(
             items,
@@ -151,6 +155,13 @@ def reduce_event(items, type_, p):
             },
         )
     elif type_ == "agent.tool_result":
+        if p.get("job_key") and p.get("running") is False:
+            for item in items:
+                if item["kind"] == "steps":
+                    for step in item["steps"]:
+                        if step.get("jobKey") == p["job_key"] and step.get("background"):
+                            step.pop("background", None)
+                            step["status"] = "ok" if p.get("ok") else "failed"
         for item in reversed(items):
             if item["kind"] != "steps":
                 continue
@@ -161,8 +172,10 @@ def reduce_event(items, type_, p):
                     status="ok" if p.get("ok") else "failed",
                     output="\n".join(str(p[k]) for k in ("error", "stdout", "stderr") if p.get(k))[:1500],
                 )
+                if p.get("job_key"):
+                    step["jobKey"] = p["job_key"]
                 if p.get("running"):
-                    step.update(label=step["label"] + " · 仍在运行", status="note")
+                    step.update(background=True, status="note")
                 if isinstance(p.get("sources"), list):
                     step["sources"] = [s for s in p["sources"] if s and re.match(r"^https?://", s.get("url") or "")][:10]
                 return
@@ -244,14 +257,30 @@ def reduce_event(items, type_, p):
         note("已存入资料库", p.get("filename"))
 
 
-def process_items(items, *, preserve_answer=False):
-    """Match splitTurn; retain an unconfirmed answer only when Run.summary cannot."""
-    if preserve_answer:
+def reconcile_terminal(items, status):
+    if status not in {"succeeded", "failed", "canceled"}:
         return items
+    label = {"succeeded": "已结束", "failed": "已失败", "canceled": "已取消"}[status]
+    for item in items:
+        if item["kind"] == "thinking":
+            item["done"] = True
+        elif item["kind"] == "steps":
+            for step in item["steps"]:
+                if step.get("background") or step["status"] == "running":
+                    step.pop("background", None)
+                    step.update(label=step["label"] + " · " + label, status="ok" if status == "succeeded" else "failed")
+    return items
+
+
+def process_items(items, *, summary="", preserve_answer=False):
+    """Only discard a confirmed answer actually represented by Run.summary."""
     cut = len(items)
     while cut:
         item = items[cut - 1]
         if item["kind"] != "text" and (item["kind"] != "steps" or any("modelStep" in s for s in item["steps"])):
             break
         cut -= 1
-    return items[:cut] + [i for i in items[cut:] if i["kind"] != "text"]
+    tail = items[cut:]
+    answer = "\n\n".join(i["text"] for i in tail if i["kind"] == "text" and i["text"].strip()).strip()
+    represented = bool(summary and summary.strip() == answer and all(i.get("confirmed") for i in tail if i["kind"] == "text"))
+    return items[:cut] + [i for i in tail if i["kind"] != "text" or preserve_answer or not represented]

@@ -6,7 +6,7 @@ import { api, downloadUrl, errorMessage, ProcessView, quotaMessage, Run } from "
 import { formatBytes, isTerminal } from "../../lib/format";
 import { placeMenu } from "../../lib/menu-place";
 import { startingState } from "../../lib/ui-state";
-import { SKILL_TITLES, splitTurn, turnSources, type Source } from "../../lib/work-process";
+import { SKILL_TITLES, reconcileTerminal, splitTurn, turnAnswer, turnSources, type Source } from "../../lib/work-process";
 import { fromPayload, plainText, sentSkills, toPayload, type Part, type SkillPick } from "../../lib/message-parts";
 import MessageText from "./message-text";
 import RichInput, { type RichInputHandle } from "./rich-input";
@@ -259,9 +259,9 @@ export default memo(function Turn({
       if (historyRequest.current === controller) historyRequest.current = null;
     }
   }
-  const { process, answer: streamed } = useMemo(() => splitTurn(items ?? history), [items, history]);
+  const { process } = useMemo(() => splitTurn(reconcileTerminal(items ?? history, run.status)), [items, history, run.status]);
   // the confirmed answer once the run is over; until then whatever the model has written after its last step
-  const answer = (terminal ? run.summary?.trim() : "") || streamed;
+  const answer = turnAnswer(items ?? history, run.summary, terminal);
   const visibleAnswer = useSmoothText(answer, live && !terminal);
   // a plain chat answer with nothing behind it needs no process box; while waiting for the first word it is the indicator
   const showProcess = !chat || process.length > 0 || (!terminal && !answer) || (shown == null && terminal && !!run.work_ms && run.work_ms >= 1000);

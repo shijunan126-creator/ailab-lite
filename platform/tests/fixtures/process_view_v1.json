@@ -989,7 +989,8 @@
     {
       "kind": "text",
       "step": 0,
-      "text": "检查资料后生成文件。"
+      "text": "检查资料后生成文件。",
+      "confirmed": true
     },
     {
       "kind": "plan",

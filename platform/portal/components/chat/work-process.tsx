@@ -54,7 +54,7 @@ const StepRow = memo(function StepRow({ step, active, label }: { step: Step; act
     {viewport.visible ? <>
     <span className="pr-icon"><StepIcon name={step.name} /></span>
     <div className="step-body">
-      <span className="step-label">{label}</span>
+      <span className="step-label">{label}{step.background ? " · 仍在运行" : ""}</span>
       {step.detail ? <span className="step-detail" title={step.detail}>{step.detail}</span> : null}
       {sources.length ? <span className="pr-sources">
         {sources.slice(0, 4).map((s) => <a key={s.url} href={s.url} target="_blank" rel="noreferrer noopener" title={s.title || s.url}>{s.site || siteOf(s.url)}</a>)}

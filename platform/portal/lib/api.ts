@@ -686,13 +686,15 @@ export type Step = {
   status: "running" | "ok" | "failed" | "note";
   output?: string;
   modelStep?: number;
+  background?: boolean;
+  jobKey?: string;
   sources?: Source[];
 };
 export type PlanStep = { id: string; title: string; status: "pending" | "running" | "done" | "skipped" | "failed" };
 export type ProcessItem =
   | { kind: "plan"; steps: PlanStep[] }
   | { kind: "ask"; id: string; question: string; options: string[]; allowText: boolean; answer?: string }
-  | { kind: "text"; step: number; text: string }
+  | { kind: "text"; step: number; text: string; confirmed?: boolean }
   | { kind: "thinking"; step: number; text: string; seconds: number; done: boolean }
   | { kind: "steps"; steps: Step[] }
   | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running

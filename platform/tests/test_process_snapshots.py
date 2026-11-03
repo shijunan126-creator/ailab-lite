@@ -45,6 +45,8 @@ def seed(db, run):
 def test_shared_view_full_thinking_tools_and_filtered_answer(db):
     run, _ = make_run(db)
     seed(db, run)
+    run.summary = "最终回答不属于过程"
+    db.flush()
     items, _, _ = derive(db, run.id)
     assert items == FIXTURE["items"]
     assert items[0]["text"] == "完整思考，不会丢失。"
@@ -55,7 +57,7 @@ def test_shared_view_full_thinking_tools_and_filtered_answer(db):
 def test_stop_covers_late_events_and_history_survives_gc(db):
     run, user = make_run(db)
     seed(db, run)
-    transition_run(db, run.id, RunStatus.SUCCEEDED, summary="answer", commit=False)
+    transition_run(db, run.id, RunStatus.SUCCEEDED, summary="最终回答不属于过程", commit=False)
     append_event(db, run.id, "agent.warning", {"message": "late"}, commit=False)
     db.commit()
     snapshot = db.get(RunProcessSnapshot, run.id)
@@ -212,7 +214,7 @@ def test_process_http_contract_and_cross_user_404(db):
 
     run, _ = make_run(db)
     seed(db, run)
-    transition_run(db, run.id, RunStatus.SUCCEEDED, summary="confirmed final answer")
+    transition_run(db, run.id, RunStatus.SUCCEEDED, summary="最终回答不属于过程")
     other = User(email=new_id("other") + "@process.test", display_name="Other")
     db.add(other)
     db.flush()
@@ -239,13 +241,48 @@ def test_stopped_stream_retains_unconfirmed_visible_answer_without_context_side_
     transition_run(db, run.id, status)
     before = get_process(run.id, user, db)
     assert before["source"] == "snapshot"
-    if summary:
-        assert before["items"] == []
-    else:
-        assert before["items"] == [{"kind": "text", "step": 0, "text": "visible partial answer"}]
+    assert before["items"] == [{"kind": "text", "step": 0, "text": "visible partial answer"}]
     assert run.summary == summary
     assert json.dumps(run.runtime_meta, sort_keys=True) == original_context
     db.execute(delete(RunEvent).where(RunEvent.run_id == run.id))
     db.commit()
     assert get_process(run.id, user, db) == before
     assert run.summary == summary
+
+
+def test_resumed_partial_survives_full_gc_and_late_append(db):
+    from ailab_platform.api.routes_runtime import queue_continuation
+
+    run, user = make_run(db)
+    append_event(db, run.id, "agent.message", {"step": 0, "content": "old saved progress"})
+    transition_run(db, run.id, RunStatus.INTERRUPTED, summary="old saved progress")
+    queue_continuation(db, run)
+    db.commit()
+    transition_run(db, run.id, RunStatus.RUNNING)
+    append_event(db, run.id, "agent.delta", {"step": 1, "text": "new partial"})
+    append_event(db, run.id, "agent.tool_call", {"step": 1, "name": "exec", "arguments": {"cmd": "sleep 30"}})
+    append_event(db, run.id, "agent.tool_result", {"step": 1, "name": "exec", "ok": True, "running": True, "job_key": "job"})
+    transition_run(db, run.id, RunStatus.CANCELED)
+    before = get_process(run.id, user, db)
+    assert "new partial" in json.dumps(before)
+    assert "仍在运行" not in json.dumps(before, ensure_ascii=False)
+    assert "已取消" in json.dumps(before, ensure_ascii=False)
+    snapshot_seq = db.get(RunProcessSnapshot, run.id).through_seq
+    db.execute(delete(RunEvent).where(RunEvent.run_id == run.id))
+    db.commit()
+    assert get_process(run.id, user, db) == before
+    late = append_event(db, run.id, "agent.warning", {"message": "late"})
+    assert late.seq == snapshot_seq + 1
+    items, seq, _ = derive(db, run.id)
+    assert seq == late.seq
+    assert "new partial" in json.dumps(items) and "late" in json.dumps(items)
+
+
+def test_shared_process_lifecycle_fixture():
+    from ailab_platform.api.process_view import reconcile_terminal, reduce_event
+
+    fixture = json.loads((Path(__file__).parent / "fixtures/process_lifecycle_v1.json").read_text())
+    items = []
+    for event in fixture["events"]:
+        reduce_event(items, event["type"], event["payload"])
+    assert reconcile_terminal(items, fixture["status"]) == fixture["items"]
