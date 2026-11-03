@@ -21,10 +21,9 @@ from ..domain.answer_parts import for_history
 from ..llm import LLMError, llm_for
 from ..model_policy import ModelPolicy, estimator
 from .budgets import ContextPause
-from .context_band import ContextBand, active_users, stage_context
+from .context_band import ContextBand, active_users, bounded_memory, bounded_navigation, bounded_runtime, bounded_summary, stage_context
 from .context_protocol import validate_safe_compaction_point
 from .context_rendering import (
-    operational_context_message,
     parse_summary,
     source_handles,
     stored_summary_messages,
@@ -173,13 +172,9 @@ class ContextManager:
     async def _refresh_boundary_memory(self, run_id, context, band=None):
         if not hasattr(self.platform, "get_memory_context") or not isinstance(context.get("content"), str):
             return context
-        latest = deepcopy(await self.platform.get_memory_context(run_id))
+        latest = await self.platform.get_memory_context(run_id)
         if band:
-            while band.cost(latest.get("entries") or []) > band.memory_budget:
-                if latest.get("entries"):
-                    latest["entries"].pop()
-                else:
-                    raise ContextPause("记忆固定结构超过上下文预算，已暂停")
+            latest = bounded_memory(band, latest)
         content = context["content"]
         start = content.find("<ailab_memory>")
         if start >= 0:
@@ -241,15 +236,29 @@ class ContextManager:
         staged_history = None
         band = self._band(model, run)
 
+        def summary_blocks():
+            memory = stored_summary_messages(summary)
+            if summary:
+                try:
+                    semantic = ContextSummary.model_validate_json(summary)
+                except ValueError:
+                    if band.cost(memory) > band.summary_budget:
+                        raise ContextPause("旧摘要超过语义预算，已暂停；请新建对话") from None
+                else:
+                    semantic, navigation = bounded_navigation(band, bounded_summary(band, semantic), memory)
+                    from .context_rendering import semantic_message
+
+                    memory = [semantic_message(semantic), navigation]
+            return memory
+
         def assemble():
             if staged_history is not None and not pending:
                 return staged_history.messages
-            memory = stored_summary_messages(summary)
+            memory = summary_blocks()
             runtime = {**self.state}
             if not runtime.get("workspace") and run.get("workspace_restore_key"):
                 runtime["workspace"] = {"available": True}
-            operational = operational_context_message(runtime)
-            memory.insert(1 if memory else 0, operational)
+            memory.insert(1 if memory else 0, bounded_runtime(band, runtime))
             return [*fixed[:-1], *memory, *history_messages(pending), fixed[-1]]
 
         instruction = {
@@ -262,7 +271,7 @@ class ContextManager:
         def summary_prefix():
             prefix = [*fixed[:-1]]
             if summary:
-                prefix.extend(stored_summary_messages(summary))
+                prefix.extend(summary_blocks())
             prefix.extend(history_messages(_summary_input(pending)))
             return prefix
 
@@ -455,6 +464,7 @@ class ContextManager:
             self.state.update(original)
             self.state["failed_compaction_digest"] = attempt_digest
             raise
+        staged.measurements["before_tokens"] = band.cost({"messages": [*prior, current], "tools": tools})
         self.state["memory_observed"] = observed
         self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in staged.semantic.sources()]
         self.state["compaction"] = {**staged.measurements, "after": staged.measurements["after_tokens"], "threshold": band.trigger}
@@ -527,6 +537,7 @@ class ContextManager:
             state["messages"] = messages
             state["failed_compaction_digest"] = attempt_digest
             raise
+        staged.measurements["before_tokens"] = band.cost({"messages": messages, "tools": tools})
         messages[:] = staged.messages
         state["user_message_index"] = staged.current_indices[0] if staged.current_indices else None
         state["active_user_indices"] = staged.current_indices
@@ -605,6 +616,9 @@ class ContextManager:
             if attached:
                 files = [{"filename": f["filename"], "chars": f.get("chars"), "truncated": f.get("truncated")} for f in attached]
                 await self.runtime._event(run_id, "agent.attachments", {"files": files})
+            boundary_memory = (
+                bounded_memory(self._band(model, run), run.get("memory") or {}) if self.catalog().get(model) else run.get("memory") or {}
+            )
             messages: list[dict] = [
                 {
                     "role": "system",
@@ -624,7 +638,7 @@ class ContextManager:
                     "content": workspace_prompt(
                         run.get("project_instructions") or "", run.get("brand") or {}, (run.get("options") or {}).get("template")
                     )
-                    + memory_prompt(run.get("memory") or {})
+                    + memory_prompt(boundary_memory)
                     + project_library_prompt(run.get("project_library") or [])
                     + (WORKSPACE_EXPIRED_NOTE if run.get("workspace_expired") and mode != "chat" else ""),
                 },
@@ -642,10 +656,10 @@ class ContextManager:
                 state["messages"] = [*messages[:2], *saved_messages[skip:]]
                 if isinstance(state.get("user_message_index"), int):
                     state["user_message_index"] += 2 - skip
-                state["memory_observed"] = run.get("memory") or {}
+                state["memory_observed"] = boundary_memory
                 run["context_boundary"] = "context_abi_changed" if abi_mismatch else "rebuilt"
             elif previous and await self._revoked_recall_results(run_id, previous.get("messages", [])):
-                state["memory_observed"] = run.get("memory") or {}
+                state["memory_observed"] = boundary_memory
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 run["context_boundary"] = "access_revoked"
             elif previous and (
@@ -655,7 +669,7 @@ class ContextManager:
                 or "<ailab_memory>" in str(previous["messages"][0].get("content", ""))
                 or ("<ailab_memory>" in str(previous["messages"][1].get("content", "")) and "memory_observed" not in previous)
             ):
-                state["memory_observed"] = run.get("memory") or {}
+                state["memory_observed"] = boundary_memory
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
                 run["context_boundary"] = (
                     "context_abi_changed" if previous.get("context_abi_version") not in (None, CONTEXT_ABI_VERSION) else "rebuilt"
@@ -663,7 +677,7 @@ class ContextManager:
             elif previous and previous.get("tools") == state["tool_catalog_v1"] and previous.get("messages", [{}])[0] == messages[0]:
                 prior = {"messages": previous["messages"]}
                 await self.runtime._restore_images(run_id, run, prior)
-                state["memory_observed"] = previous.get("memory_observed", run.get("memory") or {})
+                state["memory_observed"] = previous.get("memory_observed", boundary_memory)
                 state["messages"] = await self._compact_parent_context(
                     run_id,
                     run,
@@ -681,7 +695,7 @@ class ContextManager:
                     run["context_boundary"] = "model_changed"
                 elif not run.get("context_boundary") and (run.get("parent_run_id") or run.get("history")):
                     run["context_boundary"] = "rebuilt"
-                state["memory_observed"] = run.get("memory") or {}
+                state["memory_observed"] = boundary_memory
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
             if not legacy:
                 state["user_message_index"] = len(state["messages"]) - 1

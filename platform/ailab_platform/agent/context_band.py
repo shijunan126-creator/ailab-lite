@@ -5,6 +5,7 @@ callers own persistence and activate only the returned, measured candidate.
 """
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass
 from hashlib import sha256
 
@@ -16,6 +17,23 @@ from .context_protocol import protocol_groups
 from .context_rendering import block, loaded_modules, semantic_message
 
 STALE_BLOCKS = ("<conversation_checkpoint>", "<runtime_state>", "<loaded_modules>", "历史摘要（仅作背景）：")
+
+
+CANNOT_FIT_RESULT = {
+    "ok": False,
+    "reason": "batch_budget",
+    "error": "cannot fit: 整个工具批次超过上下文预算；请减少读取范围、页数或并行文件数，整文件不会截断",
+}
+
+
+def bounded_memory(band, memory):
+    snapshot = deepcopy(memory)
+    while band.cost(snapshot.get("entries") or []) > band.memory_budget:
+        if snapshot.get("entries"):
+            snapshot["entries"].pop()
+        else:
+            raise ContextPause("记忆固定结构超过上下文预算，已暂停")
+    return snapshot
 
 
 @dataclass(frozen=True)
@@ -156,6 +174,17 @@ def bounded_summary(band, semantic):
     return result
 
 
+def bounded_navigation(band, semantic, messages):
+    index = _select(band, "loaded_modules", loaded_modules(messages), band.allocation(2000, 0.04))
+    semantic.read_modules = [ReadModule(**entry) for entry in index["items"]]
+    while len(canonical_summary(semantic).encode("utf-8")) > 16000 and semantic.read_modules:
+        semantic.read_modules.pop()
+        index["items"].pop()
+        index["omitted_count"] += 1
+    navigation = block("loaded_modules", index)
+    return semantic, navigation
+
+
 def semantic_groups(messages, protected=()):
     """Associate tool images and plain assistant continuation with their batch."""
     groups = []
@@ -194,13 +223,7 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
     protected = set(protected)
     semantic = bounded_summary(band, semantic)
     runtime = bounded_runtime(band, state)
-    index = _select(band, "loaded_modules", loaded_modules(prior), band.allocation(2000, 0.04))
-    semantic.read_modules = [ReadModule(**entry) for entry in index["items"]]
-    while len(canonical_summary(semantic).encode("utf-8")) > 16000 and semantic.read_modules:
-        semantic.read_modules.pop()
-        index["items"].pop()
-        index["omitted_count"] += 1
-    navigation = block("loaded_modules", index)
+    semantic, navigation = bounded_navigation(band, semantic, prior)
     blocks = [semantic_message(semantic), runtime, navigation]
     raw_protected = [prior[i] for i in sorted(protected)]
     raw_current = [*raw_protected, *current]
@@ -300,7 +323,7 @@ def admit_tool_result(band, messages, tools, state, call, result, *, image_start
     # Reserve a minimal paired result for every remaining invocation. Do not let
     # early results exhaust the space required to close the protocol batch.
     pending = state.get("pending") or []
-    reserve = band.cost([tool_result_message(item["id"], item["name"], {"ok": False, "reason": "batch_budget"}) for item in pending[1:]])
+    reserve = band.cost([tool_result_message(item["id"], item["name"], CANNOT_FIT_RESULT) for item in pending[1:]])
     candidate = [*batch, tool_result_message(call.id, call.name, result), *images]
     full = [*messages, tool_result_message(call.id, call.name, result), *images]
     if band.cost(candidate) + reserve <= budget and band.cost({"messages": full, "tools": tools}) + reserve < band.window - min(
@@ -315,12 +338,7 @@ def admit_tool_result(band, messages, tools, state, call, result, *, image_start
         for key in ("handle", "running", "exit_code", "delivery_id", "file_id", "path", "next_cursor", "cursor")
         if key in result and isinstance(result[key], (str, int, bool, type(None)))
     }
-    rejected = {
-        "ok": False,
-        "reason": "batch_budget",
-        "error": "cannot fit: 整个工具批次超过上下文预算；请减少读取范围、页数或并行文件数，整文件不会截断",
-        **visible,
-    }
+    rejected = {**CANNOT_FIT_RESULT, **visible}
     if band.cost([*batch, tool_result_message(call.id, call.name, rejected), *images[:image_start]]) + reserve > budget:
         raise ContextPause("工具参数和活动句柄超过批次预算，已暂停；请缩小任务范围")
     return rejected

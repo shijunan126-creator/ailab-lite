@@ -43,7 +43,7 @@ from .budgets import BUDGET_WRAP_NOTE, REVIEW_NOTE, BudgetPause, ContextPause, Q
 from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
 from .context import _summary_input as _summary_input
-from .context_band import ContextBand, admit_tool_result, batch_budget
+from .context_band import CANNOT_FIT_RESULT, ContextBand, admit_tool_result, batch_budget
 from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
@@ -2148,7 +2148,7 @@ class AgentLoop:
                         turn.thinking_seconds += response.thinking_seconds
                     if calls and spec:
                         band = ContextBand.for_model(spec, run.get("context_settings"))
-                        placeholders = [tool_result_message(c.id, c.name, {"ok": False, "reason": "batch_budget"}) for c in calls]
+                        placeholders = [tool_result_message(c.id, c.name, CANNOT_FIT_RESULT) for c in calls]
                         if band.cost([assistant, *placeholders]) > batch_budget(band, messages, offered, state):
                             messages.extend([assistant, *placeholders])
                             await self._checkpoint(run_id, turn)

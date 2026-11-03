@@ -349,3 +349,61 @@ def test_plan_rejects_unknown_top_level_keys(monkeypatch):
     monkeypatch.setattr(loop, "_checkpoint", noop)
     result = asyncio.run(loop._durable_tool(_Turn({}), "r", ToolCall("p", "update_plan", {"steps": [], "extra": "x"}), 1, "1:0"))
     assert not result["ok"]
+
+
+def test_pending_batch_reserves_real_cannot_fit_messages():
+    band = band_for(1000000)
+    calls = [ToolCall(str(i), "read_file", {}) for i in range(20)]
+    assistant = {"role": "assistant", "tool_calls": [{"id": call.id, "function": {"name": call.name, "arguments": "{}"}} for call in calls]}
+    messages = [*PREFIX, CURRENT, assistant]
+    state = {"user_message_index": 2, "pending": [{"id": call.id, "name": call.name} for call in calls]}
+    first = None
+    for index, call in enumerate(calls):
+        result = admit_tool_result(band, messages, [], state, call, {"ok": True, "text": "汉" * (21500 if index == 0 else 80000)})
+        first = result if first is None else first
+        messages.append(tool_result_message(call.id, call.name, result))
+        state["pending"].pop(0)
+    assert not first["ok"]
+    assert band.cost(messages[3:]) <= band.allocation(24000, 0.4)
+    protocol_groups(messages)
+
+
+def test_uncompacted_rebuild_bounds_deterministic_blocks_without_changing_trigger(monkeypatch):
+    from ailab_platform.contracts.context_summary import ReadModule
+
+    cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=1000000, max_output_tokens=8192)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
+    summary = ContextSummary(read_modules=[ReadModule(name="n" * 64, resource=f"{i:03}" + "r" * 509, hash="a" * 64) for i in range(512)])
+
+    class Platform(FakePlatform):
+        async def get_model_context(self, *args, **kwargs):
+            return {"summary": canonical_summary(summary), "through_run_id": "old", "history": [], "has_more": False}
+
+    loop = AgentLoop(platform=Platform(), llm=ScriptedLLM([]))
+    loop._states["r"] = {**fresh_state(), "plan": [{"id": str(i), "title": "汉" * 500, "status": "pending"} for i in range(100)]}
+    result = asyncio.run(loop._assemble_context("r", {"model": "band", "_fixed_catalog": []}, "band", [*PREFIX, CURRENT]))
+    nav = next(message for message in result if message.get("content", "").startswith("<loaded_modules>"))
+    assert band_for(1000000).cost(nav) <= 2000
+    runtime = next(message for message in result if message.get("content", "").startswith("<runtime_state>"))
+    assert json.loads(runtime["content"].split("\n")[1])["plan"]["omitted_count"] > 0
+    assert not loop.llm.seen_messages
+
+
+def test_compaction_before_measurement_includes_recall_body(monkeypatch):
+    cat = Catalog([ModelSpec("band", "band", provider="mock", context_tokens=64000, max_output_tokens=8192)])
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
+    loop = AgentLoop(platform=FakePlatform(), llm=ScriptedLLM([LLMResponse(content=canonical_summary(ContextSummary()))]))
+    messages = fixture(64000)
+    messages[3]["tool_calls"][0]["function"]["name"] = "recall_history"
+    messages[4]["name"] = "recall_history"
+    before = band_for(64000).cost({"messages": messages, "tools": []})
+    loop._states["r"] = {**fresh_state(), "messages": messages, "user_message_index": 2}
+
+    async def checkpoint(*args):
+        pass
+
+    monkeypatch.setattr(loop, "_checkpoint", checkpoint)
+    asyncio.run(
+        loop._context("r").compact("r", SimpleNamespace(messages=messages, run={"model": "band", "_attempt_id": "a"}), loop.llm, "band", [])
+    )
+    assert loop._states["r"]["compaction"]["before_tokens"] == before
