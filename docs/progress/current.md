@@ -3,7 +3,8 @@
 - 授权：按 HLD v4 实施并更新文档；Claude 编排与文档，Codex 实施/测试/修复；随后授权提 PR、CI 绿后合并、由 Codex 部署。追加决定：压缩后 10K–48K / 上限 64K，计数以模型返回的实际 token 为准，最终版本不再测真实模型。差异与决定见 [ADR 0033](../architecture/adr/0033-context-epoch-band-process-snapshot.md)。
 - 分支 `feat/context-hld-usage`，base `origin/main@ab31537`，最终产品 SHA `f23e470`；迁移 0050（过程快照）、0051（0.85→0.90）。
 - 验证（`f23e470`）：SQLite 2314/201 跳过，PG+Redis 2446/69 跳过，Portal 237+build，E2E 184/6 跳过。真实模型 300K 压缩（`92cffa8`）：Work 293K→23.8K、Chat 299K→21.7K，6 条事实全对。详情、未测边界见[记录](updates/2026-11-04-context-hld.md)。
-- 下一步：提 PR → CI 全绿后 squash 合并 → Codex 增量部署（0049→0051），结果补入记录。
+- 已合并并部署：[PR #153](https://github.com/shijunan126-creator/ailab-lite/pull/153) 9 项 CI 通过，squash 为 `main@db7e2e1`；本机 `release-db7e2e1`（后端共享镜像+Portal 重建，迁移 0049→0051，12 running/10 healthy），未备份、未做部署后验收。VM Docker 仅剩约 295 MiB，下次构建前需清理。
+- 下一步：用户使用反馈；不自动推进其他路线图任务。
 
 ---
 
