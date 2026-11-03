@@ -6,7 +6,6 @@ def protocol_groups(messages):
     groups = []
     start = 0
     pending = set()
-    seen = set()
     for index, message in enumerate(messages):
         role = message.get("role")
         if role == "tool":
@@ -23,10 +22,9 @@ def protocol_groups(messages):
             calls = message.get("tool_calls") or []
             for call in calls:
                 call_id = call.get("id")
-                if role != "assistant" or not call_id or call_id in seen:
+                if role != "assistant" or not call_id or call_id in pending:
                     raise ValueError("invalid tool call at compaction barrier")
                 pending.add(call_id)
-                seen.add(call_id)
             if not pending:
                 groups.append((index, index + 1))
     if pending:

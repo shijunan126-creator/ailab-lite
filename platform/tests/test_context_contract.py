@@ -196,3 +196,12 @@ def test_one_valid_nonconverging_compaction_pauses_without_a_second_summary(monk
             asyncio.run(loop._compact_work_context("r", turn, model, "m", []))
     assert state["context_epoch"] == 3
     assert len(model.seen_messages) == 1
+
+
+def test_call_ids_are_scoped_to_the_open_protocol_batch():
+    # Provider/mock numbering may restart on a new Run in inherited context.
+    assert protocol_groups([*pair(), *pair()]) == [(0, 2), (2, 4)]
+    duplicate = pair()[0]
+    duplicate["tool_calls"] *= 2
+    with pytest.raises(ValueError, match="invalid tool call"):
+        protocol_groups([duplicate, pair()[1]])
