@@ -384,6 +384,7 @@ class CommitOut(BaseModel):
 
 
 class RunStateOut(BaseModel):
+    retain_background_lease: bool = False
     steer_pending: bool = False
     job_id: str | None = None
     status: str

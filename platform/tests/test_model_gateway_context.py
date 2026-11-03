@@ -14,6 +14,7 @@ from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMError, LLMResponse, OpenAICompatibleClient, reset_llm_cache
 from tests.run_claims import attempt_headers
+from tests.runtime_fakes import CheckpointFake
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -83,7 +84,7 @@ async def upstream(kind, seen):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-class LedgerBridge:
+class LedgerBridge(CheckpointFake):
     def __init__(self, client):
         self.client = client
         self.events = []
@@ -271,7 +272,7 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
             self.summary, self.through = payload["summary"], payload["through_run_id"]
             self.saved.append(payload)
 
-    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3300, max_output_tokens=1000)])
+    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=5000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     bridge = Context()
 

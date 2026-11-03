@@ -86,6 +86,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
                                 }
                                 | {"workspace": {"available": True} if state.get("workspace") else None},
                             }
+                            if state.get("context_sources"):
+                                out["previous_model_context"]["context_sources"] = state["context_sources"]
                             if "memory_observed" in state:
                                 out["previous_model_context"]["memory_observed"] = state["memory_observed"]
                 else:

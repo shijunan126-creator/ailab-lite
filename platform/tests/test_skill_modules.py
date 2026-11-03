@@ -91,7 +91,9 @@ def test_budget_refusal_and_group_cumulative_admission(monkeypatch):
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
         turn = _Turn({"model": "m", "options": {"mode": "chat"}, "_fixed_catalog": [LOAD_SKILL]})
         turn.messages = [{"role": "system", "content": "rules"}]
-        loop._states["r"] = {"messages": turn.messages}
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
         arguments = {"name": "platform.docx", "resource": "viewer/SKILL.md"}
         first = await loop._run_tool(turn, "r", ToolCall("first", "load_skill", arguments), 0)
         assert first["ok"] and first["skill"]
@@ -147,7 +149,9 @@ def test_large_file_is_whole_or_refused_by_small_window(monkeypatch):
             {"model": "m", "options": {"mode": "work"}, "context_settings": {"auto_compact": False}, "_fixed_catalog": [LOAD_SKILL]}
         )
         turn.messages = [{"role": "system", "content": "rules"}]
-        loop._states["r"] = {"messages": turn.messages}
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
         result = await loop._run_tool(turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource}), 0)
         assert not result["ok"] and "cannot fit" in result["error"] and "skill" not in result
 
@@ -159,7 +163,9 @@ def test_legacy_skill_visibility_also_survives_only_with_paired_body():
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
         turn = _Turn({"options": {"mode": "work"}, "_fixed_catalog": [LOAD_SKILL]})
         turn.messages = []
-        loop._states["r"] = {"messages": turn.messages}
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
         call = ToolCall("one", "load_skill", {"name": "pptx"})
         first = await loop._run_tool(turn, "r", call, 0)
         assert first["ok"] and first["skill"]

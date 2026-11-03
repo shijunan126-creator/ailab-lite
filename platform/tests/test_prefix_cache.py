@@ -135,7 +135,7 @@ def test_next_run_extends_the_previous_run_wire_messages(mode):
 
 
 def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     previous = [
         {"role": "system", "content": "rules"},
@@ -148,7 +148,7 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = FakePlatform()
         llm = ModelTransport(url)
-        run = {"_attempt_id": "attempt", "options": {"mode": "chat"}}
+        run = {"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "attempt", "options": {"mode": "chat"}}
         loop = AgentLoop(platform=platform, llm=llm)
         result = asyncio.run(
             loop._compact_parent_context(
@@ -167,7 +167,7 @@ def test_parent_near_threshold_is_summarized_as_prefix_extension(monkeypatch):
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert result[:2] == previous[:2] and result[2]["content"].startswith("<conversation_checkpoint>\n") and result[-1] == current
     assert "final.txt" in result[3]["content"] and "/workspace/outputs/source.txt" in result[3]["content"]
-    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+    assert run["context_boundary"] == "compacted" and not platform.events
 
 
 def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeypatch):
@@ -198,7 +198,7 @@ def test_parent_with_recall_compacts_with_instruction_to_forget_excerpts(monkeyp
 
 
 def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypatch):
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     messages = [
         {"role": "system", "content": "rules"},
@@ -218,14 +218,22 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = FakePlatform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
-        loop._states["r"] = {"user_message_index": 2, "delivered": {"/workspace/outputs/report.txt": 12}}
+        loop._states["r"] = {
+            **fresh_state(),
+            "messages": messages,
+            "user_message_index": 2,
+            "delivered": {"/workspace/outputs/report.txt": 12},
+        }
         loop._steps["r"] = 0
 
         async def checkpoint(*args):
             pass
 
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
-        turn = SimpleNamespace(messages=messages, run={"_attempt_id": "a", "_ledger_tokens": 0, "prompt": "constraints"})
+        turn = SimpleNamespace(
+            messages=messages,
+            run={"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a", "_ledger_tokens": 0, "prompt": "constraints"},
+        )
         try:
             asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", tools))
         except BudgetPause:
@@ -238,7 +246,7 @@ def test_run_compaction_extends_wire_prefix_and_retains_complete_groups(monkeypa
     assert messages[5]["content"].startswith("<loaded_modules>")
     assert "secret recall content" not in json.dumps(messages, ensure_ascii=False)
     assert loop._states["r"]["user_message_index"] == 2
-    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+    assert loop._states["r"]["context_boundary"]["reason"] == "compacted"
 
 
 def test_unchanged_memory_refresh_preserves_all_request_messages():
@@ -321,7 +329,7 @@ def test_recall_revalidation_preserves_result_and_tombstones_revoked_source():
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
         assert messages == original
         assert platform.calls == ["source", "source2"]
-        loop._states["next_run"] = {}
+        loop._states["next_run"] = {**fresh_state(), "messages": messages}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "next_run", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert json.loads(messages[0]["content"]) == {"ok": False, "error": "引用的历史已不可用"}
         assert ("agent.context_boundary", {"reason": "access_revoked"}) in platform.events
@@ -503,7 +511,7 @@ def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypat
     from ailab_platform.agent.loop import estimator
 
     monkeypatch.setattr(estimator, "factors", {})
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
 
     class Platform(FakePlatform):
@@ -523,7 +531,11 @@ def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypat
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         platform = Platform()
         loop = AgentLoop(platform=platform, llm=ModelTransport(url))
-        result = asyncio.run(loop._assemble_context("r", {"_attempt_id": "a", "_fixed_catalog": tools}, "m", base))
+        result = asyncio.run(
+            loop._assemble_context(
+                "r", {"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a", "_fixed_catalog": tools}, "m", base
+            )
+        )
     assert requests[0]["messages"][:-1] == [*base[:2], {"role": "user", "content": "旧" * 5300}, {"role": "assistant", "content": "done"}]
     assert requests[0]["tools"] == tools and requests[0]["tool_choice"] == "auto"
     assert result[:2] == base[:2] and result[-1] == base[-1] and result[2]["content"].startswith("<conversation_checkpoint>\n")
@@ -674,7 +686,7 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
     from ailab_platform.agent.loop import estimator
 
     monkeypatch.setattr(estimator, "factors", {})
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     old = {"revision": 1, "entries": [{"id": "old", "content": "旧专属事实"}]}
     new = {"revision": 2, "entries": [{"id": "new", "content": "最新"}]}
@@ -692,7 +704,15 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         loop = AgentLoop(platform=Platform(), llm=ModelTransport(url))
         result = asyncio.run(
-            loop._compact_parent_context("r", {"_attempt_id": "a"}, loop.llm, "m", prior, {"role": "user", "content": "新" * 500}, [])
+            loop._compact_parent_context(
+                "r",
+                {"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a"},
+                loop.llm,
+                "m",
+                prior,
+                {"role": "user", "content": "新" * 500},
+                [],
+            )
         )
     assert requests[0]["messages"][:-1] == prior
     assert "旧专属事实" not in result[1]["content"] and "最新" in result[1]["content"]
@@ -705,7 +725,7 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
 
     monkeypatch.setattr(estimator, "factors", {})
     monkeypatch.setattr(settings, "vision_input_tokens", 16)
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, capabilities=frozenset({"tools", "vision"}))
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools", "vision"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     old_image, recent_image = image_part(b"old image", "image/png"), image_part(b"recent image", "image/png")
     messages = [
@@ -726,13 +746,21 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
     original = copy.deepcopy(messages)
     with scripted_server([{"content": canonical_summary(ContextSummary(objective="summary"))}]) as (url, requests):
         loop = AgentLoop(platform=FakePlatform(), llm=ModelTransport(url))
-        loop._states["r"] = {"user_message_index": 3}
+        loop._states["r"] = {**fresh_state(), "messages": messages, "user_message_index": 3}
 
         async def checkpoint(*args):
             pass
 
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
-        asyncio.run(loop._compact_work_context("r", SimpleNamespace(messages=messages, run={"_attempt_id": "a"}), loop.llm, "m", []))
+        asyncio.run(
+            loop._compact_work_context(
+                "r",
+                SimpleNamespace(messages=messages, run={"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a"}),
+                loop.llm,
+                "m",
+                [],
+            )
+        )
     assert requests[0]["messages"][:-1] == original
     assert messages[loop._states["r"]["user_message_index"]] == {"role": "user", "content": "current task"}
     assert messages[-1]["content"] == [recent_image]
@@ -747,8 +775,8 @@ def test_rebuilt_summary_does_not_fallback_to_a_different_model(monkeypatch):
 
     monkeypatch.setattr(estimator, "factors", {})
     monkeypatch.setattr(settings, "llm_max_retries", 0)
-    first = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512, fallback=["backup"])
-    second = ModelSpec("backup", "backup", provider="mock", context_tokens=6000, max_output_tokens=512)
+    first = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, fallback=["backup"])
+    second = ModelSpec("backup", "backup", provider="mock", context_tokens=6500, max_output_tokens=512)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([first, second]))
 
     class Platform(FakePlatform):
@@ -768,11 +796,11 @@ def test_rebuilt_summary_does_not_fallback_to_a_different_model(monkeypatch):
     monkeypatch.setattr("ailab_platform.agent.loop.llm_for", lambda model: fallback.append(model))
     platform = Platform()
     loop = AgentLoop(platform=platform, llm=Failure([]))
-    with pytest.raises(LLMError, match="unavailable"):
+    with pytest.raises(BudgetPause, match="上下文整理失败"):
         asyncio.run(
             loop._assemble_context(
                 "r",
-                {"_attempt_id": "a", "_fixed_catalog": []},
+                {"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a", "_fixed_catalog": []},
                 "m",
                 [{"role": "system", "content": "rules"}, {"role": "user", "content": "current"}],
             )
@@ -785,7 +813,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
     from ailab_platform.config import settings
     from ailab_platform.llm import LLMError
 
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=6000, max_output_tokens=512)
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     monkeypatch.setattr(settings, "llm_max_retries", 1)
     monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
@@ -811,7 +839,7 @@ def test_compaction_retries_transient_failure_on_same_model(monkeypatch, scope):
         {"role": "assistant", "content": "b"},
         {"role": "assistant", "content": "c"},
     ]
-    run = {"_attempt_id": "a"}
+    run = {"context_settings": {"threshold_ratio": 0.8}, "_attempt_id": "a"}
     if scope == "parent":
         asyncio.run(loop._compact_parent_context("r", run, loop.llm, "m", messages, {"role": "user", "content": "新" * 500}, []))
     else:
@@ -1083,7 +1111,7 @@ def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, ret
     result = ui_components({"names": ["Text"]}, {"messages": messages}, html_enabled=False)
     assert (result["components"] == "") is retained
     assert ("guide" in result) is not retained
-    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+    assert loop._states["r"]["context_boundary"]["reason"] == "compacted"
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -1302,7 +1330,12 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
             pass
 
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
-        loop._states["r"] = {"user_message_index": None, "delivered": {"/workspace/outputs/f.txt": 1}}
+        loop._states["r"] = {
+            **fresh_state(),
+            "messages": messages,
+            "user_message_index": None,
+            "delivered": {"/workspace/outputs/f.txt": 1},
+        }
         loop._steps["r"] = 0
         run = {"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.35}}
         for generation in range(3):
@@ -1338,7 +1371,11 @@ def test_office_module_compaction_wire_and_visibility(monkeypatch, path, keep):
             summary = next(m["content"] for m in messages if m["role"] == "system" and "<loaded_modules>" in m.get("content", ""))
             assert result["hash"] in summary and result["resource"] in summary
             assert result["skill"] not in summary
-            assert len([e for e in platform.events if e[0] == "agent.context_boundary"]) == generation + 1
+            if path == "in_turn":
+                assert loop._states["r"]["context_epoch"] == generation + 1
+                assert loop._states["r"]["context_boundary"]["reason"] == "compacted"
+            else:
+                assert run["context_boundary"] == "compacted"
 
 
 def test_office_no_snapshot_rebuild_keeps_navigation_not_visibility(monkeypatch):
@@ -1379,7 +1416,7 @@ def test_office_no_snapshot_rebuild_keeps_navigation_not_visibility(monkeypatch)
     assert ContextSummary.model_validate_json(platform.saved["summary"]).read_modules[0].hash == module["hash"]
     assert not visible_modules(result)
     assert result[-1] == base[-1]
-    assert ("agent.context_boundary", {"reason": "compacted"}) in platform.events
+    assert run["context_boundary"] == "compacted"
     assert read_module("platform.docx", "chat", module["resource"])["hash"] == module["hash"]
 
 
@@ -1713,7 +1750,7 @@ def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
 def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
     from ailab_platform.agent.loop import estimator
 
-    spec = ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=11000, max_output_tokens=1000)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     monkeypatch.setattr(estimator, "factors", {})
     messages = [
@@ -1732,7 +1769,7 @@ def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
             assert state["context_epoch"] == 4
 
         monkeypatch.setattr(loop, "_checkpoint", checkpoint)
-        run = {"_attempt_id": "a"}
+        run = {"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.8}}
         tools = []
 
         async def exercise():
@@ -1748,3 +1785,43 @@ def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
     for before, after in pairwise(requests[1:]):
         assert_extension(before, after)
     assert all(request.get("tools") == requests[0].get("tools") for request in requests)
+
+
+@pytest.mark.parametrize("failure", ["length", "invalid_json", "transport"])
+def test_summary_wire_failure_preserves_epoch_and_running_handle(monkeypatch, failure):
+    from ailab_platform.agent.loop import estimator
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(estimator, "factors", {})
+    monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=22000, max_output_tokens=4096)
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    script = (
+        [{"status": 503}] * 3
+        if failure == "transport"
+        else [{"content": "{", "_finish_reason": "length" if failure == "length" else "stop"}]
+    )
+    with scripted_server(script) as (url, requests):
+        loop = AgentLoop(FakePlatform(), llm=ModelTransport(url))
+        state = {
+            **fresh_state(),
+            "context_epoch": 7,
+            "user_message_index": 2,
+            "background_jobs": ["live"],
+            "messages": [
+                {"role": "system", "content": "rules"},
+                {"role": "system", "content": "context"},
+                {"role": "user", "content": "task"},
+                {"role": "assistant", "content": "old" * 7000},
+            ],
+        }
+        loop._states["r"] = state
+        before = copy.deepcopy(state)
+        turn = SimpleNamespace(messages=state["messages"], run={"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.2}})
+        with pytest.raises(BudgetPause):
+            asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
+    assert state == before
+    assert len(requests) == (3 if failure == "transport" else 1)
+    assert all(request["messages"][:-1] == before["messages"] for request in requests)
+    assert all(request["max_tokens"] >= 4096 for request in requests)
+    assert not any(kind == "agent.context_boundary" for kind, _ in loop.platform.events)

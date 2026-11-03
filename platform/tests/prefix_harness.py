@@ -22,7 +22,7 @@ def scripted_server(responses):
                 self.send_response(delta["status"])
                 self.end_headers()
                 return
-            finish = "tool_calls" if delta.get("tool_calls") else "stop"
+            finish = delta.pop("_finish_reason", "tool_calls" if delta.get("tool_calls") else "stop")
             chunks = [
                 {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]},
                 {"choices": [], "usage": {"prompt_tokens": 100, "completion_tokens": 1}},

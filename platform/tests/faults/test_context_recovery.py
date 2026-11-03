@@ -113,7 +113,7 @@ def test_lost_attempt_cannot_append_settle_tools_or_activate_epoch_and_summary(a
 def test_compaction_discards_rejected_epoch_messages_and_memory(monkeypatch, conflict):
     spec = ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
-    monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: 9100 if "OLDER" in json.dumps(value) else 100)
+    monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: 9000 if "OLDER" in json.dumps(value) else 100)
 
     class Platform(FakePlatform):
         async def get_memory_context(self, run_id):
@@ -146,7 +146,7 @@ def test_compaction_discards_rejected_epoch_messages_and_memory(monkeypatch, con
 
 def test_rejected_boundary_event_cannot_advance_local_epoch():
     class Platform(FakePlatform):
-        async def append_event(self, *args):
+        async def put_checkpoint(self, *args):
             raise ClientError("POST", "/events", 409, "stale_attempt")
 
     loop = AgentLoop(Platform())

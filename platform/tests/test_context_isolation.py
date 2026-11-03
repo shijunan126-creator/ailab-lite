@@ -127,7 +127,12 @@ def test_checkpoint_writers_reject_stale_compaction_and_epoch(api):  # noqa: F81
     barrier = Barrier(2)
 
     def write(label):
-        candidate = {**copy.deepcopy(initial), "context_epoch": 4, "messages": [{"role": "user", "content": label}]}
+        candidate = {
+            **copy.deepcopy(initial),
+            "context_epoch": 4,
+            "messages": [{"role": "user", "content": label}],
+            "context_boundary": {"reason": "compacted", "epoch": 4, "run_id": rid},
+        }
         barrier.wait(timeout=10)
         return label, save(api, rid, headers, step=1, state=candidate)
 
@@ -222,7 +227,11 @@ def test_fork_siblings_share_ancestor_bytes_but_advance_epochs_independently(api
         assert save(api, rid, owner, state=child_state).status_code == 200
         if first is None:
             first = rid
-            child_state.update(context_epoch=8, messages=[{"role": "system", "content": "A-compacted"}])
+            child_state.update(
+                context_epoch=8,
+                messages=[{"role": "system", "content": "A-compacted"}],
+                context_boundary={"reason": "compacted", "epoch": 8, "run_id": rid},
+            )
             assert save(api, rid, owner, step=1, state=child_state).status_code == 200
             assert api.post(f"/internal/runs/{rid}/transition", headers=owner, json={"status": "succeeded"}).status_code == 200
         children.append((rid, child_state))

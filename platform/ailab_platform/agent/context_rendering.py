@@ -6,33 +6,34 @@ from ..contracts.context_summary import ContextSummary, canonical_summary, forma
 from .skill_modules import SUMMARY_MARKER, module_summary
 
 
-def source_handles(value):
+def source_handles(value=None, *, run_ids=(), attachments=(), evidence=(), summary=None):
+    """Authority comes only from API-owned metadata, never model-visible text.
+
+    `value` is deliberately ignored for legacy callers: messages and arbitrary
+    JSON cannot grant provenance. Callers must select a typed metadata channel.
+    """
     allowed = {key: set() for key in ("run_id", "file_id", "block_id")}
-
-    def visit(item):
-        if isinstance(item, list):
-            for child in item:
-                visit(child)
-        elif isinstance(item, dict):
-            if item.get("name") == "recall_history":
-                return
-            for key, child in item.items():
-                if key in allowed and isinstance(child, str):
-                    allowed[key].add(child)
-                else:
-                    visit(child)
-        elif isinstance(item, str):
-            text = item
-            if text.startswith("<conversation_checkpoint>\n"):
-                text = text.split("\n", 1)[1].rsplit("\n", 1)[0]
-            try:
-                parsed = json.loads(text)
-            except (ValueError, TypeError):
-                return
-            if isinstance(parsed, (dict, list)):
-                visit(parsed)
-
-    visit(value)
+    for run_id in run_ids:
+        if isinstance(run_id, str) and run_id:
+            allowed["run_id"].add(run_id)
+    for attachment in attachments:
+        file_id = attachment.get("file_id") or attachment.get("id")
+        if isinstance(file_id, str) and file_id:
+            allowed["file_id"].add(file_id)
+    for record in evidence:
+        for key in allowed:
+            if isinstance(record.get(key), str):
+                allowed[key].add(record[key])
+    if summary:
+        try:
+            parsed = ContextSummary.model_validate_json(summary)
+        except ValueError:
+            pass
+        else:
+            for source in parsed.sources():
+                for key, handle in source.model_dump(exclude_none=True).items():
+                    if key in allowed:
+                        allowed[key].add(handle)
     return allowed
 
 

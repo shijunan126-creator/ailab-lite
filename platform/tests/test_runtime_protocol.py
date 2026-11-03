@@ -481,3 +481,51 @@ def test_only_explicit_budget_resume_resets_window(api, kind):  # noqa: F811
     assert response.status_code in {200, 202}, response.text
     body = api.get(f"/internal/runs/{rid}", headers=SERVICE).json()
     assert (body["budget_window_id"] != rid) == (kind == "budget")
+
+
+def test_boundary_checkpoint_and_event_commit_or_rollback_together(api, monkeypatch):  # noqa: F811
+    from ailab_platform.api import routes_runtime
+    from ailab_platform.models import RunEvent
+
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers).status_code == 200
+    state = {
+        **fresh_state(),
+        "context_epoch": 1,
+        "context_boundary": {"reason": "access_revoked", "epoch": 1, "run_id": rid},
+        "messages": [{"role": "system", "content": "replacement"}],
+    }
+    original = routes_runtime.append_event
+
+    def fail(*args, **kw):
+        raise RuntimeError("injected boundary persistence failure")
+
+    monkeypatch.setattr(routes_runtime, "append_event", fail)
+    with pytest.raises(RuntimeError, match="injected"):
+        save(api, rid, headers, 1, state)
+    with SessionLocal() as db:
+        assert db.get(Run, rid).checkpoint_step == 1
+        assert not db.scalar(select(RunEvent.id).where(RunEvent.run_id == rid, RunEvent.type == "agent.context_boundary"))
+    monkeypatch.setattr(routes_runtime, "append_event", original)
+    assert save(api, rid, headers, 1, state).status_code == 200
+    assert save(api, rid, headers, 2, state).status_code == 200
+    with SessionLocal() as db:
+        events = list(db.scalars(select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type == "agent.context_boundary")))
+        assert len(events) == 1 and events[0].payload["epoch"] == 1
+    assert api.get(f"/internal/runs/{rid}/checkpoint", headers=SERVICE).json()["state"] == state
+
+
+@pytest.mark.parametrize("jobs", [[], ["live-job"]])
+def test_context_pause_exposes_only_checkpoint_confirmed_lease_retention(api, jobs):  # noqa: F811
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers, state={**fresh_state(), "background_jobs": jobs}).status_code == 200
+    response = api.post(
+        f"/internal/runs/{rid}/pause",
+        headers=headers,
+        json={"status": "interrupted", "auto_resume": False, "result": {"pause": {"kind": "context"}}},
+    )
+    assert response.status_code == 200, response.text
+    state = api.get(f"/internal/runs/{rid}/state", headers=SERVICE).json()
+    assert state["retain_background_lease"] is bool(jobs)
+    assert api.post(f"/v1/runs/{rid}/cancel", headers=AUTH).status_code == 200
+    assert api.get(f"/internal/runs/{rid}/state", headers=SERVICE).json()["retain_background_lease"] is False

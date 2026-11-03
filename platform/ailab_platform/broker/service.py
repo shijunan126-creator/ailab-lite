@@ -1595,7 +1595,8 @@ class LeaseManager:
                             except Exception:
                                 log.warning("run state unavailable during reconciliation; retaining lease")
                             else:
-                                if run.get("status") not in {None, "queued", "running"}:
+                                retained_pause = run.get("status") == "interrupted" and run.get("retain_background_lease") is True
+                                if run.get("status") not in {None, "queued", "running"} and not retained_pause:
                                     self.release(lease_id, reason="run_finished")
                                     continue
                         # A listing can observe startup before activation wins the

@@ -177,11 +177,9 @@ def test_step_budget_resumes_with_new_window_and_keeps_lifetime_usage(monkeypatc
 def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input(monkeypatch):
     from ailab_platform.agent.loop import _Turn
     from ailab_platform.catalog import Catalog, ModelSpec
-    from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=10000, max_output_tokens=1000)])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=12000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
-    monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     platform = FakePlatform()
     model = ScriptedLLM([LLMResponse(content='{"schema_version":1,"objective":"已执行前三步"}') for _ in range(10)])
     loop = AgentLoop(platform, FakeBroker(), model)
@@ -200,7 +198,7 @@ def test_current_run_context_compacts_whole_tool_groups_and_keeps_original_input
             ]
         )
     loop._states["run_1"], loop._steps["run_1"] = state, 0
-    turn = _Turn({"prompt": "original constraints", "_attempt_id": "a", "_ledger_tokens": 0})
+    turn = _Turn({"prompt": "original constraints", "_attempt_id": "a", "_ledger_tokens": 0, "context_settings": {"threshold_ratio": 0.75}})
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[1]["content"] == "context"
@@ -274,11 +272,9 @@ def test_v1_checkpoint_resumes_with_hourly_note_after_pending_tool_pair():
 def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
     from ailab_platform.agent.loop import _Turn
     from ailab_platform.catalog import Catalog, ModelSpec
-    from ailab_platform.model_policy import ModelPolicy
 
-    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=10000, max_output_tokens=1000)])
+    catalog = Catalog([ModelSpec("m", "model", provider="mock", context_tokens=12000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: catalog)
-    monkeypatch.setattr(ModelPolicy, "input_budget", staticmethod(lambda spec: 10000))
     model = ScriptedLLM([LLMResponse(content='{"schema_version":1,"objective":"摘要"}') for _ in range(10)])
     loop = AgentLoop(FakePlatform(), FakeBroker(), model)
 
@@ -301,7 +297,7 @@ def test_task_inside_kept_groups_is_pinned_by_the_next_compaction(monkeypatch):
     state["messages"] += [task, *group(4)]
     state["user_message_index"] = len(state["messages"]) - 3
     loop._states["run_1"], loop._steps["run_1"] = state, 0
-    turn = _Turn({"prompt": "current task", "_attempt_id": "a", "_ledger_tokens": 0})
+    turn = _Turn({"prompt": "current task", "_attempt_id": "a", "_ledger_tokens": 0, "context_settings": {"threshold_ratio": 0.75}})
     turn.messages = state["messages"]
     asyncio.run(loop._compact_work_context("run_1", turn, model, "m", []))
     assert turn.messages[state["user_message_index"]] == task

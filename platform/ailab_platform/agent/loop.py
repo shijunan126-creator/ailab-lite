@@ -9,6 +9,7 @@ and office files written to /workspace/outputs get rendered previews while the t
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
@@ -370,6 +371,7 @@ class AgentLoop:
         self.platform = platform or AsyncPlatformClient()
         self.broker = broker or AsyncBrokerClient()
         self._states: dict[str, dict] = {}
+        self._turns: dict[str, _Turn] = {}
         self._steps: dict[str, int] = {}
         self._lease_errors: dict[str, Exception] = {}
         self._steer_pending: set[str] = set()
@@ -381,11 +383,11 @@ class AgentLoop:
         return ContextManager(self, run_id, catalog=get_catalog, tools_for_run=_tools_for_run, prompt_for=system_prompt_for)
 
     async def _event(self, run_id: str, type_: str, payload: dict, *, advance_boundary=True) -> None:
+        if type_ == "agent.context_boundary":
+            await self._context(run_id).activate_boundary(payload, advance=advance_boundary)
+            return
         try:
             await self.platform.append_event(run_id, type_, payload)
-            if type_ == "agent.context_boundary":
-                self._module_views.pop(run_id, None)
-                self._context(run_id).record_boundary(payload["reason"], advance=advance_boundary)
             if budget := self._budgets.get(run_id):
                 budget.progress()
         except ClientError as exc:
@@ -1504,6 +1506,17 @@ class AgentLoop:
             self._warm_view(turn, run_id)
         metrics.TOOL_SECONDS.labels(tool).observe(time.perf_counter() - tool_started)
         metrics.TOOL_CALLS.labels(tool, str(bool(result.get("ok"))).lower()).inc()
+        # Only identities returned by authorization-enforcing platform tools grant
+        # summary provenance. Arguments, file text and recall never do.
+        if result.get("ok") and call.name in {"read_library_file", "copy_library_file", "document_view"}:
+            metadata = result.get("view") if call.name == "document_view" else result
+            if isinstance(metadata, dict):
+                source = {key: metadata[key] for key in ("file_id", "block_id") if isinstance(metadata.get(key), str)}
+                sources = self._states[run_id].setdefault("context_sources", [])
+                if source and source not in sources:
+                    if len(sources) >= 2048:
+                        raise BudgetPause("来源数量超过上下文容量，已保存进度")
+                    sources.append(source)
         shown = result.get("skill")
         await self._event(
             run_id,
@@ -1518,7 +1531,11 @@ class AgentLoop:
                     or (f"已读取技能说明（{len(shown)} 字）" if shown else "")
                 )[:2000],
                 **(
-                    {"running": bool(result.get("running")), "idle_seconds": result.get("idle_seconds")}
+                    {
+                        "running": bool(result.get("running")),
+                        "job_key": hashlib.sha256(result["handle"].encode()).hexdigest() if result.get("handle") else None,
+                        "idle_seconds": result.get("idle_seconds"),
+                    }
                     if call.name in {"exec", "exec_wait", "exec_kill"}
                     else {}
                 ),
@@ -1593,7 +1610,7 @@ class AgentLoop:
         payload, exceeded = bounded_checkpoint(
             self._context(run_id).snapshot(turn.run.get("_image_files", {})), settings.checkpoint_max_bytes
         )
-        saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps[run_id], "state": payload})
+        saved = await self.platform.put_checkpoint(run_id, {"expected_step": self._steps.get(run_id, 0), "state": payload})
         self._steps[run_id] = saved["step"]
         if exceeded:
             state.clear()
@@ -1877,14 +1894,15 @@ class AgentLoop:
             log.warning("could not take over the workspace saved on reclaim run=%s", run_id, exc_info=True)
             return False
 
-    async def _budget_pause(self, run_id, turn, reason, *, pause=None):
+    async def _budget_pause(self, run_id, turn, reason, *, pause=None, preserve_jobs=False):
         budget = self._budgets[run_id]
         budget.update()
         budget.suspended = True  # saving a stalled step must not immediately trip the watchdog again
         state = self._states[run_id]
+        preserve_jobs = preserve_jobs and bool(state.get("background_jobs"))
         # Preserve pending paid tools. Started non-replayable tools remain uncertain on resume.
         state["finished"] = False
-        if turn.lease_id:
+        if turn.lease_id and not preserve_jobs:
             await self._stop_background(run_id, turn)
             try:
                 await self._finish_previews(turn, run_id)
@@ -1922,6 +1940,11 @@ class AgentLoop:
                 },
             },
         )
+        if preserve_jobs and state.get("background_jobs") and turn.lease_id:
+            # Broker retains bounded ownership until its original TTL/max lifetime;
+            # a resumed run reacquires the same active lease. Never renew forever.
+            await self.broker.renew(turn.lease_id)
+            turn.lease_id = None
 
     async def process(self, run_id: str, attempt: int = 1, *, attempt_id: str | None = None, checkpoint: dict | None = None) -> None:
         if not attempt_id:
@@ -1933,6 +1956,7 @@ class AgentLoop:
             attempt_id_var.reset(identity)
             self._module_views.pop(run_id, None)
             self._states.pop(run_id, None)
+            self._turns.pop(run_id, None)
             self._steps.pop(run_id, None)
             self._lease_errors.pop(run_id, None)
             self._steer_pending.discard(run_id)
@@ -1953,6 +1977,7 @@ class AgentLoop:
         window = run.get("budget_window_id") or run_id
         budget = self._budgets[run_id] = WorkBudget(state, window)
         turn = _Turn(run)
+        self._turns[run_id] = turn
         turn.disabled_skills = frozenset(run.get("disabled_skills") or [])
         turn.personal = {s["name"]: s for s in run.get("personal_skills") or []}
         turn.artifacts, turn.delivered = state["artifacts"], state["delivered"]
@@ -2268,7 +2293,9 @@ class AgentLoop:
             )
             outcome = "interrupted"
         except BudgetPause as exc:
-            await self._budget_pause(run_id, turn, exc.reason, pause=getattr(exc, "pause", None))
+            await self._budget_pause(
+                run_id, turn, exc.reason, pause=getattr(exc, "pause", None), preserve_jobs=getattr(exc, "preserve_jobs", False)
+            )
             outcome = "interrupted"
         except RunPaused:
             outcome = "waiting_user"

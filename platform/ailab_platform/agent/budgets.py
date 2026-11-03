@@ -14,6 +14,11 @@ class BudgetPause(Exception):
         super().__init__(reason)
 
 
+class ContextPause(BudgetPause):
+    preserve_jobs = True
+    pause = {"kind": "context"}
+
+
 class QuotaPause(BudgetPause):
     def __init__(self, window: str, resets_at: str):
         self.pause = {"kind": "quota", "window": window, "resets_at": resets_at}

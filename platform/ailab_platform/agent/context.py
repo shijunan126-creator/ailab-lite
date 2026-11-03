@@ -11,7 +11,7 @@ import time
 from copy import deepcopy
 
 from .. import metrics
-from ..adapters.runtime import checkpoint_state
+from ..adapters.runtime import checkpoint_state, fresh_state
 from ..catalog import get_catalog
 from ..clients import ClientError
 from ..config import settings
@@ -20,7 +20,7 @@ from ..contracts.model_context import CONTEXT_ABI_VERSION, tool_catalog_fingerpr
 from ..domain.answer_parts import for_history
 from ..llm import LLMError, llm_for
 from ..model_policy import ModelPolicy, estimator
-from .budgets import BudgetPause
+from .budgets import ContextPause
 from .context_protocol import validate_safe_compaction_point
 from .context_rendering import (
     boundary_messages,
@@ -59,7 +59,7 @@ class ContextManager:
     def __init__(self, runtime, run_id, *, catalog=get_catalog, tools_for_run=None, prompt_for=system_prompt_for):
         self.runtime = runtime
         self.run_id = run_id
-        self.state = runtime._states.setdefault(run_id, {})
+        self.state = runtime._states.setdefault(run_id, fresh_state())
         self.platform = runtime.platform
         self.llm = runtime.llm
         self.catalog = catalog
@@ -76,6 +76,45 @@ class ContextManager:
             metrics.CONTEXT_REBUILDS.labels(reason).inc()
         metrics.CONTEXT_EPOCH.observe(self.state.get("context_epoch", 0))
 
+    async def activate_boundary(self, payload, *, advance=True):
+        """Checkpoint CAS owns replacement, epoch and boundary event together."""
+        from types import SimpleNamespace
+
+        original = deepcopy(self.state)
+        self.state["context_epoch"] = self.state.get("context_epoch", 0) + int(advance)
+        self.state["context_abi_version"] = CONTEXT_ABI_VERSION
+        self.state["context_boundary"] = {**payload, "epoch": self.state["context_epoch"], "run_id": self.run_id}
+        turn = self.runtime._turns.get(self.run_id) or SimpleNamespace(
+            run={}, artifacts=self.state.get("artifacts", []), delivered=self.state.get("delivered", {})
+        )
+        try:
+            from .checkpoint_budget import encoded_size
+
+            candidate = {**self.snapshot(turn.run.get("_image_files", {})), "artifacts": turn.artifacts, "delivered": turn.delivered}
+            if encoded_size(candidate) > settings.checkpoint_max_bytes:
+                raise ContextPause("上下文边界超过保存容量，旧进度已保留；请新建对话")
+            await self.runtime._checkpoint(self.run_id, turn)
+        except Exception as exc:
+            self.state.clear()
+            self.state.update(original)
+            if isinstance(exc, ClientError) and exc.status == 409:
+                raise
+            raise ContextPause("上下文边界保存失败，旧进度已保留；请稍后继续") from exc
+        self.runtime._module_views.pop(self.run_id, None)
+        self.record_boundary(payload["reason"], advance=False)
+
+    async def _summary_response(self, llm, run_id, run, model, prompt, step, tools):
+        spec = self.catalog().get(model)
+        reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
+        estimated = estimator.estimate(model, {"messages": prompt, "tools": tools})
+        if ModelPolicy.output_budget(spec, estimated) < reserve:
+            metrics.CONTEXT_COMPACTION_FAILURES.labels("input_budget").inc()
+            raise ContextPause("上下文整理缺少足够输出空间，已暂停；请缩小任务或新建对话")
+        try:
+            return await self.runtime._answer_without_tools(llm, run_id, run, model, prompt, step, tools, quiet=True, allow_fallback=False)
+        except (LLMError, ClientError) as exc:
+            raise ContextPause("上下文整理失败，旧进度已保留；请继续或新建对话") from exc
+
     def append(self, message):
         self.state["messages"].append(deepcopy(message))
 
@@ -84,9 +123,17 @@ class ContextManager:
 
     def should_compact(self, model, messages, tools, config=None):
         spec = self.catalog().get(model)
-        return spec is not None and estimator.estimate(model, {"messages": messages, "tools": tools}) >= ModelPolicy.compaction_threshold(
-            spec, config
-        )
+        if spec is None:
+            return False
+        cost = estimator.estimate(model, {"messages": messages, "tools": tools})
+        if config and not config.get("auto_compact", True):
+            return cost >= ModelPolicy.compaction_threshold(spec, config)
+        # The 90% target cannot consume the summary's own instruction/output space.
+        # Small catalog models reserve their whole output cap; overflow after an
+        # indivisible tool group is handled by the summary preflight, never a loop.
+        reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
+        safe = spec.context_tokens - reserve - min(2048, spec.context_tokens // 16)
+        return cost >= min(ModelPolicy.compaction_threshold(spec, config), safe)
 
     def validate_safe_boundary(self, messages, state=None):
         return validate_safe_compaction_point(messages, self.state if state is None else state)
@@ -194,11 +241,10 @@ class ContextManager:
                     [{"role": "user", "content": json.dumps({"revalidation": evidence}, ensure_ascii=False)}] if evidence else []
                 )
                 allowed = source_handles(
-                    [
-                        prefix,
-                        evidence,
-                        [{"run_id": item["id"], "attachments": item.get("attachments", [])} for item in pending],
-                    ]
+                    run_ids=[item["id"] for item in pending],
+                    attachments=[f for item in pending for f in item.get("attachments", [])],
+                    evidence=evidence,
+                    summary=summary,
                 )
                 prompt = [*prefix, *evidence_note, {**instruction, "content": summary_instruction(instruction["content"], allowed)}]
                 if estimator.estimate(model, {"messages": prompt, "tools": context_tools}) < budget:
@@ -206,10 +252,8 @@ class ContextManager:
                 if evidence:
                     evidence.pop()
                     continue
-                raise LLMError("history exceeds model budget before compaction")
-            response = await self.runtime._answer_without_tools(
-                self.llm or llm_for(model), run_id, run, model, prompt, -1, context_tools, quiet=True, allow_fallback=False
-            )
+                raise ContextPause("已有历史无法安全整理，旧进度已保留；请新建对话")
+            response = await self._summary_response(self.llm or llm_for(model), run_id, run, model, prompt, -1, context_tools)
             try:
                 semantic = parse_summary(response, allowed)
                 # The existing durable JSON envelope carries module metadata; it is
@@ -222,7 +266,7 @@ class ContextManager:
                     raise ValueError("summary and module metadata exceed budget")
             except ValueError as exc:
                 metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
-                raise LLMError("summary schema invalid; cursor unchanged") from exc
+                raise ContextPause("上下文整理未返回有效摘要，旧进度已保留") from exc
             await self.platform.save_model_summary(
                 run_id,
                 {
@@ -233,13 +277,14 @@ class ContextManager:
                     "revalidation_ids": [item["evidence_id"] for item in evidence],
                 },
             )
+            self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
             summary, through = new_summary, pending[-1]["id"]
             count, pending, revalidation = len(pending), [], []
             await self.runtime._event(run_id, "agent.context_compacted", {"turns": count})
-            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted"})
+            run.setdefault("context_boundary", "compacted")
             if estimator.estimate(model, {"messages": assemble(), "tools": context_tools}) >= threshold:
                 metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
-                raise BudgetPause("上下文整理后仍超过安全容量，请缩小任务范围")
+                raise ContextPause("上下文整理后仍超过安全容量，请缩小任务范围")
             if run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
                 raise LLMError("token limit reached during context compaction")
 
@@ -247,8 +292,15 @@ class ContextManager:
             for turn in page["history"]:
                 # Compact before adding a turn that cannot fit alongside the instruction.
                 pending.append(turn)
-                summary_tokens = estimator.estimate(model, {"messages": [*summary_prefix(), instruction], "tools": context_tools})
-                if len(pending) > 1 and summary_tokens + min(2048, spec.max_output_tokens) >= budget:
+                planning_handles = source_handles(
+                    run_ids=[item["id"] for item in pending],
+                    attachments=[f for item in pending for f in item.get("attachments", [])],
+                    summary=summary,
+                )
+                planning_instruction = {**instruction, "content": summary_instruction(instruction["content"], planning_handles)}
+                summary_tokens = estimator.estimate(model, {"messages": [*summary_prefix(), planning_instruction], "tools": context_tools})
+                reserve = min(4096, spec.max_output_tokens, settings.model_max_output_tokens or spec.max_output_tokens)
+                if len(pending) > 1 and summary_tokens + reserve > spec.context_tokens:
                     last = pending.pop()
                     await compact()
                     pending.append(last)
@@ -292,7 +344,7 @@ class ContextManager:
             return [*prior, current]
         policy = ModelPolicy(self.catalog())
         threshold = policy.compaction_threshold(spec, run.get("context_settings"))
-        if estimator.estimate(model, {"messages": [*prior, current], "tools": tools}) < threshold:
+        if not self.should_compact(model, [*prior, current], tools, run.get("context_settings")):
             return [*prior, current]
         instruction = {
             "role": "user",
@@ -306,18 +358,22 @@ class ContextManager:
         except ValueError:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("unsafe_barrier").inc()
             raise
-        allowed = source_handles([prior, {"run_id": run.get("parent_run_id")}])
+        allowed = source_handles(
+            run_ids=[run.get("parent_run_id"), run_id],
+            attachments=run.get("input_files") or [],
+            evidence=self.state.get("context_sources") or [],
+        )
         instruction["content"] = summary_instruction(instruction["content"], allowed)
         prompt = [*prior, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= policy.input_budget(spec):
             metrics.CONTEXT_COMPACTION_FAILURES.labels("input_budget").inc()
-            raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self.runtime._answer_without_tools(llm, run_id, run, model, prompt, -3, tools, quiet=True, allow_fallback=False)
+            raise ContextPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
+        response = await self._summary_response(llm, run_id, run, model, prompt, -3, tools)
         try:
             semantic = parse_summary(response, allowed)
         except ValueError as exc:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
-            raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
+            raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
         operational = {**(runtime_state or {}), "delivered": delivered or {}, "delivery_names": delivery_names or {}}
         base = [prior[0], await self._refresh_boundary_memory(run_id, prior[1]), *boundary_messages(semantic, prior, operational)]
         last_user = next((i for i in range(len(prior) - 1, 1, -1) if prior[i].get("role") == "user"), len(prior))
@@ -327,8 +383,9 @@ class ContextManager:
         result = [*base, current]
         if estimator.estimate(model, {"messages": result, "tools": tools}) >= threshold:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
-            raise BudgetPause("摘要和当前输入超过模型窗口，请缩小任务范围")
-        await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted"})
+            raise ContextPause("摘要和当前输入超过模型窗口，请缩小任务范围")
+        self.state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
+        run["context_boundary"] = "compacted"
         return result
 
     async def compact(self, run_id, turn, llm, model, offered):
@@ -355,7 +412,7 @@ class ContextManager:
             metrics.CONTEXT_BARRIER_WAIT_SECONDS.observe(time.perf_counter() - barrier_started)
         prior = state.get("compaction", {})
         if prior.get("after", 0) >= threshold and prior.get("threshold") == threshold:
-            raise BudgetPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
+            raise ContextPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
         user_index = state.get("user_message_index")
         user = messages[user_index] if isinstance(user_index, int) and 0 <= user_index < len(messages) else None
         fixed = [*messages[:2], *([user] if user is not None and user_index >= 2 else [])]
@@ -376,7 +433,7 @@ class ContextManager:
             if fixed_cost + remaining + min(2048, spec.max_output_tokens) <= min(int(spec.context_tokens * 0.55), threshold - 1):
                 break
         if cut is None:
-            raise BudgetPause("当前输入和固定上下文无法安全整理，请缩小任务范围")
+            raise ContextPause("当前输入和固定上下文无法安全整理，请缩小任务范围")
         instruction = {
             "role": "user",
             "content": (
@@ -386,20 +443,22 @@ class ContextManager:
                 "不要摘要技能正文，已读模块索引只供导航。只输出摘要，不调用工具。）"
             ),
         }
-        allowed = source_handles([messages, {"run_id": run_id}])
+        allowed = source_handles(
+            run_ids=[run_id, turn.run.get("parent_run_id")],
+            attachments=turn.run.get("input_files") or [],
+            evidence=state.get("context_sources") or [],
+        )
         instruction["content"] = summary_instruction(instruction["content"], allowed)
         prompt = [*messages, instruction]
         if estimator.estimate(model, {"messages": prompt, "tools": tools}) >= limit:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("input_budget").inc()
-            raise BudgetPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
-        response = await self.runtime._answer_without_tools(
-            llm, run_id, turn.run, model, prompt, -3, tools, quiet=True, allow_fallback=False
-        )
+            raise ContextPause("已有上下文过大，无法在模型窗口内安全整理；请新建对话继续")
+        response = await self._summary_response(llm, run_id, turn.run, model, prompt, -3, tools)
         try:
             semantic = parse_summary(response, allowed)
         except ValueError as exc:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("invalid_summary").inc()
-            raise BudgetPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
+            raise ContextPause("上下文整理未返回有效摘要，请继续或新建对话") from exc
         recent = self._compacted_recent(messages[cut:])
         original = dict(state)
         context = await self._refresh_boundary_memory(run_id, messages[1])
@@ -420,27 +479,36 @@ class ContextManager:
         original_messages = list(messages)
         messages[:] = replacement
         state["user_message_index"] = next_user_index
+        state["context_sources"] = [source.model_dump(exclude_none=True) for source in semantic.sources()]
         state["compaction"] = {"after": after, "limit": limit, "threshold": threshold, "summary": canonical_summary(semantic)}
         state.pop("compaction_work", None)
-        state["context_epoch"] = state.get("context_epoch", 0) + 1
-        state["context_abi_version"] = CONTEXT_ABI_VERSION
         try:
-            await self.runtime._checkpoint(run_id, turn)
+            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted"})
         except Exception:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("persistence").inc()
             messages[:] = original_messages
             state.clear()
             state.update(original)
             raise
-        await self.runtime._event(run_id, "agent.context_boundary", {"reason": "compacted"}, advance_boundary=False)
         await self.runtime._event(run_id, "agent.context_compacted", {"scope": "run", "messages": cut - 2})
         if after >= threshold:
             metrics.CONTEXT_COMPACTION_FAILURES.labels("non_converging").inc()
-            raise BudgetPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
+            raise ContextPause("上下文整理后仍超过安全容量，已保存进度，请缩小任务范围")
         if turn.run.get("_ledger_tokens", 0) >= settings.run_max_tokens:
             raise TokenLimit(_token_limit_error(turn.run))
 
     async def build(self, run, turn, model, llm):
+        original = deepcopy(self.state)
+        try:
+            await self._build(run, turn, model, llm)
+        except Exception:
+            # No partially assembled prefix may be persisted by the pause path.
+            self.state.clear()
+            self.state.update(original)
+            turn.messages = self.state["messages"]
+            raise
+
+    async def _build(self, run, turn, model, llm):
         run_id, state = self.run_id, self.state
         options = run.get("options") or {}
         mode, skill = options.get("mode", "work"), options.get("skill")
@@ -492,6 +560,7 @@ class ContextManager:
             previous = run.get("previous_model_context") if not legacy else None
             if previous:
                 state["context_epoch"] = previous.get("context_epoch", 0)
+                state["context_sources"] = previous.get("context_sources", [])
             if legacy:
                 skip = int(saved_messages[0].get("role") == "system")
                 if skip and len(saved_messages) > 1 and saved_messages[1].get("role") == "system":
@@ -540,11 +609,12 @@ class ContextManager:
                     run["context_boundary"] = "rebuilt"
                 state["memory_observed"] = run.get("memory") or {}
                 state["messages"] = await self._assemble_context(run_id, run, model, messages)
-            if reason := run.get("context_boundary"):
-                await self.runtime._event(run_id, "agent.context_boundary", {"reason": reason})
             if not legacy:
                 state["user_message_index"] = len(state["messages"]) - 1
-            await self.runtime._checkpoint(run_id, turn)
+            if reason := run.get("context_boundary"):
+                await self.runtime._event(run_id, "agent.context_boundary", {"reason": reason})
+            else:
+                await self.runtime._checkpoint(run_id, turn)
         state["context_abi_version"] = CONTEXT_ABI_VERSION
         messages = state["messages"]
         turn.messages = messages
@@ -574,6 +644,8 @@ class ContextManager:
             state.setdefault("memory_observed", latest)
 
     async def revalidate_recall(self, run_id, messages):
+        original = deepcopy(self.state)
+        previous = deepcopy(messages)
         revoked = await self._revoked_recall_results(run_id, messages)
         if revoked:
             for index in revoked:
@@ -581,7 +653,14 @@ class ContextManager:
                     **messages[index],
                     "content": json.dumps({"ok": False, "error": "引用的历史已不可用"}, ensure_ascii=False, separators=(",", ":")),
                 }
-            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "access_revoked"})
+            try:
+                await self.runtime._event(run_id, "agent.context_boundary", {"reason": "access_revoked"})
+            except Exception:
+                messages[:] = previous
+                self.state.clear()
+                self.state.update(original)
+                self.state["messages"] = messages
+                raise
 
     async def _restore_images(self, run_id, run, state):
         import base64
@@ -616,7 +695,7 @@ class ContextManager:
                         continue
                     images = [item for item in restored if item.get("type") == "image_url"]
                     if len(images) != 1:
-                        raise BudgetPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
+                        raise ContextPause("附件图片无法按原内容恢复，已暂停；请重新开始任务")
                     image = images[0]["image_url"]
                     header, data = image["url"].split(",", 1)
                     if not part.get("sha256"):
@@ -626,7 +705,7 @@ class ContextManager:
                         or image.get("detail") != part.get("detail")
                         or hashlib.sha256(base64.b64decode(data, validate=True)).hexdigest() != part["sha256"]
                     ):
-                        raise BudgetPause("附件图片内容已变化，已暂停；请重新开始任务")
+                        raise ContextPause("附件图片内容已变化，已暂停；请重新开始任务")
                     parts.append(images[0])
                 else:
                     parts.append(part)
@@ -634,5 +713,8 @@ class ContextManager:
         if pending:
             state["pending_image_inputs"] = [message["content"] for message in pending]
         if expired:
-            await self.runtime._event(run_id, "agent.context_boundary", {"reason": "rebuilt", "cause": "capture_expired"})
+            if state is self.state:
+                await self.runtime._event(run_id, "agent.context_boundary", {"reason": "rebuilt", "cause": "capture_expired"})
+            else:
+                run["context_boundary"] = "rebuilt"
         return legacy or expired
