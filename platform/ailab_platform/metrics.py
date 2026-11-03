@@ -290,3 +290,10 @@ CONTEXT_COMPACTION_TOTALS = Histogram(
     buckets=(10000, 30000, 48000, 64000, 300000, 1000000),
 )
 CONTEXT_COMPACTION_REASONS = Counter("ailab_context_compaction_reasons_total", "Post-boundary policy outcomes", ("scope", "reason"))
+
+CONTEXT_DELTA_ERROR = Histogram(
+    "ailab_context_delta_error_ratio",
+    "Signed prediction error relative to provider prompt tokens",
+    ["source"],
+    buckets=(-1, -0.5, -0.25, -0.1, -0.05, 0, 0.05, 0.1, 0.25, 0.5, 1, 2, 4),
+)

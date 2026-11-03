@@ -1,4 +1,4 @@
-"""Model selection and bounded, calibrated input estimates; no HTTP or ledger writes."""
+"""Model selection and bounded input estimates; no HTTP or ledger writes."""
 
 from __future__ import annotations
 
@@ -11,9 +11,6 @@ from .llm import LLMError
 
 
 class TokenEstimator:
-    def __init__(self):
-        self.factors: dict[str, float] = {}
-
     def raw(self, value: object) -> int:
         images = 0
 
@@ -33,12 +30,7 @@ class TokenEstimator:
         return images * settings.vision_input_tokens + 32 + wide + (len(text) - wide + 3) // 4
 
     def estimate(self, alias: str, value: object) -> int:
-        return int(self.raw(value) * self.factors.get(alias, 1.0)) + 1
-
-    def calibrate(self, alias: str, value: object, prompt_tokens: int) -> None:
-        if prompt_tokens > 0:
-            observed = prompt_tokens / self.raw(value)
-            self.factors[alias] = max(1.0, min(8.0, max(observed * 1.1, self.factors.get(alias, 1.0) * 0.95)))
+        return self.raw(value) + 1
 
 
 estimator = TokenEstimator()

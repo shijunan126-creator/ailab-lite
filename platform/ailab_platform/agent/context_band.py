@@ -1,6 +1,6 @@
 """One post-boundary policy and staged-request validator for every context path.
 
-All costs include calibrated image charges. Nothing here mutates the active epoch;
+All costs include image charges. Nothing here mutates the active epoch;
 callers own persistence and activate only the returned, measured candidate.
 """
 
@@ -15,6 +15,7 @@ from ..model_policy import ModelPolicy, estimator
 from .budgets import ContextPause
 from .context_protocol import protocol_groups
 from .context_rendering import block, loaded_modules, semantic_message
+from .context_usage import CandidatePricing, request_tokens
 from .skill_modules import SUMMARY_MARKER
 
 STALE_BLOCKS = ("<conversation_checkpoint>", "<runtime_state>", "<loaded_modules>", "历史摘要（仅作背景）：")
@@ -218,7 +219,7 @@ class StagedContext:
     measurements: dict
 
 
-def stage_context(band, prefix, semantic, prior, state, tools, protected=(), current=(), *, keep_latest=True):
+def stage_context(band, prefix, semantic, prior, state, tools, protected=(), current=(), *, keep_latest=True, pricing_source=None):
     """Pack newest-first, then validate the exact staged wire request before CAS.
 
     Optional history may never raise a candidate above U. Latest complete unit is
@@ -237,8 +238,10 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
 
     fixed = compose(blocks)
 
+    pricing = CandidatePricing(state, band.model, pricing_source or state.get("messages") or prior, tools, aliases=prior)
+
     def cost(messages):
-        return band.cost({"messages": messages, "tools": tools})
+        return pricing.cost(messages)
 
     mandatory = cost(fixed)
     reason = "band"
@@ -279,11 +282,10 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
             raise ContextPause("最近完整工具组超过安全容量，已暂停；请缩小读取批次")
         selected = [latest]
         # Cache immutable group costs for linear planning. Final measurement is
-        # authoritative, including JSON framing and calibrated image charges.
+        # authoritative, including JSON framing and image charges.
         estimate = cost([*fixed, *latest])
-        overhead = band.cost([])
         for group in reversed(groups[:-1]):
-            increment = max(0, band.cost(group) - overhead)
+            increment = max(0, cost([*fixed, *group]) - cost(fixed))
             if estimate + increment > min(band.aim, band.upper):
                 break
             selected.append(group)
@@ -345,7 +347,7 @@ def admit_tool_result(band, messages, tools, state, call, result, *, image_start
     reserve = band.cost([tool_result_message(item["id"], item["name"], CANNOT_FIT_RESULT) for item in pending[1:]])
     candidate = [*batch, tool_result_message(call.id, call.name, result), *images]
     full = [*messages, tool_result_message(call.id, call.name, result), *images]
-    if band.cost(candidate) + reserve <= budget and band.cost({"messages": full, "tools": tools}) + reserve < band.window - min(
+    if band.cost(candidate) + reserve <= budget and request_tokens(state, band.model, full, tools) + reserve < band.window - min(
         4096, band.output * 2
     ) - min(2048, band.window // 16):
         return result
@@ -368,7 +370,7 @@ def batch_budget(band, messages, tools, state):
         state.get("active_user_indices") or []
     )
     essentials = [*messages[:2], *(messages[i] for i in sorted(protected)), bounded_runtime(band, state)]
-    floor = band.cost({"messages": essentials, "tools": tools}) + band.summary_budget + band.allocation(2000, 0.04)
+    floor = CandidatePricing(state, band.model, messages, tools).cost(essentials) + band.summary_budget + band.allocation(2000, 0.04)
     # The newest complete batch must survive the next boundary alongside every
     # mandatory component. A window fraction rejects files that actually fit.
     return max(0, band.ceiling - floor)

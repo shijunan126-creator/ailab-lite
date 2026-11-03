@@ -44,6 +44,7 @@ from .checkpoint_budget import CAPACITY_NOTE, bounded_checkpoint
 from .context import ContextManager
 from .context import _summary_input as _summary_input
 from .context_band import CANNOT_FIT_RESULT, ContextBand, admit_tool_result, batch_budget
+from .context_usage import record_usage, request_tokens
 from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
@@ -732,7 +733,9 @@ class AgentLoop:
             if not quiet and run.get("_last_model") and run["_last_model"] != spec.id and announced_model != spec.id:
                 await self._event(run_id, "agent.context_boundary", {"reason": "model_changed"})
                 announced_model = spec.id
-            if estimator.estimate(spec.id, {"messages": messages, "tools": offered}) > policy.input_budget(spec):
+            if request_tokens(self._states.get(run_id, {}), spec.id, messages, offered) + min(
+                128, spec.context_tokens // 100
+            ) > policy.input_budget(spec):
                 raise LLMError(f"context budget exceeded for {spec.id}")
             client = llm if spec.id == model else llm_for(spec.id)
             for retry in range(settings.llm_max_retries + 1):
@@ -831,13 +834,16 @@ class AgentLoop:
         writer = _DeltaWriter(self, run_id, step)
         thinker = _DeltaWriter(self, run_id, step, "agent.thinking")
         offered = tools_for_turn() if tools is None else tools
-        estimated_input = estimator.estimate(model, {"messages": messages, "tools": offered})
+        estimated_input = request_tokens(self._states.get(run_id, {}), model, messages, offered)
         if not quiet:
             metrics.CONTEXT_INPUT_TOKENS.observe(estimated_input)
         spec = get_catalog().get(model)
-        if spec is not None and estimated_input > ModelPolicy(get_catalog()).input_budget(spec):
+        # A small, explicit window reserve covers unsent delta/framing error;
+        # it does not inflate the 90% trigger, band accounting or usage ledger.
+        safety = min(128, (spec.context_tokens if spec else 32768) // 100)
+        if spec is not None and estimated_input + safety > ModelPolicy(get_catalog()).input_budget(spec):
             raise LLMError("updated memory and current input exceed context budget")
-        output_limit = ModelPolicy.output_budget(spec or ModelSpec(model, model), estimated_input)
+        output_limit = ModelPolicy.output_budget(spec or ModelSpec(model, model), estimated_input + safety)
         if output_limit < 1:
             raise LLMError("no output space remains in the model context window")
         if settings.model_max_output_tokens is not None:
@@ -940,7 +946,12 @@ class AgentLoop:
             # The durable intent remains charged until the reaper makes the gap visible.
             settled = await submit()
             run["_ledger_tokens"] = settled["run_tokens"]
-            estimator.calibrate(model, {"messages": messages, "tools": offered}, call.usage.get("prompt_tokens", 0))
+            actual = call.usage.get("prompt_tokens", 0)
+            if actual > 0:
+                metrics.CONTEXT_DELTA_ERROR.labels("anchor_delta").observe((estimated_input - actual) / actual)
+                raw = estimator.estimate(model, {"messages": messages, "tools": offered})
+                metrics.CONTEXT_DELTA_ERROR.labels("raw").observe((raw - actual) / actual)
+                record_usage(self._states.setdefault(run_id, fresh_state()), model, messages, offered, actual)
             response.thinking_seconds = thinker.seconds
             if not quiet:
                 run["_last_model"] = model

@@ -113,7 +113,11 @@ def test_next_run_extends_the_previous_run_wire_messages(mode):
             run = {**await super().get_run(run_id), "prompt": "first" if run_id == "first" else "second", "options": {"mode": mode}}
             if run_id == "second":
                 state = self.checkpoints["first"]["state"]
-                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+                run["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "prompt_anchors": state["prompt_anchors"],
+                }
             return run
 
     call = {"index": 0, "id": "plan", "type": "function", "function": {"name": "update_plan", "arguments": '{"steps":["finish"]}'}}
@@ -126,6 +130,9 @@ def test_next_run_extends_the_previous_run_wire_messages(mode):
         asyncio.run(loop.process("second", attempt_id="a2"))
     assert [status for status, _ in platform.statuses if status == "succeeded"] == ["succeeded", "succeeded"]
     assert len(requests) == 3
+    assert any(
+        a in platform.checkpoints["second"]["state"]["prompt_anchors"] for a in platform.checkpoints["first"]["state"]["prompt_anchors"]
+    )
     assert_extension(requests[1], requests[2])
     assert requests[2]["messages"] == [
         *requests[1]["messages"],
@@ -508,9 +515,6 @@ def test_revoked_parent_rebuilds_valid_history_without_replaying_tools(monkeypat
 
 
 def test_rebuilt_history_summary_appends_instruction_to_packed_history(monkeypatch):
-    from ailab_platform.agent.loop import estimator
-
-    monkeypatch.setattr(estimator, "factors", {})
     spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
 
@@ -683,9 +687,6 @@ def test_steer_wrap_up_and_stuck_notes_are_appended(monkeypatch):
 
 
 def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
-    from ailab_platform.agent.loop import estimator
-
-    monkeypatch.setattr(estimator, "factors", {})
     spec = ModelSpec("m", "m", provider="mock", context_tokens=32000, max_output_tokens=8192, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
     old = {"revision": 1, "entries": [{"id": "old", "content": "旧专属事实"}]}
@@ -720,10 +721,8 @@ def test_memory_snapshot_is_replaced_at_compaction_boundary(monkeypatch):
 
 
 def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
-    from ailab_platform.agent.loop import estimator
     from ailab_platform.config import settings
 
-    monkeypatch.setattr(estimator, "factors", {})
     monkeypatch.setattr(settings, "vision_input_tokens", 16)
     spec = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, capabilities=frozenset({"tools", "vision"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
@@ -769,11 +768,9 @@ def test_compaction_drops_old_image_and_preserves_recent_image(monkeypatch):
 
 
 def test_rebuilt_summary_does_not_fallback_to_a_different_model(monkeypatch):
-    from ailab_platform.agent.loop import estimator
     from ailab_platform.config import settings
     from ailab_platform.llm import LLMError
 
-    monkeypatch.setattr(estimator, "factors", {})
     monkeypatch.setattr(settings, "llm_max_retries", 0)
     first = ModelSpec("m", "m", provider="mock", context_tokens=6500, max_output_tokens=512, fallback=["backup"])
     second = ModelSpec("backup", "backup", provider="mock", context_tokens=6500, max_output_tokens=512)
@@ -919,7 +916,11 @@ def test_office_skill_loaded_earlier_in_the_conversation_is_not_sent_again():
             run = {**await super().get_run(run_id), "prompt": f"{run_id} 演示文稿", "options": {"mode": "work"}}
             if run_id == "second":
                 state = self.checkpoints["first"]["state"]
-                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+                run["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "prompt_anchors": state["prompt_anchors"],
+                }
             return run
 
     def skill_loads(request):
@@ -1022,7 +1023,11 @@ def test_ui_docs_deduplicate_across_calls_and_runs_without_rewriting_prefix(monk
             run = {**await super().get_run(run_id), "options": {"mode": mode}, "prompt": run_id}
             if run_id == "second":
                 state = self.checkpoints["first"]["state"]
-                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+                run["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "prompt_anchors": state["prompt_anchors"],
+                }
             return run
 
     def call(identity, names):
@@ -1144,7 +1149,11 @@ def test_file_skill_reuses_text_but_revalidates_and_installs_current_version(mod
             }
             if run_id == "second":
                 state = self.checkpoints["first"]["state"]
-                run["previous_model_context"] = {"messages": state["messages"], "tools": state["tool_catalog_v1"]}
+                run["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "prompt_anchors": state["prompt_anchors"],
+                }
             return run
 
     execute = {"tool_calls": [{"index": 0, "id": "exec", "type": "function", "function": {"name": "exec", "arguments": '{"cmd":"true"}'}}]}
@@ -1276,7 +1285,10 @@ def test_office_resource_batch_wire_order_dedup_and_cumulative_budget(monkeypatc
     first, second = "references/common-rules.md", "references/decorations.md"
     batch = [call(0, "first", first), call(1, "second", second), call(2, "duplicate", first)]
     platform = Platform()
-    with scripted_server([{"tool_calls": [call(0, "navigation")]}, {"tool_calls": batch}, {"content": "done"}]) as (url, requests):
+    with scripted_server(
+        [{"tool_calls": [call(0, "navigation")]}, {"tool_calls": batch}, {"content": "done"}],
+        prompt_tokens=lambda request: estimator.estimate("m", {"messages": request["messages"], "tools": request["tools"]}),
+    ) as (url, requests):
         asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
     assert platform.statuses[-1][0] == "succeeded"
     assert len(requests) == 3  # no model round trip between resources
@@ -1752,11 +1764,8 @@ def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
 
 
 def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
-    from ailab_platform.agent.loop import estimator
-
     spec = ModelSpec("m", "m", provider="mock", context_tokens=11000, max_output_tokens=1000)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
-    monkeypatch.setattr(estimator, "factors", {})
     messages = [
         {"role": "system", "content": "rules"},
         {"role": "system", "content": "context"},
@@ -1793,10 +1802,8 @@ def test_new_compaction_epoch_then_five_requests_extend(monkeypatch):
 
 @pytest.mark.parametrize("failure", ["length", "invalid_json", "transport"])
 def test_summary_wire_failure_preserves_epoch_and_running_handle(monkeypatch, failure):
-    from ailab_platform.agent.loop import estimator
     from ailab_platform.config import settings
 
-    monkeypatch.setattr(estimator, "factors", {})
     monkeypatch.setattr(settings, "llm_retry_backoff_seconds", 0)
     spec = ModelSpec("m", "m", provider="mock", context_tokens=22000, max_output_tokens=4096)
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
@@ -1824,7 +1831,7 @@ def test_summary_wire_failure_preserves_epoch_and_running_handle(monkeypatch, fa
         turn = SimpleNamespace(messages=state["messages"], run={"_attempt_id": "a", "context_settings": {"threshold_ratio": 0.2}})
         with pytest.raises(BudgetPause):
             asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
-    assert state == before
+    assert {key: value for key, value in state.items() if key != "prompt_anchors"} == before
     assert len(requests) == (3 if failure == "transport" else 1)
     assert all(request["messages"][:-1] == before["messages"] for request in requests)
     assert all(request["max_tokens"] >= 4096 for request in requests)
@@ -1955,3 +1962,19 @@ def test_below_trigger_rebuild_validates_checkpoint_and_first_wire_request(monke
     assert boundaries[0]["reason"] == reason
     assert boundaries[0]["after_tokens"] <= band.upper
     assert_extension(requests[1], requests[2])
+
+
+def test_usage_anchor_metadata_does_not_change_recorded_request_bytes(monkeypatch):
+    from ailab_platform.agent.context_usage import record_usage
+
+    captures = []
+    for anchored in (False, True):
+        monkeypatch.setattr("ailab_platform.agent.loop.record_usage", record_usage if anchored else lambda *_: None)
+        with scripted_server([_plan_call(1), {"content": "done"}]) as (url, requests):
+            platform = FakePlatform()
+            asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("r", attempt_id="a"))
+            assert platform.statuses[-1][0] == "succeeded"
+        assert_extension(*requests)
+        captures.append(json.dumps(requests, ensure_ascii=False))
+        assert bool(platform.checkpoint["state"].get("prompt_anchors")) is anchored
+    assert captures[0] == captures[1]

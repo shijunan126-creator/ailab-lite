@@ -496,7 +496,7 @@ def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-@pytest.mark.parametrize("input_tokens,expected_output", [(500, 8000), (8000, 2000)])
+@pytest.mark.parametrize("input_tokens,expected_output", [(500, 8000), (8000, 1900)])
 def test_output_request_and_real_ledger_reservation_use_remaining_window(monkeypatch, mode, input_tokens, expected_output):
     async def exercise(c):
         seen = []
