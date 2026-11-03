@@ -285,7 +285,20 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
         calls = len(bridge.reservations)
         assert calls > 0 and calls == len(bridge.settlements) == len(bridge.saved)
         again = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
-        assert again == messages
+        # Saving the summary advances its durable coverage cursor. The first
+        # staged request also retains recent raw units; a fresh rebuild starts
+        # from that saved cursor, rather than recreating those covered units.
+        from ailab_platform.agent.context_band import ContextBand
+        from ailab_platform.agent.context_protocol import protocol_groups
+
+        assert again[-1] == messages[-1] == base[-1]
+        assert next(m for m in again if "<conversation_checkpoint>" in m["content"]) == next(
+            m for m in messages if "<conversation_checkpoint>" in m["content"]
+        )
+        assert estimator.estimate("summary", {"messages": again, "tools": []}) <= ContextBand.for_model(cat.get("summary")).ceiling
+        protocol_groups(again)
+        rebuilt = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
+        assert rebuilt == again
         assert len(bridge.reservations) == calls
 
     asyncio.run(exercise())
