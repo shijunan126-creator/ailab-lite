@@ -4,6 +4,7 @@ and keeps one delivery identity per file. Also: lease loss, waiting for an answe
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 
 import pytest
@@ -98,7 +99,12 @@ class SandboxSpy(FakeBroker):
     async def commit(self, lease_id, path, filename=None, role="output"):
         def deliver():
             self.commits.append(delivery_id_var.get())
-            return {"filename": filename or path.rsplit("/", 1)[-1], "size": len(self.files.get(path, b"")), "file_id": "f1"}
+            return {
+                "filename": filename or path.rsplit("/", 1)[-1],
+                "size": len(self.files.get(path, b"")),
+                "file_id": "f1",
+                "sha256": hashlib.sha256(self.files.get(path, b"")).hexdigest(),
+            }
 
         return self._step("deliver", deliver)
 

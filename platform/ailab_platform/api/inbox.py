@@ -89,6 +89,7 @@ def dispatch_next(db, conv, *, raise_admission=False):
                 frozen_template=row.options.get("template"),
                 frozen_doc_refs=document_refs(db, "queued_message", row.id, visible=False),
                 client="portal",
+                upload_ids={},  # the queued message already owns its upload provenance
             )
             db.flush()  # admission stages refs/positions with autoflush disabled
             row.state, row.run_id, row.updated_at = "started", run.id, utcnow()

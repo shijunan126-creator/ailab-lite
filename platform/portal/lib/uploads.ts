@@ -12,6 +12,7 @@ export type Upload = {
   stage: UploadStage;
   loaded: number; // bytes sent: real progress while uploading
   fileId?: string;
+  projectId?: string | null;
   error?: string;
   permanent?: boolean; // rejected by the scan: retrying cannot help, the file must be removed or replaced
 };
@@ -48,7 +49,9 @@ export function existingUpload(file: Pick<FileItem, "id" | "filename" | "status"
 function send(key: string, file: File, projectId?: string | null): Promise<FileItem> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+    const params = new URLSearchParams({ client_upload_id: key });
+    if (projectId) params.set("project_id", projectId);
+    const query = `?${params}`;
     xhr.open("POST", `${API_BASE}/v1/files${query}`);
     xhr.timeout = 10 * 60_000;
     xhr.upload.onprogress = (e) => patch(key, { loaded: e.loaded });
@@ -121,7 +124,7 @@ export function startUpload(file: File, projectId?: string | null): string {
   const key = `local:${crypto.randomUUID()}`;
   files.set(key, file);
   useUploads.setState((s) => ({
-    uploads: { ...s.uploads, [key]: { key, filename: file.name, contentType: file.type, size: file.size, stage: "uploading", loaded: 0 } },
+    uploads: { ...s.uploads, [key]: { key, projectId, filename: file.name, contentType: file.type, size: file.size, stage: "uploading", loaded: 0 } },
   }));
   run(key, projectId);
   return key;
@@ -161,7 +164,7 @@ export function retryUpload(key: string, projectId?: string | null): boolean {
   }
   if (!files.has(key)) return false; // the browser no longer has the file: it must be picked again
   patch(key, { stage: "uploading", loaded: 0, error: undefined });
-  run(key, projectId);
+  run(key, upload.projectId);
   return true;
 }
 

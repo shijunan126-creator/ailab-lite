@@ -275,6 +275,14 @@ def list_files(lease_id: str, path: str = Query(default="/workspace")) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/leases/{lease_id}/outputs", dependencies=[Depends(require_scope("sandbox:use"))])
+def output_manifest(lease_id: str) -> dict:
+    try:
+        return {"files": get_manager().output_manifest(lease_id), "complete": True}
+    except SandboxError as exc:
+        raise HTTPException(422, "无法完整核对交付区文件") from exc
+
+
 @router.post("/leases/{lease_id}/library-file", dependencies=[Depends(require_scope("sandbox:use"))])
 def copy_library_file(lease_id: str, body: dict):
     from pathlib import PurePosixPath
@@ -313,7 +321,7 @@ def get_file(lease_id: str, path: str = Query(..., min_length=1)) -> Response:
 @router.post("/leases/{lease_id}/commit", response_model=CommitOut, dependencies=[Depends(require_scope("sandbox:use"))])
 def commit_artifact(lease_id: str, body: CommitIn) -> dict:
     try:
-        return get_manager().commit(lease_id, body.path, body.filename, body.role)
+        return get_manager().commit(lease_id, body.path, body.filename, body.role, body.expected_sha256)
     except ArtifactRejected as exc:
         raise HTTPException(status_code=413, detail=str(exc)) from exc
     except SandboxError as exc:

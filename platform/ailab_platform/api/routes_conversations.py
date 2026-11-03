@@ -236,6 +236,7 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         selections=body.skills,
         template=body.template,
         doc_refs=body.doc_refs,
+        upload_ids=body.upload_ids,
         client_send_id=body.client_send_id,
         client="portal",
     )
@@ -380,7 +381,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     }
                 copy_message_sources(db, old, new, copied_steers)
                 for artifact in db.scalars(select(Artifact).where(Artifact.run_id == old.id)):
-                    db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role))
+                    db.add(Artifact(run_id=new.id, file_id=artifact.file_id, role=artifact.role, output_key=artifact.output_key))
                 # Copy events in pages to bound memory; the source can subsequently be purged independently.
                 after = 0
                 while True:

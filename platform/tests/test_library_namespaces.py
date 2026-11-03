@@ -29,14 +29,14 @@ def test_project_names_are_normalized_and_cannot_collide(api):
 def test_sibling_upload_move_restore_and_versions_preserve_both_files(api):
     folder = project(api, "文件目录")
     first = upload(api, "报告.txt")
-    second = upload(api, "报告.txt")
+    second = api.post("/v1/files?disposition=copy", files={"upload": ("报告.txt", b"preserved", "text/plain")}).json()
     assert second["filename"] == "报告 (2).txt"
     grouped = upload(api, "报告.txt", project_id=folder["id"])
     moved = api.patch(f"/v1/files/{grouped['id']}", json={"project_id": None})
     assert moved.status_code == 200, moved.text
     assert moved.json()["filename"] == "报告 (3).txt"
     assert api.delete(f"/v1/files/{first['id']}").status_code == 204
-    replacement = upload(api, "报告.txt")
+    replacement = api.post("/v1/files?disposition=copy", files={"upload": ("报告.txt", b"preserved", "text/plain")}).json()
     restored = api.post(f"/v1/files/{first['id']}/restore")
     assert restored.status_code == 200, restored.text
     assert restored.json()["filename"] == "报告 (4).txt"
@@ -105,7 +105,7 @@ def test_concurrent_sibling_uploads_and_project_creation(api):
     def send(kind):
         client = TestClient(app, headers=dict(api.headers))
         if kind == "file":
-            return client.post("/v1/files", files={"upload": ("并发.txt", b"preserved", "text/plain")})
+            return client.post("/v1/files?disposition=copy", files={"upload": ("并发.txt", b"preserved", "text/plain")})
         return client.post("/v1/projects", json={"name": "并发项目"})
 
     with ThreadPoolExecutor(max_workers=3) as pool:

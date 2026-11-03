@@ -11,6 +11,9 @@ class CheckpointFake:
     checkpoint: dict | None = None  # class default; the first write makes it per-instance
     paused: dict | None = None
 
+    async def delivery_receipt(self, run_id, delivery_id):
+        return None
+
     async def get_checkpoint(self, run_id):
         return self.checkpoint
 

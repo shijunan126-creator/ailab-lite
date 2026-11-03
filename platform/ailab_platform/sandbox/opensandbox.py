@@ -267,24 +267,14 @@ class OpenSandboxProvider(SandboxProvider):
             raise SandboxError("OpenSandbox streaming download failed") from exc
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
+        from .file_listing import LIST_PROGRAM, parse_listing
+
         path = _checked(path)
-        result = self.exec(
-            sandbox_id,
-            f"find {shlex.quote(path)} -maxdepth 2 -type f -printf '%p\\t%s\\n'",
-            timeout=30,
-        )
+        command = " ".join(shlex.quote(v) for v in ["python", "-c", LIST_PROGRAM, path, "list", "500", "0"])
+        result = self.exec(sandbox_id, command, timeout=60)
         if result.exit_code != 0:
-            return []
-        out: list[dict] = []
-        for line in result.stdout.splitlines():
-            if "\t" not in line:
-                continue
-            item_path, size = line.split("\t", 1)
-            try:
-                out.append({"path": item_path, "size": int(size)})
-            except ValueError:
-                continue
-        return out[:500]
+            raise SandboxError("file enumeration failed")
+        return parse_listing(result.stdout)
 
     def cancel_exec(self, provider_ref: str) -> bool:
         with self._lock:

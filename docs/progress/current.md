@@ -1,3 +1,12 @@
+# 文件身份修复（2026-11-03）
+
+- 最新授权：以远端最新main实施文件重复根因修复；本轮不含Git发布、部署或历史业务数据清理。
+- 已在独立分支 `fix/file-identity-repair`、base `origin/main@fc63e5f` 实现上传操作幂等/READY内容复用/显式副本、输出槽与持久修订身份、完整枚举和旧来源预演工具。原工作区改动保留。产品合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)，本轮检查、成本与边界统一见[记录](updates/2026-11-03-file-identity-repair.md)。
+- 已完成真实模型三轮同大小AA→BB→AA与Docker、Chromium上传路径；SQLite全套2125 passed/187 skipped，PG/Redis全套2244 passed/69 skipped；末轮审查增量专项已通过，Portal229项/build、Ruff/导入通过。真实S3下载源不可用，OpenSandbox/目标机联合容量未验。历史诊断文件未删除、真实metadata未回填。
+- 下一步：用户审阅隔离分支；另行授权后才发布/部署或处理历史回填清理；其他暂停路线图保持。
+
+---
+
 # 预览单标题栏：合并与部署（2026-11-03）
 
 - 用户授权“CI 过了就合并并部署，手机端也测”。[PR #150](https://github.com/shijunan126-creator/ailab-lite/pull/150) 最终 head `d38bd71` 的 9 项 CI 全部成功（E2E 182 passed / 6 skipped），squash 为 `main@6ac39ed`。

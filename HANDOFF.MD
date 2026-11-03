@@ -1,3 +1,11 @@
+## 2026-11-03 文件身份与交付
+
+- `/workspace/outputs` 是系统自动交付区；诊断中间产物放work，验收使用隔离身份/资源清单，不能靠提示词“不交付”控制收存。实际运行版本须核对，不用旧checkout推翻已发布修复。
+- 重试身份、内容复用、独立副本是三个合同；测试要独立文件时显式disposition=copy。操作收据与文件删除解耦，永久删除清除文件名但留失效墓碑。共享库引用删除影响所有引用，不后台合并旧实体。
+- 自动交付不能按size判变，不能把当前恢复文件直接标为已交付，也不能只按path/hash固定delivery_id：A→B→A是三次修订。先持久化修订意图；恢复先读API确认结果，再核对当前字节；同id异内容422与fencing409分开。
+- 原名回填只能用经Run/Artifact关联校验的API生成storage_key，不剥数字后缀、不捏造旧目录。排队消息晋升不能重新认领上传来源。API提交后响应序列化失败不能删已提交对象。
+- 页头按钮不要复用默认opacity=0的.row-actions。新worktree使用独立venv；共享venv的editable路径会使子进程读旧代码。合同、验收与限制见[本轮记录](docs/progress/updates/2026-11-03-file-identity-repair.md)。
+
 ## 2026-11-03 预览标题栏
 
 - 预览外壳（侧栏标签栏、全屏查看器顶栏）是唯一标题栏。预览自己的文档控件通过 `components/preview/doc-tools.tsx` 的插槽 portal 进去，不要在预览内部再画一行工具栏；上游查看器 docbar 由 `office/build.mjs` 的补丁去掉，控件状态走 `tools`/`command` 消息。

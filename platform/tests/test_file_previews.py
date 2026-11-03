@@ -127,7 +127,7 @@ def api(monkeypatch):
 
 
 def upload(api, name, data=b"hello", mime="application/octet-stream", *, process=True):
-    r = api.post("/v1/files", headers=AUTH, files={"upload": (name, data, mime)})
+    r = api.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data, mime)})
     assert r.status_code == 201
     fid = r.json()["id"]
     if process:

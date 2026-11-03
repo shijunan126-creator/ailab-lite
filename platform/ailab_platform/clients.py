@@ -389,6 +389,9 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_client_call(self, run_id: str, call_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/client-calls/{call_id}", timeout=5))).json()
 
+    async def delivery_receipt(self, run_id: str, delivery_id: str) -> dict | None:
+        return (await self._send(self._req("GET", f"/internal/runs/{run_id}/deliveries/{delivery_id}"))).json()["result"]
+
     async def get_checkpoint(self, run_id: str) -> dict | None:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/checkpoint"))).json()
 
@@ -594,8 +597,14 @@ class AsyncBrokerClient(_Service):
         r = await self._send(self._req("GET", f"/internal/leases/{lease_id}/files/list", timeout=60, params={"path": path}))
         return r.json().get("files", [])
 
-    async def commit(self, lease_id: str, path: str, filename: str | None = None, role: str = "output") -> dict:
-        body = {"path": path, "filename": filename, "role": role}
+    async def output_manifest(self, lease_id: str) -> list[dict]:
+        r = await self._send(self._req("GET", f"/internal/leases/{lease_id}/outputs", timeout=90))
+        return r.json()["files"]
+
+    async def commit(
+        self, lease_id: str, path: str, filename: str | None = None, role: str = "output", expected_sha256: str | None = None
+    ) -> dict:
+        body = {"path": path, "filename": filename, "role": role, "expected_sha256": expected_sha256}
         return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/commit", timeout=180, json=body))).json()
 
     async def refresh_previews(self, lease_id: str) -> list[dict]:

@@ -74,6 +74,7 @@ class PromptRequest(BaseModel):
 
 
 class RunCreate(PromptRequest):
+    upload_ids: dict[str, str] | None = Field(default=None, max_length=50)
     doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
@@ -140,6 +141,7 @@ class InternalRunDetail(RunDetail):
     context_settings: dict = Field(default_factory=dict)
     needs_conversation_title: bool = False
     history: list[dict] = Field(default_factory=list)
+    workspace_delivered: dict[str, dict | int] = Field(default_factory=dict)
     workspace_restore_key: str | None = None
     workspace_expired: bool = False  # the conversation's last workspace was dropped by the retention window
     disabled_skills: list[str] = Field(default_factory=list)
@@ -214,6 +216,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
+    upload_ids: dict[str, str] | None = Field(default=None, max_length=50)
     doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
     template: TemplateSelection | None = None
@@ -275,6 +278,7 @@ class EventOut(ORMModel):
 
 
 class FileOut(ORMModel):
+    reused: bool = False
     id: str
     project_id: str | None
     starred: bool
@@ -362,6 +366,7 @@ class ExecOut(BaseModel):
 
 
 class CommitIn(BaseModel):
+    expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     path: str
     filename: str | None = None
     role: str = "output"
@@ -403,6 +408,7 @@ class RunTransitionIn(RunStatusIn):
 
 
 class ArtifactIn(BaseModel):
+    output_key: str | None = Field(default=None, max_length=500)
     run_id: str
     staging_key: str
     filename: str

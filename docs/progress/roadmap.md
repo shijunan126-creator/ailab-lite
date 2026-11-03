@@ -1,5 +1,7 @@
 # 开发路线图
 
+2026-11-03 已授权从最新main实施文件身份修复：上传幂等与明确内容复用、自动交付修订、旧来源预演；合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md)，状态以[current](current.md)与[实施记录](updates/2026-11-03-file-identity-repair.md)为准。历史清理和部署单独授权。
+
 2026-11-02 已授权实施办公能力完整迁移（P0–P5），见[计划](../architecture/design/office-suite/README.md)与[current](current.md)；不含部署。
 
 2026-11-02 用户追加授权GenUI说明精简复用实施（只考虑支持工具的模型）；当前进度与后续见[current](current.md)，证据见[记录](updates/2026-11-02-genui-doc-reuse.md)。不自动发布或部署。

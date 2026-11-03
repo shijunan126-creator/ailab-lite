@@ -366,6 +366,7 @@ export type Info = {
 };
 
 export type FileItem = {
+  reused?: boolean; // an upload may reference an existing library file
   id: string;
   filename: string;
   content_type: string;
@@ -555,11 +556,19 @@ export function archiveUrl(ids: string[]): string {
 }
 
 /** Upload one file to the library (into a project when given). Throws with the server's reason. */
-export async function uploadFile(file: File, projectId?: string | null): Promise<FileItem> {
+const uploadOperations = new WeakMap<File, Map<string, string>>();
+
+export async function uploadFile(file: File, projectId?: string | null, disposition: "reuse" | "copy" = "reuse", purpose: "library" | "skill" = "library"): Promise<FileItem> {
   const form = new FormData();
   form.append("upload", file);
-  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
-  const resp = await fetch(`${API_BASE}/v1/files${query}`, { method: "POST", body: form });
+  const scope = JSON.stringify([projectId || null, disposition, purpose]);
+  let operations = uploadOperations.get(file);
+  if (!operations) uploadOperations.set(file, operations = new Map());
+  if (!operations.has(scope)) operations.set(scope, crypto.randomUUID());
+  const params = new URLSearchParams({ client_upload_id: operations.get(scope)!, disposition });
+  if (purpose !== "library") params.set("purpose", purpose);
+  if (projectId) params.set("project_id", projectId);
+  const resp = await fetch(`${API_BASE}/v1/files?${params}`, { method: "POST", body: form, signal: AbortSignal.timeout(10 * 60_000) });
   redirectIfUnauthorized(resp);
   if (!resp.ok) throw new Error(`${file.name}：上传失败（${resp.status}）`);
   return (await resp.json()) as FileItem;

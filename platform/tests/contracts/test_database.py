@@ -79,3 +79,75 @@ def test_inbox_queue_queries_use_indexes(engine):
                 prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
                 plan = " ".join(str(row) for row in conn.execute(text(prefix + query)))
                 assert index in plan, plan
+
+
+def test_file_identity_queries_are_bounded_by_indexes(engine):
+    """Representative selective data, ANALYZE, then inspect the production upload query and delivery lookups."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from ailab_platform.api.upload_identity import reusable
+    from ailab_platform.models import Artifact, FileObject, Run, UploadReceipt, User
+
+    run_migrations(engine)
+    with Session(engine) as db:
+        db.add_all([User(id=f"u{i}", email=f"u{i}@test", display_name="test") for i in range(20)])
+        db.flush()
+        db.add_all([Run(id=f"r{i}", user_id=f"u{i % 20}", prompt="p", title="t", model="m") for i in range(400)])
+        db.flush()
+        for i in range(2000):
+            fid = f"f{i:05}"
+            db.add(
+                FileObject(
+                    id=fid,
+                    user_id=f"u{i % 20}",
+                    filename=f"report{i}.txt",
+                    content_type="text/plain",
+                    size=2,
+                    sha256=f"{i:064x}",
+                    storage_key=f"objects/{fid}",
+                    lineage_id=fid,
+                    version=1,
+                    is_head=1,
+                    status="ready",
+                )
+            )
+        db.flush()
+        db.add_all([Artifact(id=f"a{i}", run_id=f"r{i % 400}", file_id=f"f{i:05}", output_key="report.txt") for i in range(2000)])
+        db.add_all(
+            [
+                UploadReceipt(
+                    user_id=f"u{i % 20}",
+                    client_upload_id=f"pick{i}",
+                    fingerprint="digest",
+                    file_id=f"f{i:05}",
+                    reservation_id=f"f{i:05}",
+                    reused=0,
+                    state="completed",
+                )
+                for i in range(2000)
+            ]
+        )
+        db.commit()
+    with engine.begin() as conn:
+        conn.execute(text("ANALYZE"))
+    statements = [
+        select(UploadReceipt).where(UploadReceipt.file_id == "f00001"),
+        select(UploadReceipt).where(UploadReceipt.user_id == "u1", UploadReceipt.client_upload_id == "pick1"),
+        select(UploadReceipt).where(UploadReceipt.user_id == "u1", UploadReceipt.reservation_id == "f00001").limit(1),
+        select(Artifact).where(Artifact.run_id == "r1", Artifact.output_key == "report.txt").limit(2),
+    ]
+
+    # Capture the exact select used by reusable, including its JSON name predicate.
+    class Capture:
+        def scalar(self, statement):
+            statements.append(statement)
+
+    reusable(Capture(), "u1", None, "report1.txt", "text/plain", 2, f"{1:064x}")
+    with engine.connect() as conn:
+        for statement in statements:
+            sql = str(statement.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True}))
+            prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+            plan = " ".join(str(row) for row in conn.execute(text(prefix + sql)))
+            assert "INDEX" in plan.upper(), plan
+            assert "SEQ SCAN" not in plan.upper(), plan

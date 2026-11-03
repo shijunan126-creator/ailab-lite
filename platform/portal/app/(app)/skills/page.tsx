@@ -11,7 +11,7 @@ import SkillEditor, { EditorTarget } from "../../../components/skills/skill-edit
 import DraftEditor from "../../../components/skills/draft-editor";
 import Market from "../../../components/skills/market";
 import { isLocked, SCANNING, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
-import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, Skill, SkillDraft, skillKind } from "../../../lib/api";
+import { API_BASE, api, downloadUrl, errorMessage, FileItem, redirectIfUnauthorized, uploadFile, Skill, SkillDraft, skillKind } from "../../../lib/api";
 import { confirmDialog } from "../../../lib/dialog";
 import { draftLabel, draftsChanged, useActiveDrafts, working } from "../../../lib/skill-drafts";
 
@@ -259,15 +259,13 @@ export default function SkillsPage() {
     setError("");
     for (const file of Array.from(list)) {
       if (disposed.current) return;
-      const form = new FormData();
-      form.append("upload", file);
-      const resp = await fetch(`${API_BASE}/v1/files?purpose=skill`, { method: "POST", body: form });
-      redirectIfUnauthorized(resp);
-      if (!resp.ok) {
-        setError(`${file.name}：上传失败（${resp.status}）`);
+      let item: FileItem;
+      try {
+        item = await uploadFile(file, null, "copy", "skill");
+      } catch (err) {
+        setError(errorMessage(err));
         continue;
       }
-      const item: FileItem = await resp.json();
       setUploading((u) => [...u, file.name]);
       // the Worker scans the file and recognises the skill; wait for it
       const f = await scanned(item.id);

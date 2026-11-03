@@ -7,11 +7,11 @@ import re
 from fastapi import HTTPException
 from sqlalchemy import insert, select
 
-from ..models import DocumentBlock, FileDerivation, FileObject, MessageFileRef
+from ..models import DocumentBlock, FileDerivation, FileObject, MessageFileRef, UploadReceipt
 from ..storage import get_storage
 
 
-def bind_refs(db, message_kind, message_id, file_ids, run_id=None):
+def bind_refs(db, message_kind, message_id, file_ids, run_id=None, *, upload_ids=None):
     existing = set(
         db.scalars(
             select(MessageFileRef.file_id).where(
@@ -23,8 +23,14 @@ def bind_refs(db, message_kind, message_id, file_ids, run_id=None):
         if file_id not in existing:
             file = db.get(FileObject, file_id)
             provenance = dict((file.meta or {}).get("upload_provenance") or {}) if file else {}
+            receipt = None
+            if upload_ids and file_id in upload_ids and file:
+                receipt = db.get(UploadReceipt, (file.user_id, upload_ids[file_id]))
+                if receipt is None or receipt.file_id != file_id or receipt.state != "completed":
+                    raise HTTPException(422, "附件上传收据无效")
             origin = "library"
-            if provenance.get("id") and not provenance.get("first_message_id"):
+            fresh_upload = (not receipt.reused) if receipt else upload_ids is None
+            if fresh_upload and provenance.get("id") and not provenance.get("first_message_id"):
                 origin = "upload"
                 provenance["first_message_id"] = message_id
                 file.meta = {**(file.meta or {}), "upload_provenance": provenance}
@@ -38,7 +44,7 @@ def bind_refs(db, message_kind, message_id, file_ids, run_id=None):
                     role="input",
                     reference_origin=origin,
                     upload_id=provenance.get("id") if origin == "upload" else None,
-                    filename_snapshot=file.filename if file else None,
+                    filename_snapshot=(receipt.filename or file.filename) if receipt else file.filename if file else None,
                 )
             )
 
