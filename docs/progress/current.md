@@ -1,8 +1,8 @@
-# 预览单标题栏（2026-11-03）
+# 预览单标题栏：合并与部署（2026-11-03）
 
-- 分支 `fix/preview-header-chrome`（worktree `.worktrees/preview-chrome`），基线 `origin/main@3cd5a61`。用户反馈侧栏 / 全屏查看器里 Office 文件有两条叠加的标题栏、文件名重复、首次使用看不懂，要求重新设计并排查其他预览位置。用户未要求合并或部署。
-- 已完成：每个预览只有一条标题栏；原生查看器的 docbar 由构建补丁去掉，页面与目录、查找放进外壳标题栏；HTML 渲染/源码改为标题栏中的分段控件；Work PDF 缩放改为浮动胶囊；预览 iframe 不再显示 title 悬停提示；下载 / 外链统一为图标按钮。设计、检查与边界见[记录](updates/2026-11-03-preview-title-bar.md)。
-- 已提 [PR #150](https://github.com/shijunan126-creator/ailab-lite/pull/150)。下一步：CI 全绿后由用户决定是否合并、部署；之后看用户使用反馈。
+- 用户授权“CI 过了就合并并部署，手机端也测”。[PR #150](https://github.com/shijunan126-creator/ailab-lite/pull/150) 最终 head `d38bd71` 的 9 项 CI 全部成功（E2E 182 passed / 6 skipped），squash 为 `main@6ac39ed`。
+- 已完成：每个预览只有一条标题栏（原生查看器 docbar 去掉，页面与目录、查找并入外壳；HTML 渲染/源码与 Work PDF 缩放不再另起一行；iframe 无悬停提示；手机宽度全屏顶栏收紧）。手机 390 宽与 Work PDF 浮动控件已在隔离栈浏览器验证。设计、检查与边界见[记录](updates/2026-11-03-preview-title-bar.md#合并与部署)。
+- 本机仅 Portal 增量部署为 `release-6ac39ed`，healthy；其他镜像不变，无迁移。下一步：用户使用反馈。
 
 ---
 
