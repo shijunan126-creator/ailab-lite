@@ -1037,3 +1037,25 @@ def test_threshold_downgrade_preserves_later_admin_edits(engine):
     _downgrade_to(engine, "0050")
     with engine.connect() as conn:
         assert conn.scalar(sa.select(settings.c.value).where(settings.c.key == "context")) == {"threshold_ratio": 0.90, "enabled": False}
+
+
+@pytest.mark.parametrize("persisted", [None, {}, {"threshold_ratio": 0.85}, {"threshold_ratio": 0.90}, {"threshold_ratio": 0.72}])
+def test_threshold_migration_and_code_defaults_converge(engine, persisted):
+    import sqlalchemy as sa
+    from sqlalchemy.orm import Session
+
+    from ailab_platform.catalog import ModelSpec
+    from ailab_platform.context_settings import context_settings
+    from ailab_platform.model_policy import ModelPolicy
+
+    _upgrade_to(engine, "0050")
+    table = sa.table("platform_settings", sa.column("key", sa.String), sa.column("value", sa.JSON))
+    if persisted is not None:
+        with engine.begin() as conn:
+            conn.execute(table.insert().values(key="context", value=persisted))
+    _upgrade_to(engine, "head")
+    with Session(engine) as db:
+        effective = context_settings(db)
+        expected = 0.72 if persisted == {"threshold_ratio": 0.72} else 0.90
+        assert effective["threshold_ratio"] == expected
+        assert ModelPolicy.compaction_threshold(ModelSpec("m", "m", context_tokens=10000), effective) == int(10000 * expected)
