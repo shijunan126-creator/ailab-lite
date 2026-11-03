@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api, downloadUrl, type DocRef, type DocumentIndex, type OfficeKind } from "../../lib/api";
 import { registerView, type OfficeCapture } from "../../lib/office-views";
 import DocLoading, { type LoadingShape } from "./doc-loading";
-import { CHANNEL, isChannel, MAX_CAPTURE_MESSAGE_CHARS, MAX_MESSAGE_CHARS, type FrameMessage, type HostMessage, type ViewerReference } from "../../office/protocol";
+import { DocTools } from "./doc-tools";
+import { IconPages, IconSearch } from "../icons";
+import { CHANNEL, isChannel, MAX_CAPTURE_MESSAGE_CHARS, MAX_MESSAGE_CHARS, type FrameMessage, type HostMessage, type ViewerCommand, type ViewerReference, type ViewerTools } from "../../office/protocol";
 
 /** A document the side pane can open natively: a library file, or a file still in a Work run's workspace. */
 export type OfficeDoc = {
@@ -161,6 +163,8 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
   const channel = useRef<{ up: boolean; send(message: Outgoing, transfer?: Transferable[]): void; report(): void } | null>(null);
   // Until the viewer asks for its document, its frame is blank: the placeholder stays over it till then.
   const [framed, setFramed] = useState<string | null>(null);
+  // The viewer's document controls, as it last reported them for the version on screen.
+  const [tools, setTools] = useState<{ version: string; tools: ViewerTools } | null>(null);
   const sentReveal = useRef(0);
   const ready = index !== null && index !== "fallback";
   const contentVersion = ready ? index.version : null;
@@ -368,6 +372,10 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
         return;
       }
       if (!("nonce" in message) || message.nonce !== nonce) return;
+      if (message.t === "tools") {
+        setTools({ version: version!, tools: message.tools });
+        return;
+      }
       if (message.t === "failed") {
         // Only a failure of the version this frame shows ends it; anything else is a late message from before.
         if (message.version !== version) return;
@@ -489,6 +497,13 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     });
   }, [reveal, ready, index, doc]);
 
+  // The frame takes focus first: find puts the caret in its own field, which a frame without focus cannot do.
+  const command = (name: ViewerCommand) => {
+    frame.current?.focus();
+    channel.current?.send({ t: "command", name });
+  };
+  const shown = ready && framed === contentVersion && tools?.version === contentVersion ? tools.tools : null;
+
   if (stop?.error)
     return (
       <div className="office-stage">
@@ -502,8 +517,23 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
   return (
     <div className="office-stage">
       {/* allow-scripts only: an opaque origin with no cookies, storage or same-origin access to the Portal */}
-      {ready ? <iframe key={contentVersion} ref={frame} className="office-frame" src="/frame/office" sandbox="allow-scripts" title={doc.filename} /> : null}
+      {/* aria-label, not title: a frame's title shows as a tooltip over the whole document */}
+      {ready ? <iframe key={contentVersion} ref={frame} className="office-frame" src="/frame/office" sandbox="allow-scripts" aria-label={doc.filename} /> : null}
       {ready && framed === contentVersion ? null : <DocLoading key="loading" shape={SHAPES[doc.kind]} />}
+      {shown ? (
+        <DocTools>
+          {shown.drawer !== null ? (
+            <button type="button" className="icon-btn" aria-pressed={shown.drawer} aria-label="页面与目录" title="页面与目录" onClick={() => command("drawer")}>
+              <IconPages size={16} />
+            </button>
+          ) : null}
+          {shown.find !== null ? (
+            <button type="button" className="icon-btn" aria-pressed={shown.find} aria-label="查找" title="查找（⌘F）" onClick={() => command("find")}>
+              <IconSearch size={16} />
+            </button>
+          ) : null}
+        </DocTools>
+      ) : null}
     </div>
   );
 }

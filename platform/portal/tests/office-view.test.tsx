@@ -1,12 +1,13 @@
 // @vitest-environment jsdom
 import React from "react";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import OfficeView, { docRefOf, VIEW_RENEW_MS, VIEW_REQUEST_MS, type OfficeDoc } from "../components/preview/office-view";
 import { api } from "../lib/api";
 import { captureView, hasView } from "../lib/office-views";
 import { CHANNEL, isChannel, MAX_MESSAGE_CHARS } from "../office/protocol";
 import { frameBridge } from "./office-bridge";
+import { DocToolsSlot } from "../components/preview/doc-tools";
 
 vi.mock("../lib/api", () => ({ api: vi.fn(), downloadUrl: (p: string) => p }));
 const request = vi.mocked(api);
@@ -150,7 +151,7 @@ test("a failure from a replaced frame cannot stop the new version", async () => 
   const oldNonce = b.bundle.nonce;
   request.mockResolvedValue({ ...ready, version: "hash2" });
   b.rerender(<OfficeView doc={doc} docs={[doc]} revision={1} conversationId={null} onOpen={vi.fn()} onReference={onReference} onAsk={onAsk} fallback={<Fallback />} />);
-  await waitFor(() => expect(screen.getByTitle(doc.filename)).not.toBe(b.frame));
+  await waitFor(() => expect(screen.getByLabelText(doc.filename)).not.toBe(b.frame));
   await b.emit({ t: "failed", nonce: oldNonce, version: "hash1", stage: "render", message: "late" }, oldWindow);
   await b.emit({ t: "failed", nonce: oldNonce, version: "hash2", stage: "render", message: "late" }, oldWindow);
   expect(frames()).toBe(1);
@@ -219,7 +220,7 @@ test("pending index polls then opens native; unmount cancels polling", async () 
   await act(async () => { await vi.advanceTimersByTimeAsync(1499); });
   expect(request).toHaveBeenCalledTimes(1);
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
-  expect(screen.getByTitle(doc.filename)).toBeTruthy();
+  expect(screen.getByLabelText(doc.filename)).toBeTruthy();
   view.unmount();
   expect(request.mock.calls[0][1]!.signal!.aborted).toBe(true);
   request.mockReset().mockResolvedValue({ status: "pending" });
@@ -253,7 +254,7 @@ test.each(["docx", "xlsx", "pptx", "pdf"] as const)("boot only requests the %s r
 
 test("same native hash refresh preserves an in-flight capture; a new content hash replaces the frame", async () => {
   const b = await reporting();
-  const original = screen.getByTitle(doc.filename);
+  const original = screen.getByLabelText(doc.filename);
   await b.report(1, "p:1");
   await advance(600);
   b.post.mockClear();
@@ -265,14 +266,14 @@ test("same native hash refresh preserves an in-flight capture; a new content has
   b.rerender(<OfficeView {...props} revision={1} />);
   await advance(0);
   expect(request.mock.calls.length).toBe(initialCalls + 1);
-  expect(screen.getByTitle(doc.filename)).toBe(original);
+  expect(screen.getByLabelText(doc.filename)).toBe(original);
   await b.send({ t: "page-tool-result", id: tool.id, ok: true, value: { content: [{ type: "image", data: "png" }, { type: "text", text: "库/报告.docx#p:1 (800×600 px)" }] } });
   expect(await capture).toMatchObject({ data: "png", version: "hash1" });
   request.mockResolvedValue({ ...ready, version: "changed" });
   b.rerender(<OfficeView {...props} revision={2} />);
   await advance(0);
   await advance(0);
-  expect(screen.getByTitle(doc.filename)).not.toBe(original);
+  expect(screen.getByLabelText(doc.filename)).not.toBe(original);
 });
 
 // ---- loading: one placeholder from the index wait until the viewer asks for its document ----
@@ -598,4 +599,39 @@ test("a view reported before the conversation existed is reported once it does",
   expect(puts("c3")).toHaveLength(1);
   expect(putBody(0, "c3").view_id).not.toBe(putBody(0, "c2").view_id);
   b.unmount();
+});
+
+test("the viewer's own controls sit in the host's title bar, press through to the frame and leave with it", async () => {
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  function Host() {
+    const [slot, setSlot] = React.useState<HTMLElement | null>(null);
+    return (
+      <>
+        <span data-testid="bar" ref={setSlot} />
+        <DocToolsSlot.Provider value={slot}>
+          <OfficeView doc={doc} docs={[doc]} onOpen={vi.fn()} onReference={onReference} onAsk={onAsk} fallback={<div>fallback</div>} />
+        </DocToolsSlot.Provider>
+      </>
+    );
+  }
+  render(<Host />);
+  const b = await frameBridge(doc.filename);
+  const bar = screen.getByTestId("bar");
+  await b.send({ t: "ready", viewId: "v1" });
+  await b.send({ t: "tools", tools: { drawer: null, find: false } });
+  // nothing until the viewer has the document on screen
+  expect(bar.childElementCount).toBe(0);
+  await b.send({ t: "call", id: 1, name: "load_document", args: { path: doc.path } });
+  expect(within(bar).queryByRole("button", { name: "页面与目录" })).toBeNull();
+  const find = within(bar).getByRole("button", { name: "查找" });
+  expect(find.getAttribute("aria-pressed")).toBe("false");
+  b.post.mockClear();
+  await act(async () => find.click());
+  expect(b.post.mock.calls.map(([m]) => m)).toContainEqual(expect.objectContaining({ t: "command", name: "find" }));
+  await b.send({ t: "tools", tools: { drawer: true, find: true } });
+  expect(within(bar).getByRole("button", { name: "页面与目录" }).getAttribute("aria-pressed")).toBe("true");
+  expect(within(bar).getByRole("button", { name: "查找" }).getAttribute("aria-pressed")).toBe("true");
+  await b.send({ t: "failed", version: "hash1", stage: "render", message: "boom" });
+  expect(screen.getByText("fallback")).toBeTruthy();
+  expect(bar.childElementCount).toBe(0);
 });

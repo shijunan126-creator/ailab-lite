@@ -1,7 +1,7 @@
 // The one place icons come from: lucide, under the names the Portal already uses. Import icons from here only.
 import {
   ArchiveRestore, ArrowDown, ArrowLeft, Braces, CodeXml, ArrowUp, Bell, BookOpen, Check, ChevronDown, ChevronRight, Clock, Copy, CornerDownRight, Download, File, FilePen,
-  FileText, FilePlus, Folder, FolderInput, FolderOpen, FolderPlus, GitBranch, Globe, History, Image, LayoutGrid, LayoutTemplate, Library, Lightbulb, Link, ListPlus, LogOut,
+  ExternalLink, FileText, FilePlus, Folder, FolderInput, FolderOpen, FolderPlus, GalleryVerticalEnd, GitBranch, Globe, History, Image, LayoutGrid, LayoutTemplate, Library, Lightbulb, Link, ListPlus, LogOut,
   MessageCircleQuestion, MessageSquare, MoreHorizontal, PanelLeft, PanelRight, Pencil, Pin, PinOff, Plus, Presentation, Printer, RotateCcw,
   Pause, Play, Eye, CopyPlus, Quote,
   Search, Send, ImageUp, Settings, Share2, Shield, Sheet, Sparkles, Square, SquarePen, Star, BarChart3, Terminal, Trash2, Upload, Users, X,
@@ -23,6 +23,8 @@ export const IconSend = icon(Send);
 export const IconNewChat = icon(SquarePen);
 export const IconFolder = icon(Folder);
 export const IconPanel = icon(PanelLeft);
+export const IconPages = icon(GalleryVerticalEnd);
+export const IconExternal = icon(ExternalLink);
 export const IconPanelRight = icon(PanelRight);
 export const IconLogOut = icon(LogOut);
 export const IconSettings = icon(Settings);

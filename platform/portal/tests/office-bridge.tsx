@@ -7,7 +7,7 @@ import { CHANNEL } from "../office/protocol";
 export async function frameBridge(title: string) {
   // the pane's tab carries the same title; the frame is the iframe
   const frame = await waitFor(() => {
-    const node = screen.getAllByTitle(title).find((element): element is HTMLIFrameElement => element instanceof HTMLIFrameElement);
+    const node = screen.getAllByLabelText(title).find((element): element is HTMLIFrameElement => element instanceof HTMLIFrameElement);
     expect(node).toBeTruthy();
     return node!;
   });

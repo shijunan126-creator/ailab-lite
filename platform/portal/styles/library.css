@@ -232,12 +232,7 @@ a.project-row:hover, .project-row:hover { background: var(--subtle); color: var(
 .viewer-plain { white-space: pre-wrap; word-break: break-word; }
 .viewer-code { counter-reset: line; white-space: pre; overflow-x: auto; }
 .viewer-html { display: flex; flex-direction: column; width: min(100% - 24px, 1100px); height: 100%; min-height: 0; }
-.viewer-modes { display: flex; gap: 6px; padding: 8px 0; }
-.viewer-mode { border: 1px solid var(--border); background: var(--popover); color: var(--foreground); border-radius: 999px; padding: 3px 14px; font-size: var(--text-sm); cursor: pointer; }
-.viewer-mode.on { background: var(--subtle); border-color: var(--subtle); font-weight: 600; }
 .viewer-frame { flex: 1; width: 100%; border: 0; border-radius: 10px; background: #fff; }
-.reader-open { color: var(--muted-foreground); font-size: var(--text-ui); text-decoration: none; padding: 2px 6px; border-radius: 6px; }
-.reader-open:hover { background: var(--popover); color: var(--foreground); }
 .reader-frame { flex: 1; width: 100%; border: 0; background: #fff; }
 .viewer-code > span { counter-increment: line; }
 .viewer-code > span::before { content: counter(line); display: inline-block; width: 3.5em; margin-right: 1em; text-align: right; color: var(--faint-foreground); user-select: none; }

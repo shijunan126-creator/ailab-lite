@@ -1,7 +1,7 @@
 // AILab replacement for the runtime's ui/host.ts. Upstream connects an MCP Apps `App` to its desktop host; here the
 // viewer runs in an opaque-origin frame of the Portal and talks to it over postMessage (office/protocol.ts). The
 // object keeps the upstream Host surface so the shell, viewers and hooks run unchanged; only transport differs.
-import { CHANNEL, isChannel, type HostContext, type HostMessage, type RecentDocument, type ViewerReference } from "./protocol";
+import { CHANNEL, isChannel, type HostContext, type HostMessage, type RecentDocument, type ViewerCommand, type ViewerReference, type ViewerTools } from "./protocol";
 
 type Json = Record<string, unknown>;
 export type CallToolResult = {
@@ -25,6 +25,7 @@ function createHost() {
   const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error & { code?: string }): void }>();
   const handlers = new Map<string, PageToolHandler>();
   const waiters = new Set<() => void>();
+  const commands = new Set<(name: ViewerCommand) => void>();
   const results: ToolResult[] = [];
   let context: HostContext = { theme: "light", locale: "zh-CN" };
   let recent: RecentDocument[] = [];
@@ -81,6 +82,7 @@ function createHost() {
       if (results.length > 20) results.shift();
       emit("toolresult");
     } else if (message.t === "page-tool") void runPageTool(message.id, message.name, message.args);
+    else if (message.t === "command") for (const run of commands) run(message.name);
   });
 
   // The Portal answers with the theme, the conversation's documents and which one to open.
@@ -131,6 +133,7 @@ function createHost() {
   return {
     app,
     viewId,
+    titleBar: "portal" as const,
     ready: () => readyPromise,
     readWindow: () => ({ path: opened ?? undefined, recent }),
     saveWindow(_patch: unknown) {
@@ -149,6 +152,14 @@ function createHost() {
       const code = typeof failure?.code === "string" ? failure.code : failure?.name === "PasswordException" ? "password" : undefined;
       const message = String(failure?.message ?? error).slice(0, 500);
       post({ t: "failed", stage, version: revision, message, ...(code ? { code } : {}) });
+    },
+    /** The Portal's title bar replaces the viewer's own (office/build.mjs drops it): these carry its two controls. */
+    onCommand(run: (name: ViewerCommand) => void) {
+      commands.add(run);
+      return () => void commands.delete(run);
+    },
+    reportTools(tools: ViewerTools) {
+      post({ t: "tools", tools });
     },
     handleTool(name: string, handler: PageToolHandler) {
       handlers.set(name, handler);

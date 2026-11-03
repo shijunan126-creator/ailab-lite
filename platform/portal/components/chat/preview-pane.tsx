@@ -3,7 +3,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, downloadUrl, errorMessage, FileItem, Preview, previewUrl, readerRenderUrl, type DocRef } from "../../lib/api";
 import OfficeView, { officeKind, type OfficeDoc, type OfficeReveal } from "../preview/office-view";
-import { IconDownload, IconPanelRight, IconX } from "../icons";
+import { IconDownload, IconExternal, IconPanelRight, IconX } from "../icons";
+import { DocToolsSlot } from "../preview/doc-tools";
 import { PagedPreview } from "../preview/file-viewer";
 import Sheets from "../preview/sheets";
 import DocumentPages from "../preview/pages";
@@ -140,7 +141,7 @@ function PdfPane({ preview }: { preview: Preview }) {
 function ReaderView({ url, title, active }: { url: string; title: string; active: boolean }) {
   const [opened, setOpened] = useState(false);
   useEffect(() => { if (active) setOpened(true); }, [active]);
-  return opened ? <iframe className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-popups" referrerPolicy="no-referrer" title={title || url} /> : null;
+  return opened ? <iframe className="reader-frame" src={readerRenderUrl(url)} sandbox="allow-popups" referrerPolicy="no-referrer" aria-label={title || url} /> : null;
 }
 
 /** The side pane: one tab per previewed file and one for a turn's sources, each closed on its own. */
@@ -198,6 +199,7 @@ export default function PreviewPane({
     if (readerOn && readerUrl) setRecentReaders((prev) => [...prev.filter((url) => url !== readerUrl), readerUrl].slice(-4));
   }, [readerOn, readerUrl]);
   const pane = useRef<HTMLElement | null>(null);
+  const [toolSlot, setToolSlot] = useState<HTMLElement | null>(null);
   const close = useRef(onClose);
   close.current = onClose;
   const historyGeneration = useRef(0);
@@ -281,19 +283,19 @@ export default function PreviewPane({
           {readers.map((r) => tab(`reader-${r.url}`, r.title || r.url, showReader && r.url === readerUrl, () => onReaderTab(r.url), () => onCloseReader(r.url)))}
         </div>
         <span className="spacer" />
-        {!showSources && !showReader && current ? (
-          <>
-            {live && !current.libraryFileId ? <span className="live on">实时</span> : null}
-            {downloads[previewTabKey(current)] ? (
-              <a className="btn secondary sm" href={downloads[previewTabKey(current)]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`}>
-                <IconDownload size={15} />
-              </a>
-            ) : null}
-          </>
+        {!showSources && !showReader && current && live && !current.libraryFileId ? <span className="live on">实时</span> : null}
+        <span className="doc-tools" ref={setToolSlot} />
+        {!showSources && !showReader && current && downloads[previewTabKey(current)] ? (
+          <a className="icon-btn" href={downloads[previewTabKey(current)]} target="_blank" rel="noreferrer" aria-label={`下载 ${current.filename}`} title="下载">
+            <IconDownload size={16} />
+          </a>
         ) : showReader ? (
-          <a className="reader-open" href={reader.url} target="_blank" rel="noreferrer noopener" aria-label="在新标签打开">↗</a>
+          <a className="icon-btn" href={reader.url} target="_blank" rel="noreferrer noopener" aria-label="在新标签打开" title="在新标签打开">
+            <IconExternal size={16} />
+          </a>
         ) : null}
       </div>
+      <DocToolsSlot.Provider value={toolSlot}>
       {readers.filter((r) => r.url === readerUrl || recentReaders.includes(r.url)).map((r) => (
         <div className="preview-body reader-body" key={`reader-${r.url}`} hidden={!showReader || r.url !== readerUrl}>
           <ReaderView url={r.url} title={r.title} active={showReader && r.url === readerUrl} />
@@ -312,6 +314,7 @@ export default function PreviewPane({
           })()}
         </div>
       ) : null}
+      </DocToolsSlot.Provider>
     </aside>
   );
 }
