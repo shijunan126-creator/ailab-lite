@@ -63,6 +63,7 @@ class NotificationRead(BaseModel):
 
 
 class QueueCreate(BaseModel):
+    upload_ids: dict[str, str] | None = Field(default=None, max_length=50)
     doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     template: TemplateSelection | None = None
     prompt: str = Field(min_length=1, max_length=8000)

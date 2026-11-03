@@ -119,3 +119,23 @@ def test_storage_failure_removes_local_spool(tmp_path, monkeypatch):
         manager.commit(lease["lease_id"], "/workspace/outputs/a.bin")
     assert not list(manager._transfer_root.iterdir())
     assert manager.platform.committed == []
+
+
+def test_output_manifest_and_commit_reject_concurrent_change(tmp_path):
+    from ailab_platform.sandbox.base import SandboxError
+
+    manager, provider, _ = _manager_with(_ApiStub({}, []))
+    manager.storage = LocalStorage(tmp_path / "objects")
+    lease = manager.create("run-manifest")
+    path = "/workspace/outputs/nested/deep/result\t中\n.txt"
+    provider.put_file(lease["sandbox_id"], path, b"AA")
+    manifest = manager.output_manifest(lease["lease_id"])
+    assert manifest == [{"path": path, "size": 2, "sha256": hashlib.sha256(b"AA").hexdigest()}]
+    provider.put_file(lease["sandbox_id"], path, b"BB")
+    with pytest.raises(SandboxError, match="changed"):
+        manager.commit(lease["lease_id"], path, expected_sha256=manifest[0]["sha256"])
+    assert manager.platform.committed == []
+    assert manager.storage.list_prefix("staging/").items == []
+    result = manager.commit(lease["lease_id"], path, expected_sha256=hashlib.sha256(b"BB").hexdigest())
+    assert manager.platform.committed[0]["output_key"] == "nested/deep/result\t中\n.txt"
+    assert result["sha256"] == hashlib.sha256(b"BB").hexdigest()

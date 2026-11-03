@@ -70,12 +70,14 @@ from ..schemas import (
 from ..service_auth import ServicePrincipal, require_scope
 from ..storage import get_storage
 from ..title_text import normalize_title
+from .artifact_identity import legacy_filename, output_key, request_fingerprint, verify_replay
 from .inbox import pending_query
 from .jobs import stage_job
 from .routes_ocr import request_ocr
 from .routes_skills import skill_input_for, usable_personal
 from .runtime_fence import fenced_run
 from .serializers import file_dict, run_dict
+from .upload_identity import fingerprint
 
 router = APIRouter(prefix="/internal", tags=["internal"])
 log = logging.getLogger("ailab.api.internal")
@@ -229,6 +231,8 @@ def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     own = (run.runtime_meta or {}).get("workspace") if run.id not in invalid else None
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
     # the last turn left files, but they are past the retention window: tell the model instead of letting it hunt
+    source_workspace = own if own else (newest.runtime_meta or {}).get("workspace") if alive else None
+    out["workspace_delivered"] = (source_workspace or {}).get("delivered", {})
     out["workspace_expired"] = newest is not None and not alive
     return out
 
@@ -409,6 +413,16 @@ def _artifact_filename(name: str) -> str:
     return name[:200] if name not in ("", ".", "..") else "artifact"
 
 
+@router.get("/runs/{run_id}/deliveries/{delivery_id}", dependencies=[Depends(require_scope("runs:read"))])
+def delivery_receipt(run_id: str, delivery_id: str, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)):
+    run = _run_or_404(db, run_id)
+    with fenced_run(db, run, x_run_attempt):
+        prior = db.get(RunDelivery, (run_id, delivery_id))
+        result = prior.result if prior else None
+        db.commit()
+        return {"result": result}
+
+
 @router.post("/artifacts", response_model=CommitOut, dependencies=[Depends(require_scope("artifacts:commit_for_run"))])
 def internal_commit_artifact(
     body: ArtifactIn,
@@ -428,8 +442,15 @@ def internal_commit_artifact(
             raise HTTPException(422, "stable delivery identity required")
         if not body.staging_key.startswith("staging/") or ".." in body.staging_key.split("/"):
             raise HTTPException(400, "staging_key must be under staging/")
+        body.output_key = output_key(body.output_key)
+        body.filename = _artifact_filename(body.filename)
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
         if prior:
+            try:
+                verify_replay(db, prior, body)
+            except HTTPException:
+                get_storage().delete(body.staging_key)
+                raise
             get_storage().delete(body.staging_key)
             db.commit()
             return prior.result
@@ -452,21 +473,100 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         raise reject(413, f"artifact exceeds {settings.max_artifact_bytes} bytes")
     filename = _artifact_filename(body.filename)
 
-    existing = db.execute(
+    visible = [*path_ids(db, run.conversation_id, run.parent_run_id), run.id] if run.conversation_id else [run.id]
+    # Match a source slot on the visible ancestry, never any historical equal hash (A -> B -> A).
+    slot = (
+        Artifact.output_key == body.output_key
+        if body.output_key is not None
+        else (
+            (Artifact.output_key.is_(None))
+            & (func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename)
+        )
+    )
+    candidates = db.execute(
         select(Artifact, FileObject)
         .join(FileObject, Artifact.file_id == FileObject.id)
         .where(
-            Artifact.run_id == run.id,
-            func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
-            FileObject.sha256 == body.sha256,
+            Artifact.run_id.in_(visible),
+            FileObject.user_id == run.user_id,
+            slot,
+            FileObject.deleted_at.is_(None),
+            FileObject.purged_at.is_(None),
         )
-    ).first()
-    if existing is not None:
-        storage.delete(body.staging_key)
-        _enqueue_thumbnail(db, existing[1])
-        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(*existing)))
+        .order_by(FileObject.created_at.desc(), FileObject.version.desc(), Artifact.created_at.desc())
+        .limit(2)
+    ).all()
+    parent = candidates[0][1] if candidates else None
+    if parent is None:
+        # Older API-generated objects retain the original basename in their storage key. Bound to ancestry;
+        # only unique legacy basename candidates are eligible. Nested paths cannot be reconstructed.
+        legacy = db.execute(
+            select(Artifact, FileObject)
+            .join(FileObject, Artifact.file_id == FileObject.id)
+            .where(
+                Artifact.run_id.in_(visible),
+                Artifact.output_key.is_(None),
+                FileObject.user_id == run.user_id,
+                (FileObject.meta["artifact_filename"].as_string() == filename)
+                | (
+                    FileObject.meta["artifact_filename"].as_string().is_(None)
+                    & FileObject.storage_key.endswith("/" + filename, autoescape=True)
+                ),
+                FileObject.deleted_at.is_(None),
+                FileObject.purged_at.is_(None),
+            )
+            .order_by(FileObject.created_at.desc(), FileObject.version.desc())
+            .limit(501)
+        ).all()
+        matches = [
+            (a, f)
+            for a, f in legacy
+            if ((f.meta or {}).get("artifact_filename") or legacy_filename(f, (f.meta or {}).get("run_id"))) == filename
+        ]
+        if (body.output_key is None or body.output_key == filename) and (len(legacy) > 500 or len({f.lineage_id for _, f in matches}) > 1):
+            raise reject(422, "旧产物来源有歧义，请先预演并修复来源元数据")
+        if matches and (body.output_key is None or body.output_key == filename):
+            parent = matches[0][1]
+            parent.meta = {**(parent.meta or {}), "artifact_filename": filename}
+    if (
+        parent is not None
+        and parent.is_head
+        and parent.sha256 == body.sha256
+        and parent.size == body.size
+        and parent.content_type == body.content_type
+    ):
+        existing = db.scalar(
+            select(Artifact)
+            .where(
+                Artifact.run_id == run.id, Artifact.file_id == parent.id, Artifact.output_key == body.output_key, Artifact.role == body.role
+            )
+            .limit(1)
+        )
+        if existing is None:
+            existing = Artifact(run_id=run.id, file_id=parent.id, role=body.role, output_key=body.output_key)
+            db.add(existing)
+            db.flush()
+            append_event(
+                db,
+                run.id,
+                "artifact.created",
+                {
+                    "artifact_id": existing.id,
+                    "file_id": parent.id,
+                    "filename": parent.filename,
+                    "size": parent.size,
+                    "content_type": parent.content_type,
+                    "role": existing.role,
+                    "download_url": f"/v1/files/{parent.id}/content",
+                },
+                commit=False,
+            )
+        result = _artifact_out(existing, parent)
+        _enqueue_thumbnail(db, parent)
+        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, fingerprint=request_fingerprint(body), result=result))
         db.commit()
-        return _artifact_out(*existing)
+        storage.delete(body.staging_key)
+        return result
 
     try:
         enforce_library_quota(db, run.user_id, body.size)
@@ -518,24 +618,11 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         status=FileStatus.READY,
         meta={"source": "sandbox", "run_id": run.id, "artifact_filename": filename},
     )
-    parent = None
-    if run.conversation_id:
-        parent = db.scalar(
-            select(FileObject)
-            .join(Artifact, Artifact.file_id == FileObject.id)
-            .join(Run, Run.id == Artifact.run_id)
-            .where(
-                Run.conversation_id == run.conversation_id,
-                Run.id.in_([*path_ids(db, run.conversation_id, run.parent_run_id), run.id]),
-                FileObject.user_id == run.user_id,
-                func.coalesce(FileObject.meta["artifact_filename"].as_string(), FileObject.filename) == filename,
-                FileObject.deleted_at.is_(None),
-                FileObject.purged_at.is_(None),
-            )
-            .order_by(FileObject.created_at.desc(), FileObject.version.desc())
-            .limit(1)
-        )
-    artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role)
+    # A sibling branch may already have advanced this lineage; do not change its head.
+    if parent is not None and not parent.is_head:
+        file.parent_id = parent.id
+        parent = None
+    artifact = Artifact(run_id=run.id, file_id=file_id, role=body.role, output_key=body.output_key)
     try:
         if parent is not None:
             # Library collision suffixes are display names, not the workspace delivery identity.
@@ -561,7 +648,9 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         )
         _enqueue_thumbnail(db, file)
         db.flush()
-        db.add(RunDelivery(run_id=run.id, delivery_id=delivery_id, result=_artifact_out(artifact, file)))
+        db.add(
+            RunDelivery(run_id=run.id, delivery_id=delivery_id, fingerprint=request_fingerprint(body), result=_artifact_out(artifact, file))
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -637,8 +726,34 @@ async def internal_save_skill(
         def record() -> dict:
             run = _run_or_404(db, run_id)
             with fenced_run(db, run, x_run_attempt) as run:
+                request_hash = fingerprint(
+                    kind="skill",
+                    name=name,
+                    mode=mode,
+                    filename=filename,
+                    expected_file_id=expected_file_id,
+                    sha256=digest.hexdigest(),
+                    size=size,
+                )
                 prior = db.get(RunDelivery, (run.id, x_delivery_id))
                 if prior:
+                    row = db.get(FileObject, prior.result.get("file_id"))
+                    if row is None or row.deleted_at is not None or row.purged_at is not None:
+                        raise HTTPException(410, "已保存技能已删除")
+                    if prior.fingerprint is None:
+                        if (row.sha256, row.size, row.filename, row.parent_id, prior.result.get("name"), prior.result.get("mode")) != (
+                            digest.hexdigest(),
+                            size,
+                            filename,
+                            expected_file_id,
+                            name,
+                            mode,
+                        ):
+                            raise HTTPException(422, "旧技能交付收据与请求不一致")
+                        prior.fingerprint = request_hash
+                    if prior.fingerprint != request_hash:
+                        raise HTTPException(422, "交付标识已用于其他内容")
+                    db.commit()
                     return prior.result
                 if run.status != RunStatus.RUNNING:
                     raise HTTPException(409, f"run is {run.status}")
@@ -691,7 +806,7 @@ async def internal_save_skill(
                         "note": "已保存为个人技能，安全扫描与审核通过后可用",
                     }
                     append_event(db, run.id, "skill.saved", {k: result[k] for k in ("file_id", "name", "mode", "version")}, commit=False)
-                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, fingerprint=request_hash, result=result))
                     db.commit()
                 except Exception:
                     db.rollback()

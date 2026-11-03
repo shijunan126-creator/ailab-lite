@@ -86,6 +86,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     alive = newest is not None and newest.id not in invalid and workspace_alive(newest, datetime.now(UTC))
     own = (run.runtime_meta or {}).get("workspace")
     out["workspace_restore_key"] = own["key"] if own else (workspace_data(newest).get("key") or workspace_key(newest.id)) if alive else None
+    source_workspace = own if own else (newest.runtime_meta or {}).get("workspace") if alive else None
+    out["workspace_delivered"] = (source_workspace or {}).get("delivered", {})
     out["workspace_expired"] = newest is not None and not alive
     return out
 

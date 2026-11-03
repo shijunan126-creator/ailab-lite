@@ -29,8 +29,8 @@ def bounded_checkpoint(state, limit):
         },
     )
     # These records are useful for inspection, but no frozen checkpoint executes.
-    for key in ("delivered", "artifacts", "sources", "plan", "tool_log"):
-        candidate = {**frozen, key: state.get(key, frozen[key])}
+    for key in ("delivered", "delivery_intents", "artifacts", "sources", "plan", "tool_log"):
+        candidate = {**frozen, key: state.get(key, frozen.get(key, {}))}
         if encoded_size(candidate) <= limit:
             frozen = candidate
     if encoded_size(frozen) > limit:

@@ -68,3 +68,27 @@ def test_injected_nested_parents_remain_writable_by_exec_user(provider, tmp_path
             assert provider.exec(ref, "test $(id -u) -ne 0", 5).exit_code == 0
     finally:
         provider.release(ref)
+
+
+def test_deep_output_manifest_and_frozen_revision(provider, tmp_path):  # noqa: F811
+    import json
+
+    from ailab_platform.sandbox.file_listing import LIST_PROGRAM, parse_listing
+
+    spec = SandboxSpec(image=settings.sandbox_image, ttl=120)
+    ref = provider.acquire(f"identity-{uuid.uuid4().hex[:12]}", spec.image, spec=spec)
+    path = "/workspace/outputs/a/b/c/result\t中\n.txt"
+    command = " ".join(shlex.quote(p) for p in ["python", "-c", LIST_PROGRAM, "/workspace/outputs", "hash", "500", "100"])
+    try:
+        provider.put_file(ref, path, b"AA")
+        if provider.name != "mock":
+            assert provider.list_files(ref, "/workspace/outputs") == [{"path": path, "size": 2}]
+        first = parse_listing(provider.exec(ref, command, 60).stdout)
+        assert first == [{"path": path, "size": 2, "sha256": hashlib.sha256(b"AA").hexdigest()}]
+        provider.put_file(ref, path, b"BB")
+        second = parse_listing(provider.exec(ref, command, 60).stdout)
+        assert second[0]["sha256"] == hashlib.sha256(b"BB").hexdigest()
+        provider.exec(ref, "ln -s /etc/passwd /workspace/outputs/link", 5)
+        assert not json.loads(provider.exec(ref, command, 60).stdout)["complete"]
+    finally:
+        provider.release(ref)

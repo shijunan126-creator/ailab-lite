@@ -295,3 +295,78 @@ def test_project_folders_keep_files_inside_each_category_and_text_previews(logge
     page.goto(stack.portal + "/files?c=trash")
     page.locator(".library-folders a", has_text=name).click()
     expect(page.locator(".lib-row", has_text=filename)).to_be_visible()
+
+
+def test_reupload_reuses_ready_file_and_explicit_copy_is_independent(logged_in, stack, tmp_path):
+    page = logged_in
+    name = f"identity-{uuid.uuid4().hex[:8]}.txt"
+    _upload(page, stack, tmp_path, name, b"immutable content")
+    path = tmp_path / name
+    with page.expect_response(lambda response: response.request.method == "POST" and "/api/v1/files?" in response.url) as uploaded:
+        page.set_input_files("input[type=file]", str(path))
+    reused = uploaded.value.json()
+    assert reused["reused"] is True
+    page.get_by_role("button", name="上传", exact=True).wait_for(state="visible")
+    assert page.locator(".lib-row", has_text=name).count() == 1
+    with page.expect_file_chooser() as chooser:
+        page.get_by_role("button", name="保存副本", exact=True).click()
+    chooser.value.set_files(str(path))
+    copy_name = name.removesuffix(".txt") + " (2).txt"
+    row = page.locator(".lib-row", has_text=copy_name)
+    row.get_by_role("link", name=f"下载 {copy_name}", exact=True).wait_for(timeout=30000)
+    files = page.request.get(f"{stack.portal}/api/v1/files?q={name.split('.')[0]}").json()
+    assert len(files) == 2 and len({f["lineage_id"] for f in files}) == 2
+    assert len({f["sha256"] for f in files}) == 1
+    assert all(f["version"] == 1 for f in files)
+    assert page.get_by_role("button", name="保存副本", exact=True).evaluate(
+        "el => { for (let n = el; n; n = n.parentElement) if (getComputedStyle(n).opacity === '0') return false; return true; }"
+    )
+    _shot(page, "file-identity-desktop")
+    page.set_viewport_size({"width": 390, "height": 844})
+    if page.get_by_role("button", name="收起侧栏", exact=True).is_visible():
+        page.get_by_role("button", name="收起侧栏", exact=True).click()
+    page.get_by_role("button", name="保存副本", exact=True).wait_for(state="visible")
+    assert page.evaluate("() => document.documentElement.scrollWidth <= innerWidth")
+    _shot(page, "file-identity-mobile")
+
+
+def test_library_lost_upload_response_retries_same_operation(logged_in, stack, tmp_path):
+    import re
+
+    page = logged_in
+    name = f"retry-{uuid.uuid4().hex[:8]}.txt"
+    path = tmp_path / name
+    path.write_bytes(b"one operation")
+    page.goto(stack.portal + "/files")
+    requests = []
+    accepted = []
+
+    def intercept(route):
+        if route.request.method != "POST":
+            return route.continue_()
+        requests.append(route.request.url)
+        if len(requests) == 1:
+            # Playwright route.fetch does not preserve selected file bytes in a multipart request.
+            # Accept the exact same operation/payload through the real API, then drop the browser response.
+            response = page.request.post(
+                route.request.url,
+                multipart={
+                    "upload": {"name": name, "mimeType": "text/plain", "buffer": path.read_bytes()},
+                },
+            )
+            assert response.status == 201, response.text()
+            accepted.append(response.json()["id"])
+            route.abort("failed")  # the API accepted the operation, the browser lost its response
+        else:
+            route.continue_()
+
+    pattern = re.compile(r"/api/v1/files(?:\?.*)?$")
+    page.route(pattern, intercept)
+    page.set_input_files("input[type=file]", str(path))
+    page.get_by_role("button", name="重试上传", exact=True).click()
+    row = page.locator(".lib-row", has_text=name)
+    row.get_by_role("link", name=f"下载 {name}", exact=True).wait_for(timeout=30000)
+    assert requests[0] == requests[1]
+    files = page.request.get(f"{stack.portal}/api/v1/files?q={name}").json()
+    assert [f["id"] for f in files] == accepted
+    page.unroute(pattern)

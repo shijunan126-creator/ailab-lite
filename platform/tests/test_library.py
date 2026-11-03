@@ -35,7 +35,7 @@ def api(monkeypatch):
 
 
 def ready(api, name="a.txt", data=b"data", content_type="text/plain") -> dict:
-    response = api.post("/v1/files", files={"upload": (name, data, content_type)})
+    response = api.post("/v1/files?disposition=copy", files={"upload": (name, data, content_type)})
     assert response.status_code == 201, response.text
     file = response.json()
     assert api.patch(f"/internal/files/{file['id']}", headers=SERVICE, json={"status": "ready"}).status_code == 200
@@ -179,8 +179,9 @@ def test_image_artifact_enqueues_thumbnail_job_and_worker_processes_it(api, monk
 
     monkeypatch.setattr(preview_dispatch, "get_queue", fail_queue)
     get_storage().put_bytes(key, data)
-    response = api.post("/internal/artifacts", headers=delivery_headers(attempt_headers(api, run["id"]), run["id"], key), json=body)
-    assert response.status_code == 200  # queue outage must not fail an artifact commit
+    headers = delivery_headers(attempt_headers(api, run["id"]), run["id"], key + ":new-delivery")
+    response = api.post("/internal/artifacts", headers=headers, json=body)
+    assert response.status_code == 200  # queue outage must not fail a new artifact commit
 
 
 def test_backfill_only_enqueues_ready_missing_images_in_batches(api, monkeypatch):

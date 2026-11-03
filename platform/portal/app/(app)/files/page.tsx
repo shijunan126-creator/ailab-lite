@@ -209,13 +209,20 @@ function Library() {
     window.location.href = ready.length === 1 ? downloadUrl(ready[0].download_url) : archiveUrl(ready.map((f) => f.id));
   }
 
-  async function upload(list: FileList | File[]) {
+  const uploadDisposition = useRef<"reuse" | "copy">("reuse");
+  const [retryFiles, setRetryFiles] = useState<{ files: File[]; disposition: "reuse" | "copy"; projectId: string | null } | null>(null);
+
+  async function upload(list: FileList | File[], disposition: "reuse" | "copy" = "reuse", targetProject = projectId) {
     setBusy(true);
     setNotice("");
+    setRetryFiles(null);
+    const picked = Array.from(list);
+    let index = 0;
     try {
-      for (const file of Array.from(list)) await uploadFile(file, projectId);
+      for (; index < picked.length; index++) await uploadFile(picked[index], targetProject, disposition);
       if (projectId) projectsChanged();
     } catch (err: any) {
+      setRetryFiles({ files: picked.slice(index), disposition, projectId: targetProject });
       setNotice(errorMessage(err));
     } finally {
       if (inputRef.current) inputRef.current.value = "";
@@ -368,16 +375,20 @@ function Library() {
             </button>
           ) : null
         ) : showsFiles ? (
+          <div className="flex items-center gap-2">
+          {retryFiles ? <button className="secondary sm" disabled={busy} onClick={() => upload(retryFiles.files, retryFiles.disposition, retryFiles.projectId)}>重试上传</button> : null}
+          <button className="secondary sm" disabled={busy} onClick={() => { uploadDisposition.current = "copy"; inputRef.current?.click(); }}>保存副本</button>
           <button
             className="sm"
             disabled={busy}
-            onClick={() => inputRef.current?.click()}
+            onClick={() => { uploadDisposition.current = "reuse"; inputRef.current?.click(); }}
             title={maxUpload ? `单个文件最大 ${formatBytes(maxUpload)}` : undefined}
           >
             <IconUpload size={15} /> {busy ? "上传中…" : "上传"}
           </button>
+          </div>
         ) : null}
-        <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
+        <input ref={inputRef} type="file" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files, uploadDisposition.current)} />
       </div>
 
       <div className="library-bar">

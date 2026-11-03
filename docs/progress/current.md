@@ -1,3 +1,12 @@
+# 文件身份修复：已推送与部署（2026-11-03）
+
+- 最新授权：用户追加“提pr和merge”。分支 `fix/file-identity-repair`、base `origin/main@fc63e5f`；产品提交e05d9a8及部署记录已推送。[PR #152](https://github.com/shijunan126-creator/ailab-lite/pull/152) 首轮PostgreSQL因共享OCR测试夹具复用READY文件失败，已修为显式copy并补固定payload回归；双库五模块各57通过。等待新head全部CI与评审检查成功后squash；原工作区改动保持。
+- 已部署该固定分支快照：平台四服务与Portal为 `release-e05d9a8`，API迁移0048→0049；12 running/10 healthcheck healthy。只构建变化组件并复用依赖层，资源限额及其他镜像不变。未备份、重复功能验收或运行历史回填/删除。
+- 实施检查和部署结果统一见[记录](updates/2026-11-03-file-identity-repair.md)，合同见[设计](../architecture/design/2026-11-03-file-identity-repair.md#7-实施合同2026-11-03)。SQLite2125/187跳过、PG2244/69跳过及末轮专项/Portal/真实模型/Docker/浏览器是部署前的分阶段证据；本次只确认构建、迁移和启动健康。
+- 下一步：等待PR #152新head的全部CI及评审；通过后合并；历史清理/回填仍需单独授权。Docker余约592MiB，本次只删除自己测试的Postgres镜像；真实S3/OpenSandbox/目标机容量边界保持。其他暂停路线图不自动推进。
+
+---
+
 # 预览单标题栏：合并与部署（2026-11-03）
 
 - 用户授权“CI 过了就合并并部署，手机端也测”。[PR #150](https://github.com/shijunan126-creator/ailab-lite/pull/150) 最终 head `d38bd71` 的 9 项 CI 全部成功（E2E 182 passed / 6 skipped），squash 为 `main@6ac39ed`。

@@ -491,8 +491,25 @@ class FileObject(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class UploadReceipt(Base):
+    """Operation results survive file deletion; no file FK may erase retry tombstones."""
+
+    __tablename__ = "upload_receipts"
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    client_upload_id: Mapped[str] = mapped_column(String(100), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_id: Mapped[str] = mapped_column(String(40), index=True)
+    reservation_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
+    reused: Mapped[int] = mapped_column(Integer, default=0)
+    state: Mapped[str] = mapped_column(String(20), default="completed")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
+    __table_args__ = (Index("ix_artifacts_run_output", "run_id", "output_key"),)
+    output_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("art"))
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id"), index=True)
@@ -672,6 +689,7 @@ class RunCheckpoint(Base):
 
 class RunDelivery(Base):
     __tablename__ = "run_deliveries"
+    fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
     delivery_id: Mapped[str] = mapped_column(String(160), primary_key=True)
     result: Mapped[dict] = mapped_column(JSON)

@@ -543,7 +543,10 @@ def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(
     page = logged_in
     held = {}
     created = []
-    page.route("**/api/v1/files", lambda route: held.update(upload=route))
+    page.route(
+        re.compile(r"/api/v1/files(?:\?.*)?$"),
+        lambda route: held.update(upload=route) if route.request.method == "POST" else route.continue_(),
+    )
     sends = re.compile(r"/api/v1/conversations(/[^/]+/messages)?$")
     page.on("request", lambda r: r.method == "POST" and sends.search(r.url) and created.append(r.url))
     note = tmp_path / "slow.txt"
@@ -560,7 +563,7 @@ def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(
     page.wait_for_timeout(300)
     assert created == [], "no conversation or model call before the file is ready"
     held["upload"].continue_()
-    page.unroute("**/api/v1/files")
+    page.unroute(re.compile(r"/api/v1/files(?:\?.*)?$"))
     page.wait_for_url(re.compile(r"/c/cnv_"), timeout=30000)
     _wait_for_turns(page, 1)
     assert page.locator(".msg.user .attach-chip", has_text="slow.txt").count() == 1
@@ -569,7 +572,10 @@ def test_a_message_sent_while_its_file_uploads_waits_for_the_file_then_goes_out(
 def test_a_file_removed_while_it_is_checked_stays_removed(logged_in, tmp_path) -> None:
     page = logged_in
     pending = {}
-    page.route("**/api/v1/files", lambda route: pending.update(upload=route))
+    page.route(
+        re.compile(r"/api/v1/files(?:\?.*)?$"),
+        lambda route: pending.update(upload=route) if route.request.method == "POST" else route.continue_(),
+    )
     page.route(re.compile(r"/api/v1/files\?.*\bids=deferred-file(?:&|$)"), lambda route: pending.update(scan=route))
     note = tmp_path / "deferred.txt"
     note.write_text("still uploading", encoding="utf-8")

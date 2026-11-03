@@ -238,7 +238,9 @@ class MockSandbox(SandboxProvider):
                         "size": item.stat().st_size,
                     }
                 )
-        return out[:500]
+        if len(out) > 500:
+            raise SandboxError("file count limit exceeded")
+        return out
 
     def release(self, sandbox_id: str) -> None:
         self.cancel_exec(sandbox_id)

@@ -97,7 +97,8 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
     from .routes_runs import reject_both_skill_fields
 
     reject_both_skill_fields(body)
-    digest = hashlib.sha256(body.model_dump_json(exclude={"client_send_id"}).encode()).hexdigest()
+    excluded = {"client_send_id"} | ({"upload_ids"} if body.upload_ids is None else set())
+    digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
 
     def replay():
         if body.client_send_id is None:
@@ -164,7 +165,7 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             db.flush()
             from .document_sources import bind_refs
 
-            bind_refs(db, "queued_message", row.id, files)
+            bind_refs(db, "queued_message", row.id, files, upload_ids=body.upload_ids)
             from .document_view import bind
 
             bind(db, "queued_message", row.id, references)

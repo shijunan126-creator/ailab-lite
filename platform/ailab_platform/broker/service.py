@@ -1255,7 +1255,20 @@ class LeaseManager:
         return self._provider_call("list_files", lease["sandbox_id"], self._checked(path))
 
     @_operation
-    def commit(self, lease_id: str, path: str, filename: str | None = None, role: str = "output") -> dict:
+    def output_manifest(self, lease_id: str) -> list[dict]:
+        from ..sandbox.file_listing import LIST_PROGRAM, parse_listing
+
+        lease = self._load(lease_id)
+        command = " ".join(shlex.quote(v) for v in ["python", "-c", LIST_PROGRAM, OUTPUTS, "hash", "500", str(settings.max_artifact_bytes)])
+        result = self._provider_call("exec", lease["sandbox_id"], command, 60)
+        if result.exit_code != 0:
+            raise SandboxError("output fingerprint enumeration failed")
+        return parse_listing(result.stdout)
+
+    @_operation
+    def commit(
+        self, lease_id: str, path: str, filename: str | None = None, role: str = "output", expected_sha256: str | None = None
+    ) -> dict:
         lease = self._load(lease_id)
         path = self._checked(path, OUTPUTS)  # only /workspace/outputs is archived
         if path == OUTPUTS:
@@ -1271,7 +1284,11 @@ class LeaseManager:
             )
         except TransferLimitError as exc:
             raise ArtifactRejected(str(exc)) from exc
+        if expected_sha256 is not None and sha256 != expected_sha256:
+            self.storage.delete(staging_key)
+            raise SandboxError("output changed since delivery intent")
         payload = {
+            "output_key": path.removeprefix(OUTPUTS + "/"),
             "run_id": lease["run_id"],
             "staging_key": staging_key,
             "filename": name,

@@ -251,6 +251,7 @@ def start_run(
     client: str | None = None,
     doc_refs=None,
     frozen_doc_refs=None,
+    upload_ids=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -269,6 +270,7 @@ def start_run(
                         "prompt": prompt,
                         "model": model,
                         "file_ids": file_ids,
+                        **({"upload_ids": upload_ids} if upload_ids is not None else {}),
                         "doc_refs": [r.model_dump(exclude_none=True) if hasattr(r, "model_dump") else r for r in doc_refs or []],
                         "title": title,
                         "conversation_id": conversation.id if conversation else None,
@@ -359,7 +361,7 @@ def start_run(
         register_assets(db, run)
         from .document_sources import bind_refs
 
-        bind_refs(db, "run_prompt", run.id, inputs, run.id)
+        bind_refs(db, "run_prompt", run.id, inputs, run.id, upload_ids=upload_ids)
         from .document_view import bind
 
         bind(db, "run_prompt", run.id, references, run.id)
@@ -400,6 +402,7 @@ def create_run(body: RunCreate, user: User = Depends(current_user), db: Session 
         selections=body.skills,
         template=body.template,
         doc_refs=body.doc_refs,
+        upload_ids=body.upload_ids,
         client_send_id=body.client_send_id,
         client="portal",
     )

@@ -110,7 +110,8 @@ async function turnOf(p: Pending) {
 
 async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]> {
   const skills = p.options.skills?.map(({ name, file_id, at }) => ({ name, file_id, at }));
-  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
+  const upload_ids = Object.fromEntries(p.attachments.map(getUpload).filter((u) => u?.key.startsWith("local:") && u.fileId).map((u) => [u!.fileId!, u!.key]));
+  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
     conversation = await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model: p.model, project_id: p.projectId || undefined }) });

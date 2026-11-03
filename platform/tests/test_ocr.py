@@ -127,7 +127,7 @@ def text_pdf(pages):
 
 
 def upload(api, name="photo.png", data=None, mime="image/png"):
-    r = api.post("/v1/files", headers=AUTH, files={"upload": (name, data or photo(), mime)})
+    r = api.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data or photo(), mime)})
     assert r.status_code == 201
     return r.json()["id"]
 

@@ -17,7 +17,7 @@ import time
 from collections.abc import Awaitable
 from datetime import UTC, datetime
 from typing import TypeVar
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from .. import internal_skills, metrics, skillfiles
 from ..adapters.runtime import NON_REPLAYABLE, UNCERTAIN_EXEC, checkpoint_state, fresh_state, restored_state
@@ -264,7 +264,7 @@ class _Turn:
         self.lease_task: asyncio.Task | None = None  # a sandbox taken ahead of the first tool that needs it
         self.lease_used = False  # a tool asked for the sandbox (an early one may end the turn unused)
         self.artifacts: list[dict] = []
-        self.delivered: dict[str, int] = {}  # sandbox path -> size at delivery (or at restore)
+        self.delivered: dict[str, dict] = {}  # sandbox path -> confirmed content fingerprint
         self.previews: dict[str, dict] = {}  # filename -> latest preview manifest
         self.preview_task: asyncio.Task | None = None
         self.view_warm_task: asyncio.Task | None = None
@@ -497,39 +497,61 @@ class AgentLoop:
             await asyncio.sleep(SANDBOX_RETRY_SECONDS)
             waited += SANDBOX_RETRY_SECONDS
 
-    async def _deliver_leftovers(self, run_id: str, lease_id: str, delivered: dict[str, int], artifacts: list[dict]) -> None:
-        """Archive files left in /workspace/outputs that the model never delivered.
-
-        A run that ends without calling deliver_file would otherwise lose its work
-        when the sandbox is destroyed. Files delivered earlier are skipped unless
-        they changed afterwards; the API de-duplicates identical content anyway.
-        """
+    async def _deliver_leftovers(self, run_id: str, turn: _Turn) -> None:
+        """Archive each changed revision; persist its intent before a possibly successful remote commit."""
+        state = self._states[run_id]
+        intents = state.setdefault("delivery_intents", {})
+        state.pop("delivery_incomplete", None)
+        # An API success followed by process death may have no local confirmation yet.
+        for path, intent in list(intents.items()):
+            result = await self.platform.delivery_receipt(run_id, intent["id"])
+            if result:
+                turn.delivered[path] = {"sha256": result["sha256"], "size": result["size"]}
+                if not any(a.get("file_id") == result["file_id"] for a in turn.artifacts):
+                    turn.artifacts.append({**result, "auto": True})
+                del intents[path]
+                await self._checkpoint(run_id, turn)
         try:
-            files = await self.broker.list_files(lease_id, OUTPUTS)
-        except Exception:
-            log.warning("could not list leftovers for %s", run_id, exc_info=True)
+            files = await self.broker.output_manifest(turn.lease_id)
+        except Exception as exc:
+            if isinstance(exc, ClientError) and exc.status == 409:
+                raise
+            log.warning("could not fingerprint leftovers for %s", run_id, exc_info=True)
+            state["delivery_incomplete"] = {"reason": "manifest_unavailable"}
+            await self._event(run_id, "agent.warning", {"message": "交付区未能完整核对，请检查未交付文件"})
             return
-        pending = [f for f in files if f["path"].startswith(OUTPUTS + "/") and delivered.get(f["path"]) != f.get("size")]
+        pending = [
+            f
+            for f in files
+            if f["path"].startswith(OUTPUTS + "/") and turn.delivered.get(f["path"]) != {"sha256": f["sha256"], "size": f["size"]}
+        ]
         for item in pending[: settings.max_auto_deliver_files]:
+            path = item["path"]
+            intent = intents.get(path)
+            if not intent or (intent["sha256"], intent["size"]) != (item["sha256"], item["size"]):
+                intent = intents[path] = {"id": f"{run_id}:auto:{uuid4().hex}", "sha256": item["sha256"], "size": item["size"]}
+                await self._checkpoint(run_id, turn)
             try:
-                identity = delivery_id_var.set(f"{run_id}:auto:{uuid5(NAMESPACE_URL, item['path']).hex}")
+                identity = delivery_id_var.set(intent["id"])
                 try:
-                    result = await self.broker.commit(lease_id, item["path"])
+                    result = await self.broker.commit(turn.lease_id, path, expected_sha256=intent["sha256"])
                 finally:
                     delivery_id_var.reset(identity)
-            except Exception:
-                log.warning("auto-deliver failed for %s run=%s", item["path"], run_id, exc_info=True)
+            except Exception as exc:
+                if isinstance(exc, ClientError) and exc.status == 409:
+                    raise
+                log.warning("auto-deliver failed run=%s", run_id, exc_info=True)
+                state["delivery_incomplete"] = {"reason": "commit_failed"}
                 await self._event(run_id, "agent.warning", {"message": "有文件未能自动交付"})
                 continue
-            delivered[item["path"]] = item.get("size", 0)
-            artifacts.append({**result, "auto": True})
-            await self._event(run_id, "agent.autodeliver", {"path": item["path"], "filename": result.get("filename")})
+            turn.delivered[path] = {"sha256": result["sha256"], "size": result["size"]}
+            turn.artifacts.append({**result, "auto": True})
+            del intents[path]
+            await self._checkpoint(run_id, turn)
+            await self._event(run_id, "agent.autodeliver", {"path": path, "filename": result.get("filename")})
         if len(pending) > settings.max_auto_deliver_files:
-            await self._event(
-                run_id,
-                "agent.warning",
-                {"message": f"{len(pending) - settings.max_auto_deliver_files} more files in outputs were not delivered"},
-            )
+            state["delivery_incomplete"] = {"reason": "file_limit", "count": len(pending) - settings.max_auto_deliver_files}
+            await self._event(run_id, "agent.warning", {"message": f"还有 {len(pending) - settings.max_auto_deliver_files} 个文件未交付"})
 
     async def _ensure_lease(self, turn: _Turn, run_id: str, *, required: bool = False, early: bool = False) -> str:
         """The turn's sandbox. ``early``: taken ahead of need, never queued, and not yet used by any tool."""
@@ -575,12 +597,11 @@ class AgentLoop:
                     await self._event(run_id, "agent.warning", {"message": f"技能「{title}」已不可用，本轮不再使用它的附带文件"})
         for name in existing:  # personal skills read before the sandbox existed
             await self._install_skill(turn, name)
-        # Files already in outputs (restored from the last turn) are not this turn's work: never auto-deliver them unchanged.
-        try:
-            for f in await self.broker.list_files(turn.lease_id, OUTPUTS):
-                turn.delivered.setdefault(f["path"], f.get("size", 0))
-        except Exception:
-            log.warning("could not list outputs after leasing for %s", run_id, exc_info=True)
+        # A saved confirmation describes delivered bytes. Rehashing current restored files here would
+        # incorrectly confirm edits made after the last delivery, especially during checkpoint recovery.
+        for path, fingerprint in (turn.run.get("workspace_delivered") or {}).items():
+            if isinstance(fingerprint, dict):
+                turn.delivered.setdefault(path, fingerprint)
         turn.lease_ready = True
         self._warm_view(turn, run_id)
         return turn.lease_id
@@ -1857,7 +1878,7 @@ class AgentLoop:
             turn.artifacts.append(result)
             path = call.arguments.get("path")
             if isinstance(path, str):
-                turn.delivered[path] = result.get("size", 0)
+                turn.delivered[path] = {"sha256": result["sha256"], "size": result["size"]}
                 self._states[run_id].setdefault("delivery_names", {})[path] = result.get("filename") or path.rsplit("/", 1)[-1]
         return result
 
@@ -1931,7 +1952,7 @@ class AgentLoop:
 
     async def _record_workspace(self, run_id: str, turn: _Turn, snapshot: dict) -> dict:
         state = self._states[run_id]
-        state["workspace"] = {**snapshot, "step": self._steps[run_id], "saved_at": time.time()}
+        state["workspace"] = {**snapshot, "delivered": dict(turn.delivered), "step": self._steps[run_id], "saved_at": time.time()}
         state["workspace_dirty"] = bool(state.get("background_jobs"))
         await self._checkpoint(run_id, turn)
         return state["workspace"]
@@ -2205,7 +2226,7 @@ class AgentLoop:
             try:
                 await self._finish_previews(turn, run_id)
                 if pause is None:
-                    await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+                    await self._deliver_leftovers(run_id, turn)
                 await self._workspace_checkpoint(run_id, turn, force=True)
             except Exception as exc:
                 if isinstance(exc, ClientError) and exc.status == 409:
@@ -2228,6 +2249,7 @@ class AgentLoop:
                 "summary": state["final_summary"],
                 "result": {
                     "pause": pause or {"kind": "budget"},
+                    **({"delivery_incomplete": state["delivery_incomplete"]} if state.get("delivery_incomplete") else {}),
                     "sources": state["sources"],
                     "artifacts": turn.artifacts,
                     "plan": state["plan"],
@@ -2615,7 +2637,9 @@ class AgentLoop:
                 # Whatever the outcome, don't lose finished work with the sandbox.
                 await self._finish_previews(turn, run_id)
                 result["previews"] = list(turn.previews.values())
-                await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+                await self._deliver_leftovers(run_id, turn)
+                if state.get("delivery_incomplete"):
+                    result["delivery_incomplete"] = state["delivery_incomplete"]
                 # Nothing changed since the last snapshot: that archive still describes the sandbox exactly.
                 saved = state.get("workspace")
                 if state["workspace_dirty"] or saved is None:
@@ -2645,7 +2669,7 @@ class AgentLoop:
             if turn.lease_id:
                 try:
                     await self._finish_previews(turn, run_id)
-                    await self._deliver_leftovers(run_id, turn.lease_id, turn.delivered, turn.artifacts)
+                    await self._deliver_leftovers(run_id, turn)
                     await self._workspace_checkpoint(run_id, turn, force=True)
                 except Exception as cleanup_error:
                     if isinstance(cleanup_error, ClientError) and cleanup_error.status == 409:

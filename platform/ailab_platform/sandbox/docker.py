@@ -274,23 +274,13 @@ class DockerSandbox(SandboxProvider):
             raise SandboxError("docker file transfer failed")
 
     def list_files(self, sandbox_id: str, path: str) -> list[dict]:
+        from .file_listing import LIST_PROGRAM, parse_listing
+
         path = self._check_path(path)
-        proc = _run(
-            ["docker", "exec", "-u", "10001", sandbox_id, "find", path, "-maxdepth", "2", "-type", "f", "-printf", "%p\t%s\n"],
-            timeout=30,
-        )
+        proc = _run(["docker", "exec", "-u", "10001", sandbox_id, "python", "-c", LIST_PROGRAM, path, "list", "500", "0"], timeout=60)
         if proc.returncode != 0:
-            return []
-        out = []
-        for line in proc.stdout.decode("utf-8", "replace").splitlines():
-            if "\t" not in line:
-                continue
-            p, size = line.split("\t", 1)
-            try:
-                out.append({"path": p, "size": int(size)})
-            except ValueError:
-                continue
-        return out[:500]
+            raise SandboxError("file enumeration failed")
+        return parse_listing(proc.stdout)
 
     def _inspect_info(self, provider_ref: str, timeout: float = 20) -> dict | None:
         proc = _run(["docker", "inspect", provider_ref], timeout=timeout)

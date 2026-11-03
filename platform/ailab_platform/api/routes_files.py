@@ -33,16 +33,18 @@ from ..library import (
     owned_project,
     purge_lineages,
     restore_lineages,
+    schedule_object_deletion,
     trash_lineages,
     trim_file_versions,
 )
 from ..locks import user_critical_section
-from ..models import FileObject, FileStatus, User, new_id, utcnow
+from ..models import FileObject, FileStatus, UploadReceipt, User, new_id, utcnow
 from ..quota import enforce_library_quota
 from ..schemas import FileBatch, FileOut, LibraryFilePatch
 from ..storage import get_storage
 from .jobs import stage_job
 from .serializers import file_dict, file_dicts
+from .upload_identity import fingerprint, receipt_for, replay, reusable
 
 router = APIRouter(prefix="/v1/files", tags=["files"])
 trash_router = APIRouter(prefix="/v1/trash", tags=["files"])
@@ -50,6 +52,10 @@ log = logging.getLogger("ailab.api.files")
 
 
 class PresignIn(BaseModel):
+    client_upload_id: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9:_-]+$")
+    disposition: Literal["reuse", "copy"] = "reuse"
+    size: int | None = Field(default=None, gt=0)
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     project_id: str | None = None
     filename: str = Field(min_length=1, max_length=255)
     content_type: str = "application/octet-stream"
@@ -79,6 +85,8 @@ async def upload_file(
     parent_id: str | None = Query(default=None),
     project_id: str | None = Query(default=None),
     purpose: Literal["library", "skill"] = Query(default="library"),
+    client_upload_id: str | None = Query(default=None, min_length=1, max_length=100, pattern=r"^[a-zA-Z0-9:_-]+$"),
+    disposition: Literal["reuse", "copy"] = Query(default="reuse"),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -101,17 +109,40 @@ async def upload_file(
 
         filename = safe_filename(upload.filename or "file")
         content_type = upload.content_type or "application/octet-stream"
+        request_hash = fingerprint(
+            kind="multipart",
+            filename=filename,
+            content_type=content_type,
+            size=size,
+            sha256=digest.hexdigest(),
+            project_id=project_id,
+            purpose=purpose,
+            parent_id=parent_id,
+            disposition=disposition,
+        )
         file_id = new_id("fil")
         key = f"{'skills' if purpose == 'skill' else 'uploads'}/{user.id}/{file_id}/{filename}"
         try:
-            await asyncio.to_thread(storage.put_file, key, tmp.name, content_type)
 
             def record() -> dict:
                 # The per-user lock can be held for a while by another request of this user (an artifact being
                 # hashed): wait for it in a worker thread, never on the event loop that serves everyone.
                 with user_critical_section(db, user.id):  # quota check and the file row are one step
+                    prior = db.get(UploadReceipt, (user.id, client_upload_id)) if client_upload_id else None
+                    if prior:
+                        result = replay(db, prior, request_hash)
+                        return result
                     if project_id is not None:
                         owned_project(db, project_id, user)
+                    match = (
+                        reusable(db, user.id, project_id, filename, content_type, size, digest.hexdigest())
+                        if (purpose == "library" and parent_id is None and disposition == "reuse")
+                        else None
+                    )
+                    if match:
+                        receipt_for(db, user.id, client_upload_id, request_hash, match.id, filename=filename, reused=True)
+                        db.commit()
+                        return {**file_dict(match), "reused": True}
                     enforce_library_quota(db, user.id, size)
                     parent = _owned_file(db, parent_id, user) if parent_id else None
                     if parent is not None and parent.deleted_at is not None:
@@ -121,6 +152,8 @@ async def upload_file(
                             raise HTTPException(422, "技能已更新或正在扫描，请刷新后重试")
                         if parent.filename.endswith(".zip") and not filename.endswith(".zip"):
                             raise HTTPException(422, "请上传完整技能压缩包，保留附带脚本")
+                    # Replays and content matches only hash the incoming spool; they never write another object.
+                    storage.put_file(key, tmp.name, content_type)
                     row = FileObject(
                         id=file_id,
                         user_id=user.id,
@@ -135,6 +168,7 @@ async def upload_file(
                         purpose=purpose,
                         meta={
                             "processing": "queued",
+                            "upload_filename": filename,
                             "upload_provenance": {"id": new_id("upl")},
                             **(
                                 {"skill_claim": (parent.meta or {}).get("skill", {}).get("name")}
@@ -148,6 +182,7 @@ async def upload_file(
                     keys = trim_file_versions(db, row)
                     db.flush()
                     stage_job(db, "file", file_id=row.id)
+                    receipt_for(db, user.id, client_upload_id, request_hash, row.id, filename=filename)
                     db.commit()
                     delete_storage_objects(keys)
                     db.refresh(row)
@@ -155,7 +190,22 @@ async def upload_file(
 
             file = await asyncio.to_thread(record)
         except Exception:
-            await asyncio.to_thread(storage.delete, key)
+
+            def cleanup_uncommitted():
+                # A committed receipt may outlive a failed response serialization. Never delete its object.
+                db.rollback()
+                with user_critical_section(db, user.id):
+                    accepted = db.get(FileObject, file_id, populate_existing=True)
+                    if accepted is not None and accepted.storage_key == key:
+                        return
+                    schedule_object_deletion(db, key, "upload_failed")
+                    db.commit()
+                delete_storage_objects([key])
+
+            try:
+                await asyncio.to_thread(cleanup_uncommitted)
+            except Exception:
+                log.warning("upload cleanup could not verify commit; retained object for reconciliation", exc_info=True)
             raise
     finally:
         await asyncio.to_thread(tmp.close)
@@ -582,84 +632,152 @@ def delete_file(file_id: str, user: User = Depends(current_user), db: Session = 
 
 @router.post("/presign", status_code=200)
 def presign_upload(body: PresignIn, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    """S3/SeaweedFS direct upload. Local storage returns 501 on purpose."""
+    """A reservation is an operation, not a bindable attachment until completion."""
+    storage = get_storage()
+    if body.client_upload_id and (body.size is None or body.sha256 is None):
+        raise HTTPException(422, "预签名上传操作必须提供size和sha256")
+    if body.size is not None and body.size > settings.max_upload_bytes:
+        raise HTTPException(413, "file too large")
+    filename = safe_filename(body.filename)
+    digest = fingerprint(
+        kind="presign",
+        filename=filename,
+        content_type=body.content_type,
+        project_id=body.project_id,
+        disposition=body.disposition,
+        size=body.size,
+        sha256=body.sha256,
+    )
     with user_critical_section(db, user.id):
-        if body.project_id is not None:
-            owned_project(db, body.project_id, user)
-        file_id = new_id("fil")
-        filename = safe_filename(body.filename)
-        key = f"uploads/{user.id}/{file_id}/{filename}"
-        url = get_storage().presign_put(key, expires=900)
-        if url is None:
-            raise HTTPException(
-                status_code=status.HTTP_501_NOT_IMPLEMENTED,
-                detail="storage backend does not support presigned upload; use POST /v1/files",
+        prior = db.get(UploadReceipt, (user.id, body.client_upload_id)) if body.client_upload_id else None
+        if prior:
+            if prior.fingerprint != digest:
+                raise HTTPException(422, "上传操作标识已用于其他内容")
+            if prior.state == "completed":
+                return {"file_id": prior.file_id, "completed": True, "file": replay(db, prior, digest)}
+            file = db.get(FileObject, prior.reservation_id, populate_existing=True)
+            if file is None:
+                raise HTTPException(410, "上传预约已失效")
+            if prior.state != "reserved" or file.deleted_at is not None or file.purged_at is not None:
+                raise HTTPException(410, "上传预约已失效")
+            if (utcnow().timestamp() - file.created_at.replace(tzinfo=UTC).timestamp()) > 900:
+                raise HTTPException(410, "上传预约已过期，请重新选择文件")
+        else:
+            if body.project_id is not None:
+                owned_project(db, body.project_id, user)
+            file_id = new_id("fil")
+            file = FileObject(
+                id=file_id,
+                user_id=user.id,
+                project_id=body.project_id,
+                filename=filename,
+                content_type=body.content_type,
+                storage_key=f"uploads/{user.id}/{file_id}/{filename}",
+                status=FileStatus.PENDING,
+                meta={
+                    "processing": "awaiting_upload",
+                    "disposition": body.disposition,
+                    "upload_filename": filename,
+                    "expected_size": body.size,
+                    "expected_sha256": body.sha256,
+                },
             )
-        file = FileObject(
-            id=file_id,
-            user_id=user.id,
-            project_id=body.project_id,
-            filename=filename,
-            content_type=body.content_type,
-            storage_key=key,
-            status=FileStatus.PENDING,
-            meta={"processing": "awaiting_upload"},
-        )
-        assign_file_version(db, file)
-        db.add(file)
+            assign_file_version(db, file)
+            db.add(file)
+            receipt_for(db, user.id, body.client_upload_id, digest, file.id, filename=filename, reservation_id=file.id, state="reserved")
+        url = storage.presign_put(file.storage_key, expires=900)
+        if url is None:
+            raise HTTPException(501, "storage backend does not support presigned upload; use POST /v1/files")
         db.commit()
-        return {"file_id": file_id, "upload_url": url, "method": "PUT", "expires_in": 900}
+        return {"file_id": file.id, "upload_url": url, "method": "PUT", "expires_in": 900, "completed": False}
 
 
 @router.post("/{file_id}/complete", response_model=FileOut)
 def complete_upload(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
     storage = get_storage()
     with user_critical_section(db, user.id):
-        file = _owned_file(db, file_id, user)
-        db.refresh(file)  # a simultaneous completion may have finished while we waited for the lock
+        receipt = db.scalar(select(UploadReceipt).where(UploadReceipt.reservation_id == file_id, UploadReceipt.user_id == user.id).limit(1))
+        if receipt and receipt.state == "completed":
+            return replay(db, receipt, receipt.fingerprint)
+        file = db.get(FileObject, file_id, populate_existing=True)
+        if file is None or file.user_id != user.id:
+            raise HTTPException(410 if receipt else 404, "原上传文件已删除")
+        meta = dict(file.meta or {})
+        if meta.get("canonical_file_id"):
+            canonical = db.get(FileObject, meta["canonical_file_id"], populate_existing=True)
+            if canonical is None or canonical.user_id != user.id or canonical.deleted_at is not None or canonical.purged_at is not None:
+                raise HTTPException(410, "原上传文件已删除")
+            return {**file_dict(canonical), "reused": True}
         if file.deleted_at is not None or file.purged_at is not None:
-            raise HTTPException(status_code=404, detail="file not found")
-        if (file.meta or {}).get("processing") != "awaiting_upload":
-            raise HTTPException(status_code=409, detail=f"file already {file.status}")
+            raise HTTPException(410, "原上传文件已删除")
+        if meta.get("processing") != "awaiting_upload":
+            if meta.get("upload_completed"):
+                return file_dict(file)
+            raise HTTPException(409, f"file already {file.status}")
         signed_key = file.storage_key
         if not storage.exists(signed_key):
-            raise HTTPException(status_code=409, detail="object not uploaded yet")
-        # A signed PUT is reusable until it expires. Freeze a separate object BEFORE hashing/scanning:
-        # replacing the signed object later must never replace the bytes the Worker approved.
+            raise HTTPException(409, "object not uploaded yet")
         final_key = f"uploads/{user.id}/{file.id}/{new_id('obj')}/{file.filename}"
         try:
             storage.copy(signed_key, final_key)
             size = storage.size(final_key)
-            if size == 0:
-                raise HTTPException(status_code=400, detail="empty file")
-            if size > settings.max_upload_bytes:
-                raise HTTPException(status_code=413, detail=f"file exceeds {settings.max_upload_bytes} bytes")
-            enforce_library_quota(db, user.id, size)
+            if not 0 < size <= settings.max_upload_bytes:
+                raise HTTPException(400 if size == 0 else 413, "empty file" if size == 0 else "file too large")
             digest = hashlib.sha256()
-            for chunk in storage.stream(final_key):
-                digest.update(chunk)
-            file.storage_key = final_key
-            file.size = size
-            file.sha256 = digest.hexdigest()
-            file.meta = {"processing": "queued"}
-            stage_job(db, "file", file_id=file.id)
+            stream = storage.stream(final_key)
+            try:
+                for chunk in stream:
+                    digest.update(chunk)
+            finally:
+                close = getattr(stream, "close", None)
+                if close:
+                    close()
+            if (meta.get("expected_size") is not None and meta["expected_size"] != size) or (
+                meta.get("expected_sha256") is not None and meta["expected_sha256"] != digest.hexdigest()
+            ):
+                raise HTTPException(400, "上传内容与预约不一致")
+            filename = meta.get("upload_filename", file.filename)
+            match = (
+                reusable(db, user.id, file.project_id, filename, file.content_type, size, digest.hexdigest())
+                if (meta.get("disposition", "reuse") == "reuse")
+                else None
+            )
+            if match:
+                result = {**file_dict(match), "reused": True}
+                if receipt:
+                    receipt.file_id, receipt.state, receipt.reused = match.id, "completed", 1
+                    db.delete(file)  # the receipt owns the alias; an unbound reservation is never a library item
+                else:
+                    # Old clients have no receipt: retain only a hidden identity tombstone for complete retries.
+                    file.deleted_at, file.purged_at, file.is_head = utcnow(), utcnow(), 0
+                    file.filename = ""
+                    file.meta = {"processing": "reused", "canonical_file_id": match.id}
+                cleanup = [signed_key, final_key]
+            else:
+                enforce_library_quota(db, user.id, size)
+                file.storage_key, file.size, file.sha256 = final_key, size, digest.hexdigest()
+                file.meta = {**meta, "processing": "queued", "upload_completed": True, "upload_provenance": {"id": new_id("upl")}}
+                stage_job(db, "file", file_id=file.id)
+                if receipt:
+                    receipt.state = "completed"
+                result = None
+                cleanup = [signed_key]
+            for key in cleanup:
+                schedule_object_deletion(db, key, "upload_complete")
             db.commit()
         except Exception as exc:
             db.rollback()
-            storage.delete(final_key)
+            delete_storage_objects([final_key])
             if isinstance(exc, HTTPException) and exc.status_code in (400, 413):
-                # Invalid/over-quota uploads are terminal rejections, as with multipart uploads. Do not
-                # retain an unaccounted object simply because no FileObject.size was committed for it.
-                storage.delete(signed_key)
+                schedule_object_deletion(db, signed_key, "upload_rejected")
+                if receipt:
+                    receipt.state, receipt.filename = "rejected", None
                 db.delete(file)
                 db.commit()
+                delete_storage_objects([signed_key])
             raise
-        # The DB now references only the frozen copy. Cleanup failure must not undo an accepted upload.
-        try:
-            storage.delete(signed_key)
-        except Exception:
-            log.warning("could not delete completed upload object %s", signed_key, exc_info=True)
-    return file_dict(file)
+        delete_storage_objects(cleanup)
+        return result or file_dict(file)
 
 
 @router.get("/{file_id}/versions", response_model=list[FileOut])

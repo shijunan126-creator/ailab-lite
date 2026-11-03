@@ -44,9 +44,10 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
         if outside:
             raise HTTPException(status_code=409, detail=f"file has newer versions; delete those first: {', '.join(outside)}")
     from .api.source_lifecycle import invalidate
-    from .models import DocumentBlock, FileDerivation, MessageFileRef, OcrPageResult, RenderedPage
+    from .models import DocumentBlock, FileDerivation, MessageFileRef, OcrPageResult, RenderedPage, UploadReceipt
 
     invalidate(db, files[0].user_id, ids)
+    db.execute(update(UploadReceipt).where(UploadReceipt.file_id.in_(ids)).values(filename=None))
     db.execute(update(MessageFileRef).where(MessageFileRef.file_id.in_(ids)).values(filename_snapshot=None, upload_id=None))
     db.execute(delete(RenderedPage).where(RenderedPage.file_id.in_(ids)))
     db.execute(delete(OcrPageResult).where(OcrPageResult.file_id.in_(ids)))

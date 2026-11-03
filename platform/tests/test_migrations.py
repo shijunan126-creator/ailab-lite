@@ -972,3 +972,25 @@ def test_document_refs_and_captures_roundtrip_and_index_plans(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
     _upgrade_to(engine, "head")
+
+
+def test_file_identity_roundtrip_preserves_references(engine):
+    _upgrade_to(engine, "0048")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "0049")
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO upload_receipts (user_id,client_upload_id,fingerprint,file_id,reused,state,created_at) "
+                "VALUES ('u1','pick','digest','deleted-file',0,'completed','2026-01-01')"
+            )
+        )
+        conn.execute(text("INSERT INTO run_deliveries (run_id,delivery_id,result,fingerprint) VALUES ('r1','r1:revision','{}','digest')"))
+    _downgrade_to(engine, "0048")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT count(*) FROM runs WHERE id='r1'")) == 1
+        assert conn.scalar(text("SELECT count(*) FROM run_deliveries WHERE run_id='r1'")) == 1
+    _upgrade_to(engine, "0049")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT fingerprint FROM run_deliveries WHERE run_id='r1'")) is None

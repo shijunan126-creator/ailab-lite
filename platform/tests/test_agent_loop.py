@@ -72,11 +72,14 @@ class FakeBroker:
         self.snapshots += 1
         return {"key": "workspaces/run_1.tgz", "size": 10}
 
+    async def output_manifest(self, lease_id):
+        return [{**f, "sha256": "a" * 64} for f in await self.list_files(lease_id, "/workspace/outputs")]
+
     async def list_files(self, lease_id, path):
         return []
 
-    async def commit(self, lease_id, path, filename=None, role="output"):
-        return {"filename": filename or path.rsplit("/", 1)[-1], "size": 1}
+    async def commit(self, lease_id, path, filename=None, role="output", expected_sha256=None):
+        return {"file_id": "fil_fake", "filename": filename or path.rsplit("/", 1)[-1], "size": 1, "sha256": "a" * 64}
 
     async def put_file(self, lease_id, path, data):
         self.put_calls.append((path, data))
@@ -107,7 +110,7 @@ def test_workspace_and_delivery_failures_hide_internal_details(caplog):
         async def list_files(self, lease_id, path):
             return [{"path": "/workspace/outputs/result.txt", "size": 1}]
 
-        async def commit(self, lease_id, path):
+        async def commit(self, lease_id, path, expected_sha256=None):
             raise RuntimeError(secret)
 
         async def refresh_previews(self, lease_id):
@@ -119,7 +122,10 @@ def test_workspace_and_delivery_failures_hide_internal_details(caplog):
         turn = _Turn({})
         turn.lease_id = "lease_private"
         assert await loop._snapshot(turn, "run_1") is None
-        await loop._deliver_leftovers("run_1", turn.lease_id, {}, [])
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["run_1"], loop._steps["run_1"] = fresh_state(), 0
+        await loop._deliver_leftovers("run_1", turn)
         await loop._render_previews(turn, "run_1")
         return platform.events
 
@@ -207,11 +213,11 @@ class RichBroker(FakeBroker):
 
     async def list_files(self, lease_id, path):
         self.listings += 1
-        return [] if self.listings == 1 else self.outputs
+        return self.outputs
 
-    async def commit(self, lease_id, path, filename=None, role="output"):
+    async def commit(self, lease_id, path, filename=None, role="output", expected_sha256=None):
         self.commits.append(path)
-        return {"filename": filename or path.rsplit("/", 1)[-1], "size": 1}
+        return {"file_id": "fil_fake", "filename": filename or path.rsplit("/", 1)[-1], "size": 1, "sha256": "a" * 64}
 
     async def exec(self, lease_id, cmd, timeout=None):
         self.exec_started = True

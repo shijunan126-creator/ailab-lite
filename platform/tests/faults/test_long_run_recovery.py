@@ -51,7 +51,7 @@ rid, marker = sys.argv[1:]
 class Broker(FakeBroker):
     async def commit(self, *args, **kwargs):
         Path(marker).write_text("delivered\\n")
-        return {"file_id": "confirmed", "filename": "a.txt", "size": 1}
+        return {"file_id": "confirmed", "filename": "a.txt", "size": 1, "sha256": "a" * 64}
     async def exec(self, *args, **kwargs):
         with Path(marker).open("a") as out:
             out.write("background_started\\n")
