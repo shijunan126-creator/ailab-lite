@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import time
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import case, func, insert, select
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
-from .models import RunEvent, utcnow
+from .models import RunEvent, RunProcessSnapshot, utcnow
 
 
 def append_event(db: Session, run_id: str, type_: str, payload: dict | None = None, *, commit: bool = True) -> RunEvent:
@@ -23,7 +23,10 @@ def append_event(db: Session, run_id: str, type_: str, payload: dict | None = No
     for attempt in range(6):
         created_at = utcnow()
         data = payload or {}
-        next_seq = select(func.coalesce(func.max(RunEvent.seq), 0) + 1).where(RunEvent.run_id == run_id).scalar_subquery()
+        raw_seq = select(func.coalesce(func.max(RunEvent.seq), 0)).where(RunEvent.run_id == run_id).scalar_subquery()
+        # Snapshot coverage survives full GC and is the durable sequence floor.
+        covered_seq = func.coalesce(select(RunProcessSnapshot.through_seq).where(RunProcessSnapshot.run_id == run_id).scalar_subquery(), 0)
+        next_seq = case((raw_seq > covered_seq, raw_seq), else_=covered_seq) + 1
         stmt = (
             insert(RunEvent)
             .values(run_id=run_id, seq=next_seq, type=type_, payload=data, created_at=created_at)

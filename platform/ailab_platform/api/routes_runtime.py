@@ -127,6 +127,15 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
                 runtime_version=1,
             )
         )
+        meta = run.runtime_meta or {}
+        epoch = body.state.get("context_epoch", 0)
+        boundary = body.state.get("context_boundary") or {}
+        if epoch != meta.get("context_epoch", 0) and boundary.get("run_id") == run_id:
+            if boundary.get("epoch") != epoch or epoch <= meta.get("context_epoch", 0):
+                raise HTTPException(409, "invalid_context_epoch")
+            append_event(db, run_id, "agent.context_boundary", boundary, commit=False)
+        elif "context_epoch" in meta and epoch != meta["context_epoch"]:
+            raise HTTPException(409, "context_boundary_required")
         previous_workspace = (run.runtime_meta or {}).get("workspace") or {}
         workspace = body.state.get("workspace")
         if workspace and not str(workspace.get("key", "")).startswith(f"workspaces/{run_id}/"):
@@ -137,6 +146,7 @@ def put_checkpoint(run_id: str, body: CheckpointIn, x_run_attempt: str | None = 
         run.runtime_meta = {
             **(run.runtime_meta or {}),
             "plan": body.state.get("plan", []),
+            "context_epoch": epoch,
             "workspace": workspace,
             "steer_ids": steer_ids,
             "context_snapshot": bool(
@@ -252,6 +262,13 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
             ):
                 raise HTTPException(422, "invalid file dependency")
             meta["file_dependency"] = dep
+        # Only a checkpoint-confirmed live job can retain a bounded context-pause
+        # lease. Broker still enforces its original expiry and maximum lifetime.
+        retained = False
+        if (body.result or {}).get("pause", {}).get("kind") == "context":
+            saved = read_checkpoint(db, run)
+            retained = bool(saved and saved["state"].get("background_jobs"))
+        meta["retain_background_lease"] = retained
         run.runtime_meta = meta
         result = {**(run.result or {}), **(body.result or {})}
         # Pause metadata describes this pause only, unlike retained previews and sources.

@@ -819,7 +819,7 @@ def put_context_settings(body: ContextSettings, user: User = Depends(current_use
             "settings",
             "context",
             {
-                "fields": ["auto_compact", "threshold_ratio"],
+                "fields": list(ContextSettings.model_fields),
                 "auto_compact": body.auto_compact,
                 "threshold_ratio": str(body.threshold_ratio),
             },

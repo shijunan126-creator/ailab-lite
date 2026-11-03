@@ -131,7 +131,8 @@ test('budget events, run-scope compaction and background commands read plainly',
  assert.equal(steps[3].detail,'同一操作反复出错');
  let run=reduceEvent([],event('agent.tool_call',{step:1,name:'exec',arguments:{cmd:'make'}}));
  run=reduceEvent(run,event('agent.tool_result',{step:1,name:'exec',ok:true,running:true,stdout:'building…'}));
- assert.equal(run[0].steps[0].label,'运行命令 · 仍在运行');
+ assert.equal(run[0].steps[0].label,'运行命令');
+ assert.equal(run[0].steps[0].background,true);
  assert.equal(run[0].steps[0].output,'building…');
  assert.equal(run[0].steps[0].status,'note');
 });
@@ -170,4 +171,20 @@ test('a skill read through load_skill shows one step, named by its title; a skil
  items=reduceEvent(items,event('agent.skill',{name:'other',title:'别的',status:'loaded'}));
  const steps=items.flatMap(it=>it.kind==='steps'?it.steps:[]);
  assert.deepEqual(steps.map(s=>[s.label,s.detail,s.status]),[['读取技能','周报助手','ok'],['读取技能','gone','failed'],['已加载技能','别的','ok']]);
+});
+
+test('ProcessView V1 API projection stays identical to the live SSE display', async () => {
+ const fixture = JSON.parse(await readFile(new URL('../../tests/fixtures/process_view_v1.json', import.meta.url), 'utf8'));
+ assert.deepEqual(JSON.parse(JSON.stringify(splitTurn(fixture.events.reduce(reduceEvent, [])).process)), fixture.items);
+});
+
+test('resumed partial and canceled background use the shared lifecycle fixture', async () => {
+ const fixture = JSON.parse(await readFile(new URL('../../tests/fixtures/process_lifecycle_v1.json', import.meta.url), 'utf8'));
+ assert.deepEqual(JSON.parse(JSON.stringify(mod.reconcileTerminal(fixture.events.reduce(reduceEvent, []), fixture.status))), fixture.items);
+});
+
+test('answer selection follows confirmation rather than run-wide summary presence', () => {
+ const partial = [{kind:'text',step:1,text:'new partial'}];
+ assert.equal(mod.turnAnswer(partial, 'old progress', true), 'new partial');
+ assert.equal(mod.turnAnswer([{...partial[0], confirmed:true}], 'authoritative final', true), 'authoritative final');
 });

@@ -300,25 +300,65 @@ def purge_orphan_objects(db: Session, storage, now: datetime) -> int:
 def purge_run_events(db: Session, now: datetime) -> int:
     from sqlalchemy import delete
 
-    from ..models import RunEvent
+    from ..models import RunEvent, RunProcessSnapshot
+    from .process_snapshots import latest_seq
+    from .process_view import PROCESS_SNAPSHOT_SCHEMA_VERSION
 
     if not settings.run_events_retention_days:
         return 0
     cutoff = now - timedelta(days=settings.run_events_retention_days)
-    ids = list(
-        db.scalars(
-            select(RunEvent.id)
-            .join(Run, Run.id == RunEvent.run_id)
-            .where(Run.status.in_(RunStatus.TERMINAL), Run.finished_at < cutoff, RunEvent.created_at < cutoff)
-            .order_by(RunEvent.created_at, RunEvent.id)
+    from ..locks import user_critical_section
+
+    candidates = list(
+        db.execute(
+            select(Run.id, Run.user_id)
+            .join(RunProcessSnapshot, RunProcessSnapshot.run_id == Run.id)
+            .where(
+                Run.status.in_(RunStatus.TERMINAL),
+                Run.finished_at < cutoff,
+                select(RunEvent.id).where(RunEvent.run_id == Run.id, RunEvent.created_at < cutoff).exists(),
+                RunProcessSnapshot.schema_version == PROCESS_SNAPSHOT_SCHEMA_VERSION,
+                RunProcessSnapshot.through_seq >= latest_seq(),
+            )
+            .order_by(Run.finished_at, Run.id)
             .limit(settings.gc_batch_size)
         )
     )
-    if ids:
-        db.execute(delete(RunEvent).where(RunEvent.id.in_(ids)))
-        db.commit()
-        GC_ACTIONS.labels("events").inc(len(ids))
-    return len(ids)
+    removed = 0
+    for run_id, user_id in candidates:
+        with user_critical_section(db, user_id):
+            # Recheck under the event writers' lock before deleting the trace.
+            covered = db.scalar(
+                select(Run.id)
+                .join(RunProcessSnapshot, RunProcessSnapshot.run_id == Run.id)
+                .where(
+                    Run.id == run_id,
+                    RunProcessSnapshot.schema_version == PROCESS_SNAPSHOT_SCHEMA_VERSION,
+                    RunProcessSnapshot.through_seq >= latest_seq(),
+                )
+            )
+            if covered is None:
+                continue
+            ids = list(
+                db.scalars(
+                    select(RunEvent.id)
+                    .where(
+                        RunEvent.run_id == run_id,
+                        RunEvent.created_at < cutoff,
+                    )
+                    .order_by(RunEvent.seq)
+                    .limit(settings.gc_batch_size - removed)
+                )
+            )
+            if ids:
+                db.execute(delete(RunEvent).where(RunEvent.id.in_(ids)))
+                removed += len(ids)
+            db.commit()
+        if removed >= settings.gc_batch_size:
+            break
+    if removed:
+        GC_ACTIONS.labels("events").inc(removed)
+    return removed
 
 
 def purge_deleted_conversations(db: Session, now: datetime) -> int:
@@ -448,6 +488,7 @@ def purge_unused_assets(db: Session, now: datetime) -> int:
 def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> dict[str, int]:
     storage = storage or get_storage()
     now = now or datetime.now(UTC)
+    from .process_snapshots import repair_snapshots
     from .source_lifecycle import drain_invalidations
     from .viewer_captures import purge as purge_captures
 
@@ -458,6 +499,7 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
         ("presign", lambda: purge_expired_presigns(db, storage, now)),
         ("orphan", lambda: purge_orphan_objects(db, storage, now)),
         ("checkpoint", lambda: purge_checkpoints(db, storage, now)),
+        ("process", lambda: repair_snapshots(db)),
         ("events", lambda: purge_run_events(db, now)),
         ("conversation", lambda: purge_deleted_conversations(db, now)),
         ("trash", lambda: purge_expired_trash(db, now)),

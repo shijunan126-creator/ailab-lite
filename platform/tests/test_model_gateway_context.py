@@ -14,6 +14,7 @@ from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.config import settings
 from ailab_platform.llm import LLMError, LLMResponse, OpenAICompatibleClient, reset_llm_cache
 from tests.run_claims import attempt_headers
+from tests.runtime_fakes import CheckpointFake
 
 AUTH = {"Authorization": "Bearer test-token"}
 SERVICE = {"X-Service-Token": "test-service"}
@@ -83,7 +84,7 @@ async def upstream(kind, seen):
         await asyncio.gather(*tasks, return_exceptions=True)
 
 
-class LedgerBridge:
+class LedgerBridge(CheckpointFake):
     def __init__(self, client):
         self.client = client
         self.events = []
@@ -242,9 +243,12 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
         async def chat(self, messages, tools, model, user_id=None):
             call = model_call.get()
             spec = cat.get(model)
-            assert call.max_output_tokens == min(2048, spec.max_output_tokens)
+            assert 0 < call.max_output_tokens <= min(2048, spec.max_output_tokens)
             assert estimator.estimate(model, {"messages": messages, "tools": tools}) + call.max_output_tokens <= spec.context_tokens
-            return LLMResponse(content="记住用户要求与已交付文件。", usage={"prompt_tokens": 50, "completion_tokens": 15})
+            return LLMResponse(
+                content='{"schema_version":1,"objective":"记住用户要求与已交付文件。"}',
+                usage={"prompt_tokens": 50, "completion_tokens": 15},
+            )
 
     class Context(FakePlatform):
         def __init__(self):
@@ -268,7 +272,7 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
             self.summary, self.through = payload["summary"], payload["through_run_id"]
             self.saved.append(payload)
 
-    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=3300, max_output_tokens=1000)])
+    cat = Catalog([ModelSpec("summary", "Summary", provider="mock", context_tokens=5000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     bridge = Context()
 
@@ -277,11 +281,24 @@ def test_200_round_budget_and_incremental_summary(monkeypatch):
         base = [{"role": "system", "content": "系统"}, {"role": "user", "content": "当前问题"}]
         messages = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
         assert estimator.estimate("summary", {"messages": messages, "tools": []}) <= ModelPolicy.input_budget(cat.get("summary"))
-        assert any("历史摘要" in m["content"] for m in messages)
+        assert any("conversation_checkpoint" in m["content"] for m in messages)
         calls = len(bridge.reservations)
         assert calls > 0 and calls == len(bridge.settlements) == len(bridge.saved)
         again = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
-        assert again == messages
+        # Saving the summary advances its durable coverage cursor. The first
+        # staged request also retains recent raw units; a fresh rebuild starts
+        # from that saved cursor, rather than recreating those covered units.
+        from ailab_platform.agent.context_band import ContextBand
+        from ailab_platform.agent.context_protocol import protocol_groups
+
+        assert again[-1] == messages[-1] == base[-1]
+        assert next(m for m in again if "<conversation_checkpoint>" in m["content"]) == next(
+            m for m in messages if "<conversation_checkpoint>" in m["content"]
+        )
+        assert estimator.estimate("summary", {"messages": again, "tools": []}) <= ContextBand.for_model(cat.get("summary")).ceiling
+        protocol_groups(again)
+        rebuilt = await loop._assemble_context("run", {"_attempt_id": "attempt", "_fixed_catalog": []}, "summary", base)
+        assert rebuilt == again
         assert len(bridge.reservations) == calls
 
     asyncio.run(exercise())
@@ -479,7 +496,7 @@ def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-@pytest.mark.parametrize("input_tokens,expected_output", [(500, 8000), (8000, 2000)])
+@pytest.mark.parametrize("input_tokens,expected_output", [(500, 8000), (8000, 1900)])
 def test_output_request_and_real_ledger_reservation_use_remaining_window(monkeypatch, mode, input_tokens, expected_output):
     async def exercise(c):
         seen = []

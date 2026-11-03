@@ -4,6 +4,8 @@ import base64
 import hashlib
 from copy import deepcopy
 
+from ..contracts.model_context import CONTEXT_ABI_VERSION
+
 RUNTIME_VERSION = 1
 NON_REPLAYABLE = frozenset({"exec"})
 UNCERTAIN_EXEC = "此命令在中断前可能已部分执行，未重跑；请先检查工作区。"
@@ -12,6 +14,8 @@ UNCERTAIN_EXEC = "此命令在中断前可能已部分执行，未重跑；请�
 def fresh_state():
     return {
         "runtime_version": RUNTIME_VERSION,
+        "context_abi_version": CONTEXT_ABI_VERSION,
+        "context_epoch": 0,
         "messages": [],
         "next_step": 0,
         "pending": [],

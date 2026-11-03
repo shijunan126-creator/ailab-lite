@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator, model_validator
 
+from .config import ContextBandSettings
 from .contracts.document_view import DocRef
 from .contracts.inbox import QueuedMessageOut
 from .contracts.skills import SkillSelection
@@ -384,6 +385,7 @@ class CommitOut(BaseModel):
 
 
 class RunStateOut(BaseModel):
+    retain_background_lease: bool = False
     steer_pending: bool = False
     job_id: str | None = None
     status: str
@@ -428,9 +430,9 @@ class RunRetry(BaseModel):
     mode: Literal["chat", "work"] | None = None
 
 
-class ContextSettings(BaseModel):
+class ContextSettings(ContextBandSettings):
     auto_compact: bool = True
-    threshold_ratio: float = Field(default=0.85, ge=0.2, le=0.95)
+    threshold_ratio: float = Field(default=0.90, ge=0.2, le=0.95)
 
 
 class ConversationTitle(BaseModel):

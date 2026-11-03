@@ -994,3 +994,68 @@ def test_file_identity_roundtrip_preserves_references(engine):
     _upgrade_to(engine, "0049")
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT fingerprint FROM run_deliveries WHERE run_id='r1'")) is None
+
+
+@pytest.mark.parametrize("threshold", [0.85, 0.90, 0.72, None])
+def test_process_snapshot_and_threshold_migrations(engine, threshold):
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0049")
+    settings = sa.table("platform_settings", sa.column("key", sa.String), sa.column("value", sa.JSON))
+    original = {"enabled": True, **({"threshold_ratio": threshold} if threshold is not None else {})}
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(settings.insert().values(key="context", value=original))
+    _upgrade_to(engine, "0051")
+    with engine.begin() as conn:
+        value = conn.scalar(sa.select(settings.c.value).where(settings.c.key == "context"))
+        assert value == {**original, **({"threshold_ratio": 0.90} if threshold == 0.85 else {})}
+        conn.execute(
+            sa.text(
+                "INSERT INTO run_process_snapshots "
+                "(run_id,schema_version,through_seq,items,item_count,uncompressed_bytes,created_at,updated_at) "
+                "VALUES ('r1',1,3,'[]',0,2,'2026-01-01','2026-01-01')"
+            )
+        )
+    _downgrade_to(engine, "0049")
+    assert "run_process_snapshots" not in inspect(engine).get_table_names()
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(settings.c.value).where(settings.c.key == "context")) == original
+    _upgrade_to(engine, "head")
+
+
+def test_threshold_downgrade_preserves_later_admin_edits(engine):
+    import sqlalchemy as sa
+
+    _upgrade_to(engine, "0050")
+    settings = sa.table("platform_settings", sa.column("key", sa.String), sa.column("value", sa.JSON))
+    with engine.begin() as conn:
+        conn.execute(settings.insert().values(key="context", value={"threshold_ratio": 0.85}))
+    _upgrade_to(engine, "0051")
+    with engine.begin() as conn:
+        conn.execute(settings.update().where(settings.c.key == "context").values(value={"threshold_ratio": 0.90, "enabled": False}))
+    _downgrade_to(engine, "0050")
+    with engine.connect() as conn:
+        assert conn.scalar(sa.select(settings.c.value).where(settings.c.key == "context")) == {"threshold_ratio": 0.90, "enabled": False}
+
+
+@pytest.mark.parametrize("persisted", [None, {}, {"threshold_ratio": 0.85}, {"threshold_ratio": 0.90}, {"threshold_ratio": 0.72}])
+def test_threshold_migration_and_code_defaults_converge(engine, persisted):
+    import sqlalchemy as sa
+    from sqlalchemy.orm import Session
+
+    from ailab_platform.catalog import ModelSpec
+    from ailab_platform.context_settings import context_settings
+    from ailab_platform.model_policy import ModelPolicy
+
+    _upgrade_to(engine, "0050")
+    table = sa.table("platform_settings", sa.column("key", sa.String), sa.column("value", sa.JSON))
+    if persisted is not None:
+        with engine.begin() as conn:
+            conn.execute(table.insert().values(key="context", value=persisted))
+    _upgrade_to(engine, "head")
+    with Session(engine) as db:
+        effective = context_settings(db)
+        expected = 0.72 if persisted == {"threshold_ratio": 0.72} else 0.90
+        assert effective["threshold_ratio"] == expected
+        assert ModelPolicy.compaction_threshold(ModelSpec("m", "m", context_tokens=10000), effective) == int(10000 * expected)

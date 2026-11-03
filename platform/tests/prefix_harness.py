@@ -5,9 +5,15 @@ import threading
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+from ailab_platform.model_policy import estimator
+
 
 @contextmanager
-def scripted_server(responses):
+def scripted_server(
+    responses,
+    *,
+    prompt_tokens=lambda request: estimator.estimate("m", {"messages": request["messages"], "tools": request.get("tools", [])}),
+):
     requests = []
     script = iter(responses)
 
@@ -22,10 +28,10 @@ def scripted_server(responses):
                 self.send_response(delta["status"])
                 self.end_headers()
                 return
-            finish = "tool_calls" if delta.get("tool_calls") else "stop"
+            finish = delta.pop("_finish_reason", "tool_calls" if delta.get("tool_calls") else "stop")
             chunks = [
                 {"choices": [{"index": 0, "delta": delta, "finish_reason": finish}]},
-                {"choices": [], "usage": {"prompt_tokens": 100, "completion_tokens": 1}},
+                {"choices": [], "usage": {"prompt_tokens": prompt_tokens(requests[-1]), "completion_tokens": 1}},
             ]
             data = "".join("data: " + json.dumps(chunk) + "\n\n" for chunk in chunks) + "data: [DONE]\n\n"
             self.send_response(200)

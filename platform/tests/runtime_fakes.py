@@ -21,6 +21,10 @@ class CheckpointFake:
         step = self.checkpoint["step"] if self.checkpoint else 0
         if payload["expected_step"] != step:
             raise ClientError("PUT", f"/internal/runs/{run_id}/checkpoint", 409, "stale_step")
+        boundary = payload["state"].get("context_boundary") or {}
+        previous = (self.checkpoint or {}).get("state", {}).get("context_boundary")
+        if boundary and boundary != previous and hasattr(self, "events"):
+            self.events.append(("agent.context_boundary", {k: v for k, v in boundary.items() if k not in {"epoch", "run_id"}}))
         self.checkpoint = {"step": step + 1, "state": json.loads(json.dumps(payload["state"]))}
         return {"step": step + 1}
 

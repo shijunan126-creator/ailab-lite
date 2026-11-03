@@ -17,7 +17,7 @@ from typing import Literal
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[1]
@@ -31,7 +31,29 @@ DEFAULT_SECRETS = {
 }
 
 
-class Settings(BaseSettings):
+class ContextBandSettings(BaseModel):
+    """Decimal token limits, shared by environment defaults and persisted policy."""
+
+    target_lower_tokens: int = Field(default=10000, ge=1, le=1000000)
+    target_upper_tokens: int = Field(default=48000, ge=1, le=1000000)
+    hard_ceiling_tokens: int = Field(default=64000, ge=1, le=1000000)
+    target_aim_tokens: int = Field(default=30000, ge=1, le=1000000)
+    lower_window_ratio: float = Field(default=0.15, gt=0, le=0.75)
+    upper_window_ratio: float = Field(default=0.55, gt=0, le=0.75)
+    ceiling_window_ratio: float = Field(default=0.75, gt=0, le=0.95)
+    next_output_reserve: int = Field(default=2048, ge=1, le=65536)
+    context_safety_tokens: int = Field(default=256, ge=1, le=65536)
+
+    @model_validator(mode="after")
+    def ordered_band(self):
+        if not self.target_lower_tokens <= self.target_aim_tokens <= self.target_upper_tokens <= self.hard_ceiling_tokens:
+            raise ValueError("context token band must satisfy lower <= aim <= upper <= ceiling")
+        if not self.lower_window_ratio <= self.upper_window_ratio <= self.ceiling_window_ratio:
+            raise ValueError("context window ratios must be ordered")
+        return self
+
+
+class Settings(ContextBandSettings, BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="AILAB_",
         env_file=os.environ.get("AILAB_ENV_FILE", BASE_DIR / ".env"),  # tests point this at nothing

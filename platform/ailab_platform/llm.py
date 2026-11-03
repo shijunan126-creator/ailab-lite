@@ -435,6 +435,10 @@ class MockLLM(LLMClient):
         step = _assistant_steps(messages)
         usage = {"prompt_tokens": max(1, len(json.dumps(messages, ensure_ascii=False)) // 4), "completion_tokens": 20}
 
+        if messages and "只返回JSON对象，不加Markdown围栏：" in str(messages[-1].get("content", "")):
+            from .contracts.context_summary import ContextSummary, canonical_summary
+
+            return LLMResponse(content=canonical_summary(ContextSummary(objective="继续完成用户任务")), usage=usage)
         if messages and (answer := _memory_answer(str(messages[0].get("content") or ""), prompt)) is not None:
             return LLMResponse(content=answer, usage=usage)
         if (answer := _genui_answer(prompt)) is not None:

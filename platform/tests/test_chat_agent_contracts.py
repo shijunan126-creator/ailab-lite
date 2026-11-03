@@ -115,7 +115,7 @@ def test_library_tool_modes():
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_context_threshold_triggers_before_overflow(monkeypatch, enabled):
+def test_rebuild_is_bounded_even_when_append_compaction_is_disabled(monkeypatch, enabled):
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: len(str(value)))
@@ -137,7 +137,7 @@ def test_context_threshold_triggers_before_overflow(monkeypatch, enabled):
 
     class Summary(LLMClient):
         async def chat(self, *args, **kwargs):
-            return LLMResponse(content="摘要")
+            return LLMResponse(content='{"schema_version":1,"objective":"摘要"}')
 
     async def run():
         p = Context()
@@ -146,7 +146,7 @@ def test_context_threshold_triggers_before_overflow(monkeypatch, enabled):
         await AgentLoop(platform=p, llm=Summary())._assemble_context(
             "r", {"_attempt_id": "a", "context_settings": {"auto_compact": enabled, "threshold_ratio": 0.5}}, "m", base
         )
-        assert bool(p.saved) == enabled
+        assert p.saved  # Prefix replacement always enforces the boundary band.
 
     asyncio.run(run())
 

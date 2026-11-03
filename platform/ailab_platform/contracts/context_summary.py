@@ -1,5 +1,6 @@
 """Lossy semantic background with explicit, verifiable source handles."""
 
+import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -22,7 +23,7 @@ class SummaryEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str = Field(max_length=40)
     text: str = Field(max_length=2000)
-    sources: list[SummarySource] = Field(min_length=1, max_length=8)
+    sources: list[SummarySource] = Field(default_factory=list, max_length=8)
     status: Literal["unverified", "verified", "conflict"] = "unverified"
 
 
@@ -55,12 +56,37 @@ class ContextSummary(BaseModel):
         ]
 
 
-def format_instructions():
-    import json
+def canonical_summary(summary, *, modules=True):
+    """Field order is the schema declaration order, never the model's key order."""
+    value = summary.model_dump(exclude=set() if modules else {"read_modules"})
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
+
+def validate_summary(text, allowed_sources):
+    if len(text.encode("utf-8")) > 16000:
+        raise ValueError("summary exceeds byte budget")
+    summary = ContextSummary.model_validate_json(text)
+    for source in summary.sources():
+        for kind, value in source.model_dump(exclude_none=True).items():
+            if value not in allowed_sources.get(kind, set()):
+                raise ValueError("unknown summary source handle")
+    if any(len(value) > 2000 for value in [*summary.next_actions, *summary.uncertainties]):
+        raise ValueError("summary entry exceeds budget")
+    if len(canonical_summary(summary).encode("utf-8")) > 16000:
+        raise ValueError("canonical summary exceeds byte budget")
+    return summary
+
+
+def format_instructions():
+    # Keep the instruction small enough for the 10% headroom at the barrier.
     return (
-        "只返回一个符合以下JSON Schema的JSON对象，不加Markdown围栏。"
-        "constraints/decisions/facts/open_items为条目对象数组；next_actions和uncertainties只能是字符串数组。"
-        "合并重复进度，保留关键约束、更正和未完成事项，不逐条复述无变化的状态。"
-        + json.dumps(ContextSummary.model_json_schema(), ensure_ascii=False, separators=(",", ":"))
+        "只返回JSON对象，不加Markdown围栏："
+        '{"schema_version":1,"objective":"", "constraints":[],"decisions":[],"facts":[],"open_items":[],'
+        '"next_actions":[],"uncertainties":[]}。'
+        "constraints/decisions/facts/open_items的每项为"
+        '{"id":"短标识","text":"事实","sources":[{"run_id":"来源"}],"status":"unverified"}；'
+        "sources只能使用给定的run_id/file_id/block_id，最多8个。"
+        "每组最多32项，text最多2000字；objective最多1000字；"
+        "next_actions/uncertainties只能是字符串数组，各最多20项。"
+        "总计不超过16000 UTF-8字节，合并重复状态，不摘要技能正文。"
     )

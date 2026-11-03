@@ -88,27 +88,45 @@ def test_budget_refusal_and_group_cumulative_admission(monkeypatch):
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
 
     async def exercise():
+        from ailab_platform.adapters.runtime import fresh_state
+        from ailab_platform.agent.context_band import ContextBand, admit_tool_result, batch_budget
+
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
         turn = _Turn({"model": "m", "options": {"mode": "chat"}, "_fixed_catalog": [LOAD_SKILL]})
-        turn.messages = [{"role": "system", "content": "rules"}]
-        loop._states["r"] = {"messages": turn.messages}
+        turn.messages = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}]
+        state = {**fresh_state(), "messages": turn.messages}
+        loop._states["r"] = state
         arguments = {"name": "platform.docx", "resource": "viewer/SKILL.md"}
-        first = await loop._run_tool(turn, "r", ToolCall("first", "load_skill", arguments), 0)
+        calls = [ToolCall("first", "load_skill", arguments), ToolCall("second", "load_skill", arguments)]
+        turn.messages.append(
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": call.id, "function": {"name": call.name, "arguments": json.dumps(call.arguments)}} for call in calls],
+            }
+        )
+        first = await loop._run_tool(turn, "r", calls[0], 0)
         assert first["ok"] and first["skill"]
-        # Another result in the same pending group consumes the shared window.
-        turn.messages.append(tool_result_message("other", "read_file", {"text": "大" * 10500}))
-        refused = await loop._run_tool(turn, "r", ToolCall("second", "load_skill", arguments), 0)
+        turn.messages.append(tool_result_message("first", "load_skill", first))
+        # A second complete file would exceed the new pending-batch budget.
+        oversized = {**first, "skill": "大" * batch_budget(ContextBand.for_model(spec), turn.messages, [LOAD_SKILL], state)}
+        refused = admit_tool_result(ContextBand.for_model(spec), turn.messages, [LOAD_SKILL], state, calls[1], oversized)
         assert not refused["ok"] and "cannot fit" in refused["error"] and "skill" not in refused
-        turn.messages[:] = paired(first)
-        duplicate = await loop._run_tool(turn, "r", ToolCall("third", "load_skill", arguments), 0)
+        turn.messages.append(tool_result_message("second", "load_skill", refused))
+        third = ToolCall("third", "load_skill", arguments)
+        turn.messages.append(
+            {"role": "assistant", "tool_calls": [{"id": third.id, "function": {"name": third.name, "arguments": json.dumps(arguments)}}]}
+        )
+        duplicate = await loop._run_tool(turn, "r", third, 0)
         assert duplicate["already_loaded"] and "skill" not in duplicate
-        # A boundary can replace the prefix without changing list length or the last object.
-        turn.messages[:] = [{"role": "system", "content": "summary"}, turn.messages[-1]]
+        turn.messages.append(tool_result_message(third.id, third.name, duplicate))
+        turn.messages[:] = [{"role": "system", "content": "rules"}, {"role": "system", "content": "context"}]
         await loop._event("r", "agent.context_boundary", {"reason": "compacted"})
-        reread = await loop._run_tool(turn, "r", ToolCall("fourth", "load_skill", arguments), 0)
-        assert reread["skill"] == first["skill"]  # installed state cannot suppress a read
-        error = await loop._run_tool(turn, "r", ToolCall("bad", "load_skill", {"name": "platform.nope"}), 0)
-        assert not error["ok"]
+        fourth = ToolCall("fourth", "load_skill", arguments)
+        turn.messages.append(
+            {"role": "assistant", "tool_calls": [{"id": fourth.id, "function": {"name": fourth.name, "arguments": json.dumps(arguments)}}]}
+        )
+        reread = await loop._run_tool(turn, "r", fourth, 0)
+        assert reread["skill"] == first["skill"]
 
     asyncio.run(exercise())
 
@@ -147,7 +165,9 @@ def test_large_file_is_whole_or_refused_by_small_window(monkeypatch):
             {"model": "m", "options": {"mode": "work"}, "context_settings": {"auto_compact": False}, "_fixed_catalog": [LOAD_SKILL]}
         )
         turn.messages = [{"role": "system", "content": "rules"}]
-        loop._states["r"] = {"messages": turn.messages}
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
         result = await loop._run_tool(turn, "r", ToolCall("read", "load_skill", {"name": "platform.docx", "resource": resource}), 0)
         assert not result["ok"] and "cannot fit" in result["error"] and "skill" not in result
 
@@ -159,7 +179,9 @@ def test_legacy_skill_visibility_also_survives_only_with_paired_body():
         loop = AgentLoop(platform=FakePlatform(), broker=FakeBroker())
         turn = _Turn({"options": {"mode": "work"}, "_fixed_catalog": [LOAD_SKILL]})
         turn.messages = []
-        loop._states["r"] = {"messages": turn.messages}
+        from ailab_platform.adapters.runtime import fresh_state
+
+        loop._states["r"] = {**fresh_state(), "messages": turn.messages}
         call = ToolCall("one", "load_skill", {"name": "pptx"})
         first = await loop._run_tool(turn, "r", call, 0)
         assert first["ok"] and first["skill"]

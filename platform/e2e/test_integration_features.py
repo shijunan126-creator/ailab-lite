@@ -248,17 +248,28 @@ def test_admin_context_toggle_persists(logged_in, stack):
         page.get_by_role("tab", name="上下文", exact=True).click()
         switch = page.get_by_role("switch", name="自动压缩上下文", exact=True)
         expect(switch).to_have_attribute("aria-checked", str(original["auto_compact"]).lower())
-        switch.click()
+        # Exercise new budget controls in the production Portal, not only API schemas.
+        if not original["auto_compact"]:
+            switch.click()
+        aim = page.get_by_role("spinbutton", name="压缩后目标", exact=True)
+        expect(aim).to_have_value(str(original["target_aim_tokens"]))
+        aim.fill("31000")
+        if original["auto_compact"]:
+            switch.click()
         with page.expect_response(lambda r: r.url.endswith("/api/v1/admin/settings/context") and r.request.method == "PUT") as response:
             page.get_by_role("button", name="保存", exact=True).click()
         assert response.value.ok
+        assert response.value.json()["target_aim_tokens"] == 31000
         page.reload()
         page.get_by_role("tab", name="上下文", exact=True).click()
         expect(switch).to_have_attribute("aria-checked", str(not original["auto_compact"]).lower())
+        if original["auto_compact"]:
+            switch.click()
+        expect(page.get_by_role("spinbutton", name="压缩后目标", exact=True)).to_have_value("31000")
     finally:
         assert page.request.put(
             stack.portal + "/api/v1/admin/settings/context",
-            data={"auto_compact": original["auto_compact"], "threshold_ratio": original["threshold_ratio"]},
+            data={key: value for key, value in original.items() if key != "models"},
         ).ok
 
 

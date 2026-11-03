@@ -21,6 +21,7 @@ from ..accounts import LoginThrottle
 from ..agent.prompts import skills
 from ..catalog import get_catalog
 from ..config import settings
+from ..contracts.process import ProcessView
 from ..db import SessionLocal
 from ..deps import current_user, current_user_short, get_db
 from ..events import append_event, list_events
@@ -453,6 +454,31 @@ def cancel_run(run_id: str, user: User = Depends(current_user), db: Session = De
         run, _ = transition_run(db, run.id, RunStatus.CANCELED, reason="user_requested", commit=False)
         db.commit()
     return run_dict(db, run, detail=True)
+
+
+@router.get("/runs/{run_id}/process", response_model=ProcessView)
+def get_process(run_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    run = _get_owned_run(db, run_id, user)
+    from ..memory_recall.policy import source_available
+    from ..models import RunProcessSnapshot
+    from .process_snapshots import STOPPED, ProcessTooLarge, derive, latest_seq, valid_snapshot
+    from .process_view import PROCESS_SNAPSHOT_SCHEMA_VERSION
+
+    if not source_available(db, run):
+        return {"schema_version": PROCESS_SNAPSHOT_SCHEMA_VERSION, "source": "events", "items": []}
+    snapshot = db.get(RunProcessSnapshot, run_id)
+    if run.status in STOPPED and valid_snapshot(snapshot, db.scalar(select(latest_seq()).select_from(Run).where(Run.id == run_id))):
+        return {"schema_version": snapshot.schema_version, "source": "snapshot", "items": snapshot.items}
+    try:
+        items, _, _ = derive(db, run_id)
+    except ProcessTooLarge as exc:
+        raise HTTPException(413, "过程记录超过大小限制；原始事件仍保留") from exc
+    if run.status in STOPPED:
+        # The commit hook tries in this transaction; the bounded lifecycle repair
+        # also finds this run after a failed attempt or API restart.
+        db.info.setdefault("process_snapshot_runs", set()).add(run_id)
+        db.commit()
+    return {"schema_version": PROCESS_SNAPSHOT_SCHEMA_VERSION, "source": "events", "items": items}
 
 
 @router.get("/runs/{run_id}/events/history", response_model=list[EventOut])

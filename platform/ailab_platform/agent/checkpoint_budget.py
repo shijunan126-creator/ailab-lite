@@ -19,6 +19,8 @@ def bounded_checkpoint(state, limit):
     frozen = fresh_state()
     frozen.update(
         checkpoint_capacity_exceeded=True,
+        context_epoch=state.get("context_epoch", 0),
+        context_abi_version=state.get("context_abi_version"),
         workspace=state.get("workspace"),
         workspace_dirty=state.get("workspace_dirty", True),
         next_step=state["next_step"],

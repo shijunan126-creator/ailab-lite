@@ -112,14 +112,35 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         delivered={"/workspace/outputs/report.txt": 12},
         delivery_names={"/workspace/outputs/report.txt": "final.txt"},
     )
+    from ailab_platform.agent.context_usage import record_usage
+
+    record_usage(state, parent["model"], state["messages"], [], 321)
     assert save(api, parent["id"], headers, state=state).status_code == 200
     assert api.post(f"/internal/runs/{parent['id']}/status", headers=headers, json={"status": "succeeded"}).status_code == 200
     with SessionLocal() as db:
         lifecycle_once(db, now=datetime.now(UTC) + timedelta(days=8))
         assert db.get(RunCheckpoint, (parent["id"], 1)).expires_at is None
+    from sqlalchemy import delete
+
+    from ailab_platform.models import RunEvent
+
+    with SessionLocal() as db:
+        db.execute(delete(RunEvent).where(RunEvent.run_id == parent["id"]))
+        db.commit()
     child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "second"}).json()
     result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
     assert result["previous_model_context"] == {
+        "context_abi_version": 1,
+        "context_epoch": 0,
+        "prompt_anchors": state["prompt_anchors"],
+        "operational_state": {
+            "background_jobs": None,
+            "plan": [],
+            "workspace_dirty": False,
+            "file_wait_deadlines": None,
+            "pending": [],
+            "workspace": None,
+        },
         "messages": state["messages"],
         "tools": [],
         "delivered": state["delivered"],
@@ -143,6 +164,9 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         query = text(prefix + "SELECT * FROM run_checkpoints WHERE run_id = :rid AND expires_at IS NULL")
         plan = str(db.execute(query, {"rid": parent["id"]}).all())
         assert "INDEX" in plan.upper() or "Bitmap" in plan
+    rebuilt_history = api.get(f"/internal/runs/{child['id']}/model-context", headers=SERVICE).json()
+    assert rebuilt_history["history"][0]["id"] == parent["id"]
+    assert rebuilt_history["history"][0]["prompt"] == "first"
     edited = api.post(f"/v1/runs/{child['id']}/edit", headers=AUTH, json={"prompt": "different"}).json()
     rebuilt = api.get(f"/internal/runs/{edited['id']}/model-input", headers=SERVICE).json()
     assert rebuilt["context_boundary"] == "rebuilt" and "previous_model_context" not in rebuilt
@@ -461,3 +485,51 @@ def test_only_explicit_budget_resume_resets_window(api, kind):  # noqa: F811
     assert response.status_code in {200, 202}, response.text
     body = api.get(f"/internal/runs/{rid}", headers=SERVICE).json()
     assert (body["budget_window_id"] != rid) == (kind == "budget")
+
+
+def test_boundary_checkpoint_and_event_commit_or_rollback_together(api, monkeypatch):  # noqa: F811
+    from ailab_platform.api import routes_runtime
+    from ailab_platform.models import RunEvent
+
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers).status_code == 200
+    state = {
+        **fresh_state(),
+        "context_epoch": 1,
+        "context_boundary": {"reason": "access_revoked", "epoch": 1, "run_id": rid},
+        "messages": [{"role": "system", "content": "replacement"}],
+    }
+    original = routes_runtime.append_event
+
+    def fail(*args, **kw):
+        raise RuntimeError("injected boundary persistence failure")
+
+    monkeypatch.setattr(routes_runtime, "append_event", fail)
+    with pytest.raises(RuntimeError, match="injected"):
+        save(api, rid, headers, 1, state)
+    with SessionLocal() as db:
+        assert db.get(Run, rid).checkpoint_step == 1
+        assert not db.scalar(select(RunEvent.id).where(RunEvent.run_id == rid, RunEvent.type == "agent.context_boundary"))
+    monkeypatch.setattr(routes_runtime, "append_event", original)
+    assert save(api, rid, headers, 1, state).status_code == 200
+    assert save(api, rid, headers, 2, state).status_code == 200
+    with SessionLocal() as db:
+        events = list(db.scalars(select(RunEvent).where(RunEvent.run_id == rid, RunEvent.type == "agent.context_boundary")))
+        assert len(events) == 1 and events[0].payload["epoch"] == 1
+    assert api.get(f"/internal/runs/{rid}/checkpoint", headers=SERVICE).json()["state"] == state
+
+
+@pytest.mark.parametrize("jobs", [[], ["live-job"]])
+def test_context_pause_exposes_only_checkpoint_confirmed_lease_retention(api, jobs):  # noqa: F811
+    rid, _, headers = owned(api)
+    assert save(api, rid, headers, state={**fresh_state(), "background_jobs": jobs}).status_code == 200
+    response = api.post(
+        f"/internal/runs/{rid}/pause",
+        headers=headers,
+        json={"status": "interrupted", "auto_resume": False, "result": {"pause": {"kind": "context"}}},
+    )
+    assert response.status_code == 200, response.text
+    state = api.get(f"/internal/runs/{rid}/state", headers=SERVICE).json()
+    assert state["retain_background_lease"] is bool(jobs)
+    assert api.post(f"/v1/runs/{rid}/cancel", headers=AUTH).status_code == 200
+    assert api.get(f"/internal/runs/{rid}/state", headers=SERVICE).json()["retain_background_lease"] is False

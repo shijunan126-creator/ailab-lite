@@ -16,7 +16,7 @@ pytestmark = pytest.mark.e2e
 
 
 @pytest.mark.parametrize("mode,mobile", [("chat", False), ("work", False), ("chat", True), ("work", True)])
-def test_full_400k_thought_across_event_pages_is_readable_with_bounded_dom(page, stack, mode, mobile):
+def test_full_400k_thought_from_process_is_readable_with_bounded_dom(page, stack, mode, mobile):
     if mobile:
         page.set_viewport_size({"width": 390, "height": 844})
     conv = seed(stack, active=False)
@@ -35,7 +35,14 @@ with SessionLocal() as db:
 """.replace("RUN", repr(conv["run"])).replace("MODE", repr(mode))
     subprocess.run([sys.executable, "-c", code], cwd=PLATFORM, env=stack.env, check=True)
     requests = []
-    page.on("request", lambda request: requests.append(request.url) if "/events/history?" in request.url else None)
+    page.on(
+        "request",
+        lambda request: (
+            requests.append(request.url)
+            if f"/runs/{conv['run']}/process" in request.url or f"/runs/{conv['run']}/events/history?" in request.url
+            else None
+        ),
+    )
     login(page, stack, path="/c/" + conv["id"])
     head = page.locator(".steps-head")
     head.wait_for()
@@ -54,15 +61,14 @@ with SessionLocal() as db:
     page.mouse.wheel(0, 500)
     page.wait_for_function("() => document.querySelector('.work-timeline').scrollTop > 0")
     page.locator(".work-timeline").evaluate("el => el.scrollTop = 0")
-    # Traverse placeholders naturally. This loads the next event page when its sentinel approaches the viewport.
+    # Traverse the complete durable process through viewport placeholders; no event-history paging is needed.
     for _ in range(14):
         page.locator(".work-timeline").evaluate("el => el.scrollTop = el.scrollHeight")
         page.wait_for_timeout(100)
         if page.get_by_text("段落300结束。", exact=False).count():
             break
     page.get_by_text("段落300结束。", exact=False).wait_for()
-    assert any("after=200" in url for url in requests), requests
-    assert len(requests) == 2
+    assert len(requests) == 1 and requests[0].endswith(f"/runs/{conv['run']}/process"), requests
     mounted = page.locator(".md-chunks .viewport-block[data-mounted=true]").count()
     nodes = page.locator(".work-timeline *").count()
     assert mounted < 12, mounted

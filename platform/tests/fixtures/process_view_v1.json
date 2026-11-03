@@ -1,0 +1,1484 @@
+{
+  "events": [
+    {
+      "seq": 1,
+      "type": "agent.thinking",
+      "payload": {
+        "step": 0,
+        "text": "完整思考",
+        "seconds": 1
+      }
+    },
+    {
+      "seq": 2,
+      "type": "agent.thinking",
+      "payload": {
+        "step": 0,
+        "text": "，不会丢失。",
+        "seconds": 2
+      }
+    },
+    {
+      "seq": 3,
+      "type": "agent.delta",
+      "payload": {
+        "step": 0,
+        "text": "检查"
+      }
+    },
+    {
+      "seq": 4,
+      "type": "agent.message",
+      "payload": {
+        "step": 0,
+        "content": "检查资料后生成文件。"
+      }
+    },
+    {
+      "seq": 5,
+      "type": "plan.updated",
+      "payload": {
+        "steps": [
+          {
+            "id": "a",
+            "title": "检查",
+            "status": "running"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 6,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "load_skill",
+        "arguments": {
+          "name": "platform.pdf"
+        }
+      }
+    },
+    {
+      "seq": 7,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "load_skill",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 8,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "search_capabilities",
+        "arguments": {
+          "query": "pdf"
+        }
+      }
+    },
+    {
+      "seq": 9,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "search_capabilities",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 10,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "run_js",
+        "arguments": {
+          "code": "\n const x = 1;"
+        }
+      }
+    },
+    {
+      "seq": 11,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "run_js",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 12,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "search_images",
+        "arguments": {
+          "query": "猫"
+        }
+      }
+    },
+    {
+      "seq": 13,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "search_images",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 14,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "exec",
+        "arguments": {
+          "cmd": "python -V"
+        }
+      }
+    },
+    {
+      "seq": 15,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "exec",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 16,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "exec_wait",
+        "arguments": {}
+      }
+    },
+    {
+      "seq": 17,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "exec_wait",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 18,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "exec_kill",
+        "arguments": {}
+      }
+    },
+    {
+      "seq": 19,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "exec_kill",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 20,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "write_file",
+        "arguments": {
+          "path": "a"
+        }
+      }
+    },
+    {
+      "seq": 21,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "write_file",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 22,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "read_file",
+        "arguments": {
+          "path": "a"
+        }
+      }
+    },
+    {
+      "seq": 23,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "read_file",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 24,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "list_files",
+        "arguments": {
+          "path": "."
+        }
+      }
+    },
+    {
+      "seq": 25,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "list_files",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 26,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "deliver_file",
+        "arguments": {
+          "path": "/workspace/a.pdf"
+        }
+      }
+    },
+    {
+      "seq": 27,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "deliver_file",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 28,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "web_search",
+        "arguments": {
+          "query": "q"
+        }
+      }
+    },
+    {
+      "seq": 29,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "web_search",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 30,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "read_url",
+        "arguments": {
+          "url": "https://example.com"
+        }
+      }
+    },
+    {
+      "seq": 31,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "read_url",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 32,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "download_url",
+        "arguments": {
+          "url": "https://example.com/a"
+        }
+      }
+    },
+    {
+      "seq": 33,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "download_url",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 34,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "fetch_repo",
+        "arguments": {
+          "repo": "a/b",
+          "ref": "main"
+        }
+      }
+    },
+    {
+      "seq": 35,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "fetch_repo",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 36,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "fetch_packages",
+        "arguments": {
+          "packages": [
+            "a",
+            "b"
+          ]
+        }
+      }
+    },
+    {
+      "seq": 37,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "fetch_packages",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 38,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "save_skill",
+        "arguments": {
+          "name": "s",
+          "mode": "update"
+        }
+      }
+    },
+    {
+      "seq": 39,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "save_skill",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 40,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "search_library",
+        "arguments": {
+          "query": "q"
+        }
+      }
+    },
+    {
+      "seq": 41,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "search_library",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 42,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "read_library_file",
+        "arguments": {
+          "file_id": "f"
+        }
+      }
+    },
+    {
+      "seq": 43,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "read_library_file",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 44,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "copy_library_file",
+        "arguments": {
+          "filename": "a"
+        }
+      }
+    },
+    {
+      "seq": 45,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "copy_library_file",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 46,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "memory",
+        "arguments": {}
+      }
+    },
+    {
+      "seq": 47,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "memory",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 48,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "recall_history",
+        "arguments": {
+          "query": "q"
+        }
+      }
+    },
+    {
+      "seq": 49,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "recall_history",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 50,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "update_plan",
+        "arguments": {}
+      }
+    },
+    {
+      "seq": 51,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "update_plan",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 52,
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "unknown_tool",
+        "arguments": {}
+      }
+    },
+    {
+      "seq": 53,
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "unknown_tool",
+        "ok": true,
+        "stdout": "result",
+        "sources": [
+          {
+            "url": "https://example.com",
+            "title": "来源",
+            "site": "example.com"
+          },
+          {
+            "url": "javascript:bad"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 54,
+      "type": "agent.skill",
+      "payload": {
+        "name": "platform.pdf",
+        "title": "PDF 文档"
+      }
+    },
+    {
+      "seq": 55,
+      "type": "plan.updated",
+      "payload": {
+        "steps": [
+          {
+            "id": "a",
+            "title": "检查",
+            "status": "done"
+          }
+        ]
+      }
+    },
+    {
+      "seq": 56,
+      "type": "agent.ask_user",
+      "payload": {
+        "question_id": "q",
+        "question": "继续？",
+        "options": [
+          "是"
+        ],
+        "allow_text": false
+      }
+    },
+    {
+      "seq": 57,
+      "type": "agent.ask_answered",
+      "payload": {
+        "question_id": "q",
+        "answer": "是"
+      }
+    },
+    {
+      "seq": 58,
+      "type": "agent.steered",
+      "payload": {
+        "queued_id": "s",
+        "prompt": "增加图表"
+      }
+    },
+    {
+      "seq": 59,
+      "type": "run.resumed",
+      "payload": {}
+    },
+    {
+      "seq": 60,
+      "type": "agent.model_fallback",
+      "payload": {
+        "from": "a",
+        "to": "b"
+      }
+    },
+    {
+      "seq": 61,
+      "type": "agent.context_compacted",
+      "payload": {
+        "scope": "run",
+        "messages": 20
+      }
+    },
+    {
+      "seq": 62,
+      "type": "agent.budget",
+      "payload": {
+        "kind": "nudge",
+        "minutes": 4,
+        "reason": "identical_call_result",
+        "extension_minutes": 5
+      }
+    },
+    {
+      "seq": 63,
+      "type": "agent.budget",
+      "payload": {
+        "kind": "wrap_up",
+        "minutes": 4,
+        "reason": "identical_call_result",
+        "extension_minutes": 5
+      }
+    },
+    {
+      "seq": 64,
+      "type": "agent.budget",
+      "payload": {
+        "kind": "soft",
+        "minutes": 4,
+        "reason": "identical_call_result",
+        "extension_minutes": 5
+      }
+    },
+    {
+      "seq": 65,
+      "type": "agent.budget",
+      "payload": {
+        "kind": "extended",
+        "minutes": 4,
+        "reason": "identical_call_result",
+        "extension_minutes": 5
+      }
+    },
+    {
+      "seq": 66,
+      "type": "agent.budget",
+      "payload": {
+        "kind": "paused",
+        "minutes": 4,
+        "reason": "identical_call_result",
+        "extension_minutes": 5
+      }
+    },
+    {
+      "seq": 67,
+      "type": "agent.attachments",
+      "payload": {
+        "files": [
+          {
+            "filename": "a.txt",
+            "chars": 10,
+            "truncated": true
+          }
+        ]
+      }
+    },
+    {
+      "seq": 68,
+      "type": "agent.skill",
+      "payload": {
+        "name": "missing",
+        "status": "failed",
+        "error": "不存在"
+      }
+    },
+    {
+      "seq": 69,
+      "type": "agent.waiting_sandbox",
+      "payload": {}
+    },
+    {
+      "seq": 70,
+      "type": "preview.updated",
+      "payload": {
+        "filename": "a.pdf"
+      }
+    },
+    {
+      "seq": 71,
+      "type": "preview.failed",
+      "payload": {
+        "filename": "a.pdf",
+        "error": "失败"
+      }
+    },
+    {
+      "seq": 72,
+      "type": "agent.warning",
+      "payload": {
+        "message": "警告"
+      }
+    },
+    {
+      "seq": 73,
+      "type": "agent.autodeliver",
+      "payload": {
+        "filename": "a.pdf"
+      }
+    },
+    {
+      "seq": 74,
+      "type": "agent.message",
+      "payload": {
+        "step": 2,
+        "content": "最终回答不属于过程"
+      }
+    },
+    {
+      "seq": 75,
+      "type": "run.status",
+      "payload": {
+        "status": "succeeded"
+      }
+    }
+  ],
+  "items": [
+    {
+      "kind": "thinking",
+      "step": 0,
+      "text": "完整思考，不会丢失。",
+      "seconds": 2,
+      "done": true
+    },
+    {
+      "kind": "text",
+      "step": 0,
+      "text": "检查资料后生成文件。",
+      "confirmed": true
+    },
+    {
+      "kind": "plan",
+      "steps": [
+        {
+          "id": "a",
+          "title": "检查",
+          "status": "running"
+        }
+      ]
+    },
+    {
+      "kind": "steps",
+      "steps": [
+        {
+          "name": "load_skill",
+          "label": "读取技能",
+          "detail": "PDF 文档",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "search_capabilities",
+          "label": "查找可用能力",
+          "detail": "pdf",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "run_js",
+          "label": "运行 JavaScript",
+          "detail": "const x = 1;",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "search_images",
+          "label": "搜索图片",
+          "detail": "猫",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "exec",
+          "label": "运行命令",
+          "detail": "python -V",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "exec_wait",
+          "label": "查看命令进度",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "exec_kill",
+          "label": "停止命令",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "write_file",
+          "label": "写入文件",
+          "detail": "a",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "read_file",
+          "label": "读取文件",
+          "detail": "a",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "list_files",
+          "label": "查看目录",
+          "detail": ".",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "deliver_file",
+          "label": "交付文件",
+          "detail": "a.pdf",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "web_search",
+          "label": "搜索网页",
+          "detail": "q",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "read_url",
+          "label": "读取网页",
+          "detail": "https://example.com",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "download_url",
+          "label": "下载文件",
+          "detail": "https://example.com/a",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "fetch_repo",
+          "label": "获取仓库",
+          "detail": "a/b@main",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "fetch_packages",
+          "label": "安装依赖",
+          "detail": "a b",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "save_skill",
+          "label": "更新个人技能",
+          "detail": "s",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "search_library",
+          "label": "搜索资料库",
+          "detail": "q",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "read_library_file",
+          "label": "阅读资料",
+          "detail": "f",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "copy_library_file",
+          "label": "复制到工作区",
+          "detail": "a",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "memory",
+          "label": "更新记忆",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "recall_history",
+          "label": "回忆历史对话",
+          "detail": "q",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "update_plan",
+          "label": "更新计划",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        },
+        {
+          "name": "unknown_tool",
+          "label": "unknown_tool",
+          "status": "ok",
+          "modelStep": 1,
+          "output": "result",
+          "sources": [
+            {
+              "url": "https://example.com",
+              "title": "来源",
+              "site": "example.com"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "kind": "plan",
+      "steps": [
+        {
+          "id": "a",
+          "title": "检查",
+          "status": "done"
+        }
+      ]
+    },
+    {
+      "kind": "ask",
+      "id": "q",
+      "question": "继续？",
+      "options": [
+        "是"
+      ],
+      "allowText": false,
+      "answer": "是"
+    },
+    {
+      "kind": "steer",
+      "id": "s",
+      "prompt": "增加图表"
+    },
+    {
+      "kind": "steps",
+      "steps": [
+        {
+          "name": "run.resumed",
+          "label": "从中断处继续",
+          "status": "ok"
+        },
+        {
+          "name": "agent.model_fallback",
+          "label": "已换用备用模型",
+          "detail": "a → b",
+          "status": "note"
+        },
+        {
+          "name": "agent.context_compacted",
+          "label": "已压缩本轮较早的步骤",
+          "detail": "20 条",
+          "status": "note"
+        },
+        {
+          "name": "agent.budget",
+          "label": "提醒换个方法",
+          "detail": "同一操作重复得到相同结果",
+          "status": "note"
+        },
+        {
+          "name": "agent.budget",
+          "label": "开始收尾",
+          "detail": "identical_call_result",
+          "status": "note"
+        },
+        {
+          "name": "agent.budget",
+          "label": "检查进度",
+          "detail": "已工作 4 分钟",
+          "status": "note"
+        },
+        {
+          "name": "agent.budget",
+          "label": "有进展，继续工作",
+          "detail": "延长 5 分钟",
+          "status": "ok"
+        },
+        {
+          "name": "agent.budget",
+          "label": "已暂停",
+          "detail": "identical_call_result",
+          "status": "note"
+        },
+        {
+          "name": "agent.attachments",
+          "label": "已读取附件",
+          "detail": "a.txt（10 字，内容较长，只读了开头部分）",
+          "status": "ok"
+        },
+        {
+          "name": "agent.skill",
+          "label": "技能未能加载",
+          "detail": "missing：不存在",
+          "status": "failed"
+        },
+        {
+          "name": "agent.waiting_sandbox",
+          "label": "排队中，马上开始…",
+          "status": "note"
+        },
+        {
+          "name": "preview.updated",
+          "label": "预览已更新",
+          "detail": "a.pdf",
+          "status": "ok"
+        },
+        {
+          "name": "preview.failed",
+          "label": "预览生成失败",
+          "detail": "a.pdf：失败",
+          "status": "failed"
+        },
+        {
+          "name": "agent.warning",
+          "label": "提示",
+          "detail": "警告",
+          "status": "failed"
+        },
+        {
+          "name": "agent.autodeliver",
+          "label": "已存入资料库",
+          "detail": "a.pdf",
+          "status": "note"
+        }
+      ]
+    }
+  ]
+}

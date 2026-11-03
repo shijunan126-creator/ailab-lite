@@ -1,0 +1,80 @@
+{
+  "events": [
+    {
+      "type": "agent.message",
+      "payload": {
+        "step": 0,
+        "content": "old progress"
+      }
+    },
+    {
+      "type": "run.resumed",
+      "payload": {}
+    },
+    {
+      "type": "agent.delta",
+      "payload": {
+        "step": 0,
+        "text": "new partial"
+      }
+    },
+    {
+      "type": "agent.tool_call",
+      "payload": {
+        "step": 1,
+        "name": "exec",
+        "arguments": {
+          "cmd": "sleep 30"
+        }
+      }
+    },
+    {
+      "type": "agent.tool_result",
+      "payload": {
+        "step": 1,
+        "name": "exec",
+        "ok": true,
+        "running": true,
+        "job_key": "job"
+      }
+    }
+  ],
+  "status": "canceled",
+  "items": [
+    {
+      "kind": "text",
+      "step": 0,
+      "text": "old progress",
+      "confirmed": true
+    },
+    {
+      "kind": "steps",
+      "steps": [
+        {
+          "name": "run.resumed",
+          "label": "从中断处继续",
+          "status": "ok"
+        }
+      ]
+    },
+    {
+      "kind": "text",
+      "step": 0,
+      "text": "new partial"
+    },
+    {
+      "kind": "steps",
+      "steps": [
+        {
+          "name": "exec",
+          "label": "运行命令 · 已取消",
+          "detail": "sleep 30",
+          "status": "failed",
+          "modelStep": 1,
+          "output": "",
+          "jobKey": "job"
+        }
+      ]
+    }
+  ]
+}

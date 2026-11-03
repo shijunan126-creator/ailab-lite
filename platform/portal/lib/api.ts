@@ -677,3 +677,26 @@ function parseChunk(chunk: string): EventItem | null {
 
 export type SkillPolicy = { scope: string; name: string; state: "allowed" | "review" | "disabled" };
 export type SkillReview = { file_id: string; name: string; owner_id: string };
+
+export type Source = { title?: string; url: string; site?: string };
+export type Step = {
+  name: string;
+  label: string;
+  detail?: string;
+  status: "running" | "ok" | "failed" | "note";
+  output?: string;
+  modelStep?: number;
+  background?: boolean;
+  jobKey?: string;
+  sources?: Source[];
+};
+export type PlanStep = { id: string; title: string; status: "pending" | "running" | "done" | "skipped" | "failed" };
+export type ProcessItem =
+  | { kind: "plan"; steps: PlanStep[] }
+  | { kind: "ask"; id: string; question: string; options: string[]; allowText: boolean; answer?: string }
+  | { kind: "text"; step: number; text: string; confirmed?: boolean }
+  | { kind: "thinking"; step: number; text: string; seconds: number; done: boolean }
+  | { kind: "steps"; steps: Step[] }
+  | { kind: "steer"; id: string; prompt: string }; // a message the user added while this answer was running
+
+export type ProcessView = { schema_version: 2; source: "snapshot" | "events"; items: ProcessItem[] };

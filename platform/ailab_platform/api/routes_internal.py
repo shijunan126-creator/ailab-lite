@@ -273,6 +273,7 @@ def internal_run_state(run_id: str, x_run_attempt: str | None = Header(default=N
                 )
     return {
         "steer_pending": pending,
+        "retain_background_lease": run.status == RunStatus.INTERRUPTED and bool((run.runtime_meta or {}).get("retain_background_lease")),
         "status": run.status,
         "finished_at": run.finished_at,
         "job_id": (run.runtime_meta or {}).get("job_id", run.id),

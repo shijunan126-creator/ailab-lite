@@ -149,7 +149,9 @@ def test_original_user_index_comes_from_real_paginated_assembly(monkeypatch):
     state = platform.checkpoint["state"]
     original = state["messages"][state["user_message_index"]]
     assert original["role"] == "user" and original["content"] == "current request"
-    assert state["messages"][2]["content"].startswith("历史摘要")
+    assert any(
+        "prior summary" in m.get("content", "") and m.get("content", "").startswith("<conversation_checkpoint>") for m in state["messages"]
+    )
 
 
 def test_running_polls_do_not_checkpoint_workspace(monkeypatch):

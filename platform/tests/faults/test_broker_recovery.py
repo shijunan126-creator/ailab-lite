@@ -558,3 +558,27 @@ def test_terminal_run_is_reconciled_without_waiting_for_ttl(env):
     manager.platform = Platform()
     manager.cleanup_once()
     assert provider.inspect(handle.provider_ref) is None
+
+
+@pytest.mark.parametrize("retained", [False, True])
+def test_context_pause_retains_only_explicit_bounded_background_lease(env, retained):
+    make, provider, store, _ = env
+    manager = make()
+    handle = take(manager)
+
+    class Platform:
+        def get_run(self, run_id):
+            return {"status": "interrupted", "retain_background_lease": retained}
+
+        def append_event(self, *args):
+            pass
+
+    manager.platform = Platform()
+    manager.cleanup_once()
+    assert (provider.inspect(handle.provider_ref) is not None) == retained
+    if retained:
+        lease = store.get(handle.lease_id)
+        lease["expires_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
+        manager._save(lease)
+        manager.cleanup_once()
+        assert provider.inspect(handle.provider_ref) is None
