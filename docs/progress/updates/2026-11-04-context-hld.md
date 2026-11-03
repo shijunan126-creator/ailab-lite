@@ -36,9 +36,6 @@
 - 迁移前已被 GC 的过程事件无法恢复；超过 8 MiB 的快照拒绝物化并保留事件。
 - 因上下文暂停而保留的沙箱受原有 TTL/最长寿命回收约束。
 
-## 合并与部署
+## 合并
 
-- [PR #153](https://github.com/shijunan126-creator/ailab-lite/pull/153) head `744e204` 的 9 项 CI 全部成功、无评审意见，squash 为 `main@db7e2e1`。
-- 已增量部署 `release-db7e2e1`：只重建后端共享镜像（API/Agent/Broker/Worker）与 Portal，Office、文档读取、爬虫/OCR 等镜像与资源限额复用；迁移 0049→0051；12 个服务 running，10 项健康检查 healthy。按约定未备份、未做部署后测试、浏览器或真实模型验收；健康检查只证明启动成功。
-- VM Docker 剩余磁盘 581→295 MiB，未清理；下次构建前需先释放空间。
-- 下一步：用户使用反馈。
+[PR #153](https://github.com/shijunan126-creator/ailab-lite/pull/153) head `744e204` 的 9 项 CI 全部成功，squash 为 `main@db7e2e1`。下一步：用户使用反馈。
