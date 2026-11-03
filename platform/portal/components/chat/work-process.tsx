@@ -113,6 +113,10 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
     return () => observer.disconnect();
   }, [open, more, loading, error, onLoad]);
 
+  useEffect(() => {
+    if (open && !items && !loading && !error) onLoad();
+  }, [open, items, loading, error, onLoad]);
+
   const doing = running && !open ? current(items, thinking) : "";
   return <section className={`work-process steps ${open ? "open" : ""} ${running ? "is-live" : ""}`} aria-label={chat ? "思考过程" : "工作过程"}>
     <button className="steps-head" aria-expanded={open} onClick={() => {
@@ -138,7 +142,7 @@ export default function WorkProcess({ thoughtsExpanded, onToggleThought, run, it
               </li>)}</ol>
               : <ol className="steps-list">{item.steps.map((step, j) => <StepRow key={j} step={step} active={active} label={step.label} />)}</ol>}
           </div>) : null}
-          {items && !items.length && !loading && !active ? <div className="hint">没有可显示的过程</div> : null}
+          {items && !items.length && !loading && !running && run.status !== "waiting_user" ? <div className="hint">没有可显示的过程</div> : null}
           {loading ? <div className="pr-loading"><span /><span /><span /></div> : null}
           {error ? <button className="link" onClick={onLoad}>加载失败，重试</button> : null}
           {more ? <div ref={sentinel} className="process-more">{!loading ? <button className="link" onClick={onLoad}>继续加载</button> : null}</div> : null}

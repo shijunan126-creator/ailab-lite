@@ -97,6 +97,11 @@ def test_events_finished_only_and_keep_summary(env):
             db.flush()
             db.add(RunEvent(run_id=id, seq=1, type="x", created_at=OLD))
         db.commit()
+        from ailab_platform.api.process_snapshots import materialize
+
+        assert purge_run_events(db, NOW) == 0  # no projection: retain even non-display events conservatively
+        materialize(db, "old")
+        db.commit()
         assert purge_run_events(db, NOW) == 1
         assert purge_run_events(db, NOW) == 0
         assert db.get(Run, "old").summary == "keep"

@@ -22,6 +22,7 @@ from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
 from ..skill_drafts.service import draft_forever
+from . import process_snapshots as process_snapshots
 from .jobs import router as jobs_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
