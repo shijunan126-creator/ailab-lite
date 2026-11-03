@@ -15,6 +15,7 @@ from ..model_policy import ModelPolicy, estimator
 from .budgets import ContextPause
 from .context_protocol import protocol_groups
 from .context_rendering import block, loaded_modules, semantic_message
+from .skill_modules import SUMMARY_MARKER
 
 STALE_BLOCKS = ("<conversation_checkpoint>", "<runtime_state>", "<loaded_modules>", "历史摘要（仅作背景）：")
 
@@ -243,7 +244,12 @@ def stage_context(band, prefix, semantic, prior, state, tools, protected=(), cur
         if start < len(prefix) or any(i in protected for i in range(start, end)):
             continue
         group = prior[start:end]
-        if any(m.get("role") == "system" and isinstance(m.get("content"), str) and m["content"].startswith(STALE_BLOCKS) for m in group):
+        if any(
+            m.get("role") == "system"
+            and isinstance(m.get("content"), str)
+            and (m["content"].startswith(STALE_BLOCKS) or SUMMARY_MARKER in m["content"])
+            for m in group
+        ):
             continue
         groups.append(group)
     selected = []

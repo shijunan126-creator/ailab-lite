@@ -425,3 +425,15 @@ def test_optional_navigation_yields_before_latest_complete_unit(prefix_tokens):
     assert staged.measurements["reason"] == "band"
     assert staged.measurements["after_tokens"] <= band.ceiling
     assert any(message.get("tool_call_id") == "latest" for message in staged.messages)
+
+
+def test_legacy_module_marker_is_replaced_not_retained_as_latest_group():
+    from ailab_platform.agent.skill_modules import SUMMARY_MARKER
+
+    entries = [["n" * 64, f"{i:03}" + "r" * 509, "a" * 64] for i in range(512)]
+    marker = {"role": "system", "content": SUMMARY_MARKER + json.dumps(entries)}
+    prior = [*PREFIX, CURRENT, *pair("latest", 100), marker]
+    staged = stage_context(band_for(128000), PREFIX, ContextSummary(), prior, {}, [], {2})
+    assert not any(SUMMARY_MARKER in message.get("content", "") for message in staged.messages if isinstance(message.get("content"), str))
+    assert any(message.get("tool_call_id") == "latest" for message in staged.messages)
+    assert staged.measurements["after_tokens"] <= 48000
