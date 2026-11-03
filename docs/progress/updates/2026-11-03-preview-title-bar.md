@@ -31,3 +31,9 @@
 
 - 网页标签外链图标未单独截图，由既有 reader E2E 覆盖功能。
 - 上游“更多”菜单中的适合页面 / 实际大小 / 重新加载不再提供。
+
+## 合并与部署
+
+- PR #150 最终 head `d38bd71`：9 项 CI 成功，Linux E2E 182 passed / 6 skipped；squash 为 `main@6ac39ed`，树与 CI head 相同。
+- 用户本轮明确授权部署。本机仅重建 Portal（Office 查看器 bundle 在 Portal 镜像内构建）为 `release-6ac39ed`：npm 依赖层缓存命中，`compose up --no-deps --wait portal` 成功并 healthy，12 服务 running；平台/Office 等镜像沿用，无迁移（0048）。
+- 部署后只核对容器状态、新 bundle 已在线、`/login` HTTP 200；未备份，未另跑测试、浏览器或真模型（浏览器检查已在合并前完成）。部署细节在本机私有记录，不入库。
