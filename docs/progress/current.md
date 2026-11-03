@@ -2,7 +2,7 @@
 
 - 当前分支`t3/sidebar-office-file-features`，发布前已fetch核对`origin/main@8cbc216`，产品56文件摘要与[最终修复记录](updates/2026-11-03-office-review-fixes.md)一致。用户本轮明确授权：全部修改提PR，最终CI全绿后合并，增量部署最新main；不做备份或部署后重复测试/浏览器/真模型。
 - 范围：四格式viewer指导/能力清单、侧栏选区续期/直问/骨架、文件库/分享原生优先、Work按需分页，以及独立审查两项P2的终态失败回退与原子视图顺序围栏。最终Portal226项/build、PG/Redis2228 passed/67 skipped、Office26＋2项E2E通过；前序SQLite与整体183项E2E的阶段基线/失败修复详见原记录，不混称相同最终树全量重跑。
-- 下一步：提交PR并等待最终head的全部CI和审查状态，绿后merge；部署固定最新main，只构建变化组件、复用依赖。当前尚未push/merge/部署，既有改动均保留；旧活动工作区间歇失败未复现且根因仍未知，真实模型/真实Docker长时边界见记录。私有部署资料只留本机配置目录。
+- 已提交[PR #149](https://github.com/shijunan126-creator/ailab-lite/pull/149)，产品提交`0b901bf`；接下来等待最终head的全部CI和审查状态，绿后merge，再固定最新main增量部署。当前尚未merge/部署，产品摘要与本地验证一致；旧活动工作区间歇失败未复现且根因仍未知，真实模型/真实Docker长时边界见记录。私有部署资料只留本机配置目录。
 
 ---
 
