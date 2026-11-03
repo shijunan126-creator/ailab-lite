@@ -56,3 +56,10 @@ API v1无key的旧客户端仍不能获得操作级幂等，不同操作同时�
 ## PR与合并授权（2026-11-03）
 
 用户追加“提pr和merge”。已fetch，origin/main仍为fc63e5f，分支干净；e8eadc3相对已部署产品提交e05d9a8仅有部署文档，platform/images/vendor一致。本轮创建PR并等待最终head的全部CI、核对评审及合并状态后squash；不用gh --auto替代等待，也不因部署成功跳过CI。PR及合并结果在完成后补记；历史回填/清理保持原授权边界。
+
+
+### PR #152：PostgreSQL CI夹具隔离修正
+
+[PR #152](https://github.com/shijunan126-creator/ailab-lite/pull/152) 首轮head e2004ca，CI run41602049776的PostgreSQL为2232 passed / 83 skipped / 1 failed：test_pdf_inflight_selection_is_not_replaced_and_failure_is_terminal缺ocr_generation。相邻缓存测试与该测试共用账号、scanned.pdf文件名；Linux同秒生成的PIL PDF字节相同，普通上传复用前一个READY/OCR已完成文件，request_extraction合法直接返回done，未创建新generation。日志显示后一个文件处理入口因READY跳过，固定同一payload回归在SQLite/PG均能稳定复现，不能称为OCR功能失效或数据库差异。
+
+修正共享test_document_context.upload夹具为显式disposition=copy，新增固定相同PDF字节、先缓存OCR再上传第二夹具的回归，验证不同file_id、后者新建pending/generation且无旧OCR页。没有改产品、清缓存、加等待/重试或放宽原断言。基线e2004ca＋两份测试文件修正：文档上下文、读取可靠性、删除审查、分叉文档状态与删除运行时五模块，SQLite57 passed、独立临时PostgreSQL57 passed；新增回归修改前双库失败、修改后通过，Ruff/格式与diff检查通过。临时PG已清理。该次只改测试/文档，无需重复Portal构建或部署；产品仍与已部署e05d9a8相同。下一步等待新head全部CI/评审通过后合并。

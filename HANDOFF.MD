@@ -4,6 +4,7 @@
 - 重试身份、内容复用、独立副本是三个合同；测试要独立文件时显式disposition=copy。操作收据与文件删除解耦，永久删除清除文件名但留失效墓碑。共享库引用删除影响所有引用，不后台合并旧实体。
 - 自动交付不能按size判变，不能把当前恢复文件直接标为已交付，也不能只按path/hash固定delivery_id：A→B→A是三次修订。先持久化修订意图；恢复先读API确认结果，再核对当前字节；同id异内容422与fencing409分开。
 - 原名回填只能用经Run/Artifact关联校验的API生成storage_key，不剥数字后缀、不捏造旧目录。排队消息晋升不能重新认领上传来源。API提交后响应序列化失败不能删已提交对象。
+- 共享文档测试夹具必须显式copy：PIL生成PDF的CreationDate按秒，同一秒内容可能完全相同；普通上传会合法复用前一测试的READY文件/OCR缓存。不能靠生成耗时、改时间戳、清掉产品缓存或重试掩盖测试状态串用；用固定同一payload先写缓存再新建夹具验证隔离。
 - 页头按钮不要复用默认opacity=0的.row-actions。新worktree使用独立venv；共享venv的editable路径会使子进程读旧代码。合同、验收与限制见[本轮记录](docs/progress/updates/2026-11-03-file-identity-repair.md)。
 
 ## 2026-11-03 预览标题栏

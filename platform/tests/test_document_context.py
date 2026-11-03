@@ -15,7 +15,8 @@ from tests.test_ocr import text_pdf
 
 
 def upload(c, name, data, mime):
-    response = c.post("/v1/files", headers=AUTH, files={"upload": (name, data, mime)})
+    # Each fixture owns mutable processing/OCR state, even when another test produced identical bytes.
+    response = c.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data, mime)})
     assert response.status_code == 201
     fid = response.json()["id"]
     process_file(fid, platform=ApiClient(c))

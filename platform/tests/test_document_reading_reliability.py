@@ -438,3 +438,23 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
     from ailab_platform.internal_skills import load
 
     assert "不要启动沙箱sleep" in load("platform.pdf.read", "zcode-3c5b227-ailab1")
+
+
+def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(monkeypatch):
+    from ailab_platform.api.routes_ocr import request_extraction
+
+    monkeypatch.setattr(settings, "ocr_executor_url", "http://unused")
+    payload = office_image("pdf")  # one payload makes the cross-test collision deterministic
+    with TestClient(app) as c:
+        first = upload(c, "ocr-fixture-isolation.pdf", payload, "application/pdf")
+        with SessionLocal() as db:
+            cache_page(db, db.get(FileObject, first), 0, "previous case OCR")
+            db.commit()
+        second = upload(c, "ocr-fixture-isolation.pdf", payload, "application/pdf")
+        assert second != first
+        with SessionLocal() as db:
+            file = db.get(FileObject, second)
+            assert request_extraction(db, file, [1])["ocr"] == "pending"
+            assert file.meta["ocr_generation"]
+            assert db.get(OcrPageResult, (second, 0, settings.ocr_engine_fingerprint or "test")) is None
+            db.rollback()
