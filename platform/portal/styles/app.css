@@ -636,3 +636,10 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .pdf-pill button:hover:not(:disabled) { background: rgb(255 255 255 / 16%); color: #fff; }
 .pdf-pill button:disabled { opacity: .4; }
 .pdf-zoom { min-width: 40px; text-align: center; }
+/* On a phone the viewer's bar carries up to seven controls: tighten it so the file name keeps room to be read. */
+@media (max-width: 720px) {
+  .viewer-bar { gap: 2px; padding: 8px 6px 8px 12px; }
+  .viewer-bar > .file-tile, .viewer-bar > .viewer-name { margin-right: 4px; }
+  .viewer-bar .icon-btn { width: 30px; }
+  .viewer-bar .doc-tools::after { display: none; }
+}
