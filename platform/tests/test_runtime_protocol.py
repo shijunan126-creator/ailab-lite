@@ -112,6 +112,9 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         delivered={"/workspace/outputs/report.txt": 12},
         delivery_names={"/workspace/outputs/report.txt": "final.txt"},
     )
+    from ailab_platform.agent.context_usage import record_usage
+
+    record_usage(state, parent["model"], state["messages"], [], 321)
     assert save(api, parent["id"], headers, state=state).status_code == 200
     assert api.post(f"/internal/runs/{parent['id']}/status", headers=headers, json={"status": "succeeded"}).status_code == 200
     with SessionLocal() as db:
@@ -129,6 +132,7 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
     assert result["previous_model_context"] == {
         "context_abi_version": 1,
         "context_epoch": 0,
+        "prompt_anchors": state["prompt_anchors"],
         "operational_state": {
             "background_jobs": None,
             "plan": [],
