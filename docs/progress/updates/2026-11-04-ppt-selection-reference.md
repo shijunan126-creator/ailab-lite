@@ -46,3 +46,7 @@
 真实浏览器：新增普通表格/全空单列表格 × 添加到对话/直接提问四组合，隔离栈使用真实API/Worker/Broker/Chromium和mock模型/沙箱，四组合全部通过（`AILAB_E2E=1 AILAB_TEST_REDIS_URL=<throwaway Redis> AILAB_E2E_BASE_PORT=18691 AILAB_E2E_PORTAL_PORT=13691 python -m pytest e2e/test_office_native.py -k ppt_table_reference_actions -q --tb=short`，exit0）；确认两个动作实际提交引用的原文字段、file_id和shape locator。首轮E2E初始化与同时运行的Portal构建发生资源复制冲突；串行重启后新测试又误用了文本形状的 `.pptx-slide` 选择器，截图/DOM确认表格是HTML table，已修正为点击真实table节点，不更改产品、不延长等待/跳过断言。
 
 未测：PG、真实模型、真实容器沙箱；不宣称视觉理解质量或生产容量已验。原始日志/生成PPTX/reader不提交仓库，没有发布或部署。一次性栈由fixture停止，专用Redis已清理；下一步用户按需授权发布/部署，当前仅本地提交。
+
+## PR 与合并授权
+
+用户追加要求提PR并merge。发布前fetch确认 `origin/main@3d85a86e` 未前进，产品基线为 `17bdf824`；前述本地结果继续适用，本次仅更新授权/交接记录，不重复产品检查。提交后核对最终head的CI、评审与合并条件，通过后squash；不使用无required-checks仓库中可能立即合并的 `--auto`。本轮不部署。
