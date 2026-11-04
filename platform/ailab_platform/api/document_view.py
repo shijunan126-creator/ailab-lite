@@ -93,7 +93,7 @@ def validate_refs(db, user, refs):
 
             filename, text = workspace_reference(db, user, ref)
         quote = normalized(ref.quote)
-        if not quote or quote not in normalized(text):
+        if ref.quote and (not quote or quote not in normalized(text)):
             raise HTTPException(422, "quote does not match document range")
         result.append({**target, "filename": filename})
     return result

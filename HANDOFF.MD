@@ -1245,3 +1245,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 # 2026-11-04 CI总时限诊断
 
 - GitHub job标记cancelled先读check annotation及逐段进度日志；总timeout包含容器/依赖准备和artifact收尾。持续推进到93%后撞总时限，与某项断言失败/卡死不同；预算应按实际全套耗时留收尾与runner波动空间，不调整验收阈值或用重试掩盖。见[PR158时限证据](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。
+
+## 2026-11-04 无文字选区与消息引用
+
+- PPT 点击形状/整页、PDF 点击页面及空单元格可以有合法 locator 而没有选中文字；不要把 `Selection.text` 允许空字符串而 `DocRef.quote` 要求非空。空 quote 表示位置引用，必须照常验证权限、版本和位置；有 quote 才做文本匹配，纯空白仍拒绝。不能虚构引文或静默丢掉引用来消除422。回归与边界见[记录](docs/progress/updates/2026-11-04-ppt-selection-reference.md)。

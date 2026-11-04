@@ -150,7 +150,53 @@ def test_refs_are_frozen_deduplicated_and_sent_as_selection_only(api):  # noqa: 
         assert len(list(db.scalars(select(MessageDocRef).where(MessageDocRef.run_id == rid)))) == 1
 
 
-@pytest.mark.parametrize("change,status", [({"version": "stale"}, 409), ({"at": "p:2"}, 422), ({"quote": "invented"}, 422)])
+@pytest.mark.parametrize("quote", ["quoted words", ""])
+@pytest.mark.parametrize("change,status", [({"version": "stale"}, 409), ({"at": "p:2"}, 422)])
+def test_reference_identity_is_checked_without_quoted_text(api, quote, change, status):  # noqa: F811
+    fid, version, _ = document(api)
+    response = send(api, conv(api), [{**reference(fid, version), "quote": quote, **change}])
+    assert response.status_code == status, response.text
+
+
+@pytest.mark.parametrize("quote", ["", "quoted words"])
+def test_location_reference_survives_send_and_retry(api, quote):  # noqa: F811
+    from tests.test_conversations import _finish
+
+    fid, version, _ = document(api)
+    cid = conv(api)
+    ref = {**reference(fid, version), "quote": quote}
+    first = send(api, cid, [ref])
+    assert first.status_code == 201, first.text
+    assert first.json()["doc_refs"][0]["quote"] == quote
+    _finish(api, first.json()["id"], "done")
+    retry = api.post(f"/v1/runs/{first.json()['id']}/retry", headers=AUTH, json={})
+    assert retry.status_code == 201, retry.text
+    assert retry.json()["doc_refs"] == first.json()["doc_refs"]
+
+
+@pytest.mark.parametrize("text", ["", "chart data"])
+def test_workspace_shape_reference_without_text(api, monkeypatch, text):  # noqa: F811
+    from ailab_platform.api.document_view import validate_refs
+    from ailab_platform.contracts.document_view import DocRef
+
+    rid, _, _ = owned(api)
+    calls = []
+
+    def workspace(db, user, run_id, path, operation, selections, version):
+        calls.append((run_id, path, operation, selections, version))
+        return {"version": "v1", "selections": [{"at": "slide:2/shape:3", "text": text}]}
+
+    monkeypatch.setattr("ailab_platform.api.workspace_documents.request_workspace", workspace)
+    ref = {"run_id": rid, "path": "outputs/chart.pptx", "version": "v1", "at": "slide:2/shape:3", "quote": ""}
+    with SessionLocal() as db:
+        user = db.get(User, db.get(Run, rid).user_id)
+        assert validate_refs(db, user, [DocRef.model_validate(ref)]) == [{**ref, "filename": "chart.pptx"}]
+    assert calls == [(rid, ref["path"], "check", [ref["at"]], "v1")]
+
+
+@pytest.mark.parametrize(
+    "change,status", [({"version": "stale"}, 409), ({"at": "p:2"}, 422), ({"quote": "invented"}, 422), ({"quote": " \n"}, 422)]
+)
 def test_invalid_reference_rejected_before_send(api, change, status):  # noqa: F811
     fid, version, _ = document(api)
     response = send(api, conv(api), [{**reference(fid, version), **change}])
@@ -375,7 +421,8 @@ def test_retry_edit_fork_preserve_frozen_references(api):  # noqa: F811
     assert turns[-1]["doc_refs"] == first["doc_refs"]
 
 
-def test_queue_keeps_selection_after_dispatch(api):  # noqa: F811
+@pytest.mark.parametrize("quote", ["quoted words", ""])
+def test_queue_keeps_selection_after_dispatch(api, quote):  # noqa: F811
     from tests.test_conversations import _finish
 
     fid, version, _ = document(api)
@@ -384,10 +431,10 @@ def test_queue_keeps_selection_after_dispatch(api):  # noqa: F811
     queued = api.post(
         f"/v1/conversations/{cid}/queue",
         headers=AUTH,
-        json={"prompt": "queued quote", "model": "test-fast", "mode": "chat", "doc_refs": [reference(fid, version)]},
+        json={"prompt": "queued quote", "model": "test-fast", "mode": "chat", "doc_refs": [{**reference(fid, version), "quote": quote}]},
     )
     assert queued.status_code == 201, queued.text
-    assert queued.json()["doc_refs"][0]["quote"] == "quoted words"
+    assert queued.json()["doc_refs"][0]["quote"] == quote
     _finish(api, first["id"], "done")
     turns = api.get(f"/v1/conversations/{cid}", headers=AUTH).json()["turns"]
     assert turns[-1]["doc_refs"] == queued.json()["doc_refs"]

@@ -17,7 +17,8 @@ class DocRef(BaseModel):
     path: str | None = Field(default=None, min_length=1, max_length=1000)
     version: str = Field(min_length=1, max_length=100)
     at: str = Field(min_length=1, max_length=300)
-    quote: str = Field(min_length=1, max_length=4000)
+    # A clicked shape/page/cell has a locator even when it has no selected text.
+    quote: str = Field(max_length=4000)
 
     @model_validator(mode="after")
     def target(self):

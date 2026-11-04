@@ -1,3 +1,12 @@
+# PPT 无文字选区引用发送修复（2026-11-04）
+
+- 最新授权：定位并修复预览「添加到对话 / 提问」间歇出现的 String should have at least 1 character；仅本地修改与验证，不含发布、PR、合并或部署。
+- 独立分支 `fix/ppt-selection-empty-ref`，base `origin/main@3d85a86e589cb651b954b8feba11f46e1203237d`；主工作区既有 UI/文档等 dirty 全部保留。下方 #158 待 CI 为历史记录，该 PR 已包含于本次 main 基线。
+- 根因与修复、验证及边界统一见[本轮记录](updates/2026-11-04-ppt-selection-reference.md)。PPT 图形/整页及其他无选中文字的位置引用允许空 quote，权限/版本/locator 校验保持；有文字仍校验来源，拒绝伪造及纯空白引文。
+- 专项28项、Ruff、Portal246项与生产构建通过；Python首轮2333通过/205跳过/15失败，新工作区补齐Office reader构建后15个失败项全部通过，未重复全套。详细边界见记录。下一步按用户反馈处理发布；当前未部署，不自动推进其他暂停任务。
+
+---
+
 # PR158 PostgreSQL任务时限修复待CI（2026-11-04）
 
 - 新唤醒：head83fcab7的PG job因GitHub 15分钟总时限cancelled。日志连续正常推进到93%，未见断言失败；同产品上一head PG全套2460/83跳过、780.61s。初始化/收尾也占用该总期限，调整python矩阵总预算为20分钟，验收门禁不变。[证据与变更](updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。
