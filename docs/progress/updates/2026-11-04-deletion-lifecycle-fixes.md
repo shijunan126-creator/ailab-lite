@@ -33,3 +33,10 @@
 - 会话检查增加主键查询，列表和草稿来源查询沿用现有索引；GC清单数量受200条技能包限制，存储分页沿用适配器。LocalStorage枚举前缀的遍历CPU、巨大历史删除和长期磁盘容量未压测，不把响应分页冒称完整遍历CPU有界。
 - 本轮未测真实S3/OpenSandbox、真实模型或全套E2E；未运行历史数据批量删除。已有失效草稿的历史记录不做擅自数据迁移，新增GC会在部署后按既有宽限逐步回收无主对象。
 - 修复与本地验证完成；本次追加授权提PR并部署固定分支快照，PR保留供评审。本机部署结果不写入产品仓库，依照部署约定仅汇报必要组件启动结果。临时测试服务和原始日志已清理，不提交构建产物。
+
+
+## PR158 CI收尾修复（2026-11-04）
+
+- 远端head `5a7ca0b`：SQLite/PG全套与其他5项检查成功；E2E为188 passed/6 skipped/2 teardown errors，CI gate失败。两个浏览器用例本身通过；失败来自test_conversation_ui清理已删除会话的Run，cancel按新合同返回404。第一次assert中止还留下模块级种子清单，使下一用例重复清同一Run。
+- 修复测试fixture：进入收尾先移走/清空本例资源清单和attempt表；404不直接放行，必须在同一隔离测试DB核实Conversation.deleted_at及Run终态。未删会话、缺失种子或仍运行的Run均会报错。删除浏览器回归新增active=True，覆盖删除活动任务及其收尾；不改产品可见性或加入重试/skip。
+- 验证基线：5a7ca0b加本节fixture/回归差异；Ruff check/format、diff检查通过；`AILAB_E2E=1 python -m pytest e2e/test_conversation_ui.py -q -o addopts=''`在独立SQLite/Redis/mock栈中10 passed（126.05s），前置Portal246项与生产构建通过。产品源码仍等于已验证的c0541f5/5a7ca0b，本次不重复Python全套、不重新部署；新head CI按既有工作流重跑。

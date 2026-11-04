@@ -19,12 +19,35 @@ _attempts = {}
 @pytest.fixture(autouse=True)
 def cleanup_seeded(stack):
     yield
-    token = httpx.post(stack.api + "/v1/auth/login", json={"username": USERNAME, "password": PASSWORD}).json()["token"]
-    for run_id in _seeded:
-        response = httpx.post(stack.api + f"/v1/runs/{run_id}/cancel", headers={"Authorization": f"Bearer {token}"})
-        assert response.status_code in (200, 409), response.text
+    # Consume this test's inventory before doing I/O, so a cleanup failure cannot
+    # make the next test retry another test's resources.
+    seeded = tuple(_seeded)
     _seeded.clear()
     _attempts.clear()
+    if not seeded:
+        return
+    response = httpx.post(stack.api + "/v1/auth/login", json={"username": USERNAME, "password": PASSWORD})
+    response.raise_for_status()
+    token = response.json()["token"]
+    for run_id in seeded:
+        response = httpx.post(stack.api + f"/v1/runs/{run_id}/cancel", headers={"Authorization": f"Bearer {token}"})
+        if response.status_code == 404:
+            # A tombstoned conversation intentionally hides its runs. Prove it
+            # was deleted and the task already stopped; unrelated 404s still fail.
+            code = """
+import sys
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import Conversation, Run, RunStatus
+with SessionLocal() as db:
+    run = db.get(Run, sys.argv[1])
+    assert run is not None, "seeded run unexpectedly missing"
+    conversation = db.get(Conversation, run.conversation_id)
+    assert conversation is not None and conversation.deleted_at is not None, "run hidden without conversation tombstone"
+    assert run.status in RunStatus.TERMINAL, f"deleted conversation left run {run.status}"
+"""
+            subprocess.run([sys.executable, "-c", code, run_id], cwd=PLATFORM, env=stack.env, check=True, timeout=30)
+        else:
+            assert response.status_code in (200, 409), response.text
 
 
 def seed(stack, count=1, active=True, title="预览与历史验收"):
@@ -201,8 +224,9 @@ def test_plain_text_answer_gets_model_title_without_overwriting_manual_name(page
     assert page.locator(".alert.error").count() == 0
 
 
-def test_confirmed_delete_removes_sidebar_even_when_list_refresh_fails(page, stack):
-    conv = seed(stack, active=False)
+@pytest.mark.parametrize("active", [False, True])
+def test_confirmed_delete_removes_sidebar_even_when_list_refresh_fails(page, stack, active):
+    conv = seed(stack, active=active)
     login(page, stack, path="/c/" + conv["id"])
     row = page.locator(f".conv-item:has(a[href='/c/{conv['id']}'])")
     row.wait_for()

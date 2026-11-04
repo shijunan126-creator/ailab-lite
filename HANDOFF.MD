@@ -1237,3 +1237,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 
 - 恢复必须在事务内生成新的durable job身份，旧Worker的读检查不能代替写入围栏。API未安装RuntimeContextMiddleware，处理接口应显式读取X-Run-Attempt；不要以为ContextVar会自动继承HTTP头。确认删除后内容接口应404，取消状态/历史身份改查DB，不保留绕过墓碑的读取便利。
 - 草稿解包按claim分目录；孤儿清理先核对精确manifest和有效租约，再在用户锁内重验mtime并删单对象。不能延迟无条件删除编辑器可能重新复用的hash。修复、测试与历史数据边界见[记录](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md)。
+
+# 2026-11-04 删除E2E收尾
+
+- 会话删除后public cancel正确返回404，测试清理不能再依赖已隐藏的Run内容接口。404须核实测试DB中的会话墓碑和Run终态，不能把任意404视为清理成功；模块级资源清单应在I/O前移走，避免assert失败污染下一测试。见[CI修复记录](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-ci收尾修复2026-11-04)。

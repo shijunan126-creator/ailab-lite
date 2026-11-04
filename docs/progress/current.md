@@ -1,9 +1,9 @@
-# 全删除生命周期修复已本地验证（2026-11-04）
+# PR158删除生命周期CI修复已推送待复验（2026-11-04）
 
-- 用户授权的6项问题均已修复：会话墓碑读写/迟到摘要/前端缓存、文件恢复任务与旧attempt、技能依赖草稿失效、解包attempt隔离与有界孤儿回收。合同、代码基线、阶段失败及未测边界统一见[修复记录](updates/2026-11-04-deletion-lifecycle-fixes.md)。
-- 分支fix/deletion-lifecycle，base origin/main@e4479cd；产品提交c0541f5已推送并创建[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)，PR保持开放供评审。主工作区及前序发布/空间清理dirty保留。
-- 完整SQLite首轮2333通过/5失败/205跳过，5项测试修正后定点复核全部通过；PG/Redis关键组及两库EXPLAIN通过，Portal246项/生产构建、桌面/手机4项真实浏览器回归通过。不是最终树第二遍全套或真实模型/S3验收。
-- 最新授权：提PR并部署本次分支固定提交。PR已创建；本机部署进度和结果仅在对话与私有状态记录，不重复功能验收。下一步由用户审阅PR；CI以链接的最终head远端结果为准，不自动合并或推进其他路线图。一次性测试服务及原始输出已清理。
+- 用户要求继续修复。PR158 head5a7ca0b的SQLite/PG全套等7项检查通过；E2E为188 passed/6 skipped/2 teardown errors，CI汇总因此失败。根因是删除墓碑生效后cancel返回404，旧fixture报错且未清共享种子清单，污染下一项收尾。
+- 已修测试资源清理：先取走本例清单；404须在隔离DB确认会话墓碑和Run终态，其他失败继续报错；删除浏览器回归增加活动Run场景。产品源码无改动，本轮不重部署。
+- 分支fix/deletion-lifecycle，base e4479cd，当前已推送head5a7ca0b；主工作区和前序文档dirty保留。相关浏览器模块10项、Portal246项及生产构建已在隔离栈通过，详见[修复记录](updates/2026-11-04-deletion-lifecycle-fixes.md)。
+- 下一步：跟进同一[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)新head全部CI，失败继续处理；不自动合并或推进其他工作。
 
 ---
 
