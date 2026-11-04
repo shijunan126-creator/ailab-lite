@@ -20,8 +20,10 @@ def process_ocr(file_id, platform):
     if state.get("preview_job_id"):
         # The API recorded this preview job as pending; render it through the existing Broker path.
         process_preview(file_id, state["preview_job_id"], platform)
-        meta = platform.get_file(file_id, job="preview").get("meta") or {}
-        if (meta.get("preview") or {}).get("status") == "pending":
+        state = platform.ocr(file_id, prepare=True)
+        if state["ocr"] not in {"pending", "running"}:
+            return state
+        if state.get("preview_job_id") or state["ocr"] == "running":
             raise RuntimeError("OCR preview is still rendering")
     import time
 

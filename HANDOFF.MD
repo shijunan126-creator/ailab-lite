@@ -1260,3 +1260,9 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - Worker的durable job可重试失败仅return会保留660秒claim；通过已有retry_after/release才能及时重新投递。验收覆盖API授权/真实传输失败/DB claim/outbox重发/同身份完成，不能只mock process_ocr。重启后的OOMKilled/memory.events可能归零，历史OOM通过VM内核日志绑定完整容器ID确认。
 
 - 临时检出位于/private/tmp时，MockSandbox会把命令里的sys.executable也按/tmp重映射，background_exec输出断言随之失败。测试保持本检出的PYTHONPATH，使用非/tmp下的现有venv解释器；不要为环境入口问题改产品传输逻辑。
+
+# 2026-11-04 OCR请求身份与终态
+
+- OCR所选范围、缺失计算页和最终下载是三个不同合同；缓存齐全也要组装与本次选择匹配的结果，轮询/下载绑定request_id，旧job过期/迟到完成须核对当前job与attempt。API没有通用RuntimeContextMiddleware时显式读X-Run-Attempt，测试客户端也要像真实Worker一样传claim token。
+- OCR页渲染完成后普通preview会恢复此前状态，应再prepare消费ocr_preview终态；不能依据恢复后的普通preview判断OCR是否成功。busy复用原身份，terminal失败结束且ACK，显式重试清旧OCR渲染状态。验证见[记录](docs/progress/updates/2026-11-04-ocr-lifecycle-pr.md)。
+- git worktree add不会切换后续shell命令cwd；跨工作区整合命令必须显式指定workdir，不能仅因前一个命令创建了工作区就cherry-pick。

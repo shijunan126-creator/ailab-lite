@@ -31,10 +31,10 @@ export default function TextExtraction({fileId, filename, onClose}: {fileId: str
         }
         if (!pages.length || pages.length > 20) throw new Error("每批请选择1至20页");
       }
-      await api(`/v1/files/${fileId}/extract-text`, {method: "POST", signal: current.signal, body: JSON.stringify(pdf ? {pages} : {})});
+      const requested = await api<{request_id: string}>(`/v1/files/${fileId}/extract-text`, {method: "POST", signal: current.signal, body: JSON.stringify(pdf ? {pages} : {})});
       const deadline = Date.now() + 120000;
       while (!current.signal.aborted && Date.now() < deadline) {
-        const progress = await api<Progress>(`/v1/files/${fileId}/extract-text`, {signal: current.signal});
+        const progress = await api<Progress>(`/v1/files/${fileId}/extract-text?request_id=${encodeURIComponent(requested.request_id)}`, {signal: current.signal});
         if (!['pending', 'running'].includes(progress.status)) {
           if (controller.current === current) setResult(progress);
           return;

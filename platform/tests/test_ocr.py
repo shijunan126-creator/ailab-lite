@@ -28,7 +28,11 @@ class OCRClient(ApiClient):
         return r.json()
 
     def ocr(self, fid, prepare=False):
-        r = self.api.post(f"/internal/files/{fid}/ocr" + ("/prepare" if prepare else ""), headers=SERVICE, json={})
+        from ailab_platform.runtime_context import attempt_id_var
+
+        token = attempt_id_var.get()
+        headers = {**SERVICE, **({"X-Run-Attempt": token} if token else {})}
+        r = self.api.post(f"/internal/files/{fid}/ocr" + ("/prepare" if prepare else ""), headers=headers, json={})
         r.raise_for_status()
         return r.json()
 

@@ -309,3 +309,5 @@ GenUI 块可复制为图片/下载 PNG（浏览器内光栅，首击加载），
 2026-11-04 历史消息分支一致性：分支修订围栏、分页/版本互斥、摘要frame及复核来源隔离已本地实施并经双库专项、Portal构建与4项真实浏览器回归验证；准确结果和未测边界见[记录](../progress/updates/2026-11-04-message-branch-consistency.md)。未合入main、未部署。
 
 2026-11-04 OCR常驻节点profiling内存与失败重试修复已本地实现并验证CPU同图重复/真实HTTP/双库恢复，尚未发布；[证据与边界](../progress/updates/2026-11-04-ocr-memory-recovery.md)。
+
+2026-11-04 OCR内存、所选页下载、请求/代次围栏与终态渲染失败已在最新main独立分支修复；本轮验证与PR/合并状态见[记录](../progress/updates/2026-11-04-ocr-lifecycle-pr.md)，未部署。
