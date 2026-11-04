@@ -10,7 +10,8 @@ from ..contracts.model_context import SummaryUpdate
 from ..conversation_tree import ancestor_query, path_ids
 from ..deps import get_db
 from ..domain.answer_parts import for_history, history_sources
-from ..models import Conversation, QueuedMessage, Run, User
+from ..models import Conversation, QueuedMessage, Run, RunStatus, User
+from ..run_visibility import conversation_available
 from ..service_auth import require_scope
 from .routes_internal import _attachment_texts, _run_or_404, workspace_alive, workspace_data, workspace_key
 from .routes_skills import skill_input_for
@@ -23,6 +24,8 @@ router = APIRouter(prefix="/internal/runs", tags=["internal"])
 def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
     """Agent bootstrap without loading the complete conversation to find a workspace."""
     run = _run_or_404(db, run_id)
+    if not conversation_available(db, run):
+        raise HTTPException(404, "run not found")
     out = run_dict(db, run, detail=True)
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     out["needs_conversation_title"] = bool(conversation and conversation.deleted_at is None and not conversation.title)
@@ -105,6 +108,8 @@ def model_input(run_id: str, db: Session = Depends(get_db)) -> dict:
 @router.get("/{run_id}/model-context", dependencies=[Depends(require_scope("runs:read"))])
 def model_context(run_id: str, after: str | None = None, db: Session = Depends(get_db)) -> dict:
     run = _run_or_404(db, run_id)
+    if not conversation_available(db, run):
+        raise HTTPException(404, "run not found")
     conversation = db.get(Conversation, run.conversation_id) if run.conversation_id else None
     if not conversation:
         return {"summary": "", "through_run_id": None, "history": [], "has_more": False}
@@ -231,6 +236,9 @@ def _save_model_summary(db, run, body, x_run_attempt):
     from .runtime_fence import fence_attempt
 
     fence_attempt(db, run_id, x_run_attempt)
+    db.refresh(run)
+    if run.status not in {RunStatus.QUEUED, RunStatus.RUNNING} or not conversation_available(db, run):
+        raise HTTPException(409, "run_source_unavailable")
     ids = path_ids(db, run.conversation_id, run.parent_run_id) if run.conversation_id else []
     if body.through_run_id not in ids:
         raise HTTPException(422, "invalid summary boundary")
@@ -257,6 +265,7 @@ def _save_model_summary(db, run, body, x_run_attempt):
         update(Conversation)
         .where(
             Conversation.id == run.conversation_id,
+            Conversation.deleted_at.is_(None),
             Conversation.summary_through_run_id == actual,
         )
         .values(summary=body.summary, summary_through_run_id=body.through_run_id)

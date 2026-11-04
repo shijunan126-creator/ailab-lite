@@ -246,8 +246,9 @@ def test_late_title_is_fenced_normalized_and_streamed_before_end(terminal):
         markdown = "# 你好！这是**离线演示模型**的回答 __重点__ *星号* `代码` [链接](https://example.com)\n  空白 "
         expected = "你好！这是离线演示模型的回答 重点 星号 代码 链接 空白"
         result = c.put(title_url, headers=owner, json={"title": markdown})
-        assert result.status_code == 200, result.text
-        assert result.json() == {"ok": terminal in {"succeeded", "failed"}}
+        assert result.status_code == (409 if terminal == "deleted" else 200), result.text
+        if terminal != "deleted":
+            assert result.json() == {"ok": terminal in {"succeeded", "failed"}}
         assert c.put(title_url, headers={**owner, "X-Run-Attempt": "foreign"}, json={"title": "foreign"}).status_code == 409
         if terminal in {"succeeded", "failed"}:
             assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).json()["title"] == expected

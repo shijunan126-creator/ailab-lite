@@ -85,7 +85,10 @@ def source_available(db, run) -> bool:
 
     from ..api.source_lifecycle import invalid_sources_query
     from ..models import Run, User
+    from ..run_visibility import conversation_available
 
+    if not conversation_available(db, run):
+        return False
     owner = db.get(User, run.user_id, populate_existing=True)
     if owner is None or not owner.context_source_epoch:
         return owner is not None

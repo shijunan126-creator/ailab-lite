@@ -76,7 +76,7 @@ def complete(draft_id: str, body: Completion, db: Session = Depends(get_db)):
                     if (
                         len(digest) != 64
                         or any(c not in "0123456789abcdef" for c in digest)
-                        or item["blob"] != prefix + digest
+                        or item["blob"] not in {prefix + digest, f"{prefix}attempts/{body.token}/{digest}"}
                         or item["kind"] not in ("text", "image", "binary")
                         or item["change"] != "unchanged"
                         or get_storage().size(item["blob"]) != item["size"]

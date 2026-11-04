@@ -10,7 +10,7 @@ import { useFollow } from "../../lib/use-follow";
 import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
 import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
-import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
+import { cacheConversation, cachedConversation, CONVERSATION_DELETED, forgetConversation } from "../../lib/conversation-cache";
 import { prependConversationPage, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
@@ -160,6 +160,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   // A read started before a confirmed write can still contain the old queue or turn.
   const detailWriteVersion = useRef(0);
+  const unavailable = useRef(false);
   const branchMutation = useRef(false);
   const visibleRevision = useRef(detail?.branch_revision);
   visibleRevision.current = detail?.branch_revision;
@@ -169,7 +170,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   }
 
   const loadDetail = useCallback(async (): Promise<ConversationDetail | null> => {
-    if (!id || branchMutation.current) return null;
+    if (!id || unavailable.current || branchMutation.current) return null;
     detailController.current?.abort();
     const controller = new AbortController();
     detailController.current = controller;
@@ -177,7 +178,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     const version = detailWriteVersion.current;
     try {
       const d = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20`, { signal: controller.signal });
-      if (seq !== loadSeq.current || branchMutation.current) return null;
+      if (controller.signal.aborted || unavailable.current || seq !== loadSeq.current || branchMutation.current) return null;
       // Keep the caller's refresh/follow continuation, but obtain a snapshot after the write.
       if (version !== detailWriteVersion.current) return loadDetail();
       if (visibleRevision.current !== undefined && d.branch_revision !== undefined && d.branch_revision < visibleRevision.current) return null;
@@ -190,10 +191,42 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       setDetail((previous) => refreshConversation(previous, d));
       return d;
     } catch (err: any) {
-      if (!controller.signal.aborted && seq === loadSeq.current) setError(errorMessage(err));
+      if (!controller.signal.aborted && seq === loadSeq.current) {
+        if (/^404\b/.test(String(err?.message))) forgetConversation(id);
+        else setError(errorMessage(err));
+      }
       return null;
     }
   }, [id]);
+
+  useEffect(() => {
+    const removed = (event: Event) => {
+      const target = (event as CustomEvent<string | { projectId: string }>).detail;
+      if (typeof target === "string" ? target !== id : !detail || target.projectId !== detail.project_id) return;
+      if (typeof target !== "string" && id) { forgetConversation(id); return; }
+      unavailable.current = true;
+      ++loadSeq.current;
+      ++detailWriteVersion.current;
+      actionController.current.abort();
+      detailController.current?.abort();
+      olderController.current?.abort();
+      streamController.current?.abort();
+      runRefresh.current.controller?.abort();
+      if (runRefresh.current.timer) clearTimeout(runRefresh.current.timer);
+      setDetail(null);
+      setItems({});
+      setStreaming(null);
+      setLoadingOlder(false);
+      clearBranchPreviews();
+      setReaders([]);
+      setReaderUrl(null);
+      setReaderOn(false);
+      setPaneOpen(false);
+      setError("对话已删除或不存在");
+    };
+    window.addEventListener(CONVERSATION_DELETED, removed);
+    return () => window.removeEventListener(CONVERSATION_DELETED, removed);
+  }, [id, detail?.project_id]);
 
   // A status or artifact change mid-run refreshes that one turn, coalesced; the whole page reloads when the run ends.
   const runRefresh = useRef<{ timer: ReturnType<typeof setTimeout> | null; controller: AbortController | null }>({ timer: null, controller: null });

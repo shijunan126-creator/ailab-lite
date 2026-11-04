@@ -860,10 +860,17 @@ def restore_version(file_id: str, user: User = Depends(current_user), db: Sessio
                 return remapped.get(value, value) if isinstance(value, str) else value
 
             meta = remap(meta)
+            for field in ("processing_job_id", "document_job_id", "preview_job_id"):
+                meta.pop(field, None)
+            if (meta.get("preview") or {}).get("status") == "pending":
+                meta.pop("preview", None)
             file.meta = {**meta, "restored_from_id": old.id}
             assign_file_version(db, file, old)
             db.add(file)
             keys = trim_file_versions(db, file)
+            from ..library import resume_file_processing
+
+            resume_file_processing(db, file)
             db.commit()
         except Exception:
             db.rollback()

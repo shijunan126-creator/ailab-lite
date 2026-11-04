@@ -74,6 +74,7 @@ def invalidate(db, user_id, file_ids):
     epoch = db.scalar(select(User.context_source_epoch).where(User.id == user_id))
     for file in db.scalars(select(FileObject).where(FileObject.id.in_(file_ids))):
         meta = dict(file.meta or {})
+        meta.pop("document_job_id", None)
         if meta.get("ocr") in {"pending", "running"}:
             meta.update(ocr="canceled", ocr_reason="source_unavailable", ocr_generation="canceled")
         if (meta.get("preview") or {}).get("status") == "pending":
@@ -88,6 +89,8 @@ def invalidate(db, user_id, file_ids):
         .values(invalidated_epoch=epoch)
     )
     from ..skill_drafts.service import invalidate_drafts
+
+    invalidate_drafts(db, user_id, file_ids=file_ids)
 
     affected = descendants(user_id, file_ids)
     conversation_ids = list(

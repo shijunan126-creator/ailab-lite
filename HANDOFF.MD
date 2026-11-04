@@ -1232,3 +1232,8 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - fetch abort使客户端Promise先结算，不会撤销同步API中的授权/解析；finally追加DELETE仍可早于旧PUT落地。关闭/选区排序必须由服务端原子generation/sequence围栏和有界关闭标记保证，客户端双DELETE不能替代。最小复现与方案见[独立报告](docs/reviews/2026-11-03-office-sidebar-independent-review.md)；后续已用begin/commit/close围栏、新view绑定身份及终态消息[修复验证](docs/progress/updates/2026-11-03-office-review-fixes.md)，保留这条作为不可依赖客户端abort的原因。
 
 - Linux mock E2E只装Writer/Impress仍会使新Work XLSX回退失败：render_preview检测到soffice后会用Calc重算/导出XLSX，必须同时安装libreoffice-calc。不能因soffice存在就认为所有格式可转换；Mac完整Office包会掩盖这个缺口。见[PR149修复记录](docs/progress/updates/2026-11-03-office-review-fixes.md#pr-149-linux-ci依赖补齐)。
+
+# 2026-11-04 全删除修复
+
+- 恢复必须在事务内生成新的durable job身份，旧Worker的读检查不能代替写入围栏。API未安装RuntimeContextMiddleware，处理接口应显式读取X-Run-Attempt；不要以为ContextVar会自动继承HTTP头。确认删除后内容接口应404，取消状态/历史身份改查DB，不保留绕过墓碑的读取便利。
+- 草稿解包按claim分目录；孤儿清理先核对精确manifest和有效租约，再在用户锁内重验mtime并删单对象。不能延迟无条件删除编辑器可能重新复用的hash。修复、测试与历史数据边界见[记录](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md)。

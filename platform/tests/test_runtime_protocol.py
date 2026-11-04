@@ -358,8 +358,10 @@ def test_deleting_conversation_cancels_waiting_run(api):  # noqa: F811
     assert pause(api, rid, headers).status_code == 200
     assert api.post(f"/v1/conversations/{conv}/messages", headers=AUTH, json={"prompt": "another"}).status_code == 409
     assert api.delete(f"/v1/conversations/{conv}", headers=AUTH).status_code == 204
-    assert api.get(f"/v1/runs/{rid}", headers=AUTH).json()["status"] == "canceled"
-    assert api.post(f"/v1/runs/{rid}/answer", headers=AUTH, json={"question_id": rid + ":q", "answer": "A"}).status_code == 409
+    assert api.get(f"/v1/runs/{rid}", headers=AUTH).status_code == 404
+    with SessionLocal() as db:
+        assert db.get(Run, rid).status == "canceled"
+    assert api.post(f"/v1/runs/{rid}/answer", headers=AUTH, json={"question_id": rid + ":q", "answer": "A"}).status_code == 404
 
 
 def test_pausing_revokes_business_writes_before_transport_ack(api):  # noqa: F811

@@ -43,6 +43,7 @@ from ..models import (
 )
 from ..quota import enforce_token_quota, usage_summary, user_limits
 from ..run_state import transition_run
+from ..run_visibility import conversation_available, live_run_predicate
 from ..schemas import EventOut, RunCreate, RunDetail, RunEdit, RunOut, RunRetry
 from ..skill_policy import effective_policy
 from ..skill_registry import BASE_SKILLS, resolve_name
@@ -59,7 +60,7 @@ ui_state_throttle = LoginThrottle(120, 60)
 
 def _get_owned_run(db: Session, run_id: str, user: User) -> Run:
     run = db.get(Run, run_id)
-    if run is None or run.user_id != user.id:
+    if run is None or run.user_id != user.id or not conversation_available(db, run):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="run not found")
     return run
 
@@ -68,7 +69,7 @@ def _owns_run(run_id: str, user_id: str) -> bool:
     """Ownership check on a throwaway session, safe to call from a worker thread."""
     with SessionLocal() as db:
         run = db.get(Run, run_id)
-        return run is not None and run.user_id == user_id
+        return run is not None and run.user_id == user_id and conversation_available(db, run)
 
 
 @router.get("/usage")
@@ -421,7 +422,9 @@ def list_runs(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ) -> list[dict]:
-    runs = db.scalars(select(Run).where(Run.user_id == user.id).order_by(Run.created_at.desc()).limit(limit).offset(offset)).all()
+    runs = db.scalars(
+        select(Run).where(Run.user_id == user.id, live_run_predicate()).order_by(Run.created_at.desc()).limit(limit).offset(offset)
+    ).all()
     return [run_dict(db, run) for run in runs]
 
 
@@ -538,7 +541,9 @@ def sse_poll_delay(idle_polls: int) -> float:
 def _poll_events(run_id: str, after: int) -> tuple[list[tuple[int, str, dict]], str, bool]:
     with SessionLocal() as db:
         run = db.get(Run, run_id)
-        status = run.status if run else RunStatus.FAILED
+        if run is None or not conversation_available(db, run):
+            return [], RunStatus.CANCELED, False
+        status = run.status
         # Automatic file waits keep SSE alive across suspension/continuation.
         pending_title = bool(run and status == RunStatus.INTERRUPTED and (run.runtime_meta or {}).get("file_dependency"))
         if run and status in {RunStatus.SUCCEEDED, RunStatus.FAILED} and run.finished_at:

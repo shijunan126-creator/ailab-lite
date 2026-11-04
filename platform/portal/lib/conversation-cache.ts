@@ -6,12 +6,28 @@ const LIMIT = 12;
 const MAX_CHARS = 1_000_000;
 const cache = new Map<string, { detail: ConversationDetail; size: number }>();
 let size = 0;
+const deleted = new Set<string>();
+export const CONVERSATION_DELETED = "ailab:conversation-deleted";
+
+export function forgetConversation(id: string): void {
+  size -= cache.get(id)?.size || 0;
+  cache.delete(id);
+  deleted.add(id);
+  if (deleted.size > 200) deleted.delete(deleted.values().next().value!);
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CONVERSATION_DELETED, { detail: id }));
+}
+
+export function forgetProjectConversations(projectId: string): void {
+  for (const [id, entry] of cache) if (entry.detail.project_id === projectId) forgetConversation(id);
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(CONVERSATION_DELETED, { detail: { projectId } }));
+}
 
 export function cachedConversation(id: string): ConversationDetail | null {
   return cache.get(id)?.detail || null;
 }
 
 export function cacheConversation(detail: ConversationDetail): void {
+  if (deleted.has(detail.id)) return;
   size -= cache.get(detail.id)?.size || 0;
   cache.delete(detail.id);
   const page = { ...detail, turns: detail.turns.slice(-20), has_more: detail.has_more || detail.turns.length > 20 };

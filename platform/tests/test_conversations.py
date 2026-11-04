@@ -125,7 +125,11 @@ def test_rename_delete_and_privacy() -> None:
 
         assert c.delete(f"/v1/conversations/{conv['id']}", headers=AUTH).status_code == 204
         assert c.get(f"/v1/conversations/{conv['id']}", headers=AUTH).status_code == 404
-        assert c.get(f"/v1/runs/{run['id']}", headers=AUTH).json()["status"] == "canceled"  # the answer in progress stops
+        assert c.get(f"/v1/runs/{run['id']}", headers=AUTH).status_code == 404
+        with SessionLocal() as db:
+            from ailab_platform.models import Run
+
+            assert db.get(Run, run["id"]).status == "canceled"
 
 
 def test_previews_are_served_to_the_owner_only() -> None:

@@ -49,6 +49,75 @@ def put_old(storage, key):
     os.utime(storage.root / key, (OLD.timestamp(), OLD.timestamp()))
 
 
+def test_draft_gc_preserves_manifest_and_live_attempt_then_collects_crashes(env):
+    from ailab_platform.models import OutboxMessage, SkillDraft
+
+    factory, storage = env
+    root = "skill-drafts/u/draft/"
+    manifest = root + "attempts/published/kept"
+    active = root + "attempts/live/inflight"
+    crashed = root + "attempts/abandoned/orphan"
+    missing = "skill-drafts/u/absent/orphan"
+    young = "skill-drafts/u/absent/young"
+    with factory() as db:
+        db.add(
+            SkillDraft(
+                id="draft",
+                user_id="u",
+                origin="skill",
+                action="update",
+                status="preparing",
+                claim_token="draft-job",
+                files=[{"blob": manifest}],
+            )
+        )
+        db.add(
+            OutboxMessage(
+                id="draft-job",
+                topic="file",
+                payload={"kind": "skill_unpack", "draft_id": "draft"},
+                claim_token="live",
+                claimed_until=NOW + timedelta(days=1),
+            )
+        )
+        db.commit()
+        for key in (manifest, active, crashed, missing):
+            put_old(storage, key)
+        storage.put_bytes(young, b"young")
+        for _ in range(6):
+            purge_orphan_objects(db, storage, NOW)
+        assert storage.exists(manifest) and storage.exists(active) and storage.exists(young)
+        assert not storage.exists(crashed) and not storage.exists(missing)
+        db.get(OutboxMessage, "draft-job").claimed_until = OLD
+        db.get(SkillDraft, "draft").status = "confirmed"
+        db.commit()
+        for _ in range(6):
+            purge_orphan_objects(db, storage, NOW)
+        assert storage.exists(manifest) and not storage.exists(active)
+
+
+def test_draft_gc_rechecks_reused_hash_mtime_under_writer_lock(env, monkeypatch):
+    from contextlib import contextmanager
+
+    from ailab_platform.api import reaper
+
+    factory, storage = env
+    key = "skill-drafts/u/absent/reused"
+    put_old(storage, key)
+    real_lock = reaper.user_critical_section
+
+    @contextmanager
+    def rewrite_before_lock(db, user_id):
+        storage.put_bytes(key, b"a concurrent editor just wrote this hash")
+        with real_lock(db, user_id):
+            yield
+
+    monkeypatch.setattr(reaper, "user_critical_section", rewrite_before_lock)
+    with factory() as db:
+        purge_orphan_objects(db, storage, NOW)
+    assert storage.exists(key)
+
+
 def test_presign_targets_and_idempotency(env):
     factory, storage = env
     with factory() as db:

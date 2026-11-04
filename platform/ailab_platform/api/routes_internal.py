@@ -147,6 +147,10 @@ def _earlier_turns(db: Session, run: Run) -> list[Run]:
 def internal_get_run(run_id: str, db: Session = Depends(get_db)) -> dict:
     """The run, and for a conversation turn: the earlier turns (for the model) and the workspace to restore (for the Broker)."""
     run = _run_or_404(db, run_id)
+    from ..run_visibility import conversation_available
+
+    if not conversation_available(db, run):
+        raise HTTPException(404, "run not found")
     out = run_dict(db, run, detail=True)
     out["budget_window_id"] = (run.runtime_meta or {}).get("budget_window_id", (run.runtime_meta or {}).get("job_id", run.id))
     earlier = _earlier_turns(db, run)
@@ -1081,6 +1085,7 @@ def internal_patch_file(
     file_id: str,
     body: FilePatch,
     job: FileJob = "processing",
+    x_run_attempt: str | None = Header(default=None),
     principal: ServicePrincipal = Depends(require_scope("files:patch_processing", "files:preview_write")),
     db: Session = Depends(get_db),
 ) -> dict:
@@ -1090,6 +1095,10 @@ def internal_patch_file(
     lock = brand_lock(db) if file.purpose in {"brand", "platform_skill"} else user_critical_section(db, file.user_id)
     with lock:
         db.refresh(file)
+        if job == "processing":
+            from .jobs import fence_file_processing
+
+            fence_file_processing(db, file, x_run_attempt)
         return _apply_file_patch(db, file, body, principal, job)
 
 
@@ -1106,6 +1115,8 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             ):
                 raise HTTPException(status_code=403, detail="derived key must belong to this file")
     if body.meta is not None:
+        if "processing_job_id" in body.meta:
+            raise HTTPException(422, "processing_job_id is API-owned")
         source_id = body.meta.get("cache_source_id")
         if source_id:
             source = db.get(FileObject, source_id, populate_existing=True)
@@ -1350,7 +1361,11 @@ def set_conversation_title(
 
 @router.post("/files/{file_id}/reuse-document", dependencies=[Depends(require_scope("files:patch_processing"))])
 def reuse_document(
-    file_id: str, body: dict, principal: ServicePrincipal = Depends(require_scope("files:patch_processing")), db: Session = Depends(get_db)
+    file_id: str,
+    body: dict,
+    x_run_attempt: str | None = Header(default=None),
+    principal: ServicePrincipal = Depends(require_scope("files:patch_processing")),
+    db: Session = Depends(get_db),
 ):
     file = _bound_file(db, file_id, principal, None, "processing")
     with user_critical_section(db, file.user_id):
@@ -1360,14 +1375,16 @@ def reuse_document(
         if body.get("scan", {}).get("verdict") != "clean":
             raise HTTPException(409, "clean scan required")
         from .document_cache import reuse
+        from .jobs import fence_file_processing
 
+        fence_file_processing(db, file, x_run_attempt)
         cached = reuse(db, file)
         db.commit()
         return {"reused": bool(cached), "source": cached}
 
 
 @router.post("/files/{file_id}/prepare-document", dependencies=[Depends(require_scope("files:patch_processing"))])
-def prepare_document(file_id: str, body: dict, db: Session = Depends(get_db)):
+def prepare_document(file_id: str, body: dict, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)):
     from uuid import uuid4
 
     file = db.get(FileObject, file_id)
@@ -1379,9 +1396,7 @@ def prepare_document(file_id: str, body: dict, db: Session = Depends(get_db)):
             raise HTTPException(409, "file_source_changed")
         if body.get("scan", {}).get("verdict") != "clean":
             raise HTTPException(409, "clean scan required")
-        from ..runtime_context import attempt_id_var
-
-        token = attempt_id_var.get()
+        token = x_run_attempt
         if token:
             from ..models import OutboxMessage
 
@@ -1390,6 +1405,9 @@ def prepare_document(file_id: str, body: dict, db: Session = Depends(get_db)):
             )
             if not claimed or claimed.payload.get("file_id") != file.id:
                 raise HTTPException(409, "stale_file_attempt")
+        from .jobs import fence_file_processing
+
+        fence_file_processing(db, file, x_run_attempt)
         job_id = token or (file.meta or {}).get("document_job_id") or uuid4().hex
         file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id}
         db.commit()
@@ -1427,13 +1445,16 @@ def document_cache_pages(file_id: str, source_id: str, after: int = Query(defaul
 
 
 @router.post("/files/{file_id}/document-cache-pages", dependencies=[Depends(require_scope("files:patch_processing"))])
-def publish_cache_pages(file_id: str, body: dict, db: Session = Depends(get_db)):
+def publish_cache_pages(file_id: str, body: dict, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)):
     from ..models import OcrPageResult
     from .document_cache import pair
 
     target, source = pair(db, file_id, body.get("source_id"))
     with user_critical_section(db, target.user_id):
         target, source = pair(db, file_id, source.id)
+        from .jobs import fence_file_processing
+
+        fence_file_processing(db, target, x_run_attempt)
         pages = body.get("pages")
         if not isinstance(pages, list) or not 1 <= len(pages) <= 100:
             raise HTTPException(422, "cache page batch limit")
