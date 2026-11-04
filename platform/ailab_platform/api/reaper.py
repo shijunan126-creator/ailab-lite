@@ -255,11 +255,44 @@ def purge_expired_presigns(db: Session, storage, now: datetime) -> int:
     return removed
 
 
+def purge_orphan_draft_objects(db: Session, storage, cutoff: datetime) -> int:
+    from ..models import OutboxMessage, SkillDraft
+
+    removed = 0
+    for item in _page(storage, "skill-drafts/"):
+        if _aware(item.modified_at) >= cutoff:
+            continue
+        parts = item.key.split("/")
+        if len(parts) < 4:
+            continue
+        user_id, draft_id = parts[1:3]
+        with user_critical_section(db, user_id):
+            draft = db.get(SkillDraft, draft_id, populate_existing=True)
+            if draft and draft.user_id == user_id:
+                # Exact manifest ownership, including confirmed snapshots and edit baselines.
+                if draft.status != "discarded" and any(f.get("blob") == item.key for f in draft.files or []):
+                    db.rollback()
+                    continue
+                job = db.get(OutboxMessage, draft.claim_token) if draft.status == "preparing" and draft.claim_token else None
+                if job and job.claimed_until and _aware(job.claimed_until) > datetime.now(UTC):
+                    if len(parts) == 4 or (len(parts) == 6 and parts[3] == "attempts" and parts[4] == job.claim_token):
+                        db.rollback()
+                        continue
+            # Recheck the mtime under the writer lock: an editor may have replaced a content hash.
+            current = next((obj for obj in storage.list_prefix(item.key, limit=1) if obj.key == item.key), None)
+            if current and _aware(current.modified_at) < cutoff:
+                # Delete while holding the lock: deferred deletion could race a new edit reusing this hash.
+                storage.delete(item.key)
+                removed += 1
+            db.rollback()
+    return removed
+
+
 def purge_orphan_objects(db: Session, storage, now: datetime) -> int:
     if not settings.orphan_objects_grace_seconds:
         return 0
     cutoff = now - timedelta(seconds=settings.orphan_objects_grace_seconds)
-    removed = 0
+    removed = purge_orphan_draft_objects(db, storage, cutoff)
     for prefix, owner in (("derived/", FileObject), ("previews/", Run)):
         for item in _page(storage, prefix):
             if _aware(item.modified_at) >= cutoff:

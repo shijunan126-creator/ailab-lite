@@ -202,7 +202,12 @@ def test_project_trash_restore_retains_specific_version_references(api):
     api.delete(f"/v1/projects/{p['id']}")
     rows = history(api, first)
     assert all(f["project_id"] is None and f["trashed_from_project_id"] == p["id"] for f in rows)
-    assert api.get(f"/v1/runs/{run['id']}").json()["input_files"][0]["file_id"] == first["id"]
+    assert api.get(f"/v1/runs/{run['id']}").status_code == 404
+    # Deletion hides the conversation, but its immutable attachment identity survives retention.
+    from ailab_platform.models import MessageFileRef
+
+    with SessionLocal() as db:
+        assert db.scalar(select(MessageFileRef.file_id).where(MessageFileRef.run_id == run["id"])) == first["id"]
     assert api.post(f"/v1/files/{first['id']}/restore").json()["project_id"] is None
     assert listed(api) == [second["id"]]
 

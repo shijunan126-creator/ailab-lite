@@ -1,10 +1,8 @@
-# 历史消息编辑、版本切换与分支一致性修复（2026-11-04）
+# PR158 PostgreSQL任务时限修复待CI（2026-11-04）
 
-- 最新授权：修复[审查报告](../reviews/2026-11-04-message-branch-audit.md)全部4项问题。用户已追加授权提PR、CI通过后合并并增量部署最新main；其他任务保持原范围。
-- 隔离分支 `fix/message-branch-consistency`，base `origin/main@40150395aa7772736e92feb306dc20712e56ec14`（已fetch确认）；主工作区全部dirty保留。
-- 已实现：迁移0052持久化分支修订号；发送/排队/编辑/重试/切换的修订校验；前端版本操作互斥、迟到响应及分页围栏；摘要frame与文件/文档块复核来源隔离。实施与验证统一见[记录](updates/2026-11-04-message-branch-consistency.md)。
-- 本地验收完成：SQLite全套2319通过/202跳过/1项迁移版本断言失败已修，最终相关25通过/1跳过；PG+Redis专项172通过，Portal243项/生产构建和Chromium4项通过。准确基线、初轮失败及未测边界见同一记录。
-- 下一步：提交PR、确认CI通过后合并；固定最新main，增量更新后端0052与Portal。部署不备份、不追加重复测试或功能验收。
+- 新唤醒：head83fcab7的PG job因GitHub 15分钟总时限cancelled。日志连续正常推进到93%，未见断言失败；同产品上一head PG全套2460/83跳过、780.61s。初始化/收尾也占用该总期限，调整python矩阵总预算为20分钟，验收门禁不变。[证据与变更](updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。
+- 前轮E2E收尾修复83fcab7已推送，相关浏览器10项/Portal246项及生产构建本地通过；本轮SQLite远端通过，E2E仍运行。产品源码无改动，不重部署。其他工作区与前序文档dirty保留。
+- 分支fix/deletion-lifecycle，base e4479cd；最新head以同一[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)为准。工作流28项测试、YAML解析及diff检查通过。下一步继续跟进修复后最终CI；不自动合并或推进其他工作。
 
 ---
 

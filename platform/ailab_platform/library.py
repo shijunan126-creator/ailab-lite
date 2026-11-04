@@ -229,17 +229,34 @@ def trash_lineages(db: Session, user_id: str, lineage_ids: list[str], *, project
         )
 
 
+def resume_file_processing(db: Session, file: FileObject) -> None:
+    """A restored immutable file keeps completed work, but cannot reuse revoked jobs."""
+    from .api.jobs import stage_job
+
+    if file.deleted_at is not None or file.purged_at is not None:
+        return
+    meta = dict(file.meta or {})
+    if (meta.get("preview") or {}).get("reason") == "source_unavailable":
+        for key in ("preview", "preview_job_id", "preview_requested_at"):
+            meta.pop(key, None)
+    if file.status == "pending" and not meta.get("scan_exhausted") and meta.get("processing") != "awaiting_upload":
+        job = stage_job(db, "file", file_id=file.id)
+        meta["processing_job_id"] = job.id
+        meta["processing"] = "queued"
+        meta.pop("document_job_id", None)
+    file.meta = meta
+
+
 def restore_lineages(db: Session, user_id: str, lineage_ids: list[str]) -> None:
     for lineage in lineage_ids:
         head = db.scalar(select(FileObject).where(FileObject.user_id == user_id, FileObject.lineage_id == lineage, FileObject.is_head == 1))
-        if not head:
+        if not head or head.deleted_at is None:
             continue
         reserve_filename(db, head)
-        db.execute(
-            update(FileObject)
-            .where(FileObject.user_id == user_id, FileObject.lineage_id == lineage)
-            .values(filename=head.filename, name_key=head.name_key, deleted_at=None, purge_at=None, trashed_from_project_id=None)
-        )
+        for file in db.scalars(select(FileObject).where(FileObject.user_id == user_id, FileObject.lineage_id == lineage)):
+            file.filename, file.name_key = head.filename, head.name_key
+            file.deleted_at, file.purge_at, file.trashed_from_project_id = None, None, None
+            resume_file_processing(db, file)
         db.flush()
 
 

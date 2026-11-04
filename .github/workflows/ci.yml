@@ -63,8 +63,9 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-24.04
-    # the PostgreSQL full suite ran 11m40s on main@82ff828: 12 left no room for new tests
-    timeout-minutes: 15
+    # PR158: PostgreSQL took 13m on one runner and reached 93% at the 15m job limit on another.
+    # Include setup/artifact time and runner variance; test coverage and acceptance gates are unchanged.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:

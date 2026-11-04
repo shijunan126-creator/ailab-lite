@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, Conversation, errorMessage } from "../lib/api";
+import { forgetConversation } from "../lib/conversation-cache";
 import { projectsChanged } from "../lib/projects";
 import { conversationsChanged } from "./app-shell";
 import { IconBook, IconCheck, IconFilePen, IconFolderInput, IconMore, IconPin, IconPinOff, IconShare, IconSparkles, IconTrash } from "./icons";
@@ -121,6 +122,7 @@ export default function ConversationMenu({ conv, onDeleted, onPinned, className 
       setError("删除失败，请重试");
       return;
     }
+    forgetConversation(conv.id);
     onDeleted?.();
     conversationsChanged();
     if (conv.project_id) projectsChanged();

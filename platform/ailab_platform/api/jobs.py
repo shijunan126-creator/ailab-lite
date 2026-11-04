@@ -149,7 +149,14 @@ def _claim_locked(db, job, body):
         if not done:
             meta = file.meta or {}
             done = (
-                (envelope.kind == "file" and (file.status != FileStatus.PENDING or meta.get("scan_exhausted")))
+                (
+                    envelope.kind == "file"
+                    and (
+                        file.status != FileStatus.PENDING
+                        or meta.get("scan_exhausted")
+                        or (meta.get("processing_job_id") and meta["processing_job_id"] != job_id)
+                    )
+                )
                 or (envelope.kind == "thumbnail" and (file.status != FileStatus.READY or bool(meta.get("thumb_key"))))
                 or (
                     envelope.kind == "preview"
@@ -329,3 +336,20 @@ def thumbnail_batch(body: ThumbnailBatchIn, db: Session = Depends(get_db)):
             db.commit()
     db.commit()
     return {"cursor": files[-1].id if files else None, "enqueued": count}
+
+
+def fence_file_processing(db, file, token):
+    """Restored files admit only the new durable scan attempt, including document cache writes."""
+    job_id = (file.meta or {}).get("processing_job_id")
+    if not job_id:
+        return
+    if (
+        not token
+        or not db.execute(
+            update(OutboxMessage)
+            .where(OutboxMessage.id == job_id, OutboxMessage.claim_token == token, OutboxMessage.claimed_until > datetime.now(UTC))
+            .values(claim_token=OutboxMessage.claim_token)
+            .execution_options(synchronize_session=False)
+        ).rowcount
+    ):
+        raise HTTPException(409, "stale_file_attempt")

@@ -34,7 +34,7 @@ def process_skill_unpack(client, draft_id: str, job_id: str, token: str) -> None
             path = output / item["entry"]
             with path.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            key = f"skill-drafts/{source['user_id']}/{draft_id}/{digest}"
+            key = f"skill-drafts/{source['user_id']}/{draft_id}/attempts/{token}/{digest}"
             storage.put_file(key, path)
             data = path.read_bytes()
             files.append(

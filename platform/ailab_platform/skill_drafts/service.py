@@ -413,17 +413,20 @@ async def draft_forever():
         await asyncio.sleep(5)
 
 
-def invalidate_drafts(db, user_id, conversation_ids=None):
+def invalidate_drafts(db, user_id, conversation_ids=None, *, file_ids=None):
     """Remove derived draft contents as part of the source-deletion transaction."""
     from ..library import schedule_object_deletion
 
     query = select(SkillDraft).where(
         SkillDraft.user_id == user_id,
-        SkillDraft.origin == "conversation",
         SkillDraft.status.in_(("queued", "running", "preparing", "ready", "failed")),
     )
-    if conversation_ids is not None:
-        query = query.where(SkillDraft.conversation_id.in_(conversation_ids))
+    if file_ids is not None:
+        query = query.where(SkillDraft.base_file_id.in_(file_ids))
+    else:
+        query = query.where(SkillDraft.origin == "conversation")
+        if conversation_ids is not None:
+            query = query.where(SkillDraft.conversation_id.in_(conversation_ids))
     for draft in db.scalars(query):
         draft.status, draft.stage, draft.error = "discarded", None, "对话或文件来源已删除"
         draft.files, draft.claim_token, draft.claimed_until = [], None, None

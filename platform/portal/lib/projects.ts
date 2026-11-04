@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api, Project } from "./api";
+import { forgetProjectConversations } from "./conversation-cache";
 import { confirmDialog } from "./dialog";
 
 /** Pages tell each other (and the sidebar) that projects changed: created, renamed, deleted, files moved. */
@@ -72,6 +73,7 @@ export async function deleteProject(project: Project): Promise<boolean> {
   const kept = project.files ? `${project.files} 个文件会移到回收站。` : "";
   if (!(await confirmDialog({ title: `删除项目「${project.name}」？`, body: `${lost}${kept}` || undefined, action: "删除", danger: true }))) return false;
   await api(`/v1/projects/${project.id}`, { method: "DELETE" });
+  forgetProjectConversations(project.id);
   projectsChanged();
   return true;
 }
