@@ -265,6 +265,7 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     _start_conversation(page, "做一个 Excel 表格")
     _wait_for_turns(page, 1)
     assert page.locator(".preview-pane, .viewer").count() == 0
+    filename = page.locator(".file-card .name").inner_text().strip()
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
     # This generated workbook has a chart unsupported by the native reader;
     # its server fallback must still open, preserve values and reopen correctly.
@@ -273,28 +274,40 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     assert surface.count() == 1
     grid = surface.locator(".sheet-grid").inner_text()
     assert "华东" in grid and "合计" in grid
-    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    close = f"关闭 {filename}" if page.locator(".preview-pane").count() else "关闭预览"
     page.get_by_role("button", name=close, exact=True).click()
     surface.wait_for(state="detached")
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
     surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
-    close = "关闭 sales.xlsx" if page.locator(".preview-pane").count() else "关闭预览"
+    close = f"关闭 {filename}" if page.locator(".preview-pane").count() else "关闭预览"
     page.get_by_role("button", name=close, exact=True).click()
     _send(page, "表格再改一下")
     _wait_for_turns(page, 2)
     assert page.locator(".file-card").count() == 2
 
 
-def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
+def test_a_deck_that_cannot_be_previewed_says_so(logged_in, stack) -> None:
     from playwright.sync_api import expect
 
     page = logged_in
+    # A delivered deck must open by file_id even when the library renamed it on collision.
+    reserved = page.request.post(
+        stack.portal + "/api/v1/files",
+        multipart={"upload": {"name": "ailab-demo.pptx", "mimeType": "application/octet-stream", "buffer": b"reserved filename"}},
+    )
+    assert reserved.status == 201, reserved.text()
     _start_conversation(page, "帮我做一个 PPT")
     _wait_for_turns(page, 1, seconds=120)
     # the render runs in the background, so its note may land in a later group of steps: open them all
     _open_all_steps(page)
     steps = "\n".join(page.locator(".steps").all_inner_texts())
     assert "读取技能" in steps and "PPT" in steps and "交付文件" in steps
+    cid = page.url.rsplit("/", 1)[-1]
+    turn = page.request.get(f"{stack.portal}/api/v1/conversations/{cid}").json()["turns"][-1]
+    artifact = turn["artifacts"][0]
+    assert artifact["filename"] != "ailab-demo.pptx"
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
     # The host may have Office installed. A successful render is now opened explicitly.
     if "预览生成失败" not in steps:
         page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
@@ -302,6 +315,8 @@ def test_a_deck_that_cannot_be_previewed_says_so(logged_in) -> None:
         expect(surface).to_have_count(1)
         page_image = surface.locator("iframe.office-frame, img, .pdf-page canvas").first
         expect(page_image).to_be_visible(timeout=15000)
+        assert any(f"/files/{artifact['file_id']}/document" in url for url in requests)
+        assert not any(f"/runs/{turn['id']}/workspace/" in url for url in requests)
         if page_image.evaluate("el => el.tagName === 'IFRAME'"):
             slide = page_image.content_frame.locator(".slide-frame").first
             expect(slide).to_be_visible(timeout=20000)

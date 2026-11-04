@@ -1,3 +1,12 @@
+# PPT 无文字选区引用发送修复（2026-11-04）
+
+- 最新授权：修复审核发现的多行 PPT 表格引用 P2，已在 AILab viewer-reader 还原校验正文；无文字选区前次修复保留。原发现见[审查报告](../reviews/2026-11-04-ppt-selection-reference-review.md)，实施/检查见[本轮记录](updates/2026-11-04-ppt-selection-reference.md#多行-ppt-表格引用修复后续授权)。用户现已追加授权提PR、CI通过后合并；未授权部署。
+- 独立分支 `fix/ppt-selection-empty-ref`，base `origin/main@3d85a86e589cb651b954b8feba11f46e1203237d`；主工作区既有 UI/文档等 dirty 全部保留。下方 #158 待 CI 为历史记录，该 PR 已包含于本次 main 基线。
+- 根因与修复、验证及边界统一见[本轮记录](updates/2026-11-04-ppt-selection-reference.md)。PPT 图形/整页及其他无选中文字的位置引用允许空 quote，权限/版本/locator 校验保持；有文字仍校验来源，拒绝伪造及纯空白引文。
+- 本轮真实PPTX回归6例、Python全套2354通过/205跳过、Portal252项/build、Ruff通过；追加纯空白选区归一化，真实浏览器4组合全部通过。产品基线 `17bdf824` 已本地完成；已提交[PR #159](https://github.com/shijunan126-creator/ailab-lite/pull/159)，head `21119d1`、base `3d85a86e`；首轮后端等检查通过，E2E因改名交付PPT误读终态workspace失败，CI汇总随之失败；已修文件卡按file_id打开并退掉旧workspace tab，同时修复迟到完成回调重开终态workspace的竞态；表格引用4项浏览器回归及最终PPT/Excel两项通过，Portal252/build/Ruff通过。下一步推送本次修复并核对最终head全部CI与评审后squash合并。未部署，不自动推进其他暂停任务。
+
+---
+
 # PR158 PostgreSQL任务时限修复待CI（2026-11-04）
 
 - 新唤醒：head83fcab7的PG job因GitHub 15分钟总时限cancelled。日志连续正常推进到93%，未见断言失败；同产品上一head PG全套2460/83跳过、780.61s。初始化/收尾也占用该总期限，调整python矩阵总预算为20分钟，验收门禁不变。[证据与变更](updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。
