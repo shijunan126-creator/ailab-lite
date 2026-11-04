@@ -1,9 +1,99 @@
 """Exercise the real pinned runtime's check() in the limited reader process."""
 
+import shutil
+import subprocess
+from pathlib import Path
+
 import pytest
 
 from ailab_platform.config import settings
 from ailab_platform.worker.isolate import IsolationError, execute
+from tests.test_ledger_protocol import AUTH, api  # noqa: F401
+
+
+@pytest.fixture(scope="module")
+def ppt_reader(tmp_path_factory):
+    if settings.viewer_reader_path.exists():
+        return settings.viewer_reader_path
+    root = Path(__file__).resolve().parents[2]
+    modules = root / "vendor/office-suite/runtime/node_modules"
+    compiler = modules / ".bin/esbuild"
+    if not shutil.which("node") or not compiler.exists():
+        pytest.skip("build the pinned Office runtime dependencies or set AILAB_VIEWER_READER_PATH")
+    target = tmp_path_factory.mktemp("ppt-viewer-reader")
+    (target / "node_modules").symlink_to(modules, target_is_directory=True)
+    reader = target / "reader.mjs"
+    subprocess.run(
+        [
+            str(compiler),
+            str(root / "platform/ailab_platform/sandbox_tools/viewer-reader.ts"),
+            "--bundle",
+            "--platform=node",
+            "--format=esm",
+            "--packages=external",
+            f"--outfile={reader}",
+        ],
+        check=True,
+        timeout=30,
+        capture_output=True,
+    )
+    return reader
+
+
+@pytest.mark.parametrize("name", ["Table 2", ""])
+@pytest.mark.parametrize(
+    "rows,quote",
+    [
+        ([["收入", "利润"], ["100", "50"]], "收入 | 利润\n100 | 50"),
+        ([["A|B", "C\nD"], ["---", r"x\|y"]], "A|B | C\nD\n--- | x\\|y"),
+        ([["", ""], ["", ""]], " | \n | "),
+    ],
+)
+def test_ppt_table_reference_matches_viewer_cells_and_rejects_forgery(api, tmp_path, monkeypatch, ppt_reader, rows, quote, name):  # noqa: F811
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    from ailab_platform.api.document_view import normalized
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import FileObject
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    shape = slide.shapes.add_table(2, 2, Inches(1), Inches(1), Inches(4), Inches(2))
+    shape.name = name
+    for row, cells in enumerate(rows):
+        for col, text in enumerate(cells):
+            shape.table.cell(row, col).text = text
+    source = tmp_path / "table.pptx"
+    presentation.save(source)
+    at = f"slide:1/shape:{shape.shape_id}"
+    parsed = execute("viewer", source, tmp_path / "read", timeout=22, reader=str(ppt_reader), selections=[at])
+    assert normalized(parsed["selections"][0]["text"]) == normalized(quote)
+    with pytest.raises(IsolationError):
+        execute("viewer", source, tmp_path / "bad", timeout=22, reader=str(ppt_reader), selections=["slide:1/shape:999"])
+    uploaded = api.post("/v1/files", headers=AUTH, files={"upload": (source.name, source.read_bytes())})
+    assert uploaded.status_code == 201, uploaded.text
+    fid = uploaded.json()["id"]
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.status, file.meta = "ready", {"processing": "done"}
+        version = file.sha256
+        db.commit()
+
+    def checked(file, selections):
+        assert file.id == fid and file.sha256 == version and selections == [at]
+        return parsed["selections"]
+
+    monkeypatch.setattr("ailab_platform.api.document_view.checked_ranges", checked)
+    cid = api.post("/v1/conversations", headers=AUTH, json={}).json()["id"]
+    ref = {"file_id": fid, "version": version, "at": at, "quote": quote}
+    url = f"/v1/conversations/{cid}/messages"
+    body = {"prompt": "修改这张表", "model": "test-fast", "mode": "chat", "doc_refs": [ref]}
+    response = api.post(url, headers=AUTH, json={**body, "doc_refs": [{**ref, "quote": "invented table content"}]})
+    assert response.status_code == 422 and response.json()["detail"] == "quote does not match document range"
+    response = api.post(url, headers=AUTH, json=body)
+    assert response.status_code == 201, response.text
+    assert response.json()["doc_refs"] == [{**ref, "filename": uploaded.json()["filename"]}]
 
 
 def test_native_word_cells_ranges_and_invalid_locator(tmp_path):

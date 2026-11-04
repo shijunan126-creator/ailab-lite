@@ -77,6 +77,16 @@ test("frame error before ready falls back", async () => {
   await b.emit({ t: "error", message: "bundle failed" });
   expect(screen.getByText("fallback")).toBeTruthy();
 });
+test.each(["", "\n", " \t ", "收入 | 利润\n100 | 50", "A|B | C\nD\n--- | x\\|y", " | \n | "])("PPT reference and ask preserve the table selection %j", async text => {
+  const current: OfficeDoc = { path: "库/表格.pptx", filename: "表格.pptx", kind: "pptx", source: { fileId: "f1" } };
+  const b = await bridge(current);
+  const reference = { path: current.path, at: "slide:1/shape:2", text };
+  const expected = { file_id: "f1", version: "hash1", at: reference.at, quote: text.trim() ? text : "" };
+  await b.send({ t: "reference", id: 1, reference });
+  await b.send({ t: "ask", id: 2, question: "修改这张表", reference });
+  expect(onReference).toHaveBeenCalledWith(expected, "表格.pptx · slide:1/shape:2");
+  expect(onAsk).toHaveBeenCalledWith("修改这张表", expected, "表格.pptx · slide:1/shape:2");
+});
 // ---- the viewer giving up after it is up: renderer failures fall back once, source failures say why ----
 
 let fallbacks = 0;

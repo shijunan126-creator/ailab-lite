@@ -14,6 +14,52 @@ pytestmark = pytest.mark.e2e
 FIXTURES = PLATFORM.parent / "vendor/office-suite/runtime/fixtures"
 
 
+@pytest.mark.parametrize("empty", [False, True])
+@pytest.mark.parametrize("direct", [False, True])
+def test_ppt_table_reference_actions(logged_in, stack, tmp_path, empty, direct):
+    from playwright.sync_api import expect
+    from pptx import Presentation
+    from pptx.util import Inches
+
+    presentation = Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+    shape = slide.shapes.add_table(2, 1 if empty else 2, Inches(1), Inches(1), Inches(4), Inches(2))
+    if not empty:
+        for row, cells in enumerate([["收入", "利润"], ["100", "50"]]):
+            for col, value in enumerate(cells):
+                shape.table.cell(row, col).text = value
+    source = tmp_path / f"table-{uuid.uuid4().hex[:8]}.pptx"
+    presentation.save(source)
+    page = logged_in
+    page.set_input_files(".composer-box input[type=file]", str(source))
+    _start_conversation(page, "原生收件验收", "test-office-vision")
+    _wait_for_turns(page, 1)
+    page.locator(".turn .attach-chip.open").first.click()
+    file = next(item for item in page.request.get(stack.portal + "/api/v1/files").json() if item["filename"] == source.name)
+    _index(page, stack, file["id"])
+    frame = _frame(page, source.name)
+    table = frame.locator('.slide-frame[data-at="slide:1"] table')
+    expect(table).to_be_visible(timeout=25000)
+    # One click inside the actual table selects the shape, including a blank single-column table.
+    table.click(position={"x": 5, "y": 5})
+    if direct:
+        frame.get_by_role("button", name="提问", exact=True).click()
+        question = frame.get_by_role("textbox", name="就这里提问…")
+        question.fill("修改这张表")
+        question.press("Enter")
+    else:
+        frame.get_by_role("button", name=re.compile("^添加(到对话)?$")).click()
+        expect(page.locator(".composer-box .quote-chip")).to_be_visible()
+        _send(page, "修改这张表")
+    _wait_for_turns(page, 2)
+    cid = page.url.rsplit("/", 1)[-1]
+    turn = page.request.get(f"{stack.portal}/api/v1/conversations/{cid}").json()["turns"][-1]
+    assert len(turn["doc_refs"]) == 1
+    ref = turn["doc_refs"][0]
+    assert ref["at"] == f"slide:1/shape:{shape.shape_id}"
+    assert ref["quote"] == ("" if empty else "收入 | 利润\n100 | 50")
+
+
 def _index(page, stack, file_id):
     end = time.monotonic() + 30
     value = None

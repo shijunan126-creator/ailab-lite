@@ -59,7 +59,7 @@ const contentUrl = (source: OfficeDoc["source"]) =>
 
 /** The reference the API will check: the document's identity plus the exact version the user looked at. */
 export function docRefOf(doc: OfficeDoc, version: string, ref: { at: string; text: string }): DocRef {
-  const quote = ref.text.slice(0, 4000);
+  const quote = ref.text.trim() ? ref.text.slice(0, 4000) : "";
   return "fileId" in doc.source
     ? { file_id: doc.source.fileId, version, at: ref.at, quote }
     : { run_id: doc.source.runId, path: doc.source.path, version, at: ref.at, quote };

@@ -1249,3 +1249,5 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 ## 2026-11-04 无文字选区与消息引用
 
 - PPT 点击形状/整页、PDF 点击页面及空单元格可以有合法 locator 而没有选中文字；不要把 `Selection.text` 允许空字符串而 `DocRef.quote` 要求非空。空 quote 表示位置引用，必须照常验证权限、版本和位置；有 quote 才做文本匹配，纯空白仍拒绝。不能虚构引文或静默丢掉引用来消除422。回归与边界见[记录](docs/progress/updates/2026-11-04-ppt-selection-reference.md)。
+
+- 表格引用校验不能直接拿模型展示 Markdown 与查看器单元格拼接文字做子串匹配；PPT 整表引用需要精确还原边框/分隔行/转义竖线。只能解码确定的结构，保留数据行 `---`、单元格标点和伪造引文拒绝。真实PPTX→reader→API回归与构建前置见[本轮记录](docs/progress/updates/2026-11-04-ppt-selection-reference.md#多行-ppt-表格引用修复后续授权)。

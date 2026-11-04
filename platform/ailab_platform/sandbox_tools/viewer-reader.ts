@@ -28,6 +28,18 @@ const selections = (request.selections ?? []).map((at: string) => {
     if (page.next !== null && page.next <= cursor) throw Error('cursor_stalled');
     cursor = page.next;
   } while (cursor !== null);
+  // A clicked PPT table quotes cells joined with " | ", without Markdown borders/header rules.
+  // Decode only the parser's table framing; keep cell punctuation and escaped literal pipes.
+  if (locator.kind === 'pptx' && locator.shape) {
+    const lines = text.split('\n');
+    const table = lines.findIndex(line => line === `[shape:${locator.shape} table]` || line.startsWith(`[shape:${locator.shape} table "`));
+    if (table >= 0) {
+      text = lines.slice(table + 1).filter(line => line.startsWith('| ') && line.endsWith(' |'))
+        .filter((_, index) => index !== 1)
+        .map(line => line.slice(2, -2).split(/(?<!\\)\|/)
+          .map(cell => cell.trim().replace(/\\\|/g, '|')).join(' | ')).join('\n');
+    }
+  }
   // The viewer quotes TSV values and source formulas, not uncached browser calculations.
   // Model-facing tables contain row labels and Markdown
   // separators, which are not part of the selected cells and must not invalidate that quote.
