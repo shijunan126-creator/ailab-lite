@@ -1,3 +1,20 @@
+# OCR修复已整合最新main：验证与PR合并中（2026-11-04）
+
+- 最新授权：使用最新main修复已确认OCR问题、提PR后合并；未授权部署。独立`fix/ocr-lifecycle-pr`、base `origin/main@22a8b121`（含#159），主工作区既有dirty保留。
+- 已整合常驻ORT profiling内存修复与及时release；补齐完整选择结果、请求ID轮询/下载、不同范围409、当前job/attempt围栏、终态渲染失败收敛。说明与精确验证边界统一见[本轮记录](updates/2026-11-04-ocr-lifecycle-pr.md)；原4项发现保留在[审查](../reviews/2026-11-04-ocr-followup-audit.md)。
+- SQLite前序专项92项、新增/现有OCR21项、PG/Redis相关98项及最终代次/兼容8项、Portal254项/build、Ruff已通过；完整Python2367过/205跳过（收尾边界见记录）、最终OCR23项与真实浏览器1项通过。下一步提PR、核对最终head的CI/评审并合并；不部署，不推进其他暂停任务。
+
+---
+
+# OCR内存与重试修复：本地完成，未部署（2026-11-04）
+
+- 最新授权：定位并修复提取文字卡住，本地实现与验证；未授权push/PR/merge/部署。已从origin/main@3d85a86建立独立fix/ocr-memory-recovery；主工作区既有dirty不动。
+- 已确认旧执行器常开ORT节点profiling，密集文字批次造成追踪事件持续留存并触发1GiB OOM；另有Worker失败不release导致660秒重试等待。已修默认关闭追踪、显式短时诊断启用，并在可重试失败时release原任务。
+- 产品提交b0f0dfd；原1GiB限额下同图10次成功、峰值454.28MiB且文字与旧代码一致，真实HTTP链路/双库恢复/Portal构建/Ruff通过。全SQLite2341过/205跳过/4项环境路径失败，4项仅改解释器入口后定点通过；最终测试夹具修订及未测边界见[记录](updates/2026-11-04-ocr-memory-recovery.md)。临时容器/数据库/调试产物已清理。下一步仅按用户新指令发布部署；线上仍为原版本。
+- 下方PR158的待CI是main里的历史交接；当前已合并3d85a86，不能从旧记录推断新的发布授权。其他暂停工作保持。
+
+---
+
 # PPT 无文字选区引用发送修复（2026-11-04）
 
 - 最新授权：修复审核发现的多行 PPT 表格引用 P2，已在 AILab viewer-reader 还原校验正文；无文字选区前次修复保留。原发现见[审查报告](../reviews/2026-11-04-ppt-selection-reference-review.md)，实施/检查见[本轮记录](updates/2026-11-04-ppt-selection-reference.md#多行-ppt-表格引用修复后续授权)。用户现已追加授权提PR、CI通过后合并；未授权部署。

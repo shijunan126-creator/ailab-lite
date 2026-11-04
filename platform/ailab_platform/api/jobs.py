@@ -162,7 +162,10 @@ def _claim_locked(db, job, body):
                     envelope.kind == "preview"
                     and (meta.get("preview_job_id") != job_id or (meta.get("preview") or {}).get("status") != "pending")
                 )
-                or (envelope.kind == "ocr" and meta.get("ocr") not in {"pending", "running"})
+                or (
+                    envelope.kind == "ocr"
+                    and (meta.get("ocr") not in {"pending", "running"} or (meta.get("ocr_job_id") and meta["ocr_job_id"] != job_id))
+                )
                 or (
                     envelope.kind == "summary"
                     and (

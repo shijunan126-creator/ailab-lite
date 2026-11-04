@@ -8,4 +8,6 @@ Source pin: RapidAI/RapidOCR `80b427d69bfc5b91a12913394875910296c6f315` (Apache-
 
 Readiness checks all three actual sessions, not just installed providers. This is necessary but insufficient proof of NPU execution: acceptance must additionally retain ORT node profiling, CANN/driver/wheel/model identities, NPU utilization and cold/hot/30-minute measurements on the real host. No such hardware evidence exists in this local change. CPU preprocessing or permitted CPU operators must be distinguished from full-model fallback.
 
+Node profiling is off in the resident service: ORT retains events in memory for the session lifetime, so dense pages and repeated requests otherwise cause unbounded growth. Set `OCR_PROFILE_PREFIX` only in a separate, short-lived diagnostic executor, run the selected sample and end its sessions to flush the profile. Do not set it on the continuously running service. This diagnostic setting does not change inference or the cache fingerprint.
+
 OCR records pages, engine/backend and elapsed seconds; it does not bill tokens/points or impose per-user usage quotas. Request byte/pixel/deadline and executor concurrency limits remain fault-isolation boundaries.

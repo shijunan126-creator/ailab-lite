@@ -84,7 +84,12 @@ def main(args):
         bridge = Bridge()
 
         def upload():
-            r = client.post("/v1/files", headers=auth, files={"upload": ("ocr-core.png", encoded.getvalue(), "image/png")})
+            r = client.post(
+                "/v1/files",
+                headers=auth,
+                params={"disposition": "copy"},
+                files={"upload": ("ocr-core.png", encoded.getvalue(), "image/png")},
+            )
             r.raise_for_status()
             fid = r.json()["id"]
             process_file(fid, platform=bridge)

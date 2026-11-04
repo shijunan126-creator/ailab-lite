@@ -166,8 +166,11 @@ def _handle(queue, msg, file_id) -> None:
             process_ocr(file_id, platform)
         except Exception as exc:
             if not _obsolete_job(exc):
-                # Unacked: the API keeps the job pending, so redelivery resumes it without touching the file's readiness.
+                # Release the durable claim: leaving it unacked alone waits out
+                # the entire 660-second crash lease, even after OCR recovers.
                 log.warning("OCR for %s not finished yet; will retry", file_id, exc_info=True)
+                if hasattr(queue, "retry_after"):
+                    queue.retry_after(2)
                 return
         finally:
             platform.close()
