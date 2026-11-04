@@ -1,6 +1,7 @@
 """Explicit file-bound RapidOCR jobs. API owns unbilled page/engine/time records; Worker drives durable progress."""
 
 import asyncio
+import hashlib
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -83,9 +84,12 @@ def extraction_pages(meta):
 
 def publish_extraction(db, file, selected, records):
     generation = file.meta.get("ocr_generation") or uuid.uuid4().hex
-    key = f"derived/{file.id}/ocr/{generation}/result.txt"
     texts = [f"\f[page:{page}]\n" + get_storage().get_bytes(records[str(page - 1)]["text_key"]).decode() for page in selected]
-    get_storage().put_bytes(key, "\n".join(texts).encode(), "text/plain; charset=utf-8")
+    data = "\n".join(texts).encode()
+    key = f"derived/{file.id}/ocr-results/{hashlib.sha256(data).hexdigest()}.txt"
+    storage = get_storage()
+    if not storage.exists(key):
+        storage.put_bytes(key, data, "text/plain; charset=utf-8")
     file.meta = {
         **file.meta,
         "ocr_generation": generation,

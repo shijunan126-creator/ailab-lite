@@ -49,6 +49,8 @@ def test_mixed_and_fully_cached_selections_download_exact_pages(api, rapid_upstr
     first = request(api, fid, [1]).json()
     rendered(fid, 1)
     assert run_ocr_job(api, fid)["ocr"] == "done"
+    with SessionLocal() as db:
+        first_key = db.get(FileObject, fid).meta["ocr_text_key"]
     second = request(api, fid, [2, 1]).json()
     rendered(fid, 2)
     assert run_ocr_job(api, fid)["ocr"] == "done"
@@ -62,6 +64,8 @@ def test_mixed_and_fully_cached_selections_download_exact_pages(api, rapid_upstr
     text = api.get(f"/v1/files/{fid}/extracted-text", headers=AUTH, params={"request_id": third["request_id"]}).text
     assert "[page:1]" in text and "[page:2]" not in text
     assert len(rapid_upstream[0]) == 2
+    with SessionLocal() as db:
+        assert db.get(FileObject, fid).meta["ocr_text_key"] == first_key
     for endpoint in ("extract-text", "extracted-text"):
         for old in (first, second):
             assert api.get(f"/v1/files/{fid}/{endpoint}", headers=AUTH, params={"request_id": old["request_id"]}).status_code == 409

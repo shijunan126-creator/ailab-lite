@@ -2,7 +2,7 @@
 
 - 最新授权：使用最新main修复已确认OCR问题、提PR后合并；未授权部署。独立`fix/ocr-lifecycle-pr`、base `origin/main@22a8b121`（含#159），主工作区既有dirty保留。
 - 已整合常驻ORT profiling内存修复与及时release；补齐完整选择结果、请求ID轮询/下载、不同范围409、当前job/attempt围栏、终态渲染失败收敛。说明与精确验证边界统一见[本轮记录](updates/2026-11-04-ocr-lifecycle-pr.md)；原4项发现保留在[审查](../reviews/2026-11-04-ocr-followup-audit.md)。
-- SQLite前序专项92项、新增/现有OCR21项、PG/Redis相关98项及最终代次/兼容8项、Portal254项/build、Ruff已通过；完整Python与真实浏览器检查运行中。下一步处理失败后提PR、核对最终head的CI/评审并合并；不部署，不推进其他暂停任务。
+- SQLite前序专项92项、新增/现有OCR21项、PG/Redis相关98项及最终代次/兼容8项、Portal254项/build、Ruff已通过；完整Python2367过/205跳过（收尾边界见记录）、最终OCR23项与真实浏览器1项通过。下一步提PR、核对最终head的CI/评审并合并；不部署，不推进其他暂停任务。
 
 ---
 

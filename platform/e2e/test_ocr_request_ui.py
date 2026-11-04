@@ -1,8 +1,10 @@
 """Real-browser request binding; OCR responses are controlled at the HTTP edge."""
 
 import json
+import os
+import subprocess
+import sys
 import uuid
-from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -41,17 +43,20 @@ def test_text_extraction_binds_polling_and_download_to_request(logged_in, stack,
     page.route(f"**/api/v1/files/{fid}/extract-text*", extraction)
     # Let the actual download route stream a fixture; Chromium's intercepted
     # attachment responses can be canceled before Playwright saves the body.
-    key = f"derived/{fid}/ocr/selected-request/result.txt"
-    target = Path(stack.env["AILAB_STORAGE_ROOT"]) / key
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text("selected page text")
-    patched = page.request.patch(
-        stack.api + f"/internal/files/{fid}",
-        headers={"X-Service-Token": stack.service_token},
-        params={"job": "processing"},
-        data={"meta": {"ocr": "done", "ocr_generation": "selected-request", "ocr_text_key": key}},
-    )
-    assert patched.ok, patched.text()
+    fixture = """
+import sys
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import FileObject
+from ailab_platform.storage import get_storage
+fid = sys.argv[1]
+key = f"derived/{fid}/ocr/selected-request/result.txt"
+get_storage().put_bytes(key, b"selected page text", "text/plain")
+with SessionLocal() as db:
+    file = db.get(FileObject, fid)
+    file.meta = {**file.meta, "ocr": "done", "ocr_generation": "selected-request", "ocr_text_key": key}
+    db.commit()
+"""
+    subprocess.run([sys.executable, "-c", fixture, fid], env={**os.environ, **stack.env}, check=True, timeout=30)
     try:
         row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
         page.get_by_role("menuitem", name="提取文字", exact=True).click()
