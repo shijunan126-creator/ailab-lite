@@ -50,3 +50,18 @@
 ## PR 与合并授权
 
 用户追加要求提PR并merge。发布前fetch确认 `origin/main@3d85a86e` 未前进，产品基线为 `17bdf824`；前述本地结果继续适用，本次仅更新授权/交接记录，不重复产品检查。提交后核对最终head的CI、评审与合并条件，通过后squash；不使用无required-checks仓库中可能立即合并的 `--auto`。本轮不部署。
+
+已提交[PR #159](https://github.com/shijunan126-creator/ailab-lite/pull/159)，head `21119d1bb0fc985c76bd72f306dcd1d47375d46c`；CI启动、无评审/评论。此状态仅本地交接，不另推纯状态更新触发重复CI；等待全部检查结果再合并。
+
+
+## PR159 首轮 CI：交付文件身份修复
+
+head `21119d1` 的 SQLite/PostgreSQL、quality、shell、crawler、storage-contracts均通过；E2E为192通过/6跳过/1失败，CI汇总因e2e=failure失败，不是第二个独立缺陷。失败为 `test_a_deck_that_cannot_be_previewed_says_so`。运行41842126584的trace/服务日志显示文件卡展示 `ailab-demo (5).pptx`，打开的却是原工作区名称tab，终态Run的workspace/document与workspace/preview均返回410，侧栏显示live workspace unavailable。
+
+根因：文件卡优先以展示文件名（或同扩展名的唯一预览）复用工作区tab，原生预览再按原名查delivered映射；资料库名称避让后不能找到对应file_id。修复为Office/PDF交付文件卡直接使用自己的file_id打开既有库文件侧栏，并关闭它替代的旧工作区预览tab，避免两个同名tab和对终态工作区的读取。HTML等既有路径保持。复用已存在的file_id原生/分页回退，无新增依赖、后台任务或查询；不修改交付命名、归属或API授权。
+
+回归将预先上传保留 `ailab-demo.pptx` 以稳定制造改名，断言侧栏请求交付file_id/document、没有请求终态workspace，并继续检查真实页面。Excel测试按实际交付名称关闭tab。首个修复探针发现旧workspace与新库tab并存（Excel关闭按钮重复），已在同一根因修复中关闭被替代tab，不改为first()或放宽断言。
+
+另据trace，显式点击期间迟到的stream完成回调也会showFile旧名称；该回调现在仅在可精确对应交付文件时自动打开库文件，改名/无法精确对应时不再自动打开终态workspace，文件卡始终以其file_id打开。不通过扩展名猜交付身份。
+
+本轮仅改Portal和浏览器回归，复用已通过的后端CI，不重跑本地Python全套；中间6项浏览器检查中4个表格引用场景通过，最终PPT/Excel两项通过（exit0），Portal252项与build通过，Ruff/diff检查通过。最后两项在最终Portal源码上单独重跑，原4个表格引用场景在前一轮6项中已通过；未重复Python全套。没有部署；修复验证后更新同一PR并等待最终head全部CI。

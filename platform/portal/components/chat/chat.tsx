@@ -22,7 +22,7 @@ import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
 import PendingMessage from "./pending-message";
 import { enqueue, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
 import { addQuote, quotesKey } from "../../lib/doc-refs";
-import type { OfficeReveal } from "../preview/office-view";
+import { officeKind, type OfficeReveal } from "../preview/office-view";
 import { useShallow } from "zustand/react/shallow";
 import ModeToggle, { useChatMode } from "./mode-toggle";
 import PreviewPane, { previewTabKey, type PanePreview, type PaneSources } from "./preview-pane";
@@ -311,7 +311,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
             const finished = d?.turns.find((t) => t.id === run.id);
             if (!file || finished?.status !== "succeeded" || controller.signal.aborted) return;
             if (!window.matchMedia("(min-width: 761px)").matches) return; // on a phone the pane covers the chat: the file card opens it
-            showFileRef.current(file);
+            showFileRef.current(file, finished);
           });
           conversationsChanged();
         },
@@ -467,15 +467,23 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const modelName = (m: string) => models.find((x) => x.id === m)?.name || m;
 
   const openFiles = previews.filter((p) => !closedFiles.includes(previewTabKey(p)));
-  function showFile(filename: string) {
+  function showFile(filename: string, completed?: Run) {
+    const kind = officeKind(filename);
+    if (completed && kind) {
+      const artifact = completed.artifacts?.find((a) => !a.deleted && a.filename === filename);
+      if (artifact) return showLibraryFile({ file_id: artifact.file_id, filename: artifact.filename, replacePreviewKey: filename });
+      // A closed workspace cannot be reopened; renamed deliveries have their own exact file-card identity.
+      return;
+    }
     setClosedFiles((closed) => closed.filter((f) => f !== filename));
     setSelected(filename);
     setSourcesOn(false);
     setReaderOn(false);
     setPaneOpen(true);
   }
-  function showLibraryFile(file: { file_id: string; filename: string }) {
+  function showLibraryFile(file: { file_id: string; filename: string; replacePreviewKey?: string | null }) {
     const preview = { filename: file.filename, version: 1, libraryFileId: file.file_id };
+    if (file.replacePreviewKey) setClosedFiles((closed) => [...new Set([...closed, file.replacePreviewKey!])]);
     setLibraryPreviews((previous) => previous.some((p) => p.libraryFileId === file.file_id) ? previous : [...previous, preview]);
     showFile(previewTabKey(preview));
   }

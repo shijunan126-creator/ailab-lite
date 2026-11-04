@@ -18,6 +18,7 @@ import Answer from "./answer";
 import { answerForCopy } from "../genui/markdown-bridge";
 import { useSmoothText } from "../motion/smooth-text";
 import { useFileViewer } from "../preview/file-viewer";
+import { officeKind } from "../preview/office-view";
 
 export { reduceEvent } from "../../lib/work-process";
 export type { Item } from "../../lib/work-process";
@@ -195,7 +196,7 @@ export default memo(function Turn({
   modelLabel: string;
   previewKey: (run: Run, filename: string) => string | null;
   onPreview: (filename: string) => void;
-  onPreviewFile: (file: { file_id: string; filename: string }) => void;
+  onPreviewFile: (file: { file_id: string; filename: string; replacePreviewKey?: string | null }) => void;
   /** Show a quoted place in the side pane. */
   onRevealRef?: (run: Run, index: number) => void;
   onResume?: (run: Run) => void;
@@ -384,6 +385,8 @@ export default memo(function Turn({
                     <button
                       className="secondary sm"
                       onClick={() => {
+                        // A delivery's identity survives library name collisions and the workspace closing.
+                        if (officeKind(a.filename)) return onPreviewFile({ file_id: a.file_id, filename: a.filename, replacePreviewKey: previewKey(run, a.filename) });
                         // the live pane follows a file through later turns; anything else opens on its own
                         const key = PREVIEWABLE.test(a.filename) ? previewKey(run, a.filename) : null;
                         if (key) onPreview(key);
