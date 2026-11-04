@@ -19,6 +19,18 @@ _engine = None
 _manifest = None
 
 
+def configure_session_options(opts, backend):
+    # ORT retains node trace events until the session ends. A resident OCR
+    # executor must not accumulate a profile for every line of every page.
+    profile_prefix = os.environ.get("OCR_PROFILE_PREFIX")
+    opts.enable_profiling = bool(profile_prefix)
+    if profile_prefix:
+        opts.profile_file_prefix = profile_prefix
+    if backend == "cann":
+        opts.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
+    return opts
+
+
 def load_engine():
     import onnxruntime as ort
     from rapidocr import RapidOCR
@@ -50,14 +62,7 @@ def load_engine():
     original_options = OrtInferSession._init_sess_opts
 
     def options(config):
-        opts = original_options(config)
-        opts.enable_profiling = True
-        opts.profile_file_prefix = os.environ.get(
-            "OCR_PROFILE_PREFIX", "/tmp/ailab-ocr-profile"
-        )
-        if backend == "cann":
-            opts.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
-        return opts
+        return configure_session_options(original_options(config), backend)
 
     OrtInferSession._init_sess_opts = staticmethod(options)
     try:

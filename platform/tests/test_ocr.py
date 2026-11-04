@@ -313,7 +313,7 @@ def rapid_upstream(monkeypatch):
             payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             seen.append(payload)
             encoded = json.dumps(reply).encode()
-            self.send_response(200)
+            self.send_response(reply.get("status", 200))
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
@@ -356,6 +356,50 @@ def test_rapidocr_metering_without_billing_and_duplicate_delivery(api, rapid_ups
         assert file.meta["ocr_pages"]["0"]["seconds"] == 0.12
         assert not db.scalar(select(ModelUsage).where(ModelUsage.file_id == fid))
         assert not db.scalar(select(UsageReservation).where(UsageReservation.file_id == fid))
+
+
+def test_executor_outage_releases_claim_and_redelivery_completes(api, rapid_upstream, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from ailab_platform.api import preview_dispatch
+    from ailab_platform.queue import InMemoryQueue
+    from ailab_platform.worker import main
+
+    fid = upload(api)
+    process_file(fid, platform=OCRClient(api))
+    assert api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={}).status_code == 200
+    payload = queued_ocr(fid)[0]
+    jid = payload["job_id"]
+    queue = InMemoryQueue()
+    monkeypatch.setattr(main, "PlatformClient", lambda **kwargs: OCRClient(api))
+    monkeypatch.setattr(preview_dispatch, "get_queue", lambda: queue)
+    queue.enqueue(settings.file_queue, payload)
+    # A controlled HTTP dependency outage, after the durable job is claimed.
+    rapid_upstream[1]["status"] = 503
+    before = datetime.now(UTC)
+    main.handle_message(queue, queue.dequeue(settings.file_queue, timeout=0))
+    rapid_upstream[1].pop("status")
+    now = datetime.now(UTC)
+    with SessionLocal() as db:
+        job, file = db.get(OutboxMessage, jid), db.get(FileObject, fid)
+        assert job and job.claim_token is None and job.claimed_until is None
+        due = job.next_attempt_at
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=UTC)
+        assert before <= due <= now + timedelta(seconds=2)
+        assert file.status == "ready" and file.meta["ocr"] == "pending"
+        assert file.meta["ocr_reason"] == "dependency_unavailable"
+    assert queue.outstanding(settings.file_queue) == []
+    # The dispatcher republishes the same durable identity, not a new OCR job.
+    assert preview_dispatch.dispatch_preview_jobs(jid, now=now + timedelta(seconds=3)) == 1
+    main.handle_message(queue, queue.dequeue(settings.file_queue, timeout=0))
+    assert queue.outstanding(settings.file_queue) == []
+    with SessionLocal() as db:
+        assert db.get(OutboxMessage, jid) is None
+        assert db.get(FileObject, fid).meta["ocr"] == "done"
+    assert len(rapid_upstream[0]) == 2
+    response = api.get(f"/v1/files/{fid}/extracted-text", headers=AUTH)
+    assert response.status_code == 200 and "123" in response.text
 
 
 def test_cpu_response_never_counts_as_npu_success(api, rapid_upstream):
