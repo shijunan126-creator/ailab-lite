@@ -249,6 +249,7 @@ def start_run(
     template=None,
     frozen_template: dict | None = None,
     client_send_id: str | None = None,
+    expected_branch_revision: int | None = None,
     client: str | None = None,
     doc_refs=None,
     frozen_doc_refs=None,
@@ -275,6 +276,7 @@ def start_run(
                         "doc_refs": [r.model_dump(exclude_none=True) if hasattr(r, "model_dump") else r for r in doc_refs or []],
                         "title": title,
                         "conversation_id": conversation.id if conversation else None,
+                        **({"expected_branch_revision": expected_branch_revision} if expected_branch_revision is not None else {}),
                         "mode": mode,
                         "skill": skill,
                         "skills": [s.model_dump() if hasattr(s, "model_dump") else s for s in selections]
@@ -325,7 +327,9 @@ def start_run(
             db.refresh(conversation)  # project deletion may have completed while this request waited
             if conversation.active_run_id != expected_active:
                 raise HTTPException(409, "对话路径已改变，请刷新后重试")
-            from ..conversation_tree import path_ids, require_idle
+            from ..conversation_tree import path_ids, require_branch, require_idle
+
+            require_branch(conversation, expected_branch_revision)
 
             require_idle(db, conversation.id)
             if not sibling_of and len(path_ids(db, conversation.id, conversation.active_run_id)) >= 500:
@@ -628,6 +632,9 @@ def _new_version(db, user, run_id, body, editing=False):
         conv = db.get(Conversation, old.conversation_id, populate_existing=True) if old.conversation_id else None
         if not conv or conv.deleted_at is not None:
             raise HTTPException(409, "只能修改对话中的消息")
+        from ..conversation_tree import require_branch
+
+        require_branch(conv, body.expected_branch_revision)
         require_idle(db, conv.id)
         ids = path_ids(db, conv.id, conv.active_run_id)
         if old.status not in RunStatus.TERMINAL or old.id not in ids or (not editing and conv.active_run_id != old.id):
@@ -682,6 +689,7 @@ def _new_version(db, user, run_id, body, editing=False):
         )
         new.options = {**{k: v for k, v in options.items() if k not in {"skill", "skill_title", "skills"}}, **new.options}
         conv.queue_paused = True
+        conv.branch_revision += 1
         if editing:
             new.edited_from = old.id
         else:
@@ -689,9 +697,9 @@ def _new_version(db, user, run_id, body, editing=False):
             old.superseded_by_run_id = new.id  # legacy audit field, no longer controls path membership
         # The shared summary cache is reusable only at an ancestor of the replacement's parent.
         if conv.summary_through_run_id not in path_ids(db, conv.id, old.parent_run_id):
-            conv.summary, conv.summary_through_run_id = None, None
+            conv.summary, conv.summary_through_run_id, conv.summary_frame_id = None, None, None
         db.commit()
-        return run_dict(db, new, detail=True)
+        return {**run_dict(db, new, detail=True), "branch_revision": conv.branch_revision}
 
 
 @router.post("/runs/{run_id}/retry", response_model=RunDetail, status_code=201)

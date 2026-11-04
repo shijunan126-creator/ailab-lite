@@ -282,6 +282,7 @@ class Conversation(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True, nullable=True)
     queue_paused: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
     active_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    branch_revision: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     pinned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     forked_from: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)

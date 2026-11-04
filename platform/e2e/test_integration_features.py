@@ -327,3 +327,69 @@ def test_mobile_composer_and_fixed_library_selection(logged_in, stack, tmp_path)
         return r.x >= 0 && r.right <= innerWidth && r.y >= 0 && r.bottom <= innerHeight;
     }""")
     page.screenshot(path=str(stack.log_dir / "integration-mobile-selection.png"))
+
+
+def test_stale_tab_send_is_rejected_after_edit(logged_in):
+    page = logged_in
+    first, edited = _prompt("旧分支"), _prompt("新分支")
+    _start_conversation(page, first)
+    _wait_for_turns(page, 1)
+    other = page.context.new_page()
+    try:
+        other.goto(page.url)
+        expect(other.locator(".msg.user .bubble")).to_have_text(first)
+        page.get_by_role("button", name="编辑消息", exact=True).click()
+        page.get_by_role("textbox", name="编辑消息", exact=True).fill(edited)
+        page.locator(".edit-box").get_by_role("button", name="发送", exact=True).click()
+        expect(page.locator(".versions-n")).to_have_text("2/2", timeout=20000)
+        _wait_for_turns(page, 1)
+        _send(other, _prompt("不能误发"))
+        expect(other.locator(".send-failed")).to_contain_text("对话版本已改变", timeout=10000)
+        # Reload must show exactly the selected branch, with no accidental continuation.
+        page.reload()
+        expect(page.locator(".turn")).to_have_count(1)
+        expect(page.locator(".msg.user .bubble")).to_have_text(edited)
+    finally:
+        other.close()
+
+
+def test_version_switch_locks_all_turns_until_response(logged_in):
+    page = logged_in
+    first, second, edited = _prompt("原分支"), _prompt("后续"), _prompt("另一分支")
+    _start_conversation(page, first)
+    _wait_for_turns(page, 1)
+    _send(page, second)
+    _wait_for_turns(page, 2)
+    page.get_by_role("button", name="重新生成", exact=True).click()
+    expect(page.locator(".versions-n")).to_have_text("2/2", timeout=20000)
+    _wait_for_turns(page, 2)
+    page.get_by_role("button", name="编辑消息", exact=True).first.click()
+    page.get_by_role("textbox", name="编辑消息", exact=True).fill(edited)
+    page.locator(".edit-box").get_by_role("button", name="发送", exact=True).click()
+    expect(page.locator(".turn")).to_have_count(1)
+    expect(page.locator(".versions-n")).to_have_text("2/2", timeout=20000)
+    _wait_for_turns(page, 1)
+    page.get_by_role("button", name="上一个版本", exact=True).click()
+    expect(page.locator(".turn")).to_have_count(2)
+    held = []
+
+    def delay_response(route):
+        held.append((route, route.fetch()))
+
+    page.route("**/api/v1/conversations/*/active", delay_response)
+    try:
+        page.get_by_role("button", name="下一个版本", exact=True).first.click()
+        expect(page.locator(".versions button:enabled")).to_have_count(0)
+        box = page.get_by_role("textbox", name="消息", exact=True)
+        box.fill("切换期间不能发送")
+        expect(page.get_by_role("button", name="发送", exact=True)).to_be_disabled()
+        assert len(held) == 1
+        route, response = held.pop()
+        route.fulfill(response=response)
+        expect(page.locator(".turn")).to_have_count(1)
+        expect(page.locator(".msg.user .bubble")).to_have_text(edited)
+        expect(page.get_by_role("button", name="发送", exact=True)).to_be_enabled()
+    finally:
+        for route, response in held:
+            route.fulfill(response=response)
+        page.unroute("**/api/v1/conversations/*/active", delay_response)

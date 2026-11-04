@@ -13,6 +13,7 @@ export type Pending = {
   id: string; // client_send_id: a retry after a lost response finds the same run instead of starting another
   conversationId: string | null; // null: a new conversation, created when the message goes out
   projectId: string | null;
+  expectedBranchRevision?: number; // frozen at submit, including upload waits and retries
   prompt: string;
   attachments: string[]; // upload keys, in the order the user attached them
   docRefs?: DocRef[]; // quotes from the side-pane viewer, checked by the API against the exact version
@@ -111,7 +112,7 @@ async function turnOf(p: Pending) {
 async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]> {
   const skills = p.options.skills?.map(({ name, file_id, at }) => ({ name, file_id, at }));
   const upload_ids = Object.fromEntries(p.attachments.map(getUpload).filter((u) => u?.key.startsWith("local:") && u.fileId).map((u) => [u!.fileId!, u!.key]));
-  const body = { prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
+  const body = { expected_branch_revision: p.expectedBranchRevision, prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
     conversation = await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model: p.model, project_id: p.projectId || undefined }) });

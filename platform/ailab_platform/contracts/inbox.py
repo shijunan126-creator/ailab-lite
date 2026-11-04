@@ -63,6 +63,7 @@ class NotificationRead(BaseModel):
 
 
 class QueueCreate(BaseModel):
+    expected_branch_revision: int | None = Field(default=None, ge=0)
     upload_ids: dict[str, str] | None = Field(default=None, max_length=50)
     doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     template: TemplateSelection | None = None

@@ -1,5 +1,7 @@
 # 开发路线图
 
+2026-11-04 已授权修复历史消息编辑/版本切换的4项分支一致性缺陷，实施与验收见[记录](updates/2026-11-04-message-branch-consistency.md)；不沿用其他任务的PR或部署授权。
+
 2026-11-04 已授权实施上下文压缩 HLD v4（含用户修订的 10K–48K/64K 区间与实际值计数）并提 PR、合并、部署；状态见 [current](current.md) 与[记录](updates/2026-11-04-context-hld.md)。
 
 

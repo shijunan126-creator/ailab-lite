@@ -42,6 +42,7 @@ def conversation_out(conv: Conversation, last_status: str | None = None) -> dict
         "id": conv.id,
         "pinned_at": conv.pinned_at,
         "active_run_id": conv.active_run_id,
+        "branch_revision": conv.branch_revision,
         "forked_from": conv.forked_from,
         "project_id": conv.project_id,
         "title": conv.title,
@@ -238,6 +239,7 @@ def send_message(conversation_id: str, body: MessageCreate, user: User = Depends
         doc_refs=body.doc_refs,
         upload_ids=body.upload_ids,
         client_send_id=body.client_send_id,
+        expected_branch_revision=body.expected_branch_revision,
         client="portal",
     )
     return run_dict(db, run, detail=True)
@@ -483,6 +485,9 @@ def select_active(conversation_id: str, body: ConversationActive, user: User = D
         run = db.get(Run, body.run_id)
         if not run or run.conversation_id != conv.id:
             raise HTTPException(404, "轮次不存在")
+        from ..conversation_tree import require_branch
+
+        require_branch(conv, body.expected_branch_revision)
         expected = conv.active_run_id
         depth = len(path_ids(db, conv.id, run.id))
         while True:
@@ -501,7 +506,11 @@ def select_active(conversation_id: str, body: ConversationActive, user: User = D
         changed = db.execute(
             update(Conversation)
             .where(Conversation.id == conv.id, Conversation.active_run_id == expected)
-            .values(active_run_id=run.id, updated_at=utcnow())
+            .values(
+                active_run_id=run.id,
+                branch_revision=conv.branch_revision + int(expected != run.id),
+                updated_at=utcnow(),
+            )
         ).rowcount
         if not changed:
             raise HTTPException(409, "对话路径已改变，请刷新后重试")

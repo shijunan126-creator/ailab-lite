@@ -11,7 +11,7 @@ import { handleClientCall, type ClientCall } from "../../lib/js/client-calls";
 import { extractSkill } from "../../lib/skill-drafts";
 import { useStable } from "../../lib/use-stable";
 import { cacheConversation, cachedConversation } from "../../lib/conversation-cache";
-import { mergeTurns, mergePreviews, refreshConversation } from "../../lib/conversation-pages";
+import { prependConversationPage, refreshConversation } from "../../lib/conversation-pages";
 import { isTerminal } from "../../lib/format";
 import { projectsChanged, useProjects } from "../../lib/projects";
 import { conversationsChanged, conversationTitled } from "../app-shell";
@@ -160,12 +160,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
 
   // A read started before a confirmed write can still contain the old queue or turn.
   const detailWriteVersion = useRef(0);
+  const branchMutation = useRef(false);
+  const visibleRevision = useRef(detail?.branch_revision);
+  visibleRevision.current = detail?.branch_revision;
+  const [branchChanging, setBranchChanging] = useState(false);
   function markDetailWrite() {
     ++detailWriteVersion.current;
   }
 
   const loadDetail = useCallback(async (): Promise<ConversationDetail | null> => {
-    if (!id) return null;
+    if (!id || branchMutation.current) return null;
     detailController.current?.abort();
     const controller = new AbortController();
     detailController.current = controller;
@@ -173,9 +177,16 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     const version = detailWriteVersion.current;
     try {
       const d = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20`, { signal: controller.signal });
-      if (seq !== loadSeq.current) return null;
+      if (seq !== loadSeq.current || branchMutation.current) return null;
       // Keep the caller's refresh/follow continuation, but obtain a snapshot after the write.
       if (version !== detailWriteVersion.current) return loadDetail();
+      if (visibleRevision.current !== undefined && d.branch_revision !== undefined && d.branch_revision < visibleRevision.current) return null;
+      if (visibleRevision.current !== d.branch_revision) {
+        streamController.current?.abort();
+        setStreaming(null);
+        clearBranchPreviews();
+      }
+      visibleRevision.current = d.branch_revision;
       setDetail((previous) => refreshConversation(previous, d));
       return d;
     } catch (err: any) {
@@ -304,7 +315,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
         if (startedHere.delete(last.id)) answerFrom(last.id);
         controller = follow(last);
       }
-      else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target);
+      else if (target && d && !d.turns.some((t) => t.id === target)) await switchRef.current(target, d.branch_revision ?? 0);
       if (target && !disposed) requestAnimationFrame(() => reveal(target));
     });
     return () => {
@@ -325,12 +336,15 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       const page = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20&before=${encodeURIComponent(detail.turns[0].id)}`, { signal: controller.signal });
       if (controller.signal.aborted) return;
+      if (page.branch_revision !== detail.branch_revision) {
+        void loadDetail();
+        return;
+      }
       const el = scroller.current;
       prependHeight.current = el ? el.scrollHeight - el.scrollTop : null;
       stick.current = false;
       for (const t of page.turns) opened.current?.add(t.id);
-      setDetail((d) => d && d.id === page.id ? { ...d, turns: mergeTurns(page.turns, d.turns),
-        previews: mergePreviews(page.previews, d.previews), has_more: page.has_more } : d);
+      setDetail((d) => d ? prependConversationPage(d, page) ?? d : d);
     } catch (err: any) {
       if (!controller.signal.aborted) setError(errorMessage(err));
     } finally {
@@ -509,6 +523,10 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   function takeSent(p: Pending) {
     const { run, queued, conversation } = p.sent || {};
     removePending(p.id);
+    if (id && p.expectedBranchRevision !== undefined && p.expectedBranchRevision !== detail?.branch_revision) {
+      void loadDetail();
+      return;
+    }
     if (queued) {
       markDetailWrite();
       setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== queued.id), queued] } : d));
@@ -570,7 +588,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const convId = id || created!.id;
       const run = await api<Run>(`/v1/conversations/${convId}/messages`, {
         method: "POST", signal,
-        body: JSON.stringify({ prompt, model: model || undefined, file_ids: fileIds, ...options }),
+        body: JSON.stringify({ prompt, model: model || undefined, file_ids: fileIds, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       if (created) {
         // the conversation page starts from what is already known: the question shows at once and its answer streams in
@@ -607,7 +625,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       const item = await api<QueuedMessage>(`/v1/conversations/${id}/queue`, {
         method: "POST",
         signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, steer, ...options }),
+        body: JSON.stringify({ prompt, file_ids: fileIds, model: model || undefined, steer, ...options, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       markDetailWrite();
       setDetail((d) => (d ? { ...d, queue: [...(d.queue || []).filter((q) => q.id !== item.id), item] } : d));
@@ -686,51 +704,87 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     }
   }
 
+  function beginBranchChange() {
+    if (branchMutation.current) return false;
+    branchMutation.current = true;
+    setBranchChanging(true);
+    markDetailWrite();
+    ++loadSeq.current;
+    detailController.current?.abort();
+    olderController.current?.abort();
+    olderController.current = null;
+    setLoadingOlder(false);
+    streamController.current?.abort();
+    setStreaming(null);
+    return true;
+  }
+
+  function endBranchChange() {
+    markDetailWrite();
+    branchMutation.current = false;
+    setBranchChanging(false);
+    // Also reconcile an uncertain/lost POST response with the actual server path.
+    void loadDetail();
+  }
+
+  function clearBranchPreviews() {
+    setLivePreviews([]);
+    setLibraryPreviews([]);
+    setPaneSources(null);
+    setSheetSources(null);
+    setSourcesOn(false);
+  }
+
   /** A new version of a turn (regenerated, or its message edited): it and everything after it give way to the new one. */
   function branchTo(old: Run, fresh: Run) {
     olderController.current?.abort();
     olderController.current = null;
     setLoadingOlder(false);
-    setLivePreviews([]);
-    setLibraryPreviews([]);
+    clearBranchPreviews();
+    visibleRevision.current = fresh.branch_revision ?? undefined;
     setDetail((d) => {
       if (!d) return d;
       const at = d.turns.findIndex((t) => t.id === old.id);
-      return { ...d, turns: [...(at < 0 ? d.turns : d.turns.slice(0, at)).filter((t) => t.id !== fresh.id), fresh] };
+      return { ...d, active_run_id: fresh.id, branch_revision: fresh.branch_revision ?? d.branch_revision, previews: [], turns: [...(at < 0 ? d.turns : d.turns.slice(0, at)).filter((t) => t.id !== fresh.id), fresh] };
     });
     answerFrom(fresh.id);
     follow(fresh);
-    loadDetail(); // the run alone does not carry its versions: the conversation does
     conversationsChanged();
   }
 
   /** Answer the last message again; the old answer stays as another version. */
   async function retry(run: Run) {
+    if (!beginBranchChange()) return;
     setError("");
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/retry`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ model: model || null }),
+        body: JSON.stringify({ model: model || null, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       branchTo(run, fresh);
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      endBranchChange();
     }
   }
 
   /** Send an earlier message again, changed; the conversation continues from there. */
   async function edit(run: Run, prompt: string, skills: SkillPick[]): Promise<boolean> {
+    if (!beginBranchChange()) return false;
     setError("");
     try {
       const fresh = await api<Run>(`/v1/runs/${run.id}/edit`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, mode: null }),
+        body: JSON.stringify({ prompt, skills, file_ids: null, model: model || null, mode: null, expected_branch_revision: detail?.branch_revision ?? 0 }),
       });
       branchTo(run, fresh);
       return true;
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
       return false;
+    } finally {
+      endBranchChange();
     }
   }
 
@@ -738,8 +792,8 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   switchRef.current = switchTo;
 
   /** Show another version of a turn: the conversation below it follows that version. */
-  async function switchTo(runId: string) {
-    if (!id) return;
+  async function switchTo(runId: string, expectedRevision = detail?.branch_revision ?? 0) {
+    if (!id || !beginBranchChange()) return;
     setError("");
     olderController.current?.abort();
     olderController.current = null;
@@ -747,18 +801,20 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
     try {
       const page = await api<ConversationDetail>(`/v1/conversations/${id}/active`, {
         method: "POST", signal: actionController.current.signal,
-        body: JSON.stringify({ run_id: runId }),
+        body: JSON.stringify({ run_id: runId, expected_branch_revision: expectedRevision }),
       });
       for (const t of page.turns) opened.current?.add(t.id); // a version switch is not new content arriving
       ++loadSeq.current; // a detail load already in flight would bring the old path back
       olderController.current?.abort();
       olderController.current = null;
       setLoadingOlder(false);
-      setLivePreviews([]);
-      setLibraryPreviews([]);
+      clearBranchPreviews();
+      visibleRevision.current = page.branch_revision;
       setDetail((d) => (d && d.id === page.id ? { ...page, turns: page.turns } : page));
     } catch (err: any) {
       if (!actionController.current.signal.aborted) setError(errorMessage(err));
+    } finally {
+      endBranchChange();
     }
   }
 
@@ -870,9 +926,11 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   /** The composer's message: answers a waiting question directly; anything else goes out through the outbox, which
    * shows it at once and asks the model only when its files are ready. */
   async function submit(message: Outgoing): Promise<boolean> {
+    if (branchMutation.current || (id && !detail)) return false;
     if (waiting && question && !message.attachments.length && !message.docRefs?.length) return send(message.prompt, [], message.options);
     const info = models.find((m) => m.id === model);
     enqueue({
+      expectedBranchRevision: detail?.branch_revision ?? 0,
       conversationId: id, projectId: projectId, prompt: message.prompt, attachments: message.attachments, options: message.options, docRefs: message.docRefs,
       model, vision: !!info?.capabilities?.includes("vision"), steer: message.steer, queued: running && !!id && !question,
     });
@@ -898,7 +956,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
       models={models}
       model={model}
       onModel={setModel}
-      busy={busy}
+      busy={busy || branchChanging || (!!id && !detail)}
       running={running && !question}
       queueable={!!id && !question}
       onSubmit={submit}
@@ -1009,7 +1067,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
                     onExtract={turnExtract}
                     onEdit={turnEdit}
                     onSwitch={turnSwitch}
-                    locked={running}
+                    locked={running || branchChanging}
                     forkModes={forkModes[i]}
                     onFork={turnFork}
                     projectId={projectId}
