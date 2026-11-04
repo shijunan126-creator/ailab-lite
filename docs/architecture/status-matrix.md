@@ -303,3 +303,5 @@ API新消息与排队统一执行开始后不可切换的合同；省略继承�
 ## GenUI 存图与表格复制（2026-11-01）
 
 GenUI 块可复制为图片/下载 PNG（浏览器内光栅，首击加载），表格（Markdown、GenUI Table/Compare）复制为 HTML + Markdown，代码块逐块复制。HtmlArtifact 不支持存图。[记录](../progress/updates/2026-11-01-genui-copy.md)。
+
+2026-11-04 历史消息分支一致性：分支修订围栏、分页/版本互斥、摘要frame及复核来源隔离已本地实施并经双库专项、Portal构建与4项真实浏览器回归验证；准确结果和未测边界见[记录](../progress/updates/2026-11-04-message-branch-consistency.md)。未合入main、未部署。

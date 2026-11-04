@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { api, ConversationDetail, errorMessage, Run } from "../../../lib/api";
-import { mergeTurns } from "../../../lib/conversation-pages";
+import { api, ConversationDetail, errorMessage } from "../../../lib/api";
+import { prependConversationPage } from "../../../lib/conversation-pages";
 import { formatDate } from "../../../lib/format";
 import Answer from "../../../components/chat/answer";
 import { preloadGenUI } from "../../../components/genui";
@@ -30,12 +30,13 @@ export default function PrintConversation() {
     const controller = new AbortController();
     (async () => {
       let page = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20`, { signal: controller.signal });
-      let turns: Run[] = page.turns;
-      for (let i = 0; page.has_more && turns.length && i < MAX_PAGES; i++) {
-        page = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20&before=${encodeURIComponent(turns[0].id)}`, { signal: controller.signal });
-        turns = mergeTurns(page.turns, turns);
+      for (let i = 0; page.has_more && page.turns.length && i < MAX_PAGES; i++) {
+        const older = await api<ConversationDetail>(`/v1/conversations/${id}?limit=20&before=${encodeURIComponent(page.turns[0].id)}`, { signal: controller.signal });
+        const merged = prependConversationPage(page, older);
+        if (!merged) throw new Error("对话版本已改变，请重新导出");
+        page = merged;
       }
-      setDetail({ ...page, turns });
+      setDetail(page);
     })().catch((err) => !controller.signal.aborted && setError(errorMessage(err)));
     return () => controller.abort();
   }, [id]);

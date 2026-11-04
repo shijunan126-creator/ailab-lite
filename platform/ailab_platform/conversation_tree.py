@@ -50,3 +50,9 @@ def require_idle(db, conversation_id):
 
 def siblings_query(conversation_id, parent_id):
     return select(Run.id).where(Run.conversation_id == conversation_id, Run.parent_run_id == parent_id).order_by(Run.created_at, Run.id)
+
+
+def require_branch(conversation, expected_revision):
+    # Optional only for older API clients. Portal freezes this before uploads/queue waits.
+    if expected_revision is not None and conversation.branch_revision != expected_revision:
+        raise HTTPException(409, {"code": "conversation_branch_changed", "message": "对话版本已改变，请刷新后重新发送"})

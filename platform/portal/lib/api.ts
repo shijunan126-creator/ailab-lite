@@ -53,6 +53,7 @@ export type Run = {
   usage?: { prompt_tokens?: number; completion_tokens?: number; calls?: number };
   resumable?: boolean; // a failure the run can continue from (its checkpoint survived)
   retry_of?: string | null; // the turn this one regenerated
+  branch_revision?: number | null; // returned when editing or regenerating switches the branch
   edited_from?: string | null; // the turn whose message was edited into this one
   versions?: { index: number; count: number; ids: string[] }; // the turns answering the same point of the conversation
   steered?: { id: string; prompt: string }[]; // messages the user added while it was running, in the order it took them
@@ -159,6 +160,7 @@ export const skillKind = (s: Pick<Skill, "kind" | "scope" | "name">): SkillKind 
   s.kind ?? (s.scope === "personal" ? "personal" : s.name.startsWith("platform.") ? "base" : "builtin");
 
 export type Conversation = {
+  branch_revision?: number; // changes only on an edit/retry/version switch, not ordinary continuation
   memory_policy?: { read?: boolean; write?: boolean };
   id: string;
   title: string;

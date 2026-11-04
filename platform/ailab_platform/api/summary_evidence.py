@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from ..contracts.context_summary import ContextSummary
 from ..memory_recall.policy import run_permissions
-from ..models import DocumentBlock, FileDerivation, FileObject, Run
+from ..models import DocumentBlock, FileDerivation, FileObject, MessageFileRef, Run
 from ..storage import get_storage
 
 
@@ -33,7 +33,7 @@ def _queue(frame):
     return [{"source": handle, "offset": 0} for handle in handles.values()]
 
 
-def _excerpt(db, handle, owner_id, allowed_runs, offset, limit):
+def _excerpt(db, handle, owner_id, allowed_runs, allowed_files, offset, limit):
     key, raw = None, None
     if handle.get("run_id"):
         run = db.get(Run, handle["run_id"])
@@ -51,12 +51,12 @@ def _excerpt(db, handle, owner_id, allowed_runs, offset, limit):
         if not row:
             return None
         block, file = row
-        if file.user_id != owner_id or file.deleted_at or file.purged_at:
+        if file.id not in allowed_files or file.user_id != owner_id or file.deleted_at or file.purged_at:
             return None
         key = block.text_key
     elif handle.get("file_id"):
         file = db.get(FileObject, handle["file_id"])
-        if not file or file.user_id != owner_id or file.deleted_at or file.purged_at:
+        if not file or file.id not in allowed_files or file.user_id != owner_id or file.deleted_at or file.purged_at:
             return None
         meta = file.meta or {}
         key = meta.get("text_key") or (meta.get("ocr_text_key") if meta.get("ocr") == "done" else None)
@@ -84,11 +84,17 @@ def _excerpt(db, handle, owner_id, allowed_runs, offset, limit):
 def batch(db, frame, owner_id, allowed_runs):
     pending, offered, budget = _queue(frame), [], 32000
     unavailable = []
+    allowed_files = set()
+    if pending and allowed_runs:
+        allowed_files.update(db.scalars(select(MessageFileRef.file_id).where(MessageFileRef.run_id.in_(allowed_runs))))
+        # Older turns may predate explicit message references.
+        for files in db.scalars(select(Run.input_file_ids).where(Run.id.in_(allowed_runs), Run.user_id == owner_id)):
+            allowed_files.update(files or [])
     for item in pending:
         if len(offered) == 16 or not budget:
             break
         handle, offset = item["source"], item["offset"]
-        excerpt = _excerpt(db, handle, owner_id, allowed_runs, offset, min(4000, budget))
+        excerpt = _excerpt(db, handle, owner_id, allowed_runs, allowed_files, offset, min(4000, budget))
         if excerpt is None:
             unavailable.append(item)
             continue
@@ -127,3 +133,21 @@ def advance(db, frame, owner_id, allowed_runs, consumed_ids):
         else:
             match["offset"] = item["through_char"]
     return {"pending": pending}
+
+
+def current_frame(db, conversation, allowed_runs):
+    """A frame is usable only together with the exact active summary and boundary."""
+    from ..models import ContextSummaryFrame
+
+    if not conversation.summary_frame_id or conversation.summary_through_run_id not in allowed_runs:
+        return None
+    frame = db.get(ContextSummaryFrame, conversation.summary_frame_id)
+    if (
+        frame
+        and frame.status == "active"
+        and frame.conversation_id == conversation.id
+        and frame.through_run_id == conversation.summary_through_run_id
+        and frame.summary == conversation.summary
+    ):
+        return frame
+    return None

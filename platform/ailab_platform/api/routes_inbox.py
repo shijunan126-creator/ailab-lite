@@ -98,6 +98,8 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
 
     reject_both_skill_fields(body)
     excluded = {"client_send_id"} | ({"upload_ids"} if body.upload_ids is None else set())
+    if body.expected_branch_revision is None:
+        excluded.add("expected_branch_revision")
     digest = hashlib.sha256(body.model_dump_json(exclude=excluded).encode()).hexdigest()
 
     def replay():
@@ -121,6 +123,9 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
         db.refresh(conv)
         if (prior := replay()) is not None:
             return prior
+        from ..conversation_tree import require_branch
+
+        require_branch(conv, body.expected_branch_revision)
         pending = db.scalars(pending_query(conv.id).limit(5)).all()
         leaf = db.get(Run, conv.active_run_id, populate_existing=True) if conv.active_run_id else None
         if not leaf or leaf.status not in {RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.WAITING_USER}:

@@ -200,10 +200,9 @@ def model_context(run_id: str, after: str | None = None, db: Session = Depends(g
             break
         history.append(item)
         chars += size
-    from ..models import ContextSummaryFrame
-    from .summary_evidence import evidence
+    from .summary_evidence import current_frame, evidence
 
-    frame = db.get(ContextSummaryFrame, conversation.summary_frame_id) if through and conversation.summary_frame_id else None
+    frame = current_frame(db, conversation, set(ids) - invalid) if through else None
     revalidation = evidence(db, frame, run.user_id, set(ids) - invalid) if after is None else []
     return {
         "summary_evidence": revalidation,
@@ -244,9 +243,16 @@ def _save_model_summary(db, run, body, x_run_attempt):
     if body.source_epoch != owner.context_source_epoch:
         raise HTTPException(409, "context_source_changed")
     actual = conversation.summary_through_run_id
-    effective = actual if actual in ids else None
+    from .source_lifecycle import invalid_history
+
+    valid_ids = set(ids) - invalid_history(db, ids)
+    effective = actual if actual in valid_ids else None
     if effective != body.expected_through_run_id:
         raise HTTPException(422, "summary changed concurrently")
+    from .summary_evidence import advance, current_frame
+
+    previous = current_frame(db, conversation, valid_ids) if effective else None
+
     changed = db.execute(
         update(Conversation)
         .where(
@@ -261,11 +267,8 @@ def _save_model_summary(db, run, body, x_run_attempt):
 
     from ..models import ContextSummaryFrame, ContextSummarySource, MessageFileRef
 
-    previous = db.get(ContextSummaryFrame, conversation.summary_frame_id) if conversation.summary_frame_id else None
-    from .summary_evidence import advance
-
     try:
-        revalidation = advance(db, previous, run.user_id, set(ids), body.revalidation_ids)
+        revalidation = advance(db, previous, run.user_id, valid_ids, body.revalidation_ids)
     except ValueError as exc:
         raise HTTPException(409, "revalidation_cursor_stale") from exc
     frame = ContextSummaryFrame(

@@ -128,6 +128,7 @@ class SteeredMessage(BaseModel):
 
 
 class RunDetail(RunOut):
+    branch_revision: int | None = None
     steered: list[SteeredMessage] = Field(default_factory=list)
     artifacts: list[ArtifactOut] = Field(default_factory=list)
     input_files: list[dict] = Field(default_factory=list)
@@ -217,6 +218,7 @@ class ConversationPatch(BaseModel):
 
 
 class MessageCreate(PromptRequest):
+    expected_branch_revision: int | None = Field(default=None, ge=0)
     upload_ids: dict[str, str] | None = Field(default=None, max_length=50)
     doc_refs: list[DocRef] = Field(default_factory=list, max_length=8)
     client_send_id: str | None = Field(default=None, min_length=1, max_length=64)
@@ -229,6 +231,7 @@ class MessageCreate(PromptRequest):
 
 
 class ConversationOut(UTCModel):
+    branch_revision: int = 0
     memory_policy: dict = Field(default_factory=dict)
     moved_files: int | None = None
     active_run_id: str | None = None
@@ -250,10 +253,12 @@ class ConversationContext(BaseModel):
 
 
 class ConversationActive(BaseModel):
+    expected_branch_revision: int | None = Field(default=None, ge=0)
     run_id: str = Field(min_length=1, max_length=40)
 
 
 class RunEdit(PromptRequest):
+    expected_branch_revision: int | None = Field(default=None, ge=0)
     doc_refs: list[DocRef] | None = Field(default=None, max_length=8)
     skill: str | None = Field(default=None, max_length=64)
     skills: list[SkillSelection] | None = None
@@ -426,6 +431,7 @@ class ConversationFork(BaseModel):
 
 
 class RunRetry(BaseModel):
+    expected_branch_revision: int | None = Field(default=None, ge=0)
     model: str | None = Field(default=None, max_length=120)
     mode: Literal["chat", "work"] | None = None
 

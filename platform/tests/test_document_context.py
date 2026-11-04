@@ -496,7 +496,10 @@ def test_summary_revalidation_reads_completed_ocr_when_native_text_is_absent():
             db.commit()
             summary = ContextSummary(facts=[SummaryEntry(id="f", text="编号", sources=[SummarySource(file_id=fid)])])
             frame = ContextSummaryFrame(revision=7, status="active", summary=summary.model_dump_json(), revalidation_state={})
-            assert evidence(db, frame, file.user_id, set())[0]["text"] == "识别编号 AL-219"
+            assert evidence(db, frame, file.user_id, set()) == []
+        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read OCR", "file_ids": [fid]}).json()
+        with SessionLocal() as db:
+            assert evidence(db, frame, file.user_id, {run["id"]})[0]["text"] == "识别编号 AL-219"
 
 
 def test_a_tool_the_mode_allows_runs_when_called_by_name_before_discovery():

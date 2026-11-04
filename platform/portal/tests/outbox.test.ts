@@ -6,7 +6,7 @@ import { api } from "../lib/api";
 vi.mock("../lib/api", () => ({ api: vi.fn(), errorCode: (e: any) => e.code, errorMessage: (e: Error) => e.message }));
 const request = vi.mocked(api);
 const message = (prompt: string, conversationId: string | null = "conv") => ({
-  prompt, conversationId, projectId: null, attachments: [] as string[], options: { mode: "work" as const },
+  prompt, conversationId, expectedBranchRevision: 0, projectId: null, attachments: [] as string[], options: { mode: "work" as const },
   model: "test", vision: false, steer: false, queued: false,
 });
 const stage = (id: string) => useOutbox.getState().pending[id]?.stage;
@@ -62,4 +62,32 @@ test("a rejected attachment prevents dispatch; deleting its message releases its
   const body = JSON.parse(request.mock.calls.at(-1)![1]!.body as string);
   if (docRefs?.length) expect(body.doc_refs).toEqual(docRefs);
   else expect(body).not.toHaveProperty("doc_refs");
+});
+
+
+test("uploads and a lost-response retry keep the submitted branch fence", async () => {
+  const key = existingUpload({ id: "file", filename: "a.txt", content_type: "text/plain", status: "ready", size: 3 });
+  let prepared!: (value: any) => void;
+  request.mockImplementationOnce(() => new Promise(resolve => { prepared = resolve; }));
+  request.mockRejectedValueOnce(new Error("lost response")).mockResolvedValueOnce({}).mockResolvedValueOnce({ id: "run" });
+  const outgoing = { ...message("frozen"), expectedBranchRevision: 4, attachments: [key], options: { mode: "chat" as const } };
+  const id = enqueue(outgoing);
+  await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+  outgoing.expectedBranchRevision = 5;
+  prepared({});
+  await vi.waitFor(() => expect(stage(id)).toBe("failed"));
+  expect(retry(id)).toBe(true);
+  // The attachment preparation runs again before the same dispatch is replayed.
+  await vi.waitFor(() => expect(stage(id)).toBe("sent"));
+  const sends = request.mock.calls.filter(([path]) => String(path).endsWith("/messages"));
+  expect(sends).toHaveLength(2);
+  for (const [, options] of sends) expect(JSON.parse(options!.body as string)).toMatchObject({ expected_branch_revision: 4, client_send_id: id });
+});
+
+test("a branch conflict stays failed instead of silently joining the other branch queue", async () => {
+  request.mockRejectedValue(Object.assign(new Error("branch changed"), { code: "conversation_branch_changed" }));
+  const id = enqueue({ ...message("old tab"), expectedBranchRevision: 2 });
+  await vi.waitFor(() => expect(stage(id)).toBe("failed"));
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(useOutbox.getState().pending[id].expectedBranchRevision).toBe(2);
 });

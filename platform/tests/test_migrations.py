@@ -1059,3 +1059,23 @@ def test_threshold_migration_and_code_defaults_converge(engine, persisted):
         expected = 0.72 if persisted == {"threshold_ratio": 0.72} else 0.90
         assert effective["threshold_ratio"] == expected
         assert ModelPolicy.compaction_threshold(ModelSpec("m", "m", context_tokens=10000), effective) == int(10000 * expected)
+
+
+def test_branch_revision_upgrade_downgrade_preserves_history(engine):
+    _upgrade_to(engine, "0051")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            text(
+                "INSERT INTO conversations (id,user_id,title,model,created_at,updated_at) "
+                "VALUES ('branch-c','u1','title','test','2026-01-01','2026-01-01')"
+            )
+        )
+    _upgrade_to(engine, "0052")
+    with engine.begin() as conn:
+        assert conn.scalar(text("SELECT branch_revision FROM conversations WHERE id='branch-c'")) == 0
+        conn.execute(text("UPDATE conversations SET branch_revision=4 WHERE id='branch-c'"))
+    _downgrade_to(engine, "0051")
+    with engine.connect() as conn:
+        assert conn.scalar(text("SELECT title FROM conversations WHERE id='branch-c'")) == "title"
+    _upgrade_to(engine, "0052")

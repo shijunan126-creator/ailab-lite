@@ -1,3 +1,13 @@
+# 历史消息编辑、版本切换与分支一致性修复（2026-11-04）
+
+- 最新授权：修复[审查报告](../reviews/2026-11-04-message-branch-audit.md)全部4项问题。本轮仅本地实施与验证，不发布、合并或部署；其他任务保持原范围。
+- 隔离分支 `fix/message-branch-consistency`，base `origin/main@40150395aa7772736e92feb306dc20712e56ec14`（已fetch确认）；主工作区全部dirty保留。
+- 已实现：迁移0052持久化分支修订号；发送/排队/编辑/重试/切换的修订校验；前端版本操作互斥、迟到响应及分页围栏；摘要frame与文件/文档块复核来源隔离。实施与验证统一见[记录](updates/2026-11-04-message-branch-consistency.md)。
+- 本地验收完成：SQLite全套2319通过/202跳过/1项迁移版本断言失败已修，最终相关25通过/1跳过；PG+Redis专项172通过，Portal243项/生产构建和Chromium4项通过。准确基线、初轮失败及未测边界见同一记录。
+- 下一步：用户审阅本分支；未push/PR/merge/deploy。后续部署需后端0052与Portal一起更新，不自动推进其他范围。
+
+---
+
 # 上下文压缩 HLD 与运行过程快照（2026-11-04）
 
 - 授权：按 HLD v4 实施并更新文档；Claude 编排与文档，Codex 实施/测试/修复；随后授权提 PR、CI 绿后合并、由 Codex 部署。追加决定：压缩后 10K–48K / 上限 64K，计数以模型返回的实际 token 为准，最终版本不再测真实模型。差异与决定见 [ADR 0033](../architecture/adr/0033-context-epoch-band-process-snapshot.md)。
