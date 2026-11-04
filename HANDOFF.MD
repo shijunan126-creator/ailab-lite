@@ -1253,3 +1253,10 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - 表格引用校验不能直接拿模型展示 Markdown 与查看器单元格拼接文字做子串匹配；PPT 整表引用需要精确还原边框/分隔行/转义竖线。只能解码确定的结构，保留数据行 `---`、单元格标点和伪造引文拒绝。真实PPTX→reader→API回归与构建前置见[本轮记录](docs/progress/updates/2026-11-04-ppt-selection-reference.md#多行-ppt-表格引用修复后续授权)。
 
 - 交付文件名会因库内重名变成 `(N)`；文件卡预览必须使用该交付file_id，不能按旧工作区名/扩展名猜身份。替换为库文件侧栏时还要关闭对应workspace tab，否则同名双tab或终态workspace的410仍会出现。PR159的trace证据与确定性改名回归见[记录](docs/progress/updates/2026-11-04-ppt-selection-reference.md#pr159-首轮-ci交付文件身份修复)。
+
+# 2026-11-04 常驻OCR与任务恢复
+
+- ORT的节点profiling在session结束前会持续累计内存，不能常开于常驻OCR；小图成功或权重小不能证明密集文字/多页稳定。性能诊断用单独短生命周期执行器和OCR_PROFILE_PREFIX。密集图复现显示检测成功后，固定shape的识别批次仍可因追踪事件积累而OOM，先做阶段/配置对照，不直接加内存或缩图。
+- Worker的durable job可重试失败仅return会保留660秒claim；通过已有retry_after/release才能及时重新投递。验收覆盖API授权/真实传输失败/DB claim/outbox重发/同身份完成，不能只mock process_ocr。重启后的OOMKilled/memory.events可能归零，历史OOM通过VM内核日志绑定完整容器ID确认。
+
+- 临时检出位于/private/tmp时，MockSandbox会把命令里的sys.executable也按/tmp重映射，background_exec输出断言随之失败。测试保持本检出的PYTHONPATH，使用非/tmp下的现有venv解释器；不要为环境入口问题改产品传输逻辑。
