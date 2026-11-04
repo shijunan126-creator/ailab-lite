@@ -1,9 +1,8 @@
-# PR158删除生命周期CI修复已推送待复验（2026-11-04）
+# PR158 PostgreSQL任务时限修复待CI（2026-11-04）
 
-- 用户要求继续修复。PR158 head5a7ca0b的SQLite/PG全套等7项检查通过；E2E为188 passed/6 skipped/2 teardown errors，CI汇总因此失败。根因是删除墓碑生效后cancel返回404，旧fixture报错且未清共享种子清单，污染下一项收尾。
-- 已修测试资源清理：先取走本例清单；404须在隔离DB确认会话墓碑和Run终态，其他失败继续报错；删除浏览器回归增加活动Run场景。产品源码无改动，本轮不重部署。
-- 分支fix/deletion-lifecycle，base e4479cd，当前已推送head5a7ca0b；主工作区和前序文档dirty保留。相关浏览器模块10项、Portal246项及生产构建已在隔离栈通过，详见[修复记录](updates/2026-11-04-deletion-lifecycle-fixes.md)。
-- 下一步：跟进同一[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)新head全部CI，失败继续处理；不自动合并或推进其他工作。
+- 新唤醒：head83fcab7的PG job因GitHub 15分钟总时限cancelled。日志连续正常推进到93%，未见断言失败；同产品上一head PG全套2460/83跳过、780.61s。初始化/收尾也占用该总期限，调整python矩阵总预算为20分钟，验收门禁不变。[证据与变更](updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。
+- 前轮E2E收尾修复83fcab7已推送，相关浏览器10项/Portal246项及生产构建本地通过；本轮SQLite远端通过，E2E仍运行。产品源码无改动，不重部署。其他工作区与前序文档dirty保留。
+- 分支fix/deletion-lifecycle，base e4479cd；最新head以同一[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)为准。工作流28项测试、YAML解析及diff检查通过。下一步继续跟进修复后最终CI；不自动合并或推进其他工作。
 
 ---
 

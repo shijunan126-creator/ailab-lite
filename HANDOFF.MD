@@ -1241,3 +1241,7 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 # 2026-11-04 删除E2E收尾
 
 - 会话删除后public cancel正确返回404，测试清理不能再依赖已隐藏的Run内容接口。404须核实测试DB中的会话墓碑和Run终态，不能把任意404视为清理成功；模块级资源清单应在I/O前移走，避免assert失败污染下一测试。见[CI修复记录](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-ci收尾修复2026-11-04)。
+
+# 2026-11-04 CI总时限诊断
+
+- GitHub job标记cancelled先读check annotation及逐段进度日志；总timeout包含容器/依赖准备和artifact收尾。持续推进到93%后撞总时限，与某项断言失败/卡死不同；预算应按实际全套耗时留收尾与runner波动空间，不调整验收阈值或用重试掩盖。见[PR158时限证据](docs/progress/updates/2026-11-04-deletion-lifecycle-fixes.md#pr158-postgresql任务时限修复2026-11-04)。

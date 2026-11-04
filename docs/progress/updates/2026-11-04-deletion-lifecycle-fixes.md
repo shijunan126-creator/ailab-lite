@@ -40,3 +40,10 @@
 - 远端head `5a7ca0b`：SQLite/PG全套与其他5项检查成功；E2E为188 passed/6 skipped/2 teardown errors，CI gate失败。两个浏览器用例本身通过；失败来自test_conversation_ui清理已删除会话的Run，cancel按新合同返回404。第一次assert中止还留下模块级种子清单，使下一用例重复清同一Run。
 - 修复测试fixture：进入收尾先移走/清空本例资源清单和attempt表；404不直接放行，必须在同一隔离测试DB核实Conversation.deleted_at及Run终态。未删会话、缺失种子或仍运行的Run均会报错。删除浏览器回归新增active=True，覆盖删除活动任务及其收尾；不改产品可见性或加入重试/skip。
 - 验证基线：5a7ca0b加本节fixture/回归差异；Ruff check/format、diff检查通过；`AILAB_E2E=1 python -m pytest e2e/test_conversation_ui.py -q -o addopts=''`在独立SQLite/Redis/mock栈中10 passed（126.05s），前置Portal246项与生产构建通过。产品源码仍等于已验证的c0541f5/5a7ca0b，本次不重复Python全套、不重新部署；新head CI按既有工作流重跑。
+
+
+## PR158 PostgreSQL任务时限修复（2026-11-04）
+
+- head83fcab7的PostgreSQL job126473456824标记cancelled；GitHub annotation明确为“exceeded the maximum execution time of 15m0s”。原始日志显示从08:31:45开始全套测试，持续无断言失败地推进，08:46:05到93%，08:46:13被任务期限取消，未生成最终JUnit。不是测试通过，也没有证据支持单个测试卡死。
+- 相同产品源码的head5a7ca0b此前PG全套2460 passed/83 skipped，耗时780.61s，最慢单项17.09s；本轮初始化约45s，15分钟总期限不足以容纳runner耗时波动。调整python矩阵任务预算15→20分钟，覆盖准备、完整套件、JUnit门禁与artifact收尾；不修改断言、测试覆盖、性能验收阈值或重试规则。无产品/部署变更。
+- 验证：`.github/tests` 28项通过，工作流YAML解析/任务预算及fail-fast核对通过，diff检查通过。未安装本机actionlint，新head的shell工作流负责该项；等待完整CI复验，不为任务预算改动重复本机Python全套或部署。
