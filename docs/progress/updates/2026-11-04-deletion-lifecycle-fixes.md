@@ -2,7 +2,7 @@
 
 用户授权修复[会话删除审查](../../reviews/2026-11-04-conversation-deletion-audit.md)和[补充审查](../../reviews/2026-11-04-all-deletion-audit.md)的全部六类问题；已完成本地实施与验证；用户随后授权提PR并部署本次分支固定提交，PR保持开放供评审。未处理真实业务数据。
 
-分支 `fix/deletion-lifecycle`，base `origin/main@e4479cd96bf5f41ca4ab718cc34f349df9acf664`。主工作区的无关改动、前序发布/空间清理文档保留。本记录验证的是base之上的产品差异；17个产品文件按路径排序、以NUL分隔路径/内容的SHA256为 `564493b306da99ea53358073c2f0357c0a81217ab9fc5ea803999f3f525c3518`（不含测试/文档）。
+[PR #158](https://github.com/shijunan126-creator/ailab-lite/pull/158)，产品提交 `c0541f5`，分支 `fix/deletion-lifecycle`，base `origin/main@e4479cd96bf5f41ca4ab718cc34f349df9acf664`。主工作区的无关改动、前序发布/空间清理文档保留。本记录验证的是base之上的产品差异；17个产品文件按路径排序、以NUL分隔路径/内容的SHA256为 `564493b306da99ea53358073c2f0357c0a81217ab9fc5ea803999f3f525c3518`（不含测试/文档）。
 
 ## 修复合同
 
