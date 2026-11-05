@@ -172,3 +172,8 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 原始阶段测量在仓库外upload-safety-v2.json/lazy-native-v2.json；当时脚本记录HEAD但包含本组未提交差异，不能称最终冻结SHA验收。脚本现记录API/Worker/Broker源码指纹和实际Office image ID，后续最终验收可精确定位；本次不会倒填不存在的旧指纹。SQLite源代码/分组验证与真实阶段结果严格区分。自己的栈进程/容器均已停，临时数据库、对象与新增测试镜像清理后保留冻结样本/必要测量供最终比较。
 
 剩余：新Chat三工具目录/权限与OCR/范围/导航接线、24K/20%/8图分档、Work工具与skill隔离/lease OCR、浏览器首开与优先截图/CAS后备、所有派生writer记账与TTL/引用/版本恢复、全局公平/600秒累计预算、S3总deadline/运行中shutdown，以及完整Python/Portal/E2E/真模型≥95%/多用户故障/50轮/移动设备验收。未据本组局部成功宣称目标达标。
+
+
+补充收尾核验：在冻结应用提交`28b85762a0d5afc111728e93cc719c2e20c32b8f`、源码指纹`dac2121539105d6bd6f01c26f3946f0c808d869c8b69721d66d4bd81611be50e`上，12次真实安全上传再次均ready/零派生；**服务仍运行时**实查Outbox=0、transfer=0、reserved=0、临时文件=0、partial=0、model_usage行=0，三个Broker文档/预热/渲染调用均0，随后按依赖顺序停止。数据在upload-safety-before-shutdown.json；不是依赖进程退出后清空来冒充正常路径回收。测试profile清理另以1项API/子进程定点检查验证，打印的目录实际已不存在。
+
+旧上传基线没有单独计数mock摘要usage；其“无模型”口径仅可解释为未启动Agent/未使用外部付费模型，不能据此声称旧路径完全0次mock调用或已测完整回答成本。新的脚本单独记录该计数并对v2后台usage非零失败，不改写旧冻结数据。该澄清不影响真实ClamAV/Office上传延迟的观测性质，模型完整回答/前缀成本仍待验收。

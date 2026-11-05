@@ -1,7 +1,8 @@
 """Real upload baseline on owned API/Broker/Worker/Redis/ClamAV/Docker resources.
 
 Uses no existing database, volume or Broker ownership domain. Never loads model
-keys or calls models. Logs/measurements stay outside the repository. Inspect the
+keys or calls external models. Legacy mock summaries are counted separately.
+Logs/measurements stay outside the repository. Inspect the
 retained state directory after failures, then remove it; containers/processes are
 always terminated in finally. This is not browser or full-answer acceptance.
 """
@@ -14,6 +15,7 @@ import os
 import secrets
 import signal
 import socket
+import sqlite3
 import subprocess
 import tempfile
 import time
@@ -94,10 +96,11 @@ def benchmark(directory, *, context, output, prepare_native=False, office_image=
     report = {
         "baseline": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
         "implementation_sha256": implementation_fingerprint(),
+        "harness_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         "office_image_id": subprocess.check_output(
             [*docker, "image", "inspect", env["AILAB_SANDBOX_IMAGE"], "--format", "{{.Id}}"], text=True, timeout=20
         ).strip(),
-        "scope": "real API/Worker/Broker/ClamAV/Docker upload chain; no Agent/model/browser",
+        "scope": "real API/Worker/Broker/ClamAV/Docker upload chain; no Agent/external model/browser",
         "results": [],
     }
 
@@ -261,6 +264,32 @@ def benchmark(directory, *, context, output, prepare_native=False, office_image=
                             raise RuntimeError("native preparation failed: " + str(native.get("reason")))
                     report["results"].append(row)
                     print(json.dumps(row), flush=True)
+            deadline = time.monotonic() + 30
+            while True:
+                with sqlite3.connect("file:" + str(state / "platform.db") + "?mode=ro", uri=True) as db:
+                    pending = db.execute("SELECT count(*) FROM outbox").fetchone()[0]
+                    transfers = db.execute("SELECT count(*) FROM derived_assets WHERE kind='transfer'").fetchone()[0]
+                    reserved = db.execute("SELECT reserved_bytes FROM derived_budget WHERE id=1").fetchone()[0]
+                    model_calls = db.execute("SELECT count(*) FROM model_usage").fetchone()[0]
+                if not pending and not transfers and not reserved:
+                    break
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("owned jobs or derivative transfers did not settle")
+                time.sleep(0.1)
+            temporary = sum(path.is_file() for path in (state / "tmp").rglob("*"))
+            partial = sum(path.is_file() for path in (state / "objects/.metadata").glob("*.tmp"))
+            if temporary or partial:
+                raise RuntimeError("temporary files remain before service shutdown")
+            if all(row.get("input_lifecycle") == 2 for row in report["results"]) and model_calls:
+                raise RuntimeError("safety inputs unexpectedly triggered background model usage")
+            report["before_shutdown"] = {
+                "outbox": pending,
+                "transfer_assets": transfers,
+                "reserved_bytes": reserved,
+                "temporary_files": temporary,
+                "partial_objects": partial,
+                "model_usage_rows": model_calls,
+            }
             broker_log = (state / "broker.log").read_text()
             report["observed_broker_calls"] = {
                 path: broker_log.count("POST /internal/" + path + " ->") for path in ["render-prewarm", "read-document", "render"]
@@ -270,7 +299,6 @@ def benchmark(directory, *, context, output, prepare_native=False, office_image=
         for label, proc in reversed(processes):
             if proc.poll() is None:
                 os.killpg(proc.pid, signal.SIGTERM)
-        for label, proc in reversed(processes):
             try:
                 proc.wait(timeout=20)
             except subprocess.TimeoutExpired:

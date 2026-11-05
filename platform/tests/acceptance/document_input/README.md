@@ -26,3 +26,5 @@ platform/.venv/bin/python platform/tests/acceptance/document_input/stack_benchma
 ```
 
 每个样本首次上传与同字节独立副本分别观测；后者可复用私有派生缓存，不是第二次解析。仅两次观测不计算p95。服务RSS是轮询样本峰值，可能漏掉瞬时峰值；不代表容器OCR/ClamAV/Node总RSS。正常/异常均终止自己的进程/容器；原始日志与对象目录留在打印的仓库外state中，检查失败与保存必要摘要后删除整个专属目录。
+
+`--prepare-native --office-image <pinned-image>`会在每份安全ready后通过Chat准入请求native，并等到实际终态；镜像须包含当前V4 runner。记录API/Worker/Broker源码指纹、验收脚本摘要与实际Office image ID。全部任务完成后，在服务仍运行时核对Outbox/transfer/预留归零及临时文件清空，之后按Worker→Broker→API→Redis顺序停止，避免先关闭依赖破坏在途清理。旧路径可能触发mock摘要，另计model_usage行；新安全输入要求无后台模型usage。既有阶段JSON只记HEAD的情况不能倒填为冻结源码证明。
