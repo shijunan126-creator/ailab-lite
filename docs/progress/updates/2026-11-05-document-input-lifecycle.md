@@ -110,4 +110,14 @@
 
 5000个128字节合成对象、limit20、30次LocalStorage分页：旧适配器p95 93.126ms，新索引1.319ms，CPU总2750.59ms→33.5ms；单次旧目录发现0.186秒/10页。原始测量在仓库外；存储基准脚本可重现。50次LocalStorage打开/close的FD回归是组件检查，不能冒充50轮浏览器/全栈资源稳定性。
 
-原始新native测量保留`/private/tmp/ailab-document-validation-oghcidq0/native-chat-v4.json`，脚本拒绝覆盖冻结测量；自己的基准容器finally已删除。自己的PostgreSQL25432用于双库检查，最终收尾前需停止和清理自己的临时目录。下一步继续安全/派生拆分与消费入口、全生产writer记账/失效/回填、Chat独立工具与Work隔离、浏览器优先与引用回收；当前所有未验收边界仍成立。
+原始新native测量保留`/private/tmp/ailab-document-validation-oghcidq0/native-chat-v4.json`，脚本拒绝覆盖冻结测量；自己的基准容器finally已删除。自己的PostgreSQL25432用于双库检查，已停止；其专属临时目录已清理，冻结样本与新旧native测量继续保留供最终对比。下一步继续安全/派生拆分与消费入口、全生产writer记账/失效/回填、Chat独立工具与Work隔离、浏览器优先与引用回收；当前所有未验收边界仍成立。
+
+## Chat读搜看契约与原生分页内核（2026-11-05续作）
+
+在本地`7a8828a`之上新增共享类型化selector/region/三工具请求契约，互斥pages/Word anchor/Excel sheet-range，页号从1开始，region绑定revision/rotation并拒绝NaN/越界/零面积；read默认native，OCR必须显式pages/region，view最多4页。旧目录/路由未改，**新契约与服务尚未挂到Agent/对外路由，不构成新Chat功能完成**。
+
+纯分页内核每批最多100块/20命中/200字片段、read最多8000字并优先完整块；超长块与20命中边界都有块内位置。零命中但尚有块时仍返回cursor。游标绑定操作、file、源版本、表示代际、query和selector，换其中一项返回cursor_stale；游标不是权限票据，消费入口仍须授权。关键词是NFKC+casefold字面匹配，返回明确标记的规范化位置/片段与真实block/locator；精确quote必须另走原文read，不能直接把规范化snippet当精确来源引用。
+
+API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101行，规范文本只读一个有界buffer、逐块核验SHA，read不自动补OCR；实际native/视觉/OCR覆盖分开。仅消费已ready且绑定源版本的索引；缺失/损坏明确错误。Excel范围、Word单元格仍返回requires_scoped_preparation，OCR/search合并与导航仍待接通，不以整sheet假冒精确范围。
+
+验证：首8项纯内核/类型契约通过。API/storage联合组第一次42通过/1失败，根因新测试与已有测试在共享临时数据库创建了同名native.pdf，触发真实folder name唯一约束；改独有fixture名称，未放松产品约束。修正后联合43项通过（16.10秒），含原生API/存储读取、旧读取完整性和新分页。Ruff check全平台通过、588文件format通过。本组无请求构造变化，真实前缀/最终全套仍待完整目录接通后集中验收。
