@@ -1,3 +1,9 @@
+## 2026-11-05 隔离真实上传基线
+
+- Broker读取须使用独立service身份；legacy共享token不返回Broker专属render_owner_id，健康服务也会立即503。验收用独立token+摘要矩阵，不从既有栈复制凭据。
+- 独立Broker必须设置唯一broker_owner并用自己的Redis/端口；默认owner可能与既有沙箱对账域冲突。端口预检应区分活监听与TIME_WAIT；已结束句柄后才换装置重跑，失败样本不计成功基线。
+- 压缩包先有界遍历central directory，再允许ZipFile完整分配目录；不能仅在infolist后检查10000项就声称流式目录边界。安全检查不导出成员，正常产物只有受限子进程的spec/result/stderr，退出归其job目录清理。
+
 ## 2026-11-05 搜索续游标与规范化片段
 
 - 20条命中上限须保留当前块内位置；100块扫描0命中也不代表搜完。游标须绑定文件/源与派生代际/query/selector，不可只记block offset。Unicode规范化片段只作导航证据，不可当原始quote去精确引用；原文引用另读并核验。

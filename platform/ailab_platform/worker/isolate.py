@@ -104,7 +104,22 @@ def _child(spec: dict) -> None:
         # libxml reports failed C allocations as XMLSyntaxError, not MemoryError.
         # Use its structured error code; malformed XML must still be "corrupt".
         xml_oom = any(getattr(entry, "type_name", "") == "ERR_NO_MEMORY" for entry in getattr(exc, "error_log", ()))
-        error = "memory_limit" if xml_oom else str(exc) if str(exc) in {"archive_limit", "pixel_limit", "input_limit"} else "corrupt"
+        error = (
+            "memory_limit"
+            if xml_oom
+            else str(exc)
+            if str(exc)
+            in {
+                "archive_limit",
+                "archive_corrupt",
+                "archive_unsafe_path",
+                "archive_structure_unsupported",
+                "file_type_mismatch",
+                "pixel_limit",
+                "input_limit",
+            }
+            else "corrupt"
+        )
         result = {"error": error}
     if spec["options"].get("measure"):
         usage = resource.getrusage(resource.RUSAGE_SELF)

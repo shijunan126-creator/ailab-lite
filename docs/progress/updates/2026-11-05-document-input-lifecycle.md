@@ -121,3 +121,24 @@
 API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101行，规范文本只读一个有界buffer、逐块核验SHA，read不自动补OCR；实际native/视觉/OCR覆盖分开。仅消费已ready且绑定源版本的索引；缺失/损坏明确错误。Excel范围、Word单元格仍返回requires_scoped_preparation，OCR/search合并与导航仍待接通，不以整sheet假冒精确范围。
 
 验证：首8项纯内核/类型契约通过。API/storage联合组第一次42通过/1失败，根因新测试与已有测试在共享临时数据库创建了同名native.pdf，触发真实folder name唯一约束；改独有fixture名称，未放松产品约束。修正后联合43项通过（16.10秒），含原生API/存储读取、旧读取完整性和新分页。Ruff check全平台通过、588文件format通过。本组无请求构造变化，真实前缀/最终全套仍待完整目录接通后集中验收。
+
+## 真实上传链路基线与安全检查子进程（2026-11-05续作）
+
+基线产品`ef436436`，普通上传行为修改前，以冻结样本通过真实API/Worker/Broker、Redis、ClamAV与Docker Office链路完成六场景、各首次上传+同字节独立副本。新建313xx端口、独立临时SQLite/对象目录、随机服务凭据与唯一Broker owner；未使用或修改现有栈/用户数据。ClamAV固定镜像`d7ede3cefeaf`内置病毒库；Office镜像与原组件基线相同。宿主三个服务与Redis进程，ClamAV限0.5CPU/1GiB，重型Office仍1CPU/768MiB；不是把整栈限制在2CPU/8GiB的联合容量证明。
+
+| 样本 | 首次上传至ready秒 | 私有缓存副本ready秒 | 首次ready时派生对象数 |
+|---|---:|---:|---:|
+| 原生3页PDF | 4.537 | 1.018 | 6 |
+| 原生500页PDF | 9.370 | 1.244 | 503 |
+| 扫描40页PDF | 2.161 | 0.260 | 43 |
+| 混排12页Word | 2.928 | 1.141 | 39 |
+| 混排12页PPT | 3.051 | 0.926 | 15 |
+| 混排Excel | 2.651 | 0.392 | 5 |
+
+全部12个上传为真实ClamAV clean且ready。第二次明确disposition=copy，是新文件实体的私有缓存复制，不冒充同对象命中或独立冷解析；仅两观测/样本，不报告p95。ready轮询采样的API/Broker/Worker峰值分别约136.2/98.5/107.5MiB，可能漏瞬时峰值，不包含ClamAV和沙箱Node。未测浏览器首交互、模型完整回答、CPU/查询数、移动设备和50轮稳定性。原始数据在冻结目录的upload-baseline.json，不提交对象/日志。
+
+初次基线装置用了legacy共享服务token，API未返回Broker专属render_owner_id，读取立即503，未获得样本。已停止该确切进程/清理其容器后，改为服务独立身份与SHA256验证矩阵，重新启动独立新栈后完成上述基线；不是产品解析失败后反复重启求通过。另一次端口预检拒绝TIME_WAIT，未启动服务；以SO_REUSEADDR允许已无监听者的旧端口，保留对活监听者的拒绝。仓库保留可复现stack_benchmark.py，拒绝仓库内原始输出及覆盖冻结测量；转换后的仓库脚本另做一次运行验证，12/12真实上传再次ready且扫描clean，结果另存upload-baseline-replay.json，不覆盖本表。自己的进程/容器均由finally结束，专属state检查后清理。
+
+新增Worker限定子进程`safety`操作：流式摘要/类型签名与OOXML必要入口核对，先流式检查ZIP central directory再允许ZipFile分配目录；10000项/100MiB解压总量，另限8MiB目录元数据与1024字节单路径，拒绝加密/ZIP64/分卷/不一致目录/路径越界/重复成员。逐成员流式CRC与实际展开量核验，不导出正文、图片或任何包成员。ZIP64在上述小包边界内不需要，当前明确unsupported，不能把它当损坏或假成功。9项回归通过，含真实受限子进程、目录超项、扩展量、类型伪装、CRC、假EOCD及路径；Ruff全平台通过、591文件format通过。
+
+**安全操作尚未替换普通上传pipeline**：需要与Chat/预览消费、Work原件与图片能力、专用导入/交付保持一起接线；不能提前把只安全ready接到仍期待正文的旧消费入口。普通上传仍可能启动旧解析/prewarm，此表是修改前基线而非达标证据。下一步切换pipeline并完成旧/新消费懒准备、全生产派生账本与全局槽/预算/期限；整体目标继续进行。
