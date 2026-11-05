@@ -458,3 +458,44 @@ def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(
             assert file.meta["ocr_generation"]
             assert db.get(OcrPageResult, (second, 0, settings.ocr_engine_fingerprint or "test")) is None
             db.rollback()
+
+
+@pytest.mark.parametrize("kind", ["docx", "xlsx"])
+@pytest.mark.parametrize("count", [8, 30])
+def test_visual_cache_uses_known_render_count_before_final_manifest(kind, count):
+    from ailab_platform.api.routes_library_tools import document_images
+    from ailab_platform.models import RenderedPage
+
+    with TestClient(app) as client:
+        fid = upload(client, "mixed." + kind, office_image(kind, True), "application/" + kind)
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "render_page_count": count, "preview": {"status": "pending"}}
+            for page in range(1, min(count, 20) + 1):
+                db.add(RenderedPage(file_id=fid, page=page, version="poppler-1280-v1", key=f"derived/{fid}/{page}.png", digest="a"))
+            db.flush()
+            result = document_images(db, file, None, prepare=False)
+            assert result["page_count"] == count
+            assert result["truncated"] is (count > 20)
+            assert len(result["files"]) == min(count, 20)
+            assert all(image["content_type"] == "image/png" for image in result["files"])
+            db.delete(db.get(RenderedPage, (fid, 2, "poppler-1280-v1")))
+            db.flush()
+            assert document_images(db, file, None, prepare=False)["pending"] is True
+
+
+def test_unknown_page_count_and_explicit_subset_do_not_claim_whole_file():
+    from ailab_platform.api.routes_library_tools import document_images
+    from ailab_platform.models import RenderedPage
+
+    with TestClient(app) as client:
+        fid = upload(client, "mixed.docx", office_image("docx", True), "application/docx")
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "preview": {"status": "pending"}}
+            db.add(RenderedPage(file_id=fid, page=1, version="poppler-1280-v1", key=f"derived/{fid}/1.jpg", digest="a"))
+            db.flush()
+            assert document_images(db, file, None, prepare=False)["pending"] is True
+            subset = document_images(db, file, [1], prepare=False)
+            assert subset["page_count"] is None
+            assert subset["files"][0]["content_type"] == "image/jpeg"

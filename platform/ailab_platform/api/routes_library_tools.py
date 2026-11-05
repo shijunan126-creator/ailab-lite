@@ -430,10 +430,9 @@ def document_images(db, file, selected, *, prepare=True):
     if preview.get("status") == "failed":
         return {"error": "文档视觉页面生成失败，请稍后重试或换用可读取文件", "reason": preview.get("reason")}
     all_pages = selected is None
-    if all_pages and preview.get("status") == "ready" and preview.get("page_count"):
-        selected = list(range(1, min(preview["page_count"], 20) + 1))
-    elif all_pages and meta.get("render_page_count"):
-        selected = list(range(1, min(meta["render_page_count"], 20) + 1))
+    page_count = (preview.get("page_count") if preview.get("status") == "ready" else None) or meta.get("render_page_count")
+    if all_pages and page_count:
+        selected = list(range(1, min(page_count, 20) + 1))
     pages = (
         db.scalars(
             select(RenderedPage)
@@ -461,15 +460,15 @@ def document_images(db, file, selected, *, prepare=True):
                 "id": file.id,
                 "file_id": file.id,
                 "filename": file.filename,
-                "content_type": "image/jpeg",
+                "content_type": "image/png" if by_page[p].key.endswith(".png") else "image/jpeg",
                 "version": file.version,
                 "page": p,
                 "digest": by_page[p].digest,
             }
             for p in selected[:20]
         ],
-        "truncated": len(selected) > 20 or (all_pages and preview.get("page_count", 0) > 20),
-        "page_count": preview.get("page_count"),
+        "truncated": len(selected) > 20 or (all_pages and (page_count or 0) > 20),
+        "page_count": page_count,
         "location_kind": "rendered_page",
     }
 

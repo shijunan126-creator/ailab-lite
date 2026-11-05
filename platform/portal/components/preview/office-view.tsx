@@ -176,20 +176,35 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     const bytes = new Map<string, Promise<ArrayBuffer>>();
     // Closing or switching the document stops a download the viewer has not taken yet.
     const downloads = new AbortController();
-    const captures = new Map<number, { resolve(value: OfficeCapture): void; reject(error: Error): void }>();
+    const captures = new Map<number, { resolve(value: OfficeCapture): void; reject(error: Error): void; dispose(): void }>();
     let toolSeq = 0;
     let up = false;
     // Set when the document's bytes could not be read: a failure the viewer then reports is the source's, not its own.
     let unreadable: string | null = null;
     const version = contentVersion;
     const send = (message: Outgoing, transfer: Transferable[] = []) =>
-      element.contentWindow?.postMessage({ ch: CHANNEL, ...message }, "*", transfer);
-    const capture = (at: string | null, maxWidth: number) =>
+      !closed && element.contentWindow?.postMessage({ ch: CHANNEL, ...message }, "*", transfer);
+    const capture = (at: string | null, maxWidth: number, signal?: AbortSignal) =>
       new Promise<OfficeCapture>((resolve, reject) => {
+        if (closed || signal?.aborted) return reject(new Error("查看器已关闭"));
+        if (captures.size) return reject(new Error("截图正在处理中"));
         const id = ++toolSeq;
-        captures.set(id, { resolve, reject });
+        const finish = (error: string) => {
+          const waiter = captures.get(id);
+          if (!waiter) return;
+          captures.delete(id);
+          waiter.dispose();
+          reject(new Error(error));
+        };
+        const abort = () => finish("截图已取消");
+        const timer = setTimeout(() => finish("截图超时"), 15_000);
+        const dispose = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+        };
+        captures.set(id, { resolve, reject, dispose });
+        signal?.addEventListener("abort", abort, { once: true });
         send({ t: "page-tool", id, name: "capture_view", args: { ...(at ? { anchor: `${live.current.doc.path}#${at}` } : {}), maxWidth } });
-        setTimeout(() => captures.get(id) && (captures.delete(id), reject(new Error("截图超时"))), 15_000);
       });
 
     // What the user is looking at, for the model's get_view and viewport captures. The API keeps it 600 s, so
@@ -349,7 +364,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     };
 
     const onMessage = async (event: MessageEvent) => {
-      if (event.source !== element.contentWindow || !isChannel(event.data)) return;
+      if (closed || event.source !== element.contentWindow || !isChannel(event.data)) return;
       const message = event.data as FrameMessage;
       // Screenshots are base64 PNGs, unlike control messages. Keep their transport bounded while
       // allowing the client-call handler to shrink images exceeding its 2 MiB result budget.
@@ -445,6 +460,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
           const waiter = captures.get(message.id);
           if (!waiter) return;
           captures.delete(message.id);
+          waiter.dispose();
           const result = message.value as { content?: { type: string; data?: string; text?: string }[] } | undefined;
           const image = result?.content?.find((part) => part.type === "image")?.data;
           if (!message.ok || !image) return waiter.reject(new Error(message.error || "截图失败"));
@@ -464,7 +480,12 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
       clearTimeout(renewal);
       inflight?.abort();
       releaseView();
-      for (const waiter of captures.values()) waiter.reject(new Error("查看器已关闭"));
+      for (const waiter of captures.values()) {
+        waiter.dispose();
+        waiter.reject(new Error("查看器已关闭"));
+      }
+      captures.clear();
+      bytes.clear();
       channel.current = null;
     };
   }, [ready, contentVersion]);

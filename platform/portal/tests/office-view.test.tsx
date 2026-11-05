@@ -645,3 +645,28 @@ test("the viewer's own controls sit in the host's title bar, press through to th
   expect(screen.getByText("fallback")).toBeTruthy();
   expect(bar.childElementCount).toBe(0);
 });
+
+test("capture timeout handles and abort listeners are released on result, cancellation and close", async () => {
+  const b = await bridge(doc, "c1");
+  await b.send({ t: "ready", viewId: "v1" });
+  await b.send({ t: "call", id: 1, name: "report_view", args: { at: "p:1" } });
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 650)); });
+  const binding = request.mock.calls.find(([url, options]) => url.endsWith("/view") && options?.method === "PUT");
+  const id = JSON.parse(binding![1]!.body as string).view_id;
+  vi.useFakeTimers();
+  const baseline = vi.getTimerCount();
+  for (let i = 0; i < 50; i++) {
+    const controller = new AbortController();
+    const pending = captureView(id, "p:1", 800, controller.signal)!;
+    const rejected = expect(pending).rejects.toThrow("截图已取消");
+    controller.abort();
+    await rejected;
+    expect(vi.getTimerCount()).toBe(baseline);
+  }
+  const pending = captureView(id, "p:1", 800)!;
+  const rejected = expect(pending).rejects.toThrow("查看器已关闭");
+  b.unmount();
+  await rejected;
+  expect(hasView(id)).toBe(false);
+  expect(vi.getTimerCount()).toBe(0);
+});

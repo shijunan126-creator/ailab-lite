@@ -1,3 +1,9 @@
+## 2026-11-05 页图完整性与截图等待者
+
+- 最终manifest迟到时，选页、page_count和truncated必须共用同一有效总页数；已缓存前20页不证明整份可用。RenderedPage存PNG时不能固定返回JPEG。
+- 截图Promise完成不自动清setTimeout；等待者须持有dispose，成功/失败/取消/卸载均清timer与监听。SSE去重不能用永久增长Set；只留有界小收据，淘汰后仍须服务端claim。桥接取消不证明上游Canvas/编码已停止，须独立验证。
+- 新文件输入链路仍待完整实施，当前局部修复不等于安全/派生拆分、容量治理或真实50轮性能通过，见[记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md)。
+
 # 2026-11-04 历史消息分支身份
 
 - mock文档执行器调用PATH中的`python`，测试要把Python3.12 venv/bin放在PATH前端，并准备当前worktree的Office runtime。一次性PG库显式用UTF8；SQL_ASCII会让psycopg返回bytes，SQLAlchemy读取server version时报类型错误。

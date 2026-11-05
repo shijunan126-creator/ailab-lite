@@ -45,3 +45,26 @@ test("js calls retain code, input, limits, logs and stats", async () => {
   expect(result()).toEqual({ claim_token: "token", ok: true, value: "3", logs: "", stats: { ms: 1 } });
   expect(captureView).not.toHaveBeenCalled();
 });
+
+test("invalid or expired deadlines never claim", async () => {
+  for (const deadline of ["invalid", new Date(Date.now() - 1).toISOString()]) await handleClientCall("run", { ...call(), deadline });
+  expect(api).not.toHaveBeenCalled();
+});
+test("unavailable claims can retry and concurrent replays share one execution", async () => {
+  const c = call();
+  vi.mocked(api).mockRejectedValueOnce(new Error("offline"));
+  await handleClientCall("run", c);
+  await Promise.all([handleClientCall("run", c), handleClientCall("run", c)]);
+  expect(captureView).toHaveBeenCalledTimes(1);
+  expect(api).toHaveBeenCalledTimes(3);
+});
+test("terminal receipts are bounded; evicted calls require a server claim", async () => {
+  const first = call();
+  await handleClientCall("run", first);
+  for (let i = 0; i < 256; i++) await handleClientCall("run", call());
+  vi.mocked(api).mockRejectedValueOnce(new Error("already claimed"));
+  const before = vi.mocked(captureView).mock.calls.length;
+  await handleClientCall("run", first);
+  expect(captureView).toHaveBeenCalledTimes(before);
+  expect(vi.mocked(api).mock.calls.at(-1)![0]).toContain(`/${first.call_id}/claim`);
+});

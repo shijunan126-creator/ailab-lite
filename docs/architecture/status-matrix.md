@@ -1,3 +1,5 @@
+2026-11-05 文件读取与预览优化正在隔离分支本地实施，当前仅完成页图完整性/MIME与截图桥接资源回收的第一组修复；新Chat三工具、模式隔离、安全/派生状态与容量迁移尚未完成，不宣称整套能力可用。[实施记录](../progress/updates/2026-11-05-document-input-lifecycle.md)。
+
 # 单机能力状态
 
 2026-11-04 删除审查D1–D6已在 `fix/deletion-lifecycle` 本地修复验证（PR/部署状态见当前交接）：会话墓碑读写与缓存、恢复任务围栏、依赖草稿失效、解包对象最终回收；阶段检查与边界见[修复记录](../progress/updates/2026-11-04-deletion-lifecycle-fixes.md)。
