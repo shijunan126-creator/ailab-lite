@@ -36,14 +36,28 @@ REDUCED_V1 = frozenset(
 )
 
 
-def catalog_for_budget(catalog, budget_tokens):
+REDUCED_V2 = (REDUCED_V1 - {"document_view"}) | frozenset(
+    {
+        "read_document",
+        "search_document",
+        "view_document",
+        "resolve_attachment",
+        "search_library",
+        "copy_library_file",
+        "view_workspace_file",
+    }
+)
+
+
+def catalog_for_budget(catalog, budget_tokens, version=1):
     from ..model_policy import estimator
 
     if estimator.raw(catalog) <= budget_tokens:
         return catalog
-    reduced = [tool for tool in catalog if tool["function"]["name"] in REDUCED_V1]
+    names = REDUCED_V2 if version == 2 else REDUCED_V1
+    reduced = [tool for tool in catalog if tool["function"]["name"] in names]
     if estimator.raw(reduced) > budget_tokens:
-        raise ValueError("version 1 reduced tool catalog exceeds model schema budget")
+        raise ValueError(f"version {version} reduced tool catalog exceeds model schema budget")
     return reduced
 
 

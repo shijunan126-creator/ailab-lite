@@ -5,6 +5,13 @@
 - 取消/失败后先由API确认该grant仍未发布，再删持久暂存并结算；发布响应丢失不能当未发布清掉。backfill_complete仅表示初次登记扫描完成，不等于所有新writer已纳管或TTL失效已接通。
 - 真验收需记录源码指纹/实际镜像，不只git HEAD；dirty基线不得倒填为最终冻结提交。单次或两次上传不能报p95，慢观察留待定位，不调门槛或重启求绿。见[当前实施证据](docs/progress/updates/2026-11-05-document-input-lifecycle.md#安全入库与消费准备已接通2026-11-05续作)。
 
+## 2026-11-06 文档目录与技能兼容
+
+- 工具目录变化只给新run；不要原地修改V1常量对象或已保存catalog。V2的Agent执行和API路由都校验模式/目录，旧run仍校验当前权限/删除。新目录未完成全部资源合同前不默认启用。
+- 技能模式变化从build.py生成版本化指南；保持旧技能包字节和完整操作资源，指南revision也要保存/恢复检查。替换工具名只能作用于平台指导，不能对用户prompt或附件原文全局replace。
+- SQLite命名UNIQUE约束实际查询计划常显示sqlite_autoindex；EXPLAIN按实际列组合识别它，不能硬套PostgreSQL约束索引名。自定义checkpoint fake若不模拟原子边界事件，应验证保存的boundary/epoch，不能误判产品没记录。
+- Work工作区图片OCR仍调用平台现有执行器，当前沙箱只准备图片/裁剪；不安装权重、不泄露密钥、不额外租系统render沙箱。
+
 ## 2026-11-05 隔离真实上传基线
 
 - Broker读取须使用独立service身份；legacy共享token不返回Broker专属render_owner_id，健康服务也会立即503。验收用独立token+摘要矩阵，不从既有栈复制凭据。

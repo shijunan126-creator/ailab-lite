@@ -103,6 +103,10 @@ def document_view(
     run = db.get(Run, run_id)
     if not run:
         raise HTTPException(404, "run not found")
+    from ..domain.document_tools import catalog_version, permitted
+
+    if not permitted("document_view", mode=(run.options or {}).get("mode", "work"), version=catalog_version(run.options)):
+        raise HTTPException(422, "document_tool_not_available_for_catalog")
     with fenced_run(db, run, x_run_attempt):
         if run.status != "running":
             raise HTTPException(409, "run unavailable")

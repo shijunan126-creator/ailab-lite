@@ -193,6 +193,15 @@ def test_indexed_native_operations_page_without_ocr_or_eager_body_reads(monkeypa
             return original(key, *args, **kwargs)
 
         monkeypatch.setattr(storage, "open_stream", record)
+        navigation = text_operation(db, file, ReadDocument(file_id=file.id, navigation_only=True))
+        assert len(navigation["navigation"]) == 100 and navigation["next_cursor"]
+        assert navigation["navigation"][0]["locator"] == "page:1" and navigation["physical_page_count"] == 130
+        assert opens == []  # Navigation never opens canonical text or a PDF/render.
+        continuation = text_operation(db, file, ReadDocument(file_id=file.id, navigation_only=True, cursor=navigation["next_cursor"]))
+        assert len(continuation["navigation"]) == 30 and not continuation["next_cursor"] and opens == []
+        with pytest.raises(HTTPException) as error:
+            text_operation(db, file, ReadDocument(file_id=file.id, cursor=navigation["next_cursor"]))
+        assert error.value.detail == "cursor_stale"
         first = text_operation(db, file, SearchDocument(file_id=file.id, query="target"))
         assert first["hits"] == [] and first["checked_blocks"] == 100 and first["next_cursor"]
         assert opens == [key]  # one canonical buffer, no per-block storage read

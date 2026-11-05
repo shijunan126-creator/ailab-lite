@@ -218,6 +218,41 @@ def test_document_indexes_are_bounded_at_100000_blocks():
             )
             assert "ix_document_blocks_unit" in plan
             assert db.scalar(query)
+            # The new transport pages the same indexes; neither native search
+            # nor a typed page/anchor request may load the full metadata table.
+            from types import SimpleNamespace
+
+            from ailab_platform.api.document_text import select_blocks
+            from ailab_platform.contracts.document_input import Pages, Word
+            from ailab_platform.domain.document_reading import Position
+
+            for source, selector, expected in [
+                (SimpleNamespace(meta={"extract": {"kind": "pdf", "units": 100000}}), None, "uq_document_block_ordinal"),
+                (
+                    SimpleNamespace(meta={"extract": {"kind": "pdf", "units": 100000}}),
+                    Pages(kind="pages", pages=[85000]),
+                    "ix_document_blocks_unit",
+                ),
+                (SimpleNamespace(meta={"extract": {"kind": "docx"}}), Word(kind="word", anchor="p:85000"), "ix_document_blocks_anchor"),
+            ]:
+                bounded = select_blocks(source, derivation, selector, Position(84990))
+                compiled = str(bounded.compile(db.bind, compile_kwargs={"literal_binds": True}))
+                explain = " ".join(
+                    str(row)
+                    for row in db.execute(text(("EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN ") + compiled))
+                )
+                if expected == "uq_document_block_ordinal" and db.bind.dialect.name == "sqlite":
+                    # SQLite assigns its own name to a named UNIQUE constraint.
+                    indexes = db.execute(text("PRAGMA index_list(document_blocks)")).all()
+                    matching = []
+                    for item in indexes:
+                        columns = db.execute(text('PRAGMA index_info("' + item[1].replace('"', '""') + '")')).all()
+                        if [column[2] for column in columns] == ["derivation_id", "ordinal"]:
+                            matching.append(item[1])
+                    assert matching and any(name in explain for name in matching)
+                else:
+                    assert expected in explain
+                assert len(db.scalars(bounded).all()) <= 101
             import json
             import os
             from pathlib import Path

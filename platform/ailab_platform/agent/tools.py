@@ -12,10 +12,12 @@ from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
 from ..contracts.genui import component_docs_for, component_names, guide_for
+from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools, subtasks
 from .background_exec import background_exec
+from .document_tools import TOOLS as DOCUMENT_TOOLS
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
 
@@ -526,8 +528,8 @@ DOCUMENT_VIEW = {
 }
 
 
-def tools_for_turn() -> list[dict]:
-    return [
+def tools_for_turn(document_tools_version=1) -> list[dict]:
+    catalog = [
         DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
@@ -546,10 +548,27 @@ def tools_for_turn() -> list[dict]:
         subtasks.TOOL,
     ]
 
+    if document_tools_version == 2:
+        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="work", version=2)]
+        catalog = _current_recall(catalog, "copy_library_file")
+    return catalog
 
-def tools_for_chat() -> list[dict]:
+
+def _current_recall(catalog, reader):
+    # Descriptions are request bytes too: clone rather than editing frozen V1.
+    from copy import deepcopy
+
+    catalog = deepcopy(catalog)
+    for tool in catalog:
+        if tool["function"]["name"] == "recall_history":
+            parameters = tool["function"]["parameters"]
+            parameters["description"] = parameters["description"].replace("read_library_file", reader)
+    return catalog
+
+
+def tools_for_chat(document_tools_version=1) -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
-    return [
+    catalog = [
         DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
@@ -562,11 +581,27 @@ def tools_for_chat() -> list[dict]:
         net_tools.SAVE_SKILL,
     ]
 
+    if document_tools_version == 2:
+        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="chat", version=2)]
+        catalog.extend(DOCUMENT_TOOLS)
+        catalog = _current_recall(catalog, "read_document")
+    return catalog
+
 
 class ToolContext:
     """What a tool may know about its run beyond its arguments."""
 
-    def __init__(self, run_id: str = "", platform=None, messages: list[dict] | None = None, budget: net_tools.Budget | None = None):
+    def __init__(
+        self,
+        run_id: str = "",
+        platform=None,
+        messages: list[dict] | None = None,
+        budget: net_tools.Budget | None = None,
+        *,
+        mode="work",
+        document_tools_version=1,
+    ):
+        self.mode, self.document_tools_version = mode, document_tools_version
         self.run_id, self.platform = run_id, platform
         self.messages = messages if messages is not None else []
         self.budget = budget or net_tools.Budget()
@@ -618,6 +653,10 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     if INVALID_ARGUMENTS_KEY in args:
         raise ToolError("tool arguments were not valid JSON; resend the call with a well-formed JSON object")
     ctx = ctx or ToolContext()
+    if not permitted(name, mode=ctx.mode, version=ctx.document_tools_version):
+        raise ToolError("document tool is not available for this run mode/catalog")
+    if name in CHAT_DOCUMENT_TOOLS:
+        return {"ok": True, **await ctx.platform.document_input(ctx.run_id, name, args)}
     if name == "search_library":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
     if name == "extract_text":

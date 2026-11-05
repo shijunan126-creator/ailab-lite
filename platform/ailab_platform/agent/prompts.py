@@ -156,6 +156,7 @@ def system_prompt_for(
     deferred: bool = False,
     genui: bool = False,
     genui_tools: bool = True,
+    document_tools_version: int = 1,
 ) -> str:
     """Describe the actual capabilities; preload a picked skill and omit disabled skill names."""
     base = f"[AILab platform rules {PLATFORM_PROMPT_VERSION}; mode={mode}]\n" + (
@@ -168,6 +169,17 @@ def system_prompt_for(
         "工作时可 copy_library_file 复制资料到工作区。"
         "引用网页事实时，在主张后用 [简短标题](https://…) 标注来源，不裸贴URL，不在末尾堆参考链接。\n"
     )
+    if document_tools_version == 2:
+        if mode == "work":
+            base = base.replace("已实际 read_library_file 阅读", "已核验原件并实际阅读")
+            base = base.replace(
+                "search_library 搜索资料库、read_library_file 分页读取已提取正文",
+                "search_library 查找原件、copy_library_file 复制原件到当前工作区",
+            )
+            base = base.replace("OCR走平台能力", "OCR用当前工作沙箱的受限工作区工具")
+            base = base.replace("再通过平台读取", "核验交付版本与实际来源位置")
+        else:
+            base = base.replace("read_library_file", "read_document")
     if settings.genui_enabled and genui:
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
@@ -181,16 +193,24 @@ def system_prompt_for(
     return base
 
 
-def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
+def user_prompt(prompt: str, input_files: list[dict] | None = None, *, mode="work", document_tools_version=1) -> str:
     """The message, plus each attachment: its extracted text when there is one, and where the file is."""
     if not input_files:
         return prompt
     lines = [prompt]
+    reader = "read_document" if document_tools_version == 2 else "read_library_file"
+    viewer = "view_document" if document_tools_version == 2 else "view_attachment"
     for f in input_files:
         name = f.get("filename") or f.get("file_id")
         text = (f.get("text") or "").strip()
         lines.append("")
         lines.append(f"（附件身份：file_id={f.get('file_id') or f.get('id')}，版本={f.get('version', 1)}）")
+        if document_tools_version == 2 and mode == "work":
+            lines.append(
+                f"（原件《{name}》：类型={f.get('content_type')}，字节={f.get('size', 'unknown')}；"
+                f"工作区 /workspace/inputs/{f.get('sandbox_filename') or name}，用office-read按需读取和核对覆盖。）"
+            )
+            continue
         visual = f.get("visual") or {}
         if visual.get("status") in {"present", "unknown"}:
             lines.append(
@@ -198,21 +218,24 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
                 + (
                     "本轮已附视觉页面。"
                     if f.get("visual_pages")
-                    else "需要图形理解时发现并调用view_attachment；非视觉模型须说明未理解图形，不能根据OCR猜测。"
+                    else f"需要图形理解时发现并调用{viewer}；非视觉模型须说明未理解图形，不能根据OCR猜测。"
                 )
                 + "）"
             )
         if f.get("input_strategy") == "reference":
             lines.append(
                 f"（附件《{name}》：file_id={f['file_id']}，版本={f.get('version')}，"
-                f"类型={f.get('content_type')}，处理={f.get('processing')}；正文按需发现并调用read_library_file，"
-                f"原文件在 /workspace/inputs/{f.get('sandbox_filename') or name}）"
+                f"类型={f.get('content_type')}，处理={f.get('processing')}；正文按需发现并调用{reader}"
+                + (f"，原文件在 /workspace/inputs/{f.get('sandbox_filename') or name}" if document_tools_version == 1 else "")
+                + "）"
             )
             continue
         if text:
             cut = f"，以下是前 {len(text)} 字" if f.get("truncated") else ""
             lines += [
-                f"（附件《{name}》：共 {f.get('chars') or len(text)} 字{cut}；原文件使用沙箱时在 /workspace/inputs/{name}）",
+                f"（附件《{name}》：共 {f.get('chars') or len(text)} 字{cut}"
+                + (f"；原文件使用沙箱时在 /workspace/inputs/{name}" if document_tools_version == 1 else "")
+                + "）",
                 "<!-- AILAB_ATTACHMENT_START -->",
                 "```",
                 text,
@@ -220,7 +243,11 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None) -> str:
                 "<!-- AILAB_ATTACHMENT_END -->",
             ]
         else:
-            lines.append(f"（附件《{name}》：没有可直接读取的文字；原文件使用沙箱时在 /workspace/inputs/{name}）")
+            lines.append(
+                f"（附件《{name}》：没有可直接读取的文字"
+                + (f"；原文件使用沙箱时在 /workspace/inputs/{name}" if document_tools_version == 1 else "")
+                + "）"
+            )
     return "\n".join(lines)
 
 

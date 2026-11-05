@@ -1978,3 +1978,122 @@ def test_usage_anchor_metadata_does_not_change_recorded_request_bytes(monkeypatc
         captures.append(json.dumps(requests, ensure_ascii=False))
         assert bool(platform.checkpoint["state"].get("prompt_anchors")) is anchored
     assert captures[0] == captures[1]
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode):
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": mode, "document_tools_version": 2}}
+
+        async def document_input(self, run_id, operation, payload):
+            assert mode == "chat" and operation == "read_document" and payload == {"file_id": "f"}
+            return {
+                "text": "native evidence",
+                "next_cursor": None,
+                "coverage": {"native": {"status": "ready"}, "visual": {"status": "not_viewed"}, "ocr": {"status": "not_read"}},
+            }
+
+    def response(identity, name, arguments):
+        return {
+            "tool_calls": [
+                {
+                    "index": 0,
+                    "id": identity,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": json.dumps(arguments),
+                    },
+                }
+            ]
+        }
+
+    sequence = [
+        response("guide", "load_skill", {"name": "platform.pdf"}),
+        response("viewer", "load_skill", {"name": "platform.pdf", "resource": "viewer/SKILL.md"}),
+    ]
+    if mode == "chat":
+        sequence.append(response("read", "read_document", {"file_id": "f"}))
+    sequence.append({"content": "done"})
+    with scripted_server(sequence) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == len(sequence)
+    for first, second in pairwise(requests):
+        assert_extension(first, second)
+    names = {t["function"]["name"] for t in requests[0]["tools"]}
+    assert not names & {"read_library_file", "extract_text", "view_attachment", "document_view"}
+    assert ({"read_document", "search_document", "view_document"} <= names) == (mode == "chat")
+    for message in requests[-1]["messages"]:
+        if message.get("name") == "load_skill":
+            loaded = json.loads(message["content"])
+            assert loaded["ok"] and "skill" in loaded
+            assert "read_library_file" not in loaded["skill"] and "document_view" not in loaded["skill"]
+            assert ("office-read" in loaded["skill"]) == (mode == "work")
+
+
+def test_v1_checkpoint_remains_v1_when_catalog_v2_is_available():
+    platform = FakePlatform()
+    state = fresh_state()
+    state["messages"] = [
+        {"role": "system", "content": system_prompt_for("work")},
+        {"role": "system", "content": ""},
+        {"role": "user", "content": "continue old run"},
+    ]
+    state["tool_catalog_v1"] = copy.deepcopy(_tools_for_run({"model": "m", "options": {"mode": "work"}}))
+    state["user_message_index"] = 2
+    platform.checkpoint = {"step": 1, "state": state}
+    with scripted_server([{"content": "done"}]) as (url, requests):
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("legacy", attempt_id="resume"))
+    assert requests[0]["messages"] == state["messages"]
+    assert requests[0]["tools"] == state["tool_catalog_v1"]
+    assert "read_library_file" in {t["function"]["name"] for t in requests[0]["tools"]}
+
+
+@pytest.mark.parametrize("mode", ["chat", "work"])
+@pytest.mark.parametrize("previous_version", [1, 2])
+def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, previous_version):
+    class Platform(FakePlatform):
+        def __init__(self):
+            super().__init__()
+            self.checkpoints = {}
+
+        async def get_checkpoint(self, run_id):
+            return self.checkpoints.get(run_id)
+
+        async def put_checkpoint(self, run_id, payload):
+            step = self.checkpoints.get(run_id, {}).get("step", 0)
+            assert payload["expected_step"] == step
+            self.checkpoints[run_id] = {"step": step + 1, "state": copy.deepcopy(payload["state"])}
+            return {"step": step + 1}
+
+        async def get_run(self, run_id):
+            result = {
+                **await super().get_run(run_id),
+                "prompt": run_id,
+                "options": {"mode": mode, "document_tools_version": previous_version if run_id == "first" else 2},
+            }
+            if run_id == "second":
+                state = self.checkpoints["first"]["state"]
+                result["previous_model_context"] = {
+                    "messages": state["messages"],
+                    "tools": state["tool_catalog_v1"],
+                    "prompt_anchors": state["prompt_anchors"],
+                }
+            return result
+
+    with scripted_server([{"content": "old answer"}, {"content": "new answer"}]) as (url, requests):
+        platform = Platform()
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("first", attempt_id="first"))
+        asyncio.run(loop.process("second", attempt_id="second"))
+    assert len(requests) == 2 and platform.statuses[-1][0] == "succeeded"
+    if previous_version == 2:
+        assert_extension(*requests)
+        assert not any(event[0] == "agent.context_boundary" for event in platform.events)
+    else:
+        assert requests[1]["tools"] != requests[0]["tools"]
+        boundary = platform.checkpoints["second"]["state"]["context_boundary"]
+        assert boundary["reason"] == "rebuilt" and boundary["epoch"] == 1

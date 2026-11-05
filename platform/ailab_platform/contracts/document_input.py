@@ -11,7 +11,7 @@ class Contract(BaseModel):
 
 class Pages(Contract):
     kind: Literal["pages"]
-    pages: list[Annotated[StrictInt, Field(ge=1)]] = Field(min_length=1, max_length=20)
+    pages: list[Annotated[StrictInt, Field(ge=1, le=2147483647)]] = Field(min_length=1, max_length=20)
 
     @field_validator("pages")
     @classmethod
@@ -56,7 +56,7 @@ Selector = Annotated[Pages | Word | Sheet, Field(discriminator="kind")]
 
 class Region(Contract):
     kind: Literal["region"]
-    page: StrictInt = Field(ge=1)
+    page: StrictInt = Field(ge=1, le=2147483647)
     # Coordinates refer to the stated representation, never inferred Word pages.
     revision: str = Field(min_length=1, max_length=100)
     rotation: Literal[0, 90, 180, 270] = 0
@@ -82,10 +82,13 @@ class ReadDocument(Contract):
     file_id: str = Field(min_length=1, max_length=40)
     selector: Selector | Region | None = None
     text_source: Literal["native", "ocr"] = "native"
+    navigation_only: bool = False
     cursor: str | None = Field(default=None, max_length=2048)
 
     @model_validator(mode="after")
     def explicit_ocr(self):
+        if self.navigation_only and self.text_source != "native":
+            raise ValueError("navigation uses native structure, not OCR")
         if self.text_source == "ocr" and not isinstance(self.selector, Pages | Region):
             raise ValueError("OCR requires explicit pages or region")
         if self.text_source == "native" and isinstance(self.selector, Region):

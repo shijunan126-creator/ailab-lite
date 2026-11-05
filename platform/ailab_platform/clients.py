@@ -404,6 +404,11 @@ class AsyncPlatformClient(_PlatformApi):
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
 
+    async def document_input(self, run_id: str, operation: str, payload: dict) -> dict:
+        if operation not in {"read_document", "search_document", "view_document"}:
+            raise ValueError("unknown document operation")
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/documents/{operation}", timeout=30, json=payload))).json()
+
     async def document_view(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/document-view", timeout=100, json=payload))).json()
 

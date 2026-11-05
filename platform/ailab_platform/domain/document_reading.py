@@ -3,6 +3,7 @@
 import base64
 import binascii
 import hashlib
+import hmac
 import json
 import unicodedata
 from dataclasses import dataclass
@@ -43,18 +44,26 @@ def context_digest(*, operation, file_id, version, representation, selector=None
     return hashlib.sha256(json.dumps(body, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def encode_cursor(context, position):
+def encode_cursor(context, position, *, key=None):
     body = json.dumps([1, context, position.ordinal, position.offset], separators=(",", ":")).encode()
+    if key is not None:
+        body += b"." + hmac.digest(key, body, "sha256").hex().encode()
     return base64.urlsafe_b64encode(body).decode().rstrip("=")
 
 
-def decode_cursor(cursor, context):
+def decode_cursor(cursor, context, *, key=None):
     if cursor is None:
         return Position()
     if not isinstance(cursor, str) or len(cursor) > 2048:
         raise CursorError("invalid_cursor")
     try:
-        body = json.loads(base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True))
+        raw = base64.b64decode(cursor + "=" * (-len(cursor) % 4), altchars=b"-_", validate=True)
+        if key is not None:
+            raw, signature = raw.rsplit(b".", 1)
+            expected = hmac.digest(key, raw, "sha256").hex().encode()
+            if not hmac.compare_digest(signature, expected):
+                raise CursorError("invalid_cursor")
+        body = json.loads(raw)
     except (ValueError, binascii.Error, UnicodeError):
         raise CursorError("invalid_cursor") from None
     if not isinstance(body, list) or len(body) != 4 or body[0] != 1:

@@ -1,8 +1,11 @@
 """Authorized-source text operations; transport and run/catalog admission are separate."""
 
+import hmac
+
 from fastapi import HTTPException
 from sqlalchemy import select
 
+from ..config import settings
 from ..contracts.document_input import Pages, ReadDocument, SearchDocument, Sheet, Word
 from ..domain.document_reading import (
     CursorError,
@@ -21,6 +24,21 @@ from .native_preparation import native_state
 
 def current_index(db, file):
     state = native_state(file)
+    # Reuse a previously indexed immutable legacy generation without parsing it
+    # again. Publication owns this pointer; retired indexes are never selected.
+    if state.get("status") == "absent":
+        key = (file.meta or {}).get("document_manifest_key") or ((file.meta or {}).get("extract") or {}).get("document_manifest_key")
+        if key:
+            index = db.scalar(
+                select(FileDerivation).where(
+                    FileDerivation.file_id == file.id,
+                    FileDerivation.kind == "native",
+                    FileDerivation.manifest_key == key,
+                    FileDerivation.status.in_(["ready", "partial"]),
+                )
+            )
+            if index:
+                return index
     if state.get("version") != file.sha256 or state.get("status") != "ready":
         raise HTTPException(409, "native_representation_unavailable")
     index = db.get(FileDerivation, state.get("derivation_id"))
@@ -59,24 +77,26 @@ def select_blocks(file, index, selector, position):
 def text_operation(db, file, request: ReadDocument | SearchDocument):
     """Consumes an already authorized immutable file; never starts parsing or OCR.
 
-    This service is deliberately not mounted as a legacy route. New-run catalog,
-    pending-job orchestration and OCR coverage admission must wrap it at rollout.
+    New-run transport owns permission/attempt admission and pending preparation;
+    legacy tools retain their separately frozen contracts.
     """
     searching = isinstance(request, SearchDocument)
+    navigation = not searching and request.navigation_only
     if not searching and request.text_source != "native":
         raise HTTPException(409, "ocr_representation_unavailable")
     index = current_index(db, file)
     selector = request.selector.model_dump(mode="json") if request.selector else None
     context = context_digest(
-        operation="search" if searching else "read",
+        operation="search" if searching else ("navigate" if navigation else "read"),
         file_id=file.id,
         version=file.sha256,
         representation=index.id,
         selector=selector,
         query=request.query if searching else None,
     )
+    key = hmac.digest(settings.caller_token("api").encode(), b"document-cursor-v2", "sha256")
     try:
-        position = decode_cursor(request.cursor, context)
+        position = decode_cursor(request.cursor, context, key=key)
         rows = db.scalars(select_blocks(file, index, request.selector, position)).all()
         storage, cache = get_storage(), {}
 
@@ -94,7 +114,21 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
                     ).decode("utf-8")
                 yield TextBlock(row.ordinal, row.anchor, text, block_id=row.id)
 
-        result = search_batch(blocks(), request.query, position) if searching else read_batch(blocks(), position)
+        if navigation:
+            if position.offset:
+                raise CursorError("invalid_cursor")
+            from ..domain.document_reading import Position
+
+            result = {
+                "navigation": [
+                    {"block_id": row.id, "locator": row.anchor, "unit": row.unit_number, "chars": row.chars} for row in rows[:100]
+                ],
+                "checked_blocks": min(100, len(rows)),
+                "next_position": Position(rows[100].ordinal) if len(rows) > 100 else None,
+                "coverage": [],
+            }
+        else:
+            result = search_batch(blocks(), request.query, position) if searching else read_batch(blocks(), position)
     except CursorError as exc:
         raise HTTPException(409, str(exc)) from None
     except (NativeCacheError, UnicodeError) as exc:
@@ -107,8 +141,12 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         "version": file.sha256,
         "representation": {"kind": "native", "revision": index.id, "parser": index.parser_version},
         **result,
-        "next_cursor": encode_cursor(context, next_position) if next_position is not None else None,
+        "next_cursor": encode_cursor(context, next_position, key=key) if next_position is not None else None,
         "truncated": next_position is not None,
+        "navigation_status": "available_index" if navigation else "not_requested",
+        "physical_page_count": ((file.meta or {}).get("extract") or {}).get("units")
+        if ((file.meta or {}).get("extract") or {}).get("kind") == "pdf"
+        else "unknown",
         "coverage": {
             "native": {"indexed_status": index.status, "end_of_available_text": next_position is None},
             "visual": {"status": "not_viewed"},

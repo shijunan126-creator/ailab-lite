@@ -43,49 +43,63 @@ class Read(BaseModel):
         return value
 
 
-def _ready(db, run_id, file_id):
-    run = _run_or_404(db, run_id)
+def authorized_source(db, run, file_id):
+    """Authorize and bind a source in the caller's existing user/fence transaction."""
     from ..models import MessageFileRef
 
-    with user_critical_section(db, run.user_id):
-        db.refresh(run)
-        conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
-        if run.conversation_id and (conversation is None or conversation.deleted_at):
-            raise HTTPException(404, "对话不存在")
-        file = db.get(FileObject, file_id, populate_existing=True)
-        if (
-            not file
-            or file.user_id != run.user_id
-            or file.status != FileStatus.READY
-            or file.purpose != "library"
-            or file.deleted_at
-            or file.purged_at
-        ):
-            raise HTTPException(404, "资料不存在或不可用")
+    conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
+    if run.conversation_id and (conversation is None or conversation.deleted_at):
+        raise HTTPException(404, "对话不存在")
+    file = db.get(FileObject, file_id, populate_existing=True)
+    if (
+        not file
+        or file.user_id != run.user_id
+        or file.status != FileStatus.READY
+        or file.purpose != "library"
+        or file.deleted_at
+        or file.purged_at
+    ):
+        raise HTTPException(404, "资料不存在或不可用")
 
-        existing = db.scalar(
-            select(MessageFileRef.id).where(
-                MessageFileRef.run_id == run.id,
-                MessageFileRef.message_kind == "run_prompt",
-                MessageFileRef.message_id == run.id,
-                MessageFileRef.file_id == file.id,
-                MessageFileRef.role == "agent_read",
+    existing = db.scalar(
+        select(MessageFileRef.id).where(
+            MessageFileRef.run_id == run.id,
+            MessageFileRef.message_kind == "run_prompt",
+            MessageFileRef.message_id == run.id,
+            MessageFileRef.file_id == file.id,
+            MessageFileRef.role == "agent_read",
+        )
+    )
+    if not existing:
+        db.add(
+            MessageFileRef(
+                run_id=run.id,
+                message_kind="run_prompt",
+                message_id=run.id,
+                file_id=file.id,
+                role="agent_read",
+                ordinal=0,
+                reference_origin="agent_read",
             )
         )
-        if not existing:
-            db.add(
-                MessageFileRef(
-                    run_id=run.id,
-                    message_kind="run_prompt",
-                    message_id=run.id,
-                    file_id=file.id,
-                    role="agent_read",
-                    ordinal=0,
-                    reference_origin="agent_read",
-                )
-            )
+    return file
+
+
+def _ready(db, run_id, file_id):
+    run = _run_or_404(db, run_id)
+    with user_critical_section(db, run.user_id):
+        db.refresh(run)
+        file = authorized_source(db, run, file_id)
         db.commit()
     return run, file
+
+
+def legacy_document_entry(db, run_id, name):
+    from ..domain.document_tools import catalog_version, permitted
+
+    run = _run_or_404(db, run_id)
+    if not permitted(name, mode=(run.options or {}).get("mode", "work"), version=catalog_version(run.options)):
+        raise HTTPException(422, "document_tool_not_available_for_catalog")
 
 
 def library_query(user_id, project_id, body):
@@ -132,6 +146,7 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
 
 @router.post("/{run_id}/library/read", dependencies=[Depends(require_scope("files:read_for_run"))])
 def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
+    legacy_document_entry(db, run_id, "read_library_file")
     _, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
     if meta.get("input_lifecycle") == 2 and not meta.get("document_manifest_key") and not file.content_type.startswith("image/"):
@@ -430,6 +445,7 @@ def resolve_attachment(run_id: str, body: Resolve, db: Session = Depends(get_db)
 
 @router.post("/{run_id}/library/image-reference", dependencies=[Depends(require_scope("files:read_for_run"))])
 def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
+    legacy_document_entry(db, run_id, "view_attachment")
     _, file = _ready(db, run_id, body.file_id)
     if file.content_type.startswith("image/"):
         return {
@@ -501,6 +517,7 @@ def document_images(db, file, selected, *, prepare=True):
 
 @router.post("/{run_id}/library/extract-text", dependencies=[Depends(require_scope("files:read_for_run"))])
 def extract_for_run(run_id: str, body: Read, db: Session = Depends(get_db)):
+    legacy_document_entry(db, run_id, "extract_text")
     run, file = _ready(db, run_id, body.file_id)
     from .routes_ocr import request_extraction
 
