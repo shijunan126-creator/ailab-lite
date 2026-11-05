@@ -13,6 +13,18 @@ def manifest(file):
     return json.loads(get_storage().get_bytes(key)) if key else None
 
 
+def unit_bytes(file, unit, cache=None):
+    from fastapi import HTTPException
+
+    from ..native_text import NativeCacheError, read_unit
+
+    key = file.meta["document_manifest_key"].rsplit("/", 1)[0] + "/" + unit["name"]
+    try:
+        return read_unit(get_storage(), key, unit, cache)
+    except NativeCacheError as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
 def native_text(file, unit, data):
     text = data.decode("utf-8")
     if unit.get("quality") == "no_text":

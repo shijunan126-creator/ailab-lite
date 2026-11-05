@@ -849,7 +849,7 @@ def _bound_file(
         meta = file.meta or {}
         if (
             "files:read_for_document" not in principal.scopes
-            or file.status != FileStatus.PENDING
+            or file.status not in {FileStatus.PENDING, FileStatus.READY}
             or meta.get("document_job_id") != preview_job
             or not preview_job
             or (meta.get("scan") or {}).get("verdict") != "clean"
@@ -1409,7 +1409,7 @@ def prepare_document(file_id: str, body: dict, x_run_attempt: str | None = Heade
 
         fence_file_processing(db, file, x_run_attempt)
         job_id = token or (file.meta or {}).get("document_job_id") or uuid4().hex
-        file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id}
+        file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id, "document_profile": "legacy"}
         db.commit()
     return {"job_id": job_id}
 

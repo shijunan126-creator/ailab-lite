@@ -22,8 +22,10 @@ from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
 from ..skill_drafts.service import draft_forever
+from ..storage import close_storage
 from . import process_snapshots as process_snapshots
 from .jobs import router as jobs_router
+from .native_preparation import router as native_preparation_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_admin import router as admin_router
@@ -119,6 +121,7 @@ async def lifespan(_: FastAPI):
             await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             SERVING_LOOP = None
+            await asyncio.to_thread(close_storage)
 
 
 app = FastAPI(
@@ -169,6 +172,7 @@ app.include_router(skills_router)
 app.include_router(platform_skills_router)
 app.include_router(memory_router)
 app.include_router(library_tools_router)
+app.include_router(native_preparation_router)
 app.include_router(derived_assets_router)
 app.include_router(files_router)
 app.include_router(trash_router)

@@ -115,3 +115,95 @@ def abandon(body: Completion, principal: ServicePrincipal = Depends(WRITE), db: 
     assets.abandon(db, body.key, body.token)
     db.commit()
     return {"status": "accepted"}
+
+
+class BatchGrant(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[Grant] = Field(min_length=1, max_length=32)
+
+
+class BatchCompletion(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[Completion] = Field(min_length=1, max_length=32)
+
+
+def unique_items(items):
+    if len({item.key for item in items}) != len(items):
+        raise HTTPException(422, "duplicate_derived_keys")
+
+
+@router.post("/reserve-batch")
+def reserve_batch(
+    body: BatchGrant,
+    principal: ServicePrincipal = Depends(WRITE),
+    x_run_attempt: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    unique_items(body.items)
+    owners = {authorize(db, item, principal, x_run_attempt) for item in body.items}
+    if len(owners) != 1:
+        raise HTTPException(403, "derived_batch_owner_mismatch")
+    with user_critical_section(db, next(iter(owners))):
+        result = []
+        for item in body.items:
+            authorize(db, item, principal, x_run_attempt)
+            grant = assets.reserve(db, item.key, item.max_bytes, item.version, kind=item.kind, reconstructible=item.kind != "capture")
+            row = db.get(DerivedAsset, item.key)
+            row.job_id, row.attempt_token = item.job_id, x_run_attempt
+            result.append(grant)
+        db.commit()
+    return {"items": result}
+
+
+@router.post("/finish-batch")
+def finish_batch(
+    body: BatchCompletion,
+    principal: ServicePrincipal = Depends(WRITE),
+    x_run_attempt: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    unique_items(body.items)
+    owners = {authorize(db, item, principal, x_run_attempt) for item in body.items}
+    if len(owners) != 1:
+        raise HTTPException(403, "derived_batch_owner_mismatch")
+    db.rollback()
+    storage = get_storage()
+    infos = [(item, storage.info(item.key)) for item in body.items]
+    with user_critical_section(db, next(iter(owners))):
+        result = []
+        for item, info in infos:
+            authorize(db, item, principal, x_run_attempt)
+            row = assets.finish(db, item.key, item.token, info.size, info.etag, published=False)
+            result.append({"key": row.key, "bytes": row.size_bytes, "digest": row.digest})
+        db.commit()
+    return {"items": result}
+
+
+@router.post("/abandon-batch")
+def abandon_batch(body: BatchCompletion, principal: ServicePrincipal = Depends(WRITE), db: Session = Depends(get_db)):
+    unique_items(body.items)
+    for item in body.items:
+        assets.abandon(db, item.key, item.token)
+    db.commit()
+    return {"status": "accepted"}
+
+
+@router.post("/discard-batch")
+def discard_batch(body: BatchCompletion, principal: ServicePrincipal = Depends(WRITE), db: Session = Depends(get_db)):
+    """Settle a deleted transport object; requires its original grant, never a raw key."""
+    unique_items(body.items)
+    storage = get_storage()
+    for item in body.items:
+        db.rollback()
+        if storage.exists(item.key):
+            raise HTTPException(409, "derived_object_still_present")
+        assets.budget_lock(db)
+        row = db.get(DerivedAsset, item.key, populate_existing=True)
+        if row is None:
+            db.rollback()
+            continue
+        if row.token != item.token or row.state not in {"writing", "staged", "deleting"}:
+            raise HTTPException(409, "derived_generation_stale")
+        assets.forget_deleted(db, item.key)
+        db.commit()
+    return {"status": "discarded"}

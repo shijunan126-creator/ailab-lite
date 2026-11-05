@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue, job_topic
 from ..service_auth import require_scope
+from ..storage import close_storage
 from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
@@ -85,7 +87,18 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
 
             identity = attempt_id_var.set(token)
             try:
-                if envelope.kind == "viewer":
+                if envelope.kind == "native":
+                    from .native_preparation import process_native
+
+                    try:
+                        process_native(client, file_id, envelope.job_id)
+                        completion.ack()
+                    except ClientError as exc:
+                        if exc.status in {404, 410}:
+                            completion.ack()
+                        else:
+                            completion.retry_after(2)
+                elif envelope.kind == "viewer":
                     from .viewer import process_viewer
 
                     process_viewer(client, file_id)
@@ -322,8 +335,23 @@ async def lifespan(_: FastAPI):
     _summary_thread.start()
     _preview_thread.start()
     log.info("file worker ready")
-    yield
-    _stop.set()
+    try:
+        yield
+    finally:
+        _stop.set()
+
+        # Queue reads block for at most two seconds. Stop idle consumers before
+        # dropping their shared storage instance; an active job retains its own
+        # bounded execution/lease and the process supervisor's shutdown deadline.
+        def join_idle():
+            deadline = time.monotonic() + 3
+            for thread in (_thread, _summary_thread, _preview_thread):
+                if thread:
+                    thread.join(max(0, deadline - time.monotonic()))
+            if not any(thread and thread.is_alive() for thread in (_thread, _summary_thread, _preview_thread)):
+                close_storage()
+
+        await asyncio.to_thread(join_idle)
 
 
 app = FastAPI(title="AILab File Worker", version="0.1.0", lifespan=lifespan)

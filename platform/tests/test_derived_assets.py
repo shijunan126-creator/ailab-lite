@@ -381,3 +381,100 @@ def test_last_capture_reference_release_registers_immediate_deletion(ledger):
         assert assets.collect_batch(db, storage) == 1
     assert not storage.exists(grant["key"])
     assert totals(factory) == (0, 0)
+
+
+def test_batch_capacity_is_atomic_and_stages_only_after_every_object_exists(ledger, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api import routes_derived_assets as routes
+    from ailab_platform.deps import get_db
+    from ailab_platform.models import OutboxMessage
+
+    factory, storage = ledger
+    initialize(factory, storage)
+    with factory.begin() as db:
+        db.add(
+            OutboxMessage(
+                id="job",
+                topic="file",
+                payload={"file_id": "f", "kind": "file"},
+                claim_token="attempt",
+                claimed_until=datetime.now(UTC) + timedelta(minutes=3),
+            )
+        )
+    app = FastAPI()
+    app.include_router(routes.router)
+
+    def sessions():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = sessions
+    monkeypatch.setattr(routes, "get_storage", lambda: storage)
+    headers = {"X-Service-Token": settings.service_token, "X-Run-Attempt": "attempt"}
+    items = [
+        {"key": f"derived/f/bundle/{name}", "version": "source", "max_bytes": 6, "kind": "native", "job_id": "job"}
+        for name in ["manifest.json", "text.txt"]
+    ]
+    with TestClient(app, raise_server_exceptions=False) as client:
+        monkeypatch.setattr(settings, "derived_budget_bytes", 10)
+        refused = client.post("/internal/derived-assets/reserve-batch", json={"items": items}, headers=headers)
+        assert refused.status_code == 507
+        assert totals(factory) == (0, 0)
+        with factory() as db:
+            assert not db.scalars(select(DerivedAsset)).all()
+        monkeypatch.setattr(settings, "derived_budget_bytes", 20)
+        grant = client.post("/internal/derived-assets/reserve-batch", json={"items": items}, headers=headers)
+        assert grant.status_code == 200, grant.text
+        receipts = [{"key": item["key"], "token": item["token"]} for item in grant.json()["items"]]
+        storage.put_bytes(items[0]["key"], b"{}")
+        missing = client.post("/internal/derived-assets/finish-batch", json={"items": receipts}, headers=headers)
+        assert missing.status_code == 500
+        assert totals(factory) == (0, 12)
+        storage.put_bytes(items[1]["key"], b"text")
+        completed = client.post("/internal/derived-assets/finish-batch", json={"items": receipts}, headers=headers)
+        assert completed.status_code == 200, completed.text
+        assert totals(factory) == (6, 0)
+        with factory() as db:
+            assert {row.state for row in db.scalars(select(DerivedAsset))} == {"staged"}
+        assert client.post("/internal/derived-assets/abandon-batch", json={"items": receipts}, headers=headers).status_code == 200
+        with factory() as db:
+            assert assets.collect_batch(db, storage) == 2
+        assert totals(factory) == (0, 0)
+
+
+def test_transport_discard_requires_missing_object_and_matching_generation(ledger, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from ailab_platform.api import routes_derived_assets as routes
+    from ailab_platform.deps import get_db
+
+    factory, storage = ledger
+    initialize(factory, storage)
+    with factory() as db:
+        grant = assets.reserve(db, "derived/f/transport.tar", 8, "source", kind="transfer")
+        db.commit()
+    app = FastAPI()
+    app.include_router(routes.router)
+
+    def sessions():
+        with factory() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = sessions
+    monkeypatch.setattr(routes, "get_storage", lambda: storage)
+    headers = {"X-Service-Token": settings.service_token}
+    with TestClient(app) as client:
+        body = {"items": [{"key": grant["key"], "token": grant["token"]}]}
+        storage.put_bytes(grant["key"], b"data")
+        assert client.post("/internal/derived-assets/discard-batch", json=body, headers=headers).status_code == 409
+        assert totals(factory) == (0, 8)
+        storage.delete(grant["key"])
+        stale = {"items": [{"key": grant["key"], "token": "wrong"}]}
+        assert client.post("/internal/derived-assets/discard-batch", json=stale, headers=headers).status_code == 409
+        assert totals(factory) == (0, 8)
+        assert client.post("/internal/derived-assets/discard-batch", json=body, headers=headers).status_code == 200
+        assert totals(factory) == (0, 0)
+        assert client.post("/internal/derived-assets/discard-batch", json=body, headers=headers).status_code == 200

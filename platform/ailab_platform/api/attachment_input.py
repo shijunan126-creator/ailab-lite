@@ -8,7 +8,7 @@ from ..config import settings
 from ..model_policy import ModelPolicy, estimator
 from ..models import FileObject
 from ..storage import get_storage
-from .document_content import visual_info
+from .document_content import unit_bytes, visual_info
 from .document_sources import attachment_manifest
 
 MAX_CHAT_CHARS = 200000
@@ -30,10 +30,9 @@ def readable_text(file, limit=MAX_CHAT_CHARS, db=None):
 
         pages = [unit["unit_number"] - 1 for unit in manifest["units"] if unit["anchor"].startswith("page:")]
         records = ocr_records(db, file, pages[:3000])
-        parts, chars = [], 0
+        parts, chars, native_cache = [], 0, {}
         for unit in manifest["units"]:
-            key = meta["document_manifest_key"].rsplit("/", 1)[0] + "/" + unit["name"]
-            raw = storage.get_bytes(key)
+            raw = unit_bytes(file, unit, native_cache)
             text, method = unit_text(db, file, unit, raw, records)
             if (
                 unit["anchor"].startswith("page:")
@@ -78,12 +77,11 @@ def chat_file(file, spec, db=None):
     doc = manifest(file)
     visual = visual_info(file, doc)
     if spec.supports({"vision"}) and doc and visual["status"] != "none":
-        parts, chars = [], 0
+        parts, chars, native_cache = [], 0, {}
         from .document_content import native_text
 
-        prefix = meta["document_manifest_key"].rsplit("/", 1)[0] + "/"
         for unit in doc["units"]:
-            text = native_text(file, unit, get_storage().get_bytes(prefix + unit["name"]))
+            text = native_text(file, unit, unit_bytes(file, unit, native_cache))
             chars += len(text)
             if chars > MAX_CHAT_CHARS:
                 _too_large()
@@ -114,13 +112,13 @@ def validate_chat_files(db, files, model, prompt):
             from .document_sources import ocr_records
 
             needed = []
-            prefix = meta["document_manifest_key"].rsplit("/", 1)[0] + "/"
+            native_cache = {}
             for unit in manifest["units"]:
                 if not unit["anchor"].startswith("page:") or not unit.get("visual", True):
                     continue
                 missing_text = unit.get("quality") == "no_text"
                 if manifest.get("parser") == "zcode-3c5b227-ailab1":
-                    missing_text = not native_text(file, unit, get_storage().get_bytes(prefix + unit["name"])).strip()
+                    missing_text = not native_text(file, unit, unit_bytes(file, unit, native_cache)).strip()
                 if missing_text:
                     needed.append(unit["unit_number"] - 1)
             visual = visual_info(file, manifest)

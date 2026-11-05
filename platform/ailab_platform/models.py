@@ -1118,6 +1118,8 @@ class DocumentBlock(Base):
     text_key: Mapped[str] = mapped_column(String(600))
     digest: Mapped[str] = mapped_column(String(64))
     chars: Mapped[int] = mapped_column(Integer)
+    byte_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AppliedMessagePosition(Base):

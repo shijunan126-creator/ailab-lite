@@ -1,3 +1,10 @@
+## 2026-11-05 存储目录与原生generation
+
+- LocalStorage的limit不能只约束返回量；目录发现须有项数/时间预算和持久游标。迁移期间空页仍有cursor，调用者不能当结束。索引只登记适配器写入；升级时停旧writer，外部直写不是合法并发API。
+- rename/目录元数据发布与delete须串行，否则并发删除可能移掉新对象登记；发布前commit的pending key补偿rename后崩溃。正常tmp立即清，崩溃租约宽限另算；scandir与SQLite anchor必须显式close。
+- Chat native用2个规范对象与字节范围，不能10000块逐个reserve/HTTP；UTF-8范围与SHA同时校验。失败夹具若替换旧字节，须同步更新可信block/manifest digest，不能为过测试放松完整性。
+- parser/source相同但generation换了，不能复用指向已回收旧key的索引身份；Work默认legacy与Chat profile显式区分。完成请求响应丢失须可幂等重放；对象读取别持有业务发布锁。阶段证据见[实施记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md#有界存储目录与两对象原生代际2026-11-05续作)。
+
 ## 2026-11-05 派生容量与发布基础
 
 - 预留须在首字节I/O前提交；上传成功先staged，业务引用绑定与ready发布同事务。失败/崩溃的对象在实际删除成功前继续计占用；不要因取消或所有者行删除就先释放容量。

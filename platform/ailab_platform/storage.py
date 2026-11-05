@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 import hashlib
-import heapq
 import json
 import os
 import tempfile
-import uuid
+import time
 from collections.abc import Iterable, Iterator
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
@@ -37,14 +36,33 @@ def _chunks(source: Iterable[bytes] | BinaryIO, max_bytes: int) -> Iterator[byte
     if max_bytes < 0:
         raise ValueError("max_bytes must be nonnegative")
     total = 0
+    deadline = time.monotonic() + 120
     chunks = iter(lambda: source.read(CHUNK_SIZE), b"") if hasattr(source, "read") else iter(source)
     for chunk in chunks:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("storage input deadline exceeded")
         if not isinstance(chunk, bytes):
             raise TypeError("storage streams must yield bytes")
         total += len(chunk)
         if total > max_bytes:
             raise ValueError(f"object exceeds {max_bytes} bytes")
         yield chunk
+
+
+def iter_objects(storage, prefix, *, limit=100, timeout=120):
+    """Consume every page, including empty discovery pages, under one deadline."""
+    deadline, cursor = time.monotonic() + timeout, None
+    while True:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("storage listing deadline exceeded")
+        page = storage.list_prefix(prefix, cursor=cursor, limit=limit)
+        for item in page:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("storage listing deadline exceeded")
+            yield item
+        cursor = page.cursor
+        if cursor is None:
+            return
 
 
 class _StorageMethods:
@@ -72,7 +90,10 @@ class _StorageMethods:
             raise ValueError("refuse deleting the entire store")
         cursor = None
         removed = 0
+        deadline = time.monotonic() + 120
         while True:
+            if time.monotonic() >= deadline:
+                raise TimeoutError("storage prefix deletion deadline exceeded")
             page = self.list_prefix(prefix, cursor=cursor)
             for item in page:
                 self.delete(item.key)
@@ -96,6 +117,9 @@ class LocalStorage(_StorageMethods):
     def __init__(self, root: Path):
         self.root = Path(root).resolve()
         self.root.mkdir(parents=True, exist_ok=True)
+        from .adapters.local_object_index import LocalObjectIndex
+
+        self.index = LocalObjectIndex(self.root)
 
     def _path(self, key: str) -> Path:
         path = (self.root / _safe_key(key)).resolve()
@@ -111,8 +135,9 @@ class LocalStorage(_StorageMethods):
         path.parent.mkdir(parents=True, exist_ok=True)
         staging = self.root / ".metadata"
         staging.mkdir(exist_ok=True)
-        tmp = staging / f"{uuid.uuid4().hex}.tmp"
         digest = hashlib.sha256()
+        token = self.index.register(key)
+        tmp = staging / f"{token}.tmp"
         try:
             with open(tmp, "xb") as fh:
                 for chunk in _chunks(source, max_bytes):
@@ -120,20 +145,14 @@ class LocalStorage(_StorageMethods):
                     digest.update(chunk)
                 fh.flush()
                 os.fsync(fh.fileno())
-            os.replace(tmp, path)
-            stat = path.stat()
-            meta = self._meta(key)
-            meta.parent.mkdir(exist_ok=True)
-            meta_tmp = meta.with_suffix(f".{uuid.uuid4().hex}.tmp")
-            try:
-                meta_tmp.write_text(
-                    json.dumps({"size": stat.st_size, "mtime": stat.st_mtime_ns, "etag": digest.hexdigest(), "content_type": content_type})
-                )
-                os.replace(meta_tmp, meta)
-            finally:
-                meta_tmp.unlink(missing_ok=True)
+                stat = os.fstat(fh.fileno())
+            self.index.publish(key, tmp, path, stat, digest.hexdigest(), content_type)
         finally:
             tmp.unlink(missing_ok=True)
+            self.index.end_write(key, token)
+
+    def maintenance(self, *, now=None, limit=100):
+        return self.index.maintenance(now=now, limit=limit)
 
     def size(self, key: str) -> int:
         return self._path(key).stat().st_size
@@ -141,50 +160,37 @@ class LocalStorage(_StorageMethods):
     def info(self, key: str) -> ObjectInfo:
         path = self._path(key)
         stat = path.stat()
-        try:
-            meta = json.loads(self._meta(key).read_text())
-        except FileNotFoundError:
-            meta = {}
-        if meta.get("size") == stat.st_size and meta.get("mtime") == stat.st_mtime_ns:
+        meta = self.index.get(key)
+        if not meta.get("etag"):
+            try:
+                meta = json.loads(self._meta(key).read_text())
+            except FileNotFoundError:
+                pass
+        if meta.get("etag") and meta.get("content_type") and meta.get("size") == stat.st_size and meta.get("mtime") == stat.st_mtime_ns:
             return ObjectInfo(stat.st_size, meta["etag"], meta["content_type"])
         with path.open("rb") as fh:
             digest = hashlib.file_digest(fh, "sha256").hexdigest()
-        return ObjectInfo(stat.st_size, digest, meta.get("content_type", "application/octet-stream"))
+        content_type = meta.get("content_type") or "application/octet-stream"
+        self.index.record(key, stat.st_size, stat.st_mtime_ns, digest, content_type)
+        return ObjectInfo(stat.st_size, digest, content_type)
 
     def list_prefix(self, prefix: str, cursor: str | None = None, limit: int = 1000) -> ObjectPage:
         prefix = _prefix(prefix)
         if not 1 <= limit <= 1000:
             raise ValueError("limit must be between 1 and 1000")
 
-        # Heap retains only limit+1 keys; scandir does not allocate a whole
-        # directory listing. A local page still costs one prefix-tree traversal.
-        base = self._path(prefix.rstrip("/")) if prefix.endswith("/") else self._path(prefix).parent if prefix else self.root
-
-        def candidates(directory):
-            try:
-                with os.scandir(directory) as entries:
-                    for entry in entries:
-                        if entry.is_symlink() or (directory == self.root and entry.name == ".metadata"):
-                            continue
-                        path = Path(entry.path)
-                        if entry.is_dir(follow_symlinks=False):
-                            yield from candidates(path)
-                        elif entry.is_file(follow_symlinks=False):
-                            key = path.relative_to(self.root).as_posix()
-                            if key.startswith(prefix) and (cursor is None or key > cursor):
-                                yield key
-            except FileNotFoundError:
-                return
-
-        keys = heapq.nsmallest(limit + 1, candidates(base))
+        keys, continuation = self.index.page(prefix, cursor, limit)
         items = []
-        for key in keys[:limit]:
+        for key in keys:
             try:
                 stat = self._path(key).stat()
             except FileNotFoundError:
                 continue
             items.append(StoredObject(key, stat.st_size, datetime.fromtimestamp(stat.st_mtime, UTC)))
-        return ObjectPage(items, keys[limit - 1] if len(keys) > limit else None)
+        return ObjectPage(items, continuation)
+
+    def close(self):
+        self.index.close()
 
     def stream(self, key: str, chunk_size: int = CHUNK_SIZE) -> Iterator[bytes]:
         if chunk_size <= 0:
@@ -194,8 +200,7 @@ class LocalStorage(_StorageMethods):
                 yield chunk
 
     def delete(self, key: str) -> None:
-        self._path(key).unlink(missing_ok=True)
-        self._meta(key).unlink(missing_ok=True)
+        self.index.delete(key, self._path(key), self._meta(key))
 
     def exists(self, key: str) -> bool:
         return self._path(key).is_file()
@@ -283,6 +288,9 @@ class S3Storage(_StorageMethods):
             return
         self.client.copy_object(Bucket=self.bucket, Key=_safe_key(dst_key), CopySource={"Bucket": self.bucket, "Key": _safe_key(src_key)})
 
+    def close(self):
+        self.client.close()
+
     def presign_put(self, key: str, expires: int = 900) -> str | None:
         return self.client.generate_presigned_url("put_object", Params={"Bucket": self.bucket, "Key": _safe_key(key)}, ExpiresIn=expires)
 
@@ -297,3 +305,14 @@ def get_storage() -> Storage:
     if settings.storage_backend == "local":
         return LocalStorage(settings.storage_path)
     raise ValueError(f"unknown storage backend: {settings.storage_backend}")
+
+
+def close_storage():
+    if get_storage.cache_info().currsize:
+        storage = get_storage()
+        try:
+            close = getattr(storage, "close", None)
+            if close:
+                close()
+        finally:
+            get_storage.cache_clear()

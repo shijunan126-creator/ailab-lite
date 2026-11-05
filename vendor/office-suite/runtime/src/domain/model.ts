@@ -35,6 +35,7 @@ export interface ParsedDocument {
   blocks?: DocxBlockKey[];
   /** AILab: source content facts, independent of model-facing headings/placeholders. */
   hasVisuals?: boolean;
+  nonemptyCells?: number;
   contentInfo?(anchor: string): { has_text: boolean; visual: boolean };
 }
 

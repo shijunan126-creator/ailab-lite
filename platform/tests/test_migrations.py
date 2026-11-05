@@ -1095,3 +1095,14 @@ def test_derived_budget_roundtrip_preserves_files_and_restarts_backfill(engine):
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_native_ranges_roundtrip_preserves_legacy_block_shape(engine):
+    _upgrade_to(engine, "0053")
+    _upgrade_to(engine, "head")
+    assert {column["name"] for column in inspect(engine).get_columns("document_blocks")} >= {"byte_offset", "byte_size"}
+    _downgrade_to(engine, "0053")
+    assert "byte_offset" not in {column["name"] for column in inspect(engine).get_columns("document_blocks")}
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

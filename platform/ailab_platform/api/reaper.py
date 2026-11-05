@@ -549,21 +549,33 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
 
 
 async def lifecycle_cleanup_forever() -> None:
-    def tick():
+    def tick(full):
         queue = get_queue()
-        token = queue.acquire_lock("ailab:lock:lifecycle-gc", settings.gc_interval_seconds)
-        if token is None:
-            return
-        # Retain the lock until expiry, so API replicas share one pass per interval.
-        with SessionLocal() as db:
-            lifecycle_once(db)
+        if full:
+            token = queue.acquire_lock("ailab:lock:lifecycle-gc", settings.gc_interval_seconds)
+            if token is not None:
+                with SessionLocal() as db:
+                    lifecycle_once(db)
+        # Local writer .tmp files have their own persisted leases. Scan their
+        # small expiry index every minute without repeating hourly business GC.
+        token = queue.acquire_lock("ailab:lock:storage-metadata-gc", settings.derived_maintenance_interval_seconds)
+        if token is not None:
+            maintenance = getattr(get_storage(), "maintenance", None)
+            if maintenance:
+                maintenance(limit=settings.gc_batch_size)
 
+    import time
+
+    next_full = time.monotonic() + settings.gc_interval_seconds
     while True:
-        await asyncio.sleep(settings.gc_interval_seconds)
+        await asyncio.sleep(min(settings.gc_interval_seconds, settings.derived_maintenance_interval_seconds))
+        full = time.monotonic() >= next_full
         try:
-            await asyncio.to_thread(tick)
+            await asyncio.to_thread(tick, full)
         except Exception:
             log.exception("lifecycle tick failed; next interval retries")
+        if full:
+            next_full = time.monotonic() + settings.gc_interval_seconds
 
 
 def purge_expired_trash(db: Session, now: datetime | None = None, *, batch_size: int = 200) -> int:

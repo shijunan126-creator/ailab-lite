@@ -41,7 +41,7 @@ from ..locks import user_critical_section
 from ..models import FileObject, FileStatus, UploadReceipt, User, new_id, utcnow
 from ..quota import enforce_library_quota
 from ..schemas import FileBatch, FileOut, LibraryFilePatch
-from ..storage import get_storage
+from ..storage import get_storage, iter_objects
 from .jobs import stage_job
 from .serializers import file_dict, file_dicts
 from .upload_identity import fingerprint, receipt_for, replay, reusable
@@ -839,7 +839,7 @@ def restore_version(file_id: str, user: User = Depends(current_user), db: Sessio
             copied.append(key)
             storage.copy(old.storage_key, key)
             remapped = {}
-            for item in storage.list_prefix(f"derived/{old.id}/"):
+            for item in iter_objects(storage, f"derived/{old.id}/"):
                 target = item.key.replace(f"derived/{old.id}/", f"derived/{fid}/", 1)
                 copied.append(target)
                 storage.copy(item.key, target)

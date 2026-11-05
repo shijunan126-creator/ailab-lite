@@ -301,6 +301,24 @@ class PlatformClient(_PlatformApi):
     def abandon_derived(self, key, token):
         return self._send(self._req("POST", "/internal/derived-assets/abandon", json={"key": key, "token": token})).json()
 
+    def reserve_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/reserve-batch", json={"items": items})).json()
+
+    def finish_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/finish-batch", json={"items": items})).json()
+
+    def abandon_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon-batch", json={"items": items})).json()
+
+    def discard_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/discard-batch", json={"items": items})).json()
+
+    def start_native(self, file_id, job_id):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/start", json={"job_id": job_id})).json()
+
+    def complete_native(self, file_id, job_id, **body):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/complete", json={"job_id": job_id, **body})).json()
+
     def prepare_document(self, file_id, scan):
         return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
 

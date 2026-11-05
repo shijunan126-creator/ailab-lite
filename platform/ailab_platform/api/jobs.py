@@ -157,6 +157,14 @@ def _claim_locked(db, job, body):
                         or (meta.get("processing_job_id") and meta["processing_job_id"] != job_id)
                     )
                 )
+                or (
+                    envelope.kind == "native"
+                    and (
+                        file.status != FileStatus.READY
+                        or ((meta.get("representations") or {}).get("native_text") or {}).get("status") != "pending"
+                        or ((meta.get("representations") or {}).get("native_text") or {}).get("job_id") != job_id
+                    )
+                )
                 or (envelope.kind == "thumbnail" and (file.status != FileStatus.READY or bool(meta.get("thumb_key"))))
                 or (
                     envelope.kind == "preview"
@@ -203,6 +211,10 @@ def _claim_locked(db, job, body):
                 attempt.ended_at, attempt.outcome = now, "deadline"
         if expired and envelope.kind == "file" and not done:
             file.meta = {**(file.meta or {}), "processing": "job_expired", "scan_exhausted": True}
+        elif expired and envelope.kind == "native" and not done:
+            representations = dict((file.meta or {}).get("representations") or {})
+            representations["native_text"] = {**representations.get("native_text", {}), "status": "failed", "reason": "job_expired"}
+            file.meta = {**(file.meta or {}), "representations": representations}
         elif expired and envelope.kind == "preview" and not done:
             file.meta = {**(file.meta or {}), "preview": {"status": "failed", "reason": "job_expired"}}
         elif expired and envelope.kind == "ocr" and not done:

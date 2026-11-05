@@ -1,7 +1,9 @@
 """Cross-format visual coverage, OCR reuse and durable dependency recovery."""
 
 import asyncio
+import hashlib
 import io
+import json
 import time
 
 import pytest
@@ -105,7 +107,18 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             from ailab_platform.models import DocumentBlock, FileDerivation
 
             block = db.scalar(select(DocumentBlock).join(FileDerivation).where(FileDerivation.file_id == fid))
-            get_storage().put_bytes(block.text_key, b"## Page 1\n(no extractable text; the page may be scanned)", "text/plain")
+            legacy = b"## Page 1\n(no extractable text; the page may be scanned)"
+            get_storage().put_bytes(block.text_key, legacy, "text/plain")
+            # A deployed legacy index recorded the same source bytes. Simulate
+            # both halves; changing only the object is corruption, not migration.
+            block.digest = hashlib.sha256(legacy).hexdigest()
+            block.chars = len(legacy)
+            manifest_key = file.meta["document_manifest_key"]
+            old_manifest = json.loads(get_storage().get_bytes(manifest_key))
+            old_manifest["parser"] = "zcode-3c5b227-ailab1"
+            old_manifest["units"][0]["sha256"] = block.digest
+            old_manifest["units"][0]["chars"] = block.chars
+            get_storage().put_bytes(manifest_key, json.dumps(old_manifest).encode(), "application/json")
             cache_page(db, file, 0, "Invoice amount 123")
             db.commit()
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json()

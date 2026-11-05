@@ -18,16 +18,27 @@ from uuid import uuid4
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def benchmark(directory, *, context, image, repeats=5):
+def benchmark(directory, *, context, image, repeats=5, profile="legacy", output_name="native-baseline.json"):
     directory = Path(directory).resolve()
+    destination = directory / output_name
+    if destination.exists():
+        raise FileExistsError("refusing to replace a frozen measurement")
     corpus = directory / "samples-a"
     manifest = json.loads((corpus / "manifest.json").read_text())
     name = "ailab-document-baseline-" + uuid4().hex[:12]
     docker = ["docker", "--context", context]
     results = []
 
-    def run(args, *, timeout=90):
+    def run(args, *, timeout=90, parser=False):
         reply = subprocess.run([*docker, *args], capture_output=True, timeout=timeout)
+        if reply.returncode and parser and profile == "chat":
+            for line in reply.stderr.decode("utf-8", "replace").splitlines():
+                try:
+                    error = json.loads(line).get("error")
+                except (ValueError, AttributeError):
+                    continue
+                if error in {"document_text_limit", "document_cells_limit", "document_structure_limit"}:
+                    return {"error": error}
         if reply.returncode:
             raise RuntimeError(f"docker command failed ({reply.returncode}): {reply.stderr.decode('utf-8', 'replace')[-3000:]}")
         return reply.stdout
@@ -90,7 +101,7 @@ def benchmark(directory, *, context, image, repeats=5):
             for iteration in range(repeats + 1):
                 run(["exec", name, "python", "-c", "import shutil; shutil.rmtree('/workspace/out', ignore_errors=True)"])
                 started = time.monotonic()
-                run(
+                status = run(
                     [
                         "exec",
                         name,
@@ -104,11 +115,29 @@ def benchmark(directory, *, context, image, repeats=5):
                         "/workspace/samples/" + item["name"],
                         "/workspace/out",
                         kind,
+                        profile,
                     ],
                     timeout=75,
+                    parser=True,
                 )
                 wall = time.monotonic() - started
+                if isinstance(status, dict):
+                    samples.append({"iteration": iteration, "wall_seconds": wall, **status})
+                    continue
                 parsed = json.loads(run(["exec", name, "cat", "/workspace/out/manifest.json"]))
+                objects = json.loads(
+                    run(
+                        [
+                            "exec",
+                            name,
+                            "python",
+                            "-c",
+                            "import json,pathlib; "
+                            "a=[p.stat().st_size for p in pathlib.Path('/workspace/out').rglob('*') if p.is_file()]; "
+                            "print(json.dumps({'objects':len(a),'bytes':sum(a)}))",
+                        ]
+                    )
+                )
                 samples.append(
                     {
                         "iteration": iteration,
@@ -116,6 +145,7 @@ def benchmark(directory, *, context, image, repeats=5):
                         "units": parsed["total_units"],
                         "chars": parsed["chars"],
                         "measurement": parsed["measurement"],
+                        **objects,
                     }
                 )
             warm = sorted(sample["wall_seconds"] for sample in samples[1:])
@@ -130,6 +160,7 @@ def benchmark(directory, *, context, image, repeats=5):
             print(json.dumps({k: v for k, v in row.items() if k != "samples"}), flush=True)
         output = {
             "baseline": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+            "profile": profile,
             "image_id": image_id,
             "node": node,
             "runner_sha256": hashlib.sha256(runner.read_bytes()).hexdigest(),
@@ -138,7 +169,7 @@ def benchmark(directory, *, context, image, repeats=5):
             "definition": "fresh process/output for every sample; cold OS disk cache not guaranteed; repeats are not derivative-cache hits",
             "results": results,
         }
-        (directory / "native-baseline.json").write_text(json.dumps(output, ensure_ascii=False, indent=2))
+        destination.write_text(json.dumps(output, ensure_ascii=False, indent=2))
         return output
     finally:
         subprocess.run([*docker, "rm", "-f", name], capture_output=True, timeout=30)
@@ -150,5 +181,7 @@ if __name__ == "__main__":
     parser.add_argument("--context", required=True)
     parser.add_argument("--image", required=True)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--profile", choices=["legacy", "chat"], default="legacy")
+    parser.add_argument("--output", default="native-baseline.json")
     args = parser.parse_args()
-    benchmark(args.directory, context=args.context, image=args.image, repeats=args.repeats)
+    benchmark(args.directory, context=args.context, image=args.image, repeats=args.repeats, profile=args.profile, output_name=args.output)

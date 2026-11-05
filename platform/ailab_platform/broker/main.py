@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from dataclasses import asdict
@@ -19,6 +20,7 @@ from ..sandbox import SandboxError
 from ..sandbox.base import LeaseHandle
 from ..schemas import CommitIn, CommitOut, ExecIn, ExecOut, LeaseCreate, LeaseOut
 from ..service_auth import require_scope
+from ..storage import close_storage
 from .render import LibraryRenderer
 from .service import ArtifactRejected, BrokerOwnershipError, CapacityError, LeaseCanceledError, LeaseError, LeaseLostError, LeaseManager
 
@@ -52,6 +54,7 @@ async def lifespan(_: FastAPI):
         yield
     finally:
         manager.close()
+        await asyncio.to_thread(close_storage)
 
 
 app = FastAPI(title="AILab Sandbox Broker", version="0.1.0", lifespan=lifespan)

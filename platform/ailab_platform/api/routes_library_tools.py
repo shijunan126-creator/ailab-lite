@@ -286,12 +286,26 @@ def read_document_blocks(db, file, body):
 
     ocr_pages = ocr_records(db, file, [block.unit_number - 1 for block in blocks])
     text, coverage, next_cursor = "", [], None
+    from ..native_text import NativeCacheError, read_unit
     from .document_content import unit_text, visual_info
 
+    native_cache = {}
     for block in blocks[:100]:
         key = block.text_key
         method = "native"
-        content = get_storage().get_bytes(key).decode("utf-8")
+        try:
+            content = read_unit(
+                get_storage(),
+                key,
+                {
+                    "byte_offset": block.byte_offset,
+                    "byte_size": block.byte_size,
+                    "digest": block.digest,
+                },
+                native_cache,
+            ).decode("utf-8")
+        except NativeCacheError as exc:
+            raise HTTPException(409, str(exc)) from None
         ocr_available = block.anchor.startswith("page:") and str(block.unit_number - 1) in ocr_pages
         content, method = unit_text(db, file, {"anchor": block.anchor, "unit_number": block.unit_number}, content.encode(), ocr_pages)
         digest = hashlib.sha256(content.encode()).hexdigest()

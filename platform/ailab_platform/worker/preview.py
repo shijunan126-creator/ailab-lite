@@ -14,7 +14,7 @@ from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
 from ..queue import get_queue
-from ..storage import get_storage
+from ..storage import get_storage, iter_objects
 from .isolate import IsolationError, execute
 from .pipeline import _images, download
 
@@ -127,7 +127,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
                 if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
-                    for obj in storage.list_prefix(f"derived/{file_id}/"):
+                    for obj in iter_objects(storage, f"derived/{file_id}/"):
                         storage.delete(obj.key)
                     return {"skipped": "deleted"}
                 if exc.status == 409:

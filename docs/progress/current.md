@@ -5,5 +5,6 @@
 - 第一组产品提交f9aa2279（页图完整性/MIME与截图桥接回收），交接f46c64f4。其历史全套通过，不能冒充后续改动的验收。
 - 本组容量基础产品提交159de80b：新增0053派生容量账本、预留/暂存/业务事务发布、引用保护、持久回填/回收基础、Worker/Broker内部scope及客户端。账本+全部迁移双库116通过，服务身份40通过，Ruff通过。**尚未接入所有生产写入、失效与周期调度，未宣称全量容量已生效。** 结果/失败根因/剩余清单统一见[实施记录](updates/2026-11-05-document-input-lifecycle.md#完整目标续作容量基础2026-11-05)。
 - 10个确定性合成样本与机器可读门槛已冻结；真实1CPU/768MiB Office容器9个native场景基线完成并删除自建容器。原始样本/设备/基线在仓库外 `/private/tmp/ailab-document-validation-oghcidq0`；自己的PG25432已停并清数据/日志。默认Docker socket不可用只是context问题，已找到可用daemon；所有既有栈保持。完整上传/浏览器/模型基线仍须在相应生产改动前补测。
-- 下一步：先补齐端到端/首开基线；接有界generation bundle记账（避免每原生块HTTP）、生产写入/回填/缓存失效，再实现安全/派生状态与Chat/预览懒准备、Work原件/受限OCR、新旧工具目录、浏览器优先/CAS后备。LocalStorage前缀分页仍可能全树遍历，必须修正其扫描CPU/I/O边界。
+- 本组已接有界两对象native job与0054范围索引、批量预留/暂存/发布；LocalStorage改索引分页与持久有界发现、tmp清理、句柄close。新Chat profile组件实测与存储分页结果见[实施记录](updates/2026-11-05-document-input-lifecycle.md#有界存储目录与两对象原生代际2026-11-05续作)。尚未挂普通上传/新Chat消费，不能宣称生产容量治理完成。
+- 下一步：补端到端/首开基线；继续安全/派生状态与Chat/预览懒准备、全生产writer记账/失效/回填、Chat三工具/Work原件与受限OCR、新旧目录、浏览器优先/CAS后备。仍有Worker在途shutdown、S3总deadline、跨代际失效与迟到写入需完整审查。
 - 完整Python/PG/Redis/E2E/Portal与真实模型/故障/50轮性能稳定性留到最终集中验收，不拿mock或历史结果代替。不触碰旧run schema/消息前缀，未完成状态与账本前不启用新链路。
