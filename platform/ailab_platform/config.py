@@ -229,6 +229,12 @@ class Settings(ContextBandSettings, BaseSettings):
     render_queue_limit: int = Field(default=32, ge=1, le=10000)
     render_queue_wait_seconds: int = Field(default=30, ge=1, le=300)
     render_work_listener_rss_bytes: int = Field(default=384 * 1024**2, ge=32 * 1024**2, le=4 * 1024**3)
+    derived_budget_bytes: int = Field(default=1024**3, ge=1024**2, le=1024**4)
+    derived_cache_days: int = Field(default=30, ge=1, le=365)
+    derived_generation_grace_seconds: int = Field(default=86400, ge=1, le=86400)
+    derived_orphan_grace_seconds: int = Field(default=900, ge=1, le=900)
+    derived_maintenance_interval_seconds: int = Field(default=60, ge=1, le=300)
+    derived_write_lease_seconds: int = Field(default=180, ge=1, le=600)
     preview_eager_max_bytes: int = Field(default=20 * 1024**2, ge=0)  # 0 disables speculative office/PDF previews
     sandbox_exec_timeout_seconds: int = Field(default=120, gt=0)
     max_artifact_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one delivered file

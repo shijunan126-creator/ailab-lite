@@ -1222,7 +1222,11 @@ class MessageDocRef(Base):
 
 class ViewerCapture(Base):
     __tablename__ = "viewer_captures"
-    __table_args__ = (Index("ix_viewer_captures_expiry", "expires_at"), Index("ix_viewer_captures_run", "run_id"))
+    __table_args__ = (
+        Index("ix_viewer_captures_expiry", "expires_at"),
+        Index("ix_viewer_captures_run", "run_id"),
+        Index("ix_viewer_captures_key", "storage_key"),
+    )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"))
     file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -1231,3 +1235,59 @@ class ViewerCapture(Base):
     digest: Mapped[str] = mapped_column(String(64))
     content_type: Mapped[str] = mapped_column(String(50))
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DerivedBudget(Base):
+    __tablename__ = "derived_budget"
+    __table_args__ = (CheckConstraint("used_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_budget_nonnegative"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    used_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    backfill_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    backfill_prefix: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    backfill_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DerivedAsset(Base):
+    """Accounting survives owner deletion until physical object deletion succeeds."""
+
+    __tablename__ = "derived_assets"
+    __table_args__ = (
+        Index("ix_derived_assets_state_expiry", "state", "expires_at", "key"),
+        Index("ix_derived_assets_state_lease", "state", "lease_until", "key"),
+        Index("ix_derived_assets_file", "file_id", "source_version"),
+        Index("ix_derived_assets_run", "run_id"),
+        Index("ix_derived_assets_captures", "state", "reconstructible", "created_at", "key"),
+        CheckConstraint("size_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_assets_nonnegative"),
+    )
+    key: Mapped[str] = mapped_column(String(600), primary_key=True)
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_version: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(30))
+    state: Mapped[str] = mapped_column(String(20))
+    token: Mapped[str] = mapped_column(String(40))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempt_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    digest: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reconstructible: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DerivedAssetRef(Base):
+    __tablename__ = "derived_asset_refs"
+    __table_args__ = (
+        Index("ix_derived_asset_refs_key", "key", "kind", "expires_at"),
+        Index("ix_derived_asset_refs_run", "run_id"),
+        Index("ix_derived_asset_refs_expiry", "expires_at"),
+    )
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    key: Mapped[str] = mapped_column(String(600), ForeignKey("derived_assets.key", ondelete="CASCADE"))
+    run_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

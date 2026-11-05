@@ -292,6 +292,15 @@ class PlatformClient(_PlatformApi):
             )
         ).json()
 
+    def reserve_derived(self, **body):
+        return self._send(self._req("POST", "/internal/derived-assets/reserve", json=body)).json()
+
+    def finish_derived(self, key, token):
+        return self._send(self._req("POST", "/internal/derived-assets/finish", json={"key": key, "token": token})).json()
+
+    def abandon_derived(self, key, token):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon", json={"key": key, "token": token})).json()
+
     def prepare_document(self, file_id, scan):
         return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
 
