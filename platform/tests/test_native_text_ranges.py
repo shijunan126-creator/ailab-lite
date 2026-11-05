@@ -237,7 +237,7 @@ def test_native_representation_stages_two_assets_then_publishes_atomically(tmp_p
         file = FileObject(
             id=new_id("fil"),
             user_id=user.id,
-            filename="native.pdf",
+            filename=f"{new_id('atomic_native')}.pdf",
             storage_key="test-original",
             sha256="source",
             status="ready",

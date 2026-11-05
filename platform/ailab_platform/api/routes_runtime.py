@@ -188,7 +188,7 @@ MAX_EVICT_RESUMES = 3
 
 class FileDependencyIn(BaseModel):
     file_id: str = Field(min_length=1, max_length=40)
-    action: Literal["extract-text", "image-reference"]
+    action: Literal["extract-text", "image-reference", "native-text"]
     pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
     deadline: float = Field(ge=0, allow_inf_nan=False)
 
@@ -254,7 +254,7 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
                 or file.user_id != run.user_id
                 or dep["deadline"] > datetime.now(UTC).timestamp() + settings.ocr_deadline_seconds + 150
                 or any(type(p) is not int or not 1 <= p <= 100000 for p in dep.get("pages") or [])
-                or dep.get("action") not in {"extract-text", "image-reference"}
+                or dep.get("action") not in {"extract-text", "image-reference", "native-text"}
                 or not isinstance(dep.get("deadline"), (float, int))
                 or not db.scalar(
                     select(MessageFileRef.id).where(MessageFileRef.run_id == run.id, MessageFileRef.file_id == file.id).limit(1)

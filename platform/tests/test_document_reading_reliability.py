@@ -97,7 +97,7 @@ def cache_page(db, file, page, content):
 def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeholder_is_not_body(monkeypatch):
     monkeypatch.setattr(settings, "ocr_executor_url", "")  # cache remains readable while executor is offline
     with TestClient(app) as c:
-        fid = upload(c, "scanned.pdf", office_image("pdf"), "application/pdf")
+        fid = upload(c, "scanned.pdf", office_image("pdf"), "application/pdf", legacy=True)
         with SessionLocal() as db:
             file = db.get(FileObject, fid)
             # Simulate the original deployed cache format exactly.
@@ -406,7 +406,7 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
     monkeypatch.setattr(settings, "ocr_executor_url", "")
     payload = office_image("pdf")
     with TestClient(app) as c:
-        source = upload(c, "old.pdf", payload, "application/pdf")
+        source = upload(c, "old.pdf", payload, "application/pdf", legacy=True)
         with SessionLocal() as db:
             file = db.get(FileObject, source)
             cache_page(db, file, 0, "cached legacy invoice")
@@ -437,6 +437,9 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
                 return response.json()
 
         target = c.post("/v1/files", headers=AUTH, files={"upload": ("new.pdf", payload, "application/pdf")}).json()["id"]
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(target)
         process_file(target, platform=CacheClient(c))
         with SessionLocal() as db:
             file = db.get(FileObject, target)

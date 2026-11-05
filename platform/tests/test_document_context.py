@@ -14,12 +14,21 @@ from tests.test_file_previews import AUTH, SERVICE, ApiClient
 from tests.test_ocr import text_pdf
 
 
-def upload(c, name, data, mime):
+def upload(c, name, data, mime, *, legacy=False):
     # Each fixture owns mutable processing/OCR state, even when another test produced identical bytes.
     response = c.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data, mime)})
     assert response.status_code == 201
     fid = response.json()["id"]
+    if legacy:
+        # An existing pre-migration queued record, not new-upload behaviour.
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(fid)
     process_file(fid, platform=ApiClient(c))
+    if not legacy and not mime.startswith("image/"):
+        from tests.document_fixtures import prepare_native
+
+        prepare_native(c, fid)
     return fid
 
 
@@ -62,7 +71,7 @@ def test_chat_rejects_partial_without_losing_original():
     with TestClient(app) as c:
         fid = upload(c, "large.txt", ("字" * 200010).encode(), "text/plain")
         response = c.post("/v1/runs", headers=AUTH, json={"prompt": "全文", "mode": "chat", "file_ids": [fid]})
-        assert response.status_code == 422 and response.json()["detail"]["code"] == "chat_attachment_too_large"
+        assert response.status_code == 422 and response.json()["detail"]["code"] == "chat_attachment_unavailable"
         assert c.get(f"/v1/files/{fid}/content", headers=AUTH).status_code == 200
         assert c.post("/v1/runs", headers=AUTH, json={"prompt": "读", "mode": "work", "file_ids": [fid]}).status_code == 201
 
@@ -136,13 +145,13 @@ def test_file_backed_reads_register_deletion_dependency():
             assert db.get(Run, run["id"]).status == "canceled"
 
 
-def test_same_bytes_private_cache_copies_are_independent():
+def test_legacy_same_bytes_private_cache_copies_are_independent():
     from ailab_platform.api.document_cache import reuse
     from ailab_platform.models import FileObject
     from ailab_platform.storage import get_storage
 
     with TestClient(app) as c:
-        first = upload(c, "cache.pdf", text_pdf(2), "application/pdf")
+        first = upload(c, "cache.pdf", text_pdf(2), "application/pdf", legacy=True)
         response = c.post("/v1/files", headers=AUTH, files={"upload": ("cache-copy.pdf", text_pdf(2), "application/pdf")})
         second = response.json()["id"]
         with SessionLocal() as db:

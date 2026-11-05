@@ -1,4 +1,4 @@
-2026-11-05 文件读取与预览优化正在隔离分支本地实施，已完成第一组页图/截图修复及0053容量账本、租约/暂存发布与引用保护基础；生产记账/回收尚未接入，新Chat三工具、模式隔离和安全/派生状态仍在实施，不宣称整套能力可用。[实施记录](../progress/updates/2026-11-05-document-input-lifecycle.md)。
+2026-11-05 文件输入优化继续本地实施：新普通输入已安全ready/派生分离，上传零Office调用；消费时持久native与两对象记账接通。三工具新目录、Work隔离/OCR、浏览器与全量容量/清理仍未完成。阶段验证见[实施记录](../progress/updates/2026-11-05-document-input-lifecycle.md)，不宣称整体达标。
 
 # 单机能力状态
 
@@ -159,6 +159,7 @@
 
 | 能力 | 实现 | 未验收 |
 |---|---|---|
+| 安全入库/按需原生准备 | 新普通输入安全ready、三类表示独立；上传零派生；消费时持久native job、两对象/范围索引及旧读取等待恢复；[ADR0034](adr/0034-safety-ready-and-lazy-native-input.md) | 全功能、浏览器/模型、全量容量和50轮资源稳定性仍未验收，见本页顶部记录 |
 | 扫描（T04） | Scanner 端口；ClamAV TCP/Unix INSTREAM；扫描器不可用时文件保持 pending、退避重试、最终标记，绝不当作干净 | 2026-10-23 原生 ARM64 ClamAV 1.5.4：契约 1 passed、EICAR rejected/clean ready、故障 30.03 s fail closed / 36.86 s 恢复；容器空闲 RSS 1045.9 MiB；冷启动签名重载峰值未验 |
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
 | Work 本地 Office 读取 | 镜像预装固定 Node reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |

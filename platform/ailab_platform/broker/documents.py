@@ -32,6 +32,10 @@ class DocumentReader:
         profile = (file.get("meta") or {}).get("document_profile", "legacy")
         if profile not in {"legacy", "chat"}:
             raise LeaseError("document_profile_invalid")
+        if profile == "chat":
+            kind = (file.get("meta") or {}).get("document_kind") or kind
+            if kind not in {"pdf", "docx", "pptx", "xlsx"}:
+                raise LeaseError("document_format_unsupported")
         if not kind or file.get("size", 0) > settings.max_parse_bytes:
             raise LeaseError("document_input_limit")
         owner = file.get("render_owner_id")

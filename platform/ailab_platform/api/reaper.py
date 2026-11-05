@@ -563,9 +563,27 @@ async def lifecycle_cleanup_forever() -> None:
             maintenance = getattr(get_storage(), "maintenance", None)
             if maintenance:
                 maintenance(limit=settings.gc_batch_size)
+            from .derived_assets import backfill_batch, collect_batch
+
+            with SessionLocal() as db:
+                from ..models import DerivedBudget
+
+                deadline = time.monotonic() + 0.5
+                for _ in range(10):
+                    if time.monotonic() >= deadline:
+                        break
+                    backfill_batch(db, get_storage())
+                    db.commit()
+                    if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
+                        break
+                collect_batch(db, get_storage(), transient_only=True)
 
     import time
 
+    try:
+        await asyncio.to_thread(tick, False)
+    except Exception:
+        log.exception("initial derivative metadata maintenance failed; next tick retries")
     next_full = time.monotonic() + settings.gc_interval_seconds
     while True:
         await asyncio.sleep(min(settings.gc_interval_seconds, settings.derived_maintenance_interval_seconds))

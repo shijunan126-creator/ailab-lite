@@ -74,18 +74,31 @@ def process_native(platform, file_id, job_id, storage=None):
 
     storage = storage or get_storage()
     start = platform.start_native(file_id, job_id)
-    result = platform.read_document(file_id, start["job_id"])
+    from .isolate import execute
+    from .pipeline import download
+
+    result, archive_key = {}, None
     success, receipts = False, []
-    archive_key = result.get("archive_key")
     try:
-        if result.get("error"):
-            platform.complete_native(file_id, job_id, reason=result["error"])
-            return
-        if archive_key != f"derived/{file_id}/office-staging/{start['job_id']}.tar":
-            raise IsolationError("invalid_native_transfer")
         with tempfile.TemporaryDirectory(prefix="ailab-native-") as temporary:
             output = Path(temporary)
-            manifest = unpack(storage, archive_key, output, result)
+            if start["kind"] in {"pdf", "docx", "pptx", "xlsx"}:
+                result = platform.read_document(file_id, start["job_id"])
+                archive_key = result.get("archive_key")
+                if result.get("error"):
+                    platform.complete_native(file_id, job_id, reason=result["error"])
+                    return
+                if archive_key != f"derived/{file_id}/office-staging/{start['job_id']}.tar":
+                    raise IsolationError("invalid_native_transfer")
+                manifest = unpack(storage, archive_key, output, result)
+            else:
+                source = output / "source"
+                download(platform, file_id, source, 20 * 1024**2, job="viewer")
+                with source.open("rb") as stream:
+                    if hashlib.file_digest(stream, "sha256").hexdigest() != start["version"]:
+                        raise IsolationError("file_integrity_mismatch")
+                output = output / "native"
+                manifest = execute("native_text", source, output)
             prefix = f"derived/{file_id}/office/{job_id}-{start['job_id']}/"
             items = [
                 {
@@ -112,7 +125,13 @@ def process_native(platform, file_id, job_id, storage=None):
     finally:
         if receipts and not success:
             try:
-                platform.abandon_derived_batch(receipts)
+                abandoned = platform.abandon_derived_batch(receipts)
+                # A lost successful publication response must never cause us to
+                # delete ready assets. API atomically grants deletion only for
+                # unpublished generations, fencing any concurrent publication.
+                for receipt in abandoned.get("deletable", []):
+                    storage.delete(receipt["key"])
+                    platform.discard_derived_batch([receipt])
             except Exception:
                 log.warning("native transfer cleanup awaits durable lease expiry", exc_info=True)
         try:

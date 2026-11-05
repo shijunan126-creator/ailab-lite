@@ -14,6 +14,48 @@ from .document_sources import attachment_manifest
 MAX_CHAT_CHARS = 200000
 
 
+def prepare_native_input(db, file):
+    """Consumption, never upload, asks for a bounded native representation."""
+    if (file.meta or {}).get("input_lifecycle") != 2 or (file.meta or {}).get("document_manifest_key"):
+        return
+    from ..locks import user_critical_section
+    from .native_preparation import request_native
+
+    with user_critical_section(db, file.user_id):
+        db.refresh(file)
+        state = request_native(db, file)
+        db.commit()
+    if state["status"] == "failed":
+        raise HTTPException(
+            422,
+            {"code": "chat_attachment_unavailable", "reason": state.get("reason"), "message": "附件文字准备失败，原文件仍可用于工作模式"},
+        )
+    if state["status"] != "ready":
+        raise HTTPException(409, {"code": "chat_attachment_processing", "message": "附件正在准备文字"})
+    if not (file.meta or {}).get("document_manifest_key"):
+        raise HTTPException(409, {"code": "native_cache_missing", "message": "附件文字缓存不可用，原文件仍保留"})
+
+
+def prepare_input_images(db, files):
+    for fid in files:
+        file = db.get(FileObject, fid)
+        meta = file.meta or {}
+        if meta.get("input_lifecycle") != 2 or not file.content_type.startswith("image/") or meta.get("display_key"):
+            continue
+        from ..locks import user_critical_section
+        from .preview_requests import request_preview
+
+        with user_critical_section(db, file.user_id):
+            db.refresh(file)
+            if (file.meta or {}).get("display_key"):
+                continue
+            preview, _ = request_preview(db, file)
+            db.commit()
+        if preview["status"] == "pending":
+            raise HTTPException(409, {"code": "chat_attachment_processing", "message": "附件正在准备图片"})
+        raise HTTPException(422, {"code": "attachment_image_unavailable", "message": "图片无法准备为模型输入，原文件仍保留"})
+
+
 def _too_large():
     raise HTTPException(422, {"code": "chat_attachment_too_large", "message": "文件超出对话预算，请选择范围或切换工作模式"})
 
@@ -102,6 +144,9 @@ def validate_chat_files(db, files, model, prompt):
     for fid in files:
         file = db.get(FileObject, fid)
         meta = file.meta or {}
+        if not file.content_type.startswith("image/"):
+            prepare_native_input(db, file)
+            meta = file.meta or {}
         pages = None
         needs_ocr = (file.content_type or "").startswith("image/") and not spec.supports({"vision"}) and meta.get("ocr") != "done"
         if meta.get("document_manifest_key"):

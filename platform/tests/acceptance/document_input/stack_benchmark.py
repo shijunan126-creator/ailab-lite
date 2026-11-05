@@ -25,7 +25,19 @@ import httpx
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def benchmark(directory, *, context, output):
+def implementation_fingerprint():
+    paths = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "platform/ailab_platform"], cwd=ROOT
+    ).split(b"\0")
+    digest = hashlib.sha256()
+    for path in sorted(set(paths) - {b""}):
+        source = ROOT / os.fsdecode(path)
+        if source.is_file():
+            digest.update(path + b"\0" + hashlib.sha256(source.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def benchmark(directory, *, context, output, prepare_native=False, office_image=None):
     directory = Path(directory).resolve()
     if directory.is_relative_to(ROOT):
         raise ValueError("keep measurements outside the repository")
@@ -63,7 +75,7 @@ def benchmark(directory, *, context, output):
         "AILAB_SCANNER_BACKEND": "clamav",
         "AILAB_CLAMD_ADDRESS": "tcp://127.0.0.1:31310",
         "AILAB_SANDBOX_PROVIDER": "docker",
-        "AILAB_SANDBOX_IMAGE": "sha256:5bd2e9250ddbc139916067007b477399204e6e4d79a955746d17923bbf1cc5b3",
+        "AILAB_SANDBOX_IMAGE": office_image or "sha256:5bd2e9250ddbc139916067007b477399204e6e4d79a955746d17923bbf1cc5b3",
         "AILAB_BROKER_OWNER": name,
         "AILAB_DEV_TOKEN": secrets.token_urlsafe(32),
         "AILAB_SERVICE_TOKEN": secrets.token_urlsafe(32),
@@ -81,6 +93,10 @@ def benchmark(directory, *, context, output):
     )
     report = {
         "baseline": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
+        "implementation_sha256": implementation_fingerprint(),
+        "office_image_id": subprocess.check_output(
+            [*docker, "image", "inspect", env["AILAB_SANDBOX_IMAGE"], "--format", "{{.Id}}"], text=True, timeout=20
+        ).strip(),
         "scope": "real API/Worker/Broker/ClamAV/Docker upload chain; no Agent/model/browser",
         "results": [],
     }
@@ -210,14 +226,45 @@ def benchmark(directory, *, context, output):
                         "status": file["status"],
                         "scan": meta.get("scan"),
                         "extract": meta.get("extract"),
+                        "input_lifecycle": meta.get("input_lifecycle"),
+                        "representations": meta.get("representations"),
                         "preview_status": meta.get("preview", {}).get("status"),
                         "cache": meta.get("cache"),
                         "derived_objects_at_ready": len(objects),
                         "derived_bytes_at_ready": sum(p.stat().st_size for p in objects),
                         "peak_service_rss": peak,
                     }
+                    if prepare_native:
+                        native_started = time.monotonic()
+                        # API performs authorization, deduplication and outbox staging.
+                        response = client.post("/v1/runs", json={"mode": "chat", "prompt": "读取文字", "file_ids": [fid]})
+                        if response.status_code not in {201, 409}:
+                            raise RuntimeError("native admission failed: " + response.text[:300])
+                        deadline = time.monotonic() + 600
+                        while True:
+                            response = client.get("/v1/files/" + fid)
+                            response.raise_for_status()
+                            prepared = response.json()
+                            native = prepared.get("meta", {}).get("representations", {}).get("native_text", {})
+                            if native.get("status") in {"ready", "failed"}:
+                                break
+                            if time.monotonic() >= deadline:
+                                raise TimeoutError("native generation deadline")
+                            time.sleep(0.25)
+                        row["native"] = {
+                            "status": native.get("status"),
+                            "reason": native.get("reason"),
+                            "seconds": time.monotonic() - native_started,
+                        }
+                        print("NATIVE", json.dumps(row["native"]), flush=True)
+                        if native.get("status") != "ready":
+                            raise RuntimeError("native preparation failed: " + str(native.get("reason")))
                     report["results"].append(row)
                     print(json.dumps(row), flush=True)
+            broker_log = (state / "broker.log").read_text()
+            report["observed_broker_calls"] = {
+                path: broker_log.count("POST /internal/" + path + " ->") for path in ["render-prewarm", "read-document", "render"]
+            }
             destination.write_text(json.dumps(report, indent=2, ensure_ascii=False))
     finally:
         for label, proc in reversed(processes):
@@ -245,5 +292,7 @@ if __name__ == "__main__":
     parser.add_argument("directory")
     parser.add_argument("--context", required=True)
     parser.add_argument("--output", default="upload-baseline.json")
+    parser.add_argument("--prepare-native", action="store_true")
+    parser.add_argument("--office-image")
     args = parser.parse_args()
-    benchmark(args.directory, context=args.context, output=args.output)
+    benchmark(args.directory, context=args.context, output=args.output, prepare_native=args.prepare_native, office_image=args.office_image)

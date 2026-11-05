@@ -89,3 +89,112 @@ def test_duplicate_members_and_invalid_crc_fail_explicitly(tmp_path):
             archive.writestr("file", "two")
     with pytest.raises(ValueError, match="archive_unsafe_path"):
         directory_guard(source)
+
+
+def test_safety_only_upload_has_no_parser_prewarm_or_derivative_writes(tmp_path):
+    from ailab_platform.storage import LocalStorage
+    from ailab_platform.worker.pipeline import process_file
+
+    payload = b"plain input, never extract during upload"
+    updates = []
+
+    class Platform:
+        def get_file(self, *args, **kwargs):
+            return {
+                "status": "pending",
+                "filename": "input.txt",
+                "content_type": "text/plain",
+                "size": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "purpose": "library",
+                "meta": {"input_lifecycle": 2},
+            }
+
+        def download_file(self, fid, target, **kwargs):
+            target.write_bytes(payload)
+
+        def patch_file(self, fid, **kwargs):
+            updates.append(kwargs)
+
+        def prewarm_render(self):
+            raise AssertionError("ordinary upload must not prewarm")
+
+        def reuse_document(self, *args):
+            raise AssertionError("ordinary upload must not copy derived data")
+
+    storage = LocalStorage(tmp_path / "objects")
+    result = process_file("file", Platform(), storage)
+    assert result["safety_ready"] is True
+    assert len(updates) == 1 and updates[0]["status"] == "ready"
+    meta = updates[0]["meta"]
+    assert meta["scan"]["verdict"] == "clean"
+    assert set(meta["representations"]) == {"native_text", "page_images", "ocr_text"}
+    assert all(x["status"] == "absent" for x in meta["representations"].values())
+    assert not (tmp_path / "objects/derived").exists()
+    storage.close()
+
+
+@pytest.mark.parametrize("mismatch", ["digest", "size"])
+def test_safety_ready_requires_exact_uploaded_identity(tmp_path, mismatch):
+    from ailab_platform.storage import LocalStorage
+    from ailab_platform.worker.pipeline import process_file
+
+    payload = b"safe text"
+    updates = []
+
+    class Platform:
+        def get_file(self, *args, **kwargs):
+            return {
+                "status": "pending",
+                "filename": "identity.txt",
+                "size": len(payload) + (mismatch == "size"),
+                "sha256": "wrong" if mismatch == "digest" else hashlib.sha256(payload).hexdigest(),
+                "meta": {"input_lifecycle": 2},
+            }
+
+        def download_file(self, fid, target, **kwargs):
+            target.write_bytes(payload)
+
+        def patch_file(self, fid, **kwargs):
+            updates.append(kwargs)
+
+    storage = LocalStorage(tmp_path / "store")
+    assert process_file("file", Platform(), storage)["rejected"] == "file_integrity_mismatch"
+    assert updates[-1]["status"] == "rejected"
+    storage.close()
+
+
+def test_plain_native_rejects_over_limit_and_keeps_unicode_byte_ranges(tmp_path):
+    from ailab_platform.native_text import read_unit
+    from ailab_platform.storage import LocalStorage
+    from ailab_platform.worker.plain_text import prepare
+
+    source, output = tmp_path / "source.txt", tmp_path / "output"
+    output.mkdir()
+    body = "测试范围与分页\n" * 2000
+    source.write_bytes(body.encode("utf-16"))
+    manifest = prepare(source, output)
+    store = LocalStorage(output)
+    assert "".join(read_unit(store, "text.txt", unit, {}).decode() for unit in manifest["units"]) == body
+    store.close()
+    source.write_text("x" * 200001)
+    (output / "manifest.json").unlink()
+    with pytest.raises(ValueError, match="document_text_limit"):
+        prepare(source, output)
+    assert not (output / "manifest.json").exists()
+
+
+@pytest.mark.parametrize(
+    "filename,actual,mime,expected",
+    [
+        ("download", "pdf", "application/octet-stream", "pdf"),
+        ("pretend.txt", "png", "text/plain", None),
+        ("note.txt", "binary", "text/plain", "text"),
+    ],
+)
+def test_native_kind_uses_verified_type_without_treating_an_image_as_text(filename, actual, mime, expected):
+    from ailab_platform.api.native_preparation import native_kind
+    from ailab_platform.models import FileObject
+
+    file = FileObject(filename=filename, content_type=mime, meta={"safety": {"kind": actual}})
+    assert native_kind(file) == expected

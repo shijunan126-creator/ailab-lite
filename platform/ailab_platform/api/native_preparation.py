@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePath
 from uuid import uuid4
 
@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..contracts.file_types import OFFICE_SUFFIXES, TEXT_SUFFIXES
 from ..deps import get_db
 from ..locks import user_critical_section
 from ..models import FileDerivation, FileObject, OutboxMessage
@@ -23,7 +24,19 @@ from .jobs import stage_job
 from .routes_derived_assets import Completion
 
 router = APIRouter(prefix="/internal/files", tags=["internal"])
-KINDS = {".pdf", ".docx", ".pptx", ".xlsx"}
+KINDS = OFFICE_SUFFIXES | TEXT_SUFFIXES
+
+
+def native_kind(file):
+    actual = ((file.meta or {}).get("safety") or {}).get("kind")
+    if actual in {"pdf", "docx", "pptx", "xlsx"}:
+        return actual
+    if actual in {"zip", "png", "jpeg", "gif", "webp"}:
+        return None
+    suffix = PurePath(file.filename).suffix.lower()
+    if suffix in OFFICE_SUFFIXES:
+        return suffix[1:]
+    return "text" if suffix in TEXT_SUFFIXES or file.content_type.startswith("text/") else None
 
 
 def native_state(file):
@@ -33,7 +46,7 @@ def native_state(file):
 def request_native(db, file):
     if file.deleted_at or file.purged_at or file.status != "ready" or (file.meta or {}).get("scan", {}).get("verdict") != "clean":
         raise HTTPException(404, "document_unavailable")
-    if PurePath(file.filename).suffix.lower() not in KINDS:
+    if native_kind(file) is None:
         raise HTTPException(422, "native_format_unsupported")
     if file.size > 20 * 1024**2:
         raise HTTPException(413, "document_input_limit")
@@ -46,7 +59,8 @@ def request_native(db, file):
     job_id = uuid4().hex
     state = {"status": "pending", "version": file.sha256, "parser": PARSER_V4, "job_id": job_id}
     file.meta = {**(file.meta or {}), "representations": {**(file.meta or {}).get("representations", {}), "native_text": state}}
-    stage_job(db, "native", file_id=file.id, job_id=job_id)
+    job = stage_job(db, "native", file_id=file.id, job_id=job_id)
+    job.payload = {**job.payload, "deadline": (datetime.now(UTC) + timedelta(seconds=600)).isoformat()}
     db.flush()
     return state
 
@@ -92,9 +106,16 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
         file = claimed_file(db, file_id, body.job_id, x_run_attempt)
         # Broker's existing document channel is tied to this attempt, not a model
         # selected storage key or newly acquired Work sandbox.
-        file.meta = {**file.meta, "document_job_id": x_run_attempt, "document_profile": "chat"}
+        file.meta = {**file.meta, "document_job_id": x_run_attempt, "document_profile": "chat", "document_kind": native_kind(file)}
         db.commit()
-    return {"job_id": x_run_attempt, "version": file.sha256}
+    return {
+        "job_id": x_run_attempt,
+        "version": file.sha256,
+        "filename": file.filename,
+        "kind": native_kind(file),
+        "content_type": file.content_type,
+        "size": file.size,
+    }
 
 
 @router.post("/{file_id}/native/complete", dependencies=[Depends(require_scope("files:patch_processing"))])
@@ -185,5 +206,8 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
             state = {**state, "status": "ready", "derivation_id": derivation.id, "coverage": manifest["status"]}
         state = {**state, "completion_fingerprint": fingerprint}
         file.meta = {**file.meta, "representations": {**file.meta.get("representations", {}), "native_text": state}}
+        from .file_dependencies import wake_file
+
+        wake_file(db, file)
         db.commit()
     return state

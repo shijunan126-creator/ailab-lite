@@ -49,6 +49,9 @@ def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
         for name, body in (("long.txt", "字" * 80), ("short.txt", "hello")):
             up = c.post("/v1/files", headers=AUTH, files={"upload": (name, body.encode(), "text/plain")}).json()
             process_file(up["id"], platform=_ApiClient(c), storage=get_storage())
+            from tests.document_fixtures import prepare_native
+
+            prepare_native(c, up["id"])
             ids.append(up["id"])
             names.append(up["filename"])
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "总结附件", "mode": "chat", "file_ids": ids}).json()

@@ -71,6 +71,8 @@ def request_summary(db, file):
     from .preview_requests import request_ready_preview
 
     request_ready_preview(db, file)
+    if (file.meta or {}).get("input_lifecycle") == 2:
+        return
     if file.purpose != "library" or file.status != FileStatus.READY or file.deleted_at or file.purged_at:
         return
     meta = file.meta or {}

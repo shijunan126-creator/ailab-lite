@@ -215,6 +215,10 @@ def validate_run_input(
             inputs.append(file.id)
     if mode == "work" and inputs and not spec.supports({"tools"}):
         raise HTTPException(422, {"code": "work_model_requires_tools", "message": "请选择支持工具的模型，或切换对话模式读取文件"})
+    if inputs:
+        from .attachment_input import prepare_input_images
+
+        prepare_input_images(db, inputs)
     if mode == "work" and inputs and not spec.supports({"vision"}):
         images = [fid for fid in inputs if (db.get(FileObject, fid).content_type or "").startswith("image/")]
         if images:

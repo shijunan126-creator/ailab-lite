@@ -168,6 +168,7 @@ async def upload_file(
                         purpose=purpose,
                         meta={
                             "processing": "queued",
+                            **({"input_lifecycle": 2} if purpose == "library" and not (parent and parent.purpose == "skill") else {}),
                             "upload_filename": filename,
                             "upload_provenance": {"id": new_id("upl")},
                             **(
@@ -492,6 +493,7 @@ def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
         raise HTTPException(status_code=410, detail="version purged")
     scanned = (
         file.status == FileStatus.PENDING
+        and (file.meta or {}).get("input_lifecycle") != 2
         and file.purpose == "library"
         and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean"
         and bool((file.meta or {}).get("preview_job_id"))
@@ -676,6 +678,7 @@ def presign_upload(body: PresignIn, user: User = Depends(current_user), db: Sess
                 status=FileStatus.PENDING,
                 meta={
                     "processing": "awaiting_upload",
+                    "input_lifecycle": 2,
                     "disposition": body.disposition,
                     "upload_filename": filename,
                     "expected_size": body.size,

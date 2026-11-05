@@ -184,8 +184,13 @@ def abandon_batch(body: BatchCompletion, principal: ServicePrincipal = Depends(W
     unique_items(body.items)
     for item in body.items:
         assets.abandon(db, item.key, item.token)
+    result = []
+    for item in body.items:
+        row = db.get(DerivedAsset, item.key)
+        if row and row.token == item.token and row.state == "deleting":
+            result.append(item.model_dump())
     db.commit()
-    return {"status": "accepted"}
+    return {"status": "accepted", "deletable": result}
 
 
 @router.post("/discard-batch")

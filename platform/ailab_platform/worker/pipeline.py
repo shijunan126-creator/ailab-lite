@@ -118,7 +118,13 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         return {"file_id": file_id, "skipped": meta.get("status")}
     if not thumbnail_only and (meta.get("meta") or {}).get("scan_exhausted"):
         return {"file_id": file_id, "skipped": "scan_exhausted"}
-    if not thumbnail_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
+    flags = meta.get("meta") or {}
+    safety_only = (
+        flags.get("input_lifecycle") == 2
+        and meta.get("purpose", "library") == "library"
+        and not any(flags.get(name) for name in ("template_kind", "brand_kind", "skill_claim"))
+    )
+    if not thumbnail_only and not safety_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
         hint = getattr(platform, "prewarm_render", None)
         if hint:
             try:
@@ -159,6 +165,27 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        if safety_only:
+            try:
+                safety = execute("safety", source, Path(tmp) / "safety", filename=meta["filename"])
+                if safety["sha256"] != meta.get("sha256") or safety["bytes"] != meta.get("size"):
+                    raise IsolationError("file_integrity_mismatch")
+            except IsolationError as exc:
+                platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan, "safety_reason": str(exc)}, status="rejected")
+                return {"file_id": file_id, "rejected": str(exc)}
+            platform.patch_file(
+                file_id,
+                meta={
+                    "processing": "done",
+                    "scan": scan,
+                    "safety": safety,
+                    "representations": {
+                        name: {"status": "absent", "version": safety["sha256"]} for name in ("native_text", "page_images", "ocr_text")
+                    },
+                },
+                status="ready",
+            )
+            return {"file_id": file_id, "kind": safety["kind"], "safety_ready": True}
         # Commit the scanner verdict before any parser starts. The API stages a
         # preview in the same transaction, independently of parsing readiness.
         scanned_file = platform.patch_file(file_id, meta={"scan": scan})

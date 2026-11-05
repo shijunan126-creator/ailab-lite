@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from ..agent.prompts import skills as builtin_skills
 from ..config import settings
 from ..contracts.file_preview import PreviewCompletion, PreviewPagePublication
+from ..contracts.file_types import DETECTED_MIME, legacy_scanned_pending
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
@@ -860,7 +861,7 @@ def _bound_file(
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
         meta = file.meta or {}
         pending = (meta.get("preview") or {}).get("status") == "pending"
-        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        scanned = legacy_scanned_pending(file.status, meta)
         if (
             "files:read_for_preview" not in principal.scopes
             or not (file.status == FileStatus.READY or scanned)
@@ -873,7 +874,7 @@ def _bound_file(
         return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
-        if job == "preview" and file.status == FileStatus.PENDING and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean":
+        if job == "preview" and legacy_scanned_pending(file.status, file.meta or {}):
             allowed = True
         if not allowed:
             raise HTTPException(status_code=403, detail="file is not eligible for this processing job")
@@ -1144,6 +1145,16 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             except HTTPException:
                 merged.pop("skill")
                 merged["skill_error"] = "与平台技能重名"
+        safety = (body.meta or {}).get("safety")
+        if safety and merged.get("input_lifecycle") == 2:
+            if (
+                safety.get("sha256") != file.sha256
+                or type(safety.get("bytes")) is not int
+                or safety["bytes"] != file.size
+                or (merged.get("scan") or {}).get("verdict") != "clean"
+            ):
+                raise HTTPException(409, "file_integrity_mismatch")
+            file.content_type = DETECTED_MIME.get(safety.get("kind"), file.content_type)
         file.meta = merged
         if merged.get("skill") or merged.get("skill_error"):
             head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file
@@ -1254,7 +1265,7 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
     with user_critical_section(db, file.user_id):
         db.refresh(file)
         meta = dict(file.meta or {})
-        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        scanned = legacy_scanned_pending(file.status, meta)
         if not (file.status == FileStatus.READY or scanned) or meta.get("preview_job_id") != body.job_id:
             raise HTTPException(status_code=409, detail="preview job superseded")
         preview = body.preview

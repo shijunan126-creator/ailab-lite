@@ -26,6 +26,10 @@ def ready(db, dependency):
         if dependency["action"] == "extract-text" and meta.get("ocr") in {"pending", "running"}:
             file.meta = {**meta, "ocr": "failed", "ocr_reason": "deadline"}
         return True
+    if dependency["action"] == "native-text":
+        from .native_preparation import native_state
+
+        return native_state(file).get("status") in {"ready", "failed"}
     if dependency["action"] == "extract-text":
         from .routes_ocr import extraction_result
 
@@ -87,6 +91,13 @@ def prepare(db, dependency):
     the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
     Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
     duplicate durable jobs."""
+    if dependency["action"] == "native-text":
+        file = db.get(FileObject, dependency["file_id"])
+        if file and not file.deleted_at and not file.purged_at:
+            from .native_preparation import request_native
+
+            request_native(db, file)
+        return
     if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
         return
     file = db.get(FileObject, dependency["file_id"])

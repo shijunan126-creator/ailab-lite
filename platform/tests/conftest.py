@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import tempfile
 import traceback
 
@@ -38,6 +39,22 @@ os.environ["AILAB_REDIS_URL"] = "redis://127.0.0.1:6379/15"
 os.environ["AILAB_MAX_ACTIVE_RUNS_PER_USER"] = "1000"
 os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from tests
 os.environ["AILAB_WATCHDOG_MODE"] = "off"  # scripted models answer in order; tests that need the judge turn it on
+
+
+def pytest_sessionfinish(session, exitstatus):
+    reporter = session.config.pluginmanager.getplugin("terminalreporter")
+    if exitstatus:
+        if reporter:
+            reporter.write_line("Isolated test state retained for failure inspection: " + _TMP)
+        return
+    from ailab_platform.db import engine
+    from ailab_platform.storage import close_storage
+
+    close_storage()
+    engine.dispose()
+    shutil.rmtree(_TMP)
+    if reporter:
+        reporter.write_line("Removed isolated test state: " + _TMP)
 
 
 @pytest.fixture(autouse=True)

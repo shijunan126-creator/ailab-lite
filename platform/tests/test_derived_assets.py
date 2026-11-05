@@ -478,3 +478,26 @@ def test_transport_discard_requires_missing_object_and_matching_generation(ledge
         assert client.post("/internal/derived-assets/discard-batch", json=body, headers=headers).status_code == 200
         assert totals(factory) == (0, 0)
         assert client.post("/internal/derived-assets/discard-batch", json=body, headers=headers).status_code == 200
+
+
+def test_transient_maintenance_reclaims_failed_writes_without_expiring_published_metadata(ledger):
+    factory, storage = ledger
+    initialize(factory, storage)
+    now = datetime.now(UTC)
+    with factory() as db:
+        cached = assets.reserve(db, "derived/f/preview/page.png", 5, "source")
+        db.commit()
+        storage.put_bytes(cached["key"], b"image")
+        ready = assets.finish(db, cached["key"], cached["token"], 5, "image-digest")
+        ready.expires_at = now - timedelta(seconds=1)
+        failed = assets.reserve(db, "derived/f/office-staging/failed.tar", 4, "source", kind="transfer")
+        db.commit()
+        storage.put_bytes(failed["key"], b"temp")
+        assets.finish(db, failed["key"], failed["token"], 4, "temp-digest", published=False)
+        assets.abandon(db, failed["key"], failed["token"])
+        db.commit()
+        assert assets.collect_batch(db, storage, now=now + timedelta(seconds=1), transient_only=True) == 1
+        assert storage.exists(cached["key"]) and not storage.exists(failed["key"])
+        assert db.get(DerivedAsset, cached["key"]).state == "ready"
+        assert db.get(DerivedBudget, 1).used_bytes == 5
+        assert db.get(DerivedBudget, 1).reserved_bytes == 0

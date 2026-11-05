@@ -134,6 +134,18 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
 def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
     _, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
+    if meta.get("input_lifecycle") == 2 and not meta.get("document_manifest_key") and not file.content_type.startswith("image/"):
+        from .native_preparation import request_native
+
+        with user_critical_section(db, file.user_id):
+            db.refresh(file)
+            state = request_native(db, file)
+            db.commit()
+        if state["status"] == "pending":
+            return {"file_id": file.id, "pending": True, "action": "native-text"}
+        if state["status"] == "failed":
+            raise HTTPException(422, "native_representation_failed")
+        meta = file.meta or {}
     if meta.get("document_manifest_key"):
         return read_document_blocks(db, file, body)
     keys = list(filter(None, [meta.get("text_key"), meta.get("ocr_text_key") if meta.get("ocr") == "done" else None]))

@@ -277,7 +277,7 @@ def backfill_batch(db, storage, *, now=None):
     return count
 
 
-def collect_batch(db, storage, *, now=None):
+def collect_batch(db, storage, *, now=None, transient_only=False):
     """Failures leave durable rows and charged bytes for the next bounded pass."""
     now = now or datetime.now(UTC)
     expired = list(db.scalars(select(DerivedAssetRef.id).where(DerivedAssetRef.expires_at <= now).limit(settings.gc_batch_size)))
@@ -312,6 +312,10 @@ def collect_batch(db, storage, *, now=None):
         .where(DerivedAsset.state == "ready", DerivedAsset.expires_at <= now)
         .order_by(DerivedAsset.expires_at, DerivedAsset.key),
     ]
+    if transient_only:
+        # Until all legacy business metadata has expiry invalidation, do not
+        # collect published caches. Unpublished failed/crashed writes are safe.
+        queries = queries[1:3]
     removed, examined = 0, 0
     for query in queries:
         keys = list(db.scalars(query.limit(settings.gc_batch_size - examined)))

@@ -26,8 +26,8 @@ def preview_jobs(db, fid):
     )
 
 
-def test_clean_scan_stages_preview_before_parse_and_exposes_only_scanned_file(api):
-    fid = upload(api, "early.doc", process=False)
+def test_legacy_clean_scan_stages_preview_before_parse_and_exposes_only_scanned_file(api):
+    fid = upload(api, "early.doc", process=False, legacy=True)
     assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).status_code == 404
     p = ApiClient(api)
     p.patch_file(fid, meta={"scan": {"verdict": "clean", "ok": True}})
@@ -50,7 +50,7 @@ def test_worker_publishes_clean_scan_before_office_parse(api, monkeypatch):
     from ailab_platform.worker.isolate import IsolationError
     from ailab_platform.worker.pipeline import process_file
 
-    fid = upload(api, "early.docx", process=False)
+    fid = upload(api, "early.docx", process=False, legacy=True)
 
     def parse(file_id, platform, storage, output, scan):
         with SessionLocal() as db:
@@ -86,6 +86,7 @@ def test_waiting_page_promotes_an_already_published_background_job(api):
     from ailab_platform.queue import get_queue, job_topic
 
     fid = upload(api, "promote.doc")
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "pending"
     with SessionLocal() as db:
         job = db.get(FileObject, fid).meta["preview_job_id"]
     dispatch_preview_jobs(job)
@@ -102,15 +103,18 @@ def test_waiting_page_promotes_an_already_published_background_job(api):
 
 
 @pytest.mark.parametrize("name", ["a.doc", "a.ppt", "a.xls", "a.ods", "a.rtf"])
-def test_readiness_stages_preview_without_a_click_and_without_rendering(api, name):
+def test_safe_readiness_waits_for_explicit_preview_open(api, name):
     fid = upload(api, name)
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         assert file.status == "ready"
-        assert file.meta["preview"]["status"] == "pending"
-        assert len(preview_jobs(db, fid)) == 1
+        assert "preview" not in file.meta
+        assert preview_jobs(db, fid) == []
         request_ready_preview(db, file)
         db.commit()
+        assert preview_jobs(db, fid) == []
+    assert api.get(f"/v1/files/{fid}/preview", headers=AUTH).json()["status"] == "pending"
+    with SessionLocal() as db:
         assert len(preview_jobs(db, fid)) == 1
     p = ApiClient(api)
     if name.endswith((".doc", ".ppt", ".xls", ".ods", ".rtf")):
@@ -122,7 +126,7 @@ def test_readiness_stages_preview_without_a_click_and_without_rendering(api, nam
 @pytest.mark.parametrize("condition", ["large", "disabled", "pending", "deleted", "purged", "text", "failed", "ready"])
 def test_eager_admission_and_cached_terminal_states(api, monkeypatch, condition):
     monkeypatch.setattr(settings, "preview_eager_max_bytes", 0)
-    fid = upload(api, "a.txt" if condition == "text" else "a.doc", process=condition != "pending")
+    fid = upload(api, "a.txt" if condition == "text" else "a.doc", process=condition != "pending", legacy=True)
     monkeypatch.setattr(settings, "preview_eager_max_bytes", 0 if condition == "disabled" else 20)
     with SessionLocal() as db:
         file = db.get(FileObject, fid)

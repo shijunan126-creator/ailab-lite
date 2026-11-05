@@ -115,6 +115,8 @@ def _child(spec: dict) -> None:
                 "archive_unsafe_path",
                 "archive_structure_unsupported",
                 "file_type_mismatch",
+                "document_text_limit",
+                "text_encoding_unsupported",
                 "pixel_limit",
                 "input_limit",
             }

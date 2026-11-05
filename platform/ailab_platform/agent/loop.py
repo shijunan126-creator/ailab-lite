@@ -1397,6 +1397,16 @@ class AgentLoop:
                             "不能把exit0、WARN、文件存在或结构通过当成全部质量通过。"
                         ),
                     )
+            elif call.name == "read_library_file":
+                result = await self._interruptible(run_id, self.platform.library(run_id, "read", call.arguments))
+                if result.get("pending") and result.get("action") == "native-text":
+                    state = self._states[run_id]
+                    key = "native-text:" + call.arguments["file_id"]
+                    deadline = state.setdefault("file_wait_deadlines", {}).setdefault(key, time.time() + 150)
+                    if time.time() >= deadline:
+                        raise ToolError("文件文字准备超过截止时间，请告知用户处理失败")
+                    raise FileDependencyPending(call.arguments["file_id"], "native-text", None, deadline)
+                result = {"ok": True, **result}
             elif call.name == "extract_text":
                 result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))
                 if result.get("ocr") in {"pending", "running"}:

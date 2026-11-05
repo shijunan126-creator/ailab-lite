@@ -13,6 +13,7 @@ from pathlib import Path
 from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
+from ..contracts.file_types import legacy_scanned_pending
 from ..queue import get_queue
 from ..storage import get_storage, iter_objects
 from .isolate import IsolationError, execute
@@ -57,7 +58,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             if meta.get("preview_job_id") != job_id:
                 return {"skipped": "superseded"}
             manifest = meta.get("preview") or {}
-            scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
+            scanned = legacy_scanned_pending(file.get("status"), meta)
             if not (file.get("status") == "ready" or scanned) or manifest.get("status") != "pending":
                 return {"skipped": "already_complete"}
             storage = get_storage()
