@@ -3,5 +3,5 @@
 - 当前授权：完整任务的本地实现、必要迁移和验证；不 push、PR、合并、部署，不操作现有栈或业务数据。其他暂停事项不推进。
 - 工作区 `.worktrees/document-input-lifecycle`，分支 `feat/document-input-lifecycle`，最新核对 base `origin/main@fdc0a05f68c89aa884ce3682939f70e0337c45c4`。主工作区及资料来源工作区既有修改保留；四份指定资料完整带入，未复制其他产品修改。
 - 已实施第一组：已知页数/部分缓存完整性与页图 MIME；浏览器截图等待者、超时/取消/关闭清理、有界终态去重、claim/result 网络截止时间。未开启新文档生产路径，未改旧 run 工具目录。
-- 当前代码落点、验证与未完成清单见[实施记录](updates/2026-11-05-document-input-lifecycle.md)。下一步须完成安全/派生状态及容量账本迁移，随后接通按模式工具、懒准备、Work OCR和浏览器后备；不能把第一组回归通过当作整份设计完成。
+- 当前代码落点、验证与未完成清单见[实施记录](updates/2026-11-05-document-input-lifecycle.md)。最终局部修复检查已完成：SQLite2423/156跳过、PG/Redis2511/68跳过、E2E194/6跳过、Portal258/build、Ruff；真实模型与整套性能验收未做，临时栈已清。下一步须完成安全/派生状态及容量账本迁移，随后接通按模式工具、懒准备、Work OCR和浏览器后备；不能把第一组回归通过当作整份设计完成。
 - 历史 PR160 已在 base 中合并；旧 current 的“待 PR/合并”记录已过期，详见原[OCR记录](updates/2026-11-04-ocr-lifecycle-pr.md)。此前其他项目暂停/产品决策继续保持，不从旧记录继承发布授权。
