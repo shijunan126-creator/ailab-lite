@@ -1,4 +1,4 @@
-2026-11-06 独立评审发现版本恢复容量、插话累计预算、OCR接收取消三项旁路，已在本地修复；验证与基线见[评审后修复](../progress/updates/2026-11-06-document-input-final-acceptance.md#独立评审后的三项修复2026-11-06)。无发布操作。
+2026-11-07 真实模型workflow复核与修复已本地完成：9类场景、38轮/191次实际调用，修复收尾槽位阻塞与恢复/指南问题；仍有视觉参数试错、回答偏长等体验边界，不以终态成功冒充全流程质量通过。最新基线、验证与后续审阅见[记录](../progress/updates/2026-11-07-real-model-document-workflows.md)；未发布。
 
 2026-11-06 文件输入优化已完成本地实现与本轮可执行收尾：固定依赖镜像构建成功，真实Docker/ClamAV联合38项、完整截图50轮及硬退出/ENOSPC回收通过。完整双库的生成摘要失败已修复并复核，未改称最终SHA全套绿色；目标移动/NPU/S3/OpenSandbox、整栈容量及未测统计/故障边界仍保留。未push/PR/合并/部署，见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md)。
 

@@ -41,3 +41,15 @@ DOCKER_CONTEXT=<owned-context> AILAB_TEST_STORAGE_DOCKER_IMAGE=<pinned-image> \
 ```
 
 该检查运行原始LocalStorage/索引代码，配置模块使用不含凭据的占位对象（组件不读取配置）；它证明ENOSPC后的临时字节/写意图清理与恢复写入，不能代替整个业务数据库/S3故障验收。专用E2E用真实文件系统拒写补充API容量和业务发布边界。模型使用确定性脚本，真实模型的缓存/成本另验。
+
+
+真实模型流程观察使用`workflow_probe.py`，只连接调用者明确提供的隔离API；不会启动栈、加载模型密钥或把终态成功当质量pass。`--auth-file`为权限0600的合成测试用户session JSON（字段token），不是模型key。计划为case数组：id、mode、files（合成语料文件名）、turns（自然任务与追问）；可选browser_gate暂停等待外部浏览器准备。输出必须在仓库外。
+
+```sh
+platform/.venv/bin/python platform/tests/acceptance/document_input/workflow_probe.py \
+  --api http://127.0.0.1:<owned-api-port> --auth-file /private/tmp/<owned>/auth.json \
+  --model <real-model-alias> --plan /private/tmp/<owned>/plan.json \
+  --corpus /private/tmp/<owned>/samples-a --output /private/tmp/<owned>/workflow
+```
+
+模型别名不能证明真实调用，另核对计量actual_backend/settled；逐例审阅参数、等待、stderr/退出码、回答覆盖与实际下载成品。重复工具事件可能是checkpoint重放，不能直接当重复模型决策。实例范围、前后变化和仍有的体验缺陷见[真实模型记录](../../../../docs/progress/updates/2026-11-07-real-model-document-workflows.md)。不要把API驱动说成所有用例都从UI上传/发送。

@@ -1,6 +1,6 @@
 # ADR 0034：安全原件就绪与按需派生
 
-状态：本地实施中，未合并/部署。完整范围与验收仍以[文件输入设计](../design/2026-11-05-chat-document-input.md)为准；本ADR仅记录已接通的就绪语义，不表示三工具/浏览器/容量治理全部完成。
+状态：已本地实施，未合并/部署。新Run已默认V2，旧Run仍冻结V1目录。下文标记“未验收”“尚未默认”的段落是2026-11-06实施过程的历史阶段，不再代表当前状态；最新基线与实际边界见[真实模型workflow复核](../../progress/updates/2026-11-07-real-model-document-workflows.md)及[本地收尾](../../progress/updates/2026-11-06-document-input-final-acceptance.md)。完整合同以[文件输入设计](../design/2026-11-05-chat-document-input.md)为准。
 
 ## 决定
 

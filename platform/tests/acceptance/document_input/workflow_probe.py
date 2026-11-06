@@ -95,6 +95,12 @@ class Probe:
             raise TimeoutError(f"workflow deadline: {label}")
         calls = [e for e in events if e["type"] == "agent.tool_call"]
         failures = [e for e in events if e["type"] == "agent.tool_result" and not e["payload"].get("ok")]
+        execution_diagnostics = [
+            e
+            for e in events
+            if e["type"] == "agent.tool_result"
+            and ((e["payload"].get("exit_code") or 0) != 0 or "Traceback" in e["payload"].get("stderr", ""))
+        ]
         signatures = Counter(
             json.dumps({k: v for k, v in e["payload"].items() if k != "step"}, ensure_ascii=False, sort_keys=True) for e in calls
         )
@@ -107,7 +113,8 @@ class Probe:
             "status_changes": status_changes,
             "tool_sequence": [e["payload"] for e in calls],
             "failed_tools": failures,
-            "repeated_identical_calls": {k: v for k, v in signatures.items() if v > 1},
+            "repeated_call_events": {k: v for k, v in signatures.items() if v > 1},
+            "execution_diagnostics": execution_diagnostics,
             "events": events,
         }
         (self.output / f"{label}.json").write_text(json.dumps(record, ensure_ascii=False, indent=2))

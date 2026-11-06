@@ -1981,7 +1981,7 @@ def test_usage_anchor_metadata_does_not_change_recorded_request_bytes(monkeypatc
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-@pytest.mark.parametrize("fmt", ["pdf", "xlsx"])
+@pytest.mark.parametrize("fmt", ["pdf", "xlsx", "pptx"])
 def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt):
     class Platform(FakePlatform):
         async def get_run(self, run_id):
