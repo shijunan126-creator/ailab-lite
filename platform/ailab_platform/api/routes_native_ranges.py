@@ -189,12 +189,18 @@ def publish(db, row, file, manifest, body):
     source = file.meta.get("extract") or {}
     base_id = current_index(db, file).id
     previous = file.meta.get("native_range_budget") or {}
+    base_blocks = source.get("source_blocks")
+    if base_blocks is None:
+        from sqlalchemy import func, select
+        from ..models import DocumentBlock
+
+        base_blocks = db.scalar(select(func.count()).select_from(DocumentBlock).where(DocumentBlock.derivation_id == base_id))
     previous = (
         previous
         if previous.get("base_derivation_id") == base_id
         else {
             "chars": source.get("chars", 0),
-            "blocks": source.get("source_blocks", 0),
+            "blocks": base_blocks,
             "next_ordinal": 0,
         }
     )

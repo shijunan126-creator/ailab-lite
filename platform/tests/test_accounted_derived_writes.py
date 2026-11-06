@@ -96,3 +96,69 @@ def test_failed_put_keeps_capacity_liability_until_physical_delete_succeeds(tmp_
         writer.cleanup()
     assert authority.rows[key]["state"] == "deleting"
     storage.close()
+
+
+def test_api_ocr_pages_and_aggregate_publish_once_with_exact_capacity():
+    from sqlalchemy import select
+    from ailab_platform.api.document_sources import ocr_records
+    from ailab_platform.api.legacy_ocr_assets import store_page
+    from ailab_platform.api.routes_ocr import publish_extraction
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.models import DerivedAsset, DerivedBudget
+    from ailab_platform.storage import get_storage
+    from tests.test_native_document_scopes import make_file
+
+    init_db()
+    with SessionLocal() as db:
+        file, _ = make_file(db)
+        file.meta = {**file.meta, "ocr_generation": "owned-ocr", "ocr": "running"}
+        db.get(DerivedBudget, 1).backfill_complete = True
+        db.commit()
+        key = store_page(
+            db, file, "owned-ocr", 0, {"text": "文字与图形覆盖独立", "engine": "rapidocr:test", "backend": "cpu"}, attempt=None
+        )
+        records = ocr_records(db, file, [0])
+        assert records["0"]["text_key"] == key
+        count = publish_extraction(db, file, [1], records)
+        aggregate = file.meta["ocr_text_key"]
+        assert get_storage().get_bytes(aggregate).decode() == "\f[page:1]\n文字与图形覆盖独立"
+        assert count == len("\f[page:1]\n文字与图形覆盖独立")
+        again = publish_extraction(db, file, [1], records)
+        assert again == count and file.meta["ocr_text_key"] == aggregate
+        rows = list(db.scalars(select(DerivedAsset).where(DerivedAsset.file_id == file.id)))
+        assert len(rows) == 2 and all(row.state == "ready" and row.reserved_bytes == 0 for row in rows)
+        assert sum(row.size_bytes for row in rows) == sum(get_storage().size(row.key) for row in rows)
+
+
+def test_api_owned_write_rejects_late_generation_and_cleans_only_its_unpublished_bytes(monkeypatch):
+    from fastapi import HTTPException
+    from sqlalchemy import select
+    from ailab_platform.api.legacy_ocr_assets import store_page
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.models import DerivedAsset, DerivedBudget, FileObject, OcrPageResult
+    from ailab_platform.storage import get_storage
+    from tests.test_native_document_scopes import make_file
+
+    init_db()
+    with SessionLocal() as db:
+        file, _ = make_file(db)
+        file.meta = {**file.meta, "ocr_generation": "old", "ocr": "running"}
+        db.get(DerivedBudget, 1).backfill_complete = True
+        db.commit()
+        storage = get_storage()
+        original = storage.put_bytes
+
+        def race(key, body, content_type):
+            original(key, body, content_type)
+            with SessionLocal() as other:
+                current = other.get(FileObject, file.id)
+                current.meta = {**current.meta, "ocr_generation": "new"}
+                other.commit()
+
+        monkeypatch.setattr(storage, "put_bytes", race)
+        with pytest.raises(HTTPException) as caught:
+            store_page(db, file, "old", 0, {"text": "late", "engine": "rapidocr:test", "backend": "cpu"}, attempt=None)
+        assert caught.value.status_code == 409
+        assert db.scalar(select(DerivedAsset.key).where(DerivedAsset.file_id == file.id)) is None
+        assert db.scalar(select(OcrPageResult.file_id).where(OcrPageResult.file_id == file.id)) is None
+        assert not storage.exists(f"derived/{file.id}/ocr/old/0.txt")

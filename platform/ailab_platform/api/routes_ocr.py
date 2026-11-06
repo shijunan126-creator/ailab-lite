@@ -39,6 +39,9 @@ def eligible(db, file_id):
     file = db.get(FileObject, file_id, populate_existing=True)
     if not file or file.deleted_at or file.purged_at:
         raise HTTPException(404, "file not found")
+    owner = db.get(User, file.user_id, populate_existing=True)
+    if not owner or owner.disabled_at:
+        raise HTTPException(404, "file not found")
     if file.status != FileStatus.READY or ((file.meta or {}).get("scan") or {}).get("verdict") != "clean":
         raise HTTPException(409, "OCR requires a clean, ready file")
     return file
@@ -87,26 +90,80 @@ def extraction_pages(meta):
     return meta.get("ocr_selected_pages") or [p + 1 for p in (meta.get("ocr_pdf") or {}).get("low_text_pages", [0])]
 
 
-def publish_extraction(db, file, selected, records):
-    generation = file.meta.get("ocr_generation") or uuid.uuid4().hex
-    texts = [f"\f[page:{page}]\n" + get_storage().get_bytes(records[str(page - 1)]["text_key"]).decode() for page in selected]
-    data = "\n".join(texts).encode()
-    key = f"derived/{file.id}/ocr-results/{hashlib.sha256(data).hexdigest()}.txt"
-    storage = get_storage()
-    if not storage.exists(key):
-        storage.put_bytes(key, data, "text/plain; charset=utf-8")
-    file.meta = {
-        **file.meta,
-        "ocr_generation": generation,
-        "ocr_selected_pages": selected,
-        "ocr": "done",
-        "ocr_reason": None,
-        "ocr_text_key": key,
-    }
-    from .file_dependencies import wake_file
+def publish_extraction(db, file, selected, records, *, operation=None, attempt=None, new_generation=None):
+    import codecs
+    from .owned_assets import publish
 
-    wake_file(db, file)
-    return sum(map(len, texts))
+    file_id, owner, version = file.id, file.user_id, file.sha256
+    original_generation = str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at"))
+    generation = new_generation or file.meta.get("ocr_generation") or uuid.uuid4().hex
+    operation_id, token = (operation.id, operation.claim_token) if operation else (None, None)
+    snapshot = {str(page - 1): records[str(page - 1)]["text_key"] for page in selected}
+    if len(selected) > 20:
+        raise ValueError("page_limit")
+    db.rollback()
+    data, chars = bytearray(), 0
+    try:
+        storage = get_storage()
+        for ordinal, page in enumerate(selected):
+            key = snapshot[str(page - 1)]
+            if not key.startswith(f"derived/{file_id}/") or ".." in key.split("/"):
+                raise ValueError("invalid_ocr_binding")
+            prefix = ("\n" if ordinal else "") + f"\f[page:{page}]\n"
+            data.extend(prefix.encode())
+            chars += len(prefix)
+            decoder, size = codecs.getincrementaldecoder("utf-8")("strict"), 0
+            with storage.open_stream(key) as chunks:
+                for chunk in chunks:
+                    size += len(chunk)
+                    if size > 800000:
+                        raise ValueError("text_limit")
+                    chars += len(decoder.decode(chunk))
+                    data.extend(chunk)
+            chars += len(decoder.decode(b"", final=True))
+        target = f"derived/{file_id}/ocr-results/{hashlib.sha256(data).hexdigest()}.txt"
+
+        def validate():
+            current = eligible(db, file_id)
+            check_ocr_attempt(db, current, attempt)
+            if (
+                current.sha256 != version
+                or str(current.meta.get("ocr_generation") or current.meta.get("ocr_requested_at")) != original_generation
+            ):
+                raise HTTPException(409, "OCR source changed")
+            from .document_sources import ocr_records
+
+            found = ocr_records(db, current, [page - 1 for page in selected])
+            if any(found.get(page, {}).get("text_key") != key for page, key in snapshot.items()):
+                raise HTTPException(409, "OCR cache changed")
+            if operation_id:
+                from . import document_operations as operations
+
+                operations.active(db, operation_id, token)
+
+        def bind(text_key):
+            current = eligible(db, file_id)
+            if operation_id:
+                from ..models import DocumentOperation
+
+                row = db.get(DocumentOperation, operation_id)
+                row.status, row.claim_token, row.lease_until, row.result = "ready", None, None, {}
+            current.meta = {
+                **current.meta,
+                "ocr_generation": generation,
+                "ocr_selected_pages": selected,
+                "ocr": "done",
+                "ocr_reason": None,
+                "ocr_text_key": text_key,
+            }
+            from .file_dependencies import wake_file
+
+            wake_file(db, current)
+            return chars
+
+        return publish(db, owner, target, data, version, kind="ocr", validate=validate, bind=bind, content_type="text/plain; charset=utf-8")
+    finally:
+        data.clear()
 
 
 def _total_timeout() -> float:
@@ -327,44 +384,18 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
                     )
                 else:
                     result = asyncio.run(remote_recognize(bounded_image(key, file_id)))
-                text = result["text"]
-                with user_critical_section(db, file.user_id):
-                    file = eligible(db, file_id)
-                    check_ocr_attempt(db, file, attempt)
-                    if (
-                        str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation
-                        or file.meta.get("ocr") != "running"
-                    ):
-                        raise HTTPException(409, "OCR source changed")
-                    text_key = f"derived/{file_id}/ocr/{generation}/{page}.txt"
-                    get_storage().put_bytes(text_key, text.encode(), "text/plain; charset=utf-8")
-                    pages = dict(done)
-                    from ..models import OcrPageResult
+                from .legacy_ocr_assets import store_page
 
-                    fingerprint = settings.ocr_engine_fingerprint or generation
-                    page_row = db.get(OcrPageResult, (file.id, page, fingerprint))
-                    if page_row is None:
-                        page_row = OcrPageResult(file_id=file.id, page=page, fingerprint=fingerprint)
-                        db.add(page_row)
-                    page_row.generation, page_row.text_key = generation, text_key
-                    page_row.engine, page_row.backend = result["engine"], result["backend"]
-                    page_row.seconds = result.get("seconds", 0)
-                    pages[str(page)] = {
-                        "generation": generation,
-                        "text_key": text_key,
-                        "engine": result["engine"],
-                        "fingerprint": result.get("fingerprint"),
-                        "backend": result["backend"],
-                        "seconds": result.get("seconds", 0),
-                        "pages": 1,
-                    }
-                    file.meta = {
-                        **file.meta,
-                        "ocr_pages": dict(list(pages.items())[-20:]),
-                        "ocr_cache_revision": int(file.meta.get("ocr_cache_revision", 0)) + 1,
-                        "ocr": "running",
-                    }
-                    db.commit()
+                store_page(db, file, generation, page, result, attempt=attempt, operation=operation)
+                if any(str(p) not in done and p != page for p, _ in targets):
+                    with user_critical_section(db, file.user_id):
+                        file = eligible(db, file_id)
+                        check_ocr_attempt(db, file, attempt)
+                        file.meta = {**file.meta, "ocr": "pending"}
+                        if operation:
+                            operation.executor_started_at = None
+                        db.commit()
+                    return {"ocr": "pending", "completed_page": page + 1}
         with user_critical_section(db, file.user_id):
             file = eligible(db, file_id)
             if str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation:
@@ -372,11 +403,9 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             check_ocr_attempt(db, file, attempt)
             if file.meta.get("ocr") != "running":
                 return {"ocr": "canceled", "reason": "superseded"}
-            if operation:
-                operations.active(db, operation.id, operation.claim_token)
-                operation.status, operation.claim_token, operation.lease_until = "ready", None, None
-                operation.result = {}
-            chars = publish_extraction(db, file, [p + 1 for p, _ in targets], ocr_records(db, file, [p for p, _ in targets]))
+            chars = publish_extraction(
+                db, file, [p + 1 for p, _ in targets], ocr_records(db, file, [p for p, _ in targets]), operation=operation, attempt=attempt
+            )
             db.commit()
         return {"ocr": "done", "pages": len(targets), "chars": chars}
     except Exception as exc:
@@ -454,8 +483,7 @@ def request_extraction(db, file, pages=None, *, retry=False, run=None):
         if meta.get("ocr_selected_pages") != selected or not meta.get("ocr_text_key") or meta.get("ocr") != "done":
             from .document_sources import ocr_records
 
-            file.meta = {**meta, "ocr_generation": uuid.uuid4().hex, "ocr_job_id": None}
-            publish_extraction(db, file, selected, ocr_records(db, file, [p - 1 for p in selected]))
+            publish_extraction(db, file, selected, ocr_records(db, file, [p - 1 for p in selected]), new_generation=uuid.uuid4().hex)
         return {**result, "request_id": file.meta.get("ocr_generation")}
     if meta.get("ocr") == "failed" and not retry:
         return {**result, "ocr": "failed"}

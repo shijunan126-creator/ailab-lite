@@ -267,3 +267,15 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 - 补充取消收据：不确定在途先canceling保留槽，Broker仅在确认所属render资源已移除后ACK释放；删除失败依旧保留到租约/补偿。Worker本地native/preview的拥有者探测有正确服务scope。新增容量写序/发布响应丢失/移交/物理删除失败回归已写，尚未执行。
 
 **未完成**：旧OCR页与聚合正文的API writer、viewer索引/Work preview/capture等持久writer还未全部纳管；TTL业务元数据/行失效和必要消息/checkpoint资产引用仍未接齐，reaper仍只回收未发布写入，不能声称全平台1GiB/30天治理已达标。本组没有运行pytest/双库/迁移/真实栈/浏览器/性能；仅编辑/格式化。下一步继续这些writer与引用/TTL，再做浏览器首开基线/优先截图/CAS后备和最终集中验收。
+
+
+## API OCR规范正文记账（2026-11-06，未验收）
+
+在`a715d93`上继续接线。API-owned写入帮助器在所有者/来源复核后预留并提交，存储I/O后再复核与正文行/元数据同事务发布；相同canonical内容重绑需验证完整digest，缓存命中不再预留一份相同占用。失败物理删除成功后才结算；已发布对象不因响应失败误删。
+
+- 旧OCR页正文改用该协议，生成/attempt/operation围栏与OcrPageResult/ocr_cache_revision一起发布；每页确认后可保持原有progress回传，后续页沿同一已领取slot与执行deadline，不能每页再开90秒。
+- OCR聚合正文不再同时加载所有页文本并拼出多份字符串；受限流式读取每页≤800000字节，单个≤20页bytearray聚合，写入按64KiB切片，退出释放大缓冲，不新增临时聚合文件。聚合与本次选页/代际同事务绑定，缓存选页改变只在发布后更新请求身份，拒绝迟到范围覆盖。
+- 原生旧partial代际缺source_blocks时，范围累计预算从实际基础索引计数补齐，不能漏掉既有3000页块而允许逐批绕10000块。
+- 新增真实LocalStorage/DB正文与聚合单份占用、迟到代际/正常失败清理回归，**尚未执行**。本组只有代码编辑和格式化，未做功能/迁移/性能或资源验收。
+
+剩余仍包括viewer/Work预览/浏览器capture等writer、TTL业务失效/规范截图历史引用、客户端资源回收与browser-first/CAS后备；之后才启用新Chat并集中验收。部分旧入口外层用户锁仍可能跨聚合I/O，需在统一review时连调用方拆分，不能把已移出数据库事务等同于全部锁/I/O性能合同已完成。
