@@ -289,6 +289,12 @@ def document_guide(fmt: str, mode: str, resources: list[str]) -> str:
             "Word/Excel文字读取不必先转PDF，Office物理页以实际渲染来源为准，不能混用浏览器与Office-PDF页码。"
             "不运行脚本、不安装OCR权重，不交付中间图片来绕过工具。\n"
         )
+        if fmt == "pptx":
+            text += (
+                "用户问流程的组件/箭头时，默认描述图中的业务节点和可见关系，不主动讲PPT内部shape编号。"
+                "像素中读到的文字不等于原生文本框内容；文字属于哪个shape只能由对应原生块核验，"
+                "不能把嵌图里的五行文字归给只含标题的文本框，也不从少数页推断奇偶页规律。\n"
+            )
     else:
         text += (
             "用resolve_attachment/search_library定位原件，必要时copy_library_file到当前工作区；"

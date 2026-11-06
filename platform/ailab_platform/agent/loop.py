@@ -1223,6 +1223,14 @@ class AgentLoop:
             else {}
         )
         files = run.get("input_files") or []
+        if prompt_options.get("mode") == "work" and run.get("workspace_restore_key"):
+            injected = "本轮inputs为空" if not files else "本轮inputs仅含本消息附件清单中的原件"
+            prompt += (
+                "\n\n平台工作区恢复事实：已保存的work/assets/outputs可恢复，但历史inputs不会由快照恢复；"
+                + injected
+                + "。旧脚本若读取历史inputs，先按历史file_id用copy_library_file恢复到脚本原路径，再运行脚本，"
+                "不要先执行并等待FileNotFoundError后再补文件。"
+            )
         images = [
             file
             for file in files

@@ -2090,6 +2090,7 @@ def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, 
                 "options": {"mode": mode, "document_tools_version": previous_version if run_id == "first" else 2},
             }
             if run_id == "second":
+                result["workspace_restore_key"] = "owned-snapshot"
                 state = self.checkpoints["first"]["state"]
                 result["previous_model_context"] = {
                     "messages": state["messages"],
@@ -2103,6 +2104,11 @@ def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, 
         loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
         asyncio.run(loop.process("first", attempt_id="first"))
         asyncio.run(loop.process("second", attempt_id="second"))
+    if mode == "work":
+        assert "平台工作区恢复事实" in requests[-1]["messages"][-1]["content"]
+        assert "本轮inputs为空" in requests[-1]["messages"][-1]["content"]
+    else:
+        assert "平台工作区恢复事实" not in requests[-1]["messages"][-1]["content"]
     assert len(requests) == 2 and platform.statuses[-1][0] == "succeeded"
     if previous_version == 2:
         assert_extension(*requests)
