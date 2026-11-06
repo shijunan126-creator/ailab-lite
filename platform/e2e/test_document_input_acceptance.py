@@ -130,7 +130,7 @@ def test_canonical_capture_history_fork_and_fifty_cycles(logged_in, stack, tmp_p
         assert len(state["captures"]) == 1, state
         capture = state["captures"][0]
         url = f"{stack.api}/internal/runs/{turn['id']}/captures/{capture['id']}"
-        headers = {"X-Service-Token": SERVICE_TOKENS["ops"]}
+        headers = {"X-Service-Token": SERVICE_TOKENS["agent"]}
         pixels = page.request.get(url, headers=headers)
         assert pixels.ok and hashlib.sha256(pixels.body()).hexdigest() == capture["digest"]
         page.reload()
