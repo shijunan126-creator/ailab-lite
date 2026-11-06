@@ -30,7 +30,7 @@ def authorize_state(db, user, state):
     elif state.get("run_id") and state.get("path"):
         from .workspace_documents import request_workspace
 
-        data = request_workspace(db, user, state["run_id"], state["path"], "document")
+        data = request_workspace(db, user, state["run_id"], state["path"], "open")
         if data.get("version") != state["version"]:
             raise HTTPException(409, "workspace version changed")
     else:

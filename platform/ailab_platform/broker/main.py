@@ -437,7 +437,7 @@ def workspace_document(run_id: str, operation: str, body: dict):
     from .viewer import workspace
 
     if (
-        operation not in {"document", "content", "check", "render", "preview"}
+        operation not in {"open", "document", "content", "check", "render", "preview"}
         or not {"user_id", "path"} <= set(body)
         or set(body) - {"user_id", "path", "selections", "version"}
     ):

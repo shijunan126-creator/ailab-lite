@@ -481,6 +481,7 @@ def file_content(
     if_none_match: str | None = Header(default=None),
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
+    structure: bool = False,
 ):
     row = authorized(db, share_id, user)
     bound_file(db, row, file_id)
@@ -494,7 +495,7 @@ def file_content(
         result = routes_files.download_thumbnail(file_id, if_none_match, owner, db)
     elif action == "document":
         response.headers["Cache-Control"] = "private, no-store"
-        return routes_files.get_document(file_id, owner, db)
+        return routes_files.get_document(file_id, owner, db, structure=structure)
     elif action == "preview":
         response.headers["Cache-Control"] = "private, no-store"
         return routes_files.get_preview(file_id, owner, db)

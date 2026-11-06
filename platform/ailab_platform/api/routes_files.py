@@ -913,7 +913,7 @@ def empty_trash(user: User = Depends(current_user), db: Session = Depends(get_db
 
 
 @router.get("/{file_id}/document")
-def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db), structure: bool = False):
     from ..contracts.document_view import PARSER_REVISION
     from .document_view import index
 
@@ -922,6 +922,12 @@ def get_document(file_id: str, user: User = Depends(current_user), db: Session =
         raise HTTPException(404, "document unavailable")
     if file.status != FileStatus.READY:
         return {"status": "pending" if file.status == FileStatus.PENDING else "failed", "file_id": file.id, "native": False}
+    if not structure:
+        from ..contracts.document_view import opening_metadata
+
+        if (file.meta or {}).get("scan", {}).get("verdict") != "clean":
+            raise HTTPException(409, "document_not_safe")
+        return opening_metadata(version=file.sha256, filename=file.filename, size=file.size, file_id=file.id)
     result = index(file)
     if result["status"] == "pending" or (result["status"] == "failed" and not result.get("reason")):
         with user_critical_section(db, user.id):

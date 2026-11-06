@@ -279,3 +279,19 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 - 新增真实LocalStorage/DB正文与聚合单份占用、迟到代际/正常失败清理回归，**尚未执行**。本组只有代码编辑和格式化，未做功能/迁移/性能或资源验收。
 
 剩余仍包括viewer/Work预览/浏览器capture等writer、TTL业务失效/规范截图历史引用、客户端资源回收与browser-first/CAS后备；之后才启用新Chat并集中验收。部分旧入口外层用户锁仍可能跨聚合I/O，需在统一review时连调用方拆分，不能把已移出数据库事务等同于全部锁/I/O性能合同已完成。
+
+
+## 浏览器基线与轻量首开/资源回收（2026-11-06，接线未验收）
+
+浏览器生产改动前创建独立detached `fdc0a05f`基线工作区，构建旧Portal成功。第一次node_modules符号链接被Turbopack根目录边界拒绝，改为专用APFS clone依赖后成功；未改产品配置。真实ClamAV/Docker栈尝试在启动前因原`colima-ailab-verify` socket不存在而终止，没有启动/重启既有VM。故仅执行**真实Portal/API/Worker+合成种子文件**的本地夹具浏览器基线，不把它算作扫描/Broker/模型验收。
+
+设备为内置T3浏览器Chrome152/Electron44、1280×800。冷口径是已启动浏览器首次文件viewer/index，非OS清缓存；暖口径是同file/index复用、每次关闭销毁iframe。指标为点击至首个1024px capture_view成功，100ms轮询及1000ms单次reply等待会影响数值，不能直接冒充纯首交互时间。旧Word/PPT/scan40首次可用capture约2.698/2.683/2.673秒；各3次有效暖观测分别Word0.258–0.279秒、PPT1.247–1.253秒、scan40为1.212–1.251秒，关闭iframe均0。没有足够样本计算稳定p95，没有子frame heap/CPU/50轮/移动设备或泄漏结论。native-small首样本因夹具Portal工作目录让assets返回404而无效，修正专用资源路径后只有暖观测1.284秒；未重启服务抹掉该失败。mixed.xlsx和50001单元格Excel的旧Worker viewer索引真实返回viewer_reader_unavailable，回退表格不能算原生capture成功，仍记失败。两次snapshot超时，使用DOM与实际capture验证；一次工具evaluate超时后续测量重叠，相关样本显式排除，不冒充有效暖数据。原始无密钥摘要`/private/tmp/ailab-document-validation-oghcidq0/browser-baseline-main-fixture.json`保留；全部专用进程、标签页、临时数据库/对象/凭据与基线工作区已清理，没有更改用户栈。
+
+在`7c0bde5`后接入新代码（未跑功能回归/Portal完整build/真实性能）：
+
+- 库/分享的document默认仅返回当前授权、安全原件身份和类型字节准入元数据，不创建全文索引任务；Work open在当前lease中做有界snapshot/摘要后返回同类元数据，无新系统沙箱。未知页数保持null。显式structure=true才请求现有完整viewer索引。Word在首次选区/精确定位时请求同源位置映射，原生画面先显示；引用仍经既有服务端quote/版本核验。结构映射失败不伪造位置。
+- 父frame资源缓存增加项数/16MiB预算及请求截止；文件bytes未消费Map只允许一个；capture取消消息传到frame，host pending≤64、单重型capture、请求/执行计时器与监听在结果/取消/dispose释放。主frame卸载显式dispose，晚截图不回挂。
+- PDF首开只取第一页实际尺寸，后续页实际尺寸随请求准备；浏览器导航结构限定5000，超出走受控后备，该限制不是Chat物理页数准入。离开窗口取消/清Canvas及文本层，所有Canvas合计约64MiB像素预算；loading task/doc/render/范围/字体Worker来源URL有退役清理，渲染资源失败交受控后备。Word仍整包浏览器排版，未宣称增量或低性能设备已过。
+- 共用raster适配对DOM/像素/编码有界，按序处理图像并释放Canvas/临时DOM/图像引用；资源错误不得静默留白。保留原生viewer架构，不自建排版/OCR。生成源仍office/build.mjs，新的office:build成功仅证明bundle生成，不是功能或内存验收。Portal发送准备现传client_send_id。
+
+**仍未完成**：view_document浏览器优先/持久generation后备CAS、多tab和版本/region全链路、规范截图与历史引用、全部writer/TTL业务失效；通用静态资源与Office renderer额外内存/Worker边界仍需统一review和50轮实际证明。Chat默认仍V1，不能提前称整体方案达标。

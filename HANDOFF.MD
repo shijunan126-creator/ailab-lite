@@ -5,6 +5,12 @@
 - 取消/失败后先由API确认该grant仍未发布，再删持久暂存并结算；发布响应丢失不能当未发布清掉。backfill_complete仅表示初次登记扫描完成，不等于所有新writer已纳管或TTL失效已接通。
 - 真验收需记录源码指纹/实际镜像，不只git HEAD；dirty基线不得倒填为最终冻结提交。单次或两次上传不能报p95，慢观察留待定位，不调门槛或重启求绿。见[当前实施证据](docs/progress/updates/2026-11-05-document-input-lifecycle.md#安全入库与消费准备已接通2026-11-05续作)。
 
+## 2026-11-06 浏览器基线与轻量打开
+
+- 内置预览工具的evaluate超时后页面脚本仍可能继续；测量必须持有互斥/终态，不能立即启动下一轮污染首轮。已重叠样本标无效，不能重试拼成绿色。snapshot超时不等于页面失败，实际capture/DOM证据分开。
+- Next viewer assets根依赖process.cwd，启动Next时cwd必须Portal；next start参数指定目录不会改变该路径。依赖目录符号链接跨Turbopack根也会被拒，基线用自有副本，不改产品配置或共享依赖。
+- 轻量open没有Word可靠段落/单元格映射；选区/定位必须等同源结构映射并继续服务端quote核验，不能按浏览器分页猜p/t序号。未知页数null不是0页或已索引。
+
 ## 2026-11-06 多服务暂存写入移交
 
 - Broker返回的页图/PDF等字节仍需Worker绑定元数据，不能在Broker finally把staged对象当失败删除；按同一持久writer/attempt显式移交，Worker完成后补偿，崩溃才走租约。

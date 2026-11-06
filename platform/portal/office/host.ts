@@ -22,7 +22,9 @@ function splitAnchor(anchor: string): { path: string; at: string } {
 function createHost() {
   const nonce = (window as unknown as { __officeNonce?: string }).__officeNonce ?? "";
   const viewId = crypto.randomUUID();
-  const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error & { code?: string }): void }>();
+  const pending = new Map<number, { resolve(value: unknown): void; reject(error: Error & { code?: string }): void; dispose(): void }>();
+  const executions = new Map<number, AbortController>();
+  let disposed = false;
   const handlers = new Map<string, PageToolHandler>();
   const waiters = new Set<() => void>();
   const commands = new Set<(name: ViewerCommand) => void>();
@@ -39,36 +41,65 @@ function createHost() {
   function request<T>(message: Json): Promise<T> {
     const id = ++sequence;
     return new Promise<T>((resolve, reject) => {
-      pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
+      if (disposed || pending.size >= 64) return reject(new Error("查看器请求已关闭或过多"));
+      const timer = setTimeout(() => { const held = pending.get(id); pending.delete(id); held?.reject(new Error("查看器请求超时")); }, 30000);
+      pending.set(id, { resolve: resolve as (value: unknown) => void, reject, dispose: () => clearTimeout(timer) });
       post({ ...message, id });
     });
   }
 
   async function runPageTool(id: number, name: string, args: Json) {
+    if (disposed || executions.size) return post({t: "page-tool-result", id, ok: false, error: "截图正在处理中"});
+    const controller = new AbortController();
+    executions.set(id, controller);
+    const deadline = setTimeout(() => controller.abort(), 10000);
     try {
-      // The bundle registers its page tool on mount; a request can arrive while it is still loading.
-      const deadline = Date.now() + 20_000;
-      while (!handlers.has(name) && Date.now() < deadline)
-        await new Promise<void>((resolve) => {
-          const done = () => (waiters.delete(done), resolve());
+      const expires = Date.now() + 10000;
+      while (!handlers.has(name) && Date.now() < expires) {
+        controller.signal.throwIfAborted();
+        await new Promise<void>((resolve, reject) => {
+          const done = () => { clearTimeout(timer); controller.signal.removeEventListener("abort", abort); waiters.delete(done); resolve(); };
+          const abort = () => { clearTimeout(timer); waiters.delete(done); reject(new Error("截图已取消")); };
+          const timer = setTimeout(done, 100);
           waiters.add(done);
-          setTimeout(done, 500);
+          controller.signal.addEventListener("abort", abort, {once: true});
         });
+      }
       const handler = handlers.get(name);
       if (!handler) throw new Error("查看器仍在加载");
-      post({ t: "page-tool-result", id, ok: true, value: await handler(args, undefined) });
+      controller.signal.throwIfAborted();
+      const value = await handler(args, controller.signal);
+      controller.signal.throwIfAborted();
+      if (!disposed) post({t: "page-tool-result", id, ok: true, value});
     } catch (error) {
-      post({ t: "page-tool-result", id, ok: false, error: error instanceof Error ? error.message : String(error) });
+      if (!disposed) post({t: "page-tool-result", id, ok: false, error: error instanceof Error ? error.message : String(error)});
+    } finally {
+      clearTimeout(deadline);
+      controller.abort();
+      executions.delete(id);
     }
   }
 
-  window.addEventListener("message", (event) => {
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    for (const request of pending.values()) { request.dispose(); request.reject(new Error("查看器已关闭")); }
+    pending.clear();
+    for (const execution of executions.values()) execution.abort();
+    executions.clear();
+    handlers.clear(); waiters.clear(); commands.clear(); results.length = 0;
+    window.removeEventListener("message", onMessage);
+    window.removeEventListener("pagehide", dispose);
+  }
+
+  const onMessage = (event: MessageEvent) => {
     if (event.source !== parent || !isChannel(event.data)) return;
     const message = event.data as HostMessage;
     if (message.t === "reply") {
       const waiter = pending.get(message.id);
       if (!waiter) return;
       pending.delete(message.id);
+      waiter.dispose();
       if ("error" in message) waiter.reject(Object.assign(new Error(message.error.message), { code: message.error.code }));
       else waiter.resolve(message.value);
     } else if (message.t === "context") {
@@ -81,9 +112,13 @@ function createHost() {
       results.push({ structuredContent: message.snapshot });
       if (results.length > 20) results.shift();
       emit("toolresult");
-    } else if (message.t === "page-tool") void runPageTool(message.id, message.name, message.args);
+    } else if (message.t === "page-tool-cancel") executions.get(message.id)?.abort();
+    else if (message.t === "dispose") dispose();
+    else if (message.t === "page-tool") void runPageTool(message.id, message.name, message.args);
     else if (message.t === "command") for (const run of commands) run(message.name);
-  });
+  };
+  window.addEventListener("message", onMessage);
+  window.addEventListener("pagehide", dispose, {once: true});
 
   // The Portal answers with the theme, the conversation's documents and which one to open.
   post({ t: "ready", viewId });

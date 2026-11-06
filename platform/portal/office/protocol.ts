@@ -53,6 +53,8 @@ export type HostMessage =
   | { ch: typeof CHANNEL; t: "context"; context: HostContext; recent: RecentDocument[]; open?: string }
   | { ch: typeof CHANNEL; t: "snapshot"; snapshot: unknown }
   | { ch: typeof CHANNEL; t: "page-tool"; id: number; name: string; args: Record<string, unknown> }
+  | { ch: typeof CHANNEL; t: "page-tool-cancel"; id: number }
+  | { ch: typeof CHANNEL; t: "dispose" }
   /** A press of one of those controls in the Portal's title bar. */
   | { ch: typeof CHANNEL; t: "command"; name: ViewerCommand };
 

@@ -510,3 +510,26 @@ def test_workspace_report_is_not_resurrected_after_close_or_reordered(api, monke
             pending.result(timeout=5)
         assert error.value.status_code == 409
     assert view_state.views(user.id, cid)[0]["at"] == "p:2"
+
+
+def test_opening_metadata_does_not_start_viewer_or_native_jobs_and_structure_remains_explicit(api):  # noqa: F811
+    from ailab_platform.models import OutboxMessage
+
+    fid, version, _ = document(api)
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.meta = {"processing": "done", "scan": {"verdict": "clean"}}
+        db.commit()
+        get_storage().delete(f"derived/{fid}/viewer.json")
+    response = api.get(f"/v1/files/{fid}/document", headers=AUTH)
+    assert response.status_code == 200, response.text
+    value = response.json()
+    assert value["native"] and value["version"] == version
+    assert value["structure"] == "not_prepared" and value["units"] is None
+    assert value["outline"] == [] and "blocks" not in value
+    with SessionLocal() as db:
+        assert db.scalar(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)) is None
+    requested = api.get(f"/v1/files/{fid}/document?structure=true", headers=AUTH)
+    assert requested.status_code == 200 and requested.json()["status"] == "pending"
+    with SessionLocal() as db:
+        assert db.scalar(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)) is not None

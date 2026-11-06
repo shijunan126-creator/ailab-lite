@@ -41,7 +41,7 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
     if not lease:
         raise HTTPException(410, "live workspace unavailable")
     lease = manager.get(lease["lease_id"])
-    claimed = operation != "content"
+    claimed = operation not in {"content", "open"}
     if claimed and not _reader_slot.acquire(blocking=False):
         raise HTTPException(503, "viewer busy")
     ident = uuid4().hex
@@ -57,6 +57,10 @@ def workspace(manager, run_id, user_id, path, operation, selections=None, versio
         identity = json.loads(result.stdout)
         if version and identity["version"] != version:
             raise HTTPException(409, "workspace version changed")
+        if operation == "open":
+            from ..contracts.document_view import opening_metadata
+
+            return opening_metadata(version=identity["version"], filename=Path(path).name, size=identity["bytes"])
         if operation == "content":
             local = tempfile.NamedTemporaryFile(prefix="ailab-workspace-", delete=False)
             local.close()

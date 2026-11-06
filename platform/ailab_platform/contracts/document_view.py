@@ -74,3 +74,26 @@ def text_block(refs):
     return (
         "\n\n<document_references>\n" + "\n\n".join(f"{r['filename']} ({r['at']})\n{r['quote']}" for r in refs) + "\n</document_references>"
     )
+
+
+def opening_metadata(*, version, filename, size, file_id=None):
+    """An authorization/byte admission result, never a full-text or safety assertion."""
+    from pathlib import PurePath
+
+    kind = PurePath(filename).suffix.lower().removeprefix(".")
+    supported = kind in NATIVE_BYTES
+    native = supported and size <= NATIVE_BYTES[kind]
+    return {
+        "status": "ready" if supported else "unsupported",
+        "version": version,
+        "file_id": file_id,
+        "parser_revision": PARSER_REVISION,
+        "kind": kind,
+        "title": filename,
+        "bytes": size,
+        "native": native,
+        "units": None,
+        "outline": [],
+        "structure": "not_prepared",
+        "reason": None if native else "native_admission_limit",
+    }
