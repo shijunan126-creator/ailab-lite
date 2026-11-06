@@ -70,7 +70,12 @@ def bind(db, run, plan):
     if not saved and preparation and preparation.started_at:
         saved = {"started_at": aware(preparation.started_at).isoformat(), "deadline": aware(preparation.deadline).isoformat()}
     if saved:
-        run.runtime_meta = {**(run.runtime_meta or {}), "document_budget": {**saved, "ocr_batches": 0, "ocr_pages": {}}}
+        current = (run.runtime_meta or {}).get("document_budget") or {}
+        merged = {**saved, "ocr_batches": 0, "ocr_pages": {}, **current}
+        if current:
+            for field in ("started_at", "deadline"):
+                merged[field] = min(datetime.fromisoformat(current[field]), datetime.fromisoformat(saved[field])).isoformat()
+        run.runtime_meta = {**(run.runtime_meta or {}), "document_budget": merged}
 
 
 def maintenance(db):

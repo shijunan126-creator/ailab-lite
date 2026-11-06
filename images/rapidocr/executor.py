@@ -22,6 +22,28 @@ _lock = threading.Lock()
 _engine = None
 _manifest = None
 
+# Event-loop owned admission/terminal receipts. Retain a tombstone beyond the
+# maximum accepted upload/execution window; never evict a live receipt for space.
+_operations = {}
+_OPERATION_RETENTION = 135
+_OPERATION_LIMIT = 1024
+
+
+def operation_record(operation_id, *, register=False):
+    now = time.monotonic()
+    for key, record in list(_operations.items()):
+        if record["expires"] <= now and _supervisor.active_id != key:
+            del _operations[key]
+    record = _operations.get(operation_id)
+    if register and record is not None:
+        raise HTTPException(409, "OCR operation already received")
+    if record is None:
+        if len(_operations) >= _OPERATION_LIMIT:
+            raise HTTPException(429, "OCR receipt capacity exhausted")
+        record = {"expires": now + _OPERATION_RETENTION, "canceled": not register, "terminal": False}
+        _operations[operation_id] = record
+    return record
+
 
 def configure_session_options(opts, backend):
     # ORT retains node trace events until the session ends. A resident OCR
@@ -266,7 +288,7 @@ def ready():
     }
 
 
-async def infer(request, data, backend, operation_id, deadline):
+async def infer(request, data, backend, operation_id, deadline, receipt=None):
     if backend != _manifest["backend"]:
         raise HTTPException(503, "required OCR backend unavailable")
     if not data or len(data) > 2 * 1024 * 1024:
@@ -277,9 +299,15 @@ async def infer(request, data, backend, operation_id, deadline):
     try:
         # A fault/explicit cancellation destroys only the owned inference child;
         # successful requests keep the same warm process and model sessions.
+        if receipt is not None and (
+            _operations.get(operation_id) is not receipt or receipt["canceled"] or receipt["terminal"] or time.time() >= deadline
+        ):
+            raise HTTPException(408, "OCR canceled or timed out")
         _supervisor.active_id = operation_id
         _supervisor.cancel.clear()
         await asyncio.to_thread(_supervisor.start, deadline)
+        if _supervisor.cancel.is_set() or time.time() >= deadline:
+            raise HTTPException(408, "OCR canceled or timed out")
         await asyncio.to_thread(_supervisor.connection.send_bytes, data)
         while True:
             if (
@@ -332,23 +360,31 @@ async def recognize_image(
     authorize(authorization)
     if x_ocr_deadline <= time.time():
         raise HTTPException(408, "OCR deadline expired")
-    data = bytearray()
-    async for chunk in request.stream():
-        if len(data) + len(chunk) > 2 * 1024 * 1024:
-            raise HTTPException(413)
-        data.extend(chunk)
-    return await infer(
-        request,
-        data,
-        x_ocr_backend,
-        x_ocr_operation,
-        min(x_ocr_deadline, time.time() + 120),
-    )
+    receipt = operation_record(x_ocr_operation, register=True)
+    deadline = min(x_ocr_deadline, time.time() + 120)
+    try:
+        data = bytearray()
+        async with asyncio.timeout(max(0, deadline - time.time())):
+            async for chunk in request.stream():
+                if receipt["canceled"]:
+                    raise HTTPException(408, "OCR canceled")
+                if len(data) + len(chunk) > 2 * 1024 * 1024:
+                    raise HTTPException(413)
+                data.extend(chunk)
+            return await infer(request, data, x_ocr_backend, x_ocr_operation, deadline, receipt)
+    except TimeoutError:
+        raise HTTPException(408, "OCR deadline expired") from None
+    finally:
+        receipt["terminal"] = True
 
 
 @app.delete("/operations/{operation_id}")
 async def cancel_operation(operation_id: str, authorization: str = Header(default="")):
     authorize(authorization)
+    if not 1 <= len(operation_id) <= 100:
+        raise HTTPException(422, "invalid OCR operation")
+    receipt = operation_record(operation_id)
+    receipt["canceled"] = True
     if _supervisor.active_id == operation_id:
         _supervisor.cancel.set()
         until = time.monotonic() + 4

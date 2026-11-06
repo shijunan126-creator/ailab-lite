@@ -340,7 +340,7 @@ def test_project_delete_covers_more_than_one_batch_and_already_trashed(api):
     assert api.delete("/v1/trash").json() == {"count": 206}
 
 
-def test_restore_copies_derived_objects_including_nested_metadata(api, monkeypatch):
+def test_restore_only_copies_source_with_no_derived_writes_even_at_capacity(api, monkeypatch):
     first = ready(api)
     prefix = f"derived/{first['id']}"
     text_key, preview_key = f"{prefix}/text.txt", f"{prefix}/preview/pages/1.png"
@@ -349,11 +349,46 @@ def test_restore_copies_derived_objects_including_nested_metadata(api, monkeypat
     api.patch(f"/internal/files/{first['id']}", headers=SERVICE, json={"meta": {"text_key": text_key, "preview": {"pages": [preview_key]}}})
     second = version(api, first)
     monkeypatch.setattr(settings, "max_file_versions", 2)
+    storage = get_storage()
+    copy = storage.copy
+
+    def source_only(source, target):
+        assert not source.startswith("derived/")
+        return copy(source, target)
+
+    monkeypatch.setattr(storage, "copy", source_only)
+    monkeypatch.setattr(settings, "derived_budget_bytes", 1024**2)
+    from ailab_platform.models import DerivedAsset, new_id
+
+    capacity_key = f"derived/{second['id']}/capacity"
+    storage.put_bytes(capacity_key, b"x" * 1024**2)
+    with SessionLocal() as db:
+        db.add(
+            DerivedAsset(
+                key=capacity_key,
+                file_id=second["id"],
+                source_version=second["sha256"],
+                kind="native",
+                state="ready",
+                token=new_id("tok"),
+                size_bytes=1024**2,
+                reconstructible=True,
+            )
+        )
+        db.commit()
     restored = api.post(f"/v1/files/{first['id']}/restore-version").json()
     assert restored["is_head"] and restored["version"] == 3
-    for key in (restored["meta"]["text_key"], restored["meta"]["preview"]["pages"][0]):
-        assert key.startswith(f"derived/{restored['id']}/")
-        assert get_storage().get_bytes(key) == b"derived bytes"
+    assert "text_key" not in restored["meta"] and "preview" not in restored["meta"]
+    assert restored["meta"]["input_lifecycle"] == 2
+    from ailab_platform.storage import iter_objects
+
+    assert list(iter_objects(get_storage(), f"derived/{restored['id']}/")) == []
+    with SessionLocal() as db:
+        assert db.scalar(select(DerivedAsset).where(DerivedAsset.file_id == restored["id"])) is None
+        assert db.get(DerivedAsset, capacity_key).size_bytes == 1024**2
+        db.delete(db.get(DerivedAsset, capacity_key))
+        db.commit()
+    storage.delete(capacity_key)
     assert not get_storage().exists(text_key) and not get_storage().exists(preview_key)
     assert api.get(f"/v1/files/{first['id']}/content").status_code == 410
     assert api.get(f"/v1/files/{second['id']}/content").status_code == 200

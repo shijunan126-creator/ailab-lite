@@ -22,7 +22,7 @@ from ..contracts.inbox import (
 )
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..models import Notification, QueuedMessage, Run, RunStatus, User, utcnow
+from ..models import FileObject, Notification, QueuedMessage, Run, RunStatus, User, utcnow
 from ..service_auth import require_scope
 from .brand import brand_lock
 from .inbox import dispatch_next, pending_query, queue_output, steers_for_run
@@ -287,6 +287,14 @@ def claim_steers(run_id: str, x_run_attempt: str | None = Header(default=None), 
                 .values(run_id=run.id)
             )
             item = queue_output(row)
+            plan = row.options.get("document_input_plan")
+            if plan and (run.options or {}).get("document_tools_version") == 2:
+                from .document_preparation import bind as bind_preparation
+                from .native_ranges import charge_consumption
+
+                bind_preparation(db, run, plan)
+                for file_id in row.file_ids:
+                    charge_consumption(db, run, db.get(FileObject, file_id))
             item["input_files"] = input_files(
                 db,
                 run,
