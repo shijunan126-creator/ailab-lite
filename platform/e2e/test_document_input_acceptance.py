@@ -184,6 +184,11 @@ def test_canonical_capture_history_fork_and_fifty_cycles(logged_in, stack, tmp_p
         )
     delta = (resources[-1]["heap_bytes"] - baseline["heap_bytes"]) / 1024**2
     assert delta <= 16, delta
+    # Keep this run exclusive: unrelated library uploads change these counts.
+    # A fixed-library run must return to the same mounted document/listeners.
+    assert resources[-1]["documents"] == baseline["documents"]
+    assert resources[-1]["jsEventListeners"] == baseline["jsEventListeners"]
+    assert resources[-1]["nodes"] == baseline["nodes"]
     xs = list(range(50))
     ys = [r["heap_bytes"] / 1024**2 for r in resources]
     mean = sum(ys) / 50
@@ -409,3 +414,49 @@ def test_two_users_prepare_independently_and_source_deletion_does_not_cancel_the
             assert time.monotonic() < end, state
             time.sleep(0.25)
         assert second.get("/v1/files/" + files[1]).json()["status"] == "ready"
+
+
+def test_process_death_after_storage_write_recovers_its_capacity(logged_in, stack):
+    page = logged_in
+    uploaded = page.request.post(
+        stack.portal + "/api/v1/files?disposition=copy",
+        multipart={"upload": {"name": "crash.pdf", "mimeType": "application/pdf", "buffer": (FIXTURES / "cjk.pdf").read_bytes()}},
+    )
+    assert uploaded.ok
+    fid = uploaded.json()["id"]
+    wait_ready(page, stack, fid)
+    script = """
+import os,sys
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import FileObject
+from ailab_platform.api.owned_assets import publish
+with SessionLocal() as db:
+    file=db.get(FileObject,sys.argv[1])
+    publish(db,file.user_id,'derived/'+file.id+'/crash-after-write',b'partial-before-business-binding',file.sha256,
+        kind='capture',content_type='application/octet-stream',validate=lambda:None,bind=lambda _:os._exit(9))
+"""
+    result = subprocess.run([sys.executable, "-c", script, fid], cwd=PLATFORM, env=stack.env, timeout=30, capture_output=True)
+    assert result.returncode == 9, result.stderr.decode()
+    key = "derived/" + fid + "/crash-after-write"
+    physical = Path(stack.env["AILAB_STORAGE_ROOT"]) / key
+    assert physical.read_bytes() == b"partial-before-business-binding"
+    assert inspect(stack)["reserved"] == physical.stat().st_size
+    recovery = """
+import sys
+from datetime import UTC,datetime,timedelta
+from ailab_platform.config import settings
+from ailab_platform.db import SessionLocal
+from ailab_platform.models import DerivedAsset
+from ailab_platform.api.derived_assets import collect_batch
+from ailab_platform.storage import get_storage
+key=sys.argv[1]
+with SessionLocal() as db:
+    collect_batch(db,get_storage(),transient_only=True)
+    assert db.get(DerivedAsset,key).state=='writing'
+    due=datetime.now(UTC)+timedelta(seconds=settings.derived_write_lease_seconds+settings.derived_orphan_grace_seconds+1)
+    collect_batch(db,get_storage(),now=due,transient_only=True)
+    assert db.get(DerivedAsset,key) is None
+"""
+    subprocess.run([sys.executable, "-c", recovery, key], cwd=PLATFORM, env=stack.env, check=True, timeout=30, capture_output=True)
+    assert not physical.exists()
+    assert inspect(stack)["reserved"] == 0
