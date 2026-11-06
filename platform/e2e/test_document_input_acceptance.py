@@ -22,6 +22,13 @@ from .test_portal import _send, _start_conversation, _wait_for_turns
 pytestmark = [pytest.mark.e2e, pytest.mark.skipif(os.environ.get("AILAB_DOCUMENT_STABILITY") != "1", reason="opt-in document stability")]
 
 
+def wait_ready(page, stack, fid):
+    end = time.monotonic() + 60
+    while page.request.get(f"{stack.portal}/api/v1/files/{fid}").json()["status"] != "ready":
+        assert time.monotonic() < end, "safety scan did not finish"
+        page.wait_for_timeout(200)
+
+
 def maintenance(stack):
     """Drive production expiry code on this test-owned database, never a developer DB."""
     assert stack.env and "e2e" in stack.env["AILAB_DATA_DIR"]
@@ -199,6 +206,7 @@ def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logge
     )
     assert upload.ok
     fid = upload.json()["id"]
+    wait_ready(page, stack, fid)
     page.goto(stack.portal + "/?files=" + fid)
     page.get_by_role("radio", name="对话", exact=True).click()
     cid = _start_conversation(page, "原生收件验收", "test-office-vision")
@@ -230,6 +238,120 @@ def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logge
     assert page.request.delete(f"{stack.portal}/api/v1/conversations/{cid}").ok
     maintenance(stack)
     assert inspect(stack)["reserved"] == 0
+
+
+@pytest.mark.parametrize("failure", ["storage", "version", "deleted"])
+def test_capture_publication_rechecks_storage_version_and_deleted_source(logged_in, stack, failure):
+    page = logged_in
+    uploaded = page.request.post(
+        stack.portal + "/api/v1/files?disposition=copy",
+        multipart={
+            "upload": {"name": f"publication-{failure}.pdf", "mimeType": "application/pdf", "buffer": (FIXTURES / "cjk.pdf").read_bytes()}
+        },
+    )
+    assert uploaded.ok
+    fid = uploaded.json()["id"]
+    wait_ready(page, stack, fid)
+    page.goto(stack.portal + "/?files=" + fid)
+    page.get_by_role("radio", name="对话", exact=True).click()
+    cid = _start_conversation(page, "原生收件验收", "test-office-vision")
+    _wait_for_turns(page, 1)
+    page.locator(".turn .attach-chip.open").first.click()
+    _frame(page, f"publication-{failure}.pdf").locator(".textLayer span").first.wait_for()
+    held = []
+    page.route("**/client-calls/*/result", lambda route: held.append(route))
+    _send(page, f"原生控制 {fid} pdf")
+    end = time.monotonic() + 30
+    while not held:
+        assert time.monotonic() < end
+        page.wait_for_timeout(50)
+    request = held[0].request
+    original = request.post_data_json
+    before = {r["id"] for r in inspect(stack)["captures"]}
+    if failure == "storage":
+        # A real filesystem denial at atomic rename, confined to this upload's
+        # private capture directory. Never change the shared store's permissions.
+        target = Path(stack.env["AILAB_STORAGE_ROOT"]) / "derived" / fid / "captures"
+        target.mkdir(parents=True, exist_ok=True)
+        target.chmod(0o500)
+        try:
+            denied = page.request.post(request.url, data=original)
+            assert denied.status == 500, denied.text()
+            assert {r["id"] for r in inspect(stack)["captures"]} == before
+            assert not list(target.iterdir())
+        finally:
+            target.chmod(0o700)
+    elif failure == "version":
+        stale = {**original, "value": {**original["value"], "version": "0" * 64}}
+        rejected = page.request.post(request.url, data=stale)
+        assert rejected.status == 409 and rejected.json()["detail"] == "capture version changed"
+        assert {r["id"] for r in inspect(stack)["captures"]} == before
+    else:
+        assert page.request.delete(f"{stack.portal}/api/v1/files/{fid}").ok
+        rejected = page.request.post(request.url, data=original)
+        assert rejected.status in {404, 409}, rejected.text()
+        assert {r["id"] for r in inspect(stack)["captures"]} == before
+    if failure != "deleted":
+        accepted = page.request.post(request.url, data=original)
+        assert accepted.ok, accepted.text()
+        held[0].fulfill(status=accepted.status, json=accepted.json())
+        _wait_for_turns(page, 2)
+        assert len(inspect(stack)["captures"]) == len(before) + 1
+    else:
+        held[0].abort()
+    assert page.request.delete(f"{stack.portal}/api/v1/conversations/{cid}").ok
+    maintenance(stack)
+    assert {r["id"] for r in inspect(stack)["captures"]} == before
+    assert inspect(stack)["reserved"] == 0
+
+
+def test_two_tabs_compete_for_one_browser_capture(logged_in, stack):
+    page = logged_in
+    uploaded = page.request.post(
+        stack.portal + "/api/v1/files?disposition=copy",
+        multipart={"upload": {"name": "tabs.pdf", "mimeType": "application/pdf", "buffer": (FIXTURES / "cjk.pdf").read_bytes()}},
+    )
+    assert uploaded.ok
+    fid = uploaded.json()["id"]
+    wait_ready(page, stack, fid)
+    page.goto(stack.portal + "/?files=" + fid)
+    page.get_by_role("radio", name="对话", exact=True).click()
+    cid = _start_conversation(page, "原生收件验收", "test-office-vision")
+    _wait_for_turns(page, 1)
+    page.locator(".turn .attach-chip.open").first.click()
+    _frame(page, "tabs.pdf").locator(".textLayer span").first.wait_for()
+    competitor = page.context.new_page()
+    try:
+        competitor.goto(page.url)
+        competitor.locator(".turn .attach-chip.open").first.click()
+        _frame(competitor, "tabs.pdf").locator(".textLayer span").first.wait_for()
+        held, publications = [], []
+        page.context.route("**/client-calls/*/claim", lambda route: held.append(route))
+        page.context.on("request", lambda request: publications.append(request.url) if request.url.endswith("/result") else None)
+        _send(page, f"原生控制 {fid} pdf")
+        end = time.monotonic() + 20
+        while not held:
+            assert time.monotonic() < end
+            page.wait_for_timeout(50)
+        # Each tab has its own JS realm/view_id. The losing tab submits an actual
+        # claim for the same call; it must receive 409 and cannot encode pixels.
+        url = held[0].request.url
+        winner = page.request.post(url)
+        loser = competitor.request.post(url)
+        assert winner.ok and loser.status == 409
+        held[0].fulfill(status=200, json=winner.json())
+        for route in held[1:]:
+            route.fulfill(status=409, json=loser.json())
+        page.context.unroute("**/client-calls/*/claim")
+        _wait_for_turns(page, 2)
+        assert len(publications) == 1
+        captures = [r for r in inspect(stack)["captures"] if r["key"].startswith("derived/" + fid + "/")]
+        assert len(captures) == 1
+    finally:
+        page.context.unroute("**/client-calls/*/claim")
+        competitor.close()
+        assert page.request.delete(f"{stack.portal}/api/v1/conversations/{cid}").ok
+        maintenance(stack)
 
 
 def test_two_users_prepare_independently_and_source_deletion_does_not_cancel_the_other(logged_in, stack):
@@ -270,7 +392,8 @@ def test_two_users_prepare_independently_and_source_deletion_does_not_cancel_the
             replies = list(pool.map(lambda pair: pair[0].post("/v1/chat/prepare", json=pair[1]), zip((first, second), bodies)))
         assert all(r.status_code in {200, 409} for r in replies), [r.text for r in replies]
         assert first.delete("/v1/files/" + files[0]).is_success
-        assert first.post("/v1/chat/prepare", json=bodies[0]).status_code == 404
+        rejected = first.post("/v1/chat/prepare", json=bodies[0])
+        assert rejected.status_code == 400 and rejected.json()["detail"] == "unknown file_id: " + files[0]
         end = time.monotonic() + 90
         while True:
             ready = second.post("/v1/chat/prepare", json=bodies[1])
