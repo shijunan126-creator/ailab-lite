@@ -325,3 +325,64 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 剩余集中失败仍含旧原生/视觉/OCR/前缀恢复、fork、模板/成品和部分模式预期；不能将其全部归因夹具。最后56项清单及复核日志保留仓库外`/private/tmp/ailab-document-final-dVcZZC`。其中新目录显式OCR不可用原因及图片fixture凭据已随后修复，但未再滚动宣称全绿。下一步逐类核对真实失败，补完fork预览复制容量及引用生命周期，并完成最终录制前缀/真实模型≥95%、真实四格式与50轮浏览器/服务资源验收。
 
 本轮Docker专用VM实际Stopped且socket不存在；未启动共享既有栈。真实Docker/OCR/模型/移动设备/E2E与浏览器50轮仍未跑，早期夹具或组件结果不得替代。临时PostgreSQL25432/Redis26379为本轮独立目录/进程；检查结束停止，仅保留有复现价值的仓库外失败证据。无提高限额、忽略失败、周期重启或模拟真实验收。
+
+
+## 最终共因修复与集中复核（2026-11-06，48c78a07）
+
+分支`feat/document-input-lifecycle`，再次fetch确认`origin/main@fdc0a05f68c89aa884ce3682939f70e0337c45c4`未变。产品修复依次为`3a1f06f7`、`a47be008`、`48c78a07`。仅本地提交，无push/PR/合并/部署；不修改其他工作区或既有业务栈。
+
+本组完成的共因修复：
+
+- autoflush关闭时，准备身份/预览登记先flush再刷新，避免幂等发送碰UNIQUE、取消被覆盖，以及页图job已登记但文件指针丢失。等待Chat view/OCR的Run只继承经用户、文件版本、consumer、parent和render_job_id共同核验的子页图需求，不让无关中断Run保活任务。
+- 预览容量拒绝只有Broker明确返回“未开始执行”的429回执才可撤回dispatch并重排；503/传输不确定不能假装没执行。OCR重投沿用原执行截止和工作量；取消回执丢失时保留canceling及全局槽，直到执行/回收截止，不以HTTP结束代替推理终止。
+- 模板分析ready与预览排队拆开，队列满不回滚已完成分析；修正不可变缩略图路径。Work图片在消费时标准化并实际进入模型图像输入；非图片仍保留原件引用。
+- fork预览先持久预留、事务外复制、随分支原子发布；失败对象物理删除前继续计占容量。规范截图分叉只复制身份/引用、共享原字节，删除原分支不能破坏另一分支的历史截图。迁移0062把capture索引改为(run_id,id)，含双库EXPLAIN、upgrade/downgrade/模型漂移回归。
+- 旧Run/旧解析夹具显式冻结V1，V2测试遵循独立读/搜/看及Work当前沙箱合同。E2E不再调用移除的document_view；Work复制路径仍受inputs约束，工作区预览由用户显式展开，Word精确映射在实际选区时加载。合法生成Excel的后备测试显式让浏览器拒绝准入，不把旧native能力限制当成永久事实。长解析夹具心跳复用其真实TestClient API；未调产品限额或放松文件校验。
+
+### 自动回归结果与基线
+
+为避免重复跑无变化的全套，完整套件后只复核失败及受后续修复影响的模块；以下不拼接成“最终SHA完整全绿”的声明。
+
+| 检查 | 实测基线 | 结果 |
+| --- | --- | --- |
+| Ruff check/format | 48c78a07，640文件 | 通过 |
+| Portal完整测试/production build | 本轮未再改Portal的固定源码 | 258通过，build通过 |
+| 完整Python SQLite | 3a1f06f7 | 2523通过、1失败、234跳过；唯一失败为长解析夹具心跳误连宿主API |
+| 完整Python PostgreSQL/Redis/迁移 | 3a1f06f7 | 2688通过、2失败、68跳过；两项同一心跳夹具根因 |
+| 上述失败及影响模块8文件 | a47be008，SQLite / PostgreSQL | 115通过5跳过 / 120通过 |
+| 完整E2E | 3a1f06f7 | 186通过、8失败、6跳过；使用真实服务/Chromium、仓库mock模型/沙箱/扫描，不冒充真实后端验收 |
+| native/引用/后备E2E整组 | a47be008 | 30通过、1失败；剩余Excel暴露等待父操作不能保活子页图job |
+| 父子需求/OCR生命周期/传输组 | 48c78a07，SQLite / PostgreSQL | 17通过6跳过 / 23通过 |
+| 最后Excel Chat/Work E2E两项 | 48c78a07 | 2通过；已知失败清单清零 |
+
+未在48c78a07重复完整Python/E2E；完整记录保留上述失败过程及后续有针对性的复核，不把旧成功或最终局部成功倒填为全套结果。前两次缺GNU PATH/venv的命令不计验收。原始XML、失败trace与服务日志位于仓库外`/private/tmp/ailab-document-consolidated-_tu080cb`，不提交stdout/heap/逐点数据。
+
+### 真实链路与资源测量
+
+真实装置独立使用32500/32580–32584、ClamAV32510、Redis26380/13、SQLite/对象/tmp专属目录，唯一Broker owner；专用Colima `document-final`为2CPU/6GiB。原有`ailab-verify`始终Stopped，未启动或修改。真实服务源码为3a1f06f7；后续修改的取消异常分支/父子页图依赖有以上双库回归，不能冒充在真实栈中已复测。
+
+- 十份冻结合成样本通过真实ClamAV安全入库；初始快照派生资产、页图、模型usage与重型job均为0。浏览器登录用户另持有一套合成副本；统计明确区分用户身份，未使用业务文件。
+- 真实模型四轮Chat附件对话成功。首轮10602 prompt tokens/0 cached；三次追问为10752/10893、10752/10951、10752/11012，命中率98.7%、98.2%、97.6%，均达到95%。冷输入单列，未把首轮算成暖缓存。正文来自V2真实安全入库/按需准备链路。
+- 真实模型显式调用read_document(text_source=ocr, selector=pages[1])，经API/Worker/CPU RapidOCR识别scan.png；唯一chat_ocr操作ready，返回中英文与金额1280.50。队列恢复重发工具调用不等于重复推理。设备为CPU，未宣称CANN/NPU验收。
+- Chromium156.0.8078.4、1280×800，固定四格式，3次预热后50轮打开/关闭，每轮关闭后观察10秒；无服务重启。保留堆增长0.479MiB，回归斜率0.00731MiB/轮；EventListener保持557，iframe/Worker净增0，documents净增0、DOM nodes净增2（测量同时新增模型对话侧栏条目）。ArrayBuffer由6到7并在后25轮保持7；基线/25轮/50轮有真实heap snapshot佐证。暖打开最大1.025秒；每格式仅12–13次，首开样本不报冷p95，未得到旧版同装置暖延迟比。
+- 正常临时目录为空。50轮中不要求截图，所以这只证明打开/关闭循环；不能替代page-tool capture、API规范截图引用或所有私有请求Map计数。
+
+补充测量同一真实栈/同一进程期间执行，实际OCR镜像`sha256:ce72145b6385448aec46a5157c6445c3e68928835551a54453ad31b8fc2416c7`：
+
+- 四格式再做3次预热+50轮实际page-tool capture/关闭，每轮观察10秒。53次图像结果均成功，最大编码解码后的上界76467字节，未超过2MiB。保留堆+0.488MiB、斜率0.00710MiB/轮；EventListener567→567，iframe/Worker/documents净增0、DOM nodes+2，ArrayBuffer6→7→7。基线/25轮/50轮heap已实际采集。该测试从真实viewer组件的parent消息入口调用capture，不经过client-call的API claim/规范资产发布，不能算完整端到端截图50轮；Portal私有capture Map仍只有自动回归覆盖。
+- 独立CPU RapidOCR执行器3次预热+50次实际推理，逐次检查扫描图的金额和文字，每轮10秒观察；50次均成功，无重启。容器工作集采样301.7–313.4MiB，最后301.8MiB，延迟最近秩p95=1.932秒，最大2.500秒。该容器保持原1GiB/0.75CPU限制；这是CPU执行器稳定性，不是NPU证明，也不是包含所有服务的2CPU目标机压力。
+- 同期宿主服务的**轮后空闲RSS采样最大值**：API94.45、Broker27.69、Agent46.63、Worker30.25MiB；CPU累计分别+4.29/+1.10/+1.99/+1.62秒。没有采样重型Office解析峰值，不能称其峰值RSS达标。ClamAV约988MiB/1GiB，独立计入VM总成本。宿主为8核/16GiB，不能把这些数冒充整栈被限制到2CPU/8GiB的验收。
+- 停止前数据库revision0062；5个ready派生对象合计38457字节，全部有正常业务用途（两对象native文字、按需图片和OCR结果），预留0，账本used_bytes与对象总量一致。chat_ocr 1个、file_job 2个均ready；tmp文件0。浏览器打开/截图本身未生成额外后台全文/页图。
+
+### 未完成验收与具体阻塞
+
+完整生产Office镜像两次构建失败：Debian固定快照源批量获取反复返回503/No healthy backends，apt-get随后cgroup OOM；第二次使用更低的2GiB构建上限，dmesg显示apt匿名RSS约2089120KiB。单包256MiB探针成功、无重试批量探针明确503退出；官方备用快照域也返回503。未提高限额、替换包版本/哈希或反复重启。这个构建故障不能称产品运行时泄漏，也不能声称真实Docker Office后备通过。
+
+尚未达到整体验收：当前生产Office镜像的真实四格式读/转换/后备与Work沙箱复核；50轮完整浏览器→client-call→API规范截图发布/引用循环及私有请求Map细粒度计数；真实双用户重型争用与所有取消/崩溃/磁盘故障组合；冷p95和旧版同装置延迟比；S3/OpenSandbox、真实移动设备与NPU。已有双库/故障/mock沙箱E2E仅覆盖对应合同，不替代这些真实边界。下一步先恢复固定快照依赖获取，再在48c78a07或后继冻结基线上补上述缺口；不调验收门槛。
+
+
+### 隔离资源清理
+
+两组压力结束后才停止服务；无周期重启。API/Broker/Agent/Worker/Portal、ClamAV/OCR容器、一次性PostgreSQL25433与Redis26380均停止；14个本任务监听端口复核关闭。内置预览tab已关闭，测试Chromium由脚本finally/context退出。
+
+专用Colima `document-final`已停止并删除，其Docker context/镜像随专用VM清理；Docker当前context仍为default。再次只读检查原`ailab-verify`为Stopped。临时token/session/model配置文件、专属业务DB/对象/tmp、一次性PG数据、复制的OCR权重及重复trace/截图/中间heap已删除；保留仓库外约38MiB必要证据（最终测试XML、必要日志、合成代表图、capture基线/末轮heap、指标与复现脚本）。没有向仓库提交原始运行输出，也没有清理用户数据或其他工作区。

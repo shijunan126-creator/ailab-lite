@@ -1,3 +1,10 @@
+## 2026-11-06 派生依赖、分叉与取消回执
+
+- autoflush关闭时，stage_job/file.meta变更必须在后续populate_existing/权限源复核前flush，否则页图job可存在但文件指针被刷新丢弃。等待父Chat view/OCR的Run仍可持有其精确子页图需求；须核验parent/consumer/user/file/version/render_job_id，不放宽为任意interrupted Run。
+- HTTP结束不证明OCR停止。执行器取消必须收到stopped回执；回执丢失保留canceling与全局执行槽，直到实际执行截止+回收宽限，不立即重投或释放。Broker只有明确“执行未开始”的容量拒绝才能撤回dispatch。
+- fork资产先提交容量预留，再在事务外复制；与新分支一起发布。规范截图共享字节、分叉身份/引用；删源分支不能删另一分支仍引用的规范资产。失败/删除未确认前保留容量责任。
+- 长解析TestClient夹具的心跳也应走同一API适配，不能因解析短于1秒偶然避开错误宿主连接。V2 E2E按新工具/inputs路径/用户显式展开预览测试；不恢复已移除工具以求绿。证据见[集中复核](docs/progress/updates/2026-11-05-document-input-lifecycle.md#最终共因修复与集中复核2026-11-0648c78a07)。
+
 ## 2026-11-06 规范截图到期与懒图片OCR
 
 - `datetime.max`不是“永不过期”：PostgreSQL在非UTC时区回传可能超过Python年份上限。规范消息资产用可空到期时间并按引用释放；迁移0061保留旧截图TTL。不要用远未来哨兵修补日期越界。
