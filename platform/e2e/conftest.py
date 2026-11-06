@@ -215,6 +215,11 @@ def stack(tmp_path_factory):
         AILAB_VIEWER_READER_PATH=str(reader),
         AILAB_BROKER_OWNER=f"e2e-{tag}",
     )
+    # Explicit test-only backends; never inherit a developer's service settings.
+    for setting in ("SCANNER_BACKEND", "CLAMD_ADDRESS", "RENDER_PREWARM"):
+        value = os.environ.get("AILAB_E2E_" + setting)
+        if value is not None:
+            env["AILAB_" + setting] = value
     if provider != "mock":
         env["AILAB_SANDBOX_IMAGE"] = image
         # Copy only explicit adapter settings, never developer database/model credentials.

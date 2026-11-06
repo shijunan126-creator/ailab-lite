@@ -1,6 +1,6 @@
 # Office production dependency closure
 
-System packages are frozen by Debian snapshot `20261101T000000Z` and the base image digest. Python distributions and transitive dependencies are version/hash locked in requirements.lock; Node dependencies and integrity hashes are in package-lock.json. Rebuilds install dependencies only at image build time. Work executes with no network; missing packages are errors. Chromium, LibreOffice and XeLaTeX are short-lived job processes, with no new resident service.
+System packages are frozen by Debian snapshot `20261101T000000Z` and the base image digest. Python distributions and transitive dependencies are version/hash locked in requirements.lock; Node dependencies and integrity hashes are in package-lock.json. The signed snapshot index selects every version and SHA256. Bounded streaming downloads first try the identical package path at deb.debian.org, then the fixed snapshot; every package must match the snapshot SHA256/size before offline APT installation. There is no fallback to newer package versions. Acquisition has a 20-minute total deadline, 20-second socket timeout, 64KiB buffers, and at most two source attempts per package; failed partial files are removed. Rebuilds install dependencies only at image build time. Work executes with no network; missing packages are errors. Chromium, LibreOffice and XeLaTeX are short-lived job processes, with no new resident service.
 
 | Route | Preinstalled dependencies | License family |
 | --- | --- | --- |
