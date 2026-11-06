@@ -36,6 +36,7 @@ from .routes_client_calls import router as client_calls_router
 from .routes_conversations import router as conversations_router
 from .routes_derived_assets import router as derived_assets_router
 from .routes_workspace_ocr import router as workspace_ocr_router
+from .routes_document_ocr import router as document_ocr_router
 from .routes_document_input import router as document_input_router
 from .routes_document_view import router as document_view_router
 from .routes_files import router as files_router
@@ -194,6 +195,7 @@ app.include_router(workspace_documents_router)
 
 app.include_router(document_view_router)
 app.include_router(document_input_router)
+app.include_router(document_ocr_router)
 app.include_router(workspace_ocr_router)
 app.include_router(schedules_router)
 

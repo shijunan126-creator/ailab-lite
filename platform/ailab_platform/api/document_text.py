@@ -17,7 +17,7 @@ from ..domain.document_reading import (
     read_batch,
     search_batch,
 )
-from ..models import DerivedAsset, DocumentBlock, FileDerivation, OcrPageResult
+from ..models import DerivedAsset, DocumentBlock, DocumentOcrUnit, FileDerivation, OcrPageResult
 from ..native_text import NativeCacheError, read_unit
 from ..storage import get_storage
 from .native_preparation import native_state
@@ -79,10 +79,22 @@ def select_blocks(file, index, selector, position):
 # physical OCR page ids and intra-block offsets stable without materializing a
 # merged index or renumbering earlier native blocks when OCR is added.
 OCR_BASE = 2**31
+OCR_SCOPES_BASE = 2**40
 
 
 def ocr_query(file, selector, ordinal):
-    query = select(OcrPageResult).where(OcrPageResult.file_id == file.id, OcrPageResult.page >= max(0, ordinal - OCR_BASE))
+    adopted = (
+        select(DocumentOcrUnit.id)
+        .where(
+            DocumentOcrUnit.file_id == file.id,
+            DocumentOcrUnit.source_version == file.sha256,
+            DocumentOcrUnit.fingerprint == OcrPageResult.fingerprint,
+            DocumentOcrUnit.page == OcrPageResult.page + 1,
+            DocumentOcrUnit.selector["kind"].as_string() == "pages",
+        )
+        .exists()
+    )
+    query = select(OcrPageResult).where(OcrPageResult.file_id == file.id, OcrPageResult.page >= max(0, ordinal - OCR_BASE), ~adopted)
     if settings.ocr_engine_fingerprint:
         query = query.where(OcrPageResult.fingerprint == settings.ocr_engine_fingerprint)
     else:
@@ -99,7 +111,30 @@ def ocr_query(file, selector, ordinal):
     return query.order_by(OcrPageResult.page).limit(101)
 
 
+def scoped_ocr_query(file, selector, ordinal):
+    if not settings.ocr_engine_fingerprint:
+        return None
+    query = select(DocumentOcrUnit).where(
+        DocumentOcrUnit.file_id == file.id,
+        DocumentOcrUnit.source_version == file.sha256,
+        DocumentOcrUnit.fingerprint == settings.ocr_engine_fingerprint,
+        DocumentOcrUnit.ordinal >= max(0, ordinal - OCR_SCOPES_BASE),
+    )
+    if isinstance(selector, Pages):
+        query = query.where(DocumentOcrUnit.page.in_(selector.pages))
+    elif isinstance(selector, Region):
+        from .document_ocr import scope_key
+
+        query = query.where(DocumentOcrUnit.selector_key == scope_key(selector.model_dump(mode="json", exclude_none=True)))
+    elif selector is not None:
+        return None
+    return query.order_by(DocumentOcrUnit.ordinal).limit(101)
+
+
 def available_ocr(db, file):
+    scoped = scoped_ocr_query(file, None, OCR_SCOPES_BASE)
+    if scoped is not None and db.scalar(scoped.with_only_columns(DocumentOcrUnit.id).limit(1)) is not None:
+        return True
     query = ocr_query(file, None, OCR_BASE)
     return bool(query is not None and db.scalar(query.with_only_columns(OcrPageResult.page).limit(1)) is not None)
 
@@ -156,8 +191,10 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         position = decode_cursor(request.cursor, context, key=key)
         native_scope_mapped = not (
             searching
-            and isinstance(request.selector, Pages)
-            and ((file.meta or {}).get("extract") or {}).get("kind") not in {"pdf", "pptx"}
+            and (
+                isinstance(request.selector, Region)
+                or (isinstance(request.selector, Pages) and ((file.meta or {}).get("extract") or {}).get("kind") not in {"pdf", "pptx"})
+            )
         )
         rows = (
             db.scalars(select_blocks(file, index, request.selector, position)).all()
@@ -165,11 +202,17 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
             else []
         )
         ocr_rows = []
-        if (searching or reading_ocr) and len(rows) <= 100:
+        if (searching or reading_ocr) and len(rows) <= 100 and position.ordinal < OCR_SCOPES_BASE:
             query = ocr_query(file, request.selector, position.ordinal)
             ocr_rows = db.scalars(query).all() if query is not None else []
-        if reading_ocr and not ocr_rows:
+        if reading_ocr and (
+            not ocr_rows or (isinstance(request.selector, Pages) and {row.page + 1 for row in ocr_rows} != set(request.selector.pages))
+        ):
             raise HTTPException(409, "ocr_representation_unavailable")
+        scoped_rows = []
+        if searching and len(rows) + len(ocr_rows) <= 100:
+            query = scoped_ocr_query(file, request.selector, position.ordinal)
+            scoped_rows = db.scalars(query).all() if query is not None else []
         storage, cache = get_storage(), {}
         scanned = {"native": 0, "ocr": 0}
         ocr_digests = (
@@ -210,6 +253,25 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
                 if i + len(rows) < 100:
                     scanned["ocr"] += 1
                 yield TextBlock(OCR_BASE + row.page, f"page:{row.page + 1}", text, source="ocr")
+            for i, row in enumerate(scoped_rows):
+                text = ""
+                if i + len(rows) + len(ocr_rows) < 100:
+                    from .document_ocr import text_bytes
+
+                    text = text_bytes(storage, row).decode("utf-8")
+                    scanned["ocr"] += 1
+                locator = f"page:{row.page}" if row.page else "image:" + row.selector.get("image_id", row.id)
+                if row.selector.get("kind") == "region":
+                    locator += "/region:" + row.selector_key[:16]
+                yield TextBlock(
+                    OCR_SCOPES_BASE + row.ordinal,
+                    locator,
+                    text,
+                    source="ocr",
+                    block_id=row.id,
+                    selector=row.selector,
+                    provenance={"source": row.source_kind, "revision": row.image_revision, **(row.details or {})},
+                )
 
         if navigation:
             if position.offset:
@@ -240,7 +302,7 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
             "kind": "available_text" if searching else "ocr" if reading_ocr else "native",
             "revision": index.id if index else str((file.meta or {}).get("ocr_cache_revision", 0)),
             "parser": index.parser_version if index else None,
-            "ocr_provenance": "legacy_page_cache" if ocr_rows else None,
+            "ocr_provenance": "legacy_page_cache" if ocr_rows else "scoped_cache" if scoped_rows else None,
         },
         **result,
         "next_cursor": encode_cursor(context, next_position, key=key) if next_position is not None else None,

@@ -1312,14 +1312,16 @@ class DocumentOperation(Base):
         Index("ix_document_operations_user_lane", "user_id", "lane", "status", "created_at"),
         Index("ix_document_operations_run", "run_id", "status"),
         Index("ix_document_operations_lease", "status", "lease_until"),
+        Index("ix_document_operations_file_identity", "file_id", "identity", "status"),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dop"))
-    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     identity: Mapped[str] = mapped_column(String(64))
     lane: Mapped[str] = mapped_column(String(20))
     kind: Mapped[str] = mapped_column(String(30))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
     source_version: Mapped[str] = mapped_column(String(100))
     binding: Mapped[dict] = mapped_column(JSON)
     status: Mapped[str] = mapped_column(String(20), default="pending")
@@ -1333,3 +1335,39 @@ class DocumentOperation(Base):
     deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class DocumentOperationConsumer(Base):
+    __tablename__ = "document_operation_consumers"
+    __table_args__ = (Index("ix_document_consumers_operation", "operation_id", "deadline"),)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("document_operations.id", ondelete="CASCADE"), primary_key=True)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DocumentOcrUnit(Base):
+    __tablename__ = "document_ocr_units"
+    __table_args__ = (
+        UniqueConstraint("file_id", "source_version", "fingerprint", "selector_key", name="uq_document_ocr_scope"),
+        Index("ix_document_ocr_units_order", "file_id", "source_version", "fingerprint", "ordinal"),
+        Index("ix_document_ocr_units_page", "file_id", "source_version", "page", "ordinal"),
+        Index("ix_document_ocr_units_operation", "operation_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ocr"))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    selector_key: Mapped[str] = mapped_column(String(64))
+    selector: Mapped[dict] = mapped_column(JSON)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page: Mapped[int] = mapped_column(Integer)
+    image_revision: Mapped[str] = mapped_column(String(100))
+    source_kind: Mapped[str] = mapped_column(String(30))
+    text_key: Mapped[str] = mapped_column(String(600))
+    digest: Mapped[str] = mapped_column(String(64))
+    chars: Mapped[int] = mapped_column(Integer)
+    engine: Mapped[str] = mapped_column(String(80))
+    backend: Mapped[str] = mapped_column(String(16))
+    seconds: Mapped[float] = mapped_column(Float)
+    operation_id: Mapped[str | None] = mapped_column(ForeignKey("document_operations.id", ondelete="SET NULL"), nullable=True)

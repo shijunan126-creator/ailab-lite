@@ -124,6 +124,10 @@ def extract_path(data: Path, filename: str, content_type: str) -> dict:
 
 
 def run(operation: str, source: Path, output: Path, options: dict) -> dict:
+    if operation == "ocr_image":
+        from ..image_regions import prepare
+
+        return {"image": "image.jpg", **prepare(source, output, options.get("region"))}
     if operation == "native_text":
         from .plain_text import prepare
 

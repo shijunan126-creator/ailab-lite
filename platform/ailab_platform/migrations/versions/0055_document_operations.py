@@ -18,7 +18,7 @@ def upgrade():
     op.create_table(
         "document_operations",
         sa.Column("id", sa.String(40), primary_key=True),
-        sa.Column("run_id", sa.String(40), sa.ForeignKey("runs.id", ondelete="CASCADE"), nullable=False),
+        sa.Column("run_id", sa.String(40), sa.ForeignKey("runs.id", ondelete="SET NULL"), nullable=True),
         sa.Column("user_id", sa.String(40), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
         sa.Column("file_id", sa.String(40), nullable=True),
         sa.Column("identity", sa.String(64), nullable=False),

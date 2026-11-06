@@ -576,6 +576,9 @@ async def lifecycle_cleanup_forever() -> None:
                     db.commit()
                     if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
                         break
+                from .document_operations import maintenance as operation_maintenance
+
+                operation_maintenance(db)
                 invalidate_workspace_ocr(db)
                 db.commit()
                 collect_batch(db, get_storage(), transient_only=True)

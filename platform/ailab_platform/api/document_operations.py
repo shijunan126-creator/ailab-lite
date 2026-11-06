@@ -9,7 +9,18 @@ from fastapi import HTTPException
 from sqlalchemy import select, update
 
 from ..config import settings
-from ..models import Conversation, DocumentLane, DocumentOperation, FileObject, OutboxMessage, Run, RunAttempt, RunStatus, User
+from ..models import (
+    Conversation,
+    DocumentLane,
+    DocumentOperation,
+    DocumentOperationConsumer,
+    FileObject,
+    OutboxMessage,
+    Run,
+    RunAttempt,
+    RunStatus,
+    User,
+)
 
 
 def aware(value):
@@ -30,23 +41,55 @@ def budget(run, *, start=False, now=None):
     return deadline
 
 
+def live_consumer(db, operation):
+    runs = db.scalars(
+        select(Run)
+        .join(DocumentOperationConsumer, DocumentOperationConsumer.run_id == Run.id)
+        .where(
+            DocumentOperationConsumer.operation_id == operation.id,
+            DocumentOperationConsumer.deadline > datetime.now(UTC),
+            Run.user_id == operation.user_id,
+            Run.status.in_([RunStatus.RUNNING, RunStatus.INTERRUPTED]),
+        )
+        .limit(50)
+    ).all()
+    for run in runs:
+        conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
+        if run.conversation_id and (not conversation or conversation.deleted_at):
+            continue
+        dependency = (run.runtime_meta or {}).get("file_dependency") or {}
+        if run.status == RunStatus.RUNNING or dependency.get("operation_id") == operation.id:
+            return run
+    return None
+
+
 def source_available(db, operation, *, active=False):
-    run = db.get(Run, operation.run_id, populate_existing=True)
     user = db.get(User, operation.user_id, populate_existing=True)
-    if not run or not user or user.disabled_at or (active and run.status != RunStatus.RUNNING):
+    if not user or user.disabled_at:
         return False
-    conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
-    if run.conversation_id and (not conversation or conversation.deleted_at):
-        return False
+    if operation.job_id:
+        run = live_consumer(db, operation)
+        if not run:
+            return False
+    else:
+        run = db.get(Run, operation.run_id, populate_existing=True)
+        if not run or (active and run.status != RunStatus.RUNNING):
+            return False
+        conversation = db.get(Conversation, run.conversation_id, populate_existing=True) if run.conversation_id else None
+        if run.conversation_id and (not conversation or conversation.deleted_at):
+            return False
     if active and operation.executor_started_at and operation.attempt_token:
-        attempt = db.get(RunAttempt, operation.attempt_token, populate_existing=True)
         owned = db.scalar(
             select(OutboxMessage.id)
             .where(OutboxMessage.claim_token == operation.attempt_token, OutboxMessage.claimed_until > datetime.now(UTC))
             .limit(1)
         )
-        if not attempt or attempt.run_id != run.id or attempt.ended_at or not owned:
+        if not owned or (operation.job_id and owned != operation.job_id):
             return False
+        if not operation.job_id:
+            attempt = db.get(RunAttempt, operation.attempt_token, populate_existing=True)
+            if not attempt or attempt.run_id != run.id or attempt.ended_at:
+                return False
     if operation.file_id:
         file = db.get(FileObject, operation.file_id, populate_existing=True)
         if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at or file.sha256 != operation.source_version:
@@ -87,42 +130,43 @@ def expire_lane(db, lane, now):
     return [row for row in rows if row.status in {"pending", "running", "canceling"}]
 
 
-def request(db, run, *, lane, kind, version, binding, file_id=None, priority=0, now=None):
+def request(db, run, *, lane, kind, version, binding, file_id=None, priority=0, now=None, share=False):
     now = now or datetime.now(UTC)
-    identity = hashlib.sha256(json.dumps([kind, file_id, version, binding], sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    identity = hashlib.sha256(
+        json.dumps([kind, file_id, version, binding.get("identity", binding)], sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
     lane_lock(db, lane)
     current = db.scalar(select(DocumentOperation).where(DocumentOperation.run_id == run.id, DocumentOperation.identity == identity))
+    if current is None and share:
+        current = db.scalar(
+            select(DocumentOperation)
+            .join(DocumentOperationConsumer, DocumentOperationConsumer.operation_id == DocumentOperation.id)
+            .where(DocumentOperationConsumer.run_id == run.id, DocumentOperation.identity == identity)
+            .limit(1)
+        )
     if current:
+        if share:
+            attach_consumer(db, run, current, now=now)
         return current
     deadline = budget(run, start=True, now=now)
     rows = expire_lane(db, lane, now)
+    if share and file_id:
+        shared = db.scalar(
+            select(DocumentOperation)
+            .where(
+                DocumentOperation.file_id == file_id,
+                DocumentOperation.identity == identity,
+                DocumentOperation.user_id == run.user_id,
+                DocumentOperation.status.in_(["pending", "running"]),
+            )
+            .limit(1)
+        )
+        if shared:
+            attach_consumer(db, run, shared, now=now)
+            return shared
     waiting = [row for row in rows if row.status == "pending"]
     if len(waiting) >= 32 or any(row.user_id == run.user_id for row in waiting):
         raise HTTPException(429, "document_queue_full")
-    if lane == "ocr":
-        state = dict((run.runtime_meta or {}).get("document_budget") or {})
-        batches = int(state.get("ocr_batches", 0))
-        known = {key: list(value) for key, value in state.get("ocr_pages", {}).items()}
-        page_key = file_id or hashlib.sha256((binding.get("path", "") + binding.get("source_sha256", version)).encode()).hexdigest()
-        requested_pages = binding.get("pages") or [1]
-        if len(requested_pages) > 20 or any(type(page) is not int or page < 1 for page in requested_pages):
-            raise HTTPException(422, "invalid_ocr_page_batch")
-        combined = set(known.get(page_key, [])) | set(requested_pages)
-        unique_pages = sum(len(value) for key, value in known.items() if key != page_key) + len(combined)
-        per_file = dict(state.get("ocr_file_batches") or {})
-        if batches >= 4 or per_file.get(page_key, 0) >= 4 or unique_pages > 80:
-            raise HTTPException(429, "document_ocr_work_limit")
-        known[page_key] = sorted(combined)
-        per_file[page_key] = per_file.get(page_key, 0) + 1
-        run.runtime_meta = {
-            **(run.runtime_meta or {}),
-            "document_budget": {
-                **state,
-                "ocr_batches": batches + 1,
-                "ocr_pages": known,
-                "ocr_file_batches": per_file,
-            },
-        }
     row = DocumentOperation(
         run_id=run.id,
         user_id=run.user_id,
@@ -139,7 +183,53 @@ def request(db, run, *, lane, kind, version, binding, file_id=None, priority=0, 
     )
     db.add(row)
     db.flush()
+    if share:
+        attach_consumer(db, run, row, now=now)
     return row
+
+
+def attach_consumer(db, run, operation, *, now=None):
+    deadline = budget(run, start=True, now=now)
+    if db.get(DocumentOperationConsumer, (run.id, operation.id)) is None:
+        count = db.scalars(
+            select(DocumentOperationConsumer.run_id).where(DocumentOperationConsumer.operation_id == operation.id).limit(50)
+        ).all()
+        if len(count) >= 50:
+            raise HTTPException(429, "document_consumer_limit")
+        db.add(DocumentOperationConsumer(run_id=run.id, operation_id=operation.id, deadline=deadline))
+        db.flush()
+
+
+def charge_ocr(run, operation):
+    binding, version, file_id = operation.binding, operation.source_version, operation.file_id
+    state = dict((run.runtime_meta or {}).get("document_budget") or {})
+    batches = int(state.get("ocr_batches", 0))
+    known = {key: [str(item) for item in value] for key, value in state.get("ocr_pages", {}).items()}
+    page_key = file_id or hashlib.sha256((binding.get("path", "") + binding.get("source_sha256", version)).encode()).hexdigest()
+    requested_pages = binding.get("pages") or [1]
+    if len(requested_pages) > 20 or any(type(page) is not int or page < 1 for page in requested_pages):
+        raise HTTPException(422, "invalid_ocr_page_batch")
+    source_pages = (
+        (operation.result or {}).get("work_pages") or binding.get("source_pages") or ["page:" + str(page) for page in requested_pages]
+    )
+    if len(source_pages) > 20 or any(not isinstance(page, str) or len(page) > 120 for page in source_pages):
+        raise HTTPException(422, "invalid_ocr_page_batch")
+    combined = set(known.get(page_key, [])) | set(source_pages)
+    unique_pages = sum(len(value) for key, value in known.items() if key != page_key) + len(combined)
+    per_file = dict(state.get("ocr_file_batches") or {})
+    if batches >= 4 or per_file.get(page_key, 0) >= 4 or unique_pages > 80:
+        raise HTTPException(429, "document_ocr_work_limit")
+    known[page_key] = sorted(combined)
+    per_file[page_key] = per_file.get(page_key, 0) + 1
+    run.runtime_meta = {
+        **(run.runtime_meta or {}),
+        "document_budget": {
+            **state,
+            "ocr_batches": batches + 1,
+            "ocr_pages": known,
+            "ocr_file_batches": per_file,
+        },
+    }
 
 
 def claim(db, operation, *, now=None):
@@ -168,9 +258,15 @@ def claim(db, operation, *, now=None):
     )
     if selected is not operation:
         return operation
-    run = db.get(Run, operation.run_id, populate_existing=True)
-    remaining = budget(run, now=now)
+    run = live_consumer(db, operation) if operation.job_id else db.get(Run, operation.run_id, populate_existing=True)
+    remaining = aware(operation.deadline) if operation.job_id else budget(run, now=now)
     seconds = min(120, settings.ocr_executor_timeout_seconds) if operation.lane == "ocr" else 120
+    if operation.lane == "ocr":
+        try:
+            charge_ocr(run, operation)
+        except HTTPException as exc:
+            operation.status, operation.result = "failed", {"reason": exc.detail}
+            return operation
     operation.status, operation.claim_token = "running", uuid4().hex
     operation.generation += 1
     operation.execution_deadline = min(aware(operation.deadline), remaining, now + timedelta(seconds=seconds))
@@ -211,3 +307,29 @@ def receipt(row):
         ),
         **({"result": row.result} if row.status in {"ready", "failed", "canceled"} else {}),
     }
+
+
+def maintenance(db):
+    """Expire bounded queues even when no new caller arrives to drive a lane."""
+    files = set()
+    for lane in ("render", "ocr"):
+        lane_lock(db, lane)
+        rows = db.scalars(
+            select(DocumentOperation)
+            .where(DocumentOperation.lane == lane, DocumentOperation.status.in_(["pending", "running", "canceling"]))
+            .limit(34)
+        ).all()
+        expire_lane(db, lane, datetime.now(UTC))
+        files.update(row.file_id for row in rows if row.file_id and row.status in {"failed", "canceled"})
+        db.commit()
+    # Never take a user lock while holding the lane lock: admission uses the
+    # user-then-lane order. Wakeups happen only after the queue transaction ends.
+    from .file_dependencies import wake_file
+    from ..locks import user_critical_section
+
+    for file_id in files:
+        file = db.get(FileObject, file_id)
+        if file:
+            with user_critical_section(db, file.user_id):
+                wake_file(db, file)
+                db.commit()

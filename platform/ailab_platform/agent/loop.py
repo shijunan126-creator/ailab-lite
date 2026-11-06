@@ -1469,6 +1469,10 @@ class AgentLoop:
                     else self.platform.document_input(run_id, call.name, call.arguments)
                 )
                 result = await self._interruptible(run_id, request)
+                if result.get("pending") and result.get("action") == "document-ocr":
+                    raise FileDependencyPending(
+                        call.arguments["file_id"], "document-ocr", result.get("pages"), result["deadline"], result["operation_id"]
+                    )
                 if result.get("pending") and result.get("action") == "native-text":
                     state = self._states[run_id]
                     key = "native-text:" + call.arguments["file_id"]
@@ -1477,7 +1481,7 @@ class AgentLoop:
                     if time.time() >= deadline:
                         raise ToolError("文件文字准备超过截止时间，请告知用户处理失败")
                     raise FileDependencyPending(call.arguments["file_id"], "native-text", None, deadline)
-                result = {"ok": True, **result}
+                result = {"ok": not bool(result.get("error")), **result}
             elif call.name == "extract_text":
                 result = await self._interruptible(run_id, self.platform.library(run_id, "extract-text", call.arguments))
                 if result.get("ocr") in {"pending", "running"}:

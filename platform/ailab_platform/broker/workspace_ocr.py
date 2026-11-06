@@ -47,6 +47,7 @@ def recognize(manager, lease_id, body: WorkspaceOcr):
     try:
         manager.register_scratch(lease_id, directory, deadline)
         manager.put_file(lease_id, directory + "/prepare.py", HELPER.read_bytes())
+        manager.put_file(lease_id, directory + "/image_regions.py", (HELPER.parent.parent / "image_regions.py").read_bytes())
         manager.put_file(lease_id, directory + "/limit.py", LIMITER.read_bytes())
         remaining = min(30, max(1, int(deadline - time.time())))
         region = body.region.model_dump(mode="json") if body.region else None

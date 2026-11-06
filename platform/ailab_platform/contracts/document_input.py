@@ -56,7 +56,8 @@ Selector = Annotated[Pages | Word | Sheet, Field(discriminator="kind")]
 
 class Region(Contract):
     kind: Literal["region"]
-    page: StrictInt = Field(ge=1, le=2147483647)
+    page: StrictInt | None = Field(default=None, ge=1, le=2147483647)
+    image_id: str | None = Field(default=None, min_length=1, max_length=100)
     # Coordinates refer to the stated representation, never inferred Word pages.
     revision: str = Field(min_length=1, max_length=100)
     rotation: Literal[0, 90, 180, 270] = 0
@@ -67,6 +68,8 @@ class Region(Contract):
 
     @model_validator(mode="after")
     def inside(self):
+        if bool(self.page) == bool(self.image_id):
+            raise ValueError("region requires exactly one page or image_id")
         if self.x + self.width > 1 or self.y + self.height > 1:
             raise ValueError("region outside representation")
         return self
@@ -99,7 +102,7 @@ class ReadDocument(Contract):
 class SearchDocument(Contract):
     file_id: str = Field(min_length=1, max_length=40)
     query: str = Field(min_length=1, max_length=200)
-    selector: Selector | None = None
+    selector: Selector | Region | None = None
     cursor: str | None = Field(default=None, max_length=2048)
 
     @field_validator("query")

@@ -173,6 +173,35 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def document_ocr_failed(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-operations/{operation_id}/fail", json={})).json()
+
+    def document_ocr_step(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-operations/{operation_id}/step", json={})).json()
+
+    def document_ocr_image(self, operation_id, token, ordinal, image, receipt, deadline):
+        req = self._req(
+            "POST",
+            f"/internal/document-operations/{operation_id}/image",
+            timeout=max(1, deadline - time.time()) + 8,
+            params={"image_index": ordinal},
+        )
+        with image.open("rb") as stream:
+            return self._send(
+                req._replace(
+                    kwargs={
+                        **req.kwargs,
+                        "headers": {
+                            **req.kwargs["headers"],
+                            "X-Document-Token": token,
+                            "X-Image-Receipt": json.dumps(receipt, separators=(",", ":")),
+                            "Content-Type": "application/octet-stream",
+                        },
+                        "content": stream,
+                    }
+                )
+            ).json()
+
     def workspace_ocr_budget(self, run_id):
         return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/budget", json={})).json()
 

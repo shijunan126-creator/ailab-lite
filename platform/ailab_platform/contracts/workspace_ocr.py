@@ -44,3 +44,17 @@ class PreparedImage(BaseModel):
     region: Crop | None = None
     actual_region: Crop | None = None
     preprocessing: Literal["workspace-image-v1"] = "workspace-image-v1"
+
+
+class NormalizedImage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    image_sha256: str = Field(pattern="^[a-f0-9]{64}$")
+    width: int = Field(ge=1, le=16_000_000)
+    height: int = Field(ge=1, le=16_000_000)
+    actual_region: Crop | None = None
+
+    @model_validator(mode="after")
+    def pixels(self):
+        if self.width * self.height > 16_000_000:
+            raise ValueError("image_pixel_limit")
+        return self

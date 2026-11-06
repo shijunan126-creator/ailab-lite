@@ -31,6 +31,8 @@ class TextBlock:
     text: str
     source: str = "native"
     block_id: str | None = None
+    selector: dict | None = None
+    provenance: dict | None = None
 
 
 def normalize(text):
@@ -76,7 +78,13 @@ def decode_cursor(cursor, context, *, key=None):
 
 
 def identity(block):
-    return {"block_id": block.block_id, "locator": block.locator, "text_source": block.source}
+    return {
+        "block_id": block.block_id,
+        "locator": block.locator,
+        "text_source": block.source,
+        **({"selector": block.selector} if block.selector else {}),
+        **({"provenance": block.provenance} if block.provenance else {}),
+    }
 
 
 def read_batch(blocks, position=Position()):

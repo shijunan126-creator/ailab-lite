@@ -243,31 +243,13 @@ async def image(
     data = bytes(payload)
     payload.clear()
 
-    async def abandon_request():
-        def mark():
-            with SessionLocal() as owned_db:
-                cancel(run_id, operation_id, x_document_token=x_document_token, db=owned_db)
+    from .owned_execution import execute_owned
 
-        try:
-            await asyncio.to_thread(mark)
-        except Exception:
-            log.warning("workspace OCR disconnect cleanup pending operation=%s", operation_id)
+    def abandon_request():
+        with SessionLocal() as owned_db:
+            cancel(run_id, operation_id, x_document_token=x_document_token, db=owned_db)
 
-    task = asyncio.create_task(run_in_threadpool(execute, db, run_id, operation_id, x_document_token, x_run_attempt, data))
-    try:
-        while not task.done():
-            await asyncio.wait({task}, timeout=0.25)
-            if await request.is_disconnected():
-                await abandon_request()
-                # The owned worker closes remote inference and storage before
-                # FastAPI closes its database session. No detached DB thread.
-                await asyncio.gather(task, return_exceptions=True)
-                raise HTTPException(409, "workspace_ocr_request_disconnected")
-        return await task
-    finally:
-        if not task.done():
-            await abandon_request()
-            await asyncio.gather(task, return_exceptions=True)
+    return await execute_owned(request, lambda: execute(db, run_id, operation_id, x_document_token, x_run_attempt, data), abandon_request)
 
 
 @router.post("/{run_id}/workspace-ocr/{operation_id}/cancel")

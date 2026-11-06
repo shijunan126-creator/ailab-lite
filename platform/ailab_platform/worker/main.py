@@ -87,7 +87,14 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
 
             identity = attempt_id_var.set(token)
             try:
-                if envelope.kind == "native":
+                if envelope.kind == "document_ocr":
+                    from .document_ocr import process
+
+                    if process(client, envelope.job_id):
+                        completion.ack()
+                    else:
+                        completion.retry_after(2)
+                elif envelope.kind == "native":
                     from .native_preparation import process_native
 
                     try:

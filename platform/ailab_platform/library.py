@@ -44,13 +44,28 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
         if outside:
             raise HTTPException(status_code=409, detail=f"file has newer versions; delete those first: {', '.join(outside)}")
     from .api.source_lifecycle import invalidate
-    from .models import DocumentBlock, FileDerivation, MessageFileRef, OcrPageResult, RenderedPage, UploadReceipt
+    from .models import DocumentBlock, DocumentOcrUnit, FileDerivation, MessageFileRef, OcrPageResult, RenderedPage, UploadReceipt
 
     invalidate(db, files[0].user_id, ids)
     db.execute(update(UploadReceipt).where(UploadReceipt.file_id.in_(ids)).values(filename=None))
     db.execute(update(MessageFileRef).where(MessageFileRef.file_id.in_(ids)).values(filename_snapshot=None, upload_id=None))
     db.execute(delete(RenderedPage).where(RenderedPage.file_id.in_(ids)))
     db.execute(delete(OcrPageResult).where(OcrPageResult.file_id.in_(ids)))
+    from .api.derived_assets import budget_lock
+    from .models import DerivedAsset, DerivedAssetRef, utcnow
+
+    # Correlated index probes release file-owned OCR references without
+    # materializing every cached region or making one round-trip per unit.
+    unit_keys = select(DocumentOcrUnit.text_key).where(DocumentOcrUnit.file_id.in_(ids))
+    budget_lock(db)
+    db.execute(delete(DerivedAssetRef).where(DerivedAssetRef.key.in_(unit_keys), DerivedAssetRef.kind == "file"))
+    surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == DerivedAsset.key).exists()
+    db.execute(
+        update(DerivedAsset)
+        .where(DerivedAsset.key.in_(unit_keys), DerivedAsset.state == "ready", DerivedAsset.reconstructible.is_(False), ~surviving)
+        .values(state="deleting", lease_until=None, expires_at=utcnow())
+    )
+    db.execute(delete(DocumentOcrUnit).where(DocumentOcrUnit.file_id.in_(ids)))
     derivations = select(FileDerivation.id).where(FileDerivation.file_id.in_(ids))
     db.execute(delete(DocumentBlock).where(DocumentBlock.derivation_id.in_(derivations)))
     db.execute(delete(FileDerivation).where(FileDerivation.file_id.in_(ids)))

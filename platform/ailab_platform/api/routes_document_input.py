@@ -29,7 +29,23 @@ def text_request(db, run_id, body, attempt):
         if run.status != RunStatus.RUNNING:
             raise HTTPException(409, "run_unavailable")
         file = authorized_source(db, run, body.file_id)
-        if (isinstance(body, ReadDocument) and body.text_source == "ocr") or (isinstance(body, SearchDocument) and available_ocr(db, file)):
+        if isinstance(body, ReadDocument) and body.text_source == "ocr":
+            from .document_ocr import adopt_legacy, read_cached, request_scope
+
+            adopt_legacy(db, file, body.selector)
+            result = read_cached(db, file, body)
+            if result is None:
+                # Existing full-page results remain readable without starting
+                # new inference; explicit regions require their own cache.
+                try:
+                    result = text_operation(db, file, body)
+                except HTTPException as exc:
+                    if exc.detail != "ocr_representation_unavailable":
+                        raise
+                    result = request_scope(db, run, file, body)
+            db.commit()
+            return result
+        if isinstance(body, SearchDocument) and available_ocr(db, file):
             result = text_operation(db, file, body)
             db.commit()
             return result
