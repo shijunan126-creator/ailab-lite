@@ -83,7 +83,7 @@ def save(db, run, identity, target, data, mime="image/png", *, validate=None, bi
     key = f"{prefix}/captures/{capture_id}"
     digest = hashlib.sha256(data).hexdigest()
     receipt = {"status": "ready", "capture_id": capture_id, "version": target["version"], "source": target["source"]}
-    expires = datetime.max.replace(tzinfo=UTC) if canonical else datetime.now(UTC) + timedelta(minutes=10)
+    expires = None if canonical else datetime.now(UTC) + timedelta(minutes=10)
 
     def check():
         current = db.get(Run, run_id, populate_existing=True)
@@ -223,8 +223,9 @@ def image(db, run_id, capture_id):
             or not db.scalar(select(ancestors.c.id).where(ancestors.c.id == capture.run_id).limit(1))
         ):
             raise HTTPException(404, "capture unavailable")
-    expiry = capture.expires_at.replace(tzinfo=UTC) if capture.expires_at.tzinfo is None else capture.expires_at
-    if expiry <= datetime.now(UTC):
+    expiry = capture.expires_at
+    expiry = expiry.replace(tzinfo=UTC) if expiry is not None and expiry.tzinfo is None else expiry
+    if expiry is not None and expiry <= datetime.now(UTC):
         raise HTTPException(410, "capture expired")
     from .routes_document_view import authorize_state
 

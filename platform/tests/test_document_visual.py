@@ -27,6 +27,7 @@ def prepare(factory, storage, monkeypatch, *, pages=(1,)):
         result = visual.requested(db, run, db.get(FileObject, "f"), body)
         assert visual.requested(db, run, db.get(FileObject, "f"), body) == result
         row = db.get(DocumentOperation, result["operation_id"])
+        db.flush()
         job = db.get(OutboxMessage, row.id)
         job.claim_token, job.claimed_until = "worker", datetime.now(UTC) + timedelta(minutes=5)
         return row.id

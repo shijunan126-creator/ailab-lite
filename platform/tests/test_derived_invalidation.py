@@ -8,13 +8,15 @@ from sqlalchemy import select
 
 from ailab_platform.api import derived_assets as assets
 from ailab_platform.api.preview_requests import request_preview
-from ailab_platform.models import DerivedAsset, FileObject, RenderedPage
+from ailab_platform.models import DerivedAsset, DocumentLane, FileObject, RenderedPage
 from tests.test_derived_assets import initialize, ledger, totals, write  # noqa: F401
 
 
 def test_expired_page_is_removed_from_rows_and_metadata_before_rebuild(ledger):
     factory, storage = ledger
     initialize(factory, storage)
+    with factory.begin() as db:
+        db.add_all([DocumentLane(name="render"), DocumentLane(name="ocr")])
     old = datetime.now(UTC) - timedelta(days=31)
     key = "derived/" + "f/preview/old/p-1.png"
     write(factory, storage, key, b"page", now=old)

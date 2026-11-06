@@ -231,6 +231,17 @@ def prepare(file_id: str, db: Session = Depends(get_db), attempt: str | None = H
         pdf = meta.get("ocr_pdf")
         if pdf is None:  # image: the normalized display derivative is the only input the model sees
             if not meta.get("display_key"):
+                from .preview_requests import request_preview
+
+                previous = meta.get("preview") or {}
+                if previous.get("status") == "failed":
+                    return finish(ocr="failed", ocr_reason="normalized_image_unavailable")
+                manifest, job_id = request_preview(db, file)
+                db.commit()
+                if manifest.get("status") == "pending" and job_id is None:
+                    job_id = (file.meta or {}).get("preview_job_id")
+                if job_id:
+                    return {"ocr": "pending", "preview_job_id": job_id}
                 return finish(ocr="failed", ocr_reason="normalized_image_unavailable")
             return {"ocr": "pending"}
         if pdf.get("error"):

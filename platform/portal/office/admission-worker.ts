@@ -9,7 +9,7 @@ function boundedEntry(entry: JSZip.JSZipObject): Promise<Uint8Array> {
   return new Promise((resolve, reject) => {
     const chunks: Uint8Array[] = [];
     let bytes = 0, stopped = false;
-    const stream = entry.internalStream("uint8array");
+    const stream = (entry as JSZip.JSZipObject & {internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>}).internalStream("uint8array");
     stream.on("data", chunk => {
       if (stopped) return;
       bytes += chunk.byteLength;

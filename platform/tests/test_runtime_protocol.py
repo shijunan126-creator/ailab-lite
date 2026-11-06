@@ -18,8 +18,14 @@ from tests.test_ledger_protocol import AUTH, SERVICE, api  # noqa: F401
 from tests.test_transactional_jobs import action, claim, start
 
 
-def owned(api):  # noqa: F811
+def owned(api, *, document_tools_version=1):  # noqa: F811
     rid = start(api)
+    # This long-lived protocol fixture represents an existing run. New-catalog
+    # tests explicitly replace the version or pass their intended catalog.
+    with SessionLocal() as db:
+        run = db.get(Run, rid)
+        run.options = {**run.options, "document_tools_version": document_tools_version}
+        db.commit()
     token = claim(api, rid)["token"]
     headers = {**SERVICE, "X-Run-Attempt": token}
     response = api.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})

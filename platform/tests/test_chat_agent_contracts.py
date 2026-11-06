@@ -119,7 +119,7 @@ def test_rebuild_is_bounded_even_when_append_compaction_is_disabled(monkeypatch,
     cat = Catalog([ModelSpec("m", "m", provider="mock", context_tokens=10000, max_output_tokens=1000)])
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: cat)
     monkeypatch.setattr("ailab_platform.agent.loop.estimator.estimate", lambda model, value: len(str(value)))
-    monkeypatch.setattr("ailab_platform.agent.loop.tools_for_turn", lambda: [])
+    monkeypatch.setattr("ailab_platform.agent.loop.tools_for_turn", lambda *args, **kwargs: [])
 
     class Context(FakePlatform):
         saved = []

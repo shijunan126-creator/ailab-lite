@@ -20,6 +20,35 @@ from .fakes import FakeRedis
 class _Api:
     def __init__(self) -> None:
         self.runs: dict[str, dict] = {}
+        self.assets = {}
+
+    def reserve_derived(self, **body):
+        from uuid import uuid4
+
+        key = body["key"]
+        grant = {"key": key, "token": uuid4().hex, "state": "writing", "version": body["version"], "max_bytes": body["max_bytes"]}
+        self.assets[key] = grant
+        return grant
+
+    def finish_derived(self, key, token):
+        assert self.assets[key]["token"] == token
+        self.assets[key]["state"] = "staged"
+
+    def publish_run_derived(self, items):
+        for item in items:
+            assert self.assets[item["key"]]["token"] == item["token"]
+            self.assets[item["key"]]["state"] = "ready"
+
+    def derived_ready(self, key, version):
+        row = self.assets.get(key, {})
+        return row.get("state") == "ready" and row.get("version") == version
+
+    def abandon_derived_batch(self, items):
+        return {"deletable": [item for item in items if self.assets.get(item["key"], {}).get("state") != "ready"]}
+
+    def discard_derived_batch(self, items):
+        for item in items:
+            self.assets.pop(item["key"], None)
 
     def get_run(self, run_id):
         return {"id": run_id, "user_id": "user_test", "input_file_ids": [], **self.runs.get(run_id, {})}

@@ -117,7 +117,11 @@ def test_storage_failure_removes_local_spool(tmp_path, monkeypatch):
     monkeypatch.setattr(manager.storage, "put_stream", fail)
     with pytest.raises(OSError):
         manager.commit(lease["lease_id"], "/workspace/outputs/a.bin")
-    assert not list(manager._transfer_root.iterdir())
+    from ailab_platform.owned_temporary import index, root
+
+    assert not [path for path in root("broker").iterdir() if path.is_dir()]
+    with index("broker") as connection:
+        assert connection.execute("SELECT count(*) FROM leases").fetchone()[0] == 0
     assert manager.platform.committed == []
 
 

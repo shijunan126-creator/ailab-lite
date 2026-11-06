@@ -345,7 +345,7 @@ test("an open view renews its last report, any report restarts the interval, and
   expect(puts()).toHaveLength(0);
   await advance(1);
   const id = putBody(0).view_id;
-  expect(report(0)).toEqual({ view_id: id, file_id: "f1", version: "hash1", at: "p:2", selection: { at: "p:2", text: "选中的句子" } });
+  expect(report(0)).toEqual({ view_id: id, file_id: "f1", version: "hash1", representation_revision: "v:light", at: "p:2", selection: { at: "p:2", text: "选中的句子" } });
   await advance(VIEW_RENEW_MS - 1);
   expect(puts()).toHaveLength(1);
   await advance(1);

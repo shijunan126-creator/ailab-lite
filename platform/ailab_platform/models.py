@@ -1242,7 +1242,7 @@ class ViewerCapture(Base):
     storage_key: Mapped[str] = mapped_column(String(600))
     digest: Mapped[str] = mapped_column(String(64))
     content_type: Mapped[str] = mapped_column(String(50))
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class DerivedBudget(Base):

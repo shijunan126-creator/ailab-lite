@@ -51,6 +51,7 @@ def requested(db, run, file, body):
         }
         job = stage_job(db, "document_view", file_id=file.id, job_id=operation.id, priority=True)
         job.payload = {**job.payload, "deadline": operations.aware(operation.deadline).isoformat()}
+    db.flush()
     return response(operation, file)
 
 

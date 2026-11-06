@@ -23,6 +23,7 @@ def setup_capture(factory, storage, monkeypatch):
     with factory.begin() as db:
         file = db.get(FileObject, "f")
         file.status = "ready"
+        file.content_type = "application/pdf"
         run = db.get(Run, "r")
         run.status, run.options = "running", {"document_tools_version": 2, "mode": "chat"}
     return {"file_id": "f", "version": "source", "source": "browser", "at": "page:1"}

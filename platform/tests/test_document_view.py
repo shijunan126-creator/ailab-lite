@@ -78,9 +78,20 @@ def document(api):  # noqa: F811
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.status = "ready"
-        file.meta = {"processing": "done", "extract": {"document_manifest_key": prefix + "manifest.json"}}
+        file.meta = {"processing": "done", "scan": {"verdict": "clean"}, "extract": {"document_manifest_key": prefix + "manifest.json"}}
         index_document(db, file, prefix + "manifest.json")
         version = file.sha256
+        from sqlalchemy import delete
+
+        from ailab_platform.models import OutboxMessage
+
+        # The fixture installs a completed representation directly, so retire
+        # the upload job exactly as a successful Worker ACK would.
+        db.execute(
+            delete(OutboxMessage).where(
+                OutboxMessage.payload["file_id"].as_string() == fid, OutboxMessage.payload["kind"].as_string() == "file"
+            )
+        )
         storage.put_bytes(
             f"derived/{fid}/viewer.json",
             json.dumps(

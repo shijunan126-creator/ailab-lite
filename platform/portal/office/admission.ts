@@ -1,10 +1,10 @@
-import { readText } from "./assets";
+import { getHost } from "./host";
 
 /** One request owns a disposable Worker and the transferred source buffer. */
 export async function admit(bytes: ArrayBuffer, kind: string, signal?: AbortSignal): Promise<ArrayBuffer> {
   if (kind === "pdf") return bytes;
   signal?.throwIfAborted();
-  const code = await readText("admission-worker.js");
+  const code = await getHost().request<string>({t: "asset", name: "admission-worker.js", binary: false});
   signal?.throwIfAborted();
   const url = URL.createObjectURL(new Blob([code], {type: "text/javascript"}));
   let worker: Worker | null = null;

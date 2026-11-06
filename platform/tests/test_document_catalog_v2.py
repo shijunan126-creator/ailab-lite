@@ -130,7 +130,7 @@ def test_native_routes_require_current_attempt_mode_and_source_and_page_without_
     explicit = api.post(
         url + "read_document", headers=headers, json={"file_id": fid, "text_source": "ocr", "selector": {"kind": "pages", "pages": [1]}}
     )
-    assert explicit.status_code == 409 and explicit.json()["detail"] == "ocr_representation_unavailable"
+    assert explicit.status_code == 503 and explicit.json()["detail"] == "ocr_executor_unavailable"
     with SessionLocal() as db:
         jobs = db.scalars(select(OutboxMessage).where(OutboxMessage.payload["file_id"].as_string() == fid)).all()
         assert not jobs  # read/search/explicit unavailable OCR never starts a legacy OCR job
@@ -204,7 +204,7 @@ def test_v2_attachment_guidance_never_rewrites_user_prompt_or_source_text():
     original = "read_library_file 与 view_attachment 是源码中的旧函数名；原文件在 /workspace/inputs/original.txt"
     result = user_prompt(original, [{"file_id": "f", "filename": "source.txt", "text": original}], mode="chat", document_tools_version=2)
     assert result.startswith(original)
-    assert result.split("<!-- AILAB_ATTACHMENT_START -->\n```\n")[1].split("\n```\n")[0] == original
+    assert result.split("<!-- AILAB_ATTACHMENT_START -->\n\n```\n\n")[1].split("\n\n```\n\n")[0] == original
 
 
 @pytest.mark.parametrize("page", [2147483648, 10**100])

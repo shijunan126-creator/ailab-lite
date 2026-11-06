@@ -622,7 +622,12 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         sha256=digest,
         storage_key=final_key,
         status=FileStatus.READY,
-        meta={"source": "sandbox", "run_id": run.id, "artifact_filename": filename},
+        meta={
+            "source": "sandbox",
+            "run_id": run.id,
+            "artifact_filename": filename,
+            "scan": {"verdict": scan.verdict, "engine": scan.engine},
+        },
     )
     # A sibling branch may already have advanced this lineage; do not change its head.
     if parent is not None and not parent.is_head:

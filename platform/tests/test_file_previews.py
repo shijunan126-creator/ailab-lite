@@ -153,6 +153,23 @@ class ApiClient:
     def finish_derived(self, key, token):
         return self._post("/internal/derived-assets/finish", {"key": key, "token": token})
 
+    def native_owned(self, file_id, job_id):
+        return self._post(f"/internal/files/{file_id}/native/owned", {"job_id": job_id})
+
+    def start_file_work(self, job_id):
+        if not self.attempt:
+            claim = self._post(f"/internal/jobs/{job_id}/claim", {"consumer": "preview-fixture"})
+            if claim.get("state") == "done":
+                return {"status": "ready"}
+            self.attempt = claim["token"]
+        return self._post(f"/internal/file-work/{job_id}/start", {})
+
+    def file_work_owned(self, job_id):
+        return self._post(f"/internal/file-work/{job_id}/owned", {})
+
+    def abandon_derived_writer(self, job_id):
+        return self._post("/internal/derived-assets/abandon-writer", {"job_id": job_id})
+
     def abandon_derived(self, key, token):
         return self._post("/internal/derived-assets/abandon", {"key": key, "token": token})
 
@@ -303,7 +320,7 @@ def test_images_svg_and_lazy_existing_image(api):
         assert image.size == (2048, 1024)
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
-        file.meta = {"source": "sandbox"}
+        file.meta = {"source": "sandbox", "scan": {"verdict": "clean"}}
         db.commit()
     assert preview(api, fid)["status"] == "pending"
     p = ApiClient(api)
@@ -537,3 +554,24 @@ def test_text_artifact_without_extracted_text_gets_a_preview(api, encoding):
     assert api.get(f"/v1/files/{file['file_id']}/preview").json()["status"] == "ready"
     text = api.get(f"/v1/files/{file['file_id']}/preview/text.txt")
     assert text.text == "中文第一行\n第二行"
+
+
+def test_explicit_image_ocr_prepares_normalized_pixels_lazily_without_inference(api, monkeypatch):
+    monkeypatch.setattr(settings, "ocr_executor_url", "http://unused-executor.invalid")
+    output = io.BytesIO()
+    Image.new("RGB", (80, 60), "white").save(output, "PNG")
+    fid = upload(api, "lazy-ocr.png", output.getvalue(), "image/png")
+    request = api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
+    assert request.status_code == 200, request.text
+    assert request.json()["ocr"] == "pending"
+    prepared = api.post(f"/internal/files/{fid}/ocr/prepare", headers=SERVICE)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["ocr"] == "pending" and prepared.json()["preview_job_id"]
+    platform = ApiClient(api)
+    process_preview(fid, prepared.json()["preview_job_id"], platform)
+    again = api.post(f"/internal/files/{fid}/ocr/prepare", headers=SERVICE)
+    assert again.status_code == 200 and again.json() == {"ocr": "pending"}
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["display_key"] and file.meta["ocr"] == "pending"
+        assert not file.meta.get("ocr_text_key")

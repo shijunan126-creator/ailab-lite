@@ -24,6 +24,8 @@ def setup_renderer(tmp_path, content, filename):
         "render_owner_id": "user_test",
         "status": "ready",
         "filename": filename,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size": len(content),
         "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
     }
     api.download_file = lambda fid, target, **bound: Path(target).write_bytes(content)
