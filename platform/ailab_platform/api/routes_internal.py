@@ -856,7 +856,7 @@ def _bound_file(
             or (meta.get("scan") or {}).get("verdict") != "clean"
         ):
             raise HTTPException(403, "no authorized document job")
-        if meta.get("document_profile") == "scope":
+        if meta.get("document_operation_id") and meta.get("document_profile") != "legacy":
             from . import document_operations as operations
             from ..models import DocumentOperation
 
@@ -883,6 +883,14 @@ def _bound_file(
             raise HTTPException(status_code=403, detail="no pending preview job for this file")
         if meta.get("preview_job_id") != preview_job:
             raise HTTPException(status_code=403, detail="preview job superseded")
+        if (meta.get("preview_execution") or {}).get("operation_id") == preview_job:
+            from ..models import DocumentOperation
+            from . import document_operations as operations
+
+            operation = db.get(DocumentOperation, preview_job, populate_existing=True)
+            if not operation:
+                raise HTTPException(409, "document_operation_superseded")
+            operations.active(db, operation.id, operation.claim_token)
         return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
@@ -1269,7 +1277,9 @@ def publish_preview_page(
 
 
 @router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])
-def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
+def complete_file_preview(
+    file_id: str, body: PreviewCompletion, db: Session = Depends(get_db), x_run_attempt: str | None = Header(default=None)
+) -> dict:
     """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
     file = db.get(FileObject, file_id)
     if file is None:
@@ -1305,6 +1315,13 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
             raise HTTPException(status_code=400, detail="manifest assets do not match")
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
+        from ..models import DocumentOperation
+
+        operation = db.get(DocumentOperation, body.job_id, populate_existing=True)
+        if operation:
+            from .file_work import finish as finish_work
+
+            finish_work(db, body.job_id, x_run_attempt, reason=preview.reason if preview.status == "failed" else None)
         meta["preview"] = preview.model_dump(exclude_unset=True)
         meta.pop("preview_requested_pages", None)
         for name, asset in assets.items():

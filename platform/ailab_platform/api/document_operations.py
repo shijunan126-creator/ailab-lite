@@ -67,6 +67,21 @@ def source_available(db, operation, *, active=False):
     user = db.get(User, operation.user_id, populate_existing=True)
     if not user or user.disabled_at:
         return False
+    if operation.kind == "file_job":
+        from .file_work import available
+
+        if not available(db, operation):
+            return False
+        if active and operation.executor_started_at:
+            job = db.get(OutboxMessage, operation.job_id, populate_existing=True)
+            if (
+                not job
+                or job.claim_token != operation.attempt_token
+                or not job.claimed_until
+                or aware(job.claimed_until) <= datetime.now(UTC)
+            ):
+                return False
+        return True
     if operation.job_id:
         run = live_consumer(db, operation)
         if not run:
@@ -266,7 +281,7 @@ def claim(db, operation, *, now=None):
     run = live_consumer(db, operation) if operation.job_id else db.get(Run, operation.run_id, populate_existing=True)
     remaining = aware(operation.deadline) if operation.job_id else budget(run, now=now)
     seconds = min(120, settings.ocr_executor_timeout_seconds) if operation.lane == "ocr" else 120
-    if operation.lane == "ocr":
+    if operation.lane == "ocr" and (operation.kind != "file_job" or run is not None):
         try:
             charge_ocr(run, operation)
         except HTTPException as exc:
@@ -336,5 +351,32 @@ def maintenance(db):
         file = db.get(FileObject, file_id)
         if file:
             with user_critical_section(db, file.user_id):
+                db.refresh(file)
+                from .native_preparation import native_state
+
+                state = native_state(file)
+                operation = db.get(DocumentOperation, state.get("job_id")) if state.get("job_id") else None
+                if (
+                    operation
+                    and operation.kind == "file_job"
+                    and operation.status in {"failed", "canceled"}
+                    and state.get("status") == "pending"
+                ):
+                    file.meta = {
+                        **file.meta,
+                        "representations": {
+                            **file.meta.get("representations", {}),
+                            "native_text": {**state, "status": "failed", "reason": (operation.result or {}).get("reason", "native_failed")},
+                        },
+                    }
+                preview_job = (file.meta or {}).get("preview_job_id")
+                preview_operation = db.get(DocumentOperation, preview_job) if preview_job else None
+                if preview_operation and preview_operation.kind == "file_job" and preview_operation.status in {"failed", "canceled"}:
+                    preview = (file.meta or {}).get("preview") or {}
+                    if preview.get("status") == "pending":
+                        file.meta = {
+                            **file.meta,
+                            "preview": {**preview, "status": "failed", "reason": preview_operation.result.get("reason", "render_failed")},
+                        }
                 wake_file(db, file)
                 db.commit()

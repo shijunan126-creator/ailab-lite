@@ -243,3 +243,16 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 - 已知原生结构超限持久绑定源版本，后续小范围不能绕开整份Chat拒绝。原件安全READY和Work可用性不变。
 
 本组没有运行pytest、迁移、Portal或真实浏览器/模型/性能验收；构建和格式化不是功能结论。下一步仍为base native/render/旧OCR统一持久调度与取消、浏览器首开基线和capture/CAS后备、全部writer记账与TTL业务失效/规范资产引用；全部实现后集中验收，不用历史测试数声明完成。
+
+
+## 基础native、预览与旧OCR统一调度接线（2026-11-06，未验收）
+
+在`7b8ad34`上继续，仍未运行功能/回归/迁移/真实组件检查。没有部署、修改既有栈或提升限额。
+
+- 增加file_work适配，把文件持久job与已有document_lanes合并：native、主动preview/page render和旧OCR在同一API持久槽/队列准入；准备/Run消费者与公共文件需求区分，记录原截止并绑定worker attempt。新旧OCR共用OCR lane；旧OCR不再只靠API进程semaphore作为全局限制。base native与范围、预览共用render lane。
+- 原生/预览实际执行前领取slot，Worker忙时release claim再投递；Broker按秒复核API执行权和源版本/消费方，失权删除所属专用render沙箱并等待执行线程退出。执行deadline传到Broker/本地受限子进程，取消中的任务保留slot直到回收或固定期限，不把HTTP取消直接当计算已停。当前并发/取消时延与各provider真实回收仍未验收。
+- 旧OCR输入页图改成真实Outbox preview任务，Worker不再用OCR attempt嵌套执行未领取的preview；每批推理沿同一90/120秒执行deadline和可终止的平台执行器。公共显式提取仍保留原接口/缓存语义；在途不确定失败不会自动重复已派发整批。尚需全链路故障/旧恢复回归与全部OCR writer记账。
+- office_exec使用独立进程组，正常wrapper结束也清残留后代，SIGTERM/INT走finally回收；Worker isolate支持拥有者回调并在失权时杀组。新增退出后后代进程、共享slot/取消占位、预发送native deadline回归尚未执行。图片处理路径尚需和所有writer/取消合同一起完成。
+- 新旧任务期限不再因render_waiting自动延长（已登记document operation时）；周期维护使过期pending native/preview元数据终止并唤醒等待者。公共旧未登记任务保留迁移兼容行为，不以兼容逻辑延长新目录工作。
+
+剩余硬门槛仍包括所有生产writer容量/发布/TTL失效、截图单规范资产及消息/checkpoint引用、浏览器首开基线/优先capture/CAS后备/客户端资源释放，以及最后全套/双库/真实模型前缀/50轮性能故障验证。Chat默认仍V1；不能把调度接线称为资源验收通过。

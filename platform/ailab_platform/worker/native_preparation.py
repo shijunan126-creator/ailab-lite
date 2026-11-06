@@ -103,7 +103,21 @@ def process_native(platform, file_id, job_id, storage=None, *, scoped=False):
                     if hashlib.file_digest(stream, "sha256").hexdigest() != start["version"]:
                         raise IsolationError("file_integrity_mismatch")
                 output = output / "native"
-                manifest = execute("native_text", source, output)
+                remaining = None
+                if start.get("execution_deadline"):
+                    from datetime import datetime
+                    import time
+
+                    remaining = min(120, datetime.fromisoformat(start["execution_deadline"]).timestamp() - time.time())
+                    if remaining <= 0:
+                        raise IsolationError("document_operation_deadline")
+                manifest = execute(
+                    "native_text",
+                    source,
+                    output,
+                    ownership=(lambda: platform.native_owned(file_id, start["job_id"])) if start.get("execution_deadline") else None,
+                    **({"timeout": remaining} if remaining else {}),
+                )
             prefix = f"derived/{file_id}/office/{job_id}-{start['job_id']}/"
             items = [
                 {

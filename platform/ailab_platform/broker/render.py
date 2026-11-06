@@ -49,7 +49,7 @@ class LibraryRenderer:
             raise LeaseError("render_timeout")
         archive = f"{directory}.tar"
         args = " ".join(shlex.quote(name) for name in names)
-        packed = self.manager.exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
+        packed = self._exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
         if packed.exit_code != 0 or time.monotonic() >= deadline:
             raise LeaseError("render_failed")
         with self.manager.transfer_file() as local:
@@ -96,6 +96,14 @@ class LibraryRenderer:
         platform = self.manager.platform
         file = platform.get_file(file_id, job="preview", preview_job=job_id)
         meta = file.get("meta") or {}
+        owned = meta.get("preview_execution") or {}
+        self._document_execution = (file_id, job_id, bool(owned.get("operation_id") == job_id), owned.get("deadline"))
+        if owned.get("operation_id") == job_id:
+            from datetime import datetime
+
+            deadline = min(deadline, time.monotonic() + datetime.fromisoformat(owned["deadline"]).timestamp() - time.time())
+            if deadline <= time.monotonic():
+                raise LeaseError("document_operation_deadline")
         scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
         if (
             not (file.get("status") == "ready" or scanned)
@@ -186,7 +194,7 @@ class LibraryRenderer:
 
         try:
             if pdf_mime and suffix != ".pdf":
-                self.manager.exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
+                self._exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
                 source = "/workspace/.ailab/input.pdf"
             if visual:
                 # Convert once, publish the first requested page, then rasterize the
@@ -194,7 +202,7 @@ class LibraryRenderer:
                 first_page = selected[0] if selected else 1
                 save_pdf = not source.endswith(".pdf")
                 first_started = time.monotonic()
-                first = self.manager.exec(
+                first = self._exec(
                     lease_id,
                     f"AILAB_PAGE_PNG=1 {office_env}timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
                     f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
@@ -257,7 +265,7 @@ class LibraryRenderer:
                     if remaining <= 1:
                         raise LeaseError("render_timeout")
                     rest_started = time.monotonic()
-                    result = self.manager.exec(
+                    result = self._exec(
                         lease_id,
                         f"AILAB_PAGE_PNG=1 timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                         f"{shlex.quote(source)} /workspace/.ailab/rest --pages {','.join(map(str, order))}",
@@ -285,7 +293,7 @@ class LibraryRenderer:
                 names = [names_by_page[page] for page in page_numbers]
                 if template:
                     thumb_started = time.monotonic()
-                    thumbnail = self.manager.exec(
+                    thumbnail = self._exec(
                         lease_id,
                         "python /workspace/.ailab/render_preview.py "
                         f"{shlex.quote(source)} /workspace/.ailab/thumbnail --pages {first_page} --template-thumbnail",
@@ -318,7 +326,7 @@ class LibraryRenderer:
                 raise LeaseError("render_timeout")
             remaining = max(1, int(120 - (time.monotonic() - started)))
             exec_started = time.monotonic()
-            result = self.manager.exec(
+            result = self._exec(
                 lease_id,
                 f"{office_env}timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
@@ -394,3 +402,21 @@ class LibraryRenderer:
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - started
             log.info("library render lease_source=%s phases=%s", lease_source, {k: round(v, 3) for k, v in phases.items()})
+
+    def _exec(self, handle, command, timeout):
+        execution = getattr(self, "_document_execution", None)
+        if not execution or not execution[2]:
+            return self.manager.exec(handle, command, timeout)
+        from .documents import DocumentReader
+
+        if execution[3]:
+            from datetime import datetime
+
+            timeout = min(timeout, int(datetime.fromisoformat(execution[3]).timestamp() - time.time()))
+            if timeout <= 0:
+                raise LeaseError("document_operation_deadline")
+        lease = self.manager.get(handle)
+        from ..sandbox.base import LeaseHandle
+
+        owned_handle = LeaseHandle(lease["lease_id"], lease["provider_ref"])
+        return DocumentReader(self.manager)._execute_owned(owned_handle, command, timeout, execution[0], execution[1], True, preview=True)

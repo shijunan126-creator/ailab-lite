@@ -43,7 +43,7 @@ def native_state(file):
     return ((file.meta or {}).get("representations") or {}).get("native_text") or {"status": "absent"}
 
 
-def request_native(db, file, *, full_pdf=False):
+def request_native(db, file, *, full_pdf=False, run=None, preparation=None):
     if file.deleted_at or file.purged_at or file.status != "ready" or (file.meta or {}).get("scan", {}).get("verdict") != "clean":
         raise HTTPException(404, "document_unavailable")
     if native_kind(file) is None:
@@ -67,7 +67,10 @@ def request_native(db, file, *, full_pdf=False):
                 )
             ):
                 return current
-        if current["status"] == "pending" and db.get(OutboxMessage, current.get("job_id")):
+        if current["status"] == "pending" and (existing_job := db.get(OutboxMessage, current.get("job_id"))):
+            from .file_work import register
+
+            register(db, file, existing_job, run=run, preparation=preparation)
             return current
     job_id = uuid4().hex
     state = {
@@ -80,6 +83,9 @@ def request_native(db, file, *, full_pdf=False):
     file.meta = {**(file.meta or {}), "representations": {**(file.meta or {}).get("representations", {}), "native_text": state}}
     job = stage_job(db, "native", file_id=file.id, job_id=job_id)
     job.payload = {**job.payload, "deadline": (datetime.now(UTC) + timedelta(seconds=600)).isoformat()}
+    from .file_work import register
+
+    register(db, file, job, run=run, preparation=preparation)
     db.flush()
     return state
 
@@ -123,13 +129,37 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
     file = claimed_file(db, file_id, body.job_id, x_run_attempt)
     with user_critical_section(db, file.user_id):
         file = claimed_file(db, file_id, body.job_id, x_run_attempt)
-        # Broker's existing document channel is tied to this attempt, not a model
-        # selected storage key or newly acquired Work sandbox.
+        from .file_work import start as start_work
+        from .document_operations import aware, receipt
+
+        job = db.get(OutboxMessage, body.job_id)
+        operation = start_work(db, file, job, x_run_attempt)
+        if operation.status != "running":
+            if operation.status in {"failed", "canceled"}:
+                file.meta = {
+                    **file.meta,
+                    "representations": {
+                        **file.meta.get("representations", {}),
+                        "native_text": {
+                            **native_state(file),
+                            "status": "failed",
+                            "reason": (operation.result or {}).get("reason", "native_failed"),
+                        },
+                    },
+                }
+                from .file_dependencies import wake_file
+
+                wake_file(db, file)
+            db.commit()
+            return receipt(operation)
+        # Broker's channel remains tied to this attempt and persistent slot.
         file.meta = {
             **file.meta,
             "document_job_id": x_run_attempt,
             "document_profile": "chat-full" if native_state(file).get("pdf_strategy") == "full" else "chat",
             "document_kind": native_kind(file),
+            "document_operation_id": operation.id,
+            "document_deadline": aware(operation.execution_deadline).isoformat(),
         }
         db.commit()
     return {
@@ -139,6 +169,7 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
         "kind": native_kind(file),
         "content_type": file.content_type,
         "size": file.size,
+        "execution_deadline": aware(operation.execution_deadline).isoformat(),
     }
 
 
@@ -192,6 +223,9 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
         ):
             return recorded
         file = claimed_file(db, file_id, body.job_id, x_run_attempt)
+        from .file_work import finish as finish_work
+
+        finish_work(db, body.job_id, x_run_attempt, reason=body.reason)
         state = native_state(file)
         if body.reason:
             if body.manifest_key or body.receipts:
@@ -238,3 +272,19 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
         wake_file(db, file)
         db.commit()
     return state
+
+
+@router.post("/{file_id}/native/owned", dependencies=[Depends(require_scope("files:read_for_document"))])
+def owned(file_id: str, body: Start, db: Session = Depends(get_db)):
+    from ..models import DocumentOperation
+    from . import document_operations as operations
+
+    file = db.get(FileObject, file_id, populate_existing=True)
+    operation_id = (file.meta or {}).get("document_operation_id") if file else None
+    row = db.get(DocumentOperation, operation_id, populate_existing=True) if operation_id else None
+    if not file or not row or row.file_id != file.id or row.attempt_token != body.job_id:
+        raise HTTPException(409, "document_operation_superseded")
+    with user_critical_section(db, file.user_id):
+        db.refresh(row)
+        operations.active(db, row.id, row.claim_token)
+        return {"owned": True, "deadline": operations.aware(row.execution_deadline).isoformat()}

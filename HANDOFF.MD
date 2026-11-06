@@ -5,6 +5,12 @@
 - 取消/失败后先由API确认该grant仍未发布，再删持久暂存并结算；发布响应丢失不能当未发布清掉。backfill_complete仅表示初次登记扫描完成，不等于所有新writer已纳管或TTL失效已接通。
 - 真验收需记录源码指纹/实际镜像，不只git HEAD；dirty基线不得倒填为最终冻结提交。单次或两次上传不能报p95，慢观察留待定位，不调门槛或重启求绿。见[当前实施证据](docs/progress/updates/2026-11-05-document-input-lifecycle.md#安全入库与消费准备已接通2026-11-05续作)。
 
+## 2026-11-06 持久执行槽与进程所有权
+
+- 本地Semaphore只能补充，不能让旧OCR/native/preview绕过跨进程document lane；OCR准备页图必须由自己的Outbox/attempt执行，不能在OCR Worker里直接嵌套执行另一未claim的preview。
+- 记录dispatch后的崩溃不代表没算，恢复要明确不确定状态，不能自动再启动同操作。取消中仍计执行槽；Broker监测失权后只删所属专用render lease，Work共享沙箱不能套此整租约删除。
+- parser wrapper退出后仍可能有后代占内存/文件；单kill父PID不够，独立进程组正常/异常均回收。ThreadPool中的执行必须等待结束才关闭引用/资源，不能把请求断开当子进程已退出。
+
 ## 2026-11-06 发送前准备与策略冻结
 
 - 409准备轮询发生在Run创建前，不能每次HTTP重新起算600秒；发送身份持久保存首个必要重型工作起点，Run/排队快照继承同一绝对截止。缓存读取不重新启动计时，准备小记录TTL不能删掉历史快照预算。

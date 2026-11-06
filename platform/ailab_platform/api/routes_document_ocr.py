@@ -130,7 +130,7 @@ def step(operation_id: str, x_run_attempt: str | None = Header(default=None), db
                     ):
                         raise HTTPException(422, "document_page_images_failed")
                     operations.budget(operations.live_consumer(db, row))
-                    request_page_render(db, file, missing)
+                    request_page_render(db, file, missing, run=operations.live_consumer(db, row))
                     render_id = (file.meta or {}).get("preview_job_id")
                     row.result = {**(row.result or {}), "render_job_id": render_id}
                     render_job = db.get(OutboxMessage, render_id) if render_id else None

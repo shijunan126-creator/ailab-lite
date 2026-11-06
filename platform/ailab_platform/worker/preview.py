@@ -61,6 +61,23 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             scanned = legacy_scanned_pending(file.get("status"), meta)
             if not (file.get("status") == "ready" or scanned) or manifest.get("status") != "pending":
                 return {"skipped": "already_complete"}
+            ownership = None
+            if hasattr(platform, "start_file_work"):
+                ownership = platform.start_file_work(job_id)
+                if ownership["status"] == "pending":
+                    return {"skipped": "busy"}
+                if ownership["status"] in {"ready", "failed", "canceled"}:
+                    return {"skipped": ownership["status"]}
+            execution_deadline = ownership.get("execution_deadline") if ownership else None
+
+            def check_owned():
+                if execution_deadline:
+                    from datetime import datetime
+
+                    if time.time() >= datetime.fromisoformat(execution_deadline).timestamp():
+                        raise IsolationError("document_operation_deadline")
+                    platform.file_work_owned(job_id)
+
             storage = get_storage()
             assets = {}
             render_lease_id = None
@@ -84,6 +101,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                                 Path(tmp) / "text",
                                 filename=file["filename"],
                                 content_type=file.get("content_type") or "",
+                                ownership=check_owned,
                             )
                             data = info.get("text", "").encode("utf-8")
                             key = f"derived/{file_id}/preview/text.txt"
@@ -100,7 +118,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                                 raise ValueError("image_unavailable")
                             manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
                         else:
-                            execute("sheets", source, Path(tmp) / "sheets", timeout=120)
+                            execute("sheets", source, Path(tmp) / "sheets", timeout=120, ownership=check_owned)
                             data = (Path(tmp) / "sheets" / "sheets.json").read_bytes()
                             key = f"derived/{file_id}/preview/sheets.json"
                             storage.put_bytes(key, data, "application/json")

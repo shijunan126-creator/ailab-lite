@@ -34,10 +34,17 @@ def request_ready_preview(db, file):
         request_preview(db, file, retry_stale=False)
 
 
-def request_preview(db, file, *, retry_stale=True):
+def request_preview(db, file, *, retry_stale=True, run=None, preparation=None):
     meta = dict(file.meta or {})
     now = datetime.now(UTC).timestamp()
     cached = meta.get("preview")
+    if cached and cached.get("status") == "pending" and meta.get("preview_job_id"):
+        from ..models import OutboxMessage
+        from .file_work import register
+
+        existing_job = db.get(OutboxMessage, meta["preview_job_id"])
+        if existing_job:
+            register(db, file, existing_job, run=run, preparation=preparation)
     if cached and cached.get("reason") != "text_unavailable":
         if not retry_stale or cached["status"] != "pending" or now - meta.get("preview_requested_at", 0) <= 300:
             return cached, None
@@ -73,4 +80,10 @@ def request_preview(db, file, *, retry_stale=True):
         stage_job(db, "preview", file_id=file.id, job_id=job_id)
     meta["preview"] = manifest
     file.meta = meta
+    if job_id:
+        from ..models import OutboxMessage
+        from .file_work import register
+
+        db.flush()
+        register(db, file, db.get(OutboxMessage, job_id), run=run, preparation=preparation)
     return manifest, job_id

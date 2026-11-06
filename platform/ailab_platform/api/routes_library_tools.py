@@ -147,14 +147,14 @@ def search_library(run_id: str, body: Search, db: Session = Depends(get_db)):
 @router.post("/{run_id}/library/read", dependencies=[Depends(require_scope("files:read_for_run"))])
 def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
     legacy_document_entry(db, run_id, "read_library_file")
-    _, file = _ready(db, run_id, body.file_id)
+    run, file = _ready(db, run_id, body.file_id)
     meta = file.meta or {}
     if meta.get("input_lifecycle") == 2 and not meta.get("document_manifest_key") and not file.content_type.startswith("image/"):
         from .native_preparation import request_native
 
         with user_critical_section(db, file.user_id):
             db.refresh(file)
-            state = request_native(db, file, full_pdf=True)
+            state = request_native(db, file, full_pdf=True, run=run)
             db.commit()
         if state["status"] == "pending":
             return {"file_id": file.id, "pending": True, "action": "native-text"}
@@ -446,7 +446,7 @@ def resolve_attachment(run_id: str, body: Resolve, db: Session = Depends(get_db)
 @router.post("/{run_id}/library/image-reference", dependencies=[Depends(require_scope("files:read_for_run"))])
 def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
     legacy_document_entry(db, run_id, "view_attachment")
-    _, file = _ready(db, run_id, body.file_id)
+    run, file = _ready(db, run_id, body.file_id)
     if file.content_type.startswith("image/"):
         return {
             "files": [
@@ -523,7 +523,7 @@ def extract_for_run(run_id: str, body: Read, db: Session = Depends(get_db)):
 
     with user_critical_section(db, run.user_id):
         db.refresh(file)
-        result = request_extraction(db, file, body.pages)
+        result = request_extraction(db, file, body.pages, run=run)
         db.commit()
     if result.get("ocr") == "done":
         result["content"] = read_library(run_id, body, db)

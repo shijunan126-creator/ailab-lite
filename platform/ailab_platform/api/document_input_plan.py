@@ -1,7 +1,7 @@
 """Frozen V2 Chat input: bounded native probe, whole-file packing and explicit coverage."""
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import HTTPException
 
@@ -42,7 +42,7 @@ def native_document(db, file, preparation):
         available = False
     if not available:
         preparations.start_budget(db, preparation)
-        state = request_native(db, file)
+        state = request_native(db, file, preparation=preparation)
         bounded_job(db, preparation, state.get("job_id"))
         if state["status"] == "failed":
             raise HTTPException(
@@ -120,6 +120,12 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
         if limits.get("version") == file.sha256 and limits.get("reason"):
             raise HTTPException(413, "native_structure_limit")
     preparation = preparations.get_preparation(db, user, files, spec.id, prompt, send_id)
+    if (
+        preparation.started_at
+        and preparation.deadline
+        and preparations.aware(preparation.deadline).timestamp() <= datetime.now(UTC).timestamp()
+    ):
+        preparations.start_budget(db, preparation)
     if preparation.plan:
         validate_frozen(db, files, preparation.plan, spec.id)
         return preparation.plan
@@ -211,7 +217,7 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
                 from .preview_requests import request_preview
 
                 preparations.start_budget(db, preparation)
-                preview, _ = request_preview(db, file)
+                preview, _ = request_preview(db, file, preparation=preparation)
                 bounded_job(db, preparation, (file.meta or {}).get("preview_job_id"))
                 if preview["status"] == "failed":
                     raise HTTPException(422, "attachment_image_unavailable")
@@ -228,7 +234,7 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
                 from .routes_ocr import request_page_render
 
                 preparations.start_budget(db, preparation)
-                request_page_render(db, file, item["pages"])
+                request_page_render(db, file, item["pages"], preparation=preparation)
                 bounded_job(db, preparation, (file.meta or {}).get("preview_job_id"))
                 processing()
             if binding.get("error") or binding.get("truncated"):

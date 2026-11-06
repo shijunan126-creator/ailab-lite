@@ -194,3 +194,67 @@ def test_non_tool_model_can_inline_native_text_but_cannot_accept_partial_pdf():
         plan = prepare(db, db.get(User, file.user_id), [file], ModelSpec("m", "m", capabilities=[]), "read", send_id=str(uuid4()))
         assert plan["items"][0]["inline"]
         assert not plan["items"][0].get("visual_pages")
+
+
+def test_native_preflight_jobs_join_global_lane_and_keep_original_absolute_deadline():
+    from ailab_platform.api.document_operations import aware
+    from ailab_platform.api.native_preparation import request_native
+    from ailab_platform.models import DocumentOperation
+
+    init_db()
+    with SessionLocal() as db:
+        file, _ = make_file(db)
+        file.meta = {"scan": {"verdict": "clean"}}
+        user = db.get(User, file.user_id)
+        preparation = get_preparation(db, user, [file], "m", "read", str(uuid4()))
+        deadline = start_budget(db, preparation)
+        state = request_native(db, file, preparation=preparation)
+        db.commit()
+        operation = db.get(DocumentOperation, state["job_id"])
+        assert operation.kind == "file_job" and operation.lane == "render"
+        assert aware(operation.deadline) == deadline
+        assert operation.binding["preparations"] == [preparation.id]
+        assert not operation.binding.get("file_demand")
+        again = request_native(db, file, preparation=preparation)
+        assert again["job_id"] == state["job_id"]
+        assert aware(operation.deadline) == deadline
+        # Expired/withdrawn preparation is not a permanent file-owned demand.
+        from ailab_platform.api.file_work import available
+
+        preparation.deadline = datetime.now(UTC) - timedelta(seconds=1)
+        assert not available(db, operation)
+
+
+def test_file_preview_and_native_share_one_persistent_slot_and_canceling_retains_it():
+    from ailab_platform.api import document_operations as operations
+    from ailab_platform.api.file_work import register, start
+    from ailab_platform.api.jobs import stage_job
+    from ailab_platform.models import DocumentOperation
+
+    init_db()
+    with SessionLocal() as db:
+        file, _ = make_file(db)
+        first = stage_job(db, "preview", file_id=file.id)
+        file.meta = {**file.meta, "preview_job_id": first.id, "preview": {"status": "pending", "kind": "pages"}}
+        db.flush()
+        registered = register(db, file, first)
+        first.claim_token, first.claimed_until = "attempt", datetime.now(UTC) + timedelta(minutes=3)
+        db.flush()
+        claimed = start(db, file, first, "attempt")
+        assert claimed.status == "running" and claimed.kind == "file_job"
+        second_file, _ = make_file(db)
+        job = stage_job(db, "native", file_id=second_file.id)
+        second_file.meta = {**second_file.meta, "representations": {"native_text": {"status": "pending", "job_id": job.id}}}
+        db.flush()
+        waiting = register(db, second_file, job)
+        # Execution still exists after its source is revoked; a waiting parser
+        # cannot claim until cancellation is acknowledged or its lease expires.
+        file.deleted_at = datetime.now(UTC)
+        db.flush()
+        operations.claim(db, waiting)
+        assert registered.status == "canceling" and waiting.status == "pending"
+        assert db.get(DocumentOperation, first.id).executor_started_at is not None
+        registered.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+        db.flush()
+        operations.claim(db, waiting)
+        assert registered.status == "failed" and waiting.status == "running"

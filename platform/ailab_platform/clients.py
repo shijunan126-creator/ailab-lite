@@ -377,6 +377,15 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/native/scope/complete", json={"job_id": operation_id, **body})
         ).json()
 
+    def start_file_work(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/start", json={})).json()
+
+    def file_work_owned(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/owned", timeout=2, json={})).json()
+
+    def native_owned(self, file_id, attempt):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/owned", timeout=2, json={"job_id": attempt})).json()
+
     def start_native(self, file_id, job_id):
         return self._send(self._req("POST", f"/internal/files/{file_id}/native/start", json={"job_id": job_id})).json()
 

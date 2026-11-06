@@ -202,7 +202,7 @@ def _claim_locked(db, job, body):
         if envelope.kind == "file":
             # Capacity waits do not consume the scanner failure budget.
             job.deliveries = 1
-        if expired:
+        if expired and not db.get(DocumentOperation, job_id):
             job.payload = {**job.payload, "deadline": (now + timedelta(seconds=settings.job_deadline_seconds)).isoformat()}
             expired = False
     if expired and envelope.kind == "run" and not done:
@@ -230,6 +230,14 @@ def _claim_locked(db, job, body):
             representations = dict((file.meta or {}).get("representations") or {})
             representations["native_text"] = {**representations.get("native_text", {}), "status": "failed", "reason": "job_expired"}
             file.meta = {**(file.meta or {}), "representations": representations}
+            operation = db.get(DocumentOperation, job_id)
+            if operation and operation.kind == "file_job":
+                operation.status = "failed"
+                operation.result = {"reason": "document_job_deadline"}
+                operation.claim_token, operation.lease_until = None, None
+            from .file_dependencies import wake_file
+
+            wake_file(db, file)
         elif expired and envelope.kind == "preview" and not done:
             file.meta = {**(file.meta or {}), "preview": {"status": "failed", "reason": "job_expired"}}
         elif expired and envelope.kind == "ocr" and not done:

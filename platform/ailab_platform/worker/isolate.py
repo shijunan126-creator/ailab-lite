@@ -17,7 +17,9 @@ class IsolationError(RuntimeError):
     pass
 
 
-def execute(operation: str, source: Path, output: Path, *, timeout: float | None = None, memory_mb: int | None = None, **options) -> dict:
+def execute(
+    operation: str, source: Path, output: Path, *, timeout: float | None = None, memory_mb: int | None = None, ownership=None, **options
+) -> dict:
     from ..config import settings
 
     output.mkdir(parents=True, exist_ok=True)
@@ -37,6 +39,7 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
         )
     )
     started = time.monotonic()
+    next_ownership_check = started
     with open(output / "stderr.log", "wb") as errors:
         proc = subprocess.Popen(
             [sys.executable, "-m", "ailab_platform.worker.isolate", str(spec)],
@@ -47,6 +50,9 @@ def execute(operation: str, source: Path, output: Path, *, timeout: float | None
         )
         try:
             while proc.poll() is None:
+                if ownership and time.monotonic() >= next_ownership_check:
+                    ownership()
+                    next_ownership_check = time.monotonic() + 1
                 if time.monotonic() - started > (timeout or settings.parse_timeout_seconds):
                     raise IsolationError("timeout")
                 if sum(p.stat().st_size for p in output.iterdir() if p.is_file()) > output_limit:

@@ -201,3 +201,37 @@ def test_consuming_small_scope_still_charges_entire_source_and_round_budget():
         third, _ = make_file(db)
         with pytest.raises(HTTPException, match="document_input_limit"):
             charge_consumption(db, run, third)
+
+
+def test_office_supervisor_kills_remaining_children_after_parent_exit(tmp_path):
+    import os
+    import signal
+    import sys
+    import time
+    from pathlib import Path
+
+    supervisor = Path(__file__).resolve().parents[1] / "ailab_platform/sandbox_tools/office_exec.py"
+    child = tmp_path / "child.pid"
+    code = "import subprocess,sys; from pathlib import Path; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); Path(sys.argv[1]).write_text(str(p.pid))"
+    result = subprocess.run(
+        [sys.executable, str(supervisor), "5", str(128 * 1024**2), sys.executable, "-c", code, str(child)], capture_output=True, timeout=10
+    )
+    assert result.returncode == 0, result.stderr
+    pid = int(child.read_text())
+    try:
+        # A killed Linux child can be a short-lived zombie owned by init; it no
+        # longer has memory or executable work. ps distinguishes that state.
+        until = time.monotonic() + 3
+        state = ""
+        while time.monotonic() < until:
+            row = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, timeout=1)
+            state = row.stdout.strip()
+            if not state or state.startswith("Z"):
+                break
+            time.sleep(0.02)
+        assert not state or state.startswith("Z"), state
+    finally:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass

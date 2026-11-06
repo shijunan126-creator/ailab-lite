@@ -84,14 +84,14 @@ def reconcile():
                     db.rollback()
                     continue
                 if not ready(db, dependency):
-                    prepare(db, dependency)
+                    prepare(db, dependency, run=run)
                     db.commit()
                     continue
                 resume_dependency(db, run)
                 db.commit()
 
 
-def prepare(db, dependency):
+def prepare(db, dependency, *, run=None):
     """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
     the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
     Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
@@ -103,7 +103,7 @@ def prepare(db, dependency):
         if file and not file.deleted_at and not file.purged_at:
             from .native_preparation import request_native
 
-            request_native(db, file)
+            request_native(db, file, run=run)
         return
     if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
         return

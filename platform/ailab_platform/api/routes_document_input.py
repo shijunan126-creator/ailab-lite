@@ -63,7 +63,7 @@ def text_request(db, run_id, body, attempt):
             from .document_operations import budget
 
             deadline = budget(run, start=True)
-            state = request_native(db, file)
+            state = request_native(db, file, run=run)
             job = db.get(OutboxMessage, state.get("job_id"))
             if job:
                 from datetime import datetime

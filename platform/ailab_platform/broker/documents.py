@@ -47,7 +47,7 @@ class DocumentReader:
         def remaining_seconds():
             from datetime import datetime
 
-            deadline = (file.get("meta") or {}).get("document_deadline") if profile == "scope" else None
+            deadline = (file.get("meta") or {}).get("document_deadline") if profile != "legacy" else None
             remaining = datetime.fromisoformat(deadline).timestamp() - time.time() if deadline else settings.office_timeout_seconds + 10
             if remaining <= 0:
                 raise LeaseError("document_operation_deadline")
@@ -85,7 +85,9 @@ class DocumentReader:
                 f"{shlex.quote(source)} {out} {kind} {profile} "
                 f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
             )
-            result = self.manager.exec(handle.lease_id, command, min(int(remaining_seconds()), int(execution_seconds) + 5))
+            result = self._execute_owned(
+                handle, command, min(int(remaining_seconds()), int(execution_seconds) + 5), file_id, job_id, profile != "legacy"
+            )
             phases["exec_seconds"] = time.monotonic() - started
             if result.exit_code:
                 import json
@@ -145,3 +147,42 @@ class DocumentReader:
                     self.manager.release(handle, reason="document_failed")
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - total_started
+
+    def _execute_owned(self, handle, command, timeout, file_id, job_id, monitored, *, preview=False):
+        if not monitored:
+            return self.manager.exec(handle.lease_id, command, timeout)
+        import concurrent.futures
+        import contextvars
+        import threading
+        from ..clients import PlatformClient
+
+        stopped = threading.Event()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="document-parser") as executor:
+            task = executor.submit(contextvars.copy_context().run, self.manager.exec, handle.lease_id, command, timeout)
+            deadline = time.monotonic() + timeout
+            try:
+                with PlatformClient(service="broker") as client:
+                    while not task.done():
+                        if stopped.wait(min(1, max(0, deadline - time.monotonic()))):
+                            break
+                        if task.done():
+                            break
+                        if time.monotonic() >= deadline:
+                            raise LeaseError("document_operation_deadline")
+                        if preview:
+                            client.file_work_owned(job_id)
+                        else:
+                            client.native_owned(file_id, job_id)
+                return task.result()
+            except BaseException:
+                # A dedicated parser lease never contains another user's or
+                # Work subtask's processes. Destroy it and join execution before
+                # releasing ownership; cancel_exec is not supported by all backends.
+                self.manager.release(handle, reason="document_canceled")
+                try:
+                    task.result(timeout=5)
+                except Exception:
+                    pass
+                raise
+            finally:
+                stopped.set()

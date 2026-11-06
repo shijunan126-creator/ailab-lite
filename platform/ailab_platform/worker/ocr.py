@@ -10,21 +10,15 @@ from .isolate import execute
 
 def process_ocr(file_id, platform):
     """Drive one queued OCR job towards a terminal state. Raising means "retry this message later"."""
-    from .preview import process_preview
-
     state = platform.ocr(file_id, prepare=True)
     if state["ocr"] == "running":
         raise RuntimeError("OCR is already running for this file")
     if state["ocr"] != "pending":
         return state
     if state.get("preview_job_id"):
-        # The API recorded this preview job as pending; render it through the existing Broker path.
-        process_preview(file_id, state["preview_job_id"], platform)
-        state = platform.ocr(file_id, prepare=True)
-        if state["ocr"] not in {"pending", "running"}:
-            return state
-        if state.get("preview_job_id") or state["ocr"] == "running":
-            raise RuntimeError("OCR preview is still rendering")
+        # Preview owns a separate durable claim and the render lane. Do not run
+        # it under this OCR attempt or bypass global fairness with a nested call.
+        raise RuntimeError("OCR preview is still rendering")
     import time
 
     deadline = time.monotonic() + min(540, settings.ocr_deadline_seconds)
