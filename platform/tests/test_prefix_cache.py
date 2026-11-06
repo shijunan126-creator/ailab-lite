@@ -1981,7 +1981,8 @@ def test_usage_anchor_metadata_does_not_change_recorded_request_bytes(monkeypatc
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
-def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode):
+@pytest.mark.parametrize("fmt", ["pdf", "xlsx"])
+def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt):
     class Platform(FakePlatform):
         async def get_run(self, run_id):
             return {**await super().get_run(run_id), "options": {"mode": mode, "document_tools_version": 2}}
@@ -2010,9 +2011,11 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode):
         }
 
     sequence = [
-        response("guide", "load_skill", {"name": "platform.pdf"}),
-        response("viewer", "load_skill", {"name": "platform.pdf", "resource": "viewer/SKILL.md"}),
+        response("guide", "load_skill", {"name": f"platform.{fmt}"}),
+        response("viewer", "load_skill", {"name": f"platform.{fmt}", "resource": "viewer/SKILL.md"}),
     ]
+    if mode == "work" and fmt == "xlsx":
+        sequence.append(response("design", "load_skill", {"name": "platform.xlsx", "resource": "engines/design.md"}))
     if mode == "chat":
         sequence.append(response("read", "read_document", {"file_id": "f"}))
     sequence.append({"content": "done"})
@@ -2023,6 +2026,13 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode):
     assert len(requests) == len(sequence)
     for first, second in pairwise(requests):
         assert_extension(first, second)
+    system = requests[0]["messages"][0]["content"]
+    assert "回答围绕用户本次问题" in system
+    if mode == "work":
+        assert "inputs只注入本轮附件" in system and "保留真实退出码" in system
+    else:
+        search = next(t for t in requests[0]["tools"] if t["function"]["name"] == "search_document")
+        assert "整段字面子串" in search["function"]["description"]
     names = {t["function"]["name"] for t in requests[0]["tools"]}
     assert not names & {"read_library_file", "extract_text", "view_attachment", "document_view"}
     assert ({"read_document", "search_document", "view_document"} <= names) == (mode == "chat")
@@ -2031,7 +2041,11 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode):
             loaded = json.loads(message["content"])
             assert loaded["ok"] and "skill" in loaded
             assert "read_library_file" not in loaded["skill"] and "document_view" not in loaded["skill"]
-            assert ("office-read" in loaded["skill"]) == (mode == "work")
+            if loaded.get("resource") == "engines/design.md":
+                assert 'sys.path.insert(0, "/opt/skills/platform.xlsx")' in loaded["skill"]
+                assert "from templates.base import *" in loaded["skill"]
+            else:
+                assert ("office-read" in loaded["skill"]) == (mode == "work")
 
 
 def test_v1_checkpoint_remains_v1_when_catalog_v2_is_available():

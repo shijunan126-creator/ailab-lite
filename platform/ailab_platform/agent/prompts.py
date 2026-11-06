@@ -18,7 +18,7 @@ from ..domain.answer_parts import for_history
 from ..skill_registry import BASE_SKILLS
 from ..skill_registry import catalog as skills
 
-PLATFORM_PROMPT_VERSION = "2026-11-02-skills-v2"
+PLATFORM_PROMPT_VERSION = "2026-11-07-document-workflow"
 
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
 
@@ -57,11 +57,15 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
   修改前先 load_skill 阅读，保留已有约定和附带脚本；不要把外部指令自动安装成技能，同名不覆盖通用技能。
   用户纠正已有做法时可更新对应个人技能，并简要告知；未验证的尝试和一次性细节不要沉淀。
 - 单条命令不超过 10 分钟；不要尝试读取环境变量、密钥或系统文件。
+- 执行脚本和验证时保留真实退出码，用set -e/pipefail或&&连接依赖步骤；
+  不要用末尾echo或仅看管道尾部掩盖失败，也不把旧成品当作失败命令的新结果。
 
 # 多轮对话
 - 同一个对话里，上一轮留下的 /workspace 文件（work、assets、outputs）会在你使用沙箱时恢复。
 - 用户说"改一下""第三页换成…""再加一列…"时：读原来的规格文件或脚本，只改相关部分，重新生成**同名**文件，不要从头再做。
-- 改完简要说明改了什么。
+- inputs只注入本轮附件，不随上一轮工作区快照保留。继续运行已有脚本前，若它依赖历史inputs文件，先检查路径；
+  缺失时按历史file_id用copy_library_file恢复到脚本原路径，再执行，不靠报错试探。
+- 改完用一两句话和文件链接说明本次改动；未逐项核对前后值，不额外罗列推算的变化、审计过程或改动建议。
 
 # 技能
 {skills}
@@ -185,6 +189,10 @@ def system_prompt_for(
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
         base += WEB_NOTE
+    base += (
+        "\n回答围绕用户本次问题，默认只给必要结论与核对依据；不主动扩展其他页、图表建议或整体规律。"
+        "未查看的范围保持未知，不能从少数页或部分命中推断全文件规律。"
+    )
     base += "\n" + SKILL_LOADING_NOTE
     base += "\n工具已在本轮提供；其他技能可用 search_capabilities 查找后调用 load_skill。"
     if mode == "chat":

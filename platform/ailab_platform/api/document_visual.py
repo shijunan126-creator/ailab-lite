@@ -58,7 +58,23 @@ def requested(db, run, file, body):
 def response(row, file):
     base = {"file_id": file.id, "version": file.sha256, "operation_id": row.id}
     if row.status == "ready":
-        return {**base, "files": row.result["files"], "coverage": row.binding["target"], "missing": [], "truncated": False}
+        files = row.result["files"]
+        source = files[0].get("source") if files else None
+        meta = file.meta or {}
+        count = (meta.get("ocr_preview") or {}).get("page_count") or meta.get("render_page_count")
+        return {
+            **base,
+            "files": files,
+            "coverage": row.binding["target"],
+            "missing": [],
+            "truncated": False,
+            "visual_representation": {
+                "source": source,
+                "page_count": count,
+                "region_revision": "use the selected files entry image_revision, never a native index revision",
+                "sheet_to_page_mapping": "unavailable" if file.filename.lower().endswith(".xlsx") else "not_applicable",
+            },
+        }
     if row.status in {"failed", "canceled"}:
         return {**base, "error": row.result.get("reason", "document_view_failed"), "partial": bool(row.result.get("files"))}
     return {**base, "pending": True, "action": "document-view", "deadline": operations.aware(row.deadline).timestamp()}

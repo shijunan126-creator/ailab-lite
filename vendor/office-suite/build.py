@@ -275,13 +275,17 @@ def document_guide(fmt: str, mode: str, resources: list[str]) -> str:
         text += (
             "用resolve_attachment确认file_id。先read_document(navigation_only=true)查看有界真实导航，"
             "再选selector范围；read_document默认读取native文字；"
-            "search_document只搜索已有原生/OCR文字。next_cursor原样续取，不能更改query或selector；"
+            "search_document只搜索已有原生/OCR文字，query是规范化后的整段字面子串，不是语义搜索或多词OR；多个词分别调用，"
+            "不能拼在一起后声称逐词搜过。next_cursor原样续取，不能更改query或selector；"
             "零命中但有游标不代表搜完。片段规范化只作定位，精确引用另读原文。\n"
             "目录缺失用工具返回的稳定locator，未知内容标unknown，不猜页码或范围。"
             "view_document每次最多4页或指定区域，不隐式OCR。需要OCR时用read_document(text_source=ocr)明确选择页或region。"
             "region绑定表示revision、页面和旋转，坐标是归一化范围。\n"
             "原生文字、视觉和OCR覆盖彼此独立；页眉或隐藏文字不能证明扫描正文、图表或嵌图已读。"
             "全文任务须遍历所有续游标并核对覆盖，部分命中不能当全文；非视觉模型说明未理解图形。"
+            "只问可读文字中的值或事实时，读到足够依据就回答，不因视觉覆盖未知而例行渲染；问题涉及图片/布局/图表或文字缺失才看相关范围。"
+            "没有实际检查的页面不推断相同内容或整体规律，默认不添加用户未问的格式审计、数字变化或建议。"
+            "Word/Excel的工作表或段落序号不是Office-PDF页号；先用view_document的pages取得视觉表示，不能用native索引revision猜region。"
             "Word/Excel文字读取不必先转PDF，Office物理页以实际渲染来源为准，不能混用浏览器与Office-PDF页码。"
             "不运行脚本、不安装OCR权重，不交付中间图片来绕过工具。\n"
         )
@@ -297,6 +301,8 @@ def document_guide(fmt: str, mode: str, resources: list[str]) -> str:
             "exec执行，后台用exec_wait；先scripts/check.py，再view_workspace_file检查，最后deliver_file。"
             "工作区locator不自动成为平台file_id引用，须核验交付版本；子任务只汇报，主任务交付。\n"
             f"资源根目录/opt/skills/platform.{fmt}/。\n"
+            + ("Python模板应把/opt/skills/platform.xlsx加入sys.path或PYTHONPATH，用from templates.base import ...；"
+               "不要仅把templates目录加入路径后from base导入，否则模板内的templates.palettes无法解析。\n" if fmt == "xlsx" else "")
         )
     text += (
         "\n按任务读取下面的完整资源及modules.json中的deps，不默认重复注入所有正文。\n"
@@ -381,6 +387,15 @@ def build_document_guides(output: Path) -> None:
                 "viewer": viewer_guide(fmt, mode, original.decode()),
                 "viewer_source_sha256": sha(original),
             }
+            if fmt == "xlsx" and mode == "work":
+                relative = "engines/design.md"
+                original_design = resources[relative][0]
+                old = "sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'templates'))\nfrom base import *"
+                new = 'sys.path.insert(0, "/opt/skills/platform.xlsx")\nfrom templates.base import *'
+                design = original_design.decode()
+                if old not in design:
+                    raise ValueError("xlsx template import example changed; review V2 adaptation")
+                result[fmt][mode]["resources"] = {relative: {"source_sha256": sha(original_design), "text": design.replace(old,new)}}
             if fmt == "pdf" and mode == "work":
                 relative = "briefs/process-advanced.md"
                 original_advanced = resources[relative][0]

@@ -136,10 +136,33 @@ def start(db, file, job, attempt):
 
 
 def finish(db, job_id, attempt, *, reason=None):
+    db.flush()  # preserve completion metadata before the identity refresh below
     row = db.get(DocumentOperation, job_id, populate_existing=True)
     if not row or row.kind != "file_job" or row.attempt_token != attempt:
         raise HTTPException(409, "document_operation_superseded")
-    operations.active(db, row.id, row.claim_token)
+    # Completion acknowledges a dispatched executor returning. Its consumer may
+    # already have resumed from the last published page, even finished the Run.
+    # Requiring continuing demand here strands the lane until execution expiry.
+    # Keep the writer/attempt/version/deadline fences, but not consumer liveness.
+    _, file = job_for_attempt(db, job_id, attempt)
+    from ..models import User
+
+    user = db.get(User, row.user_id, populate_existing=True)
+    now = datetime.now(UTC)
+    if (
+        row.status not in {"running", "canceling"}
+        or not row.claim_token
+        or not row.lease_until
+        or operations.aware(row.lease_until) <= now
+        or not row.execution_deadline
+        or operations.aware(row.execution_deadline) <= now
+        or file.id != row.file_id
+        or file.user_id != row.user_id
+        or file.sha256 != row.source_version
+        or not user
+        or user.disabled_at
+    ):
+        raise HTTPException(409, "document_operation_superseded")
     row.status, row.claim_token, row.lease_until = "failed" if reason else "ready", None, None
     row.result = {"reason": reason} if reason else {}
 

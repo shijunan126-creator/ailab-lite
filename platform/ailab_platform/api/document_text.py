@@ -426,6 +426,7 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
             "ocr_provenance": "legacy_page_cache" if ocr_rows else "scoped_cache" if scoped_rows else None,
         },
         **result,
+        **({"query": request.query, "match_mode": "normalized_literal"} if searching else {}),
         "next_cursor": encode_cursor(context, next_position, key=key) if next_position is not None else None,
         "truncated": next_position is not None,
         "navigation_status": "available_index" if navigation else "not_requested",

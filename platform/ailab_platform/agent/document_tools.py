@@ -18,13 +18,15 @@ TOOLS = [
     tool(
         "search_document",
         "在文档已有原生文字和OCR文字中搜索，不自动OCR。每次最多扫描100块、返回20条命中；"
-        "零命中且有next_cursor仍须继续。规范化片段只用于定位，精确引用须read_document读取原文。",
+        "query是NFKC/大小写规范化后的整段字面子串，不是语义、正则或多词OR搜索；多个关键词分别调用，不能拼成一个query后声称分别搜过。"
+        "零命中且有next_cursor仍须继续。零命中只排除该字面短语；精确引用须read_document读取原文。",
         SearchDocument,
     ),
     tool(
         "view_document",
         "查看文档页、图片或绑定表示revision的区域；每次最多4页。不自动OCR。"
-        "根据实际返回来源与覆盖判断布局、图表和嵌图，不能把不同Word排版页码互换。",
+        "文字已足够回答且未要求视觉核验时，不为确认文字而额外看图。根据实际返回来源与覆盖判断布局、图表和嵌图。"
+        "Word/Excel的pages是渲染页，工作表序号不是页号；native索引revision不能用于视觉region，先用pages取得实际视觉revision。",
         ViewDocument,
     ),
 ]
