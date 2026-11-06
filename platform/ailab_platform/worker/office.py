@@ -84,6 +84,8 @@ def read(file_id, platform, storage, output, scan):
         try:
             if key:
                 storage.delete(key)
+                if result.get("transfer_receipt"):
+                    platform.discard_derived_batch([result["transfer_receipt"]])
         finally:
             if result.get("render_lease_id") and result.get("render_generation"):
                 try:

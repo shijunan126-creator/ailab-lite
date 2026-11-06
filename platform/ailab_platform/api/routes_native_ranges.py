@@ -82,9 +82,9 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
                 # The old parser may have executed. Never silently launch the
                 # same operation again after an ambiguous worker crash.
                 if row.attempt_token != x_run_attempt:
-                    fail(db, row, "document_dispatch_uncertain")
+                    row.status, row.result = "canceling", {"reason": "document_dispatch_uncertain"}
                     db.commit()
-                    return operations.receipt(row)
+                    return {**operations.receipt(row), "status": "failed"}
                 raise HTTPException(409, "document_operation_already_dispatched")
             operations.claim(db, row)
             if row.status != "running":

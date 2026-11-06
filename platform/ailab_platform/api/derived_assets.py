@@ -385,3 +385,22 @@ def collect_batch(db, storage, *, now=None, transient_only=False):
         if examined >= settings.gc_batch_size:
             break
     return removed
+
+
+def publish_writer(db, file_id, job_id, attempt, *, failed=False, keys=None):
+    """Same transaction as business metadata. The indexed writer pair bounds the mutation."""
+    budget_lock(db)
+    if not job_id or not attempt:
+        raise HTTPException(409, "derived_job_stale")
+    query = update(DerivedAsset).where(
+        DerivedAsset.file_id == file_id,
+        DerivedAsset.job_id == job_id,
+        DerivedAsset.attempt_token == attempt,
+        DerivedAsset.state == "staged",
+    )
+    if keys is not None:
+        query = query.where(DerivedAsset.key.in_(keys))
+    db.execute(
+        query.values(state="deleting" if failed else "ready", lease_until=None, **({"expires_at": datetime.now(UTC)} if failed else {}))
+    )
+    db.flush()

@@ -105,6 +105,24 @@ def process_file(
 
 
 def _process_file(file_id: str, platform: PlatformClient, storage: Storage | None, *, thumbnail_only: bool) -> dict:
+    from ..derived_writes import accounted_writes
+    from ..runtime_context import attempt_id_var
+    from ..storage import get_storage
+
+    raw = storage or get_storage()
+    attempt = attempt_id_var.get()
+    if not attempt or not hasattr(platform, "reserve_derived"):
+        return _process_file_impl(file_id, platform, raw, thumbnail_only=thumbnail_only)
+    file = platform.get_file(file_id, job="thumbnail" if thumbnail_only else "processing")
+    # API returns its own durable writer id, not a model-selected key.
+    job_id = (file.get("meta") or {}).get("writer_job_id") or (
+        "thumb_" + file_id if thumbnail_only else (file.get("meta") or {}).get("processing_job_id")
+    )
+    with accounted_writes(raw, platform, file["sha256"], job_id) as bounded:
+        return _process_file_impl(file_id, platform, bounded, thumbnail_only=thumbnail_only)
+
+
+def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage | None, *, thumbnail_only: bool) -> dict:
     from ..storage import get_storage
 
     storage = storage or get_storage()
@@ -189,18 +207,6 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         # Commit the scanner verdict before any parser starts. The API stages a
         # preview in the same transaction, independently of parsing readiness.
         scanned_file = platform.patch_file(file_id, meta={"scan": scan})
-        # Give the preview the standby before the document reader competes for
-        # the same reserved capacity. The durable outbox remains the retry path.
-        if settings.render_prewarm and isinstance(scanned_file, dict):
-            preview_meta = scanned_file.get("meta") or {}
-            job_id = preview_meta.get("preview_job_id")
-            if job_id and (preview_meta.get("preview") or {}).get("status") == "pending":
-                from .preview import process_preview
-
-                try:
-                    process_preview(file_id, job_id, platform)
-                except Exception:
-                    log.warning("early preview failed; durable preview job will retry", exc_info=True)
         if (meta.get("meta") or {}).get("template_kind"):
             try:
                 analysis = execute("template", source, Path(tmp) / "template")

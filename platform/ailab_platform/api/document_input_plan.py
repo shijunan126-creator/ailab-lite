@@ -1,7 +1,7 @@
 """Frozen V2 Chat input: bounded native probe, whole-file packing and explicit coverage."""
 
 import json
-from datetime import UTC, datetime
+from datetime import datetime
 
 from fastapi import HTTPException
 
@@ -120,12 +120,6 @@ def prepare(db, user, files, spec, prompt, *, send_id=None):
         if limits.get("version") == file.sha256 and limits.get("reason"):
             raise HTTPException(413, "native_structure_limit")
     preparation = preparations.get_preparation(db, user, files, spec.id, prompt, send_id)
-    if (
-        preparation.started_at
-        and preparation.deadline
-        and preparations.aware(preparation.deadline).timestamp() <= datetime.now(UTC).timestamp()
-    ):
-        preparations.start_budget(db, preparation)
     if preparation.plan:
         validate_frozen(db, files, preparation.plan, spec.id)
         return preparation.plan

@@ -1259,6 +1259,7 @@ class DerivedAsset(Base):
         Index("ix_derived_assets_state_lease", "state", "lease_until", "key"),
         Index("ix_derived_assets_file", "file_id", "source_version"),
         Index("ix_derived_assets_run", "run_id"),
+        Index("ix_derived_assets_job_attempt", "job_id", "attempt_token", "state"),
         Index("ix_derived_assets_kind_state", "kind", "state", "key"),
         Index("ix_derived_assets_captures", "state", "reconstructible", "created_at", "key"),
         CheckConstraint("size_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_assets_nonnegative"),

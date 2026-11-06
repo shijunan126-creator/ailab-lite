@@ -4,6 +4,7 @@ import hashlib
 from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -120,8 +121,7 @@ def start(db, file, job, attempt):
         return row
     if row.executor_started_at:
         if row.attempt_token != attempt:
-            row.status, row.result = "failed", {"reason": "document_dispatch_uncertain"}
-            row.claim_token, row.lease_until = None, None
+            row.status, row.result = "canceling", {"reason": "document_dispatch_uncertain"}
         else:
             raise HTTPException(409, "document_operation_already_dispatched")
         return row
@@ -173,7 +173,7 @@ def start_preview(job_id: str, x_run_attempt: str | None = Header(default=None),
                 **file.meta,
                 "preview_execution": {"operation_id": row.id, "deadline": operations.aware(row.execution_deadline).isoformat()},
             }
-        elif row.status in {"failed", "canceled"} and file.meta.get("preview_job_id") == job.id:
+        elif row.status in {"failed", "canceled", "canceling"} and file.meta.get("preview_job_id") == job.id:
             file.meta = {
                 **file.meta,
                 "preview": {
@@ -186,10 +186,10 @@ def start_preview(job_id: str, x_run_attempt: str | None = Header(default=None),
 
             wake_file(db, file)
         db.commit()
-        return operations.receipt(row)
+        return {**operations.receipt(row), **({"status": "failed"} if row.status == "canceling" else {})}
 
 
-@router.post("/{job_id}/owned", dependencies=[Depends(require_scope("files:read_for_preview"))])
+@router.post("/{job_id}/owned", dependencies=[Depends(require_scope("files:read_for_preview", "files:preview_write"))])
 def owned(job_id: str, db: Session = Depends(get_db)):
     row = db.get(DocumentOperation, job_id, populate_existing=True)
     if not row or row.kind != "file_job" or row.binding.get("job_kind") != "preview":
@@ -198,3 +198,44 @@ def owned(job_id: str, db: Session = Depends(get_db)):
         db.refresh(row)
         operations.active(db, row.id, row.claim_token)
         return {"owned": True, "deadline": operations.aware(row.execution_deadline).isoformat()}
+
+
+class Stopped(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    attempt: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/{operation_id}/stopped", dependencies=[Depends(require_scope("files:read_for_document", "files:read_for_preview"))])
+def execution_stopped(operation_id: str, body: Stopped, db: Session = Depends(get_db)):
+    row = db.get(DocumentOperation, operation_id, populate_existing=True)
+    if not row:
+        return {"status": "gone"}
+    with user_critical_section(db, row.user_id):
+        operations.lane_lock(db, row.lane)
+        db.refresh(row)
+        if row.attempt_token != body.attempt:
+            raise HTTPException(409, "document_operation_superseded")
+        if row.status in {"running", "canceling"}:
+            row.status, row.claim_token, row.lease_until = "failed", None, None
+            row.result = {"reason": "document_execution_stopped"}
+            file = db.get(FileObject, row.file_id, populate_existing=True)
+            if file and not file.purged_at:
+                state = ((file.meta or {}).get("representations") or {}).get("native_text") or {}
+                if state.get("job_id") == row.job_id:
+                    file.meta = {
+                        **file.meta,
+                        "representations": {
+                            **file.meta.get("representations", {}),
+                            "native_text": {**state, "status": "failed", "reason": "document_execution_stopped"},
+                        },
+                    }
+                if file.meta.get("preview_job_id") == row.job_id:
+                    file.meta = {
+                        **file.meta,
+                        "preview": {**file.meta.get("preview", {}), "status": "failed", "reason": "document_execution_stopped"},
+                    }
+                from .file_dependencies import wake_file
+
+                wake_file(db, file)
+            db.commit()
+        return operations.receipt(row)

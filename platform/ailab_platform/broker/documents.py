@@ -47,7 +47,11 @@ class DocumentReader:
         def remaining_seconds():
             from datetime import datetime
 
-            deadline = (file.get("meta") or {}).get("document_deadline") if profile != "legacy" else None
+            deadline = (
+                (file.get("meta") or {}).get("document_deadline")
+                if profile != "legacy" or (file.get("meta") or {}).get("document_execution_required")
+                else None
+            )
             remaining = datetime.fromisoformat(deadline).timestamp() - time.time() if deadline else settings.office_timeout_seconds + 10
             if remaining <= 0:
                 raise LeaseError("document_operation_deadline")
@@ -86,7 +90,13 @@ class DocumentReader:
                 f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
             )
             result = self._execute_owned(
-                handle, command, min(int(remaining_seconds()), int(execution_seconds) + 5), file_id, job_id, profile != "legacy"
+                handle,
+                command,
+                min(int(remaining_seconds()), int(execution_seconds) + 5),
+                file_id,
+                job_id,
+                profile != "legacy" or bool((file.get("meta") or {}).get("document_execution_required")),
+                operation_id=(file.get("meta") or {}).get("document_operation_id"),
             )
             phases["exec_seconds"] = time.monotonic() - started
             if result.exit_code:
@@ -105,15 +115,17 @@ class DocumentReader:
             export_started = time.monotonic()
             transfer_grant = None
             transfer_limit = 8 * 1024**2 if profile != "legacy" else 48 * 1024**2
-            if profile != "legacy":
-                native = ((file.get("meta") or {}).get("representations") or {}).get("native_text") or {}
-                transfer_grant = self.manager.platform.reserve_derived(
-                    key=key,
-                    version=file["sha256"],
-                    max_bytes=transfer_limit,
-                    kind="transfer",
-                    job_id=(file.get("meta") or {}).get("document_operation_id") if profile == "scope" else native.get("job_id"),
-                )
+            native = ((file.get("meta") or {}).get("representations") or {}).get("native_text") or {}
+            transfer_job = (
+                ((file.get("meta") or {}).get("writer_job_id") or (file.get("meta") or {}).get("processing_job_id"))
+                if profile == "legacy"
+                else (file.get("meta") or {}).get("document_operation_id")
+                if profile == "scope"
+                else native.get("job_id")
+            )
+            transfer_grant = self.manager.platform.reserve_derived(
+                key=key, version=file["sha256"], max_bytes=transfer_limit, kind="transfer", job_id=transfer_job
+            )
             size, digest = self.manager.store_file(
                 self.manager.get(handle.lease_id), "/workspace/.ailab/document.tar", key, "application/x-tar", transfer_limit
             )
@@ -148,7 +160,7 @@ class DocumentReader:
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - total_started
 
-    def _execute_owned(self, handle, command, timeout, file_id, job_id, monitored, *, preview=False):
+    def _execute_owned(self, handle, command, timeout, file_id, job_id, monitored, *, preview=False, operation_id=None):
         if not monitored:
             return self.manager.exec(handle.lease_id, command, timeout)
         import concurrent.futures
@@ -183,6 +195,18 @@ class DocumentReader:
                     task.result(timeout=5)
                 except Exception:
                     pass
+                if operation_id and self.manager.store.get(handle.lease_id) is None:
+                    # Only confirmed resource removal acknowledges cancellation;
+                    # a failed delete leaves its slot charged until compensation.
+                    from ..runtime_context import attempt_id_var
+
+                    attempt = attempt_id_var.get()
+                    if attempt:
+                        try:
+                            with PlatformClient(service="broker") as client:
+                                client.file_work_stopped(operation_id, attempt)
+                        except Exception:
+                            pass
                 raise
             finally:
                 stopped.set()

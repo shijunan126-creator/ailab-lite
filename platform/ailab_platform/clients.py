@@ -377,6 +377,12 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/native/scope/complete", json={"job_id": operation_id, **body})
         ).json()
 
+    def abandon_derived_writer(self, job_id):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon-writer", json={"job_id": job_id})).json()
+
+    def file_work_stopped(self, operation_id, attempt):
+        return self._send(self._req("POST", f"/internal/file-work/{operation_id}/stopped", timeout=2, json={"attempt": attempt})).json()
+
     def start_file_work(self, job_id):
         return self._send(self._req("POST", f"/internal/file-work/{job_id}/start", json={})).json()
 

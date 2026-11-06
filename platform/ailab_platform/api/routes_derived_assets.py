@@ -212,3 +212,45 @@ def discard_batch(body: BatchCompletion, principal: ServicePrincipal = Depends(W
         assets.forget_deleted(db, item.key)
         db.commit()
     return {"status": "discarded"}
+
+
+class WriterCleanup(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    job_id: str = Field(min_length=1, max_length=40)
+
+
+@router.post("/abandon-writer")
+def abandon_writer(
+    body: WriterCleanup,
+    principal: ServicePrincipal = Depends(WRITE),
+    x_run_attempt: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    # Cleanup remains valid after deletion/claim loss, but can only affect the
+    # authenticated writer's unpredictable attempt pair and unpublished states.
+    if not x_run_attempt:
+        raise HTTPException(409, "derived_job_stale")
+    from sqlalchemy import select, update
+
+    assets.budget_lock(db)
+    db.execute(
+        update(DerivedAsset)
+        .where(
+            DerivedAsset.job_id == body.job_id, DerivedAsset.attempt_token == x_run_attempt, DerivedAsset.state.in_(["writing", "staged"])
+        )
+        .values(state="deleting", lease_until=None, expires_at=datetime.now(UTC))
+    )
+    rows = db.scalars(
+        select(DerivedAsset)
+        .where(
+            DerivedAsset.job_id == body.job_id,
+            DerivedAsset.attempt_token == x_run_attempt,
+            DerivedAsset.state == "deleting",
+            DerivedAsset.lease_until.is_(None),
+        )
+        .order_by(DerivedAsset.key)
+        .limit(32)
+    ).all()
+    result = [{"key": row.key, "token": row.token} for row in rows]
+    db.commit()
+    return {"deletable": result}

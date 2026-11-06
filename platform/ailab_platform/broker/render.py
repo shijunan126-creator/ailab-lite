@@ -86,8 +86,16 @@ class LibraryRenderer:
         if not isinstance(owner, str) or not owner:
             raise LeaseError("render job has no authorized owner")
         priority = 0 if (file.get("meta") or {}).get("ocr_render_job_id") == job_id else 1
-        with self.manager.render_activity(owner, priority=priority):
-            return self._render(file_id, job_id, owner)
+        from ..derived_writes import accounted_writes
+
+        with (
+            self.manager.render_activity(owner, priority=priority),
+            accounted_writes(self.manager.storage, self.manager.platform, file["sha256"], job_id) as storage,
+        ):
+            self.storage = storage
+            result = self._render(file_id, job_id, owner)
+            storage.handoff()
+            return result
 
     def _render(self, file_id: str, job_id: str, scheduled_owner: str) -> dict:
         started = time.monotonic()
@@ -136,7 +144,7 @@ class LibraryRenderer:
         if re.fullmatch(r"[a-f0-9]{64}", digest) and visual and suffix != ".pdf" and not pdf_mime:
             version = hashlib.sha256(SCRIPT.read_bytes() + b"\0" + self._spec().image.encode()).hexdigest()[:20]
             cache_key = f"derived/{file_id}/render-cache/{digest}/{version}/document.pdf"
-        cached_pdf = bool(cache_key and self.manager.storage.exists(cache_key))
+        cached_pdf = bool(cache_key and self.storage.exists(cache_key))
         if cached_pdf:
             source = "/workspace/inputs/cached.pdf"
         elif cache_key:
@@ -146,7 +154,7 @@ class LibraryRenderer:
             injection_started = time.monotonic()
             if cached_pdf:
                 with self.manager.transfer_file() as local:
-                    with self.manager.storage.open_stream(cache_key) as chunks, local.open("wb") as out:
+                    with self.storage.open_stream(cache_key) as chunks, local.open("wb") as out:
                         total = 0
                         for chunk in chunks:
                             total += len(chunk)
@@ -182,13 +190,13 @@ class LibraryRenderer:
                 with local.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
             key = f"derived/{file_id}/preview/{name}"
-            self.manager.storage.put_file(key, local, "image/png")
+            self.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
             try:
                 self.manager.platform.publish_preview_page(file_id, job_id, name, page_count, asset)
             except Exception:
                 # A deleted file can race the object write after its prefix was purged.
-                self.manager.storage.delete(key)
+                self.storage.delete(key)
                 raise
             return asset
 
@@ -250,7 +258,9 @@ class LibraryRenderer:
                 names_by_page = {first_page: first_asset[0]}
                 if cache_key and not cached_pdf:
                     cache_started = time.monotonic()
-                    self.manager.store_file(self.manager.get(handle), source, cache_key, "application/pdf", 32 * 1024 * 1024)
+                    with self.manager.transfer_file() as cached_local:
+                        self.manager._download(self.manager.get(handle), source, cached_local, 32 * 1024 * 1024)
+                        self.storage.put_file(cache_key, cached_local, "application/pdf")
                     phases["pdf_export_seconds"] = time.monotonic() - cache_started
                 if pending_pages:
                     current = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
@@ -311,7 +321,7 @@ class LibraryRenderer:
                         with local.open("rb") as stream:
                             digest = hashlib.file_digest(stream, "sha256").hexdigest()
                         key = f"derived/{file_id}/preview/template-thumbnail.jpg"
-                        self.manager.storage.put_file(key, local, "image/jpeg")
+                        self.storage.put_file(key, local, "image/jpeg")
                     assets["template-thumbnail.jpg"] = {"key": key, "content_type": "image/jpeg", "sha256": digest}
                     phases["thumbnail_seconds"] = time.monotonic() - thumb_started
                 generation = self.manager.get(handle)["render_generation"]
@@ -381,7 +391,7 @@ class LibraryRenderer:
             for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name):
                 is_pdf = name == pdf_name
                 key = cache_key if is_pdf else f"derived/{file_id}/preview/{name}"
-                self.manager.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
+                self.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
                 if not is_pdf:
                     assets[name] = {"key": key, "content_type": mime, "sha256": digest}
                     if kind == "pages" and name != "template-thumbnail.jpg":
@@ -419,4 +429,6 @@ class LibraryRenderer:
         from ..sandbox.base import LeaseHandle
 
         owned_handle = LeaseHandle(lease["lease_id"], lease["provider_ref"])
-        return DocumentReader(self.manager)._execute_owned(owned_handle, command, timeout, execution[0], execution[1], True, preview=True)
+        return DocumentReader(self.manager)._execute_owned(
+            owned_handle, command, timeout, execution[0], execution[1], True, preview=True, operation_id=execution[1]
+        )

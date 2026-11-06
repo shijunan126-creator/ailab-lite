@@ -135,7 +135,7 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
         job = db.get(OutboxMessage, body.job_id)
         operation = start_work(db, file, job, x_run_attempt)
         if operation.status != "running":
-            if operation.status in {"failed", "canceled"}:
+            if operation.status in {"failed", "canceled", "canceling"}:
                 file.meta = {
                     **file.meta,
                     "representations": {
@@ -151,7 +151,7 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
 
                 wake_file(db, file)
             db.commit()
-            return receipt(operation)
+            return {**receipt(operation), **({"status": "failed"} if operation.status == "canceling" else {})}
         # Broker's channel remains tied to this attempt and persistent slot.
         file.meta = {
             **file.meta,
@@ -274,7 +274,7 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
     return state
 
 
-@router.post("/{file_id}/native/owned", dependencies=[Depends(require_scope("files:read_for_document"))])
+@router.post("/{file_id}/native/owned", dependencies=[Depends(require_scope("files:read_for_document", "files:patch_processing"))])
 def owned(file_id: str, body: Start, db: Session = Depends(get_db)):
     from ..models import DocumentOperation
     from . import document_operations as operations

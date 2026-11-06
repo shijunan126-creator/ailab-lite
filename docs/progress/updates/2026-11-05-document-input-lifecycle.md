@@ -256,3 +256,14 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 - 新旧任务期限不再因render_waiting自动延长（已登记document operation时）；周期维护使过期pending native/preview元数据终止并唤醒等待者。公共旧未登记任务保留迁移兼容行为，不以兼容逻辑延长新目录工作。
 
 剩余硬门槛仍包括所有生产writer容量/发布/TTL失效、截图单规范资产及消息/checkpoint引用、浏览器首开基线/优先capture/CAS后备/客户端资源释放，以及最后全套/双库/真实模型前缀/50轮性能故障验证。Chat默认仍V1；不能把调度接线称为资源验收通过。
+
+
+## 生产写入预留与发布接线（2026-11-06，部分writer完成/未验收）
+
+在`5819337`上继续。0059增加writer job/attempt/state索引；共用AccountedWrites适配负责首字节前API预留、写后staged、业务事务发布与正常失败补偿。写入库存留在持久账本，不在请求内积累所有receipt；补偿按32项领取、有绝对时间预算，失败仍计容量。Broker成功交回Worker时显式移交暂存所有权，不能在Broker返回时删掉尚待Worker绑定的字节；发布响应丢失只清API确认可删的对象。
+
+- 已接普通/旧兼容处理、缩略图、模板/品牌派生、私有缓存复制、Worker本地preview、Broker页图/PDF转换缓存与旧Office传输。FilePatch/preview/page publication同事务发布对应writer，内部文件读返回API确认的writer身份以兼容旧排队记录，不从模型推断job。新native原有两对象批量记账继续使用自己的完整合同，未改成逐块RPC。
+- 去掉Worker预览删除竞态中的全file-prefix扫描/删除，只处理本writer未发布grant，其他代际由API删除流程管理。legacy处理中的早期preview不再绕过独立claim；legacy Office必要解析也进入render lane，不能一边新调度一边让旧处理旁路重型槽。
+- 补充取消收据：不确定在途先canceling保留槽，Broker仅在确认所属render资源已移除后ACK释放；删除失败依旧保留到租约/补偿。Worker本地native/preview的拥有者探测有正确服务scope。新增容量写序/发布响应丢失/移交/物理删除失败回归已写，尚未执行。
+
+**未完成**：旧OCR页与聚合正文的API writer、viewer索引/Work preview/capture等持久writer还未全部纳管；TTL业务元数据/行失效和必要消息/checkpoint资产引用仍未接齐，reaper仍只回收未发布写入，不能声称全平台1GiB/30天治理已达标。本组没有运行pytest/双库/迁移/真实栈/浏览器/性能；仅编辑/格式化。下一步继续这些writer与引用/TTL，再做浏览器首开基线/优先截图/CAS后备和最终集中验收。

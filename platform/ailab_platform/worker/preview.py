@@ -15,7 +15,7 @@ from ..config import settings
 from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
 from ..contracts.file_types import legacy_scanned_pending
 from ..queue import get_queue
-from ..storage import get_storage, iter_objects
+from ..storage import get_storage
 from .isolate import IsolationError, execute
 from .pipeline import _images, download
 
@@ -78,7 +78,12 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                         raise IsolationError("document_operation_deadline")
                     platform.file_work_owned(job_id)
 
-            storage = get_storage()
+            from ..derived_writes import AccountedWrites
+
+            raw_storage = get_storage()
+            storage = (
+                AccountedWrites(raw_storage, platform, file["sha256"], job_id) if hasattr(platform, "reserve_derived") else raw_storage
+            )
             assets = {}
             render_lease_id = None
             render_generation = None
@@ -145,9 +150,9 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 published = True
                 log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
-                if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
-                    for obj in iter_objects(storage, f"derived/{file_id}/"):
-                        storage.delete(obj.key)
+                if exc.status == 404:
+                    # Only this writer's unpublished grants are ours to clean;
+                    # source deletion owns older/current generation invalidation.
                     return {"skipped": "deleted"}
                 if exc.status == 409:
                     return {"skipped": "superseded"}
@@ -160,5 +165,11 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                         log.warning("render completion failed; lease expiry will release it", exc_info=True)
             return manifest
     finally:
-        queue.release_lock(f"ailab:preview:{file_id}", token)
+        try:
+            if "storage" in locals() and hasattr(storage, "cleanup"):
+                storage.cleanup()
+        except Exception:
+            log.warning("preview write compensation remains in durable ledger", exc_info=True)
+        finally:
+            queue.release_lock(f"ailab:preview:{file_id}", token)
         log.info("preview completed total_seconds=%.3f slot_wait_seconds=%.3f", time.monotonic() - started, slot_seconds)

@@ -5,6 +5,12 @@
 - 取消/失败后先由API确认该grant仍未发布，再删持久暂存并结算；发布响应丢失不能当未发布清掉。backfill_complete仅表示初次登记扫描完成，不等于所有新writer已纳管或TTL失效已接通。
 - 真验收需记录源码指纹/实际镜像，不只git HEAD；dirty基线不得倒填为最终冻结提交。单次或两次上传不能报p95，慢观察留待定位，不调门槛或重启求绿。见[当前实施证据](docs/progress/updates/2026-11-05-document-input-lifecycle.md#安全入库与消费准备已接通2026-11-05续作)。
 
+## 2026-11-06 多服务暂存写入移交
+
+- Broker返回的页图/PDF等字节仍需Worker绑定元数据，不能在Broker finally把staged对象当失败删除；按同一持久writer/attempt显式移交，Worker完成后补偿，崩溃才走租约。
+- 正常补偿必须先由API按不可猜attempt领取可删grant；成功发布但响应丢失时ready对象不可删。请求不持有无限receipt列表，writer库存用索引分页；物理删除失败保留占用和删除意图。
+- 旧Worker删除竞态不能全file-prefix扫描/删除，可能触碰其他代际；只删自己未发布写入。旧队列缺业务job_id时由API从当前claim返回writer身份，不从模型或文件名猜。
+
 ## 2026-11-06 持久执行槽与进程所有权
 
 - 本地Semaphore只能补充，不能让旧OCR/native/preview绕过跨进程document lane；OCR准备页图必须由自己的Outbox/attempt执行，不能在OCR Worker里直接嵌套执行另一未claim的preview。

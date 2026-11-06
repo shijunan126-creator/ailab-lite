@@ -856,7 +856,7 @@ def _bound_file(
             or (meta.get("scan") or {}).get("verdict") != "clean"
         ):
             raise HTTPException(403, "no authorized document job")
-        if meta.get("document_operation_id") and meta.get("document_profile") != "legacy":
+        if meta.get("document_operation_id") and (meta.get("document_profile") != "legacy" or meta.get("document_execution_required")):
             from . import document_operations as operations
             from ..models import DocumentOperation
 
@@ -1064,9 +1064,20 @@ def internal_get_file(
     preview_job: str | None = None,
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
+    x_run_attempt: str | None = Header(default=None),
 ) -> dict:
     file = _bound_file(db, file_id, principal, run_id, job, preview_job)
     result = file_dict(file)
+    if principal.service in {"worker", "broker"} and isinstance(x_run_attempt, str):
+        from ..models import OutboxMessage
+
+        writer = db.scalar(
+            select(OutboxMessage)
+            .where(OutboxMessage.claim_token == x_run_attempt, OutboxMessage.claimed_until > datetime.now(UTC))
+            .limit(1)
+        )
+        if writer and writer.payload.get("file_id") == file.id:
+            result["meta"] = {**(result.get("meta") or {}), "writer_job_id": writer.id}
     if principal.service == "broker" and job in {"preview", "document"}:
         result["render_owner_id"] = file.user_id
     return result
@@ -1120,6 +1131,29 @@ def internal_patch_file(
             from .jobs import fence_file_processing
 
             fence_file_processing(db, file, x_run_attempt)
+        if x_run_attempt:
+            from ..models import OutboxMessage
+            from .derived_assets import publish_writer
+
+            writer = db.scalar(
+                select(OutboxMessage)
+                .where(OutboxMessage.claim_token == x_run_attempt, OutboxMessage.claimed_until > datetime.now(UTC))
+                .limit(1)
+            )
+            if writer and writer.payload.get("file_id") == file.id:
+                from ..models import DocumentOperation
+
+                operation = db.get(DocumentOperation, writer.id, populate_existing=True)
+                if (
+                    operation
+                    and operation.kind == "file_job"
+                    and operation.binding.get("job_kind") == "file"
+                    and body.status in {FileStatus.READY, FileStatus.REJECTED}
+                ):
+                    from .file_work import finish as finish_work
+
+                    finish_work(db, writer.id, x_run_attempt, reason="processing_failed" if body.status == FileStatus.REJECTED else None)
+                publish_writer(db, file.id, writer.id, x_run_attempt, failed=body.status == FileStatus.REJECTED)
         return _apply_file_patch(db, file, body, principal, job)
 
 
@@ -1254,6 +1288,13 @@ def publish_preview_page(
         meta["preview_requested_pages"] = [p for p in (meta.get("preview_requested_pages") or []) if p != page]
         meta["render_page_count"] = body.page_count
         file.meta = meta
+        from ..models import DocumentOperation
+
+        operation = db.get(DocumentOperation, body.job_id)
+        if operation:
+            from .derived_assets import publish_writer
+
+            publish_writer(db, file.id, body.job_id, operation.attempt_token, keys=[asset["key"]])
         from ..models import RenderedPage
 
         existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
@@ -1320,8 +1361,10 @@ def complete_file_preview(
         operation = db.get(DocumentOperation, body.job_id, populate_existing=True)
         if operation:
             from .file_work import finish as finish_work
+            from .derived_assets import publish_writer
 
             finish_work(db, body.job_id, x_run_attempt, reason=preview.reason if preview.status == "failed" else None)
+            publish_writer(db, file.id, body.job_id, x_run_attempt, failed=preview.status == "failed")
         meta["preview"] = preview.model_dump(exclude_unset=True)
         meta.pop("preview_requested_pages", None)
         for name, asset in assets.items():
@@ -1450,6 +1493,26 @@ def prepare_document(file_id: str, body: dict, x_run_attempt: str | None = Heade
         fence_file_processing(db, file, x_run_attempt)
         job_id = token or (file.meta or {}).get("document_job_id") or uuid4().hex
         file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id, "document_profile": "legacy"}
+        operation = None
+        if token:
+            from .file_work import start as start_work
+
+            operation = start_work(db, file, claimed, token)
+            if operation.status == "pending":
+                file.meta = {**file.meta, "processing": "render_pending"}
+                db.commit()
+                raise HTTPException(503, "document_queue_wait")
+            if operation.status != "running":
+                db.commit()
+                raise HTTPException(409, "document_operation_superseded")
+            from .document_operations import aware
+
+            file.meta = {
+                **file.meta,
+                "document_operation_id": operation.id,
+                "document_execution_required": True,
+                "document_deadline": aware(operation.execution_deadline).isoformat(),
+            }
         db.commit()
     return {"job_id": job_id}
 
