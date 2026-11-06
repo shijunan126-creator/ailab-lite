@@ -7,6 +7,7 @@ CANONICAL_TEXT_BYTES = 1024**2
 LEGACY_BLOCK_BYTES = 100000
 PARSER_V3 = "office-a60ba6a-ailab3"
 PARSER_V4 = "office-a60ba6a-ailab4"
+PARSER_NATIVE = "office-a60ba6a-ailab5"
 
 
 class NativeCacheError(ValueError):

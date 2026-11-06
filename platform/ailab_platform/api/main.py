@@ -26,6 +26,7 @@ from ..storage import close_storage
 from . import process_snapshots as process_snapshots
 from .jobs import router as jobs_router
 from .native_preparation import router as native_preparation_router
+from .routes_native_ranges import router as native_ranges_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_admin import router as admin_router
@@ -176,6 +177,7 @@ app.include_router(platform_skills_router)
 app.include_router(memory_router)
 app.include_router(library_tools_router)
 app.include_router(native_preparation_router)
+app.include_router(native_ranges_router)
 app.include_router(derived_assets_router)
 app.include_router(files_router)
 app.include_router(trash_router)

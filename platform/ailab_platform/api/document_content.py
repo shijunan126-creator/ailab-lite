@@ -70,7 +70,10 @@ def visual_info(file, doc=None):
     units = doc.get("visual_units")
     if units is None:
         return {"status": "unknown", "units": []}
-    return {"status": "present" if units else "none", "units": units[:200], "truncated": len(units) > 200}
+    status = doc.get("visual_status")
+    if status not in {"unknown", "present", "none"}:
+        status = "present" if units else "none"
+    return {"status": status, "units": units[:200], "truncated": len(units) > 200}
 
 
 def visual_pages(file, doc=None):
@@ -80,6 +83,6 @@ def visual_pages(file, doc=None):
         return []
     # PDF pages/PPT slides have stable physical locations. Word and workbook
     # anchors do not map to rendered pages; rendering must establish that map.
-    if doc and doc["kind"] in {"pdf", "pptx"}:
-        return sorted({u["unit_number"] for u in info["units"]}) if info["status"] == "present" else list(range(1, doc["total_units"] + 1))
+    if doc and doc["kind"] in {"pdf", "pptx"} and info["status"] == "present" and not info.get("truncated"):
+        return sorted({u["unit_number"] for u in info["units"]})
     return None

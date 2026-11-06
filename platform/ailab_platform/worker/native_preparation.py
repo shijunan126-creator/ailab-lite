@@ -7,7 +7,7 @@ import tarfile
 import tempfile
 from pathlib import Path
 
-from ..native_text import CANONICAL_TEXT_BYTES, PARSER_V4, read_unit
+from ..native_text import CANONICAL_TEXT_BYTES, PARSER_NATIVE, read_unit
 from .isolate import IsolationError
 
 log = logging.getLogger("ailab.worker.native")
@@ -45,7 +45,7 @@ def unpack(storage, archive_key, output, expected):
     if seen != {"manifest.json", "text.txt"}:
         raise IsolationError("invalid_native_bundle")
     manifest = json.loads((output / "manifest.json").read_text())
-    if manifest.get("parser") != PARSER_V4 or manifest.get("version") != 2 or manifest.get("status") not in {"ready", "partial"}:
+    if manifest.get("parser") != PARSER_NATIVE or manifest.get("version") != 2 or manifest.get("status") not in {"ready", "partial"}:
         raise IsolationError("invalid_native_manifest")
     if manifest.get("chars", 200001) > 200000 or len(manifest.get("units", [])) > 10000 or (manifest.get("cells") or 0) > 200000:
         raise IsolationError("native_structure_limit")
@@ -68,12 +68,17 @@ def unpack(storage, archive_key, output, expected):
     return manifest
 
 
-def process_native(platform, file_id, job_id, storage=None):
+def process_native(platform, file_id, job_id, storage=None, *, scoped=False):
     from ..clients import ClientError
     from ..storage import get_storage
 
     storage = storage or get_storage()
-    start = platform.start_native(file_id, job_id)
+    start = platform.start_native_scope(file_id, job_id) if scoped else platform.start_native(file_id, job_id)
+    if start.get("status") in {"ready", "failed", "canceled"}:
+        return True
+    if start.get("status") == "pending":
+        return False
+    complete = platform.complete_native_scope if scoped else platform.complete_native
     from .isolate import execute
     from .pipeline import download
 
@@ -86,7 +91,7 @@ def process_native(platform, file_id, job_id, storage=None):
                 result = platform.read_document(file_id, start["job_id"])
                 archive_key = result.get("archive_key")
                 if result.get("error"):
-                    platform.complete_native(file_id, job_id, reason=result["error"])
+                    complete(file_id, job_id, reason=result["error"])
                     return
                 if archive_key != f"derived/{file_id}/office-staging/{start['job_id']}.tar":
                     raise IsolationError("invalid_native_transfer")
@@ -115,11 +120,11 @@ def process_native(platform, file_id, job_id, storage=None):
             for name, grant in zip(["manifest.json", "text.txt"], grants, strict=True):
                 storage.put_file(grant["key"], output / name, "application/json" if name.endswith("json") else "text/plain; charset=utf-8")
             platform.finish_derived_batch(receipts)
-            platform.complete_native(file_id, job_id, manifest_key=prefix + "manifest.json", receipts=receipts)
-            success = True
+            published = complete(file_id, job_id, manifest_key=prefix + "manifest.json", receipts=receipts)
+            success = published.get("status") == "ready"
             log.info("native generation published kind=%s chars=%d units=%d", manifest["kind"], manifest["chars"], manifest["total_units"])
     except (ValueError, IsolationError) as exc:
-        platform.complete_native(file_id, job_id, reason=str(exc)[:80])
+        complete(file_id, job_id, reason=str(exc)[:80])
     except ClientError:
         raise  # durable retry keeps the existing source/job identity
     finally:

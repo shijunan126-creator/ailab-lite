@@ -94,7 +94,7 @@ def attachment_manifest(db, run, *, file_ids=None, message_id=None, message_kind
     ]
 
 
-def index_document(db, file, key, *, manifest=None):
+def index_document(db, file, key, *, manifest=None, kind="native"):
     prefix = key.rsplit("/", 1)[0] + "/"
     if not re.fullmatch(r"derived/" + re.escape(file.id) + r"/office/[a-zA-Z0-9_-]{1,100}/manifest\.json", key):
         raise HTTPException(422, "invalid document manifest")
@@ -109,7 +109,7 @@ def index_document(db, file, key, *, manifest=None):
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     old = db.scalar(
         select(FileDerivation).where(
-            FileDerivation.file_id == file.id, FileDerivation.kind == "native", FileDerivation.fingerprint == fingerprint
+            FileDerivation.file_id == file.id, FileDerivation.kind == kind, FileDerivation.fingerprint == fingerprint
         )
     )
     if old:
@@ -120,7 +120,7 @@ def index_document(db, file, key, *, manifest=None):
         raise HTTPException(422, "invalid document coverage")
     derivation = FileDerivation(
         file_id=file.id,
-        kind="native",
+        kind=kind,
         fingerprint=fingerprint,
         parser_version=manifest["parser"],
         status=manifest["status"],

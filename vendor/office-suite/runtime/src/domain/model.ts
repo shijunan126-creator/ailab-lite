@@ -36,6 +36,9 @@ export interface ParsedDocument {
   /** AILab: source content facts, independent of model-facing headings/placeholders. */
   hasVisuals?: boolean;
   nonemptyCells?: number;
+  indexedPages?: number[];
+  coverageComplete?: boolean;
+  visualStatus?: "none" | "present" | "unknown";
   contentInfo?(anchor: string): { has_text: boolean; visual: boolean };
 }
 

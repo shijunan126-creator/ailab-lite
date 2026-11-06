@@ -154,7 +154,7 @@ def read_library(run_id: str, body: Read, db: Session = Depends(get_db)):
 
         with user_critical_section(db, file.user_id):
             db.refresh(file)
-            state = request_native(db, file)
+            state = request_native(db, file, full_pdf=True)
             db.commit()
         if state["status"] == "pending":
             return {"file_id": file.id, "pending": True, "action": "native-text"}

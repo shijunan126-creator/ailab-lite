@@ -856,6 +856,18 @@ def _bound_file(
             or (meta.get("scan") or {}).get("verdict") != "clean"
         ):
             raise HTTPException(403, "no authorized document job")
+        if meta.get("document_profile") == "scope":
+            from . import document_operations as operations
+            from ..models import DocumentOperation
+
+            operation = (
+                db.get(DocumentOperation, meta["document_operation_id"], populate_existing=True)
+                if meta.get("document_operation_id")
+                else None
+            )
+            if not operation or operation.file_id != file.id or operation.attempt_token != preview_job:
+                raise HTTPException(409, "native_scope_superseded")
+            operations.active(db, operation.id, operation.claim_token)
         return file
     if job == "preview" and principal.service == "broker":
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.

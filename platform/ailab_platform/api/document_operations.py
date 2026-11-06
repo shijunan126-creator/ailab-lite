@@ -94,6 +94,11 @@ def source_available(db, operation, *, active=False):
         file = db.get(FileObject, operation.file_id, populate_existing=True)
         if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at or file.sha256 != operation.source_version:
             return False
+        if operation.kind == "native_scope":
+            from .native_preparation import native_state
+
+            if native_state(file).get("derivation_id") != operation.binding.get("base_derivation_id"):
+                return False
     return True
 
 

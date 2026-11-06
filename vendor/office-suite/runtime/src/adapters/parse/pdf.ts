@@ -17,6 +17,13 @@ import { installDomMatrix } from "#office/adapters/parse/dommatrix.ts";
 export interface PdfAssets {
   cMapUrl: string;
   standardFontDataUrl: string;
+  /** AILab native CLI: explicit extraction scope; absent keeps the legacy reader. */
+  indexedPages?: number[];
+  nativeProbe?: boolean;
+  consumeBytes?: boolean;
+  inspectVisuals?: boolean;
+  maxNativeChars?: number;
+  maxNativeBlocks?: number;
 }
 
 type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -41,18 +48,20 @@ export async function parsePdf(
   assets: PdfAssets,
 ): Promise<ParsedDocument> {
   const { getDocument, OPS } = await loadPdfJs();
-  let doc;
+  let doc, loading;
   try {
-    doc = await getDocument({
-      data: bytes.slice(),
+    loading = getDocument({
+      data: assets.consumeBytes ? bytes : bytes.slice(),
       cMapUrl: assets.cMapUrl,
       cMapPacked: true,
       standardFontDataUrl: assets.standardFontDataUrl,
       isEvalSupported: false,
       useSystemFonts: false,
       verbosity: 0,
-    }).promise;
+    });
+    doc = await loading.promise;
   } catch (error) {
+    await loading?.destroy().catch(() => undefined);
     const name = (error as Error).name;
     throw new OfficeError(
       "corrupt_file",
@@ -62,20 +71,45 @@ export async function parsePdf(
     );
   }
   try {
-    const pages: string[] = [];
-    const visuals: boolean[] = [];
-    for (let n = 1; n <= Math.min(doc.numPages, MAX_PAGES_INDEXED); n++) {
+    const scoped = assets.indexedPages !== undefined;
+    const selected = scoped ? [...new Set(assets.indexedPages)] :
+      Array.from({length: assets.nativeProbe && doc.numPages > 8 ? 0 : Math.min(doc.numPages, MAX_PAGES_INDEXED)}, (_, i) => i + 1);
+    if ((scoped && selected.length > 20) || selected.some(n => !Number.isSafeInteger(n) || n < 1 || n > doc.numPages))
+      throw new Error('invalid_page_selection');
+    selected.sort((a,b) => a-b);
+    const pages = new Map<number, string>();
+    const visuals = new Map<number, boolean>();
+    let chars = 0, visualUnknown = false;
+    for (const n of selected) {
       const page = await doc.getPage(n);
-      const content = await page.getTextContent();
-      let text = "";
-      for (const item of content.items) {
-        if (!("str" in item)) continue;
-        text += item.str + (item.hasEOL ? "\n" : "");
+      try {
+        const content = await page.getTextContent();
+        let text = "";
+        for (const item of content.items) {
+          if (!("str" in item)) continue;
+          text += item.str + (item.hasEOL ? "\n" : "");
+        }
+        text = normalizeCjkCompat(text.replace(/[ \t]+\n/g, "\n").trim());
+        chars += text.length;
+        if (assets.maxNativeChars !== undefined && chars > assets.maxNativeChars) throw new Error('document_text_limit');
+        if (assets.maxNativeBlocks !== undefined && pages.size >= assets.maxNativeBlocks) throw new Error('document_structure_limit');
+        pages.set(n, text);
+        if (assets.inspectVisuals !== false) {
+          const operators = await page.getOperatorList();
+          const images = operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject,
+            OPS.paintImageMaskXObject, OPS.shadingFill].includes(op));
+          // Paths can be table borders or vector diagrams. Preserve uncertainty
+          // instead of automatically requiring images for every ruled table.
+          const paths = operators.fnArray.some(op => op === OPS.constructPath);
+          const native = assets.nativeProbe || scoped;
+          visuals.set(n, images || (!native && paths));
+          visualUnknown ||= !!native && paths && !images;
+        } else {
+          visualUnknown = true;
+        }
+      } finally {
+        page.cleanup();
       }
-      pages.push(normalizeCjkCompat(text.replace(/[ \t]+\n/g, "\n").trim()));
-      const operators = await page.getOperatorList();
-      visuals.push(operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.constructPath, OPS.shadingFill].includes(op)));
-      page.cleanup();
     }
 
     const outline: OutlineItem[] = [];
@@ -108,19 +142,23 @@ export async function parsePdf(
     const numPages = doc.numPages;
 
     const render = (n: number) =>
-      `## Page ${n}\n${pages[n - 1] || "(no extractable text; the page may be scanned)"}`;
+      `## Page ${n}\n${pages.get(n) || "(no extractable text; the page may be scanned)"}`;
     const select = (locator: Locator | null) => {
-      if (!locator) return pages.map((_, i) => render(i + 1));
+      if (!locator) return selected.map(render);
       if (locator.kind !== "pdf") throw new OfficeError("invalid_anchor", "Not a PDF location.");
       const { from, to } = clampRange(locator.from, locator.to, numPages, "page");
-      return Array.from({ length: Math.min(to, pages.length) - from + 1 }, (_, i) =>
-        render(from + i),
-      );
+      const prepared = selected.filter(n => n >= from && n <= to);
+      if ((scoped || assets.nativeProbe) && prepared.length !== to-from+1)
+        throw new Error('document_range_not_prepared');
+      return prepared.map(render);
     };
 
     return {
       kind: "pdf",
-      contentInfo(anchor) { const n = Number(anchor.split(":")[1]) - 1; return {has_text: !!pages[n]?.trim(), visual: !!visuals[n]}; },
+      indexedPages: selected,
+      coverageComplete: selected.length === numPages,
+      visualStatus: selected.length !== numPages || visualUnknown ? 'unknown' : [...visuals.values()].some(Boolean) ? 'present' : 'none',
+      contentInfo(anchor) { const n = Number(anchor.split(":")[1]); return {has_text: !!pages.get(n)?.trim(), visual: !!visuals.get(n)}; },
       title: info?.Title?.trim() || null,
       units: numPages,
       outline,
@@ -128,10 +166,10 @@ export async function parsePdf(
       check: (locator) => (select(locator), locator),
       search(query, limit) {
         const hits: Hit[] = [];
-        pages.forEach((text, i) => {
+        pages.forEach((text, n) => {
           for (const index of matchAll(text, query)) {
             if (hits.length >= limit) return;
-            hits.push({ at: `page:${i + 1}`, snippet: snippet(text, index, query.length) });
+            hits.push({ at: `page:${n}`, snippet: snippet(text, index, query.length) });
           }
         });
         return hits;

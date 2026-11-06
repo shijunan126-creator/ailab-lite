@@ -4,7 +4,7 @@ import codecs
 import hashlib
 import json
 
-from ..native_text import PARSER_V4
+from ..native_text import PARSER_NATIVE
 
 
 def prepare(source, output):
@@ -46,7 +46,7 @@ def prepare(source, output):
                         break
             manifest = {
                 "version": 2,
-                "parser": PARSER_V4,
+                "parser": PARSER_NATIVE,
                 "kind": "text",
                 "title": None,
                 "total_units": len(units),

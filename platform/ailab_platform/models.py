@@ -1371,3 +1371,22 @@ class DocumentOcrUnit(Base):
     backend: Mapped[str] = mapped_column(String(16))
     seconds: Mapped[float] = mapped_column(Float)
     operation_id: Mapped[str | None] = mapped_column(ForeignKey("document_operations.id", ondelete="SET NULL"), nullable=True)
+
+
+class DocumentNativeRange(Base):
+    __tablename__ = "document_native_ranges"
+    __table_args__ = (
+        UniqueConstraint("file_id", "source_version", "parser", "base_derivation_id", "selector_key", name="uq_document_native_range"),
+        Index("ix_document_native_ranges_order", "file_id", "source_version", "parser", "ordinal"),
+        Index("ix_document_native_ranges_derivation", "derivation_id", "page"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("nrg"))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    parser: Mapped[str] = mapped_column(String(80))
+    base_derivation_id: Mapped[str] = mapped_column(ForeignKey("file_derivations.id", ondelete="CASCADE"))
+    selector_key: Mapped[str] = mapped_column(String(64))
+    selector: Mapped[dict] = mapped_column(JSON)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    derivation_id: Mapped[str] = mapped_column(ForeignKey("file_derivations.id", ondelete="CASCADE"))

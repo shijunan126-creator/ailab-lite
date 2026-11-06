@@ -23,7 +23,7 @@ def prepare_native_input(db, file):
 
     with user_critical_section(db, file.user_id):
         db.refresh(file)
-        state = request_native(db, file)
+        state = request_native(db, file, full_pdf=True)
         db.commit()
     if state["status"] == "failed":
         raise HTTPException(

@@ -94,12 +94,15 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                         completion.ack()
                     else:
                         completion.retry_after(2)
-                elif envelope.kind == "native":
+                elif envelope.kind in {"native", "native_scope"}:
                     from .native_preparation import process_native
 
                     try:
-                        process_native(client, file_id, envelope.job_id)
-                        completion.ack()
+                        finished = process_native(client, file_id, envelope.job_id, scoped=envelope.kind == "native_scope")
+                        if finished is False:
+                            completion.retry_after(2)
+                        else:
+                            completion.ack()
                     except ClientError as exc:
                         if exc.status in {404, 410}:
                             completion.ack()

@@ -188,7 +188,7 @@ MAX_EVICT_RESUMES = 3
 
 class FileDependencyIn(BaseModel):
     file_id: str = Field(min_length=1, max_length=40)
-    action: Literal["extract-text", "image-reference", "native-text", "document-ocr"]
+    action: Literal["extract-text", "image-reference", "native-text", "document-ocr", "native-scope"]
     pages: list[int] | None = Field(default=None, min_length=1, max_length=20)
     deadline: float = Field(ge=0, allow_inf_nan=False)
     operation_id: str | None = Field(default=None, max_length=40)
@@ -256,20 +256,27 @@ def pause_run(run_id: str, body: PauseIn, x_run_attempt: str | None = Header(def
                 or not file
                 or file.user_id != run.user_id
                 or dep["deadline"] > datetime.now(UTC).timestamp() + settings.ocr_deadline_seconds + 150
-                or any(type(p) is not int or not 1 <= p <= 100000 for p in dep.get("pages") or [])
-                or dep.get("action") not in {"extract-text", "image-reference", "native-text", "document-ocr"}
+                or any(
+                    type(p) is not int or not 1 <= p <= (2147483647 if dep.get("action") in {"native-scope", "document-ocr"} else 100000)
+                    for p in dep.get("pages") or []
+                )
+                or dep.get("action") not in {"extract-text", "image-reference", "native-text", "document-ocr", "native-scope"}
                 or not isinstance(dep.get("deadline"), (float, int))
                 or not db.scalar(
                     select(MessageFileRef.id).where(MessageFileRef.run_id == run.id, MessageFileRef.file_id == file.id).limit(1)
                 )
             ):
                 raise HTTPException(422, "invalid file dependency")
-            if dep["action"] == "document-ocr":
+            if dep["action"] in {"document-ocr", "native-scope"}:
                 from ..models import DocumentOperation, DocumentOperationConsumer
 
                 operation = db.get(DocumentOperation, dep.get("operation_id"))
                 consumer = db.get(DocumentOperationConsumer, (run.id, dep.get("operation_id"))) if operation else None
-                if not consumer or operation.file_id != file.id or operation.kind != "chat_ocr":
+                if (
+                    not consumer
+                    or operation.file_id != file.id
+                    or operation.kind != ("chat_ocr" if dep["action"] == "document-ocr" else "native_scope")
+                ):
                     raise HTTPException(422, "invalid document operation dependency")
             meta["file_dependency"] = dep
         # Only a checkpoint-confirmed live job can retain a bounded context-pause

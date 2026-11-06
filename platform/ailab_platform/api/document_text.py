@@ -61,18 +61,105 @@ def select_blocks(file, index, selector, position):
     elif isinstance(selector, Word):
         if kind != "docx":
             raise HTTPException(422, "selector_representation_mismatch")
-        if "/" in selector.anchor:
+        if "/" in selector.anchor and index.kind != "native-scope":
             raise HTTPException(422, "selector_requires_scoped_preparation")
         q = q.where(DocumentBlock.anchor == selector.anchor)
     elif isinstance(selector, Sheet):
         if kind != "xlsx":
             raise HTTPException(422, "selector_representation_mismatch")
-        if selector.range:
+        if selector.range and index.kind != "native-scope":
             raise HTTPException(422, "selector_requires_scoped_preparation")
         # The runtime's formatSheet emits either a plain name or Excel quoting.
         quoted = "'" + selector.sheet.replace("'", "''") + "'"
-        q = q.where(DocumentBlock.anchor.in_([selector.sheet, quoted]))
+        anchors = [selector.sheet, quoted]
+        if selector.range:
+            anchors = [anchor + "!" + selector.range for anchor in anchors]
+        q = q.where(DocumentBlock.anchor.in_(anchors))
     return q.order_by(DocumentBlock.ordinal).limit(101)
+
+
+def native_blocks(db, file, index, selector, position):
+    rows = list(db.scalars(select_blocks(file, index, selector, position)))
+    if ((file.meta or {}).get("extract") or {}).get("kind") != "pdf" or index.kind != "native":
+        return rows
+    from types import SimpleNamespace
+    from .native_ranges import scope_query
+    from ..models import DocumentNativeRange
+
+    scopes = scope_query(file).subquery()
+    ordinal = 100000 + scopes.c.ordinal * 10001 + DocumentBlock.ordinal
+    query = (
+        select(DocumentBlock, ordinal)
+        .join(scopes, (scopes.c.derivation_id == DocumentBlock.derivation_id) & (scopes.c.page == DocumentBlock.unit_number))
+        .where(ordinal >= position.ordinal)
+    )
+    if isinstance(selector, Pages):
+        query = query.where(DocumentBlock.unit_number.in_(selector.pages))
+    elif selector is not None:
+        return rows
+    for row, global_ordinal in db.execute(query.order_by(scopes.c.ordinal, DocumentBlock.ordinal).limit(101)):
+        rows.append(
+            SimpleNamespace(
+                **{
+                    field: getattr(row, field)
+                    for field in ("id", "anchor", "unit_number", "chars", "text_key", "byte_offset", "byte_size", "digest")
+                },
+                ordinal=global_ordinal,
+            )
+        )
+    return sorted(rows, key=lambda row: row.ordinal)[:101]
+
+
+def page_navigation(db, file, index, request):
+    """Stable page locators need PDF metadata, never all page bodies/operators."""
+    from ..domain.document_reading import Position
+    from ..models import DocumentNativeRange
+    from .native_ranges import scope_query
+
+    total = ((file.meta or {}).get("extract") or {}).get("units")
+    if type(total) is not int or total < 0:
+        raise HTTPException(409, "native_page_count_unavailable")
+    context = context_digest(
+        operation="native_page_navigation",
+        file_id=file.id,
+        version=file.sha256,
+        representation=[index.id, (file.meta or {}).get("native_range_revision", 0)],
+    )
+    key = hmac.digest(settings.caller_token("api").encode(), b"document-cursor-v2", "sha256")
+    try:
+        position = decode_cursor(request.cursor, context, key=key)
+        if position.offset or position.ordinal > total:
+            raise CursorError("invalid_cursor")
+    except CursorError as exc:
+        raise HTTPException(409, str(exc)) from None
+    pages = list(range(position.ordinal + 1, min(total, position.ordinal + 100) + 1))
+    prepared = set(
+        db.scalars(
+            select(DocumentBlock.unit_number)
+            .where(DocumentBlock.derivation_id == index.id, DocumentBlock.unit_number.in_(pages))
+            .distinct()
+            .limit(100)
+        )
+    )
+    prepared.update(
+        db.scalars(scope_query(file).where(DocumentNativeRange.page.in_(pages)).with_only_columns(DocumentNativeRange.page).limit(100))
+    )
+    next_position = Position(pages[-1]) if pages and pages[-1] < total else None
+    return {
+        "file_id": file.id,
+        "version": file.sha256,
+        "representation": {"kind": "native", "revision": index.id},
+        "navigation": [
+            {"locator": f"page:{page}", "unit": page, "native": "prepared" if page in prepared else "unknown", "visual": "unknown"}
+            for page in pages
+        ],
+        "physical_page_count": total,
+        "navigation_status": "physical_locators",
+        "next_cursor": encode_cursor(context, next_position, key=key) if next_position else None,
+        "truncated": next_position is not None,
+        "coverage": {"native": {"indexed_status": index.status}, "visual": {"status": "not_viewed"}, "ocr": {"status": "not_read"}},
+        "text": "",
+    }
 
 
 # The native contract has at most 10k blocks. The separate namespace keeps
@@ -171,17 +258,51 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         except HTTPException:
             if not searching or not available_ocr(db, file):
                 raise
+    if (
+        index
+        and not searching
+        and not reading_ocr
+        and request.selector is None
+        and ((file.meta or {}).get("extract") or {}).get("kind") == "pdf"
+        and (navigation or index.status == "partial")
+    ):
+        return page_navigation(db, file, index, request)
+    if index and isinstance(request.selector, (Word, Sheet)):
+        needs_scope = (isinstance(request.selector, Word) and "/" in request.selector.anchor) or (
+            isinstance(request.selector, Sheet) and request.selector.range
+        )
+        if needs_scope:
+            from .native_ranges import cached_scope
+
+            scope = cached_scope(db, file, request.selector.model_dump(mode="json", exclude_none=True))
+            if scope:
+                index = db.get(FileDerivation, scope.derivation_id)
+            elif searching:
+                # Search does not create a new projection just to inspect it.
+                return {
+                    "file_id": file.id,
+                    "version": file.sha256,
+                    "hits": [],
+                    "truncated": False,
+                    "next_cursor": None,
+                    "coverage": {"native": {"status": "scope_not_prepared"}, "ocr": {"status": "scope_not_mapped"}},
+                }
     selector = request.selector.model_dump(mode="json") if request.selector else None
     context = context_digest(
         operation="search" if searching else ("navigate" if navigation else "read"),
         file_id=file.id,
         version=file.sha256,
         representation=(
-            [index.id if index else None, (file.meta or {}).get("ocr_cache_revision", 0), settings.ocr_engine_fingerprint]
+            [
+                index.id if index else None,
+                (file.meta or {}).get("native_range_revision", 0),
+                (file.meta or {}).get("ocr_cache_revision", 0),
+                settings.ocr_engine_fingerprint,
+            ]
             if searching
             else ["ocr", (file.meta or {}).get("ocr_cache_revision", 0), settings.ocr_engine_fingerprint]
             if reading_ocr
-            else index.id
+            else [index.id, (file.meta or {}).get("native_range_revision", 0)]
         ),
         selector=selector,
         query=request.query if searching else None,
@@ -197,7 +318,7 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
             )
         )
         rows = (
-            db.scalars(select_blocks(file, index, request.selector, position)).all()
+            native_blocks(db, file, index, request.selector, position)
             if index and position.ordinal < OCR_BASE and not reading_ocr and native_scope_mapped
             else []
         )
@@ -314,6 +435,7 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         "coverage": {
             "native": {
                 "indexed_status": index.status if index else "unavailable",
+                "unprepared_pages_or_regions": "unknown" if index and index.status == "partial" else "none_known",
                 "scanned_blocks": scanned["native"],
                 "selector_mapping": "available" if native_scope_mapped else "unknown",
                 "end_of_available_text": next_position is None or next_position.ordinal >= OCR_BASE,

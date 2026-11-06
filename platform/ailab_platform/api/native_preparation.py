@@ -15,7 +15,7 @@ from ..contracts.file_types import OFFICE_SUFFIXES, TEXT_SUFFIXES
 from ..deps import get_db
 from ..locks import user_critical_section
 from ..models import FileDerivation, FileObject, OutboxMessage
-from ..native_text import PARSER_V4
+from ..native_text import PARSER_NATIVE, PARSER_V4
 from ..service_auth import require_scope
 from ..storage import get_storage
 from . import derived_assets as assets
@@ -43,7 +43,7 @@ def native_state(file):
     return ((file.meta or {}).get("representations") or {}).get("native_text") or {"status": "absent"}
 
 
-def request_native(db, file):
+def request_native(db, file, *, full_pdf=False):
     if file.deleted_at or file.purged_at or file.status != "ready" or (file.meta or {}).get("scan", {}).get("verdict") != "clean":
         raise HTTPException(404, "document_unavailable")
     if native_kind(file) is None:
@@ -51,7 +51,8 @@ def request_native(db, file):
     if file.size > 20 * 1024**2:
         raise HTTPException(413, "document_input_limit")
     current = native_state(file)
-    if current.get("version") == file.sha256 and current.get("parser") == PARSER_V4:
+    full_pdf = full_pdf or current.get("pdf_strategy") == "full" or current.get("parser") == PARSER_V4
+    if current.get("version") == file.sha256 and current.get("parser") in {PARSER_NATIVE, PARSER_V4}:
         if current["status"] == "failed":
             return current
         if current["status"] == "ready":
@@ -61,12 +62,21 @@ def request_native(db, file):
                 and derivation.file_id == file.id
                 and derivation.status in {"ready", "partial"}
                 and (file.meta or {}).get("document_manifest_key") == derivation.manifest_key
+                and not (
+                    full_pdf and native_kind(file) == "pdf" and current.get("pdf_strategy") == "probe" and derivation.status == "partial"
+                )
             ):
                 return current
         if current["status"] == "pending" and db.get(OutboxMessage, current.get("job_id")):
             return current
     job_id = uuid4().hex
-    state = {"status": "pending", "version": file.sha256, "parser": PARSER_V4, "job_id": job_id}
+    state = {
+        "status": "pending",
+        "version": file.sha256,
+        "parser": PARSER_NATIVE,
+        "job_id": job_id,
+        "pdf_strategy": "full" if full_pdf else "probe",
+    }
     file.meta = {**(file.meta or {}), "representations": {**(file.meta or {}).get("representations", {}), "native_text": state}}
     job = stage_job(db, "native", file_id=file.id, job_id=job_id)
     job.payload = {**job.payload, "deadline": (datetime.now(UTC) + timedelta(seconds=600)).isoformat()}
@@ -115,7 +125,12 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
         file = claimed_file(db, file_id, body.job_id, x_run_attempt)
         # Broker's existing document channel is tied to this attempt, not a model
         # selected storage key or newly acquired Work sandbox.
-        file.meta = {**file.meta, "document_job_id": x_run_attempt, "document_profile": "chat", "document_kind": native_kind(file)}
+        file.meta = {
+            **file.meta,
+            "document_job_id": x_run_attempt,
+            "document_profile": "chat-full" if native_state(file).get("pdf_strategy") == "full" else "chat",
+            "document_kind": native_kind(file),
+        }
         db.commit()
     return {
         "job_id": x_run_attempt,
@@ -160,7 +175,7 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
             manifest = json.loads(storage.get_bytes(body.manifest_key))
         except (ValueError, KeyError, FileNotFoundError) as exc:
             raise HTTPException(422, "invalid_native_manifest") from exc
-        if not isinstance(manifest, dict) or manifest.get("parser") != PARSER_V4 or manifest.get("version") != 2:
+        if not isinstance(manifest, dict) or manifest.get("parser") != PARSER_NATIVE or manifest.get("version") != 2:
             raise HTTPException(422, "invalid_native_manifest")
         if manifest.get("chars", 200001) > 200000 or len(manifest.get("units", [])) > 10000 or (manifest.get("cells") or 0) > 200000:
             raise HTTPException(413, "native_structure_limit")
@@ -205,9 +220,12 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
                 "text_key": prefix + "text.txt",
                 "extract": {
                     "kind": manifest["kind"],
-                    "parser": PARSER_V4,
+                    "parser": PARSER_NATIVE,
                     "coverage": manifest["status"],
                     "chars": manifest["chars"],
+                    "source_chars": manifest.get("source_chars", manifest["chars"]),
+                    "source_blocks": manifest.get("source_blocks", len(manifest["units"])),
+                    "cells": manifest.get("cells"),
                     "units": manifest["total_units"],
                     "truncated": manifest["status"] != "ready",
                 },

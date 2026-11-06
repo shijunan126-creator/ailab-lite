@@ -29,6 +29,9 @@ def text_request(db, run_id, body, attempt):
         if run.status != RunStatus.RUNNING:
             raise HTTPException(409, "run_unavailable")
         file = authorized_source(db, run, body.file_id)
+        from .native_ranges import charge_consumption
+
+        charge_consumption(db, run, file)
         if isinstance(body, ReadDocument) and body.text_source == "ocr":
             from .document_ocr import adopt_legacy, read_cached, request_scope
 
@@ -50,7 +53,7 @@ def text_request(db, run_id, body, attempt):
             db.commit()
             return result
         try:
-            current_index(db, file)
+            index = current_index(db, file)
         except HTTPException as exc:
             if exc.detail != "native_representation_unavailable":
                 raise
@@ -71,6 +74,13 @@ def text_request(db, run_id, body, attempt):
             if state["status"] == "failed":
                 raise HTTPException(422, "native_representation_failed")
             return {"file_id": file.id, "version": file.sha256, "pending": True, "action": "native-text", "deadline": deadline.timestamp()}
+        from .native_ranges import request_scope
+
+        if isinstance(body, ReadDocument) and not body.navigation_only:
+            pending = request_scope(db, run, file, index, body)
+            if pending:
+                db.commit()
+                return pending
         result = text_operation(db, file, body)
         db.commit()
         return result

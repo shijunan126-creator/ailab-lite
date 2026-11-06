@@ -1469,9 +1469,9 @@ class AgentLoop:
                     else self.platform.document_input(run_id, call.name, call.arguments)
                 )
                 result = await self._interruptible(run_id, request)
-                if result.get("pending") and result.get("action") == "document-ocr":
+                if result.get("pending") and result.get("action") in {"document-ocr", "native-scope"}:
                     raise FileDependencyPending(
-                        call.arguments["file_id"], "document-ocr", result.get("pages"), result["deadline"], result["operation_id"]
+                        call.arguments["file_id"], result["action"], result.get("pages"), result["deadline"], result["operation_id"]
                     )
                 if result.get("pending") and result.get("action") == "native-text":
                     state = self._states[run_id]

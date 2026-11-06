@@ -30,9 +30,9 @@ class DocumentReader:
         file = self.manager.platform.get_file(file_id, job="document", preview_job=job_id)
         kind = KINDS.get(PurePath(file["filename"]).suffix.lower())
         profile = (file.get("meta") or {}).get("document_profile", "legacy")
-        if profile not in {"legacy", "chat"}:
+        if profile not in {"legacy", "chat", "chat-full", "scope"}:
             raise LeaseError("document_profile_invalid")
-        if profile == "chat":
+        if profile != "legacy":
             kind = (file.get("meta") or {}).get("document_kind") or kind
             if kind not in {"pdf", "docx", "pptx", "xlsx"}:
                 raise LeaseError("document_format_unsupported")
@@ -44,11 +44,27 @@ class DocumentReader:
         spec = LibraryRenderer(self.manager)._spec()
         source = "/workspace/inputs/document." + kind
 
+        def remaining_seconds():
+            from datetime import datetime
+
+            deadline = (file.get("meta") or {}).get("document_deadline") if profile == "scope" else None
+            remaining = datetime.fromisoformat(deadline).timestamp() - time.time() if deadline else settings.office_timeout_seconds + 10
+            if remaining <= 0:
+                raise LeaseError("document_operation_deadline")
+            return remaining
+
         def prepare(lease):
+            remaining_seconds()
             injection_started = time.monotonic()
             self.manager.inject_file(lease, file_id, source, job="document", preview_job=job_id, max_bytes=settings.max_parse_bytes)
             script = Path(__file__).resolve().parents[1] / "sandbox_tools" / "office_exec.py"
             self.manager.put_input(lease, "/workspace/.ailab/office_exec.py", script.read_bytes())
+            if profile == "scope":
+                import json
+
+                self.manager.put_input(
+                    lease, "/workspace/.ailab/document-request.json", json.dumps((file.get("meta") or {}).get("document_selector")).encode()
+                )
             phases["inject_seconds"] = time.monotonic() - injection_started
 
         acquire_started = time.monotonic()
@@ -61,13 +77,15 @@ class DocumentReader:
         transfer_grant = None
         try:
             out = "/workspace/.ailab/document"
+            execution_seconds = min(settings.office_timeout_seconds, max(1, int(remaining_seconds()) - 5))
             command = (
-                f"mkdir -p {out} && python /workspace/.ailab/office_exec.py {settings.office_timeout_seconds} "
+                f"mkdir -p {out} && python /workspace/.ailab/office_exec.py {execution_seconds} "
                 f"{(settings.office_memory_mb + 64) * 1024**2} "
                 f"node --max-old-space-size={max(32, settings.office_memory_mb - 96)} /opt/ailab-office/runner.mjs "
-                f"{shlex.quote(source)} {out} {kind} {profile} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
+                f"{shlex.quote(source)} {out} {kind} {profile} "
+                f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
             )
-            result = self.manager.exec(handle.lease_id, command, int(settings.office_timeout_seconds) + 10)
+            result = self.manager.exec(handle.lease_id, command, min(int(remaining_seconds()), int(execution_seconds) + 5))
             phases["exec_seconds"] = time.monotonic() - started
             if result.exit_code:
                 import json
@@ -84,11 +102,15 @@ class DocumentReader:
             key = f"derived/{file_id}/office-staging/{job_id}.tar"
             export_started = time.monotonic()
             transfer_grant = None
-            transfer_limit = 8 * 1024**2 if profile == "chat" else 48 * 1024**2
-            if profile == "chat":
+            transfer_limit = 8 * 1024**2 if profile != "legacy" else 48 * 1024**2
+            if profile != "legacy":
                 native = ((file.get("meta") or {}).get("representations") or {}).get("native_text") or {}
                 transfer_grant = self.manager.platform.reserve_derived(
-                    key=key, version=file["sha256"], max_bytes=transfer_limit, kind="transfer", job_id=native.get("job_id")
+                    key=key,
+                    version=file["sha256"],
+                    max_bytes=transfer_limit,
+                    kind="transfer",
+                    job_id=(file.get("meta") or {}).get("document_operation_id") if profile == "scope" else native.get("job_id"),
                 )
             size, digest = self.manager.store_file(
                 self.manager.get(handle.lease_id), "/workspace/.ailab/document.tar", key, "application/x-tar", transfer_limit

@@ -148,7 +148,7 @@ def _claim_locked(db, job, body):
         done = file is None or file.deleted_at is not None or file.purged_at is not None
         if not done:
             meta = file.meta or {}
-            document_operation = db.get(DocumentOperation, job_id) if envelope.kind == "document_ocr" else None
+            document_operation = db.get(DocumentOperation, job_id) if envelope.kind in {"document_ocr", "native_scope"} else None
             done = (
                 (
                     envelope.kind == "file"
@@ -167,7 +167,7 @@ def _claim_locked(db, job, body):
                     )
                 )
                 or (
-                    envelope.kind == "document_ocr"
+                    envelope.kind in {"document_ocr", "native_scope"}
                     and (
                         file.status != FileStatus.READY
                         or not document_operation
@@ -220,7 +220,7 @@ def _claim_locked(db, job, body):
                 attempt.ended_at, attempt.outcome = now, "deadline"
         if expired and envelope.kind == "file" and not done:
             file.meta = {**(file.meta or {}), "processing": "job_expired", "scan_exhausted": True}
-        elif expired and envelope.kind == "document_ocr" and not done:
+        elif expired and envelope.kind in {"document_ocr", "native_scope"} and not done:
             from .routes_document_ocr import fail
 
             operation = db.get(DocumentOperation, job_id)

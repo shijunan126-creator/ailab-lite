@@ -369,6 +369,14 @@ class PlatformClient(_PlatformApi):
     def discard_derived_batch(self, items):
         return self._send(self._req("POST", "/internal/derived-assets/discard-batch", json={"items": items})).json()
 
+    def start_native_scope(self, file_id, operation_id):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/scope/start", json={"job_id": operation_id})).json()
+
+    def complete_native_scope(self, file_id, operation_id, **body):
+        return self._send(
+            self._req("POST", f"/internal/files/{file_id}/native/scope/complete", json={"job_id": operation_id, **body})
+        ).json()
+
     def start_native(self, file_id, job_id):
         return self._send(self._req("POST", f"/internal/files/{file_id}/native/start", json={"job_id": job_id})).json()
 

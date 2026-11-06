@@ -540,7 +540,11 @@ def build_runtime(output: Path) -> None:
         {
             "commit": json.loads((BASE / "UPSTREAM.json").read_text())["commit"],
             "adapter_revision": sha(
-                (BASE / "patches/004-runtime-reader.json").read_bytes()
+                b"".join(
+                    (BASE / "patches" / item["file"]).read_bytes()
+                    for item in json.loads((BASE / "patches/series.json").read_text())
+                )
+                + b"".join(path.read_bytes() for path in sorted((BASE / "runtime-adapter").rglob("*")) if path.is_file())
             ),
         },
     )

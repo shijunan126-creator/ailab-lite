@@ -91,7 +91,7 @@ def test_chat_runner_emits_only_two_canonical_files_and_legacy_remains_available
     assert result.returncode == 0, result.stderr
     assert sorted(p.name for p in output.iterdir()) == ["manifest.json", "text.txt"]
     manifest = json.loads((output / "manifest.json").read_text())
-    assert manifest["version"] == 2 and manifest["parser"].endswith("ailab4")
+    assert manifest["version"] == 2 and manifest["parser"].endswith("ailab5")
     body = (output / "text.txt").read_bytes()
     assert manifest["text_bytes"] == len(body)
     assert len(manifest["units"]) == 3
@@ -110,8 +110,10 @@ def test_chat_has_no_physical_total_page_admission_limit(tmp_path):
     assert result.returncode == 0, result.stderr
     manifest = json.loads((output / "manifest.json").read_text())
     assert manifest["total_units"] == 500
-    assert manifest["status"] == "ready"
-    assert len(manifest["units"]) == 500
+    assert manifest["status"] == "partial"
+    assert manifest["visual_status"] == "unknown"
+    assert manifest["units"] == []
+    assert (output / "text.txt").read_bytes() == b""
     assert len(list(output.iterdir())) == 2
 
 
@@ -274,7 +276,7 @@ def test_native_representation_stages_two_assets_then_publishes_atomically(tmp_p
         }
         manifest = {
             "version": 2,
-            "parser": "office-a60ba6a-ailab4",
+            "parser": "office-a60ba6a-ailab5",
             "status": "ready",
             "kind": "pdf",
             "units": [unit],
@@ -343,7 +345,7 @@ def test_native_bundle_unpacks_exactly_two_files_and_rejects_extra_or_corrupt_me
     data = b"Native text"
     manifest = {
         "version": 2,
-        "parser": "office-a60ba6a-ailab4",
+        "parser": "office-a60ba6a-ailab5",
         "kind": "pdf",
         "status": "ready",
         "chars": len(data),
