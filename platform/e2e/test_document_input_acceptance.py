@@ -115,6 +115,7 @@ def test_canonical_capture_history_fork_and_fifty_cycles(logged_in, stack, tmp_p
     baseline = None
     for cycle in range(-3, 50):
         page.goto(stack.portal + "/?files=" + fid)
+        page.get_by_role("radio", name="对话", exact=True).click()
         _start_conversation(page, "原生收件验收", "test-office-vision")
         _wait_for_turns(page, 1)
         cid = page.url.rsplit("/", 1)[-1]
