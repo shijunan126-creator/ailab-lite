@@ -1,3 +1,10 @@
+## 2026-11-07 文档工具反馈要与校验身份一致
+
+- OCR执行器在可能失败前按`X-Ocr-Operation`登记回执并拒绝重复。一个operation多张图须各用独立身份；`image_index`在每步重建剩余图片时恒为0，不能当执行身份，用`operation:claim_token:selector摘要`。只测单页或fake不拒重复id会漏掉。
+- 返回给模型的标识必须就是后续校验比对的那个：服务端重编码页图的`image_revision`不是RenderedPage摘要，模型只能猜。直接返回可原样回填的`region_ref`，不要靠提示词解释该用哪个revision。
+- 不带字段的422会让模型盲重试；在Agent本地按同一契约校验，返回字段级fix（不回显参数）。工具契约只写在工具描述一次，格式指南只写格式事实；指南里重复workflow或夹带测试语料措辞会让模型绕路。
+- 完成回执的job围栏要比对本operation自己的job kind，固定白名单会把文件处理job误判superseded。见[终审修复](docs/progress/updates/2026-11-07-document-prompt-review.md)。
+
 ## 2026-11-07 真实模型workflow不能只看终态
 
 - 最后一页发布可能先唤醒模型并完成Run，再收到Worker完成回执。完成回执必须保留attempt/job/source/deadline围栏，但不能要求消费者继续存活，否则已返回执行占着lane，下一附件等120秒；不要用“任何ACK都释放”替代执行停止证明。
