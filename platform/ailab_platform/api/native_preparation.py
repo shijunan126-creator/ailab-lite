@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from ..config import settings
 from ..contracts.file_types import OFFICE_SUFFIXES, TEXT_SUFFIXES
 from ..deps import get_db
 from ..locks import user_critical_section
@@ -129,8 +130,8 @@ def start(file_id: str, body: Start, x_run_attempt: str | None = Header(default=
     file = claimed_file(db, file_id, body.job_id, x_run_attempt)
     with user_critical_section(db, file.user_id):
         file = claimed_file(db, file_id, body.job_id, x_run_attempt)
-        from .file_work import start as start_work
         from .document_operations import aware, receipt
+        from .file_work import start as start_work
 
         job = db.get(OutboxMessage, body.job_id)
         operation = start_work(db, file, job, x_run_attempt)
@@ -248,6 +249,25 @@ def complete(file_id: str, body: Complete, x_run_attempt: str | None = Header(de
                     old_derivation.status = "retired"
                 for key in [old, old.rsplit("/", 1)[0] + "/text.txt"]:
                     assets.retire(db, key)
+                # Scope indexes belong to the previous base generation too.
+                # Retire their object inventory with the base publication; the
+                # indexed collector removes their business rows after grace.
+                from sqlalchemy import update
+
+                from ..models import DerivedAsset
+
+                now = datetime.now(UTC)
+                db.execute(
+                    update(DerivedAsset)
+                    .where(
+                        DerivedAsset.file_id == file.id,
+                        DerivedAsset.kind == "native",
+                        DerivedAsset.state == "ready",
+                        DerivedAsset.key.not_in(expected),
+                        DerivedAsset.retired_at.is_(None),
+                    )
+                    .values(retired_at=now, expires_at=now + timedelta(seconds=settings.derived_generation_grace_seconds))
+                )
             file.meta = {
                 **file.meta,
                 "document_manifest_key": body.manifest_key,

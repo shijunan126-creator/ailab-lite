@@ -28,3 +28,39 @@ TOOLS = [
         ViewDocument,
     ),
 ]
+
+
+# These are public operation outcomes, never provider errors or host paths.
+ERRORS = frozenset(
+    {
+        "cursor_stale",
+        "native_cache_changed",
+        "native_cache_missing",
+        "ocr_cache_changed",
+        "ocr_image_revision_changed",
+        "document_image_revision_changed",
+        "document_view_generation_changed",
+        "document_source_unavailable",
+        "document_run_deadline",
+        "document_queue_full",
+        "document_ocr_work_limit",
+        "document_input_limit",
+        "document_source_limit",
+        "document_structure_limit",
+        "native_structure_limit",
+        "derived_capacity_exceeded",
+        "derived_accounting_initializing",
+        "selector_representation_mismatch",
+        "selector_requires_scoped_preparation",
+        "document_page_out_of_range",
+        "model_vision_required",
+        "explicit_ocr_scope_required",
+        "ocr_executor_unavailable",
+        "native_representation_failed",
+        "native_representation_unavailable",
+        "ocr_representation_unavailable",
+        "native_page_count_unavailable",
+        "embedded_image_unavailable_use_pages",
+        "document_tool_not_available_for_catalog",
+    }
+)

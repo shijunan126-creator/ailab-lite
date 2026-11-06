@@ -6,30 +6,59 @@
 
 const imageCache = new Map<string, Promise<string | null>>();
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImage(src: string, signal?: AbortSignal): Promise<HTMLImageElement> {
+  signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const image = new Image();
     const timer = setTimeout(() => { clear(); image.src = ""; reject(new Error("截图解码超时")); }, 5000);
-    const clear = () => { clearTimeout(timer); image.onload = image.onerror = null; };
+    const abort = () => { clear(); image.src = ""; reject(new Error("截图已取消")); };
+    const clear = () => { clearTimeout(timer); image.onload = image.onerror = null; signal?.removeEventListener("abort", abort); };
+    signal?.addEventListener("abort", abort, {once: true});
     image.onload = () => { clear(); resolve(image); };
     image.onerror = () => { clear(); image.src = ""; reject(new Error("image failed to load")); };
     image.src = src;
   });
 }
 
+/** Native asynchronous PNG encoding; abort never retains a late Blob or reader. */
+async function encodeCanvas(canvas: HTMLCanvasElement, signal?: AbortSignal): Promise<string> {
+  signal?.throwIfAborted();
+  const blob = await new Promise<Blob>((resolve, reject) => {
+    const abort = () => reject(new Error("截图已取消"));
+    signal?.addEventListener("abort", abort, {once: true});
+    canvas.toBlob(value => {
+      signal?.removeEventListener("abort", abort);
+      if (signal?.aborted) return;
+      if (value) resolve(value); else reject(new Error("截图编码失败"));
+    }, "image/png");
+  });
+  signal?.throwIfAborted();
+  if (blob.size > 9 * 1024 * 1024) throw new Error("截图编码超限");
+  return await new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    const clean = () => { reader.onload = reader.onerror = reader.onabort = null; signal?.removeEventListener("abort", abort); };
+    const abort = () => { clean(); reader.abort(); reject(new Error("截图已取消")); };
+    reader.onload = () => { const value = reader.result; clean(); if (typeof value === "string") resolve(value); else reject(new Error("截图编码失败")); };
+    reader.onerror = () => { clean(); reject(new Error("截图编码失败")); };
+    signal?.addEventListener("abort", abort, {once: true});
+    reader.readAsDataURL(blob);
+  });
+}
+
 /** Turn a blob:/same-origin image URL into a data: URL by drawing it on a canvas. */
-function inlineImage(src: string): Promise<string | null> {
+function inlineImage(src: string, signal?: AbortSignal): Promise<string | null> {
+  signal?.throwIfAborted();
   if (src.startsWith("data:")) return Promise.resolve(src);
   let cached = imageCache.get(src);
   if (!cached) {
-    cached = loadImage(src)
-      .then((image) => {
+    cached = loadImage(src, signal)
+      .then(async (image) => {
         const canvas = document.createElement("canvas");
         if (image.naturalWidth * image.naturalHeight > 16_000_000) throw new Error("截图像素超限");
         canvas.width = image.naturalWidth || 1;
         canvas.height = image.naturalHeight || 1;
         canvas.getContext("2d")!.drawImage(image, 0, 0);
-        try { return canvas.toDataURL("image/png"); }
+        try { return await encodeCanvas(canvas, signal); }
         finally { canvas.width = canvas.height = 0; image.src = ""; }
       })
       .catch(() => null);
@@ -53,20 +82,21 @@ function cssText(): string {
 
 const URL_IN_CSS = /url\((['"]?)(blob:[^'")]+)\1\)/g;
 
-async function inlineTree(original: Element, clone: Element) {
+async function inlineTree(original: Element, clone: Element, signal?: AbortSignal) {
   let count = 0, encoded = 0;
   const resolveImage = async (src: string) => {
-    const data = await inlineImage(src);
+    const data = await inlineImage(src, signal);
     encoded += data?.length ?? 0;
     if (encoded > 8 * 1024 * 1024) throw new Error("截图资源超出预算");
     return data;
   };
   const walk = async (source: Element, target: Element): Promise<void> => {
+    signal?.throwIfAborted();
     if (++count > 10000) throw new Error("截图结构超出预算");
     if (source instanceof HTMLCanvasElement) {
       if (source.width * source.height > 16_000_000) throw new Error("截图像素超限");
       const image = document.createElement("img");
-      image.src = source.toDataURL("image/png");
+      image.src = await encodeCanvas(source, signal);
       encoded += image.src.length;
       if (encoded > 8 * 1024 * 1024) throw new Error("截图资源超出预算");
       image.setAttribute("style", (source.getAttribute("style") ?? "") + `;width:${source.offsetWidth}px;height:${source.offsetHeight}px`);
@@ -126,15 +156,16 @@ export interface Raster {
 
 export async function rasterize(
   element: HTMLElement,
-  options: { maxWidth: number; context?: Element | null; background?: string },
+  options: { maxWidth: number; context?: Element | null; background?: string; signal?: AbortSignal },
 ): Promise<Raster> {
+  options.signal?.throwIfAborted();
   const width = Math.max(1, element.offsetWidth);
   const height = Math.max(1, element.offsetHeight);
   if (width * height > 16_000_000 || element.querySelectorAll("*").length > 10000) throw new Error("截图区域超出资源预算");
   const clone = element.cloneNode(true) as HTMLElement;
   clone.style.transform = "none";
   clone.style.margin = "0";
-  try { await inlineTree(element, clone); }
+  try { await inlineTree(element, clone, options.signal); }
   catch (error) { clone.replaceChildren(); imageCache.clear(); throw error; }
   const computed = getComputedStyle(element);
   const root = document.createElement("div");
@@ -148,7 +179,9 @@ export async function rasterize(
   root.append(style, wrapInAncestors(element, clone, options.context ?? null));
   const markup = new XMLSerializer().serializeToString(root);
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}"><foreignObject x="0" y="0" width="100%" height="100%">${markup}</foreignObject></svg>`;
-  const image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`);
+  let image: HTMLImageElement;
+  try { image = await loadImage(`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`, options.signal); }
+  catch (error) { root.replaceChildren(); clone.replaceChildren(); imageCache.clear(); throw error; }
   const scale = Math.min(2, options.maxWidth / width, Math.sqrt(5_000_000 / (width * height)));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width * scale));
@@ -158,7 +191,7 @@ export async function rasterize(
   context.fillRect(0, 0, canvas.width, canvas.height);
   context.drawImage(image, 0, 0, canvas.width, canvas.height);
   try {
-    const data = canvas.toDataURL("image/png").split(",")[1];
+    const data = (await encodeCanvas(canvas, options.signal)).split(",")[1];
     if (data.length > 12 * 1024 * 1024) throw new Error("截图编码超限");
     return {data, width: canvas.width, height: canvas.height};
   } finally {
@@ -171,14 +204,15 @@ export async function rasterize(
 }
 
 /** Scale a canvas down to `maxWidth` and encode it. */
-export function canvasToPng(source: HTMLCanvasElement, maxWidth: number): Raster {
+export async function canvasToPng(source: HTMLCanvasElement, maxWidth: number, signal?: AbortSignal): Promise<Raster> {
+  signal?.throwIfAborted();
   const scale = Math.min(1, maxWidth / source.width, Math.sqrt(5_000_000 / (source.width * source.height)));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(source.width * scale));
   canvas.height = Math.max(1, Math.round(source.height * scale));
   canvas.getContext("2d")!.drawImage(source, 0, 0, canvas.width, canvas.height);
   try {
-    const data = canvas.toDataURL("image/png").split(",")[1];
+    const data = (await encodeCanvas(canvas, signal)).split(",")[1];
     if (data.length > 12 * 1024 * 1024) throw new Error("截图编码超限");
     return {data, width: canvas.width, height: canvas.height};
   } finally {

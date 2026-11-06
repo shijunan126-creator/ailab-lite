@@ -6,7 +6,6 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -45,8 +44,8 @@ def claimed(db, operation_id, attempt):
 
 
 def wake(db, row):
-    from .file_dependencies import wake_file
     from ..models import FileObject
+    from .file_dependencies import wake_file
 
     file = db.get(FileObject, row.file_id)
     if file:

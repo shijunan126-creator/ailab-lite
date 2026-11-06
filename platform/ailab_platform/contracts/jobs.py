@@ -11,7 +11,18 @@ class JobEnvelope(BaseModel):
     job_id: str = Field(min_length=1, max_length=40)
     schema_version: Literal[1] = 1
     kind: Literal[
-        "run", "file", "preview", "thumbnail", "ocr", "summary", "skill_unpack", "viewer", "native", "document_ocr", "native_scope"
+        "run",
+        "file",
+        "preview",
+        "thumbnail",
+        "ocr",
+        "summary",
+        "skill_unpack",
+        "viewer",
+        "native",
+        "document_ocr",
+        "native_scope",
+        "document_view",
     ]
     run_id: str | None = None
     file_id: str | None = None

@@ -92,6 +92,7 @@ def extraction_pages(meta):
 
 def publish_extraction(db, file, selected, records, *, operation=None, attempt=None, new_generation=None):
     import codecs
+
     from .owned_assets import publish
 
     file_id, owner, version = file.id, file.user_id, file.sha256
@@ -345,7 +346,8 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
         if attempt and meta.get("ocr_job_id"):
             from ..models import DocumentOperation, OutboxMessage, Run
             from . import document_operations as operations
-            from .file_work import register, start as start_work
+            from .file_work import register
+            from .file_work import start as start_work
 
             job = db.get(OutboxMessage, meta["ocr_job_id"])
             run = db.get(Run, meta.get("ocr_consumer_run_id")) if meta.get("ocr_consumer_run_id") else None

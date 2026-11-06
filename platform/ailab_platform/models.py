@@ -1092,7 +1092,10 @@ class MessageFileRef(Base):
 
 class FileDerivation(Base):
     __tablename__ = "file_derivations"
-    __table_args__ = (UniqueConstraint("file_id", "kind", "fingerprint", name="uq_file_derivation"),)
+    __table_args__ = (
+        UniqueConstraint("file_id", "kind", "fingerprint", name="uq_file_derivation"),
+        Index("ix_file_derivations_manifest", "manifest_key"),
+    )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("drv"))
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(24))
@@ -1109,6 +1112,7 @@ class DocumentBlock(Base):
         UniqueConstraint("derivation_id", "ordinal", name="uq_document_block_ordinal"),
         Index("ix_document_blocks_unit", "derivation_id", "unit_number", "ordinal"),
         Index("ix_document_blocks_anchor", "derivation_id", "anchor", "ordinal"),
+        Index("ix_document_blocks_text_key", "text_key", "derivation_id"),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("blk"))
     derivation_id: Mapped[str] = mapped_column(String(40), ForeignKey("file_derivations.id", ondelete="CASCADE"))
@@ -1163,6 +1167,7 @@ class ContextSummarySource(Base):
 
 class RenderedPage(Base):
     __tablename__ = "rendered_pages"
+    __table_args__ = (Index("ix_rendered_pages_key", "key"),)
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
     page: Mapped[int] = mapped_column(Integer, primary_key=True)
     version: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -1182,6 +1187,7 @@ class FileSourceInvalidation(Base):
 
 class OcrPageResult(Base):
     __tablename__ = "ocr_page_results"
+    __table_args__ = (Index("ix_ocr_page_results_key", "text_key"),)
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
     page: Mapped[int] = mapped_column(Integer, primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -1353,6 +1359,7 @@ class DocumentOcrUnit(Base):
         Index("ix_document_ocr_units_order", "file_id", "source_version", "fingerprint", "ordinal"),
         Index("ix_document_ocr_units_page", "file_id", "source_version", "page", "ordinal"),
         Index("ix_document_ocr_units_operation", "operation_id"),
+        Index("ix_document_ocr_units_key", "text_key"),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ocr"))
     file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))

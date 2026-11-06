@@ -188,12 +188,18 @@ def drain_object_deletions(db: Session, storage) -> int:
                 page = storage.list_prefix(job.key, limit=budget)
                 for item in page:
                     storage.delete(item.key)
+                    from .derived_assets import forget_deleted
+
+                    forget_deleted(db, item.key)
                 budget -= len(page.items)
                 if page.cursor:
                     db.commit()
                     continue
             else:
                 storage.delete(job.key)
+                from .derived_assets import forget_deleted
+
+                forget_deleted(db, job.key)
                 budget -= 1
             kind = job.kind
             db.delete(job)
@@ -443,7 +449,9 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 purge_episodes_for_runs(db, ids)
                 # the usage ledger stays: what these runs cost still counts
                 from ..models import ClientCall, ViewerCapture
+                from .viewer_captures import release_runs
 
+                release_runs(db, ids)
                 for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids))):
                     _schedule_delete(db, key, "conversation")
                 for model in (RunEvent, Artifact, ClientCall, ViewerCapture):
@@ -584,7 +592,7 @@ async def lifecycle_cleanup_forever() -> None:
                 preparation_maintenance(db)
                 invalidate_workspace_ocr(db)
                 db.commit()
-                collect_batch(db, get_storage(), transient_only=True)
+                collect_batch(db, get_storage())
 
     import time
 

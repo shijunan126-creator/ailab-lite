@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from ..deps import get_db
 from ..locks import user_critical_section
-from ..service_auth import require_scope
 from ..models import DocumentOperation, DocumentPreparation, FileObject, OutboxMessage
+from ..service_auth import require_scope
 from . import document_operations as operations
 
 

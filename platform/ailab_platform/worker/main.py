@@ -83,14 +83,15 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                     self.retry_delay = seconds
 
             completion = Completion()
-            from ..runtime_context import attempt_id_var
+            from ..runtime_context import attempt_id_var, temporary_deadline_var
 
             identity = attempt_id_var.set(token)
+            temporary_identity = temporary_deadline_var.set(envelope.deadline.timestamp())
             try:
-                if envelope.kind == "document_ocr":
+                if envelope.kind in {"document_ocr", "document_view"}:
                     from .document_ocr import process
 
-                    if process(client, envelope.job_id):
+                    if process(client, envelope.job_id, view=envelope.kind == "document_view"):
                         completion.ack()
                     else:
                         completion.retry_after(2)
@@ -111,8 +112,11 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                 elif envelope.kind == "viewer":
                     from .viewer import process_viewer
 
-                    process_viewer(client, file_id)
-                    completion.ack()
+                    viewed = process_viewer(client, file_id, job_id=envelope.job_id)
+                    if viewed.get("status") == "pending":
+                        completion.retry_after(2)
+                    else:
+                        completion.ack()
                 elif envelope.kind == "skill_unpack":
                     from .skill_unpack import process_skill_unpack
 
@@ -122,6 +126,7 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                     _handle(completion, msg, file_id)
             finally:
                 attempt_id_var.reset(identity)
+                temporary_deadline_var.reset(temporary_identity)
             if completion.completed:
                 client.job_action(envelope.job_id, "ack", token=token)
                 queue.ack(topic, msg)
@@ -344,11 +349,24 @@ async def lifespan(_: FastAPI):
     _thread.start()
     _summary_thread.start()
     _preview_thread.start()
+    from ..owned_temporary import sweep
+
+    async def temporary_maintenance():
+        while True:
+            try:
+                await asyncio.to_thread(sweep)
+            except Exception:
+                log.exception("temporary cleanup failed; next bounded pass retries")
+            await asyncio.sleep(min(300, settings.derived_maintenance_interval_seconds))
+
+    temporary_task = asyncio.create_task(temporary_maintenance())
     log.info("file worker ready")
     try:
         yield
     finally:
         _stop.set()
+        temporary_task.cancel()
+        await asyncio.gather(temporary_task, return_exceptions=True)
 
         # Queue reads block for at most two seconds. Stop idle consumers before
         # dropping their shared storage instance; an active job retains its own

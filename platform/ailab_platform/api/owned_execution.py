@@ -6,7 +6,6 @@ import logging
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 
-
 log = logging.getLogger("ailab.api.owned_execution")
 
 

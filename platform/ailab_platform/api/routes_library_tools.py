@@ -446,7 +446,7 @@ def resolve_attachment(run_id: str, body: Resolve, db: Session = Depends(get_db)
 @router.post("/{run_id}/library/image-reference", dependencies=[Depends(require_scope("files:read_for_run"))])
 def image_reference(run_id: str, body: Read, db: Session = Depends(get_db)):
     legacy_document_entry(db, run_id, "view_attachment")
-    run, file = _ready(db, run_id, body.file_id)
+    _run, file = _ready(db, run_id, body.file_id)
     if file.content_type.startswith("image/"):
         return {
             "files": [

@@ -857,8 +857,8 @@ def _bound_file(
         ):
             raise HTTPException(403, "no authorized document job")
         if meta.get("document_operation_id") and (meta.get("document_profile") != "legacy" or meta.get("document_execution_required")):
-            from . import document_operations as operations
             from ..models import DocumentOperation
+            from . import document_operations as operations
 
             operation = (
                 db.get(DocumentOperation, meta["document_operation_id"], populate_existing=True)
@@ -1281,7 +1281,9 @@ def publish_preview_page(
         if (
             page < 1
             or page > body.page_count
-            or asset["key"] != f"derived/{file_id}/preview/{body.name}"
+            or not re.fullmatch(
+                r"derived/" + re.escape(file_id) + r"/preview/(?:[A-Za-z0-9_-]{1,100}/)?" + re.escape(body.name), asset["key"]
+            )
             or asset["content_type"] != ("image/png" if body.name.endswith(".png") else "image/jpeg")
         ):
             raise HTTPException(400, "invalid preview page")
@@ -1299,6 +1301,10 @@ def publish_preview_page(
 
         existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
         if existing:
+            if existing.key != asset["key"]:
+                from .derived_assets import retire
+
+                retire(db, existing.key)
             existing.key, existing.digest = asset["key"], asset["sha256"]
         else:
             db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
@@ -1336,7 +1342,14 @@ def complete_file_preview(
             raise HTTPException(status_code=400, detail="invalid completion")
         assets = {name: asset.model_dump() for name, asset in body.assets.items()}
         for name, asset in assets.items():
-            if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
+            if (
+                "/" in name
+                or "\\" in name
+                or name in {".", ".."}
+                or not re.fullmatch(
+                    r"derived/" + re.escape(file_id) + r"/preview/(?:[A-Za-z0-9_-]{1,100}/)?" + re.escape(name), asset.get("key", "")
+                )
+            ):
                 raise HTTPException(status_code=400, detail="invalid asset")
         thumbnail = assets.get("template-thumbnail.jpg")
         if thumbnail and (file.purpose != "template" or preview.status != "ready" or preview.kind != "pages"):
@@ -1360,8 +1373,8 @@ def complete_file_preview(
 
         operation = db.get(DocumentOperation, body.job_id, populate_existing=True)
         if operation:
-            from .file_work import finish as finish_work
             from .derived_assets import publish_writer
+            from .file_work import finish as finish_work
 
             finish_work(db, body.job_id, x_run_attempt, reason=preview.reason if preview.status == "failed" else None)
             publish_writer(db, file.id, body.job_id, x_run_attempt, failed=preview.status == "failed")
@@ -1371,7 +1384,7 @@ def complete_file_preview(
             mime = (
                 ("image/png" if name.endswith(".png") else "image/jpeg")
                 if preview.kind == "pages"
-                else {"sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(preview.kind)
+                else {"sheets": "application/json", "text": "text/plain; charset=utf-8", "image": "image/webp"}.get(preview.kind)
             )
             if asset["content_type"] != mime:
                 raise HTTPException(status_code=400, detail="invalid asset content type")
@@ -1379,8 +1392,8 @@ def complete_file_preview(
         if thumbnail:
             meta["template_preview_thumbnail"] = thumbnail
         if preview.image == "display.webp":
-            meta["display_key"] = f"derived/{file_id}/display.webp"
-            meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+            meta["display_key"] = assets.get("display.webp", {}).get("key") or f"derived/{file_id}/display.webp"
+            meta["thumb_key"] = assets.get("thumb.webp", {}).get("key") or f"derived/{file_id}/thumb.webp"
         if preview.status == "ready" and preview.kind == "pages":
             from ..models import RenderedPage
 
@@ -1390,6 +1403,10 @@ def complete_file_preview(
                 page = int(name[2:-4])
                 existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
                 if existing:
+                    if existing.key != asset["key"]:
+                        from .derived_assets import retire
+
+                        retire(db, existing.key)
                     existing.key, existing.digest = asset["key"], asset["sha256"]
                 else:
                     db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))

@@ -312,6 +312,13 @@ def capture_setup(api):  # noqa: F811
         run.conversation_id = cid
         run.options = {**run.options, "client": "portal"}
         db.commit()
+    from ailab_platform.models import DerivedBudget
+
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.meta = {**file.meta, "scan": {"verdict": "clean"}}
+        db.get(DerivedBudget, 1).backfill_complete = True
+        db.commit()
     view(api, cid, fid, version)
     response = api.post(
         f"/internal/runs/{rid}/client-calls",

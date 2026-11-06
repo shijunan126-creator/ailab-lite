@@ -10,7 +10,6 @@ import mimetypes
 import re
 import shlex
 import shutil
-import tempfile
 import threading
 import time
 import uuid
@@ -344,13 +343,13 @@ class LeaseManager:
     def transfer_file(self):
         # /data is disk-backed in both deployment overlays. /tmp may be tmpfs,
         # which would merely move the same OOM risk out of the Python heap.
-        root = self._transfer_root
-        root.mkdir(parents=True, exist_ok=True, mode=0o700)
-        with tempfile.TemporaryDirectory(prefix="transfer-", dir=root) as directory:
-            yield Path(directory) / "file"
+        from ..owned_temporary import directory
+
+        with directory("broker", prefix="transfer") as temporary:
+            yield Path(temporary) / "file"
 
     def register_scratch(self, lease_id, directory, deadline):
-        if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view)-[a-f0-9]{32}", directory):
+        if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view|viewer|view-warm|preview)-[a-f0-9]{32}", directory):
             raise LeaseError("invalid_scratch_directory")
         if not time.time() < deadline <= time.time() + 610:
             raise LeaseError("invalid_scratch_deadline")
@@ -370,7 +369,7 @@ class LeaseManager:
             jobs = dict(lease.get("scratch_jobs") or {})
             if directory not in jobs:
                 return
-            if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view)-[a-f0-9]{32}", directory):
+            if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view|viewer|view-warm|preview)-[a-f0-9]{32}", directory):
                 raise LeaseError("invalid_scratch_directory")
             result = self._provider_call("exec", lease["sandbox_id"], "rm -rf -- " + shlex.quote(directory), 5)
             if result.exit_code:
@@ -400,7 +399,7 @@ class LeaseManager:
             raise TransferLimitError(f"file is {size} bytes; the limit is {limit}")
         self._provider_call("get_file_to_path", lease["sandbox_id"], path, local, max_bytes=limit)
 
-    def store_file(self, lease: dict, path: str, key: str, content_type: str, limit: int) -> tuple[int, str]:
+    def store_file(self, lease: dict, path: str, key: str, content_type: str, limit: int, *, storage=None) -> tuple[int, str]:
         with self.transfer_file() as local:
             self._download(lease, path, local, limit)
             digest = hashlib.sha256()
@@ -408,7 +407,7 @@ class LeaseManager:
                 for chunk in iter(lambda: stream.read(CHUNK_SIZE), b""):
                     digest.update(chunk)
                 stream.seek(0)
-                self.storage.put_stream(key, stream, content_type, max_bytes=limit)
+                (storage or self.storage).put_stream(key, stream, content_type, max_bytes=limit)
             return local.stat().st_size, digest.hexdigest()
 
     @staticmethod
@@ -1076,10 +1075,11 @@ class LeaseManager:
             self._save(latest)
         return manifests
 
-    def _render_preview(self, lease: dict, path: str, seq: int) -> dict:
+    def _render_preview(self, lease: dict, path: str, seq: int, *, storage=None) -> dict:
         sandbox_id, run_id = lease["sandbox_id"], lease["run_id"]
         self._provider_call("put_file", sandbox_id, PREVIEW_SCRIPT, RENDER_PREVIEW.read_bytes())
-        outdir = f"{TOOL_DIR}/preview/{seq}"
+        outdir = f"/workspace/.ailab/preview-{uuid.uuid4().hex}"
+        self.register_scratch(lease["lease_id"], outdir, time.time() + 120)
         try:
             filename = Path(path).name
             started = time.perf_counter()
@@ -1111,6 +1111,7 @@ class LeaseManager:
                             f"previews/{run_id}/{seq}/{name}",
                             "image/jpeg",
                             min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024 - total),
+                            storage=storage,
                         )
                         total += size
                         names.append(f"{seq}/{name}")
@@ -1122,6 +1123,7 @@ class LeaseManager:
                         f"previews/{run_id}/{seq}/sheets.json",
                         "application/json",
                         settings.max_sandbox_read_bytes,
+                        storage=storage,
                     )
                     manifest.update(kind="sheets", data=f"{seq}/sheets.json", errors=result.get("errors", []))
                 elif result.get("kind") == "pdf" and result.get("pdf") == "document.pdf":
@@ -1131,6 +1133,7 @@ class LeaseManager:
                         f"previews/{run_id}/{seq}/document.pdf",
                         "application/pdf",
                         min(settings.max_sandbox_read_bytes, 32 * 1024 * 1024),
+                        storage=storage,
                     )
                     manifest.update(kind="pdf", pdf=f"{seq}/document.pdf", page_count=result.get("page_count"))
                 else:
@@ -1141,7 +1144,10 @@ class LeaseManager:
             manifest["seconds"] = round(time.perf_counter() - started, 1)
             return manifest
         finally:
-            self._provider_call("exec", sandbox_id, f"rm -rf {outdir}", 5)
+            try:
+                self.clear_scratch(lease["lease_id"], outdir)
+            except Exception:
+                log.warning("preview scratch cleanup pending lease=%s", lease["lease_id"])
 
     @_operation
     def render_workspace_preview(self, lease_id: str, snapshot: str, filename: str, version: str) -> dict:
@@ -1149,10 +1155,10 @@ class LeaseManager:
         lease = self._load(lease_id)
         revision = hashlib.sha256(RENDER_PREVIEW.read_bytes() + str(lease.get("spec", {}).get("image", "")).encode()).hexdigest()[:20]
         key = f"previews/{lease['run_id']}/fallback/{version}-{Path(filename).suffix.lower()}-{revision}.json"
-        if self.storage.exists(key):
+        if self.platform.derived_ready(key, version) and self.storage.exists(key):
             return {**json.loads(self.storage.get_bytes(key)), "filename": filename}
         with self.render_activity(lease["user_id"], priority=1, wait_seconds=2):
-            if self.storage.exists(key):
+            if self.platform.derived_ready(key, version) and self.storage.exists(key):
                 return {**json.loads(self.storage.get_bytes(key)), "filename": filename}
             # Reserve before rendering: failed transfers may leave immutable assets,
             # and a later render must never overwrite their URLs with different bytes.
@@ -1162,13 +1168,16 @@ class LeaseManager:
                 latest["preview_seq"] = seq
                 self._provider_call("update_metadata", latest["provider_ref"], self._metadata(latest))
                 self._save(latest)
-            manifest = self._render_preview(latest, snapshot, seq)
-            manifest.update(filename=filename)
-            manifest.pop("path", None)
-            # A failed dependency may recover by the next explicit open.
-            if not manifest.get("error"):
-                self.storage.put_bytes(key, json.dumps(manifest).encode(), "application/json")
-            return manifest
+            from ..derived_writes import AccountedRunWrites
+
+            with AccountedRunWrites(self.storage, self.platform, version) as writer:
+                manifest = self._render_preview(latest, snapshot, seq, storage=writer)
+                manifest.update(filename=filename)
+                manifest.pop("path", None)
+                if not manifest.get("error"):
+                    writer.put_bytes(key, json.dumps(manifest).encode(), "application/json")
+                    writer.publish()
+                return manifest
 
     def _finish(self, lease: dict, state: str, reason: str) -> None:
         lease.update(state=state, reason=reason, closed_at=datetime.now(UTC).isoformat())
@@ -1524,6 +1533,9 @@ class LeaseManager:
 
     def cleanup_once(self) -> None:
         self._assert_owner()
+        from ..owned_temporary import sweep
+
+        sweep("broker")
         seen_ids: set[str] = set()
         with self._reconcile_lock:
             resources = self._provider_call("list_owned", self.owner)

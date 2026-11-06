@@ -4,10 +4,10 @@ import hashlib
 import json
 import logging
 import tarfile
-import tempfile
 from pathlib import Path
 
 from ..native_text import CANONICAL_TEXT_BYTES, PARSER_NATIVE, read_unit
+from ..owned_temporary import directory as temporary_directory
 from .isolate import IsolationError
 
 log = logging.getLogger("ailab.worker.native")
@@ -85,7 +85,7 @@ def process_native(platform, file_id, job_id, storage=None, *, scoped=False):
     result, archive_key = {}, None
     success, receipts = False, []
     try:
-        with tempfile.TemporaryDirectory(prefix="ailab-native-") as temporary:
+        with temporary_directory(prefix="ailab-native-") as temporary:
             output = Path(temporary)
             if start["kind"] in {"pdf", "docx", "pptx", "xlsx"}:
                 result = platform.read_document(file_id, start["job_id"])
@@ -105,8 +105,8 @@ def process_native(platform, file_id, job_id, storage=None, *, scoped=False):
                 output = output / "native"
                 remaining = None
                 if start.get("execution_deadline"):
-                    from datetime import datetime
                     import time
+                    from datetime import datetime
 
                     remaining = min(120, datetime.fromisoformat(start["execution_deadline"]).timestamp() - time.time())
                     if remaining <= 0:

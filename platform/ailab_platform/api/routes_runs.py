@@ -197,7 +197,7 @@ def validate_run_input(
         db, conversation, mode, turn_mode=turn_mode, requires_work=bool(template is not None and conversation is not None)
     )
     options["mode"] = mode
-    if mode == "work" or document_tools_version == 2:
+    if document_tools_version is None or document_tools_version == 2:
         options["document_tools_version"] = 2
 
     catalog = get_catalog()

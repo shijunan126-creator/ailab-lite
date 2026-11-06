@@ -1,4 +1,4 @@
-2026-11-06 文件输入优化仍为部分本地实现：安全ready/按需native已接；V2 Work/OCR、Chat显式OCR及原生范围/有界导航接线中，Chat默认仍V1。最新范围/runtime构建及未测边界见[实施记录](../progress/updates/2026-11-05-document-input-lifecycle.md#原生真实范围与生成源恢复2026-11-06未验收)。浏览器/全部生产记账/TTL/全局调度和最终验收尚未完成；没有整体达标声明。
+2026-11-06 文件输入优化仍为部分本地实现：安全ready/按需native已接；V2 Work/OCR、Chat显式OCR及原生范围/有界导航接线中，新Chat默认V2已本地接线，尚未验收。最新范围/runtime构建及未测边界见[实施记录](../progress/updates/2026-11-05-document-input-lifecycle.md#原生真实范围与生成源恢复2026-11-06未验收)。浏览器/记账/TTL/临时资源回收已续接，fork复制等覆盖与最终验收仍待复核；没有整体达标声明。
 
 # 单机能力状态
 

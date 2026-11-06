@@ -202,6 +202,35 @@ class PlatformClient(_PlatformApi):
                 )
             ).json()
 
+    def document_view_failed(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-views/{operation_id}/fail", json={})).json()
+
+    def document_view_step(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-views/{operation_id}/step", json={})).json()
+
+    def document_view_image(self, operation_id, token, ordinal, image, receipt, deadline):
+        req = self._req(
+            "POST",
+            f"/internal/document-views/{operation_id}/image",
+            timeout=max(1, deadline - time.time()) + 8,
+            params={"image_index": ordinal},
+        )
+        with image.open("rb") as stream:
+            return self._send(
+                req._replace(
+                    kwargs={
+                        **req.kwargs,
+                        "headers": {
+                            **req.kwargs["headers"],
+                            "X-Document-Token": token,
+                            "X-Image-Receipt": json.dumps(receipt, separators=(",", ":")),
+                            "Content-Type": "application/octet-stream",
+                        },
+                        "content": stream,
+                    }
+                )
+            ).json()
+
     def workspace_ocr_budget(self, run_id):
         return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/budget", json={})).json()
 
@@ -347,6 +376,12 @@ class PlatformClient(_PlatformApi):
                 },
             )
         ).json()
+
+    def publish_run_derived(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/publish-run", json={"items": items})).json()
+
+    def derived_ready(self, key, version):
+        return self._send(self._req("POST", "/internal/derived-assets/ready", json={"key": key, "version": version})).json()["ready"]
 
     def reserve_derived(self, **body):
         return self._send(self._req("POST", "/internal/derived-assets/reserve", json=body)).json()

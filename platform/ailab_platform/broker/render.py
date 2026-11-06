@@ -189,14 +189,15 @@ class LibraryRenderer:
             if digest is None:
                 with local.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            key = f"derived/{file_id}/preview/{name}"
+            key = f"derived/{file_id}/preview/{job_id}/{name}"
             self.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
             try:
                 self.manager.platform.publish_preview_page(file_id, job_id, name, page_count, asset)
             except Exception:
-                # A deleted file can race the object write after its prefix was purged.
-                self.storage.delete(key)
+                # Publication can commit before its response is lost. The
+                # accounted writer asks the API which grants remain deletable;
+                # never delete a possibly published page from this exception.
                 raise
             return asset
 
@@ -320,7 +321,7 @@ class LibraryRenderer:
                         )
                         with local.open("rb") as stream:
                             digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                        key = f"derived/{file_id}/preview/template-thumbnail.jpg"
+                        key = f"derived/{file_id}/preview/{job_id}/template-thumbnail.jpg"
                         self.storage.put_file(key, local, "image/jpeg")
                     assets["template-thumbnail.jpg"] = {"key": key, "content_type": "image/jpeg", "sha256": digest}
                     phases["thumbnail_seconds"] = time.monotonic() - thumb_started
@@ -390,7 +391,7 @@ class LibraryRenderer:
             export_started = time.monotonic()
             for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name):
                 is_pdf = name == pdf_name
-                key = cache_key if is_pdf else f"derived/{file_id}/preview/{name}"
+                key = cache_key if is_pdf else f"derived/{file_id}/preview/{job_id}/{name}"
                 self.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
                 if not is_pdf:
                     assets[name] = {"key": key, "content_type": mime, "sha256": digest}

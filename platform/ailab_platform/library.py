@@ -65,6 +65,14 @@ def delete_file_rows(db: Session, files: list[FileObject], *, detach_children: b
         .where(DerivedAsset.key.in_(unit_keys), DerivedAsset.state == "ready", DerivedAsset.reconstructible.is_(False), ~surviving)
         .values(state="deleting", lease_until=None, expires_at=utcnow())
     )
+    from .models import ViewerCapture
+
+    capture_keys = select(ViewerCapture.storage_key).where(ViewerCapture.file_id.in_(ids))
+    db.execute(delete(DerivedAssetRef).where(DerivedAssetRef.key.in_(capture_keys)))
+    db.execute(
+        update(DerivedAsset).where(DerivedAsset.key.in_(capture_keys)).values(state="deleting", lease_until=None, expires_at=utcnow())
+    )
+    db.execute(delete(ViewerCapture).where(ViewerCapture.file_id.in_(ids)))
     db.execute(delete(DocumentOcrUnit).where(DocumentOcrUnit.file_id.in_(ids)))
     derivations = select(FileDerivation.id).where(FileDerivation.file_id.in_(ids))
     db.execute(delete(DocumentBlock).where(DocumentBlock.derivation_id.in_(derivations)))

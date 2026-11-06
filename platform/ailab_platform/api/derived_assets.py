@@ -239,7 +239,7 @@ def backfill_batch(db, storage, *, now=None):
             continue
         owner = item.key.split("/")[1]
         file, run, capture = files.get(owner), runs.get(owner), captures.get(item.key)
-        native = item.key.endswith((".txt", "manifest.json"))
+        native = item.key.endswith((".txt", "manifest.json")) and "/preview/" not in item.key
         orphan = (not file or file.purged_at) if prefix == "derived/" else not run
         row = DerivedAsset(
             key=item.key,
@@ -307,6 +307,39 @@ def invalidate_workspace_ocr(db, *, conversation_id=None):
     return len(rows)
 
 
+def claim_collection(db, key, now, orphan_cutoff):
+    from contextlib import nullcontext
+
+    from ..locks import user_critical_section
+    from .derived_invalidation import invalidate
+
+    snapshot = db.get(DerivedAsset, key, populate_existing=True)
+    file = db.get(FileObject, snapshot.file_id) if snapshot and snapshot.file_id else None
+    run = db.get(Run, snapshot.run_id) if snapshot and snapshot.run_id else None
+    owner = file.user_id if file else run.user_id if run else None
+    db.rollback()
+    with user_critical_section(db, owner) if owner else nullcontext():
+        budget_lock(db)
+        row = db.get(DerivedAsset, key, populate_existing=True)
+        if (
+            not row
+            or row.state not in {"ready", "deleting", "writing", "staged"}
+            or (row.state in {"writing", "staged"} and (not row.lease_until or aware(row.lease_until) > orphan_cutoff))
+            or (row.state == "ready" and row.reconstructible and (not row.expires_at or aware(row.expires_at) > now))
+            or (row.state == "ready" and not row.reconstructible and row.created_at and aware(row.created_at) > orphan_cutoff)
+            or (row.state == "deleting" and row.lease_until and aware(row.lease_until) > now)
+            or protected(db, row, now)
+        ):
+            db.rollback()
+            return None
+        token = uuid4().hex
+        row.state, row.token = "deleting", token
+        row.lease_until = now + timedelta(seconds=settings.derived_write_lease_seconds)
+        invalidate(db, row)
+        db.commit()
+        return token
+
+
 def collect_batch(db, storage, *, now=None, transient_only=False):
     """Failures leave durable rows and charged bytes for the next bounded pass."""
     now = now or datetime.now(UTC)
@@ -351,23 +384,9 @@ def collect_batch(db, storage, *, now=None, transient_only=False):
         keys = list(db.scalars(query.limit(settings.gc_batch_size - examined)))
         for key in keys:
             examined += 1
-            budget_lock(db)
-            row = db.get(DerivedAsset, key, populate_existing=True)
-            if (
-                not row
-                or row.state not in {"ready", "deleting", "writing", "staged"}
-                or (row.state in {"writing", "staged"} and (not row.lease_until or aware(row.lease_until) > orphan_cutoff))
-                or (row.state == "ready" and row.reconstructible and (not row.expires_at or aware(row.expires_at) > now))
-                or (row.state == "ready" and not row.reconstructible and row.created_at and aware(row.created_at) > orphan_cutoff)
-                or (row.state == "deleting" and row.lease_until and aware(row.lease_until) > now)
-                or protected(db, row, now)
-            ):
-                db.rollback()
+            token = claim_collection(db, key, now, orphan_cutoff)
+            if token is None:
                 continue
-            token = uuid4().hex
-            row.state, row.token = "deleting", token
-            row.lease_until = now + timedelta(seconds=settings.derived_write_lease_seconds)
-            db.commit()
             try:
                 storage.delete(key)
             except Exception:

@@ -212,7 +212,11 @@ def test_office_supervisor_kills_remaining_children_after_parent_exit(tmp_path):
 
     supervisor = Path(__file__).resolve().parents[1] / "ailab_platform/sandbox_tools/office_exec.py"
     child = tmp_path / "child.pid"
-    code = "import subprocess,sys; from pathlib import Path; p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); Path(sys.argv[1]).write_text(str(p.pid))"
+    code = (
+        "import subprocess,sys; from pathlib import Path; "
+        "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+        "Path(sys.argv[1]).write_text(str(p.pid))"
+    )
     result = subprocess.run(
         [sys.executable, str(supervisor), "5", str(128 * 1024**2), sys.executable, "-c", code, str(child)], capture_output=True, timeout=10
     )

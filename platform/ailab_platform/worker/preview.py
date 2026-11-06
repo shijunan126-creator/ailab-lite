@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -14,6 +13,7 @@ from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
 from ..contracts.file_types import legacy_scanned_pending
+from ..owned_temporary import directory as temporary_directory
 from ..queue import get_queue
 from ..storage import get_storage
 from .isolate import IsolationError, execute
@@ -96,7 +96,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                     "image",
                     "text",
                 }:
-                    with tempfile.TemporaryDirectory(prefix="ailab-preview-") as tmp:
+                    with temporary_directory(prefix="ailab-preview-") as tmp:
                         source = Path(tmp) / ("input" + Path(file["filename"]).suffix.lower())
                         download(platform, file_id, source, settings.max_upload_bytes, job="preview")
                         if manifest["kind"] == "text":
@@ -109,7 +109,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                                 ownership=check_owned,
                             )
                             data = info.get("text", "").encode("utf-8")
-                            key = f"derived/{file_id}/preview/text.txt"
+                            key = f"derived/{file_id}/preview/{job_id}/text.txt"
                             storage.put_bytes(key, data, "text/plain; charset=utf-8")
                             assets["text.txt"] = {
                                 "key": key,
@@ -118,14 +118,24 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                             }
                             manifest = text_manifest(file["filename"], {"extract": info})
                         elif manifest["kind"] == "image":
-                            derivatives = _images(file_id, source, file, storage, Path(tmp) / "images")
+                            derivatives = _images(
+                                file_id, source, file, storage, Path(tmp) / "images", prefix=f"derived/{file_id}/preview/{job_id}/"
+                            )
                             if not derivatives.get("display_key"):
                                 raise ValueError("image_unavailable")
+                            assets = {
+                                name: {
+                                    "key": derivatives[field],
+                                    "content_type": "image/webp",
+                                    "sha256": hashlib.sha256((Path(tmp) / "images" / name).read_bytes()).hexdigest(),
+                                }
+                                for name, field in (("display.webp", "display_key"), ("thumb.webp", "thumb_key"))
+                            }
                             manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
                         else:
                             execute("sheets", source, Path(tmp) / "sheets", timeout=120, ownership=check_owned)
                             data = (Path(tmp) / "sheets" / "sheets.json").read_bytes()
-                            key = f"derived/{file_id}/preview/sheets.json"
+                            key = f"derived/{file_id}/preview/{job_id}/sheets.json"
                             storage.put_bytes(key, data, "application/json")
                             assets["sheets.json"] = {
                                 "key": key,

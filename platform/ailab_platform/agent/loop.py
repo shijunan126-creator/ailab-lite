@@ -1395,6 +1395,23 @@ class AgentLoop:
                 raise ToolError("resource is unavailable for this skill")
             elif wanted and _full_skill_visible(turn, wanted):
                 result = {"ok": True, "name": wanted, "already_loaded": True}
+            elif call.name == "view_document":
+                spec = get_catalog().get(turn.run.get("model"))
+                if not spec or not spec.supports({"vision"}):
+                    raise ToolError("当前模型不支持图像理解，请选择视觉模型")
+                binding = await self._interruptible(run_id, self.platform.document_input(run_id, call.name, call.arguments))
+                if binding.get("pending"):
+                    raise FileDependencyPending(
+                        call.arguments["file_id"], "document-view", None, binding["deadline"], binding["operation_id"]
+                    )
+                if binding.get("error"):
+                    raise ToolError(binding["error"])
+                for file in binding["files"]:
+                    parts = await self._image_content(run_id, turn.run, file, spec)
+                    if not any(part.get("type") == "image_url" for part in parts):
+                        raise ToolError("文档图像当前不可读取")
+                    self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
+                result = {**binding, "ok": True, "input": "image"}
             elif call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
                 if not spec or not spec.supports({"vision"}):
@@ -1565,10 +1582,32 @@ class AgentLoop:
         except ClientError as exc:
             if exc.status == 410:
                 raise LeaseInterrupted() from exc
-            if exc.status == 409 and call.name not in {"extract_text", "read_library_file", "view_attachment"}:
+            document_tool = call.name in {"read_document", "search_document", "view_document"}
+            try:
+                detail = json.loads(exc.body).get("detail")
+            except (ValueError, AttributeError):
+                detail = None
+            from .document_tools import ERRORS as DOCUMENT_ERRORS
+
+            public_reason = detail if isinstance(detail, str) and detail in DOCUMENT_ERRORS else None
+            if (
+                exc.status == 409
+                and call.name not in {"extract_text", "read_library_file", "view_attachment"}
+                and not (document_tool and public_reason)
+            ):
                 raise
             log.warning("tool %s client request failed", call.name, exc_info=True)
             result = {"ok": False, "error": "工具请求失败"}
+            if document_tool:
+                reason = public_reason or {
+                    404: "document_unavailable",
+                    408: "document_run_deadline",
+                    413: "document_input_limit",
+                    422: "invalid_document_arguments",
+                    429: "document_queue_full",
+                    507: "derived_capacity_exceeded",
+                }.get(exc.status, "document_operation_unavailable")
+                result = {"ok": False, "error": reason, "reason": reason}
         except ToolError as exc:
             result = {"ok": False, "error": str(exc)}
         except Exception:  # broker / sandbox failures stay in the loop

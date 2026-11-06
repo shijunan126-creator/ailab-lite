@@ -3,7 +3,6 @@
 import hashlib
 import hmac
 import json
-from datetime import UTC, datetime
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -13,12 +12,9 @@ from ..contracts.document_input import Pages, Region
 from ..domain.document_reading import CursorError, TextBlock, context_digest, decode_cursor, encode_cursor, read_batch
 from ..models import (
     DocumentOcrUnit,
-    DocumentOperation,
-    DocumentOperationConsumer,
     FileObject,
     OcrPageResult,
     RenderedPage,
-    User,
     ViewerCapture,
 )
 from ..storage import get_storage

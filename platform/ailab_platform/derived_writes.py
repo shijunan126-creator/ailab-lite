@@ -19,7 +19,7 @@ class AccountedWrites:
     def _write(self, key, maximum, action):
         if not key.startswith(("derived/", "viewer/", "previews/")):
             return action()
-        native = key.endswith(".txt") or "/office/" in key or key.endswith("viewer.json")
+        native = (key.endswith(".txt") and "/preview/" not in key) or "/office/" in key or "/viewer/" in key or key.endswith("viewer.json")
         grant = self.platform.reserve_derived(
             key=key, version=self.version, max_bytes=maximum, kind="native" if native else "cache", job_id=self.job_id
         )
@@ -79,3 +79,50 @@ def accounted_writes(storage, platform, version, job_id):
             wrapped.cleanup()
         except Exception:
             logging.getLogger("ailab.derived_writes").warning("write compensation remains in the durable ledger", exc_info=True)
+
+
+class AccountedRunWrites:
+    """A bounded Broker request owns grants until its manifest is published."""
+
+    def __init__(self, storage, platform, version):
+        self.storage, self.platform, self.version = storage, platform, version
+        self.grants = []
+        self.published = False
+
+    def _write(self, key, size, action):
+        if len(self.grants) >= 64:
+            raise ValueError("derived_request_asset_limit")
+        grant = self.platform.reserve_derived(key=key, version=self.version, max_bytes=size, kind="cache")
+        self.grants.append({"key": key, "token": grant["token"]})
+        result = action()
+        self.platform.finish_derived(key, grant["token"])
+        return result
+
+    def put_bytes(self, key, data, content_type="application/octet-stream"):
+        return self._write(key, len(data), lambda: self.storage.put_bytes(key, data, content_type))
+
+    def put_stream(self, key, stream, content_type="application/octet-stream", *, max_bytes):
+        return self._write(key, max_bytes, lambda: self.storage.put_stream(key, stream, content_type, max_bytes=max_bytes))
+
+    def publish(self):
+        if self.grants:
+            self.platform.publish_run_derived(self.grants)
+        self.published = True
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        if not self.published:
+            for offset in range(0, len(self.grants), 32):
+                chunk = self.grants[offset : offset + 32]
+                # Publication may have committed before its response was lost;
+                # the authority only permits deleting our unpublished grants.
+                response = self.platform.abandon_derived_batch(chunk)
+                removed = []
+                for item in response.get("deletable", []):
+                    self.storage.delete(item["key"])
+                    removed.append(item)
+                if removed:
+                    self.platform.discard_derived_batch(removed)
+        self.grants.clear()

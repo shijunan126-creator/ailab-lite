@@ -1,28 +1,28 @@
 """Drive explicit OCR pages/regions without model calls or retained transport objects."""
 
 import hashlib
-import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
 
 from ..clients import ClientError
+from ..owned_temporary import directory as temporary_directory
 from ..storage import get_storage
 from .isolate import IsolationError, execute
 
 
-def process(platform, operation_id):
+def process(platform, operation_id, *, view=False):
     try:
-        return _process(platform, operation_id)
+        return _process(platform, operation_id, view=view)
     except (ValueError, IsolationError):
-        result = platform.document_ocr_failed(operation_id)
+        result = (platform.document_view_failed if view else platform.document_ocr_failed)(operation_id)
         return result["status"] in {"ready", "failed", "canceled"}
 
 
-def _process(platform, operation_id):
+def _process(platform, operation_id, *, view=False):
     storage = get_storage()
     for _ in range(21):
-        state = platform.document_ocr_step(operation_id)
+        state = (platform.document_view_step if view else platform.document_ocr_step)(operation_id)
         if state["status"] in {"ready", "failed", "canceled"}:
             return True
         if state.get("waiting_for") or state["status"] == "pending":
@@ -33,7 +33,7 @@ def _process(platform, operation_id):
         if deadline <= time.time():
             return False
         image = state["image"]
-        with tempfile.TemporaryDirectory(prefix="ailab-document-ocr-") as temporary:
+        with temporary_directory(prefix="ailab-document-ocr-") as temporary:
             root = Path(temporary)
             source = root / "input"
             digest, size = hashlib.sha256(), 0
@@ -58,7 +58,7 @@ def _process(platform, operation_id):
                 return False
             prepared = execute("ocr_image", source, output, timeout=remaining, memory_mb=192, region=image.get("region"))
             try:
-                result = platform.document_ocr_image(
+                result = (platform.document_view_image if view else platform.document_ocr_image)(
                     operation_id,
                     state["claim_token"],
                     state["image_index"],

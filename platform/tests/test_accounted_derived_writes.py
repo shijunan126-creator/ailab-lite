@@ -100,6 +100,7 @@ def test_failed_put_keeps_capacity_liability_until_physical_delete_succeeds(tmp_
 
 def test_api_ocr_pages_and_aggregate_publish_once_with_exact_capacity():
     from sqlalchemy import select
+
     from ailab_platform.api.document_sources import ocr_records
     from ailab_platform.api.legacy_ocr_assets import store_page
     from ailab_platform.api.routes_ocr import publish_extraction
@@ -133,6 +134,7 @@ def test_api_ocr_pages_and_aggregate_publish_once_with_exact_capacity():
 def test_api_owned_write_rejects_late_generation_and_cleans_only_its_unpublished_bytes(monkeypatch):
     from fastapi import HTTPException
     from sqlalchemy import select
+
     from ailab_platform.api.legacy_ocr_assets import store_page
     from ailab_platform.db import SessionLocal, init_db
     from ailab_platform.models import DerivedAsset, DerivedBudget, FileObject, OcrPageResult

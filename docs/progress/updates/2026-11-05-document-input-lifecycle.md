@@ -295,3 +295,17 @@ API原生文本服务按现有derivation/ordinal与unit/anchor索引取至多101
 - 共用raster适配对DOM/像素/编码有界，按序处理图像并释放Canvas/临时DOM/图像引用；资源错误不得静默留白。保留原生viewer架构，不自建排版/OCR。生成源仍office/build.mjs，新的office:build成功仅证明bundle生成，不是功能或内存验收。Portal发送准备现传client_send_id。
 
 **仍未完成**：view_document浏览器优先/持久generation后备CAS、多tab和版本/region全链路、规范截图与历史引用、全部writer/TTL业务失效；通用静态资源与Office renderer额外内存/Worker边界仍需统一review和50轮实际证明。Chat默认仍V1，不能提前称整体方案达标。
+
+
+## 浏览器查看、规范截图及回收接线（2026-11-06续作，集中验收前）
+
+基线 `30a156a7`，重新fetch确认 `origin/main@fdc0a05f`；独立实施分支继续，其他工作区未改。依用户要求连续实现后集中检查，以下代码接线不是验收通过声明。
+
+- `view_document`已接Agent/API/Worker：持久操作与client-call绑定源版本/范围/表示revision/generation/绝对deadline；在线PDF/PPT/Word页图串行领取，多tab共用claim。失败/关闭/超时后在同一事务撤销浏览器执行权、递增generation，再请求既有系统后备；浏览器阶段不占服务端重型槽、不投机转换。Excel打印页不假用浏览器网格，按原有受限Office后备处理。截图来源与客户端像素可信度分别报告。
+- 区域/图片按revision核对，经Worker受限子进程处理；整页后备复用规范RenderedPage，不再次编码/另存模型副本。新Chat默认V2三工具；显式旧目录与checkpoint定义保持，旧等待窗口改为校验持久原始截止时间，新增页图等待复用既有恢复机制。
+- 浏览器截图接容量预留与原子发布，消息/运行引用与对象同事务绑定；V2必要截图不再按10分钟临时TTL删除。旧Run保留原临时过期语义。传输不把base64长期写到ClientCall；checkpoint继续引用同一规范资产。迟到/撤权/取消校验在写前和发布前各做一次；提交响应丢失可幂等重传。取消/部分浏览器结果转后备时撤销其未使用资产。
+- Worker viewer索引改为不可变代际，ACK事务才发布metadata；Work viewer/后备缓存接API容量预留与发布。页图改为job子前缀，避免未发布的新字节覆盖旧引用；旧代际进入24小时回收。对象实际删除后结算账本，失败保持占用和删除意图。迁移0060为按资产key清理的查询加索引；TTL先使相应元数据/RenderedPage/文字索引等失效，再物理删除，周期回收开启。
+- 浏览器新增复用JSZip 3.10.1的临时准入Worker：检查实际流式解压边界、结构/内嵌图资源，超限走后备，不替代安全扫描。初值为单成员4MiB、包16MiB、Word1000段、Excel100000单元格、PPT200页、已支持内嵌图解码合计32MiB；不支持的图片明确后备。源ArrayBuffer转移后归还，取消/超时/关闭terminate并revoke URL。PDF/PPT页面和缩略图按可见邻窗释放；截图取消传到PDF render task与异步PNG编码，释放Canvas、FileReader、监听与迟到Blob。
+- Worker及Broker主机临时目录新增独立本地资源租约索引，正常退出立即清理，硬崩溃按原job截止+15分钟由有界扫描补偿；Work viewer/view/warm/preview目录接已有沙箱scratch登记。没有清理用户目录或成品。
+
+本组Ruff check/format和viewer生成检查通过（最终版本仍需集中复核）；未运行本组功能/双库/真实浏览器/模型/性能及50轮资源验收。此前性能数据只属于原阶段，不能替代本组最终门槛。接下来集中检查，修复失败后记录实际基线和资源证据；fork旧预览复制的容量覆盖、全链路故障与所有历史引用边界必须纳入复核，未通过前不宣称整个方案完成。未push/PR/合并/部署。

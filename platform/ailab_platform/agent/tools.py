@@ -11,8 +11,8 @@ from typing import Any
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
-from ..contracts.workspace_ocr import WorkspaceOcr
 from ..contracts.genui import component_docs_for, component_names, guide_for
+from ..contracts.workspace_ocr import WorkspaceOcr
 from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path

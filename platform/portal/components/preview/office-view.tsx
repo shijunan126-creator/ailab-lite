@@ -67,6 +67,7 @@ export function docRefOf(doc: OfficeDoc, version: string, ref: { at: string; tex
 
 // Viewer files are fetched once per page: the version path makes them immutable.
 let assetVersion: Promise<string> | undefined;
+let resolvedAssetVersion: string | null = null;
 const assetCache = new Map<string, Promise<string | ArrayBuffer>>();
 const assetSizes = new Map<string, number>();
 const ASSET_CACHE_BYTES = 16 * 1024 * 1024;
@@ -90,7 +91,7 @@ function asset(name: string, binary: boolean): Promise<string | ArrayBuffer> {
   if (!cached) {
     cached = (assetVersion ??= fetch("/office-viewer/current/manifest.json", { cache: "no-store", signal: AbortSignal.timeout(15000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`查看器不可用 ${r.status}`))))
-      .then((m: { version: string }) => m.version))
+      .then((m: { version: string }) => { resolvedAssetVersion = m.version; return m.version; }))
       .then((version) => fetch(`/office-viewer/${version}/${name.split("/").map(encodeURIComponent).join("/")}`, { signal: AbortSignal.timeout(15000) }))
       .then((r) => (r.ok ? (binary ? r.arrayBuffer() : r.text()) : Promise.reject(new Error(`${name} ${r.status}`))));
     cached.then((value) => {
@@ -294,7 +295,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
       }
       const request = (inflight = new AbortController());
       const deadline = setTimeout(() => request.abort(), VIEW_REQUEST_MS);
-      const body = { view_id: binding.id, sequence: ++reportSequence, ...report };
+      const body = { view_id: binding.id, sequence: ++reportSequence, ...report, representation_revision: `${resolvedAssetVersion ?? "loading"}:${live.current.dark ? "dark" : "light"}` };
       void api(`/v1/conversations/${conversation}/view`, { method: "PUT", body: JSON.stringify(body), signal: request.signal })
         .then(() => void (sentAt = Date.now()), () => undefined)
         .finally(() => {
@@ -546,6 +547,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
       context: { theme: dark ? "dark" : "light", locale: "zh-CN", chat: live.current.chat },
       recent: live.current.docs.map((d) => ({ path: d.path, kind: d.kind })),
     });
+    channel.current?.report();
   }, [dark]);
 
   // A new reveal from the model goes to the running viewer; the first one rides on the ready handshake.

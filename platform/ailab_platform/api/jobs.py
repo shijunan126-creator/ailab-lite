@@ -148,7 +148,9 @@ def _claim_locked(db, job, body):
         done = file is None or file.deleted_at is not None or file.purged_at is not None
         if not done:
             meta = file.meta or {}
-            document_operation = db.get(DocumentOperation, job_id) if envelope.kind in {"document_ocr", "native_scope"} else None
+            document_operation = (
+                db.get(DocumentOperation, job_id) if envelope.kind in {"document_ocr", "native_scope", "document_view"} else None
+            )
             done = (
                 (
                     envelope.kind == "file"
@@ -167,7 +169,7 @@ def _claim_locked(db, job, body):
                     )
                 )
                 or (
-                    envelope.kind in {"document_ocr", "native_scope"}
+                    envelope.kind in {"document_ocr", "native_scope", "document_view"}
                     and (
                         file.status != FileStatus.READY
                         or not document_operation
@@ -220,9 +222,11 @@ def _claim_locked(db, job, body):
                 attempt.ended_at, attempt.outcome = now, "deadline"
         if expired and envelope.kind == "file" and not done:
             file.meta = {**(file.meta or {}), "processing": "job_expired", "scan_exhausted": True}
-        elif expired and envelope.kind in {"document_ocr", "native_scope"} and not done:
-            from .routes_document_ocr import fail
+        elif expired and envelope.kind in {"document_ocr", "native_scope", "document_view"} and not done:
+            from .document_visual import fail as view_fail
+            from .routes_document_ocr import fail as ocr_fail
 
+            fail = view_fail if envelope.kind == "document_view" else ocr_fail
             operation = db.get(DocumentOperation, job_id)
             if operation:
                 fail(db, operation, "document_job_deadline")
@@ -289,24 +293,46 @@ def ack_job(
     job = _job(db, job_id, principal)
     if job is None:
         return {"ok": True}
-    if job.claim_token != body.token:
-        raise HTTPException(409, "stale_claim")
-    deleted = db.execute(
-        delete(OutboxMessage)
-        .where(
-            OutboxMessage.id == job_id,
-            OutboxMessage.claim_token == body.token,
-            OutboxMessage.claimed_until > datetime.now(UTC),
-        )
-        .execution_options(synchronize_session=False)
-    ).rowcount
-    if not deleted:
-        raise HTTPException(409, "stale_claim")
-    attempt = db.get(RunAttempt, body.token)
-    if attempt:
-        attempt.ended_at, attempt.outcome = datetime.now(UTC), "acked"
-    db.commit()
-    return {"ok": True}
+    owner = None
+    if job.payload.get("kind") == "viewer":
+        file = db.get(FileObject, job.payload.get("file_id"))
+        owner = file.user_id if file else None
+    with user_critical_section(db, owner) if owner else nullcontext():
+        if job.claim_token != body.token:
+            raise HTTPException(409, "stale_claim")
+        if job.payload.get("kind") == "viewer":
+            from ..contracts.document_view import PARSER_REVISION
+            from ..models import DerivedAsset
+            from .derived_assets import publish_writer, retire
+
+            file = db.get(FileObject, job.payload.get("file_id"), populate_existing=True)
+            key = f"derived/{file.id}/viewer/{PARSER_REVISION}/{job.id}.json" if file else None
+            if file and not file.deleted_at and not file.purged_at:
+                previous = (file.meta or {}).get("viewer_key")
+                asset = db.get(DerivedAsset, key)
+                if asset and asset.state == "staged" and asset.attempt_token == body.token:
+                    publish_writer(db, file.id, job.id, body.token, keys=[key])
+                    file.meta = {**(file.meta or {}), "viewer_key": key}
+                    if previous and previous != key:
+                        retire(db, previous)
+            elif file:
+                publish_writer(db, file.id, job.id, body.token, failed=True)
+        deleted = db.execute(
+            delete(OutboxMessage)
+            .where(
+                OutboxMessage.id == job_id,
+                OutboxMessage.claim_token == body.token,
+                OutboxMessage.claimed_until > datetime.now(UTC),
+            )
+            .execution_options(synchronize_session=False)
+        ).rowcount
+        if not deleted:
+            raise HTTPException(409, "stale_claim")
+        attempt = db.get(RunAttempt, body.token)
+        if attempt:
+            attempt.ended_at, attempt.outcome = datetime.now(UTC), "acked"
+        db.commit()
+        return {"ok": True}
 
 
 @router.post("/{job_id}/release")

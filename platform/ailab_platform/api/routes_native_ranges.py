@@ -192,6 +192,7 @@ def publish(db, row, file, manifest, body):
     base_blocks = source.get("source_blocks")
     if base_blocks is None:
         from sqlalchemy import func, select
+
         from ..models import DocumentBlock
 
         base_blocks = db.scalar(select(func.count()).select_from(DocumentBlock).where(DocumentBlock.derivation_id == base_id))

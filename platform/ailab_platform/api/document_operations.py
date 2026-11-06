@@ -107,7 +107,15 @@ def source_available(db, operation, *, active=False):
                 return False
     if operation.file_id:
         file = db.get(FileObject, operation.file_id, populate_existing=True)
-        if not file or file.user_id != run.user_id or file.deleted_at or file.purged_at or file.sha256 != operation.source_version:
+        if (
+            not file
+            or file.user_id != run.user_id
+            or file.deleted_at
+            or file.purged_at
+            or file.sha256 != operation.source_version
+            or file.status != "ready"
+            or (file.meta or {}).get("scan", {}).get("verdict") != "clean"
+        ):
             return False
         if operation.kind == "native_scope":
             from .native_preparation import native_state
@@ -131,7 +139,7 @@ def expire_lane(db, lane, now):
     # One active slot plus a maximum of 32 waiting operations; work is bounded.
     rows = db.scalars(
         select(DocumentOperation)
-        .where(DocumentOperation.lane == lane, DocumentOperation.status.in_(["pending", "running", "canceling"]))
+        .where(DocumentOperation.lane == lane, DocumentOperation.status.in_(["pending", "running", "canceling", "browser", "preparing"]))
         .order_by(DocumentOperation.created_at, DocumentOperation.id)
         .limit(34)
     ).all()
@@ -143,7 +151,13 @@ def expire_lane(db, lane, now):
             # A dispatched executor retains its slot until cancellation is
             # acknowledged or the enforced executor deadline has elapsed.
             row.status = "failed" if expired else ("canceling" if row.executor_started_at else "canceled")
-            row.result = {"reason": "document_operation_deadline" if expired else "document_source_unavailable"}
+            reason = "document_operation_deadline" if expired else "document_source_unavailable"
+            if row.kind == "chat_view":
+                from .document_visual import fail
+
+                fail(db, row, reason)
+            else:
+                row.result = {"reason": reason}
             if row.status != "canceling":
                 row.claim_token, row.lease_until = None, None
     db.flush()
@@ -184,7 +198,7 @@ def request(db, run, *, lane, kind, version, binding, file_id=None, priority=0, 
         if shared:
             attach_consumer(db, run, shared, now=now)
             return shared
-    waiting = [row for row in rows if row.status == "pending"]
+    waiting = [row for row in rows if row.status in {"pending", "browser", "preparing"}]
     if len(waiting) >= 32 or any(row.user_id == run.user_id for row in waiting):
         raise HTTPException(429, "document_queue_full")
     row = DocumentOperation(
@@ -336,7 +350,9 @@ def maintenance(db):
         lane_lock(db, lane)
         rows = db.scalars(
             select(DocumentOperation)
-            .where(DocumentOperation.lane == lane, DocumentOperation.status.in_(["pending", "running", "canceling"]))
+            .where(
+                DocumentOperation.lane == lane, DocumentOperation.status.in_(["pending", "running", "canceling", "browser", "preparing"])
+            )
             .limit(34)
         ).all()
         expire_lane(db, lane, datetime.now(UTC))
@@ -344,8 +360,8 @@ def maintenance(db):
         db.commit()
     # Never take a user lock while holding the lane lock: admission uses the
     # user-then-lane order. Wakeups happen only after the queue transaction ends.
-    from .file_dependencies import wake_file
     from ..locks import user_critical_section
+    from .file_dependencies import wake_file
 
     for file_id in files:
         file = db.get(FileObject, file_id)

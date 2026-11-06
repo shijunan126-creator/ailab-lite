@@ -82,6 +82,7 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
     result_path = f"{directory}/result.json"
     start = time.monotonic()
     try:
+        manager.register_scratch(lease_id, directory, time.time() + 60)
         manager.put_file(lease_id, helper, HELPER.read_bytes())
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
         manager.put_file(lease_id, f"{directory}/work_view_listener.py", LISTENER.read_bytes())
@@ -129,7 +130,7 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
         return payload
     finally:
         try:
-            manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
+            manager.clear_scratch(lease_id, directory)
         except Exception:
             pass
 
@@ -146,11 +147,12 @@ def warm(manager, lease_id: str) -> dict:
     directory = f"/workspace/.ailab/view-warm-{uuid4().hex}"
     script = f"{directory}/work_view_listener.py"
     try:
+        manager.register_scratch(lease_id, directory, time.time() + 15)
         manager.put_file(lease_id, script, LISTENER.read_bytes())
         result = manager.exec(lease_id, f"timeout -k 2 8s python {script} --ensure {settings.render_work_listener_rss_bytes}", 12)
         return {"ok": result.exit_code == 0}
     finally:
         try:
-            manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
+            manager.clear_scratch(lease_id, directory)
         except Exception:
             pass

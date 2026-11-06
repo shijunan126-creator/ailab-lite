@@ -83,8 +83,8 @@ def native_blocks(db, file, index, selector, position):
     if ((file.meta or {}).get("extract") or {}).get("kind") != "pdf" or index.kind != "native":
         return rows
     from types import SimpleNamespace
+
     from .native_ranges import scope_query
-    from ..models import DocumentNativeRange
 
     scopes = scope_query(file).subquery()
     ordinal = 100000 + scopes.c.ordinal * 10001 + DocumentBlock.ordinal

@@ -10,8 +10,9 @@ from ..domain.document_input_plan import choose_inline
 from ..model_policy import ModelPolicy, estimator
 from ..models import FileObject, OutboxMessage, RenderedPage
 from . import document_preparation as preparations
-from .document_content import manifest as load_manifest, native_text, unit_bytes, visual_info, visual_pages
-from .native_preparation import native_kind, native_state, request_native
+from .document_content import manifest as load_manifest
+from .document_content import native_text, unit_bytes, visual_info, visual_pages
+from .native_preparation import native_kind, request_native
 
 
 def processing():

@@ -7,8 +7,6 @@ import logging
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..config import settings
@@ -18,7 +16,7 @@ from ..deps import get_db
 from ..domain.document_reading import CursorError, Position, decode_cursor, encode_cursor
 from ..domain.document_tools import catalog_version
 from ..locks import user_critical_section
-from ..models import DocumentOperation, Run, RunStatus
+from ..models import DocumentOperation, RunStatus
 from ..ocr_backend import recognize
 from ..service_auth import require_scope
 from ..storage import get_storage

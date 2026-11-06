@@ -65,7 +65,14 @@ def utc(value):
 def expire(db, call, run):
     now = datetime.now(UTC)
     if call.status in {"pending", "claimed"}:
-        if run.status != RunStatus.RUNNING:
+        dependency = (run.runtime_meta or {}).get("file_dependency") or {}
+        document = ((call.result or {}).get("_capture") or {}).get("operation_id")
+        waiting_view = (
+            run.status == RunStatus.INTERRUPTED
+            and dependency.get("action") == "document-view"
+            and dependency.get("operation_id") == document
+        )
+        if run.status != RunStatus.RUNNING and not waiting_view:
             call.status = "canceled"
         elif now >= utc(call.claim_deadline if call.status == "pending" else call.deadline):
             message = "没有在线的浏览器页面执行，页面可能已关闭或离线" if call.status == "pending" else "浏览器执行超时"
@@ -225,6 +232,20 @@ def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(
             if body.ok == (body.error is not None):
                 raise HTTPException(422, "invalid client result")
         expire(db, call, run)
+        if call.status == "completed" and call.kind == "capture_view" and call.claim_token == body.claim_token and body.ok:
+            import hashlib
+
+            from ..domain.document_tools import catalog_version
+            from ..models import ViewerCapture
+            from .viewer_captures import validate_png
+
+            capture_id = ((call.result or {}).get("value") or {}).get("capture_id")
+            capture = db.get(ViewerCapture, capture_id) if capture_id else None
+            if catalog_version(run.options) == 2 and capture and capture.digest == hashlib.sha256(validate_png(body.value)).hexdigest():
+                from .routes_document_view import authorize_state
+
+                authorize_state(db, user, capture.target)
+                return {"status": "completed"}
         if call.status != "claimed" or call.claim_token != body.claim_token:
             db.commit()
             raise HTTPException(409, "client call unavailable")
@@ -241,6 +262,7 @@ def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(
                 or current.get("version") != binding["version"]
                 or current.get("file_id") != binding.get("file_id")
                 or current.get("path") != binding.get("path")
+                or current.get("representation_revision") != binding.get("representation_revision")
             ):
                 raise HTTPException(409, "view version changed")
             authorize_state(db, user, binding)
@@ -248,8 +270,41 @@ def submit_result(run_id: str, call_id: str, body: Result, user: User = Depends(
                 data = validate_png(body.value)
                 if body.value.get("version") != binding["version"]:
                     raise HTTPException(409, "capture version changed")
-                captured = save(db, run, call.call_id, {**binding, "source": "viewport"}, data)
-                result = {"ok": True, "value": captured}
+                document_binding = binding.get("operation_id")
+                if document_binding:
+                    from .document_visual import validate_browser
+
+                    validate_browser(db, run, call, binding, body.value)
+
+                def validate_claim():
+                    current_call = db.get(ClientCall, (run_id, call_id), populate_existing=True)
+                    current_run = db.get(Run, run_id, populate_existing=True)
+                    expire(db, current_call, current_run)
+                    current_views = view_state.views(user.id, current_run.conversation_id)
+                    view = next((v for v in current_views if v["view_id"] == binding["view_id"]), None)
+                    if (
+                        current_call.status != "claimed"
+                        or current_call.claim_token != body.claim_token
+                        or not view
+                        or view.get("version") != binding["version"]
+                        or view.get("file_id") != binding.get("file_id")
+                        or view.get("path") != binding.get("path")
+                        or view.get("representation_revision") != binding.get("representation_revision")
+                    ):
+                        raise HTTPException(409, "client call unavailable")
+                    if document_binding:
+                        validate_browser(db, current_run, current_call, binding, body.value)
+
+                def bind_capture(receipt):
+                    current_call = db.get(ClientCall, (run_id, call_id))
+                    current_call.status, current_call.result = "completed", {"ok": True, "value": receipt}
+                    if document_binding:
+                        from .document_visual import bind_browser
+
+                        bind_browser(db, run, current_call, binding, receipt)
+
+                save(db, run, call.call_id, {**binding, "source": "viewport"}, data, validate=validate_claim, bind=bind_capture)
+                return {"status": "completed"}
             else:
                 result = {"ok": False, "error": {"type": "unavailable", "message": "viewport capture unavailable"}}
             call.status, call.result = "completed", result

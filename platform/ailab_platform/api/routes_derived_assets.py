@@ -70,7 +70,7 @@ def authorize(db, body, principal, attempt):
         if principal.service not in {"broker", "legacy"}:
             raise HTTPException(403, "derived_run_scope_required")
         run = db.get(Run, run_id)
-        if not run or (run.options or {}).get("mode", "work") != "work":
+        if not run or run.status != "running" or (run.options or {}).get("mode", "work") != "work":
             raise HTTPException(403, "derived_run_scope_required")
         return run.user_id
 
@@ -254,3 +254,53 @@ def abandon_writer(
     result = [{"key": row.key, "token": row.token} for row in rows]
     db.commit()
     return {"deletable": result}
+
+
+class RunPublication(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    items: list[Completion] = Field(min_length=1, max_length=64)
+
+
+@router.post("/publish-run")
+def publish_run(body: RunPublication, principal: ServicePrincipal = Depends(WRITE), db: Session = Depends(get_db)):
+    if principal.service not in {"broker", "legacy"}:
+        raise HTTPException(403, "derived_run_scope_required")
+    unique_items(body.items)
+    owners = {authorize(db, item, principal, None) for item in body.items}
+    if len(owners) != 1:
+        raise HTTPException(403, "derived_batch_owner_mismatch")
+    with user_critical_section(db, next(iter(owners))):
+        run_ids = set()
+        for item in body.items:
+            authorize(db, item, principal, None)
+            row = db.get(DerivedAsset, item.key, populate_existing=True)
+            if not row or not row.run_id or row.token != item.token or row.state not in {"staged", "ready"}:
+                raise HTTPException(409, "derived_generation_stale")
+            run_ids.add(row.run_id)
+        if len(run_ids) != 1:
+            raise HTTPException(403, "derived_batch_owner_mismatch")
+        for item in body.items:
+            assets.publish(db, item.key, item.token)
+        db.commit()
+    return {"status": "ready"}
+
+
+class CacheCheck(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    key: str = Field(min_length=1, max_length=600)
+    version: str = Field(min_length=1, max_length=100)
+
+
+@router.post("/ready")
+def ready(body: CacheCheck, principal: ServicePrincipal = Depends(WRITE), db: Session = Depends(get_db)):
+    file_id, run_id, _ = assets.source(db, body.key, body.version)
+    if file_id or not run_id or principal.service not in {"broker", "legacy"}:
+        raise HTTPException(403, "derived_run_scope_required")
+    row = db.get(DerivedAsset, body.key)
+    valid = bool(
+        row
+        and row.state == "ready"
+        and row.source_version == body.version
+        and (not row.expires_at or assets.aware(row.expires_at) > datetime.now(UTC))
+    )
+    return {"ready": valid}

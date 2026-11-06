@@ -87,7 +87,8 @@ class DocumentReader:
                 f"{(settings.office_memory_mb + 64) * 1024**2} "
                 f"node --max-old-space-size={max(32, settings.office_memory_mb - 96)} /opt/ailab-office/runner.mjs "
                 f"{shlex.quote(source)} {out} {kind} {profile} "
-                f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
+                f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && "
+                f"COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
             )
             result = self._execute_owned(
                 handle,
@@ -166,6 +167,7 @@ class DocumentReader:
         import concurrent.futures
         import contextvars
         import threading
+
         from ..clients import PlatformClient
 
         stopped = threading.Event()

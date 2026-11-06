@@ -33,6 +33,7 @@ class Selection(BaseModel):
 
 
 class ViewState(BaseModel):
+    representation_revision: str | None = Field(default=None, min_length=1, max_length=100)
     sequence: int | None = Field(default=None, ge=1, le=9007199254740991)
     view_id: str = Field(min_length=1, max_length=160)
     file_id: str | None = Field(default=None, max_length=100)
