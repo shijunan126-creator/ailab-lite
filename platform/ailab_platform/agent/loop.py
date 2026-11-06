@@ -1223,6 +1223,8 @@ class AgentLoop:
             else {}
         )
         files = run.get("input_files") or []
+        if prompt_options.get("document_tools_version") == 2 and prompt_options.get("mode") == "work":
+            return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
         images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
         if not images and not document_pages:
@@ -1470,7 +1472,8 @@ class AgentLoop:
                 if result.get("pending") and result.get("action") == "native-text":
                     state = self._states[run_id]
                     key = "native-text:" + call.arguments["file_id"]
-                    deadline = state.setdefault("file_wait_deadlines", {}).setdefault(key, time.time() + 150)
+                    wait_until = result.get("deadline", time.time() + 150) if call.name != "read_library_file" else time.time() + 150
+                    deadline = state.setdefault("file_wait_deadlines", {}).setdefault(key, wait_until)
                     if time.time() >= deadline:
                         raise ToolError("文件文字准备超过截止时间，请告知用户处理失败")
                     raise FileDependencyPending(call.arguments["file_id"], "native-text", None, deadline)

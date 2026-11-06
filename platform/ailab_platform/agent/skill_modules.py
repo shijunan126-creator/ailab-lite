@@ -55,10 +55,17 @@ def read_module(name, mode, resource=None, *, document_tools_version=1):
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != module["sha256"]:
         raise ValueError("resource hash mismatch; rebuild context with the installed package")
-    if overlay is not None and resource == "viewer/SKILL.md":
-        if module["sha256"] != overlay["viewer_source_sha256"]:
-            raise ValueError("viewer guide source changed; regenerate versioned guides")
-        data = overlay["viewer"].encode()
+    adapted_resource = None
+    if overlay is not None:
+        adapted_resource = (
+            {"source_sha256": overlay["viewer_source_sha256"], "text": overlay["viewer"]}
+            if resource == "viewer/SKILL.md"
+            else overlay.get("resources", {}).get(resource)
+        )
+    if adapted_resource is not None:
+        if module["sha256"] != adapted_resource["source_sha256"]:
+            raise ValueError("document guide source changed; regenerate versioned guides")
+        data = adapted_resource["text"].encode()
         from ..model_policy import estimator
 
         return {

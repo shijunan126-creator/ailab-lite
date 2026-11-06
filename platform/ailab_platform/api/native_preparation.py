@@ -52,8 +52,17 @@ def request_native(db, file):
         raise HTTPException(413, "document_input_limit")
     current = native_state(file)
     if current.get("version") == file.sha256 and current.get("parser") == PARSER_V4:
-        if current["status"] in {"ready", "failed"}:
+        if current["status"] == "failed":
             return current
+        if current["status"] == "ready":
+            derivation = db.get(FileDerivation, current.get("derivation_id"))
+            if (
+                derivation
+                and derivation.file_id == file.id
+                and derivation.status in {"ready", "partial"}
+                and (file.meta or {}).get("document_manifest_key") == derivation.manifest_key
+            ):
+                return current
         if current["status"] == "pending" and db.get(OutboxMessage, current.get("job_id")):
             return current
     job_id = uuid4().hex

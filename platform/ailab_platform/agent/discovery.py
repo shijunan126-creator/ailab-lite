@@ -45,6 +45,7 @@ REDUCED_V2 = (REDUCED_V1 - {"document_view"}) | frozenset(
         "search_library",
         "copy_library_file",
         "view_workspace_file",
+        "ocr_workspace_image",
     }
 )
 

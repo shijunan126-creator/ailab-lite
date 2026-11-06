@@ -563,7 +563,7 @@ async def lifecycle_cleanup_forever() -> None:
             maintenance = getattr(get_storage(), "maintenance", None)
             if maintenance:
                 maintenance(limit=settings.gc_batch_size)
-            from .derived_assets import backfill_batch, collect_batch
+            from .derived_assets import backfill_batch, collect_batch, invalidate_workspace_ocr
 
             with SessionLocal() as db:
                 from ..models import DerivedBudget
@@ -576,6 +576,8 @@ async def lifecycle_cleanup_forever() -> None:
                     db.commit()
                     if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
                         break
+                invalidate_workspace_ocr(db)
+                db.commit()
                 collect_batch(db, get_storage(), transient_only=True)
 
     import time

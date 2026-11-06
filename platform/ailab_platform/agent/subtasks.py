@@ -52,7 +52,7 @@ ALLOWED = frozenset(
 
 def allowed(version=1):
     if version == 2:
-        return (ALLOWED - {"read_library_file"}) | {"resolve_attachment", "copy_library_file", "view_workspace_file"}
+        return (ALLOWED - {"read_library_file"}) | {"resolve_attachment", "copy_library_file", "view_workspace_file", "ocr_workspace_image"}
     return ALLOWED
 
 

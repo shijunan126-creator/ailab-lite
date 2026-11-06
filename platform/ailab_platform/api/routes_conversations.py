@@ -211,6 +211,10 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
             .values(state="canceled", updated_at=utcnow())
         )
         conv.deleted_at = utcnow()
+        db.flush()
+        from .derived_assets import invalidate_workspace_ocr
+
+        invalidate_workspace_ocr(db, conversation_id=conv.id)
         # what the memory system kept of this conversation (episode copies, source quotes) goes with it
         from ..memory_recall.lineage import forget_conversation
 

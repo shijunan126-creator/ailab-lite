@@ -183,6 +183,8 @@ def validate_run_input(
         db, conversation, mode, turn_mode=turn_mode, requires_work=bool(template is not None and conversation is not None)
     )
     options["mode"] = mode
+    if mode == "work":
+        options["document_tools_version"] = 2
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -207,7 +209,7 @@ def validate_run_input(
                 status_code=409,
                 detail={"code": "file_not_ready", "message": f"文件还没检查完（{file.status}），稍候再发送"},
             )
-        if (file.content_type or "").startswith("image/"):
+        if mode == "chat" and (file.content_type or "").startswith("image/"):
             image_count += 1
             if image_count > 5:
                 raise HTTPException(422, {"code": "attachment_image_limit", "message": "每轮最多附加5张图片"})
@@ -215,16 +217,10 @@ def validate_run_input(
             inputs.append(file.id)
     if mode == "work" and inputs and not spec.supports({"tools"}):
         raise HTTPException(422, {"code": "work_model_requires_tools", "message": "请选择支持工具的模型，或切换对话模式读取文件"})
-    if inputs:
+    if inputs and mode == "chat":
         from .attachment_input import prepare_input_images
 
         prepare_input_images(db, inputs)
-    if mode == "work" and inputs and not spec.supports({"vision"}):
-        images = [fid for fid in inputs if (db.get(FileObject, fid).content_type or "").startswith("image/")]
-        if images:
-            from .attachment_input import validate_chat_files
-
-            validate_chat_files(db, images, model_id, "")
     if mode == "chat" and inputs:
         from .attachment_input import validate_chat_files
 

@@ -70,7 +70,7 @@ def decode_cursor(cursor, context, *, key=None):
         raise CursorError("invalid_cursor")
     if body[1] != context:
         raise CursorError("cursor_stale")
-    if any(type(n) is not int or n < 0 or n > 2147483647 for n in body[2:]):
+    if any(type(n) is not int or n < 0 or n > 9223372036854775807 for n in body[2:]):
         raise CursorError("invalid_cursor")
     return Position(*body[2:])
 

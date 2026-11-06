@@ -381,6 +381,28 @@ def build_document_guides(output: Path) -> None:
                 "viewer": viewer_guide(fmt, mode, original.decode()),
                 "viewer_source_sha256": sha(original),
             }
+            if fmt == "pdf" and mode == "work":
+                relative = "briefs/process-advanced.md"
+                original_advanced = resources[relative][0]
+                advanced = original_advanced.decode()
+                start = advanced.index("## §OCR Fallback for Scanned PDFs")
+                end = advanced.index("## §Batch Processing", start)
+                replacement = (
+                    "## §OCR for selected scanned pages\n\n"
+                    "Native text and visual coverage are independent. Empty extraction does not automatically authorize OCR. "
+                    "Choose the pages/regions needed for the task. Render only those pages inside the current Work sandbox "
+                    "with the installed Poppler/Office tools, then call `ocr_workspace_image` with their /workspace image path "
+                    "and optional normalized region. This calls the existing platform OCR executor through the current lease. "
+                    "No credentials or model weights belong in the sandbox; do not install or run a second OCR engine. "
+                    "Read every returned next_cursor with its operation_id before claiming complete textual coverage. "
+                    "OCR reads text only; review graphics/layout separately with view_workspace_file.\n\n---\n\n"
+                )
+                result[fmt][mode]["resources"] = {
+                    relative: {
+                        "source_sha256": sha(original_advanced),
+                        "text": advanced[:start] + replacement + advanced[end:],
+                    }
+                }
     dump(output, {"version": 2, "formats": result})
 
 

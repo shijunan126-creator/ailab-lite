@@ -103,6 +103,7 @@ KNOWN_TOOLS = frozenset(
         "search_library",
         "read_library_file",
         "read_document",
+        "ocr_workspace_image",
         "search_document",
         "view_document",
         "copy_library_file",

@@ -277,6 +277,36 @@ def backfill_batch(db, storage, *, now=None):
     return count
 
 
+def invalidate_workspace_ocr(db, *, conversation_id=None):
+    """Release bounded run-owned OCR references when their conversation is gone.
+
+    File-owned OCR and browser captures have different business invalidation;
+    this only handles the new Work canonical text assets and never originals.
+    """
+    query = (
+        select(DerivedAsset)
+        .outerjoin(Run, Run.id == DerivedAsset.run_id)
+        .outerjoin(Conversation, Conversation.id == Run.conversation_id)
+        .where(DerivedAsset.kind == "ocr", DerivedAsset.state == "ready", DerivedAsset.run_id.is_not(None))
+    )
+    if conversation_id:
+        query = query.where(Run.conversation_id == conversation_id, Conversation.deleted_at.is_not(None))
+    else:
+        query = query.where(
+            or_(Run.id.is_(None), (Run.conversation_id.is_not(None) & or_(Conversation.id.is_(None), Conversation.deleted_at.is_not(None))))
+        )
+    rows = db.scalars(query.order_by(DerivedAsset.key).limit(settings.gc_batch_size)).all()
+    if rows:
+        budget_lock(db)
+        for row in rows:
+            db.execute(delete(DerivedAssetRef).where(DerivedAssetRef.key == row.key, DerivedAssetRef.run_id == row.run_id))
+            db.flush()
+            if not protected(db, row, datetime.now(UTC)):
+                row.state, row.lease_until, row.expires_at = "deleting", None, datetime.now(UTC)
+        db.flush()
+    return len(rows)
+
+
 def collect_batch(db, storage, *, now=None, transient_only=False):
     """Failures leave durable rows and charged bytes for the next bounded pass."""
     now = now or datetime.now(UTC)

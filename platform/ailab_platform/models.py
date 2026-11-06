@@ -1259,6 +1259,7 @@ class DerivedAsset(Base):
         Index("ix_derived_assets_state_lease", "state", "lease_until", "key"),
         Index("ix_derived_assets_file", "file_id", "source_version"),
         Index("ix_derived_assets_run", "run_id"),
+        Index("ix_derived_assets_kind_state", "kind", "state", "key"),
         Index("ix_derived_assets_captures", "state", "reconstructible", "created_at", "key"),
         CheckConstraint("size_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_assets_nonnegative"),
     )
@@ -1293,3 +1294,42 @@ class DerivedAssetRef(Base):
     run_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
     kind: Mapped[str] = mapped_column(String(20))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DocumentLane(Base):
+    """One durable execution slot per heavy document class, shared by API workers."""
+
+    __tablename__ = "document_lanes"
+    name: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class DocumentOperation(Base):
+    __tablename__ = "document_operations"
+    __table_args__ = (
+        UniqueConstraint("run_id", "identity", name="uq_document_operation_identity"),
+        Index("ix_document_operations_lane_queue", "lane", "status", "created_at", "id"),
+        Index("ix_document_operations_user_lane", "user_id", "lane", "status", "created_at"),
+        Index("ix_document_operations_run", "run_id", "status"),
+        Index("ix_document_operations_lease", "status", "lease_until"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dop"))
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    identity: Mapped[str] = mapped_column(String(64))
+    lane: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(30))
+    source_version: Mapped[str] = mapped_column(String(100))
+    binding: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    claim_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    executor_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)

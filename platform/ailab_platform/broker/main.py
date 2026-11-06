@@ -193,6 +193,59 @@ def exec_in_sandbox(lease_id: str, body: ExecIn) -> dict:
     return asdict(result)
 
 
+@router.post("/leases/{lease_id}/ocr-workspace-image", dependencies=[Depends(require_scope("sandbox:use"))])
+def ocr_workspace_image(lease_id: str, body: dict) -> dict:
+    from pydantic import ValidationError
+
+    from ..clients import ClientError
+    from ..contracts.workspace_ocr import WorkspaceOcr
+    from .workspace_ocr import recognize
+
+    try:
+        request = WorkspaceOcr.model_validate(body)
+        return recognize(get_manager(), lease_id, request)
+    except (ValueError, ValidationError) as exc:
+        reason = str(exc)
+        allowed = {
+            "invalid_workspace_path",
+            "image_input_limit",
+            "image_pixel_limit",
+            "image_size_limit",
+            "invalid_region",
+            "workspace_source_changed",
+            "image_preparation_timeout",
+            "image_memory_limit",
+            "image_preparation_failed",
+            "document_run_deadline",
+            "workspace_ocr_failed",
+            "workspace_ocr_scope_changed",
+        }
+        raise HTTPException(422, reason if reason in allowed else "invalid_workspace_ocr_request") from None
+    except ClientError as exc:
+        import json
+
+        try:
+            reason = json.loads(exc.body).get("detail")
+        except (ValueError, AttributeError):
+            reason = None
+        allowed = {
+            "document_queue_full",
+            "document_ocr_work_limit",
+            "document_run_deadline",
+            "derived_capacity_exceeded",
+            "derived_accounting_initializing",
+            "ocr_executor_unavailable",
+            "workspace_ocr_failed",
+            "ocr_image_binding_changed",
+        }
+        raise HTTPException(
+            exc.status if exc.status in {408, 409, 413, 422, 429, 502, 503, 507} else 502,
+            reason if isinstance(reason, str) and reason in allowed else "workspace_ocr_unavailable",
+        ) from None
+    except SandboxError:
+        raise HTTPException(502, "workspace_ocr_unavailable") from None
+
+
 @router.post("/leases/{lease_id}/view-workspace-file", dependencies=[Depends(require_scope("sandbox:use"))])
 def view_workspace_file(lease_id: str, body: dict) -> dict:
     from .workspace_view import view

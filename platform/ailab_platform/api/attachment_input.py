@@ -214,13 +214,14 @@ def input_files(db, run, **message):
     refs = attachment_manifest(db, run, **message)
     spec = get_catalog().get(run.model)
     chat = (run.options or {}).get("mode", "work") == "chat"
+    work_originals = not chat and (run.options or {}).get("document_tools_version") == 2
     files = {f.id: f for f in db.scalars(select(FileObject).where(FileObject.id.in_([r["file_id"] for r in refs])))}
     out = []
     for ref in refs:
         f = files[ref["file_id"]]
         meta = f.meta or {}
         image = (f.content_type or "").startswith("image/")
-        text = chat_file(f, spec, db) if spec and (chat or (image and not spec.supports({"vision"}))) else ""
+        text = chat_file(f, spec, db) if not work_originals and spec and (chat or (image and not spec.supports({"vision"}))) else ""
         visual_pages = []
         if chat and spec and spec.supports({"vision"}) and meta.get("document_manifest_key"):
             binding = image_reference_for_chat(db, f, prepare=False)
@@ -231,7 +232,8 @@ def input_files(db, run, **message):
             {
                 **ref,
                 "id": f.id,
-                "input_strategy": "prepared" if chat or image else "reference",
+                "input_strategy": "reference" if work_originals else "prepared" if chat or image else "reference",
+                "size": f.size,
                 "sandbox_filename": f.filename,
                 "text": text,
                 "chars": len(text),

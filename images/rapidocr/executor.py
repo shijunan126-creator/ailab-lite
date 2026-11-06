@@ -1,18 +1,22 @@
 """Single-process executor on the allocated OCR host. No platform DB or model API keys."""
 
+import asyncio
 import base64
 import hashlib
 import io
 import json
+import multiprocessing
 import os
 import secrets
+import signal
 import threading
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from pydantic import BaseModel, Field
+from uuid import uuid4
 
 _lock = threading.Lock()
 _engine = None
@@ -115,64 +119,241 @@ def load_engine():
     return engine, manifest
 
 
+def inference_worker(connection):
+    """Keep weights warm in a killable child; credentials stay in the supervisor."""
+    if hasattr(os, "setsid"):
+        os.setsid()
+    os.environ.pop("OCR_EXECUTOR_TOKEN", None)
+    try:
+        engine, manifest = load_engine()
+        connection.send({"ready": True, "manifest": manifest})
+        while True:
+            data = connection.recv_bytes(2 * 1024 * 1024)
+            from PIL import Image
+
+            Image.MAX_IMAGE_PIXELS = 16_000_000
+            with Image.open(io.BytesIO(data)) as image:
+                if image.width * image.height > 16_000_000 or image.format not in {
+                    "PNG",
+                    "JPEG",
+                    "WEBP",
+                }:
+                    raise ValueError("image_limit")
+                image.verify()
+            started = time.monotonic()
+            engine._ailab_failures.clear()
+            result = engine(data)
+            if engine._ailab_failures:
+                raise ValueError("inference_failed")
+            text = "\n".join(result.txts or [])
+            if len(text) > 200000:
+                raise ValueError("text_limit")
+            connection.send(
+                {
+                    "text": text,
+                    "engine": manifest["engine"],
+                    "fingerprint": manifest["fingerprint"],
+                    "backend": manifest["backend"],
+                    "seconds": time.monotonic() - started,
+                }
+            )
+    except (EOFError, BrokenPipeError):
+        pass
+    except Exception:
+        try:
+            connection.send({"error": "inference_failed"})
+        except (EOFError, BrokenPipeError, OSError):
+            pass
+    finally:
+        connection.close()
+
+
+class InferenceProcess:
+    def __init__(self):
+        self.process = self.connection = None
+        self.active_id = None
+        self.cancel = threading.Event()
+        self.lifecycle_lock = threading.RLock()
+
+    def stop(self):
+        with self.lifecycle_lock:
+            self._stop()
+
+    def _stop(self):
+        process, self.process = self.process, None
+        connection, self.connection = self.connection, None
+        if connection:
+            connection.close()
+        if process:
+            if process.is_alive():
+                try:
+                    if os.name == "posix":
+                        os.killpg(process.pid, signal.SIGTERM)
+                    else:
+                        process.terminate()
+                except ProcessLookupError:
+                    pass
+                process.join(timeout=1)
+                if process.is_alive():
+                    process.kill()
+            process.join(timeout=2)
+            process.close()
+
+    def start(self, deadline=None):
+        with self.lifecycle_lock:
+            self._start(deadline)
+
+    def _start(self, deadline):
+        global _manifest
+        if self.process and self.process.is_alive():
+            return
+        self.stop()
+        context = multiprocessing.get_context("spawn")
+        parent, child = context.Pipe(duplex=True)
+        process = context.Process(target=inference_worker, args=(child,), daemon=True)
+        self.process, self.connection = process, parent
+        process.start()
+        child.close()
+        until = min(deadline or time.time() + 120, time.time() + 120)
+        while not parent.poll(0.1):
+            if time.time() >= until or self.cancel.is_set() or not process.is_alive():
+                self.stop()
+                raise RuntimeError("OCR engine startup timeout or cancellation")
+        message = parent.recv()
+        if not message.get("ready"):
+            self.stop()
+            raise RuntimeError("OCR engine startup failed")
+        _manifest = message["manifest"]
+
+
+_supervisor = InferenceProcess()
+
+
 @asynccontextmanager
 async def lifespan(app):
-    global _engine, _manifest
     if not os.environ.get("OCR_EXECUTOR_TOKEN"):
         raise RuntimeError("OCR executor credential required")
-    _engine, _manifest = load_engine()
-    yield
+    await asyncio.to_thread(_supervisor.start)
+    try:
+        yield
+    finally:
+        _supervisor.cancel.set()
+        await asyncio.to_thread(_supervisor.stop)
 
 
 app = FastAPI(lifespan=lifespan)
 
 
 class Input(BaseModel):
-    image: str = Field(max_length=12 * 1024 * 1024)
+    image: str = Field(max_length=4 * ((2 * 1024 * 1024 + 2) // 3))
     required_backend: str = "cann"
+
+
+def authorize(authorization):
+    if not secrets.compare_digest(
+        authorization, "Bearer " + os.environ["OCR_EXECUTOR_TOKEN"]
+    ):
+        raise HTTPException(403)
 
 
 @app.get("/ready")
 def ready():
     return {
-        "ready": _engine is not None,
+        "ready": bool(_supervisor.process and _supervisor.process.is_alive()),
         "backend": _manifest["backend"],
         "fingerprint": _manifest["fingerprint"],
         "providers": _manifest["providers"],
     }
 
 
-@app.post("/recognize")
-def recognize(body: Input, authorization: str = Header(default="")):
-    if not secrets.compare_digest(
-        authorization, "Bearer " + os.environ["OCR_EXECUTOR_TOKEN"]
-    ):
-        raise HTTPException(403)
-    if body.required_backend != _manifest["backend"]:
+async def infer(request, data, backend, operation_id, deadline):
+    if backend != _manifest["backend"]:
         raise HTTPException(503, "required OCR backend unavailable")
+    if not data or len(data) > 2 * 1024 * 1024:
+        raise HTTPException(413)
     if not _lock.acquire(blocking=False):
         raise HTTPException(429, "OCR busy")
+    completed = False
     try:
-        from PIL import Image
-
-        data = base64.b64decode(body.image, validate=True)
-        if len(data) > 8 * 1024 * 1024:
-            raise HTTPException(413)
-        Image.MAX_IMAGE_PIXELS = 16_000_000
-        with Image.open(io.BytesIO(data)) as image:
-            if image.width * image.height > 16_000_000:
-                raise HTTPException(413)
-        started = time.monotonic()
-        _engine._ailab_failures.clear()
-        result = _engine(data)
-        if _engine._ailab_failures:
-            raise HTTPException(502, "OCR inference failed")
-        return {
-            "text": "\n".join(result.txts or []),
-            "engine": _manifest["engine"],
-            "fingerprint": _manifest["fingerprint"],
-            "backend": _manifest["backend"],
-            "seconds": time.monotonic() - started,
-        }
+        # A fault/explicit cancellation destroys only the owned inference child;
+        # successful requests keep the same warm process and model sessions.
+        _supervisor.active_id = operation_id
+        _supervisor.cancel.clear()
+        await asyncio.to_thread(_supervisor.start, deadline)
+        await asyncio.to_thread(_supervisor.connection.send_bytes, data)
+        while True:
+            if (
+                time.time() >= deadline
+                or _supervisor.cancel.is_set()
+                or await request.is_disconnected()
+            ):
+                raise HTTPException(408, "OCR canceled or timed out")
+            if _supervisor.connection.poll():
+                result = _supervisor.connection.recv()
+                if "error" in result:
+                    raise HTTPException(502, "OCR inference failed")
+                completed = True
+                return result
+            if not _supervisor.process.is_alive():
+                raise HTTPException(502, "OCR inference process exited")
+            await asyncio.sleep(0.05)
     finally:
-        _lock.release()
+        try:
+            if not completed:
+                _supervisor.cancel.set()
+                await asyncio.to_thread(_supervisor.stop)
+        finally:
+            _supervisor.active_id = None
+            _lock.release()
+
+
+@app.post("/recognize")
+async def recognize(
+    body: Input, request: Request, authorization: str = Header(default="")
+):
+    authorize(authorization)
+    try:
+        data = base64.b64decode(body.image, validate=True)
+    except ValueError:
+        raise HTTPException(422, "invalid image") from None
+    return await infer(
+        request, data, body.required_backend, uuid4().hex, time.time() + 90
+    )
+
+
+@app.post("/recognize-image")
+async def recognize_image(
+    request: Request,
+    authorization: str = Header(default=""),
+    x_ocr_operation: str = Header(min_length=1, max_length=100),
+    x_ocr_deadline: float = Header(allow_inf_nan=False),
+    x_ocr_backend: str = Header(default="cann"),
+):
+    authorize(authorization)
+    if x_ocr_deadline <= time.time():
+        raise HTTPException(408, "OCR deadline expired")
+    data = bytearray()
+    async for chunk in request.stream():
+        if len(data) + len(chunk) > 2 * 1024 * 1024:
+            raise HTTPException(413)
+        data.extend(chunk)
+    return await infer(
+        request,
+        data,
+        x_ocr_backend,
+        x_ocr_operation,
+        min(x_ocr_deadline, time.time() + 120),
+    )
+
+
+@app.delete("/operations/{operation_id}")
+async def cancel_operation(operation_id: str, authorization: str = Header(default="")):
+    authorize(authorization)
+    if _supervisor.active_id == operation_id:
+        _supervisor.cancel.set()
+        until = time.monotonic() + 4
+        while _supervisor.active_id == operation_id:
+            if time.monotonic() >= until:
+                raise HTTPException(503, "OCR cancellation pending")
+            await asyncio.sleep(0.05)
+    return {"status": "stopped"}

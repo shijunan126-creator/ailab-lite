@@ -11,6 +11,7 @@ from typing import Any
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
+from ..contracts.workspace_ocr import WorkspaceOcr
 from ..contracts.genui import component_docs_for, component_names, guide_for
 from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..llm import INVALID_ARGUMENTS_KEY
@@ -336,6 +337,7 @@ READ_URL = {
 SANDBOX_TOOLS = {
     "review_artifact",
     "view_workspace_file",
+    "ocr_workspace_image",
     "copy_library_file",
     "list_files",
     "read_file",
@@ -528,6 +530,18 @@ DOCUMENT_VIEW = {
 }
 
 
+WORKSPACE_OCR = {
+    "type": "function",
+    "function": {
+        "name": "ocr_workspace_image",
+        "description": "识别当前Work工作区PNG/JPEG/WebP图片中选定文字；可显式选择归一化region与旋转。"
+        "PDF/Office先在当前沙箱生成所需页图。不理解图形语义。平台复用现有OCR服务，不需安装权重；"
+        "长结果用返回的operation_id和next_cursor续读，并保持path/region相同。",
+        "parameters": WorkspaceOcr.model_json_schema(),
+    },
+}
+
+
 def tools_for_turn(document_tools_version=1) -> list[dict]:
     catalog = [
         DOCUMENT_VIEW,
@@ -550,6 +564,7 @@ def tools_for_turn(document_tools_version=1) -> list[dict]:
 
     if document_tools_version == 2:
         catalog = [t for t in catalog if permitted(t["function"]["name"], mode="work", version=2)]
+        catalog.append(WORKSPACE_OCR)
         catalog = _current_recall(catalog, "copy_library_file")
     return catalog
 
@@ -657,6 +672,37 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         raise ToolError("document tool is not available for this run mode/catalog")
     if name in CHAT_DOCUMENT_TOOLS:
         return {"ok": True, **await ctx.platform.document_input(ctx.run_id, name, args)}
+    if name == "ocr_workspace_image":
+        if ctx.mode != "work" or ctx.document_tools_version != 2:
+            raise ToolError("workspace OCR is unavailable for this run")
+        try:
+            return await broker.ocr_workspace_image(lease_id, args)
+        except ClientError as exc:
+            try:
+                reason = json.loads(exc.body).get("detail")
+            except (ValueError, AttributeError):
+                reason = None
+            allowed = {
+                "document_queue_full",
+                "document_ocr_work_limit",
+                "document_run_deadline",
+                "derived_capacity_exceeded",
+                "derived_accounting_initializing",
+                "ocr_executor_unavailable",
+                "workspace_ocr_failed",
+                "ocr_image_binding_changed",
+                "invalid_workspace_path",
+                "image_input_limit",
+                "image_pixel_limit",
+                "image_size_limit",
+                "invalid_region",
+                "workspace_source_changed",
+                "image_preparation_timeout",
+                "image_memory_limit",
+                "image_preparation_failed",
+                "workspace_ocr_unavailable",
+            }
+            return {"ok": False, "error": reason if isinstance(reason, str) and reason in allowed else "workspace_ocr_unavailable"}
     if name == "search_library":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
     if name == "extract_text":

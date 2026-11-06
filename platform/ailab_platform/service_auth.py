@@ -39,6 +39,7 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
             "files:read_for_preview",
             "files:read_for_document",
             "artifacts:commit_for_run",
+            "ocr:workspace",
             "files:derived_write",
         }
     ),

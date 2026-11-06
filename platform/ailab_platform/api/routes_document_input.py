@@ -12,7 +12,7 @@ from ..deps import get_db
 from ..domain.document_tools import catalog_version
 from ..models import RunStatus
 from ..service_auth import require_scope
-from .document_text import current_index, text_operation
+from .document_text import available_ocr, current_index, text_operation
 from .native_preparation import request_native
 from .routes_internal import _run_or_404
 from .routes_library_tools import authorized_source
@@ -29,9 +29,10 @@ def text_request(db, run_id, body, attempt):
         if run.status != RunStatus.RUNNING:
             raise HTTPException(409, "run_unavailable")
         file = authorized_source(db, run, body.file_id)
-        if isinstance(body, ReadDocument) and body.text_source == "ocr":
-            # No implicit native fallback or implicit whole-document OCR.
-            raise HTTPException(409, "ocr_representation_unavailable")
+        if (isinstance(body, ReadDocument) and body.text_source == "ocr") or (isinstance(body, SearchDocument) and available_ocr(db, file)):
+            result = text_operation(db, file, body)
+            db.commit()
+            return result
         try:
             current_index(db, file)
         except HTTPException as exc:
@@ -39,11 +40,21 @@ def text_request(db, run_id, body, attempt):
                 raise
             if body.cursor:
                 raise HTTPException(409, "cursor_stale") from None
+            from ..models import OutboxMessage
+            from .document_operations import budget
+
+            deadline = budget(run, start=True)
             state = request_native(db, file)
+            job = db.get(OutboxMessage, state.get("job_id"))
+            if job:
+                from datetime import datetime
+
+                existing_deadline = datetime.fromisoformat(job.payload["deadline"])
+                job.payload = {**job.payload, "deadline": min(existing_deadline, deadline).isoformat()}
             db.commit()
             if state["status"] == "failed":
                 raise HTTPException(422, "native_representation_failed")
-            return {"file_id": file.id, "version": file.sha256, "pending": True, "action": "native-text"}
+            return {"file_id": file.id, "version": file.sha256, "pending": True, "action": "native-text", "deadline": deadline.timestamp()}
         result = text_operation(db, file, body)
         db.commit()
         return result

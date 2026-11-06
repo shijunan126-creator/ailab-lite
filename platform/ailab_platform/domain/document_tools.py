@@ -9,6 +9,8 @@ def catalog_version(options):
 
 
 def permitted(name, *, mode="work", version=1):
+    if name == "ocr_workspace_image":
+        return version == 2 and mode == "work"
     if version == 1:
         return name not in CHAT_DOCUMENT_TOOLS
     if name in LEGACY_DOCUMENT_TOOLS:

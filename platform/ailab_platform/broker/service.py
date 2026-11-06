@@ -349,6 +349,45 @@ class LeaseManager:
         with tempfile.TemporaryDirectory(prefix="transfer-", dir=root) as directory:
             yield Path(directory) / "file"
 
+    def register_scratch(self, lease_id, directory, deadline):
+        if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view)-[a-f0-9]{32}", directory):
+            raise LeaseError("invalid_scratch_directory")
+        if not time.time() < deadline <= time.time() + 610:
+            raise LeaseError("invalid_scratch_deadline")
+        with self._stripe(lease_id):
+            lease = self._load(lease_id)
+            jobs = dict(lease.get("scratch_jobs") or {})
+            if len(jobs) >= 32:
+                raise LeaseError("workspace_scratch_limit")
+            jobs[directory] = deadline + 900
+            lease["scratch_jobs"] = jobs
+            self._save(lease)
+            self._provider_call("update_metadata", lease["provider_ref"], self._metadata(lease))
+
+    def clear_scratch(self, lease_id, directory):
+        with self._stripe(lease_id):
+            lease = self._load(lease_id)
+            jobs = dict(lease.get("scratch_jobs") or {})
+            if directory not in jobs:
+                return
+            if not re.fullmatch(r"/workspace/\.ailab/(?:ocr|view)-[a-f0-9]{32}", directory):
+                raise LeaseError("invalid_scratch_directory")
+            result = self._provider_call("exec", lease["sandbox_id"], "rm -rf -- " + shlex.quote(directory), 5)
+            if result.exit_code:
+                raise LeaseError("workspace_scratch_cleanup_failed")
+            jobs.pop(directory)
+            lease["scratch_jobs"] = jobs
+            self._save(lease)
+            self._provider_call("update_metadata", lease["provider_ref"], self._metadata(lease))
+
+    def _sweep_scratch(self, lease):
+        due = [path for path, deadline in (lease.get("scratch_jobs") or {}).items() if deadline <= time.time()][:4]
+        for path in due:
+            try:
+                self.clear_scratch(lease["lease_id"], path)
+            except Exception:
+                log.warning("workspace scratch cleanup pending lease=%s", lease["lease_id"], exc_info=True)
+
     def inject_file(self, lease: dict, file_id: str, path: str, *, max_bytes: int | None = None, **binding) -> None:
         limit = min(max_bytes or settings.max_upload_bytes, settings.max_upload_bytes)
         with self.transfer_file() as local:
@@ -393,6 +432,7 @@ class LeaseManager:
         # Only recovery-critical fields; preview caches stay ephemeral in Redis.
         labels["ailab.inputs"] = json.dumps(lease.get("inputs", []), ensure_ascii=False)
         labels["ailab.preview_seq"] = str(lease.get("preview_seq", 0))
+        labels["ailab.scratch_jobs"] = json.dumps(lease.get("scratch_jobs") or {}, separators=(",", ":"))
         return labels
 
     def acquire(
@@ -1471,6 +1511,7 @@ class LeaseManager:
                 inputs=json.loads(labels.get("ailab.inputs", "[]")),
                 create_deadline=lease["created_at"],
                 preview_seq=int(labels.get("ailab.preview_seq", "0")),
+                scratch_jobs=json.loads(labels.get("ailab.scratch_jobs", "{}")),
             )
             return lease
         except (KeyError, ValueError, TypeError):
@@ -1613,6 +1654,7 @@ class LeaseManager:
                         elif _expired(lease):
                             self.release(lease_id, reason="expired")
                         else:
+                            self._sweep_scratch(lease)
                             metrics.SANDBOX_RECONCILE_ACTIONS.labels("adopted").inc()
                     elif lease["state"] == "creating":
                         # A restart interrupted creation/staging. Provider active metadata
@@ -1673,7 +1715,7 @@ class LeaseManager:
                     return
 
         def reconcile() -> None:
-            while not self._stop.wait(settings.broker_reconcile_interval_seconds):
+            while not self._stop.wait(min(300, settings.broker_reconcile_interval_seconds)):
                 try:
                     self.cleanup_once()
                 except BrokerOwnershipError:

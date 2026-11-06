@@ -173,6 +173,33 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def workspace_ocr_budget(self, run_id):
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/budget", json={})).json()
+
+    def workspace_ocr_prepare(self, run_id, payload):
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr", json=payload)).json()
+
+    def workspace_ocr_status(self, run_id, operation_id, cursor=None):
+        return self._send(
+            self._req("GET", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}", params={"cursor": cursor} if cursor else {})
+        ).json()
+
+    def workspace_ocr_image(self, run_id, operation_id, token, image, deadline):
+        req = self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}/image", timeout=max(1, deadline - time.time()) + 8)
+        with image.open("rb") as stream:
+            req = req._replace(
+                kwargs={
+                    **req.kwargs,
+                    "headers": {**req.kwargs["headers"], "X-Document-Token": token, "Content-Type": "application/octet-stream"},
+                    "content": stream,
+                }
+            )
+            return self._send(req).json()
+
+    def workspace_ocr_cancel(self, run_id, operation_id, token):
+        req = self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}/cancel", timeout=5, json={})
+        return self._send(req._replace(kwargs={**req.kwargs, "headers": {**req.kwargs["headers"], "X-Document-Token": token}})).json()
+
     def summarize_file(self, file_id: str) -> dict:
         timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
         return self._send(self._req("POST", f"/internal/files/{file_id}/summary", timeout=timeout, json={})).json()
@@ -589,6 +616,9 @@ class AsyncBrokerClient(_Service):
             json={"cmd": cmd, "timeout_seconds": timeout_seconds},
         )
         return (await self._send(req)).json()
+
+    async def ocr_workspace_image(self, lease_id, payload):
+        return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/ocr-workspace-image", timeout=610, json=payload))).json()
 
     async def view_workspace_file(self, lease_id: str, path: str, pages: list[int] | None = None) -> dict:
         req = self._req("POST", f"/internal/leases/{lease_id}/view-workspace-file", timeout=80, json={"path": path, "pages": pages})
