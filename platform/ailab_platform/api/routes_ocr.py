@@ -435,12 +435,20 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             )
             if operation:
                 operation = db.get(DocumentOperation, operation.id, populate_existing=True)
-                # The failed HTTP request has ended; redelivery reuses this
-                # operation and its original execution deadline/work charge.
+                from ..ocr_backend import OCRExecutionUncertain
+
+                uncertain = isinstance(exc, OCRExecutionUncertain)
                 retryable = retryable and operations.aware(operation.execution_deadline) > datetime.now(UTC)
-                operation.status, operation.claim_token, operation.lease_until = "pending" if retryable else "failed", None, None
-                operation.executor_started_at, operation.attempt_token = None, None
-                operation.result = {"reason": "dependency_unavailable" if retryable else "ocr_failed"}
+                if uncertain:
+                    # A lost cancellation receipt cannot free the global slot.
+                    operation.status = "canceling"
+                else:
+                    operation.status = "pending" if retryable else "failed"
+                    operation.claim_token, operation.lease_until = None, None
+                    operation.executor_started_at, operation.attempt_token = None, None
+                operation.result = {
+                    "reason": "document_dispatch_uncertain" if uncertain else "dependency_unavailable" if retryable else "ocr_failed"
+                }
             state = "pending" if retryable else "failed"
             file.meta = {
                 **file.meta,

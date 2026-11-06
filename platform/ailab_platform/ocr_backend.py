@@ -9,6 +9,10 @@ import httpx
 from .config import settings
 
 
+class OCRExecutionUncertain(RuntimeError):
+    """The executor has not acknowledged that its owned inference has stopped."""
+
+
 async def recognize(data: bytes, *, operation_id: str | None = None, deadline: float | None = None) -> dict:
     if not settings.ocr_executor_url:
         raise ValueError("ocr_executor_unavailable")
@@ -51,11 +55,14 @@ async def recognize(data: bytes, *, operation_id: str | None = None, deadline: f
                 # allowing an abandoned HTTP request to keep running kernels.
                 try:
                     async with asyncio.timeout(3):
-                        await asyncio.shield(
+                        stopped = await asyncio.shield(
                             client.delete(settings.ocr_executor_url.rstrip("/") + "/operations/" + operation_id, headers=headers, timeout=3)
                         )
-                except (Exception, asyncio.CancelledError):
-                    pass
+                        stopped.raise_for_status()
+                        if stopped.json().get("status") != "stopped":
+                            raise ValueError("OCR cancellation not acknowledged")
+                except (Exception, asyncio.CancelledError) as exc:
+                    raise OCRExecutionUncertain("OCR cancellation unconfirmed") from exc
     if result.get("backend") != settings.ocr_required_backend or not result.get("engine", "").startswith("rapidocr:"):
         raise ValueError("ocr_backend_mismatch")
     if settings.ocr_engine_fingerprint and result.get("fingerprint") != settings.ocr_engine_fingerprint:

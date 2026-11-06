@@ -236,16 +236,17 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     )
     page.get_by_role("radio", name="工作", exact=True).click()
     _start_conversation(page, "原生工作区验收", "test-office-vision")
+    page.get_by_role("button", name=re.compile("^打开预览")).click(timeout=25000)
     try:
         frame = _frame(page, "draft.docx")
         expect(frame.get_by_text("Workspace quote for integration", exact=True)).to_be_visible(timeout=25000)
         _select(page, frame, "docx")
-        expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=10000)
+        expect(frame.locator('[data-at="p:1"]')).to_be_visible(timeout=10000)
         end = time.monotonic() + 15
         while not view_updates:
             assert time.monotonic() < end
             page.wait_for_timeout(150)
-        expect(_frame(page, "draft.docx").locator('[data-at="p:2"]')).to_be_visible(timeout=10000)
+        expect(_frame(page, "draft.docx").locator('[data-at="p:1"]')).to_be_visible(timeout=10000)
     finally:
         httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
     _wait_for_turns(page, 1)
@@ -305,6 +306,7 @@ def test_work_native_unavailable_renders_workspace_only_on_fallback(logged_in, s
     page.on("response", lambda response: calls.append(response) if "/workspace/preview?" in response.url else None)
     page.get_by_role("radio", name="工作", exact=True).click()
     _start_conversation(page, "原生表格回退验收", "test-office-vision")
+    page.get_by_role("button", name=re.compile("^打开预览")).click(timeout=25000)
     try:
         pane = page.get_by_role("complementary", name="侧栏")
         expect(pane.locator(".sheet-grid td", has_text="华东")).to_be_visible(timeout=30000)
@@ -354,6 +356,7 @@ def test_native_renderer_failure_after_index_uses_authorized_fallback(logged_in,
         page.route("**/api/v1/runs/*/workspace/content?*", corrupt)
         page.get_by_role("radio", name="工作", exact=True).click()
         _start_conversation(page, "原生表格回退验收", "test-office-vision")
+        page.get_by_role("button", name=re.compile("^打开预览")).click(timeout=25000)
         try:
             pane = page.get_by_role("complementary", name="侧栏")
             expect(pane.locator(".sheet-grid td", has_text="华东")).to_be_visible(timeout=30000)

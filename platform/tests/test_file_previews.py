@@ -125,7 +125,12 @@ class ApiClient:
             start_background=False,
         )
         try:
-            result = DocumentReader(manager).read(fid, job_id)
+            from contextlib import nullcontext
+            from unittest.mock import patch
+
+            # Slow fixtures must heartbeat through their real TestClient API.
+            with patch("ailab_platform.clients.PlatformClient", lambda **kwargs: nullcontext(self_api)):
+                result = DocumentReader(manager).read(fid, job_id)
             if result.get("render_lease_id"):
                 self.closed_render_leases.add(result["render_lease_id"])
             return result

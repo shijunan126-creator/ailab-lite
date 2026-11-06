@@ -146,7 +146,11 @@ async def infer_while_owned(data, operation_id, token, deadline):
     finally:
         if not task.done():
             task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        stopped = await asyncio.gather(task, return_exceptions=True)
+        from ..ocr_backend import OCRExecutionUncertain
+
+        if isinstance(stopped[0], OCRExecutionUncertain):
+            raise stopped[0]
 
 
 def execute(db, run_id, operation_id, token, attempt, data):
@@ -192,9 +196,14 @@ def execute(db, run_id, operation_id, token, attempt, data):
         with user_critical_section(db, run.user_id):
             row = db.get(DocumentOperation, operation_id, populate_existing=True)
             if row and row.claim_token == token and row.status in {"running", "canceling"}:
-                row.status = "canceled" if not operations.source_available(db, row, active=True) else "failed"
-                row.claim_token, row.lease_until = None, None
-                row.result = {"reason": "document_operation_deadline" if isinstance(exc, TimeoutError) else "ocr_failed"}
+                from ..ocr_backend import OCRExecutionUncertain
+
+                if isinstance(exc, OCRExecutionUncertain) or (row.status == "canceling" and row.executor_started_at):
+                    row.status, row.result = "canceling", {"reason": "document_dispatch_uncertain"}
+                else:
+                    row.status = "canceled" if not operations.source_available(db, row, active=True) else "failed"
+                    row.claim_token, row.lease_until = None, None
+                    row.result = {"reason": "document_operation_deadline" if isinstance(exc, TimeoutError) else "ocr_failed"}
                 db.commit()
         if isinstance(exc, HTTPException):
             raise

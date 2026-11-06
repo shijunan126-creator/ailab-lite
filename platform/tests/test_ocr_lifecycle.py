@@ -217,3 +217,30 @@ def test_legacy_job_without_current_identity_can_finish(api, rapid_upstream):  #
         db.commit()
     response = api.post(f"/internal/files/{fid}/ocr", headers={**SERVICE, "X-Run-Attempt": token}, json={})
     assert response.status_code == 200 and response.json()["ocr"] == "done"
+
+
+def test_lost_executor_stop_receipt_retains_ocr_lane_until_reap_deadline(api, rapid_upstream, monkeypatch):  # noqa: F811
+    from ailab_platform.api import document_operations, routes_workspace_ocr
+    from ailab_platform.models import DocumentOperation
+    from ailab_platform.ocr_backend import OCRExecutionUncertain
+
+    fid = ready_pdf(api)
+    request(api, fid, [1])
+    rendered(fid, 1)
+    job = queued_ocr(fid)[0]
+    token = api.post(f"/internal/jobs/{job['job_id']}/claim", headers=SERVICE, json={"consumer": "uncertain"}).json()["token"]
+
+    async def uncertain(*args, **kwargs):
+        raise OCRExecutionUncertain("lost stop receipt")
+
+    monkeypatch.setattr(routes_workspace_ocr, "recognize", uncertain)
+    result = api.post(f"/internal/files/{fid}/ocr", headers={**SERVICE, "X-Run-Attempt": token}, json={})
+    assert result.status_code == 200 and result.json()["ocr"] == "failed"
+    with SessionLocal() as db:
+        row = db.get(DocumentOperation, job["job_id"])
+        assert row.status == "canceling" and row.claim_token and row.executor_started_at
+        held = row.claim_token
+        document_operations.expire_lane(db, "ocr", datetime.now(UTC))
+        assert row.status == "canceling" and row.claim_token == held
+        document_operations.expire_lane(db, "ocr", document_operations.aware(row.lease_until) + timedelta(seconds=1))
+        assert row.status == "failed" and row.claim_token is None

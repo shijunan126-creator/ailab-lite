@@ -158,7 +158,7 @@ class QuestionThenAnswer(LLMClient):
                 target_path = "/workspace/outputs/draft.docx"
             elif work_mode:
                 copies = [json.loads(m["content"]) for m in results if m.get("name") == "copy_library_file"]
-                target_path = "/workspace/work/selected." + prompt.split()[2]
+                target_path = "/workspace/inputs/selected." + prompt.split()[2]
                 if not copies:
                     arguments = {"file_id": prompt.split()[1], "path": target_path}
                     return LLMResponse(tool_calls=[ToolCall("office_copy", "copy_library_file", arguments)])

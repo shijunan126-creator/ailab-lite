@@ -346,6 +346,13 @@ def rapid_upstream(monkeypatch):
             self.end_headers()
             self.wfile.write(encoded)
 
+        def do_DELETE(self):
+            encoded = b'{"status":"stopped"}'
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
         def log_message(self, *args):
             pass
 

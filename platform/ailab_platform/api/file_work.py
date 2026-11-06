@@ -79,6 +79,8 @@ def attach(db, operation, *, run=None, preparation=None):
 
 
 def register(db, file, job, *, lane="render", run=None, preparation=None):
+    # Source checks refresh identities; persist this newly staged job/metadata first.
+    db.flush()
     operations.lane_lock(db, lane)
     row = db.get(DocumentOperation, job.id, populate_existing=True)
     if row:

@@ -127,3 +127,22 @@ def test_view_operation_cancel_releases_all_partial_browser_assets(ledger, monke
         assert db.scalar(select(DerivedAssetRef.id)) is None
         assets.collect_batch(db, storage, transient_only=True)
         assert not storage.exists(f"derived/f/captures/{row.result['files'][0]['capture_id']}")
+
+
+def test_uncached_offline_view_stages_one_render_and_keeps_its_source_binding(ledger, monkeypatch):
+    factory, storage = ledger
+    operation_id = prepare(factory, storage, monkeypatch)
+    monkeypatch.setattr("ailab_platform.api.view_state.views", lambda user, conversation: [])
+    with factory() as db:
+        file = db.get(FileObject, "f")
+        file.filename = "source.xlsx"
+        db.commit()
+        first = routes.step(operation_id, "worker", db)
+        assert first["status"] == "preparing", first
+        row = db.get(DocumentOperation, operation_id)
+        job_id = row.result["render_job_id"]
+        assert job_id and db.get(FileObject, "f").meta["preview_job_id"] == job_id
+        second = routes.step(operation_id, "worker", db)
+        assert second["status"] == "preparing", second
+        assert db.get(DocumentOperation, operation_id).result["render_job_id"] == job_id
+        assert db.scalar(select(func.count()).select_from(OutboxMessage)) == 2

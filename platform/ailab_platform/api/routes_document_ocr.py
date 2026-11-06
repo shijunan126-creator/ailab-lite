@@ -78,6 +78,13 @@ def step(operation_id: str, x_run_attempt: str | None = Header(default=None), db
         row = claimed(db, operation_id, x_run_attempt)
         if row.status in {"ready", "failed", "canceled"}:
             return operations.receipt(row)
+        if row.status == "canceling":
+            operations.claim(db, row)  # expire only after the owned executor/reap deadline
+            if row.status in {"failed", "canceled"}:
+                release_inputs(db, row)
+                wake(db, row)
+            db.commit()
+            return operations.receipt(row)
         try:
             file = consumer_file(db, row)
             if file.status != "ready" or (file.meta or {}).get("scan", {}).get("verdict") != "clean":
@@ -259,7 +266,13 @@ def execute_image(db, operation_id, attempt, token, ordinal, receipt, data):
         with user_critical_section(db, owner):
             row = db.get(DocumentOperation, operation_id, populate_existing=True)
             if row and row.claim_token == token and row.status in {"running", "canceling"}:
-                fail(db, row, "document_operation_deadline" if isinstance(exc, TimeoutError) else "ocr_failed")
+                from ..ocr_backend import OCRExecutionUncertain
+
+                if isinstance(exc, OCRExecutionUncertain) or (row.status == "canceling" and row.executor_started_at):
+                    row.status = "canceling"
+                    row.result = {**row.result, "reason": "document_dispatch_uncertain"}
+                else:
+                    fail(db, row, "document_operation_deadline" if isinstance(exc, TimeoutError) else "ocr_failed")
                 db.commit()
         if isinstance(exc, HTTPException):
             raise
