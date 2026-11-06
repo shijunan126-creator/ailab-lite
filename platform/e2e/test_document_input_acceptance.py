@@ -182,3 +182,107 @@ def test_canonical_capture_history_fork_and_fifty_cycles(logged_in, stack, tmp_p
     mean = sum(ys) / 50
     slope = sum((x - 24.5) * (y - mean) for x, y in zip(xs, ys)) / sum((x - 24.5) ** 2 for x in xs)
     assert slope <= 0.1, slope
+
+
+@pytest.mark.parametrize("failure", ["timeout", "cancel"])
+def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logged_in, stack, failure):
+    page = logged_in
+    upload = page.request.post(
+        stack.portal + "/api/v1/files",
+        multipart={
+            "upload": {
+                "name": f"late-{failure}.docx",
+                "mimeType": "application/octet-stream",
+                "buffer": (FIXTURES / "report.docx").read_bytes(),
+            }
+        },
+    )
+    assert upload.ok
+    fid = upload.json()["id"]
+    page.goto(stack.portal + "/?files=" + fid)
+    page.get_by_role("radio", name="对话", exact=True).click()
+    cid = _start_conversation(page, "原生收件验收", "test-office-vision")
+    _wait_for_turns(page, 1)
+    page.locator(".turn .attach-chip.open").first.click()
+    _frame(page, f"late-{failure}.docx").locator("section.office-docx > article p").first.wait_for()
+    held = []
+    page.route("**/client-calls/*/result", lambda route: held.append(route))
+    _send(page, f"原生控制 {fid} docx")
+    end = time.monotonic() + 30
+    while not held:
+        assert time.monotonic() < end, "no real browser capture reached the publication boundary"
+        page.wait_for_timeout(100)
+    request = held[0].request
+    payload = request.post_data_json
+    turn = page.request.get(f"{stack.portal}/api/v1/conversations/{cid}").json()["turns"][-1]
+    if failure == "cancel":
+        canceled = page.request.post(f"{stack.portal}/api/v1/runs/{turn['id']}/cancel")
+        assert canceled.ok, canceled.text()
+    else:
+        _wait_for_turns(page, 2, seconds=120)
+        done = page.request.get(f"{stack.portal}/api/v1/conversations/{cid}").json()["turns"][-1]
+        assert '"source": "office-pdf"' in done["summary"], done
+        assert '"input": "image"' in done["summary"]
+    late = page.request.post(request.url, data=payload)
+    assert late.status == 409, late.text()
+    assert not inspect(stack)["captures"], "late client result must not create a canonical asset"
+    held[0].abort()
+    assert page.request.delete(f"{stack.portal}/api/v1/conversations/{cid}").ok
+    maintenance(stack)
+    assert inspect(stack)["reserved"] == 0
+
+
+def test_two_users_prepare_independently_and_source_deletion_does_not_cancel_the_other(logged_in, stack):
+    import uuid
+    from concurrent.futures import ThreadPoolExecutor
+
+    import httpx
+
+    page = logged_in
+    username, password = "document-" + uuid.uuid4().hex[:12], uuid.uuid4().hex
+    created = page.request.post(
+        stack.portal + "/api/v1/admin/users", data={"username": username, "password": password, "display_name": "Document contender"}
+    )
+    assert created.ok, created.text()
+    owner_token = next(c["value"] for c in page.context.cookies() if c["name"] == "ailab_token")
+    with httpx.Client(base_url=stack.api, timeout=60) as login:
+        response = login.post("/v1/auth/login", json={"username": username, "password": password})
+        response.raise_for_status()
+        other_token = response.json()["token"]
+    with (
+        httpx.Client(base_url=stack.api, headers={"Authorization": "Bearer " + owner_token}, timeout=60) as first,
+        httpx.Client(base_url=stack.api, headers={"Authorization": "Bearer " + other_token}, timeout=60) as second,
+    ):
+        files = []
+        for client in (first, second):
+            response = client.post("/v1/files", files={"upload": ("contender.docx", (FIXTURES / "report.docx").read_bytes())})
+            response.raise_for_status()
+            fid = response.json()["id"]
+            end = time.monotonic() + 60
+            while client.get("/v1/files/" + fid).json()["status"] != "ready":
+                assert time.monotonic() < end
+                time.sleep(0.2)
+            files.append(fid)
+        assert first.get("/v1/files/" + files[1]).status_code == 404
+        assert second.get("/v1/files/" + files[0]).status_code == 404
+        bodies = [{"file_ids": [fid], "model": "test-office-vision", "mode": "chat", "client_send_id": uuid.uuid4().hex} for fid in files]
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            replies = list(pool.map(lambda pair: pair[0].post("/v1/chat/prepare", json=pair[1]), zip((first, second), bodies)))
+        assert all(r.status_code in {200, 409} for r in replies), [r.text for r in replies]
+        assert first.delete("/v1/files/" + files[0]).is_success
+        assert first.post("/v1/chat/prepare", json=bodies[0]).status_code == 404
+        end = time.monotonic() + 90
+        while True:
+            ready = second.post("/v1/chat/prepare", json=bodies[1])
+            if ready.status_code == 200:
+                break
+            assert ready.status_code == 409 and time.monotonic() < end, ready.text
+            time.sleep(0.25)
+        end = time.monotonic() + 20
+        while True:
+            state = inspect(stack)
+            if state["active"] == state["reserved"] == 0:
+                break
+            assert time.monotonic() < end, state
+            time.sleep(0.25)
+        assert second.get("/v1/files/" + files[1]).json()["status"] == "ready"
