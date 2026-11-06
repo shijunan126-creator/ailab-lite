@@ -34,5 +34,9 @@
   {
     "file": "009-native-ranges.json",
     "reason": "Preserve compact native limits in generator inputs; probe long PDFs and extract only explicit native page ranges while retaining legacy reader defaults."
+  },
+  {
+    "file": "010-native-visual-candidates.json",
+    "reason": "Keep legacy visual facts while excluding ordinary PPT text boxes from native inline image preselection; preserve unknown master/layout visuals."
   }
 ]

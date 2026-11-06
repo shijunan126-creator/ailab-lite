@@ -34,6 +34,7 @@ interface Shape {
   placeholder?: string;
   text: string;
   rows?: string[][];
+  nativeVisual?: boolean;
 }
 
 interface Slide {
@@ -42,6 +43,7 @@ interface Slide {
   title: string | null;
   shapes: Shape[];
   notes: string;
+  nativeVisual: boolean;
 }
 
 function paragraphsText(txBody: XNode | undefined): string {
@@ -81,6 +83,7 @@ function readShapes(nodes: XNode[], out: Shape[]) {
         id,
         name,
         kind: "text",
+        nativeVisual: !placeholder && !(nv && attr(child(nv, "p:cNvSpPr") ?? {}, "txBox") === "1"),
         placeholder,
         text: paragraphsText(child(node, "p:txBody")),
       });
@@ -184,6 +187,7 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
       hidden: root ? attr(root, "show") === "0" : false,
       title: titleShape?.text ? normalise(titleShape.text) : null,
       shapes,
+      nativeVisual: !!find(doc, "a:blip") || shapes.some(shape => shape.nativeVisual || ["picture", "chart", "connector", "group", "other"].includes(shape.kind)),
       notes: await readNotes(pkg, rel.target),
     });
   }
@@ -212,12 +216,21 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
     return slides.slice(from - 1, to).map((slide) => renderSlide(slide));
   }
 
+  let unmappedVisuals = false;
+  for (const path of pkg.paths()) {
+    if (!/^ppt\/(slideMasters|slideLayouts)\/[^/]+\.xml$/.test(path)) continue;
+    const xml = await pkg.text(path);
+    if (xml && /<(?:a:blip|c:chart|p:pic|p:cxnSp|p:graphicFrame|a:custGeom)[\s/>]/.test(xml)) {
+      unmappedVisuals = true; break;
+    }
+  }
   return {
     kind: "pptx",
+    visualStatus: unmappedVisuals ? "unknown" : slides.some(slide => slide.nativeVisual) ? "present" : "none",
     contentInfo(anchor) {
       const slide = slides[Number(anchor.split(":")[1])-1];
       return {has_text: !!slide && (!!slide.notes.trim() || slide.shapes.some(s => s.kind === "text" && !!s.text.trim() || s.kind === "table" && !!s.rows?.flat().join("").trim())),
-        visual: !!slide?.shapes.length};
+        visual: !!slide?.shapes.length, native_visual: !!slide?.nativeVisual};
     },
     title: (await coreTitle(pkg)) ?? slides[0]?.title ?? null,
     units: slides.length,

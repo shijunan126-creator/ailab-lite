@@ -109,6 +109,14 @@ def charge_consumption(db, run, file):
     """Full source size and all known source facts count even for a small scope."""
     from .native_preparation import native_state
 
+    limits = (file.meta or {}).get("document_limits") or {}
+    state = native_state(file)
+    if (limits.get("version") == file.sha256 and limits.get("reason")) or (
+        state.get("version") == file.sha256
+        and state.get("status") == "failed"
+        and state.get("reason") in {"document_text_limit", "document_structure_limit", "document_cells_limit", "native_structure_limit"}
+    ):
+        raise HTTPException(413, "native_structure_limit")
     extract = (file.meta or {}).get("extract") or {}
     ranges = (file.meta or {}).get("native_range_budget") or {}
     if ranges.get("base_derivation_id") != native_state(file).get("derivation_id"):

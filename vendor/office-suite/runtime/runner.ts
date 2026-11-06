@@ -47,7 +47,8 @@ async function main() {
     const anchor = anchors[unit];
     const facts = doc.contentInfo?.(anchor) ?? {has_text:true, visual:false};
     const unitNumber = ['pdf','pptx'].includes(kind) ? Number(anchor.split(':')[1]) : unit+1;
-    if (facts.visual) visualUnits.push({anchor, unit_number:unitNumber});
+    const visual = bounded ? facts.native_visual ?? facts.visual : facts.visual;
+    if (visual) visualUnits.push({anchor, unit_number:unitNumber});
     let cursor = 0, part = 0;
     do {
       const page = doc.read(parseLocator(kind, anchor), cursor);
@@ -61,7 +62,7 @@ async function main() {
       await appendFile(join(output,'text.txt'),text+'\n\n');
       units.push({ordinal:units.length, anchor, unit_number:unitNumber, part:part++, name,
         ...(bounded ? {byte_offset:byteOffset,byte_size:Buffer.byteLength(text)} : {}),
-        quality:facts.has_text?'native_unverified':'no_text', visual:facts.visual,
+        quality:facts.has_text?'native_unverified':'no_text', visual,
         chars:text.length, sha256:(await import('node:crypto')).createHash('sha256').update(text).digest('hex')});
       chars += text.length;
       byteOffset += Buffer.byteLength(text)+2;
@@ -95,7 +96,7 @@ async function main() {
     version:bounded?2:1, parser:bounded?'office-a60ba6a-ailab5':'office-a60ba6a-ailab3', kind, title:doc.title, total_units:doc.units,
     status:complete?'ready':'partial', coverage:anchors, units, chars, text_bytes:byteOffset, cells:doc.nonemptyCells ?? null,
     source_chars:sourceChars, source_blocks:sourceBlocks,
-    visual_units:visualUnits, outline:doc.outline, ...(bounded ? {scope, visual_status:doc.visualStatus ?? (doc.hasVisuals?'present':'unknown')} : {}),
+    visual_units:visualUnits, outline:doc.outline, ...(bounded ? {scope, visual_status:doc.visualStatus ?? (visualUnits.length?'present':'none')} : {}),
     limitations:['Native text only; embedded media, charts and layout require visual review.',
       ...(scope && kind!=='pdf' ? ['Office source parsing still loads the whole package before selecting this range.'] : []),
       ...(!complete ? ['Unprepared pages remain unknown; native page ranges are prepared explicitly.'] : [])],

@@ -39,7 +39,7 @@ export interface ParsedDocument {
   indexedPages?: number[];
   coverageComplete?: boolean;
   visualStatus?: "none" | "present" | "unknown";
-  contentInfo?(anchor: string): { has_text: boolean; visual: boolean };
+  contentInfo?(anchor: string): { has_text: boolean; visual: boolean; native_visual?: boolean };
 }
 
 export const normalise = (text: string) => text.replace(/\s+/g, " ").trim();

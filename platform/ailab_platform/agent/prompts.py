@@ -180,6 +180,7 @@ def system_prompt_for(
             base = base.replace("再通过平台读取", "核验交付版本与实际来源位置")
         else:
             base = base.replace("read_library_file", "read_document")
+            base = base.replace("附件中可读取的内容已经附在消息里。", "附件导航标明本轮已提供的文字或图像，其余范围按需读取。")
     if settings.genui_enabled and genui:
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
@@ -197,6 +198,24 @@ def user_prompt(prompt: str, input_files: list[dict] | None = None, *, mode="wor
     """The message, plus each attachment: its extracted text when there is one, and where the file is."""
     if not input_files:
         return prompt
+    if document_tools_version == 2 and mode == "chat":
+        lines = [prompt]
+        metadata = next((file["navigation_text"] for file in input_files if file.get("navigation_text")), "")
+        if metadata:
+            lines.append("附件导航：" + metadata)
+        for file in input_files:
+            if file.get("text"):
+                lines.extend(
+                    [
+                        f"附件正文 file_id={file.get('file_id') or file.get('id')}：",
+                        "<!-- AILAB_ATTACHMENT_START -->",
+                        "```",
+                        file["text"],
+                        "```",
+                        "<!-- AILAB_ATTACHMENT_END -->",
+                    ]
+                )
+        return "\n\n".join(lines)
     lines = [prompt]
     reader = "read_document" if document_tools_version == 2 else "read_library_file"
     viewer = "view_document" if document_tools_version == 2 else "view_attachment"

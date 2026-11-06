@@ -47,6 +47,10 @@ def claimed(db, file_id, operation_id, attempt):
 def fail(db, row, reason):
     row.status, row.claim_token, row.lease_until = "failed", None, None
     row.result = {"reason": reason}
+    if reason in {"document_text_limit", "document_structure_limit", "document_cells_limit", "native_structure_limit"}:
+        file = db.get(FileObject, row.file_id, populate_existing=True)
+        if file and file.sha256 == row.source_version and not file.purged_at:
+            file.meta = {**file.meta, "document_limits": {"version": file.sha256, "reason": reason}}
     wake(db, row)
 
 

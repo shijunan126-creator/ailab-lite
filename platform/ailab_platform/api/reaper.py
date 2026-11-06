@@ -579,6 +579,9 @@ async def lifecycle_cleanup_forever() -> None:
                 from .document_operations import maintenance as operation_maintenance
 
                 operation_maintenance(db)
+                from .document_preparation import maintenance as preparation_maintenance
+
+                preparation_maintenance(db)
                 invalidate_workspace_ocr(db)
                 db.commit()
                 collect_batch(db, get_storage(), transient_only=True)

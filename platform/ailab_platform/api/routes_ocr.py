@@ -531,6 +531,7 @@ def extraction_download(file_id: str, request_id: str | None = None, user: User 
 
 
 class ChatPreparation(BaseModel):
+    client_send_id: str | None = Field(default=None, min_length=1, max_length=120)
     mode: Literal["chat", "work"] = "chat"
     file_ids: list[str] = Field(max_length=50)
     model: str = Field(max_length=120)
@@ -545,5 +546,5 @@ def prepare_chat(body: ChatPreparation, user: User = Depends(current_user), db: 
     from .routes_runs import validate_run_input
 
     with user_critical_section(db, user.id):
-        validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode)
+        validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode, preparation_send_id=body.client_send_id)
     return {"status": "ready"}

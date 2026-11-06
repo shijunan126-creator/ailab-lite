@@ -1225,7 +1225,12 @@ class AgentLoop:
         files = run.get("input_files") or []
         if prompt_options.get("document_tools_version") == 2 and prompt_options.get("mode") == "work":
             return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
-        images = [file for file in files if (file.get("content_type") or "").startswith("image/")]
+        images = [
+            file
+            for file in files
+            if (file.get("content_type") or "").startswith("image/")
+            and not (prompt_options.get("document_tools_version") == 2 and file.get("input_strategy") == "reference")
+        ]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
         if not images and not document_pages:
             return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
@@ -1234,7 +1239,7 @@ class AgentLoop:
                 "type": "text",
                 "text": user_prompt(
                     render_skill_mentions(prompt, (run.get("options") or {}).get("skills")),
-                    [file for file in files if file not in images],
+                    files if prompt_options.get("document_tools_version") == 2 else [file for file in files if file not in images],
                     **prompt_options,
                 ),
             }
@@ -1242,7 +1247,9 @@ class AgentLoop:
         spec = get_catalog().get(model)
         for file in [*images, *document_pages]:
             image_parts = await self._image_content(run_id, run, file, spec)
-            if file in document_pages and not any(part.get("type") == "image_url" for part in image_parts):
+            if (file in document_pages or prompt_options.get("document_tools_version") == 2) and not any(
+                part.get("type") == "image_url" for part in image_parts
+            ):
                 raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
             parts.extend(image_parts)
         return parts

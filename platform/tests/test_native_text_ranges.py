@@ -377,3 +377,34 @@ def test_native_bundle_unpacks_exactly_two_files_and_rejects_extra_or_corrupt_me
         unpack(storage, "bundle.tar", output, archive(corrupt=True))
     assert not (tmp_path / "escape").exists()
     storage.close()
+
+
+def test_v5_ppt_text_boxes_do_not_require_images_but_shapes_preserve_visuals(tmp_path):
+    import io
+
+    from pptx import Presentation
+    from pptx.enum.shapes import MSO_AUTO_SHAPE_TYPE
+    from pptx.util import Inches
+
+    deck = Presentation()
+    slide = deck.slides.add_slide(deck.slide_layouts[6])
+    slide.shapes.add_textbox(Inches(1), Inches(1), Inches(4), Inches(1)).text = "Plain text box"
+    source = io.BytesIO()
+    deck.save(source)
+    result, output = parse(tmp_path, source.getvalue(), "pptx")
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["visual_status"] == "none" and manifest["visual_units"] == []
+    legacy, old = parse(tmp_path, source.getvalue(), "pptx", "legacy")
+    assert legacy.returncode == 0, legacy.stderr
+    assert json.loads((old / "manifest.json").read_text())["visual_units"]
+    slide.shapes.add_shape(MSO_AUTO_SHAPE_TYPE.RIGHT_ARROW, Inches(1), Inches(3), Inches(4), Inches(1))
+    source = io.BytesIO()
+    deck.save(source)
+    # Each runtime invocation uses an owned output directory, including retries.
+    other = tmp_path / "with-shape"
+    other.mkdir()
+    result, output = parse(other, source.getvalue(), "pptx")
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["visual_status"] == "present" and manifest["visual_units"]

@@ -2097,3 +2097,57 @@ def test_v2_followup_extends_compatible_prefix_or_records_catalog_rebuild(mode, 
         assert requests[1]["tools"] != requests[0]["tools"]
         boundary = platform.checkpoints["second"]["state"]["context_boundary"]
         assert boundary["reason"] == "rebuilt" and boundary["epoch"] == 1
+
+
+def test_v2_frozen_inline_and_on_demand_attachments_keep_recorded_prefix():
+    files = [
+        {
+            "id": "inline",
+            "file_id": "inline",
+            "filename": "text.bin",
+            "version": 1,
+            "content_type": "application/octet-stream",
+            "input_strategy": "prepared",
+            "text": "Initial inline text",
+            "navigation_text": "FROZEN_NAVIGATION",
+        },
+        {
+            "id": "image",
+            "file_id": "image",
+            "filename": "image.jpg",
+            "version": 1,
+            "content_type": "image/jpeg",
+            "input_strategy": "reference",
+            "text": "",
+        },
+    ]
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {
+                **await super().get_run(run_id),
+                "input_files": copy.deepcopy(files),
+                "options": {"mode": "chat", "document_tools_version": 2},
+            }
+
+        async def get_file_image(self, *args):
+            pytest.fail("on-demand image must not be fetched for the initial prompt")
+
+        async def document_input(self, run_id, operation, payload):
+            files[0]["navigation_text"] = "LATER_CACHE_STATE"
+            return {"text": "Appended evidence", "coverage": {"native": {"status": "read_selected"}}}
+
+    call = {
+        "tool_calls": [
+            {"index": 0, "id": "read", "type": "function", "function": {"name": "read_document", "arguments": '{"file_id":"inline"}'}}
+        ]
+    }
+    with scripted_server([call, {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert_extension(*requests)
+    first = json.dumps(requests[0]["messages"], ensure_ascii=False)
+    last = json.dumps(requests[-1]["messages"], ensure_ascii=False)
+    assert first.count("Initial inline text") == 1 and first.count("FROZEN_NAVIGATION") == 1
+    assert "LATER_CACHE_STATE" not in last and "Appended evidence" in last

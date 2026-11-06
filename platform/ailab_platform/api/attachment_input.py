@@ -210,8 +210,14 @@ def validate_chat_files(db, files, model, prompt):
         raise HTTPException(422, {"code": "chat_attachment_too_large", "message": "附件超出当前模型输入预算，请选择范围或切换工作模式"})
 
 
-def input_files(db, run, **message):
+def input_files(db, run, *, document_plan=None, **message):
     refs = attachment_manifest(db, run, **message)
+    if (run.options or {}).get("mode", "work") == "chat" and (run.options or {}).get("document_tools_version") == 2:
+        if not refs:
+            return []
+        from .document_input_plan import input_files as planned_input_files
+
+        return planned_input_files(db, run, refs, plan=document_plan)
     spec = get_catalog().get(run.model)
     chat = (run.options or {}).get("mode", "work") == "chat"
     work_originals = not chat and (run.options or {}).get("document_tools_version") == 2

@@ -1390,3 +1390,21 @@ class DocumentNativeRange(Base):
     ordinal: Mapped[int] = mapped_column(Integer)
     page: Mapped[int | None] = mapped_column(Integer, nullable=True)
     derivation_id: Mapped[str] = mapped_column(ForeignKey("file_derivations.id", ondelete="CASCADE"))
+
+
+class DocumentPreparation(Base):
+    __tablename__ = "document_preparations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "send_id", name="uq_document_preparation_send"),
+        Index("ix_document_preparations_expiry", "expires_at", "id"),
+        Index("ix_document_preparations_run", "run_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dpr"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    send_id: Mapped[str] = mapped_column(String(120))
+    identity: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)
