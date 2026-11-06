@@ -74,3 +74,21 @@ Python跳过包括未配置S3/OpenSandbox/crawler、未在全套命令启用Dock
 专属PG数据、E2E数据库/对象/会话凭据、基线依赖/构建副本、失败trace及重复heap/采样已删；约23MiB必要证据留仓库外`/var/folders/vs/19c9t0qx41db81b3_4lbcs5w0000gn/T/ailab-document-complete-0p9_5xlw`，含最终XML、源指纹/镜像和指标摘要、两份heap见证及构建故障/修复日志。仓库不提交原始输出。
 
 仍未覆盖：物理低内存移动设备、NPU、S3/OpenSandbox，实际整栈2CPU/8GiB联合负载、所有故障笛卡尔组合与真实等待30天/孤儿宽限，逐计时器/完整GPU资源盘点、完整回答费用与全量上传p95。旧Docker/Linux专项契约skip仍为skip。当前无已知未修复产品失败；这些边界不写成达标。下一步是条件具备后执行这些目标环境/统计验收；发布仍须用户另行授权，不自动推进其他路线图。
+
+
+## 独立评审后的三项修复（2026-11-06）
+
+独立GPT-6.1 Sol/high只读评审`fdc0a05f→3284dc66`发现P1×1/P2×2；本节取代上文当时“无已知未修复产品失败”的判断。用户随后授权本地修复。代码提交`d68cd5b`及`06acb79`，不修改Portal、请求前缀、数据库schema或发布环境。
+
+- 版本恢复只复制原件和安全元数据，清空全部派生/job/index身份并使用V2按需生命周期；不再写账本外派生对象。回归在派生预算被1MiB实际对象及账本占满时恢复，断言只复制原件、新文件无派生对象/资产行；保留版本裁剪、原件复制失败回滚覆盖。因取消了派生复制，部分派生复制/该复制中崩溃已无执行路径；原件复制硬崩溃沿用原有版本上传边界，并非本轮新增崩溃证明。
+- 领取插话在原事务中绑定准备身份、累计登记源文件后才组装模型输入；共享绑定合并最早起点/截止并保留既有OCR消费。回归覆盖40MiB上限、结构上限、合法追加及重复领取，以及首次插话预算/后续合并均不延长截止。
+- OCR执行器在接收body前登记operation；重复或已取消身份拒绝，有界1024条/135秒回执记录，满时拒绝而不驱逐未过期记录。上传和推理共用至多120秒的绝对截止；取消与启动在单事件循环内无await间隙切换。回归覆盖POST前、首块前、两块之间、最后一块后取消，以及重复DELETE、记录容量/到期、正常推理与重复提交。推理子进程在这些调度测试中为记录替身，未冒称本轮实际ORT/NPU推理验证。
+
+集中检查：
+
+- `platform/.venv/bin/ruff check platform`及`ruff format --check platform`通过（644文件）；Portal `npm run build`通过，未改Portal源代码，未重复浏览器/E2E或258项Portal单测。
+- SQLite完整`pytest tests -q`：2782项，2544通过/1失败/237跳过，514秒。唯一失败是本轮新增正常推理测试替身缺少`is_disconnected`，已补齐；全套在修复主体基线启动，期间仅有该夹具补全和OCR迟到上传提前围栏收紧，不能声称最终SHA完整绿色。首次在仓库根启动导致故障子进程找不到`tests.faults`，已中断，该次不计验收。
+- 最终`06acb79`相关六文件集中复核68通过、0跳过（12.21秒）：`test_document_review_regressions.py`、`test_file_versions.py`、`test_document_input_plan.py`、`test_ocr_lifecycle.py`、`test_rapidocr_executor.py`、`test_ocr_transport_ownership.py`。PostgreSQL同组68通过（14.81秒，`d68cd5b`主体；后续仅收紧无DB依赖的OCR围栏，该部分纳入最终SQLite组）。已知夹具定因后只复核受影响组，没有再次重复全套。
+- 独立临时PG25434已停并删其数据，所有本轮pytest资料和中断/失败测试库均清理；必要XML/日志留仓库外`/var/folders/vs/19c9t0qx41db81b3_4lbcs5w0000gn/T/ailab-review-fixes-0gj_eha4`。未启动Docker或用户既有栈。
+
+历史真实模型、资源稳定性、E2E与设备/后端边界仍以此前代码基线口径保存，不移花接木为本轮最终SHA验收。当前三项发现已修复，无本轮已知产品失败；未重新运行真实OCR推理/NPU、双库全套或完整联合E2E。下一步仍是既有未测目标环境/统计验收，发布另需授权。未push/PR/合并/部署。
