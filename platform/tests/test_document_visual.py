@@ -146,3 +146,24 @@ def test_uncached_offline_view_stages_one_render_and_keeps_its_source_binding(le
         assert second["status"] == "preparing", second
         assert db.get(DocumentOperation, operation_id).result["render_job_id"] == job_id
         assert db.scalar(select(func.count()).select_from(OutboxMessage)) == 2
+
+
+def test_interrupted_view_consumer_keeps_only_its_exact_render_dependency_alive(ledger, monkeypatch):
+    from ailab_platform.api import file_work
+
+    factory, storage = ledger
+    operation_id = prepare(factory, storage, monkeypatch)
+    monkeypatch.setattr("ailab_platform.api.view_state.views", lambda user, conversation: [])
+    with factory() as db:
+        result = routes.step(operation_id, "worker", db)
+        assert result["status"] == "preparing", result
+        parent = db.get(DocumentOperation, operation_id)
+        child = db.get(DocumentOperation, parent.result["render_job_id"])
+        run = db.get(Run, "r")
+        run.status = "interrupted"
+        run.runtime_meta = {**run.runtime_meta, "file_dependency": {"operation_id": parent.id}}
+        db.commit()
+        assert file_work.available(db, child)
+        parent.result = {**parent.result, "render_job_id": "unrelated-job"}
+        db.commit()
+        assert not file_work.available(db, child)

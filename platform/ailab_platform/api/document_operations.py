@@ -60,6 +60,24 @@ def live_consumer(db, operation):
         dependency = (run.runtime_meta or {}).get("file_dependency") or {}
         if run.status == RunStatus.RUNNING or dependency.get("operation_id") == operation.id:
             return run
+        # A run waiting on a Chat view/OCR still owns that operation's
+        # page-render dependency. Verify the exact bounded parent edge; an
+        # unrelated interrupted run cannot keep another job alive.
+        parent_id = dependency.get("operation_id")
+        if parent_id and operation.kind == "file_job" and operation.binding.get("job_kind") == "preview":
+            parent = db.get(DocumentOperation, parent_id)
+            if (
+                parent
+                and parent.kind in {"chat_view", "chat_ocr"}
+                and parent.status in {"preparing", "pending", "running", "browser"}
+                and parent.user_id == operation.user_id
+                and parent.file_id == operation.file_id
+                and parent.source_version == operation.source_version
+                and aware(parent.deadline) > datetime.now(UTC)
+                and parent.result.get("render_job_id") == operation.id
+                and db.get(DocumentOperationConsumer, (run.id, parent.id)) is not None
+            ):
+                return run
     return None
 
 
