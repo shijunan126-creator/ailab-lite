@@ -221,3 +221,16 @@ def test_indexed_native_operations_page_without_ocr_or_eager_body_reads(monkeypa
             text_operation(db, file, ReadDocument(file_id=file.id, selector={"kind": "pages", "pages": [131]}))
         assert error.value.detail == "document_page_out_of_range"
         storage.delete(key)
+
+
+def test_ocr_execution_ids_are_unique_per_image_and_dispatch():
+    # The executor registers each X-Ocr-Operation before it can fail and
+    # rejects reuse; image_index restarts at 0 for every remaining image.
+    from ailab_platform.api.routes_document_ocr import execution_id
+
+    page3, page4 = ({"kind": "pages", "pages": [page]} for page in (3, 4))
+    first = execution_id("dop_" + "a" * 20, "t" * 40, page3)
+    assert first != execution_id("dop_" + "a" * 20, "t" * 40, page4)
+    assert first != execution_id("dop_" + "a" * 20, "u" * 40, page3)
+    assert first == execution_id("dop_" + "a" * 20, "t" * 40, dict(reversed(page3.items())))
+    assert len(first) <= 100

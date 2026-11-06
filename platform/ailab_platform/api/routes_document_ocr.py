@@ -182,6 +182,15 @@ def step(operation_id: str, x_run_attempt: str | None = Header(default=None), db
             return operations.receipt(row)
 
 
+def execution_id(operation_id, token, selector):
+    """One executor receipt per image of one dispatch.
+
+    `image_index` restarts at 0 whenever a step rebuilds the remaining
+    images, so it cannot name an execution; the selector does.
+    """
+    return f"{operation_id}:{token}:{scope_key(selector)[:24]}"
+
+
 def execute_image(db, operation_id, attempt, token, ordinal, receipt, data):
     row = claimed(db, operation_id, attempt)
     owner = row.user_id
@@ -211,7 +220,7 @@ def execute_image(db, operation_id, attempt, token, ordinal, receipt, data):
             db.commit()
         # The operation's fixed batch deadline covers every page and crop, not
         # one fresh timeout for every repeated HTTP call.
-        result = asyncio.run(infer_while_owned(data, row.id, token, deadline))
+        result = asyncio.run(infer_while_owned(data, row.id, token, deadline, execution_id=execution_id(row.id, token, selector)))
         body = result["text"].encode("utf-8")
         storage.put_bytes(key, body, "text/plain; charset=utf-8")
         with user_critical_section(db, owner):

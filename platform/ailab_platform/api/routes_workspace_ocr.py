@@ -127,7 +127,10 @@ def read_result(db, row, cursor=None):
     }
 
 
-async def infer_while_owned(data, operation_id, token, deadline):
+async def infer_while_owned(data, operation_id, token, deadline, execution_id=None):
+    # The executor keeps one receipt per execution id, registered before it
+    # can fail. Each image of each dispatch is therefore its own execution;
+    # ownership and cancellation stay with the durable operation.
     def owned():
         with SessionLocal() as db:
             try:
@@ -136,7 +139,7 @@ async def infer_while_owned(data, operation_id, token, deadline):
             except HTTPException:
                 return False
 
-    task = asyncio.create_task(recognize(data, operation_id=operation_id, deadline=deadline.timestamp()))
+    task = asyncio.create_task(recognize(data, operation_id=execution_id or operation_id, deadline=deadline.timestamp()))
     try:
         while not task.done():
             await asyncio.wait({task}, timeout=0.25)

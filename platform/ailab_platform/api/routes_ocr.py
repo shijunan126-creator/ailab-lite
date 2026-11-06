@@ -392,7 +392,11 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
 
                     result = asyncio.run(
                         infer_while_owned(
-                            bounded_image(key, file_id), operation.id, operation.claim_token, operations.aware(operation.execution_deadline)
+                            bounded_image(key, file_id),
+                            operation.id,
+                            operation.claim_token,
+                            operations.aware(operation.execution_deadline),
+                            execution_id=f"{operation.id}:{operation.claim_token}:{page}",
                         )
                     )
                 else:

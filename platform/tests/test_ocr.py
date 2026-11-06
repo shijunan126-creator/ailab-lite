@@ -329,6 +329,7 @@ def rapid_upstream(monkeypatch):
 
     seen = []
     reply = {"text": "发票 金额 123 元", "backend": "cann", "engine": "rapidocr:80b427d", "seconds": 0.12}
+    executions = set()
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -336,6 +337,16 @@ def rapid_upstream(monkeypatch):
             if self.path == "/recognize-image":
                 assert self.headers["Content-Type"] == "application/octet-stream"
                 assert self.headers["X-Ocr-Operation"] and float(self.headers["X-Ocr-Deadline"]) > time.time()
+                # Like the real executor: one receipt per execution id, so a
+                # multi-page batch must not reuse one id for every image.
+                if self.headers["X-Ocr-Operation"] in executions:
+                    encoded = b'{"detail":"OCR operation already received"}'
+                    self.send_response(409)
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                    return
+                executions.add(self.headers["X-Ocr-Operation"])
                 payload = {"image": data, "required_backend": self.headers["X-Ocr-Backend"]}
             else:
                 payload = json.loads(data)

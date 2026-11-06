@@ -144,7 +144,9 @@ def finish(db, job_id, attempt, *, reason=None):
     # already have resumed from the last published page, even finished the Run.
     # Requiring continuing demand here strands the lane until execution expiry.
     # Keep the writer/attempt/version/deadline fences, but not consumer liveness.
-    _, file = job_for_attempt(db, job_id, attempt)
+    # The operation names its own job kind; legacy whole-file processing jobs
+    # finish through the same fence as preview/native/OCR work.
+    _, file = job_for_attempt(db, job_id, attempt, kinds={row.binding.get("job_kind")})
     from ..models import User
 
     user = db.get(User, row.user_id, populate_existing=True)
@@ -170,11 +172,11 @@ def finish(db, job_id, attempt, *, reason=None):
 router = APIRouter(prefix="/internal/file-work")
 
 
-def job_for_attempt(db, job_id, attempt):
+def job_for_attempt(db, job_id, attempt, kinds=frozenset({"preview", "native", "ocr"})):
     job = db.get(OutboxMessage, job_id, populate_existing=True)
     if (
         not job
-        or job.payload.get("kind") not in {"preview", "native", "ocr"}
+        or job.payload.get("kind") not in kinds
         or not attempt
         or job.claim_token != attempt
         or not job.claimed_until
