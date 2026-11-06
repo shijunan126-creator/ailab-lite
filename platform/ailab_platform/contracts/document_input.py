@@ -81,9 +81,13 @@ class Image(Contract):
     revision: str = Field(min_length=1, max_length=100)
 
 
+# One tagged union so an invalid selector reports the fields of its own kind only.
+TextSelector = Annotated[Pages | Word | Sheet | Region, Field(discriminator="kind")]
+
+
 class ReadDocument(Contract):
     file_id: str = Field(min_length=1, max_length=40)
-    selector: Selector | Region | None = None
+    selector: TextSelector | None = None
     text_source: Literal["native", "ocr"] = "native"
     navigation_only: bool = False
     cursor: str | None = Field(default=None, max_length=2048)
@@ -102,7 +106,7 @@ class ReadDocument(Contract):
 class SearchDocument(Contract):
     file_id: str = Field(min_length=1, max_length=40)
     query: str = Field(min_length=1, max_length=200)
-    selector: Selector | Region | None = None
+    selector: TextSelector | None = None
     cursor: str | None = Field(default=None, max_length=2048)
 
     @field_validator("query")

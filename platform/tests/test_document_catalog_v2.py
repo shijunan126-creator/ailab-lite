@@ -227,3 +227,75 @@ def test_generated_document_guides_are_reproducible_without_repacking_old_skill_
     output = tmp_path / "guides.json"
     builder["build_document_guides"](output)
     assert output.read_bytes() == (root / "platform/ailab_platform/agent/office_guides_v2.json").read_bytes()
+
+
+@pytest.mark.parametrize(
+    ("name", "arguments", "expected"),
+    [
+        (
+            "view_document",
+            {
+                "file_id": "f",
+                "target": {"kind": "region", "page": 2, "image_id": "c", "revision": "r", "x": 0, "y": 0, "width": 1, "height": 1},
+            },
+            "target.region: region requires exactly one page or image_id",
+        ),
+        (
+            "view_document",
+            {"file_id": "f", "target": {"kind": "region", "page": 2, "x": 0, "y": 0, "width": 1, "height": 1}},
+            "target.region.revision",
+        ),
+        ("read_document", {"file_id": "f", "text_source": "ocr"}, "OCR requires explicit pages or region"),
+        ("read_document", {"file_id": "f", "selector": {"kind": "sheet", "sheet": "S", "range": "a1"}}, "selector.sheet.range"),
+    ],
+)
+def test_malformed_document_calls_name_the_fields_to_fix(name, arguments, expected):
+    from ailab_platform.agent.document_tools import argument_error
+
+    error = argument_error(name, arguments)
+    assert error["error"] == "invalid_document_arguments"
+    assert any(problem.startswith(expected) for problem in error["fix"]), error
+    assert "a1" not in str(error)  # never echo argument values back
+    assert argument_error("view_document", {"file_id": "f", "target": {"kind": "pages", "pages": [1]}}) is None
+
+
+def test_v2_guides_state_each_rule_once_and_only_their_own_format_facts():
+    from ailab_platform.agent.skill_modules import read_module
+
+    for fmt in ("pdf", "docx", "xlsx", "pptx"):
+        navigation = read_module(f"platform.{fmt}", "chat", document_tools_version=2)["skill"]
+        viewer = read_module(f"platform.{fmt}", "chat", "viewer/SKILL.md", document_tools_version=2)["skill"]
+        # Attachments already carry file_id/navigation; the guide must not demand extra round trips.
+        assert "resolve_attachment" not in navigation and "直接读取或查看该范围" in navigation
+        # The operating workflow lives in the navigation guide, never repeated inside the viewer resource.
+        assert navigation.splitlines()[2] not in viewer and "## Workflow" not in viewer
+        assert ("工作表序号不是页号" in navigation) == (fmt == "xlsx")
+        assert "the verified locator" not in viewer and "workspace" not in viewer
+
+
+def test_revision_failures_tell_the_model_how_to_obtain_a_region_identity():
+    from ailab_platform.agent.document_tools import failure
+
+    result = failure("ocr_image_revision_changed")
+    assert not result["ok"] and "region_ref" in result["fix"][0]
+    assert "fix" not in failure("document_queue_full")
+
+
+def test_copy_outside_inputs_returns_the_destination_rule_not_a_generic_failure():
+    from ailab_platform.agent.tools import ToolContext, execute_tool, tools_for_turn
+    from ailab_platform.clients import ClientError
+
+    class Platform:
+        async def library(self, run_id, action, payload):
+            return {"file_id": payload["file_id"]}
+
+    class Broker:
+        async def copy_library_file(self, lease_id, file_id, path):
+            raise ClientError("POST", "/library-file", 422, '{"detail":"path must stay under /workspace/inputs"}')
+
+    ctx = ToolContext("r", Platform(), mode="work", document_tools_version=2)
+    result = asyncio.run(execute_tool("copy_library_file", {"file_id": "f", "path": "/workspace/work/a.docx"}, "lease", Broker(), ctx))
+    assert result["ok"] is False and "/workspace/inputs/" in result["error"]
+    copy = next(t for t in tools_for_turn(2) if t["function"]["name"] == "copy_library_file")
+    assert "/workspace/inputs/" in copy["function"]["description"]
+    assert next(t for t in tools_for_turn() if t["function"]["name"] == "copy_library_file")["function"]["description"] == "复制到工作区"

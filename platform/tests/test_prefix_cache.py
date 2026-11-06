@@ -2027,12 +2027,12 @@ def test_v2_document_catalog_and_mode_guides_extend_recorded_requests(mode, fmt)
     for first, second in pairwise(requests):
         assert_extension(first, second)
     system = requests[0]["messages"][0]["content"]
-    assert "回答围绕用户本次问题" in system
+    assert "只回答用户本次问的内容" in system
     if mode == "work":
-        assert "inputs只注入本轮附件" in system and "保留真实退出码" in system
+        assert "保留真实退出码" in system and "inputs只注入本轮附件" not in system
     else:
         search = next(t for t in requests[0]["tools"] if t["function"]["name"] == "search_document")
-        assert "整段字面子串" in search["function"]["description"]
+        assert "字面匹配" in search["function"]["description"]
     names = {t["function"]["name"] for t in requests[0]["tools"]}
     assert not names & {"read_library_file", "extract_text", "view_attachment", "document_view"}
     assert ({"read_document", "search_document", "view_document"} <= names) == (mode == "chat")

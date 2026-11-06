@@ -566,6 +566,9 @@ def tools_for_turn(document_tools_version=1) -> list[dict]:
         catalog = [t for t in catalog if permitted(t["function"]["name"], mode="work", version=2)]
         catalog.append(WORKSPACE_OCR)
         catalog = _current_recall(catalog, "copy_library_file")
+        for tool in catalog:
+            if tool["function"]["name"] == "copy_library_file":
+                tool["function"]["description"] = "把资料库文件原件复制到/workspace/inputs/（只读）；path可省略，默认使用原文件名"
     return catalog
 
 
@@ -713,7 +716,13 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
     if name == "copy_library_file":
         file = await ctx.platform.library(ctx.run_id, "authorize-copy", {"file_id": args.get("file_id")})
-        return {"ok": True, **await broker.copy_library_file(lease_id, file["file_id"], args.get("path"))}
+        try:
+            return {"ok": True, **await broker.copy_library_file(lease_id, file["file_id"], args.get("path"))}
+        except ClientError as exc:
+            if exc.status != 422:
+                raise
+            # Originals are only injected beneath inputs; say so instead of a generic failure.
+            return {"ok": False, "error": "path须在/workspace/inputs/下；省略path时使用原文件名，需要改写时再复制到work"}
     if name == "memory":
         return {"ok": True, **await ctx.platform.memory(ctx.run_id, args)}
     if name == "recall_history":

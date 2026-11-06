@@ -63,15 +63,13 @@ BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题�
 # 多轮对话
 - 同一个对话里，上一轮留下的 /workspace 文件（work、assets、outputs）会在你使用沙箱时恢复。
 - 用户说"改一下""第三页换成…""再加一列…"时：读原来的规格文件或脚本，只改相关部分，重新生成**同名**文件，不要从头再做。
-- inputs只注入本轮附件，不随上一轮工作区快照保留。继续运行已有脚本前，若它依赖历史inputs文件，先检查路径；
-  缺失时按历史file_id用copy_library_file恢复到脚本原路径，再执行，不靠报错试探。
-- 改完用一两句话和文件链接说明本次改动；未逐项核对前后值，不额外罗列推算的变化、审计过程或改动建议。
+- 改完用一两句话和文件链接说明改了什么；没有逐项核对过的前后变化不要罗列。
 
 # 技能
 {skills}
 
 # 交付
-成品生成后调用 deliver_file 提交到资料库，然后用一两句话告诉用户结果和可以怎么继续调整。
+成品生成后调用 deliver_file 提交到资料库，然后用一两句话告诉用户结果。
 outputs 里没交付的文件在本轮结束时也会自动归档。
 """
 
@@ -174,25 +172,33 @@ def system_prompt_for(
         "引用网页事实时，在主张后用 [简短标题](https://…) 标注来源，不裸贴URL，不在末尾堆参考链接。\n"
     )
     if document_tools_version == 2:
-        if mode == "work":
-            base = base.replace("已实际 read_library_file 阅读", "已核验原件并实际阅读")
-            base = base.replace(
-                "search_library 搜索资料库、read_library_file 分页读取已提取正文",
-                "search_library 查找原件、copy_library_file 复制原件到当前工作区",
+        swaps = (
+            (
+                ("已实际 read_library_file 阅读", "已实际阅读"),
+                ("search_library 搜索资料库、read_library_file 分页读取已提取正文；", "search_library 按文件名查找资料库文件；"),
+                ("OCR走平台能力", "识别图片文字用ocr_workspace_image"),
+                ("需要平台引用时先交付新版本，再通过平台读取", "需要引用时先交付新版本，再引用交付返回的file_id"),
             )
-            base = base.replace("OCR走平台能力", "OCR用当前工作沙箱的受限工作区工具")
-            base = base.replace("再通过平台读取", "核验交付版本与实际来源位置")
-        else:
-            base = base.replace("read_library_file", "read_document")
-            base = base.replace("附件中可读取的内容已经附在消息里。", "附件导航标明本轮已提供的文字或图像，其余范围按需读取。")
+            if mode == "work"
+            else (
+                ("已实际 read_library_file 阅读", "已实际 read_document 读取"),
+                (
+                    "search_library 搜索资料库、read_library_file 分页读取已提取正文；工作时可 copy_library_file 复制资料到工作区。",
+                    "search_library 按文件名查找资料库文件，再用 read_document/search_document/view_document 按需读取。",
+                ),
+                ("附件中可读取的内容已经附在消息里。", "附件导航列出每份附件；已附正文的直接使用，其余范围按需读取。"),
+            )
+        )
+        for old, new in swaps:
+            # A silent miss would leave a legacy tool name in a new-catalog prompt.
+            if old not in base:
+                raise ValueError(f"document prompt anchor missing: {old}")
+            base = base.replace(old, new)
     if settings.genui_enabled and genui:
         base += "\n" + (index_for if genui_tools else full_prompt)(settings.genui_html_enabled)
     if web.enabled():
         base += WEB_NOTE
-    base += (
-        "\n回答围绕用户本次问题，默认只给必要结论与核对依据；不主动扩展其他页、图表建议或整体规律。"
-        "未查看的范围保持未知，不能从少数页或部分命中推断全文件规律。"
-    )
+    base += "\n只回答用户本次问的内容，不主动扩展；没查看的范围说明未知，不从部分内容推断整份文件。"
     base += "\n" + SKILL_LOADING_NOTE
     base += "\n工具已在本轮提供；其他技能可用 search_capabilities 查找后调用 load_skill。"
     if mode == "chat":

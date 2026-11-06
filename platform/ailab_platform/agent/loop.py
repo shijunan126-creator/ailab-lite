@@ -46,6 +46,10 @@ from .context import ContextManager
 from .context import _summary_input as _summary_input
 from .context_band import CANNOT_FIT_RESULT, ContextBand, admit_tool_result, batch_budget
 from .context_usage import record_usage, request_tokens
+from .document_tools import CONTRACTS as DOCUMENT_CONTRACTS
+from .document_tools import ERRORS as DOCUMENT_ERRORS
+from .document_tools import argument_error as document_argument_error
+from .document_tools import failure as document_failure
 from .file_dependencies import FileDependencyPending
 from .multimodal import attachment_content, has_image_part, input_content
 from .prompts import (
@@ -1401,6 +1405,8 @@ class AgentLoop:
                 raise ToolError("resource is unavailable for this skill")
             elif wanted and _full_skill_visible(turn, wanted):
                 result = {"ok": True, "name": wanted, "already_loaded": True}
+            elif call.name in DOCUMENT_CONTRACTS and (invalid := document_argument_error(call.name, call.arguments)):
+                result = invalid
             elif call.name == "view_document":
                 spec = get_catalog().get(turn.run.get("model"))
                 if not spec or not spec.supports({"vision"}):
@@ -1411,13 +1417,16 @@ class AgentLoop:
                         call.arguments["file_id"], "document-view", None, binding["deadline"], binding["operation_id"]
                     )
                 if binding.get("error"):
-                    raise ToolError(binding["error"])
+                    reason = binding["error"]
+                    result = document_failure(reason if reason in DOCUMENT_ERRORS else "document_view_failed")
+                    binding = {"files": []}
                 for file in binding["files"]:
                     parts = await self._image_content(run_id, turn.run, file, spec)
                     if not any(part.get("type") == "image_url" for part in parts):
                         raise ToolError("文档图像当前不可读取")
                     self._states[run_id].setdefault("pending_image_inputs", []).append(parts)
-                result = {**binding, "ok": True, "input": "image"}
+                if binding["files"]:
+                    result = {**binding, "ok": True, "input": "image"}
             elif call.name == "view_attachment":
                 spec = get_catalog().get(turn.run.get("model"))
                 if not spec or not spec.supports({"vision"}):
@@ -1593,8 +1602,6 @@ class AgentLoop:
                 detail = json.loads(exc.body).get("detail")
             except (ValueError, AttributeError):
                 detail = None
-            from .document_tools import ERRORS as DOCUMENT_ERRORS
-
             public_reason = detail if isinstance(detail, str) and detail in DOCUMENT_ERRORS else None
             if (
                 exc.status == 409
@@ -1613,7 +1620,7 @@ class AgentLoop:
                     429: "document_queue_full",
                     507: "derived_capacity_exceeded",
                 }.get(exc.status, "document_operation_unavailable")
-                result = {"ok": False, "error": reason, "reason": reason}
+                result = document_failure(reason)
         except ToolError as exc:
             result = {"ok": False, "error": str(exc)}
         except Exception:  # broker / sandbox failures stay in the loop

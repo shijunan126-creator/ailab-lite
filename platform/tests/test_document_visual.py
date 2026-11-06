@@ -82,6 +82,9 @@ def test_browser_success_stays_in_one_canonical_asset_and_never_requests_fallbac
         assert db.scalar(select(func.count()).select_from(OutboxMessage)) == 1
         assert "browser" == row.result["files"][0]["source"]
         assert not row.result["files"][0]["pixels_verified"]
+        # A stored capture is addressed by its own digest, never the page render digest.
+        ref = visual.response(row, file)["files"][0]["region_ref"]
+        assert ref == {"image_id": result["capture_id"], "revision": row.result["files"][0]["image_revision"]}
 
 
 def test_offline_cached_pages_reuse_original_canonical_objects_without_ocr_or_encoding(ledger, monkeypatch):
@@ -101,6 +104,9 @@ def test_offline_cached_pages_reuse_original_canonical_objects_without_ocr_or_en
         files = result["result"]["files"]
         assert [f["page"] for f in files] == [1, 2]
         assert all(f["source"] == "native-pdf" and not f.get("capture_id") for f in files)
+        row, file = db.get(DocumentOperation, operation_id), db.get(FileObject, "f")
+        refs = [item["region_ref"] for item in visual.response(row, file)["files"]]
+        assert refs == [{"page": 1, "revision": "digest-1"}, {"page": 2, "revision": "digest-2"}]
         assert db.scalar(select(func.count()).select_from(OutboxMessage)) == 1
 
 
