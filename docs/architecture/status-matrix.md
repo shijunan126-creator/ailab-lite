@@ -1,4 +1,5 @@
-2026-11-06 文件输入优化本地产品基线48c78a07：已知回归失败经集中修复及影响组复核清零；真实模型缓存与显式CPU OCR、浏览器50轮开关已有证据。整体仍未达标：固定快照源503阻塞生产Office镜像，完整真实Office后备/截图发布50轮及其他边界待补。详见[集中复核](../progress/updates/2026-11-05-document-input-lifecycle.md#最终共因修复与集中复核2026-11-0648c78a07)。
+2026-11-06 文件输入优化已完成本地实现与本轮可执行收尾：固定依赖镜像构建成功，真实Docker/ClamAV联合38项、完整截图50轮及硬退出/ENOSPC回收通过。完整双库的生成摘要失败已修复并复核，未改称最终SHA全套绿色；目标移动/NPU/S3/OpenSandbox、整栈容量及未测统计/故障边界仍保留。未push/PR/合并/部署，见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md)。
+
 
 # 单机能力状态
 
@@ -159,12 +160,12 @@
 
 | 能力 | 实现 | 未验收 |
 |---|---|---|
-| 安全入库/按需原生准备 | 新普通输入安全ready、三类表示独立；上传零派生；消费时持久native job、两对象/范围索引及旧读取等待恢复；[ADR0034](adr/0034-safety-ready-and-lazy-native-input.md) | 全功能、浏览器/模型、全量容量和50轮资源稳定性仍未验收，见本页顶部记录 |
+| 安全入库/按需原生准备 | 新普通输入安全ready、三类表示独立；上传零派生；消费时持久native job、两对象/范围索引及旧读取等待恢复；[ADR0034](adr/0034-safety-ready-and-lazy-native-input.md) | 本地真实Docker/浏览器/规范截图50轮及补偿已验；目标设备/后端、联合容量与统计边界见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md) |
 | 扫描（T04） | Scanner 端口；ClamAV TCP/Unix INSTREAM；扫描器不可用时文件保持 pending、退避重试、最终标记，绝不当作干净 | 2026-10-23 原生 ARM64 ClamAV 1.5.4：契约 1 passed、EICAR rejected/clean ready、故障 30.03 s fail closed / 36.86 s 恢复；容器空闲 RSS 1045.9 MiB；冷启动签名重载峰值未验 |
 | 隔离解析（T04） | 受限子进程：内存 192 MiB、CPU 45 s、墙钟 60 s、输出 16 MiB；ZIP 膨胀检查；缩略图解码同一执行器 | Linux RLIMIT_AS/OOM/timeout 已验；20 MiB PPTX 扫描+解析 27.91 s，Worker peak RSS 173.2 MiB / limit384；并发饱和未验 |
-| Work 本地 Office 读取 | 镜像预装固定 Node reader，office-read 按需解析工作区四格式；编辑生成沿用现有库，平台索引独立 | 实现与本机解析检查见[本轮记录](../progress/updates/2026-10-29-work-office-runtime.md)；真实ARM64/runsc镜像及DeepSeek Flash编辑重读通过；资源峰值/完整五服务交付未验，未部署 |
-| 资料库预览 | 首次打开时生成并永久缓存：PDF/Word/PPT 页面、Excel/CSV 表格、图片（≤2048 px 显示图）、文本/Markdown/代码。Office/PDF 在 Broker 的 render 保留槽沙箱中渲染，xlsx/csv 在 Worker 受限进程中处理；ETag/304/CSP；删除时清理 | 2026-10-23 k3s→OSB render 保留槽 DOCX 8.12 s ready，中文 DOCX/PPTX JPEG 已看图；真实 OSB+S3 联合部署未验 |
-| 渲染沙箱（按用户复用） | 用户绑定的 render 沙箱常驻 LibreOffice listener，同用户预览与解析复用；首页先发布，其余页批量光栅化后逐页发布；1 槽 / 768 MiB（ADR 0032） | 2026-11-01 runsc：15 页 PPTX 全页 2.5 s、7 页 DOCX 3.2 s、首页约 1.0 s，交替用户冷启动首页 4.2–4.6 s；见 [C4](../progress/updates/2026-10-31-prefix-cache-render.md#c4-收尾2026-11-01claude) |
+| Work 本地 Office 读取 | V2主/子任务在当前Work lease用Office runtime/skills读取编辑；排除Chat平台文档接口，保留原件复制、工作区查看及受限图片OCR；旧Run冻结原目录 | 本轮真实Docker四格式/Work流程通过；NPU/OpenSandbox与联合容量见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md) |
+| 资料库预览 | Office/PDF浏览器原生优先，首开只授权/必要导航；精确选区按需结构映射；关闭/离线/失效有受控后备。服务器派生按容量/TTL/代际回收，历史必要截图按引用保留；ETag/304/CSP | 四格式前端320次打开和完整截图50轮通过；物理移动/S3联合环境未验，见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md) |
+| 渲染沙箱（按用户复用） | 按需系统render池与Work自己的lease分开；统一持久槽/执行截止/取消回执，普通输入无自动预热。保留LibreOffice复用与分批页图，限额未提高 | 本轮Docker真实后备通过；旧runsc性能仅历史组件证据，目标全栈容量未重验 |
 | 对话发送附件预览 | 复用资料库渲染内容，以file_id建立侧栏标签；同名文件独立、切换/关闭/下载；手机保留带标签整屏侧栏 | 2026-10-29 本机Portal独立更新，真实DOCX/表格/图片及1440/390浏览器通过；[记录](../progress/updates/2026-10-29-chat-attachment-tabs.md)，非全站E2E重验 |
 | 版本与回收站（T18） | 版本为不可变行（lineage + version 唯一）；旧版恢复 = 新建 head；每链最多 10 版，超出的旧版留 tombstone（内容 410）；删除整链进回收站 30 天并计入空间额度；项目删除把文件移入回收站；对象删除在同一事务写持久删除意图，失败由 lifecycle 重试；2026-11-03已实现上传收据/明确内容复用与副本、输出槽和持久修订身份（0049），见[记录](../progress/updates/2026-11-03-file-identity-repair.md) | 原版本/回收站真实S3属历史证据；新增身份合同本轮S3/OpenSandbox、历史实际回填/清理及目标容量未验 |
 

@@ -1,6 +1,6 @@
 # 文件输入：安全入库、Work按需操作、Chat按需准备
 
-状态：实施中；当前仅完成部分页图完整性与截图桥接回收修复，整体合同尚未实现。实际状态与验证以[实施记录](../../progress/updates/2026-11-05-document-input-lifecycle.md)为准。原设计背景：研究修订后的实施建议。2026-11-05用户要求给出具体方案，并要求读文字、搜文档采用独立工具名；不再沿用此前“一个read工具兼做搜索”的设计。
+状态：已完成本地实现与本轮可执行验收；目标环境/统计/故障边界仍未全部覆盖，未push/PR/合并/部署。实现与验收统一见[收尾记录](../../progress/updates/2026-11-06-document-input-final-acceptance.md)。原设计背景：2026-11-05用户要求具体方案，并明确读文字、搜文档采用独立工具名。
 
 核对基线：`fix/ocr-lifecycle-pr@87315188`，PR160合并产品树为`main@fdc0a05`；不代表当前部署版本。关联：[原视觉/等待ADR](../adr/0026-document-visual-coverage-and-file-waits.md)、[Chat/Work历史设计](file-context-ocr/02-chat-work.md)、[前缀缓存ADR](../adr/0030-prefix-stable-model-requests.md)、[压缩ADR](../adr/0033-context-epoch-band-process-snapshot.md)、[已知视觉覆盖缺口](../../reviews/2026-11-04-chat-visual-coverage-followup.md)。本稿替换此前候选规则；最新[读取流程研究](../../reviews/2026-11-05-document-reading-workflow-research.md)补充上游证据、混排与模式隔离，不把设计稿视作实施授权。
 
