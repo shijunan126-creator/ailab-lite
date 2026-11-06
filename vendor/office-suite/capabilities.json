@@ -13929,7 +13929,7 @@
     "P2 image installs the offline production closure at build time; no new resident service or runtime package installation."
   ],
   "dependency_scan": "Python AST imports/calls, JS/TS literal imports, Markdown examples, shell probes and package manifests; dynamic sites carry expressions for P2 review.",
-  "image_baseline_sha256": "bfd3e723c5ffb6c9d19f73a25b1afccfd2e062851d33b649def17aca2d11da98",
+  "image_baseline_sha256": "d0a9b34ada7a35bd3300242d804150504ef523ae49b80c2ae4694462fe67b4fe",
   "missing_from_image": {
     "binary": [
       "brew",
