@@ -293,16 +293,18 @@ async def infer(request, data, backend, operation_id, deadline, receipt=None):
         raise HTTPException(503, "required OCR backend unavailable")
     if not data or len(data) > 2 * 1024 * 1024:
         raise HTTPException(413)
+    # No await separates this fence from claiming active_id. Rejected late
+    # uploads must not tear down an unrelated warm inference process either.
+    if receipt is not None and (
+        _operations.get(operation_id) is not receipt or receipt["canceled"] or receipt["terminal"] or time.time() >= deadline
+    ):
+        raise HTTPException(408, "OCR canceled or timed out")
     if not _lock.acquire(blocking=False):
         raise HTTPException(429, "OCR busy")
     completed = False
     try:
         # A fault/explicit cancellation destroys only the owned inference child;
         # successful requests keep the same warm process and model sessions.
-        if receipt is not None and (
-            _operations.get(operation_id) is not receipt or receipt["canceled"] or receipt["terminal"] or time.time() >= deadline
-        ):
-            raise HTTPException(408, "OCR canceled or timed out")
         _supervisor.active_id = operation_id
         _supervisor.cancel.clear()
         await asyncio.to_thread(_supervisor.start, deadline)

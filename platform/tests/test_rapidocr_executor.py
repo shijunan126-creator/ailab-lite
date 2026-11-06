@@ -69,7 +69,7 @@ def test_stop_receipt_during_upload_prevents_late_inference(cancellation_executo
         with pytest.raises(HTTPException) as caught:
             await executor.recognize_image(request, "Bearer test-token", "op", time.time() + 120, "cpu")
         assert caught.value.status_code == 408
-        assert "start" not in calls and "send" not in calls
+        assert calls == []
         assert await executor.cancel_operation("op", "Bearer test-token") == {"status": "stopped"}
         with pytest.raises(HTTPException) as duplicate:
             await executor.recognize_image(request, "Bearer test-token", "op", time.time() + 120, "cpu")
