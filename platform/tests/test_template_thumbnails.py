@@ -25,7 +25,11 @@ def preview_job(fid):
 
 
 def complete(api, fid, *, failed=False):
+    from tests.test_file_previews import ApiClient
+
+    worker = ApiClient(api)
     body = {"job_id": preview_job(fid), "assets": {}}
+    assert worker.start_file_work(body["job_id"])["status"] == "running"
     if failed:
         body["preview"] = {"status": "failed", "kind": "pages", "reason": "render_failed"}
     else:
@@ -33,10 +37,10 @@ def complete(api, fid, *, failed=False):
         for name, size in [("p-01.jpg", (1280, 960)), ("template-thumbnail.jpg", (480, 360))]:
             data = io.BytesIO()
             Image.new("RGB", size, "#123456").save(data, "JPEG")
-            key = f"derived/{fid}/preview/{name}"
+            key = f"derived/{fid}/preview/{body['job_id']}/{name}"
             get_storage().put_bytes(key, data.getvalue(), "image/jpeg")
             body["assets"][name] = {"key": key, "content_type": "image/jpeg", "sha256": hashlib.sha256(data.getvalue()).hexdigest()}
-    result = api.post(f"/internal/files/{fid}/preview", headers=SERVICE, json=body)
+    result = api.post(f"/internal/files/{fid}/preview", headers=worker.headers, json=body)
     assert result.status_code == 200, result.text
     return body
 
@@ -110,6 +114,17 @@ def test_failed_preview_keeps_sketch_and_template_usable(api):
     with SessionLocal() as db:
         tpl = db.get(Template, row["id"])
         assert freeze_template(db, db.get(User, tpl.owner_id), {"id": tpl.id}, "work")["file_id"] == fid
+
+
+def test_busy_preview_lane_does_not_undo_template_analysis_and_open_retries_admission(api):
+    first, second = ready(api), ready(api, name="second.pptx")
+    assert second["status"] == "ready" and api.get(second["thumbnail_url"]).status_code == 200
+    with SessionLocal() as db:
+        file = db.get(FileObject, file_id(second))
+        assert "preview_job_id" not in file.meta
+    complete(api, file_id(first))
+    opened = api.get(f"/v1/templates/{second['id']}").json()
+    assert opened["status"] == "ready" and opened["preview_status"] == "pending"
 
 
 def test_sandbox_thumbnail_is_downscaled_first_page(tmp_path):

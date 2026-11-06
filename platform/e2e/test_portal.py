@@ -265,10 +265,11 @@ def test_a_spreadsheet_opens_on_request_and_can_be_revised(logged_in) -> None:
     _start_conversation(page, "做一个 Excel 表格")
     _wait_for_turns(page, 1)
     assert page.locator(".preview-pane, .viewer").count() == 0
+    page.route("**/api/v1/files/*/document", lambda route: route.fulfill(json={"status": "unsupported", "native": False}))
     filename = page.locator(".file-card .name").inner_text().strip()
     page.locator(".file-card").get_by_role("button", name="预览", exact=True).click()
-    # This generated workbook has a chart unsupported by the native reader;
-    # its server fallback must still open, preserve values and reopen correctly.
+    # Force browser admission to decline this file; fallback must read the
+    # intact generated workbook, preserve values and reopen from cached assets.
     surface = page.locator(".preview-pane, .viewer")
     surface.locator(".sheet-grid td").first.wait_for(timeout=60000)
     assert surface.count() == 1

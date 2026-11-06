@@ -102,7 +102,7 @@ def _select(page, frame, kind, question=None):
         page.mouse.move(box["x"] + 280, box["y"] + 90, steps=12)
         page.mouse.up()
     else:
-        selector = {"docx": '[data-at="p:2"]', "pdf": ".textLayer span", "pptx": ".pptx-slide svg text"}[kind]
+        selector = {"docx": "section.office-docx > article p", "pdf": ".textLayer span", "pptx": ".pptx-slide svg text"}[kind]
         text = frame.get_by_text("Product Launch", exact=True).first if kind == "pptx" else frame.locator(selector).first
         expect(text).to_be_visible(timeout=25000)
         if kind == "pdf":
@@ -181,11 +181,15 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         )
         _send(page, "原生控制 " + file["id"] + " " + kind)
         _wait_for_turns(page, 3)
-        assert results and all(r.ok for r in results)
+        if mode == "对话" and kind != "xlsx":
+            assert results and all(r.ok for r in results)
+        else:
+            assert not results, "Work views stay in its sandbox; spreadsheet page views use controlled server rendering"
         assert "unavailable" not in page.locator(".turn").last.inner_text()
-        expect(page.locator(".turn").last).to_contain_text("原生截图结果")
-        expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
-        expect(page.locator(".turn").last).to_contain_text("capture_id")
+        expect(page.locator(".turn").last).to_contain_text("文档查看结果")
+        expect(page.locator(".turn").last).to_contain_text('"input": "image"')
+        if mode == "对话":
+            expect(page.locator(".turn").last).to_contain_text('"file_id"')
 
 
 @pytest.mark.parametrize("mode", ["对话", "工作"])
@@ -234,21 +238,21 @@ def test_live_work_file_native_agent_reveal_and_capture(logged_in, stack):
     _start_conversation(page, "原生工作区验收", "test-office-vision")
     try:
         frame = _frame(page, "draft.docx")
-        expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=25000)
-        expect(frame.locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
+        expect(frame.get_by_text("Workspace quote for integration", exact=True)).to_be_visible(timeout=25000)
+        _select(page, frame, "docx")
+        expect(frame.locator('[data-at="p:2"]')).to_be_visible(timeout=10000)
         end = time.monotonic() + 15
         while not view_updates:
             assert time.monotonic() < end
             page.wait_for_timeout(150)
-        expect(_frame(page, "draft.docx").locator('[data-at="p:2"].office-revealed')).to_be_visible(timeout=10000)
+        expect(_frame(page, "draft.docx").locator('[data-at="p:2"]')).to_be_visible(timeout=10000)
     finally:
         httpx.post(stack.agent + "/e2e/office-release", timeout=5).raise_for_status()
     _wait_for_turns(page, 1)
-    assert results and all(r.ok for r in results)
+    assert not results, "Work layout inspection uses its current sandbox"
     assert "unavailable" not in page.locator(".turn").last.inner_text()
-    expect(page.locator(".turn").last).to_contain_text("原生截图结果")
-    expect(page.locator(".turn").last).to_contain_text('"status": "ready"')
-    expect(page.locator(".turn").last).to_contain_text("capture_id")
+    expect(page.locator(".turn").last).to_contain_text("文档查看结果")
+    expect(page.locator(".turn").last).to_contain_text('"input": "image"')
 
 
 @pytest.mark.parametrize("kind,name", [("docx", "report.docx"), ("xlsx", "budget.xlsx"), ("pptx", "launch.pptx"), ("pdf", "cjk.pdf")])
@@ -272,7 +276,7 @@ def test_library_native_view_does_not_request_server_preview(logged_in, stack, t
     if kind == "xlsx":
         expect(frame.get_by_role("tab", name="Revenue", exact=True)).to_be_visible()
     elif kind == "docx":
-        text = frame.locator('[data-at="p:2"]')
+        text = frame.locator("section.office-docx > article p").first
         expect(text).to_be_visible()
         text.click(click_count=3)
         expect(frame.get_by_role("button", name="提问", exact=True)).to_have_count(0)

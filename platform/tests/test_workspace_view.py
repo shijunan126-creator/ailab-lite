@@ -174,7 +174,9 @@ def test_warm_starts_the_listener_only_where_one_can_run(tmp_path, monkeypatch):
     assert warm(manager, lease) == {"ok": False, "skipped": True} and commands == []
     monkeypatch.setattr(manager.provider, "office_listener", True)
     assert warm(manager, lease) == {"ok": True}
-    assert "work_view_listener.py --ensure " in commands[0] and commands[-1].startswith("rm -rf -- /workspace/.ailab/view-warm-")
+    assert "work_view_listener.py --ensure " in commands[0]
+    assert manager.get(lease)["scratch_jobs"] == {}
+    assert not any((tmp_path).rglob("view-warm-*"))
 
 
 @pytest.mark.parametrize("prompt,warms", [("做一份演示文稿", 1), ("整理一下笔记", 0)])

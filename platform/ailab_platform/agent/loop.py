@@ -1223,8 +1223,6 @@ class AgentLoop:
             else {}
         )
         files = run.get("input_files") or []
-        if prompt_options.get("document_tools_version") == 2 and prompt_options.get("mode") == "work":
-            return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
         images = [
             file
             for file in files

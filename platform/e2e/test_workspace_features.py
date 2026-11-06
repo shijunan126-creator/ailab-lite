@@ -382,20 +382,12 @@ def test_library_summary_file_menu_and_switch(logged_in, stack, tmp_path):
         page.set_input_files("input[type=file]", str(path))
         row = page.locator(".lib-row").filter(has_text=path.name)
         row.get_by_role("link", name="下载 " + path.name, exact=True).wait_for(timeout=30000)
-        files = wait_api(
-            page,
-            stack,
-            "/files",
-            lambda fs: any(f["filename"] == path.name and f.get("meta", {}).get("summary", {}).get("status") == "done" for f in fs),
-        )
+        files = api(page, stack, "get", "/files")
         file = next(f for f in files if f["filename"] == path.name)
-        # Preserve every word; the mock includes bold and a quoted last paragraph.
-        summary = file["meta"]["summary"]["text"].replace("**", "")
-        summary = " ".join(re.sub(r"(?m)^>\s*", "", summary).split())
-        expect(row.locator(".lib-summary")).to_have_text(summary, timeout=15000)
-        expect(row.locator(".lib-summary")).not_to_contain_text("**")
-        shot(page, "library-summary")
-        shot(page, "library-summary", True)
+        # Safety-only V2 upload does not parse or invoke a model for a summary.
+        assert file.get("meta", {}).get("input_lifecycle") == 2
+        assert not file.get("meta", {}).get("summary")
+        expect(row.locator(".lib-summary")).to_have_count(0)
         page.set_viewport_size({"width": 1360, "height": 860})
         row.get_by_role("button", name="更多操作 " + path.name, exact=True).click()
         page.get_by_role("menuitem", name="分享", exact=True).click()

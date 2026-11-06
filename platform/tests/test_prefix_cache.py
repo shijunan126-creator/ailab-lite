@@ -2151,3 +2151,45 @@ def test_v2_frozen_inline_and_on_demand_attachments_keep_recorded_prefix():
     last = json.dumps(requests[-1]["messages"], ensure_ascii=False)
     assert first.count("Initial inline text") == 1 and first.count("FROZEN_NAVIGATION") == 1
     assert "LATER_CACHE_STATE" not in last and "Appended evidence" in last
+
+
+def test_v2_work_prepared_image_is_sent_once_and_keeps_recorded_prefix(monkeypatch):
+    from ailab_platform.catalog import get_catalog
+
+    monkeypatch.setitem(get_catalog().models, "m", ModelSpec(id="m", name="m", provider="mock", capabilities=["tools", "vision"]))
+    image = {
+        "id": "image",
+        "file_id": "image",
+        "filename": "input.png",
+        "content_type": "image/png",
+        "input_strategy": "prepared",
+        "text": "",
+    }
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "input_files": [image], "options": {"mode": "work", "document_tools_version": 2}}
+
+        async def get_file_image(self, *args):
+            return b"prepared-pixels"
+
+    call = {
+        "tool_calls": [
+            {"index": 0, "id": "step", "type": "function", "function": {"name": "update_plan", "arguments": '{"steps":["inspect"]}'}}
+        ]
+    }
+    with scripted_server([call, {"content": "done"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert_extension(*requests)
+    for request in requests:
+        assert (
+            sum(
+                part.get("type") == "image_url"
+                for message in request["messages"]
+                if isinstance(message.get("content"), list)
+                for part in message["content"]
+            )
+            == 1
+        )

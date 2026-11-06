@@ -122,16 +122,6 @@ class QuestionThenAnswer(LLMClient):
                         ToolCall("fallback_create", "exec", {"cmd": "mkdir -p /workspace/outputs && python -c " + shlex.quote(source)})
                     ]
                 )
-            if not any(m.get("name") == "document_view" for m in results):
-                return LLMResponse(
-                    tool_calls=[
-                        ToolCall(
-                            "fallback_open",
-                            "document_view",
-                            {"op": "reveal", "path": "outputs/fallback.xlsx", "targets": [{"at": "销售!A1:B2"}]},
-                        )
-                    ]
-                )
             await asyncio.wait_for(office_release.wait(), timeout=45)
             return LLMResponse(content="回退预览验收完成。")
         if prompt.startswith("就这里直接提问"):
@@ -150,44 +140,39 @@ class QuestionThenAnswer(LLMClient):
                 if messages[i].get("role") == "user" and isinstance(messages[i].get("content"), str)
             )
             results = [m for m in messages[turn + 1 :] if m.get("role") == "tool"]
-            views = [json.loads(m["content"]) for m in results if m.get("name") == "document_view"]
+            offered = {t["function"]["name"] for t in tools or []}
             workspace = prompt.startswith("原生工作区")
-            target = {"path": "outputs/draft.docx"} if workspace else {"file_id": prompt.split()[1]}
-            kind = prompt.split()[2] if not workspace and len(prompt.split()) > 2 else "docx"
-            at = {"docx": "p:2", "xlsx": "Revenue!A1:B2", "pptx": "slide:1/shape:2", "pdf": "page:1"}[kind]
-            if workspace and not any(m.get("name") == "exec" for m in results):
-                import shlex
+            work_mode = "view_workspace_file" in offered or any(m.get("name") == "copy_library_file" for m in results)
+            if workspace:
+                if not any(m.get("name") == "exec" for m in results):
+                    import shlex
 
-                script = (
-                    "from docx import Document; d=Document(); d.add_paragraph('Native workspace'); "
-                    "d.add_paragraph('Workspace quote for integration'); d.save('/workspace/outputs/draft.docx')"
-                )
-                command = "mkdir -p /workspace/outputs && python -c " + shlex.quote(script)
-                office_release.clear()
-                return LLMResponse(tool_calls=[ToolCall("office_create", "exec", {"cmd": command})])
+                    script = (
+                        "from docx import Document; d=Document(); d.add_paragraph('Native workspace'); "
+                        "d.add_paragraph('Workspace quote for integration'); d.save('/workspace/outputs/draft.docx')"
+                    )
+                    office_release.clear()
+                    command = "mkdir -p /workspace/outputs && python -c " + shlex.quote(script)
+                    return LLMResponse(tool_calls=[ToolCall("office_create", "exec", {"cmd": command})])
+                await asyncio.wait_for(office_release.wait(), timeout=45)
+                target_path = "/workspace/outputs/draft.docx"
+            elif work_mode:
+                copies = [json.loads(m["content"]) for m in results if m.get("name") == "copy_library_file"]
+                target_path = "/workspace/work/selected." + prompt.split()[2]
+                if not copies:
+                    arguments = {"file_id": prompt.split()[1], "path": target_path}
+                    return LLMResponse(tool_calls=[ToolCall("office_copy", "copy_library_file", arguments)])
+                assert copies[-1].get("ok"), copies
+            name = "view_workspace_file" if workspace or work_mode else "view_document"
+            views = [json.loads(m["content"]) for m in results if m.get("name") == name]
             if not views:
-                return LLMResponse(
-                    tool_calls=[
-                        ToolCall(
-                            "office_reveal", "document_view", {"op": "reveal", **target, "targets": [{"at": at}], "note": "原生定位验收"}
-                        )
-                    ]
+                args = (
+                    {"path": target_path, "pages": [1]}
+                    if name == "view_workspace_file"
+                    else {"file_id": prompt.split()[1], "target": {"kind": "pages", "pages": [1]}}
                 )
-            if len(views) == 1:
-                if workspace:
-                    await asyncio.wait_for(office_release.wait(), timeout=45)
-                return LLMResponse(tool_calls=[ToolCall("office_views", "document_view", {"op": "get_view"})])
-            if len(views) == 2:
-                return LLMResponse(
-                    tool_calls=[
-                        ToolCall("office_capture", "document_view", {"op": "capture", **target, "source": "viewport", "max_width": 800})
-                    ]
-                )
-            capture = views[-1]
-            return LLMResponse(
-                content="原生截图结果："
-                + json.dumps({k: v for k, v in capture.items() if k not in {"image", "images"}}, ensure_ascii=False)
-            )
+                return LLMResponse(tool_calls=[ToolCall("office_view", name, args)])
+            return LLMResponse(content="文档查看结果：" + json.dumps(views[-1], ensure_ascii=False))
         if prompt.startswith("PPT模板链路"):
             current_turn = next(i for i in range(len(messages) - 1, -1, -1) if messages[i].get("role") == "user")
             results = [

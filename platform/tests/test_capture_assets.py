@@ -89,3 +89,62 @@ def test_failed_legacy_expiry_delete_retains_durable_intent_and_capacity(ledger,
         monkeypatch.setattr(storage, "delete", delete)
         assert drain_object_deletions(db, storage) == 1
     assert not storage.exists(key) and totals(factory) == (0, 0)
+
+
+def test_fork_capture_shares_bytes_and_survives_original_run_release(ledger, monkeypatch):
+    from ailab_platform.api.fork_assets import copy_captures
+
+    factory, storage = ledger
+    target = setup_capture(factory, storage, monkeypatch)
+    with factory() as db:
+        saved = captures.save(db, db.get(Run, "r"), "fork-capture", target, b"shared-pixels")
+        source = db.get(ViewerCapture, saved["capture_id"])
+        key = source.storage_key
+        fork = Run(id="branch", user_id="u", prompt="fork", model="test", options={"document_tools_version": 2})
+        db.add(fork)
+        db.flush()
+        copied = copy_captures(db, db.get(Run, "r"), fork)
+        assert db.get(ViewerCapture, copied[source.id]).storage_key == key
+        db.commit()
+        captures.release_runs(db, ["r"])
+        db.commit()
+        assert assets.collect_batch(db, storage, now=datetime.now(UTC) + timedelta(days=31)) == 0
+        assert storage.exists(key) and totals(factory) == (len(b"shared-pixels"), 0)
+        captures.release_runs(db, [fork.id])
+        db.commit()
+        assets.collect_batch(db, storage)
+    assert not storage.exists(key) and totals(factory) == (0, 0)
+
+
+def test_capture_fork_keyset_query_uses_run_and_id_index(ledger):
+    from sqlalchemy import insert, text
+
+    factory, _ = ledger
+    with factory() as db:
+        db.add(Run(id="other", user_id="u", prompt="other", model="test"))
+        db.flush()
+        db.execute(
+            insert(ViewerCapture),
+            [
+                {
+                    "id": f"capture-{index:05}",
+                    "run_id": "r" if index < 100 else "other",
+                    "target": {},
+                    "storage_key": "unused",
+                    "digest": "0" * 64,
+                    "content_type": "image/png",
+                }
+                for index in range(2000)
+            ],
+        )
+        db.commit()
+        db.execute(text("ANALYZE viewer_captures"))
+        query = (
+            select(ViewerCapture)
+            .where(ViewerCapture.run_id == "r", ViewerCapture.id > "capture-00050")
+            .order_by(ViewerCapture.id)
+            .limit(20)
+        )
+        sql = str(query.compile(db.bind, compile_kwargs={"literal_binds": True}))
+        prefix = "EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN "
+        assert "ix_viewer_captures_run" in str(db.execute(text(prefix + sql)).all())

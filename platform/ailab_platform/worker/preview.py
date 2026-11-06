@@ -150,6 +150,14 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                     render_generation = result.get("render_generation")
             except Exception as exc:
                 if isinstance(exc, ClientError) and exc.status in {429, 503}:
+                    import json
+
+                    try:
+                        detail = json.loads(exc.body).get("detail")
+                    except (ValueError, AttributeError):
+                        detail = None
+                    if detail == {"code": "render_admission_rejected", "execution_started": False} and ownership:
+                        platform.defer_file_work(job_id)
                     return {"skipped": "busy"}
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}

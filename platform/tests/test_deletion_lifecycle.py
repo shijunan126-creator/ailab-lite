@@ -139,6 +139,10 @@ def test_restore_preview_rebuilds_only_deletion_failure(api):
     with SessionLocal() as db:
         new_job = db.get(FileObject, f["id"]).meta["preview_job_id"]
     assert new_job != old_job
+    from tests.test_file_previews import ApiClient
+
+    worker = ApiClient(api)
+    assert worker.start_file_work(new_job)["status"] == "running"
     assert (
         api.post(
             f"/internal/files/{f['id']}/preview",
@@ -150,7 +154,7 @@ def test_restore_preview_rebuilds_only_deletion_failure(api):
     assert (
         api.post(
             f"/internal/files/{f['id']}/preview",
-            headers=SERVICE,
+            headers=worker.headers,
             json={"job_id": new_job, "preview": {"status": "failed", "reason": "parser_error"}, "assets": {}},
         ).status_code
         == 200

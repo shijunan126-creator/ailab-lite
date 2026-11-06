@@ -421,6 +421,9 @@ class PlatformClient(_PlatformApi):
     def start_file_work(self, job_id):
         return self._send(self._req("POST", f"/internal/file-work/{job_id}/start", json={})).json()
 
+    def defer_file_work(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/defer", json={})).json()
+
     def file_work_owned(self, job_id):
         return self._send(self._req("POST", f"/internal/file-work/{job_id}/owned", timeout=2, json={})).json()
 

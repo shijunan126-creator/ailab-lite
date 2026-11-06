@@ -144,9 +144,12 @@ def expire_lane(db, lane, now):
         .limit(34)
     ).all()
     for row in rows:
-        expired = (
-            aware(row.lease_until) <= now if row.status in {"running", "canceling"} and row.lease_until else aware(row.deadline) <= now
+        expires = (
+            aware(row.lease_until)
+            if row.status in {"running", "canceling"} and row.lease_until
+            else min(aware(row.deadline), aware(row.execution_deadline) if row.execution_deadline else aware(row.deadline))
         )
+        expired = expires <= now
         if expired or not source_available(db, row, active=True):
             # A dispatched executor retains its slot until cancellation is
             # acknowledged or the enforced executor deadline has elapsed.
@@ -295,7 +298,7 @@ def claim(db, operation, *, now=None):
     run = live_consumer(db, operation) if operation.job_id else db.get(Run, operation.run_id, populate_existing=True)
     remaining = aware(operation.deadline) if operation.job_id else budget(run, now=now)
     seconds = min(120, settings.ocr_executor_timeout_seconds) if operation.lane == "ocr" else 120
-    if operation.lane == "ocr" and (operation.kind != "file_job" or run is not None):
+    if operation.lane == "ocr" and operation.execution_deadline is None and (operation.kind != "file_job" or run is not None):
         try:
             charge_ocr(run, operation)
         except HTTPException as exc:
@@ -303,7 +306,12 @@ def claim(db, operation, *, now=None):
             return operation
     operation.status, operation.claim_token = "running", uuid4().hex
     operation.generation += 1
-    operation.execution_deadline = min(aware(operation.deadline), remaining, now + timedelta(seconds=seconds))
+    operation.execution_deadline = min(
+        aware(operation.deadline),
+        remaining,
+        now + timedelta(seconds=seconds),
+        aware(operation.execution_deadline) if operation.execution_deadline else aware(operation.deadline),
+    )
     # The executor's deadline stops inference first. Its bounded process reap
     # must finish before an abandoned owner can free the global slot.
     operation.lease_until = operation.execution_deadline + timedelta(seconds=5)

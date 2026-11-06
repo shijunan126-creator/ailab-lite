@@ -46,6 +46,9 @@ def test_safe_original_is_ready_before_lazy_native_and_failure_does_not_break_wo
             def start_native(self, fid, jid):
                 return self.request("POST", f"/internal/files/{fid}/native/start", {"job_id": jid})
 
+            def native_owned(self, fid, jid):
+                return self.request("POST", f"/internal/files/{fid}/native/owned", {"job_id": jid})
+
             def complete_native(self, fid, jid, **kwargs):
                 return self.request("POST", f"/internal/files/{fid}/native/complete", {"job_id": jid, **kwargs})
 

@@ -435,9 +435,13 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             )
             if operation:
                 operation = db.get(DocumentOperation, operation.id, populate_existing=True)
-                operation.status, operation.claim_token, operation.lease_until = "failed", None, None
-                operation.result = {"reason": "ocr_failed"}
-            state = "pending" if retryable and not operation else "failed"
+                # The failed HTTP request has ended; redelivery reuses this
+                # operation and its original execution deadline/work charge.
+                retryable = retryable and operations.aware(operation.execution_deadline) > datetime.now(UTC)
+                operation.status, operation.claim_token, operation.lease_until = "pending" if retryable else "failed", None, None
+                operation.executor_started_at, operation.attempt_token = None, None
+                operation.result = {"reason": "dependency_unavailable" if retryable else "ocr_failed"}
+            state = "pending" if retryable else "failed"
             file.meta = {
                 **file.meta,
                 "ocr": state,

@@ -5,7 +5,7 @@ safe file after upload, using real API grants, jobs and the limited reader.
 """
 
 
-def prepare_native(api, fid):
+def prepare_native(api, fid, *, full_pdf=False):
     from ailab_platform.api.derived_assets import backfill_batch
     from ailab_platform.api.native_preparation import request_native
     from ailab_platform.db import SessionLocal
@@ -26,7 +26,7 @@ def prepare_native(api, fid):
         file = db.get(FileObject, fid)
         assert file.status == "ready"
         with user_critical_section(db, file.user_id):
-            state = request_native(db, file)
+            state = request_native(db, file, full_pdf=full_pdf)
             db.commit()
     if state["status"] == "pending":
         claim = platform._post(f"/internal/jobs/{state['job_id']}/claim", {"consumer": "explicit-fixture-reader"})
@@ -35,6 +35,19 @@ def prepare_native(api, fid):
         platform._post(f"/internal/jobs/{state['job_id']}/ack", {"token": platform.attempt})
     with SessionLocal() as db:
         return db.get(FileObject, fid).meta["representations"]["native_text"]
+
+
+def legacy_run(run, *, mode=None):
+    """An existing run keeps the tool catalog it was originally given."""
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import Run
+
+    with SessionLocal() as db:
+        row = db.get(Run, run["id"])
+        row.options = {**row.options, "document_tools_version": 1, **({"mode": mode} if mode else {})}
+        run["options"] = dict(row.options)
+        db.commit()
+    return run
 
 
 def legacy_pending(fid):
@@ -84,3 +97,19 @@ def minimal_file(name, mime):
     else:
         return b"hello"
     return output.getvalue()
+
+
+def initialize_accounting():
+    """Complete the bounded migration before an explicit test-owned writer."""
+    from ailab_platform.api.derived_assets import backfill_batch
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import DerivedBudget
+    from ailab_platform.storage import get_storage
+
+    with SessionLocal() as db:
+        for _ in range(100):
+            backfill_batch(db, get_storage())
+            db.commit()
+            if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
+                return
+        raise AssertionError("test-owned storage migration did not finish")

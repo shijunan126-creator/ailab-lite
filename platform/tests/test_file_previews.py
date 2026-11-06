@@ -31,7 +31,10 @@ class ApiClient:
 
     @property
     def headers(self):
-        return {**SERVICE, **({"X-Run-Attempt": self.attempt} if self.attempt else {})}
+        from ailab_platform.runtime_context import attempt_id_var
+
+        attempt = attempt_id_var.get() or self.attempt
+        return {**SERVICE, **({"X-Run-Attempt": attempt} if attempt else {})}
 
     def get_file(self, fid, job="processing", **binding):
         response = self.api.get(f"/internal/files/{fid}", headers=self.headers, params={"job": job, **binding})
@@ -60,6 +63,19 @@ class ApiClient:
         response.raise_for_status()
 
     def prepare_document(self, fid, scan):
+        if not self.attempt:
+            from sqlalchemy import select
+
+            from ailab_platform.models import OutboxMessage
+
+            with SessionLocal() as db:
+                job_id = db.scalar(
+                    select(OutboxMessage.id).where(
+                        OutboxMessage.payload["file_id"].as_string() == fid,
+                        OutboxMessage.payload["kind"].as_string() == "file",
+                    )
+                )
+            self.attempt = self._post(f"/internal/jobs/{job_id}/claim", {"consumer": "legacy-reader-fixture"})["token"]
         response = self.api.post(f"/internal/files/{fid}/prepare-document", headers=self.headers, json={"scan": scan})
         response.raise_for_status()
         return response.json()
@@ -87,6 +103,13 @@ class ApiClient:
                 result = self_api.get_file(file_id, **binding)
                 with SessionLocal() as db:
                     result["render_owner_id"] = db.get(FileObject, file_id).user_id
+                    from sqlalchemy import select
+
+                    from ailab_platform.models import OutboxMessage
+
+                    result["meta"]["writer_job_id"] = db.scalar(
+                        select(OutboxMessage.id).where(OutboxMessage.claim_token == self_api.attempt)
+                    )
                 return result
 
             def download_file(self, *args, **kwargs):
@@ -157,6 +180,9 @@ class ApiClient:
         return self._post(f"/internal/files/{file_id}/native/owned", {"job_id": job_id})
 
     def start_file_work(self, job_id):
+        from ailab_platform.runtime_context import attempt_id_var
+
+        self.attempt = attempt_id_var.get() or self.attempt
         if not self.attempt:
             claim = self._post(f"/internal/jobs/{job_id}/claim", {"consumer": "preview-fixture"})
             if claim.get("state") == "done":
@@ -166,6 +192,9 @@ class ApiClient:
 
     def file_work_owned(self, job_id):
         return self._post(f"/internal/file-work/{job_id}/owned", {})
+
+    def defer_file_work(self, job_id):
+        return self._post(f"/internal/file-work/{job_id}/defer", {})
 
     def abandon_derived_writer(self, job_id):
         return self._post("/internal/derived-assets/abandon-writer", {"job_id": job_id})

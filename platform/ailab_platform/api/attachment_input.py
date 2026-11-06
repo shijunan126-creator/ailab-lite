@@ -238,7 +238,11 @@ def input_files(db, run, *, document_plan=None, **message):
             {
                 **ref,
                 "id": f.id,
-                "input_strategy": "reference" if work_originals else "prepared" if chat or image else "reference",
+                "input_strategy": "reference"
+                if work_originals and not (image and spec and spec.supports({"vision"}))
+                else "prepared"
+                if chat or image
+                else "reference",
                 "size": f.size,
                 "sandbox_filename": f.filename,
                 "text": text,

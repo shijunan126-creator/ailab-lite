@@ -16,6 +16,7 @@ from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, OcrPageResult, OutboxMessage, Run
 from ailab_platform.storage import get_storage
+from tests.document_fixtures import legacy_run
 from tests.test_document_context import upload
 from tests.test_file_previews import AUTH, SERVICE
 from tests.test_ocr import photo
@@ -64,12 +65,12 @@ def test_office_images_are_detected_and_never_presented_as_complete_text(kind, w
     from ailab_platform.api.document_content import manifest
 
     with TestClient(app) as c:
-        fid = upload(c, "diagram." + kind, office_image(kind, with_text), "application/" + kind)
+        fid = upload(c, "diagram." + kind, office_image(kind, with_text), "application/" + kind, legacy=True)
         with SessionLocal() as db:
             doc = manifest(db.get(FileObject, fid))
             assert doc["visual_units"]
             assert all(u["quality"] == "no_text" for u in doc["units"]) if not with_text or kind == "pdf" else doc["chars"] > 0
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "解释图形关系", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "解释图形关系", "file_ids": [fid]}).json())
         read = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).json()
         assert read["visual"]["status"] == "present"
         assert "图" in read["visual_note"]
@@ -121,7 +122,7 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             get_storage().put_bytes(manifest_key, json.dumps(old_manifest).encode(), "application/json")
             cache_page(db, file, 0, "Invoice amount 123")
             db.commit()
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json())
         endpoint = f"/internal/runs/{run['id']}/library/extract-text"
         for _ in range(3):
             result = c.post(endpoint, headers=SERVICE, json={"file_id": fid, "pages": [1]}).json()
@@ -129,9 +130,8 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             assert result["content"]["coverage"][0]["method"] == "ocr"
         with SessionLocal() as db:
             assert not [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.payload.get("kind") == "ocr"]
-        chat = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "chat"})
-        assert chat.status_code == 201
-        model_input = c.get(f"/internal/runs/{chat.json()['id']}/model-input", headers=SERVICE).json()
+        chat = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "work"}).json(), mode="chat")
+        model_input = c.get(f"/internal/runs/{chat['id']}/model-input", headers=SERVICE).json()
         assert model_input["input_files"][0]["text"] == "Invoice amount 123"
 
 
@@ -265,10 +265,8 @@ def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbo
     assert platform.statuses[-1][0] == "succeeded"
 
 
-def test_chat_vision_prepares_visual_pages_and_nonvision_does_not_claim_image_semantics(monkeypatch):
+def test_chat_office_visuals_remain_on_demand_without_speculative_render_or_ocr(monkeypatch):
     monkeypatch.setattr(settings, "render_prewarm", 0)
-    from ailab_platform.models import RenderedPage
-
     monkeypatch.setitem(
         get_catalog().models,
         "vision-doc",
@@ -277,25 +275,20 @@ def test_chat_vision_prepares_visual_pages_and_nonvision_does_not_claim_image_se
     with TestClient(app) as c:
         fid = upload(c, "diagram.docx", office_image("docx", True), "application/docx")
         body = {"prompt": "解释架构图", "mode": "chat", "model": "vision-doc", "file_ids": [fid]}
-        pending = c.post("/v1/chat/prepare", headers=AUTH, json=body)
-        assert pending.status_code == 409 and pending.json()["detail"]["code"] == "chat_attachment_processing"
-        with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            key = f"derived/{fid}/preview/p-1.jpg"
-            get_storage().put_bytes(key, photo(), "image/jpeg")
-            db.add(RenderedPage(file_id=fid, page=1, version="poppler-1280-v1", key=key, digest="test"))
-            file.meta = {**file.meta, "ocr_preview": {"status": "ready", "page_count": 1}}
-            db.commit()
         assert c.post("/v1/chat/prepare", headers=AUTH, json=body).status_code == 200
         run = c.post("/v1/runs", headers=AUTH, json=body)
-        assert run.status_code == 201
+        assert run.status_code == 201, run.text
         data = c.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()
         file = data["input_files"][0]
-        assert file["visual_pages"][0]["page"] == 1 and file["visual"]["status"] == "present"
-        from ailab_platform.agent.prompts import user_prompt
-
-        text = user_prompt("解释", [{**file, "visual_pages": []}])
-        assert "不能根据OCR猜测" in text and fid in text
+        assert file["input_strategy"] == "reference" and file["visual"]["status"] == "present"
+        assert not file["text"] and not file["visual_pages"]
+        with SessionLocal() as db:
+            assert not db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.payload["file_id"].as_string() == fid,
+                    OutboxMessage.payload["kind"].as_string().in_(["preview", "ocr"]),
+                )
+            ).all()
 
 
 def test_safe_file_pause_keeps_sse_live_and_quota_gate_defers_recovery(monkeypatch):
@@ -447,9 +440,10 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
             assert file.meta["ocr_copied_pages"] == 1
             record = db.scalar(select(OcrPageResult).where(OcrPageResult.file_id == target))
             assert record.text_key.startswith(f"derived/{target}/") and record.seconds == 0
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "chat"})
-        assert run.status_code == 201
-        model_input = c.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()
+        run = legacy_run(
+            c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json(), mode="chat"
+        )
+        model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
         assert model_input["input_files"][0]["text"] == "cached legacy invoice"
     from ailab_platform.internal_skills import load
 

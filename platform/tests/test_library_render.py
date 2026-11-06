@@ -308,7 +308,7 @@ def test_template_real_sandbox_preview_includes_cached_first_page_thumbnail(tmp_
     assert len(result["preview"]["pages"]) == 2
     assert set(result["assets"]) == {*result["preview"]["pages"], "template-thumbnail.jpg"}
     asset = result["assets"]["template-thumbnail.jpg"]
-    assert asset["key"] == "derived/file/preview/template-thumbnail.jpg"
+    assert asset["key"] == "derived/file/preview/job/template-thumbnail.jpg"
     with Image.open(io.BytesIO(storage.get_bytes(asset["key"]))) as image:
         assert image.format == "JPEG" and image.width == 480
     published(manager, result)

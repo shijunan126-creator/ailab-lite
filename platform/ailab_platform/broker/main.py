@@ -92,8 +92,12 @@ def render_library_file(body: dict) -> dict:
         raise HTTPException(status_code=422, detail="file_id and job_id required")
     try:
         return LibraryRenderer(get_manager()).render(body["file_id"], body["job_id"])
+    except CapacityError as exc:
+        # Admission rejects before acquiring an executor. Only this explicit
+        # receipt allows the Worker to relinquish its durable dispatch ticket.
+        raise HTTPException(429, {"code": "render_admission_rejected", "execution_started": False}) from exc
     except (LeaseError, SandboxError) as exc:
-        raise HTTPException(status_code=429 if isinstance(exc, CapacityError) else 502, detail=str(exc)) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/render-finish", dependencies=[Depends(require_scope("sandbox:render"))])

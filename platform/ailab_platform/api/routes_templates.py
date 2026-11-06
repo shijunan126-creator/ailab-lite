@@ -194,7 +194,17 @@ def upload_template(
 
 @router.get("/{template_id}", response_model=TemplateOut)
 def get_template(template_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    return output(db, visible_template(db, template_id, user), user)
+    row = visible_template(db, template_id, user)
+    file = db.get(FileObject, row.file_id)
+    if template_status(file)[0] == "ready" and not (file.meta or {}).get("preview"):
+        from .preview_requests import request_template_preview
+
+        with user_critical_section(db, file.user_id):
+            db.refresh(file)
+            if template_status(file)[0] == "ready" and not (file.meta or {}).get("preview"):
+                request_template_preview(db, file)
+                db.commit()
+    return output(db, row, user, file)
 
 
 @router.patch("/{template_id}", response_model=TemplateOut)
@@ -220,7 +230,11 @@ def rendered_thumbnail(file):
     meta = file.meta or {}
     asset = meta.get("template_preview_thumbnail")
     if (meta.get("preview") or {}).get("status") == "ready" and asset:
-        if asset.get("key") == f"derived/{file.id}/preview/template-thumbnail.jpg":
+        import re
+
+        if re.fullmatch(
+            r"derived/" + re.escape(file.id) + r"/preview/(?:[A-Za-z0-9_-]{1,100}/)?template-thumbnail\.jpg", asset.get("key", "")
+        ):
             return asset
     return None
 

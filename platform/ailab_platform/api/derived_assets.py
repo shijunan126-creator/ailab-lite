@@ -58,12 +58,22 @@ def source(db, key, version=None, *, writing=True):
     raise HTTPException(409, "document_source_unavailable")
 
 
-def reserve(db, key, maximum, version, *, kind="cache", reconstructible=True, now=None):
+def reserve(db, key, maximum, version, *, kind="cache", reconstructible=True, now=None, fork_source=None):
     """Caller commits this reservation before the first byte is written."""
     if type(maximum) is not int or not 0 <= maximum <= settings.derived_budget_bytes:
         raise HTTPException(413, "derived_capacity_exceeded")
     now = now or datetime.now(UTC)
-    file_id, run_id, source_version = source(db, key, version)
+    if fork_source is None:
+        file_id, run_id, source_version = source(db, key, version)
+    else:
+        # A fork reserves invisible destination objects before creating its
+        # branch transaction. Only this API-owned path may bind them temporarily
+        # to an existing source run; service grants cannot supply this argument.
+        parts = key.split("/")
+        if len(parts) < 3 or parts[0] != "previews" or db.get(Run, parts[1]) is not None:
+            raise HTTPException(409, "fork_destination_invalid")
+        _safe_key(key)
+        file_id, run_id, source_version = source(db, f"previews/{fork_source}/fork", version)
     ledger = budget_lock(db)
     if not ledger.backfill_complete:
         raise HTTPException(409, "derived_accounting_initializing")

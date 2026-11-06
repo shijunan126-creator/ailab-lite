@@ -1255,9 +1255,12 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
     if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
         request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
     if file.purpose == "template" and file.status == FileStatus.READY and (file.meta or {}).get("template"):
-        from .preview_requests import request_preview
+        from .preview_requests import request_template_preview
 
-        request_preview(db, file, retry_stale=False)
+        # Preview admission must not roll back successful scanning/analysis.
+        # A busy lane leaves the sketch usable; opening the template requests
+        # its full preview again under the normal bounded admission contract.
+        request_template_preview(db, file)
     from .routes_library_summary import request_summary
 
     request_summary(db, file)

@@ -452,7 +452,10 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 from .viewer_captures import release_runs
 
                 release_runs(db, ids)
-                for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids))):
+                from ..models import DerivedAssetRef
+
+                surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == ViewerCapture.storage_key).exists()
+                for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids), ~surviving)):
                     _schedule_delete(db, key, "conversation")
                 for model in (RunEvent, Artifact, ClientCall, ViewerCapture):
                     db.execute(delete(model).where(model.run_id.in_(ids)))

@@ -16,6 +16,8 @@ from . import document_operations as operations
 
 
 def available(db, operation):
+    # Do not refresh away a cancellation/deadline changed by this transaction.
+    db.flush()
     file = db.get(FileObject, operation.file_id, populate_existing=True)
     job = db.get(OutboxMessage, operation.job_id, populate_existing=True)
     if (
@@ -198,6 +200,24 @@ def owned(job_id: str, db: Session = Depends(get_db)):
         db.refresh(row)
         operations.active(db, row.id, row.claim_token)
         return {"owned": True, "deadline": operations.aware(row.execution_deadline).isoformat()}
+
+
+@router.post("/{job_id}/defer", dependencies=[Depends(require_scope("files:preview_write"))])
+def defer_preview(job_id: str, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)):
+    job, file = job_for_attempt(db, job_id, x_run_attempt)
+    if job.payload["kind"] != "preview":
+        raise HTTPException(422, "document_job_kind_mismatch")
+    with user_critical_section(db, file.user_id):
+        operations.lane_lock(db, "render")
+        row = db.get(DocumentOperation, job_id, populate_existing=True)
+        if not row or row.attempt_token != x_run_attempt:
+            raise HTTPException(409, "document_operation_superseded")
+        operations.active(db, row.id, row.claim_token)
+        row.status, row.claim_token, row.lease_until = "pending", None, None
+        row.executor_started_at, row.attempt_token = None, None
+        # Preserve the original execution deadline across capacity redelivery.
+        db.commit()
+        return operations.receipt(row)
 
 
 class Stopped(BaseModel):

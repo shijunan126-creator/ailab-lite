@@ -10,6 +10,7 @@ from ailab_platform.api.routes_library_tools import Search, library_query
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, Run
 from ailab_platform.storage import get_storage
+from tests.document_fixtures import legacy_run
 from tests.run_claims import SERVICE, attempt_headers
 from tests.test_conversations import AUTH, _status
 
@@ -18,7 +19,7 @@ def test_library_search_and_text_pages_are_owned_ready_and_project_first():
     with TestClient(app) as c:
         project = c.post("/v1/projects", headers=AUTH, json={"name": "lib" + uuid.uuid4().hex[:8]}).json()
         conv = c.post("/v1/conversations", headers=AUTH, json={"project_id": project["id"]}).json()
-        run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "read", "mode": "chat"}).json()
+        run = legacy_run(c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "read", "mode": "chat"}).json())
         with SessionLocal() as db:
             owner = db.get(Run, run["id"]).user_id
             files = []
@@ -64,7 +65,7 @@ def test_library_search_and_text_pages_are_owned_ready_and_project_first():
         # A foreign run cannot use the first user's file, even knowing its id.
         from tests.test_conversations import _other_user
 
-        other = c.post("/v1/runs", headers=_other_user(c), json={"prompt": "foreign"}).json()
+        other = legacy_run(c.post("/v1/runs", headers=_other_user(c), json={"prompt": "foreign"}).json())
         assert c.post(f"/internal/runs/{other['id']}/library/read", headers=SERVICE, json={"file_id": ids[0]}).status_code == 404
 
 
@@ -92,7 +93,7 @@ def test_work_copy_grant_is_bound_to_run_and_broker_streams_into_inputs(monkeypa
     from tests.test_broker_lease import _ApiStub, _manager_with
 
     with TestClient(app) as c:
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "copy", "mode": "work"}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "copy", "mode": "work"}).json())
         _status(c, run["id"], "running")
         with SessionLocal() as db:
             owner = db.get(Run, run["id"]).user_id
@@ -134,7 +135,7 @@ from tests.test_service_identity import identities as identities  # noqa: E402
 
 def test_copy_grant_is_enforced_for_real_broker_identity(identities):
     with TestClient(app) as c:
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "copy", "mode": "work"}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "copy", "mode": "work"}).json())
         _status(c, run["id"], "running")
         with SessionLocal() as db:
             owner = db.get(Run, run["id"]).user_id

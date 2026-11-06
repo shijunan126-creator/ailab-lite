@@ -12,6 +12,9 @@ from .document_operations import aware
 
 
 def get_preparation(db, user, files, model, prompt, send_id):
+    # Sessions disable autoflush. An adopted send identity must be visible to
+    # the next request in this transaction, including its uniqueness check.
+    db.flush()
     identity = hashlib.sha256(
         json.dumps([model, [(file.id, file.sha256) for file in files]], ensure_ascii=False, separators=(",", ":")).encode()
     ).hexdigest()
@@ -31,6 +34,7 @@ def get_preparation(db, user, files, model, prompt, send_id):
         if legacy:
             legacy.send_id = send_id
             row = legacy
+            db.flush()
     if row is None:
         row = DocumentPreparation(
             user_id=user.id, send_id=send_id, identity=identity, expires_at=datetime.now(UTC) + timedelta(days=30), plan={}

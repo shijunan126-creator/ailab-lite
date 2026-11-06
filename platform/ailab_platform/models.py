@@ -1232,7 +1232,7 @@ class ViewerCapture(Base):
     __tablename__ = "viewer_captures"
     __table_args__ = (
         Index("ix_viewer_captures_expiry", "expires_at"),
-        Index("ix_viewer_captures_run", "run_id"),
+        Index("ix_viewer_captures_run", "run_id", "id"),
         Index("ix_viewer_captures_key", "storage_key"),
     )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)

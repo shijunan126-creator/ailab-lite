@@ -258,3 +258,28 @@ def test_file_preview_and_native_share_one_persistent_slot_and_canceling_retains
         db.flush()
         operations.claim(db, waiting)
         assert registered.status == "failed" and waiting.status == "running"
+
+
+def test_confirmed_preview_admission_rejection_releases_slot_without_renewing_deadline():
+    from ailab_platform.api.document_operations import aware
+    from ailab_platform.api.file_work import defer_preview, register, start
+    from ailab_platform.api.jobs import stage_job
+
+    init_db()
+    with SessionLocal() as db:
+        file, _ = make_file(db)
+        job = stage_job(db, "preview", file_id=file.id)
+        file.meta = {**file.meta, "preview_job_id": job.id, "preview": {"status": "pending", "kind": "pages"}}
+        db.flush()
+        register(db, file, job)
+        job.claim_token, job.claimed_until = "first", datetime.now(UTC) + timedelta(minutes=3)
+        db.flush()
+        operation = start(db, file, job, "first")
+        db.commit()
+        deadline = aware(operation.execution_deadline)
+        assert defer_preview(job.id, "first", db)["status"] == "pending"
+        assert operation.executor_started_at is None and operation.lease_until is None
+        job.claim_token = "second"
+        db.flush()
+        resumed = start(db, file, job, "second")
+        assert resumed.status == "running" and aware(resumed.execution_deadline) == deadline

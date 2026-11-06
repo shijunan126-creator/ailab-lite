@@ -241,7 +241,7 @@ def validate_run_input(
             options["document_input_plan"] = frozen_document_input
         else:
             options["document_input_plan"] = prepare(db, user, files, spec, prompt, send_id=preparation_send_id)
-    if inputs and mode == "chat" and not new_chat_documents:
+    if inputs and ((mode == "chat" and not new_chat_documents) or (mode == "work" and spec.supports({"vision"}))):
         from .attachment_input import prepare_input_images
 
         prepare_input_images(db, inputs)

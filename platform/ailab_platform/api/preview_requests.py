@@ -9,6 +9,19 @@ from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS, cached
 from .jobs import stage_job
 
 
+def request_template_preview(db, file):
+    from fastapi import HTTPException
+
+    # The sketch remains usable while the bounded heavy lane is full. A later
+    # explicit template open can retry admission without redoing its analysis.
+    try:
+        with db.begin_nested():
+            request_preview(db, file, retry_stale=False)
+    except HTTPException as exc:
+        if exc.status_code != 429:
+            raise
+
+
 def request_ready_preview(db, file):
     """Speculate only on bounded library documents; the caller commits readiness and outbox together."""
     if (

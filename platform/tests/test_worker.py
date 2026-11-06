@@ -101,7 +101,7 @@ def test_preview_returns_lease_only_after_publication(monkeypatch, published):
     assert events == ["publish", ("lease", "job", "preview", "generation", published)]
 
 
-def test_clean_scan_renders_before_office_reader(monkeypatch):
+def test_legacy_parse_does_not_nest_an_unclaimed_preview(monkeypatch):
     from ailab_platform.config import settings
     from ailab_platform.worker import office, pipeline, preview
 
@@ -127,7 +127,7 @@ def test_clean_scan_renders_before_office_reader(monkeypatch):
         ),
     )
     pipeline.process_file("fil_order", platform=p)
-    assert events == ["preview", "parse"]
+    assert events == ["parse"]
 
 
 def image_bytes(fmt="PNG", size=(960, 240), mode="RGB", color="red", **kwargs):
