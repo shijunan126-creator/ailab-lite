@@ -20,6 +20,26 @@ DISCOVERY_SECONDS = 0.1
 DISCOVERY_LEASE = 180
 
 
+def wal(db, seconds=5):
+    """Switch the index file to WAL once; the mode persists in the file.
+
+    The switch needs an exclusive lock. When several first opens race, SQLite
+    answers BUSY at once to avoid a deadlock instead of honouring busy_timeout,
+    so only that switch is retried, within a deadline.
+    """
+    deadline = time.monotonic() + seconds
+    while db.execute("PRAGMA journal_mode").fetchone()[0] != "wal":
+        try:
+            if db.execute("PRAGMA journal_mode=WAL").fetchone()[0] == "wal":
+                return
+        except sqlite3.OperationalError as error:
+            if "locked" not in str(error):
+                raise
+        if time.monotonic() >= deadline:
+            raise sqlite3.OperationalError("local object index could not switch to WAL")
+        time.sleep(0.01)
+
+
 class LocalObjectIndex:
     def __init__(self, root):
         self.root = Path(root)
@@ -32,7 +52,7 @@ class LocalObjectIndex:
         self.entries = None
         self.anchor = None
         with self.connection() as db:
-            db.execute("PRAGMA journal_mode=WAL")
+            wal(db)
             db.executescript("""
                 CREATE TABLE IF NOT EXISTS objects (
                     key TEXT PRIMARY KEY COLLATE BINARY,

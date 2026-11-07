@@ -270,3 +270,32 @@ def test_queued_legacy_directory_changed_to_symlink_is_not_followed(tmp_path):
     restarted = LocalStorage(tmp_path)
     assert all_keys(restarted) == []
     restarted.close()
+
+
+def test_racing_first_opens_retry_the_wal_switch_sqlite_refuses_without_waiting():
+    class Racing:
+        """SQLite answers BUSY at once, not after busy_timeout, when first opens race."""
+
+        def __init__(self, busy):
+            self.busy, self.mode, self.switches = busy, "delete", 0
+
+        def execute(self, sql):
+            if sql.endswith("=WAL"):
+                self.switches += 1
+                if self.switches <= self.busy:
+                    raise sqlite3.OperationalError("database is locked")
+                self.mode = "wal"
+            return self
+
+        def fetchone(self):
+            return (self.mode,)
+
+    db = Racing(busy=2)
+    local_object_index.wal(db)
+    assert db.mode == "wal" and db.switches == 3
+    already = Racing(busy=0)
+    already.mode = "wal"
+    local_object_index.wal(already)
+    assert already.switches == 0
+    with pytest.raises(sqlite3.OperationalError, match="could not switch"):
+        local_object_index.wal(Racing(busy=10**6), seconds=0.05)
