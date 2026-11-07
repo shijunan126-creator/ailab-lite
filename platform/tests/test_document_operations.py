@@ -7,6 +7,8 @@ from pydantic import ValidationError
 
 from ailab_platform.contracts.document_input import ReadDocument, SearchDocument, ViewDocument
 from ailab_platform.domain.document_reading import (
+    SEARCH_BLOCKS,
+    SEARCH_TEXT,
     CursorError,
     Position,
     TextBlock,
@@ -32,16 +34,29 @@ def test_search_does_not_drop_hits_at_twenty_result_boundary():
 
 
 def test_zero_hit_batch_has_a_cursor_until_available_text_is_exhausted():
-    blocks = [TextBlock(i, f"p:{i + 1}", "ordinary text") for i in range(250)]
-    blocks[-1] = TextBlock(249, "p:250", "target")
+    total = SEARCH_BLOCKS + 50
+    blocks = [TextBlock(i, f"p:{i + 1}", "ordinary text") for i in range(total)]
+    blocks[-1] = TextBlock(total - 1, f"p:{total}", "target")
     position, counts, hits = Position(), [], []
     while position is not None:
         result = search_batch((b for b in blocks if b.ordinal >= position.ordinal), "target", position)
         counts.append(result["checked_blocks"])
         hits.extend(result["hits"])
         position = result["next_position"]
-    assert counts == [100, 100, 50]
-    assert [h["locator"] for h in hits] == ["p:250"]
+    assert counts == [SEARCH_BLOCKS, 50]
+    assert [h["locator"] for h in hits] == [f"p:{total}"]
+
+
+def test_search_window_is_bounded_by_scanned_text_and_by_blocks_the_caller_did_not_load():
+    big = "x" * (SEARCH_TEXT // 2)
+    blocks = [TextBlock(0, "p:1", big), TextBlock(1, "p:2", big), TextBlock(2, "p:3", "target")]
+    first = search_batch(iter(blocks), "target")
+    assert first["checked_blocks"] == 2 and first["next_position"] == Position(2)
+    assert search_batch(iter(blocks[2:]), "target", first["next_position"])["hits"]
+    # A block the caller's budget left unloaded ends the batch before it.
+    unloaded = [TextBlock(0, "p:1", "ordinary"), TextBlock(1, "p:2", None)]
+    result = search_batch(iter(unloaded), "target")
+    assert result["checked_blocks"] == 1 and result["next_position"] == Position(1)
 
 
 def test_search_literal_unicode_normalization_keeps_source_locator():
@@ -202,15 +217,15 @@ def test_indexed_native_operations_page_without_ocr_or_eager_body_reads(monkeypa
         with pytest.raises(HTTPException) as error:
             text_operation(db, file, ReadDocument(file_id=file.id, cursor=navigation["next_cursor"]))
         assert error.value.detail == "cursor_stale"
+        # One search call reaches the last page instead of paging per hundred blocks.
         first = text_operation(db, file, SearchDocument(file_id=file.id, query="target"))
-        assert first["hits"] == [] and first["checked_blocks"] == 100 and first["next_cursor"]
+        assert len(first["hits"]) == 20 and first["checked_blocks"] == 130 and first["next_cursor"]
+        assert first["coverage"]["native"]["scanned_blocks"] == 130
         assert opens == [key]  # one canonical buffer, no per-block storage read
         second = text_operation(db, file, SearchDocument(file_id=file.id, query="target", cursor=first["next_cursor"]))
-        assert len(second["hits"]) == 20 and second["next_cursor"]
-        third = text_operation(db, file, SearchDocument(file_id=file.id, query="target", cursor=second["next_cursor"]))
-        assert len(third["hits"]) == 5 and not third["next_cursor"]
-        assert third["coverage"]["ocr"]["status"] == "not_searched"
-        assert third["coverage"]["visual"]["status"] == "not_viewed"
+        assert len(second["hits"]) == 5 and not second["next_cursor"]
+        assert second["coverage"]["ocr"]["status"] == "not_searched"
+        assert second["coverage"]["visual"]["status"] == "not_viewed"
         result = text_operation(db, file, ReadDocument(file_id=file.id, selector={"kind": "pages", "pages": [130]}))
         assert result["text"] == "target " * 25
         assert result["coverage"]["blocks"][0]["locator"] == "page:130"
@@ -234,3 +249,57 @@ def test_ocr_execution_ids_are_unique_per_image_and_dispatch():
     assert first != execution_id("dop_" + "a" * 20, "u" * 40, page3)
     assert first == execution_id("dop_" + "a" * 20, "t" * 40, dict(reversed(page3.items())))
     assert len(first) <= 100
+
+
+def test_search_over_per_block_legacy_text_opens_at_most_one_hundred_objects_per_call(monkeypatch):
+    import hashlib
+
+    from sqlalchemy import select
+
+    from ailab_platform.api import document_text
+    from ailab_platform.db import SessionLocal, init_db
+    from ailab_platform.models import DocumentBlock, FileDerivation, FileObject, User, new_id
+    from ailab_platform.storage import get_storage
+
+    init_db()
+    storage = get_storage()
+    with SessionLocal() as db:
+        user = db.scalar(select(User))
+        file = FileObject(id=new_id("fil"), user_id=user.id, filename="legacy.pdf", storage_key="original", sha256="source", status="ready")
+        db.add(file)
+        db.flush()
+        index = FileDerivation(
+            file_id=file.id,
+            kind="native",
+            fingerprint="old",
+            parser_version="old",
+            status="ready",
+            manifest_key=f"derived/{file.id}/m.json",
+        )
+        db.add(index)
+        db.flush()
+        file.meta = {
+            "extract": {"kind": "pdf", "units": 150},
+            "representations": {"native_text": {"status": "ready", "version": "source", "derivation_id": index.id}},
+        }
+        for i in range(150):
+            text, key = (b"target" if i == 149 else b"plain"), f"derived/{file.id}/text/{i:06d}.txt"
+            storage.put_bytes(key, text)
+            db.add(
+                DocumentBlock(
+                    derivation_id=index.id,
+                    ordinal=i,
+                    unit_number=i + 1,
+                    anchor=f"page:{i + 1}",
+                    text_key=key,
+                    digest=hashlib.sha256(text).hexdigest(),
+                    chars=len(text),
+                )
+            )
+        db.commit()
+        opens, original = [], storage.open_stream
+        monkeypatch.setattr(storage, "open_stream", lambda key, *a, **k: opens.append(key) or original(key, *a, **k))
+        first = document_text.text_operation(db, file, SearchDocument(file_id=file.id, query="target"))
+        assert first["checked_blocks"] == document_text.MAX_OBJECTS == len(opens) and first["next_cursor"] and not first["hits"]
+        second = document_text.text_operation(db, file, SearchDocument(file_id=file.id, query="target", cursor=first["next_cursor"]))
+        assert [hit["locator"] for hit in second["hits"]] == ["page:150"] and not second["next_cursor"]

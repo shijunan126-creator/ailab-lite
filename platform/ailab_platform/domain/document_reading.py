@@ -12,6 +12,11 @@ MAX_BLOCKS = 100
 MAX_HITS = 20
 MAX_TEXT = 8000
 SNIPPET = 200
+# Search returns at most MAX_HITS snippets, so its window is bounded by the work
+# of one call, not by output size: a word late in a long document is found in
+# one call instead of one model round trip per hundred paragraphs.
+SEARCH_BLOCKS = 2000
+SEARCH_TEXT = 1_000_000
 
 
 class CursorError(ValueError):
@@ -28,7 +33,8 @@ class Position:
 class TextBlock:
     ordinal: int
     locator: str
-    text: str
+    # None: the caller's per-call budget did not load this block; the batch ends before it.
+    text: str | None
     source: str = "native"
     block_id: str | None = None
     selector: dict | None = None
@@ -96,7 +102,7 @@ def read_batch(blocks, position=Position()):
         if block.ordinal < position.ordinal or block.ordinal <= previous:
             raise ValueError("unordered_document_blocks")
         previous = block.ordinal
-        if checked == MAX_BLOCKS or len(text) == MAX_TEXT:
+        if checked == MAX_BLOCKS or len(text) == MAX_TEXT or block.text is None:
             next_position = Position(block.ordinal)
             break
         checked += 1
@@ -127,15 +133,16 @@ def search_batch(blocks, query, position=Position()):
     needle = normalize(query)
     if not needle or not needle.strip() or len(query) > 200:
         raise ValueError("invalid_query")
-    hits, checked, next_position, previous = [], 0, None, -1
+    hits, checked, scanned, next_position, previous = [], 0, 0, None, -1
     for block in blocks:
         if block.ordinal < position.ordinal or block.ordinal <= previous:
             raise ValueError("unordered_document_blocks")
         previous = block.ordinal
-        if checked == MAX_BLOCKS or len(hits) == MAX_HITS:
+        if checked == SEARCH_BLOCKS or scanned >= SEARCH_TEXT or len(hits) == MAX_HITS or block.text is None:
             next_position = Position(block.ordinal)
             break
         checked += 1
+        scanned += len(block.text)
         text = normalize(block.text)
         start = position.offset if block.ordinal == position.ordinal else 0
         if start > len(text):

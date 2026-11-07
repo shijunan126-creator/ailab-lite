@@ -9,6 +9,8 @@ from sqlalchemy import select
 from ..config import settings
 from ..contracts.document_input import Pages, ReadDocument, Region, SearchDocument, Sheet, Word
 from ..domain.document_reading import (
+    MAX_BLOCKS,
+    SEARCH_BLOCKS,
     CursorError,
     TextBlock,
     context_digest,
@@ -48,7 +50,12 @@ def current_index(db, file):
     return index
 
 
-def select_blocks(file, index, selector, position):
+# Storage objects one call may open: a canonical text buffer serves all of its
+# blocks, while each legacy block and OCR page is its own object.
+MAX_OBJECTS = 100
+
+
+def select_blocks(file, index, selector, position, window=MAX_BLOCKS):
     q = select(DocumentBlock).where(DocumentBlock.derivation_id == index.id, DocumentBlock.ordinal >= position.ordinal)
     kind = (file.meta.get("extract") or {}).get("kind")
     if isinstance(selector, Pages):
@@ -75,11 +82,11 @@ def select_blocks(file, index, selector, position):
         if selector.range:
             anchors = [anchor + "!" + selector.range for anchor in anchors]
         q = q.where(DocumentBlock.anchor.in_(anchors))
-    return q.order_by(DocumentBlock.ordinal).limit(101)
+    return q.order_by(DocumentBlock.ordinal).limit(window + 1)
 
 
-def native_blocks(db, file, index, selector, position):
-    rows = list(db.scalars(select_blocks(file, index, selector, position)))
+def native_blocks(db, file, index, selector, position, window=MAX_BLOCKS):
+    rows = list(db.scalars(select_blocks(file, index, selector, position, window)))
     if ((file.meta or {}).get("extract") or {}).get("kind") != "pdf" or index.kind != "native":
         return rows
     from types import SimpleNamespace
@@ -97,7 +104,7 @@ def native_blocks(db, file, index, selector, position):
         query = query.where(DocumentBlock.unit_number.in_(selector.pages))
     elif selector is not None:
         return rows
-    for row, global_ordinal in db.execute(query.order_by(scopes.c.ordinal, DocumentBlock.ordinal).limit(101)):
+    for row, global_ordinal in db.execute(query.order_by(scopes.c.ordinal, DocumentBlock.ordinal).limit(window + 1)):
         rows.append(
             SimpleNamespace(
                 **{
@@ -107,7 +114,7 @@ def native_blocks(db, file, index, selector, position):
                 ordinal=global_ordinal,
             )
         )
-    return sorted(rows, key=lambda row: row.ordinal)[:101]
+    return sorted(rows, key=lambda row: row.ordinal)[: window + 1]
 
 
 def page_navigation(db, file, index, request):
@@ -169,7 +176,7 @@ OCR_BASE = 2**31
 OCR_SCOPES_BASE = 2**40
 
 
-def ocr_query(file, selector, ordinal):
+def ocr_query(file, selector, ordinal, window=MAX_BLOCKS):
     adopted = (
         select(DocumentOcrUnit.id)
         .where(
@@ -195,10 +202,10 @@ def ocr_query(file, selector, ordinal):
         # A whole-page legacy OCR result cannot stand in for an explicit region
         # or for Word/Excel structure whose physical-page mapping is unknown.
         return None
-    return query.order_by(OcrPageResult.page).limit(101)
+    return query.order_by(OcrPageResult.page).limit(window + 1)
 
 
-def scoped_ocr_query(file, selector, ordinal):
+def scoped_ocr_query(file, selector, ordinal, window=MAX_BLOCKS):
     if not settings.ocr_engine_fingerprint:
         return None
     query = select(DocumentOcrUnit).where(
@@ -215,7 +222,7 @@ def scoped_ocr_query(file, selector, ordinal):
         query = query.where(DocumentOcrUnit.selector_key == scope_key(selector.model_dump(mode="json", exclude_none=True)))
     elif selector is not None:
         return None
-    return query.order_by(DocumentOcrUnit.ordinal).limit(101)
+    return query.order_by(DocumentOcrUnit.ordinal).limit(window + 1)
 
 
 def available_ocr(db, file):
@@ -317,25 +324,29 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
                 or (isinstance(request.selector, Pages) and ((file.meta or {}).get("extract") or {}).get("kind") not in {"pdf", "pptx"})
             )
         )
+        window = SEARCH_BLOCKS if searching else MAX_BLOCKS
+        # Each OCR result is its own storage object, so rows past the object
+        # budget could never load in this call.
+        ocr_window = min(window, MAX_OBJECTS)
         rows = (
-            native_blocks(db, file, index, request.selector, position)
+            native_blocks(db, file, index, request.selector, position, window)
             if index and position.ordinal < OCR_BASE and not reading_ocr and native_scope_mapped
             else []
         )
         ocr_rows = []
-        if (searching or reading_ocr) and len(rows) <= 100 and position.ordinal < OCR_SCOPES_BASE:
-            query = ocr_query(file, request.selector, position.ordinal)
+        if (searching or reading_ocr) and len(rows) <= window and position.ordinal < OCR_SCOPES_BASE:
+            query = ocr_query(file, request.selector, position.ordinal, ocr_window)
             ocr_rows = db.scalars(query).all() if query is not None else []
         if reading_ocr and (
             not ocr_rows or (isinstance(request.selector, Pages) and {row.page + 1 for row in ocr_rows} != set(request.selector.pages))
         ):
             raise HTTPException(409, "ocr_representation_unavailable")
         scoped_rows = []
-        if searching and len(rows) + len(ocr_rows) <= 100:
-            query = scoped_ocr_query(file, request.selector, position.ordinal)
+        if searching and len(rows) + len(ocr_rows) <= window:
+            query = scoped_ocr_query(file, request.selector, position.ordinal, ocr_window)
             scoped_rows = db.scalars(query).all() if query is not None else []
         storage, cache = get_storage(), {}
-        scanned = {"native": 0, "ocr": 0}
+        sources = []  # source of each loaded block, in order
         ocr_digests = (
             dict(
                 db.execute(
@@ -349,50 +360,58 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         )
 
         def blocks():
-            # Fetch 101 metadata rows for lookahead, but decode only the 100
-            # candidate blocks. The lookahead body cannot affect this result.
-            for i, row in enumerate(rows):
-                text = ""
-                if i < 100:
-                    text = read_unit(
-                        storage,
-                        row.text_key,
-                        {"byte_offset": row.byte_offset, "byte_size": row.byte_size, "digest": row.digest},
-                        cache,
-                    ).decode("utf-8")
-                if i < 100:
-                    scanned["native"] += 1
-                yield TextBlock(row.ordinal, row.anchor, text, block_id=row.id)
-            for i, row in enumerate(ocr_rows):
-                text = ""
-                if i + len(rows) < 100:
-                    data = ocr_text(storage, row, file)
-                    expected = ocr_digests.get(row.text_key)
-                    if expected and len(expected) == 64 and hashlib.sha256(data).hexdigest() != expected:
-                        raise NativeCacheError("ocr_cache_changed")
-                    text = data.decode("utf-8")
-                if i + len(rows) < 100:
-                    scanned["ocr"] += 1
-                yield TextBlock(OCR_BASE + row.page, f"page:{row.page + 1}", text, source="ocr")
-            for i, row in enumerate(scoped_rows):
-                text = ""
-                if i + len(rows) + len(ocr_rows) < 100:
-                    from .document_ocr import text_bytes
+            # Metadata rows include one lookahead; a block is decoded only while
+            # this call's block and storage-object budgets allow. The first
+            # block it does not load ends the batch and becomes the cursor.
+            opened, loaded = set(), 0
 
-                    text = text_bytes(storage, row).decode("utf-8")
-                    scanned["ocr"] += 1
+            def admit(key):
+                nonlocal loaded
+                if loaded >= window or (key not in opened and len(opened) >= MAX_OBJECTS):
+                    return False
+                opened.add(key)
+                loaded += 1
+                return True
+
+            for row in rows:
+                if not admit(row.text_key):
+                    yield TextBlock(row.ordinal, row.anchor, None, block_id=row.id)
+                    return
+                text = read_unit(
+                    storage,
+                    row.text_key,
+                    {"byte_offset": row.byte_offset, "byte_size": row.byte_size, "digest": row.digest},
+                    cache,
+                ).decode("utf-8")
+                sources.append("native")
+                yield TextBlock(row.ordinal, row.anchor, text, block_id=row.id)
+            for row in ocr_rows:
+                if not admit(row.text_key):
+                    yield TextBlock(OCR_BASE + row.page, f"page:{row.page + 1}", None, source="ocr")
+                    return
+                data = ocr_text(storage, row, file)
+                expected = ocr_digests.get(row.text_key)
+                if expected and len(expected) == 64 and hashlib.sha256(data).hexdigest() != expected:
+                    raise NativeCacheError("ocr_cache_changed")
+                sources.append("ocr")
+                yield TextBlock(OCR_BASE + row.page, f"page:{row.page + 1}", data.decode("utf-8"), source="ocr")
+            for row in scoped_rows:
                 locator = f"page:{row.page}" if row.page else "image:" + row.selector.get("image_id", row.id)
                 if row.selector.get("kind") == "region":
                     locator += "/region:" + row.selector_key[:16]
-                yield TextBlock(
-                    OCR_SCOPES_BASE + row.ordinal,
-                    locator,
-                    text,
-                    source="ocr",
-                    block_id=row.id,
-                    selector=row.selector,
-                    provenance={"source": row.source_kind, "revision": row.image_revision, **(row.details or {})},
-                )
+                identity = {
+                    "source": "ocr",
+                    "block_id": row.id,
+                    "selector": row.selector,
+                    "provenance": {"source": row.source_kind, "revision": row.image_revision, **(row.details or {})},
+                }
+                if not admit(("scoped", row.id)):
+                    yield TextBlock(OCR_SCOPES_BASE + row.ordinal, locator, None, **identity)
+                    return
+                from .document_ocr import text_bytes
+
+                sources.append("ocr")
+                yield TextBlock(OCR_SCOPES_BASE + row.ordinal, locator, text_bytes(storage, row).decode("utf-8"), **identity)
 
         if navigation:
             if position.offset:
@@ -415,6 +434,9 @@ def text_operation(db, file, request: ReadDocument | SearchDocument):
         raise HTTPException(409, "native_cache_changed") from exc
     except FileNotFoundError as exc:
         raise HTTPException(409, "native_cache_missing") from exc
+    # A batch may load one block it then stops before; only checked blocks count.
+    checked = sources[: result.get("checked_blocks", 0)]
+    scanned = {"native": checked.count("native"), "ocr": checked.count("ocr")}
     next_position = result.pop("next_position")
     return {
         "file_id": file.id,
