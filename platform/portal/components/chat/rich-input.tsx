@@ -55,17 +55,22 @@ function partsHtml(parts: Part[]): string {
 const isChip = (n: Node | null): n is HTMLElement => !!n && n.nodeType === 1 && (n as HTMLElement).dataset.skill !== undefined;
 const isBlock = (n: Node) => n.nodeType === 1 && /^(DIV|P|LI)$/.test((n as HTMLElement).tagName);
 
-/** The DOM read back into parts. A trailing <br> is the browser's placeholder for an empty last line, not text. */
+/** The DOM read back into parts. A trailing <br>, or a trailing newline in the last text (what a line break in this
+ * pre-wrap box leaves behind), is the browser's placeholder for an empty last line, not text: Shift+Enter then
+ * Backspace leaves "\n" alone, which is an empty message. */
 export function readParts(root: Node): Part[] {
   const out: Part[] = [];
   const walk = (node: Node) => {
     node.childNodes.forEach((child, i) => {
-      if (child.nodeType === 3) out.push({ kind: "text", text: (child.nodeValue || "").replace(/ /g, " ") });
-      else if (isChip(child)) {
+      const last = i === node.childNodes.length - 1 && node === root;
+      if (child.nodeType === 3) {
+        const text = (child.nodeValue || "").replace(/ /g, " ");
+        out.push({ kind: "text", text: last ? text.replace(/\n$/, "") : text });
+      } else if (isChip(child)) {
         const d = (child as HTMLElement).dataset;
         out.push({ kind: "skill", name: d.skill!, title: d.title || d.skill!, fileId: d.file || null });
       } else if ((child as HTMLElement).tagName === "BR") {
-        if (!(i === node.childNodes.length - 1 && node === root)) out.push({ kind: "text", text: "\n" });
+        if (!last) out.push({ kind: "text", text: "\n" });
       } else if (child.nodeType === 1) {
         // blocks some mobile keyboards insert: each one starts a new line
         if (isBlock(child) && out.length) out.push({ kind: "text", text: "\n" });

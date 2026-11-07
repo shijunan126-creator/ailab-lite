@@ -61,13 +61,14 @@ with SessionLocal() as db:
         row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
         page.get_by_role("menuitem", name="提取文字", exact=True).click()
         dialog = page.get_by_role("dialog", name="提取文字")
-        dialog.get_by_role("button", name="提取", exact=True).click()
+        # choosing the action starts reading; a refused request is retried from the dialog
         dialog.get_by_role("alert").filter(has_text="另一组页码正在提取").wait_for()
         assert not polls
-        dialog.get_by_role("button", name="提取", exact=True).click()
-        link = dialog.get_by_role("link", name="下载文字", exact=True)
+        dialog.get_by_role("button", name="重试", exact=True).click()
+        link = dialog.get_by_role("link", name="下载", exact=True)
         link.wait_for()
         assert polls == [{"request_id": ["selected-request"]}]
+        assert dialog.get_by_label(f"{name} 的文字").inner_text() == "selected page text"
         with page.expect_download() as downloaded:
             link.click()
         assert downloaded.value.path().read_text() == "selected page text"

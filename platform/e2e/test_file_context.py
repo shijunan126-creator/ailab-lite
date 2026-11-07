@@ -26,7 +26,6 @@ def test_text_extraction_dialog_and_unconfigured_service(logged_in, stack, tmp_p
     row.get_by_role("button", name=f"更多操作 {name}", exact=True).click()
     page.get_by_role("menuitem", name="提取文字", exact=True).click()
     dialog = page.get_by_role("dialog", name="提取文字", exact=True)
-    dialog.get_by_role("button", name="提取", exact=True).click()
     expect(dialog.get_by_role("alert")).to_contain_text("文字识别服务尚未配置")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     shots = Path(os.environ.get("AILAB_E2E_SHOTS", str(tmp_path)))

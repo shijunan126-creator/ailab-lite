@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { api, errorMessage, filesByIds } from "../../lib/api";
 import { projectsChanged } from "../../lib/projects";
 import { placeMenu } from "../../lib/menu-place";
-import { IconAsk, IconFolderInput, IconMore, IconShare } from "../icons";
+import { IconScanText, IconAsk, IconFolderInput, IconMore, IconShare } from "../icons";
 import ShareDialog from "../share-dialog";
 import TextExtraction from "./text-extraction";
 import { MoveDialog } from "./projects";
@@ -107,7 +107,9 @@ export default function FileMenu({ fileId, filename, projectId, onMoved }: {
                 <IconAsk size={15} /> 提问
               </button>
               {/\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|avif)$/i.test(filename) ?
-                <button className="menu-item" role="menuitem" onClick={() => (setAt(null), setDialog("extract"))}>提取文字</button> : null}
+                <button className="menu-item" role="menuitem" onClick={() => (setAt(null), setDialog("extract"))}>
+                  <IconScanText size={15} /> 提取文字
+                </button> : null}
               <button className="menu-item" role="menuitem" onClick={() => (setAt(null), setDialog("move"))}>
                 <IconFolderInput size={15} /> 移到项目
               </button>
