@@ -23,6 +23,9 @@ from pathlib import Path
 
 PAGES = {".pptx", ".potx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
 SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv"}
+PRESENTATIONS = {".pptx", ".potx", ".ppt", ".odp"}
+# Slide N must stay page N: the viewer and the slide text count hidden slides too.
+PRESENTATION_PDF = 'pdf:impress_pdf_Export:{"ExportHiddenSlides":{"type":"boolean","value":"true"}}'
 MAX_PAGES = 40
 MAX_ROWS, MAX_COLS = 200, 40
 MAX_SHEETS = 20
@@ -78,7 +81,16 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))
     try:
         subprocess.run(
-            ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
+            [
+                "soffice",
+                f"-env:UserInstallation=file://{profile}",
+                "--headless",
+                "--convert-to",
+                PRESENTATION_PDF if fmt == "pdf" and src.suffix.lower() in PRESENTATIONS else fmt,
+                "--outdir",
+                str(outdir),
+                str(src),
+            ],
             check=True,
             capture_output=True,
             timeout=90,

@@ -17,6 +17,15 @@ from . import document_operations as operations
 from .jobs import stage_job
 
 TERMINAL = {"ready", "failed", "canceled"}
+# Formats whose page numbers belong to the file: a PDF page or a slide is the
+# same page in the browser viewer and in the server render. Word pagination is
+# decided by the layout engine, so Word pages always come from the server
+# render the model's page count and earlier views also came from.
+BROWSER_KINDS = {"pdf", "pptx"}
+
+
+def browser_capable(file, target):
+    return target["kind"] == "pages" and file.filename.rsplit(".", 1)[-1].lower() in BROWSER_KINDS
 
 
 def requested(db, run, file, body):
@@ -29,6 +38,9 @@ def requested(db, run, file, body):
         (v for v in view_state.views(run.user_id, run.conversation_id) if v.get("file_id") == file.id and v.get("version") == file.sha256),
         key=lambda v: v["view_id"],
     )
+    if not browser_capable(file, target):
+        # Server-only views must not split into separate operations by preview state.
+        views = []
     representation = views[0].get("representation_revision") if views else None
     operation = operations.request(
         db,
@@ -202,10 +214,10 @@ def fallback(db, row):
 
 def browser_step(db, row, file):
     target = row.binding["target"]
-    kind = file.filename.rsplit(".", 1)[-1].lower()
-    if target["kind"] != "pages" or kind not in {"pdf", "pptx", "docx"}:
+    if not browser_capable(file, target):
         fallback(db, row)
         return
+    kind = file.filename.rsplit(".", 1)[-1].lower()
     from . import view_state
     from .routes_client_calls import expire
 

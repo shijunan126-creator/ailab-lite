@@ -43,7 +43,14 @@ def main():
             else:
                 filter_name = "writer_pdf_Export"
         options = (prop("Overwrite", True),) + ((prop("FilterName", filter_name),) if filter_name else ())
-        document.storeToURL(pathlib.Path(output).resolve().as_uri(), options)
+        if filter_name == "impress_pdf_Export":
+            # Slide N must stay page N: the viewer and the slide text count hidden slides too.
+            hidden = uno.Any("[]com.sun.star.beans.PropertyValue", (prop("ExportHiddenSlides", True),))
+            options += (prop("FilterData", hidden),)
+        # FilterData is a typed sequence; only uno.invoke keeps that type across the bridge.
+        uno.invoke(
+            document, "storeToURL", (pathlib.Path(output).resolve().as_uri(), uno.Any("[]com.sun.star.beans.PropertyValue", options))
+        )
     finally:
         document.close(True)
 

@@ -203,9 +203,9 @@ def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logge
         stack.portal + "/api/v1/files",
         multipart={
             "upload": {
-                "name": f"late-{failure}.docx",
-                "mimeType": "application/octet-stream",
-                "buffer": (FIXTURES / "report.docx").read_bytes(),
+                "name": f"late-{failure}.pdf",
+                "mimeType": "application/pdf",
+                "buffer": (FIXTURES / "cjk.pdf").read_bytes(),
             }
         },
     )
@@ -217,10 +217,11 @@ def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logge
     cid = _start_conversation(page, "原生收件验收", "test-office-vision")
     _wait_for_turns(page, 1)
     page.locator(".turn .attach-chip.open").first.click()
-    _frame(page, f"late-{failure}.docx").locator("section.office-docx > article p").first.wait_for()
+    # Word pages come only from the server render; PDF pages are the browser-capturable kind.
+    _frame(page, f"late-{failure}.pdf").locator(".textLayer span").first.wait_for(timeout=30000)
     held = []
     page.route("**/client-calls/*/result", lambda route: held.append(route))
-    _send(page, f"原生控制 {fid} docx")
+    _send(page, f"原生控制 {fid} pdf")
     end = time.monotonic() + 30
     while not held:
         assert time.monotonic() < end, "no real browser capture reached the publication boundary"
@@ -234,7 +235,7 @@ def test_late_browser_pixels_cannot_publish_after_fallback_or_cancellation(logge
     else:
         _wait_for_turns(page, 2, seconds=120)
         done = page.request.get(f"{stack.portal}/api/v1/conversations/{cid}").json()["turns"][-1]
-        assert '"source": "office-pdf"' in done["summary"], done
+        assert '"source": "native-pdf"' in done["summary"], done
         assert '"input": "image"' in done["summary"]
     late = page.request.post(request.url, data=payload)
     assert late.status == 409, late.text()

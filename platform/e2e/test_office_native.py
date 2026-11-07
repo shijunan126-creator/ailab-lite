@@ -181,10 +181,12 @@ def test_chat_upload_native_select_quote_send_and_reveal(logged_in, stack, kind,
         )
         _send(page, "原生控制 " + file["id"] + " " + kind)
         _wait_for_turns(page, 3)
-        if mode == "对话" and kind != "xlsx":
+        if mode == "对话" and kind in {"pdf", "pptx"}:
             assert results and all(r.ok for r in results)
         else:
-            assert not results, "Work views stay in its sandbox; spreadsheet page views use controlled server rendering"
+            # Work views stay in its sandbox. Word and Excel pages come from the server
+            # render, whose page numbers the model already has; browser pagination differs.
+            assert not results
         assert "unavailable" not in page.locator(".turn").last.inner_text()
         expect(page.locator(".turn").last).to_contain_text("文档查看结果")
         expect(page.locator(".turn").last).to_contain_text('"input": "image"')

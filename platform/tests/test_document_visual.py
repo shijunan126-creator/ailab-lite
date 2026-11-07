@@ -89,6 +89,24 @@ def test_browser_success_stays_in_one_canonical_asset_and_never_requests_fallbac
         assert ref == {"image_id": result["capture_id"], "revision": row.result["files"][0]["image_revision"]}
 
 
+@pytest.mark.parametrize(("filename", "browser"), [("deck.pptx", True), ("report.docx", False), ("book.xlsx", False)])
+def test_only_intrinsic_page_numbers_use_the_open_preview(ledger, monkeypatch, filename, browser):
+    # Word pages depend on the layout engine: an open preview must not swap the
+    # server render's page N for the browser's page N between turns.
+    factory, storage = ledger
+    view = {"view_id": "view", "file_id": "f", "version": "source", "representation_revision": "viewer:light"}
+    monkeypatch.setattr("ailab_platform.api.view_state.views", lambda user, conversation: [view])
+    operation_id = prepare(factory, storage, monkeypatch, filename=filename)
+    with factory() as db:
+        row, file = db.get(DocumentOperation, operation_id), db.get(FileObject, "f")
+        assert row.binding["representation_revision"] == ("viewer:light" if browser else None)
+        visual.browser_step(db, row, file)
+        db.commit()
+        assert row.status == ("browser" if browser else "preparing")
+        call = db.scalar(select(ClientCall))
+        assert (call.result["_capture"]["at"] if call else None) == ("slide:1" if browser else None)
+
+
 def test_offline_cached_pages_reuse_original_canonical_objects_without_ocr_or_encoding(ledger, monkeypatch):
     factory, storage = ledger
     operation_id = prepare(factory, storage, monkeypatch, pages=(1, 2))
