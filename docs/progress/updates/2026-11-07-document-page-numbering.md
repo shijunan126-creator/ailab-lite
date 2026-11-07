@@ -14,6 +14,8 @@
 - **e2e 卡在 `npm ci`**：本 PR 把 `jszip` 加为 Portal 直接依赖，`package.json` 和锁文件根条目写了 `3.10.1`，但锁文件实际解析的是 main 已有的传递依赖 `3.10.2`，两边不一致。改为直接依赖 `3.10.2`（本地 Portal 测试和 build 用的就是它，pptx-renderer 要求 `^3.10.1`，只保留一份）；`npm install --package-lock-only` 确认锁文件已同步。
 - **python (postgres) 偶发 501**：本 PR 让服务关闭时 `close_storage()` 清空 `get_storage` 的 `lru_cache`。下一次启动时，请求线程和后台循环同时首次取 storage，`lru_cache` 不保证创建是原子的，竞争中输的一方会拿到一个不入缓存、也不会被关闭的第二个实例；测试给这个实例打了补丁，路由用的却是缓存里的那个。改成加锁的单例，`close_storage` 在锁内取走实例再关闭。新回归 `test_concurrent_first_use_after_close_shares_one_storage` 在旧实现上失败。
 
+- **推送后 e2e 仍失败（Portal 单测依赖时钟）**：`office-client-calls` 的 js 调用测试断言 `timeout_ms` 恰好是 100，但实现会扣掉认领往返耗时，只把截止前剩余的预算交给引擎，慢的 CI 机器上得到 99。实现是对的，测试固定 `Date.now` 后确定通过；e2e 的其他报错都是同一个会话夹具在 Portal 单测失败后 setup 出错。
+
 ## 验证（基线 `ea7cd684` 加本轮改动）
 
 - 真实 LibreOffice 26.8（本机 Homebrew）：3 张幻灯片、第 2 张隐藏，默认导出 2 页，新参数导出 3 页。sandbox 镜像是 trixie 自带的 LibreOffice，JSON 过滤参数需要 ≥7.4，满足。
