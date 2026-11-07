@@ -47,8 +47,31 @@ export function niceScale(lo: number, hi: number, count = 4, whole = false) {
 
 const compact = new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 });
 export const tick = (v: number) => (Math.abs(v) >= 10000 ? compact.format(v) : formatNumber(Math.round(v * 100) / 100));
-/** Rough rendered width of a label at 12px: CJK glyphs are square, Latin about half. */
-export const textWidth = (s: string, size = FONT) => [...s].reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? size : size * 0.6), 0);
+/** Rough width when nothing can measure (server, tests): CJK glyphs are square, Latin about half. */
+const estimate = (s: string, size: number) => [...s].reduce((w, ch) => w + (/[⺀-￿]/.test(ch) ? size : size * 0.6), 0);
+
+let pen: CanvasRenderingContext2D | null | undefined;
+const widths = new Map<string, number>();
+/** Rendered width of a label in the page's font (weight 500, the heaviest a chart label uses), measured once. */
+export const textWidth = (s: string, size = FONT) => {
+  if (pen === undefined) {
+    pen = null;
+    if (typeof document !== "undefined" && !/jsdom/i.test(navigator.userAgent)) {
+      pen = document.createElement("canvas").getContext("2d");
+      if (pen) pen.font = `500 1px ${getComputedStyle(document.body).fontFamily}`;
+    }
+  }
+  if (!pen) return estimate(s, size);
+  const key = `${size}\u0000${s}`;
+  let width = widths.get(key);
+  if (width === undefined) {
+    pen.font = pen.font.replace(/\d+(\.\d+)?px/, `${size}px`);
+    width = pen.measureText(s).width;
+    if (widths.size > 4000) widths.clear();
+    widths.set(key, width);
+  }
+  return width;
+};
 export const fit = (s: string, room: number, size = FONT) => {
   if (textWidth(s, size) <= room) return s;
   let out = "";
@@ -58,6 +81,30 @@ export const fit = (s: string, room: number, size = FONT) => {
   }
   return out + "…";
 };
+
+/** A label broken into lines of at most `room` px, at most `max` lines (the last one shortened only when the text
+ * still does not fit). CJK breaks between any two characters; Latin words and numbers stay whole unless one alone
+ * is wider than a line. */
+export function wrap(s: string, room: number, max = 3, size = FONT): string[] {
+  const tokens = s.trim().match(/[A-Za-z0-9_.%+\-/:@#]+|\s+|./gu) || [];
+  const lines: string[] = [];
+  let line = "";
+  const push = () => { lines.push(line.trimEnd()); line = ""; };
+  for (const token of tokens) {
+    if (/^\s+$/.test(token)) { if (line) line += " "; continue; }
+    if (textWidth(line + token, size) <= room) { line += token; continue; }
+    if (line && textWidth(token, size) <= room) { push(); line = token; continue; }
+    for (const ch of token) {
+      if (line && textWidth(line + ch, size) > room) push();
+      line += ch;
+    }
+  }
+  if (line.trim()) push();
+  if (lines.length <= max) return lines;
+  const kept = lines.slice(0, max);
+  kept[max - 1] = fit(lines.slice(max - 1).reduce((a, b) => a + (/\w$/.test(a) && /^\w/.test(b) ? " " : "") + b), room, size);
+  return kept;
+}
 export const value = (v: number, unit?: unknown, decimals?: unknown) => withUnit(formatNumber(v, decimals), unit);
 
 /** Data that evaluated to the wrong shape. While the block is written a value can be missing for a moment, so

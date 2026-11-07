@@ -122,6 +122,11 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
 
                     process_skill_unpack(client, envelope.draft_id, envelope.job_id, token)
                     completion.ack()
+                elif envelope.kind == "skill_view":
+                    from .skill_unpack import process_skill_view
+
+                    process_skill_view(client, file_id, envelope.job_id, token)
+                    completion.ack()
                 else:
                     _handle(completion, msg, file_id)
             finally:

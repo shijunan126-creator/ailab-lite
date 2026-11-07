@@ -178,6 +178,14 @@ def _claim_locked(db, job, body):
                 )
                 or (envelope.kind == "thumbnail" and (file.status != FileStatus.READY or bool(meta.get("thumb_key"))))
                 or (
+                    envelope.kind == "skill_view"
+                    and (
+                        file.status != FileStatus.READY
+                        or (meta.get("skill_view") or {}).get("status") != "preparing"
+                        or (meta.get("skill_view") or {}).get("job_id") != job_id
+                    )
+                )
+                or (
                     envelope.kind == "preview"
                     and (meta.get("preview_job_id") != job_id or (meta.get("preview") or {}).get("status") != "pending")
                 )
@@ -242,6 +250,10 @@ def _claim_locked(db, job, body):
             from .file_dependencies import wake_file
 
             wake_file(db, file)
+        elif expired and envelope.kind == "skill_view" and not done:
+            from .skill_view import failed
+
+            file.meta = {**(file.meta or {}), "skill_view": failed("job_expired")}
         elif expired and envelope.kind == "preview" and not done:
             file.meta = {**(file.meta or {}), "preview": {"status": "failed", "reason": "job_expired"}}
         elif expired and envelope.kind == "ocr" and not done:

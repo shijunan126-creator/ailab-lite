@@ -2,7 +2,7 @@
 // numbers come from data.ts, the same functions the components draw with, so a copy says what the page showed.
 import {
   box, changeRate, factValue, facts, formatNumber, formatRate, formatShare, formatSigned, funnel, histogram, isNode, lineDiff, numbers,
-  objects, pathTree, pieData, ranking, seriesFrom, seriesOf, strings, tableRows, text, treeOf, waterfall, winners, withUnit, type PathNode, type TreeNode,
+  objects, pathTree, pieData, ranking, seriesFrom, seriesOf, siteOf, strings, tableRows, text, treeOf, waterfall, webImage, winners, withUnit, type PathNode, type TreeNode,
 } from "./data.ts";
 import { MAX_TABLE_ROWS } from "./limits.ts";
 
@@ -26,6 +26,11 @@ function seriesTable(title: unknown, categories: unknown, list: unknown, decimal
 }
 
 const bullets = (items: string[]) => items.map((t) => `- ${t}`).join("\n");
+/** A picture in text: what it shows and where it is from (the image itself does not travel in copied text). */
+const picture = (src: unknown, label: unknown, source: unknown) => {
+  const what = `［图片${text(label) ? `：${text(label)}` : ""}］`;
+  return siteOf(source) ? `[${what}](${text(source)})` : webImage(src) ? what : "";
+};
 const treeLines = (n: TreeNode, depth = 0): string[] => [`${"  ".repeat(depth)}- ${n.name}${n.note ? `：${n.note}` : ""}`, ...n.children.flatMap((c) => treeLines(c, depth + 1))];
 const pathLines = (nodes: PathNode[], depth = 0): string[] => nodes.flatMap((n) => [`${"  ".repeat(depth)}${n.name}${n.dir ? "/" : ""}`, ...pathLines(n.children, depth + 1)]);
 
@@ -58,6 +63,14 @@ export function nodeToMarkdown(value: unknown, read: (name: string) => unknown =
       return `\`${text(p.text)}\``;
     case "Callout":
       return `> ${o.title ? `**${text(o.title)}** ` : ""}${text(p.text)}`;
+    case "Image":
+      return picture(p.src, o.caption || o.alt, o.source);
+    case "Gallery": {
+      const images = objects<{ src: unknown; alt?: unknown; caption?: unknown; source?: unknown }>(p.images, ["src"]) ?? [];
+      return titled(o.title, images.map((it) => picture(it.src, it.caption || it.alt, it.source)).join("\n"));
+    }
+    case "ImageText":
+      return [`**${text(p.title)}**`, text(o.text), bullets(strings(o.points, 50) ?? []), siteOf(o.source) ? `来源：[${siteOf(o.source)}](${text(o.source)})` : ""].filter(Boolean).join("\n\n");
     case "Quote":
       return `> ${text(p.text)}${o.source ? `\n>\n> —— ${text(o.source)}` : ""}`;
     case "List": {

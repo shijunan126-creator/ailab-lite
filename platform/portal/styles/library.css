@@ -106,15 +106,23 @@
 .file-list .lib-col-check { width: 38px; padding-right: 8px; }
 .file-list .lib-col-size { width: 88px; }
 .file-list .lib-col-date { width: 120px; }
-.file-list .lib-col-actions { width: 148px; }
+.file-list .lib-col-actions { position: relative; width: 0; padding: 0; }
 .lib-col-size, .lib-col-date { color: var(--muted-foreground); font-size: var(--text-xs); }
 .lib-col-size { font-variant-numeric: tabular-nums; text-align: right; }
 .lib-col-date { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lib-file { display: flex; align-items: center; gap: 12px; min-width: 0; min-height: 32px; }
 .lib-actions { display: flex; align-items: center; justify-content: flex-end; gap: 2px; }
+/* the actions float over the row's end while it is pointed at, so at rest size and date sit at the right edge */
+.lib-row { --row-bg: var(--background); background: var(--row-bg); }
+.file-list .lib-actions { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); padding-left: 28px; background: linear-gradient(to right, transparent, var(--row-bg) 24px); opacity: 0; transition: opacity .12s; }
+.lib-row:hover .lib-actions, .lib-row:focus-within .lib-actions, .lib-row:has([aria-expanded="true"]) .lib-actions { opacity: 1; }
+.lib-row:has([aria-expanded="true"]) .lib-actions { z-index: 2; }
+.lib-name-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lib-name-line .name { min-width: 0; }
+.lib-star { flex: none; color: #f5a524; }
 .lib-mobile-meta { display: none; }
-.lib-row:hover { background: var(--subtle); }
-.lib-row.on { background: var(--selected); }
+.lib-row:hover { --row-bg: var(--subtle); }
+.lib-row.on { --row-bg: var(--selected); }
 .lib-row .grow { flex: 1; min-width: 0; }
 .lib-row .name { display: block; max-width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; font-weight: 550; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
 .lib-row .name:hover { background: none; color: var(--primary); }
@@ -128,6 +136,10 @@
 .lib-row:hover .check, .lib-row:hover .row-actions, .lib-row:hover .star-btn, .lib-row:focus-within .check, .lib-row:focus-within .row-actions, .lib-row:focus-within .star-btn, .lib-row:has([aria-expanded="true"]) .row-actions, .image-card:hover .check, .image-card:hover .row-actions, .image-card:hover .star-btn, .file-list.selecting .check, .image-grid.selecting .check, .file-list-head .check, .check.on, .star-btn.on, .row-actions:focus-within, .star-btn:focus-visible, .check:focus-visible { opacity: 1; }
 @media (hover: none) {
   .file-list .check, .image-card .check, .row-actions, .star-btn { opacity: 1; }
+  /* no pointer to reveal them: the actions keep a column of their own */
+  .file-list .lib-col-actions { width: 132px; padding: 10px 6px; }
+  .file-list .lib-actions { position: static; transform: none; padding: 0; background: none; opacity: 1; }
+  .lib-star { display: none; }
 }
 .row-actions { display: flex; align-items: center; gap: 2px; }
 .row-actions .icon-btn { width: 30px; height: 30px; }
@@ -200,7 +212,6 @@ a.project-row:hover, .project-row:hover { background: var(--subtle); color: var(
   .file-list .lib-col-size, .file-list .lib-col-date { display: none; }
   .file-list th, .file-list td { padding: 10px 6px; }
   .file-list .lib-col-check { width: 30px; padding-right: 4px; }
-  .file-list .lib-col-actions { width: 132px; }
   .lib-file { gap: 8px; }
   .lib-file .lib-open { display: none; }
   .lib-mobile-meta { display: inline; }

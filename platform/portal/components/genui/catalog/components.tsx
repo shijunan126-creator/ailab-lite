@@ -19,6 +19,7 @@ import { formatNumber, pieData, seriesOf, shapeOk, text } from "./data";
 import { HtmlArtifactView } from "./html-artifact";
 import { Malformed } from "./kit";
 import { DEFINITIONS, MAX_TABLE_ROWS, tableRows } from "./schema";
+import { GalleryView, ImageTextView, ImageView } from "./media";
 
 type P = Record<string, any>;
 type Render = (v: unknown) => React.ReactNode;
@@ -334,6 +335,9 @@ const IMPL: Record<string, ComponentRenderer<P>> = {
   }),
   Badge: r((p) => <span className="gu-badge" data-tone={tone(opts(p).tone)}>{text(p.text)}</span>),
   Quote: r((p) => <QuoteView p={p} />),
+  Image: r((p) => <ImageView p={p} />),
+  Gallery: r((p) => <GalleryView p={p} />),
+  ImageText: r((p) => <ImageTextView p={p} />),
   List: r((p) => <ListView p={p} />),
   KeyValue: r((p) => <KeyValueView p={p} />),
   Code: r((p) => <CodeView p={p} />),

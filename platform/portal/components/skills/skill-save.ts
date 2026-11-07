@@ -87,3 +87,32 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
     signal.addEventListener("abort", onAbort, { once: true });
   });
 }
+
+const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
+
+/** The id a new skill is saved under (the API's name rule: lowercase letters, digits and "-", at most 40). Made
+ * from a Latin title when there is one; a short random tail keeps it from replacing an existing skill. */
+export function skillSlug(title: string, random = () => Math.random().toString(36).slice(2, 6)): string {
+  const base = title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 28).replace(/-+$/, "");
+  const tail = random().replace(/[^a-z0-9]/g, "").padEnd(4, "0").slice(0, 4);
+  return `${base.length >= 2 ? base : "skill"}-${tail}`;
+}
+
+/** The SKILL.md of a skill written as fields. */
+export function buildSkillMarkdown({ name, title, description, body }: { name: string; title: string; description: string; body: string }): string {
+  return `---\nname: ${name}\ntitle: ${oneLine(title)}\ndescription: ${oneLine(description)}\n---\n\n${body.trim()}\n`;
+}
+
+/** A whole SKILL.md (as pasted): its header fields and the instructions after it; null for ordinary text. */
+export function readSkillMarkdown(text: string): { name: string; title: string; description: string; body: string } | null {
+  const head = /^﻿?---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(text);
+  if (!head) return null;
+  const fields: Record<string, string> = {};
+  for (const line of head[1].split(/\r?\n/)) {
+    const m = /^([A-Za-z_-]+)\s*:\s*(.*)$/.exec(line);
+    if (m) fields[m[1].toLowerCase()] = m[2].trim().replace(/^(["'])(.*)\1$/, "$2");
+  }
+  if (!fields.name && !fields.description) return null;
+  const name = /^[a-z0-9][a-z0-9-]{0,39}$/.test(fields.name || "") ? fields.name : "";
+  return { name, title: fields.title || "", description: fields.description || "", body: text.slice(head[0].length).replace(/^\s*\n/, "") };
+}

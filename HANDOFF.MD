@@ -1422,3 +1422,14 @@ Work 镜像依赖 vendor 固定 reader，必须从仓库根构建；只哈希 im
 - OCR所选范围、缺失计算页和最终下载是三个不同合同；缓存齐全也要组装与本次选择匹配的结果，轮询/下载绑定request_id，旧job过期/迟到完成须核对当前job与attempt。API没有通用RuntimeContextMiddleware时显式读X-Run-Attempt，测试客户端也要像真实Worker一样传claim token。
 - OCR页渲染完成后普通preview会恢复此前状态，应再prepare消费ocr_preview终态；不能依据恢复后的普通preview判断OCR是否成功。busy复用原身份，terminal失败结束且ACK，显式重试清旧OCR渲染状态。验证见[记录](docs/progress/updates/2026-11-04-ocr-lifecycle-pr.md)。
 - git worktree add不会切换后续shell命令cwd；跨工作区整合命令必须显式指定workdir，不能仅因前一个命令创建了工作区就cherry-pick。
+
+# 2026-11-08 GenUI 导出、换行、输入框与图片
+
+- modern-screenshot 会把每个元素的计算宽度写成固定像素。页面宽度带小数（缩放、字体回退）时，克隆里单行文字会换行，出现“19/0”“50 G/B”。100% 缩放下复现不了，要用 CSS `zoom: 1.1` 或 WebKit 复现。不能靠调导出比例或给某个组件加宽度：`image.tsx` 的 `holdLines` 截图前先量出所有单行文本节点，克隆里只给这些节点 `nowrap`/`pre`，多行文字照常换行。
+- 高亮 EntityCard 原来的外框在 WebKit 导出图里错位，改成 `box-shadow: inset 0 0 0 1px` 后正常。新组件的强调框也用内阴影。
+- 图表标签只在 `textWidth` 能真实测量时才可信：jsdom/SSR 里退回估算。流程图改成按宽度 `wrap` 成多行，节点高度跟行数走；不要再给节点固定宽度然后 `fit` 成省略号。
+- 在 `white-space: pre-wrap` 的 contenteditable 里，Shift+Enter 插入的是 `\n` 文本，不是 `<br>`。删到只剩末尾那个 `\n` 时，它只是浏览器给空末行留的占位，读取时要像末尾 `<br>` 一样丢掉，否则空消息会多一行、也不显示占位文字。
+- 容器查询不能作用于容器自身：`.gu-imagetext` 设了 `container-type`，栅格要放在内层 `.gu-imagetext-inner`，查询里的变量也要设在内层。
+- 模型写出的图片网址如果被页面自动加载，就能把对话内容拼进 URL 外泄。GenUI 只加载工具结果里平台签名的 `/v1/web-images/<编码网址>.<签名>`，由 API 代取并缓存；其他 src 一律显示占位、不发请求。不要为了“能显示”放宽 CSP `img-src` 或允许任意 https 图片。
+- 全局输入框样式只匹配 `input[type="text"]` 等带 type 的选择器。新写的 `<input>` 不写 `type="text"` 就没有边框和内边距，看起来像普通文字。
+- 悬停才显示的行内操作只用 `opacity` 隐藏，不要再加 `pointer-events: none`：指针直接移到按钮位置时，命中的是下面的单元格，Playwright 点击也会被“intercepts pointer events”挡住。指针在按钮上本身就会让整行处于 hover。

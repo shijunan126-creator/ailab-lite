@@ -38,7 +38,7 @@ const bound = <T extends z.ZodType>(schema: T): T => {
   return schema;
 };
 
-export const GROUPS = ["布局", "文字", "指标", "图表", "高级图表", "过程", "对比", "图示与代码", "交互", "页面"] as const;
+export const GROUPS = ["布局", "文字", "图片", "指标", "图表", "高级图表", "过程", "对比", "图示与代码", "交互", "页面"] as const;
 export type Group = (typeof GROUPS)[number];
 /** What the model reads about a component beyond its signature: when to pick it, and one line of use. */
 export type Meta = { group: Group; notes?: string[]; example?: string; needs?: string[] };
@@ -345,11 +345,46 @@ export const EntityCard = def("EntityCard", "一个具体对象的名片：产�
     priceUnit: str,
     highlight: z.boolean(),
     decimals,
+    image: str,
   }),
 }), {
   group: "对比",
-  notes: ["几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。"],
+  notes: ["几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。image 是卡片顶部的图片，规则同 Image 的 src。"],
   example: 'pro = EntityCard("专业版", {price: 99, priceUnit: "元/人/月", fields: [{label: "席位上限", value: 200}], tags: ["SSO"], highlight: true})',
+});
+
+// ---------- 图片 ----------
+// src is never a URL the model writes: only the /v1/web-images/… path a tool result handed it (web_search with
+// kind "images", read_url). Each path is signed by the platform, so an image the model made up does not load.
+const IMAGE_NOTE = "src 只能原样照抄 web_search（kind: \"images\"）或 read_url 结果里的 image 路径（/v1/web-images/…），不要改写或自己拼网址；手头没有图片就不用图片组件。source 填图片所在网页的 URL（结果里的 page_url 或读过的网页）。";
+const picture = z.object({ src: str, alt: str.optional(), caption: str.optional(), source: str.optional() });
+export const Image = def("Image", "一张图片，可带说明和来源", z.object({
+  src: str,
+  opts: opts({ alt: str, caption: str, source: str, ratio: z.enum(["auto", "16:9", "4:3", "1:1", "3:4"]) }),
+}), {
+  group: "图片",
+  notes: [IMAGE_NOTE],
+  example: 'shot = Image("/v1/web-images/…", {caption: "U9 Xtreme 极速测试", source: "https://example.com/news"})',
+});
+export const Gallery = def("Gallery", "同一主题的一组图片（2–12 张）：并排显示，多出的折叠为 +N，点开可逐张浏览", z.object({
+  images: z.array(picture),
+  opts: opts({ title: str }),
+}), {
+  group: "图片",
+  notes: ["每张图片的 src 规则同 Image。只有一张时用 Image。"],
+  example: 'shots = Gallery([{src: "/v1/web-images/…", caption: "正面"}, {src: "/v1/web-images/…", caption: "侧面"}])',
+});
+export const ImageText = def("ImageText", "图文并排：左图右文介绍一个人物、产品、地点或条目", z.object({
+  src: str,
+  title: str,
+  opts: opts({ text: str, points: z.array(str), source: str, side: z.enum(["left", "right"]), size: z.enum(["sm", "md", "lg"]) }),
+}), {
+  group: "图片",
+  notes: [
+    "src 规则同 Image。几个 ImageText 连续放在 Stack 里就是图文列表（如几款产品各一条）。",
+    "size：sm 为小缩略图（列表条目），md 为默认，lg 为大图（重点介绍，窄屏时图片在上）。points 是要点列表。",
+  ],
+  example: 'driver = ImageText("/v1/web-images/…", "Marc Basseng", {text: "德国职业赛车手", points: ["2012 年 FIA GT1 世界冠军"], source: "https://example.com/profile"})',
 });
 
 // ---------- 图示与代码 ----------
@@ -431,6 +466,7 @@ export const HtmlArtifact = def("HtmlArtifact", "一个完整的 HTML 页面（�
 export const DEFINITIONS = [
   Stack, Grid, Card, Tabs, Tab, Details, Divider,
   Heading, Text, Callout, Badge, Quote, List, KeyValue, Code,
+  Image, Gallery, ImageText,
   Metric, Progress, Gauge, ShareBar, Highlights,
   LineChart, AreaChart, BarChart, ComboChart, PieChart, Series,
   ScatterChart, RadarChart, Histogram, BoxPlot, Heatmap, Waterfall, Funnel, Treemap, Sankey, Candlestick, Dumbbell,

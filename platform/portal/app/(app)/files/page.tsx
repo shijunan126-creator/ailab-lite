@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { DragEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
+import { IconScanText,
   IconChevronRight,
   IconDownload,
   IconFolder,
@@ -271,7 +271,9 @@ function Library() {
         {menuFor === f.id ? (
           <div className="pop-menu right" role="menu">
             {f.status==="ready" && /\.(pdf|png|jpe?g|webp|gif|tiff?|bmp|avif)$/i.test(f.filename) ?
-              <button className="menu-item" role="menuitem" onClick={()=>{setMenuFor(null);setExtracting(f);}}>提取文字</button> : null}
+              <button className="menu-item" role="menuitem" onClick={()=>{setMenuFor(null);setExtracting(f);}}>
+                <IconScanText size={15} /> 提取文字
+              </button> : null}
             <button
               className="menu-item"
               role="menuitem"
@@ -527,7 +529,10 @@ function Library() {
                         <FileTile file={f} size={32} />
                       </button>
                       <div className="grow">
-                        <button className="name" title={f.filename} onClick={open}>{f.filename}</button>
+                        <div className="lib-name-line">
+                          <button className="name" title={f.filename} onClick={open}>{f.filename}</button>
+                          {f.starred && !trash ? <IconStar size={13} filled className="lib-star" /> : null}
+                        </div>
                         <div className="meta">
                           <span className="lib-mobile-meta">{formatBytes(f.size)} · {trash ? purgeText(f) : timeAgo(f.created_at)}</span>
                           {(f.versions || 0) > 1 ? <span>{f.versions} 个版本</span> : null}

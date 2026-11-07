@@ -41,12 +41,13 @@ import httpcore
 import httpx
 import trafilatura
 
-from . import metrics
+from . import metrics, web_images
 from .config import settings
 
 USER_AGENT = "AILab-lite/0.1 (safe web research; https://github.com/shijunan126-creator/ailab-lite)"
 MAX_REDIRECTS = 3
 MAX_LINKS = 40
+MAX_PAGE_IMAGES = 6
 TEXT_TYPES = {
     "text/html",
     "application/xhtml+xml",
@@ -275,35 +276,96 @@ def _clean(text: str) -> str:
     return text.strip()
 
 
-class _Links(HTMLParser):
-    """The page's outgoing links: read_url returns them so the model may follow one (net_tools provenance)."""
+class _References(HTMLParser):
+    """One pass over the page for what it points at: outgoing links (read_url returns them so the model may follow
+    one, net_tools provenance) and its pictures (returned as signed image references, web_images)."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.links: list[str] = []
+        self.shared: list[tuple[str, str]] = []  # og:image / twitter:image: the picture the page chose to represent it
+        self.images: list[tuple[str, str]] = []
+        self.shared_alt = ""
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.lower() == "a" and len(self.links) < MAX_LINKS * 4 and (href := dict(attrs).get("href")):
-            self.links.append(href)
+        tag = tag.lower()
+        if tag == "a":
+            if len(self.links) < MAX_LINKS * 4 and (href := dict(attrs).get("href")):
+                self.links.append(href)
+        elif tag == "meta":
+            values = dict(attrs)
+            name = (values.get("property") or values.get("name") or "").strip().lower()
+            content = (values.get("content") or "").strip()
+            if name in SHARED_IMAGE_META and content and len(self.shared) < 4:
+                self.shared.append((content, ""))
+            elif name in ("og:image:alt", "twitter:image:alt") and not self.shared_alt:
+                self.shared_alt = content
+        elif tag == "img" and len(self.images) < MAX_PAGE_IMAGES * 10:
+            values = dict(attrs)
+            if any(_attr_px(values.get(side)) <= 64 for side in ("width", "height")):
+                return  # tracking pixels, icons, spacers
+            src = (values.get("src") or "").strip()
+            if not src or src.startswith("data:"):  # lazy loaders keep a placeholder in src and the picture here
+                src = next((v.strip() for k in LAZY_SRC if (v := values.get(k)) and not v.strip().startswith("data:")), "")
+            if src:
+                self.images.append((src, (values.get("alt") or "").strip()))
 
 
-def _links(html: str, base: str) -> list[str]:
-    parser = _Links()
-    with contextlib.suppress(Exception):  # malformed HTML only costs the links
+SHARED_IMAGE_META = {"og:image", "og:image:url", "og:image:secure_url", "twitter:image", "twitter:image:src"}
+LAZY_SRC = ("data-src", "data-original", "data-lazy-src", "data-actualsrc")
+# Path words that mark chrome rather than content.
+DECORATION = {
+    "logo", "logos", "icon", "icons", "favicon", "avatar", "avatars", "sprite", "sprites", "pixel", "spacer", "blank",
+    "badge", "badges", "emoji", "placeholder", "loading", "spinner", "1x1", "beacon", "tracking",
+}  # fmt: skip
+
+
+def _attr_px(value: str | None) -> int:
+    match = re.match(r"\s*(\d+)\s*(?:px)?\s*$", value or "")
+    return int(match[1]) if match else 10_000
+
+
+def image_reference(raw: str, base: str = "") -> str | None:
+    """The signed path for a picture URL found in a search result or page; None for what must not be shown:
+    non-http(s), data:, credentials, odd ports, private literal addresses, SVG (scriptable) and icons."""
+    raw = raw.strip()
+    if not raw or raw.startswith("data:"):
+        return None
+    try:
+        url = _validate_url(urljoin(base, raw) if base else ("https:" + raw if raw.startswith("//") else raw))
+    except (WebError, ValueError):
+        return None
+    path = urlsplit(url).path.lower()
+    if path.endswith((".svg", ".svgz", ".ico")) or DECORATION & set(re.split(r"[^a-z0-9]+", path)):
+        return None
+    return web_images.reference(url)
+
+
+def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
+    parser = _References()
+    with contextlib.suppress(Exception):  # malformed HTML only costs the links and pictures
         parser.feed(html)
-    out: list[str] = []
+    links: list[str] = []
     for href in parser.links:
         url = urljoin(base, href.strip()).split("#")[0]
-        if url.startswith(("http://", "https://")) and len(url) <= 2000 and url not in out:
-            out.append(url)
-        if len(out) >= MAX_LINKS:
+        if url.startswith(("http://", "https://")) and len(url) <= 2000 and url not in links:
+            links.append(url)
+        if len(links) >= MAX_LINKS:
             break
-    return out
+    images: list[dict] = []
+    shared = [(src, parser.shared_alt) for src, _ in parser.shared]
+    for src, alt in shared + parser.images:
+        ref = image_reference(src, base)
+        if ref and all(item["image"] != ref for item in images):
+            images.append({"image": ref, "alt": _clean(alt)[:120]})
+        if len(images) >= MAX_PAGE_IMAGES:
+            break
+    return links, images
 
 
-def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str]]:
-    """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura) and links.
-    CPU-bound: callers run it in a thread."""
+def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], list[dict]]:
+    """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura), links and
+    signed picture references. CPU-bound: callers run it in a thread."""
     try:
         text = trafilatura.extract(
             html,
@@ -322,7 +384,7 @@ def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str]]:
     title = (meta.title if meta and meta.title else "") or ""
     if not title and (m := re.search(r"<title[^>]*>(.*?)</title>", html, re.I | re.S)):
         title = unescape(m[1])
-    return _clean(title)[:300], _markdown(text or ""), _links(html, base)
+    return _clean(title)[:300], _markdown(text or ""), *_references(html, base)
 
 
 def _markdown(text: str) -> str:
@@ -353,12 +415,29 @@ def _weakness(html: str, text: str) -> str | None:
     return None
 
 
-async def search(query: str, count: int | None = None) -> list[dict]:
+MOCK_IMAGE_BASE = "https://example.com/ailab-mock-images/"
+
+
+async def search(query: str, count: int | None = None, kind: str = "web") -> list[dict]:
     query = query.strip()[:300]
     if not query:
         raise WebError("query is required")
+    if kind not in ("web", "images"):
+        raise WebError("kind must be web or images")
     n = max(1, min(int(count or settings.web_max_results), 8))
     provider = settings.web_search_provider
+    if provider == "mock" and kind == "images":
+        # The API serves these without a network (api/routes_web_images.py), so the mock stack shows real pictures.
+        return [
+            {
+                "title": f"{query} — image {i + 1}",
+                "image": web_images.reference(f"{MOCK_IMAGE_BASE}{i + 1}.png"),
+                "page_url": f"https://example.com/{i + 1}",
+                "width": 480,
+                "height": 320,
+            }
+            for i in range(n)
+        ]
     if provider == "mock":
         return [
             {
@@ -374,6 +453,8 @@ async def search(query: str, count: int | None = None) -> list[dict]:
 
     base = settings.searxng_url.rstrip("/")
     params = {"q": query, "format": "json", "language": "zh-CN", "safesearch": "1"}
+    if kind == "images":
+        params["categories"] = "images"
     try:
         async with httpx.AsyncClient(
             timeout=settings.web_search_timeout_seconds,
@@ -393,6 +474,8 @@ async def search(query: str, count: int | None = None) -> list[dict]:
     if data.get("error") or (not data["results"] and data.get("unresponsive_engines")):
         raise WebError("search provider engines failed or timed out; retry later (not a successful empty search)")
 
+    if kind == "images":
+        return _image_results(data["results"], n)
     out: list[dict] = []
     for item in data["results"]:
         if not isinstance(item, dict):
@@ -408,6 +491,29 @@ async def search(query: str, count: int | None = None) -> list[dict]:
                 "engine": str(item.get("engine") or "")[:50],
             }
         )
+        if len(out) >= n:
+            break
+    return out
+
+
+def _image_results(results: list, n: int) -> list[dict]:
+    """SearXNG image hits as signed references: the picture (img_src, else its thumbnail) and the page showing it."""
+    out: list[dict] = []
+    for item in results:
+        if not isinstance(item, dict):
+            raise WebError("search service returned an invalid result")
+        if str(item.get("img_format") or "").lower().startswith("svg"):
+            continue
+        ref = image_reference(str(item.get("img_src") or "")) or image_reference(str(item.get("thumbnail_src") or ""))
+        if not ref or any(hit["image"] == ref for hit in out):
+            continue
+        page = str(item.get("url") or "").strip()
+        hit = {"title": str(item.get("title") or "")[:300], "image": ref}
+        if page.startswith(("http://", "https://")) and len(page) <= 2000:
+            hit["page_url"] = page
+        if size := re.match(r"\s*(\d{1,5})\s*[x×]\s*(\d{1,5})", str(item.get("resolution") or "")):
+            hit["width"], hit["height"] = int(size[1]), int(size[2])
+        out.append(hit)
         if len(out) >= n:
             break
     return out
@@ -538,13 +644,13 @@ async def _read_static(current: str, limit: int) -> tuple[dict, str | None]:
     final, ctype, raw, truncated = page["url"], page["content_type"], page["text"], page["truncated"]
     weak = None
     if ctype in ("text/html", "application/xhtml+xml") or raw.lstrip().startswith("<"):
-        title, text, links = await asyncio.to_thread(extract_markdown, raw, final)
+        title, text, links, images = await asyncio.to_thread(extract_markdown, raw, final)
         weak = _weakness(raw, text)
         if CHALLENGE_TITLE.fullmatch(title.strip()) or CHALLENGE_TITLE.fullmatch(text.strip()):
             # An access wall is not useful partial article content if rendering fails.
             text, weak = "", "challenge"
     else:
-        title, links, text = page["title"], [], raw
+        title, links, images, text = page["title"], [], [], raw
         if ctype == "application/json":
             with contextlib.suppress(ValueError):
                 text = json.dumps(json.loads(raw), ensure_ascii=False, indent=1)
@@ -558,6 +664,7 @@ async def _read_static(current: str, limit: int) -> tuple[dict, str | None]:
         "content_type": ctype,
         "truncated": truncated,
         "links": links,
+        **({"images": images} if images else {}),
     }
     return page, weak
 

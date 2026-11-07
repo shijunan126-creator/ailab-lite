@@ -121,7 +121,11 @@ def test_skill_create_edit_and_scanned_version(page, stack):
     login(page, stack, path="/skills")
     page.get_by_role("button", name="新建", exact=True).click()
     editor = page.get_by_role("dialog")
-    editor.get_by_role("textbox").fill(content)
+    # a whole SKILL.md pasted into the instructions fills the name and when-to-use fields from its header
+    editor.get_by_role("textbox", name="怎么做").fill(content)
+    expect(editor.get_by_role("textbox", name="名称")).to_have_value("浏览器验收技能")
+    expect(editor.get_by_role("textbox", name="什么时候用")).to_have_value("验证在线编辑")
+    expect(editor.get_by_role("textbox", name="怎么做")).to_have_value("# 做法\n先阅读材料。\n")
     editor.get_by_role("button", name="保存", exact=True).click()
     row = page.locator(".mrow").filter(has_text="浏览器验收技能")
     row.get_by_role("button", name="编辑 浏览器验收技能", exact=True).wait_for(timeout=60000)
