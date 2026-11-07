@@ -80,7 +80,7 @@ def step(operation_id: str, x_run_attempt: str | None = Header(default=None), db
                 if images is None:
                     db.commit()
                     return {**operations.receipt(row), "waiting_for": "page-images"}
-                if row.binding["target"]["kind"] == "pages":
+                if row.binding["target"]["kind"] in {"pages", "sheet"}:
                     # Full server pages are already canonical; do not encode or
                     # store a second model-only copy of the same page pixels.
                     row.result = {

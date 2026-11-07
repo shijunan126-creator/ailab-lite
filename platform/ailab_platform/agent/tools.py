@@ -32,7 +32,10 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "view_workspace_file",
-            "description": "视觉模型查看 /workspace 下工作文件的布局或图片；pages 最多 4 页，默认第 1 页。用于交付前检查。",
+            "description": (
+                "视觉模型查看 /workspace 下工作文件的布局或图片；pages 最多 4 页，默认第 1 页。"
+                "xlsx结果的sheet_pages给出各工作表的页范围。用于交付前检查。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {

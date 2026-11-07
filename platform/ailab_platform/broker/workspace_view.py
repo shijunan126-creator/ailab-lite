@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..config import settings
+from ..contracts.file_preview import sheet_ranges, sheet_starts
 from ..contracts.workspace_view import VIEW_ERRORS
 from ..paths import PathError, normalize_path
 from .render import SCRIPT as RENDER_SCRIPT
@@ -127,6 +128,13 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
             jpeg_dimensions(data)
         if review and (not isinstance(payload.get("structural"), dict) or payload.get("quality_gate") != "pending_model_judgment"):
             raise ValueError("invalid_view_output")
+        starts = payload.pop("sheet_pages", None)
+        if starts is not None:
+            count = payload.get("page_count")
+            starts = sheet_starts(starts, count) if type(count) is int and count >= 1 else None
+            # Optional metadata: a malformed outline is dropped, not trusted.
+            if starts:
+                payload["sheet_pages"] = sheet_ranges(starts, count)
         return payload
     finally:
         try:

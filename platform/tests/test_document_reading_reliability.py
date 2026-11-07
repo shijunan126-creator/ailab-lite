@@ -509,3 +509,32 @@ def test_unknown_page_count_and_explicit_subset_do_not_claim_whole_file():
             subset = document_images(db, file, [1], prepare=False)
             assert subset["page_count"] is None
             assert subset["files"][0]["content_type"] == "image/jpeg"
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch, version):
+    from ailab_platform.agent.loop import AgentLoop
+
+    monkeypatch.setitem(
+        get_catalog().models, "vision-inline", ModelSpec(id="vision-inline", name="Vision", provider="mock", capabilities=["vision"])
+    )
+
+    class Platform:
+        async def get_file_page_image(self, *args):
+            return b"\xff\xd8\xff\xe0page"
+
+    run = {
+        "prompt": "看图",
+        "options": {"mode": "chat", "document_tools_version": version} if version == 2 else {"mode": "chat"},
+        "input_files": [
+            {
+                "filename": "deck.pptx",
+                "file_id": "f",
+                "visual_pages": [{"id": "f", "filename": "deck.pptx", "page": 3, "content_type": "image/jpeg", "digest": "d" * 64}],
+            }
+        ],
+    }
+    parts = asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-inline"))
+    labels = [part["text"] for part in parts if part.get("type") == "text" and "渲染第3页" in part["text"]]
+    expected = '（region_ref={"page":3,"revision":"' + "d" * 64 + '"}）'
+    assert labels == (["附件《deck.pptx》渲染第3页" + expected] if version == 2 else ["附件《deck.pptx》渲染第3页"])

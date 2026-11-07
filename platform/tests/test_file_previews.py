@@ -609,3 +609,13 @@ def test_explicit_image_ocr_prepares_normalized_pixels_lazily_without_inference(
         file = db.get(FileObject, fid)
         assert file.meta["display_key"] and file.meta["ocr"] == "pending"
         assert not file.meta.get("ocr_text_key")
+
+
+def test_sandbox_sheet_outline_is_optional_and_never_trusted_when_malformed():
+    from ailab_platform.contracts.file_preview import sheet_ranges, sheet_starts
+
+    good = [{"sheet": "A", "first_page": 1}, {"sheet": "B", "first_page": 3}]
+    assert sheet_starts(good, 4) == good
+    assert sheet_ranges(good, 4) == [{"sheet": "A", "pages": [1, 2]}, {"sheet": "B", "pages": [3, 4]}]
+    for bad in (None, [], "A", [{"sheet": "A"}], good[::-1], [{"sheet": "A", "first_page": 5}], [{"sheet": "", "first_page": 1}]):
+        assert sheet_starts(bad, 4) is None

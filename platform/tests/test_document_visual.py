@@ -16,14 +16,16 @@ from tests.test_capture_assets import setup_capture
 from tests.test_derived_assets import ledger  # noqa: F401
 
 
-def prepare(factory, storage, monkeypatch, *, pages=(1,)):
+def prepare(factory, storage, monkeypatch, *, pages=(1,), target=None, filename=None):
     setup_capture(factory, storage, monkeypatch)
     with factory.begin() as db:
         db.add_all([DocumentLane(name="render"), DocumentLane(name="ocr")])
         db.flush()
         run = db.get(Run, "r")
         run.options = {**run.options, "client": "portal"}
-        body = ViewDocument(file_id="f", target={"kind": "pages", "pages": list(pages)})
+        if filename:
+            db.get(FileObject, "f").filename = filename
+        body = ViewDocument(file_id="f", target=target or {"kind": "pages", "pages": list(pages)})
         result = visual.requested(db, run, db.get(FileObject, "f"), body)
         assert visual.requested(db, run, db.get(FileObject, "f"), body) == result
         row = db.get(DocumentOperation, result["operation_id"])
@@ -173,3 +175,79 @@ def test_interrupted_view_consumer_keeps_only_its_exact_render_dependency_alive(
         parent.result = {**parent.result, "render_job_id": "unrelated-job"}
         db.commit()
         assert not file_work.available(db, child)
+
+
+def finish_outline(db, starts, page_count):
+    """What a completed first-page render of a workbook leaves behind."""
+    file = db.get(FileObject, "f")
+    meta = dict(file.meta)
+    meta["preview"] = {"status": "ready", "kind": "pages"}
+    if starts:
+        meta["render_sheet_pages"] = {"version": file.sha256, "page_count": page_count, "sheets": starts}
+    file.meta = meta
+    db.add_all(
+        [
+            RenderedPage(file_id="f", page=page, version="poppler-1280-v1", key=f"derived/f/page-{page}.png", digest=f"digest-{page}")
+            for page in range(1, page_count + 1)
+        ]
+    )
+    db.commit()
+
+
+def test_sheet_view_learns_the_outline_once_then_shows_that_sheets_pages(ledger, monkeypatch):
+    factory, storage = ledger
+    target = {"kind": "sheet", "sheet": "scanned"}
+    operation_id = prepare(factory, storage, monkeypatch, target=target, filename="book.xlsx")
+    monkeypatch.setattr("ailab_platform.api.view_state.views", lambda user, conversation: [])
+    with factory() as db:
+        first = routes.step(operation_id, "worker", db)
+        assert first["status"] == "preparing" and first["waiting_for"] == "page-images"
+        row, file = db.get(DocumentOperation, operation_id), db.get(FileObject, "f")
+        assert row.result["render_job_id"] == file.meta["preview_job_id"] and file.meta["ocr_render_pages"] == [1]
+        # The outline render is this view's own render dependency, so a waiting
+        # consumer keeps it alive instead of the job being cancelled as orphaned.
+        from ailab_platform.api import file_work
+
+        run = db.get(Run, "r")
+        run.status = "interrupted"
+        run.runtime_meta = {**run.runtime_meta, "file_dependency": {"operation_id": row.id}}
+        db.commit()
+        assert file_work.available(db, db.get(DocumentOperation, row.result["render_job_id"]))
+        run.status = "running"
+        db.commit()
+        jobs = db.scalar(select(func.count()).select_from(OutboxMessage))
+        assert routes.step(operation_id, "worker", db)["status"] == "preparing"
+        assert db.scalar(select(func.count()).select_from(OutboxMessage)) == jobs
+        finish_outline(db, [{"sheet": "Revenue", "first_page": 1}, {"sheet": "Scanned", "first_page": 2}], 7)
+        result = routes.step(operation_id, "worker", db)
+        assert result["status"] == "ready", result
+        assert [item["page"] for item in result["result"]["files"]] == [2, 3, 4, 5]
+        view = visual.response(db.get(DocumentOperation, operation_id), db.get(FileObject, "f"))
+        assert view["coverage"] == {**target, "pages": [2, 3, 4, 5]} and view["truncated"]
+        assert view["visual_representation"]["sheet_to_page_mapping"] == [
+            {"sheet": "Revenue", "pages": [1, 1]},
+            {"sheet": "Scanned", "pages": [2, 7]},
+        ]
+
+
+@pytest.mark.parametrize(
+    ("sheet", "starts", "error"),
+    [
+        ("Hidden", [{"sheet": "Revenue", "first_page": 1}], "sheet_not_rendered"),
+        ("Revenue", None, "sheet_page_mapping_unavailable"),
+    ],
+)
+def test_sheet_view_reports_unprinted_sheets_and_missing_outlines(ledger, monkeypatch, sheet, starts, error):
+    factory, storage = ledger
+    operation_id = prepare(factory, storage, monkeypatch, target={"kind": "sheet", "sheet": sheet}, filename="book.xlsx")
+    monkeypatch.setattr("ailab_platform.api.view_state.views", lambda user, conversation: [])
+    with factory() as db:
+        assert routes.step(operation_id, "worker", db)["status"] == "preparing"
+        finish_outline(db, starts, 2)
+        assert routes.step(operation_id, "worker", db)["status"] == "failed"
+        assert visual.response(db.get(DocumentOperation, operation_id), db.get(FileObject, "f"))["error"] == error
+
+
+def test_sheet_view_takes_no_cell_range():
+    with pytest.raises(ValueError, match="range"):
+        ViewDocument(file_id="f", target={"kind": "sheet", "sheet": "Revenue", "range": "A1:B2"})

@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..config import settings
-from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS
+from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS, sheet_starts
 from ..contracts.sandbox import SandboxSpec
 from ..domain.admission import LeasePrincipal
 from .service import LeaseError, LeaseManager
@@ -185,7 +185,7 @@ class LibraryRenderer:
         returned = False
         first_asset = None
 
-        def publish_page(name, page_count, local, digest=None):
+        def publish_page(name, page_count, local, digest=None, sheet_pages=None):
             if digest is None:
                 with local.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
@@ -193,7 +193,9 @@ class LibraryRenderer:
             self.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
             try:
-                self.manager.platform.publish_preview_page(file_id, job_id, name, page_count, asset)
+                self.manager.platform.publish_preview_page(
+                    file_id, job_id, name, page_count, asset, **({"sheet_pages": sheet_pages} if sheet_pages else {})
+                )
             except Exception:
                 # Publication can commit before its response is lost. The
                 # accounted writer asks the API which grants remain deletable;
@@ -210,11 +212,15 @@ class LibraryRenderer:
                 # remaining pages from that same PDF in the normal bulk path.
                 first_page = selected[0] if selected else 1
                 save_pdf = not source.endswith(".pdf")
+                # The first conversion also reports where each sheet starts, so
+                # a view can name a worksheet instead of guessing its pages.
+                spreadsheet = suffix in SANDBOX_SHEETS | LOCAL_SHEETS
                 first_started = time.monotonic()
                 first = self._exec(
                     lease_id,
                     f"AILAB_PAGE_PNG=1 {office_env}timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
-                    f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
+                    f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}"
+                    f"{' --sheet-pages' if spreadsheet else ''}",
                     95,
                 )
                 if first.exit_code:
@@ -246,7 +252,9 @@ class LibraryRenderer:
                     self.manager._download(
                         self.manager.get(handle), f"/workspace/.ailab/first/{names[0]}", local, settings.max_sandbox_read_bytes
                     )
-                    first = publish_page(names[0], count, local)
+                    first = publish_page(
+                        names[0], count, local, sheet_pages=sheet_starts(first_manifest.get("sheet_pages"), count) if spreadsheet else None
+                    )
                 first_asset = (names[0], first)
                 phases["first_publish_seconds"] = time.monotonic() - first_started
                 if save_pdf:

@@ -33,6 +33,7 @@ TOOLS = [
     tool(
         "view_document",
         "查看文档页图或区域，不OCR。pages每次最多4页；Word/Excel的pages是渲染页，不是段落或工作表序号。"
+        "Excel用kind=sheet按工作表名查看该表的渲染页，结果的sheet_to_page_mapping给出各表页范围。"
         "看局部细节时用kind=region：把此前返回的files[].region_ref原样填入（page或image_id加revision），"
         "x/y/width/height是该图上的0–1归一化坐标。文字已足够回答时不额外看图。",
         ViewDocument,
@@ -67,6 +68,8 @@ HINTS = {
     "document_page_out_of_range": "页号超出文档页数，按附件导航中的页数选择",
     "embedded_image_unavailable_use_pages": "改用view_document的pages查看所在页",
     "selector_representation_mismatch": "selector类型与文档格式不符：PDF/PPT用pages，Word用word，Excel用sheet",
+    "sheet_not_rendered": "该工作表没有可打印内容（空表或隐藏表），没有页图；单元格用read_document的sheet读取",
+    "sheet_page_mapping_unavailable": "无法确定该工作表所在页，改用pages查看渲染页",
 }
 
 
@@ -113,6 +116,8 @@ ERRORS = frozenset(
         "ocr_representation_unavailable",
         "native_page_count_unavailable",
         "embedded_image_unavailable_use_pages",
+        "sheet_not_rendered",
+        "sheet_page_mapping_unavailable",
         "document_tool_not_available_for_catalog",
     }
 )

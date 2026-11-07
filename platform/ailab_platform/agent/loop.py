@@ -1200,7 +1200,13 @@ class AgentLoop:
                     ]
                     for page, encoded in zip(viewed["pages"], viewed["images"], strict=True)
                 ]
-                return {"ok": True, "pages": viewed["pages"], "input": "image", "_child_images": parts}
+                return {
+                    "ok": True,
+                    "pages": viewed["pages"],
+                    "input": "image",
+                    **({"sheet_pages": viewed["sheet_pages"]} if viewed.get("sheet_pages") else {}),
+                    "_child_images": parts,
+                }
             return await self._interruptible(run_id, execute_tool(call.name, call.arguments, lease_id, self.broker, ctx))
         except (RunCanceled, LeaseInterrupted, BudgetPause):
             raise
@@ -1242,6 +1248,12 @@ class AgentLoop:
             and not (prompt_options.get("document_tools_version") == 2 and file.get("input_strategy") == "reference")
         ]
         document_pages = [page for file in files for page in file.get("visual_pages", [])]
+        if prompt_options.get("document_tools_version") == 2:
+            # Inline pages are canonical renders: their digest is the region revision.
+            document_pages = [
+                {**page, "region_ref": {"page": page["page"], "revision": page["digest"]}} if page.get("digest") else page
+                for page in document_pages
+            ]
         if not images and not document_pages:
             return user_prompt(render_skill_mentions(prompt, (run.get("options") or {}).get("skills")), files, **prompt_options)
         parts = [
@@ -1489,6 +1501,8 @@ class AgentLoop:
                         [{"type": "text", "text": f"工作文件 {call.arguments['path']} 第 {page} 页"}, part]
                     )
                 result = {"ok": True, "pages": viewed["pages"], "input": "image"}
+                if viewed.get("sheet_pages"):
+                    result["sheet_pages"] = viewed["sheet_pages"]
                 if call.name == "review_artifact":
                     result.update({k: v for k, v in viewed.items() if k != "images"})
                     result.update(

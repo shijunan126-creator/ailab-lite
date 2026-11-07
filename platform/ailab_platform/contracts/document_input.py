@@ -117,9 +117,16 @@ class SearchDocument(Contract):
         return value
 
 
+class SheetView(Contract):
+    """A worksheet's rendered pages; cells are read, not viewed, so no range."""
+
+    kind: Literal["sheet"]
+    sheet: str = Field(min_length=1, max_length=64)
+
+
 class ViewDocument(Contract):
     file_id: str = Field(min_length=1, max_length=40)
-    target: Annotated[Pages | Region | Image, Field(discriminator="kind")]
+    target: Annotated[Pages | SheetView | Region | Image, Field(discriminator="kind")]
     cursor: str | None = Field(default=None, max_length=2048)
 
     @model_validator(mode="after")

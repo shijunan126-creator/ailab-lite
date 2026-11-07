@@ -62,21 +62,78 @@ def response(row, file):
         source = files[0].get("source") if files else None
         meta = file.meta or {}
         count = (meta.get("ocr_preview") or {}).get("page_count") or meta.get("render_page_count")
+        coverage, truncated = row.binding["target"], False
+        sheet = (row.result or {}).get("sheet")
+        if sheet:
+            coverage, truncated = {**coverage, "pages": sheet["viewed"]}, sheet["viewed"][-1] < sheet["pages"][1]
+        mapping = sheet_mapping(file)
         return {
             **base,
             "files": [{**item, "region_ref": region_ref(item)} for item in files],
-            "coverage": row.binding["target"],
+            "coverage": coverage,
             "missing": [],
-            "truncated": False,
+            "truncated": truncated,
             "visual_representation": {
                 "source": source,
                 "page_count": count,
-                "sheet_to_page_mapping": "unavailable" if file.filename.lower().endswith(".xlsx") else "not_applicable",
+                "sheet_to_page_mapping": (mapping[:50] if mapping else "unavailable") if spreadsheet(file) else "not_applicable",
             },
         }
     if row.status in {"failed", "canceled"}:
         return {**base, "error": row.result.get("reason", "document_view_failed"), "partial": bool(row.result.get("files"))}
     return {**base, "pending": True, "action": "document-view", "deadline": operations.aware(row.deadline).timestamp()}
+
+
+def spreadsheet(file):
+    return file.filename.lower().endswith(".xlsx")
+
+
+def sheet_mapping(file):
+    """Rendered-page range of each printed sheet, when the render reported it."""
+    from ..contracts.file_preview import sheet_ranges
+
+    known = (file.meta or {}).get("render_sheet_pages") or {}
+    if known.get("version") != file.sha256 or not known.get("sheets"):
+        return None
+    return sheet_ranges(known["sheets"], known["page_count"])
+
+
+def sheet_pages(db, row, file):
+    """A worksheet's first rendered pages; renders once to learn the outline.
+
+    Sheet order is not page order, so the model names the sheet and the
+    outline the render recorded decides which pages it covers.
+    """
+    if not spreadsheet(file):
+        raise HTTPException(422, "selector_representation_mismatch")
+    mapping = sheet_mapping(file)
+    if mapping is None:
+        meta = file.meta or {}
+        job = row.result.get("render_job_id")
+        if row.result.get("outline_requested") and job:
+            if meta.get("preview_job_id") == job and (meta.get("preview") or {}).get("status") == "pending":
+                return None
+            # Our page render finished without an outline (another producer).
+            raise HTTPException(422, "sheet_page_mapping_unavailable")
+        from .routes_ocr import request_page_render
+
+        request_page_render(db, file, [1], run=operations.live_consumer(db, row))
+        meta = file.meta or {}
+        # Joining a pending sheet-data preview reports no pages; ask again
+        # when it completes. Only a page render reports the outline, and it
+        # is this view's render dependency, so it stays alive while we wait.
+        if meta.get("ocr_render_job_id") == meta.get("preview_job_id"):
+            row.result = {**row.result, "render_job_id": meta["preview_job_id"], "outline_requested": True}
+        return None
+    name = row.binding["target"]["sheet"].casefold()
+    match = next((item for item in mapping if item["sheet"].casefold() == name), None)
+    if not match:
+        # Empty and hidden sheets print no pages.
+        raise HTTPException(422, "sheet_not_rendered")
+    first, last = match["pages"]
+    viewed = list(range(first, min(last, first + 3) + 1))
+    row.result = {**row.result, "sheet": {"sheet": match["sheet"], "pages": [first, last], "viewed": viewed}}
+    return viewed
 
 
 def region_ref(item):
@@ -275,6 +332,11 @@ def server_inputs(db, row, file):
     from .routes_ocr import request_page_render
 
     target = row.binding["target"]
+    if target["kind"] == "sheet":
+        pages = (row.result.get("sheet") or {}).get("viewed") or sheet_pages(db, row, file)
+        if pages is None:
+            return None
+        target = {"kind": "pages", "pages": pages}
     if target["kind"] == "pages":
         selectors = [{"kind": "pages", "pages": [page]} for page in target["pages"]]
     elif target["kind"] == "image":

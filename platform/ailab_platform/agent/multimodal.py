@@ -5,6 +5,7 @@ model- or user-supplied URLs are never fetched by the model gateway.
 """
 
 import base64
+import json
 
 from ..config import settings
 
@@ -35,6 +36,9 @@ def attachment_content(
     file: dict, *, vision: bool, image: bytes | None = None, content_type: str = "image/webp", text: str = ""
 ) -> list[dict]:
     label = f"附件《{file['filename']}》" + (f"渲染第{file['page']}页" if file.get("page") else "")
+    if file.get("region_ref"):
+        # The same identity a later view_document region must name.
+        label += "（region_ref=" + json.dumps(file["region_ref"], separators=(",", ":")) + "）"
     if vision and image is not None:
         return [{"type": "text", "text": label}, image_part(image, content_type)]
     if text.strip():

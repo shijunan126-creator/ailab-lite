@@ -1297,6 +1297,14 @@ def publish_preview_page(
             raise HTTPException(400, "invalid preview page")
         meta["preview_requested_pages"] = [p for p in (meta.get("preview_requested_pages") or []) if p != page]
         meta["render_page_count"] = body.page_count
+        if body.sheet_pages:
+            # Bound to this source version and PDF length; a later render of
+            # the same version reports the same outline.
+            meta["render_sheet_pages"] = {
+                "version": file.sha256,
+                "page_count": body.page_count,
+                "sheets": [item.model_dump() for item in body.sheet_pages],
+            }
         file.meta = meta
         from ..models import DocumentOperation
 

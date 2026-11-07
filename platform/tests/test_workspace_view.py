@@ -396,3 +396,24 @@ def test_listener_interrupted_export_recovers_in_fresh_output_directory(tmp_path
     assert rendered.read_bytes() == b"complete PDF"
     assert rendered.parent != output
     assert len(calls) == 2
+
+
+@pytest.mark.skipif(not all(shutil.which(x) for x in ["soffice", "pdftoppm", "pdfinfo", "timeout"]), reason="Office tools unavailable")
+def test_workspace_workbook_view_reports_each_sheets_page_range(tmp_path):
+    from openpyxl import Workbook
+
+    book = Workbook()
+    book.active.title = "Revenue"
+    for row in range(1, 120):
+        book.active.append([f"region {row}", row])
+    book.create_sheet("Empty")
+    book.create_sheet("Notes")["A1"] = "notes"
+    data = io.BytesIO()
+    book.save(data)
+    manager, _, _ = _manager(tmp_path)
+    lease = manager.create("view-book")["lease_id"]
+    manager.put_file(lease, "/workspace/outputs/book.xlsx", data.getvalue())
+    result = view(manager, lease, "/workspace/outputs/book.xlsx", [1])
+    count = result["page_count"]
+    assert result["sheet_pages"] == [{"sheet": "Revenue", "pages": [1, count - 1]}, {"sheet": "Notes", "pages": [count, count]}]
+    manager.close()
