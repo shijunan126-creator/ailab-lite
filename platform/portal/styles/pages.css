@@ -174,3 +174,11 @@ input[type="number"]:focus { outline: none; }
 .brand-thumb.wide img { object-fit: cover; }
 .brand-slot-name strong.ellipsis { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .tpl-rename { font: inherit; font-size: var(--text-sm); padding: 3px 8px; }
+.skill-form { display: flex; flex: 1; flex-direction: column; gap: 14px; min-height: 0; }
+.skill-form .field { display: flex; flex-direction: column; gap: 6px; margin: 0; }
+.skill-form .field > span { margin: 0; color: var(--muted-foreground); font-size: var(--text-sm); font-weight: 500; }
+.skill-form .field.grow { flex: 1; min-height: 0; }
+.skill-form .skill-editor-text { font-family: inherit; font-size: var(--text-md); white-space: pre-wrap; }
+.modal.draft-editor.skill-viewer.single { max-width: 860px; }
+/* reading, not editing: long lines wrap instead of scrolling sideways */
+.skill-viewer .skill-editor-text { white-space: pre-wrap; overflow-wrap: anywhere; }

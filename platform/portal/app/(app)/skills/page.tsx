@@ -4,10 +4,11 @@ import { formatBytes } from "../../../lib/format";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Switch from "../../../components/switch";
-import { IconCopyPlus, IconDownload, IconEye, IconPencil, IconPlus, IconRetry, IconSparkles, IconTrash, IconUpload } from "../../../components/icons";
+import { IconDownload, IconEye, IconPencil, IconPlus, IconRetry, IconSparkles, IconTrash, IconUpload } from "../../../components/icons";
 import RowMenu, { RowAction } from "../../../components/row-menu";
 import { skillIcon } from "../../../components/chat/composer";
-import SkillEditor, { EditorTarget } from "../../../components/skills/skill-editor";
+import SkillEditor from "../../../components/skills/skill-editor";
+import SkillViewer from "../../../components/skills/skill-viewer";
 import DraftEditor from "../../../components/skills/draft-editor";
 import Market from "../../../components/skills/market";
 import { isLocked, SCANNING, scanProblem, ScannedFile, waitForScan } from "../../../components/skills/skill-save";
@@ -80,10 +81,7 @@ function SkillRow({
         ...(zip ? [{ label: "下载", icon: <IconDownload size={15} />, onSelect: () => download(downloadUrl(`/v1/files/${s.file_id}/content`), s.filename) }] : []),
         ...(onDelete ? ["sep" as const, { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: onDelete }] : []),
       ]
-    : [
-        { label: "查看", icon: <IconEye size={15} />, onSelect: onOpen },
-        ...(onCustomize ? [{ label: "另存为个人技能", icon: <IconCopyPlus size={15} />, onSelect: onCustomize }] : []),
-      ];
+    : []; // a built-in skill is opened by its row; there is nothing else to do with it
   const scanning = s.error === SCANNING; // a new version on its way, not a broken skill
   const broken = !!s.error && !scanning;
   return (
@@ -107,7 +105,7 @@ function SkillRow({
       </button>
       <div className="mrow-trail">
         {toggleable ? <Switch on={s.enabled} label={`${s.enabled ? "关闭" : "开启"} ${s.title}`} disabled={busy || !!s.error} onChange={onToggle} /> : null}
-        <RowMenu label={s.title} actions={actions} />
+        {actions.length ? <RowMenu label={s.title} actions={actions} /> : null}
       </div>
     </div>
   );
@@ -150,7 +148,8 @@ export default function SkillsPage() {
   const [busy, setBusy] = useState<string | null>(null);
   const [uploading, setUploading] = useState<string[]>([]); // file names still being scanned
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<EditorTarget | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [viewing, setViewing] = useState<Skill | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
   const [scanning, setScanning] = useState<ReadonlySet<string>>(new Set()); // new versions not yet scanned
   const drafts = useActiveDrafts();
@@ -205,7 +204,7 @@ export default function SkillsPage() {
   }
 
   function saved(fileId: string, label: string) {
-    setEditing(null);
+    setCreating(false);
     setDraft(null);
     setError("");
     settle(fileId, label);
@@ -213,7 +212,7 @@ export default function SkillsPage() {
 
   /** Edit a personal skill, or start a personal copy of a platform one, as a draft. An open draft of the same skill is reused. */
   async function openDraft(s: Skill) {
-    setEditing(null);
+    setViewing(null);
     setError("");
     const kind = skillKind(s);
     const origin = kind === "platform" ? "platform" : "skill";
@@ -341,7 +340,7 @@ export default function SkillsPage() {
         <button className="secondary sm" onClick={() => picker.current?.click()}>
           <IconUpload size={15} /> 上传
         </button>
-        <button className="sm" onClick={() => setEditing({ mode: "create", content: TEMPLATE })}>
+        <button className="sm" onClick={() => setCreating(true)}>
           <IconPlus size={15} /> 新建
         </button>
         <input ref={picker} type="file" accept=".md,.zip" multiple hidden onChange={(e) => e.target.files?.length && upload(e.target.files)} />
@@ -413,7 +412,7 @@ export default function SkillsPage() {
                 busy={busy === s.name}
                 locked={busy === s.name}
                 onToggle={(on) => toggle(s, on)}
-                onOpen={() => (s.customized ? openDraft(s) : setEditing({ mode: "view", skill: s }))}
+                onOpen={() => (s.customized ? openDraft(s) : setViewing(s))}
                 onCustomize={() => openDraft(s)}
                 onReset={() => resetSkill(s)}
                 onDelete={() => removeAdded(s)}
@@ -435,17 +434,15 @@ export default function SkillsPage() {
                 s={s}
                 busy={busy === s.name}
                 onToggle={(on) => toggle(s, on)}
-                onOpen={() => setEditing({ mode: "view", skill: s })}
-                onCustomize={() => openDraft(s)}
+                onOpen={() => setViewing(s)}
               />
             ))
           )}
         </div>
       </section>
       </>}
-      {editing ? (
-        <SkillEditor target={editing} onClose={() => setEditing(null)} onSaved={saved} onCustomize={(s) => openDraft(s)} />
-      ) : null}
+      {creating ? <SkillEditor onClose={() => setCreating(false)} onSaved={saved} /> : null}
+      {viewing ? <SkillViewer skill={viewing} onClose={() => setViewing(null)} onCustomize={(s) => openDraft(s)} /> : null}
       {draft ? <DraftEditor key={draft} draftId={draft} onClose={() => setDraft(null)} onConfirmed={saved} /> : null}
     </main>
   );

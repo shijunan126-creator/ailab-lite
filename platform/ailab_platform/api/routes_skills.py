@@ -8,7 +8,8 @@ it (see skillfiles.py); delete the file and the skill is gone.
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text, tuple_
 from sqlalchemy.orm import Session
@@ -461,3 +462,112 @@ def save_skill_content(body: SkillContentInput, user: User = Depends(current_use
             raise
     delete_storage_objects(keys)
     return {"file_id": fid, "name": body.name, "status": "pending"}
+
+
+def _viewable(db: Session, user: User, name: str) -> tuple[dict, FileObject]:
+    """Same visibility as read_skill_content: the user's own and added platform skills, usable ones only."""
+    personal = next((s for s in personal_skills(db, user) if s["name"] == name), None)
+    if not personal:
+        raise HTTPException(404, "skill not found")
+    file = db.get(FileObject, personal["file_id"])
+    if file.status != FileStatus.READY or personal.get("error"):
+        raise HTTPException(422, personal.get("error") or "技能尚未通过扫描")
+    return personal, file
+
+
+def _public(item: dict) -> dict:
+    return {k: item[k] for k in ("path", "size", "kind")}
+
+
+@router.get("/{name}/files")
+def skill_files(name: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    from .skill_view import builtin_files, zip_view
+
+    if name in skills():
+        return {"status": "ready", "files": [_public(item) for item in builtin_files(name)]}
+    personal, file = _viewable(db, user, name)
+    if personal.get("kind") != "zip":
+        return {"status": "ready", "files": [{"path": "SKILL.md", "size": file.size, "kind": "text"}]}
+    view = zip_view(db, file)
+    if view["status"] == "ready":
+        return {"status": "ready", "files": [_public(item) for item in view["files"]]}
+    if view["status"] == "failed":
+        return {"status": "failed", "error": view["error"]}
+    return {"status": "preparing"}
+
+
+def _first_chunk(chunks):
+    """Open the object before the response starts, so a missing object is a 404 rather than a cut-off body."""
+    try:
+        first = next(chunks, b"")
+    except Exception as exc:
+        chunks.close()
+        code = ((getattr(exc, "response", None) or {}).get("Error") or {}).get("Code")
+        if isinstance(exc, FileNotFoundError) or code in {"404", "NoSuchKey", "NotFound"}:
+            raise HTTPException(404, "文件不存在") from exc
+        raise
+
+    def body():
+        try:
+            yield first
+            yield from chunks
+        finally:
+            chunks.close()
+
+    return body()
+
+
+def _disk_chunks(location):
+    with open(location, "rb") as stream:
+        while chunk := stream.read(64 * 1024):
+            yield chunk
+
+
+@router.get("/{name}/files/{path:path}")
+def skill_file(name: str, path: str, request: Request, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    from urllib.parse import quote
+
+    from ..skill_drafts.files import checked_path, media_type
+    from ..skillfiles import MAX_UNPACKED, SkillFileError
+    from ..storage import get_storage
+    from .skill_view import builtin_files, builtin_location
+
+    try:
+        checked_path(path)
+    except SkillFileError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    if name in skills():
+        item = next((f for f in builtin_files(name) if f["path"] == path), None)
+        if not item:
+            raise HTTPException(404, "文件不存在")
+        if item["size"] > MAX_UNPACKED:
+            raise HTTPException(413, "文件超过大小限制")
+        chunks = _disk_chunks(builtin_location(name, item))
+    else:
+        personal, file = _viewable(db, user, name)
+        if personal.get("kind") != "zip":
+            if path != "SKILL.md":
+                raise HTTPException(404, "文件不存在")
+            if file.size > MAX_SKILL_MD:
+                raise HTTPException(413, "skill text too large")
+            item, blob = {"path": path, "size": file.size, "kind": "text", "sha256": file.sha256}, file.storage_key
+        else:
+            # Only the recorded manifest names readable objects; this request never unpacks or stages anything.
+            view = (file.meta or {}).get("skill_view") or {}
+            item = next((f for f in view.get("files") or () if f["path"] == path), None) if view.get("status") == "ready" else None
+            if not item or not item["blob"].startswith(f"derived/{file.id}/skill/"):
+                raise HTTPException(404, "文件不存在")
+            blob = item["blob"]
+        chunks = get_storage().stream(blob)  # lazy: nothing is opened for a 304
+    content_type, inline = media_type(path, item["kind"])
+    filename = quote(path.rsplit("/", 1)[-1], safe="")
+    etag = f'"{item["sha256"]}"'
+    headers = {
+        "X-Content-Type-Options": "nosniff",
+        "Content-Disposition": f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{filename}",
+        "Cache-Control": "private, max-age=0, must-revalidate",
+        "ETag": etag,
+    }
+    if etag in {tag.strip() for tag in request.headers.get("if-none-match", "").split(",")}:
+        return Response(status_code=304, headers=headers)
+    return StreamingResponse(_first_chunk(chunks), media_type=content_type, headers=headers)

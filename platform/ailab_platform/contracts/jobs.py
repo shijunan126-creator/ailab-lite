@@ -18,6 +18,7 @@ class JobEnvelope(BaseModel):
         "ocr",
         "summary",
         "skill_unpack",
+        "skill_view",
         "viewer",
         "native",
         "document_ocr",

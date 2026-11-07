@@ -35,6 +35,11 @@ def invalidate(db, row):
             changed = True
             preview |= field == "preview_assets"
             ocr_preview |= field == "ocr_preview_assets"
+    view_files = (meta.get("skill_view") or {}).get("files") or ()
+    if key.startswith(f"derived/{file.id}/skill/") and any(item.get("blob") == key for item in view_files):
+        # The next view unpacks again rather than listing a file it can no longer serve.
+        meta.pop("skill_view")
+        changed = True
     if preview:
         meta.pop("preview", None)
     if ocr_preview:

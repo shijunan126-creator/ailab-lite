@@ -6,7 +6,6 @@ import hashlib
 import tempfile
 import zipfile
 from contextlib import nullcontext
-from pathlib import PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
@@ -22,7 +21,7 @@ from ..library import assign_file_version, delete_storage_objects, schedule_obje
 from ..locks import user_critical_section
 from ..models import Conversation, FileObject, FileStatus, SkillDraft, User, new_id, utcnow
 from ..quota import enforce_library_quota
-from ..skill_drafts.files import MAX_TEXT, SAFE_IMAGES, checked_path, store_file, update_metadata, validate_manifest
+from ..skill_drafts.files import MAX_TEXT, checked_path, media_type, store_file, update_metadata, validate_manifest
 from ..storage import get_storage
 from .jobs import stage_job
 from .routes_internal import _skill_heads
@@ -155,11 +154,8 @@ def read_file(draft_id: str, path: str, user: User = Depends(current_user), db: 
     item = next((f for f in row.files or [] if f["path"] == path and f["change"] != "deleted"), None)
     if not item or row.status not in ("ready", "confirmed"):
         raise HTTPException(404, "文件不存在")
-    suffix = PurePosixPath(path).suffix.lower()
-    image = suffix in SAFE_IMAGES and item["kind"] == "image"
-    text_file = item["kind"] == "text" and suffix not in {".svg", ".html", ".htm"}
-    content_type = SAFE_IMAGES[suffix] if image else "text/plain; charset=utf-8" if text_file else "application/octet-stream"
-    headers = {"X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" if image or text_file else "attachment"}
+    content_type, inline = media_type(path, item["kind"])
+    headers = {"X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" if inline else "attachment"}
     return StreamingResponse(get_storage().stream(item["blob"]), media_type=content_type, headers=headers)
 
 
