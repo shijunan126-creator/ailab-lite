@@ -6,11 +6,11 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 import time
 from collections.abc import Iterable, Iterator
 from contextlib import closing, contextmanager
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from typing import BinaryIO
 
@@ -298,21 +298,33 @@ class S3Storage(_StorageMethods):
         return self.client.generate_presigned_url("get_object", Params={"Bucket": self.bucket, "Key": _safe_key(key)}, ExpiresIn=expires)
 
 
-@lru_cache
+_storage: Storage | None = None
+# Threads (request handlers, background loops) can first ask for storage at the
+# same moment after a shutdown dropped it; lru_cache would build two instances
+# and keep only one, leaving the other unclosed and unseen by its callers.
+_storage_lock = threading.Lock()
+
+
 def get_storage() -> Storage:
-    if settings.storage_backend == "s3":
-        return S3Storage()
-    if settings.storage_backend == "local":
-        return LocalStorage(settings.storage_path)
-    raise ValueError(f"unknown storage backend: {settings.storage_backend}")
+    global _storage
+    storage = _storage
+    if storage is not None:
+        return storage
+    with _storage_lock:
+        if _storage is None:
+            if settings.storage_backend == "s3":
+                _storage = S3Storage()
+            elif settings.storage_backend == "local":
+                _storage = LocalStorage(settings.storage_path)
+            else:
+                raise ValueError(f"unknown storage backend: {settings.storage_backend}")
+        return _storage
 
 
 def close_storage():
-    if get_storage.cache_info().currsize:
-        storage = get_storage()
-        try:
-            close = getattr(storage, "close", None)
-            if close:
-                close()
-        finally:
-            get_storage.cache_clear()
+    global _storage
+    with _storage_lock:
+        storage, _storage = _storage, None
+    close = getattr(storage, "close", None)
+    if close:
+        close()
