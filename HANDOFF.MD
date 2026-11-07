@@ -1,3 +1,10 @@
+## 2026-11-07 文档页码只能有一套编号
+
+- 浏览器截图和服务端渲染只有在页码属于文件本身时才能互换：PDF 页、PPT 幻灯片可以；Word 分页由排版引擎决定，两边的“第 N 页”不是同一页，Word 页图只走服务端。新增浏览器优先的格式前，先确认它的页码与服务端 `page_count` 是同一套。
+- LibreOffice 导出 PDF 默认跳过隐藏幻灯片，浏览器预览（pptx-renderer 遍历全部 `sldId`）和幻灯片文字都把隐藏页计入序号。冷启动用 `pdf:impress_pdf_Export:{"ExportHiddenSlides":…}`，常驻 listener 要传 `FilterData`，而 `FilterData` 是类型化序列，必须用 `uno.invoke` + `uno.Any` 才能保住类型。
+- 本机 LibreOffice.app 自带的 Python 在 macOS 上会被直接杀掉（137，连 `print` 也一样），listener 路径要在 sbx-office 容器里验证；冷启动路径可以直接用 Homebrew 的 `soffice`。
+- `RenderedPage.version`（`poppler-1280-v1`）和文件元数据里的预览都没有渲染器版本，改渲染参数不会让旧页图失效。
+
 ## 2026-11-07 派生缓存容量压力要主动淘汰
 
 - 派生账本预算满了以前只会让写入方拿到507，缓存要等30天到期才释放，频繁换版本的场景会先撑满。现在维护循环在使用量超过高水位（默认90%）时，按创建时间从旧到新淘汰可重建的`cache`，直到低水位（75%）。

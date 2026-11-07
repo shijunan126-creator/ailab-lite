@@ -1,4 +1,12 @@
-# 文件输入：剩余边界修复完成（2026-11-07）
+# 文件输入：页码一致性与 CI 修复，准备合并（2026-11-07）
+
+- 最新授权：用户在 PR #161 上问预览开关是否会让页码错位；同意按“每种格式一套编号”修复后，要求提 PR、合并并部署最新版。分支 `feat/document-input-lifecycle`，基线 `ea7cd684`，base `origin/main@fdc0a05f`。
+- 本轮完成：Word 页图只走服务端；PPT 服务端导出包含隐藏页；修复 CI 的两个根因（Portal `jszip` 锁文件不一致、`get_storage` 关闭后并发首次创建的竞争）。根因、验证和风险见[页码一致性记录](updates/2026-11-07-document-page-numbering.md)。
+- 验证：Ruff 通过；PostgreSQL/Redis 全套 2739 通过 / 69 跳过；E2E 193 通过 / 15 跳过，唯一失败是旧的 Word 浏览器截图期望，已改并重跑通过。
+- 剩余：已渲染过、并且含隐藏页的 PPTX 不会自动重渲（页图缓存没有渲染器版本）；listener 转换路径和 Portal 浏览器路径没有真实跑过。
+- 下一步：推送后等 CI 全绿，合并到 main，再按需增量部署。
+
+## 上一轮交接（2026-11-07 剩余边界修复）
 
 - 最新授权：用户先要求PR前复核并修复Chat/Work提示词与调用逻辑，随后要求把剩余边界“能修的都修”，可用真实模型测试。仅在本地实现、验证和提交，没有push/PR/合并/部署。分支`feat/document-input-lifecycle`，代码head `766ccfcc`，本地base `origin/main@fdc0a05f`，本轮未fetch。
 - 已完成：
