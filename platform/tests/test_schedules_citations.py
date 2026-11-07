@@ -89,7 +89,10 @@ def test_due_claim_coalesces_with_two_dispatchers_and_records_failures():
     with TestClient(app) as c:
         auth = _other_user(c)
         task = c.post("/v1/schedules", headers=auth, json=body()).json()
-        now = utcnow()
+        # Dispatch is global: on the wall clock, schedules other tests created
+        # become due once their 09:00 passes mid-suite. A clock before any
+        # of them was created sees only this task.
+        now = utcnow() - timedelta(days=5)
         with SessionLocal() as db:
             row = db.get(ScheduledTask, task["id"])
             row.next_run_at = now - timedelta(days=10)
