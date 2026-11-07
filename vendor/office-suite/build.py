@@ -247,14 +247,14 @@ CHAT_FORMAT_FACTS = {
     "pdf": "页号是PDF物理页，从1开始。\n",
     "pptx": (
         "页号是幻灯片序号，从1开始。说明流程或架构图时描述可见的业务节点和连接，不讲内部shape编号；"
-        "图片像素里的文字不属于任何原生文本框，文字归属以read_document返回的块为准。\n"
+        "图片像素里的文字不属于任何原生文本框：块标签的@x/y是形状在页面上的百分比范围，据此判断渲染图中的文字落在哪个形状内。\n"
     ),
     "docx": (
         "文字按段落/表格locator（p:N、t:N/rRcC）读取，不需要页号。Word没有固定物理页：view_document的pages是渲染页，"
         "返回的source说明排版来源，不同来源的页码不能互换。\n"
     ),
     "xlsx": (
-        "文字按sheet和单元格range读取。view_document的pages是渲染页，工作表序号不是页号，工作表到页的映射未知。"
+        "文字按sheet和单元格range读取。看工作表里的图片、图表或版式用view_document的kind=sheet按工作表名查看；工作表序号不是页号。"
         "公式与缓存值的区别见viewer/SKILL.md。\n"
     ),
 }

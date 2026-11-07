@@ -32,7 +32,9 @@ const selections = (request.selections ?? []).map((at: string) => {
   // Decode only the parser's table framing; keep cell punctuation and escaped literal pipes.
   if (locator.kind === 'pptx' && locator.shape) {
     const lines = text.split('\n');
-    const table = lines.findIndex(line => line === `[shape:${locator.shape} table]` || line.startsWith(`[shape:${locator.shape} table "`));
+    // Labels may carry a name and a slide position: [shape:N table "Name" @x..% y..%].
+    const label = `[shape:${locator.shape} table`;
+    const table = lines.findIndex(line => line.startsWith(label) && /^(?:\]| "| @)/.test(line.slice(label.length)));
     if (table >= 0) {
       text = lines.slice(table + 1).filter(line => line.startsWith('| ') && line.endsWith(' |'))
         .filter((_, index) => index !== 1)

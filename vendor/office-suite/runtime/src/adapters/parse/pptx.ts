@@ -35,6 +35,21 @@ interface Shape {
   text: string;
   rows?: string[][];
   nativeVisual?: boolean;
+  box?: Box;
+}
+
+/** A shape's frame in slide EMU. */
+interface Box { x: number; y: number; w: number; h: number }
+type Place = (box: Box) => Box;
+
+function frame(node: XNode): { box: Box; xfrm: XNode } | undefined {
+  const props = child(node, "p:spPr") ?? child(node, "p:grpSpPr");
+  const xfrm = props ? child(props, "a:xfrm") : child(node, "p:xfrm");
+  const off = xfrm && child(xfrm, "a:off");
+  const ext = xfrm && child(xfrm, "a:ext");
+  if (!xfrm || !off || !ext) return undefined;
+  const box = { x: Number(attr(off, "x")), y: Number(attr(off, "y")), w: Number(attr(ext, "cx")), h: Number(attr(ext, "cy")) };
+  return Object.values(box).every(Number.isFinite) ? { box, xfrm } : undefined;
 }
 
 interface Slide {
@@ -68,10 +83,12 @@ function paragraphsText(txBody: XNode | undefined): string {
     .trim();
 }
 
-function readShapes(nodes: XNode[], out: Shape[]) {
+function readShapes(nodes: XNode[], out: Shape[], place: Place = (box) => box) {
   for (const node of nodes) {
     const tag = tagOf(node);
     if (!["p:sp", "p:pic", "p:graphicFrame", "p:grpSp", "p:cxnSp"].includes(tag)) continue;
+    const start = out.length;
+    const own = frame(node);
     const nv = kids(node).find((item) => tagOf(item).startsWith("p:nv"));
     const cNvPr = nv && child(nv, "p:cNvPr");
     const id = (cNvPr && attr(cNvPr, "id")) ?? "";
@@ -118,7 +135,20 @@ function readShapes(nodes: XNode[], out: Shape[]) {
     } else if (tag === "p:grpSp") {
       // The group carries its members' text so a click on the group (the viewer's hit target) reads well.
       const members: Shape[] = [];
-      readShapes(kids(node), members);
+      // Group members use the group's child coordinate space.
+      const chOff = own && child(own.xfrm, "a:chOff");
+      const chExt = own && child(own.xfrm, "a:chExt");
+      const cx = Number(chOff && attr(chOff, "x")), cy = Number(chOff && attr(chOff, "y"));
+      const cw = Number(chExt && attr(chExt, "cx")), ch = Number(chExt && attr(chExt, "cy"));
+      const inner: Place | undefined = own && [cx, cy, cw, ch].every(Number.isFinite) && cw > 0 && ch > 0
+        ? (box) => place({
+            x: own.box.x + (box.x - cx) * own.box.w / cw,
+            y: own.box.y + (box.y - cy) * own.box.h / ch,
+            w: box.w * own.box.w / cw,
+            h: box.h * own.box.h / ch,
+          })
+        : undefined;
+      readShapes(kids(node), members, inner ?? (() => ({ x: NaN, y: NaN, w: NaN, h: NaN })));
       const text = members
         .map((member) =>
           member.rows ? member.rows.map((row) => row.join(" | ")).join("\n") : member.text,
@@ -126,6 +156,10 @@ function readShapes(nodes: XNode[], out: Shape[]) {
         .filter(Boolean)
         .join("\n");
       out.push({ id, name, kind: "group", text }, ...members);
+    }
+    if (own && out[start]) {
+      const box = place(own.box);
+      if (Object.values(box).every(Number.isFinite)) out[start].box = box;
     }
   }
 }
@@ -145,8 +179,15 @@ async function readNotes(pkg: Package, slidePath: string): Promise<string> {
     .trim();
 }
 
-function renderShape(shape: Shape): string {
-  const label = `[shape:${shape.id} ${shape.kind}${shape.name ? ` "${shape.name}"` : ""}]`;
+/** Slide-relative extent, so rendered pixels can be tied to the shape that draws them. */
+function position(box: Box | undefined, size: Box | undefined): string {
+  if (!box || !size || size.w <= 0 || size.h <= 0) return "";
+  const pct = (value: number, total: number) => Math.max(0, Math.min(100, Math.round((value / total) * 100)));
+  return ` @x${pct(box.x, size.w)}-${pct(box.x + box.w, size.w)}% y${pct(box.y, size.h)}-${pct(box.y + box.h, size.h)}%`;
+}
+
+function renderShape(shape: Shape, size?: Box): string {
+  const label = `[shape:${shape.id} ${shape.kind}${shape.name ? ` "${shape.name}"` : ""}${position(shape.box, size)}]`;
   if (shape.kind === "table" && shape.rows) return `${label}\n${markdownTable(shape.rows)}`;
   if (!shape.text) return label;
   return shape.text.includes("\n")
@@ -154,10 +195,10 @@ function renderShape(shape: Shape): string {
     : `${label} ${shape.text}`;
 }
 
-function renderSlide(slide: Slide, only?: Shape): string {
+function renderSlide(slide: Slide, only?: Shape, size?: Box): string {
   const head = `## Slide ${slide.index}${slide.title ? `: ${slide.title}` : ""}${slide.hidden ? " (hidden)" : ""}`;
   const shapes = (only ? [only] : slide.shapes).filter((shape) => shape.kind !== "group" || only);
-  const parts = [head, ...shapes.map(renderShape)];
+  const parts = [head, ...shapes.map((shape) => renderShape(shape, size))];
   if (!only && slide.notes) parts.push(`Speaker notes: ${slide.notes}`);
   return parts.join("\n");
 }
@@ -168,7 +209,10 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
   if (!presentationXml)
     throw new OfficeError("corrupt_file", `${label} has no ppt/presentation.xml.`);
   const rels = await readRels(pkg, "ppt/presentation.xml");
-  const slideIds = findAll(parseXml(presentationXml), "p:sldId");
+  const presentation = parseXml(presentationXml);
+  const slideIds = findAll(presentation, "p:sldId");
+  const sldSz = find(presentation, "p:sldSz");
+  const size = sldSz ? { x: 0, y: 0, w: Number(attr(sldSz, "cx")), h: Number(attr(sldSz, "cy")) } : undefined;
   const slides: Slide[] = [];
   for (const slideId of slideIds) {
     const rel = rels.get(attr(slideId, "r:id") ?? "");
@@ -199,7 +243,7 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
   }));
 
   function select(locator: Locator | null): string[] {
-    if (!locator) return slides.map((slide) => renderSlide(slide));
+    if (!locator) return slides.map((slide) => renderSlide(slide, undefined, size));
     if (locator.kind !== "pptx")
       throw new OfficeError("invalid_anchor", "Not a presentation location.");
     const { from, to } = clampRange(locator.from, locator.to, slides.length, "slide");
@@ -211,9 +255,9 @@ export async function parsePptx(bytes: Uint8Array, label: string): Promise<Parse
           "invalid_anchor",
           `Slide ${from} has no shape ${locator.shape}. Shapes: ${slide.shapes.map((item) => item.id).join(", ") || "none"}.`,
         );
-      return [renderSlide(slide, shape)];
+      return [renderSlide(slide, shape, size)];
     }
-    return slides.slice(from - 1, to).map((slide) => renderSlide(slide));
+    return slides.slice(from - 1, to).map((slide) => renderSlide(slide, undefined, size));
   }
 
   let unmappedVisuals = false;

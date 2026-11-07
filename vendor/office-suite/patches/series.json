@@ -38,5 +38,13 @@
   {
     "file": "010-native-visual-candidates.json",
     "reason": "Keep legacy visual facts while excluding ordinary PPT text boxes from native inline image preselection; preserve unknown master/layout visuals."
+  },
+  {
+    "file": "011-pdf-vector-geometry.json",
+    "reason": "Classify PDF vector paths by geometry so ruled tables do not make small native PDFs visually unknown; keep filled boxes uncertain."
+  },
+  {
+    "file": "012-pptx-shape-positions.json",
+    "reason": "Give each PPT shape its slide-relative extent so text seen in a rendered slide can be tied to the picture or text box that draws it."
   }
 ]

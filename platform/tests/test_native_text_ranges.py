@@ -51,7 +51,7 @@ def runner():
     return value
 
 
-def pdf_bytes(pages=3):
+def pdf_bytes(pages=3, drawing=""):
     import io
 
     from pypdf import PdfWriter
@@ -71,7 +71,7 @@ def pdf_bytes(pages=3):
         page = writer.add_blank_page(width=612, height=792)
         page[NameObject("/Resources")] = DictionaryObject({NameObject("/Font"): DictionaryObject({NameObject("/F1"): font})})
         stream = DecodedStreamObject()
-        stream.set_data(f"BT /F1 12 Tf 40 700 Td (Page {i + 1}: 1280.50) Tj ET".encode())
+        stream.set_data(f"BT /F1 12 Tf 40 700 Td (Page {i + 1}: 1280.50) Tj ET {drawing}".encode())
         page[NameObject("/Contents")] = writer._add_object(stream)
     output = io.BytesIO()
     writer.write(output)
@@ -115,6 +115,30 @@ def test_chat_has_no_physical_total_page_admission_limit(tmp_path):
     assert manifest["units"] == []
     assert (output / "text.txt").read_bytes() == b""
     assert len(list(output.iterdir())) == 2
+
+
+@pytest.mark.parametrize(
+    ("drawing", "status"),
+    [
+        ("", "none"),
+        ("40 600 m 540 600 l S 40 500 500 120 re S", "none"),  # rules and a ruled table box
+        ("0 0 612 792 re W n", "none"),  # clip only, nothing painted
+        ("300 300 4 4 re f", "none"),  # bullet-sized mark
+        ("100 100 m 300 300 l S", "present"),  # diagonal line
+        ("100 100 m 150 200 200 200 250 100 c S", "present"),  # curve
+        ("100 100 m 300 100 l 200 250 l h S", "present"),  # closed triangle
+        ("100 100 200 50 re f", "unknown"),  # cell shading or a chart bar
+    ],
+)
+def test_native_probe_classifies_vector_paths_by_geometry(tmp_path, drawing, status):
+    # Ruled tables carry nothing beyond their text, so the whole file stays
+    # eligible for inline text; drawings need their pages seen.
+    result, output = parse(tmp_path, pdf_bytes(2, drawing), "pdf")
+    assert result.returncode == 0, result.stderr
+    manifest = json.loads((output / "manifest.json").read_text())
+    assert manifest["status"] == "ready"
+    assert manifest["visual_status"] == status
+    assert [unit["unit_number"] for unit in manifest["visual_units"]] == ([1, 2] if status == "present" else [])
 
 
 def test_chat_text_limit_rejects_without_publishing_partial_manifest(tmp_path):

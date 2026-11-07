@@ -1,0 +1,27 @@
+[
+  {
+    "after_sha256": "74e452e3e9d12171e3625f20cf55e7311171099ed08a7807b7cf7727a388a1cd",
+    "before_sha256": "1f6da74013516f4d70f2dfa819379a31bd1a3581ab075543e08554e21360f709",
+    "edits": [
+      {
+        "after": "\ntype VectorKind = \"none\" | \"rules\" | \"shading\" | \"drawing\";\n\n/**\n * Classifies painted vector paths by geometry. Table borders, underlines and\n * boxes are axis-aligned and carry nothing beyond the text; curves, diagonals\n * and outlined glyphs are drawings. Large filled boxes can be cell shading or\n * chart bars, so only they stay uncertain. Clip-only paths are not painted.\n */\nfunction vectorKind(operators: { fnArray: number[]; argsArray: unknown[] }, OPS: Record<string, number>): VectorKind {\n  // pdf.js DrawOPS: moveTo 0, lineTo 1, curveTo 2, closePath 3.\n  const filled = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);\n  let kind: VectorKind = \"none\";\n  for (let i = 0; i < operators.fnArray.length; i++) {\n    if (operators.fnArray[i] !== OPS.constructPath) continue;\n    const [paint, [data], box] = operators.argsArray[i] as [number, [Float32Array | null], Float32Array | null];\n    if (paint === OPS.endPath || !data || !box) continue;\n    const width = box[2] - box[0], height = box[3] - box[1];\n    let axis = true, x = 0, y = 0, startX = 0, startY = 0;\n    const segment = (nx: number, ny: number) => {\n      if (Math.abs(nx - x) > 0.5 && Math.abs(ny - y) > 0.5) axis = false;\n      x = nx; y = ny;\n    };\n    for (let j = 0; j < data.length && axis;) {\n      const op = data[j];\n      if (op === 0) { x = startX = data[j + 1]; y = startY = data[j + 2]; j += 3; }\n      else if (op === 1) { segment(data[j + 1], data[j + 2]); j += 3; }\n      else if (op === 2) { axis = false; j += 7; }\n      else { segment(startX, startY); j += 1; }\n    }\n    // Bullets, check marks and small icons do not change what the page says.\n    if (width < 12 && height < 12) kind = kind === \"none\" ? \"rules\" : kind;\n    else if (!axis) return \"drawing\";\n    else if (filled.has(paint) && Math.min(width, height) > 3) kind = \"shading\";\n    else if (kind === \"none\") kind = \"rules\";\n  }\n  return kind;\n}\n",
+        "before": "",
+        "end": 1473,
+        "start": 1473
+      },
+      {
+        "after": "          const vector = vectorKind(operators, OPS);\n",
+        "before": "          // Paths can be table borders or vector diagrams. Preserve uncertainty\n          // instead of automatically requiring images for every ruled table.\n          const paths = operators.fnArray.some(op => op === OPS.constructPath);\n",
+        "end": 4139,
+        "start": 3900
+      },
+      {
+        "after": "          visuals.set(n, images || vector === \"drawing\" || (!native && vector !== \"none\"));\n          visualUnknown ||= !!native && !images && vector === \"shading\";\n",
+        "before": "          visuals.set(n, images || (!native && paths));\n          visualUnknown ||= !!native && paths && !images;\n",
+        "end": 4308,
+        "start": 4194
+      }
+    ],
+    "path": "office-runtime/src/adapters/parse/pdf.ts"
+  }
+]

@@ -42,6 +42,44 @@ async function loadPdfJs(): Promise<PdfJs> {
 
 const MAX_PAGES_INDEXED = 3000;
 
+type VectorKind = "none" | "rules" | "shading" | "drawing";
+
+/**
+ * Classifies painted vector paths by geometry. Table borders, underlines and
+ * boxes are axis-aligned and carry nothing beyond the text; curves, diagonals
+ * and outlined glyphs are drawings. Large filled boxes can be cell shading or
+ * chart bars, so only they stay uncertain. Clip-only paths are not painted.
+ */
+function vectorKind(operators: { fnArray: number[]; argsArray: unknown[] }, OPS: Record<string, number>): VectorKind {
+  // pdf.js DrawOPS: moveTo 0, lineTo 1, curveTo 2, closePath 3.
+  const filled = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+  let kind: VectorKind = "none";
+  for (let i = 0; i < operators.fnArray.length; i++) {
+    if (operators.fnArray[i] !== OPS.constructPath) continue;
+    const [paint, [data], box] = operators.argsArray[i] as [number, [Float32Array | null], Float32Array | null];
+    if (paint === OPS.endPath || !data || !box) continue;
+    const width = box[2] - box[0], height = box[3] - box[1];
+    let axis = true, x = 0, y = 0, startX = 0, startY = 0;
+    const segment = (nx: number, ny: number) => {
+      if (Math.abs(nx - x) > 0.5 && Math.abs(ny - y) > 0.5) axis = false;
+      x = nx; y = ny;
+    };
+    for (let j = 0; j < data.length && axis;) {
+      const op = data[j];
+      if (op === 0) { x = startX = data[j + 1]; y = startY = data[j + 2]; j += 3; }
+      else if (op === 1) { segment(data[j + 1], data[j + 2]); j += 3; }
+      else if (op === 2) { axis = false; j += 7; }
+      else { segment(startX, startY); j += 1; }
+    }
+    // Bullets, check marks and small icons do not change what the page says.
+    if (width < 12 && height < 12) kind = kind === "none" ? "rules" : kind;
+    else if (!axis) return "drawing";
+    else if (filled.has(paint) && Math.min(width, height) > 3) kind = "shading";
+    else if (kind === "none") kind = "rules";
+  }
+  return kind;
+}
+
 export async function parsePdf(
   bytes: Uint8Array,
   label: string,
@@ -98,12 +136,10 @@ export async function parsePdf(
           const operators = await page.getOperatorList();
           const images = operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject,
             OPS.paintImageMaskXObject, OPS.shadingFill].includes(op));
-          // Paths can be table borders or vector diagrams. Preserve uncertainty
-          // instead of automatically requiring images for every ruled table.
-          const paths = operators.fnArray.some(op => op === OPS.constructPath);
+          const vector = vectorKind(operators, OPS);
           const native = assets.nativeProbe || scoped;
-          visuals.set(n, images || (!native && paths));
-          visualUnknown ||= !!native && paths && !images;
+          visuals.set(n, images || vector === "drawing" || (!native && vector !== "none"));
+          visualUnknown ||= !!native && !images && vector === "shading";
         } else {
           visualUnknown = true;
         }
