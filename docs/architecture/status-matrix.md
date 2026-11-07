@@ -1,3 +1,5 @@
+2026-11-08 GenUI 网页图片组件（`Image`/`Gallery`/`ImageText`、`EntityCard.image`）与技能目录查看已在 `feat/ui-polish-media` 本地实现并通过单测、E2E 与浏览器检查：图片只来自 `web_search kind=images`/`read_url` 的签名路径，经 API 代理并缓存；ZIP 技能由 Worker 解包后只读查看。未用真实模型验证图片调用。见[记录](../progress/updates/2026-11-08-ui-polish-media.md)。
+
 2026-11-07 真实模型workflow复核、提示词终审与剩余边界修复已在本地完成：参数试错与目录绕路归零；Excel可按工作表查看页图；小PDF表格线不再阻止内联；搜索单批按工作量限界；exec统一用bash。回答偏长、含填充框的小PDF仍不内联、未做多模型评估等边界仍在。见[workflow记录](../progress/updates/2026-11-07-real-model-document-workflows.md)和[终审修复](../progress/updates/2026-11-07-document-prompt-review.md)。未发布。
 
 2026-11-06 文件输入优化已完成本地实现与本轮可执行收尾：固定依赖镜像构建成功，真实Docker/ClamAV联合38项、完整截图50轮及硬退出/ENOSPC回收通过。完整双库的生成摘要失败已修复并复核，未改称最终SHA全套绿色；目标移动/NPU/S3/OpenSandbox、整栈容量及未测统计/故障边界仍保留。未push/PR/合并/部署，见[收尾记录](../progress/updates/2026-11-06-document-input-final-acceptance.md)。
