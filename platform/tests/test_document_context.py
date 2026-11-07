@@ -10,23 +10,33 @@ from ailab_platform.db import SessionLocal
 from ailab_platform.internal_skills import load
 from ailab_platform.models import DocumentBlock, FileDerivation, MessageFileRef, Run
 from ailab_platform.worker.pipeline import process_file
+from tests.document_fixtures import legacy_run
 from tests.test_file_previews import AUTH, SERVICE, ApiClient
 from tests.test_ocr import text_pdf
 
 
-def upload(c, name, data, mime):
+def upload(c, name, data, mime, *, legacy=False):
     # Each fixture owns mutable processing/OCR state, even when another test produced identical bytes.
     response = c.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data, mime)})
     assert response.status_code == 201
     fid = response.json()["id"]
+    if legacy:
+        # An existing pre-migration queued record, not new-upload behaviour.
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(fid)
     process_file(fid, platform=ApiClient(c))
+    if not legacy and not mime.startswith("image/"):
+        from tests.document_fixtures import prepare_native
+
+        prepare_native(c, fid, full_pdf=True)
     return fid
 
 
 def test_pdf_tail_and_persistent_blocks_across_modes():
     with TestClient(app) as c:
         fid = upload(c, "native.pdf", text_pdf(120), "application/pdf")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "读取85页", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "读取85页", "file_ids": [fid]}).json())
         assert c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()["input_files"][0]["text"] == ""
         url = f"/internal/runs/{run['id']}/library/read"
         result = c.post(url, headers=SERVICE, json={"file_id": fid, "pages": [85]}).json()
@@ -41,14 +51,24 @@ def test_pdf_tail_and_persistent_blocks_across_modes():
         chat = c.post("/v1/runs", headers=AUTH, json={"prompt": "全文", "mode": "chat", "file_ids": [fid]})
         assert chat.status_code == 201
         prepared = c.get(f"/internal/runs/{chat.json()['id']}/model-input", headers=SERVICE).json()
-        assert "native text page 120" in prepared["input_files"][0]["text"]
+        assert prepared["input_files"][0]["input_strategy"] == "reference"
+        from tests.run_claims import attempt_headers
+        from tests.test_conversations import _status
+
+        _status(c, chat.json()["id"], "running")
+        tail = c.post(
+            f"/internal/runs/{chat.json()['id']}/documents/read_document",
+            headers=attempt_headers(c, chat.json()["id"]),
+            json={"file_id": fid, "selector": {"kind": "pages", "pages": [120]}},
+        )
+        assert tail.status_code == 200 and "native text page 120" in tail.json()["text"]
 
 
 def test_reference_order_and_ambiguity_are_structural():
     with TestClient(app) as c:
         a = upload(c, "same.txt", b"first", "text/plain")
         b = upload(c, "same.txt", b"second", "text/plain")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "compare", "file_ids": [b, a]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "compare", "file_ids": [b, a]}).json())
         url = f"/internal/runs/{run['id']}/library/resolve"
         result = c.post(url, headers=SERVICE, json={"relative": "current", "ordinal": 2}).json()
         assert result["status"] == "resolved" and result["candidates"][0]["file_id"] == a
@@ -62,7 +82,7 @@ def test_chat_rejects_partial_without_losing_original():
     with TestClient(app) as c:
         fid = upload(c, "large.txt", ("字" * 200010).encode(), "text/plain")
         response = c.post("/v1/runs", headers=AUTH, json={"prompt": "全文", "mode": "chat", "file_ids": [fid]})
-        assert response.status_code == 422 and response.json()["detail"]["code"] == "chat_attachment_too_large"
+        assert response.status_code == 422 and response.json()["detail"]["code"] == "chat_attachment_unavailable"
         assert c.get(f"/v1/files/{fid}/content", headers=AUTH).status_code == 200
         assert c.post("/v1/runs", headers=AUTH, json={"prompt": "读", "mode": "work", "file_ids": [fid]}).status_code == 201
 
@@ -70,7 +90,7 @@ def test_chat_rejects_partial_without_losing_original():
 def test_delete_fences_active_context():
     with TestClient(app) as c:
         fid = upload(c, "source.txt", b"secret-source", "text/plain")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json())
         assert c.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
         with SessionLocal() as db:
             row = db.get(Run, run["id"])
@@ -122,7 +142,7 @@ def test_skill_search_does_not_change_tool_availability():
 def test_file_backed_reads_register_deletion_dependency():
     with TestClient(app) as c:
         fid = upload(c, "not-in-prompt.txt", b"original", "text/plain")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "search"}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "search"}).json())
         response = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid})
         assert response.status_code == 200
         with SessionLocal() as db:
@@ -136,13 +156,13 @@ def test_file_backed_reads_register_deletion_dependency():
             assert db.get(Run, run["id"]).status == "canceled"
 
 
-def test_same_bytes_private_cache_copies_are_independent():
+def test_legacy_same_bytes_private_cache_copies_are_independent():
     from ailab_platform.api.document_cache import reuse
     from ailab_platform.models import FileObject
     from ailab_platform.storage import get_storage
 
     with TestClient(app) as c:
-        first = upload(c, "cache.pdf", text_pdf(2), "application/pdf")
+        first = upload(c, "cache.pdf", text_pdf(2), "application/pdf", legacy=True)
         response = c.post("/v1/files", headers=AUTH, files={"upload": ("cache-copy.pdf", text_pdf(2), "application/pdf")})
         second = response.json()["id"]
         with SessionLocal() as db:
@@ -209,6 +229,41 @@ def test_document_indexes_are_bounded_at_100000_blocks():
             )
             assert "ix_document_blocks_unit" in plan
             assert db.scalar(query)
+            # The new transport pages the same indexes; neither native search
+            # nor a typed page/anchor request may load the full metadata table.
+            from types import SimpleNamespace
+
+            from ailab_platform.api.document_text import select_blocks
+            from ailab_platform.contracts.document_input import Pages, Word
+            from ailab_platform.domain.document_reading import Position
+
+            for source, selector, expected in [
+                (SimpleNamespace(meta={"extract": {"kind": "pdf", "units": 100000}}), None, "uq_document_block_ordinal"),
+                (
+                    SimpleNamespace(meta={"extract": {"kind": "pdf", "units": 100000}}),
+                    Pages(kind="pages", pages=[85000]),
+                    "ix_document_blocks_unit",
+                ),
+                (SimpleNamespace(meta={"extract": {"kind": "docx"}}), Word(kind="word", anchor="p:85000"), "ix_document_blocks_anchor"),
+            ]:
+                bounded = select_blocks(source, derivation, selector, Position(84990))
+                compiled = str(bounded.compile(db.bind, compile_kwargs={"literal_binds": True}))
+                explain = " ".join(
+                    str(row)
+                    for row in db.execute(text(("EXPLAIN QUERY PLAN " if db.bind.dialect.name == "sqlite" else "EXPLAIN ") + compiled))
+                )
+                if expected == "uq_document_block_ordinal" and db.bind.dialect.name == "sqlite":
+                    # SQLite assigns its own name to a named UNIQUE constraint.
+                    indexes = db.execute(text("PRAGMA index_list(document_blocks)")).all()
+                    matching = []
+                    for item in indexes:
+                        columns = db.execute(text('PRAGMA index_info("' + item[1].replace('"', '""') + '")')).all()
+                        if [column[2] for column in columns] == ["derivation_id", "ordinal"]:
+                            matching.append(item[1])
+                    assert matching and any(name in explain for name in matching)
+                else:
+                    assert expected in explain
+                assert len(db.scalars(bounded).all()) <= 101
             import json
             import os
             from pathlib import Path
@@ -357,7 +412,7 @@ def test_summary_revalidation_is_periodic_bounded_and_source_fenced():
 
     with TestClient(app) as c:
         fid = upload(c, "calibration.pdf", text_pdf(2), "application/pdf")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "original constraint", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "original constraint", "file_ids": [fid]}).json())
         with SessionLocal() as db:
             source = db.get(Run, run["id"])
             block = db.scalar(select(DocumentBlock).join(FileDerivation).where(FileDerivation.file_id == fid))
@@ -385,7 +440,7 @@ def test_revalidation_progress_survives_frames_and_rejects_false_acknowledgement
     from ailab_platform.models import ContextSummaryFrame
 
     with TestClient(app) as c:
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "连续原文" * 1800}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "连续原文" * 1800}).json())
         with SessionLocal() as db:
             source = db.get(Run, run["id"])
             semantic = ContextSummary(constraints=[SummaryEntry(id="c", text="需校准", sources=[SummarySource(run_id=source.id)])])
@@ -497,7 +552,7 @@ def test_summary_revalidation_reads_completed_ocr_when_native_text_is_absent():
             summary = ContextSummary(facts=[SummaryEntry(id="f", text="编号", sources=[SummarySource(file_id=fid)])])
             frame = ContextSummaryFrame(revision=7, status="active", summary=summary.model_dump_json(), revalidation_state={})
             assert evidence(db, frame, file.user_id, set()) == []
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read OCR", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "read OCR", "file_ids": [fid]}).json())
         with SessionLocal() as db:
             assert evidence(db, frame, file.user_id, {run["id"]})[0]["text"] == "识别编号 AL-219"
 

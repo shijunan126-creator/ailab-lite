@@ -7,6 +7,7 @@ from sqlalchemy import select
 from ailab_platform.api.main import app
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, Run
+from tests.document_fixtures import legacy_run
 from tests.test_conversations import AUTH, SERVICE
 from tests.test_document_context import upload
 
@@ -15,7 +16,7 @@ from tests.test_document_context import upload
 def test_trash_cancels_suspended_source_consumers(state):
     with TestClient(app) as c:
         fid = upload(c, "suspended.txt", b"private", "text/plain")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json())
         with SessionLocal() as db:
             row = db.get(Run, run["id"])
             row.status = state
@@ -90,7 +91,7 @@ def test_library_read_rechecks_source_after_waiting_for_user_lock(monkeypatch):
 
     with TestClient(app) as c:
         fid = upload(c, "race.txt", b"secret-read-race", "text/plain")
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [fid]}).json())
 
         @contextmanager
         def delete_before_admission(db, uid):

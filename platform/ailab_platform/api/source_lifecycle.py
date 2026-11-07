@@ -207,8 +207,13 @@ def _drain_invalidation(db, file_id, limit):
         for key in db.scalars(select(RunCheckpoint.state_key).where(RunCheckpoint.run_id == run.id)):
             schedule_object_deletion(db, key, "file_source")
         from ..models import ClientCall, ViewerCapture
+        from .viewer_captures import release_runs
 
-        for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id == run.id)):
+        release_runs(db, [run.id])
+        from ..models import DerivedAssetRef
+
+        surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == ViewerCapture.storage_key).exists()
+        for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id == run.id, ~surviving)):
             schedule_object_deletion(db, key, "file_source")
         db.execute(delete(ViewerCapture).where(ViewerCapture.run_id == run.id))
         db.execute(delete(ClientCall).where(ClientCall.run_id == run.id))

@@ -71,7 +71,7 @@ def test_upload_is_pending_and_unusable_until_scanned(api) -> None:
     assert run.status_code == 409
 
     result = process_file(f["id"])
-    assert result.get("kind") == "text"
+    assert result["safety_ready"]
 
     after = api.get(f"/v1/files/{f['id']}", headers=AUTH).json()
     assert after["status"] == "ready"

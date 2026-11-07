@@ -240,12 +240,12 @@ def test_secure_disables_legacy_and_credentials_are_not_interchangeable(identiti
 
 def test_factories_do_not_fall_back(monkeypatch):
     from ailab_platform.sandbox import get_provider
-    from ailab_platform.storage import get_storage
+    from ailab_platform.storage import close_storage, get_storage
 
     monkeypatch.setattr(settings, "sandbox_provider", "typo")
     monkeypatch.setattr(settings, "storage_backend", "typo")
     get_provider.cache_clear()
-    get_storage.cache_clear()
+    close_storage()
     try:
         with pytest.raises(ValueError, match="unknown"):
             get_provider()
@@ -253,7 +253,7 @@ def test_factories_do_not_fall_back(monkeypatch):
             get_storage()
     finally:
         get_provider.cache_clear()
-        get_storage.cache_clear()
+        close_storage()
 
 
 def test_bound_conversation_and_artifact_reads(identities):

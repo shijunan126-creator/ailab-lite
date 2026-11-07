@@ -26,6 +26,15 @@ def ready(db, dependency):
         if dependency["action"] == "extract-text" and meta.get("ocr") in {"pending", "running"}:
             file.meta = {**meta, "ocr": "failed", "ocr_reason": "deadline"}
         return True
+    if dependency["action"] in {"document-ocr", "native-scope", "document-view"}:
+        from ..models import DocumentOperation
+
+        operation = db.get(DocumentOperation, dependency.get("operation_id"), populate_existing=True)
+        return not operation or operation.status in {"ready", "failed", "canceled"}
+    if dependency["action"] == "native-text":
+        from .native_preparation import native_state
+
+        return native_state(file).get("status") in {"ready", "failed"}
     if dependency["action"] == "extract-text":
         from .routes_ocr import extraction_result
 
@@ -75,18 +84,27 @@ def reconcile():
                     db.rollback()
                     continue
                 if not ready(db, dependency):
-                    prepare(db, dependency)
+                    prepare(db, dependency, run=run)
                     db.commit()
                     continue
                 resume_dependency(db, run)
                 db.commit()
 
 
-def prepare(db, dependency):
+def prepare(db, dependency, *, run=None):
     """Ask for the rendered pages a waiting image reference needs. The tool asks once, but while another preview of
     the file is still pending (the sheet preview every new spreadsheet gets) this tick promotes its queued job.
     Once that job finishes, the next tick requests any pages still missing. Asking repeatedly does not create
     duplicate durable jobs."""
+    if dependency["action"] in {"document-ocr", "native-scope", "document-view"}:
+        return  # its immutable durable outbox job drives preparation
+    if dependency["action"] == "native-text":
+        file = db.get(FileObject, dependency["file_id"])
+        if file and not file.deleted_at and not file.purged_at:
+            from .native_preparation import request_native
+
+            request_native(db, file, run=run)
+        return
     if dependency["action"] != "image-reference" or dependency.get("retry_at", 0) > time.time():
         return
     file = db.get(FileObject, dependency["file_id"])

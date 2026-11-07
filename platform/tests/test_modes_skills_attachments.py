@@ -25,7 +25,7 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
     with TestClient(app) as c:
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         chat = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "hi", "mode": "chat"}).json()
-        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": [], "client": "portal"}
+        assert chat["options"] == {"mode": "chat", "capability_discovery": 1, "skills": [], "client": "portal", "document_tools_version": 2}
         c.post(f"/v1/runs/{chat['id']}/cancel", headers=AUTH)
         conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
         deck = c.post(
@@ -37,7 +37,13 @@ def test_mode_and_skill_are_stored_and_checked() -> None:
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "skill": "nope"}).status_code == 400
         assert c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "x", "mode": "other"}).status_code == 422
         default = c.post("/v1/runs", headers=AUTH, json={"prompt": "x"}).json()
-        assert default["options"] == {"mode": "work", "capability_discovery": 1, "skills": [], "client": "portal"}
+        assert default["options"] == {
+            "mode": "work",
+            "capability_discovery": 1,
+            "skills": [],
+            "client": "portal",
+            "document_tools_version": 2,
+        }
 
 
 def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
@@ -49,6 +55,9 @@ def test_the_agent_gets_each_attachments_text(monkeypatch) -> None:
         for name, body in (("long.txt", "字" * 80), ("short.txt", "hello")):
             up = c.post("/v1/files", headers=AUTH, files={"upload": (name, body.encode(), "text/plain")}).json()
             process_file(up["id"], platform=_ApiClient(c), storage=get_storage())
+            from tests.document_fixtures import prepare_native
+
+            prepare_native(c, up["id"])
             ids.append(up["id"])
             names.append(up["filename"])
         run = c.post("/v1/runs", headers=AUTH, json={"prompt": "总结附件", "mode": "chat", "file_ids": ids}).json()

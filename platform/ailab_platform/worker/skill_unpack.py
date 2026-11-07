@@ -1,9 +1,9 @@
 """Unpack a claimed skill in a resource-limited child and publish its manifest."""
 
 import hashlib
-import tempfile
 from pathlib import Path
 
+from ..owned_temporary import directory as temporary_directory
 from ..skill_drafts.files import classify
 from ..skillfiles import MAX_ZIP
 from ..storage import get_storage
@@ -13,7 +13,7 @@ from .isolate import IsolationError, execute
 def process_skill_unpack(client, draft_id: str, job_id: str, token: str) -> None:
     source = client.skill_draft_action(draft_id, "source", job_id=job_id, token=token)
     storage = get_storage()
-    with tempfile.TemporaryDirectory(prefix="ailab-skill-draft-") as tmp:
+    with temporary_directory(prefix="ailab-skill-draft-") as tmp:
         archive = Path(tmp) / "input.zip"
         size = 0
         with archive.open("wb") as out:

@@ -173,6 +173,91 @@ class PlatformClient(_PlatformApi):
     def __exit__(self, *exc) -> None:
         self.close()
 
+    def document_ocr_failed(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-operations/{operation_id}/fail", json={})).json()
+
+    def document_ocr_step(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-operations/{operation_id}/step", json={})).json()
+
+    def document_ocr_image(self, operation_id, token, ordinal, image, receipt, deadline):
+        req = self._req(
+            "POST",
+            f"/internal/document-operations/{operation_id}/image",
+            timeout=max(1, deadline - time.time()) + 8,
+            params={"image_index": ordinal},
+        )
+        with image.open("rb") as stream:
+            return self._send(
+                req._replace(
+                    kwargs={
+                        **req.kwargs,
+                        "headers": {
+                            **req.kwargs["headers"],
+                            "X-Document-Token": token,
+                            "X-Image-Receipt": json.dumps(receipt, separators=(",", ":")),
+                            "Content-Type": "application/octet-stream",
+                        },
+                        "content": stream,
+                    }
+                )
+            ).json()
+
+    def document_view_failed(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-views/{operation_id}/fail", json={})).json()
+
+    def document_view_step(self, operation_id):
+        return self._send(self._req("POST", f"/internal/document-views/{operation_id}/step", json={})).json()
+
+    def document_view_image(self, operation_id, token, ordinal, image, receipt, deadline):
+        req = self._req(
+            "POST",
+            f"/internal/document-views/{operation_id}/image",
+            timeout=max(1, deadline - time.time()) + 8,
+            params={"image_index": ordinal},
+        )
+        with image.open("rb") as stream:
+            return self._send(
+                req._replace(
+                    kwargs={
+                        **req.kwargs,
+                        "headers": {
+                            **req.kwargs["headers"],
+                            "X-Document-Token": token,
+                            "X-Image-Receipt": json.dumps(receipt, separators=(",", ":")),
+                            "Content-Type": "application/octet-stream",
+                        },
+                        "content": stream,
+                    }
+                )
+            ).json()
+
+    def workspace_ocr_budget(self, run_id):
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/budget", json={})).json()
+
+    def workspace_ocr_prepare(self, run_id, payload):
+        return self._send(self._req("POST", f"/internal/runs/{run_id}/workspace-ocr", json=payload)).json()
+
+    def workspace_ocr_status(self, run_id, operation_id, cursor=None):
+        return self._send(
+            self._req("GET", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}", params={"cursor": cursor} if cursor else {})
+        ).json()
+
+    def workspace_ocr_image(self, run_id, operation_id, token, image, deadline):
+        req = self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}/image", timeout=max(1, deadline - time.time()) + 8)
+        with image.open("rb") as stream:
+            req = req._replace(
+                kwargs={
+                    **req.kwargs,
+                    "headers": {**req.kwargs["headers"], "X-Document-Token": token, "Content-Type": "application/octet-stream"},
+                    "content": stream,
+                }
+            )
+            return self._send(req).json()
+
+    def workspace_ocr_cancel(self, run_id, operation_id, token):
+        req = self._req("POST", f"/internal/runs/{run_id}/workspace-ocr/{operation_id}/cancel", timeout=5, json={})
+        return self._send(req._replace(kwargs={**req.kwargs, "headers": {**req.kwargs["headers"], "X-Document-Token": token}})).json()
+
     def summarize_file(self, file_id: str) -> dict:
         timeout = (settings.llm_total_timeout_seconds or settings.llm_timeout_seconds) + 30
         return self._send(self._req("POST", f"/internal/files/{file_id}/summary", timeout=timeout, json={})).json()
@@ -278,7 +363,9 @@ class PlatformClient(_PlatformApi):
             self._req("POST", f"/internal/files/{file_id}/preview", json={"job_id": job_id, "preview": preview, "assets": assets})
         ).json()
 
-    def publish_preview_page(self, file_id: str, job_id: str, name: str, page_count: int, asset: dict) -> dict:
+    def publish_preview_page(
+        self, file_id: str, job_id: str, name: str, page_count: int, asset: dict, *, sheet_pages: list[dict] | None = None
+    ) -> dict:
         return self._send(
             self._req(
                 "POST",
@@ -288,9 +375,69 @@ class PlatformClient(_PlatformApi):
                     "name": name,
                     "page_count": page_count,
                     "asset": asset,
+                    **({"sheet_pages": sheet_pages} if sheet_pages else {}),
                 },
             )
         ).json()
+
+    def publish_run_derived(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/publish-run", json={"items": items})).json()
+
+    def derived_ready(self, key, version):
+        return self._send(self._req("POST", "/internal/derived-assets/ready", json={"key": key, "version": version})).json()["ready"]
+
+    def reserve_derived(self, **body):
+        return self._send(self._req("POST", "/internal/derived-assets/reserve", json=body)).json()
+
+    def finish_derived(self, key, token):
+        return self._send(self._req("POST", "/internal/derived-assets/finish", json={"key": key, "token": token})).json()
+
+    def abandon_derived(self, key, token):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon", json={"key": key, "token": token})).json()
+
+    def reserve_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/reserve-batch", json={"items": items})).json()
+
+    def finish_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/finish-batch", json={"items": items})).json()
+
+    def abandon_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon-batch", json={"items": items})).json()
+
+    def discard_derived_batch(self, items):
+        return self._send(self._req("POST", "/internal/derived-assets/discard-batch", json={"items": items})).json()
+
+    def start_native_scope(self, file_id, operation_id):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/scope/start", json={"job_id": operation_id})).json()
+
+    def complete_native_scope(self, file_id, operation_id, **body):
+        return self._send(
+            self._req("POST", f"/internal/files/{file_id}/native/scope/complete", json={"job_id": operation_id, **body})
+        ).json()
+
+    def abandon_derived_writer(self, job_id):
+        return self._send(self._req("POST", "/internal/derived-assets/abandon-writer", json={"job_id": job_id})).json()
+
+    def file_work_stopped(self, operation_id, attempt):
+        return self._send(self._req("POST", f"/internal/file-work/{operation_id}/stopped", timeout=2, json={"attempt": attempt})).json()
+
+    def start_file_work(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/start", json={})).json()
+
+    def defer_file_work(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/defer", json={})).json()
+
+    def file_work_owned(self, job_id):
+        return self._send(self._req("POST", f"/internal/file-work/{job_id}/owned", timeout=2, json={})).json()
+
+    def native_owned(self, file_id, attempt):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/owned", timeout=2, json={"job_id": attempt})).json()
+
+    def start_native(self, file_id, job_id):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/start", json={"job_id": job_id})).json()
+
+    def complete_native(self, file_id, job_id, **body):
+        return self._send(self._req("POST", f"/internal/files/{file_id}/native/complete", json={"job_id": job_id, **body})).json()
 
     def prepare_document(self, file_id, scan):
         return self._send(self._req("POST", f"/internal/files/{file_id}/prepare-document", json={"scan": scan})).json()
@@ -376,6 +523,11 @@ class AsyncPlatformClient(_PlatformApi):
 
     async def get_run(self, run_id: str) -> dict:
         return (await self._send(self._req("GET", f"/internal/runs/{run_id}/model-input"))).json()
+
+    async def document_input(self, run_id: str, operation: str, payload: dict) -> dict:
+        if operation not in {"read_document", "search_document", "view_document"}:
+            raise ValueError("unknown document operation")
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/documents/{operation}", timeout=30, json=payload))).json()
 
     async def document_view(self, run_id: str, payload: dict) -> dict:
         return (await self._send(self._req("POST", f"/internal/runs/{run_id}/document-view", timeout=100, json=payload))).json()
@@ -557,6 +709,9 @@ class AsyncBrokerClient(_Service):
             json={"cmd": cmd, "timeout_seconds": timeout_seconds},
         )
         return (await self._send(req)).json()
+
+    async def ocr_workspace_image(self, lease_id, payload):
+        return (await self._send(self._req("POST", f"/internal/leases/{lease_id}/ocr-workspace-image", timeout=610, json=payload))).json()
 
     async def view_workspace_file(self, lease_id: str, path: str, pages: list[int] | None = None) -> dict:
         req = self._req("POST", f"/internal/leases/{lease_id}/view-workspace-file", timeout=80, json={"path": path, "pages": pages})

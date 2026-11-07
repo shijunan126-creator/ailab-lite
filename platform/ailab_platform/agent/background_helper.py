@@ -44,7 +44,9 @@ def supervise(payload, directory):
     signal.signal(signal.SIGCHLD, signal.SIG_DFL)
     cap = payload["log_bytes"]
     started = time.monotonic()
-    child = subprocess.Popen(["/bin/sh", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    # Model commands are bash on every backend (OpenSandbox execd runs bash);
+    # dash rejects common bash forms such as <(...) and [[ ]].
+    child = subprocess.Popen(["/bin/bash", "-c", payload["cmd"]], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = started + min(payload["max_seconds"], max(0, payload["expires_at"] - time.time()))
     streams = {child.stdout: "stdout", child.stderr: "stderr"}
     tails = {"stdout": "", "stderr": ""}

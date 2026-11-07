@@ -67,21 +67,43 @@ export function docRefOf(doc: OfficeDoc, version: string, ref: { at: string; tex
 
 // Viewer files are fetched once per page: the version path makes them immutable.
 let assetVersion: Promise<string> | undefined;
+let resolvedAssetVersion: string | null = null;
 const assetCache = new Map<string, Promise<string | ArrayBuffer>>();
+const assetSizes = new Map<string, number>();
+const ASSET_CACHE_BYTES = 16 * 1024 * 1024;
+function trimAssets() {
+  let bytes = Array.from(assetSizes.values()).reduce((sum, size) => sum + size, 0);
+  while (assetCache.size > 64 || bytes > ASSET_CACHE_BYTES) {
+    const oldest = assetCache.keys().next().value;
+    if (!oldest) break;
+    bytes -= assetSizes.get(oldest) ?? 0;
+    assetCache.delete(oldest);
+    assetSizes.delete(oldest);
+  }
+}
 function asset(name: string, binary: boolean): Promise<string | ArrayBuffer> {
   const key = `${binary ? "b" : "t"}:${name}`;
   let cached = assetCache.get(key);
+  if (cached) {
+    assetCache.delete(key);
+    assetCache.set(key, cached);
+  }
   if (!cached) {
-    cached = (assetVersion ??= fetch("/office-viewer/current/manifest.json", { cache: "no-store" })
+    cached = (assetVersion ??= fetch("/office-viewer/current/manifest.json", { cache: "no-store", signal: AbortSignal.timeout(15000) })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`查看器不可用 ${r.status}`))))
-      .then((m: { version: string }) => m.version))
-      .then((version) => fetch(`/office-viewer/${version}/${name.split("/").map(encodeURIComponent).join("/")}`))
+      .then((m: { version: string }) => { resolvedAssetVersion = m.version; return m.version; }))
+      .then((version) => fetch(`/office-viewer/${version}/${name.split("/").map(encodeURIComponent).join("/")}`, { signal: AbortSignal.timeout(15000) }))
       .then((r) => (r.ok ? (binary ? r.arrayBuffer() : r.text()) : Promise.reject(new Error(`${name} ${r.status}`))));
+    cached.then((value) => {
+      if (assetCache.get(key) === cached) { assetSizes.set(key, typeof value === "string" ? value.length * 2 : value.byteLength); trimAssets(); }
+    }, () => undefined);
     cached.catch(() => {
       assetCache.delete(key);
+      assetSizes.delete(key);
       assetVersion = undefined;
     });
     assetCache.set(key, cached);
+    trimAssets();
   }
   return cached;
 }
@@ -174,22 +196,55 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     if (!ready || !element) return;
     const nonce = crypto.randomUUID();
     const bytes = new Map<string, Promise<ArrayBuffer>>();
+    let structuralBlocks: Promise<unknown[]> | null = null;
+    const loadBlocks = () => (structuralBlocks ??= (async () => {
+      const source = live.current.doc.source;
+      const url = indexUrl(source) + (indexUrl(source).includes("?") ? "&" : "?") + "structure=true";
+      const deadline = Date.now() + 30_000;
+      for (;;) {
+        const result = await api<DocumentIndex>(url, { signal: downloads.signal });
+        if (closed || downloads.signal.aborted || result.version !== version) throw new Error("文档已切换");
+        if (result.status === "ready") return result.blocks ?? [];
+        if (result.status !== "pending" || Date.now() >= deadline) throw new Error("无法核验文档位置");
+        await new Promise<void>((resolve, reject) => {
+          const abort = () => { clearTimeout(timer); reject(new Error("文档已关闭")); };
+          const timer = setTimeout(() => { downloads.signal.removeEventListener("abort", abort); resolve(); }, 1000);
+          downloads.signal.addEventListener("abort", abort, { once: true });
+        });
+      }
+    })());
     // Closing or switching the document stops a download the viewer has not taken yet.
     const downloads = new AbortController();
-    const captures = new Map<number, { resolve(value: OfficeCapture): void; reject(error: Error): void }>();
+    const captures = new Map<number, { resolve(value: OfficeCapture): void; reject(error: Error): void; dispose(): void }>();
     let toolSeq = 0;
     let up = false;
     // Set when the document's bytes could not be read: a failure the viewer then reports is the source's, not its own.
     let unreadable: string | null = null;
     const version = contentVersion;
     const send = (message: Outgoing, transfer: Transferable[] = []) =>
-      element.contentWindow?.postMessage({ ch: CHANNEL, ...message }, "*", transfer);
-    const capture = (at: string | null, maxWidth: number) =>
+      !closed && element.contentWindow?.postMessage({ ch: CHANNEL, ...message }, "*", transfer);
+    const capture = (at: string | null, maxWidth: number, signal?: AbortSignal) =>
       new Promise<OfficeCapture>((resolve, reject) => {
+        if (closed || signal?.aborted) return reject(new Error("查看器已关闭"));
+        if (captures.size) return reject(new Error("截图正在处理中"));
         const id = ++toolSeq;
-        captures.set(id, { resolve, reject });
+        const finish = (error: string) => {
+          const waiter = captures.get(id);
+          if (!waiter) return;
+          captures.delete(id);
+          waiter.dispose();
+          send({ t: "page-tool-cancel", id });
+          reject(new Error(error));
+        };
+        const abort = () => finish("截图已取消");
+        const timer = setTimeout(() => finish("截图超时"), 15_000);
+        const dispose = () => {
+          clearTimeout(timer);
+          signal?.removeEventListener("abort", abort);
+        };
+        captures.set(id, { resolve, reject, dispose });
+        signal?.addEventListener("abort", abort, { once: true });
         send({ t: "page-tool", id, name: "capture_view", args: { ...(at ? { anchor: `${live.current.doc.path}#${at}` } : {}), maxWidth } });
-        setTimeout(() => captures.get(id) && (captures.delete(id), reject(new Error("截图超时"))), 15_000);
       });
 
     // What the user is looking at, for the model's get_view and viewport captures. The API keeps it 600 s, so
@@ -240,7 +295,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
       }
       const request = (inflight = new AbortController());
       const deadline = setTimeout(() => request.abort(), VIEW_REQUEST_MS);
-      const body = { view_id: binding.id, sequence: ++reportSequence, ...report };
+      const body = { view_id: binding.id, sequence: ++reportSequence, ...report, representation_revision: `${resolvedAssetVersion ?? "loading"}:${live.current.dark ? "dark" : "light"}` };
       void api(`/v1/conversations/${conversation}/view`, { method: "PUT", body: JSON.stringify(body), signal: request.signal })
         .then(() => void (sentAt = Date.now()), () => undefined)
         .finally(() => {
@@ -306,6 +361,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
           if (args.path !== current.path) throw Object.assign(new Error("该文档不在当前标签"), { code: "not_found" });
           // The viewer is up and draws its own placeholder from here on.
           setFramed(version);
+          if (bytes.size) throw new Error("文件下载正在处理中");
           const token = crypto.randomUUID();
           const download = fetch(contentUrl(current.source), { signal: downloads.signal }).then(
             (r) => {
@@ -323,6 +379,8 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
           const known = live.current.index as DocumentIndex;
           return { value: { info: info(), file: { token, chunks: 1, bytes: known.bytes ?? 0 }, blocks: known.blocks } };
         }
+        case "document_blocks":
+          return { value: { blocks: await loadBlocks() } };
         case "open_document":
           if (typeof args.path === "string" && args.path !== current.path) live.current.onOpen?.(args.path);
           return { value: snapshot() };
@@ -349,7 +407,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     };
 
     const onMessage = async (event: MessageEvent) => {
-      if (event.source !== element.contentWindow || !isChannel(event.data)) return;
+      if (closed || event.source !== element.contentWindow || !isChannel(event.data)) return;
       const message = event.data as FrameMessage;
       // Screenshots are base64 PNGs, unlike control messages. Keep their transport bounded while
       // allowing the client-call handler to shrink images exceeding its 2 MiB result budget.
@@ -445,6 +503,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
           const waiter = captures.get(message.id);
           if (!waiter) return;
           captures.delete(message.id);
+          waiter.dispose();
           const result = message.value as { content?: { type: string; data?: string; text?: string }[] } | undefined;
           const image = result?.content?.find((part) => part.type === "image")?.data;
           if (!message.ok || !image) return waiter.reject(new Error(message.error || "截图失败"));
@@ -458,13 +517,20 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
     return () => {
       window.removeEventListener("message", onMessage);
       document.removeEventListener("visibilitychange", onVisibility);
+      send({ t: "dispose" });
       closed = true;
       downloads.abort();
+      structuralBlocks = null;
       clearTimeout(debounce);
       clearTimeout(renewal);
       inflight?.abort();
       releaseView();
-      for (const waiter of captures.values()) waiter.reject(new Error("查看器已关闭"));
+      for (const waiter of captures.values()) {
+        waiter.dispose();
+        waiter.reject(new Error("查看器已关闭"));
+      }
+      captures.clear();
+      bytes.clear();
       channel.current = null;
     };
   }, [ready, contentVersion]);
@@ -481,6 +547,7 @@ export default function OfficeView({ doc, revision, docs: given, conversationId,
       context: { theme: dark ? "dark" : "light", locale: "zh-CN", chat: live.current.chat },
       recent: live.current.docs.map((d) => ({ path: d.path, kind: d.kind })),
     });
+    channel.current?.report();
   }, [dark]);
 
   // A new reveal from the model goes to the running viewer; the first one rides on the ready handshake.

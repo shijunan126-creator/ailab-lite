@@ -211,6 +211,10 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
             .values(state="canceled", updated_at=utcnow())
         )
         conv.deleted_at = utcnow()
+        db.flush()
+        from .derived_assets import invalidate_workspace_ocr
+
+        invalidate_workspace_ocr(db, conversation_id=conv.id)
         # what the memory system kept of this conversation (episode copies, source quotes) goes with it
         from ..memory_recall.lineage import forget_conversation
 
@@ -264,7 +268,27 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
         if time.monotonic() >= deadline:
             raise HTTPException(422, "分叉复制超过60秒，请缩小范围后重试")
 
+    from ..models import new_id
+    from .fork_assets import PreviewCopies, copy_captures, remap_captures
+    from .source_lifecycle import invalid_history
+
+    copies = PreviewCopies(storage, check_deadline)
+    committed = False
     try:
+        source = _owned(db, conversation_id, user)
+        target = db.get(Run, body.run_id, populate_existing=True)
+        if not target or target.conversation_id != source.id:
+            raise HTTPException(404, "轮次不存在")
+        turns = path_runs(db, source.id, target.id)
+        if len(turns) > 500 or any(turn.status not in RunStatus.TERMINAL for turn in turns):
+            raise HTTPException(422, "只能复制最多500轮已结束的轮次")
+        worked = (source.forked_from or {}).get("mode") == "work" or any((r.options or {}).get("mode", "work") != "chat" for r in turns)
+        if worked and body.mode != "work":
+            raise HTTPException(422, "包含工作轮次的对话只能分叉为工作模式")
+        destinations = {turn.id: new_id("run") for turn in turns}
+        invalid_before = invalid_history(db, list(destinations))
+        copies.prepare(db, turns, destinations, invalid_before)
+        total_bytes = sum(item["size"] for item in copies.items)
         with user_critical_section(db, user.id):
             source = _owned(db, conversation_id, user)
             db.refresh(source)
@@ -274,6 +298,8 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             if target.status not in RunStatus.TERMINAL:
                 raise HTTPException(422, "只能从已结束的轮次分叉")
             turns = path_runs(db, source.id, target.id)
+            if [turn.id for turn in turns] != list(destinations) or invalid_history(db, list(destinations)) != invalid_before:
+                raise HTTPException(409, "分叉来源已变化，请重试")
             if len(turns) > 500:
                 raise HTTPException(422, "分叉最多复制500轮对话")
             # A work branch takes the whole history into work, so nothing in it can branch back into chat.
@@ -292,12 +318,13 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
             db.add(conv)
             db.flush()
             mapping = {}
+            capture_count = 0
 
             def copy_object(src, dst):
                 nonlocal total_bytes
                 check_deadline()
                 total_bytes += storage.info(src).size
-                if total_bytes > 2 * 1024**3 or len(copied_keys) >= 10000:
+                if total_bytes > 2 * 1024**3 or len(copied_keys) + len(copies.items) >= 10000:
                     raise HTTPException(422, "分叉对象超过2GiB或10000个上限")
                 copied_keys.append(dst)
                 storage.copy(src, dst)
@@ -323,6 +350,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     created = previous_created + timedelta(microseconds=1)
                 previous_created = created
                 new = Run(
+                    id=destinations[old.id],
                     user_id=user.id,
                     context_source_epoch=old.context_source_epoch,
                     conversation_id=conv.id,
@@ -347,6 +375,13 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                 from .asset_refs import register_assets
 
                 register_assets(db, new)
+                captures = (
+                    copy_captures(db, old, new, remaining=10000 - len(copies.items) - capture_count, check_deadline=check_deadline)
+                    if old.id not in invalid_sources
+                    else {}
+                )
+                capture_count += len(captures)
+                new.result = remap_captures(new.result, captures)
                 mapping[old.id] = new
                 if old.id in invalid_sources:
                     new.runtime_meta = {**(new.runtime_meta or {}), "source_invalidated": True}
@@ -401,7 +436,9 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     for event in events:
                         if event.type in {"client.call", "client.result"}:
                             continue
-                        payload = {"source_unavailable": True} if old.id in invalid_sources else deepcopy(event.payload)
+                        payload = (
+                            {"source_unavailable": True} if old.id in invalid_sources else remap_captures(deepcopy(event.payload), captures)
+                        )
                         if event.type == "agent.steered" and payload.get("queued_id") in copied_steers:
                             payload["queued_id"] = copied_steers[payload["queued_id"]]
                         db.add(RunEvent(run_id=new.id, seq=event.seq, type=event.type, payload=payload, created_at=event.created_at))
@@ -409,14 +446,7 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                     db.flush()
                 if old.id in invalid_sources:
                     continue
-                cursor = None
-                while True:
-                    page = storage.list_prefix(f"previews/{old.id}/", cursor=cursor, limit=100)
-                    for obj in page:
-                        copy_object(obj.key, obj.key.replace(f"previews/{old.id}/", f"previews/{new.id}/", 1))
-                    cursor = page.cursor
-                    if cursor is None:
-                        break
+                copies.publish(db, new)
             conv.active_run_id = mapping[target.id].id
             copy_summary(db, source, conv, mapping, invalid_sources)
             if body.mode == "work":
@@ -440,9 +470,13 @@ def fork_conversation(conversation_id: str, body: ConversationFork, user: User =
                         "workspace_bytes": storage.info(dest).size,
                     }
             db.commit()
+            committed = True
             return conversation_out(conv, target.status)
     except BaseException:
+        if committed:
+            raise
         db.rollback()
+        copies.cleanup(db)
         for key in copied_keys:
             try:
                 storage.delete(key)

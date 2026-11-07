@@ -467,7 +467,7 @@ class MockLLM(LLMClient):
 
         if script is None:  # plain chat: answer directly, no tools
             turns = sum(1 for m in messages if m.get("role") == "user" and not _content_text(m.get("content")).startswith("（平台提示"))
-            attached = prompt.count("（附件《")
+            attached = prompt.count("（附件《") + prompt.count("<!-- AILAB_ATTACHMENT_START -->")
             text = (
                 f"你好！这是**离线演示模型**的回答（本对话第 {turns} 轮）。\n\n"
                 "- 它不调用真实大模型，只用来演示完整链路\n"

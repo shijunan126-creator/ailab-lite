@@ -450,3 +450,16 @@ def test_mock_translates_command_paths_inside_file_payload(tmp_path, monkeypatch
         assert provider.get_file(lease, "/workspace/outputs/result.txt") == b"output"
     finally:
         provider.release(lease)
+
+
+def test_model_commands_run_in_bash_like_every_sandbox_backend(tmp_path, monkeypatch):
+    # Dash (Debian /bin/sh) rejects process substitution; the model writes bash.
+    command = "set -o pipefail; diff <(printf 'a\\n') <(printf 'a\\n') && [[ -n x ]] && echo same"
+    result = asyncio.run(execute_tool("exec", {"cmd": command}, "lease", LocalBroker(tmp_path)))
+    assert result["exit_code"] == 0 and result["stdout"] == "same\n", result
+    from ailab_platform.sandbox.mock import MockSandbox
+
+    monkeypatch.setattr(settings, "data_dir", tmp_path)
+    sandbox = MockSandbox()
+    lease = sandbox.acquire("bash-probe", "mock")
+    assert sandbox.exec(lease, command, 10).stdout == "same\n"

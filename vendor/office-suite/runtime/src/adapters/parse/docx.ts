@@ -1,5 +1,5 @@
 import { OfficeError, type OutlineItem } from "#office/contract.ts";
-import type { Locator } from "#office/domain/anchor.ts";
+import { parseLocator, type Locator } from "#office/domain/anchor.ts";
 import {
   clampRange,
   markdownTable,
@@ -230,7 +230,10 @@ export async function parseDocx(bytes: Uint8Array, label: string): Promise<Parse
   return {
     kind: "docx",
     hasVisuals: pkg.paths().some(p => /^word\/(media|charts|diagrams)\//.test(p)),
-    contentInfo(anchor) { const block = byAnchor.get(anchor); return {has_text: !!block && !!blockText(block).trim(), visual: visuals.has(anchor)}; },
+    contentInfo(anchor) {
+      const selected = anchor.includes('/') ? select(parseLocator('docx', anchor)) : [byAnchor.get(anchor)].filter((block): block is Block => block !== undefined);
+      return {has_text: selected.some(block => !!blockText(block).trim()), visual: visuals.has(anchor.split('/')[0])};
+    },
     title,
     units: blocks.length,
     outline,

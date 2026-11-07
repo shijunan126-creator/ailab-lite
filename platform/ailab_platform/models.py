@@ -1092,7 +1092,10 @@ class MessageFileRef(Base):
 
 class FileDerivation(Base):
     __tablename__ = "file_derivations"
-    __table_args__ = (UniqueConstraint("file_id", "kind", "fingerprint", name="uq_file_derivation"),)
+    __table_args__ = (
+        UniqueConstraint("file_id", "kind", "fingerprint", name="uq_file_derivation"),
+        Index("ix_file_derivations_manifest", "manifest_key"),
+    )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("drv"))
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"))
     kind: Mapped[str] = mapped_column(String(24))
@@ -1109,6 +1112,7 @@ class DocumentBlock(Base):
         UniqueConstraint("derivation_id", "ordinal", name="uq_document_block_ordinal"),
         Index("ix_document_blocks_unit", "derivation_id", "unit_number", "ordinal"),
         Index("ix_document_blocks_anchor", "derivation_id", "anchor", "ordinal"),
+        Index("ix_document_blocks_text_key", "text_key", "derivation_id"),
     )
     id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("blk"))
     derivation_id: Mapped[str] = mapped_column(String(40), ForeignKey("file_derivations.id", ondelete="CASCADE"))
@@ -1118,6 +1122,8 @@ class DocumentBlock(Base):
     text_key: Mapped[str] = mapped_column(String(600))
     digest: Mapped[str] = mapped_column(String(64))
     chars: Mapped[int] = mapped_column(Integer)
+    byte_offset: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    byte_size: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class AppliedMessagePosition(Base):
@@ -1161,6 +1167,7 @@ class ContextSummarySource(Base):
 
 class RenderedPage(Base):
     __tablename__ = "rendered_pages"
+    __table_args__ = (Index("ix_rendered_pages_key", "key"),)
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
     page: Mapped[int] = mapped_column(Integer, primary_key=True)
     version: Mapped[str] = mapped_column(String(40), primary_key=True)
@@ -1180,6 +1187,7 @@ class FileSourceInvalidation(Base):
 
 class OcrPageResult(Base):
     __tablename__ = "ocr_page_results"
+    __table_args__ = (Index("ix_ocr_page_results_key", "text_key"),)
     file_id: Mapped[str] = mapped_column(String(40), ForeignKey("files.id", ondelete="CASCADE"), primary_key=True)
     page: Mapped[int] = mapped_column(Integer, primary_key=True)
     fingerprint: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -1222,7 +1230,11 @@ class MessageDocRef(Base):
 
 class ViewerCapture(Base):
     __tablename__ = "viewer_captures"
-    __table_args__ = (Index("ix_viewer_captures_expiry", "expires_at"), Index("ix_viewer_captures_run", "run_id"))
+    __table_args__ = (
+        Index("ix_viewer_captures_expiry", "expires_at"),
+        Index("ix_viewer_captures_run", "run_id", "id"),
+        Index("ix_viewer_captures_key", "storage_key"),
+    )
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     run_id: Mapped[str] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"))
     file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
@@ -1230,4 +1242,177 @@ class ViewerCapture(Base):
     storage_key: Mapped[str] = mapped_column(String(600))
     digest: Mapped[str] = mapped_column(String(64))
     content_type: Mapped[str] = mapped_column(String(50))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DerivedBudget(Base):
+    __tablename__ = "derived_budget"
+    __table_args__ = (CheckConstraint("used_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_budget_nonnegative"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    used_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    backfill_complete: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    backfill_prefix: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    backfill_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class DerivedAsset(Base):
+    """Accounting survives owner deletion until physical object deletion succeeds."""
+
+    __tablename__ = "derived_assets"
+    __table_args__ = (
+        Index("ix_derived_assets_state_expiry", "state", "expires_at", "key"),
+        Index("ix_derived_assets_state_lease", "state", "lease_until", "key"),
+        Index("ix_derived_assets_file", "file_id", "source_version"),
+        Index("ix_derived_assets_run", "run_id"),
+        Index("ix_derived_assets_job_attempt", "job_id", "attempt_token", "state"),
+        Index("ix_derived_assets_kind_state", "kind", "state", "key"),
+        Index("ix_derived_assets_captures", "state", "reconstructible", "created_at", "key"),
+        CheckConstraint("size_bytes >= 0 AND reserved_bytes >= 0", name="ck_derived_assets_nonnegative"),
+    )
+    key: Mapped[str] = mapped_column(String(600), primary_key=True)
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_version: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(30))
+    state: Mapped[str] = mapped_column(String(20))
+    token: Mapped[str] = mapped_column(String(40))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    attempt_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    size_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    reserved_bytes: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    digest: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reconstructible: Mapped[bool] = mapped_column(Boolean)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DerivedAssetRef(Base):
+    __tablename__ = "derived_asset_refs"
+    __table_args__ = (
+        Index("ix_derived_asset_refs_key", "key", "kind", "expires_at"),
+        Index("ix_derived_asset_refs_run", "run_id"),
+        Index("ix_derived_asset_refs_expiry", "expires_at"),
+    )
+    id: Mapped[str] = mapped_column(String(160), primary_key=True)
+    key: Mapped[str] = mapped_column(String(600), ForeignKey("derived_assets.key", ondelete="CASCADE"))
+    run_id: Mapped[str | None] = mapped_column(String(40), ForeignKey("runs.id", ondelete="CASCADE"), nullable=True)
+    kind: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DocumentLane(Base):
+    """One durable execution slot per heavy document class, shared by API workers."""
+
+    __tablename__ = "document_lanes"
+    name: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_user_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+
+
+class DocumentOperation(Base):
+    __tablename__ = "document_operations"
+    __table_args__ = (
+        UniqueConstraint("run_id", "identity", name="uq_document_operation_identity"),
+        Index("ix_document_operations_lane_queue", "lane", "status", "created_at", "id"),
+        Index("ix_document_operations_user_lane", "user_id", "lane", "status", "created_at"),
+        Index("ix_document_operations_run", "run_id", "status"),
+        Index("ix_document_operations_lease", "status", "lease_until"),
+        Index("ix_document_operations_file_identity", "file_id", "identity", "status"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dop"))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    file_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    identity: Mapped[str] = mapped_column(String(64))
+    lane: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(30))
+    job_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    source_version: Mapped[str] = mapped_column(String(100))
+    binding: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    generation: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    claim_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    executor_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    execution_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_token: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class DocumentOperationConsumer(Base):
+    __tablename__ = "document_operation_consumers"
+    __table_args__ = (Index("ix_document_consumers_operation", "operation_id", "deadline"),)
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(ForeignKey("document_operations.id", ondelete="CASCADE"), primary_key=True)
+    deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class DocumentOcrUnit(Base):
+    __tablename__ = "document_ocr_units"
+    __table_args__ = (
+        UniqueConstraint("file_id", "source_version", "fingerprint", "selector_key", name="uq_document_ocr_scope"),
+        Index("ix_document_ocr_units_order", "file_id", "source_version", "fingerprint", "ordinal"),
+        Index("ix_document_ocr_units_page", "file_id", "source_version", "page", "ordinal"),
+        Index("ix_document_ocr_units_operation", "operation_id"),
+        Index("ix_document_ocr_units_key", "text_key"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ocr"))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    selector_key: Mapped[str] = mapped_column(String(64))
+    selector: Mapped[dict] = mapped_column(JSON)
+    details: Mapped[dict] = mapped_column(JSON, default=dict)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page: Mapped[int] = mapped_column(Integer)
+    image_revision: Mapped[str] = mapped_column(String(100))
+    source_kind: Mapped[str] = mapped_column(String(30))
+    text_key: Mapped[str] = mapped_column(String(600))
+    digest: Mapped[str] = mapped_column(String(64))
+    chars: Mapped[int] = mapped_column(Integer)
+    engine: Mapped[str] = mapped_column(String(80))
+    backend: Mapped[str] = mapped_column(String(16))
+    seconds: Mapped[float] = mapped_column(Float)
+    operation_id: Mapped[str | None] = mapped_column(ForeignKey("document_operations.id", ondelete="SET NULL"), nullable=True)
+
+
+class DocumentNativeRange(Base):
+    __tablename__ = "document_native_ranges"
+    __table_args__ = (
+        UniqueConstraint("file_id", "source_version", "parser", "base_derivation_id", "selector_key", name="uq_document_native_range"),
+        Index("ix_document_native_ranges_order", "file_id", "source_version", "parser", "ordinal"),
+        Index("ix_document_native_ranges_derivation", "derivation_id", "page"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("nrg"))
+    file_id: Mapped[str] = mapped_column(ForeignKey("files.id", ondelete="CASCADE"))
+    source_version: Mapped[str] = mapped_column(String(100))
+    parser: Mapped[str] = mapped_column(String(80))
+    base_derivation_id: Mapped[str] = mapped_column(ForeignKey("file_derivations.id", ondelete="CASCADE"))
+    selector_key: Mapped[str] = mapped_column(String(64))
+    selector: Mapped[dict] = mapped_column(JSON)
+    ordinal: Mapped[int] = mapped_column(Integer)
+    page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    derivation_id: Mapped[str] = mapped_column(ForeignKey("file_derivations.id", ondelete="CASCADE"))
+
+
+class DocumentPreparation(Base):
+    __tablename__ = "document_preparations"
+    __table_args__ = (
+        UniqueConstraint("user_id", "send_id", name="uq_document_preparation_send"),
+        Index("ix_document_preparations_expiry", "expires_at", "id"),
+        Index("ix_document_preparations_run", "run_id"),
+    )
+    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("dpr"))
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    send_id: Mapped[str] = mapped_column(String(120))
+    identity: Mapped[str] = mapped_column(String(64))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
+    plan: Mapped[dict] = mapped_column(JSON, default=dict)

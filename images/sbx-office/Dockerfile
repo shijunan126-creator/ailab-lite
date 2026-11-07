@@ -21,15 +21,18 @@ FROM python:3.12-slim-trixie@sha256:aa943ce411423c7582288f18707ff66eddcbaeb51050
 
 # Snapshot fixes the complete system/font/TeX dependency closure, independently of skill changes.
 ARG DEBIAN_SNAPSHOT=20261101T000000Z
+COPY images/sbx-office/fetch_snapshot.py /opt/office-production/fetch_snapshot.py
 RUN rm -f /etc/apt/sources.list.d/* \
  && echo "deb [check-valid-until=no] https://snapshot.debian.org/archive/debian/${DEBIAN_SNAPSHOT}/ trixie main" > /etc/apt/sources.list \
- && apt-get update \
- && apt-get install -y --no-install-recommends \
+ && apt-get -o Acquire::Retries=0 -o Acquire::https::Pipeline-Depth=0 -o APT::Update::Error-Mode=any update \
+ && set -- \
       libreoffice-impress-nogui libreoffice-writer-nogui libreoffice-calc-nogui \
       poppler-utils fonts-noto-cjk fonts-noto-core fonts-wqy-zenhei fontconfig tini \
       libatomic1 libstdc++6 python3-uno zip unzip chromium pandoc imagemagick tesseract-ocr \
       texlive-xetex texlive-latex-extra texlive-science texlive-lang-chinese texlive-fonts-recommended \
- && rm -rf /var/lib/apt/lists/*
+ && python /opt/office-production/fetch_snapshot.py "$@" \
+ && apt-get install -y --no-download --no-install-recommends "$@" \
+ && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*.deb
 
 # Python closure is fully pinned and hash verified; changes do not invalidate the larger system layer.
 COPY images/sbx-office/requirements.lock /opt/office-production/requirements.lock
@@ -49,7 +52,7 @@ RUN python /opt/ailab-tools/skill_index.py /opt/skills --check --requirements
 COPY images/sbx-office/smoke/ /opt/ailab-tools/smoke/
 
 RUN useradd -u 10001 -m -d /home/sandbox sandbox \
- && mkdir -p /workspace/inputs /workspace/outputs \
+ && mkdir -p /workspace/inputs /workspace/work /workspace/outputs \
  && chown -R 10001:10001 /workspace
 USER 10001
 WORKDIR /workspace

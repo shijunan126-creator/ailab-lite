@@ -168,6 +168,7 @@ async def upload_file(
                         purpose=purpose,
                         meta={
                             "processing": "queued",
+                            **({"input_lifecycle": 2} if purpose == "library" and not (parent and parent.purpose == "skill") else {}),
                             "upload_filename": filename,
                             "upload_provenance": {"id": new_id("upl")},
                             **(
@@ -492,6 +493,7 @@ def _ready_file(db: Session, file_id: str, user: User) -> FileObject:
         raise HTTPException(status_code=410, detail="version purged")
     scanned = (
         file.status == FileStatus.PENDING
+        and (file.meta or {}).get("input_lifecycle") != 2
         and file.purpose == "library"
         and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean"
         and bool((file.meta or {}).get("preview_job_id"))
@@ -676,6 +678,7 @@ def presign_upload(body: PresignIn, user: User = Depends(current_user), db: Sess
                 status=FileStatus.PENDING,
                 meta={
                     "processing": "awaiting_upload",
+                    "input_lifecycle": 2,
                     "disposition": body.disposition,
                     "upload_filename": filename,
                     "expected_size": body.size,
@@ -838,33 +841,15 @@ def restore_version(file_id: str, user: User = Depends(current_user), db: Sessio
         try:
             copied.append(key)
             storage.copy(old.storage_key, key)
-            remapped = {}
-            for item in storage.list_prefix(f"derived/{old.id}/"):
-                target = item.key.replace(f"derived/{old.id}/", f"derived/{fid}/", 1)
-                copied.append(target)
-                storage.copy(item.key, target)
-                remapped[item.key] = target
-            for field in ("derived_key", "text_key", "thumb_key", "preview_key"):
-                source = meta.get(field)
-                if source and source not in remapped:
-                    target = f"derived/{fid}/{field}/{Path(source).name}"
-                    copied.append(target)
-                    storage.copy(source, target)
-                    remapped[source] = target
-
-            def remap(value):
-                if isinstance(value, dict):
-                    return {k: remap(v) for k, v in value.items()}
-                if isinstance(value, list):
-                    return [remap(v) for v in value]
-                return remapped.get(value, value) if isinstance(value, str) else value
-
-            meta = remap(meta)
-            for field in ("processing_job_id", "document_job_id", "preview_job_id"):
-                meta.pop(field, None)
-            if (meta.get("preview") or {}).get("status") == "pending":
-                meta.pop("preview", None)
-            file.meta = {**meta, "restored_from_id": old.id}
+            # Only immutable source/safety facts survive a new file identity.
+            # Copying derived bytes would bypass reservations and retain stale
+            # index/job identities; consumption prepares them under the new ID.
+            meta = {
+                k: v
+                for k, v in meta.items()
+                if k in {"scan", "safety", "scan_exhausted", "safety_reason", "upload_completed", "upload_filename", "disposition"}
+            }
+            file.meta = {**meta, "input_lifecycle": 2, "restored_from_id": old.id}
             assign_file_version(db, file, old)
             db.add(file)
             keys = trim_file_versions(db, file)
@@ -910,7 +895,7 @@ def empty_trash(user: User = Depends(current_user), db: Session = Depends(get_db
 
 
 @router.get("/{file_id}/document")
-def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)):
+def get_document(file_id: str, user: User = Depends(current_user), db: Session = Depends(get_db), structure: bool = False):
     from ..contracts.document_view import PARSER_REVISION
     from .document_view import index
 
@@ -919,6 +904,12 @@ def get_document(file_id: str, user: User = Depends(current_user), db: Session =
         raise HTTPException(404, "document unavailable")
     if file.status != FileStatus.READY:
         return {"status": "pending" if file.status == FileStatus.PENDING else "failed", "file_id": file.id, "native": False}
+    if not structure:
+        from ..contracts.document_view import opening_metadata
+
+        if (file.meta or {}).get("scan", {}).get("verdict") != "clean":
+            raise HTTPException(409, "document_not_safe")
+        return opening_metadata(version=file.sha256, filename=file.filename, size=file.size, file_id=file.id)
     result = index(file)
     if result["status"] == "pending" or (result["status"] == "failed" and not result.get("reason")):
         with user_critical_section(db, user.id):

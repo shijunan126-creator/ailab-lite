@@ -22,8 +22,11 @@ from ..models import User
 from ..obs import RequestContextMiddleware, setup_logging
 from ..queue import get_queue
 from ..skill_drafts.service import draft_forever
+from ..storage import close_storage
 from . import process_snapshots as process_snapshots
+from .file_work import router as file_work_router
 from .jobs import router as jobs_router
+from .native_preparation import router as native_preparation_router
 from .preview_dispatch import dispatch_forever
 from .reaper import lifecycle_cleanup_forever, reap_forever, workspace_cleanup_forever
 from .routes_admin import router as admin_router
@@ -32,7 +35,11 @@ from .routes_auth import router as auth_router
 from .routes_brand import router as brand_router
 from .routes_client_calls import router as client_calls_router
 from .routes_conversations import router as conversations_router
+from .routes_derived_assets import router as derived_assets_router
+from .routes_document_input import router as document_input_router
+from .routes_document_ocr import router as document_ocr_router
 from .routes_document_view import router as document_view_router
+from .routes_document_visual import router as document_visual_router
 from .routes_files import router as files_router
 from .routes_files import trash_router
 from .routes_genui import router as genui_router
@@ -42,6 +49,7 @@ from .routes_library_summary import router as library_summary_router
 from .routes_library_tools import router as library_tools_router
 from .routes_memory import router as memory_router
 from .routes_model_context import router as model_context_router
+from .routes_native_ranges import router as native_ranges_router
 from .routes_ocr import extraction_router, preparation_router, vision_router
 from .routes_ocr import router as ocr_router
 from .routes_platform_skills import router as platform_skills_router
@@ -57,6 +65,7 @@ from .routes_skill_drafts import router as skill_drafts_router
 from .routes_skill_drafts_internal import router as skill_drafts_internal_router
 from .routes_skills import router as skills_router
 from .routes_templates import router as templates_router
+from .routes_workspace_ocr import router as workspace_ocr_router
 from .workspace_documents import router as workspace_documents_router
 
 setup_logging("api")
@@ -118,6 +127,7 @@ async def lifespan(_: FastAPI):
             await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             SERVING_LOOP = None
+            await asyncio.to_thread(close_storage)
 
 
 app = FastAPI(
@@ -168,6 +178,10 @@ app.include_router(skills_router)
 app.include_router(platform_skills_router)
 app.include_router(memory_router)
 app.include_router(library_tools_router)
+app.include_router(native_preparation_router)
+app.include_router(file_work_router)
+app.include_router(native_ranges_router)
+app.include_router(derived_assets_router)
 app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)
@@ -185,6 +199,10 @@ app.include_router(client_calls_router)
 app.include_router(workspace_documents_router)
 
 app.include_router(document_view_router)
+app.include_router(document_input_router)
+app.include_router(document_visual_router)
+app.include_router(document_ocr_router)
+app.include_router(workspace_ocr_router)
 app.include_router(schedules_router)
 
 

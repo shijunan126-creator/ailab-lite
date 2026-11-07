@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import tempfile
 import traceback
 
@@ -40,6 +41,22 @@ os.environ["AILAB_IMAGE_SEARCH_PROVIDER"] = "mock"  # never call Openverse from 
 os.environ["AILAB_WATCHDOG_MODE"] = "off"  # scripted models answer in order; tests that need the judge turn it on
 
 
+def pytest_sessionfinish(session, exitstatus):
+    reporter = session.config.pluginmanager.getplugin("terminalreporter")
+    if exitstatus:
+        if reporter:
+            reporter.write_line("Isolated test state retained for failure inspection: " + _TMP)
+        return
+    from ailab_platform.db import engine
+    from ailab_platform.storage import close_storage
+
+    close_storage()
+    engine.dispose()
+    shutil.rmtree(_TMP)
+    if reporter:
+        reporter.write_line("Removed isolated test state: " + _TMP)
+
+
 @pytest.fixture(autouse=True)
 def no_sql_on_serving_loop():
     """Catch blocking SQL even when an endpoint/background job swallows its error."""
@@ -69,3 +86,27 @@ def no_sql_on_serving_loop():
         event.remove(Engine, "before_cursor_execute", before_cursor_execute)
     if violations:
         pytest.fail("Blocking SQL on API serving loop:\n" + "\n".join(sorted(violations)))
+
+
+@pytest.fixture(autouse=True)
+def release_test_document_jobs():
+    from sqlalchemy import delete, inspect, select
+
+    from ailab_platform.db import SessionLocal
+    from ailab_platform.models import DocumentOperation, DocumentPreparation
+
+    with SessionLocal() as db:
+        ready = inspect(db.get_bind()).has_table("document_operations")
+        before = set(db.scalars(select(DocumentOperation.id))) if ready else set()
+        preparations = set(db.scalars(select(DocumentPreparation.id))) if ready else set()
+    yield
+    with SessionLocal() as db:
+        if not inspect(db.get_bind()).has_table("document_operations"):
+            return
+        from ailab_platform.models import OutboxMessage
+
+        created = select(DocumentOperation.id).where(DocumentOperation.id.not_in(before))
+        db.execute(delete(OutboxMessage).where(OutboxMessage.id.in_(created)))
+        db.execute(delete(DocumentOperation).where(DocumentOperation.id.not_in(before)))
+        db.execute(delete(DocumentPreparation).where(DocumentPreparation.id.not_in(preparations)))
+        db.commit()

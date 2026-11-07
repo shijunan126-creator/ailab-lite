@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from ..agent.prompts import skills as builtin_skills
 from ..config import settings
 from ..contracts.file_preview import PreviewCompletion, PreviewPagePublication
+from ..contracts.file_types import DETECTED_MIME, legacy_scanned_pending
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
@@ -621,7 +622,12 @@ def _commit_artifact(body: ArtifactIn, db: Session, run: Run, delivery_id: str) 
         sha256=digest,
         storage_key=final_key,
         status=FileStatus.READY,
-        meta={"source": "sandbox", "run_id": run.id, "artifact_filename": filename},
+        meta={
+            "source": "sandbox",
+            "run_id": run.id,
+            "artifact_filename": filename,
+            "scan": {"verdict": scan.verdict, "engine": scan.engine},
+        },
     )
     # A sibling branch may already have advanced this lineage; do not change its head.
     if parent is not None and not parent.is_head:
@@ -849,18 +855,30 @@ def _bound_file(
         meta = file.meta or {}
         if (
             "files:read_for_document" not in principal.scopes
-            or file.status != FileStatus.PENDING
+            or file.status not in {FileStatus.PENDING, FileStatus.READY}
             or meta.get("document_job_id") != preview_job
             or not preview_job
             or (meta.get("scan") or {}).get("verdict") != "clean"
         ):
             raise HTTPException(403, "no authorized document job")
+        if meta.get("document_operation_id") and (meta.get("document_profile") != "legacy" or meta.get("document_execution_required")):
+            from ..models import DocumentOperation
+            from . import document_operations as operations
+
+            operation = (
+                db.get(DocumentOperation, meta["document_operation_id"], populate_existing=True)
+                if meta.get("document_operation_id")
+                else None
+            )
+            if not operation or operation.file_id != file.id or operation.attempt_token != preview_job:
+                raise HTTPException(409, "native_scope_superseded")
+            operations.active(db, operation.id, operation.claim_token)
         return file
     if job == "preview" and principal.service == "broker":
         # A library render has no run: it is bound to the preview job the API recorded as pending for this file.
         meta = file.meta or {}
         pending = (meta.get("preview") or {}).get("status") == "pending"
-        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        scanned = legacy_scanned_pending(file.status, meta)
         if (
             "files:read_for_preview" not in principal.scopes
             or not (file.status == FileStatus.READY or scanned)
@@ -870,10 +888,18 @@ def _bound_file(
             raise HTTPException(status_code=403, detail="no pending preview job for this file")
         if meta.get("preview_job_id") != preview_job:
             raise HTTPException(status_code=403, detail="preview job superseded")
+        if (meta.get("preview_execution") or {}).get("operation_id") == preview_job:
+            from ..models import DocumentOperation
+            from . import document_operations as operations
+
+            operation = db.get(DocumentOperation, preview_job, populate_existing=True)
+            if not operation:
+                raise HTTPException(409, "document_operation_superseded")
+            operations.active(db, operation.id, operation.claim_token)
         return file
     if principal.service == "worker":
         allowed = file.status == FileStatus.PENDING if job == "processing" else file.status == FileStatus.READY
-        if job == "preview" and file.status == FileStatus.PENDING and ((file.meta or {}).get("scan") or {}).get("verdict") == "clean":
+        if job == "preview" and legacy_scanned_pending(file.status, file.meta or {}):
             allowed = True
         if not allowed:
             raise HTTPException(status_code=403, detail="file is not eligible for this processing job")
@@ -1043,9 +1069,20 @@ def internal_get_file(
     preview_job: str | None = None,
     principal: ServicePrincipal = Depends(FILE_READ),
     db: Session = Depends(get_db),
+    x_run_attempt: str | None = Header(default=None),
 ) -> dict:
     file = _bound_file(db, file_id, principal, run_id, job, preview_job)
     result = file_dict(file)
+    if principal.service in {"worker", "broker"} and isinstance(x_run_attempt, str):
+        from ..models import OutboxMessage
+
+        writer = db.scalar(
+            select(OutboxMessage)
+            .where(OutboxMessage.claim_token == x_run_attempt, OutboxMessage.claimed_until > datetime.now(UTC))
+            .limit(1)
+        )
+        if writer and writer.payload.get("file_id") == file.id:
+            result["meta"] = {**(result.get("meta") or {}), "writer_job_id": writer.id}
     if principal.service == "broker" and job in {"preview", "document"}:
         result["render_owner_id"] = file.user_id
     return result
@@ -1099,6 +1136,29 @@ def internal_patch_file(
             from .jobs import fence_file_processing
 
             fence_file_processing(db, file, x_run_attempt)
+        if x_run_attempt:
+            from ..models import OutboxMessage
+            from .derived_assets import publish_writer
+
+            writer = db.scalar(
+                select(OutboxMessage)
+                .where(OutboxMessage.claim_token == x_run_attempt, OutboxMessage.claimed_until > datetime.now(UTC))
+                .limit(1)
+            )
+            if writer and writer.payload.get("file_id") == file.id:
+                from ..models import DocumentOperation
+
+                operation = db.get(DocumentOperation, writer.id, populate_existing=True)
+                if (
+                    operation
+                    and operation.kind == "file_job"
+                    and operation.binding.get("job_kind") == "file"
+                    and body.status in {FileStatus.READY, FileStatus.REJECTED}
+                ):
+                    from .file_work import finish as finish_work
+
+                    finish_work(db, writer.id, x_run_attempt, reason="processing_failed" if body.status == FileStatus.REJECTED else None)
+                publish_writer(db, file.id, writer.id, x_run_attempt, failed=body.status == FileStatus.REJECTED)
         return _apply_file_patch(db, file, body, principal, job)
 
 
@@ -1144,6 +1204,16 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
             except HTTPException:
                 merged.pop("skill")
                 merged["skill_error"] = "与平台技能重名"
+        safety = (body.meta or {}).get("safety")
+        if safety and merged.get("input_lifecycle") == 2:
+            if (
+                safety.get("sha256") != file.sha256
+                or type(safety.get("bytes")) is not int
+                or safety["bytes"] != file.size
+                or (merged.get("scan") or {}).get("verdict") != "clean"
+            ):
+                raise HTTPException(409, "file_integrity_mismatch")
+            file.content_type = DETECTED_MIME.get(safety.get("kind"), file.content_type)
         file.meta = merged
         if merged.get("skill") or merged.get("skill_error"):
             head = db.scalar(select(FileObject).where(FileObject.lineage_id == file.lineage_id, FileObject.is_head == 1)) or file
@@ -1185,9 +1255,12 @@ def _apply_file_patch(db: Session, file: FileObject, body: FilePatch, principal:
     if file.status == FileStatus.READY and (file.meta or {}).get("ocr") == "pending" and "ocr_requested_at" not in (file.meta or {}):
         request_ocr(db, file)  # same transaction: the job exists exactly when the file becomes ready with OCR pending
     if file.purpose == "template" and file.status == FileStatus.READY and (file.meta or {}).get("template"):
-        from .preview_requests import request_preview
+        from .preview_requests import request_template_preview
 
-        request_preview(db, file, retry_stale=False)
+        # Preview admission must not roll back successful scanning/analysis.
+        # A busy lane leaves the sketch usable; opening the template requests
+        # its full preview again under the normal bounded admission contract.
+        request_template_preview(db, file)
     from .routes_library_summary import request_summary
 
     request_summary(db, file)
@@ -1216,17 +1289,38 @@ def publish_preview_page(
         if (
             page < 1
             or page > body.page_count
-            or asset["key"] != f"derived/{file_id}/preview/{body.name}"
+            or not re.fullmatch(
+                r"derived/" + re.escape(file_id) + r"/preview/(?:[A-Za-z0-9_-]{1,100}/)?" + re.escape(body.name), asset["key"]
+            )
             or asset["content_type"] != ("image/png" if body.name.endswith(".png") else "image/jpeg")
         ):
             raise HTTPException(400, "invalid preview page")
         meta["preview_requested_pages"] = [p for p in (meta.get("preview_requested_pages") or []) if p != page]
         meta["render_page_count"] = body.page_count
+        if body.sheet_pages:
+            # Bound to this source version and PDF length; a later render of
+            # the same version reports the same outline.
+            meta["render_sheet_pages"] = {
+                "version": file.sha256,
+                "page_count": body.page_count,
+                "sheets": [item.model_dump() for item in body.sheet_pages],
+            }
         file.meta = meta
+        from ..models import DocumentOperation
+
+        operation = db.get(DocumentOperation, body.job_id)
+        if operation:
+            from .derived_assets import publish_writer
+
+            publish_writer(db, file.id, body.job_id, operation.attempt_token, keys=[asset["key"]])
         from ..models import RenderedPage
 
         existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
         if existing:
+            if existing.key != asset["key"]:
+                from .derived_assets import retire
+
+                retire(db, existing.key)
             existing.key, existing.digest = asset["key"], asset["sha256"]
         else:
             db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
@@ -1246,7 +1340,9 @@ def publish_preview_page(
 
 
 @router.post("/files/{file_id}/preview", dependencies=[Depends(require_scope("files:preview_write"))])
-def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = Depends(get_db)) -> dict:
+def complete_file_preview(
+    file_id: str, body: PreviewCompletion, db: Session = Depends(get_db), x_run_attempt: str | None = Header(default=None)
+) -> dict:
     """Worker completion is bound to the current request, so stale jobs cannot overwrite a newer one."""
     file = db.get(FileObject, file_id)
     if file is None:
@@ -1254,7 +1350,7 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
     with user_critical_section(db, file.user_id):
         db.refresh(file)
         meta = dict(file.meta or {})
-        scanned = file.status == FileStatus.PENDING and (meta.get("scan") or {}).get("verdict") == "clean"
+        scanned = legacy_scanned_pending(file.status, meta)
         if not (file.status == FileStatus.READY or scanned) or meta.get("preview_job_id") != body.job_id:
             raise HTTPException(status_code=409, detail="preview job superseded")
         preview = body.preview
@@ -1262,7 +1358,14 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
             raise HTTPException(status_code=400, detail="invalid completion")
         assets = {name: asset.model_dump() for name, asset in body.assets.items()}
         for name, asset in assets.items():
-            if "/" in name or "\\" in name or name in {".", ".."} or asset.get("key") != f"derived/{file_id}/preview/{name}":
+            if (
+                "/" in name
+                or "\\" in name
+                or name in {".", ".."}
+                or not re.fullmatch(
+                    r"derived/" + re.escape(file_id) + r"/preview/(?:[A-Za-z0-9_-]{1,100}/)?" + re.escape(name), asset.get("key", "")
+                )
+            ):
                 raise HTTPException(status_code=400, detail="invalid asset")
         thumbnail = assets.get("template-thumbnail.jpg")
         if thumbnail and (file.purpose != "template" or preview.status != "ready" or preview.kind != "pages"):
@@ -1282,13 +1385,22 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
             raise HTTPException(status_code=400, detail="manifest assets do not match")
         if (meta.get("preview") or {}).get("status") != "pending":
             return {"ok": True}
+        from ..models import DocumentOperation
+
+        operation = db.get(DocumentOperation, body.job_id, populate_existing=True)
+        if operation:
+            from .derived_assets import publish_writer
+            from .file_work import finish as finish_work
+
+            finish_work(db, body.job_id, x_run_attempt, reason=preview.reason if preview.status == "failed" else None)
+            publish_writer(db, file.id, body.job_id, x_run_attempt, failed=preview.status == "failed")
         meta["preview"] = preview.model_dump(exclude_unset=True)
         meta.pop("preview_requested_pages", None)
         for name, asset in assets.items():
             mime = (
                 ("image/png" if name.endswith(".png") else "image/jpeg")
                 if preview.kind == "pages"
-                else {"sheets": "application/json", "text": "text/plain; charset=utf-8"}.get(preview.kind)
+                else {"sheets": "application/json", "text": "text/plain; charset=utf-8", "image": "image/webp"}.get(preview.kind)
             )
             if asset["content_type"] != mime:
                 raise HTTPException(status_code=400, detail="invalid asset content type")
@@ -1296,8 +1408,8 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
         if thumbnail:
             meta["template_preview_thumbnail"] = thumbnail
         if preview.image == "display.webp":
-            meta["display_key"] = f"derived/{file_id}/display.webp"
-            meta["thumb_key"] = f"derived/{file_id}/thumb.webp"
+            meta["display_key"] = assets.get("display.webp", {}).get("key") or f"derived/{file_id}/display.webp"
+            meta["thumb_key"] = assets.get("thumb.webp", {}).get("key") or f"derived/{file_id}/thumb.webp"
         if preview.status == "ready" and preview.kind == "pages":
             from ..models import RenderedPage
 
@@ -1307,6 +1419,10 @@ def complete_file_preview(file_id: str, body: PreviewCompletion, db: Session = D
                 page = int(name[2:-4])
                 existing = db.get(RenderedPage, (file.id, page, "poppler-1280-v1"))
                 if existing:
+                    if existing.key != asset["key"]:
+                        from .derived_assets import retire
+
+                        retire(db, existing.key)
                     existing.key, existing.digest = asset["key"], asset["sha256"]
                 else:
                     db.add(RenderedPage(file_id=file.id, page=page, version="poppler-1280-v1", key=asset["key"], digest=asset["sha256"]))
@@ -1409,7 +1525,27 @@ def prepare_document(file_id: str, body: dict, x_run_attempt: str | None = Heade
 
         fence_file_processing(db, file, x_run_attempt)
         job_id = token or (file.meta or {}).get("document_job_id") or uuid4().hex
-        file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id}
+        file.meta = {**(file.meta or {}), "scan": body["scan"], "document_job_id": job_id, "document_profile": "legacy"}
+        operation = None
+        if token:
+            from .file_work import start as start_work
+
+            operation = start_work(db, file, claimed, token)
+            if operation.status == "pending":
+                file.meta = {**file.meta, "processing": "render_pending"}
+                db.commit()
+                raise HTTPException(503, "document_queue_wait")
+            if operation.status != "running":
+                db.commit()
+                raise HTTPException(409, "document_operation_superseded")
+            from .document_operations import aware
+
+            file.meta = {
+                **file.meta,
+                "document_operation_id": operation.id,
+                "document_execution_required": True,
+                "document_deadline": aware(operation.execution_deadline).isoformat(),
+            }
         db.commit()
     return {"job_id": job_id}
 

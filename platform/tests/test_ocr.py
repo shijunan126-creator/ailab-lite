@@ -3,6 +3,7 @@
 import io
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import patch
 
@@ -31,7 +32,7 @@ class OCRClient(ApiClient):
         from ailab_platform.runtime_context import attempt_id_var
 
         token = attempt_id_var.get()
-        headers = {**SERVICE, **({"X-Run-Attempt": token} if token else {})}
+        headers = {**SERVICE, **({"X-Run-Attempt": token or self.attempt} if token or self.attempt else {})}
         r = self.api.post(f"/internal/files/{fid}/ocr" + ("/prepare" if prepare else ""), headers=headers, json={})
         r.raise_for_status()
         return r.json()
@@ -143,7 +144,23 @@ def queued_ocr(fid):
 
 def run_ocr_job(api, fid, client=None):
     """What the Worker does for the queued ocr_only message after the scan completed."""
-    return process_ocr(fid, client or OCRClient(api))
+    from ailab_platform.worker.preview import process_preview
+
+    worker = client or OCRClient(api)
+    with SessionLocal() as db:
+        jid = db.get(FileObject, fid).meta["ocr_job_id"]
+    claim = worker.job_action(jid, "claim", consumer="ocr-fixture")
+    if claim["state"] == "done":
+        with SessionLocal() as db:
+            return {"ocr": db.get(FileObject, fid).meta["ocr"]}
+    worker.attempt = claim["token"]
+    state = worker.ocr(fid, prepare=True)
+    if state.get("preview_job_id"):
+        # Drive the separate durable preview, just as its own worker would.
+        process_preview(fid, state["preview_job_id"], ApiClient(api))
+    state = process_ocr(fid, worker)
+    worker.job_action(jid, "release" if state["ocr"] == "pending" else "ack", token=worker.attempt)
+    return state
 
 
 def test_pdf_is_not_analysed_when_ocr_is_unconfigured(api):
@@ -152,7 +169,8 @@ def test_pdf_is_not_analysed_when_ocr_is_unconfigured(api):
         process_file(fid, platform=OCRClient(api))
     with SessionLocal() as db:
         meta = db.get(FileObject, fid).meta
-        assert meta["ocr"] == "unavailable" and "ocr_pdf" not in meta
+        assert "ocr" not in meta and "ocr_pdf" not in meta
+        assert meta["representations"]["ocr_text"]["status"] == "absent"
 
 
 def test_conversation_image_is_bound_to_attached_active_run(api, rapid_upstream):
@@ -311,13 +329,37 @@ def rapid_upstream(monkeypatch):
 
     seen = []
     reply = {"text": "发票 金额 123 元", "backend": "cann", "engine": "rapidocr:80b427d", "seconds": 0.12}
+    executions = set()
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
-            payload = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            data = self.rfile.read(int(self.headers["Content-Length"]))
+            if self.path == "/recognize-image":
+                assert self.headers["Content-Type"] == "application/octet-stream"
+                assert self.headers["X-Ocr-Operation"] and float(self.headers["X-Ocr-Deadline"]) > time.time()
+                # Like the real executor: one receipt per execution id, so a
+                # multi-page batch must not reuse one id for every image.
+                if self.headers["X-Ocr-Operation"] in executions:
+                    encoded = b'{"detail":"OCR operation already received"}'
+                    self.send_response(409)
+                    self.send_header("Content-Length", str(len(encoded)))
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                    return
+                executions.add(self.headers["X-Ocr-Operation"])
+                payload = {"image": data, "required_backend": self.headers["X-Ocr-Backend"]}
+            else:
+                payload = json.loads(data)
             seen.append(payload)
             encoded = json.dumps(reply).encode()
             self.send_response(reply.get("status", 200))
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+        def do_DELETE(self):
+            encoded = b'{"status":"stopped"}'
+            self.send_response(200)
             self.send_header("Content-Length", str(len(encoded)))
             self.end_headers()
             self.wfile.write(encoded)
@@ -372,9 +414,19 @@ def test_executor_outage_releases_claim_and_redelivery_completes(api, rapid_upst
     fid = upload(api)
     process_file(fid, platform=OCRClient(api))
     assert api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={}).status_code == 200
+    from ailab_platform.worker.preview import process_preview
+
+    preview_state = OCRClient(api).ocr(fid, prepare=True)
+    process_preview(fid, preview_state["preview_job_id"], ApiClient(api))
     payload = queued_ocr(fid)[0]
     jid = payload["job_id"]
-    queue = InMemoryQueue()
+
+    class OwnedQueue(InMemoryQueue):
+        def enqueue(self, topic, payload):
+            if payload.get("job_id") == jid:
+                return super().enqueue(topic, payload)
+
+    queue = OwnedQueue()
     monkeypatch.setattr(main, "PlatformClient", lambda **kwargs: OCRClient(api))
     monkeypatch.setattr(preview_dispatch, "get_queue", lambda: queue)
     queue.enqueue(settings.file_queue, payload)
@@ -419,17 +471,15 @@ def test_cpu_response_never_counts_as_npu_success(api, rapid_upstream):
         assert "ocr_text_key" not in file.meta
 
 
-def test_nonvision_chat_prepares_image_before_creating_run(api, rapid_upstream):
+def test_nonvision_chat_defers_image_ocr_until_explicit_tool_selection(api, rapid_upstream):
     fid = upload(api)
     process_file(fid, platform=OCRClient(api))
     body = {"prompt": "提取金额", "mode": "chat", "file_ids": [fid]}
     response = api.post("/v1/runs", headers=AUTH, json=body)
-    assert response.status_code == 409 and response.json()["detail"]["code"] == "chat_attachment_processing"
-    run_ocr_job(api, fid)
-    run = api.post("/v1/runs", headers=AUTH, json=body)
-    assert run.status_code == 201
-    files = api.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()["input_files"]
-    assert "123" in files[0]["text"]
+    assert response.status_code == 201, response.text
+    assert not queued_ocr(fid) and not rapid_upstream[0]
+    files = api.get(f"/internal/runs/{response.json()['id']}/model-input", headers=SERVICE).json()["input_files"]
+    assert files[0]["input_strategy"] == "reference" and not files[0]["text"]
 
 
 def test_pdf_extraction_requires_explicit_range_and_preserves_native_input(api, rapid_upstream):
@@ -440,4 +490,4 @@ def test_pdf_extraction_requires_explicit_range_and_preserves_native_input(api, 
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         assert file.meta["ocr_pdf"]["low_text_pages"] == [84]
-        assert file.meta["extract"]["units"] == 100
+        assert "extract" not in file.meta  # Explicit OCR does not first index the entire PDF.

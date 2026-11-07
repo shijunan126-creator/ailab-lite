@@ -1,3 +1,159 @@
+## 2026-11-07 文档页码只能有一套编号
+
+- 浏览器截图和服务端渲染只有在页码属于文件本身时才能互换：PDF 页、PPT 幻灯片可以；Word 分页由排版引擎决定，两边的“第 N 页”不是同一页，Word 页图只走服务端。新增浏览器优先的格式前，先确认它的页码与服务端 `page_count` 是同一套。
+- LibreOffice 导出 PDF 默认跳过隐藏幻灯片，浏览器预览（pptx-renderer 遍历全部 `sldId`）和幻灯片文字都把隐藏页计入序号。冷启动用 `pdf:impress_pdf_Export:{"ExportHiddenSlides":…}`，常驻 listener 要传 `FilterData`，而 `FilterData` 是类型化序列，必须用 `uno.invoke` + `uno.Any` 才能保住类型。
+- 本机 LibreOffice.app 自带的 Python 在 macOS 上会被直接杀掉（137，连 `print` 也一样），listener 路径要在 sbx-office 容器里验证；冷启动路径可以直接用 Homebrew 的 `soffice`。
+- `RenderedPage.version`（`poppler-1280-v1`）和文件元数据里的预览都没有渲染器版本，改渲染参数不会让旧页图失效。
+
+## 2026-11-07 派生缓存容量压力要主动淘汰
+
+- 派生账本预算满了以前只会让写入方拿到507，缓存要等30天到期才释放，频繁换版本的场景会先撑满。现在维护循环在使用量超过高水位（默认90%）时，按创建时间从旧到新淘汰可重建的`cache`，直到低水位（75%）。
+- 淘汰走和到期回收同一条`claim_collection`：先在所属用户的锁里使元数据失效（页图行、preview元数据），再删对象，成功后才释放字节。不要在写入方的预留事务里做：预留持有当前用户的锁，淘汰别人的缓存会跨用户加锁，存在互等。
+- 不淘汰：`native`/`ocr`/`capture`/`transfer`、有未过期pin的、15分钟内新建的（可能正在本轮使用）。读取不写账本，所以顺序是创建时间而不是最近使用；要改成LRU需要给读取路径加合并写入的`last_used_at`。
+- 渲染缓存PDF（`derived/{file_id}/render-cache/…`）经`AccountedWrites`登记为`cache`，随文件删除按`derived/{file_id}/`前缀清理，这条路径已核对。
+
+## 2026-11-07 剩余边界修复的坑
+
+- Chat原生解析在Office沙箱镜像里运行；改`vendor/office-suite`运行时后先重建该镜像再做真实模型验证，否则测的是旧解析器。改Dockerfile后用`inventory.py`重生成`capabilities.json`，否则镜像基线测试失败。
+- pdf.js `constructPath`以`OPS.endPath`结尾的路径只裁剪不绘制；只要有矢量就判视觉unknown，会让带表格线的小PDF不内联页图。按几何分类：坐标轴线条是rules，填充框算shading（仍unknown），曲线/斜线才是drawing。
+- LibreOffice Calc导出PDF时每张打印表一个书签，空表和隐藏表既无书签也无页。工作表→页映射取书签首页并绑定源版本；工作表序号不是页号。
+- 视图等待的渲染job必须挂在`render_job_id`依赖边上。另起字段（如`outline_job_id`）不算消费者，job会以`document_source_unavailable`被当孤儿取消。
+- 搜索的单批窗口按本次工作量限界（块数、扫描字符、打开的存储对象数），不按输出；输出本来就限20条。固定100块一批时，长文档末尾的词要每百段往返一次模型，模型中途还会改道。
+- 模型`exec`在所有后端都用bash：Debian的`/bin/sh`是dash，不支持`<(...)`、`[[ ]]`，而OpenSandbox execd本就用bash，提示词也要求pipefail。
+- `LocalObjectIndex`首次被并发打开时，切WAL需要独占锁，SQLite对此会立即返回BUSY、不等busy_timeout；只对这一步做有界重试。见[终审修复](docs/progress/updates/2026-11-07-document-prompt-review.md)。
+
+## 2026-11-07 文档工具反馈要与校验身份一致
+
+- OCR执行器在可能失败前按`X-Ocr-Operation`登记回执并拒绝重复。一个operation多张图须各用独立身份；`image_index`在每步重建剩余图片时恒为0，不能当执行身份，用`operation:claim_token:selector摘要`。只测单页或fake不拒重复id会漏掉。
+- 返回给模型的标识必须就是后续校验比对的那个：服务端重编码页图的`image_revision`不是RenderedPage摘要，模型只能猜。直接返回可原样回填的`region_ref`，不要靠提示词解释该用哪个revision。
+- 不带字段的422会让模型盲重试；在Agent本地按同一契约校验，返回字段级fix（不回显参数）。工具契约只写在工具描述一次，格式指南只写格式事实；指南里重复workflow或夹带测试语料措辞会让模型绕路。
+- 完成回执的job围栏要比对本operation自己的job kind，固定白名单会把文件处理job误判superseded。见[终审修复](docs/progress/updates/2026-11-07-document-prompt-review.md)。
+
+## 2026-11-07 真实模型workflow不能只看终态
+
+- 最后一页发布可能先唤醒模型并完成Run，再收到Worker完成回执。完成回执必须保留attempt/job/source/deadline围栏，但不能要求消费者继续存活，否则已返回执行占着lane，下一附件等120秒；不要用“任何ACK都释放”替代执行停止证明。
+- 只看tool ok会漏掉被`; echo`/管道掩盖的Traceback；真实流程需同时看stderr、退出码、工具选择、等待时间和下载成品，succeeded不等于回答/过程质量通过。
+- 变化的workspace恢复事实应追加在本轮消息：历史inputs不随快照恢复，脚本所需原件先按历史file_id复制。仅在系统提示写规则，模型仍可能先失败再恢复。
+- search_document是整段字面匹配，多个词拼一起不是OR；PPT图中业务组件与原生shape对象不是同一层证据，像素内文字不能直接归给标题文本框。V2技能修改从build.py生成覆盖层，不改V1包；真实模型复测仍需如实保留参数试错与回答偏长。
+
+## 2026-11-06 独立评审遗漏的旁路
+
+- 恢复历史版本是新的文件身份，不能直接复制整个derived前缀或递归继承缓存/job/index元数据；只复制原件及不可变安全事实，派生按新身份按需生成。否则会绕过容量预留且产生账本外对象。
+- 插话也要在领取事务中绑定准备身份、登记累计源消费；预算合并取最早started_at/deadline并保留OCR计数，重复领取不重计、不重置。只校验单条插话不足以限制整个Run。
+- OCR接收body前登记操作；“尚无active_id”不等于可以承诺停止后不再启动。取消墓碑有界保留且不可为腾容量提前逐出；上传和推理共用绝对截止，启动前原子复核。被取消的迟到上传在领取推理锁前拒绝，不能误杀仍可复用的暖模型进程。
+
+## 2026-11-06 固定依赖获取与独占验收
+
+- 快照503/504不是包版本失效；保留签名索引选择的版本/大小/SHA256，可从当前Debian镜像获取相同字节，校验通过后离线APT安装。不要改日期/版本、关闭完整性校验或提高内存。当前有界下载器不对哈希/预算错误重试；快照索引不可用仍应明确失败。
+- Office镜像内有Node依赖不代表宿主Worker引用校验可用；外部reader.mjs需配同版本node_modules。预上传文件须等安全ready再用`?files=`建对话，否则UI会按不可用附件排除它。准备接口删除源返回既有400 unknown file_id，文件查询仍404，不为测试统一改权限语义。
+- 50轮资源计数必须固定资料库与侧栏人口；并发基准上传会增加DOM/监听器，不能当作泄漏或偷偷重启抹掉。原测量保留并注明干扰，新的独占测量用相同门槛核对。回收时钟推进仅验证生产补偿函数，不证明真实等待时长或定时器调度。
+- `colima delete`可能只删实例而保留Lima独立数据盘；清理需核对disk list，确认归属/未挂载后显式删本任务数据盘。不能因为名字相近就删其他卷，也不能把实例不存在写成磁盘已回收。
+
+## 2026-11-06 派生依赖、分叉与取消回执
+
+- autoflush关闭时，stage_job/file.meta变更必须在后续populate_existing/权限源复核前flush，否则页图job可存在但文件指针被刷新丢弃。等待父Chat view/OCR的Run仍可持有其精确子页图需求；须核验parent/consumer/user/file/version/render_job_id，不放宽为任意interrupted Run。
+- HTTP结束不证明OCR停止。执行器取消必须收到stopped回执；回执丢失保留canceling与全局执行槽，直到实际执行截止+回收宽限，不立即重投或释放。Broker只有明确“执行未开始”的容量拒绝才能撤回dispatch。
+- fork资产先提交容量预留，再在事务外复制；与新分支一起发布。规范截图共享字节、分叉身份/引用；删源分支不能删另一分支仍引用的规范资产。失败/删除未确认前保留容量责任。
+- 长解析TestClient夹具的心跳也应走同一API适配，不能因解析短于1秒偶然避开错误宿主连接。V2 E2E按新工具/inputs路径/用户显式展开预览测试；不恢复已移除工具以求绿。证据见[集中复核](docs/progress/updates/2026-11-05-document-input-lifecycle.md#最终共因修复与集中复核2026-11-0648c78a07)。
+
+## 2026-11-06 规范截图到期与懒图片OCR
+
+- `datetime.max`不是“永不过期”：PostgreSQL在非UTC时区回传可能超过Python年份上限。规范消息资产用可空到期时间并按引用释放；迁移0061保留旧截图TTL。不要用远未来哨兵修补日期越界。
+- 安全入库取消图片派生后，显式OCR也必须先按需准备标准化副本；准备阶段不能直接报旧normalized_image_unavailable，更不能隐式启动识别。交付成品的真实扫描凭据必须与FileObject一起发布，否则后续派生容量校验会错误拒绝成品预览。实际修复与剩余失败见[集中记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md#集中验收与共因修复2026-11-06本地4a9139e)。
+
+## 2026-11-06 截图、页图及临时资源发布
+
+- 存储写完不等于业务发布成功；HTTP响应丢失可能发生在提交之后。Broker异常路径不能直接删可能已发布的页图，须由API按grant/attempt判断哪些未发布对象可删。新页图用job子前缀，避免迟到字节先覆盖旧引用。
+- 浏览器capture不是确定可重建缓存；必要消息引用要保留规范资产，不能统一套临时10分钟TTL。版本绑定与像素可信度分别报告；对浏览器像素做裁剪/重新编码也不能把它变成服务端已验证原图。
+- TempDirectory的finally覆盖不了硬崩溃；本组主机资源用本地有界租约索引，Work scratch用已有lease metadata。正常失败清理不享用15分钟崩溃宽限。TTL要同步清业务可用状态，对象删除失败仍计占容量。最新接线及未验收项见[实施记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md#浏览器查看规范截图及回收接线2026-11-06续作集中验收前)。
+
+## 2026-11-05 安全ready与按需消费切换
+
+- 新普通输入input_lifecycle=2的ready只证明安全/身份，不能推断有正文/页图/OCR。派生缺失须显式准备或等待，不能回假空文本；scan clean但尚未做类型/完整性检查也不能提前派生。专用导入与成品交付勿一并取消。
+- 表示/预览测试fixture须显式消费；旧parser/预热/队列兼容测试应明确构造v1记录，不能靠取消新安全边界使假DOCX字节继续通过。新增fixture名字须独有，默认临时测试库跨用例共享。
+- 取消/失败后先由API确认该grant仍未发布，再删持久暂存并结算；发布响应丢失不能当未发布清掉。backfill_complete仅表示初次登记扫描完成，不等于所有新writer已纳管或TTL失效已接通。
+- 真验收需记录源码指纹/实际镜像，不只git HEAD；dirty基线不得倒填为最终冻结提交。单次或两次上传不能报p95，慢观察留待定位，不调门槛或重启求绿。见[当前实施证据](docs/progress/updates/2026-11-05-document-input-lifecycle.md#安全入库与消费准备已接通2026-11-05续作)。
+
+## 2026-11-06 浏览器基线与轻量打开
+
+- 内置预览工具的evaluate超时后页面脚本仍可能继续；测量必须持有互斥/终态，不能立即启动下一轮污染首轮。已重叠样本标无效，不能重试拼成绿色。snapshot超时不等于页面失败，实际capture/DOM证据分开。
+- Next viewer assets根依赖process.cwd，启动Next时cwd必须Portal；next start参数指定目录不会改变该路径。依赖目录符号链接跨Turbopack根也会被拒，基线用自有副本，不改产品配置或共享依赖。
+- 轻量open没有Word可靠段落/单元格映射；选区/定位必须等同源结构映射并继续服务端quote核验，不能按浏览器分页猜p/t序号。未知页数null不是0页或已索引。
+
+## 2026-11-06 多服务暂存写入移交
+
+- Broker返回的页图/PDF等字节仍需Worker绑定元数据，不能在Broker finally把staged对象当失败删除；按同一持久writer/attempt显式移交，Worker完成后补偿，崩溃才走租约。
+- 正常补偿必须先由API按不可猜attempt领取可删grant；成功发布但响应丢失时ready对象不可删。请求不持有无限receipt列表，writer库存用索引分页；物理删除失败保留占用和删除意图。
+- 旧Worker删除竞态不能全file-prefix扫描/删除，可能触碰其他代际；只删自己未发布写入。旧队列缺业务job_id时由API从当前claim返回writer身份，不从模型或文件名猜。
+
+## 2026-11-06 持久执行槽与进程所有权
+
+- 本地Semaphore只能补充，不能让旧OCR/native/preview绕过跨进程document lane；OCR准备页图必须由自己的Outbox/attempt执行，不能在OCR Worker里直接嵌套执行另一未claim的preview。
+- 记录dispatch后的崩溃不代表没算，恢复要明确不确定状态，不能自动再启动同操作。取消中仍计执行槽；Broker监测失权后只删所属专用render lease，Work共享沙箱不能套此整租约删除。
+- parser wrapper退出后仍可能有后代占内存/文件；单kill父PID不够，独立进程组正常/异常均回收。ThreadPool中的执行必须等待结束才关闭引用/资源，不能把请求断开当子进程已退出。
+
+## 2026-11-06 发送前准备与策略冻结
+
+- 409准备轮询发生在Run创建前，不能每次HTTP重新起算600秒；发送身份持久保存首个必要重型工作起点，Run/排队快照继承同一绝对截止。缓存读取不重新启动计时，准备小记录TTL不能删掉历史快照预算。
+- 多附件分档按整份移到按需，不能截前8图冒充完整；2000token导航是本轮总额。按需图片必须从Agent初始image枚举中排除，inline图片取失败也须明确失败，不能把原件引用或空图片part称为看过。
+- 共享范围解析发现源结构已超Chat硬上限，应保存版本化超限事实；失败请求不发布新正文，但下次选更小范围也不能绕开已知整份超限。Work原件仍按自身合同使用。
+
+## 2026-11-06 原生范围与生成源
+
+- Office runtime是生成物；紧凑正文/范围改动必须同时落runtime-adapter与有序patch，provenance包含全部有效源。只改runtime目录会被下一次build覆盖。生成器使用项目venv，不用缺依赖的系统Python。
+- 长PDF轻量probe的空units/visual_units表示未准备，不表示空文件/无图。导航从真实页总数按100条生成，不能list(range(total))；文字、视觉与OCR未知保持独立。Word/Excel选小范围仍要验证整包来源预算，不能把输出小当解析增量。
+- 范围缓存绑定基础索引代际，source/parser相同也不能复用已退役代际；同批两对象/多页索引不能变成每页RPC。共享任务发布不要因某消费者的其他附件超限而回滚所有消费者的缓存，该消费者在实际消费时单独重新准入。
+
+## 2026-11-06 显式OCR共享与范围缓存
+
+- OCR操作身份绑定完整请求范围，不能在失败恢复时改用“剩余未完成范围”作为新身份而静默再跑；在途共享消费者通过独立引用持有操作，首消费者删除不可级联删除仍有需求的operation。
+- 缓存命中/被别的任务填好的范围不计新执行；在领取执行槽时按实际仍需的源页计工作量，region按源页计，未知物理页的截图按明确图片身份保守计。一次批处理deadline不按页/重投重置。
+- 已有页级OCR缓存可增补强文本digest和scope索引，勿复制正文对象；部分页缓存不等于全部选定页已完成。区域必须匹配表示revision，不能在browser/Office-PDF排版之间替代页号。
+- 共享图片裁剪模块只在Work沙箱/Worker受限子进程导入；API/Broker只处理受限传输与元数据，不在进程内解码不可信图片。
+
+## 2026-11-06 Work图片OCR生命周期
+
+- HTTP超时/关闭不会自动终止ORT/CANN推理；执行器必须有可终止的实际执行所有者。正常保持暖会话，只有故障/取消终止拥有该请求的子进程；不要用周期重启当泄漏修复。全局槽在实际执行截止后还需覆盖有界进程回收，取消中不可当空槽。
+- asyncio.to_thread里的数据库操作不能在外层HTTP取消后悬空运行并与Depends清理共享session竞争；先登记取消，等待执行线程关闭远程调用/完成持久补偿，再结束session。存储失败仍保留占用/删除意图。
+- Work OCR只给沙箱无密钥的固定图片处理脚本；scratch先登记到租约与provider恢复元数据，再生成文件。正常finally立即删，崩溃按登记截止+15分钟由有界reconcile清理。Pillow EXIF整图拷贝、透明图重复RGBA缓冲可能让16MP图超过192MiB；应减少副本、铺白并明确内存失败，不能加内存求通过。
+- 用户要求减少阶段测试、整体实现后统一验收；不要把先前通过数量拼成当前全套已绿。
+
+## 2026-11-06 文档目录与技能兼容
+
+- 工具目录变化只给新run；不要原地修改V1常量对象或已保存catalog。V2的Agent执行和API路由都校验模式/目录，旧run仍校验当前权限/删除。新目录未完成全部资源合同前不默认启用。
+- 技能模式变化从build.py生成版本化指南；保持旧技能包字节和完整操作资源，指南revision也要保存/恢复检查。替换工具名只能作用于平台指导，不能对用户prompt或附件原文全局replace。
+- SQLite命名UNIQUE约束实际查询计划常显示sqlite_autoindex；EXPLAIN按实际列组合识别它，不能硬套PostgreSQL约束索引名。自定义checkpoint fake若不模拟原子边界事件，应验证保存的boundary/epoch，不能误判产品没记录。
+- Work工作区图片OCR仍调用平台现有执行器，当前沙箱只准备图片/裁剪；不安装权重、不泄露密钥、不额外租系统render沙箱。
+
+## 2026-11-05 隔离真实上传基线
+
+- Broker读取须使用独立service身份；legacy共享token不返回Broker专属render_owner_id，健康服务也会立即503。验收用独立token+摘要矩阵，不从既有栈复制凭据。
+- 独立Broker必须设置唯一broker_owner并用自己的Redis/端口；默认owner可能与既有沙箱对账域冲突。端口预检应区分活监听与TIME_WAIT；已结束句柄后才换装置重跑，失败样本不计成功基线。
+- 压缩包先有界遍历central directory，再允许ZipFile完整分配目录；不能仅在infolist后检查10000项就声称流式目录边界。安全检查不导出成员，正常产物只有受限子进程的spec/result/stderr，退出归其job目录清理。
+
+## 2026-11-05 搜索续游标与规范化片段
+
+- 20条命中上限须保留当前块内位置；一批窗口扫描0命中也不代表搜完。游标须绑定文件/源与派生代际/query/selector，不可只记block offset。Unicode规范化片段只作导航证据，不可当原始quote去精确引用；原文引用另读并核验。
+
+## 2026-11-05 存储目录与原生generation
+
+- LocalStorage的limit不能只约束返回量；目录发现须有项数/时间预算和持久游标。迁移期间空页仍有cursor，调用者不能当结束。索引只登记适配器写入；升级时停旧writer，外部直写不是合法并发API。
+- rename/目录元数据发布与delete须串行，否则并发删除可能移掉新对象登记；发布前commit的pending key补偿rename后崩溃。正常tmp立即清，崩溃租约宽限另算；scandir与SQLite anchor必须显式close。
+- Chat native用2个规范对象与字节范围，不能10000块逐个reserve/HTTP；UTF-8范围与SHA同时校验。失败夹具若替换旧字节，须同步更新可信block/manifest digest，不能为过测试放松完整性。
+- parser/source相同但generation换了，不能复用指向已回收旧key的索引身份；Work默认legacy与Chat profile显式区分。完成请求响应丢失须可幂等重放；对象读取别持有业务发布锁。阶段证据见[实施记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md#有界存储目录与两对象原生代际2026-11-05续作)。
+
+## 2026-11-05 派生容量与发布基础
+
+- 预留须在首字节I/O前提交；上传成功先staged，业务引用绑定与ready发布同事务。失败/崩溃的对象在实际删除成功前继续计占用；不要因取消或所有者行删除就先释放容量。
+- 正常abandon要清写租约，不能套崩溃孤儿的15分钟宽限。存储删除在DB事务外执行，持久claim后CAS结算；claim期限重查，避免选到旧候选后删掉新写入。
+- LocalStorage.list_prefix(limit=...)仅限返回和内存，现实现仍扫前缀树；不能把它当CPU/I/O常数成本的分页。生产全量回填/孤儿扫描尚须解决；账本基础通过不等于全链路容量治理已启用。
+
+## 2026-11-05 页图完整性与截图等待者
+
+- 最终manifest迟到时，选页、page_count和truncated必须共用同一有效总页数；已缓存前20页不证明整份可用。RenderedPage存PNG时不能固定返回JPEG。
+- 截图Promise完成不自动清setTimeout；等待者须持有dispose，成功/失败/取消/卸载均清timer与监听。SSE去重不能用永久增长Set；只留有界小收据，淘汰后仍须服务端claim。桥接取消不证明上游Canvas/编码已停止，须独立验证。
+- 新文件输入链路仍待完整实施，当前局部修复不等于安全/派生拆分、容量治理或真实50轮性能通过，见[记录](docs/progress/updates/2026-11-05-document-input-lifecycle.md)。
+
 # 2026-11-04 历史消息分支身份
 
 - mock文档执行器调用PATH中的`python`，测试要把Python3.12 venv/bin放在PATH前端，并准备当前worktree的Office runtime。一次性PG库显式用UTF8；SQL_ASCII会让psycopg返回bytes，SQLAlchemy读取server version时报类型错误。

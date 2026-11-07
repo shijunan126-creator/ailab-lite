@@ -23,11 +23,15 @@ from pathlib import Path
 
 PAGES = {".pptx", ".potx", ".ppt", ".odp", ".docx", ".doc", ".odt", ".pdf", ".rtf"}
 SHEETS = {".xlsx", ".xlsm", ".xls", ".ods", ".csv", ".tsv"}
+PRESENTATIONS = {".pptx", ".potx", ".ppt", ".odp"}
+# Slide N must stay page N: the viewer and the slide text count hidden slides too.
+PRESENTATION_PDF = 'pdf:impress_pdf_Export:{"ExportHiddenSlides":{"type":"boolean","value":"true"}}'
 MAX_PAGES = 40
 MAX_ROWS, MAX_COLS = 200, 40
 MAX_SHEETS = 20
 MAX_CELL_CHARS = 2000
 MAX_SHEET_CHARS = 1_000_000
+MAX_SHEET_MARKS = 200
 
 
 def check_archive(source: Path) -> None:
@@ -77,7 +81,16 @@ def soffice(src: Path, fmt: str, outdir: Path) -> Path:
     profile = Path(configured) if configured else Path(tempfile.mkdtemp(prefix="lo-profile-"))
     try:
         subprocess.run(
-            ["soffice", f"-env:UserInstallation=file://{profile}", "--headless", "--convert-to", fmt, "--outdir", str(outdir), str(src)],
+            [
+                "soffice",
+                f"-env:UserInstallation=file://{profile}",
+                "--headless",
+                "--convert-to",
+                PRESENTATION_PDF if fmt == "pdf" and src.suffix.lower() in PRESENTATIONS else fmt,
+                "--outdir",
+                str(outdir),
+                str(src),
+            ],
             check=True,
             capture_output=True,
             timeout=90,
@@ -109,7 +122,30 @@ def pdf_document(src: Path, out: Path) -> dict:
     return {"kind": "pdf", "pdf": "document.pdf", "page_count": count}
 
 
-def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: bool = False) -> dict:
+def sheet_starts(pdf: Path) -> list[dict] | None:
+    """First rendered page of each printed sheet, from the bookmark Calc writes per sheet.
+
+    Empty and hidden sheets print nothing and get no bookmark. None means the
+    PDF carries no usable sheet outline; callers then report the mapping unknown.
+    """
+    try:
+        from pypdf import PdfReader
+
+        reader = PdfReader(pdf)
+        starts = []
+        for item in reader.outline:
+            if isinstance(item, list):
+                continue
+            if len(starts) >= MAX_SHEET_MARKS:
+                return None
+            starts.append({"sheet": str(item.title)[:120], "first_page": reader.get_destination_page_number(item) + 1})
+    except Exception:
+        return None
+    pages = [item["first_page"] for item in starts]
+    return starts if starts and pages == sorted(set(pages)) and pages[0] >= 1 else None
+
+
+def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: bool = False, sheets: bool = False) -> dict:
     with tempfile.TemporaryDirectory() as tmp:
         convert_started = time.monotonic()
         pdf = src if src.suffix.lower() == ".pdf" else soffice(src, "pdf", Path(tmp))
@@ -117,6 +153,7 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         info = subprocess.run(["pdfinfo", str(pdf)], capture_output=True, text=True, timeout=15, check=True)
         match = re.search(r"^Pages:\s+(\d+)", info.stdout, re.MULTILINE)
         count = int(match[1]) if match else None
+        starts = sheet_starts(pdf) if sheets else None
         ranges = []
         for n in selected or []:
             # Consecutive pages share one pdftoppm call; the requested order is kept between runs.
@@ -158,6 +195,7 @@ def pages(src: Path, out: Path, selected: list[int] | None = None, *, save_pdf: 
         "kind": "pages",
         "pages": names,
         "page_count": count,
+        **({"sheet_pages": starts} if sheets else {}),
         "phases": {"convert_seconds": round(convert_seconds, 3), "raster_seconds": round(raster_seconds, 3)},
         **({"pdf_cache": "document.pdf"} if (out / "document.pdf").exists() else {}),
     }
@@ -324,7 +362,7 @@ def main() -> int:
                 selected = [int(n) for n in sys.argv[sys.argv.index("--pages") + 1].split(",")]
                 if not 1 <= len(selected) <= MAX_PAGES or len(set(selected)) != len(selected) or any(n < 1 or n > 100000 for n in selected):
                     raise ValueError("invalid_page_selection")
-            result = pages(src, out, selected, save_pdf="--save-pdf" in sys.argv[3:])
+            result = pages(src, out, selected, save_pdf="--save-pdf" in sys.argv[3:], sheets="--sheet-pages" in sys.argv[3:])
             if "--template-thumbnail" in sys.argv[3:]:
                 template_thumbnail(out, result)
                 result["thumbnail"] = "template-thumbnail.jpg"

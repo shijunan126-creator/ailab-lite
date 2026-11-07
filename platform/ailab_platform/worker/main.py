@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -24,6 +25,7 @@ from ..metrics import metrics_response
 from ..obs import NO_REQUEST, RequestContextMiddleware, request_id_var, setup_logging
 from ..queue import get_queue, job_topic
 from ..service_auth import require_scope
+from ..storage import close_storage
 from .ocr import process_ocr
 from .pipeline import ScanUnavailable, process_file
 from .preview import process_preview
@@ -81,15 +83,40 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                     self.retry_delay = seconds
 
             completion = Completion()
-            from ..runtime_context import attempt_id_var
+            from ..runtime_context import attempt_id_var, temporary_deadline_var
 
             identity = attempt_id_var.set(token)
+            temporary_identity = temporary_deadline_var.set(envelope.deadline.timestamp())
             try:
-                if envelope.kind == "viewer":
+                if envelope.kind in {"document_ocr", "document_view"}:
+                    from .document_ocr import process
+
+                    if process(client, envelope.job_id, view=envelope.kind == "document_view"):
+                        completion.ack()
+                    else:
+                        completion.retry_after(2)
+                elif envelope.kind in {"native", "native_scope"}:
+                    from .native_preparation import process_native
+
+                    try:
+                        finished = process_native(client, file_id, envelope.job_id, scoped=envelope.kind == "native_scope")
+                        if finished is False:
+                            completion.retry_after(2)
+                        else:
+                            completion.ack()
+                    except ClientError as exc:
+                        if exc.status in {404, 410}:
+                            completion.ack()
+                        else:
+                            completion.retry_after(2)
+                elif envelope.kind == "viewer":
                     from .viewer import process_viewer
 
-                    process_viewer(client, file_id)
-                    completion.ack()
+                    viewed = process_viewer(client, file_id, job_id=envelope.job_id)
+                    if viewed.get("status") == "pending":
+                        completion.retry_after(2)
+                    else:
+                        completion.ack()
                 elif envelope.kind == "skill_unpack":
                     from .skill_unpack import process_skill_unpack
 
@@ -99,6 +126,7 @@ def handle_message(queue, msg, topic: str | None = None) -> None:
                     _handle(completion, msg, file_id)
             finally:
                 attempt_id_var.reset(identity)
+                temporary_deadline_var.reset(temporary_identity)
             if completion.completed:
                 client.job_action(envelope.job_id, "ack", token=token)
                 queue.ack(topic, msg)
@@ -321,9 +349,37 @@ async def lifespan(_: FastAPI):
     _thread.start()
     _summary_thread.start()
     _preview_thread.start()
+    from ..owned_temporary import sweep
+
+    async def temporary_maintenance():
+        while True:
+            try:
+                await asyncio.to_thread(sweep)
+            except Exception:
+                log.exception("temporary cleanup failed; next bounded pass retries")
+            await asyncio.sleep(min(300, settings.derived_maintenance_interval_seconds))
+
+    temporary_task = asyncio.create_task(temporary_maintenance())
     log.info("file worker ready")
-    yield
-    _stop.set()
+    try:
+        yield
+    finally:
+        _stop.set()
+        temporary_task.cancel()
+        await asyncio.gather(temporary_task, return_exceptions=True)
+
+        # Queue reads block for at most two seconds. Stop idle consumers before
+        # dropping their shared storage instance; an active job retains its own
+        # bounded execution/lease and the process supervisor's shutdown deadline.
+        def join_idle():
+            deadline = time.monotonic() + 3
+            for thread in (_thread, _summary_thread, _preview_thread):
+                if thread:
+                    thread.join(max(0, deadline - time.monotonic()))
+            if not any(thread and thread.is_alive() for thread in (_thread, _summary_thread, _preview_thread)):
+                close_storage()
+
+        await asyncio.to_thread(join_idle)
 
 
 app = FastAPI(title="AILab File Worker", version="0.1.0", lifespan=lifespan)

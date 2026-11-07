@@ -178,7 +178,7 @@ class DockerSandbox(SandboxProvider):
             sandbox_id,
             "timeout",
             str(timeout),
-            "sh",
+            "bash",
             "-c",
             cmd,
         ]

@@ -48,6 +48,9 @@ def test_fork_copies_history_artifacts_usage_summary_and_independent_objects():
             file_id = file.id
             db.add(Artifact(run_id=old.id, file_id=file.id))
             append_event(db, old.id, "agent.thinking", {"step": 0, "text": "last reasoning", "seconds": 1})
+        from tests.document_fixtures import initialize_accounting
+
+        initialize_accounting()
         # An active later turn does not prevent an earlier fork.
         c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "busy"})
         bad = c.post(f"/v1/conversations/{conv['id']}/fork", headers=AUTH, json={"run_id": first, "mode": "chat"})
@@ -154,6 +157,9 @@ def test_fork_failure_rolls_back_database_and_cleans_copied_objects(monkeypatch)
             storage.put_bytes(f"previews/{run['id']}/1/p-01.jpg", b"preview")
         with SessionLocal() as db:
             before = db.scalar(select(func.count()).select_from(Conversation))
+        from tests.document_fixtures import initialize_accounting
+
+        initialize_accounting()
         copy = storage.copy
         destinations = []
 

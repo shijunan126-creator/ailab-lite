@@ -35,7 +35,11 @@ export interface ParsedDocument {
   blocks?: DocxBlockKey[];
   /** AILab: source content facts, independent of model-facing headings/placeholders. */
   hasVisuals?: boolean;
-  contentInfo?(anchor: string): { has_text: boolean; visual: boolean };
+  nonemptyCells?: number;
+  indexedPages?: number[];
+  coverageComplete?: boolean;
+  visualStatus?: "none" | "present" | "unknown";
+  contentInfo?(anchor: string): { has_text: boolean; visual: boolean; native_visual?: boolean };
 }
 
 export const normalise = (text: string) => text.replace(/\s+/g, " ").trim();

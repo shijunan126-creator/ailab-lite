@@ -75,7 +75,7 @@ def test_broken_skill_files_say_why(data, filename, message) -> None:
 
 
 def _upload(c: TestClient, headers: dict, filename: str, data: bytes) -> str:
-    up = c.post("/v1/files", headers=headers, files={"upload": (filename, data, "application/octet-stream")}).json()
+    up = c.post("/v1/files?purpose=skill", headers=headers, files={"upload": (filename, data, "application/octet-stream")}).json()
     process_file(up["id"], platform=_ApiClient(c), storage=get_storage())
     return up["id"]
 

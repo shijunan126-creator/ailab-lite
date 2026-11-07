@@ -12,10 +12,13 @@ from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
 from ..contracts.genui import component_docs_for, component_names, guide_for
+from ..contracts.workspace_ocr import WorkspaceOcr
+from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..llm import INVALID_ARGUMENTS_KEY
 from ..paths import OUTPUTS, WORKSPACE, PathError, normalize_path
 from . import net_tools, subtasks
 from .background_exec import background_exec
+from .document_tools import TOOLS as DOCUMENT_TOOLS
 from .prompts import load_skill
 from .skill_verification import SkillRefused, verify_sandbox_skills
 
@@ -29,7 +32,10 @@ TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "view_workspace_file",
-            "description": "视觉模型查看 /workspace 下工作文件的布局或图片；pages 最多 4 页，默认第 1 页。用于交付前检查。",
+            "description": (
+                "视觉模型查看 /workspace 下工作文件的布局或图片；pages 最多 4 页，默认第 1 页。"
+                "xlsx结果的sheet_pages给出各工作表的页范围。用于交付前检查。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -334,6 +340,7 @@ READ_URL = {
 SANDBOX_TOOLS = {
     "review_artifact",
     "view_workspace_file",
+    "ocr_workspace_image",
     "copy_library_file",
     "list_files",
     "read_file",
@@ -526,8 +533,20 @@ DOCUMENT_VIEW = {
 }
 
 
-def tools_for_turn() -> list[dict]:
-    return [
+WORKSPACE_OCR = {
+    "type": "function",
+    "function": {
+        "name": "ocr_workspace_image",
+        "description": "识别当前Work工作区PNG/JPEG/WebP图片中选定文字；可显式选择归一化region与旋转。"
+        "PDF/Office先在当前沙箱生成所需页图。不理解图形语义。平台复用现有OCR服务，不需安装权重；"
+        "长结果用返回的operation_id和next_cursor续读，并保持path/region相同。",
+        "parameters": WorkspaceOcr.model_json_schema(),
+    },
+}
+
+
+def tools_for_turn(document_tools_version=1) -> list[dict]:
+    catalog = [
         DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
@@ -546,10 +565,31 @@ def tools_for_turn() -> list[dict]:
         subtasks.TOOL,
     ]
 
+    if document_tools_version == 2:
+        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="work", version=2)]
+        catalog.append(WORKSPACE_OCR)
+        catalog = _current_recall(catalog, "copy_library_file")
+        for tool in catalog:
+            if tool["function"]["name"] == "copy_library_file":
+                tool["function"]["description"] = "把资料库文件原件复制到/workspace/inputs/（只读）；path可省略，默认使用原文件名"
+    return catalog
 
-def tools_for_chat() -> list[dict]:
+
+def _current_recall(catalog, reader):
+    # Descriptions are request bytes too: clone rather than editing frozen V1.
+    from copy import deepcopy
+
+    catalog = deepcopy(catalog)
+    for tool in catalog:
+        if tool["function"]["name"] == "recall_history":
+            parameters = tool["function"]["parameters"]
+            parameters["description"] = parameters["description"].replace("read_library_file", reader)
+    return catalog
+
+
+def tools_for_chat(document_tools_version=1) -> list[dict]:
     """Chat mode starts no sandbox: the read-only web tools, and saving a skill written as text."""
-    return [
+    catalog = [
         DOCUMENT_VIEW,
         RUN_JS,
         MEMORY,
@@ -562,11 +602,27 @@ def tools_for_chat() -> list[dict]:
         net_tools.SAVE_SKILL,
     ]
 
+    if document_tools_version == 2:
+        catalog = [t for t in catalog if permitted(t["function"]["name"], mode="chat", version=2)]
+        catalog.extend(DOCUMENT_TOOLS)
+        catalog = _current_recall(catalog, "read_document")
+    return catalog
+
 
 class ToolContext:
     """What a tool may know about its run beyond its arguments."""
 
-    def __init__(self, run_id: str = "", platform=None, messages: list[dict] | None = None, budget: net_tools.Budget | None = None):
+    def __init__(
+        self,
+        run_id: str = "",
+        platform=None,
+        messages: list[dict] | None = None,
+        budget: net_tools.Budget | None = None,
+        *,
+        mode="work",
+        document_tools_version=1,
+    ):
+        self.mode, self.document_tools_version = mode, document_tools_version
         self.run_id, self.platform = run_id, platform
         self.messages = messages if messages is not None else []
         self.budget = budget or net_tools.Budget()
@@ -618,6 +674,41 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
     if INVALID_ARGUMENTS_KEY in args:
         raise ToolError("tool arguments were not valid JSON; resend the call with a well-formed JSON object")
     ctx = ctx or ToolContext()
+    if not permitted(name, mode=ctx.mode, version=ctx.document_tools_version):
+        raise ToolError("document tool is not available for this run mode/catalog")
+    if name in CHAT_DOCUMENT_TOOLS:
+        return {"ok": True, **await ctx.platform.document_input(ctx.run_id, name, args)}
+    if name == "ocr_workspace_image":
+        if ctx.mode != "work" or ctx.document_tools_version != 2:
+            raise ToolError("workspace OCR is unavailable for this run")
+        try:
+            return await broker.ocr_workspace_image(lease_id, args)
+        except ClientError as exc:
+            try:
+                reason = json.loads(exc.body).get("detail")
+            except (ValueError, AttributeError):
+                reason = None
+            allowed = {
+                "document_queue_full",
+                "document_ocr_work_limit",
+                "document_run_deadline",
+                "derived_capacity_exceeded",
+                "derived_accounting_initializing",
+                "ocr_executor_unavailable",
+                "workspace_ocr_failed",
+                "ocr_image_binding_changed",
+                "invalid_workspace_path",
+                "image_input_limit",
+                "image_pixel_limit",
+                "image_size_limit",
+                "invalid_region",
+                "workspace_source_changed",
+                "image_preparation_timeout",
+                "image_memory_limit",
+                "image_preparation_failed",
+                "workspace_ocr_unavailable",
+            }
+            return {"ok": False, "error": reason if isinstance(reason, str) and reason in allowed else "workspace_ocr_unavailable"}
     if name == "search_library":
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "search", args)}
     if name == "extract_text":
@@ -628,7 +719,13 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
         return {"ok": True, **await ctx.platform.library(ctx.run_id, "read", args)}
     if name == "copy_library_file":
         file = await ctx.platform.library(ctx.run_id, "authorize-copy", {"file_id": args.get("file_id")})
-        return {"ok": True, **await broker.copy_library_file(lease_id, file["file_id"], args.get("path"))}
+        try:
+            return {"ok": True, **await broker.copy_library_file(lease_id, file["file_id"], args.get("path"))}
+        except ClientError as exc:
+            if exc.status != 422:
+                raise
+            # Originals are only injected beneath inputs; say so instead of a generic failure.
+            return {"ok": False, "error": "path须在/workspace/inputs/下；省略path时使用原文件名，需要改写时再复制到work"}
     if name == "memory":
         return {"ok": True, **await ctx.platform.memory(ctx.run_id, args)}
     if name == "recall_history":

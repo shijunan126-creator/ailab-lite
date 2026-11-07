@@ -1,0 +1,64 @@
+[
+  {
+    "path": "office-runtime/src/adapters/parse/pptx.ts",
+    "before_sha256": "e884866cef41ec74cdb69a3ea969288c9541bd0cb59ba8fdc52d0469fd0d94ad",
+    "after_sha256": "0a6ca653c11a66f848a916023283f3affa5b7580b43849c2e409daa8317f1c5c",
+    "edits": [
+      {
+        "start": 685,
+        "end": 685,
+        "before": "",
+        "after": "  nativeVisual?: boolean;\n"
+      },
+      {
+        "start": 800,
+        "end": 800,
+        "before": "",
+        "after": ";\n  nativeVisual: boolean"
+      },
+      {
+        "start": 2025,
+        "end": 2025,
+        "before": "",
+        "after": ",\n        nativeVisual: !placeholder && !(nv && attr(child(nv, \"p:cNvSpPr\") ?? {}, \"txBox\") === \"1\")"
+      },
+      {
+        "start": 6056,
+        "end": 6056,
+        "before": "",
+        "after": "ativeVisual: !!find(doc, \"a:blip\") || shapes.some(shape => shape.nativeVisual || [\"picture\", \"chart\", \"connector\", \"group\", \"other\"].includes(shape.kind)),\n      n"
+      },
+      {
+        "start": 7076,
+        "end": 7076,
+        "before": "",
+        "after": "let unmappedVisuals = false;\n  for (const path of pkg.paths()) {\n    if (!/^ppt\\/(slideMasters|slideLayouts)\\/[^/]+\\.xml$/.test(path)) continue;\n    const xml = await pkg.text(path);\n    if (xml && /<(?:a:blip|c:chart|p:pic|p:cxnSp|p:graphicFrame|a:custGeom)[\\s/>]/.test(xml)) {\n      unmappedVisuals = true; break;\n    }\n  }\n  "
+      },
+      {
+        "start": 7100,
+        "end": 7100,
+        "before": "",
+        "after": "\",\n    visualStatus: unmappedVisuals ? \"unknown\" : slides.some(slide => slide.nativeVisual) ? \"present\" : \"none"
+      },
+      {
+        "start": 7408,
+        "end": 7408,
+        "before": "",
+        "after": ", native_visual: !!slide?.nativeVisual"
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/domain/model.ts",
+    "before_sha256": "678910a3809bd135dc5ff76cecfc12b258626922e3545e8e2e69d82e1d562610",
+    "after_sha256": "369bd79f122cde09603dfd97096f329730c233964a510429eac227814f32688d",
+    "edits": [
+      {
+        "start": 1497,
+        "end": 1497,
+        "before": "",
+        "after": ": boolean; native_visual?"
+      }
+    ]
+  }
+]

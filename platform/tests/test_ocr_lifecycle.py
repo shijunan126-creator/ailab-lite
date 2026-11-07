@@ -109,13 +109,15 @@ def test_old_claim_and_expiry_cannot_fail_new_generation(api, rapid_upstream):  
 
 
 def drive(api, monkeypatch, fid, *, busy=False):  # noqa: F811
+    from ailab_platform.worker.preview import process_preview
+
     renders = []
 
     class Renderer(OCRClient):
         def render_preview(self, file_id, job_id):
             renders.append(job_id)
             if busy:
-                raise ClientError("POST", "/render", 503, "capacity")
+                raise ClientError("POST", "/render", 429, '{"detail":{"code":"render_admission_rejected","execution_started":false}}')
             return {"preview": {"status": "failed", "kind": "pages", "reason": "unsupported_pdf"}, "assets": {}}
 
     monkeypatch.setattr(main, "PlatformClient", lambda **kwargs: Renderer(api))
@@ -124,6 +126,17 @@ def drive(api, monkeypatch, fid, *, busy=False):  # noqa: F811
     for _ in range(2):
         queue.enqueue(settings.file_queue, payload)
         main.handle_message(queue, queue.dequeue(settings.file_queue, timeout=0))
+        with SessionLocal() as db:
+            meta = db.get(FileObject, fid).meta
+            preview_id = meta.get("preview_job_id") if (meta.get("preview") or {}).get("status") == "pending" else None
+        if preview_id:
+            try:
+                preview_worker = Renderer(api)
+                process_preview(fid, preview_id, preview_worker)
+                preview_worker.job_action(preview_id, "release" if busy else "ack", token=preview_worker.attempt)
+            except ClientError:
+                if not busy:
+                    raise
     return renders, payload["job_id"]
 
 
@@ -163,7 +176,7 @@ def test_missing_render_asset_converges_to_failed(api, rapid_upstream):  # noqa:
 
 
 def test_late_inference_cannot_publish_or_fail_a_new_request(api, rapid_upstream, monkeypatch):  # noqa: F811
-    from ailab_platform import ocr_backend
+    from ailab_platform.api import routes_workspace_ocr
 
     fid = ready_pdf(api)
     request(api, fid, [1])
@@ -172,7 +185,7 @@ def test_late_inference_cannot_publish_or_fail_a_new_request(api, rapid_upstream
     token = api.post(f"/internal/jobs/{old['job_id']}/claim", headers=SERVICE, json={"consumer": "old"}).json()["token"]
     changed = []
 
-    async def late_result(data):
+    async def late_result(data, **binding):
         with SessionLocal() as db:
             file = db.get(FileObject, fid)
             file.meta = {**file.meta, "ocr": "failed"}
@@ -180,7 +193,7 @@ def test_late_inference_cannot_publish_or_fail_a_new_request(api, rapid_upstream
         changed.append(request(api, fid, [2]).json()["request_id"])
         return {"text": "late text", "engine": "rapidocr:test", "backend": "cann", "seconds": 0.1}
 
-    monkeypatch.setattr(ocr_backend, "recognize", late_result)
+    monkeypatch.setattr(routes_workspace_ocr, "recognize", late_result)
     response = api.post(f"/internal/files/{fid}/ocr", headers={**SERVICE, "X-Run-Attempt": token}, json={})
     assert response.status_code == 409
     with SessionLocal() as db:
@@ -204,3 +217,30 @@ def test_legacy_job_without_current_identity_can_finish(api, rapid_upstream):  #
         db.commit()
     response = api.post(f"/internal/files/{fid}/ocr", headers={**SERVICE, "X-Run-Attempt": token}, json={})
     assert response.status_code == 200 and response.json()["ocr"] == "done"
+
+
+def test_lost_executor_stop_receipt_retains_ocr_lane_until_reap_deadline(api, rapid_upstream, monkeypatch):  # noqa: F811
+    from ailab_platform.api import document_operations, routes_workspace_ocr
+    from ailab_platform.models import DocumentOperation
+    from ailab_platform.ocr_backend import OCRExecutionUncertain
+
+    fid = ready_pdf(api)
+    request(api, fid, [1])
+    rendered(fid, 1)
+    job = queued_ocr(fid)[0]
+    token = api.post(f"/internal/jobs/{job['job_id']}/claim", headers=SERVICE, json={"consumer": "uncertain"}).json()["token"]
+
+    async def uncertain(*args, **kwargs):
+        raise OCRExecutionUncertain("lost stop receipt")
+
+    monkeypatch.setattr(routes_workspace_ocr, "recognize", uncertain)
+    result = api.post(f"/internal/files/{fid}/ocr", headers={**SERVICE, "X-Run-Attempt": token}, json={})
+    assert result.status_code == 200 and result.json()["ocr"] == "failed"
+    with SessionLocal() as db:
+        row = db.get(DocumentOperation, job["job_id"])
+        assert row.status == "canceling" and row.claim_token and row.executor_started_at
+        held = row.claim_token
+        document_operations.expire_lane(db, "ocr", datetime.now(UTC))
+        assert row.status == "canceling" and row.claim_token == held
+        document_operations.expire_lane(db, "ocr", document_operations.aware(row.lease_until) + timedelta(seconds=1))
+        assert row.status == "failed" and row.claim_token is None

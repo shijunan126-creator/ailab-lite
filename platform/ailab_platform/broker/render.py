@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from ..config import settings
-from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS
+from ..contracts.file_preview import LOCAL_SHEETS, PAGES, SANDBOX_SHEETS, sheet_starts
 from ..contracts.sandbox import SandboxSpec
 from ..domain.admission import LeasePrincipal
 from .service import LeaseError, LeaseManager
@@ -49,7 +49,7 @@ class LibraryRenderer:
             raise LeaseError("render_timeout")
         archive = f"{directory}.tar"
         args = " ".join(shlex.quote(name) for name in names)
-        packed = self.manager.exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
+        packed = self._exec(handle.lease_id, f"COPYFILE_DISABLE=1 tar -C {directory} -cf {archive} -- {args}", remaining)
         if packed.exit_code != 0 or time.monotonic() >= deadline:
             raise LeaseError("render_failed")
         with self.manager.transfer_file() as local:
@@ -86,8 +86,16 @@ class LibraryRenderer:
         if not isinstance(owner, str) or not owner:
             raise LeaseError("render job has no authorized owner")
         priority = 0 if (file.get("meta") or {}).get("ocr_render_job_id") == job_id else 1
-        with self.manager.render_activity(owner, priority=priority):
-            return self._render(file_id, job_id, owner)
+        from ..derived_writes import accounted_writes
+
+        with (
+            self.manager.render_activity(owner, priority=priority),
+            accounted_writes(self.manager.storage, self.manager.platform, file["sha256"], job_id) as storage,
+        ):
+            self.storage = storage
+            result = self._render(file_id, job_id, owner)
+            storage.handoff()
+            return result
 
     def _render(self, file_id: str, job_id: str, scheduled_owner: str) -> dict:
         started = time.monotonic()
@@ -96,6 +104,14 @@ class LibraryRenderer:
         platform = self.manager.platform
         file = platform.get_file(file_id, job="preview", preview_job=job_id)
         meta = file.get("meta") or {}
+        owned = meta.get("preview_execution") or {}
+        self._document_execution = (file_id, job_id, bool(owned.get("operation_id") == job_id), owned.get("deadline"))
+        if owned.get("operation_id") == job_id:
+            from datetime import datetime
+
+            deadline = min(deadline, time.monotonic() + datetime.fromisoformat(owned["deadline"]).timestamp() - time.time())
+            if deadline <= time.monotonic():
+                raise LeaseError("document_operation_deadline")
         scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
         if (
             not (file.get("status") == "ready" or scanned)
@@ -128,7 +144,7 @@ class LibraryRenderer:
         if re.fullmatch(r"[a-f0-9]{64}", digest) and visual and suffix != ".pdf" and not pdf_mime:
             version = hashlib.sha256(SCRIPT.read_bytes() + b"\0" + self._spec().image.encode()).hexdigest()[:20]
             cache_key = f"derived/{file_id}/render-cache/{digest}/{version}/document.pdf"
-        cached_pdf = bool(cache_key and self.manager.storage.exists(cache_key))
+        cached_pdf = bool(cache_key and self.storage.exists(cache_key))
         if cached_pdf:
             source = "/workspace/inputs/cached.pdf"
         elif cache_key:
@@ -138,7 +154,7 @@ class LibraryRenderer:
             injection_started = time.monotonic()
             if cached_pdf:
                 with self.manager.transfer_file() as local:
-                    with self.manager.storage.open_stream(cache_key) as chunks, local.open("wb") as out:
+                    with self.storage.open_stream(cache_key) as chunks, local.open("wb") as out:
                         total = 0
                         for chunk in chunks:
                             total += len(chunk)
@@ -169,35 +185,42 @@ class LibraryRenderer:
         returned = False
         first_asset = None
 
-        def publish_page(name, page_count, local, digest=None):
+        def publish_page(name, page_count, local, digest=None, sheet_pages=None):
             if digest is None:
                 with local.open("rb") as stream:
                     digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            key = f"derived/{file_id}/preview/{name}"
-            self.manager.storage.put_file(key, local, "image/png")
+            key = f"derived/{file_id}/preview/{job_id}/{name}"
+            self.storage.put_file(key, local, "image/png")
             asset = {"key": key, "content_type": "image/png", "sha256": digest}
             try:
-                self.manager.platform.publish_preview_page(file_id, job_id, name, page_count, asset)
+                self.manager.platform.publish_preview_page(
+                    file_id, job_id, name, page_count, asset, **({"sheet_pages": sheet_pages} if sheet_pages else {})
+                )
             except Exception:
-                # A deleted file can race the object write after its prefix was purged.
-                self.manager.storage.delete(key)
+                # Publication can commit before its response is lost. The
+                # accounted writer asks the API which grants remain deletable;
+                # never delete a possibly published page from this exception.
                 raise
             return asset
 
         try:
             if pdf_mime and suffix != ".pdf":
-                self.manager.exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
+                self._exec(lease_id, f"cp {shlex.quote(source)} /workspace/.ailab/input.pdf", 5)
                 source = "/workspace/.ailab/input.pdf"
             if visual:
                 # Convert once, publish the first requested page, then rasterize the
                 # remaining pages from that same PDF in the normal bulk path.
                 first_page = selected[0] if selected else 1
                 save_pdf = not source.endswith(".pdf")
+                # The first conversion also reports where each sheet starts, so
+                # a view can name a worksheet instead of guessing its pages.
+                spreadsheet = suffix in SANDBOX_SHEETS | LOCAL_SHEETS
                 first_started = time.monotonic()
-                first = self.manager.exec(
+                first = self._exec(
                     lease_id,
                     f"AILAB_PAGE_PNG=1 {office_env}timeout -k 2 90s python /workspace/.ailab/render_preview.py {shlex.quote(source)} "
-                    f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}",
+                    f"/workspace/.ailab/first --pages {first_page}{' --save-pdf' if save_pdf else ''}"
+                    f"{' --sheet-pages' if spreadsheet else ''}",
                     95,
                 )
                 if first.exit_code:
@@ -229,7 +252,9 @@ class LibraryRenderer:
                     self.manager._download(
                         self.manager.get(handle), f"/workspace/.ailab/first/{names[0]}", local, settings.max_sandbox_read_bytes
                     )
-                    first = publish_page(names[0], count, local)
+                    first = publish_page(
+                        names[0], count, local, sheet_pages=sheet_starts(first_manifest.get("sheet_pages"), count) if spreadsheet else None
+                    )
                 first_asset = (names[0], first)
                 phases["first_publish_seconds"] = time.monotonic() - first_started
                 if save_pdf:
@@ -242,7 +267,9 @@ class LibraryRenderer:
                 names_by_page = {first_page: first_asset[0]}
                 if cache_key and not cached_pdf:
                     cache_started = time.monotonic()
-                    self.manager.store_file(self.manager.get(handle), source, cache_key, "application/pdf", 32 * 1024 * 1024)
+                    with self.manager.transfer_file() as cached_local:
+                        self.manager._download(self.manager.get(handle), source, cached_local, 32 * 1024 * 1024)
+                        self.storage.put_file(cache_key, cached_local, "application/pdf")
                     phases["pdf_export_seconds"] = time.monotonic() - cache_started
                 if pending_pages:
                     current = self.manager.platform.get_file(file_id, job="preview", preview_job=job_id)
@@ -257,7 +284,7 @@ class LibraryRenderer:
                     if remaining <= 1:
                         raise LeaseError("render_timeout")
                     rest_started = time.monotonic()
-                    result = self.manager.exec(
+                    result = self._exec(
                         lease_id,
                         f"AILAB_PAGE_PNG=1 timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                         f"{shlex.quote(source)} /workspace/.ailab/rest --pages {','.join(map(str, order))}",
@@ -285,7 +312,7 @@ class LibraryRenderer:
                 names = [names_by_page[page] for page in page_numbers]
                 if template:
                     thumb_started = time.monotonic()
-                    thumbnail = self.manager.exec(
+                    thumbnail = self._exec(
                         lease_id,
                         "python /workspace/.ailab/render_preview.py "
                         f"{shlex.quote(source)} /workspace/.ailab/thumbnail --pages {first_page} --template-thumbnail",
@@ -302,8 +329,8 @@ class LibraryRenderer:
                         )
                         with local.open("rb") as stream:
                             digest = hashlib.file_digest(stream, "sha256").hexdigest()
-                        key = f"derived/{file_id}/preview/template-thumbnail.jpg"
-                        self.manager.storage.put_file(key, local, "image/jpeg")
+                        key = f"derived/{file_id}/preview/{job_id}/template-thumbnail.jpg"
+                        self.storage.put_file(key, local, "image/jpeg")
                     assets["template-thumbnail.jpg"] = {"key": key, "content_type": "image/jpeg", "sha256": digest}
                     phases["thumbnail_seconds"] = time.monotonic() - thumb_started
                 generation = self.manager.get(handle)["render_generation"]
@@ -318,7 +345,7 @@ class LibraryRenderer:
                 raise LeaseError("render_timeout")
             remaining = max(1, int(120 - (time.monotonic() - started)))
             exec_started = time.monotonic()
-            result = self.manager.exec(
+            result = self._exec(
                 lease_id,
                 f"{office_env}timeout -k 2 {remaining}s python /workspace/.ailab/render_preview.py "
                 f"{shlex.quote(source)} /workspace/.ailab/preview{thumbnail_option}",
@@ -372,8 +399,8 @@ class LibraryRenderer:
             export_started = time.monotonic()
             for name, local, digest in self._bundle(handle, "/workspace/.ailab/preview", names, deadline, pdf_name=pdf_name):
                 is_pdf = name == pdf_name
-                key = cache_key if is_pdf else f"derived/{file_id}/preview/{name}"
-                self.manager.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
+                key = cache_key if is_pdf else f"derived/{file_id}/preview/{job_id}/{name}"
+                self.storage.put_file(key, local, "application/pdf" if is_pdf else mime)
                 if not is_pdf:
                     assets[name] = {"key": key, "content_type": mime, "sha256": digest}
                     if kind == "pages" and name != "template-thumbnail.jpg":
@@ -394,3 +421,23 @@ class LibraryRenderer:
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - started
             log.info("library render lease_source=%s phases=%s", lease_source, {k: round(v, 3) for k, v in phases.items()})
+
+    def _exec(self, handle, command, timeout):
+        execution = getattr(self, "_document_execution", None)
+        if not execution or not execution[2]:
+            return self.manager.exec(handle, command, timeout)
+        from .documents import DocumentReader
+
+        if execution[3]:
+            from datetime import datetime
+
+            timeout = min(timeout, int(datetime.fromisoformat(execution[3]).timestamp() - time.time()))
+            if timeout <= 0:
+                raise LeaseError("document_operation_deadline")
+        lease = self.manager.get(handle)
+        from ..sandbox.base import LeaseHandle
+
+        owned_handle = LeaseHandle(lease["lease_id"], lease["provider_ref"])
+        return DocumentReader(self.manager)._execute_owned(
+            owned_handle, command, timeout, execution[0], execution[1], True, preview=True, operation_id=execution[1]
+        )

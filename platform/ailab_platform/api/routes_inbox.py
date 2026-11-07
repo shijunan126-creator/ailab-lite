@@ -22,7 +22,7 @@ from ..contracts.inbox import (
 )
 from ..deps import current_user, get_db
 from ..locks import user_critical_section
-from ..models import Notification, QueuedMessage, Run, RunStatus, User, utcnow
+from ..models import FileObject, Notification, QueuedMessage, Run, RunStatus, User, utcnow
 from ..service_auth import require_scope
 from .brand import brand_lock
 from .inbox import dispatch_next, pending_query, queue_output, steers_for_run
@@ -146,6 +146,8 @@ def enqueue(conversation_id: str, body: QueueCreate, user: User = Depends(curren
             selections=body.skills,
             conversation=conv,
             turn_mode=(leaf.options or {}).get("mode", "work") if body.steer else None,
+            document_tools_version=(leaf.options or {}).get("document_tools_version", 1) if body.steer else None,
+            preparation_send_id=body.client_send_id,
         )
         if options.get("template"):
             from .asset_refs import register_asset
@@ -206,7 +208,16 @@ def patch_queue(conversation_id: str, qid: str, body: QueuePatch, user: User = D
         if body.skills is not None and body.skill is not None:
             raise HTTPException(400, "不能同时指定 skill 和 skills")
         _, options, _ = validate_run_input(
-            db, user, prompt, row.model, row.file_ids, row.options.get("mode", "work"), skill, selections=selections
+            db,
+            user,
+            prompt,
+            row.model,
+            row.file_ids,
+            row.options.get("mode", "work"),
+            skill,
+            selections=selections,
+            document_tools_version=row.options.get("document_tools_version", 1),
+            preparation_send_id=row.client_send_id,
         )
         row.options = {**{k: v for k, v in row.options.items() if k not in {"skill", "skill_title", "skills"}}, **options}
         row.prompt = prompt
@@ -276,7 +287,22 @@ def claim_steers(run_id: str, x_run_attempt: str | None = Header(default=None), 
                 .values(run_id=run.id)
             )
             item = queue_output(row)
-            item["input_files"] = input_files(db, run, file_ids=row.file_ids, message_id=row.id, message_kind="queued_message")
+            plan = row.options.get("document_input_plan")
+            if plan and (run.options or {}).get("document_tools_version") == 2:
+                from .document_preparation import bind as bind_preparation
+                from .native_ranges import charge_consumption
+
+                bind_preparation(db, run, plan)
+                for file_id in row.file_ids:
+                    charge_consumption(db, run, db.get(FileObject, file_id))
+            item["input_files"] = input_files(
+                db,
+                run,
+                file_ids=row.file_ids,
+                message_id=row.id,
+                message_kind="queued_message",
+                document_plan=row.options.get("document_input_plan"),
+            )
             rows.append(item)
         db.commit()
         return {"items": rows}

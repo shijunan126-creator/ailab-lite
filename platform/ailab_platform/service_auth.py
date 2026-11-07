@@ -32,10 +32,27 @@ SERVICE_SCOPES: dict[str, frozenset[str]] = {
         }
     ),
     "broker": frozenset(
-        {"runs:read", "runs:events", "files:read_for_run", "files:read_for_preview", "files:read_for_document", "artifacts:commit_for_run"}
+        {
+            "runs:read",
+            "runs:events",
+            "files:read_for_run",
+            "files:read_for_preview",
+            "files:read_for_document",
+            "artifacts:commit_for_run",
+            "ocr:workspace",
+            "files:derived_write",
+        }
     ),
     "worker": frozenset(
-        {"jobs:file", "files:read_pending", "files:patch_processing", "files:preview_write", "files:ocr", "sandbox:render"}
+        {
+            "jobs:file",
+            "files:read_pending",
+            "files:patch_processing",
+            "files:preview_write",
+            "files:ocr",
+            "sandbox:render",
+            "files:derived_write",
+        }
     ),
     "ops": frozenset({"metrics:read", "sandbox:inspect", "files:restore_tombstones"}),
 }

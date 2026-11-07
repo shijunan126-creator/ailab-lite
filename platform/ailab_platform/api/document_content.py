@@ -13,6 +13,18 @@ def manifest(file):
     return json.loads(get_storage().get_bytes(key)) if key else None
 
 
+def unit_bytes(file, unit, cache=None):
+    from fastapi import HTTPException
+
+    from ..native_text import NativeCacheError, read_unit
+
+    key = file.meta["document_manifest_key"].rsplit("/", 1)[0] + "/" + unit["name"]
+    try:
+        return read_unit(get_storage(), key, unit, cache)
+    except NativeCacheError as exc:
+        raise HTTPException(409, str(exc)) from None
+
+
 def native_text(file, unit, data):
     text = data.decode("utf-8")
     if unit.get("quality") == "no_text":
@@ -58,7 +70,10 @@ def visual_info(file, doc=None):
     units = doc.get("visual_units")
     if units is None:
         return {"status": "unknown", "units": []}
-    return {"status": "present" if units else "none", "units": units[:200], "truncated": len(units) > 200}
+    status = doc.get("visual_status")
+    if status not in {"unknown", "present", "none"}:
+        status = "present" if units else "none"
+    return {"status": status, "units": units[:200], "truncated": len(units) > 200}
 
 
 def visual_pages(file, doc=None):
@@ -68,6 +83,6 @@ def visual_pages(file, doc=None):
         return []
     # PDF pages/PPT slides have stable physical locations. Word and workbook
     # anchors do not map to rendered pages; rendering must establish that map.
-    if doc and doc["kind"] in {"pdf", "pptx"}:
-        return sorted({u["unit_number"] for u in info["units"]}) if info["status"] == "present" else list(range(1, doc["total_units"] + 1))
+    if doc and doc["kind"] in {"pdf", "pptx"} and info["status"] == "present" and not info.get("truncated"):
+        return sorted({u["unit_number"] for u in info["units"]})
     return None

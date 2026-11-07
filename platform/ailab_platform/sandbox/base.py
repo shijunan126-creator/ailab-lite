@@ -73,7 +73,8 @@ class SandboxProvider(ABC):
         return False
 
     @abstractmethod
-    def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult: ...
+    def exec(self, sandbox_id: str, cmd: str, timeout: int) -> ExecResult:
+        """Run cmd with bash in /workspace; every backend uses the same shell."""
 
     @abstractmethod
     def put_file(self, sandbox_id: str, path: str, data: bytes) -> None: ...

@@ -403,7 +403,8 @@ export type DocumentIndex = {
   kind?: OfficeKind;
   title?: string | null;
   bytes?: number;
-  units?: number;
+  units?: number | null;
+  structure?: "not_prepared";
   outline?: { at: string; label: string; level: number }[];
   blocks?: { at: string; text: string }[]; // docx only
   native?: boolean; // false: over the native viewer's limits, show the paged preview

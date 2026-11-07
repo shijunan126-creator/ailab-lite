@@ -17,6 +17,13 @@ import { installDomMatrix } from "#office/adapters/parse/dommatrix.ts";
 export interface PdfAssets {
   cMapUrl: string;
   standardFontDataUrl: string;
+  /** AILab native CLI: explicit extraction scope; absent keeps the legacy reader. */
+  indexedPages?: number[];
+  nativeProbe?: boolean;
+  consumeBytes?: boolean;
+  inspectVisuals?: boolean;
+  maxNativeChars?: number;
+  maxNativeBlocks?: number;
 }
 
 type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
@@ -35,24 +42,64 @@ async function loadPdfJs(): Promise<PdfJs> {
 
 const MAX_PAGES_INDEXED = 3000;
 
+type VectorKind = "none" | "rules" | "shading" | "drawing";
+
+/**
+ * Classifies painted vector paths by geometry. Table borders, underlines and
+ * boxes are axis-aligned and carry nothing beyond the text; curves, diagonals
+ * and outlined glyphs are drawings. Large filled boxes can be cell shading or
+ * chart bars, so only they stay uncertain. Clip-only paths are not painted.
+ */
+function vectorKind(operators: { fnArray: number[]; argsArray: unknown[] }, OPS: Record<string, number>): VectorKind {
+  // pdf.js DrawOPS: moveTo 0, lineTo 1, curveTo 2, closePath 3.
+  const filled = new Set([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+  let kind: VectorKind = "none";
+  for (let i = 0; i < operators.fnArray.length; i++) {
+    if (operators.fnArray[i] !== OPS.constructPath) continue;
+    const [paint, [data], box] = operators.argsArray[i] as [number, [Float32Array | null], Float32Array | null];
+    if (paint === OPS.endPath || !data || !box) continue;
+    const width = box[2] - box[0], height = box[3] - box[1];
+    let axis = true, x = 0, y = 0, startX = 0, startY = 0;
+    const segment = (nx: number, ny: number) => {
+      if (Math.abs(nx - x) > 0.5 && Math.abs(ny - y) > 0.5) axis = false;
+      x = nx; y = ny;
+    };
+    for (let j = 0; j < data.length && axis;) {
+      const op = data[j];
+      if (op === 0) { x = startX = data[j + 1]; y = startY = data[j + 2]; j += 3; }
+      else if (op === 1) { segment(data[j + 1], data[j + 2]); j += 3; }
+      else if (op === 2) { axis = false; j += 7; }
+      else { segment(startX, startY); j += 1; }
+    }
+    // Bullets, check marks and small icons do not change what the page says.
+    if (width < 12 && height < 12) kind = kind === "none" ? "rules" : kind;
+    else if (!axis) return "drawing";
+    else if (filled.has(paint) && Math.min(width, height) > 3) kind = "shading";
+    else if (kind === "none") kind = "rules";
+  }
+  return kind;
+}
+
 export async function parsePdf(
   bytes: Uint8Array,
   label: string,
   assets: PdfAssets,
 ): Promise<ParsedDocument> {
   const { getDocument, OPS } = await loadPdfJs();
-  let doc;
+  let doc, loading;
   try {
-    doc = await getDocument({
-      data: bytes.slice(),
+    loading = getDocument({
+      data: assets.consumeBytes ? bytes : bytes.slice(),
       cMapUrl: assets.cMapUrl,
       cMapPacked: true,
       standardFontDataUrl: assets.standardFontDataUrl,
       isEvalSupported: false,
       useSystemFonts: false,
       verbosity: 0,
-    }).promise;
+    });
+    doc = await loading.promise;
   } catch (error) {
+    await loading?.destroy().catch(() => undefined);
     const name = (error as Error).name;
     throw new OfficeError(
       "corrupt_file",
@@ -62,20 +109,43 @@ export async function parsePdf(
     );
   }
   try {
-    const pages: string[] = [];
-    const visuals: boolean[] = [];
-    for (let n = 1; n <= Math.min(doc.numPages, MAX_PAGES_INDEXED); n++) {
+    const scoped = assets.indexedPages !== undefined;
+    const selected = scoped ? [...new Set(assets.indexedPages)] :
+      Array.from({length: assets.nativeProbe && doc.numPages > 8 ? 0 : Math.min(doc.numPages, MAX_PAGES_INDEXED)}, (_, i) => i + 1);
+    if ((scoped && selected.length > 20) || selected.some(n => !Number.isSafeInteger(n) || n < 1 || n > doc.numPages))
+      throw new Error('invalid_page_selection');
+    selected.sort((a,b) => a-b);
+    const pages = new Map<number, string>();
+    const visuals = new Map<number, boolean>();
+    let chars = 0, visualUnknown = false;
+    for (const n of selected) {
       const page = await doc.getPage(n);
-      const content = await page.getTextContent();
-      let text = "";
-      for (const item of content.items) {
-        if (!("str" in item)) continue;
-        text += item.str + (item.hasEOL ? "\n" : "");
+      try {
+        const content = await page.getTextContent();
+        let text = "";
+        for (const item of content.items) {
+          if (!("str" in item)) continue;
+          text += item.str + (item.hasEOL ? "\n" : "");
+        }
+        text = normalizeCjkCompat(text.replace(/[ \t]+\n/g, "\n").trim());
+        chars += text.length;
+        if (assets.maxNativeChars !== undefined && chars > assets.maxNativeChars) throw new Error('document_text_limit');
+        if (assets.maxNativeBlocks !== undefined && pages.size >= assets.maxNativeBlocks) throw new Error('document_structure_limit');
+        pages.set(n, text);
+        if (assets.inspectVisuals !== false) {
+          const operators = await page.getOperatorList();
+          const images = operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject,
+            OPS.paintImageMaskXObject, OPS.shadingFill].includes(op));
+          const vector = vectorKind(operators, OPS);
+          const native = assets.nativeProbe || scoped;
+          visuals.set(n, images || vector === "drawing" || (!native && vector !== "none"));
+          visualUnknown ||= !!native && !images && vector === "shading";
+        } else {
+          visualUnknown = true;
+        }
+      } finally {
+        page.cleanup();
       }
-      pages.push(normalizeCjkCompat(text.replace(/[ \t]+\n/g, "\n").trim()));
-      const operators = await page.getOperatorList();
-      visuals.push(operators.fnArray.some(op => [OPS.paintImageXObject, OPS.paintInlineImageXObject, OPS.paintImageMaskXObject, OPS.constructPath, OPS.shadingFill].includes(op)));
-      page.cleanup();
     }
 
     const outline: OutlineItem[] = [];
@@ -108,19 +178,23 @@ export async function parsePdf(
     const numPages = doc.numPages;
 
     const render = (n: number) =>
-      `## Page ${n}\n${pages[n - 1] || "(no extractable text; the page may be scanned)"}`;
+      `## Page ${n}\n${pages.get(n) || "(no extractable text; the page may be scanned)"}`;
     const select = (locator: Locator | null) => {
-      if (!locator) return pages.map((_, i) => render(i + 1));
+      if (!locator) return selected.map(render);
       if (locator.kind !== "pdf") throw new OfficeError("invalid_anchor", "Not a PDF location.");
       const { from, to } = clampRange(locator.from, locator.to, numPages, "page");
-      return Array.from({ length: Math.min(to, pages.length) - from + 1 }, (_, i) =>
-        render(from + i),
-      );
+      const prepared = selected.filter(n => n >= from && n <= to);
+      if ((scoped || assets.nativeProbe) && prepared.length !== to-from+1)
+        throw new Error('document_range_not_prepared');
+      return prepared.map(render);
     };
 
     return {
       kind: "pdf",
-      contentInfo(anchor) { const n = Number(anchor.split(":")[1]) - 1; return {has_text: !!pages[n]?.trim(), visual: !!visuals[n]}; },
+      indexedPages: selected,
+      coverageComplete: selected.length === numPages,
+      visualStatus: selected.length !== numPages || visualUnknown ? 'unknown' : [...visuals.values()].some(Boolean) ? 'present' : 'none',
+      contentInfo(anchor) { const n = Number(anchor.split(":")[1]); return {has_text: !!pages.get(n)?.trim(), visual: !!visuals.get(n)}; },
       title: info?.Title?.trim() || null,
       units: numPages,
       outline,
@@ -128,10 +202,10 @@ export async function parsePdf(
       check: (locator) => (select(locator), locator),
       search(query, limit) {
         const hits: Hit[] = [];
-        pages.forEach((text, i) => {
+        pages.forEach((text, n) => {
           for (const index of matchAll(text, query)) {
             if (hits.length >= limit) return;
-            hits.push({ at: `page:${i + 1}`, snippet: snippet(text, index, query.length) });
+            hits.push({ at: `page:${n}`, snippet: snippet(text, index, query.length) });
           }
         });
         return hits;

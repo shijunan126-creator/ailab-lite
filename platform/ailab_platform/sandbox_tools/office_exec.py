@@ -1,5 +1,7 @@
 """Run the Office parser with a per-process RSS limit inside a shared render sandbox."""
 
+import os
+import signal
 import subprocess
 import sys
 import time
@@ -16,7 +18,7 @@ def rss(pid):
 
 
 def run(command, timeout, rss_limit):
-    process = subprocess.Popen(command)
+    process = subprocess.Popen(command, start_new_session=True)
     deadline = time.monotonic() + timeout
     try:
         while process.poll() is None:
@@ -30,12 +32,22 @@ def run(command, timeout, rss_limit):
             time.sleep(0.05)
         return process.returncode
     finally:
-        if process.poll() is None:
-            process.kill()
+        # A parser wrapper can exit while its children still own memory/files.
+        # Its dedicated process group belongs only to this execution.
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
         process.wait()
 
 
 if __name__ == "__main__":
+
+    def interrupted(signum, _frame):
+        raise SystemExit(128 + signum)
+
+    signal.signal(signal.SIGTERM, interrupted)
+    signal.signal(signal.SIGINT, interrupted)
     try:
         sys.exit(run(sys.argv[3:], float(sys.argv[1]), int(sys.argv[2])))
     except FileNotFoundError:

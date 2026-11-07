@@ -78,9 +78,20 @@ def document(api):  # noqa: F811
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
         file.status = "ready"
-        file.meta = {"processing": "done", "extract": {"document_manifest_key": prefix + "manifest.json"}}
+        file.meta = {"processing": "done", "scan": {"verdict": "clean"}, "extract": {"document_manifest_key": prefix + "manifest.json"}}
         index_document(db, file, prefix + "manifest.json")
         version = file.sha256
+        from sqlalchemy import delete
+
+        from ailab_platform.models import OutboxMessage
+
+        # The fixture installs a completed representation directly, so retire
+        # the upload job exactly as a successful Worker ACK would.
+        db.execute(
+            delete(OutboxMessage).where(
+                OutboxMessage.payload["file_id"].as_string() == fid, OutboxMessage.payload["kind"].as_string() == "file"
+            )
+        )
         storage.put_bytes(
             f"derived/{fid}/viewer.json",
             json.dumps(
@@ -312,6 +323,13 @@ def capture_setup(api):  # noqa: F811
         run.conversation_id = cid
         run.options = {**run.options, "client": "portal"}
         db.commit()
+    from ailab_platform.models import DerivedBudget
+
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.meta = {**file.meta, "scan": {"verdict": "clean"}}
+        db.get(DerivedBudget, 1).backfill_complete = True
+        db.commit()
     view(api, cid, fid, version)
     response = api.post(
         f"/internal/runs/{rid}/client-calls",
@@ -510,3 +528,26 @@ def test_workspace_report_is_not_resurrected_after_close_or_reordered(api, monke
             pending.result(timeout=5)
         assert error.value.status_code == 409
     assert view_state.views(user.id, cid)[0]["at"] == "p:2"
+
+
+def test_opening_metadata_does_not_start_viewer_or_native_jobs_and_structure_remains_explicit(api):  # noqa: F811
+    from ailab_platform.models import OutboxMessage
+
+    fid, version, _ = document(api)
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        file.meta = {"processing": "done", "scan": {"verdict": "clean"}}
+        db.commit()
+        get_storage().delete(f"derived/{fid}/viewer.json")
+    response = api.get(f"/v1/files/{fid}/document", headers=AUTH)
+    assert response.status_code == 200, response.text
+    value = response.json()
+    assert value["native"] and value["version"] == version
+    assert value["structure"] == "not_prepared" and value["units"] is None
+    assert value["outline"] == [] and "blocks" not in value
+    with SessionLocal() as db:
+        assert db.scalar(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)) is None
+    requested = api.get(f"/v1/files/{fid}/document?structure=true", headers=AUTH)
+    assert requested.status_code == 200 and requested.json()["status"] == "pending"
+    with SessionLocal() as db:
+        assert db.scalar(select(OutboxMessage.id).where(OutboxMessage.payload["file_id"].as_string() == fid)) is not None

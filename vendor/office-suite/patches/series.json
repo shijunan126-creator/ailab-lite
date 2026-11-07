@@ -30,5 +30,21 @@
   {
     "file": "008-viewer-tool-contract.json",
     "reason": "Replace early planned viewer guidance with the implemented document_view identity, selection, reveal and capture contract in both modes."
+  },
+  {
+    "file": "009-native-ranges.json",
+    "reason": "Preserve compact native limits in generator inputs; probe long PDFs and extract only explicit native page ranges while retaining legacy reader defaults."
+  },
+  {
+    "file": "010-native-visual-candidates.json",
+    "reason": "Keep legacy visual facts while excluding ordinary PPT text boxes from native inline image preselection; preserve unknown master/layout visuals."
+  },
+  {
+    "file": "011-pdf-vector-geometry.json",
+    "reason": "Classify PDF vector paths by geometry so ruled tables do not make small native PDFs visually unknown; keep filled boxes uncertain."
+  },
+  {
+    "file": "012-pptx-shape-positions.json",
+    "reason": "Give each PPT shape its slide-relative extent so text seen in a rendered slide can be tied to the picture or text box that draws it."
   }
 ]

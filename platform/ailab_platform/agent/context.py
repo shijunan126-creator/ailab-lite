@@ -726,6 +726,7 @@ class ContextManager:
                         deferred=options.get("capability_discovery") == 1,
                         genui=bool(self.catalog().get(model) and self.catalog().get(model).supports({"genui"})),
                         genui_tools=bool(self.catalog().get(model) and self.catalog().get(model).supports({"tools"})),
+                        **({"document_tools_version": 2} if options.get("document_tools_version") == 2 else {}),
                     ),
                 },
                 {
@@ -808,7 +809,11 @@ class ContextManager:
                 )
             else:
                 if previous:
-                    run["context_boundary"] = "model_changed"
+                    run["context_boundary"] = (
+                        "rebuilt"
+                        if options.get("document_tools_version") == 2 and previous.get("tools") != state["tool_catalog_v1"]
+                        else "model_changed"
+                    )
                 elif not run.get("context_boundary") and (run.get("parent_run_id") or run.get("history")):
                     run["context_boundary"] = "rebuilt"
                 state["memory_observed"] = boundary_memory

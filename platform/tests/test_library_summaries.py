@@ -119,6 +119,9 @@ def test_ready_stages_once_without_inference_and_transaction_rolls_back(monkeypa
         fid = response.json()["id"]
         model = Model()
         monkeypatch.setattr("ailab_platform.api.routes_library_summary.llm_for", lambda alias: model)
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(fid)  # Existing queued files retain summary staging after their legacy parse.
         process_file(fid, platform=ApiClient(c))
         with SessionLocal() as db:
             f = db.get(FileObject, fid)

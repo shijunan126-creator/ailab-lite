@@ -1,0 +1,696 @@
+[
+  {
+    "path": "office-runtime/src/domain/model.ts",
+    "before_sha256": "5c25b3a889ba3c746825fb17f2c703ad64be980699aaae5c48c0c5bbe3395e38",
+    "after_sha256": "678910a3809bd135dc5ff76cecfc12b258626922e3545e8e2e69d82e1d562610",
+    "edits": [
+      {
+        "start": 1304,
+        "end": 1304,
+        "before": "",
+        "after": ";\n  nonemptyCells?: number;\n  indexedPages?: number[];\n  coverageComplete?: boolean;\n  visualStatus?: \"none\" | \"present\" | \"unknown\""
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/xlsx.ts",
+    "before_sha256": "fd823df6c671584e15ba36f1af466232dc34b845a8518550a80fb024ce72dfe5",
+    "after_sha256": "b72b7cd0515311643c4b48c8768e871d76acf8389e7200a776b9870bab1e2e05",
+    "edits": [
+      {
+        "start": 8076,
+        "end": 8076,
+        "before": "",
+        "after": "let nonemptyCells = 0;\n  for (const sheet of sheets) {\n    sheet.eachRow({ includeEmpty: false }, (row) => {\n      row.eachCell({ includeEmpty: false }, (cell) => {\n        if ((!cell.isMerged || cell.master === cell) && cell.value !== null && cell.value !== undefined && cell.value !== \"\")\n          nonemptyCells++;\n      });\n    });\n  }\n  "
+      },
+      {
+        "start": 8101,
+        "end": 8101,
+        "before": "",
+        "after": ",\n    nonemptyCells"
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/pdf.ts",
+    "before_sha256": "6d364d57f8f4a717381fac46a7ba993171ab924c2f6275d4804027474f59bc8f",
+    "after_sha256": "1f6da74013516f4d70f2dfa819379a31bd1a3581ab075543e08554e21360f709",
+    "edits": [
+      {
+        "start": 602,
+        "end": 602,
+        "before": "",
+        "after": ";\n  /** AILab native CLI: explicit extraction scope; absent keeps the legacy reader. */\n  indexedPages?: number[];\n  nativeProbe?: boolean;\n  consumeBytes?: boolean;\n  inspectVisuals?: boolean;\n  maxNativeChars?: number;\n  maxNativeBlocks?: number"
+      },
+      {
+        "start": 1406,
+        "end": 1406,
+        "before": "",
+        "after": ", loading"
+      },
+      {
+        "start": 1420,
+        "end": 1420,
+        "before": "",
+        "after": "loa"
+      },
+      {
+        "start": 1421,
+        "end": 1423,
+        "before": "oc",
+        "after": "ing"
+      },
+      {
+        "start": 1425,
+        "end": 1431,
+        "before": " await",
+        "after": ""
+      },
+      {
+        "start": 1456,
+        "end": 1456,
+        "before": "",
+        "after": ": assets.consumeBytes ? bytes "
+      },
+      {
+        "start": 1668,
+        "end": 1668,
+        "before": "",
+        "after": ";\n    doc = await loading"
+      },
+      {
+        "start": 1697,
+        "end": 1697,
+        "before": "",
+        "after": "\n    await loading?.destroy().catch(() => undefined);"
+      },
+      {
+        "start": 1973,
+        "end": 1973,
+        "before": "",
+        "after": "sco"
+      },
+      {
+        "start": 1974,
+        "end": 1974,
+        "before": "",
+        "after": "ed = assets.indexedP"
+      },
+      {
+        "start": 1978,
+        "end": 1979,
+        "before": ":",
+        "after": ""
+      },
+      {
+        "start": 1980,
+        "end": 1983,
+        "before": "str",
+        "after": "!== undef"
+      },
+      {
+        "start": 1985,
+        "end": 1993,
+        "before": "g[] = []",
+        "after": "ed"
+      },
+      {
+        "start": 2005,
+        "end": 2007,
+        "before": "vi",
+        "after": ""
+      },
+      {
+        "start": 2008,
+        "end": 2017,
+        "before": "uals: boo",
+        "after": "e"
+      },
+      {
+        "start": 2019,
+        "end": 2023,
+        "before": "an[]",
+        "after": "cted"
+      },
+      {
+        "start": 2026,
+        "end": 2026,
+        "before": "",
+        "after": "scoped ? "
+      },
+      {
+        "start": 2027,
+        "end": 2027,
+        "before": "",
+        "after": "...new Set(assets.indexedPages)"
+      },
+      {
+        "start": 2028,
+        "end": 2029,
+        "before": ";",
+        "after": " :"
+      },
+      {
+        "start": 2034,
+        "end": 2034,
+        "before": "",
+        "after": "  Array."
+      },
+      {
+        "start": 2035,
+        "end": 2035,
+        "before": "",
+        "after": "r"
+      },
+      {
+        "start": 2036,
+        "end": 2038,
+        "before": "r ",
+        "after": "m"
+      },
+      {
+        "start": 2039,
+        "end": 2039,
+        "before": "",
+        "after": "{"
+      },
+      {
+        "start": 2041,
+        "end": 2041,
+        "before": "",
+        "after": "ng"
+      },
+      {
+        "start": 2042,
+        "end": 2042,
+        "before": "",
+        "after": "h:"
+      },
+      {
+        "start": 2043,
+        "end": 2043,
+        "before": "",
+        "after": "assets."
+      },
+      {
+        "start": 2044,
+        "end": 2044,
+        "before": "",
+        "after": "ativeProbe"
+      },
+      {
+        "start": 2045,
+        "end": 2046,
+        "before": "=",
+        "after": "&&"
+      },
+      {
+        "start": 2047,
+        "end": 2049,
+        "before": "1;",
+        "after": "doc.numPages"
+      },
+      {
+        "start": 2050,
+        "end": 2051,
+        "before": "n",
+        "after": ">"
+      },
+      {
+        "start": 2052,
+        "end": 2054,
+        "before": "<=",
+        "after": "8 ? 0 :"
+      },
+      {
+        "start": 2096,
+        "end": 2096,
+        "before": "",
+        "after": "}, (_, i) => i + 1)"
+      },
+      {
+        "start": 2097,
+        "end": 2097,
+        "before": "",
+        "after": "\n    if ((scoped && selected.length > 20) || selected.some(n => !Number.isSafeInteger(n) ||"
+      },
+      {
+        "start": 2099,
+        "end": 2101,
+        "before": "++",
+        "after": " < 1 || n > doc.numPages))\n      throw new Error('invalid_page_selection');\n    selected.sort((a,b) => a-b);\n    const pages = new Map<number, string>();\n    const visuals = new Map<number, boolean>();\n    let chars = 0, visualUnknown = false;\n    for (const n of selected"
+      },
+      {
+        "start": 2146,
+        "end": 2146,
+        "before": "",
+        "after": "      try {\n  "
+      },
+      {
+        "start": 2203,
+        "end": 2203,
+        "before": "",
+        "after": "  "
+      },
+      {
+        "start": 2218,
+        "end": 2218,
+        "before": "",
+        "after": "  "
+      },
+      {
+        "start": 2268,
+        "end": 2268,
+        "before": "",
+        "after": "  "
+      },
+      {
+        "start": 2300,
+        "end": 2300,
+        "before": "",
+        "after": "  "
+      },
+      {
+        "start": 2360,
+        "end": 2360,
+        "before": "",
+        "after": "  "
+      },
+      {
+        "start": 2368,
+        "end": 2371,
+        "before": "pag",
+        "after": "  t"
+      },
+      {
+        "start": 2372,
+        "end": 2379,
+        "before": "s.push(",
+        "after": "xt = "
+      },
+      {
+        "start": 2437,
+        "end": 2437,
+        "before": "",
+        "after": ";\n        chars += text.length;\n        if (assets.maxNativeChars !== undefined && chars > assets.maxNativeChars) throw new Error('document_text_limit'"
+      },
+      {
+        "start": 2440,
+        "end": 2440,
+        "before": "",
+        "after": "        if (assets.maxNativeBlocks !== undefined && pages.size >= assets.maxNativeBlocks) throw new Error('document_structure_limit');\n        pages.set(n, text);\n        if (assets.inspectVisuals !== false) {\n    "
+      },
+      {
+        "start": 2500,
+        "end": 2501,
+        "before": "v",
+        "after": "    const "
+      },
+      {
+        "start": 2502,
+        "end": 2502,
+        "before": "",
+        "after": "mage"
+      },
+      {
+        "start": 2503,
+        "end": 2513,
+        "before": "uals.push(",
+        "after": " = "
+      },
+      {
+        "start": 2594,
+        "end": 2594,
+        "before": "",
+        "after": "\n           "
+      },
+      {
+        "start": 2626,
+        "end": 2645,
+        "before": "constructPath, OPS.",
+        "after": ""
+      },
+      {
+        "start": 2671,
+        "end": 2671,
+        "before": "",
+        "after": ";\n          // Paths can be table borders or vector diagrams. Preserve uncertainty\n          // instead of automatically requiring images for every ruled table.\n          const paths = operators.fnArray.some(op => op === OPS.constructPath"
+      },
+      {
+        "start": 2674,
+        "end": 2674,
+        "before": "",
+        "after": "          const native = assets.nativeProbe || scoped;\n          visuals.set(n, images || (!native && paths));\n          visualUnknown ||= !!native && paths && !images;\n        } else {\n          visualUnknown = true;\n        }\n      } finally {\n  "
+      },
+      {
+        "start": 2695,
+        "end": 2695,
+        "before": "",
+        "after": "\n      }"
+      },
+      {
+        "start": 3878,
+        "end": 3879,
+        "before": "[",
+        "after": ".get("
+      },
+      {
+        "start": 3880,
+        "end": 3885,
+        "before": " - 1]",
+        "after": ")"
+      },
+      {
+        "start": 4018,
+        "end": 4021,
+        "before": "pag",
+        "after": "s"
+      },
+      {
+        "start": 4022,
+        "end": 4023,
+        "before": "s",
+        "after": "lected"
+      },
+      {
+        "start": 4028,
+        "end": 4038,
+        "before": "(_, i) => ",
+        "after": ""
+      },
+      {
+        "start": 4044,
+        "end": 4051,
+        "before": "(i + 1)",
+        "after": ""
+      },
+      {
+        "start": 4241,
+        "end": 4241,
+        "before": "",
+        "after": "const p"
+      },
+      {
+        "start": 4243,
+        "end": 4243,
+        "before": "",
+        "after": "pared = selec"
+      },
+      {
+        "start": 4244,
+        "end": 4245,
+        "before": "u",
+        "after": "ed.filte"
+      },
+      {
+        "start": 4246,
+        "end": 4246,
+        "before": "",
+        "after": "("
+      },
+      {
+        "start": 4248,
+        "end": 4254,
+        "before": "Array.",
+        "after": "=> n >= "
+      },
+      {
+        "start": 4258,
+        "end": 4258,
+        "before": "",
+        "after": " && n <= to);\n      if "
+      },
+      {
+        "start": 4259,
+        "end": 4260,
+        "before": "{",
+        "after": "(scoped"
+      },
+      {
+        "start": 4261,
+        "end": 4262,
+        "before": "l",
+        "after": "|| ass"
+      },
+      {
+        "start": 4263,
+        "end": 4263,
+        "before": "",
+        "after": "ts."
+      },
+      {
+        "start": 4264,
+        "end": 4270,
+        "before": "gth: M",
+        "after": ""
+      },
+      {
+        "start": 4272,
+        "end": 4275,
+        "before": "h.m",
+        "after": ""
+      },
+      {
+        "start": 4276,
+        "end": 4279,
+        "before": "n(t",
+        "after": "vePr"
+      },
+      {
+        "start": 4280,
+        "end": 4281,
+        "before": ",",
+        "after": "be) &&"
+      },
+      {
+        "start": 4283,
+        "end": 4283,
+        "before": "",
+        "after": "rep"
+      },
+      {
+        "start": 4284,
+        "end": 4285,
+        "before": "g",
+        "after": "r"
+      },
+      {
+        "start": 4286,
+        "end": 4287,
+        "before": "s",
+        "after": "d"
+      },
+      {
+        "start": 4294,
+        "end": 4295,
+        "before": ")",
+        "after": ""
+      },
+      {
+        "start": 4296,
+        "end": 4296,
+        "before": "",
+        "after": "!== to"
+      },
+      {
+        "start": 4297,
+        "end": 4298,
+        "before": " ",
+        "after": ""
+      },
+      {
+        "start": 4302,
+        "end": 4303,
+        "before": " ",
+        "after": ""
+      },
+      {
+        "start": 4304,
+        "end": 4305,
+        "before": " ",
+        "after": ""
+      },
+      {
+        "start": 4306,
+        "end": 4315,
+        "before": " }, (_, i",
+        "after": ""
+      },
+      {
+        "start": 4316,
+        "end": 4319,
+        "before": " =>",
+        "after": ""
+      },
+      {
+        "start": 4328,
+        "end": 4328,
+        "before": "",
+        "after": "throw new Error('document_range_not_p"
+      },
+      {
+        "start": 4330,
+        "end": 4331,
+        "before": "n",
+        "after": "pare"
+      },
+      {
+        "start": 4332,
+        "end": 4343,
+        "before": "er(from + i",
+        "after": "'"
+      },
+      {
+        "start": 4344,
+        "end": 4345,
+        "before": ",",
+        "after": ";"
+      },
+      {
+        "start": 4352,
+        "end": 4352,
+        "before": "",
+        "after": "return prepared.map(render"
+      },
+      {
+        "start": 4393,
+        "end": 4393,
+        "before": "",
+        "after": ",\n      indexedPages: selected,\n      coverageComplete: selected.length === numPages,\n      visualStatus: selected.length !== numPages || visualUnknown ? 'unknown' : [...visuals.values()].some(Boolean) ? 'present' : 'none'"
+      },
+      {
+        "start": 4461,
+        "end": 4465,
+        "before": " - 1",
+        "after": ""
+      },
+      {
+        "start": 4492,
+        "end": 4493,
+        "before": "[",
+        "after": ".get("
+      },
+      {
+        "start": 4494,
+        "end": 4495,
+        "before": "]",
+        "after": ")"
+      },
+      {
+        "start": 4522,
+        "end": 4523,
+        "before": "[",
+        "after": ".get("
+      },
+      {
+        "start": 4524,
+        "end": 4525,
+        "before": "]",
+        "after": ")"
+      },
+      {
+        "start": 4823,
+        "end": 4824,
+        "before": "i",
+        "after": "n"
+      },
+      {
+        "start": 4968,
+        "end": 4973,
+        "before": "i + 1",
+        "after": "n"
+      }
+    ]
+  },
+  {
+    "path": "office-runtime/src/adapters/parse/docx.ts",
+    "before_sha256": "0bd0f04fb823d70a9af65a6f26581da54c11320af64454413e50546ffd4db4e9",
+    "after_sha256": "761a4a473c9aee6be0250db2d3980f4ae20ca9644e7741111515fad389f364c3",
+    "edits": [
+      {
+        "start": 76,
+        "end": 76,
+        "before": "",
+        "after": "{ parseLocator, "
+      },
+      {
+        "start": 80,
+        "end": 82,
+        "before": " {",
+        "after": ""
+      },
+      {
+        "start": 7708,
+        "end": 7708,
+        "before": "",
+        "after": "\n     "
+      },
+      {
+        "start": 7715,
+        "end": 7716,
+        "before": "b",
+        "after": "se"
+      },
+      {
+        "start": 7717,
+        "end": 7718,
+        "before": "o",
+        "after": "e"
+      },
+      {
+        "start": 7719,
+        "end": 7720,
+        "before": "k",
+        "after": "ted"
+      },
+      {
+        "start": 7723,
+        "end": 7723,
+        "before": "",
+        "after": "anchor.includes('/') ? select(parseLocator('docx', anchor)) : ["
+      },
+      {
+        "start": 7743,
+        "end": 7743,
+        "before": "",
+        "after": "].filter((block): block is Block => block !== undefined)"
+      },
+      {
+        "start": 7744,
+        "end": 7744,
+        "before": "",
+        "after": "\n     "
+      },
+      {
+        "start": 7763,
+        "end": 7765,
+        "before": "!!",
+        "after": "selected.some("
+      },
+      {
+        "start": 7771,
+        "end": 7773,
+        "before": "&&",
+        "after": "=>"
+      },
+      {
+        "start": 7798,
+        "end": 7798,
+        "before": "",
+        "after": ")"
+      },
+      {
+        "start": 7827,
+        "end": 7827,
+        "before": "",
+        "after": ".split('/')[0]"
+      },
+      {
+        "start": 7830,
+        "end": 7830,
+        "before": "",
+        "after": "\n   "
+      }
+    ]
+  }
+]

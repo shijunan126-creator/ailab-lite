@@ -104,7 +104,21 @@ def reject_both_skill_fields(body):
 
 
 def validate_run_input(
-    db, user, prompt, model, file_ids, mode=None, skill=None, template=None, *, selections=None, conversation=None, turn_mode=None
+    db,
+    user,
+    prompt,
+    model,
+    file_ids,
+    mode=None,
+    skill=None,
+    template=None,
+    *,
+    selections=None,
+    conversation=None,
+    turn_mode=None,
+    document_tools_version=None,
+    preparation_send_id=None,
+    frozen_document_input=None,
 ):
     if len(prompt) > settings.max_prompt_chars:
         raise HTTPException(status_code=413, detail=f"prompt exceeds {settings.max_prompt_chars} chars")
@@ -183,6 +197,8 @@ def validate_run_input(
         db, conversation, mode, turn_mode=turn_mode, requires_work=bool(template is not None and conversation is not None)
     )
     options["mode"] = mode
+    if document_tools_version is None or document_tools_version == 2:
+        options["document_tools_version"] = 2
 
     catalog = get_catalog()
     model_id = model or catalog.default_id()
@@ -207,7 +223,7 @@ def validate_run_input(
                 status_code=409,
                 detail={"code": "file_not_ready", "message": f"文件还没检查完（{file.status}），稍候再发送"},
             )
-        if (file.content_type or "").startswith("image/"):
+        if mode == "chat" and (file.content_type or "").startswith("image/"):
             image_count += 1
             if image_count > 5:
                 raise HTTPException(422, {"code": "attachment_image_limit", "message": "每轮最多附加5张图片"})
@@ -215,13 +231,21 @@ def validate_run_input(
             inputs.append(file.id)
     if mode == "work" and inputs and not spec.supports({"tools"}):
         raise HTTPException(422, {"code": "work_model_requires_tools", "message": "请选择支持工具的模型，或切换对话模式读取文件"})
-    if mode == "work" and inputs and not spec.supports({"vision"}):
-        images = [fid for fid in inputs if (db.get(FileObject, fid).content_type or "").startswith("image/")]
-        if images:
-            from .attachment_input import validate_chat_files
+    new_chat_documents = mode == "chat" and options.get("document_tools_version") == 2
+    if new_chat_documents and inputs:
+        from .document_input_plan import prepare, validate_frozen
 
-            validate_chat_files(db, images, model_id, "")
-    if mode == "chat" and inputs:
+        files = [db.get(FileObject, file_id) for file_id in inputs]
+        if frozen_document_input:
+            validate_frozen(db, files, frozen_document_input, model_id)
+            options["document_input_plan"] = frozen_document_input
+        else:
+            options["document_input_plan"] = prepare(db, user, files, spec, prompt, send_id=preparation_send_id)
+    if inputs and ((mode == "chat" and not new_chat_documents) or (mode == "work" and spec.supports({"vision"}))):
+        from .attachment_input import prepare_input_images
+
+        prepare_input_images(db, inputs)
+    if mode == "chat" and inputs and not new_chat_documents:
         from .attachment_input import validate_chat_files
 
         validate_chat_files(db, inputs, model_id, prompt)
@@ -255,6 +279,9 @@ def start_run(
     doc_refs=None,
     frozen_doc_refs=None,
     upload_ids=None,
+    document_tools_version=None,
+    frozen_document_input=None,
+    preparation_send_id=None,
 ) -> Run:
     """Check the limits, write the run and queue it. Used for standalone runs and conversation turns."""
     expected_active = conversation.active_run_id if conversation else None
@@ -307,6 +334,9 @@ def start_run(
             selections=selections,
             conversation=conversation,
             turn_mode=(sibling_of.options or {}).get("mode", "work") if sibling_of else None,
+            document_tools_version=document_tools_version,
+            preparation_send_id=client_send_id or preparation_send_id,
+            frozen_document_input=frozen_document_input,
         )
         from .document_view import validate_refs
 
@@ -365,6 +395,13 @@ def start_run(
         from .asset_refs import register_assets
 
         register_assets(db, run)
+        if options.get("document_input_plan"):
+            from .document_preparation import bind as bind_preparation
+            from .native_ranges import charge_consumption
+
+            bind_preparation(db, run, options["document_input_plan"])
+            for file_id in inputs:
+                charge_consumption(db, run, db.get(FileObject, file_id))
         from .document_sources import bind_refs
 
         bind_refs(db, "run_prompt", run.id, inputs, run.id, upload_ids=upload_ids)

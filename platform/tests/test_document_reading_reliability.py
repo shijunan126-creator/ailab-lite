@@ -1,7 +1,9 @@
 """Cross-format visual coverage, OCR reuse and durable dependency recovery."""
 
 import asyncio
+import hashlib
 import io
+import json
 import time
 
 import pytest
@@ -14,6 +16,7 @@ from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
 from ailab_platform.models import FileObject, OcrPageResult, OutboxMessage, Run
 from ailab_platform.storage import get_storage
+from tests.document_fixtures import legacy_run
 from tests.test_document_context import upload
 from tests.test_file_previews import AUTH, SERVICE
 from tests.test_ocr import photo
@@ -62,12 +65,12 @@ def test_office_images_are_detected_and_never_presented_as_complete_text(kind, w
     from ailab_platform.api.document_content import manifest
 
     with TestClient(app) as c:
-        fid = upload(c, "diagram." + kind, office_image(kind, with_text), "application/" + kind)
+        fid = upload(c, "diagram." + kind, office_image(kind, with_text), "application/" + kind, legacy=True)
         with SessionLocal() as db:
             doc = manifest(db.get(FileObject, fid))
             assert doc["visual_units"]
             assert all(u["quality"] == "no_text" for u in doc["units"]) if not with_text or kind == "pdf" else doc["chars"] > 0
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "解释图形关系", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "解释图形关系", "file_ids": [fid]}).json())
         read = c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).json()
         assert read["visual"]["status"] == "present"
         assert "图" in read["visual_note"]
@@ -95,7 +98,7 @@ def cache_page(db, file, page, content):
 def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeholder_is_not_body(monkeypatch):
     monkeypatch.setattr(settings, "ocr_executor_url", "")  # cache remains readable while executor is offline
     with TestClient(app) as c:
-        fid = upload(c, "scanned.pdf", office_image("pdf"), "application/pdf")
+        fid = upload(c, "scanned.pdf", office_image("pdf"), "application/pdf", legacy=True)
         with SessionLocal() as db:
             file = db.get(FileObject, fid)
             # Simulate the original deployed cache format exactly.
@@ -105,10 +108,21 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             from ailab_platform.models import DocumentBlock, FileDerivation
 
             block = db.scalar(select(DocumentBlock).join(FileDerivation).where(FileDerivation.file_id == fid))
-            get_storage().put_bytes(block.text_key, b"## Page 1\n(no extractable text; the page may be scanned)", "text/plain")
+            legacy = b"## Page 1\n(no extractable text; the page may be scanned)"
+            get_storage().put_bytes(block.text_key, legacy, "text/plain")
+            # A deployed legacy index recorded the same source bytes. Simulate
+            # both halves; changing only the object is corruption, not migration.
+            block.digest = hashlib.sha256(legacy).hexdigest()
+            block.chars = len(legacy)
+            manifest_key = file.meta["document_manifest_key"]
+            old_manifest = json.loads(get_storage().get_bytes(manifest_key))
+            old_manifest["parser"] = "zcode-3c5b227-ailab1"
+            old_manifest["units"][0]["sha256"] = block.digest
+            old_manifest["units"][0]["chars"] = block.chars
+            get_storage().put_bytes(manifest_key, json.dumps(old_manifest).encode(), "application/json")
             cache_page(db, file, 0, "Invoice amount 123")
             db.commit()
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json()
+        run = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid]}).json())
         endpoint = f"/internal/runs/{run['id']}/library/extract-text"
         for _ in range(3):
             result = c.post(endpoint, headers=SERVICE, json={"file_id": fid, "pages": [1]}).json()
@@ -116,9 +130,8 @@ def test_repeated_pdf_extract_returns_cached_text_without_jobs_and_legacy_placeh
             assert result["content"]["coverage"][0]["method"] == "ocr"
         with SessionLocal() as db:
             assert not [j for j in db.scalars(select(OutboxMessage)) if j.payload.get("file_id") == fid and j.payload.get("kind") == "ocr"]
-        chat = c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "chat"})
-        assert chat.status_code == 201
-        model_input = c.get(f"/internal/runs/{chat.json()['id']}/model-input", headers=SERVICE).json()
+        chat = legacy_run(c.post("/v1/runs", headers=AUTH, json={"prompt": "概述", "file_ids": [fid], "mode": "work"}).json(), mode="chat")
+        model_input = c.get(f"/internal/runs/{chat['id']}/model-input", headers=SERVICE).json()
         assert model_input["input_files"][0]["text"] == "Invoice amount 123"
 
 
@@ -252,10 +265,8 @@ def test_pending_ocr_suspends_paid_tool_and_resumes_without_model_poll_or_sandbo
     assert platform.statuses[-1][0] == "succeeded"
 
 
-def test_chat_vision_prepares_visual_pages_and_nonvision_does_not_claim_image_semantics(monkeypatch):
+def test_chat_office_visuals_remain_on_demand_without_speculative_render_or_ocr(monkeypatch):
     monkeypatch.setattr(settings, "render_prewarm", 0)
-    from ailab_platform.models import RenderedPage
-
     monkeypatch.setitem(
         get_catalog().models,
         "vision-doc",
@@ -264,25 +275,20 @@ def test_chat_vision_prepares_visual_pages_and_nonvision_does_not_claim_image_se
     with TestClient(app) as c:
         fid = upload(c, "diagram.docx", office_image("docx", True), "application/docx")
         body = {"prompt": "解释架构图", "mode": "chat", "model": "vision-doc", "file_ids": [fid]}
-        pending = c.post("/v1/chat/prepare", headers=AUTH, json=body)
-        assert pending.status_code == 409 and pending.json()["detail"]["code"] == "chat_attachment_processing"
-        with SessionLocal() as db:
-            file = db.get(FileObject, fid)
-            key = f"derived/{fid}/preview/p-1.jpg"
-            get_storage().put_bytes(key, photo(), "image/jpeg")
-            db.add(RenderedPage(file_id=fid, page=1, version="poppler-1280-v1", key=key, digest="test"))
-            file.meta = {**file.meta, "ocr_preview": {"status": "ready", "page_count": 1}}
-            db.commit()
         assert c.post("/v1/chat/prepare", headers=AUTH, json=body).status_code == 200
         run = c.post("/v1/runs", headers=AUTH, json=body)
-        assert run.status_code == 201
+        assert run.status_code == 201, run.text
         data = c.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()
         file = data["input_files"][0]
-        assert file["visual_pages"][0]["page"] == 1 and file["visual"]["status"] == "present"
-        from ailab_platform.agent.prompts import user_prompt
-
-        text = user_prompt("解释", [{**file, "visual_pages": []}])
-        assert "不能根据OCR猜测" in text and fid in text
+        assert file["input_strategy"] == "reference" and file["visual"]["status"] == "present"
+        assert not file["text"] and not file["visual_pages"]
+        with SessionLocal() as db:
+            assert not db.scalars(
+                select(OutboxMessage).where(
+                    OutboxMessage.payload["file_id"].as_string() == fid,
+                    OutboxMessage.payload["kind"].as_string().in_(["preview", "ocr"]),
+                )
+            ).all()
 
 
 def test_safe_file_pause_keeps_sse_live_and_quota_gate_defers_recovery(monkeypatch):
@@ -393,7 +399,7 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
     monkeypatch.setattr(settings, "ocr_executor_url", "")
     payload = office_image("pdf")
     with TestClient(app) as c:
-        source = upload(c, "old.pdf", payload, "application/pdf")
+        source = upload(c, "old.pdf", payload, "application/pdf", legacy=True)
         with SessionLocal() as db:
             file = db.get(FileObject, source)
             cache_page(db, file, 0, "cached legacy invoice")
@@ -424,6 +430,9 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
                 return response.json()
 
         target = c.post("/v1/files", headers=AUTH, files={"upload": ("new.pdf", payload, "application/pdf")}).json()["id"]
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(target)
         process_file(target, platform=CacheClient(c))
         with SessionLocal() as db:
             file = db.get(FileObject, target)
@@ -431,9 +440,10 @@ def test_parser_upgrade_reuses_private_ocr_without_reusing_old_native_index(monk
             assert file.meta["ocr_copied_pages"] == 1
             record = db.scalar(select(OcrPageResult).where(OcrPageResult.file_id == target))
             assert record.text_key.startswith(f"derived/{target}/") and record.seconds == 0
-        run = c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "chat"})
-        assert run.status_code == 201
-        model_input = c.get(f"/internal/runs/{run.json()['id']}/model-input", headers=SERVICE).json()
+        run = legacy_run(
+            c.post("/v1/runs", headers=AUTH, json={"prompt": "read", "file_ids": [target], "mode": "work"}).json(), mode="chat"
+        )
+        model_input = c.get(f"/internal/runs/{run['id']}/model-input", headers=SERVICE).json()
         assert model_input["input_files"][0]["text"] == "cached legacy invoice"
     from ailab_platform.internal_skills import load
 
@@ -458,3 +468,73 @@ def test_document_upload_fixture_keeps_identical_pdfs_and_ocr_state_independent(
             assert file.meta["ocr_generation"]
             assert db.get(OcrPageResult, (second, 0, settings.ocr_engine_fingerprint or "test")) is None
             db.rollback()
+
+
+@pytest.mark.parametrize("kind", ["docx", "xlsx"])
+@pytest.mark.parametrize("count", [8, 30])
+def test_visual_cache_uses_known_render_count_before_final_manifest(kind, count):
+    from ailab_platform.api.routes_library_tools import document_images
+    from ailab_platform.models import RenderedPage
+
+    with TestClient(app) as client:
+        fid = upload(client, "mixed." + kind, office_image(kind, True), "application/" + kind)
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "render_page_count": count, "preview": {"status": "pending"}}
+            for page in range(1, min(count, 20) + 1):
+                db.add(RenderedPage(file_id=fid, page=page, version="poppler-1280-v1", key=f"derived/{fid}/{page}.png", digest="a"))
+            db.flush()
+            result = document_images(db, file, None, prepare=False)
+            assert result["page_count"] == count
+            assert result["truncated"] is (count > 20)
+            assert len(result["files"]) == min(count, 20)
+            assert all(image["content_type"] == "image/png" for image in result["files"])
+            db.delete(db.get(RenderedPage, (fid, 2, "poppler-1280-v1")))
+            db.flush()
+            assert document_images(db, file, None, prepare=False)["pending"] is True
+
+
+def test_unknown_page_count_and_explicit_subset_do_not_claim_whole_file():
+    from ailab_platform.api.routes_library_tools import document_images
+    from ailab_platform.models import RenderedPage
+
+    with TestClient(app) as client:
+        fid = upload(client, "mixed.docx", office_image("docx", True), "application/docx")
+        with SessionLocal() as db:
+            file = db.get(FileObject, fid)
+            file.meta = {**file.meta, "preview": {"status": "pending"}}
+            db.add(RenderedPage(file_id=fid, page=1, version="poppler-1280-v1", key=f"derived/{fid}/1.jpg", digest="a"))
+            db.flush()
+            assert document_images(db, file, None, prepare=False)["pending"] is True
+            subset = document_images(db, file, [1], prepare=False)
+            assert subset["page_count"] is None
+            assert subset["files"][0]["content_type"] == "image/jpeg"
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_v2_inline_pages_name_the_region_identity_a_later_view_must_use(monkeypatch, version):
+    from ailab_platform.agent.loop import AgentLoop
+
+    monkeypatch.setitem(
+        get_catalog().models, "vision-inline", ModelSpec(id="vision-inline", name="Vision", provider="mock", capabilities=["vision"])
+    )
+
+    class Platform:
+        async def get_file_page_image(self, *args):
+            return b"\xff\xd8\xff\xe0page"
+
+    run = {
+        "prompt": "看图",
+        "options": {"mode": "chat", "document_tools_version": version} if version == 2 else {"mode": "chat"},
+        "input_files": [
+            {
+                "filename": "deck.pptx",
+                "file_id": "f",
+                "visual_pages": [{"id": "f", "filename": "deck.pptx", "page": 3, "content_type": "image/jpeg", "digest": "d" * 64}],
+            }
+        ],
+    }
+    parts = asyncio.run(AgentLoop(platform=Platform())._user_content("run", run, "vision-inline"))
+    labels = [part["text"] for part in parts if part.get("type") == "text" and "渲染第3页" in part["text"]]
+    expected = '（region_ref={"page":3,"revision":"' + "d" * 64 + '"}）'
+    assert labels == (["附件《deck.pptx》渲染第3页" + expected] if version == 2 else ["附件《deck.pptx》渲染第3页"])

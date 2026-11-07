@@ -117,7 +117,7 @@ def main() -> None:
                     os.environ["AILAB_LO_LISTENER"] = "1"
                     os.environ["AILAB_LO_PIPE"] = listener.PIPE
             try:
-                result = render_preview.pages(source, rendered, selected)
+                result = render_preview.pages(source, rendered, selected, sheets=suffix == ".xlsx")
             finally:
                 if listener:
                     listener.touch()
@@ -126,6 +126,8 @@ def main() -> None:
         if sum(map(len, images)) > MAX_TOTAL:
             raise ValueError("output_limit")
         payload = {"pages": selected, "images": [base64.b64encode(image).decode("ascii") for image in images]}
+        if suffix == ".xlsx":
+            payload.update(page_count=result["page_count"], sheet_pages=result.get("sheet_pages"))
         if review:
             payload.update(
                 structural=checks,

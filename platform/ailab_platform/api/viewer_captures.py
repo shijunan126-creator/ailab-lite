@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from fastapi import HTTPException, Response
 from sqlalchemy import select
 
-from ..models import Run, User, ViewerCapture
+from ..models import Conversation, DerivedAsset, DerivedAssetRef, Run, RunStatus, User, ViewerCapture
 from ..storage import get_storage
 
 MAX_IMAGE = 2 * 1024**2
@@ -64,29 +64,87 @@ def validate_png(value):
     return data
 
 
-def save(db, run, identity, target, data, mime="image/png"):
-    capture_id = hashlib.sha256((run.id + ":" + identity).encode()).hexdigest()
-    existing = db.get(ViewerCapture, capture_id)
-    if existing:
-        return {"status": "ready", "capture_id": capture_id, "version": target["version"], "source": target["source"]}
+def save(db, run, identity, target, data, mime="image/png", *, validate=None, bind=None):
+    """Publish one canonical object and its receipt in the same transaction.
+
+    Browser pixels cannot be reconstructed deterministically. V2 retains them
+    with the originating message; legacy calls keep their frozen expiry contract.
+    """
+    from ..domain.document_tools import catalog_version
+    from . import derived_assets as assets
+    from .owned_assets import publish
+    from .routes_document_view import authorize_state
+
+    run_id, owner = run.id, run.user_id
+    canonical = catalog_version(run.options) == 2
+    capture_id = hashlib.sha256((run_id + ":" + identity).encode()).hexdigest()
     file_id = target.get("file_id")
-    prefix = f"derived/{file_id}" if file_id else f"viewer/{run.id}"
+    prefix = f"derived/{file_id}" if file_id else f"viewer/{run_id}"
     key = f"{prefix}/captures/{capture_id}"
-    get_storage().put_bytes(key, data, mime)
-    db.add(
-        ViewerCapture(
-            id=capture_id,
-            run_id=run.id,
-            file_id=file_id,
-            target=target,
-            storage_key=key,
-            digest=hashlib.sha256(data).hexdigest(),
-            content_type=mime,
-            expires_at=datetime.now(UTC) + timedelta(minutes=10),
+    digest = hashlib.sha256(data).hexdigest()
+    receipt = {"status": "ready", "capture_id": capture_id, "version": target["version"], "source": target["source"]}
+    expires = None if canonical else datetime.now(UTC) + timedelta(minutes=10)
+
+    def check():
+        current = db.get(Run, run_id, populate_existing=True)
+        conversation = (
+            db.get(Conversation, current.conversation_id, populate_existing=True) if current and current.conversation_id else None
         )
+        user = db.get(User, owner, populate_existing=True)
+        if (
+            not current
+            or current.user_id != owner
+            or (
+                current.status != RunStatus.RUNNING
+                and not (
+                    canonical
+                    and current.status == RunStatus.INTERRUPTED
+                    and ((current.runtime_meta or {}).get("file_dependency") or {}).get("action") == "document-view"
+                )
+            )
+            or not user
+            or user.disabled_at
+            or (current.conversation_id and (not conversation or conversation.deleted_at))
+        ):
+            raise HTTPException(409, "capture_source_unavailable")
+        authorize_state(db, user, target)
+        previous = db.get(ViewerCapture, capture_id, populate_existing=True)
+        if previous and (previous.digest != digest or previous.target != target or previous.content_type != mime):
+            raise HTTPException(409, "capture_identity_changed")
+        if validate:
+            validate()
+
+    def attach(storage_key):
+        if db.get(ViewerCapture, capture_id) is None:
+            db.add(
+                ViewerCapture(
+                    id=capture_id,
+                    run_id=run_id,
+                    file_id=file_id,
+                    target=target,
+                    storage_key=storage_key,
+                    digest=digest,
+                    content_type=mime,
+                    expires_at=expires,
+                )
+            )
+        assets.pin(db, storage_key, "capture:" + capture_id, kind="message", run_id=run_id, expires_at=None if canonical else expires)
+        if bind:
+            bind(receipt)
+        return receipt
+
+    return publish(
+        db,
+        owner,
+        key,
+        data,
+        target["version"],
+        kind="capture",
+        reconstructible=False,
+        validate=check,
+        bind=attach,
+        content_type=mime,
     )
-    db.flush()
-    return {"status": "ready", "capture_id": capture_id, "version": target["version"], "source": target["source"]}
 
 
 def render_capture(db, run, body, identity):
@@ -165,8 +223,9 @@ def image(db, run_id, capture_id):
             or not db.scalar(select(ancestors.c.id).where(ancestors.c.id == capture.run_id).limit(1))
         ):
             raise HTTPException(404, "capture unavailable")
-    expiry = capture.expires_at.replace(tzinfo=UTC) if capture.expires_at.tzinfo is None else capture.expires_at
-    if expiry <= datetime.now(UTC):
+    expiry = capture.expires_at
+    expiry = expiry.replace(tzinfo=UTC) if expiry is not None and expiry.tzinfo is None else expiry
+    if expiry is not None and expiry <= datetime.now(UTC):
         raise HTTPException(410, "capture expired")
     from .routes_document_view import authorize_state
 
@@ -178,9 +237,39 @@ def image(db, run_id, capture_id):
 
 
 def purge(db, storage, now):
-    rows = list(db.scalars(select(ViewerCapture).where(ViewerCapture.expires_at <= now).order_by(ViewerCapture.expires_at).limit(100)))
+    """Legacy TTL has a durable delete intent; capacity is released after I/O."""
+    from ..config import settings
+    from ..library import schedule_object_deletion
+    from . import derived_assets as assets
+
+    rows = list(
+        db.scalars(
+            select(ViewerCapture).where(ViewerCapture.expires_at <= now).order_by(ViewerCapture.expires_at).limit(settings.gc_batch_size)
+        )
+    )
     for row in rows:
-        storage.delete(row.storage_key)
+        assets.unpin(db, "capture:" + row.id)
+        schedule_object_deletion(db, row.storage_key, "capture")
         db.delete(row)
     db.commit()
     return len(rows)
+
+
+def release_runs(db, run_ids):
+    """Release screenshot ownership with source invalidation/conversation GC."""
+    from sqlalchemy import delete, update
+
+    from .derived_assets import budget_lock
+
+    budget_lock(db)
+    keys = select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(run_ids))
+    db.execute(
+        delete(DerivedAssetRef).where(DerivedAssetRef.key.in_(keys), DerivedAssetRef.kind == "message", DerivedAssetRef.run_id.in_(run_ids))
+    )
+    surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == DerivedAsset.key).exists()
+    db.execute(
+        update(DerivedAsset)
+        .where(DerivedAsset.key.in_(keys), ~surviving)
+        .values(state="deleting", lease_until=None, expires_at=datetime.now(UTC))
+    )
+    db.flush()

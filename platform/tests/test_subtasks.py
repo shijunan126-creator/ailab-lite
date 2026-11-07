@@ -69,3 +69,65 @@ def test_a_single_task_is_refused_before_any_child_runs():
     result = json.loads(next(m["content"] for m in model.requests["parent"][1]["messages"] if m.get("role") == "tool"))
     assert result["ok"] is False and "2–4" in result["error"]
     assert "甲" not in model.requests or not model.requests["甲"]
+
+
+def test_v2_children_copy_original_and_view_in_parent_lease_without_platform_document_tools(monkeypatch):
+    import base64
+    import io
+
+    from PIL import Image
+
+    from ailab_platform.catalog import Catalog, ModelSpec
+    from tests.test_agent_loop import FakeBroker, FakePlatform
+
+    image = io.BytesIO()
+    Image.new("RGB", (4, 4), "white").save(image, "JPEG")
+    encoded = base64.b64encode(image.getvalue()).decode()
+    monkeypatch.setattr(
+        "ailab_platform.agent.loop.get_catalog",
+        lambda: Catalog([ModelSpec("m", "m", provider="mock", context_tokens=200000, capabilities=frozenset({"tools", "vision"}))]),
+    )
+
+    class Platform(FakePlatform):
+        async def get_run(self, run_id):
+            return {**await super().get_run(run_id), "options": {"mode": "work", "document_tools_version": 2}}
+
+        async def library(self, run_id, action, arguments):
+            assert action == "authorize-copy" and arguments == {"file_id": "original"}
+            return {"file_id": "original", "filename": "document.pdf"}
+
+    class Broker(FakeBroker):
+        async def copy_library_file(self, lease_id, file_id, path):
+            assert lease_id == "lease_1" and file_id == "original"
+            return {"file_id": file_id, "path": path}
+
+        async def view_workspace_file(self, lease_id, path, pages):
+            assert lease_id == "lease_1" and path == "/workspace/inputs/document.pdf" and pages == [2]
+            return {"pages": [2], "images": [encoded]}
+
+    model = Routing(
+        [LLMResponse(tool_calls=[ToolCall("children", "run_subtasks", {"tasks": TASKS})]), LLMResponse(content="汇总")],
+        {
+            "甲": [
+                LLMResponse(
+                    tool_calls=[
+                        ToolCall("copy", "copy_library_file", {"file_id": "original", "path": "/workspace/inputs/document.pdf"}),
+                        ToolCall("view", "view_workspace_file", {"path": "/workspace/inputs/document.pdf", "pages": [2]}),
+                        ToolCall("forged", "read_library_file", {"file_id": "original"}),
+                    ]
+                ),
+                LLMResponse(content="已查看原件第二页"),
+            ],
+            "乙": [LLMResponse(content="另一项完成")],
+        },
+    )
+    platform, broker = _run(model, platform=Platform(), broker=Broker())
+    assert platform.statuses[-1][0] == "succeeded" and broker.leases == 1
+    request = model.requests["甲"][1]
+    results = [json.loads(m["content"]) for m in request["messages"] if m.get("role") == "tool"]
+    assert results[-3]["ok"] and results[-2]["ok"] and not results[-1]["ok"]
+    assert request["messages"][-1]["content"][1]["image_url"]["url"].endswith(encoded)
+    assert not any(
+        t["function"]["name"] in {"read_library_file", "read_document", "view_document", "extract_text"} for t in request["tools"]
+    )
+    assert model.requests["parent"][0]["tools"] == request["tools"]

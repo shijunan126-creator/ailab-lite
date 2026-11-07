@@ -29,6 +29,13 @@ class DocumentReader:
         phases = {}
         file = self.manager.platform.get_file(file_id, job="document", preview_job=job_id)
         kind = KINDS.get(PurePath(file["filename"]).suffix.lower())
+        profile = (file.get("meta") or {}).get("document_profile", "legacy")
+        if profile not in {"legacy", "chat", "chat-full", "scope"}:
+            raise LeaseError("document_profile_invalid")
+        if profile != "legacy":
+            kind = (file.get("meta") or {}).get("document_kind") or kind
+            if kind not in {"pdf", "docx", "pptx", "xlsx"}:
+                raise LeaseError("document_format_unsupported")
         if not kind or file.get("size", 0) > settings.max_parse_bytes:
             raise LeaseError("document_input_limit")
         owner = file.get("render_owner_id")
@@ -37,11 +44,31 @@ class DocumentReader:
         spec = LibraryRenderer(self.manager)._spec()
         source = "/workspace/inputs/document." + kind
 
+        def remaining_seconds():
+            from datetime import datetime
+
+            deadline = (
+                (file.get("meta") or {}).get("document_deadline")
+                if profile != "legacy" or (file.get("meta") or {}).get("document_execution_required")
+                else None
+            )
+            remaining = datetime.fromisoformat(deadline).timestamp() - time.time() if deadline else settings.office_timeout_seconds + 10
+            if remaining <= 0:
+                raise LeaseError("document_operation_deadline")
+            return remaining
+
         def prepare(lease):
+            remaining_seconds()
             injection_started = time.monotonic()
             self.manager.inject_file(lease, file_id, source, job="document", preview_job=job_id, max_bytes=settings.max_parse_bytes)
             script = Path(__file__).resolve().parents[1] / "sandbox_tools" / "office_exec.py"
             self.manager.put_input(lease, "/workspace/.ailab/office_exec.py", script.read_bytes())
+            if profile == "scope":
+                import json
+
+                self.manager.put_input(
+                    lease, "/workspace/.ailab/document-request.json", json.dumps((file.get("meta") or {}).get("document_selector")).encode()
+                )
             phases["inject_seconds"] = time.monotonic() - injection_started
 
         acquire_started = time.monotonic()
@@ -51,28 +78,66 @@ class DocumentReader:
         phases["acquire_seconds"] = time.monotonic() - acquire_started
         started = time.monotonic()
         returned = False
+        transfer_grant = None
         try:
             out = "/workspace/.ailab/document"
+            execution_seconds = min(settings.office_timeout_seconds, max(1, int(remaining_seconds()) - 5))
             command = (
-                f"mkdir -p {out} && python /workspace/.ailab/office_exec.py {settings.office_timeout_seconds} "
+                f"mkdir -p {out} && python /workspace/.ailab/office_exec.py {execution_seconds} "
                 f"{(settings.office_memory_mb + 64) * 1024**2} "
                 f"node --max-old-space-size={max(32, settings.office_memory_mb - 96)} /opt/ailab-office/runner.mjs "
-                f"{shlex.quote(source)} {out} {kind} && COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
+                f"{shlex.quote(source)} {out} {kind} {profile} "
+                f"{'/workspace/.ailab/document-request.json' if profile == 'scope' else ''} && "
+                f"COPYFILE_DISABLE=1 tar -cf /workspace/.ailab/document.tar -C {out} ."
             )
-            result = self.manager.exec(handle.lease_id, command, int(settings.office_timeout_seconds) + 10)
+            result = self._execute_owned(
+                handle,
+                command,
+                min(int(remaining_seconds()), int(execution_seconds) + 5),
+                file_id,
+                job_id,
+                profile != "legacy" or bool((file.get("meta") or {}).get("document_execution_required")),
+                operation_id=(file.get("meta") or {}).get("document_operation_id"),
+            )
             phases["exec_seconds"] = time.monotonic() - started
             if result.exit_code:
-                return {"error": "document_runtime_unavailable" if result.exit_code == 127 else "document_parse_failed"}
+                import json
+
+                reason = "document_runtime_unavailable" if result.exit_code == 127 else "document_parse_failed"
+                for line in result.stderr.splitlines()[-4:]:
+                    try:
+                        reported = json.loads(line).get("error")
+                    except (ValueError, AttributeError):
+                        continue
+                    if reported in {"document_text_limit", "document_cells_limit", "document_structure_limit", "output_limit"}:
+                        reason = reported
+                return {"error": reason}
             key = f"derived/{file_id}/office-staging/{job_id}.tar"
             export_started = time.monotonic()
-            size, digest = self.manager.store_file(
-                self.manager.get(handle.lease_id), "/workspace/.ailab/document.tar", key, "application/x-tar", 48 * 1024**2
+            transfer_grant = None
+            transfer_limit = 8 * 1024**2 if profile != "legacy" else 48 * 1024**2
+            native = ((file.get("meta") or {}).get("representations") or {}).get("native_text") or {}
+            transfer_job = (
+                ((file.get("meta") or {}).get("writer_job_id") or (file.get("meta") or {}).get("processing_job_id"))
+                if profile == "legacy"
+                else (file.get("meta") or {}).get("document_operation_id")
+                if profile == "scope"
+                else native.get("job_id")
             )
+            transfer_grant = self.manager.platform.reserve_derived(
+                key=key, version=file["sha256"], max_bytes=transfer_limit, kind="transfer", job_id=transfer_job
+            )
+            size, digest = self.manager.store_file(
+                self.manager.get(handle.lease_id), "/workspace/.ailab/document.tar", key, "application/x-tar", transfer_limit
+            )
+            if transfer_grant:
+                self.manager.platform.finish_derived(key, transfer_grant["token"])
             phases["export_seconds"] = time.monotonic() - export_started
             generation = self.manager.get(handle)["render_generation"]
             returned = True
             return {
                 "archive_key": key,
+                **({"transfer_receipt": {"key": key, "token": transfer_grant["token"]}} if transfer_grant else {}),
                 "bytes": size,
                 "sha256": digest,
                 "sandbox_seconds": time.monotonic() - started,
@@ -84,6 +149,66 @@ class DocumentReader:
         finally:
             release_started = time.monotonic()
             if not returned:
-                self.manager.release(handle, reason="document_failed")
+                try:
+                    if transfer_grant:
+                        try:
+                            self.manager.storage.delete(transfer_grant["key"])
+                            self.manager.platform.discard_derived_batch([{"key": transfer_grant["key"], "token": transfer_grant["token"]}])
+                        except Exception:
+                            self.manager.platform.abandon_derived(transfer_grant["key"], transfer_grant["token"])
+                finally:
+                    self.manager.release(handle, reason="document_failed")
             phases["release_seconds"] = time.monotonic() - release_started
             phases["total_seconds"] = time.monotonic() - total_started
+
+    def _execute_owned(self, handle, command, timeout, file_id, job_id, monitored, *, preview=False, operation_id=None):
+        if not monitored:
+            return self.manager.exec(handle.lease_id, command, timeout)
+        import concurrent.futures
+        import contextvars
+        import threading
+
+        from ..clients import PlatformClient
+
+        stopped = threading.Event()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="document-parser") as executor:
+            task = executor.submit(contextvars.copy_context().run, self.manager.exec, handle.lease_id, command, timeout)
+            deadline = time.monotonic() + timeout
+            try:
+                with PlatformClient(service="broker") as client:
+                    while not task.done():
+                        if stopped.wait(min(1, max(0, deadline - time.monotonic()))):
+                            break
+                        if task.done():
+                            break
+                        if time.monotonic() >= deadline:
+                            raise LeaseError("document_operation_deadline")
+                        if preview:
+                            client.file_work_owned(job_id)
+                        else:
+                            client.native_owned(file_id, job_id)
+                return task.result()
+            except BaseException:
+                # A dedicated parser lease never contains another user's or
+                # Work subtask's processes. Destroy it and join execution before
+                # releasing ownership; cancel_exec is not supported by all backends.
+                self.manager.release(handle, reason="document_canceled")
+                try:
+                    task.result(timeout=5)
+                except Exception:
+                    pass
+                if operation_id and self.manager.store.get(handle.lease_id) is None:
+                    # Only confirmed resource removal acknowledges cancellation;
+                    # a failed delete leaves its slot charged until compensation.
+                    from ..runtime_context import attempt_id_var
+
+                    attempt = attempt_id_var.get()
+                    if attempt:
+                        try:
+                            with PlatformClient(service="broker") as client:
+                                client.file_work_stopped(operation_id, attempt)
+                        except Exception:
+                            pass
+                raise
+            finally:
+                stopped.set()

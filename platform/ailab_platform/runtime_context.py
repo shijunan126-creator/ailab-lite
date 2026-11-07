@@ -3,6 +3,8 @@
 from contextvars import ContextVar
 
 attempt_id_var: ContextVar[str | None] = ContextVar("runtime_attempt", default=None)
+temporary_deadline_var: ContextVar[float | None] = ContextVar("temporary_deadline", default=None)
+
 delivery_id_var: ContextVar[str | None] = ContextVar("runtime_delivery", default=None)
 
 

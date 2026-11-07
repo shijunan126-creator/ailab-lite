@@ -26,33 +26,57 @@ class ApiClient:
     def __init__(self, api):
         self.api = api
         self.renders = 0
+        self.attempt = None
+        self.closed_render_leases = set()
+
+    @property
+    def headers(self):
+        from ailab_platform.runtime_context import attempt_id_var
+
+        attempt = attempt_id_var.get() or self.attempt
+        return {**SERVICE, **({"X-Run-Attempt": attempt} if attempt else {})}
 
     def get_file(self, fid, job="processing", **binding):
-        response = self.api.get(f"/internal/files/{fid}", headers=SERVICE, params={"job": job, **binding})
+        response = self.api.get(f"/internal/files/{fid}", headers=self.headers, params={"job": job, **binding})
         response.raise_for_status()
         return response.json()
 
     def download_file(self, fid, target, job="processing", **kwargs):
         response = self.api.get(
-            f"/internal/files/{fid}/content", headers=SERVICE, params={"job": job, **{k: v for k, v in kwargs.items() if k != "max_bytes"}}
+            f"/internal/files/{fid}/content",
+            headers=self.headers,
+            params={"job": job, **{k: v for k, v in kwargs.items() if k != "max_bytes"}},
         )
         response.raise_for_status()
         assert len(response.content) <= kwargs["max_bytes"]
         target.write_bytes(response.content)
 
     def patch_file(self, fid, job="processing", **kwargs):
-        response = self.api.patch(f"/internal/files/{fid}", headers=SERVICE, json=kwargs, params={"job": job})
+        response = self.api.patch(f"/internal/files/{fid}", headers=self.headers, json=kwargs, params={"job": job})
         response.raise_for_status()
         return response.json()
 
     def complete_preview(self, fid, job_id, preview, assets):
         response = self.api.post(
-            f"/internal/files/{fid}/preview", headers=SERVICE, json={"job_id": job_id, "preview": preview, "assets": assets}
+            f"/internal/files/{fid}/preview", headers=self.headers, json={"job_id": job_id, "preview": preview, "assets": assets}
         )
         response.raise_for_status()
 
     def prepare_document(self, fid, scan):
-        response = self.api.post(f"/internal/files/{fid}/prepare-document", headers=SERVICE, json={"scan": scan})
+        if not self.attempt:
+            from sqlalchemy import select
+
+            from ailab_platform.models import OutboxMessage
+
+            with SessionLocal() as db:
+                job_id = db.scalar(
+                    select(OutboxMessage.id).where(
+                        OutboxMessage.payload["file_id"].as_string() == fid,
+                        OutboxMessage.payload["kind"].as_string() == "file",
+                    )
+                )
+            self.attempt = self._post(f"/internal/jobs/{job_id}/claim", {"consumer": "legacy-reader-fixture"})["token"]
+        response = self.api.post(f"/internal/files/{fid}/prepare-document", headers=self.headers, json={"scan": scan})
         response.raise_for_status()
         return response.json()
 
@@ -72,10 +96,20 @@ class ApiClient:
                 return super().exec(ref, command, timeout)
 
         class BoundPlatform:
+            def __getattr__(self, name):
+                return getattr(self_api, name)
+
             def get_file(self, file_id, **binding):
                 result = self_api.get_file(file_id, **binding)
                 with SessionLocal() as db:
                     result["render_owner_id"] = db.get(FileObject, file_id).user_id
+                    from sqlalchemy import select
+
+                    from ailab_platform.models import OutboxMessage
+
+                    result["meta"]["writer_job_id"] = db.scalar(
+                        select(OutboxMessage.id).where(OutboxMessage.claim_token == self_api.attempt)
+                    )
                 return result
 
             def download_file(self, *args, **kwargs):
@@ -91,7 +125,15 @@ class ApiClient:
             start_background=False,
         )
         try:
-            return DocumentReader(manager).read(fid, job_id)
+            from contextlib import nullcontext
+            from unittest.mock import patch
+
+            # Slow fixtures must heartbeat through their real TestClient API.
+            with patch("ailab_platform.clients.PlatformClient", lambda **kwargs: nullcontext(self_api)):
+                result = DocumentReader(manager).read(fid, job_id)
+            if result.get("render_lease_id"):
+                self.closed_render_leases.add(result["render_lease_id"])
+            return result
         finally:
             manager.close()
 
@@ -117,6 +159,66 @@ class ApiClient:
             "assets": {"p-01.jpg": {"key": key, "sha256": hashlib.sha256(b"jpeg").hexdigest(), "content_type": "image/jpeg"}},
         }
 
+    def finish_render(self, lease_id, *args):
+        # This fixture closes its manager synchronously after exporting.
+        assert lease_id in self.closed_render_leases
+        return {"reused": False}
+
+    def _post(self, path, body):
+        response = self.api.post(path, headers=self.headers, json=body)
+        response.raise_for_status()
+        return response.json()
+
+    def start_native(self, fid, jid):
+        return self._post(f"/internal/files/{fid}/native/start", {"job_id": jid})
+
+    def complete_native(self, fid, jid, **kwargs):
+        return self._post(f"/internal/files/{fid}/native/complete", {"job_id": jid, **kwargs})
+
+    def reserve_derived(self, **body):
+        return self._post("/internal/derived-assets/reserve", body)
+
+    def finish_derived(self, key, token):
+        return self._post("/internal/derived-assets/finish", {"key": key, "token": token})
+
+    def native_owned(self, file_id, job_id):
+        return self._post(f"/internal/files/{file_id}/native/owned", {"job_id": job_id})
+
+    def start_file_work(self, job_id):
+        from ailab_platform.runtime_context import attempt_id_var
+
+        self.attempt = attempt_id_var.get() or self.attempt
+        if not self.attempt:
+            claim = self._post(f"/internal/jobs/{job_id}/claim", {"consumer": "preview-fixture"})
+            if claim.get("state") == "done":
+                return {"status": "ready"}
+            self.attempt = claim["token"]
+        return self._post(f"/internal/file-work/{job_id}/start", {})
+
+    def file_work_owned(self, job_id):
+        return self._post(f"/internal/file-work/{job_id}/owned", {})
+
+    def defer_file_work(self, job_id):
+        return self._post(f"/internal/file-work/{job_id}/defer", {})
+
+    def abandon_derived_writer(self, job_id):
+        return self._post("/internal/derived-assets/abandon-writer", {"job_id": job_id})
+
+    def abandon_derived(self, key, token):
+        return self._post("/internal/derived-assets/abandon", {"key": key, "token": token})
+
+    def reserve_derived_batch(self, items):
+        return self._post("/internal/derived-assets/reserve-batch", {"items": items})
+
+    def finish_derived_batch(self, items):
+        return self._post("/internal/derived-assets/finish-batch", {"items": items})
+
+    def abandon_derived_batch(self, items):
+        return self._post("/internal/derived-assets/abandon-batch", {"items": items})
+
+    def discard_derived_batch(self, items):
+        return self._post("/internal/derived-assets/discard-batch", {"items": items})
+
 
 @pytest.fixture
 def api(monkeypatch):
@@ -126,10 +228,18 @@ def api(monkeypatch):
         yield client
 
 
-def upload(api, name, data=b"hello", mime="application/octet-stream", *, process=True):
+def upload(api, name, data=None, mime="application/octet-stream", *, process=True, legacy=False):
+    if data is None:
+        from tests.document_fixtures import minimal_file
+
+        data = minimal_file(name, mime)
     r = api.post("/v1/files?disposition=copy", headers=AUTH, files={"upload": (name, data, mime)})
     assert r.status_code == 201
     fid = r.json()["id"]
+    if legacy:
+        from tests.document_fixtures import legacy_pending
+
+        legacy_pending(fid)
     if process:
         process_file(fid, platform=ApiClient(api))
         # Simulate asynchronous dispatch of eager legacy-format jobs.
@@ -156,8 +266,10 @@ def preview(api, fid):
         ("test.log", "plain", None),
     ],
 )
-def test_text_preview_no_job_and_plain_asset(api, name, fmt, language):
+def test_text_preview_prepares_on_open_then_serves_plain_asset(api, name, fmt, language):
     fid = upload(api, name, b"<script>alert(1)</script>")
+    assert preview(api, fid) == {"status": "pending", "kind": "text"}
+    process_preview(fid, ApiClient(api).get_file(fid)["meta"]["preview_job_id"], ApiClient(api))
     assert preview(api, fid) == {
         "status": "ready",
         "kind": "text",
@@ -179,6 +291,8 @@ def test_text_preview_no_job_and_plain_asset(api, name, fmt, language):
 
 def test_text_cap_and_unsupported(api):
     fid = upload(api, "long.txt", ("字" * 210_000).encode())
+    assert preview(api, fid)["status"] == "pending"
+    process_preview(fid, ApiClient(api).get_file(fid)["meta"]["preview_job_id"], ApiClient(api))
     assert preview(api, fid)["truncated"] is True
     assert len(api.get(f"/v1/files/{fid}/preview/text.txt", headers=AUTH).text) == 200_000
     fid = upload(api, "unknown.bin")
@@ -232,13 +346,15 @@ def test_images_svg_and_lazy_existing_image(api):
     out = io.BytesIO()
     Image.new("RGB", (2400, 1200), "red").save(out, "JPEG")
     fid = upload(api, "photo.jpg", out.getvalue(), "image/jpeg")
+    assert preview(api, fid) == {"status": "pending", "kind": "image"}
+    process_preview(fid, ApiClient(api).get_file(fid)["meta"]["preview_job_id"], ApiClient(api))
     assert preview(api, fid) == {"status": "ready", "kind": "image", "image": "display.webp"}
     data = api.get(f"/v1/files/{fid}/preview/display.webp", headers=AUTH).content
     with Image.open(io.BytesIO(data)) as image:
         assert image.size == (2048, 1024)
     with SessionLocal() as db:
         file = db.get(FileObject, fid)
-        file.meta = {"source": "sandbox"}
+        file.meta = {"source": "sandbox", "scan": {"verdict": "clean"}}
         db.commit()
     assert preview(api, fid)["status"] == "pending"
     p = ApiClient(api)
@@ -251,7 +367,13 @@ def test_images_svg_and_lazy_existing_image(api):
 
 
 def test_failed_never_auto_retries_and_delete_cleans_every_derivative(api):
-    fid = upload(api, "broken.xlsx", b"broken")
+    import zipfile
+
+    malformed = io.BytesIO()
+    with zipfile.ZipFile(malformed, "w") as archive:
+        archive.writestr("[Content_Types].xml", "<Types/>")
+        archive.writestr("xl/workbook.xml", "<workbook/>")
+    fid = upload(api, "broken.xlsx", malformed.getvalue())
     assert preview(api, fid)["status"] == "pending"
     p = ApiClient(api)
     process_preview(fid, p.get_file(fid)["meta"]["preview_job_id"], platform=p)
@@ -380,6 +502,7 @@ def test_preview_asset_disconnect_closes_stream(api, monkeypatch):
 
     fid = upload(api, "close.txt")
     preview(api, fid)
+    process_preview(fid, ApiClient(api).get_file(fid)["meta"]["preview_job_id"], ApiClient(api))
     storage = get_storage()
     closed = []
 
@@ -465,3 +588,34 @@ def test_text_artifact_without_extracted_text_gets_a_preview(api, encoding):
     assert api.get(f"/v1/files/{file['file_id']}/preview").json()["status"] == "ready"
     text = api.get(f"/v1/files/{file['file_id']}/preview/text.txt")
     assert text.text == "中文第一行\n第二行"
+
+
+def test_explicit_image_ocr_prepares_normalized_pixels_lazily_without_inference(api, monkeypatch):
+    monkeypatch.setattr(settings, "ocr_executor_url", "http://unused-executor.invalid")
+    output = io.BytesIO()
+    Image.new("RGB", (80, 60), "white").save(output, "PNG")
+    fid = upload(api, "lazy-ocr.png", output.getvalue(), "image/png")
+    request = api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
+    assert request.status_code == 200, request.text
+    assert request.json()["ocr"] == "pending"
+    prepared = api.post(f"/internal/files/{fid}/ocr/prepare", headers=SERVICE)
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["ocr"] == "pending" and prepared.json()["preview_job_id"]
+    platform = ApiClient(api)
+    process_preview(fid, prepared.json()["preview_job_id"], platform)
+    again = api.post(f"/internal/files/{fid}/ocr/prepare", headers=SERVICE)
+    assert again.status_code == 200 and again.json() == {"ocr": "pending"}
+    with SessionLocal() as db:
+        file = db.get(FileObject, fid)
+        assert file.meta["display_key"] and file.meta["ocr"] == "pending"
+        assert not file.meta.get("ocr_text_key")
+
+
+def test_sandbox_sheet_outline_is_optional_and_never_trusted_when_malformed():
+    from ailab_platform.contracts.file_preview import sheet_ranges, sheet_starts
+
+    good = [{"sheet": "A", "first_page": 1}, {"sheet": "B", "first_page": 3}]
+    assert sheet_starts(good, 4) == good
+    assert sheet_ranges(good, 4) == [{"sheet": "A", "pages": [1, 2]}, {"sheet": "B", "pages": [3, 4]}]
+    for bad in (None, [], "A", [{"sheet": "A"}], good[::-1], [{"sheet": "A", "first_page": 5}], [{"sheet": "", "first_page": 1}]):
+        assert sheet_starts(bad, 4) is None

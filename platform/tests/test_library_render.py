@@ -24,6 +24,8 @@ def setup_renderer(tmp_path, content, filename):
         "render_owner_id": "user_test",
         "status": "ready",
         "filename": filename,
+        "sha256": hashlib.sha256(content).hexdigest(),
+        "size": len(content),
         "meta": {"preview_job_id": "job", "preview": {"status": "pending"}},
     }
     api.download_file = lambda fid, target, **bound: Path(target).write_bytes(content)
@@ -306,9 +308,44 @@ def test_template_real_sandbox_preview_includes_cached_first_page_thumbnail(tmp_
     assert len(result["preview"]["pages"]) == 2
     assert set(result["assets"]) == {*result["preview"]["pages"], "template-thumbnail.jpg"}
     asset = result["assets"]["template-thumbnail.jpg"]
-    assert asset["key"] == "derived/file/preview/template-thumbnail.jpg"
+    assert asset["key"] == "derived/file/preview/job/template-thumbnail.jpg"
     with Image.open(io.BytesIO(storage.get_bytes(asset["key"]))) as image:
         assert image.format == "JPEG" and image.width == 480
     published(manager, result)
     manager.release(result["render_lease_id"])
     assert manager.active_leases() == []
+
+
+@pytest.mark.skipif(
+    not all(shutil.which(x) for x in ["soffice", "pdftoppm", "pdfinfo", "timeout", "tar"]), reason="Office tools unavailable"
+)
+def test_workbook_render_reports_where_each_printed_sheet_starts(tmp_path):
+    from openpyxl import Workbook
+
+    book = Workbook()
+    book.active.title = "Alpha"
+    for row in range(1, 120):
+        book.active.append([f"alpha {row}", row])
+    book.create_sheet("Empty")
+    hidden = book.create_sheet("Hidden")
+    hidden["A1"], hidden.sheet_state = "hidden", "hidden"
+    book.create_sheet("Gamma")["A1"] = "gamma"
+    data = io.BytesIO()
+    book.save(data)
+    content = data.getvalue()
+    manager, renderer, _ = setup_renderer(tmp_path, content, "book.xlsx")
+    original = manager.platform.get_file
+    manager.platform.get_file = lambda fid, **bound: {
+        **original(fid, **bound),
+        "meta": {"preview_job_id": "job", "preview": {"status": "pending"}, "ocr_render_job_id": "job", "ocr_render_pages": [1]},
+    }
+    outlines = []
+    manager.platform.publish_preview_page = lambda fid, job, name, count, asset, **extra: outlines.append((name, count, extra))
+    # The second render converts nothing: the cached PDF keeps the outline.
+    for _ in range(2):
+        result = renderer.render("file", "job")
+        published(manager, result)
+    (name, count, extra), cached = outlines
+    assert name == "p-1.png" and cached == outlines[0]
+    assert extra["sheet_pages"] == [{"sheet": "Alpha", "first_page": 1}, {"sheet": "Gamma", "first_page": count}]
+    assert count > 2  # Alpha spans several pages; Empty and Hidden print none

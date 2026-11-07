@@ -107,7 +107,14 @@ def test_registry_visibility_permissions_quota_and_library_exclusion(api):
     _, search_run = start(api)
     search = api.post(f"/internal/runs/{search_run['id']}/library/search", headers=SERVICE, json={"query": "demo"})
     assert search.status_code == 200 and search.json()["files"] == []
-    assert api.post(f"/internal/runs/{search_run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 404
+    assert (
+        api.post(
+            f"/internal/runs/{search_run['id']}/library/authorize-copy",
+            headers=attempt_headers(api, search_run["id"]),
+            json={"file_id": fid},
+        ).status_code
+        == 404
+    )
     assert api.post("/v1/shares", json={"kind": "file", "file_id": fid, "audience": "everyone"}).status_code == 404
     with SessionLocal() as db:
         file = db.get(FileObject, fid)

@@ -188,12 +188,18 @@ def drain_object_deletions(db: Session, storage) -> int:
                 page = storage.list_prefix(job.key, limit=budget)
                 for item in page:
                     storage.delete(item.key)
+                    from .derived_assets import forget_deleted
+
+                    forget_deleted(db, item.key)
                 budget -= len(page.items)
                 if page.cursor:
                     db.commit()
                     continue
             else:
                 storage.delete(job.key)
+                from .derived_assets import forget_deleted
+
+                forget_deleted(db, job.key)
                 budget -= 1
             kind = job.kind
             db.delete(job)
@@ -443,8 +449,13 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 purge_episodes_for_runs(db, ids)
                 # the usage ledger stays: what these runs cost still counts
                 from ..models import ClientCall, ViewerCapture
+                from .viewer_captures import release_runs
 
-                for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids))):
+                release_runs(db, ids)
+                from ..models import DerivedAssetRef
+
+                surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == ViewerCapture.storage_key).exists()
+                for key in db.scalars(select(ViewerCapture.storage_key).where(ViewerCapture.run_id.in_(ids), ~surviving)):
                     _schedule_delete(db, key, "conversation")
                 for model in (RunEvent, Artifact, ClientCall, ViewerCapture):
                     db.execute(delete(model).where(model.run_id.in_(ids)))
@@ -549,21 +560,60 @@ def lifecycle_once(db: Session, storage=None, now: datetime | None = None) -> di
 
 
 async def lifecycle_cleanup_forever() -> None:
-    def tick():
+    def tick(full):
         queue = get_queue()
-        token = queue.acquire_lock("ailab:lock:lifecycle-gc", settings.gc_interval_seconds)
-        if token is None:
-            return
-        # Retain the lock until expiry, so API replicas share one pass per interval.
-        with SessionLocal() as db:
-            lifecycle_once(db)
+        if full:
+            token = queue.acquire_lock("ailab:lock:lifecycle-gc", settings.gc_interval_seconds)
+            if token is not None:
+                with SessionLocal() as db:
+                    lifecycle_once(db)
+        # Local writer .tmp files have their own persisted leases. Scan their
+        # small expiry index every minute without repeating hourly business GC.
+        token = queue.acquire_lock("ailab:lock:storage-metadata-gc", settings.derived_maintenance_interval_seconds)
+        if token is not None:
+            maintenance = getattr(get_storage(), "maintenance", None)
+            if maintenance:
+                maintenance(limit=settings.gc_batch_size)
+            from .derived_assets import backfill_batch, collect_batch, evict_oldest, invalidate_workspace_ocr
 
+            with SessionLocal() as db:
+                from ..models import DerivedBudget
+
+                deadline = time.monotonic() + 0.5
+                for _ in range(10):
+                    if time.monotonic() >= deadline:
+                        break
+                    backfill_batch(db, get_storage())
+                    db.commit()
+                    if db.get(DerivedBudget, 1, populate_existing=True).backfill_complete:
+                        break
+                from .document_operations import maintenance as operation_maintenance
+
+                operation_maintenance(db)
+                from .document_preparation import maintenance as preparation_maintenance
+
+                preparation_maintenance(db)
+                invalidate_workspace_ocr(db)
+                db.commit()
+                collect_batch(db, get_storage())
+                evict_oldest(db, get_storage())
+
+    import time
+
+    try:
+        await asyncio.to_thread(tick, False)
+    except Exception:
+        log.exception("initial derivative metadata maintenance failed; next tick retries")
+    next_full = time.monotonic() + settings.gc_interval_seconds
     while True:
-        await asyncio.sleep(settings.gc_interval_seconds)
+        await asyncio.sleep(min(settings.gc_interval_seconds, settings.derived_maintenance_interval_seconds))
+        full = time.monotonic() >= next_full
         try:
-            await asyncio.to_thread(tick)
+            await asyncio.to_thread(tick, full)
         except Exception:
             log.exception("lifecycle tick failed; next interval retries")
+        if full:
+            next_full = time.monotonic() + settings.gc_interval_seconds
 
 
 def purge_expired_trash(db: Session, now: datetime | None = None, *, batch_size: int = 200) -> int:

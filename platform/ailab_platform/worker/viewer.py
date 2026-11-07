@@ -46,18 +46,31 @@ def build(file_id, version, filename, size, parsed):
     return result
 
 
-def process_viewer(platform, file_id):
-    import tempfile
+def process_viewer(platform, file_id, *, job_id=None):
+    from ..derived_writes import accounted_writes
+    from ..storage import get_storage
+
+    if job_id is None:
+        return _process_viewer(platform, file_id, get_storage())
+    file = platform.get_file(file_id, job="viewer")
+    with accounted_writes(get_storage(), platform, file["sha256"], job_id) as writer:
+        result = _process_viewer(platform, file_id, writer, job_id=job_id)
+        if result.get("status") != "pending":
+            writer.handoff()
+        return result
+
+
+def _process_viewer(platform, file_id, storage, *, job_id=None):
     from pathlib import Path
 
-    from ..storage import get_storage
+    from ..owned_temporary import directory as temporary_directory
     from .pipeline import download
 
     file = platform.get_file(file_id, job="viewer")
-    storage = get_storage()
-    key = f"derived/{file_id}/viewer.json"
-    if storage.exists(key) and storage.size(key) <= 4 * 1024**2:
-        cached = json.loads(storage.get_bytes(key))
+    cached_key = (file.get("meta") or {}).get("viewer_key") or f"derived/{file_id}/viewer.json"
+    key = f"derived/{file_id}/viewer/{PARSER_REVISION}/{job_id}.json" if job_id else cached_key
+    if storage.exists(cached_key) and storage.size(cached_key) <= 4 * 1024**2:
+        cached = json.loads(storage.get_bytes(cached_key))
         if cached.get("version") == file["sha256"] and cached.get("parser_revision") == PARSER_REVISION:
             return cached
     kind = Path(file["filename"]).suffix.lower().removeprefix(".")
@@ -75,13 +88,13 @@ def process_viewer(platform, file_id):
         }
         storage.put_bytes(key, json.dumps(result).encode(), "application/json")
         return result
-    with tempfile.TemporaryDirectory(prefix="ailab-viewer-") as directory:
+    with temporary_directory(prefix="ailab-viewer-") as directory:
         source = Path(directory) / ("source" + Path(file["filename"]).suffix.lower())
         download(platform, file_id, source, 20 * 1024**2, job="viewer")
-        return derive(file, source, storage, Path(directory) / "read")
+        return derive(file, source, storage, Path(directory) / "read", key=key)
 
 
-def derive(file, source, storage, output):
+def derive(file, source, storage, output, *, key=None):
     from ..config import settings
     from .isolate import IsolationError
 
@@ -102,21 +115,21 @@ def derive(file, source, storage, output):
             "native": False,
             "reason": "viewer_reader_unavailable",
         }
-    storage.put_bytes(f"derived/{file['id']}/viewer.json", json.dumps(result, ensure_ascii=False).encode(), "application/json")
+    storage.put_bytes(key or f"derived/{file['id']}/viewer.json", json.dumps(result, ensure_ascii=False).encode(), "application/json")
     return result
 
 
 def check(platform, file_id, version, selections):
-    import tempfile
     from pathlib import Path
 
     from ..config import settings
+    from ..owned_temporary import directory as temporary_directory
     from .pipeline import download
 
     file = platform.get_file(file_id, job="viewer")
     if file["sha256"] != version:
         raise ValueError("version changed")
-    with tempfile.TemporaryDirectory(prefix="ailab-viewer-check-") as directory:
+    with temporary_directory(prefix="ailab-viewer-check-") as directory:
         source = Path(directory) / ("source" + Path(file["filename"]).suffix.lower())
         download(platform, file_id, source, 20 * 1024**2, job="viewer")
         with source.open("rb") as stream:

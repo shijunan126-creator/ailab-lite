@@ -2,14 +2,23 @@
 
 import hashlib
 import json
-from pathlib import PurePosixPath
+from functools import lru_cache
+from pathlib import Path, PurePosixPath
 
 from ..skill_registry import BASE_SKILLS, catalog, resolve_name
 
 SUMMARY_MARKER = "\n已读模块索引（仅供导航，正文须按需重读）："
 
 
-def read_module(name, mode, resource=None):
+@lru_cache(maxsize=1)
+def document_guides():
+    guides = json.loads(Path(__file__).with_name("office_guides_v2.json").read_text())
+    if guides.get("version") != 2:
+        raise ValueError("document guide version unavailable")
+    return guides
+
+
+def read_module(name, mode, resource=None, *, document_tools_version=1):
     entry = catalog().get(name)
     if entry is None:
         raise ValueError("unknown skill")
@@ -19,7 +28,14 @@ def read_module(name, mode, resource=None):
     common = {"ok": True, "name": name, "version": entry["version"], "package_hash": entry["sha256"], "mode": mode}
     if mode == "work":
         common["base_path"] = f"/opt/skills/{name}"
+    overlay = None
+    if document_tools_version == 2:
+        overlay = document_guides()["formats"][name.removeprefix("platform.")][mode]
+        common["guide_revision"] = hashlib.sha256(json.dumps(overlay, sort_keys=True).encode()).hexdigest()
     if resource is None:
+        if overlay is not None:
+            text = overlay["navigation"]
+            return {**common, "skill": text, "navigation": True, "hash": hashlib.sha256(text.encode()).hexdigest()}
         text = entry["path"].read_text()
         if mode == "chat":
             import re
@@ -39,6 +55,29 @@ def read_module(name, mode, resource=None):
     data = path.read_bytes()
     if hashlib.sha256(data).hexdigest() != module["sha256"]:
         raise ValueError("resource hash mismatch; rebuild context with the installed package")
+    adapted_resource = None
+    if overlay is not None:
+        adapted_resource = (
+            {"source_sha256": overlay["viewer_source_sha256"], "text": overlay["viewer"]}
+            if resource == "viewer/SKILL.md"
+            else overlay.get("resources", {}).get(resource)
+        )
+    if adapted_resource is not None:
+        if module["sha256"] != adapted_resource["source_sha256"]:
+            raise ValueError("document guide source changed; regenerate versioned guides")
+        data = adapted_resource["text"].encode()
+        from ..model_policy import estimator
+
+        return {
+            **common,
+            "resource": resource,
+            "hash": hashlib.sha256(data).hexdigest(),
+            "module_hash": module["sha256"],
+            "estimated_tokens": estimator.raw(data.decode()),
+            "deps": module["deps"],
+            "complete": True,
+            "skill": data.decode(),
+        }
     return {
         **common,
         "resource": resource,

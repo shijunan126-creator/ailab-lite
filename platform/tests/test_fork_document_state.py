@@ -17,6 +17,7 @@ from ailab_platform.models import (
     QueuedMessage,
     Run,
 )
+from tests.document_fixtures import legacy_run
 from tests.test_conversations import _finish
 from tests.test_document_context import AUTH, SERVICE, upload
 
@@ -24,7 +25,7 @@ from tests.test_document_context import AUTH, SERVICE, upload
 def seed(c):
     fid = upload(c, "original.txt", b"original file evidence", "text/plain")
     conv = c.post("/v1/conversations", headers=AUTH, json={}).json()
-    run = c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "read", "mode": "work"}).json()
+    run = legacy_run(c.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "read", "mode": "work"}).json())
     assert c.post(f"/internal/runs/{run['id']}/library/read", headers=SERVICE, json={"file_id": fid}).status_code == 200
     with SessionLocal() as db:
         owner = db.get(Run, run["id"]).user_id
@@ -166,7 +167,7 @@ def test_picked_skill_keeps_mode_for_attachment_admission():
         fid = upload(c, "partial.txt", ("字" * 200010).encode(), "text/plain")
         response = c.post("/v1/runs", headers=AUTH, json={"prompt": "read ranges", "mode": "chat", "skill": "pptx", "file_ids": [fid]})
         assert response.status_code == 422
-        assert response.json()["detail"]["code"] == "chat_attachment_too_large"
+        assert response.json()["detail"]["code"] == "chat_attachment_unavailable"
         response = c.post("/v1/runs", headers=AUTH, json={"prompt": "read ranges", "mode": "work", "skill": "pptx", "file_ids": [fid]})
         assert response.status_code == 201, response.text
         run = response.json()

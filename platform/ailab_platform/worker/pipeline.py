@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 import json
 import logging
-import tempfile
 import time
 from dataclasses import asdict
 from pathlib import Path, PurePath
@@ -14,6 +13,7 @@ from PIL import Image
 
 from ..clients import PlatformClient
 from ..config import settings
+from ..owned_temporary import directory as temporary_directory
 from ..ports.scanner import get_scanner
 from ..storage import Storage
 from .isolate import IsolationError, execute
@@ -45,7 +45,7 @@ def download(platform: PlatformClient, file_id: str, target: Path, max_bytes: in
         target.write_bytes(data)
 
 
-def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Path) -> dict:
+def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Path, *, prefix=None) -> dict:
     if (
         source.stat().st_size > MAX_THUMBNAIL_BYTES
         or meta.get("content_type") == "image/svg+xml"
@@ -64,7 +64,7 @@ def _images(file_id: str, source: Path, meta: dict, storage: Storage, output: Pa
         )
         result = {}
         for name, field in [("thumb.webp", "thumb_key"), ("display.webp", "display_key")]:
-            key = f"derived/{file_id}/{name}"
+            key = (prefix or f"derived/{file_id}/") + name
             storage.put_bytes(key, (output / name).read_bytes(), "image/webp")
             result[field] = key
         return result
@@ -86,7 +86,7 @@ def _template_thumbnail(file_id, source, storage, output):
 
 
 def extract(data: bytes, filename: str, content_type: str) -> dict:
-    with tempfile.TemporaryDirectory(prefix="ailab-extract-") as tmp:
+    with temporary_directory(prefix="ailab-extract-") as tmp:
         source = Path(tmp) / ("input" + PurePath(filename).suffix.lower())
         source.write_bytes(data)
         try:
@@ -105,6 +105,24 @@ def process_file(
 
 
 def _process_file(file_id: str, platform: PlatformClient, storage: Storage | None, *, thumbnail_only: bool) -> dict:
+    from ..derived_writes import accounted_writes
+    from ..runtime_context import attempt_id_var
+    from ..storage import get_storage
+
+    raw = storage or get_storage()
+    attempt = attempt_id_var.get()
+    if not attempt or not hasattr(platform, "reserve_derived"):
+        return _process_file_impl(file_id, platform, raw, thumbnail_only=thumbnail_only)
+    file = platform.get_file(file_id, job="thumbnail" if thumbnail_only else "processing")
+    # API returns its own durable writer id, not a model-selected key.
+    job_id = (file.get("meta") or {}).get("writer_job_id") or (
+        "thumb_" + file_id if thumbnail_only else (file.get("meta") or {}).get("processing_job_id")
+    )
+    with accounted_writes(raw, platform, file["sha256"], job_id) as bounded:
+        return _process_file_impl(file_id, platform, bounded, thumbnail_only=thumbnail_only)
+
+
+def _process_file_impl(file_id: str, platform: PlatformClient, storage: Storage | None, *, thumbnail_only: bool) -> dict:
     from ..storage import get_storage
 
     storage = storage or get_storage()
@@ -118,14 +136,20 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         return {"file_id": file_id, "skipped": meta.get("status")}
     if not thumbnail_only and (meta.get("meta") or {}).get("scan_exhausted"):
         return {"file_id": file_id, "skipped": "scan_exhausted"}
-    if not thumbnail_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
+    flags = meta.get("meta") or {}
+    safety_only = (
+        flags.get("input_lifecycle") == 2
+        and meta.get("purpose", "library") == "library"
+        and not any(flags.get(name) for name in ("template_kind", "brand_kind", "skill_claim"))
+    )
+    if not thumbnail_only and not safety_only and PurePath(meta["filename"]).suffix.lower() in {".pdf", ".docx", ".pptx", ".xlsx"}:
         hint = getattr(platform, "prewarm_render", None)
         if hint:
             try:
                 hint()
             except Exception:
                 log.warning("render prewarm hint failed")
-    with tempfile.TemporaryDirectory(prefix="ailab-file-") as tmp:
+    with temporary_directory(prefix="ailab-file-") as tmp:
         source = Path(tmp) / ("input" + PurePath(meta["filename"]).suffix.lower())
         download(
             platform,
@@ -159,21 +183,30 @@ def _process_file(file_id: str, platform: PlatformClient, storage: Storage | Non
         if scan["verdict"] == "infected":
             platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan}, status="rejected")
             return {"file_id": file_id, "rejected": scan}
+        if safety_only:
+            try:
+                safety = execute("safety", source, Path(tmp) / "safety", filename=meta["filename"])
+                if safety["sha256"] != meta.get("sha256") or safety["bytes"] != meta.get("size"):
+                    raise IsolationError("file_integrity_mismatch")
+            except IsolationError as exc:
+                platform.patch_file(file_id, meta={"processing": "rejected", "scan": scan, "safety_reason": str(exc)}, status="rejected")
+                return {"file_id": file_id, "rejected": str(exc)}
+            platform.patch_file(
+                file_id,
+                meta={
+                    "processing": "done",
+                    "scan": scan,
+                    "safety": safety,
+                    "representations": {
+                        name: {"status": "absent", "version": safety["sha256"]} for name in ("native_text", "page_images", "ocr_text")
+                    },
+                },
+                status="ready",
+            )
+            return {"file_id": file_id, "kind": safety["kind"], "safety_ready": True}
         # Commit the scanner verdict before any parser starts. The API stages a
         # preview in the same transaction, independently of parsing readiness.
-        scanned_file = platform.patch_file(file_id, meta={"scan": scan})
-        # Give the preview the standby before the document reader competes for
-        # the same reserved capacity. The durable outbox remains the retry path.
-        if settings.render_prewarm and isinstance(scanned_file, dict):
-            preview_meta = scanned_file.get("meta") or {}
-            job_id = preview_meta.get("preview_job_id")
-            if job_id and (preview_meta.get("preview") or {}).get("status") == "pending":
-                from .preview import process_preview
-
-                try:
-                    process_preview(file_id, job_id, platform)
-                except Exception:
-                    log.warning("early preview failed; durable preview job will retry", exc_info=True)
+        platform.patch_file(file_id, meta={"scan": scan})
         if (meta.get("meta") or {}).get("template_kind"):
             try:
                 analysis = execute("template", source, Path(tmp) / "template")

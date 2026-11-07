@@ -207,8 +207,18 @@ export async function parseXlsx(bytes: Uint8Array, label: string): Promise<Parse
     return renderRange(sheet, bounds, formatSheet(sheet.name));
   }
 
+  let nonemptyCells = 0;
+  for (const sheet of sheets) {
+    sheet.eachRow({ includeEmpty: false }, (row) => {
+      row.eachCell({ includeEmpty: false }, (cell) => {
+        if ((!cell.isMerged || cell.master === cell) && cell.value !== null && cell.value !== undefined && cell.value !== "")
+          nonemptyCells++;
+      });
+    });
+  }
   return {
     kind: "xlsx",
+    nonemptyCells,
     contentInfo(anchor) {
       const locator = parseSheetAnchor(anchor);
       const sheet = findSheet(locator);

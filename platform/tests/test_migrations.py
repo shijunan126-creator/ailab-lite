@@ -1079,3 +1079,30 @@ def test_branch_revision_upgrade_downgrade_preserves_history(engine):
     with engine.connect() as conn:
         assert conn.scalar(text("SELECT title FROM conversations WHERE id='branch-c'")) == "title"
     _upgrade_to(engine, "0052")
+
+
+def test_derived_budget_roundtrip_preserves_files_and_restarts_backfill(engine):
+    _upgrade_to(engine, "0052")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT used_bytes, reserved_bytes, backfill_complete FROM derived_budget WHERE id=1")).one()
+        assert tuple(row) == (0, 0, False)
+    _downgrade_to(engine, "0052")
+    with engine.connect() as conn:
+        assert conn.execute(text("SELECT id FROM runs WHERE id='r1'")).scalar() == "r1"
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_native_ranges_roundtrip_preserves_legacy_block_shape(engine):
+    _upgrade_to(engine, "0053")
+    _upgrade_to(engine, "head")
+    assert {column["name"] for column in inspect(engine).get_columns("document_blocks")} >= {"byte_offset", "byte_size"}
+    _downgrade_to(engine, "0053")
+    assert "byte_offset" not in {column["name"] for column in inspect(engine).get_columns("document_blocks")}
+    _upgrade_to(engine, "head")
+    with engine.connect() as conn:
+        assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []

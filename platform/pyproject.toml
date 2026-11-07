@@ -66,3 +66,5 @@ fail_under = 80
 
 [tool.setuptools.package-data]
 "ailab_platform.contracts.genui" = ["*.md", "*.json"]
+
+"ailab_platform.agent" = ["office_guides_v2.json"]

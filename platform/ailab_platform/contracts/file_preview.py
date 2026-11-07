@@ -69,7 +69,7 @@ class FilePreview(BaseModel):
 
 class PreviewAsset(BaseModel):
     key: str = Field(max_length=500)
-    content_type: Literal["image/jpeg", "image/png", "application/json", "text/plain; charset=utf-8"]
+    content_type: Literal["image/jpeg", "image/png", "image/webp", "application/json", "text/plain; charset=utf-8"]
     sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
@@ -79,11 +79,47 @@ class PreviewCompletion(BaseModel):
     assets: dict[str, PreviewAsset] = Field(default_factory=dict, max_length=41)
 
 
+class SheetStart(BaseModel):
+    sheet: str = Field(min_length=1, max_length=120)
+    first_page: int = Field(ge=1, le=100000)
+
+
 class PreviewPagePublication(BaseModel):
     job_id: str = Field(min_length=1, max_length=40)
     name: str = Field(pattern=r"^p-\d+\.(?:jpg|png)$", max_length=30)
     page_count: int = Field(ge=1, le=100000)
     asset: PreviewAsset
+    # Spreadsheet renders only: where each printed sheet starts in this PDF.
+    sheet_pages: list[SheetStart] | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def ordered_sheets(self):
+        if self.sheet_pages and not ordered_starts([item.first_page for item in self.sheet_pages], self.page_count):
+            raise ValueError("sheet pages must increase within the document")
+        return self
+
+
+def ordered_starts(starts: list[int], page_count: int) -> bool:
+    return starts == sorted(set(starts)) and starts[-1] <= page_count
+
+
+def sheet_starts(value, page_count: int) -> list[dict] | None:
+    """Validated sandbox sheet outline, or None: the mapping is optional metadata."""
+    from pydantic import TypeAdapter, ValidationError
+
+    try:
+        starts = TypeAdapter(list[SheetStart]).validate_python(value) if value else []
+    except ValidationError:
+        return None
+    if not starts or len(starts) > 200 or not ordered_starts([item.first_page for item in starts], page_count):
+        return None
+    return [item.model_dump() for item in starts]
+
+
+def sheet_ranges(starts: list[dict], page_count: int) -> list[dict]:
+    """Inclusive rendered-page range of each printed sheet."""
+    ends = [item["first_page"] - 1 for item in starts[1:]] + [page_count]
+    return [{"sheet": item["sheet"], "pages": [item["first_page"], end]} for item, end in zip(starts, ends, strict=True)]
 
 
 def preview_kind(filename: str, content_type: str) -> str | None:

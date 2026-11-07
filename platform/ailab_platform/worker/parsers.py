@@ -5,36 +5,9 @@ from __future__ import annotations
 import warnings
 from pathlib import Path, PurePath
 
+from ..contracts.file_types import TEXT_SUFFIXES
+
 MAX_TEXT = 200_000
-TEXT_SUFFIXES = {
-    ".txt",
-    ".md",
-    ".markdown",
-    ".csv",
-    ".tsv",
-    ".json",
-    ".yaml",
-    ".yml",
-    ".xml",
-    ".html",
-    ".log",
-    ".py",
-    ".sh",
-    ".js",
-    ".ts",
-    ".tsx",
-    ".jsx",
-    ".css",
-    ".sql",
-    ".go",
-    ".rs",
-    ".java",
-    ".c",
-    ".cpp",
-    ".h",
-    ".toml",
-    ".ini",
-}
 
 
 def images(source: Path, out: Path, options: dict) -> dict:
@@ -151,6 +124,18 @@ def extract_path(data: Path, filename: str, content_type: str) -> dict:
 
 
 def run(operation: str, source: Path, output: Path, options: dict) -> dict:
+    if operation == "ocr_image":
+        from ..image_regions import prepare
+
+        return {"image": "image.jpg", **prepare(source, output, options.get("region"))}
+    if operation == "native_text":
+        from .plain_text import prepare
+
+        return prepare(source, output)
+    if operation == "safety":
+        from .safety import inspect
+
+        return inspect(source, options.get("filename", source.name))
     if operation == "viewer":
         from .viewer_reader import read
 

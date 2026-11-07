@@ -94,28 +94,33 @@ def attachment_manifest(db, run, *, file_ids=None, message_id=None, message_kind
     ]
 
 
-def index_document(db, file, key):
+def index_document(db, file, key, *, manifest=None, kind="native"):
     prefix = key.rsplit("/", 1)[0] + "/"
     if not re.fullmatch(r"derived/" + re.escape(file.id) + r"/office/[a-zA-Z0-9_-]{1,100}/manifest\.json", key):
         raise HTTPException(422, "invalid document manifest")
-    storage = get_storage()
-    if storage.size(key) > 8 * 1024 * 1024:
-        raise HTTPException(413, "document index too large")
-    manifest = json.loads(storage.get_bytes(key))
-    fingerprint = hashlib.sha256((file.sha256 + manifest["parser"]).encode()).hexdigest()
+    if manifest is None:
+        storage = get_storage()
+        if storage.size(key) > 8 * 1024 * 1024:
+            raise HTTPException(413, "document index too large")
+        manifest = json.loads(storage.get_bytes(key))
+    # A rebuilt generation must not resolve to a retired row whose assets are
+    # already collected; cursors remain bound to their original immutable index.
+    identity = file.sha256 + manifest["parser"] + (key if manifest.get("version") == 2 else "")
+    fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     old = db.scalar(
         select(FileDerivation).where(
-            FileDerivation.file_id == file.id, FileDerivation.kind == "native", FileDerivation.fingerprint == fingerprint
+            FileDerivation.file_id == file.id, FileDerivation.kind == kind, FileDerivation.fingerprint == fingerprint
         )
     )
     if old:
         return old
     units = manifest["units"]
-    if len(units) > 100000 or manifest["status"] not in {"ready", "partial"}:
+    ranged = manifest.get("version") == 2
+    if len(units) > (10000 if ranged else 100000) or manifest["status"] not in {"ready", "partial"}:
         raise HTTPException(422, "invalid document coverage")
     derivation = FileDerivation(
         file_id=file.id,
-        kind="native",
+        kind=kind,
         fingerprint=fingerprint,
         parser_version=manifest["parser"],
         status=manifest["status"],
@@ -129,11 +134,14 @@ def index_document(db, file, key):
     for ordinal, unit in enumerate(units):
         if (
             unit["ordinal"] != ordinal
-            or not re.fullmatch(r"\d{6}\.txt", unit["name"])
+            or not (unit["name"] == "text.txt" if ranged else re.fullmatch(r"\d{6}\.txt", unit["name"]))
             or len(unit["anchor"]) > 300
             or not 0 <= unit["chars"] <= 100000
         ):
             raise HTTPException(422, "invalid document block")
+        offset, size = unit.get("byte_offset"), unit.get("byte_size")
+        if ranged and (type(offset) is not int or type(size) is not int or offset < 0 or size < 0 or offset + size > 1024**2):
+            raise HTTPException(422, "invalid document range")
         batch.append(
             {
                 "id": new_id("blk"),
@@ -144,6 +152,8 @@ def index_document(db, file, key):
                 "text_key": prefix + unit["name"],
                 "digest": unit["sha256"],
                 "chars": unit["chars"],
+                "byte_offset": offset if ranged else None,
+                "byte_size": size if ranged else None,
             }
         )
         if len(batch) == 256:

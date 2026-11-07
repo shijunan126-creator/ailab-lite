@@ -18,7 +18,7 @@ def index(file):
     if kind not in {"docx", "xlsx", "pptx", "pdf"}:
         return {**base, "status": "unsupported", "native": False}
     storage = get_storage()
-    key = f"derived/{file.id}/viewer.json"
+    key = (file.meta or {}).get("viewer_key") or f"derived/{file.id}/viewer.json"
     if storage.exists(key) and storage.size(key) <= 4 * 1024**2:
         cached = json.loads(storage.get_bytes(key))
         if cached.get("version") == file.sha256 and cached.get("parser_revision") == PARSER_REVISION:

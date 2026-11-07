@@ -89,7 +89,10 @@ def test_due_claim_coalesces_with_two_dispatchers_and_records_failures():
     with TestClient(app) as c:
         auth = _other_user(c)
         task = c.post("/v1/schedules", headers=auth, json=body()).json()
-        now = utcnow()
+        # Dispatch is global: on the wall clock, schedules other tests created
+        # become due once their 09:00 passes mid-suite. A clock before any
+        # of them was created sees only this task.
+        now = utcnow() - timedelta(days=5)
         with SessionLocal() as db:
             row = db.get(ScheduledTask, task["id"])
             row.next_run_at = now - timedelta(days=10)
@@ -166,6 +169,9 @@ def test_library_page_windows_and_project_bootstrap():
             file_id, key = file.id, file.meta["text_key"]
         content = "\f[page:1]\n" + "中" * 32000 + "\f[page:2]\nsecond"
         get_storage().put_bytes(key, content.encode())
+        from tests.document_fixtures import legacy_run
+
+        legacy_run({"id": run["run_id"]})
         url = f"/internal/runs/{run['run_id']}"
         first = c.post(url + "/library/read", headers=SERVICE, json={"file_id": file_id}).json()
         assert first["pages"] == [{"page": 1, "offset": 10}]
@@ -269,16 +275,15 @@ def test_schedule_checks_quota_capacity_and_current_skill_state(monkeypatch):
 
 
 def test_ocr_text_preserves_original_pdf_page_numbers(api, rapid_upstream):
-    from ailab_platform.worker.ocr import process_ocr
     from ailab_platform.worker.pipeline import process_file
 
     # Image OCR represents the sole preview page, not an invented PDF sequence.
-    from tests.test_ocr import AUTH, OCRClient, photo, upload
+    from tests.test_ocr import AUTH, OCRClient, photo, run_ocr_job, upload
 
     fid = upload(api, name="page.png", data=photo(), mime="image/png")
     process_file(fid, platform=OCRClient(api))
     api.post(f"/v1/files/{fid}/extract-text", headers=AUTH, json={})
-    process_ocr(fid, OCRClient(api))
+    run_ocr_job(api, fid)
     with SessionLocal() as db:
         key = db.get(FileObject, fid).meta["ocr_text_key"]
     assert get_storage().get_bytes(key).decode().startswith("\f[page:1]\n")

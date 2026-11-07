@@ -83,7 +83,7 @@ async function prepare(p: Pending, fileIds: string[], images: boolean, stale: ()
   const deadline = Date.now() + PREPARE_MS;
   for (;;) {
     try {
-      await api("/v1/chat/prepare", { method: "POST", body: JSON.stringify({ file_ids: fileIds, model: p.model, mode: p.options.mode, prompt: p.prompt }) });
+      await api("/v1/chat/prepare", { method: "POST", body: JSON.stringify({ client_send_id: p.id, file_ids: fileIds, model: p.model, mode: p.options.mode, prompt: p.prompt }) });
       return;
     } catch (err) {
       if (stale() || errorCode(err) !== "chat_attachment_processing" || Date.now() >= deadline) throw err;

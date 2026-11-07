@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from ..config import settings
+from ..contracts.file_preview import sheet_ranges, sheet_starts
 from ..contracts.workspace_view import VIEW_ERRORS
 from ..paths import PathError, normalize_path
 from .render import SCRIPT as RENDER_SCRIPT
@@ -82,6 +83,7 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
     result_path = f"{directory}/result.json"
     start = time.monotonic()
     try:
+        manager.register_scratch(lease_id, directory, time.time() + 60)
         manager.put_file(lease_id, helper, HELPER.read_bytes())
         manager.put_file(lease_id, renderer, RENDER_SCRIPT.read_bytes())
         manager.put_file(lease_id, f"{directory}/work_view_listener.py", LISTENER.read_bytes())
@@ -126,10 +128,17 @@ def view(manager, lease_id: str, path: str, selected, *, review: bool = False, t
             jpeg_dimensions(data)
         if review and (not isinstance(payload.get("structural"), dict) or payload.get("quality_gate") != "pending_model_judgment"):
             raise ValueError("invalid_view_output")
+        starts = payload.pop("sheet_pages", None)
+        if starts is not None:
+            count = payload.get("page_count")
+            starts = sheet_starts(starts, count) if type(count) is int and count >= 1 else None
+            # Optional metadata: a malformed outline is dropped, not trusted.
+            if starts:
+                payload["sheet_pages"] = sheet_ranges(starts, count)
         return payload
     finally:
         try:
-            manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
+            manager.clear_scratch(lease_id, directory)
         except Exception:
             pass
 
@@ -146,11 +155,12 @@ def warm(manager, lease_id: str) -> dict:
     directory = f"/workspace/.ailab/view-warm-{uuid4().hex}"
     script = f"{directory}/work_view_listener.py"
     try:
+        manager.register_scratch(lease_id, directory, time.time() + 15)
         manager.put_file(lease_id, script, LISTENER.read_bytes())
         result = manager.exec(lease_id, f"timeout -k 2 8s python {script} --ensure {settings.render_work_listener_rss_bytes}", 12)
         return {"ok": result.exit_code == 0}
     finally:
         try:
-            manager.exec(lease_id, f"rm -rf -- {shlex.quote(directory)}", 5)
+            manager.clear_scratch(lease_id, directory)
         except Exception:
             pass

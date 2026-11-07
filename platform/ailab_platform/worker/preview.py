@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import tempfile
 import threading
 import time
 from contextlib import contextmanager
@@ -13,6 +12,8 @@ from pathlib import Path
 from ..clients import ClientError, PlatformClient
 from ..config import settings
 from ..contracts.file_preview import LOCAL_SHEETS, cached_page_preview, text_manifest
+from ..contracts.file_types import legacy_scanned_pending
+from ..owned_temporary import directory as temporary_directory
 from ..queue import get_queue
 from ..storage import get_storage
 from .isolate import IsolationError, execute
@@ -57,10 +58,32 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
             if meta.get("preview_job_id") != job_id:
                 return {"skipped": "superseded"}
             manifest = meta.get("preview") or {}
-            scanned = file.get("status") == "pending" and (meta.get("scan") or {}).get("verdict") == "clean"
+            scanned = legacy_scanned_pending(file.get("status"), meta)
             if not (file.get("status") == "ready" or scanned) or manifest.get("status") != "pending":
                 return {"skipped": "already_complete"}
-            storage = get_storage()
+            ownership = None
+            if hasattr(platform, "start_file_work"):
+                ownership = platform.start_file_work(job_id)
+                if ownership["status"] == "pending":
+                    return {"skipped": "busy"}
+                if ownership["status"] in {"ready", "failed", "canceled"}:
+                    return {"skipped": ownership["status"]}
+            execution_deadline = ownership.get("execution_deadline") if ownership else None
+
+            def check_owned():
+                if execution_deadline:
+                    from datetime import datetime
+
+                    if time.time() >= datetime.fromisoformat(execution_deadline).timestamp():
+                        raise IsolationError("document_operation_deadline")
+                    platform.file_work_owned(job_id)
+
+            from ..derived_writes import AccountedWrites
+
+            raw_storage = get_storage()
+            storage = (
+                AccountedWrites(raw_storage, platform, file["sha256"], job_id) if hasattr(platform, "reserve_derived") else raw_storage
+            )
             assets = {}
             render_lease_id = None
             render_generation = None
@@ -73,7 +96,7 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                     "image",
                     "text",
                 }:
-                    with tempfile.TemporaryDirectory(prefix="ailab-preview-") as tmp:
+                    with temporary_directory(prefix="ailab-preview-") as tmp:
                         source = Path(tmp) / ("input" + Path(file["filename"]).suffix.lower())
                         download(platform, file_id, source, settings.max_upload_bytes, job="preview")
                         if manifest["kind"] == "text":
@@ -83,9 +106,10 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                                 Path(tmp) / "text",
                                 filename=file["filename"],
                                 content_type=file.get("content_type") or "",
+                                ownership=check_owned,
                             )
                             data = info.get("text", "").encode("utf-8")
-                            key = f"derived/{file_id}/preview/text.txt"
+                            key = f"derived/{file_id}/preview/{job_id}/text.txt"
                             storage.put_bytes(key, data, "text/plain; charset=utf-8")
                             assets["text.txt"] = {
                                 "key": key,
@@ -94,14 +118,24 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                             }
                             manifest = text_manifest(file["filename"], {"extract": info})
                         elif manifest["kind"] == "image":
-                            derivatives = _images(file_id, source, file, storage, Path(tmp) / "images")
+                            derivatives = _images(
+                                file_id, source, file, storage, Path(tmp) / "images", prefix=f"derived/{file_id}/preview/{job_id}/"
+                            )
                             if not derivatives.get("display_key"):
                                 raise ValueError("image_unavailable")
+                            assets = {
+                                name: {
+                                    "key": derivatives[field],
+                                    "content_type": "image/webp",
+                                    "sha256": hashlib.sha256((Path(tmp) / "images" / name).read_bytes()).hexdigest(),
+                                }
+                                for name, field in (("display.webp", "display_key"), ("thumb.webp", "thumb_key"))
+                            }
                             manifest = {"status": "ready", "kind": "image", "image": "display.webp"}
                         else:
-                            execute("sheets", source, Path(tmp) / "sheets", timeout=120)
+                            execute("sheets", source, Path(tmp) / "sheets", timeout=120, ownership=check_owned)
                             data = (Path(tmp) / "sheets" / "sheets.json").read_bytes()
-                            key = f"derived/{file_id}/preview/sheets.json"
+                            key = f"derived/{file_id}/preview/{job_id}/sheets.json"
                             storage.put_bytes(key, data, "application/json")
                             assets["sheets.json"] = {
                                 "key": key,
@@ -116,6 +150,14 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                     render_generation = result.get("render_generation")
             except Exception as exc:
                 if isinstance(exc, ClientError) and exc.status in {429, 503}:
+                    import json
+
+                    try:
+                        detail = json.loads(exc.body).get("detail")
+                    except (ValueError, AttributeError):
+                        detail = None
+                    if detail == {"code": "render_admission_rejected", "execution_started": False} and ownership:
+                        platform.defer_file_work(job_id)
                     return {"skipped": "busy"}
                 reason = str(exc) if isinstance(exc, ValueError | IsolationError) else "render_failed"
                 manifest = {"status": "failed", "kind": manifest.get("kind"), "reason": reason[:200]}
@@ -126,9 +168,9 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                 published = True
                 log.info("preview phase=publish seconds=%.3f", time.monotonic() - publish_started)
             except ClientError as exc:
-                if exc.status == 404:  # deletion raced rendering: remove every derived object written after deletion
-                    for obj in storage.list_prefix(f"derived/{file_id}/"):
-                        storage.delete(obj.key)
+                if exc.status == 404:
+                    # Only this writer's unpublished grants are ours to clean;
+                    # source deletion owns older/current generation invalidation.
                     return {"skipped": "deleted"}
                 if exc.status == 409:
                     return {"skipped": "superseded"}
@@ -141,5 +183,11 @@ def process_preview(file_id: str, job_id: str, platform: PlatformClient | None =
                         log.warning("render completion failed; lease expiry will release it", exc_info=True)
             return manifest
     finally:
-        queue.release_lock(f"ailab:preview:{file_id}", token)
+        try:
+            if "storage" in locals() and hasattr(storage, "cleanup"):
+                storage.cleanup()
+        except Exception:
+            log.warning("preview write compensation remains in durable ledger", exc_info=True)
+        finally:
+            queue.release_lock(f"ailab:preview:{file_id}", token)
         log.info("preview completed total_seconds=%.3f slot_wait_seconds=%.3f", time.monotonic() - started, slot_seconds)

@@ -4,7 +4,7 @@ import asyncio
 import hashlib
 import threading
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
@@ -39,19 +39,27 @@ def eligible(db, file_id):
     file = db.get(FileObject, file_id, populate_existing=True)
     if not file or file.deleted_at or file.purged_at:
         raise HTTPException(404, "file not found")
+    owner = db.get(User, file.user_id, populate_existing=True)
+    if not owner or owner.disabled_at:
+        raise HTTPException(404, "file not found")
     if file.status != FileStatus.READY or ((file.meta or {}).get("scan") or {}).get("verdict") != "clean":
         raise HTTPException(409, "OCR requires a clean, ready file")
     return file
 
 
-def request_ocr(db: Session, file: FileObject) -> None:
+def request_ocr(db: Session, file: FileObject, *, run=None) -> None:
     """Runs in the READY patch's transaction, so the job exists exactly when OCR is pending."""
     from .jobs import stage_job
 
     job_id = uuid.uuid4().hex
     file.meta = {**(file.meta or {}), "ocr_requested_at": datetime.now(UTC).timestamp(), "ocr_generation": job_id, "ocr_job_id": job_id}
     # A durable job like any other: claimed, ACKed by the Worker, and only then removed from the outbox.
-    stage_job(db, "ocr", file_id=file.id, job_id=job_id)
+    job = stage_job(db, "ocr", file_id=file.id, job_id=job_id)
+    job.payload = {**job.payload, "deadline": (datetime.now(UTC) + timedelta(seconds=600)).isoformat()}
+    from .file_work import register
+
+    file.meta = {**file.meta, "ocr_consumer_run_id": run.id if run else None}
+    register(db, file, job, lane="ocr", run=run)
 
 
 def check_ocr_attempt(db, file, attempt):
@@ -82,26 +90,81 @@ def extraction_pages(meta):
     return meta.get("ocr_selected_pages") or [p + 1 for p in (meta.get("ocr_pdf") or {}).get("low_text_pages", [0])]
 
 
-def publish_extraction(db, file, selected, records):
-    generation = file.meta.get("ocr_generation") or uuid.uuid4().hex
-    texts = [f"\f[page:{page}]\n" + get_storage().get_bytes(records[str(page - 1)]["text_key"]).decode() for page in selected]
-    data = "\n".join(texts).encode()
-    key = f"derived/{file.id}/ocr-results/{hashlib.sha256(data).hexdigest()}.txt"
-    storage = get_storage()
-    if not storage.exists(key):
-        storage.put_bytes(key, data, "text/plain; charset=utf-8")
-    file.meta = {
-        **file.meta,
-        "ocr_generation": generation,
-        "ocr_selected_pages": selected,
-        "ocr": "done",
-        "ocr_reason": None,
-        "ocr_text_key": key,
-    }
-    from .file_dependencies import wake_file
+def publish_extraction(db, file, selected, records, *, operation=None, attempt=None, new_generation=None):
+    import codecs
 
-    wake_file(db, file)
-    return sum(map(len, texts))
+    from .owned_assets import publish
+
+    file_id, owner, version = file.id, file.user_id, file.sha256
+    original_generation = str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at"))
+    generation = new_generation or file.meta.get("ocr_generation") or uuid.uuid4().hex
+    operation_id, token = (operation.id, operation.claim_token) if operation else (None, None)
+    snapshot = {str(page - 1): records[str(page - 1)]["text_key"] for page in selected}
+    if len(selected) > 20:
+        raise ValueError("page_limit")
+    db.rollback()
+    data, chars = bytearray(), 0
+    try:
+        storage = get_storage()
+        for ordinal, page in enumerate(selected):
+            key = snapshot[str(page - 1)]
+            if not key.startswith(f"derived/{file_id}/") or ".." in key.split("/"):
+                raise ValueError("invalid_ocr_binding")
+            prefix = ("\n" if ordinal else "") + f"\f[page:{page}]\n"
+            data.extend(prefix.encode())
+            chars += len(prefix)
+            decoder, size = codecs.getincrementaldecoder("utf-8")("strict"), 0
+            with storage.open_stream(key) as chunks:
+                for chunk in chunks:
+                    size += len(chunk)
+                    if size > 800000:
+                        raise ValueError("text_limit")
+                    chars += len(decoder.decode(chunk))
+                    data.extend(chunk)
+            chars += len(decoder.decode(b"", final=True))
+        target = f"derived/{file_id}/ocr-results/{hashlib.sha256(data).hexdigest()}.txt"
+
+        def validate():
+            current = eligible(db, file_id)
+            check_ocr_attempt(db, current, attempt)
+            if (
+                current.sha256 != version
+                or str(current.meta.get("ocr_generation") or current.meta.get("ocr_requested_at")) != original_generation
+            ):
+                raise HTTPException(409, "OCR source changed")
+            from .document_sources import ocr_records
+
+            found = ocr_records(db, current, [page - 1 for page in selected])
+            if any(found.get(page, {}).get("text_key") != key for page, key in snapshot.items()):
+                raise HTTPException(409, "OCR cache changed")
+            if operation_id:
+                from . import document_operations as operations
+
+                operations.active(db, operation_id, token)
+
+        def bind(text_key):
+            current = eligible(db, file_id)
+            if operation_id:
+                from ..models import DocumentOperation
+
+                row = db.get(DocumentOperation, operation_id)
+                row.status, row.claim_token, row.lease_until, row.result = "ready", None, None, {}
+            current.meta = {
+                **current.meta,
+                "ocr_generation": generation,
+                "ocr_selected_pages": selected,
+                "ocr": "done",
+                "ocr_reason": None,
+                "ocr_text_key": text_key,
+            }
+            from .file_dependencies import wake_file
+
+            wake_file(db, current)
+            return chars
+
+        return publish(db, owner, target, data, version, kind="ocr", validate=validate, bind=bind, content_type="text/plain; charset=utf-8")
+    finally:
+        data.clear()
 
 
 def _total_timeout() -> float:
@@ -168,6 +231,17 @@ def prepare(file_id: str, db: Session = Depends(get_db), attempt: str | None = H
         pdf = meta.get("ocr_pdf")
         if pdf is None:  # image: the normalized display derivative is the only input the model sees
             if not meta.get("display_key"):
+                from .preview_requests import request_preview
+
+                previous = meta.get("preview") or {}
+                if previous.get("status") == "failed":
+                    return finish(ocr="failed", ocr_reason="normalized_image_unavailable")
+                manifest, job_id = request_preview(db, file)
+                db.commit()
+                if manifest.get("status") == "pending" and job_id is None:
+                    job_id = (file.meta or {}).get("preview_job_id")
+                if job_id:
+                    return {"ocr": "pending", "preview_job_id": job_id}
                 return finish(ocr="failed", ocr_reason="normalized_image_unavailable")
             return {"ocr": "pending"}
         if pdf.get("error"):
@@ -182,15 +256,8 @@ def prepare(file_id: str, db: Session = Depends(get_db), attempt: str | None = H
             return {"ocr": "pending"}
         if meta.get("ocr_render_job_id") and (meta.get("preview") or {}).get("status") == "pending":
             return {"ocr": "pending", "preview_job_id": meta["ocr_render_job_id"]}
-        job_id = uuid.uuid4().hex
-        meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
-        meta.update(
-            preview={"status": "pending", "kind": "pages"},
-            preview_job_id=job_id,
-            ocr_render_job_id=job_id,
-            ocr_render_pages=[p + 1 for p in pdf["low_text_pages"]],
-        )
-        file.meta = meta
+        request_page_render(db, file, [p + 1 for p in pdf["low_text_pages"]])
+        job_id = file.meta.get("preview_job_id")
         db.commit()
         return {"ocr": "pending", "preview_job_id": job_id}
 
@@ -286,6 +353,25 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
                 page = number - 1
                 name = next((n for n in names if int(n[2:-4]) == page + 1), None)
                 targets.append((page, (assets.get(name) or {}).get("key")))
+        operation = None
+        if attempt and meta.get("ocr_job_id"):
+            from ..models import DocumentOperation, OutboxMessage, Run
+            from . import document_operations as operations
+            from .file_work import register
+            from .file_work import start as start_work
+
+            job = db.get(OutboxMessage, meta["ocr_job_id"])
+            run = db.get(Run, meta.get("ocr_consumer_run_id")) if meta.get("ocr_consumer_run_id") else None
+            operation = db.get(DocumentOperation, job.id, populate_existing=True)
+            if operation is None:
+                operation = register(db, file, job, lane="ocr", run=run)
+            operation.binding = {**operation.binding, "pages": extraction_pages(meta)}
+            operation = start_work(db, file, job, attempt)
+            if operation.status != "running":
+                if operation.status in {"failed", "canceled"}:
+                    file.meta = {**file.meta, "ocr": "failed", "ocr_reason": operation.result.get("reason", "ocr_failed")}
+                db.commit()
+                return {"ocr": "pending" if operation.status == "pending" else "failed"}
         file.meta = {**meta, "ocr": "running", "ocr_reason": None, "ocr_started_at": datetime.now(UTC).timestamp()}
         db.commit()
     try:
@@ -301,48 +387,32 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             if not record:
                 if not key:
                     raise ValueError("preview_unavailable")
-                result = asyncio.run(remote_recognize(bounded_image(key, file_id)))
-                text = result["text"]
-                with user_critical_section(db, file.user_id):
-                    file = eligible(db, file_id)
-                    check_ocr_attempt(db, file, attempt)
-                    if (
-                        str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation
-                        or file.meta.get("ocr") != "running"
-                    ):
-                        raise HTTPException(409, "OCR source changed")
-                    text_key = f"derived/{file_id}/ocr/{generation}/{page}.txt"
-                    get_storage().put_bytes(text_key, text.encode(), "text/plain; charset=utf-8")
-                    pages = dict(done)
-                    from ..models import OcrPageResult
+                if operation:
+                    from .routes_workspace_ocr import infer_while_owned
 
-                    fingerprint = settings.ocr_engine_fingerprint or generation
-                    page_row = db.get(OcrPageResult, (file.id, page, fingerprint))
-                    if page_row is None:
-                        page_row = OcrPageResult(file_id=file.id, page=page, fingerprint=fingerprint)
-                        db.add(page_row)
-                    page_row.generation, page_row.text_key = generation, text_key
-                    page_row.engine, page_row.backend = result["engine"], result["backend"]
-                    page_row.seconds = result.get("seconds", 0)
-                    pages[str(page)] = {
-                        "generation": generation,
-                        "text_key": text_key,
-                        "engine": result["engine"],
-                        "fingerprint": result.get("fingerprint"),
-                        "backend": result["backend"],
-                        "seconds": result.get("seconds", 0),
-                        "pages": 1,
-                    }
-                    more = any(str(p) not in pages for p, _ in targets)
-                    file.meta = {
-                        **file.meta,
-                        "ocr_pages": dict(list(pages.items())[-20:]),
-                        "ocr_cache_revision": int(file.meta.get("ocr_cache_revision", 0)) + 1,
-                        "ocr": "pending" if more else "running",
-                    }
-                    db.commit()
-                    if more:
-                        return {"ocr": "pending", "completed_page": page + 1}
+                    result = asyncio.run(
+                        infer_while_owned(
+                            bounded_image(key, file_id),
+                            operation.id,
+                            operation.claim_token,
+                            operations.aware(operation.execution_deadline),
+                            execution_id=f"{operation.id}:{operation.claim_token}:{page}",
+                        )
+                    )
+                else:
+                    result = asyncio.run(remote_recognize(bounded_image(key, file_id)))
+                from .legacy_ocr_assets import store_page
+
+                store_page(db, file, generation, page, result, attempt=attempt, operation=operation)
+                if any(str(p) not in done and p != page for p, _ in targets):
+                    with user_critical_section(db, file.user_id):
+                        file = eligible(db, file_id)
+                        check_ocr_attempt(db, file, attempt)
+                        file.meta = {**file.meta, "ocr": "pending"}
+                        if operation:
+                            operation.executor_started_at = None
+                        db.commit()
+                    return {"ocr": "pending", "completed_page": page + 1}
         with user_critical_section(db, file.user_id):
             file = eligible(db, file_id)
             if str(file.meta.get("ocr_generation") or file.meta.get("ocr_requested_at")) != generation:
@@ -350,7 +420,9 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             check_ocr_attempt(db, file, attempt)
             if file.meta.get("ocr") != "running":
                 return {"ocr": "canceled", "reason": "superseded"}
-            chars = publish_extraction(db, file, [p + 1 for p, _ in targets], ocr_records(db, file, [p for p, _ in targets]))
+            chars = publish_extraction(
+                db, file, [p + 1 for p, _ in targets], ocr_records(db, file, [p for p, _ in targets]), operation=operation, attempt=attempt
+            )
             db.commit()
         return {"ocr": "done", "pages": len(targets), "chars": chars}
     except Exception as exc:
@@ -365,6 +437,22 @@ def _run_ocr(file_id: str, db: Session, attempt=None):
             retryable = isinstance(exc, (httpx.TransportError, TimeoutError)) or (
                 isinstance(exc, httpx.HTTPStatusError) and (exc.response.status_code == 429 or exc.response.status_code >= 500)
             )
+            if operation:
+                operation = db.get(DocumentOperation, operation.id, populate_existing=True)
+                from ..ocr_backend import OCRExecutionUncertain
+
+                uncertain = isinstance(exc, OCRExecutionUncertain)
+                retryable = retryable and operations.aware(operation.execution_deadline) > datetime.now(UTC)
+                if uncertain:
+                    # A lost cancellation receipt cannot free the global slot.
+                    operation.status = "canceling"
+                else:
+                    operation.status = "pending" if retryable else "failed"
+                    operation.claim_token, operation.lease_until = None, None
+                    operation.executor_started_at, operation.attempt_token = None, None
+                operation.result = {
+                    "reason": "document_dispatch_uncertain" if uncertain else "dependency_unavailable" if retryable else "ocr_failed"
+                }
             state = "pending" if retryable else "failed"
             file.meta = {
                 **file.meta,
@@ -400,7 +488,7 @@ def extraction_result(db, file, pages=None):
     }
 
 
-def request_extraction(db, file, pages=None, *, retry=False):
+def request_extraction(db, file, pages=None, *, retry=False, run=None):
     pdf = file.content_type == "application/pdf" or file.filename.lower().endswith(".pdf")
     if pdf and not pages:
         raise HTTPException(422, "请选择需要提取的PDF页范围")
@@ -424,8 +512,7 @@ def request_extraction(db, file, pages=None, *, retry=False):
         if meta.get("ocr_selected_pages") != selected or not meta.get("ocr_text_key") or meta.get("ocr") != "done":
             from .document_sources import ocr_records
 
-            file.meta = {**meta, "ocr_generation": uuid.uuid4().hex, "ocr_job_id": None}
-            publish_extraction(db, file, selected, ocr_records(db, file, [p - 1 for p in selected]))
+            publish_extraction(db, file, selected, ocr_records(db, file, [p - 1 for p in selected]), new_generation=uuid.uuid4().hex)
         return {**result, "request_id": file.meta.get("ocr_generation")}
     if meta.get("ocr") == "failed" and not retry:
         return {**result, "ocr": "failed"}
@@ -441,7 +528,7 @@ def request_extraction(db, file, pages=None, *, retry=False):
         meta.pop("ocr_render_job_id", None)
     meta.update(ocr="pending", ocr_reason=None, ocr_selected_pages=selected)
     file.meta = meta
-    request_ocr(db, file)
+    request_ocr(db, file, run=run)
     return {**result, "ocr": "pending", "request_id": file.meta["ocr_generation"]}
 
 
@@ -463,7 +550,7 @@ def extract_text(file_id: str, body: ExtractionRequest, user: User = Depends(cur
     return result
 
 
-def request_page_render(db, file, pages):
+def request_page_render(db, file, pages, *, run=None, preparation=None):
     from .jobs import stage_job
 
     meta = dict(file.meta or {})
@@ -474,6 +561,10 @@ def request_page_render(db, file, pages):
         from ..queue import job_topic
 
         job = db.get(OutboxMessage, meta.get("preview_job_id"))
+        if job:
+            from .file_work import register
+
+            register(db, file, job, run=run, preparation=preparation)
         if job and not job.claim_token and not job.payload.get("priority"):
             job.payload = {**job.payload, "priority": True}
             job.topic = job_topic("preview", priority=True)
@@ -487,7 +578,10 @@ def request_page_render(db, file, pages):
     meta["preview_before_ocr"] = {k: meta[k] for k in ("preview", "preview_assets", "preview_job_id") if k in meta}
     meta.update(preview={"status": "pending", "kind": "pages"}, preview_job_id=job_id, ocr_render_job_id=job_id, ocr_render_pages=pages)
     file.meta = meta
-    stage_job(db, "preview", file_id=file.id, job_id=job_id, priority=True)
+    job = stage_job(db, "preview", file_id=file.id, job_id=job_id, priority=True)
+    from .file_work import register
+
+    register(db, file, job, run=run, preparation=preparation)
 
 
 @extraction_router.get("/{file_id}/extract-text")
@@ -531,6 +625,7 @@ def extraction_download(file_id: str, request_id: str | None = None, user: User 
 
 
 class ChatPreparation(BaseModel):
+    client_send_id: str | None = Field(default=None, min_length=1, max_length=120)
     mode: Literal["chat", "work"] = "chat"
     file_ids: list[str] = Field(max_length=50)
     model: str = Field(max_length=120)
@@ -545,5 +640,5 @@ def prepare_chat(body: ChatPreparation, user: User = Depends(current_user), db: 
     from .routes_runs import validate_run_input
 
     with user_critical_section(db, user.id):
-        validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode)
+        validate_run_input(db, user, body.prompt, body.model, body.file_ids, body.mode, preparation_send_id=body.client_send_id)
     return {"status": "ready"}

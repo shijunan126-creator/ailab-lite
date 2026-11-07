@@ -78,9 +78,13 @@ def request_workspace(db, user, run_id, path, operation, selections=None, versio
 
 @router.get("/v1/runs/{run_id}/workspace/document")
 def document(
-    run_id: str, path: str = Query(min_length=1, max_length=1000), user: User = Depends(current_user), db: Session = Depends(get_db)
+    run_id: str,
+    path: str = Query(min_length=1, max_length=1000),
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+    structure: bool = False,
 ):
-    return request_workspace(db, user, run_id, path, "document")
+    return request_workspace(db, user, run_id, path, "document" if structure else "open")
 
 
 @router.get("/v1/runs/{run_id}/workspace/content")

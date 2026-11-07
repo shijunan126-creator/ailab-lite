@@ -31,9 +31,14 @@ export function readBinary(name: string): Promise<Uint8Array<ArrayBuffer>> {
 }
 
 /** A loaded document's bytes; the token is released by the Portal once handed over. */
-export async function readFileBytes(handle: FileHandle, signal?: AbortSignal): Promise<ArrayBuffer> {
+export async function readFileBytes(handle: FileHandle, signal?: AbortSignal, kind?: string): Promise<ArrayBuffer> {
   signal?.throwIfAborted();
   const buffer = await getHost().request<ArrayBuffer>({ t: "bytes", token: handle.token });
   if (buffer.byteLength !== handle.bytes) throw new Error("文件在加载时发生了变化，请重新打开。");
+  signal?.throwIfAborted();
+  if (kind && kind !== "pdf") {
+    const {admit} = await import("./admission");
+    return await admit(buffer, kind, signal);
+  }
   return buffer;
 }
