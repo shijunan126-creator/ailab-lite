@@ -363,6 +363,17 @@ def test_maintenance_selective_queries_use_indexes(ledger):
             )
             plan = " ".join(str(row) for row in result).lower()
             assert index in plan, plan
+        # Eviction walks rebuildable ready caches oldest first.
+        prefix = "EXPLAIN QUERY PLAN" if db.get_bind().dialect.name == "sqlite" else "EXPLAIN"
+        result = db.execute(
+            text(
+                f"{prefix} SELECT key FROM derived_assets WHERE state='ready' AND reconstructible=:yes AND kind='cache' "
+                "AND created_at<=:now ORDER BY created_at, key LIMIT 100"
+            ),
+            {"yes": True, "now": now},
+        )
+        plan = " ".join(str(row) for row in result).lower()
+        assert "ix_derived_assets_captures" in plan, plan
 
 
 def test_last_capture_reference_release_registers_immediate_deletion(ledger):

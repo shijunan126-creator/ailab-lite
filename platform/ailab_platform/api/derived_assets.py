@@ -317,7 +317,19 @@ def invalidate_workspace_ocr(db, *, conversation_id=None):
     return len(rows)
 
 
-def claim_collection(db, key, now, orphan_cutoff):
+def live_reference(now):
+    """True while any unexpired pin names the asset."""
+    return (
+        select(DerivedAssetRef.id)
+        .where(
+            DerivedAssetRef.key == DerivedAsset.key,
+            or_(DerivedAssetRef.expires_at.is_(None), DerivedAssetRef.expires_at > now),
+        )
+        .exists()
+    )
+
+
+def claim_collection(db, key, now, orphan_cutoff, *, evicting=False):
     from contextlib import nullcontext
 
     from ..locks import user_critical_section
@@ -335,7 +347,8 @@ def claim_collection(db, key, now, orphan_cutoff):
             not row
             or row.state not in {"ready", "deleting", "writing", "staged"}
             or (row.state in {"writing", "staged"} and (not row.lease_until or aware(row.lease_until) > orphan_cutoff))
-            or (row.state == "ready" and row.reconstructible and (not row.expires_at or aware(row.expires_at) > now))
+            or (row.state == "ready" and row.reconstructible and (not row.expires_at or aware(row.expires_at) > now) and not evicting)
+            or (evicting and not evictable(db, row, now, orphan_cutoff))
             or (row.state == "ready" and not row.reconstructible and row.created_at and aware(row.created_at) > orphan_cutoff)
             or (row.state == "deleting" and row.lease_until and aware(row.lease_until) > now)
             or protected(db, row, now)
@@ -350,6 +363,93 @@ def claim_collection(db, key, now, orphan_cutoff):
         return token
 
 
+def evictable(db, row, now, orphan_cutoff):
+    """A cache that can be rebuilt on demand, is not being used and is old enough not to be mid-turn."""
+    return (
+        row.state == "ready"
+        and row.reconstructible
+        and row.kind == "cache"
+        and row.created_at is not None
+        and aware(row.created_at) <= orphan_cutoff
+        and db.scalar(
+            select(DerivedAssetRef.id)
+            .where(DerivedAssetRef.key == row.key)
+            .where(or_(DerivedAssetRef.expires_at.is_(None), DerivedAssetRef.expires_at > now))
+            .limit(1)
+        )
+        is None
+    )
+
+
+def delete_claimed(db, storage, key, token):
+    """Physical delete first; the charge is released only once the bytes are gone. Returns the bytes freed, or None."""
+    try:
+        storage.delete(key)
+    except Exception:
+        db.rollback()
+        log.warning("derived cleanup failed; capacity remains charged", exc_info=True)
+        return None
+    budget_lock(db)
+    current = db.get(DerivedAsset, key, populate_existing=True)
+    if current and current.state == "deleting" and current.token == token:
+        size = current.size_bytes
+        forget_deleted(db, key)
+        db.commit()
+        return size
+    db.rollback()
+    return None
+
+
+def evict_oldest(db, storage, *, now=None):
+    """Capacity pressure: drop the oldest rebuildable caches until usage is back under the low-water mark.
+
+    Runs in maintenance, never inside a writer's transaction: each victim is claimed under its own
+    owner's lock exactly like an expired cache (metadata is invalidated before bytes are deleted),
+    so no request ever holds two users' locks. Age is the order because a read does not touch the
+    ledger; a cache read often stays warm in the browser and rebuilds from the cached PDF.
+    """
+    now = now or datetime.now(UTC)
+    ledger = db.get(DerivedBudget, 1, populate_existing=True)
+    db.rollback()
+    if ledger is None or not ledger.backfill_complete:
+        return 0
+    budget = settings.derived_budget_bytes
+    in_use = ledger.used_bytes + ledger.reserved_bytes
+    if in_use <= budget * settings.derived_evict_high_ratio:
+        return 0
+    need = in_use - int(budget * settings.derived_evict_low_ratio)
+    cutoff = now - timedelta(seconds=settings.derived_orphan_grace_seconds)
+    victims = (
+        db.execute(
+            select(DerivedAsset.key)
+            .where(
+                DerivedAsset.state == "ready",
+                DerivedAsset.reconstructible.is_(True),
+                DerivedAsset.kind == "cache",
+                DerivedAsset.created_at <= cutoff,
+                ~live_reference(now),
+            )
+            .order_by(DerivedAsset.created_at, DerivedAsset.key)
+            .limit(settings.gc_batch_size)
+        )
+        .scalars()
+        .all()
+    )
+    db.rollback()
+    freed = removed = 0
+    for key in victims:
+        if freed >= need:
+            break
+        token = claim_collection(db, key, now, cutoff, evicting=True)
+        if token is None:
+            continue
+        size = delete_claimed(db, storage, key, token)
+        if size is not None:
+            freed += size
+            removed += 1
+    return removed
+
+
 def collect_batch(db, storage, *, now=None, transient_only=False):
     """Failures leave durable rows and charged bytes for the next bounded pass."""
     now = now or datetime.now(UTC)
@@ -358,14 +458,7 @@ def collect_batch(db, storage, *, now=None, transient_only=False):
         db.execute(delete(DerivedAssetRef).where(DerivedAssetRef.id.in_(expired)))
         db.commit()
     orphan_cutoff = now - timedelta(seconds=settings.derived_orphan_grace_seconds)
-    unreferenced_capture = (
-        ~select(DerivedAssetRef.id)
-        .where(
-            DerivedAssetRef.key == DerivedAsset.key,
-            or_(DerivedAssetRef.expires_at.is_(None), DerivedAssetRef.expires_at > now),
-        )
-        .exists()
-    )
+    unreferenced_capture = ~live_reference(now)
     queries = [
         select(DerivedAsset.key)
         .where(
@@ -397,20 +490,8 @@ def collect_batch(db, storage, *, now=None, transient_only=False):
             token = claim_collection(db, key, now, orphan_cutoff)
             if token is None:
                 continue
-            try:
-                storage.delete(key)
-            except Exception:
-                db.rollback()
-                log.warning("derived cleanup failed; capacity remains charged", exc_info=True)
-                continue
-            budget_lock(db)
-            current = db.get(DerivedAsset, key, populate_existing=True)
-            if current and current.state == "deleting" and current.token == token:
-                forget_deleted(db, key)
-                db.commit()
+            if delete_claimed(db, storage, key, token) is not None:
                 removed += 1
-            else:
-                db.rollback()
         if examined >= settings.gc_batch_size:
             break
     return removed

@@ -231,6 +231,9 @@ class Settings(ContextBandSettings, BaseSettings):
     render_work_listener_rss_bytes: int = Field(default=384 * 1024**2, ge=32 * 1024**2, le=4 * 1024**3)
     derived_budget_bytes: int = Field(default=1024**3, ge=1024**2, le=1024**4)
     derived_cache_days: int = Field(default=30, ge=1, le=365)
+    # Above the high mark, maintenance evicts the oldest rebuildable caches down to the low mark.
+    derived_evict_high_ratio: float = Field(default=0.9, gt=0, le=1)
+    derived_evict_low_ratio: float = Field(default=0.75, gt=0, le=1)
     derived_generation_grace_seconds: int = Field(default=86400, ge=1, le=86400)
     derived_orphan_grace_seconds: int = Field(default=900, ge=1, le=900)
     derived_maintenance_interval_seconds: int = Field(default=60, ge=1, le=300)
@@ -459,6 +462,8 @@ class Settings(ContextBandSettings, BaseSettings):
             raise ValueError("sandbox ttl exceeds max lifetime")
         if self.render_max_age_seconds < self.sandbox_render_max_ttl_seconds:
             raise ValueError("render max age must cover a render job")
+        if self.derived_evict_low_ratio >= self.derived_evict_high_ratio:
+            raise ValueError("derived eviction low mark must be below the high mark")
         if self.sandbox_render_reserved_slots >= self.max_sandboxes:
             raise ValueError("render reservation must leave at least one general slot")
         if self.sandbox_render_memory_bytes >= self.sandbox_total_memory_bytes:
