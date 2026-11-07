@@ -70,6 +70,7 @@ class MockSandbox(SandboxProvider):
     ) -> str:
         root = self._sandbox_root(lease_id)
         (root / "workspace" / "inputs").mkdir(parents=True, exist_ok=True)
+        (root / "workspace" / "work").mkdir(parents=True, exist_ok=True)
         (root / "workspace" / "outputs").mkdir(parents=True, exist_ok=True)
         self.update_metadata(lease_id, labels or {})
         return lease_id
@@ -141,6 +142,7 @@ class MockSandbox(SandboxProvider):
             proc = subprocess.Popen(
                 translated,
                 shell=True,
+                executable="/bin/bash",
                 cwd=root / "workspace",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,

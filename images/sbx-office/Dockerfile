@@ -52,7 +52,7 @@ RUN python /opt/ailab-tools/skill_index.py /opt/skills --check --requirements
 COPY images/sbx-office/smoke/ /opt/ailab-tools/smoke/
 
 RUN useradd -u 10001 -m -d /home/sandbox sandbox \
- && mkdir -p /workspace/inputs /workspace/outputs \
+ && mkdir -p /workspace/inputs /workspace/work /workspace/outputs \
  && chown -R 10001:10001 /workspace
 USER 10001
 WORKDIR /workspace
