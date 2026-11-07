@@ -209,7 +209,7 @@ def test_chat_can_search_read_sources_and_return_a_script_without_sandbox(monkey
 
     monkeypatch.setattr(web.settings, "web_search_provider", "mock")
 
-    async def search(query, max_results):
+    async def search(query, max_results, kind="web"):
         return [{"title": "Python", "url": "https://docs.python.org/3/", "snippet": "Documentation"}]
 
     async def read_url(url, max_chars):

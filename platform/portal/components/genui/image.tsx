@@ -67,6 +67,48 @@ export function titleOf(block: Element): string | undefined {
 /** Left out of the picture: the actions themselves and a chart's pointer readout. */
 const skip = (node: Node) => !(node instanceof Element && (node.hasAttribute("data-capture-skip") || node.classList.contains("gu-tip")));
 
+const ONE_LINE = "data-capture-line";
+
+/** How a line of text keeps from breaking without losing the line breaks it was written with. */
+const unbroken = (whiteSpace: string) => (/^(pre-wrap|break-spaces)$/.test(whiteSpace) ? "pre" : whiteSpace === "normal" || whiteSpace === "pre-line" ? "nowrap" : null);
+
+/** Marks every element whose own text sits on one line in the page. The copy pins each box to its measured width,
+ * and the picture's text can come out a fraction of a pixel wider (page zoom, another rasterizer): a number or
+ * "50 GB" then wraps its last character onto a line of its own. Text that is on one line here stays on one line
+ * there; text the page wraps keeps wrapping. Returns the undo. */
+export function holdLines(block: HTMLElement): () => void {
+  const marked: Element[] = [];
+  const range = document.createRange();
+  for (const el of block.querySelectorAll("*")) {
+    if (!(el instanceof HTMLElement) || el.closest("[data-capture-skip]")) continue;
+    let lines = 0;
+    let top = NaN;
+    for (const node of el.childNodes) {
+      if (node.nodeType !== Node.TEXT_NODE || !node.textContent?.trim()) continue;
+      range.selectNodeContents(node);
+      for (const rect of range.getClientRects()) {
+        if (!rect.width) continue;
+        if (Math.abs(rect.top - top) > rect.height / 2 || Number.isNaN(top)) { lines++; top = rect.top; }
+      }
+    }
+    const mode = lines === 1 ? unbroken(getComputedStyle(el).whiteSpace) : null;
+    if (!mode) continue;
+    el.setAttribute(ONE_LINE, mode);
+    marked.push(el);
+  }
+  range.detach();
+  return () => marked.forEach((el) => el.removeAttribute(ONE_LINE));
+}
+
+/** On each copied element: keep a one-line text on one line (see holdLines). */
+function keepLine(node: Node) {
+  if (!(node instanceof Element)) return;
+  const mode = node.getAttribute(ONE_LINE);
+  if (!mode) return;
+  node.removeAttribute(ONE_LINE);
+  (node as HTMLElement).style.setProperty("white-space", mode);
+}
+
 async function render(block: HTMLElement): Promise<Blob> {
   const { domToCanvas } = await import("modern-screenshot");
   // a hover the pointer just left (on its way to the button) commits before the block is copied
@@ -74,14 +116,21 @@ async function render(block: HTMLElement): Promise<Blob> {
   const { width, height } = block.getBoundingClientRect();
   const color = backdrop(block);
   const scale = fitScale(width + 2 * MARGIN, height + 2 * MARGIN, window.devicePixelRatio || 1);
-  const drawn = await domToCanvas(block, {
-    scale,
-    backgroundColor: color,
-    filter: skip,
-    font: false, // the Portal uses system fonts only: nothing to fetch and embed
-    features: { restoreScrollPosition: true },
-    timeout: 15000,
-  });
+  const release = holdLines(block);
+  let drawn: HTMLCanvasElement;
+  try {
+    drawn = await domToCanvas(block, {
+      scale,
+      backgroundColor: color,
+      filter: skip,
+      font: false, // the Portal uses system fonts only: nothing to fetch and embed
+      features: { restoreScrollPosition: true },
+      onCloneEachNode: keepLine,
+      timeout: 15000,
+    });
+  } finally {
+    release();
+  }
   const pad = Math.round(MARGIN * scale);
   const canvas = document.createElement("canvas");
   canvas.width = drawn.width + 2 * pad;

@@ -65,7 +65,9 @@ from .routes_skill_drafts import router as skill_drafts_router
 from .routes_skill_drafts_internal import router as skill_drafts_internal_router
 from .routes_skills import router as skills_router
 from .routes_templates import router as templates_router
+from .routes_web_images import router as web_images_router
 from .routes_workspace_ocr import router as workspace_ocr_router
+from .skill_view import router as skill_view_internal_router
 from .workspace_documents import router as workspace_documents_router
 
 setup_logging("api")
@@ -174,6 +176,7 @@ app.include_router(conversations_router)
 app.include_router(genui_router)
 app.include_router(skill_drafts_router)
 app.include_router(skill_drafts_internal_router)
+app.include_router(skill_view_internal_router)
 app.include_router(skills_router)
 app.include_router(platform_skills_router)
 app.include_router(memory_router)
@@ -186,6 +189,7 @@ app.include_router(files_router)
 app.include_router(trash_router)
 app.include_router(projects_router)
 app.include_router(reader_router)
+app.include_router(web_images_router)
 app.include_router(internal_router)
 app.include_router(ocr_router)
 app.include_router(extraction_router)

@@ -1,7 +1,7 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "3cb3d752ac0436d1874a9aedaaec3e48f00a5f99a6f701181a39e87e0dce9961",
+  "index_sha256": "9a88271a01758d493145b7aee4a8fc381fc081f034e9a3abb08dc005defd7493",
   "guide_sha256": "ab909682ce3749e823d0b0a2cf4d2a833077d50534ec650004bd439e3595e332",
   "groups": [
     {
@@ -27,6 +27,14 @@
         "List",
         "KeyValue",
         "Code"
+      ]
+    },
+    {
+      "name": "图片",
+      "components": [
+        "Image",
+        "Gallery",
+        "ImageText"
       ]
     },
     {
@@ -204,6 +212,24 @@
       "group": "文字",
       "needs": [],
       "doc": "Code(code: string, opts?: {language?: string, title?: string}) — 一段代码或命令，可复制\n- 只有代码需要和其它组件放在一起（如 Tabs 分语言）时才用；单独的代码直接写在块外的 Markdown 代码围栏里。"
+    },
+    {
+      "name": "Image",
+      "group": "图片",
+      "needs": [],
+      "doc": "Image(src: string, opts?: {alt?: string, caption?: string, source?: string, ratio?: \"auto\" | \"16:9\" | \"4:3\" | \"1:1\" | \"3:4\"}) — 一张图片，可带说明和来源\n- src 只能原样照抄 web_search（kind: \"images\"）或 read_url 结果里的 image 路径（/v1/web-images/…），不要改写或自己拼网址；手头没有图片就不用图片组件。source 填图片所在网页的 URL（结果里的 page_url 或读过的网页）。\n例：`shot = Image(\"/v1/web-images/…\", {caption: \"U9 Xtreme 极速测试\", source: \"https://example.com/news\"})`"
+    },
+    {
+      "name": "Gallery",
+      "group": "图片",
+      "needs": [],
+      "doc": "Gallery(images: {src: string, alt?: string, caption?: string, source?: string}[], opts?: {title?: string}) — 同一主题的一组图片（2–12 张）：并排显示，多出的折叠为 +N，点开可逐张浏览\n- 每张图片的 src 规则同 Image。只有一张时用 Image。\n例：`shots = Gallery([{src: \"/v1/web-images/…\", caption: \"正面\"}, {src: \"/v1/web-images/…\", caption: \"侧面\"}])`"
+    },
+    {
+      "name": "ImageText",
+      "group": "图片",
+      "needs": [],
+      "doc": "ImageText(src: string, title: string, opts?: {text?: string, points?: string[], source?: string, side?: \"left\" | \"right\", size?: \"sm\" | \"md\" | \"lg\"}) — 图文并排：左图右文介绍一个人物、产品、地点或条目\n- src 规则同 Image。几个 ImageText 连续放在 Stack 里就是图文列表（如几款产品各一条）。\n- size：sm 为小缩略图（列表条目），md 为默认，lg 为大图（重点介绍，窄屏时图片在上）。points 是要点列表。\n例：`driver = ImageText(\"/v1/web-images/…\", \"Marc Basseng\", {text: \"德国职业赛车手\", points: [\"2012 年 FIA GT1 世界冠军\"], source: \"https://example.com/profile\"})`"
     },
     {
       "name": "Metric",
@@ -403,7 +429,7 @@
       "name": "EntityCard",
       "group": "对比",
       "needs": [],
-      "doc": "EntityCard(name: string, opts?: {subtitle?: string, description?: string, fields?: {label: string, value: string | number | boolean | any, unit?: string}[], tags?: string[], badge?: string, rating?: number, price?: number, priceUnit?: string, highlight?: boolean, decimals?: number}) — 一个具体对象的名片：产品、公司、人物、地点、方案或套餐\n- 几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。\n例：`pro = EntityCard(\"专业版\", {price: 99, priceUnit: \"元/人/月\", fields: [{label: \"席位上限\", value: 200}], tags: [\"SSO\"], highlight: true})`"
+      "doc": "EntityCard(name: string, opts?: {subtitle?: string, description?: string, fields?: {label: string, value: string | number | boolean | any, unit?: string}[], tags?: string[], badge?: string, rating?: number, price?: number, priceUnit?: string, highlight?: boolean, decimals?: number, image?: string}) — 一个具体对象的名片：产品、公司、人物、地点、方案或套餐\n- 几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。image 是卡片顶部的图片，规则同 Image 的 src。\n例：`pro = EntityCard(\"专业版\", {price: 99, priceUnit: \"元/人/月\", fields: [{label: \"席位上限\", value: 200}], tags: [\"SSO\"], highlight: true})`"
     },
     {
       "name": "Flow",

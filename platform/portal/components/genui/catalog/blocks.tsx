@@ -13,6 +13,7 @@ import {
   changeRate, factValue, facts, formatNumber, formatRate, formatShare, goodness, numbers, objects, pieData, ranking, strings, text, winners, withUnit,
 } from "./data";
 import { Frame, Malformed, color } from "./kit";
+import { CardImage } from "./media";
 
 type P = Record<string, any>;
 const TONES = new Set(["neutral", "success", "warning", "danger", "info"]);
@@ -346,6 +347,7 @@ export function EntityCardView({ p }: { p: P }) {
   const rating = typeof o.rating === "number" && Number.isFinite(o.rating) ? Math.min(5, Math.max(0, o.rating)) : null;
   return (
     <section className={cn("gu-card gu-entity", o.highlight === true && "highlight")}>
+      {o.image ? <CardImage src={o.image} alt={text(p.name)} /> : null}
       <header>
         <div>
           <h4 className="gu-card-title">{text(p.name)}</h4>

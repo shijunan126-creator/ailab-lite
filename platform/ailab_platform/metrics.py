@@ -239,6 +239,13 @@ def observe_web_read(path: str, outcome: str, seconds: float) -> None:
     WEB_READ_SECONDS.labels(path if path in ("static", "rendered", "static_fallback") else "other", outcome).observe(seconds)
 
 
+WEB_IMAGES = Counter("ailab_web_images_total", "Web picture proxy responses: served from cache, fetched, refused or failed", ["result"])
+
+
+def observe_web_image(result: str) -> None:
+    WEB_IMAGES.labels(result if result in ("hit", "fetched", "refused", "failed") else "other").inc()
+
+
 GENUI_BLOCKS = Counter("ailab_genui_blocks_total", "OpenUI blocks by completion outcome", ["mode", "outcome"])
 GENUI_COMPONENTS = Counter("ailab_genui_components_total", "OpenUI component occurrences", ["component"])
 GENUI_ANSWERS = Counter("ailab_genui_answers_total", "Agent step answers with and without UI", ["mode", "has_ui"])

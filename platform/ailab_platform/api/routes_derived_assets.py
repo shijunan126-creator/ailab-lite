@@ -73,6 +73,8 @@ def authorize(db, body, principal, attempt):
         if not run or run.status != "running" or (run.options or {}).get("mode", "work") != "work":
             raise HTTPException(403, "derived_run_scope_required")
         return run.user_id
+    # Ownerless keys (web-images/) are written only by the API itself; no service grant reaches them.
+    raise HTTPException(403, "derived_scope_required")
 
 
 @router.post("/reserve")

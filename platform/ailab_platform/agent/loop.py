@@ -125,7 +125,8 @@ def web_sources(result: dict) -> list[dict]:
     for item in result.get("results", [result]):
         if not isinstance(item, dict):
             continue
-        url = item.get("url")
+        # An image hit cites the page showing it, never the picture itself (that is only a signed /v1/web-images path).
+        url = item.get("url") or item.get("page_url")
         if not isinstance(url, str):
             continue
         try:

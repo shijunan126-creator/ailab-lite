@@ -9,7 +9,7 @@ from ailab_platform import web
 
 def test_extract_markdown_drops_scripts_and_keeps_title() -> None:
     body = "第一条内容，" * 60
-    title, text, links = web.extract_markdown(
+    title, text, links, images = web.extract_markdown(
         "<html><head><title>OpenAI 新闻</title><style>x{}</style></head>"
         f"<body><script>alert(1)</script><article><h1>今日新闻</h1><p>{body}</p><a href='/b'>b</a></article>"
         "<nav>菜单</nav></body></html>",
@@ -18,7 +18,7 @@ def test_extract_markdown_drops_scripts_and_keeps_title() -> None:
     assert title in ("今日新闻", "OpenAI 新闻")  # Trafilatura may prefer the article heading over <title>
     assert "今日新闻" in text and "第一条内容" in text
     assert "alert" not in text
-    assert links == ["https://example.com/b"]
+    assert links == ["https://example.com/b"] and images == []
 
 
 def test_private_and_non_web_urls_are_rejected() -> None:

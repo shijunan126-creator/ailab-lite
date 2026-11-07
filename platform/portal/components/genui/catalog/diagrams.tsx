@@ -8,7 +8,7 @@ import { cn } from "../../../lib/cn";
 import CopyButton from "../../copy-button";
 import { IconChevronRight, IconFile, IconFolder } from "../../icons";
 import { dayOf, lineDiff, objects, pathTree, strings, text, treeOf, type PathNode, type TreeNode } from "./data";
-import { Frame, Legend, Malformed, color, fit, textWidth, useWidth } from "./kit";
+import { Frame, Legend, Malformed, color, fit, textWidth, useWidth, wrap } from "./kit";
 
 type P = Record<string, any>;
 const o = (p: P): P => p.opts || {};
@@ -18,6 +18,10 @@ const TONE_STROKE: Record<string, string> = { success: "var(--success)", warning
 // ---------- flow ----------
 
 type FlowNode = { id: string; label: string; tone?: string };
+/** Line heights of node and edge labels, and a node's horizontal padding. */
+const LINE = 17;
+const EDGE_LINE = 15;
+const PAD_X = 28;
 type FlowEdge = { from: string; to: string; label?: string };
 
 /** Layers by longest path from the sources (edges that close a cycle are drawn but do not push layers), then each
@@ -73,35 +77,59 @@ function FlowView({ p }: { p: P }) {
   if (!data || !data.list.length) return <Malformed />;
   const { list, rank, layers, back } = data;
   const maxRow = Math.max(...layers.map((l) => l.length));
-  // flowing right needs room for every layer side by side; on a narrow column it flows down instead
-  const nodeW = Math.min(150, Math.max(72, ...list.map((n) => Math.min(150, textWidth(n.label) + 24))));
-  const right = opt.direction !== "down" && width >= layers.length * (nodeW + 36);
-  const nodeH = 36;
+  const gapCross = 14;
+  const widest = Math.max(...list.map((n) => textWidth(n.label)));
+  // flowing right needs room for every layer side by side; on a narrow column it flows down instead, where a node
+  // can be wider. Labels wrap inside their box (never cut off), so a box is as tall as its lines.
+  const rightW = Math.min(160, Math.max(72, widest + PAD_X));
+  const right = opt.direction !== "down" && width >= layers.length * (rightW + 36);
+  const downRoom = Math.floor((Math.max(width, 200) - 8 - (maxRow - 1) * gapCross) / maxRow);
+  const nodeW = right ? rightW : Math.min(260, Math.max(96, Math.min(downRoom, widest + PAD_X)));
+  const lines = new Map(list.map((n) => [n.id, wrap(n.label, nodeW - PAD_X, 4)]));
+  const height = (id: string) => Math.max(36, lines.get(id)!.length * LINE + 18);
   // positions are worked out along the flow (main) and across it (cross), then mapped to x/y
-  const mainSize = right ? nodeW : nodeH;
-  const crossSize = right ? nodeH : nodeW;
+  const mainOf = (id: string) => (right ? nodeW : height(id));
+  const crossOf = (id: string) => (right ? height(id) : nodeW);
   const backward = (e: FlowEdge) => back.has(e) || rank.get(e.to)! <= rank.get(e.from)!;
   const anyBack = data.edges.some(backward);
   // a backward edge leaves and enters through the gaps before the first and after the last layer
   const lead = anyBack ? 18 : 4;
-  const gapMain = right ? Math.max(28, (width - 2 * lead - layers.length * nodeW) / Math.max(1, layers.length - 1)) : 44;
-  const gapCross = 14;
-  const crossTotal = maxRow * crossSize + (maxRow - 1) * gapCross;
-  const mainTotal = 2 * lead + layers.length * mainSize + (layers.length - 1) * gapMain;
-  const place = new Map<string, { m: number; c: number }>();
+  const band = layers.map((l) => Math.max(...l.map(mainOf)));
+  const bands = band.reduce((a, b) => a + b, 0);
+  const gapMain0 = right ? Math.max(28, (width - 2 * lead - bands) / Math.max(1, layers.length - 1)) : 44;
+  // an edge label sits in the gap between layers: beside the edge flowing down, above it flowing right
+  const labelRoom = right ? Math.max(48, gapMain0 - 10) : 150;
+  const edgeLines = new Map(data.edges.map((e) => [e, e.label ? wrap(e.label, labelRoom, 3, 11) : []]));
+  const forwardLines = Math.max(0, ...data.edges.filter((e) => !backward(e)).map((e) => edgeLines.get(e)!.length));
+  const gapMain = right ? gapMain0 : Math.max(44, forwardLines * EDGE_LINE + 20);
+  const used = layers.map((l) => l.reduce((a, id) => a + crossOf(id), 0) + (l.length - 1) * gapCross);
+  const crossTotal = Math.max(...used);
+  const mainTotal = 2 * lead + bands + (layers.length - 1) * gapMain;
+  const place = new Map<string, { m: number; c: number; ms: number; cs: number }>();
+  let start = lead;
   layers.forEach((l, d) => {
-    const used = l.length * crossSize + (l.length - 1) * gapCross;
-    l.forEach((id, i) => place.set(id, { m: lead + d * (mainSize + gapMain), c: 4 + (crossTotal - used) / 2 + i * (crossSize + gapCross) }));
+    let c = 4 + (crossTotal - used[d]) / 2;
+    for (const id of l) {
+      const ms = mainOf(id);
+      const cs = crossOf(id);
+      place.set(id, { m: start + (band[d] - ms) / 2, c, ms, cs });
+      c += cs + gapCross;
+    }
+    start += band[d] + gapMain;
   });
   // a backward edge runs beyond every node of the layers it spans, so it never crosses a box
   const bends = new Map<FlowEdge, number>();
   for (const e of data.edges.filter(backward)) {
     const lo = Math.min(rank.get(e.from)!, rank.get(e.to)!);
     const hi = Math.max(rank.get(e.from)!, rank.get(e.to)!);
-    const spanned = list.filter((n) => rank.get(n.id)! >= lo && rank.get(n.id)! <= hi);
-    bends.set(e, Math.max(...spanned.map((n) => place.get(n.id)!.c)) + crossSize + 18 + 10 * bends.size);
+    const spanned = list.filter((n) => rank.get(n.id)! >= lo && rank.get(n.id)! <= hi).map((n) => place.get(n.id)!);
+    bends.set(e, Math.max(...spanned.map((q) => q.c + q.cs)) + 18 + 10 * bends.size);
   }
-  const crossEnd = Math.max(crossTotal + 8, ...[...bends].map(([e, b]) => b + (e.label ? (right ? 18 : Math.min(90, textWidth(e.label)) + 10) : 8)));
+  const labelSpan = (e: FlowEdge) => {
+    const ls = edgeLines.get(e)!;
+    return ls.length ? (right ? ls.length * EDGE_LINE + 8 : Math.max(...ls.map((l) => textWidth(l, 11))) + 10) : 8;
+  };
+  const crossEnd = Math.max(crossTotal + 8, ...[...bends].map(([e, b]) => b + labelSpan(e)));
   const W = right ? Math.max(width, mainTotal) : Math.max(width, crossEnd);
   const H = right ? crossEnd : mainTotal;
   // flowing down, the drawing sits in the middle of a wide column
@@ -125,7 +153,6 @@ function FlowView({ p }: { p: P }) {
     const [lx, ly] = P[P.length - 1];
     return d + `L${lx},${ly}`;
   };
-  const byId = new Map(list.map((n) => [n.id, n]));
   const linked = (e: FlowEdge) => at != null && (e.from === at || e.to === at);
   return (
     <Frame title={text(opt.title)}>
@@ -144,17 +171,17 @@ function FlowView({ p }: { p: P }) {
             let lc: number;
             if (bend != null) {
               // out past the source's layer, around, and in before the target's layer, off-centre so forward arrows stay clear
-              const c0 = a.c + crossSize * 0.75;
-              const c1 = b.c + crossSize * 0.75;
-              const m0 = a.m + mainSize;
+              const c0 = a.c + a.cs * 0.75;
+              const c1 = b.c + b.cs * 0.75;
+              const m0 = a.m + a.ms;
               const m1 = b.m;
               d = route([[m0, c0], [m0 + lead - 4, c0], [m0 + lead - 4, bend], [m1 - lead + 4, bend], [m1 - lead + 4, c1], [m1 - 2, c1]]);
               lm = (m0 + m1) / 2;
-              lc = bend + (right ? 14 : 6);
+              lc = bend + (right ? 4 : 6);
             } else {
-              const c0 = a.c + crossSize / 2;
-              const c1 = b.c + crossSize / 2;
-              const m0 = a.m + mainSize;
+              const c0 = a.c + a.cs / 2;
+              const c1 = b.c + b.cs / 2;
+              const m0 = a.m + a.ms;
               const m1 = b.m;
               const [x0, y0] = xy(m0, c0);
               const [x1, y1] = xy(m1 - 2, c1);
@@ -162,24 +189,37 @@ function FlowView({ p }: { p: P }) {
               const [qx0, qy0] = xy(mid, c0);
               const [qx1, qy1] = xy(mid, c1);
               d = `M${x0},${y0}C${qx0},${qy0} ${qx1},${qy1} ${x1},${y1}`;
-              lm = mid + (right ? 0 : 4);
-              lc = (c0 + c1) / 2 + (right ? -8 : -6);
+              lm = mid;
+              lc = (c0 + c1) / 2 + (right ? -8 : -8);
             }
             const [lx, ly] = xy(lm, lc);
             const isBack = bend != null;
             return (
               <g key={i} className={at != null && !linked(e) ? "gu-dim" : undefined}>
                 <path d={d} fill="none" stroke={linked(e) ? "var(--foreground)" : "var(--muted-foreground)"} strokeWidth={1.4} strokeDasharray={isBack ? "5 4" : undefined} markerEnd="url(#gu-arrow)" />
-                {e.label ? <text x={lx} y={ly} textAnchor={right ? "middle" : isBack ? "start" : "end"} dominantBaseline="middle" className="gu-flow-edge">{fit(e.label, 90)}</text> : null}
+                {e.label ? (
+                  <text x={lx} y={ly} textAnchor={right ? "middle" : isBack ? "start" : "end"} dominantBaseline="central" className="gu-flow-edge">
+                    {edgeLines.get(e)!.map((line, k, all) => (
+                      // beside a vertical edge the lines centre on it; flowing right they stack away from the edge
+                      <tspan key={k} x={lx} y={ly + (!right ? k - (all.length - 1) / 2 : isBack ? k + 0.5 : k - (all.length - 1)) * EDGE_LINE}>{line}</tspan>
+                    ))}
+                    <title>{e.label}</title>
+                  </text>
+                ) : null}
               </g>
             );
           })}
           {list.map((n) => {
             const q = pos.get(n.id)!;
+            const { ms, cs } = place.get(n.id)!;
+            const [w, h] = right ? [ms, cs] : [cs, ms];
+            const ls = lines.get(n.id)!;
             return (
               <g key={n.id} onPointerEnter={() => setAt(n.id)} className={at != null && at !== n.id && !data.edges.some((e) => linked(e) && (e.from === n.id || e.to === n.id)) ? "gu-dim" : undefined}>
-                <rect x={q.x} y={q.y} width={nodeW} height={nodeH} rx={8} fill={TONE_FILL[n.tone ?? ""] ?? "var(--popover)"} stroke={TONE_STROKE[n.tone ?? ""] ?? "var(--border-strong)"} />
-                <text x={q.x + nodeW / 2} y={q.y + nodeH / 2 + 4} textAnchor="middle" className="gu-flow-node">{fit(byId.get(n.id)!.label, nodeW - 14)}</text>
+                <rect x={q.x} y={q.y} width={w} height={h} rx={8} fill={TONE_FILL[n.tone ?? ""] ?? "var(--popover)"} stroke={TONE_STROKE[n.tone ?? ""] ?? "var(--border-strong)"} />
+                <text textAnchor="middle" dominantBaseline="central" className="gu-flow-node">
+                  {ls.map((line, k) => <tspan key={k} x={q.x + w / 2} y={q.y + h / 2 + (k - (ls.length - 1) / 2) * LINE}>{line}</tspan>)}
+                </text>
                 <title>{n.label}</title>
               </g>
             );

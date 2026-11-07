@@ -274,10 +274,34 @@ export function dayOf(s: unknown): number | null {
 
 const opt = (p: Record<string, unknown>) => (record(p.opts) ? p.opts : {});
 const allFinite = (v: unknown, n?: number) => Array.isArray(v) && v.every((x) => x == null || finite(x)) && (n === undefined || v.length >= n);
+/** Pictures one block may show: a Gallery's own cap. */
+export const MAX_IMAGES = 12;
+/** A platform-signed web image path from a tool result (/v1/web-images/<url>.<signature>), or null. Anything else
+ * the model wrote is not an image this answer may load. */
+export function webImage(v: unknown): string | null {
+  const s = text(v).trim();
+  return s.length <= 4096 && /^\/v1\/web-images\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(s) ? s : null;
+}
+/** "example.com" for a source page, or null when it is not an http(s) URL. */
+export function siteOf(v: unknown): string | null {
+  try {
+    const url = new URL(text(v));
+    return /^https?:$/.test(url.protocol) ? url.hostname.replace(/^www\./, "") : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Whether a component's evaluated props have the shape it draws; false shows "数据格式有误". The renderer and the
  * eval checker both decide with this. Components without data (layout, text, controls) always pass. */
 export function shapeOk(name: string, p: Record<string, unknown>): boolean {
   switch (name) {
+    case "Image":
+      return typeof p.src === "string";
+    case "Gallery":
+      return objects(p.images, ["src"], MAX_IMAGES) !== null && (p.images as unknown[]).length > 0;
+    case "ImageText":
+      return typeof p.src === "string" && typeof p.title === "string";
     case "Table":
       return tableRows(p.rows, Array.isArray(p.columns) ? p.columns.length : 0) !== null;
     case "LineChart":

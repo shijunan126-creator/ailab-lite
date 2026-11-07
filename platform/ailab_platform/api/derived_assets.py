@@ -40,6 +40,10 @@ def source(db, key, version=None, *, writing=True):
     except ValueError:
         raise HTTPException(422, "invalid_derived_key") from None
     parts = key.split("/")
+    if parts[0] == "web-images" and len(parts) == 3:
+        # Public pictures shown in answers (routes_web_images): no owner, a cache that is refetched after eviction.
+        # Not in PREFIXES: the backfill scan never sees them, because none were written before this ledger existed.
+        return None, None, version or "web"
     if len(key) > 600 or len(parts) < 3 or parts[0] + "/" not in PREFIXES:
         raise HTTPException(422, "invalid_derived_key")
     file = db.get(FileObject, parts[1], populate_existing=True) if parts[0] == "derived" else None
