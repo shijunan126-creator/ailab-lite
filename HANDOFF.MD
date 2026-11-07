@@ -1,3 +1,13 @@
+## 2026-11-07 剩余边界修复的坑
+
+- Chat原生解析在Office沙箱镜像里运行；改`vendor/office-suite`运行时后先重建该镜像再做真实模型验证，否则测的是旧解析器。改Dockerfile后用`inventory.py`重生成`capabilities.json`，否则镜像基线测试失败。
+- pdf.js `constructPath`以`OPS.endPath`结尾的路径只裁剪不绘制；只要有矢量就判视觉unknown，会让带表格线的小PDF不内联页图。按几何分类：坐标轴线条是rules，填充框算shading（仍unknown），曲线/斜线才是drawing。
+- LibreOffice Calc导出PDF时每张打印表一个书签，空表和隐藏表既无书签也无页。工作表→页映射取书签首页并绑定源版本；工作表序号不是页号。
+- 视图等待的渲染job必须挂在`render_job_id`依赖边上。另起字段（如`outline_job_id`）不算消费者，job会以`document_source_unavailable`被当孤儿取消。
+- 搜索的单批窗口按本次工作量限界（块数、扫描字符、打开的存储对象数），不按输出；输出本来就限20条。固定100块一批时，长文档末尾的词要每百段往返一次模型，模型中途还会改道。
+- 模型`exec`在所有后端都用bash：Debian的`/bin/sh`是dash，不支持`<(...)`、`[[ ]]`，而OpenSandbox execd本就用bash，提示词也要求pipefail。
+- `LocalObjectIndex`首次被并发打开时，切WAL需要独占锁，SQLite对此会立即返回BUSY、不等busy_timeout；只对这一步做有界重试。见[终审修复](docs/progress/updates/2026-11-07-document-prompt-review.md)。
+
 ## 2026-11-07 文档工具反馈要与校验身份一致
 
 - OCR执行器在可能失败前按`X-Ocr-Operation`登记回执并拒绝重复。一个operation多张图须各用独立身份；`image_index`在每步重建剩余图片时恒为0，不能当执行身份，用`operation:claim_token:selector摘要`。只测单页或fake不拒重复id会漏掉。
@@ -109,7 +119,7 @@
 
 ## 2026-11-05 搜索续游标与规范化片段
 
-- 20条命中上限须保留当前块内位置；100块扫描0命中也不代表搜完。游标须绑定文件/源与派生代际/query/selector，不可只记block offset。Unicode规范化片段只作导航证据，不可当原始quote去精确引用；原文引用另读并核验。
+- 20条命中上限须保留当前块内位置；一批窗口扫描0命中也不代表搜完。游标须绑定文件/源与派生代际/query/selector，不可只记block offset。Unicode规范化片段只作导航证据，不可当原始quote去精确引用；原文引用另读并核验。
 
 ## 2026-11-05 存储目录与原生generation
 

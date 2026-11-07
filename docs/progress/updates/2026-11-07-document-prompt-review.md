@@ -29,9 +29,28 @@
 
 追问首请求暖缓存96.97%–99.16%（13次），均≥95%。时间均为单次观察。
 
+## 剩余边界修复（同日第二轮）
+
+用户要求把上面列出的剩余边界“能修的都修”。基线为`191fcdba`加本轮未提交改动。
+
+1. **小PDF视觉unknown**：只要页面有矢量就判unknown，带表格线的小PDF因此不内联。改为按pdf.js路径几何分类（vendor补丁011）：跳过只裁剪的`endPath`，坐标轴线条算rules，填充框算shading（仍unknown），曲线或斜线才算drawing。改后带线小PDF直接内联，首轮7.3s、零读取（上一轮9.3s加一次read）。
+2. **Excel工作表→页映射**：Calc导出PDF时每张打印表一个书签，渲染据此记录各表首页（`render_sheet_pages`，绑定源版本）。新增`view_document`的`kind=sheet`按表名看页，结果附`sheet_to_page_mapping`；Work的`view_workspace_file`返回`sheet_pages`。空表和隐藏表没有页，返回`sheet_not_rendered`。首次看页时学习书签的渲染job挂在`render_job_id`依赖边上，不会被当孤儿取消。
+3. **PPT像素文字归属**：块标签带形状在页面上的百分比范围（补丁012，例如`@x3-73% y13-69%`），模型据此判断渲染图里的文字落在哪个形状内。inline页图标签带`region_ref`，后续区域查看不用再猜revision。PPT视觉归属3/3正确（修前1/4）。
+4. **搜索绕路**（终跑发现）：`search_document`每次只扫100块，400段文档末尾的词需要4次调用，模型中途改道，用了25次调用、52s。改为按单次工作量限界：最多2000块、100万字符、100个存储对象。canonical文本一次读完；legacy逐块文本和OCR页仍不超过100个对象。复测两次：4–5次调用，11.1–12.7s。
+5. **Work exec用dash**（终跑发现）：Docker后端和后台helper用`/bin/sh`，在Debian镜像里是dash，模型写的`<(...)`报语法错误；OpenSandbox execd本来就用bash，提示词也要求pipefail。三处后端统一为bash。复测4轮Work Word都没有shell错误；唯一一次失败是模型自己写的`assert`拦下了错误假设，下一步已修正。
+6. **Work目录**：镜像和mock预建`/workspace/work`，`office-read`自动创建父目录，去掉先失败再mkdir的绕路。
+7. **本地对象目录并发首开**（PostgreSQL/Redis套件里偶发失败）：切WAL需要独占锁，SQLite对此立即返回BUSY、不等busy_timeout，16线程首开时200次里失败7次。改为只对这一步有界重试，400次压测0失败。
+
+验证（代码head `766ccfcc`）：
+- Ruff通过。PostgreSQL/Redis双库完整套件退出码0，2739通过、69环境跳过。SQLite完整套件2567通过、240跳过、1失败；失败的是定时任务合并派发测试，在`766ccfcc`修复（不是本分支引入：套件跨过09:00 HKT时，前面测试建的任务到期被一并派发），单独重跑通过。E2E（mock沙箱）194通过、15跳过。未改Portal，`npm test`（258个测试）与`npm run build`都通过。
+- 真实DeepSeek Flash（`actual_backend`全部为`deepseek-flash`），独立VM：终跑12个场景，追问首请求缓存命中96.92%–99.42%（11次）。搜索与bash修复后，literal-search和Work Word各复测2次，0平台失败，追问缓存97.17%–99.21%（4次）。时间均为单次观察。
+- 只配置了DeepSeek Flash的凭据，没有做多模型评估。
+
+不改的两项：回答偏长或外推，系统提示里已有一句“只回答本次问的内容”，本轮回答都没超出范围，不再加重复规则；两页OCR文字相同时再看图核对，属于合理核验。
+
 ## 剩余边界
 
-- 含矢量线条的小PDF视觉状态unknown，按设计不内联页图，模型仍可能主动看页核对；Excel工作表→渲染页映射未知，模型需排除法定位。
-- 回答仍可能偏长或从局部推广（如PPT未看页）；两页OCR文字相同时模型会再看图核对，属合理但多一步。
-- 未覆盖多模型、非合成业务文档、PostgreSQL/E2E、Portal浏览器路径与NPU/S3/OpenSandbox。
+- 含填充框的小PDF仍判visual unknown，不内联（填充可能是图表）。Excel只映射打印表，没有书签时返回`sheet_page_mapping_unavailable`，模型改用页码查看。
+- 模型偶有小失误：Excel区域行名标错一次；Excel第二轮看过页后有时还做一次OCR。按表名做OCR没有实现。
+- 未覆盖多模型、非合成业务文档、Portal浏览器路径与NPU/S3/OpenSandbox真后端。
 - 运行产物（计划、事件、回答、计量）只在仓库外临时目录，结束后删除。
