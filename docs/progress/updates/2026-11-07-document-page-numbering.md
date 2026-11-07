@@ -19,12 +19,12 @@
 ## 验证（基线 `ea7cd684` 加本轮改动）
 
 - 真实 LibreOffice 26.8（本机 Homebrew）：3 张幻灯片、第 2 张隐藏，默认导出 2 页，新参数导出 3 页。sandbox 镜像是 trixie 自带的 LibreOffice，JSON 过滤参数需要 ≥7.4，满足。
-- listener 路径没有真实跑过：本机 LibreOffice 自带的 Python 一启动就被 macOS 杀掉（137，旧代码也一样），Docker 也没开。参数形状由 `test_uno_render.py` 的假 UNO 测试覆盖。
+- listener 路径：本机 LibreOffice 自带的 Python 会被 macOS 杀掉（137），所以合并后在 `main@2bf86144` 构建的 sbx-office 镜像里按 Broker 预热方式起 listener 实测（无网络）：同一份 3 页含 1 张隐藏页的 PPT，旧 `uno_convert.py` 导出 2 页，新代码 3 页；`render_preview.soffice` 在 `AILAB_LO_LISTENER=1 AILAB_LO_STRICT=1` 下也是 3 页。真实 Docker 沙箱默认走这条路径，严格模式下不会退回冷启动。
 - 新回归：`test_only_intrinsic_page_numbers_use_the_open_preview`（pptx 走浏览器；docx/xlsx 即使开着预览也走服务端，且不登记浏览器绑定）；冷启动和 listener 两条转换路径的隐藏页参数。
 - Ruff check/format 通过。PostgreSQL 16 + Redis 完整套件 2739 通过 / 69 跳过 / 0 失败。
 - E2E（含 Portal 测试和 build）193 通过 / 15 跳过 / 1 失败：`test_chat_upload_native_select_quote_send_and_reveal[docx-对话]` 断言 Chat 看 Word 页会走浏览器截图，这正是本轮去掉的行为；期望改为只有 PDF/PPTX 走浏览器后，该用例 8 个参数全部重跑通过。opt-in 的迟到截图验收（需要真实 Docker）改用 PDF 作浏览器截图对象，本机没有 Docker，没有跑。
 
 ## 没覆盖到 / 风险
 
-- **旧缓存不会自动重渲**：`RenderedPage` 的版本仍是 `poppler-1280-v1`，文件元数据里的预览也没有渲染器版本。已经渲染过、并且含隐藏页的 PPTX 会继续用旧页图（少了隐藏页），直到文件新版本或缓存被淘汰。PR 尚未合并，本机是可重建测试环境，所以这次没有引入渲染版本迁移；如果要上生产，需要先补上按格式划分的渲染版本。
+- **旧缓存不会自动重渲**（合并后只读核查本机测试库：18 个 PPTX、114 张幻灯片，没有隐藏页，所以现有缓存不受影响）：`RenderedPage` 的版本仍是 `poppler-1280-v1`，文件元数据里的预览也没有渲染器版本。已经渲染过、并且含隐藏页的 PPTX 会继续用旧页图（少了隐藏页），直到文件新版本或缓存被淘汰。PR 尚未合并，本机是可重建测试环境，所以这次没有引入渲染版本迁移；如果要上生产，需要先补上按格式划分的渲染版本。
 - Portal 浏览器路径没有实测。
