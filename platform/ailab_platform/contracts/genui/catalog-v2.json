@@ -253,13 +253,13 @@
       "name": "ShareBar",
       "group": "指标",
       "needs": [],
-      "doc": "ShareBar(title: string, labels: string[], values: number[], opts?: {unit?: string, decimals?: number}) — 一个整体的组成，一条百分比条（组件算占比）；比饼图更省地方\n例：`mix = ShareBar(\"流量来源\", [\"搜索\", \"直接\", \"社交\"], [52, 30, 18])`"
+      "doc": "ShareBar(title: string, labels: (string | number)[], values: number[], opts?: {unit?: string, decimals?: number}) — 一个整体的组成，一条百分比条（组件算占比）；比饼图更省地方\n例：`mix = ShareBar(\"流量来源\", [\"搜索\", \"直接\", \"社交\"], [52, 30, 18])`"
     },
     {
       "name": "Highlights",
       "group": "指标",
       "needs": [],
-      "doc": "Highlights(labels: string[], values: number[], facts: string[], opts?: {unit?: string, decimals?: number, title?: string}) — 从一组数据算出的结论数字：最高、最低、合计、平均、首尾变化、最大增幅等\n- 需要写“哪个最高/最低、合计多少、涨了多少、哪一期涨得最多”时用它，由组件计算并标出对应标签，不要在文字里自己算。\n- facts：max 最高、min 最低、total 合计、avg 平均、median 中位数、range 极差、change 首尾变化（含变化率）、rise 最大单期增幅、drop 最大单期降幅、share 最大项占合计的比例。labels 有先后顺序时才用 change/rise/drop。\n例：`facts = Highlights(months, sales, [\"change\", \"rise\", \"max\"], {unit: \"万元\"})`"
+      "doc": "Highlights(labels: (string | number)[], values: number[], facts: string[], opts?: {unit?: string, decimals?: number, title?: string}) — 从一组数据算出的结论数字：最高、最低、合计、平均、首尾变化、最大增幅等\n- 需要写“哪个最高/最低、合计多少、涨了多少、哪一期涨得最多”时用它，由组件计算并标出对应标签，不要在文字里自己算。\n- facts：max 最高、min 最低、total 合计、avg 平均、median 中位数、range 极差、change 首尾变化（含变化率）、rise 最大单期增幅、drop 最大单期降幅、share 最大项占合计的比例。labels 有先后顺序时才用 change/rise/drop。\n例：`facts = Highlights(months, sales, [\"change\", \"rise\", \"max\"], {unit: \"万元\"})`"
     },
     {
       "name": "LineChart",
@@ -267,7 +267,7 @@
       "needs": [
         "Series"
       ],
-      "doc": "LineChart(title: string, categories: string[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, curve?: \"linear\" | \"smooth\" | \"step\", zero?: boolean, marks?: \"max\" | \"min\" | \"last\"[]}) — 随时间或顺序变化的趋势\n- 纵轴默认按数据范围取值，zero 为 true 时从 0 开始。marks 在图上标出最高、最低或最后一个点的数值。reference 画一条参考线（目标、均值、阈值）。\n例：`trend = LineChart(\"月销售额\", months, [Series(\"销售额\", sales)], {unit: \"万元\", marks: [\"max\", \"last\"]})`"
+      "doc": "LineChart(title: string, categories: (string | number)[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, curve?: \"linear\" | \"smooth\" | \"step\", zero?: boolean, marks?: \"max\" | \"min\" | \"last\"[]}) — 随时间或顺序变化的趋势\n- 纵轴默认按数据范围取值，zero 为 true 时从 0 开始。marks 在图上标出最高、最低或最后一个点的数值。reference 画一条参考线（目标、均值、阈值）。\n例：`trend = LineChart(\"月销售额\", months, [Series(\"销售额\", sales)], {unit: \"万元\", marks: [\"max\", \"last\"]})`"
     },
     {
       "name": "AreaChart",
@@ -275,7 +275,7 @@
       "needs": [
         "Series"
       ],
-      "doc": "AreaChart(title: string, categories: string[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, stacked?: boolean, percent?: boolean, curve?: \"linear\" | \"smooth\" | \"step\"}) — 趋势加总量；stacked 堆叠显示各部分随时间的构成，percent 显示为占比\n例：`mix = AreaChart(\"各渠道用户\", months, [Series(\"网页\", web), Series(\"App\", app)], {stacked: true})`"
+      "doc": "AreaChart(title: string, categories: (string | number)[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, stacked?: boolean, percent?: boolean, curve?: \"linear\" | \"smooth\" | \"step\"}) — 趋势加总量；stacked 堆叠显示各部分随时间的构成，percent 显示为占比\n例：`mix = AreaChart(\"各渠道用户\", months, [Series(\"网页\", web), Series(\"App\", app)], {stacked: true})`"
     },
     {
       "name": "BarChart",
@@ -283,7 +283,7 @@
       "needs": [
         "Series"
       ],
-      "doc": "BarChart(title: string, categories: string[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, horizontal?: boolean, stacked?: boolean, percent?: boolean, better?: \"high\" | \"low\"}) — 类别之间的数量对比；有负数时以 0 为中线向两侧分开\n- 类别名长或超过 8 个时用 horizontal。stacked 堆叠各系列，percent 把每个类别换算成 100%。正负值（超预期/低于预期、盈亏）直接给带符号的数，better 决定正负哪边显示为好。排名用 Ranking。\n例：`gap = BarChart(\"实际与预期之差\", items.name, [Series(\"差值\", items.gap)], {unit: \"亿元\", horizontal: true})`"
+      "doc": "BarChart(title: string, categories: (string | number)[], series: Series[], opts?: {unit?: string, decimals?: number, reference?: number, referenceLabel?: string, horizontal?: boolean, stacked?: boolean, percent?: boolean, better?: \"high\" | \"low\"}) — 类别之间的数量对比；有负数时以 0 为中线向两侧分开\n- 类别名长或超过 8 个时用 horizontal。stacked 堆叠各系列，percent 把每个类别换算成 100%。正负值（超预期/低于预期、盈亏）直接给带符号的数，better 决定正负哪边显示为好。排名用 Ranking。\n例：`gap = BarChart(\"实际与预期之差\", items.name, [Series(\"差值\", items.gap)], {unit: \"亿元\", horizontal: true})`"
     },
     {
       "name": "ComboChart",
@@ -291,13 +291,13 @@
       "needs": [
         "Series"
       ],
-      "doc": "ComboChart(title: string, categories: string[], bars: Series[], lines: Series[], opts?: {unit?: string, lineUnit?: string, decimals?: number}) — 柱和线放在同一张图：数量与比率（如收入和增长率）\n- lineUnit 与 unit 不同时，线用右侧纵轴。\n例：`rev = ComboChart(\"收入与增速\", years, [Series(\"收入\", revenue)], [Series(\"同比\", growth)], {unit: \"亿元\", lineUnit: \"%\"})`"
+      "doc": "ComboChart(title: string, categories: (string | number)[], bars: Series[], lines: Series[], opts?: {unit?: string, lineUnit?: string, decimals?: number}) — 柱和线放在同一张图：数量与比率（如收入和增长率）\n- lineUnit 与 unit 不同时，线用右侧纵轴。\n例：`rev = ComboChart(\"收入与增速\", years, [Series(\"收入\", revenue)], [Series(\"同比\", growth)], {unit: \"亿元\", lineUnit: \"%\"})`"
     },
     {
       "name": "PieChart",
       "group": "图表",
       "needs": [],
-      "doc": "PieChart(title: string, labels: string[], values: number[], opts?: {unit?: string, decimals?: number}) — 同一整体的少量组成部分（不超过 6 类），组件算占比\n- 后两个参数是标签数组和数值数组，不放 Series。\n例：`budget = PieChart(\"预算构成\", items.name, items.amount, {unit: \"万元\"})`"
+      "doc": "PieChart(title: string, labels: (string | number)[], values: number[], opts?: {unit?: string, decimals?: number}) — 同一整体的少量组成部分（不超过 6 类），组件算占比\n- 后两个参数是标签数组和数值数组，不放 Series。\n例：`budget = PieChart(\"预算构成\", items.name, items.amount, {unit: \"万元\"})`"
     },
     {
       "name": "Series",
@@ -317,7 +317,7 @@
       "needs": [
         "Series"
       ],
-      "doc": "RadarChart(title: string, axes: string[], series: Series[], opts?: {max?: number, decimals?: number}) — 几个对象在 3–8 个维度上的综合对比\n例：`radar = RadarChart(\"能力对比\", [\"推理\", \"代码\", \"长文\"], [Series(\"A\", [9, 8, 7]), Series(\"B\", [8, 9, 6])], {max: 10})`"
+      "doc": "RadarChart(title: string, axes: (string | number)[], series: Series[], opts?: {max?: number, decimals?: number}) — 几个对象在 3–8 个维度上的综合对比\n例：`radar = RadarChart(\"能力对比\", [\"推理\", \"代码\", \"长文\"], [Series(\"A\", [9, 8, 7]), Series(\"B\", [8, 9, 6])], {max: 10})`"
     },
     {
       "name": "Histogram",
@@ -337,19 +337,19 @@
       "name": "Heatmap",
       "group": "高级图表",
       "needs": [],
-      "doc": "Heatmap(title: string, columns: string[], rows: string[], values: number[][], opts?: {unit?: string, decimals?: number, better?: \"high\" | \"low\"}) — 两个维度交叉的数值矩阵（时段×星期、地区×月份）\n- values 每行对应 rows 的一项，每行的数与 columns 一一对应。\n例：`heat = Heatmap(\"各时段订单\", [\"周一\", \"周二\"], [\"上午\", \"下午\"], [[12, 18], [30, 25]])`"
+      "doc": "Heatmap(title: string, columns: (string | number)[], rows: (string | number)[], values: number[][], opts?: {unit?: string, decimals?: number, better?: \"high\" | \"low\"}) — 两个维度交叉的数值矩阵（时段×星期、地区×月份）\n- values 每行对应 rows 的一项，每行的数与 columns 一一对应。\n例：`heat = Heatmap(\"各时段订单\", [\"周一\", \"周二\"], [\"上午\", \"下午\"], [[12, 18], [30, 25]])`"
     },
     {
       "name": "Waterfall",
       "group": "高级图表",
       "needs": [],
-      "doc": "Waterfall(title: string, labels: string[], changes: number[], opts?: {start?: number, startLabel?: string, endLabel?: string, unit?: string, decimals?: number}) — 从起点经过逐项增减到终点的拆解（利润桥、预算变化）；组件累计并算出终值\n- changes 是带符号的增减量，不写累计值；start 是起点值，终值由组件算出。\n例：`bridge = Waterfall(\"利润变化\", [\"销量\", \"价格\", \"成本\"], [120, -40, -30], {start: 800, startLabel: \"去年\", endLabel: \"今年\", unit: \"万元\"})`"
+      "doc": "Waterfall(title: string, labels: (string | number)[], changes: number[], opts?: {start?: number, startLabel?: string, endLabel?: string, unit?: string, decimals?: number}) — 从起点经过逐项增减到终点的拆解（利润桥、预算变化）；组件累计并算出终值\n- changes 是带符号的增减量，不写累计值；start 是起点值，终值由组件算出。\n例：`bridge = Waterfall(\"利润变化\", [\"销量\", \"价格\", \"成本\"], [120, -40, -30], {start: 800, startLabel: \"去年\", endLabel: \"今年\", unit: \"万元\"})`"
     },
     {
       "name": "Funnel",
       "group": "高级图表",
       "needs": [],
-      "doc": "Funnel(title: string, stages: string[], values: number[], opts?: {unit?: string, decimals?: number}) — 逐级转化（访问→注册→付费）；组件算每级转化率和总转化率\n例：`f = Funnel(\"转化\", [\"访问\", \"注册\", \"付费\"], [10000, 1800, 240], {unit: \"人\"})`"
+      "doc": "Funnel(title: string, stages: (string | number)[], values: number[], opts?: {unit?: string, decimals?: number}) — 逐级转化（访问→注册→付费）；组件算每级转化率和总转化率\n例：`f = Funnel(\"转化\", [\"访问\", \"注册\", \"付费\"], [10000, 1800, 240], {unit: \"人\"})`"
     },
     {
       "name": "Treemap",
@@ -367,7 +367,7 @@
       "name": "Candlestick",
       "group": "高级图表",
       "needs": [],
-      "doc": "Candlestick(title: string, dates: string[], prices: number[][], opts?: {unit?: string, decimals?: number, rise?: \"red\" | \"green\"}) — 价格的开高低收（K 线）；默认红涨绿跌\n- prices 每项是 [开, 高, 低, 收]。\n例：`k = Candlestick(\"日 K\", [\"10-28\", \"10-29\"], [[10.2, 10.8, 10.1, 10.6], [10.6, 10.7, 10.0, 10.1]], {unit: \"元\"})`"
+      "doc": "Candlestick(title: string, dates: (string | number)[], prices: number[][], opts?: {unit?: string, decimals?: number, rise?: \"red\" | \"green\"}) — 价格的开高低收（K 线）；默认红涨绿跌\n- prices 每项是 [开, 高, 低, 收]。\n例：`k = Candlestick(\"日 K\", [\"10-28\", \"10-29\"], [[10.2, 10.8, 10.1, 10.6], [10.6, 10.7, 10.0, 10.1]], {unit: \"元\"})`"
     },
     {
       "name": "Dumbbell",
@@ -375,7 +375,7 @@
       "needs": [
         "Series"
       ],
-      "doc": "Dumbbell(title: string, categories: string[], from: Series, to: Series, opts?: {unit?: string, decimals?: number, better?: \"high\" | \"low\"}) — 每个类别的两个值及其差距：前后、预期与实际、去年与今年；组件算差值\n例：`gap = Dumbbell(\"预期与实际\", items.name, Series(\"预期\", items.expected), Series(\"实际\", items.actual), {unit: \"亿元\"})`"
+      "doc": "Dumbbell(title: string, categories: (string | number)[], from: Series, to: Series, opts?: {unit?: string, decimals?: number, better?: \"high\" | \"low\"}) — 每个类别的两个值及其差距：前后、预期与实际、去年与今年；组件算差值\n例：`gap = Dumbbell(\"预期与实际\", items.name, Series(\"预期\", items.expected), Series(\"实际\", items.actual), {unit: \"亿元\"})`"
     },
     {
       "name": "Timeline",
@@ -405,13 +405,13 @@
       "name": "Table",
       "group": "对比",
       "needs": [],
-      "doc": "Table(columns: string[], rows: (string | number | any)[][], opts?: {decimals?: number}) — 逐项核对的表格；rows 为二维数组，最多 200 行，读者可点表头排序\n- 每行的单元格数与列数相同、顺序一致，通常写成 @Each(items, \"x\", [x.name, x.amount])；合计不放进表格。\n例：`detail = Table([\"门店\", \"金额\"], @Each(items, \"x\", [x.name, x.amount]), {decimals: 2})`"
+      "doc": "Table(columns: (string | number)[], rows: (string | number | any)[][], opts?: {decimals?: number}) — 逐项核对的表格；rows 为二维数组，最多 200 行，读者可点表头排序\n- 每行的单元格数与列数相同、顺序一致，通常写成 @Each(items, \"x\", [x.name, x.amount])；合计不放进表格。\n例：`detail = Table([\"门店\", \"金额\"], @Each(items, \"x\", [x.name, x.amount]), {decimals: 2})`"
     },
     {
       "name": "Compare",
       "group": "对比",
       "needs": [],
-      "doc": "Compare(options: string[], rows: {label: string, values: (string | number | boolean | any)[], better?: \"high\" | \"low\", unit?: string}[], opts?: {decimals?: number, recommend?: string}) — 几个选项在多个属性上的对比矩阵；better 指出每行哪边好，组件标出每行最优\n- values 与 options 一一对应；true/false 显示为支持/不支持。recommend 填推荐的选项名（必须在 options 中）。比较两三个产品、方案、型号时优先用它。\n例：`cmp = Compare([\"A\", \"B\"], [{label: \"价格\", values: [20, 25], better: \"low\", unit: \"美元/月\"}, {label: \"本地部署\", values: [true, false]}], {recommend: \"A\"})`"
+      "doc": "Compare(options: (string | number)[], rows: {label: string, values: (string | number | boolean | any)[], better?: \"high\" | \"low\", unit?: string}[], opts?: {decimals?: number, recommend?: string}) — 几个选项在多个属性上的对比矩阵；better 指出每行哪边好，组件标出每行最优\n- values 与 options 一一对应；true/false 显示为支持/不支持。recommend 填推荐的选项名（必须在 options 中）。比较两三个产品、方案、型号时优先用它。\n例：`cmp = Compare([\"A\", \"B\"], [{label: \"价格\", values: [20, 25], better: \"low\", unit: \"美元/月\"}, {label: \"本地部署\", values: [true, false]}], {recommend: \"A\"})`"
     },
     {
       "name": "Ranking",

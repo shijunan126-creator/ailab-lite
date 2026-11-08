@@ -107,6 +107,21 @@ test("data of the wrong shape shows as malformed for the new components too", as
   assert.equal(screen.getAllByText("数据格式有误，无法显示").length, 2);
 });
 
+test("numbers as category and axis labels draw as labels instead of emptying the chart", async () => {
+  const source = block(
+    "root = Stack([bar, pie, ok])",
+    "speeds = [300, 350, 400]",
+    'bar = BarChart("相对功率", speeds, [Series("倍数", [1, 1.59, 2.37])], {unit: "倍"})',
+    'pie = PieChart("年份占比", [2023, 2024], [40, 60])',
+    'ok = Text("其余照常")',
+  );
+  const { container } = render(<Answer text={source} />);
+  await screen.findByText("其余照常");
+  assert.equal(screen.queryByText("数据格式有误，无法显示"), null);
+  await waitFor(() => assert.match(container.textContent ?? "", /350/));
+  assert.match(container.textContent ?? "", /2024/);
+});
+
 test("quotes inside prose stay in the string; escaped quotes and code are untouched; any component can be the root", async () => {
   assert.equal(toProgram('c = Callout("更像"积压订单"所致", {tone: "info"})'), 'c = Callout("更像\\"积压订单\\"所致", {tone: "info"})');
   for (const same of ['c = Code("print(\\"hi\\")")', 't = Text("a" + b, {tone: "muted"})']) assert.equal(toProgram(same), same);
