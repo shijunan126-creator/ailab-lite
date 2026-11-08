@@ -212,6 +212,16 @@ export function nodeToMarkdown(value: unknown, read: (name: string) => unknown =
       const rating = typeof o.rating === "number" ? `评分：${formatNumber(o.rating)} / 5` : "";
       return [head, text(o.description), bullets([price, rating, ...fields.map((f) => `${text(f.label)}：${withUnit(cell(f.value, d), f.unit)}`)].filter(Boolean)), (strings(o.tags, 20) ?? []).map((t) => `\`${t}\``).join(" ")].filter(Boolean).join("\n\n");
     }
+    case "Segments": {
+      const items = objects<{ tag: unknown; name?: unknown; value?: unknown; unit?: unknown; note?: unknown; title?: unknown; text?: unknown }>(p.items, ["tag"]) ?? [];
+      return items
+        .map((it) => {
+          const figure = it.value != null && it.value !== "" ? withUnit(cell(it.value, d), typeof it.value === "number" ? it.unit : "") : "";
+          const key = [text(it.name), [figure, text(it.note)].filter(Boolean).join(" ")].filter(Boolean).join(" · ");
+          return [`**${text(it.tag)}**${key ? ` ${key}` : ""}`, [text(it.title) && `**${text(it.title)}**`, text(it.text)].filter(Boolean).join("：")].filter(Boolean).join("\n");
+        })
+        .join("\n\n");
+    }
     case "Flow": {
       const nodes = objects<{ id: unknown; label: unknown }>(p.nodes, ["id"]) ?? [];
       const name = new Map(nodes.map((n) => [text(n.id), text(n.label) || text(n.id)]));

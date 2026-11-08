@@ -66,6 +66,23 @@ test("Compare marks each row's best by its direction and the recommended option"
   assert.ok(answerForCopy(source).includes("推荐：乙"));
 });
 
+test("Segments shows each tier's tag, figure and explanation, toned; copy keeps the same facts", async () => {
+  const source = block(
+    "root = Stack([s])",
+    's = Segments([{tag: "A类", name: "优质客户", value: 12, unit: "%", note: "假设贷款利率", title: "收入稳定", text: "低利率也有利润", tone: "success"}, {tag: "B类", name: "高风险客户", value: 30, unit: "%", tone: "danger"}])',
+  );
+  const { container } = render(<Answer text={source} />);
+  await screen.findByText("A类");
+  const rows = [...container.querySelectorAll(".gu-segments > li")];
+  assert.deepEqual(rows.map((li) => li.getAttribute("data-tone")), ["success", "danger"]);
+  assert.equal(rows[0].querySelector(".gu-segment-value")!.textContent, "12%");
+  assert.equal(rows[0].querySelector(".gu-card-title")!.textContent, "收入稳定");
+  assert.equal(rows[1].querySelector(".gu-segment-body")!.textContent, "");
+  const copy = answerForCopy(source);
+  assert.ok(copy.includes("**A类** 优质客户 · 12 % 假设贷款利率"), copy);
+  assert.ok(copy.includes("**收入稳定**：低利率也有利润"));
+});
+
 test("opts are named: a bad key is dropped, the component still renders; positional extras do not shift data", async () => {
   const source = block(
     "root = Stack([b])",

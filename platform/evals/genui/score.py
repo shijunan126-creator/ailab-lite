@@ -26,6 +26,7 @@ def score(answers, checks, judgments):
     no_ui = [r for r in checks if r["kind"] == "no_ui"]
     controls = [r for r in checks if r["kind"] == "controls"]
     html = [r for r in checks if r["kind"] == "html"]
+    proactive = [r for r in checks if r["kind"] == "proactive"]
     failed = set()
     details = []
     for answer in answers:
@@ -50,6 +51,8 @@ def score(answers, checks, judgments):
         if case["kind"] == "controls" and not any(set(b["components"]) & CONTROL_COMPONENTS for b in checked["blocks"]):
             failed.add(key[0])
         if case["kind"] == "no_ui" and checked["blocks"]:
+            failed.add(key[0])
+        if case["kind"] == "proactive" and not checked["blocks"]:
             failed.add(key[0])
         if key[1] == 2 and not edit_ok:
             failed.add(key[0])
@@ -91,7 +94,7 @@ def score(answers, checks, judgments):
     reviewed = [
         d
         for d in details
-        if cases[d["case"]]["kind"] not in {"no_ui", "html"} and not (cases[d["case"]]["kind"] == "edit" and d["turn"] == 1)
+        if cases[d["case"]]["kind"] not in {"no_ui", "html", "proactive"} and not (cases[d["case"]]["kind"] == "edit" and d["turn"] == 1)
     ]
     usage = {}
     for a in answers:
@@ -123,6 +126,9 @@ def score(answers, checks, judgments):
         conclusion_compliant=sum(d["review"].get("conclusion_compliant", False) for d in reviewed),
         numeric_correct=sum(d["review"].get("numeric_correct", False) for d in reviewed),
         expression_provenance=sum(d["review"].get("expression_provenance", False) for d in reviewed),
+        proactive_cases=len(proactive),
+        proactive_ui=sum(bool(r["blocks"]) for r in proactive),
+        proactive_components=sorted({name for r in proactive for b in r["blocks"] for name in b["components"]}),
         controls_cases=len(controls),
         controls_used=sum(any(set(b["components"]) & CONTROL_COMPONENTS for b in r["blocks"]) for r in controls),
         html_cases=len(html),

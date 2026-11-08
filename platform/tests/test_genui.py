@@ -366,47 +366,56 @@ def test_a_later_turn_knows_which_pages_the_earlier_one_fetched():
 def test_ui_components_progressive_docs(html_enabled):
     from ailab_platform.adapters.runtime import checkpoint_state, restored_state
     from ailab_platform.agent.tools import ui_components
-    from ailab_platform.contracts.genui import docs_for
+    from ailab_platform.contracts.genui import component_docs_for, core_names, docs_for
 
     state = {"runtime_version": 1, "messages": []}
-    first = ui_components({"names": ["LineChart", "LineChart", "Missing", "HtmlArtifact"]}, state, html_enabled=html_enabled)
+    first = ui_components({"names": ["AreaChart", "AreaChart", "Missing", "HtmlArtifact", "Text"]}, state, html_enabled=html_enabled)
     assert first["guide"] == guide_for(html_enabled)
-    expected, unknown = docs_for(["LineChart", "HtmlArtifact", "Missing"], html_enabled)
-    assert first["components"] == expected
+    documents, unknown = component_docs_for(["AreaChart", "HtmlArtifact", "Missing", "Text"], html_enabled)
+    # Core docs ride in the system prompt: the tool names them as available instead of repeating them.
+    assert first["components"] == "\n\n".join(doc for name, doc in documents.items() if name not in core_names())
+    assert set(first["already_available"]) == {"Series", "Text"}
     assert set(first["unknown"]) == set(unknown) == ({"Missing"} if html_enabled else {"Missing", "HtmlArtifact"})
     assert ("HtmlArtifact" in first["available"]) is html_enabled
-    assert "Series(" in first["components"]
+    assert "AreaChart(" in first["components"] and "\nSeries(name" not in first["components"]
     state["messages"] = _ui_docs_messages(first)
     restored = restored_state({"state": checkpoint_state(state, {})})
-    second = ui_components({"names": ["Text"]}, restored, html_enabled=html_enabled)
+    second = ui_components({"names": ["Ranking"]}, restored, html_enabled=html_enabled)
     assert "guide" not in second and "available" not in second
-    repeated = ui_components({"names": ["LineChart"]}, restored, html_enabled=html_enabled)
-    assert repeated["components"] == "" and set(repeated["already_available"]) == {"LineChart", "Series"}
+    repeated = ui_components({"names": ["AreaChart"]}, restored, html_enabled=html_enabled)
+    assert repeated["components"] == "" and set(repeated["already_available"]) == {"AreaChart", "Series"}
     # A new Run only carries messages, not any old boolean or tool log.
     carried = {"messages": restored["messages"]}
-    added = ui_components({"names": ["BarChart"]}, carried, html_enabled=html_enabled)
-    bar_docs, _ = docs_for(["BarChart"], html_enabled)
-    series_docs, _ = docs_for(["Series"], html_enabled)
-    assert added["components"] == bar_docs.replace(series_docs, "").strip()
-    assert added["already_available"] == ["Series"] and "guide" not in added
-    restored["messages"] = [{"role": "system", "content": "历史摘要：已读过LineChart"}]
+    added = ui_components({"names": ["Tabs"]}, carried, html_enabled=html_enabled)
+    assert added["components"] == docs_for(["Tabs"], html_enabled)[0]
+    assert "already_available" not in added and "guide" not in added
+    only_core = ui_components({"names": ["LineChart", "Segments"]}, {"messages": []}, html_enabled=html_enabled)
+    assert only_core["components"] == "" and set(only_core["already_available"]) == {"LineChart", "Series", "Segments"}
+    restored["messages"] = [{"role": "system", "content": "历史摘要：已读过AreaChart"}]
     restored["genui_guide_sent"] = True  # an older checkpoint marker must not survive missing docs
-    assert "guide" in ui_components({"names": ["LineChart"]}, restored, html_enabled=html_enabled)
+    assert "guide" in ui_components({"names": ["AreaChart"]}, restored, html_enabled=html_enabled)
 
 
 def test_prompt_budget_and_words_only(monkeypatch):
+    from ailab_platform.contracts.genui import core_names
     from ailab_platform.model_policy import estimator
 
     monkeypatch.setattr(settings, "genui_enabled", True)
     monkeypatch.setattr(settings, "genui_html_enabled", True)
     index = index_for(True)
     catalog = load_contract()[0]
-    assert all(c["doc"] not in index for c in catalog["components"])
+    # Core components are documented in the index (signature and notes); every other doc is left to ui_components.
+    for c in catalog["components"]:
+        assert (c["doc"].splitlines()[0] in index) is (c["name"] in core_names()), c["name"]
+    # About 3000 provider tokens for GenUI (the estimator over-counts Chinese text by roughly a fifth).
+    assert estimator.raw(index) <= 3700
     prompt = system_prompt_for("chat", genui=True, deferred=True, genui_tools=True)
-    assert estimator.raw(prompt) <= 2000
+    assert index in prompt
     full = system_prompt_for("chat", genui=True, deferred=True, genui_tools=False)
     assert full_prompt(True) in full
-    assert all(c["doc"] in full for c in catalog["components"])
+    assert all(c["doc"].splitlines()[0] in full for c in catalog["components"])
+    # Without the tool every doc is inline once: core in the index, the rest after it.
+    assert all(full.count(c["doc"].splitlines()[0]) == 1 for c in catalog["components"])
 
 
 @pytest.mark.parametrize("args", [{}, {"names": []}, {"names": ["Text"] * 17}, {"names": [1]}, {"names": ["Text"], "extra": True}])

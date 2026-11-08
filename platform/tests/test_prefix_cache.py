@@ -1043,11 +1043,11 @@ def test_ui_docs_deduplicate_across_calls_and_runs_without_rewriting_prefix(monk
         }
 
     responses = [
-        call("first-docs", ["LineChart"]),
-        call("repeat", ["LineChart"]),
-        call("new-docs", ["BarChart"]),
+        call("first-docs", ["AreaChart"]),
+        call("repeat", ["AreaChart"]),
+        call("new-docs", ["ComboChart"]),
         {"content": "完成"},
-        call("next-run", ["LineChart", "BarChart"]),
+        call("next-run", ["AreaChart", "ComboChart"]),
         {"content": "已修改"},
     ]
     with scripted_server(responses) as (url, requests):
@@ -1065,10 +1065,11 @@ def test_ui_docs_deduplicate_across_calls_and_runs_without_rewriting_prefix(monk
         if message.get("name") == "ui_components" and message.get("role") == "tool"
     }
     assert results["first-docs"]["guide"] == guide_for(False)
-    assert results["first-docs"]["components"] == docs_for(["LineChart"], False)[0]
+    # Series is in the system prompt's core docs, so only AreaChart's own doc is added.
+    assert results["first-docs"]["components"] == docs_for(["AreaChart"], False)[0].replace(docs_for(["Series"], False)[0], "").strip()
     assert results["repeat"]["components"] == "" and "guide" not in results["repeat"]
     assert results["new-docs"]["already_available"] == ["Series"]
-    assert "BarChart(" in results["new-docs"]["components"]
+    assert "ComboChart(" in results["new-docs"]["components"]
     assert docs_for(["Series"], False)[0] not in results["new-docs"]["components"]
     assert results["next-run"]["components"] == "" and "guide" not in results["next-run"]
     assert broker.leases == 0
@@ -1080,11 +1081,11 @@ def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, ret
 
     spec = ModelSpec("m", "m", provider="mock", context_tokens=12000, max_output_tokens=512, capabilities=frozenset({"tools"}))
     monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
-    docs = ui_components({"names": ["Text"]}, {}, html_enabled=False)
+    docs = ui_components({"names": ["Badge"]}, {}, html_enabled=False)
     pair = [
         {
             "role": "assistant",
-            "tool_calls": [{"id": "docs", "type": "function", "function": {"name": "ui_components", "arguments": '{"names":["Text"]}'}}],
+            "tool_calls": [{"id": "docs", "type": "function", "function": {"name": "ui_components", "arguments": '{"names":["Badge"]}'}}],
         },
         tool_result_message("docs", "ui_components", docs),
     ]
@@ -1113,7 +1114,7 @@ def test_ui_docs_after_real_compaction_follow_retained_messages(monkeypatch, ret
         )
         asyncio.run(loop._compact_work_context("r", turn, loop.llm, "m", []))
     assert requests[0]["messages"][:-1] == original
-    result = ui_components({"names": ["Text"]}, {"messages": messages}, html_enabled=False)
+    result = ui_components({"names": ["Badge"]}, {"messages": messages}, html_enabled=False)
     assert (result["components"] == "") is retained
     assert ("guide" in result) is not retained
     assert loop._states["r"]["context_boundary"]["reason"] == "compacted"

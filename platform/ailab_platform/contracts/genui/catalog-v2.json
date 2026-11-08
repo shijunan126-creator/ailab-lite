@@ -1,8 +1,23 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "9a88271a01758d493145b7aee4a8fc381fc081f034e9a3abb08dc005defd7493",
-  "guide_sha256": "ab909682ce3749e823d0b0a2cf4d2a833077d50534ec650004bd439e3595e332",
+  "index_sha256": "b07bbaa0fa6f57e41691ebd1f81dd16fa75eef772b193554dad30d397c87d4f6",
+  "guide_sha256": "ae6bef7e273be5153dad641fc58d47e7f4ea78716f334b2da41b67ed434b516a",
+  "core": [
+    "Stack",
+    "Grid",
+    "Text",
+    "Callout",
+    "Table",
+    "Compare",
+    "Segments",
+    "Steps",
+    "Metric",
+    "Highlights",
+    "LineChart",
+    "BarChart",
+    "Series"
+  ],
   "groups": [
     {
       "name": "布局",
@@ -90,7 +105,8 @@
         "Compare",
         "Ranking",
         "ProsCons",
-        "EntityCard"
+        "EntityCard",
+        "Segments"
       ]
     },
     {
@@ -430,6 +446,12 @@
       "group": "对比",
       "needs": [],
       "doc": "EntityCard(name: string, opts?: {subtitle?: string, description?: string, fields?: {label: string, value: string | number | boolean | any, unit?: string}[], tags?: string[], badge?: string, rating?: number, price?: number, priceUnit?: string, highlight?: boolean, decimals?: number, image?: string}) — 一个具体对象的名片：产品、公司、人物、地点、方案或套餐\n- 几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。image 是卡片顶部的图片，规则同 Image 的 src。\n例：`pro = EntityCard(\"专业版\", {price: 99, priceUnit: \"元/人/月\", fields: [{label: \"席位上限\", value: 200}], tags: [\"SSO\"], highlight: true})`"
+    },
+    {
+      "name": "Segments",
+      "group": "对比",
+      "needs": [],
+      "doc": "Segments(items: {tag: string, name?: string, value?: number | string, unit?: string, note?: string, title?: string, text?: string, tone?: \"neutral\" | \"success\" | \"warning\" | \"danger\" | \"info\"}[], opts?: {decimals?: number}) — 分档、分类或分层的几类对象：每类左侧色块给代号、名称和一个关键数，右侧写特征和解释\n- 客户分层、风险等级、套餐档位、评级标准等；value 是该类最关键的一个数，note 说明这个数是什么。\n例：`tiers = Segments([{tag: \"A类\", name: \"优质客户\", value: 12, unit: \"%\", note: \"贷款利率\", title: \"收入稳定\", text: \"违约少，低利率也有利润\", tone: \"success\"}, {tag: \"B类\", name: \"高风险客户\", tone: \"danger\"}])`"
     },
     {
       "name": "Flow",

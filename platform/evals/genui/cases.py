@@ -116,3 +116,18 @@ add(
     edit="加包邮开关，默认关闭。开启后总价不计12元运费，其余保持。",
     expected="Toggle",
 )
+
+# Proactive: structure a layout shows better than paragraphs, without the user asking for any display.
+add("bank-tiers", "proactive", "为什么银行给不同客户的贷款利率不一样？")
+add("db-choice", "proactive", "PostgreSQL、MySQL 和 SQLite 分别适合什么场景？")
+add("visa-steps", "proactive", "申请日本个人旅游签证一般要走哪些步骤？")
+add("ielts-plan", "proactive", "我有4周时间准备雅思口语，想从5分提到6.5分，帮我排个计划。")
+add("incident-levels", "proactive", "公司信息安全事件一般怎么分级？每一级该怎么响应？")
+add("return-rate", "proactive", "我们这几个月的退货率：7月3.2%，8月4.1%，9月5.6%，10月5.2%。最近是不是变差了？")
+add("laptop-choice", "proactive", "我主要写代码、偶尔剪视频，在轻薄本和游戏本之间纠结，怎么选？")
+add("salary-split", "proactive", "我月薪1.5万，房租4500，想每月至少存3000，剩下的钱怎么分配比较合理？")
+# Prose boundaries: explanation, writing and code stay text even though the prompt now leans toward layout.
+add("why-sky", "no_ui", "为什么天空是蓝色的？")
+add("write-email", "no_ui", "帮我写一封邮件，向客户说明交付会推迟一周。")
+add("code-bug", "no_ui", "这段 Python 有什么问题：for i in range(len(a)): a.remove(a[i])")
+add("interview-night", "no_ui", "面试前一天晚上应该做什么？简单说说。")

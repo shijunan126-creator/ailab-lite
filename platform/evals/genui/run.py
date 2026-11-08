@@ -73,6 +73,7 @@ async def answer_with_tools(client, messages, model, record):
         messages.append(assistant)
         for call in response.tool_calls:
             if call.name != "ui_components":
+                record["unsupported_tool"] = call.name[:64]
                 raise ValueError("unsupported evaluation tool")
             try:
                 result = ui_components(call.arguments, state, html_enabled=settings.genui_html_enabled)

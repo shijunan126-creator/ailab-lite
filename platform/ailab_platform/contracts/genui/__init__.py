@@ -58,6 +58,11 @@ def load_contract(directory: Path = CONTRACT_DIR) -> tuple[dict, str, str]:
     for item in components:
         if any(not isinstance(name, str) or name not in names for name in item["needs"]):
             raise ValueError("invalid GenUI dependency")
+    core = catalog.get("core")
+    if not isinstance(core, list) or any(name not in names or name == "HtmlArtifact" for name in core):
+        raise ValueError("invalid GenUI core components")
+    if any(dependency not in core for item in components if item["name"] in core for dependency in item["needs"]):
+        raise ValueError("GenUI core components must include their dependencies")
     return catalog, *texts
 
 
@@ -69,6 +74,12 @@ def _loaded() -> tuple[dict, str, str]:
 @cache
 def component_names() -> frozenset[str]:
     return frozenset(c["name"] for c in _loaded()[0]["components"])
+
+
+@cache
+def core_names() -> frozenset[str]:
+    """Components documented in the index itself, so already in every system prompt that carries GenUI."""
+    return frozenset(_loaded()[0]["core"])
 
 
 def _filter(text: str, html_enabled: bool) -> str:
@@ -108,5 +119,6 @@ def docs_for(names: list[str], html_enabled: bool) -> tuple[str, list[str]]:
 
 
 def full_prompt(html_enabled: bool) -> str:
-    docs, _ = docs_for([c["name"] for c in _loaded()[0]["components"]], html_enabled)
+    documents, _ = component_docs_for([c["name"] for c in _loaded()[0]["components"]], html_enabled)
+    docs = "\n\n".join(doc for name, doc in documents.items() if name not in core_names())
     return "\n\n".join((index_for(html_enabled), guide_for(html_enabled), docs))

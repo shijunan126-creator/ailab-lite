@@ -18,7 +18,7 @@ from ..domain.answer_parts import for_history
 from ..skill_registry import BASE_SKILLS
 from ..skill_registry import catalog as skills
 
-PLATFORM_PROMPT_VERSION = "2026-11-07-document-workflow"
+PLATFORM_PROMPT_VERSION = "2026-11-08-genui-core"
 
 BASE_PROMPT = """你是 AILab 助手：既能像聊天助手一样回答问题，也能在隔离沙箱里动手完成任务（做 PPT、Excel、文档，处理文件，写代码运行）。
 

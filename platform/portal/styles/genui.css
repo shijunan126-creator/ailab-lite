@@ -328,6 +328,23 @@ div.gu-divider::before { flex: 0 0 0; }
 .gu-entity header > div { min-width: 0; }
 .gu-entity.highlight { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
 .gu-entity-price { display: flex; align-items: baseline; flex-wrap: wrap; }
+/* segments: a tinted key tile per tier, the explanation beside it; rows divided, the tile sized by its column */
+.gu-segments { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.gu-segments > li { display: grid; grid-template-columns: minmax(96px, 9.5rem) minmax(0, 1fr); gap: 20px; align-items: start; padding: 16px 0; }
+.gu-segments > li:first-child { padding-top: 0; }
+.gu-segments > li:last-child { padding-bottom: 0; }
+.gu-segments > li + li { border-top: 1px solid var(--border); }
+.gu-segment-key { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; padding: 14px 10px; border-radius: var(--radius); background: var(--subtle); text-align: center; overflow-wrap: anywhere; }
+.gu-segments > li:not([data-tone="neutral"]) .gu-segment-key { background: var(--tone-soft); }
+.gu-segment-key > strong { font-size: var(--text-lg); font-weight: 650; line-height: 1.3; }
+.gu-segments > li:not([data-tone="neutral"]) .gu-segment-key > strong { color: var(--tone); }
+.gu-segment-name { font-size: var(--text-ui); color: var(--muted-foreground); }
+.gu-segment-key > .gu-segment-value { margin-top: 4px; font-size: var(--text-lg); font-weight: 600; color: var(--foreground); font-variant-numeric: tabular-nums; }
+.gu-segment-body { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding-top: 4px; }
+.gu-segment-body > .gu-card-title { font-size: var(--text-md); font-weight: 650; line-height: 1.45; }
+/* inside the tile the unit is part of the figure (12%), not a muted suffix */
+.gu-segment-value > .gu-unit { margin-left: 1px; font-size: inherit; font-weight: inherit; color: inherit; }
+@container (max-width: 360px) { .gu-segments > li { grid-template-columns: minmax(84px, 7rem) minmax(0, 1fr); gap: 12px; } }
 .gu-rating { display: flex; align-items: center; gap: 2px; color: var(--border-strong); font-size: var(--text-sm); }
 .gu-rating .on { color: var(--warning); fill: currentColor; }
 .gu-rating .half { color: var(--warning); }

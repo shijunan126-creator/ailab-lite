@@ -12,7 +12,7 @@ import TableFrame from "../../table-frame";
 import { useGenUIHost } from "../host";
 import {
   ChecklistView, CodeView, CompareView, DetailsView, EntityCardView, GaugeView, HighlightsView, KeyValueView, ListView, MetricView, ProgressView, ProsConsView,
-  QuoteView, RankingView, ShareBarView, StepsView, TimelineView, tone,
+  QuoteView, RankingView, SegmentsView, ShareBarView, StepsView, TimelineView, tone,
 } from "./blocks";
 import { CartesianChart, HBarChart, PieChartView } from "./charts";
 import { formatNumber, pieData, seriesOf, shapeOk, text } from "./data";
@@ -375,6 +375,7 @@ const IMPL: Record<string, ComponentRenderer<P>> = {
   Ranking: r((p) => <RankingView p={p} />),
   ProsCons: r((p) => <ProsConsView p={p} />),
   EntityCard: r((p) => <EntityCardView p={p} />),
+  Segments: r((p) => <SegmentsView p={p} />),
   Flow: diagram("Flow"),
   Tree: diagram("Tree"),
   Diff: diagram("Diff"),

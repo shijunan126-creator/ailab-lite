@@ -1,6 +1,6 @@
 # GenUI P6 真实模型评测
 
-固定中文集在 `cases.py`：37 个场景、43 次回答（11 个数据展示、6 个控件、4 个 HTML、10 个不应出 UI、6 个两轮编辑）。数据全部内嵌在用户消息。`judgments.json` 仅存旧提示词首轮人工判定与理由；`judgments-v2.json` 与 `judgments-v2-retry.json` 分别存新提示词全集及失败子集判定，不存原回答。第三轮根因修复后的全集/唯一失败子集判定为 `judgments-v3.json` / `judgments-v3-retry.json`。第四轮全集为 `judgments-v4.json`；第五轮 catalog v2 + `ui_components` 全集为 `judgments-v5.json`，均按当次指令不复测。v5 逐条审核43条回答，HTML/普通问答只存适用的诊断项，不扩大23项数据分母。
+固定中文集在 `cases.py`：49 个场景、55 次回答（11 个数据展示、6 个控件、4 个 HTML、14 个不应出 UI、6 个两轮编辑，以及 2026-11-08 新增的 8 个 `proactive`：需要结构但用户未提界面）。`proactive` 单独计 `proactive_ui`，不进入 23 项严格数据分母；评测工具调用了非 `ui_components` 工具时记录 `unsupported_tool`。数据全部内嵌在用户消息。`judgments.json` 仅存旧提示词首轮人工判定与理由；`judgments-v2.json` 与 `judgments-v2-retry.json` 分别存新提示词全集及失败子集判定，不存原回答。第三轮根因修复后的全集/唯一失败子集判定为 `judgments-v3.json` / `judgments-v3-retry.json`。第四轮全集为 `judgments-v4.json`；第五轮 catalog v2 + `ui_components` 全集为 `judgments-v5.json`，均按当次指令不复测。v5 逐条审核43条回答，HTML/普通问答只存适用的诊断项，不扩大23项数据分母。
 
 从仓库根运行；真实调用有费用，需当次授权。默认读取当前 `platform/models.toml` 的 `deepseek-v4.1-flash`，模型别名不替换成本机部署别名。
 

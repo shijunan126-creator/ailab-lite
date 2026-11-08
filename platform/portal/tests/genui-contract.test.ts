@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { test } from "vitest";
-import { buildCatalog, buildDocs, buildGuide, buildIndex } from "../components/genui/catalog/prompt";
+import { CORE, buildCatalog, buildDocs, buildGuide, buildIndex } from "../components/genui/catalog/prompt";
 import { COMPONENT_NAMES } from "../components/genui/catalog/limits";
 import { DEFINED_NAMES } from "../components/genui/catalog/schema";
 
@@ -36,4 +36,12 @@ test("the contract offers only what the Portal renders and allows; HtmlArtifact 
   // the Agent drops lines naming HtmlArtifact when pages are off: what is left must not depend on them
   assert.equal(buildGuide().includes("HtmlArtifact"), false);
   assert.equal(buildIndex().split("\n").filter((l) => l.includes("HtmlArtifact")).length, 1);
+});
+
+test("core components and their dependencies are documented in the index; the rest are only named", () => {
+  const index = buildIndex();
+  for (const { name, doc, needs } of buildDocs()) {
+    assert.equal(index.includes(doc.split("\n")[0]), CORE.includes(name), name);
+    if (CORE.includes(name)) for (const sub of needs) assert.ok(CORE.includes(sub), `${name} needs ${sub}`);
+  }
 });
