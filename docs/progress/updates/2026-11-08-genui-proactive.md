@@ -46,18 +46,40 @@
 
 - base 未用界面的 3 例：银行利率分层、三种数据库适用场景、安全事件分级；v9 分别用 Segments、Segments+Table、Segments+Steps。
 - 中间轮 v8（Highlights 不在常用组件）出现 1 个不合法块：规则把最高/合计等结论都指向 Highlights，模型未读说明凭记忆写错签名；已把 Highlights 移入常用组件、移出 Card，v9 无此错误。v8 另有一次评测工具调用了非 `ui_components` 工具，harness 现记录 `unsupported_tool`。
-- v9 的 2 例多余 UI：“天空为什么是蓝色”自行按 1/λ⁴ 算出一组数画柱图；Python 调试问题用执行轨迹表。最终版据此把触发数据限定为“用户给出或工具查到”，并把“原理解释、代码和调试讲解、不为讲解自造数据画图”写入不用界面。**该最后调整未经真实模型复测**：复测时 DeepSeek 账户返回 402 Insufficient Balance，22 个请求全部失败，未计入。
+- v9 的 2 例多余 UI：“天空为什么是蓝色”自行按 1/λ⁴ 算出一组数画柱图；Python 调试问题用执行轨迹表。最终版据此把触发数据限定为“用户给出或工具查到”，并把“原理解释、代码和调试讲解、不为讲解自造数据画图”写入不用界面。
+
+### 最终提示词复测（OpenCode Go 端点，同一上游模型）
+
+DeepSeek 官方账户余额不足（402）后，改经 OpenCode Go 的 `deepseek-v4.1-flash` 对 proactive/no_ui 22 例复测。
+
+| 轮次 | 主动用界面 | 多余 UI | 闭合块合法 |
+|---|---:|---:|---:|
+| v10 | 7/8 | 1/14 | 7/8 |
+| v11（最终） | 7/8 | **0/14** | **7/7** |
+
+- v10 的不合法块：`root = Stack([weeks, dims, routine])` 只定义了 `weeks`；规则只写了“定义的名字要被引用”，没写反向。v10 另一处多余 UI：用户说“简单说说”仍给了 Steps。最终版补了“引用的名字必须在同一块里定义”和“用户要简短回答不用界面”。
+- 两轮都没出 UI 的是 bank-tiers（“为什么银行给不同客户的贷款利率不一样”）：回答按因素分段讲原理，与“原理解释不用界面”一致，属于规则的有意边界，不视为错误。
 - `html-drag` 的 safe=false 是检查器把 SVG 命名空间 URI 记为 http 引用的已知误报（见评测 README）。
 
 ## 验证
 
 - Portal：`npm test` 45 文件 270 项通过；`npm run build` 通过（第一次失败是删除的临时检查页残留 `.next/dev/types`，清空 `.next` 后通过）。
 - 浏览器：临时页渲染 Segments，1280 宽深色与 375 宽浅色检查，结构与截图一致；修正了标题小于正文、单位与数字分离两处后复查。临时页已删除。
-- Python：Ruff 通过；GenUI/前缀缓存/工具相关 180 项通过；评测 harness 单测通过。全套结果见下节。
+- Python：Ruff 通过；GenUI/前缀缓存/模型网关/评测 harness 定向测试通过。全套（SQLite）2620 passed / 247 skipped，唯一失败 `test_quiet_title_skips_provider_reasoning_and_keeps_ledger` 为既有时序抖动：测试给标题等待 0.5s，满载机器上线程调度就会超时；改为 3s，与被测行为无关。
+- OpenCode 传输：工具调用、带 reasoning 回传的工具续轮、quiet 关闭思考、图片输入均直接打通。
+
+## OpenCode 提供方支持
+
+OpenCode Go 的 OpenAI 兼容端点 `https://opencode.ai/inference/go/openai/v1` 要求每个请求带 `x-opencode-session`，缺失时返回 400 MissingSessionID。模型目录新增可选 `session_header`：配置后按会话（无会话时按 Run）生成稳定的哈希 ID 写入该头，同一对话各轮共用一个会话，不暴露原始 conversation/run id；未配置的提供方行为不变。请求统一带 `User-Agent: ailab-lite/1.0`。密钥只经 `api_key_env` 读取，不进仓库。
+
+- 按量付费地址 `/inference/openai/v1` 与 Go 套餐分开计费，套餐内调用须用 `/inference/go/...`。
+- 该模型要求在 OpenCode 控制台开启 Global 区域，否则返回“hosted outside Europe and the United States”。
+- 评测 runner 新增 `--models-file`、`--env-file`，可直接使用私有模型目录和密钥文件。
 
 ## 未覆盖 / 风险
 
 - 本轮没有重做 23 项严格数据一致性的人工判定，只做了结构检查和对主动用例、多余 UI 的逐条阅读；数据正确性规则文本未删减，只是从指南移入索引。
 - 只评测 Chat；Work 模式与完整 Agent 链路未跑真实模型。
 - 系统提示变化后首轮前缀缓存冷启动；随后各轮按原规则命中。
-- DeepSeek 账户余额不足会同样影响使用该密钥的部署环境。
+- 主动/不用界面的复测共 22 例、单次采样，波动在 ±1 例量级；Work 模式未复测。
+- OpenCode Go 套餐面向编码代理，用量受其政策约束；生产使用前需确认条款。

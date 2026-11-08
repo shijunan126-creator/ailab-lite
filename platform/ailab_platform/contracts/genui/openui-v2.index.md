@@ -6,7 +6,7 @@
 - 有先后的步骤、流程、时间线或计划；
 - 用户要做选择或试算（价格、预算、配置）。
 讲解概念时，内容里出现这些结构，就用界面块承载那一部分，文字只做解读。用界面呈现本次回答的内容不算扩展。
-不用界面：一两句话能答完的内容（事实、定义、单个数值）、原理解释、翻译、改写、成稿写作、代码和调试讲解、闲聊，或用户要求纯文字；只有论述、没有上述结构时不硬套。不为讲解自己造一组数来画图；数据不足时说明缺口，不凑图。
+不用界面：一两句话能答完的内容（事实、定义、单个数值）、原理解释、翻译、改写、成稿写作、代码和调试讲解、闲聊，或用户要纯文字、简短回答；只有论述、没有上述结构时不硬套。不为讲解自己造一组数来画图；数据不足时说明缺口，不凑图。
 
 按要表达的内容选组件：
 - 趋势：LineChart、AreaChart；数量和比率放同一张图：ComboChart
@@ -35,7 +35,7 @@ chart = LineChart("月销售额", items.m, [Series("销售额", items.v)], {unit
 facts = Metric("4月", @Last(items.v), {unit: "万元", previous: items[2].v})
 ```
 
-- 每行一条 `name = 表达式`；第一行 `root = Stack([...])`，名字可以先引用后定义，数据放最后；除 root 外每个名字都要被引用，否则不显示。
+- 每行一条 `name = 表达式`；第一行 `root = Stack([...])`，名字可以先引用后定义，数据放最后；引用的名字必须在同一块里定义，除 root 外每个名字都要被引用，否则不显示。
 - 参数按位置传，末尾可选参数可省略；其余可选项写进最后一个 opts 对象，如 `{stacked: true, unit: "万元"}`，不写成单独的位置参数或 `key: value` 命名参数。opts 的键各组件同义：unit 单位、decimals 小数位（0–4）、tone（neutral、success、warning、danger、info）、better（high 越大越好，low 越小越好）。
 - 表达式：双引号字符串（内部引号写 \"，文字里引用词语用中文引号“”）、数字、true/false、null、数组、对象 {key: 值}；+ - * / %（与字符串相加是拼接）、== != > < >= <=、&& || !、`条件 ? 甲 : 乙`。`items.field` 取出一列，`items[0]` 取一个对象。语句名、字段名和 `$变量` 名只用英文字母、数字和下划线，中文只写在字符串里。
 - 内置函数只有：@Count @First @Last @Sum @Avg @Min @Max @Abs @Floor @Ceil（一个数组或数）；@Sort(array, field, direction?: "asc" | "desc")、@Filter(array, field, operator: "==" | "!=" | ">" | "<" | ">=" | "<=" | "contains", value)、@Round(number, decimals?)、@Each(array, varName, template)。@Each 的模板直接写在调用里，如 `@Each(rows, "r", [r.name, r.amount])`，循环变量只在模板内有效。

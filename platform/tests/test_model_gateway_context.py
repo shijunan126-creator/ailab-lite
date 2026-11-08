@@ -478,7 +478,9 @@ def test_quiet_title_skips_provider_reasoning_and_keeps_ledger(monkeypatch):
     from ailab_platform.model_transport import ModelTransport
     from tests.test_agent_loop import FakePlatform
 
-    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 0.5)
+    # The upstream hangs unless thinking is disabled, so a missing flag fails by timeout. The budget covers a
+    # real local HTTP round trip on a loaded CI runner; 0.5s timed out intermittently in full runs.
+    monkeypatch.setattr("ailab_platform.agent.loop.TITLE_TIMEOUT_SECONDS", 3)
 
     async def scenario():
         seen = []
@@ -532,3 +534,42 @@ def test_output_request_and_real_ledger_reservation_use_remaining_window(monkeyp
 
     with TestClient(app) as c:
         asyncio.run(exercise(c))
+
+
+def test_session_header_is_stable_per_conversation_hashed_and_opt_in():
+    from ailab_platform.llm import ModelCall, model_call
+    from ailab_platform.model_transport import USER_AGENT, ModelTransport
+
+    plain = ModelTransport("http://upstream", "k")
+    assert "x-opencode-session" not in plain._request([], [], "m", "u", True)[1]
+    assert plain._request([], [], "m", "u", True)[1]["User-Agent"] == USER_AGENT
+
+    model = ModelTransport("http://upstream", "k", session_header="x-opencode-session")
+
+    def header(call, user_id="u"):
+        token = model_call.set(call)
+        try:
+            return model._request([], [], "m", user_id, True)[1]["x-opencode-session"]
+        finally:
+            model_call.reset(token)
+
+    first = header(ModelCall("c1", "run-1", 100, session="conv-1"))
+    # Every Run and call of one conversation shares the session, so the provider can route and cache it together.
+    assert header(ModelCall("c2", "run-2", 100, session="conv-1")) == first
+    assert header(ModelCall("c3", "run-3", 100, session="conv-2")) != first
+    assert "conv-1" not in first and len(first) == 32
+    # Without a conversation the Run is the session; unmetered calls fall back to the user.
+    assert header(ModelCall("c4", "run-4", 100)) == header(ModelCall("c5", "run-4", 100))
+    unmetered = model._request([], [], "m", "u", True)[1]["x-opencode-session"]
+    assert unmetered == model._request([], [], "m", "u", False)[1]["x-opencode-session"]
+    assert model._request([], [], "m", None, True)[1]["x-opencode-session"]
+
+
+def test_catalog_accepts_session_header(tmp_path):
+    from ailab_platform.catalog import load_catalog
+
+    path = tmp_path / "models.toml"
+    path.write_text(
+        '[[models]]\nid = "m"\nprovider = "openai"\nbase_url = "http://upstream"\nsession_header = "x-opencode-session"\ndefault = true\n'
+    )
+    assert load_catalog(path).get("m").session_header == "x-opencode-session"

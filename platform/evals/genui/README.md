@@ -10,7 +10,7 @@ OPENUI_TELEMETRY_DISABLED=1 node platform/evals/genui/check.ts /tmp/ailab-genui-
 platform/.venv/bin/python platform/evals/genui/score.py /tmp/ailab-genui-eval/v5.jsonl /tmp/ailab-genui-eval/v5-check.jsonl --judgments platform/evals/genui/judgments-v5.json
 ```
 
-密钥只读进进程环境：优先 `AILAB_KEY_DEEPSEEK`，否则使用个人 AILab-local 已有 `config/deepseek.env`；不创建密钥文件，不回显异常正文。找不到密钥时停止真实调用。mock 链路检查：`--model ailab-demo --label mock --cases calc-subscription,edit-pie`，只对 mock 附加仓库原有的 `[[genui-interactive]]` 标记，不能用它度量生成质量。
+密钥只读进进程环境：优先 `AILAB_KEY_DEEPSEEK`，否则使用个人 AILab-local 已有 `config/deepseek.env`；不创建密钥文件，不回显异常正文。找不到密钥时停止真实调用。其他提供方用 `--models-file <私有 models.toml> --env-file <私有 env> --model <id>`，从私有目录读取模型和密钥。mock 链路检查：`--model ailab-demo --label mock --cases calc-subscription,edit-pie`，只对 mock 附加仓库原有的 `[[genui-interactive]]` 标记，不能用它度量生成质量。
 
 调用直接复用 `ModelTransport.chat_stream`、`ModelCall`：temperature 0.2、SSE usage、上游模型映射、connect 5s/read 90s/total 240s、最多 3 并发、每次 32,768 输出 tokens（含 reasoning）、不自动重试。v5 系统提示只带 catalog v2 索引，提供 `ui_components`，复用 Agent 的本地工具实现；每条回答独立状态，最多3轮工具调用后再生成最终回答。首次工具结果带语言指南，后续按需读组件文档；记录 `tool_call_count`、`tool_round_count`、请求的 `component_names`，usage 累加所有往返。这覆盖该工具循环，不是完整 Agent/服务链路。第二轮将第一轮正文经过 `for_history(keep_ui=True, limit=16000)` 原样作为 assistant 历史，无 reasoning 字段，与最近一轮历史合同一致。
 

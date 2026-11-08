@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import random
 import time
 from typing import Any
+from uuid import uuid4
 
 import httpx
 
@@ -15,6 +17,15 @@ from .config import settings
 from .llm import RETRYABLE_STATUS, LLMClient, LLMError, LLMResponse, TextSink, _parse_tool_calls, _StreamState, _usage, model_call
 
 log = logging.getLogger("ailab.llm")
+
+USER_AGENT = "ailab-lite/1.0"
+# Calls with neither a conversation nor a user (none today) still need a stable session value.
+_PROCESS_SESSION = uuid4().hex
+
+
+def _session_id(raw: str) -> str:
+    # Internal ids are not sent to the provider as is.
+    return hashlib.sha256(f"ailab-session:{raw}".encode()).hexdigest()[:32]
 
 
 class ModelTransport(LLMClient):
@@ -26,6 +37,7 @@ class ModelTransport(LLMClient):
         transport: httpx.AsyncBaseTransport | None = None,
         echo_reasoning: bool = False,
         disable_reasoning_for_quiet: bool = False,
+        session_header: str = "",
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
@@ -35,6 +47,7 @@ class ModelTransport(LLMClient):
         # reasoning_content back; other upstreams may reject the extra field. This is configured per model.
         self.echo_reasoning = echo_reasoning
         self.disable_reasoning_for_quiet = disable_reasoning_for_quiet
+        self.session_header = session_header
 
     def _outgoing(self, messages: list[dict]) -> list[dict]:
         if self.echo_reasoning:
@@ -86,7 +99,7 @@ class ModelTransport(LLMClient):
     def _request(
         self, messages: list[dict], tools: list[dict], model: str, user_id: str | None, stream: bool, max_tokens: int | None = None
     ) -> tuple[dict, dict]:
-        headers = {"Content-Type": "application/json"}
+        headers = {"Content-Type": "application/json", "User-Agent": USER_AGENT}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if user_id:
@@ -116,6 +129,9 @@ class ModelTransport(LLMClient):
         if tools:
             payload["tools"] = tools
             payload["tool_choice"] = call.tool_choice if call is not None and call.tool_choice else "auto"
+        if self.session_header:
+            source = (call.session or call.run_id) if call is not None else ""
+            headers[self.session_header] = _session_id(source or user_id or _PROCESS_SESSION)
         return payload, headers
 
     async def chat_stream(

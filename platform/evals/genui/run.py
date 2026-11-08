@@ -24,9 +24,15 @@ from ailab_platform.llm import MockLLM, ModelCall, model_call
 from ailab_platform.model_transport import ModelTransport
 
 
-def load_key():
+def load_key(env_name="AILAB_KEY_DEEPSEEK", env_file=None):
     """Use the existing personal deployment key without ever serializing it."""
-    if not os.environ.get("AILAB_KEY_DEEPSEEK"):
+    if env_file and not os.environ.get(env_name):
+        from dotenv import dotenv_values
+
+        value = dotenv_values(env_file).get(env_name)
+        if value:
+            os.environ[env_name] = value
+    if env_name == "AILAB_KEY_DEEPSEEK" and not os.environ.get(env_name):
         from dotenv import dotenv_values
 
         source = Path("/Users/michael/Documents/AILab-local/config/deepseek.env")
@@ -34,7 +40,7 @@ def load_key():
             value = dotenv_values(source).get("AILAB_KEY_DEEPSEEK")
             if value:
                 os.environ["AILAB_KEY_DEEPSEEK"] = value
-    return bool(os.environ.get("AILAB_KEY_DEEPSEEK"))
+    return bool(os.environ.get(env_name))
 
 
 class ToolRoundLimit(RuntimeError):
@@ -83,10 +89,10 @@ async def answer_with_tools(client, messages, model, record):
 
 
 async def main(args):
-    specs = tomllib.loads((PLATFORM / "models.toml").read_text())["models"]
+    specs = tomllib.loads(Path(args.models_file or PLATFORM / "models.toml").read_text())["models"]
     spec = next(x for x in specs if x["id"] == args.model)
-    if spec["provider"] != "mock" and not load_key():
-        raise SystemExit("Missing AILAB_KEY_DEEPSEEK in process environment or personal config/deepseek.env")
+    if spec["provider"] != "mock" and not load_key(spec["api_key_env"], args.env_file):
+        raise SystemExit(f"Missing {spec['api_key_env']} in process environment or the given env file")
     settings.genui_enabled = settings.genui_html_enabled = True
     settings.llm_idle_timeout_seconds = 90
     settings.llm_total_timeout_seconds = 240
@@ -97,7 +103,11 @@ async def main(args):
         MockLLM()
         if spec["provider"] == "mock"
         else ModelTransport(
-            spec["base_url"], os.environ[spec["api_key_env"]], spec["upstream_model"], echo_reasoning=spec.get("echo_reasoning", False)
+            spec["base_url"],
+            os.environ[spec["api_key_env"]],
+            spec["upstream_model"],
+            echo_reasoning=spec.get("echo_reasoning", False),
+            session_header=spec.get("session_header", ""),
         )
     )
     output = Path(args.output).resolve()
@@ -131,7 +141,9 @@ async def main(args):
                     user += "\n[[genui-interactive]]"
                 messages.append(dict(role="user", content=user))
                 started = time.perf_counter()
-                token = model_call.set(ModelCall(f"eval-{args.label}-{case['id']}-{turn}", "", 32768))
+                token = model_call.set(
+                    ModelCall(f"eval-{args.label}-{case['id']}-{turn}", "", 32768, session=f"eval-{args.label}-{case['id']}")
+                )
                 row = dict(case=case["id"], kind=case["kind"], turn=turn, model=spec["id"])
                 try:
                     async with asyncio.timeout(245):
@@ -160,6 +172,8 @@ async def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", default="deepseek-v4.1-flash")
+    parser.add_argument("--models-file", help="Catalog to read the model from; default platform/models.toml")
+    parser.add_argument("--env-file", help="Private env file holding the model's api_key_env")
     parser.add_argument("--output", default="/tmp/ailab-genui-eval")
     parser.add_argument("--label", default="initial")
     parser.add_argument("--cases", help="Comma-separated ids; only for one failing-case rerun")
