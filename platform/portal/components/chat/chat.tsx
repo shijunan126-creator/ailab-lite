@@ -20,7 +20,7 @@ import { IconArrowDown, IconBranch, IconChevronRight, IconFolder, IconPanelRight
 import ProjectHome from "../project-home";
 import Composer, { Attachment, Outgoing, SendOptions } from "./composer";
 import PendingMessage from "./pending-message";
-import { enqueue, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
+import { enqueue, pendingConversationId, remove as removePending, useOutbox, type Pending } from "../../lib/outbox";
 import { addQuote, quotesKey } from "../../lib/doc-refs";
 import { officeKind, type OfficeReveal } from "../preview/office-view";
 import { useShallow } from "zustand/react/shallow";
@@ -115,7 +115,7 @@ export default function Chat({ id, project }: { id: string | null; project?: Pro
   const [streaming, setStreaming] = useState<string | null>(null);
   // messages sent from this page that are not turns yet (files still uploading, or a failed send)
   const pendingProject = id ? null : project?.id || null;
-  const pending = useOutbox(useShallow((st) => Object.values(st.pending).filter((p) => p.conversationId === id && (id || p.projectId === pendingProject)).sort((a, b) => a.created - b.created)));
+  const pending = useOutbox(useShallow((st) => Object.values(st.pending).filter((p) => pendingConversationId(p) === id && (id || p.projectId === pendingProject)).sort((a, b) => a.created - b.created)));
   const scroller = useRef<HTMLDivElement | null>(null);
   const tail = useFollow(scroller, { slack: 80 });
   const stick = tail.following;

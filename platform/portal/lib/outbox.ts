@@ -32,6 +32,13 @@ export type Pending = {
 type State = { pending: Record<string, Pending> };
 export const useOutbox = create<State>(() => ({ pending: {} }));
 
+/** Where a pending send belongs before it becomes a turn: its explicit conversation, or the one created for it. */
+export function pendingConversationId(p: Pending): string | null {
+  // The page that issued a new-chat send must still see the sent item so its effect can take over and navigate.
+  if (p.stage === "sent" && p.conversationId === null) return null;
+  return p.conversationId ?? p.sent?.conversation?.id ?? null;
+}
+
 function patch(id: string, change: Partial<Pending>) {
   useOutbox.setState((s) => (s.pending[id] ? { pending: { ...s.pending, [id]: { ...s.pending[id], ...change } } } : s));
 }
@@ -115,8 +122,11 @@ async function dispatch(p: Pending, fileIds: string[]): Promise<Pending["sent"]>
   const body = { expected_branch_revision: p.expectedBranchRevision, prompt: p.prompt, model: p.model || undefined, file_ids: fileIds, upload_ids, ...p.options, ...(skills ? { skills } : {}), ...(p.docRefs?.length ? { doc_refs: p.docRefs } : {}) };
   let conversation: Conversation | undefined = p.sent?.conversation;
   if (!p.conversationId && !conversation) {
-    conversation = await api<Conversation>("/v1/conversations", { method: "POST", body: JSON.stringify({ model: p.model, project_id: p.projectId || undefined }) });
-    patch(p.id, { sent: { conversation } }); // a retry reuses it rather than creating another
+    const started = await api<{ conversation: Conversation; run: Run }>("/v1/conversations/start", {
+      method: "POST",
+      body: JSON.stringify({ ...body, client_send_id: p.id, project_id: p.projectId || undefined }),
+    });
+    return { conversation: started.conversation, run: started.run };
   }
   const id = p.conversationId || conversation!.id;
   const asMessage = () => api<Run>(`/v1/conversations/${id}/messages`, { method: "POST", body: JSON.stringify({ ...body, client_send_id: p.id }) });

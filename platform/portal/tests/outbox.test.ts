@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import { discard, enqueue, remove, retry, useOutbox } from "../lib/outbox";
+import { discard, enqueue, pendingConversationId, remove, retry, useOutbox } from "../lib/outbox";
 import { existingUpload, useUploads } from "../lib/uploads";
 import { api } from "../lib/api";
 
@@ -15,21 +15,52 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 test("same-millisecond sends stay ordered and both join the conversation created by the first", async () => {
   vi.spyOn(Date, "now").mockReturnValue(1);
-  let finish!: (value: any) => void;
+  let finish!: () => void;
   request.mockImplementation(async (path) => {
-    if (path === "/v1/conversations") return { id: "new" } as any;
-    const body = JSON.parse(request.mock.calls.at(-1)![1]!.body as string);
-    if (body.prompt === "first") return new Promise((resolve) => { finish = resolve; });
+    if (path === "/v1/conversations/start") return new Promise((resolve) => { finish = () => resolve({ conversation: { id: "new" }, run: { id: "run-first" } }); });
     return { id: "run-second" } as any;
   });
   const first = enqueue(message("first", null));
   const second = enqueue(message("second", null));
   await vi.waitFor(() => expect(stage(first)).toBe("sending"));
-  expect(request.mock.calls.map(([p]) => p)).toEqual(["/v1/conversations", "/v1/conversations/new/messages"]);
-  finish({ id: "run-first" });
+  expect(request.mock.calls.map(([p]) => p)).toEqual(["/v1/conversations/start"]);
+  expect(JSON.parse(request.mock.calls[0][1]!.body as string)).toMatchObject({ prompt: "first", client_send_id: first });
+  finish();
   await vi.waitFor(() => expect(stage(second)).toBe("sent"));
-  expect(request.mock.calls.filter(([p]) => p === "/v1/conversations")).toHaveLength(1);
+  expect(request.mock.calls.filter(([p]) => p === "/v1/conversations/start")).toHaveLength(1);
   expect(request.mock.calls.at(-1)![0]).toBe("/v1/conversations/new/messages");
+  expect(pendingConversationId(useOutbox.getState().pending[first])).toBeNull();
+  expect(useOutbox.getState().pending[first].sent?.conversation?.id).toBe("new");
+});
+
+test("a rejected first message stays on the new-chat page and a retry starts one conversation", async () => {
+  request.mockRejectedValueOnce(Object.assign(new Error("too many active runs for this user"), { code: "active_runs" }));
+  const id = enqueue(message("first", null));
+  await vi.waitFor(() => expect(stage(id)).toBe("failed"));
+  expect(useOutbox.getState().pending[id].sent?.conversation).toBeUndefined();
+  expect(pendingConversationId(useOutbox.getState().pending[id])).toBeNull();
+
+  request.mockResolvedValueOnce({ conversation: { id: "new" }, run: { id: "run" } });
+  expect(retry(id)).toBe(true);
+  await vi.waitFor(() => expect(stage(id)).toBe("sent"));
+  expect(useOutbox.getState().pending[id].sent?.conversation?.id).toBe("new");
+});
+
+test("a failure that already created a conversation stays attached to that conversation", () => {
+  const id = "legacy";
+  useOutbox.setState({
+    pending: {
+      [id]: {
+        ...message("legacy", null),
+        id,
+        stage: "failed",
+        attempt: 1,
+        created: 1,
+        sent: { conversation: { id: "server-conversation" } as any },
+      },
+    },
+  });
+  expect(pendingConversationId(useOutbox.getState().pending[id])).toBe("server-conversation");
 });
 
 test("a lost send response retries with the same id and ready files, without another upload", async () => {
