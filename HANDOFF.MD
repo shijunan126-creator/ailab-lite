@@ -1,3 +1,10 @@
+## 2026-11-09 新会话首条消息不能先建空壳
+
+- 新会话的首条消息必须在同一用户锁和事务里完成 Run 准入、Conversation 和首条 Run 创建，失败整体回滚。先建 Conversation 再提交消息时，429/422 会留下 `runs=0` 的幽灵会话；前端进入详情页后消息被过滤，看起来像整段历史消失。见[记录](docs/progress/updates/2026-11-09-first-message-admission.md)。
+- 同一 `client_send_id` 重放必须返回同一 Conversation/Run；同一身份换内容返回 409。不要用“先查空会话再补发”代替原子创建，并发和崩溃窗口仍会产生空壳。
+- `pendingConversationId` 在 `stage === "sent" && conversationId === null` 时必须返回 `null`，让发起页保留已发送项，等 `takeSent` 完成导航。过早把项归到新会话，会让它从新会话页消失且不触发 `router.replace`。
+- 待发送 outbox 只在浏览器内存；修复保证新失败不再生成幽灵会话并保留当前页反馈，但不保证刷新后的失败记录恢复。
+
 ## 2026-11-08 GenUI 常用组件进系统提示
 
 - 规则里点名要用的组件（如“最高、合计用 Highlights”）必须同时在常用组件里带签名；只给名字时模型会不读说明凭记忆写，签名错就整块不合法。改 `CORE` 时同步看规则里点到的组件。
