@@ -29,6 +29,8 @@ test("same-millisecond sends stay ordered and both join the conversation created
   await vi.waitFor(() => expect(stage(second)).toBe("sent"));
   expect(request.mock.calls.filter(([p]) => p === "/v1/conversations/start")).toHaveLength(1);
   expect(request.mock.calls.at(-1)![0]).toBe("/v1/conversations/new/messages");
+  expect(pendingConversationId(useOutbox.getState().pending[first])).toBeNull();
+  expect(useOutbox.getState().pending[first].sent?.conversation?.id).toBe("new");
 });
 
 test("a rejected first message stays on the new-chat page and a retry starts one conversation", async () => {

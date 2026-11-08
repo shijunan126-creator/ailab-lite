@@ -34,6 +34,8 @@ export const useOutbox = create<State>(() => ({ pending: {} }));
 
 /** Where a pending send belongs before it becomes a turn: its explicit conversation, or the one created for it. */
 export function pendingConversationId(p: Pending): string | null {
+  // The page that issued a new-chat send must still see the sent item so its effect can take over and navigate.
+  if (p.stage === "sent" && p.conversationId === null) return null;
   return p.conversationId ?? p.sent?.conversation?.id ?? null;
 }
 
