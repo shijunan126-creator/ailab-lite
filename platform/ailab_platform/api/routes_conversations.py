@@ -20,6 +20,8 @@ from ..schemas import (
     ConversationFork,
     ConversationOut,
     ConversationPatch,
+    ConversationStart,
+    ConversationStartOut,
     MessageCreate,
     RunDetail,
 )
@@ -82,6 +84,76 @@ def create_conversation(body: ConversationCreate, user: User = Depends(current_u
         db.commit()
         db.refresh(conv)
         return conversation_out(conv)
+
+
+def _start_turn(db: Session, user: User, conversation: Conversation, body: MessageCreate, *, locked: bool, commit: bool) -> Run:
+    from .routes_runs import reject_both_skill_fields
+
+    reject_both_skill_fields(body)
+    return start_run(
+        db,
+        user,
+        body.prompt,
+        body.model,
+        body.file_ids,
+        conversation=conversation,
+        mode=body.mode if "mode" in body.model_fields_set else None,
+        skill=body.skill,
+        selections=body.skills,
+        template=body.template,
+        doc_refs=body.doc_refs,
+        upload_ids=body.upload_ids,
+        client_send_id=body.client_send_id,
+        expected_branch_revision=body.expected_branch_revision,
+        locked=locked,
+        commit=commit,
+        client="portal",
+    )
+
+
+@router.post("/start", response_model=ConversationStartOut, status_code=status.HTTP_201_CREATED)
+def start_conversation(body: ConversationStart, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
+    """Create a conversation and its first Run as one transaction, so a rejected turn leaves no empty thread."""
+    from .routes_runs import reject_both_skill_fields
+
+    reject_both_skill_fields(body)
+    with user_critical_section(db, user.id):
+        prior = (
+            db.scalar(select(Run).where(Run.user_id == user.id, Run.client_send_id == body.client_send_id))
+            if body.client_send_id is not None
+            else None
+        )
+        if prior is not None:
+            if prior.conversation_id is None:
+                raise HTTPException(status_code=409, detail="client_send_id already used for a different message")
+            conversation = db.get(Conversation, prior.conversation_id)
+            if conversation is None or conversation.deleted_at is not None:
+                raise HTTPException(status_code=404, detail="conversation not found")
+            run = _start_turn(db, user, conversation, body, locked=True, commit=False)
+            db.commit()
+            db.refresh(conversation)
+            db.refresh(run)
+            return {"conversation": conversation_out(conversation, run.status), "run": run_dict(db, run, detail=True)}
+
+        if body.project_id is not None:
+            owned_project(db, body.project_id, user)
+        conversation = Conversation(
+            user_id=user.id,
+            title=(body.title or "").strip()[:200],
+            model=body.model or "",
+            project_id=body.project_id,
+        )
+        try:
+            db.add(conversation)
+            db.flush()
+            run = _start_turn(db, user, conversation, body, locked=True, commit=False)
+            db.commit()
+        except BaseException:
+            db.rollback()
+            raise
+        db.refresh(conversation)
+        db.refresh(run)
+        return {"conversation": conversation_out(conversation, run.status), "run": run_dict(db, run, detail=True)}
 
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
@@ -225,27 +297,8 @@ def delete_conversation(conversation_id: str, user: User = Depends(current_user)
 
 @router.post("/{conversation_id}/messages", response_model=RunDetail, status_code=status.HTTP_201_CREATED)
 def send_message(conversation_id: str, body: MessageCreate, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    from .routes_runs import reject_both_skill_fields
-
-    reject_both_skill_fields(body)
     conv = _owned(db, conversation_id, user)
-    run = start_run(
-        db,
-        user,
-        body.prompt,
-        body.model,
-        body.file_ids,
-        conversation=conv,
-        mode=body.mode if "mode" in body.model_fields_set else None,
-        skill=body.skill,
-        selections=body.skills,
-        template=body.template,
-        doc_refs=body.doc_refs,
-        upload_ids=body.upload_ids,
-        client_send_id=body.client_send_id,
-        expected_branch_revision=body.expected_branch_revision,
-        client="portal",
-    )
+    run = _start_turn(db, user, conv, body, locked=False, commit=True)
     return run_dict(db, run, detail=True)
 
 

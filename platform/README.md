@@ -45,7 +45,8 @@ T2/T3/T4 尚未就绪的依赖用可替换适配器顶替（见文末对照表�
 Portal 的主界面是**对话**：左边对话列表，中间消息，右边预览。同一个对话框里既能普通问答，也能让它动手做文件，
 做出来的 PPT / Excel 可以接着对话修改（"第三页换成图表""再加一列占比"）。
 
-- **一条消息 = 一个 Run**（`runs.conversation_id`）。`POST /v1/conversations/{id}/messages` 建 Run；同一对话同一时间只答一条（409）。
+- **一条消息 = 一个 Run**（`runs.conversation_id`）。首条消息经 `POST /v1/conversations/start` 在同一事务建会话和 Run；
+  后续 `POST /v1/conversations/{id}/messages` 建 Run；同一对话同一时间只答一条（409）。
   Agent 拿到的 Run 里带 `history`（前面各轮的问题、回答、产出文件名，最近 12 轮）。
 - **普通问答不起沙箱**：沙箱在模型第一次调用需要它的工具（exec / 读写文件 / 交付 / 搜图）时才领，纯文字回答几秒内开始出字。
 - **对话 / 工作模式**（输入框左下角，浏览器记住选择）：「对话」只提供不需要沙箱的工具（只读的 web_search / read_url、保存个人技能 save_skill），
@@ -345,6 +346,7 @@ ConfigMap/Secret。PVC 用 initContainer 把 `/data` chown 给 10001；镜像里
 公开（`Authorization: Bearer <token>`）：
 
 对话：`GET/POST /v1/conversations`、`GET/PATCH/DELETE /v1/conversations/{id}`（详情含各轮 Run 和最新预览）、
+`POST /v1/conversations/start`（首条消息与会话同事务创建，被拒绝时不留空会话）、
 `POST /v1/conversations/{id}/messages`（`{prompt, model?, file_ids?}`，返回这一轮的 Run）、
 `GET /v1/runs/{id}/previews/{n}/{p-01.jpg | sheets.json}`。
 

@@ -230,6 +230,11 @@ class MessageCreate(PromptRequest):
     skills: list[SkillSelection] | None = None
 
 
+class ConversationStart(MessageCreate):
+    project_id: str | None = None
+    title: str | None = Field(default=None, max_length=200)
+
+
 class ConversationOut(UTCModel):
     branch_revision: int = 0
     memory_policy: dict = Field(default_factory=dict)
@@ -244,6 +249,11 @@ class ConversationOut(UTCModel):
     created_at: datetime
     updated_at: datetime
     last_status: str | None = None
+
+
+class ConversationStartOut(BaseModel):
+    conversation: ConversationOut
+    run: RunDetail
 
 
 class ConversationContext(BaseModel):
