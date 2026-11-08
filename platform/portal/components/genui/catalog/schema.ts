@@ -28,6 +28,9 @@ const num = z.number();
 const tone = z.enum(["neutral", "success", "warning", "danger", "info"]);
 const better = z.enum(["high", "low"]);
 const scalar = z.union([str, num, z.boolean(), z.null()]);
+// Category and axis labels: years, speeds and quarter numbers come as numbers. The parser drops each item whose type
+// does not match, so a string-only label list turned [2023, 2024] into [] and the whole chart into "数据格式有误".
+const label = z.union([str, num]);
 // digits after the point, for numbers the reader compares to a given precision ("保留两位小数")
 const decimals = z.number().int().min(0).max(4);
 const opts = <T extends z.ZodRawShape>(shape: T) => z.object(shape).partial().optional();
@@ -118,12 +121,12 @@ export const Gauge = def("Gauge", "单个数值在一个区间里的位置（得
 }), { group: "指标", example: 'g = Gauge("CPU 利用率", 72, {max: 100, unit: "%", better: "low"})' });
 export const ShareBar = def("ShareBar", "一个整体的组成，一条百分比条（组件算占比）；比饼图更省地方", z.object({
   title: str,
-  labels: z.array(str),
+  labels: z.array(label),
   values: z.array(num),
   opts: opts({ unit: str, decimals }),
 }), { group: "指标", example: 'mix = ShareBar("流量来源", ["搜索", "直接", "社交"], [52, 30, 18])' });
 export const Highlights = def("Highlights", "从一组数据算出的结论数字：最高、最低、合计、平均、首尾变化、最大增幅等", z.object({
-  labels: z.array(str),
+  labels: z.array(label),
   values: z.array(num),
   // names, not an enum: a synonym (sum, mean) maps to its fact instead of invalidating the block
   facts: z.array(str),
@@ -142,7 +145,7 @@ export const Series = def("Series", "图表的一组数据，只作为图表参�
 const chartOpts = { unit: str, decimals, reference: num, referenceLabel: str };
 export const LineChart = def("LineChart", "随时间或顺序变化的趋势", z.object({
   title: str,
-  categories: z.array(str),
+  categories: z.array(label),
   series: z.array(Series.ref),
   opts: opts({ ...chartOpts, curve: z.enum(["linear", "smooth", "step"]), zero: z.boolean(), marks: z.array(z.enum(["max", "min", "last"])) }),
 }), {
@@ -153,13 +156,13 @@ export const LineChart = def("LineChart", "随时间或顺序变化的趋势", z
 });
 export const AreaChart = def("AreaChart", "趋势加总量；stacked 堆叠显示各部分随时间的构成，percent 显示为占比", z.object({
   title: str,
-  categories: z.array(str),
+  categories: z.array(label),
   series: z.array(Series.ref),
   opts: opts({ ...chartOpts, stacked: z.boolean(), percent: z.boolean(), curve: z.enum(["linear", "smooth", "step"]) }),
 }), { group: "图表", needs: ["Series"], example: 'mix = AreaChart("各渠道用户", months, [Series("网页", web), Series("App", app)], {stacked: true})' });
 export const BarChart = def("BarChart", "类别之间的数量对比；有负数时以 0 为中线向两侧分开", z.object({
   title: str,
-  categories: z.array(str),
+  categories: z.array(label),
   series: z.array(Series.ref),
   opts: opts({ ...chartOpts, horizontal: z.boolean(), stacked: z.boolean(), percent: z.boolean(), better }),
 }), {
@@ -170,7 +173,7 @@ export const BarChart = def("BarChart", "类别之间的数量对比；有负数
 });
 export const ComboChart = def("ComboChart", "柱和线放在同一张图：数量与比率（如收入和增长率）", z.object({
   title: str,
-  categories: z.array(str),
+  categories: z.array(label),
   bars: z.array(Series.ref),
   lines: z.array(Series.ref),
   opts: opts({ unit: str, lineUnit: str, decimals }),
@@ -182,7 +185,7 @@ export const ComboChart = def("ComboChart", "柱和线放在同一张图：数�
 });
 export const PieChart = def("PieChart", "同一整体的少量组成部分（不超过 6 类），组件算占比", z.object({
   title: str,
-  labels: z.array(str),
+  labels: z.array(label),
   values: z.array(num),
   opts: opts({ unit: str, decimals }),
 }), {
@@ -203,7 +206,7 @@ export const ScatterChart = def("ScatterChart", "两个数值指标的关系（�
 });
 export const RadarChart = def("RadarChart", "几个对象在 3–8 个维度上的综合对比", z.object({
   title: str,
-  axes: z.array(str),
+  axes: z.array(label),
   series: z.array(Series.ref),
   opts: opts({ max: num, decimals }),
 }), { group: "高级图表", needs: ["Series"], example: 'radar = RadarChart("能力对比", ["推理", "代码", "长文"], [Series("A", [9, 8, 7]), Series("B", [8, 9, 6])], {max: 10})' });
@@ -219,8 +222,8 @@ export const BoxPlot = def("BoxPlot", "几组原始数值的分布对比（中�
 }), { group: "高级图表", needs: ["Series"], example: 'box = BoxPlot("各地区客单价", [Series("华东", east), Series("华北", north)], {unit: "元"})' });
 export const Heatmap = def("Heatmap", "两个维度交叉的数值矩阵（时段×星期、地区×月份）", z.object({
   title: str,
-  columns: z.array(str),
-  rows: z.array(str),
+  columns: z.array(label),
+  rows: z.array(label),
   values: z.array(z.array(num)),
   opts: opts({ unit: str, decimals, better }),
 }), {
@@ -230,7 +233,7 @@ export const Heatmap = def("Heatmap", "两个维度交叉的数值矩阵（时�
 });
 export const Waterfall = def("Waterfall", "从起点经过逐项增减到终点的拆解（利润桥、预算变化）；组件累计并算出终值", z.object({
   title: str,
-  labels: z.array(str),
+  labels: z.array(label),
   changes: z.array(num),
   opts: opts({ start: num, startLabel: str, endLabel: str, unit: str, decimals }),
 }), {
@@ -240,7 +243,7 @@ export const Waterfall = def("Waterfall", "从起点经过逐项增减到终点�
 });
 export const Funnel = def("Funnel", "逐级转化（访问→注册→付费）；组件算每级转化率和总转化率", z.object({
   title: str,
-  stages: z.array(str),
+  stages: z.array(label),
   values: z.array(num),
   opts: opts({ unit: str, decimals }),
 }), { group: "高级图表", example: 'f = Funnel("转化", ["访问", "注册", "付费"], [10000, 1800, 240], {unit: "人"})' });
@@ -256,7 +259,7 @@ export const Sankey = def("Sankey", "数量从来源流向去处（预算分配�
 }), { group: "高级图表", example: 's = Sankey("流量去向", [{from: "搜索", to: "注册", value: 300}, {from: "搜索", to: "离开", value: 700}])' });
 export const Candlestick = def("Candlestick", "价格的开高低收（K 线）；默认红涨绿跌", z.object({
   title: str,
-  dates: z.array(str),
+  dates: z.array(label),
   prices: z.array(z.array(num)),
   opts: opts({ unit: str, decimals, rise: z.enum(["red", "green"]) }),
 }), {
@@ -266,7 +269,7 @@ export const Candlestick = def("Candlestick", "价格的开高低收（K 线）�
 });
 export const Dumbbell = def("Dumbbell", "每个类别的两个值及其差距：前后、预期与实际、去年与今年；组件算差值", z.object({
   title: str,
-  categories: z.array(str),
+  categories: z.array(label),
   from: Series.ref,
   to: Series.ref,
   opts: opts({ unit: str, decimals, better }),
@@ -301,7 +304,7 @@ export const Gantt = def("Gantt", "任务的起止时间与重叠（项目排期
 
 // ---------- 对比 ----------
 export const Table = def("Table", `逐项核对的表格；rows 为二维数组，最多 ${MAX_TABLE_ROWS} 行，读者可点表头排序`, z.object({
-  columns: z.array(str),
+  columns: z.array(label),
   rows: z.array(z.array(z.union([str, num, z.null()]))),
   opts: opts({ decimals }),
 }), {
@@ -310,7 +313,7 @@ export const Table = def("Table", `逐项核对的表格；rows 为二维数组�
   example: 'detail = Table(["门店", "金额"], @Each(items, "x", [x.name, x.amount]), {decimals: 2})',
 });
 export const Compare = def("Compare", "几个选项在多个属性上的对比矩阵；better 指出每行哪边好，组件标出每行最优", z.object({
-  options: z.array(str),
+  options: z.array(label),
   rows: z.array(z.object({ label: str, values: z.array(scalar), better: better.optional(), unit: str.optional() })),
   opts: opts({ decimals, recommend: str }),
 }), {
