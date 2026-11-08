@@ -31,10 +31,10 @@ class HarnessTests(unittest.TestCase):
                 assert tools[0]["function"]["name"] == "ui_components" and len(tools) == 1
                 if self.calls == 1 or self.endless:
                     return LLMResponse(
-                        tool_calls=[ToolCall(str(self.calls), "ui_components", {"names": ["Text"]})], usage={"prompt_tokens": 10}
+                        tool_calls=[ToolCall(str(self.calls), "ui_components", {"names": ["Badge"]})], usage={"prompt_tokens": 10}
                     )
                 result = json.loads(messages[-1]["content"])
-                assert result["ok"] and result["guide"] and "Text(" in result["components"]
+                assert result["ok"] and result["guide"] and "Badge(" in result["components"]
                 return LLMResponse(content="完成", usage={"prompt_tokens": 20, "completion_tokens": 5})
 
         old = settings.genui_html_enabled
@@ -49,7 +49,7 @@ class HarnessTests(unittest.TestCase):
                     "tool_called": True,
                     "tool_call_count": 1,
                     "tool_round_count": 1,
-                    "component_names": ["Text"],
+                    "component_names": ["Badge"],
                     "usage": {"prompt_tokens": 30, "completion_tokens": 5},
                 },
             )

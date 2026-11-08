@@ -369,6 +369,31 @@ export function EntityCardView({ p }: { p: P }) {
   );
 }
 
+/** Tiers or categories: a tinted key tile (tag, name, one figure) beside what characterises the group. */
+export function SegmentsView({ p }: { p: P }) {
+  const o: P = p.opts || {};
+  const items = objects<P>(p.items, ["tag"]);
+  if (!items) return <Malformed />;
+  return (
+    <ol className="gu-segments">
+      {items.map((it, i) => (
+        <li key={i} data-tone={tone(it.tone)}>
+          <div className="gu-segment-key">
+            <strong>{text(it.tag)}</strong>
+            {it.name ? <span className="gu-segment-name">{text(it.name)}</span> : null}
+            {it.value != null && it.value !== "" ? <span className="gu-segment-value"><Val v={it.value} unit={it.unit} decimals={o.decimals} /></span> : null}
+            {it.note ? <span className="gu-caption">{text(it.note)}</span> : null}
+          </div>
+          <div className="gu-segment-body">
+            {it.title ? <h4 className="gu-card-title">{text(it.title)}</h4> : null}
+            {it.text ? <p className="gu-text">{text(it.text)}</p> : null}
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
 /** A collapsible section; whether it is open is kept with the answer's other control state. */
 export function DetailsView({ p, sid, render }: { p: P; sid?: string; render: (v: unknown) => React.ReactNode }) {
   const o: P = p.opts || {};

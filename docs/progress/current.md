@@ -1,3 +1,12 @@
+# GenUI 主动使用与分档组件（2026-11-08）
+
+- 用户要求：模型更主动但不滥用 UI 组件，GenUI 初始提示放宽到约 3000 token；新增截图式“色块 + 说明”分档组件。工作树 `.worktrees/genui-proactive`，分支 `feat/genui-proactive`，base `origin/main@34b1e58e`；主工作区既有修改保留。
+- 已实现：索引按内容形状触发并写明不用界面的边界；13 个常用组件说明直接进系统提示（其余仍按需 `ui_components`）；语法与对错规则移入索引，工具指南只剩交互；新增 `Segments`。根因、token 与评测见[记录](updates/2026-11-08-genui-proactive.md)。
+- 追加：模型目录支持可选 `session_header`，可接入要求会话头的 OpenAI 兼容端点（OpenCode Go）；“为什么”类问题按内容形状判断（因果链可用 Flow），不再整类列为纯文字。最终提示词经 OpenCode 复测：主动 9/9、多余 UI 0/14、闭合块 15/15 合法。
+- 验证：真实模型主动用例 5/8 → 9/9（最终版），未缓存输入 113,912 → 32,425。Portal 270/build、Ruff、全套 SQLite 通过（唯一时序抖动已修），详见记录。
+- 下一步：用户已授权提 PR、CI 通过后合并，并一次性部署本机。
+---
+
 # 网页图片短 ID 与无落盘代理（2026-11-08）
 
 - 用户授权按前序讨论实施；工作树 `.worktrees/web-image-refs`，分支 `feat/web-image-refs`，base `origin/main@e3122ae3`。主工作区修改保留；用户随后追加授权提 PR、CI 通过后合并并增量部署。

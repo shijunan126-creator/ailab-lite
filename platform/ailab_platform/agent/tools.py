@@ -11,7 +11,7 @@ from typing import Any
 from .. import images, web
 from ..clients import AsyncBrokerClient, ClientError
 from ..config import settings
-from ..contracts.genui import component_docs_for, component_names, guide_for
+from ..contracts.genui import component_docs_for, component_names, core_names, guide_for
 from ..contracts.workspace_ocr import WorkspaceOcr
 from ..domain.document_tools import CHAT_DOCUMENT_TOOLS, permitted
 from ..llm import INVALID_ARGUMENTS_KEY
@@ -237,7 +237,7 @@ UI_COMPONENTS = {
     "type": "function",
     "function": {
         "name": "ui_components",
-        "description": "写 openui 界面块之前读取所选组件的签名、参数和示例；names 填打算使用的组件名。",
+        "description": "写 openui 界面块前读取“常用组件”以外的组件说明和交互用法；names 填打算使用的组件名。",
         "parameters": {
             "type": "object",
             "properties": {"names": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 16}},
@@ -249,13 +249,14 @@ UI_COMPONENTS = {
 
 
 def ui_components(args: dict, state: dict, *, html_enabled: bool) -> dict:
-    """Only append docs absent from successful tool results still visible to the model."""
+    """Only append docs absent from the system prompt and from successful tool results still visible to the model."""
     names = args.get("names")
     if set(args) != {"names"} or not isinstance(names, list) or not 1 <= len(names) <= 16 or not all(isinstance(n, str) for n in names):
         raise ToolError("ui_components requires names: 1–16 strings and no other parameters")
     documents, unknown = component_docs_for(names, html_enabled)
     guide = guide_for(html_enabled)
-    known, calls, guide_present = set(), set(), False
+    # The index carries the core docs; the tool is only offered alongside it.
+    known, calls, guide_present = set(core_names()) & set(documents), set(), False
     for message in state.get("messages", []):
         if message.get("role") == "assistant":
             calls.update(

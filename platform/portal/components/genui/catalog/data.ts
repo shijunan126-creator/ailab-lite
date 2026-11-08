@@ -364,6 +364,8 @@ export function shapeOk(name: string, p: Record<string, unknown>): boolean {
       return strings(p.paths) !== null;
     case "EntityCard":
       return opt(p).fields == null || objects(opt(p).fields, ["label"]) !== null;
+    case "Segments":
+      return objects(p.items, ["tag"]) !== null;
     default:
       return true;
   }

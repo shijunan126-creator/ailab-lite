@@ -864,7 +864,14 @@ class AgentLoop:
         if max_output_tokens is not None:
             output_limit = min(output_limit, max_output_tokens)
         call = ModelCall(
-            uuid4().hex, run_id, output_limit, actual_backend=model, quiet=quiet, tool_choice=tool_choice, continues_prefix=continues_prefix
+            uuid4().hex,
+            run_id,
+            output_limit,
+            actual_backend=model,
+            quiet=quiet,
+            tool_choice=tool_choice,
+            continues_prefix=continues_prefix,
+            session=run.get("conversation_id") or run_id,
         )
         try:
             await self.platform.reserve_usage(

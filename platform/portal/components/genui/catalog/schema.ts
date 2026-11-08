@@ -355,6 +355,17 @@ export const EntityCard = def("EntityCard", "一个具体对象的名片：产�
   notes: ["几个 EntityCard 放进 Grid 做套餐或候选对比；highlight 为 true 的一张突出显示。rating 为 0–5 分。image 是卡片顶部的图片，规则同 Image 的 src。"],
   example: 'pro = EntityCard("专业版", {price: 99, priceUnit: "元/人/月", fields: [{label: "席位上限", value: 200}], tags: ["SSO"], highlight: true})',
 });
+export const Segments = def("Segments", "分档、分类或分层的几类对象：每类左侧色块给代号、名称和一个关键数，右侧写特征和解释", z.object({
+  items: z.array(z.object({
+    tag: str, name: str.optional(), value: z.union([num, str]).optional(), unit: str.optional(), note: str.optional(),
+    title: str.optional(), text: str.optional(), tone: tone.optional(),
+  })),
+  opts: opts({ decimals }),
+}), {
+  group: "对比",
+  notes: ["客户分层、风险等级、套餐档位、评级标准等；value 是该类最关键的一个数，note 说明这个数是什么。"],
+  example: 'tiers = Segments([{tag: "A类", name: "优质客户", value: 12, unit: "%", note: "贷款利率", title: "收入稳定", text: "违约少，低利率也有利润", tone: "success"}, {tag: "B类", name: "高风险客户", tone: "danger"}])',
+});
 
 // ---------- 图片 ----------
 // The API resolves short IDs from tool results and checks run/share access; the model never supplies a fetch URL.
@@ -473,7 +484,7 @@ export const DEFINITIONS = [
   LineChart, AreaChart, BarChart, ComboChart, PieChart, Series,
   ScatterChart, RadarChart, Histogram, BoxPlot, Heatmap, Waterfall, Funnel, Treemap, Sankey, Candlestick, Dumbbell,
   Timeline, Steps, Checklist, Gantt,
-  Table, Compare, Ranking, ProsCons, EntityCard,
+  Table, Compare, Ranking, ProsCons, EntityCard, Segments,
   Flow, Tree, Diff, FileTree, JsonView,
   Select, Slider, Toggle, Input, Button,
   HtmlArtifact,

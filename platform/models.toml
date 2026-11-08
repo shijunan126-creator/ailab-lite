@@ -15,6 +15,8 @@
 #   weight          quota multiplier: a call costs tokens x weight against the daily/monthly limits
 #   echo_reasoning  true for thinking models that demand reasoning_content back on tool turns (DeepSeek V4.x)
 #   disable_reasoning_for_quiet true only when the provider supports thinking.type=disabled (titles/summaries)
+#   session_header  header that carries a stable hashed per-conversation id, for gateways that require one
+#                   (OpenCode Go: "x-opencode-session"); omitted sends none
 #   fallback        ordered aliases, tried only before any output (never silently fall back to mock)
 #   context_tokens  model context window; input assembly uses at most 70 percent
 #   max_output_tokens per-call output capacity, including reasoning; also used for the usage reservation

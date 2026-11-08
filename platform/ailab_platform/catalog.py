@@ -63,6 +63,9 @@ class ModelSpec:
     # DeepSeek's explicit non-thinking mode for metadata/summary calls. Opt in only
     # for endpoints that support thinking.type; never infer capability from a URL.
     disable_reasoning_for_quiet: bool = False
+    # Upstreams that route and cache by conversation (OpenCode Go: x-opencode-session) get a stable,
+    # hashed per-conversation id in this header. Empty means no such header.
+    session_header: str = ""
 
     def supports(self, required: set[str]) -> bool:
         declared = set(self.capabilities) if self.capabilities is not None else ({"tools"} if self.tools else set())

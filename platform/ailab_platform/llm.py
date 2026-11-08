@@ -62,6 +62,8 @@ class ModelCall:
     # A quiet call that continues the conversation (a summary, a wrap-up) keeps its request shape so the
     # provider's prefix cache still applies: no reasoning toggle, even for models that drop it on quiet calls.
     continues_prefix: bool = False
+    # What the upstream should treat as one session: the conversation, else the Run.
+    session: str = ""
 
 
 model_call: ContextVar[ModelCall | None] = ContextVar("model_call", default=None)
@@ -500,6 +502,7 @@ def llm_for(model_id: str) -> LLMClient:
         spec.upstream_model or spec.id,
         echo_reasoning=spec.echo_reasoning or settings.llm_echo_reasoning,
         disable_reasoning_for_quiet=spec.disable_reasoning_for_quiet,
+        session_header=spec.session_header,
     )
 
 
