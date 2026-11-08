@@ -1,3 +1,13 @@
+# 首条消息与会话原子创建（2026-11-09）
+
+- 用户报告 `/c/cnv_bf66cafddac34d6a8b4a` 空白，原有 PRO 正文和失败记录消失。证据：Conversation 已创建，但 `runs=0`、`run_events=0`、`queued_messages=0`；首条消息返回 `429 too many active runs for this user`。工作树 `.worktrees/first-message-admission`，分支 `fix/first-message-admission`，base `origin/main@e47d22d8`；主工作区既有修改保留。
+- 已修复：新增 `POST /v1/conversations/start`，在一个用户锁和事务内完成 Run 准入、Conversation 与首条 Run 创建，失败回滚；同一 `client_send_id` 重放幂等，内容变化 409。Portal 新会话首条发送改走原子接口，并让已发送项保留到导航完成。根因、验证和边界见[记录](updates/2026-11-09-first-message-admission.md)。
+- 合并与部署：PR [#170](https://github.com/shijunan126-creator/ailab-lite/pull/170) 的 head `a3d49234` 九项 CI 全绿，squash merge 为 `main@ad756f92`；已增量部署 `release-ad756f9`。Portal `/login`、API `/readyz` 返回 200，OpenAPI 已注册新接口；12 running / 10 healthy，数据库 revision `0063`。
+- 验证：定向 SQLite 回归、Portal 272 项测试与生产 build、完整 E2E 通过。完整本机 Python 套件仍有 16 项 Office/document 运行时环境失败，不在本改动路径。
+- 边界：历史空会话不会自动恢复；待发送 outbox 仍只在浏览器内存，完整刷新会丢失未提交的失败提示。下一步等待用户实际使用反馈，不推进其他路线图项。
+
+---
+
 # GenUI 主动使用与分档组件（2026-11-08）
 
 - 用户要求：模型更主动但不滥用 UI 组件，GenUI 初始提示放宽到约 3000 token；新增截图式“色块 + 说明”分档组件。工作树 `.worktrees/genui-proactive`，分支 `feat/genui-proactive`，base `origin/main@34b1e58e`；主工作区既有修改保留。
