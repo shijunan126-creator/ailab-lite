@@ -26,6 +26,7 @@ from ..config import settings
 from ..contracts.file_preview import PreviewCompletion, PreviewPagePublication
 from ..contracts.file_types import DETECTED_MIME, legacy_scanned_pending
 from ..contracts.usage import ReservationOut, ReserveUsageIn, SettleUsageIn, UsageErrorCode, UsageOut
+from ..contracts.web_images import RegisterWebImages
 from ..conversation_titles import apply_result_title
 from ..conversation_tree import path_ids
 from ..deps import get_db
@@ -332,6 +333,10 @@ def internal_append_event(
 ) -> dict:
     run = _run_or_404(db, run_id)
     with fenced_run(db, run, x_run_attempt):
+        if body.type == "agent.message":
+            from .web_image_refs import retain
+
+            retain(db, run, str(body.payload.get("content") or ""))
         event = append_event(db, run_id, body.type, body.payload)
     return {
         "seq": event.seq,
@@ -1683,3 +1688,18 @@ def restore_file_tombstones(body: dict, db: Session = Depends(get_db)):
             db.commit()
             applied += 1
     return {"applied": applied, "schema_version": 1}
+
+
+@router.post("/runs/{run_id}/web-images", dependencies=[Depends(require_scope("runs:events"))])
+def internal_web_images(
+    run_id: str, body: RegisterWebImages, x_run_attempt: str | None = Header(default=None), db: Session = Depends(get_db)
+):
+    from .web_image_refs import register
+
+    run = _run_or_404(db, run_id)
+    with fenced_run(db, run, x_run_attempt):
+        if run.status not in RunStatus.ACTIVE:
+            raise HTTPException(409, "run_not_active")
+        images = register(db, run, body.images)
+        db.commit()
+    return {"images": images}

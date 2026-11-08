@@ -41,7 +41,7 @@ import httpcore
 import httpx
 import trafilatura
 
-from . import metrics, web_images
+from . import metrics
 from .config import settings
 
 USER_AGENT = "AILab-lite/0.1 (safe web research; https://github.com/shijunan126-creator/ailab-lite)"
@@ -278,7 +278,7 @@ def _clean(text: str) -> str:
 
 class _References(HTMLParser):
     """One pass over the page for what it points at: outgoing links (read_url returns them so the model may follow
-    one, net_tools provenance) and its pictures (returned as signed image references, web_images)."""
+    one, net_tools provenance) and its pictures (registered by the Agent before returning to the model)."""
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -326,7 +326,7 @@ def _attr_px(value: str | None) -> int:
 
 
 def image_reference(raw: str, base: str = "") -> str | None:
-    """The signed path for a picture URL found in a search result or page; None for what must not be shown:
+    """A validated public picture URL found in a search result or page; None for what must not be shown:
     non-http(s), data:, credentials, odd ports, private literal addresses, SVG (scriptable) and icons."""
     raw = raw.strip()
     if not raw or raw.startswith("data:"):
@@ -338,7 +338,7 @@ def image_reference(raw: str, base: str = "") -> str | None:
     path = urlsplit(url).path.lower()
     if path.endswith((".svg", ".svgz", ".ico")) or DECORATION & set(re.split(r"[^a-z0-9]+", path)):
         return None
-    return web_images.reference(url)
+    return url if len(url.encode()) <= 4096 else None
 
 
 def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
@@ -357,7 +357,7 @@ def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
     for src, alt in shared + parser.images:
         ref = image_reference(src, base)
         if ref and all(item["image"] != ref for item in images):
-            images.append({"image": ref, "alt": _clean(alt)[:120]})
+            images.append({"image": ref, "page_url": base, "alt": _clean(alt)[:120]})
         if len(images) >= MAX_PAGE_IMAGES:
             break
     return links, images
@@ -365,7 +365,7 @@ def _references(html: str, base: str) -> tuple[list[str], list[dict]]:
 
 def extract_markdown(html: str, base: str = "") -> tuple[str, str, list[str], list[dict]]:
     """Title, main content as Markdown (navigation, footers and boilerplate dropped by Trafilatura), links and
-    signed picture references. CPU-bound: callers run it in a thread."""
+    picture address candidates. CPU-bound: callers run it in a thread."""
     try:
         text = trafilatura.extract(
             html,
@@ -431,7 +431,7 @@ async def search(query: str, count: int | None = None, kind: str = "web") -> lis
         return [
             {
                 "title": f"{query} — image {i + 1}",
-                "image": web_images.reference(f"{MOCK_IMAGE_BASE}{i + 1}.png"),
+                "image": f"{MOCK_IMAGE_BASE}{i + 1}.png",
                 "page_url": f"https://example.com/{i + 1}",
                 "width": 480,
                 "height": 320,
@@ -497,7 +497,7 @@ async def search(query: str, count: int | None = None, kind: str = "web") -> lis
 
 
 def _image_results(results: list, n: int) -> list[dict]:
-    """SearXNG image hits as signed references: the picture (img_src, else its thumbnail) and the page showing it."""
+    """SearXNG image address candidates: the picture (img_src, else its thumbnail) and the page showing it."""
     out: list[dict] = []
     for item in results:
         if not isinstance(item, dict):
@@ -508,7 +508,11 @@ def _image_results(results: list, n: int) -> list[dict]:
         if not ref or any(hit["image"] == ref for hit in out):
             continue
         page = str(item.get("url") or "").strip()
-        hit = {"title": str(item.get("title") or "")[:300], "image": ref}
+        hit = {
+            "title": str(item.get("title") or "")[:300],
+            "image": ref,
+            "thumbnail_url": image_reference(str(item.get("thumbnail_src") or "")) or "",
+        }
         if page.startswith(("http://", "https://")) and len(page) <= 2000:
             hit["page_url"] = page
         if size := re.match(r"\s*(\d{1,5})\s*[x×]\s*(\d{1,5})", str(item.get("resolution") or "")):

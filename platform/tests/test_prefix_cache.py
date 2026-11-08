@@ -2213,3 +2213,33 @@ def test_v2_work_prepared_image_is_sent_once_and_keeps_recorded_prefix(monkeypat
             )
             == 1
         )
+
+
+def test_short_web_image_results_extend_recorded_model_requests(monkeypatch):
+    from ailab_platform.config import settings
+
+    monkeypatch.setattr(settings, "web_search_provider", "mock")
+
+    class Platform(FakePlatform):
+        async def register_web_images(self, run_id, images):
+            assert images[0]["image"].startswith("https://")
+            return {"images": [{"image": "img_AbCdEf123456", "title": "猫", "page_url": "https://example.com/cat"}]}
+
+    calls = [
+        {
+            "index": 0,
+            "id": "image_search",
+            "type": "function",
+            "function": {"name": "web_search", "arguments": '{"query":"cat","kind":"images"}'},
+        }
+    ]
+    with scripted_server([{"tool_calls": calls}, {"content": "图片：img_AbCdEf123456"}]) as (url, requests):
+        platform = Platform()
+        asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url)).process("fixture", attempt_id="attempt"))
+    assert platform.statuses[-1][0] == "succeeded"
+    assert len(requests) == 2
+    assert_extension(*requests)
+    appended = requests[1]["messages"][len(requests[0]["messages"]) :]
+    result = next(json.loads(m["content"]) for m in appended if m["role"] == "tool")
+    assert result["results"][0]["image"] == "img_AbCdEf123456"
+    assert "ailab-mock-images" not in json.dumps(result)

@@ -452,6 +452,9 @@ def purge_deleted_conversations(db: Session, now: datetime) -> int:
                 from .viewer_captures import release_runs
 
                 release_runs(db, ids)
+                from .web_image_refs import release_runs as release_web_images
+
+                release_web_images(db, ids)
                 from ..models import DerivedAssetRef
 
                 surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == ViewerCapture.storage_key).exists()
@@ -593,6 +596,9 @@ async def lifecycle_cleanup_forever() -> None:
                 from .document_preparation import maintenance as preparation_maintenance
 
                 preparation_maintenance(db)
+                from .web_image_refs import collect as collect_web_images
+
+                collect_web_images(db, settings.gc_batch_size)
                 invalidate_workspace_ocr(db)
                 db.commit()
                 collect_batch(db, get_storage())

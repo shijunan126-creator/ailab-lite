@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { api, API_BASE, downloadUrl, errorMessage, FileItem, ShareFile, ShareView } from "../../../../lib/api";
 import { formatBytes, formatDate } from "../../../../lib/format";
+import { GenUIHostProvider } from "../../../../components/genui/host";
 import Answer from "../../../../components/chat/answer";
 import { IconDownload, IconFile, IconShare } from "../../../../components/icons";
 import { ExtTile } from "../../../../components/library/file-tile";
@@ -108,6 +109,7 @@ export default function SharedPage() {
 
   return (
     <FileSourceContext.Provider value={source}>
+    <GenUIHostProvider value={{ readOnly: true, shareId: id }}>
       <main className="share-page">
         <header className="share-head">
           <h1>{view.title || "分享"}</h1>
@@ -156,6 +158,7 @@ export default function SharedPage() {
       {viewing ? (
         <FileViewer files={viewing.files} file={viewing.file} onOpen={(file) => setViewing((v) => (v ? { ...v, file } : v))} onClose={() => setViewing(null)} />
       ) : null}
+    </GenUIHostProvider>
     </FileSourceContext.Provider>
   );
 }

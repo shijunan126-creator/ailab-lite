@@ -1416,3 +1416,26 @@ class DocumentPreparation(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     run_id: Mapped[str | None] = mapped_column(ForeignKey("runs.id", ondelete="SET NULL"), nullable=True)
     plan: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class WebImage(Base):
+    __tablename__ = "web_images"
+    __table_args__ = (Index("uq_web_images_url_hash", "url_hash", unique=True), Index("ix_web_images_expiry", "expires_at", "id"))
+    id: Mapped[str] = mapped_column(String(24), primary_key=True)
+    url_hash: Mapped[str] = mapped_column(String(64))
+    url: Mapped[str] = mapped_column(Text)
+    thumbnail_url: Mapped[str] = mapped_column(Text, default="")
+    page_url: Mapped[str] = mapped_column(Text, default="")
+    title: Mapped[str] = mapped_column(String(300), default="")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class WebImageRef(Base):
+    __tablename__ = "web_image_refs"
+    __table_args__ = (
+        Index("ix_web_image_refs_image", "image_id", "run_id"),
+        Index("ix_web_image_refs_expiry", "expires_at", "run_id", "image_id"),
+    )
+    run_id: Mapped[str] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    image_id: Mapped[str] = mapped_column(ForeignKey("web_images.id", ondelete="CASCADE"), primary_key=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

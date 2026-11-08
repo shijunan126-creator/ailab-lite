@@ -586,6 +586,9 @@ class AsyncPlatformClient(_PlatformApi):
     async def set_run_status(self, run_id, status, summary=None, error=None, result=None) -> dict:
         return (await self._send(self._set_run_status(run_id, status, summary, error, result))).json()
 
+    async def register_web_images(self, run_id: str, images: list[dict]) -> dict:
+        return (await self._send(self._req("POST", f"/internal/runs/{run_id}/web-images", json={"images": images}))).json()
+
     async def append_event(self, run_id: str, type_: str, payload: dict | None = None) -> dict:
         return (await self._send(self._append_event(run_id, type_, payload))).json()
 

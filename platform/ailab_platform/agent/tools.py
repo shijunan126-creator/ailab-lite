@@ -307,7 +307,7 @@ WEB_SEARCH = {
     "function": {
         "name": "web_search",
         "description": "搜索公开网页，返回标题、URL 和摘要。需要最新信息或外部资料时先用它；再用 read_url 读正文。"
-        "kind=images 搜图片，每条结果的 image 是可在界面中展示的图片路径，原样使用，不要改写或自己编写。",
+        "kind=images 搜图片，每条结果的 image 是可在界面中展示的短图片 ID，原样使用，不要改写或自己编写。",
         "parameters": {
             "type": "object",
             "properties": {
@@ -632,6 +632,13 @@ class ToolContext:
         self.exec_lifetime_seconds = settings.run_max_seconds
 
 
+async def _register_web_images(ctx: ToolContext, images: list[dict]) -> list[dict]:
+    if not ctx.platform or not ctx.run_id:
+        raise ToolError("image registration requires a run")
+    response = await ctx.platform.register_web_images(ctx.run_id, images)
+    return response["images"]
+
+
 def _workspace_path(path: str, under: str = WORKSPACE) -> str:
     try:
         return normalize_path(path, under)
@@ -814,6 +821,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             found = await web.search(query, int(args.get("max_results") or settings.web_max_results), str(args.get("kind") or "web"))
         except web.WebError as exc:
             raise ToolError(str(exc)) from exc
+        if str(args.get("kind") or "web") == "images":
+            found = await _register_web_images(ctx, found)
         return {"ok": True, "query": query, "results": found}
 
     if name == "read_url":
@@ -824,6 +833,8 @@ async def execute_tool(name: str, args: dict[str, Any], lease_id: str, broker: A
             page = await web.read_url(url, int(args.get("max_chars") or 8000))
         except web.WebError as exc:
             raise ToolError(str(exc)) from exc
+        if page.get("images"):
+            page["images"] = await _register_web_images(ctx, page["images"])
         return {"ok": True, **page}
 
     if name == "search_images":

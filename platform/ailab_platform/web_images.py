@@ -1,10 +1,7 @@
-"""Signed references to web images the Agent saw, shared by the Agent (signs) and the API (verifies and serves).
+"""Raster signature sniffing and compatibility for signed image paths in older answers.
 
-The Portal only loads same-origin images, and an image URL the model wrote itself would be an exfiltration channel:
-a prompt-injected model could encode conversation data into the URL and the viewer's browser would fetch it. So the
-model never gets a raw image URL. The web tools give it ``/v1/web-images/<token>``, where the token carries the URL
-and an HMAC of it; the model has no key, so it can only repeat references a tool result produced. The API's proxy
-verifies the token, fetches the image once through the public-only client and serves it from its own origin.
+New web tools register address-only records through the API and return short IDs. No new model result uses
+these signed paths; verification remains so existing answers do not break on upgrade.
 """
 
 from __future__ import annotations
