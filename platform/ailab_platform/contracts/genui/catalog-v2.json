@@ -1,7 +1,7 @@
 {
   "format": "openui",
   "version": 2,
-  "index_sha256": "8d360498f36e4dc3777a773b2bbbcacea665f6f204116c83f77b7524f2019721",
+  "index_sha256": "58cb5a1e3f7a9d63c48e67e8983b96790b2464718690d02ae1d55e3f7a2db65c",
   "guide_sha256": "ae6bef7e273be5153dad641fc58d47e7f4ea78716f334b2da41b67ed434b516a",
   "core": [
     "Stack",

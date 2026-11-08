@@ -119,6 +119,7 @@ add(
 
 # Proactive: structure a layout shows better than paragraphs, without the user asking for any display.
 add("bank-tiers", "proactive", "为什么银行给不同客户的贷款利率不一样？")
+add("svb-collapse", "proactive", "为什么硅谷银行会在2023年突然倒闭？")
 add("db-choice", "proactive", "PostgreSQL、MySQL 和 SQLite 分别适合什么场景？")
 add("visa-steps", "proactive", "申请日本个人旅游签证一般要走哪些步骤？")
 add("ielts-plan", "proactive", "我有4周时间准备雅思口语，想从5分提到6.5分，帮我排个计划。")
