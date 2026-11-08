@@ -93,6 +93,10 @@ def _transition_run(
                     .where(RunCheckpoint.run_id == run.parent_run_id, RunCheckpoint.expires_at.is_(None))
                     .values(expires_at=now + timedelta(days=7))
                 )
+    if new_status in RunStatus.TERMINAL:
+        from .api.web_image_refs import retain
+
+        retain(db, run, run.summary)
     metrics.RUNS.labels(new_status).inc()
     if new_status in RunStatus.TERMINAL:
         started = run.started_at or run.created_at

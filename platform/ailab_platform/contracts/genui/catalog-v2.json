@@ -217,19 +217,19 @@
       "name": "Image",
       "group": "图片",
       "needs": [],
-      "doc": "Image(src: string, opts?: {alt?: string, caption?: string, source?: string, ratio?: \"auto\" | \"16:9\" | \"4:3\" | \"1:1\" | \"3:4\"}) — 一张图片，可带说明和来源\n- src 只能原样照抄 web_search（kind: \"images\"）或 read_url 结果里的 image 路径（/v1/web-images/…），不要改写或自己拼网址；手头没有图片就不用图片组件。source 填图片所在网页的 URL（结果里的 page_url 或读过的网页）。\n例：`shot = Image(\"/v1/web-images/…\", {caption: \"U9 Xtreme 极速测试\", source: \"https://example.com/news\"})`"
+      "doc": "Image(src: string, opts?: {alt?: string, caption?: string, source?: string, ratio?: \"auto\" | \"16:9\" | \"4:3\" | \"1:1\" | \"3:4\"}) — 一张图片，可带说明和来源\n- src 原样使用 web_search（kind: \"images\"）或 read_url 结果里的短图片 ID（img_…），不要自己编写；没有图片就不用图片组件。来源由平台显示，无需填写 source。\n例：`shot = Image(\"img_AbCdEf123456\", {caption: \"U9 Xtreme 极速测试\"})`"
     },
     {
       "name": "Gallery",
       "group": "图片",
       "needs": [],
-      "doc": "Gallery(images: {src: string, alt?: string, caption?: string, source?: string}[], opts?: {title?: string}) — 同一主题的一组图片（2–12 张）：并排显示，多出的折叠为 +N，点开可逐张浏览\n- 每张图片的 src 规则同 Image。只有一张时用 Image。\n例：`shots = Gallery([{src: \"/v1/web-images/…\", caption: \"正面\"}, {src: \"/v1/web-images/…\", caption: \"侧面\"}])`"
+      "doc": "Gallery(images: {src: string, alt?: string, caption?: string, source?: string}[], opts?: {title?: string}) — 同一主题的一组图片（2–12 张）：并排显示，多出的折叠为 +N，点开可逐张浏览\n- 每张图片的 src 规则同 Image。只有一张时用 Image。\n例：`shots = Gallery([{src: \"img_AbCdEf123456\", caption: \"正面\"}, {src: \"img_ZyXwVu654321\", caption: \"侧面\"}])`"
     },
     {
       "name": "ImageText",
       "group": "图片",
       "needs": [],
-      "doc": "ImageText(src: string, title: string, opts?: {text?: string, points?: string[], source?: string, side?: \"left\" | \"right\", size?: \"sm\" | \"md\" | \"lg\"}) — 图文并排：左图右文介绍一个人物、产品、地点或条目\n- src 规则同 Image。几个 ImageText 连续放在 Stack 里就是图文列表（如几款产品各一条）。\n- size：sm 为小缩略图（列表条目），md 为默认，lg 为大图（重点介绍，窄屏时图片在上）。points 是要点列表。\n例：`driver = ImageText(\"/v1/web-images/…\", \"Marc Basseng\", {text: \"德国职业赛车手\", points: [\"2012 年 FIA GT1 世界冠军\"], source: \"https://example.com/profile\"})`"
+      "doc": "ImageText(src: string, title: string, opts?: {text?: string, points?: string[], source?: string, side?: \"left\" | \"right\", size?: \"sm\" | \"md\" | \"lg\"}) — 图文并排：左图右文介绍一个人物、产品、地点或条目\n- src 规则同 Image。几个 ImageText 连续放在 Stack 里就是图文列表（如几款产品各一条）。\n- size：sm 为小缩略图（列表条目），md 为默认，lg 为大图（重点介绍，窄屏时图片在上）。points 是要点列表。\n例：`driver = ImageText(\"img_AbCdEf123456\", \"Marc Basseng\", {text: \"德国职业赛车手\", points: [\"2012 年 FIA GT1 世界冠军\"]})`"
     },
     {
       "name": "Metric",

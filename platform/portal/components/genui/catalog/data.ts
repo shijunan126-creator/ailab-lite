@@ -276,10 +276,11 @@ const opt = (p: Record<string, unknown>) => (record(p.opts) ? p.opts : {});
 const allFinite = (v: unknown, n?: number) => Array.isArray(v) && v.every((x) => x == null || finite(x)) && (n === undefined || v.length >= n);
 /** Pictures one block may show: a Gallery's own cap. */
 export const MAX_IMAGES = 12;
-/** A platform-signed web image path from a tool result (/v1/web-images/<url>.<signature>), or null. Anything else
+/** A short registered ID, or a legacy signed web image path, or null. Anything else
  * the model wrote is not an image this answer may load. */
 export function webImage(v: unknown): string | null {
   const s = text(v).trim();
+  if (/^img_[A-Za-z0-9_-]{12}$/.test(s)) return s;
   return s.length <= 4096 && /^\/v1\/web-images\/[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(s) ? s : null;
 }
 /** "example.com" for a source page, or null when it is not an http(s) URL. */

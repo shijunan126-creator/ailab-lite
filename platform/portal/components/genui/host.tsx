@@ -5,6 +5,7 @@ import { createContext, useContext } from "react";
 /** What a page offers generated UI: whether it may act, and how a button's message is sent (HLD §6.8). */
 export type GenUIHost = {
   readOnly: boolean;
+  shareId?: string;
   /** Sends a message as the user, through the same path as the composer (queue/steer rules included). */
   send?: (text: string) => Promise<boolean>;
 };

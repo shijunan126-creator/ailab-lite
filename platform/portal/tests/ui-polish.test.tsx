@@ -52,6 +52,7 @@ test("the skill form writes a SKILL.md and reads a pasted one back into its fiel
 
 test("only platform-signed web images load; the source shows as its site", () => {
   assert.equal(webImage(SIGNED), SIGNED);
+  assert.equal(webImage("img_AbCdEf123456"), "img_AbCdEf123456");
   for (const bad of ["https://evil.example/x.png?leak=1", "/v1/files/f1/content", "/v1/web-images/a", `${SIGNED}/../x`, "data:image/png;base64,AA"]) {
     assert.equal(webImage(bad), null, bad);
   }
@@ -69,7 +70,7 @@ test("a gallery shows three tiles, counts the rest, and opens full size", async 
   await waitFor(() => assert.ok(container.querySelector(".gu-gallery-row img")));
   const tiles = container.querySelectorAll(".gu-gallery-row img");
   assert.equal(tiles.length, 3);
-  assert.equal(tiles[0].getAttribute("src"), `/api${SIGNED.replace("c2ln", "s0")}`);
+  assert.equal(tiles[0].getAttribute("src"), `/api${SIGNED.replace("c2ln", "s0")}?variant=thumb`);
   assert.equal(container.querySelector(".gu-gallery-more.wide")?.textContent, "+3");
   fireEvent.click(screen.getByRole("button", { name: "查看大图：图1" }));
   assert.equal(screen.getByRole("dialog", { name: "图1" }).querySelector(".gu-lightbox-count")?.textContent, "1 / 6");
@@ -86,11 +87,42 @@ test("a picture the model wrote itself never loads, and copy names the picture a
   const { container } = render(<Answer text={text} />);
   await waitFor(() => assert.ok(container.querySelector(".gu-imagetext")));
   const loaded = [...container.querySelectorAll("img")].map((i) => i.getAttribute("src"));
-  assert.deepEqual(loaded, [`/api${SIGNED}`]);
+  assert.deepEqual(loaded, [`/api${SIGNED}?variant=thumb`]);
   assert.ok(container.querySelector(".gu-imagetext .gu-photo-missing"));
   const copied = answerForCopy(text);
   assert.match(copied, /维斯塔潘/);
   assert.match(copied, /赛道/);
   assert.match(copied, /cartube\.co\.il/);
   assert.doesNotMatch(copied, /evil\.example/);
+});
+
+test("short image IDs use the share scope and fetch original only on opening", async () => {
+  const { GenUIHostProvider } = await import("../components/genui/host");
+  const fetcher = vi.fn(async () => ({ ok: true, json: async () => ({ source: "https://news.example.com/story" }) }));
+  const observers: (() => void)[] = [];
+  vi.stubGlobal("fetch", fetcher);
+  vi.stubGlobal("IntersectionObserver", class {
+    constructor(callback: (entries: { isIntersecting: boolean }[]) => void) { observers.push(() => callback([{ isIntersecting: true }])); }
+    observe() {} disconnect() {}
+  });
+  try {
+    const { container } = render(<GenUIHostProvider value={{ readOnly: true, shareId: "shr_test" }}>
+      <Answer text={block('root = Image("img_AbCdEf123456", {caption: "赛道"})')} />
+    </GenUIHostProvider>);
+    await waitFor(() => assert.ok(container.querySelector("img")));
+    assert.equal(container.querySelector("img")!.getAttribute("src"), "/api/v1/web-images/img_AbCdEf123456?variant=thumb&share_id=shr_test");
+    assert.equal(fetcher.mock.calls.length, 0);
+    observers.forEach((notify) => notify());
+    await waitFor(() => assert.ok(screen.getByText("news.example.com")));
+    fireEvent.click(screen.getByRole("button", { name: "查看大图：赛道" }));
+    const full = screen.getByRole("dialog").querySelector("img")!;
+    assert.equal(full.getAttribute("src"), "/api/v1/web-images/img_AbCdEf123456?variant=original&share_id=shr_test");
+    fireEvent.error(full);
+    assert.ok(full.getAttribute("src")!.includes("variant=fallback"));
+    fireEvent.error(full);
+    assert.ok(screen.getByRole("dialog").querySelector(".gu-photo-missing"));
+  } finally {
+    cleanup();
+    vi.unstubAllGlobals();
+  }
 });

@@ -293,9 +293,7 @@ class Settings(ContextBandSettings, BaseSettings):
     web_download_max_bytes: int = Field(default=100 * 1024 * 1024, gt=0)  # one file
     web_run_download_bytes: int = Field(default=512 * 1024 * 1024, gt=0)  # everything one run fetches
     web_run_requests: int = Field(default=120, gt=0)  # external requests one run may start
-    # Signs the /v1/web-images/<token> paths the Agent hands the model for images it found, so the model cannot
-    # point a viewer's browser at a URL of its own making (web_images.py). Agent and API need the same value.
-    # Empty outside the secure profile = a published development key.
+    # Optional, only to verify signed image paths already present in legacy answers. New images use short IDs.
     web_image_key: SecretStr = SecretStr("")
 
     # Directory holding <skill>/SKILL.md. Unset = the repo checkout (dev); the
@@ -562,8 +560,6 @@ class Settings(ContextBandSettings, BaseSettings):
             problems.append("Kubernetes sandbox isolation must be verified before enabling secure OpenSandbox Kubernetes mode")
         if self.crawler_url and len(self.crawler_token) < 24 and service in (None, "agent", "api"):
             problems.append("AILAB_CRAWLER_TOKEN must be at least 24 characters when AILAB_CRAWLER_URL is set")
-        if self.web_search_provider != "none" and len(self.web_image_key.get_secret_value()) < 32 and service in (None, "agent", "api"):
-            problems.append("AILAB_WEB_IMAGE_KEY must be at least 32 characters when web search is enabled")
         if self.scanner_backend == "stub":
             problems.append("stub scanner is forbidden")
         if self.service_token:

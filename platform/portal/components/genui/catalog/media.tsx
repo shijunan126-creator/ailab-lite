@@ -1,13 +1,14 @@
 "use client";
 
-// Pictures in an answer: one image, a gallery, an image beside its text. Every picture is a platform-signed web image
+// Pictures in an answer: one image, a gallery, an image beside its text. Every picture is a registered image ID or legacy signed path
 // a tool result handed the model (data.ts webImage); anything else is not loaded. A picture that fails to load drops
 // out of a gallery and shows as a quiet placeholder elsewhere. Clicking one opens the pictures at full size.
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import { useGenUIHost } from "../host";
 import { API_BASE } from "../../../lib/api";
 import { cn } from "../../../lib/cn";
-import { IconChevronRight, IconExternal, IconImage, IconX } from "../../icons";
+import { IconChevronRight, IconImage, IconX } from "../../icons";
 import { MAX_IMAGES, objects, siteOf, strings, text, webImage } from "./data";
 
 type P = Record<string, any>;
@@ -18,21 +19,55 @@ export function picture(v: { src?: unknown; alt?: unknown; caption?: unknown; so
   return { src: webImage(v.src), alt: text(v.alt) || text(v.caption), caption: text(v.caption), source: site ? text(v.source) : "", site };
 }
 
-const url = (p: Picture) => `${API_BASE}${p.src}`;
+function useImageUrl(p: Picture, variant = "thumb") {
+  const { shareId } = useGenUIHost();
+  if (!p.src) return "";
+  const path = p.src.startsWith("img_") ? `/v1/web-images/${p.src}` : p.src;
+  const params = new URLSearchParams({ variant });
+  if (shareId) params.set("share_id", shareId);
+  return `${API_BASE}${path}?${params}`;
+}
 
-function SourceChip({ p }: { p: Picture }) {
-  if (!p.site) return null;
-  return (
-    <a className="gu-photo-source" href={p.source} target="_blank" rel="noopener noreferrer" title={p.source}>
-      {p.site}
-    </a>
-  );
+function SourceChip({ p, overlay = true }: { p: Picture; overlay?: boolean }) {
+  const imageUrl = useImageUrl(p);
+  const [source, setSource] = useState(p.src?.startsWith("img_") ? "" : p.source);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!p.src?.startsWith("img_")) { setSource(p.source); return; }
+    setSource("");
+    const c = new AbortController();
+    const load = () => {
+      const url = new URL(imageUrl, location.origin);
+      url.pathname += "/meta";
+      fetch(url, { signal: c.signal }).then((r) => r.ok ? r.json() : null)
+        .then((data) => { if (!c.signal.aborted && siteOf(data?.source)) setSource(data.source); })
+        .catch(() => {});
+    };
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { observer.disconnect(); load(); }
+    });
+    if (ref.current) observer.observe(ref.current.parentElement || ref.current);
+    return () => { observer.disconnect(); c.abort(); };
+  }, [imageUrl, p.src, p.source]);
+  const site = siteOf(source);
+  return <span ref={ref}>{site ? (
+    <a className={overlay ? "gu-photo-source" : undefined} href={source} target="_blank" rel="noopener noreferrer" title={source}>{site}</a>
+  ) : null}</span>;
+}
+
+function FullPhoto({ p }: { p: Picture }) {
+  const [fallback, setFallback] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const src = useImageUrl(p, fallback ? "fallback" : "original");
+  return failed ? <div className="gu-photo-missing" role="img" aria-label="图片无法显示"><IconImage size={22} /></div> :
+    <img src={src} alt={p.alt} onError={() => fallback ? setFailed(true) : setFallback(true)} />;
 }
 
 /** One picture in its frame: loading shimmer, the image, the source on it; `onOpen` makes it zoomable. */
 function Photo({ p, onOpen, onFail, overlay, className }: { p: Picture; onOpen?: () => void; onFail?: () => void; overlay?: ReactNode; className?: string }) {
   const [state, setState] = useState<"loading" | "ready" | "failed">(p.src ? "loading" : "failed");
   const img = useRef<HTMLImageElement>(null);
+  const imageUrl = useImageUrl(p);
   useEffect(() => {
     // already in the cache: the load event fired before React attached the handler
     setState(!p.src ? "failed" : img.current?.complete && img.current.naturalWidth ? "ready" : "loading");
@@ -48,11 +83,11 @@ function Photo({ p, onOpen, onFail, overlay, className }: { p: Picture; onOpen?:
         </div>
       ) : (
         <button type="button" className="gu-photo-open" onClick={onOpen} disabled={!onOpen} aria-label={p.alt ? `查看大图：${p.alt}` : "查看大图"}>
-          <img ref={img} src={url(p)} alt={p.alt} loading="lazy" decoding="async" draggable={false} onLoad={() => setState("ready")} onError={() => setState("failed")} />
+          <img ref={img} src={imageUrl} alt={p.alt} loading="lazy" decoding="async" draggable={false} onLoad={() => setState("ready")} onError={() => setState("failed")} />
           {overlay}
         </button>
       )}
-      {state !== "failed" ? <SourceChip p={p} /> : null}
+      <SourceChip p={p} />
     </div>
   );
 }
@@ -95,16 +130,12 @@ function Lightbox({ items, at, onClose }: { items: Picture[]; at: number; onClos
         </button>
       ) : null}
       <figure className="gu-lightbox-figure" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-        <img key={p.src} src={url(p)} alt={p.alt} />
-        {p.caption || p.site || many ? (
+        <FullPhoto key={p.src} p={p} />
+        {p.caption || p.src || many ? (
           <figcaption>
             {many ? <span className="gu-lightbox-count">{i + 1} / {items.length}</span> : null}
             {p.caption ? <span>{p.caption}</span> : null}
-            {p.site ? (
-              <a href={p.source} target="_blank" rel="noopener noreferrer">
-                {p.site} <IconExternal size={13} />
-              </a>
-            ) : null}
+            <SourceChip p={p} overlay={false} />
           </figcaption>
         ) : null}
       </figure>

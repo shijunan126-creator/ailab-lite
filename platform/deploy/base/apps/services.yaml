@@ -270,9 +270,6 @@ spec:
             name: platform-model-secrets
         - secretRef:
             name: platform-crawler-token
-        - secretRef:
-            name: platform-web-image-key
-            optional: true
         ports:
         - containerPort: 8082
         volumeMounts:

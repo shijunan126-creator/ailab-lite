@@ -210,6 +210,9 @@ def _drain_invalidation(db, file_id, limit):
         from .viewer_captures import release_runs
 
         release_runs(db, [run.id])
+        from .web_image_refs import release_runs as release_web_images
+
+        release_web_images(db, [run.id])
         from ..models import DerivedAssetRef
 
         surviving = select(DerivedAssetRef.id).where(DerivedAssetRef.key == ViewerCapture.storage_key).exists()

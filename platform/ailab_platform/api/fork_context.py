@@ -11,7 +11,9 @@ from ..models import AppliedMessagePosition, ContextSummaryFrame, ContextSummary
 
 def copy_message_sources(db, old, new, steers):
     from .document_sources import bind_refs
+    from .web_image_refs import copy_refs
 
+    copy_refs(db, old, new)
     identities = {old.id: new.id, **steers}
     from ..models import MessageDocRef
 
