@@ -135,8 +135,9 @@ def test_finished_conversation_checkpoint_is_available_to_child_and_survives_exp
         db.commit()
     child = api.post(f"/v1/conversations/{conv['id']}/messages", headers=AUTH, json={"prompt": "second"}).json()
     result = api.get(f"/internal/runs/{child['id']}/model-input", headers=SERVICE).json()
+    assert result["previous_model_context"].pop("finished_at")
     assert result["previous_model_context"] == {
-        "context_abi_version": 2,
+        "context_abi_version": 5,
         "context_epoch": 0,
         "prompt_anchors": state["prompt_anchors"],
         "operational_state": {

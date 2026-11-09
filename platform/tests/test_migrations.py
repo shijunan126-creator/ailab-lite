@@ -6,6 +6,7 @@ Runs on SQLite always; on PostgreSQL too when AILAB_TEST_POSTGRES_URL points at 
 from __future__ import annotations
 
 import os
+from datetime import datetime
 
 import pytest
 from alembic import command
@@ -1106,3 +1107,59 @@ def test_native_ranges_roundtrip_preserves_legacy_block_shape(engine):
     _upgrade_to(engine, "head")
     with engine.connect() as conn:
         assert compare_metadata(MigrationContext.configure(conn, opts={"compare_type": True}), Base.metadata) == []
+
+
+def test_memory_document_repairs_shared_scopes_and_paused_rows(engine):
+    import sqlalchemy as sa
+    from sqlalchemy.orm import Session
+
+    from ailab_platform.models import MemoryItem, Project, User
+
+    _upgrade_to(engine, "0065")
+    with engine.begin() as conn:
+        _seed_user_and_run(conn)
+        conn.execute(
+            sa.text(
+                "INSERT INTO projects(id,user_id,name,instructions,memory_mode,created_at,updated_at) "
+                "VALUES ('repair-project','u1','shared','','shared','2026-01-01','2026-01-01')"
+            )
+        )
+        # Reflect the old schema: new ORM columns intentionally do not exist yet.
+        items = sa.Table("memory_items", sa.MetaData(), autoload_with=conn)
+        conn.execute(
+            items.insert(),
+            dict(
+                id="repair-memory",
+                user_id="u1",
+                project_id="repair-project",
+                kind="fact",
+                origin="inferred",
+                content="repair",
+                source_run_ids=[],
+                source_quote="",
+                observed_at=datetime(2026, 1, 1),
+                valid_from=datetime(2026, 1, 1),
+                status="suppressed",
+                confidence=1,
+                reinforced_at=datetime(2026, 1, 1),
+                content_hash="repair",
+                created_at=datetime(2026, 1, 1),
+                updated_at=datetime(2026, 1, 1),
+                metadata={},
+                tier="archive",
+                page="old",
+                entities=[],
+                support_conversations=1,
+                support_dates=1,
+            ),
+        )
+    _upgrade_to(engine, "0066")
+    with Session(engine) as db:
+        row = db.get(MemoryItem, "repair-memory")
+        assert row.status == "review"
+        assert db.get(Project, "repair-project").memory_merge_requested_at
+        from ailab_platform.memory_dream.maintenance import merge_pending_projects
+
+        merge_pending_projects(db, db.get(User, "u1"))
+        assert db.get(MemoryItem, "repair-memory").project_id is None
+        assert db.get(Project, "repair-project").memory_merge_requested_at is None

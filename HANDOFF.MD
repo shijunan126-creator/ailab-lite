@@ -1,3 +1,27 @@
+## 2026-11-10 全系统记忆审查
+
+- shared项目写入scope必须先归一为账号，不能把run_project直接当写scope；遗留project行用0066标记并在用户锁内程序融合。重复行保留condense重定向，review一起迁移；纠正沿链给当前handle。
+- 删除/90天回收旧版本不能断开superseded_by：有后继时清正文/quote/sources留空重定向；无后继才删。保留空跳转也要从回收候选排除，避免占满每批前列。
+- claim_due不能写user.settings，维护探测只读；no-progress signature在锁内prepare/apply记录。逐op对照显示时id/hash，不能一次并发编辑中止整批。review重复添加需明确确认，suppressed兼容输入转review。
+- 开关只取GET memory/settings；首轮不list。关闭策略仍发送旧快照至边界但禁止使用，开启按需list，是前缀优先的明确代价。
+
+## 2026-11-09 PR174 审查陷阱
+
+- 存储 status=suppressed 必须能经 MemoryEntryInput 往返；不能只修单个 HTTP 入口。created_by 不等于 superseded_reason，合并后用户再编辑仍是 correction；evicted 不推，因为仅移出空间。
+- revision 只做 Portal CAS，不能进入 scope signature 或 memory 系统块；no-op 不写。最新用户决定：用户删除也只追加 handle 失效通知，不重建 system2；旧文本留到自然边界，最新 list 覆盖快照和旧更新；空闲刷新不能绕过 parent compaction。
+- active 读取过滤 closed 后，删除传播必须另用 indexed source→item 投影清理历史，不能重新每写整表扫描。test/repro context 才重读，no_signal 只是没有新事实；项目合并保留最新50来源。
+
+## 2026-11-09 有界记忆文档
+
+- 会话快照不是 Run 快照：复用 previous_model_context 系统消息，只在批准边界刷新。新增不推，删除/纠正只在新用户 turn 开头写一个 memory_update，用户文字最后；工具自己写入只折入 observed 一次。每次模型迭代重放 observed 会回声旧改动，已发首请求后插入 block 会破坏前缀。
+- 用户另行批准条件空闲刷新：最终 assistant 完成超过24h **且文档变化**才 memory_refreshed；无变化禁止时间驱动重绘。旧“绝不TTL”仅适用无条件刷新，不应盖过此新合同。
+- tag 防伪同时覆盖存储、用户、网页和工具内容；保留旧 ailab_memory checkpoint 检测。完整文档是必需上下文，不能用旧 memory 子预算静默丢行。
+- 前序 episode context 只帮助理解，quote 只能来自当前 user_said。复制来源建立 context_run_id 索引；删/脱敏 run 要同时清理后续 episode 中的 context，不能只删其本身 episode。hash 必须包括精确 digest；模型等待后复核来源。
+- scope索引 `(user_id,project_id,status)` 在跨scope读取时缺project_id不能保证跳过历史范围，真实写入查询还要 `(user_id,status)` 索引与EXPLAIN。closed 版本不能进入每写扫描；按 scope/status 与 supersession 索引访问，撤销仅加载明确id。90天回收保护 revision fence 仍有效的 undo；删除当前行还须清理祖先/副本并保留 tombstone，防旧行复活。
+- add 去重统一 legacy user/memory→preference/fact，活动唯一键包含kind。删 item retrieval 时同步清理lineage导入，项目融合须程序事务/精确去重/来源union/undo，不能遗留旧模型merge。
+- PG EXPLAIN fixture 必须有跨账号选择性：单账号所有closed时全局status索引可能更优，不能强制planner；fixture失败也须清理，避免污染后续GC。
+- 当前OpenCode端点相同正文/工具Work同session重放4992/5106，跨user同session仍4992/5106，同user换session0/5106；短Chat重放0/4474。后续稳定追加仍观察一次Work全冷。不能自动归因系统一混入用户数据，也不能删必需session header凑命中。证据和测量边界见[记录](docs/progress/updates/2026-11-09-memory-document.md)。
+
 ## 2026-11-09 Memory v2 迁移陷阱（实施中）
 
 - JSON 事实迁到 `memory_items` 后，读取、来源清理、项目融合、撤销与后台写入必须使用同一适配层；不能只迁 HTTP 管理入口。

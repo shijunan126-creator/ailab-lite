@@ -18,3 +18,37 @@ def make_dream(**kwargs):
 
 def snapshot(job, side):
     return {"entries": [c[side] for c in job.change_set.get("items", []) if c.get(side)]}
+
+
+def install_plan_builder(monkeypatch, builder):
+    """Port synthetic plan fixtures to the single document wire protocol (no second model stage)."""
+    import json
+    from datetime import datetime
+
+    from ailab_platform.memory_dream import service
+    from ailab_platform.models import MemoryEpisode
+
+    async def chat(messages, model, user):
+        episodes = [
+            MemoryEpisode(
+                id=e["id"],
+                run_id=e["run_id"],
+                observed_at=datetime.fromisoformat(e["observed_at"]),
+                digest=json.dumps({"user_said": e["user_said"], "assistant_replied": e["assistant_replied"]}),
+            )
+            for e in json.loads(messages[1]["content"])
+        ]
+        facts, usage, _ = await builder(episodes, [], user)
+        ops = [
+            {
+                "op": "add",
+                "kind": {"user": "preference", "memory": "fact"}.get(f.get("kind"), f.get("kind", "fact")),
+                "content": f["text"],
+                "run": (f.get("evidence_run_ids") or [None])[0],
+                "quote": f.get("source_quote", ""),
+            }
+            for f in facts
+        ]
+        return json.dumps({"ops": ops}), usage
+
+    monkeypatch.setattr(service, "_chat", chat)

@@ -117,8 +117,7 @@ def test_crash_after_candidate_commit_resumes_without_duplicate_items(monkeypatc
 
     from sqlalchemy import update
 
-    from ailab_platform.memory_dream import consolidation
-    from ailab_platform.models import MemoryItem, MemoryWorkItem, Run
+    from ailab_platform.models import MemoryEpisode, MemoryItem, Run
 
     now = utcnow()
     with SessionLocal() as db:
@@ -139,43 +138,35 @@ def test_crash_after_candidate_commit_resumes_without_duplicate_items(monkeypatc
     script = """
 import asyncio, os
 from ailab_platform.memory_dream import service
-async def extract(episodes, active, user):
- e=episodes[0]
- return ([{'text':'用户使用PostgreSQL','kind':'fact','entities':['PostgreSQL'], 'scope':'account',
-           'evidence_run_ids':[e.run_id],'evidence_episode_ids':[e.id],'source_quote':'我使用PostgreSQL','confidence':1}],{},'local-demo')
 async def crash(*args): os._exit(91)
-service._extract=extract
-service._judge=crash
-service.settings.memory_dream_min_runs=1
+service._chat=crash
 asyncio.run(service.process_dream(os.environ['MEMORY_FAULT_JOB']))
 """
     result = subprocess.run([sys.executable, "-c", script], env={**os.environ, "MEMORY_FAULT_JOB": job_id}, capture_output=True, timeout=40)
     assert result.returncode == 91, result.stderr.decode()[-1000:]
     with SessionLocal() as db:
-        assert db.get(MemoryWorkItem, run_id).candidates
+        assert db.scalar(select(MemoryEpisode.id).where(MemoryEpisode.run_id == run_id))
         assert not list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
         db.execute(update(MemoryDreamRun).where(MemoryDreamRun.id == job_id).values(claimed_until=now - timedelta(seconds=1)))
         db.commit()
     assert job_id in service.recover_pending(now)
 
-    async def judge(facts, active, user, model):
-        return {i: {"supported": True} for i in range(len(facts))}, {}
+    calls = []
 
-    async def unexpected(*args):
-        raise AssertionError("committed candidates must not be extracted twice")
+    async def rewrite(*args):
+        import json
 
-    async def no_consolidation(*args):
-        return None
+        calls.append(1)
+        return json.dumps(
+            {"ops": [{"op": "add", "kind": "fact", "content": "用户使用PostgreSQL", "quote": "我使用PostgreSQL", "run": run_id}]}
+        ), {}
 
-    monkeypatch.setattr(service, "_extract", unexpected)
-    monkeypatch.setattr(service, "_judge", judge)
-    monkeypatch.setattr(consolidation, "consolidate", no_consolidation)
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
+    monkeypatch.setattr(service, "_chat", rewrite)
     asyncio.run(service.process_dream(job_id))
     asyncio.run(service.process_dream(job_id))
     with SessionLocal() as db:
         rows = list(db.scalars(select(MemoryItem).where(MemoryItem.user_id == uid)))
-        assert len(rows) == 1 and rows[0].source_run_ids == [run_id]
+        assert len(rows) == 1 and rows[0].source_run_ids == [run_id] and calls == [1]
         assert db.get(MemoryDreamRun, job_id).status == "applied"
 
 
@@ -217,7 +208,6 @@ def test_soft_deadline_persists_oldest_due_for_next_dispatch(monkeypatch):
 
 
 def test_crash_after_extraction_commit_resumes_only_dreaming(monkeypatch):
-    from ailab_platform.memory_dream import consolidation
 
     now = utcnow()
     with SessionLocal() as db:
@@ -236,24 +226,16 @@ def test_crash_after_extraction_commit_resumes_only_dreaming(monkeypatch):
         db.add(job)
         db.commit()
         identity = job.id
-    calls = []
-
-    async def consolidate(job_id, token):
-        calls.append(job_id)
-        with SessionLocal() as db:
-            row = db.get(MemoryDreamRun, job_id)
-            assert row.status == "applied" and row.claim_token == token
-            row.report = {**row.report, "dreaming": {"expired": 0}}
-            db.commit()
 
     async def unexpected(*args):
-        raise AssertionError("confirmed extraction must never repeat")
+        raise AssertionError("committed document batch must not repeat a model call")
 
-    monkeypatch.setattr(service, "_extract", unexpected)
-    monkeypatch.setattr(consolidation, "consolidate", consolidate)
-    asyncio.run(service.process_dream(identity))
-    asyncio.run(service.process_dream(identity))
-    assert calls == [identity]
+    monkeypatch.setattr(service, "_chat", unexpected)
+    asyncio.run(service.process_dream_chain(identity))
+    asyncio.run(service.process_dream_chain(identity))
+    with SessionLocal() as db:
+        assert db.get(MemoryDreamRun, identity).status == "applied"
+        assert db.get(MemoryDreamRun, identity).report["chain_complete"]
 
 
 def test_dispatch_drains_ready_backlog_before_sleeping(monkeypatch):

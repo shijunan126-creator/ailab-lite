@@ -5,7 +5,8 @@ import { api, errorMessage, MemoryMode, Project } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
 import { projectsChanged } from "../../lib/projects";
 import Switch from "../switch";
-import { MemoryDialog } from "./memory-view";
+import Modal from "../library/modal";
+import { MemoryPanel } from "./memory-view";
 
 /** A project's memory: whether it keeps to itself, and what it remembers. */
 export default function ProjectMemoryDialog({ project, onClose }: { project: Project; onClose: () => void }) {
@@ -23,7 +24,7 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
           }
         : {
             title: "与你的记忆互通？",
-            body: "本项目会读取你的其他记忆；本项目的记忆会整理进你的记忆，只与本项目相关的仍留在这里。",
+            body: "本项目会读取你的其他记忆，本项目的记忆会并入你的记忆。",
             action: "互通",
           }
     );
@@ -57,5 +58,10 @@ export default function ProjectMemoryDialog({ project, onClose }: { project: Pro
   );
 
   // a shared project's items are part of the account memory and are changed there; this one only shows them
-  return <MemoryDialog key={mode} projectId={project.id} title="项目记忆" onClose={onClose} top={() => controls} editable={mode === "isolated"} />;
+  return (
+    <Modal title="项目记忆" onClose={onClose} className="memory-dialog">
+      {controls}
+      <MemoryPanel key={mode} projectId={project.id} title="项目记忆" heading="none" editable={mode === "isolated"} />
+    </Modal>
+  );
 }

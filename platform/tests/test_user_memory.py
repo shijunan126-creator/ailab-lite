@@ -82,7 +82,8 @@ def test_agent_memory_replay_conflict_and_fence():
         added = _tool(c, run)
         assert added.status_code == 200 and added.json()["revision"] == 1
         assert _tool(c, run).json() == added.json()  # committed write, lost response
-        assert _tool(c, run, delivery="stale").status_code == 422
+        assert _tool(c, run, delivery="stale").json()["revision"] == 1
+        assert _tool(c, run, action="replace", revision=0, delivery="stale-replace", id=added.json()["entries"][0]["id"]).status_code == 200
         entry = added.json()["entries"][0]
         assert entry["source"] == "agent"
         assert _tool(c, _running(c, other), action="remove", id=entry["id"]).status_code == 422
@@ -119,10 +120,10 @@ def test_memory_controls_and_next_run_snapshot():
         snapshot = c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]
         assert [e["content"] for e in snapshot["entries"]] == ["喜欢简洁中文", "长期项目使用 Python"] and snapshot["auto_save"] is False
         # Explicitly requested memories join core; the list tool exposes both items.
-        assert len(_tool(c, run, action="list").json()["entries"]) == 2
+        assert len(c.get(f"/internal/runs/{run}/memory-context", headers=SERVICE).json()["entries"]) == 2
         _put(c, me, 2, enabled=False)
         assert _tool(c, run, revision=3, delivery="disabled", explicit=True).status_code == 422
-        assert _tool(c, run, action="list").json()["entries"] == []
+        assert c.get(f"/internal/runs/{run}/memory-context", headers=SERVICE).json()["entries"] == []
         assert c.get(f"/internal/runs/{run}/model-input", headers=SERVICE).json()["memory"]["entries"] == []
         assert "喜欢简洁中文" not in memory_prompt(c.get("/v1/memory", headers=me).json())
 

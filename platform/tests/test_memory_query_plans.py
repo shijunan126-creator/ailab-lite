@@ -53,7 +53,7 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
         event.listen(engine, "before_cursor_execute", capture)
         try:
             assert len(_rows(db, uid, None, None)) == 400
-            assert len(service._new_runs(db, uid, None, now)) == 30
+            assert len(service._new_runs(db, uid, None, now)) == 100
             assert len(service._new_runs(db, uid, None, now, limit=201)) == 100
         finally:
             event.remove(engine, "before_cursor_execute", capture)
@@ -146,9 +146,7 @@ def test_items_and_project_pool_queries_are_indexed(engine):
                     "project_id": f"prj_plan_{i}",
                     "content": "plan",
                     "kind": "fact",
-                    "page": "工作",
                     "origin": "manual",
-                    "tier": "archive",
                     "content_hash": str(i),
                 }
                 for i in range(4000)
@@ -167,3 +165,37 @@ def test_items_and_project_pool_queries_are_indexed(engine):
             prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
             plan = "\n".join(str(row) for row in db.connection().exec_driver_sql(prefix + sql))
             assert "INDEX" in plan.upper() or "BITMAP" in plan.upper(), plan
+
+
+def test_closed_source_redaction_uses_reverse_source_index(engine):
+    from ailab_platform.models import MemoryItem, MemoryItemSource
+
+    run_migrations(engine)
+    with Session(engine) as db:
+        user = User(email="closed-plan@example.test")
+        db.add(user)
+        db.flush()
+        db.execute(
+            insert(MemoryItem),
+            [
+                {"id": f"mem_closed_plan_{i}", "user_id": user.id, "content": "private", "content_hash": str(i), "status": "closed"}
+                for i in range(2000)
+            ],
+        )
+        db.execute(insert(MemoryItemSource), [{"memory_id": f"mem_closed_plan_{i}", "run_id": f"run_source_{i}"} for i in range(2000)])
+        db.commit()
+        db.execute(text("ANALYZE"))
+        query = (
+            select(MemoryItem)
+            .where(
+                MemoryItem.user_id == user.id,
+                MemoryItem.status == "closed",
+                MemoryItem.id.in_(select(MemoryItemSource.memory_id).where(MemoryItemSource.run_id.in_(["run_source_1"]))),
+            )
+            .limit(200)
+        )
+        sql = str(query.compile(engine, compile_kwargs={"literal_binds": True}))
+        prefix = "EXPLAIN QUERY PLAN " if engine.dialect.name == "sqlite" else "EXPLAIN "
+        plan = "\n".join(str(row) for row in db.execute(text(prefix + sql)))
+        assert "ix_memory_item_sources_run_id" in plan, plan
+        assert len(list(db.scalars(query))) == 1

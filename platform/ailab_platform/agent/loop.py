@@ -1282,7 +1282,9 @@ class AgentLoop:
             ):
                 raise ToolError("附件视觉页面不可读取，请重新准备；本轮未向模型发送不完整文档")
             parts.extend(image_parts)
-        return parts
+        from ..memory_recall.guard import escape_memory_tags
+
+        return escape_memory_tags(parts)
 
     async def _image_content(self, run_id, run, file, spec):
         parts = (
@@ -2386,6 +2388,8 @@ class AgentLoop:
                     )
                     state["tool_log"][invocation] = observation(call.name, call.arguments, result)
                     messages.append(tool_result_message(call.id, call.name, result))
+                    if call.name == "memory":
+                        self._context(run_id).observe_memory_result(result, call.id)
                     state["pending"].pop(0)
                     if call.name in {"exec", "exec_wait", "exec_kill"} and result.get("handle"):
                         jobs = set(state.get("background_jobs", []))

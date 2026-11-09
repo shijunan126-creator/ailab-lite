@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { MemoryCard } from "../../../components/memory/memory-view";
+import { MemoryPanel } from "../../../components/memory/memory-view";
 import Switch from "../../../components/switch";
 import { api, errorMessage } from "../../../lib/api";
 
@@ -15,7 +15,7 @@ const SWITCHES: { key: keyof Settings; label: string }[] = [
   { key: "reference_history", label: "引用历史对话" },
 ];
 
-/** What the AI remembers, as items and topic pages, and the switches that decide whether it remembers at all. */
+/** What the AI remembers, laid out the way it uses it, and the switches that decide whether it remembers at all. */
 export default function MemoryPage() {
   const [doc, setDoc] = useState<Doc | null>(null);
   const [saving, setSaving] = useState(false);
@@ -26,7 +26,7 @@ export default function MemoryPage() {
     loads.current?.abort();
     const controller = new AbortController();
     loads.current = controller;
-    api<Doc>("/v1/memory", { signal: controller.signal })
+    api<Doc>("/v1/memory/settings", { signal: controller.signal })
       .then((value) => {
         if (controller.signal.aborted) return;
         setDoc({ enabled: value.enabled, auto_save: value.auto_save, reference_history: value.reference_history !== false, dream: value.dream });
@@ -75,20 +75,11 @@ export default function MemoryPage() {
 
   return (
     <main className="page mpage memory-page">
-      <div className="mpage-head">
-        <h1>记忆</h1>
-      </div>
+      <MemoryPanel projectId={null} title="记忆" />
       {error ? <div className="alert error memory-alert" role="alert">{error}</div> : null}
-      {doc === null ? (
-        error ? null : <div className="mlist"><div className="mlist-empty">加载中…</div></div>
-      ) : (
+      {doc === null ? null : (
         <>
-          <section className="msection">
-            <div className="mlist">
-              <MemoryCard projectId={null} title="你的记忆" disabled={!doc.enabled} />
-            </div>
-          </section>
-          <section className="msection">
+          <section className="msection memory-settings">
             <div className="mlist">
               {SWITCHES.map(({ key, label }) => (
                 <div key={key} className={`mrow ${key !== "enabled" && !doc.enabled ? "off" : ""}`}>

@@ -1,3 +1,9 @@
+# 有界记忆文档：最终 CI 验收中（2026-11-09）
+
+- 分支 `feat/memory-doc`，base `origin/main@c4e88613`，本轮全系统审查基线 `02f0e066`（保留 `a79c712a` Portal提交）（已拉取 Portal 移动布局/新到旧排序）；[PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174)。授权实现、真模型、只读部署库副本、前端 merge、推送与 CI；不合并、不部署。
+- 已完成有界文档/ABI5/单调用 Dreaming、程序融合/保留撤销、历史行索引回收、会话失效/条件空闲刷新、前序 turn context 与脱敏；76项旧失败已按新路径迁移。前端 `4bf62947` 经 merge commit 合入并保留菜单修复。
+- 测量、检查、最小 Portal 修正与边界统一见[本轮记录](updates/2026-11-09-memory-document.md)，设计见[ADR0035](../architecture/adr/0035-memory-v2.md)。PR 已 ready；本轮修复暂停写入、原因拆分、无变化/行围栏、无效维护、closed隐私、空闲压缩；最新决定撤销用户删除重建，删除仅推送handle通知、保持前缀，list为当前事实。本轮修复shared作用域/重定向/保护/review/逐op并发/维护无进展/轻量设置，补两个revision旧断言；下一步核对最终head双库/E2E CI并修复失败；不得把历史通过当作最终验收。
+
 # Memory v2 后端质量与评测（2026-11-09）
 
 - 分支 `feat/memory-v2-b`，实施基线 `feat/memory-v2-a@c6fe1d46`，base `origin/main@df83d8e`；已含前轮Portal。最终产品/测试冻结`72efcf3153576ee6533f9ec8ef140ff6210f1326`。仅本地提交，无部署、推送或PR。

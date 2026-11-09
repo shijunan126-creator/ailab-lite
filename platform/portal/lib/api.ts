@@ -451,38 +451,32 @@ export type Project = {
 /** shared: the project reads and feeds the account memory; isolated: it only uses its own. */
 export type MemoryMode = "shared" | "isolated";
 
-/** One remembered item (mirrors contracts/memory.py MemoryItemOut). */
+/** One line of a scope's memory document (mirrors contracts/memory.py MemoryItemOut). */
 export type MemoryItem = {
   id: string;
   project_id: string | null;
-  kind: "preference" | "fact" | "interest" | "project" | "artifact" | "reference";
-  origin: "explicit" | "inferred" | "chat" | "manual";
-  tier: "core" | "archive";
-  page: string;
+  kind: "preference" | "fact" | "interest" | "project" | "reference";
+  origin: "explicit" | "chat" | "inferred" | "edited" | "manual"; // inferred: the AI concluded it; the rest the user said or wrote
   content: string;
-  status: "active" | "review" | "suppressed" | "closed";
+  status: "active" | "review";
   observed_at: string | null;
-  valid_from: string | null;
-  valid_to: string | null;
-  expires_at: string | null;
   updated_at: string;
   sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
 };
 
-/** GET /v1/memory/view: one scope (the account, or one project) as people see it: what is always used, then topic pages. */
+/** GET /v1/memory/view: one scope's whole memory document (the account, or one project), by kind. It is bounded, so it is never paged. */
 export type MemoryView = {
   project_id: string | null;
   enabled: boolean;
   memory_mode: MemoryMode | null; // null for the account
-  merge_pending: boolean; // an isolated project became shared and its items are waiting to be merged
+  merge_pending: boolean; // an isolated project became shared and its lines are waiting to be merged
   revision: number; // the compare-and-set fence every change sends back
   active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
-  core: MemoryItem[];
-  pages: { page: string; count: number; updated_at: string | null }[];
+  used_chars: number;
+  max_chars: number;
+  review: MemoryItem[]; // sensitive lines the AI may not use until the user confirms them
+  sections: { kind: MemoryItem["kind"]; items: MemoryItem[] }[];
 };
-
-/** GET /v1/memory/items: one page of a topic, newest first. */
-export type MemoryItems = { items: MemoryItem[]; next_cursor: string | null };
 
 export type EventItem = {
   seq: number;

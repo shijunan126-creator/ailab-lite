@@ -449,11 +449,17 @@ def test_system_prefix_is_shared_and_memory_changes_append_notes():
         p1.current = {**p1.current, "revision": 2, "entries": [first, second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 0, tools=[])
         assert messages[:2] == original
+        assert not messages[-1]["content"].startswith("<memory_update>")
+        messages.append({"role": "user", "content": "下一轮用户要求"})
         p1.current = {**p1.current, "revision": 3, "entries": [second]}
         await loop._model_attempt(ScriptedLLM([LLMResponse(content="ok")]), "r1", {"_attempt_id": "a"}, "m", messages, 1, tools=[])
         assert messages[:2] == original
-        assert "核心记忆 m2：[2026-01-02] 简洁" in messages[-2]["content"]
-        assert "记忆 m1 已删除，不得再使用" in messages[-1]["content"]
-        assert "revision=" not in memory_prompt(p1.current)
+        assert "已删除，不得再使用：[m1]" in messages[-1]["content"]
+        assert messages[-1]["content"].endswith("下一轮用户要求")
+        assert "中文" in original[1]["content"] and "简洁" not in original[1]["content"]
+        assert all(policy in original[1]["content"] for policy in ("enabled=true", "auto_save=true", "reference_history=true"))
+        current = memory_prompt(p1.current)
+        assert "简洁" in current and "中文" not in current
+        assert "revision=" not in current and all("revision=" not in m["content"] for m in original)
 
     asyncio.run(exercise())

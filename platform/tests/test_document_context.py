@@ -347,6 +347,26 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
             db.add(dream)
             db.commit()
             dream_id, uid = dream.id, owner.id
+            from ailab_platform.models import MemoryItem, MemoryItemSource
+
+            closed_id = "mem_closed_" + uid[4:20]
+            db.add(
+                MemoryItem(
+                    id=closed_id,
+                    user_id=uid,
+                    kind="fact",
+                    origin="inferred",
+                    content="private closed evidence",
+                    content_hash=closed_id,
+                    source_quote="private evidence",
+                    source_run_ids=[run.id],
+                    status="closed",
+                    metadata_={"source": "nightly"},
+                )
+            )
+            db.flush()
+            db.add(MemoryItemSource(memory_id=closed_id, run_id=run.id))
+            db.commit()
         assert c.delete(f"/v1/files/{fid}", headers=AUTH).status_code == 204
         assert c.get(f"/v1/runs/{old['id']}/events/history", headers=AUTH).json() == []
         detail = c.get(f"/v1/runs/{old['id']}", headers=AUTH).json()
@@ -373,6 +393,7 @@ def test_file_deletion_fences_dream_raw_recall_and_snapshot_replay(monkeypatch):
                 if db.get(FileSourceInvalidation, fid).state == "done":
                     break
             assert db.get(FileSourceInvalidation, fid).state == "done"
+            assert db.get(MemoryItem, closed_id) is None
             snapshot = db.get(MemoryDreamRun, dream_id)
             assert [e["id"] for e in delta_snapshot(snapshot, "before")["entries"]] == ["explicit"]
             assert delta_snapshot(snapshot, "before")["entries"][0]["source_quote"] == ""

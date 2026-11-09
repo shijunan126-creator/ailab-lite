@@ -699,6 +699,7 @@ class MemoryEpisode(Base):
     user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     conversation_id: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    context_run_id: Mapped[str | None] = mapped_column(String(40), nullable=True, index=True)
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     content_hash: Mapped[str] = mapped_column(String(64))
     digest: Mapped[str] = mapped_column(Text)
@@ -1434,12 +1435,16 @@ class WebImageRef(Base):
 class MemoryItem(Base):
     __tablename__ = "memory_items"
     __table_args__ = (
-        Index("ix_memory_items_scope", "user_id", "project_id", "status", "tier"),
-        Index("ix_memory_items_page", "user_id", "project_id", "page", "updated_at", "id"),
+        Index("ix_memory_items_scope", "user_id", "project_id", "status"),
+        Index("ix_memory_items_user_status", "user_id", "status"),
+        Index("ix_memory_items_retention", "status", "valid_to", "id"),
+        Index("ix_memory_items_content", "user_id", "content_hash"),
+        Index("ix_memory_items_superseded", "user_id", "superseded_by"),
         Index(
             "uq_memory_items_hash",
             "user_id",
             func.coalesce(text("project_id"), ""),
+            "kind",
             "content_hash",
             unique=True,
             sqlite_where=text("status = 'active'"),
@@ -1451,10 +1456,7 @@ class MemoryItem(Base):
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
     kind: Mapped[str] = mapped_column(String(20), default="fact")
     origin: Mapped[str] = mapped_column(String(20), default="manual")
-    tier: Mapped[str] = mapped_column(String(20), default="archive")
-    page: Mapped[str] = mapped_column(String(120), default="工作与身份")
     content: Mapped[str] = mapped_column(Text)
-    entities: Mapped[list] = mapped_column(JSON, default=list)
     source_run_ids: Mapped[list] = mapped_column(JSON, default=list)
     source_quote: Mapped[str] = mapped_column(Text, default="")
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
@@ -1464,33 +1466,17 @@ class MemoryItem(Base):
     superseded_by: Mapped[str | None] = mapped_column(String(40), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="active")
     confidence: Mapped[float] = mapped_column(Float, default=1.0)
-    support_conversations: Mapped[int] = mapped_column(Integer, default=1)
-    support_dates: Mapped[int] = mapped_column(Integer, default=1)
     reinforced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     content_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(20), default="addition", server_default="addition")
+    superseded_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Legacy adapter metadata, not another copy of the fact text.
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
-class MemoryEntity(Base):
-    __tablename__ = "memory_entities"
-    __table_args__ = (Index("uq_memory_entities_scope", "user_id", func.coalesce(text("project_id"), ""), "canonical", unique=True),)
-    id: Mapped[str] = mapped_column(String(40), primary_key=True, default=lambda: new_id("ent"))
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True)
-    canonical: Mapped[str] = mapped_column(String(120))
-    aliases: Mapped[list] = mapped_column(JSON, default=list)
-    conversations: Mapped[int] = mapped_column(Integer, default=1)
-    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
-
-
-class MemoryEntityAlias(Base):
-    """Indexed, disposable projection of canonical names and aliases."""
-
-    __tablename__ = "memory_entity_aliases"
-    __table_args__ = (Index("ix_memory_alias_lookup", "user_id", "name"),)
-    entity_id: Mapped[str] = mapped_column(ForeignKey("memory_entities.id", ondelete="CASCADE"), primary_key=True)
-    name: Mapped[str] = mapped_column(String(120), primary_key=True)
-    user_id: Mapped[str] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+class MemoryItemSource(Base):
+    __tablename__ = "memory_item_sources"
+    memory_id: Mapped[str] = mapped_column(ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(40), primary_key=True, index=True)

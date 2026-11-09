@@ -125,6 +125,7 @@ def test_project_instructions_and_brand_are_frozen_in_checkpoint():
     asyncio.run(AgentLoop(platform=platform, broker=FakeBroker(), llm=llm).process("run_1", attempt_id="att_1"))
     frozen = platform.checkpoint["state"]["messages"][1]["content"]
     assert "first instruction" in frozen and '"version": 3' in frozen
+    assert all(policy in frozen for policy in ("enabled=true", "auto_save=true", "reference_history=true"))
     assert "revision=" not in frozen
     platform.checkpoint["state"]["finished"] = False
     platform.instruction = "changed instruction"

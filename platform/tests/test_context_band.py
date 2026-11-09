@@ -261,7 +261,7 @@ def test_two_compactions_refresh_memory_no_stale_blocks_and_cas_rollback(monkeyp
     latest_memory = {
         "enabled": True,
         "revision": 2,
-        "entries": [{"id": str(i), "kind": "memory", "content": "汉" * 1000} for i in range(20)],
+        "entries": [{"id": str(i), "kind": "memory", "content": "汉" * 150} for i in range(20)],
     }
 
     class Platform(FakePlatform):
@@ -521,9 +521,10 @@ def test_memory_prices_rendered_projection_and_protects_preferences(kind):
     }
     assert band.cost(memory_prompt(memory)) < band.memory_budget
     assert bounded_memory(band, memory) == memory
-    oversized = {"entries": [{"id": str(i), "kind": kind, "content": "汉" * 1000} for i in range(5)] + memory["entries"][-1:]}
-    assert band.cost(memory_prompt(oversized)) < band.memory_budget
-    assert bounded_memory(band, oversized)["entries"][-1]["id"] == "explicit"
+    oversized = {"entries": [{"id": str(i), "kind": kind, "content": "汉" * 200} for i in range(1000)] + memory["entries"][-1:]}
+    assert band.cost(memory_prompt(oversized)) > band.memory_budget
+    with pytest.raises(ContextPause, match="完整记忆文档"):
+        bounded_memory(band, oversized)
 
 
 @pytest.mark.parametrize("keep_latest", [True, False])

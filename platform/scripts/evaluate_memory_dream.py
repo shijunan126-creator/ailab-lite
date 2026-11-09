@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline evaluation for the nightly memory dream.
 
-Runs the same episode/extract/judge path, but never applies a plan. Use it to compare prompts or
+Runs the same single document rewrite call, but never applies a plan. Use it to compare prompts or
 models before changing the nightly job for real users.
 
     PYTHONPATH=platform python platform/scripts/evaluate_memory_dream.py --username admin
@@ -16,20 +16,23 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
+from ailab_platform.catalog import get_catalog
+from ailab_platform.config import settings
 from ailab_platform.db import SessionLocal
+from ailab_platform.memory_dream.document import apply_ops, messages
 from ailab_platform.memory_dream.service import (
     _active,
+    _chat,
     _episodes,
-    _extract,
     _finish,
-    _judge,
+    _fit_episodes,
+    _json,
     _last_success,
     _memory_view,
     _new_runs,
-    _screen,
     dream_call,
 )
-from ailab_platform.memory_recall.tombstones import tombstones_of
+from ailab_platform.memory_recall.policy import project_mode, run_project
 from ailab_platform.models import MemoryDreamRun, User, new_id
 
 
@@ -42,11 +45,12 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
         if not runs:
             return {"user": user.id, "runs": 0, "facts": 0, "note": "no new runs"}
         memory = _memory_view(user)
-        active = _active(memory["entries"])
-        episodes = _episodes(db, user, runs)
+        pid = run_project(db, runs[0])
+        runs = [r for r in runs if run_project(db, r) == pid]
+        scope = pid if project_mode(db, pid) == "isolated" else None
+        active = [e for e in _active(memory["entries"]) if e.get("project_id") == scope]
+        episodes = _fit_episodes(_episodes(db, user, runs), settings.memory_dream_input_chars)
         if model:
-            from ailab_platform.config import settings
-
             settings.memory_dream_model = model
         claim = new_id("claim")
         job = MemoryDreamRun(
@@ -62,11 +66,13 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
         db.commit()  # Evaluation has the same short-transaction and per-call billing contract.
         context = dream_call.set((job.id, claim))
         try:
-            facts, usage, used_model = await _extract(episodes, active, user)
-            db.refresh(user)
-            facts = _screen(facts, tombstones_of(user))
-            db.commit()
-            verdicts, judge_usage = await _judge(facts, active, user, used_model) if facts else ({}, {})
+            used_model = settings.memory_dream_model or get_catalog().default_id()
+            raw, usage = await _chat(messages(episodes, active), used_model, user)
+            result = _json(raw)
+            ignored = {x.get("run") for x in result.get("ignored_runs", []) if isinstance(x, dict)}
+            _, operations = apply_ops(
+                memory["entries"], active, [e for e in episodes if e.run_id not in ignored], result.get("ops", []), user, scope
+            )
             _finish(db, job, "evaluated", journal="离线评估：未写入用户记忆")
         except BaseException:
             db.rollback()
@@ -80,14 +86,10 @@ async def evaluate(username: str | None, user_id: str | None, model: str | None)
             "runs": len(runs),
             "episodes": len(episodes),
             "active_facts": len(active),
-            "candidates": len(facts),
-            "duplicates": sum(len(v.get("duplicate_ids") or []) for v in verdicts.values()),
-            "contradictions": sum(len(v.get("contradicted_ids") or []) for v in verdicts.values()),
-            "facts": [fact["text"] for fact in facts],
-            "token_usage": {
-                key: int(usage.get(key, 0)) + int(judge_usage.get(key, 0))
-                for key in ("prompt_tokens", "completion_tokens", "cached_tokens")
-            },
+            "operations": len(operations),
+            "added": sum(op["op"] == "add" for op in operations),
+            "ignored_runs": len(ignored),
+            "token_usage": usage,
         }
 
 

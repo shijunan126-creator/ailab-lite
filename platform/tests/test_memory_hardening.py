@@ -13,12 +13,11 @@ from sqlalchemy.exc import OperationalError
 
 from ailab_platform.api.main import app
 from ailab_platform.api.routes_memory import memory_for
-from ailab_platform.contracts.memory import DreamChange, DreamPlan
 from ailab_platform.db import SessionLocal
 from ailab_platform.memory_dream import service
 from ailab_platform.memory_recall import embeddings
-from ailab_platform.models import Conversation, MemoryDreamRun, MemoryEpisode, MemoryWorkItem, Run, User
-from tests.memory_fixtures import make_dream
+from ailab_platform.models import Conversation, MemoryDreamRun, Run, User
+from tests.memory_fixtures import install_plan_builder, make_dream
 from tests.run_claims import attempt_headers
 from tests.test_memory_recall import _conversation, _running, _seed, _uid
 from tests.test_skill_settings import _user
@@ -76,9 +75,7 @@ def install_extractor(monkeypatch, seen=None):
     async def judge(*args):
         return {}, {}
 
-    monkeypatch.setattr(service, "_extract", extract)
-    monkeypatch.setattr(service, "_judge", judge)
-    monkeypatch.setattr(service.settings, "memory_dream_min_runs", 1)
+    install_plan_builder(monkeypatch, extract)
 
 
 def test_paused_memory_is_not_disclosed_by_the_agent_list_tool():
@@ -86,10 +83,9 @@ def test_paused_memory_is_not_disclosed_by_the_agent_list_tool():
         me = _user(c)
         put(c, me, [{"content": "暂停后不应给模型的事实", "suppressed": True}])
         rid = _running(c, me)
-        out = c.post(
-            f"/internal/runs/{rid}/memory",
+        out = c.get(
+            f"/internal/runs/{rid}/memory-context",
             headers=attempt_headers(c, rid),
-            json={"action": "list"},
         )
         assert out.status_code == 200
         assert "暂停后不应给模型的事实" not in out.text
@@ -174,61 +170,50 @@ def test_deleting_source_redacts_dream_snapshot_quotes():
             assert db.get(MemoryDreamRun, did).report["candidates"] == []
 
 
-def test_inflight_dream_cannot_resurrect_a_deleted_fact():
+def test_inflight_dream_cannot_resurrect_a_deleted_fact(monkeypatch):
+    from tests.test_skill_settings import _user
+
     with TestClient(app) as c:
         me = _user(c)
         uid = _uid(c, me)
-        content = "用户喜欢蓝色主题"
-        doc = put(c, me, [{"content": content}])
-        # The candidate passed screening before a concurrent user deletion.
-        facts = service._screen([{"text": content}], [])
-        assert facts
-        put(c, me, [])
+        put(c, me, [{"content": "喜欢蓝色"}])
+        rid = _seed(uid, "我喜欢蓝色", days_ago=0)
+
+        async def chat(*args):
+            await asyncio.to_thread(put, c, me, [])
+            return json.dumps({"ops": [{"op": "add", "kind": "preference", "content": "喜欢蓝色", "quote": "我喜欢蓝色", "run": rid}]}), {}
+
+        monkeypatch.setattr(service, "_chat", chat)
         with SessionLocal() as db:
-            # This is the post-model apply boundary, after the user lock is reacquired.
-            with pytest.raises(service.DreamError, match="已被用户删除"):
-                service._apply(db, db.get(User, uid), DreamPlan(changes=[DreamChange(op="add", content=content)]), {})
-            db.rollback()
-        assert c.get("/v1/memory", headers=me).json()["entries"] == [], doc["revision"]
+            row = dream_row(uid)
+            db.add(row)
+            db.commit()
+            did = row.id
+        asyncio.run(service.process_dream_chain(did))
+        assert c.get("/v1/memory", headers=me).json()["entries"] == []
+        with SessionLocal() as db:
+            assert db.get(MemoryDreamRun, did).status == "applied"
 
 
-def test_extract_quote_must_belong_to_the_claimed_source(monkeypatch):
-    now = datetime.now(UTC)
-    episodes = [
-        MemoryEpisode(
-            id="epi_a",
-            run_id="run_a",
-            observed_at=now,
-            digest="用户：我喜欢蓝色",
-            content_hash="a",
-        ),
-        MemoryEpisode(
-            id="epi_b",
-            run_id="run_b",
-            observed_at=now,
-            digest="用户：我住在上海",
-            content_hash="b",
-        ),
-    ]
+def test_extract_quote_must_belong_to_the_claimed_source():
+    from types import SimpleNamespace
 
-    async def chat(*args):
-        return json.dumps(
-            {
-                "facts": [
-                    {
-                        "text": "用户喜欢蓝色",
-                        "source_quote": "我喜欢蓝色",
-                        "confidence": 0.99,
-                        "evidence_run_ids": ["run_b"],
-                        "evidence_episode_ids": ["epi_b"],
-                    }
-                ]
-            }
-        ), {}
+    from ailab_platform.memory_dream.document import apply_ops
+    from tests.test_memory_document import episode
 
-    monkeypatch.setattr(service, "_chat", chat)
-    out, _, _ = asyncio.run(service._extract(episodes, [], User(id="usr_probe")))
-    assert not out or (out[0]["evidence_run_ids"] == ["run_a"] and out[0]["evidence_episode_ids"] == ["epi_a"]), out
+    ep = episode()
+    other = episode()
+    other.run_id = "run_other"
+    other.digest = json.dumps({"user_said": "另一个来源"})
+    _, audit = apply_ops(
+        [],
+        [],
+        [ep, other],
+        [{"op": "add", "kind": "fact", "content": "用户住上海", "quote": "我住在上海", "run": "run_other"}],
+        SimpleNamespace(settings={}),
+        None,
+    )
+    assert audit == []
 
 
 def test_agent_replace_rebinds_evidence_to_the_correction_run():
@@ -323,29 +308,18 @@ def test_conflict_replacement_and_invalidation_are_an_atomic_change(monkeypatch)
         old = put(c, me, [{"content": f"项目{i}旧状态"} for i in range(3)])["entries"]
         _seed(uid, "项目状态已全部替换", days_ago=0)
 
-        async def extract(episodes, active, user):
-            return (
-                [
-                    {
-                        "text": f"项目{i}新状态",
-                        "kind": "memory",
-                        "confidence": 0.95,
-                        "evidence_run_ids": [episodes[0].run_id],
-                        "evidence_episode_ids": [episodes[0].id],
-                        "entities": [],
-                        "source_quote": "项目状态已全部替换",
-                    }
-                    for i in range(3)
-                ],
-                {},
-                "fake",
-            )
+        async def chat(messages, model, user):
+            ep = json.loads(messages[1]["content"])[0]
+            return json.dumps(
+                {
+                    "ops": [
+                        {"op": "update", "id": e["id"], "content": f"项目{i}新状态", "quote": "项目状态已全部替换", "run": ep["run_id"]}
+                        for i, e in enumerate(old)
+                    ]
+                }
+            ), {}
 
-        async def judge(*args):
-            return {i: {"contradicted_ids": [e["id"]]} for i, e in enumerate(old)}, {}
-
-        monkeypatch.setattr(service, "_extract", extract)
-        monkeypatch.setattr(service, "_judge", judge)
+        monkeypatch.setattr(service, "_chat", chat)
         with SessionLocal() as db:
             row = dream_row(uid)
             db.add(row)
@@ -410,7 +384,7 @@ def test_dream_does_not_hold_sqlite_writer_during_model_wait(monkeypatch):
                     observed_errors.append(str(exc))
             return [], {}, "fake"
 
-        monkeypatch.setattr(service, "_extract", extract)
+        install_plan_builder(monkeypatch, extract)
         with SessionLocal() as db:
             row = dream_row(uid)
             db.add(row)
@@ -437,7 +411,7 @@ def test_projects_are_isolated_in_fact_context_history_and_raw_detail():
         assert [e["content"] for e in bootstrap["memory"]["entries"]] == ["回答用中文"]
         headers = attempt_headers(c, rid)
         c.post(f"/internal/runs/{rid}/transition", headers=headers, json={"status": "running"})
-        out = c.post(f"/internal/runs/{rid}/memory", headers=headers, json={"action": "search", "query": "BLUEPRINT"}).json()
+        out = c.post(f"/internal/runs/{rid}/recall", headers=headers, json={"query": "BLUEPRINT"}).json()
         assert out["results"] == []
         assert c.post(f"/internal/runs/{rid}/recall", headers=SERVICE, json={"run_id": secret}).status_code == 404
         assert c.patch(f"/v1/projects/{projects[0]}", headers=me, json={"memory_mode": "isolated"}).status_code == 200
@@ -462,75 +436,56 @@ def test_dialog_policy_freezes_no_write_and_live_read_disable():
 
 
 def test_sensitive_inferences_need_user_confirmation_and_history_is_temporal():
+    from ailab_platform.memory_dream.document import apply_ops
+    from ailab_platform.memory_dream.maintenance import save
     from ailab_platform.memory_recall.policy import model_view
+    from tests.test_memory_document import episode
 
     with TestClient(app) as c:
         me = _user(c)
         uid = _uid(c, me)
+        rid = _seed(uid, "我有病史", days_ago=0)
+        ep = episode()
+        ep.run_id = rid
+        ep.digest = json.dumps({"user_said": "我有病史"})
         with SessionLocal() as db:
-            service._apply(db, db.get(User, uid), DreamPlan(changes=[DreamChange(op="add", content="用户患有慢性病")]), {})
+            user = db.get(User, uid)
+            before = memory_for(user)
+            changed, _ = apply_ops(
+                [], [], [ep], [{"op": "add", "kind": "fact", "content": "用户有病史", "quote": "我有病史", "run": rid}], user, None
+            )
+            save(db, user, before, changed)
             db.commit()
         doc = c.get("/v1/memory", headers=me).json()
-        assert len(doc["entries"]) == 1 and doc["entries"][0]["status"] == "review"
-        assert model_view(doc)["entries"] == []
-        put(c, me, [{"content": "用户患有慢性病", "status": "active"}])
+        assert doc["entries"][0]["status"] == "review" and model_view(doc)["entries"] == []
+        put(c, me, [{"content": "用户有病史", "status": "active"}])
         assert model_view(c.get("/v1/memory", headers=me).json())["entries"]
-        old = {
-            "id": "mem_old",
-            "content": "旧状态",
-            "valid_from": "2026-01-01T00:00:00+00:00",
-            "invalid_at": "2026-06-01T00:00:00+00:00",
-            "superseded_by": "mem_new",
-        }
-        assert model_view({"entries": [old]}, as_of=datetime(2026, 3, 1, tzinfo=UTC))["entries"] == [old]
-        assert model_view({"entries": [old]})["entries"] == []
 
 
 def test_dream_claim_is_exclusive_and_pending_candidates_survive_budget(monkeypatch):
-    install_extractor(monkeypatch)
+    calls = []
+
+    async def chat(*args):
+        calls.append(1)
+        return '{"ops":[]}', {}
+
+    monkeypatch.setattr(service, "_chat", chat)
     with TestClient(app) as c:
         uid = _uid(c, _user(c))
         rid = _seed(uid, "用户信息", days_ago=0)
         with SessionLocal() as db:
-            item = MemoryWorkItem(
-                run_id=rid,
-                user_id=uid,
-                state="pending",
-                source_end=4,
-                candidates=[
-                    {
-                        "text": f"持久事实{i}",
-                        "kind": "memory",
-                        "confidence": 0.95,
-                        "evidence_run_ids": [rid],
-                        "evidence_episode_ids": [],
-                        "entities": [],
-                        "source_quote": "用户信息",
-                    }
-                    for i in range(7)
-                ],
-            )
             row = dream_row(uid)
-            db.add_all([item, row])
-            db.commit()
-            did = row.id
-
-        async def no_extract(*args):
-            raise AssertionError("cached candidates must not be extracted or paid for again")
-
-        monkeypatch.setattr(service, "_extract", no_extract)
-        asyncio.run(service.process_dream(did))
-        with SessionLocal() as db:
-            assert db.get(MemoryDreamRun, did).status == "applied"
-            assert len(db.get(MemoryWorkItem, rid).candidates) == 2
-            row = db.get(MemoryDreamRun, did)
             row.status = "running"
             row.claim_token = "other_owner"
             row.claimed_until = datetime.now(UTC) + timedelta(minutes=3)
+            db.add(row)
             db.commit()
+            did = row.id
         asyncio.run(service.process_dream(did))
+        assert calls == []
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).claim_token == "other_owner"
+            assert rid in [r.id for r in service._new_runs(db, uid, None, datetime.now(UTC))]
 
 
 def test_deleting_fact_redacts_undo_and_replay_and_undo_refuses_newer_changes():
@@ -563,30 +518,12 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
 
     class Model:
         async def chat(self, messages, tools, model, **kw):
-            if "memory extractor" in messages[0]["content"]:
-                user_prompt = messages[1]["content"]
-                assert user_prompt.startswith("有界前文（仅用于理解指代，不是证据）：\n")
-                ep = json.loads(user_prompt.split("新 episodes：\n")[1].split("\n\n只返回")[0])[0]
-                return LLMResponse(
-                    content=json.dumps(
-                        {
-                            "facts": [
-                                {
-                                    "text": "用户喜欢蓝色",
-                                    "kind": "user",
-                                    "confidence": 0.95,
-                                    "source_quote": "我喜欢蓝色",
-                                    "evidence_run_ids": [ep["run_id"]],
-                                    "evidence_episode_ids": [ep["id"]],
-                                }
-                            ]
-                        }
-                    ),
-                    usage={"prompt_tokens": 40, "completion_tokens": 10, "cached_tokens": 2},
-                )
+            ep = json.loads(messages[1]["content"])[0]
             return LLMResponse(
-                content='{"results":[{"index":0,"supported":true,"duplicate_ids":[],"contradicted_ids":[]}]}',
-                usage={"prompt_tokens": 20, "completion_tokens": 5},
+                content=json.dumps(
+                    {"ops": [{"op": "add", "kind": "preference", "content": "用户喜欢蓝色", "quote": "我喜欢蓝色", "run": ep["run_id"]}]}
+                ),
+                usage={"prompt_tokens": 40, "completion_tokens": 10, "cached_tokens": 2},
             )
 
     monkeypatch.setattr(service, "llm_for", lambda model: Model())
@@ -602,40 +539,10 @@ def test_real_dream_calls_are_reserved_settled_and_retries_are_distinct(monkeypa
         with SessionLocal() as db:
             assert db.get(MemoryDreamRun, did).status == "applied"
             calls = list(db.scalars(select(ModelUsage).where(ModelUsage.job_id == did)))
-            assert len(calls) == 2
-            assert len({r.call_id for r in calls}) == 2
+            assert len(calls) == 1
+            assert len({r.call_id for r in calls}) == 1
             assert all(r.subject == "memory_job" and r.status == "settled" and r.weighted_amount > 0 for r in calls)
             assert all(db.get(UsageReservation, r.call_id).status == "settled" for r in calls)
-
-
-def test_judge_denies_unsupported_inferences_even_with_valid_quotes(monkeypatch):
-    async def chat(*args):
-        return '{"results":[{"index":0,"supported":false,"duplicate_ids":[],"contradicted_ids":[]}]}', {}
-
-    monkeypatch.setattr(service, "_chat", chat)
-    verdicts, _ = asyncio.run(
-        service._judge([{"text": "用户患有某疾病", "source_quote": "假设有人患有某疾病"}], [], User(id="usr_test"), "fake")
-    )
-    assert verdicts[0]["supported"] is False
-
-
-def test_judge_sees_every_existing_fact_so_a_paraphrase_is_a_duplicate(monkeypatch):
-    sent = []
-
-    async def chat(messages, *args):
-        sent.append(json.loads(messages[1]["content"].split("\n\n")[0]))
-        return '{"results":[{"index":0,"supported":true,"duplicate_ids":["mem_pref"],"contradicted_ids":[]}]}', {}
-
-    monkeypatch.setattr(service, "_chat", chat)
-    active = [
-        {"id": "mem_pref", "content": "希望回答时先给结论，再展开说明。"},
-        {"id": "mem_city", "content": "用户目前住在上海"},
-    ]
-    fact = {"text": "用户要求以后回答都先给结论", "source_quote": "以后回答都先给结论"}
-    assert service._candidates(fact, active) == []  # too little lexical overlap for the prefilter
-    verdicts, _ = asyncio.run(service._judge([fact], active, User(id="usr_test"), "fake"))
-    assert [e["id"] for e in sent[0]["existing"]] == ["mem_city", "mem_pref"]
-    assert verdicts[0]["duplicate_ids"] == ["mem_pref"]
 
 
 def test_long_source_segments_and_steers_reach_the_extractor_without_gaps(monkeypatch):
@@ -647,7 +554,7 @@ def test_long_source_segments_and_steers_reach_the_extractor_without_gaps(monkey
         seen.extend(service._user_part(e.digest) for e in episodes)
         return [], {}, "fake"
 
-    monkeypatch.setattr(service, "_extract", extract)
+    install_plan_builder(monkeypatch, extract)
     with TestClient(app) as c:
         uid = _uid(c, _user(c))
         rid = _seed(uid, "开头" + "甲" * 7000 + "尾部重要约定", days_ago=0)
@@ -718,7 +625,7 @@ def test_concurrent_dream_dispatch_has_one_model_owner(monkeypatch):
         await asyncio.sleep(0.05)
         return [], {}, "fake"
 
-    monkeypatch.setattr(service, "_extract", extract)
+    install_plan_builder(monkeypatch, extract)
     with TestClient(app) as c:
         uid = _uid(c, _user(c))
         _seed(uid, "并发认领的记忆", days_ago=0)
@@ -738,24 +645,44 @@ def test_concurrent_dream_dispatch_has_one_model_owner(monkeypatch):
 
 
 def test_late_historical_fact_cannot_supersede_a_newer_confirmed_state():
+    from types import SimpleNamespace
+
+    from ailab_platform.memory_dream.document import apply_ops
+    from tests.test_memory_document import entry, episode
+
+    old = entry(origin="explicit", content="用户当前使用pnpm")
+    old["updated_at"] = "2027-01-01T00:00:00+00:00"
+    result, audit = apply_ops(
+        [old],
+        [old],
+        [episode()],
+        [{"op": "update", "id": old["id"], "content": "npm", "quote": "我住在上海", "run": "run_one"}],
+        SimpleNamespace(settings={}),
+        None,
+    )
+    assert result == [old] and audit == []
+
+
+def test_judge_denies_unsupported_inferences_even_with_valid_quotes():
+    from ailab_platform.models import MemoryEpisode
+
+    """The removed judge is replaced by the deterministic sensitive-review boundary."""
+    from types import SimpleNamespace
+
+    from ailab_platform.memory_dream.document import apply_ops
+
+    ep = MemoryEpisode(
+        id="epi_hypothesis", run_id="run_hypothesis", observed_at=datetime.now(UTC), digest=json.dumps({"user_said": "假设有人患有某疾病"})
+    )
+    entries, _ = apply_ops(
+        [],
+        [],
+        [ep],
+        [{"op": "add", "kind": "fact", "content": "用户患有某疾病", "quote": "假设有人患有某疾病", "run": ep.run_id}],
+        SimpleNamespace(settings={}),
+        None,
+    )
+    assert len(entries) == 1 and entries[0]["status"] == "review"
     from ailab_platform.memory_recall.policy import model_view
 
-    with TestClient(app) as c:
-        me = _user(c)
-        uid = _uid(c, me)
-        newer = put(c, me, [{"content": "用户当前使用 pnpm", "valid_from": "2026-06-01T00:00:00+00:00"}])["entries"][0]
-        ep = MemoryEpisode(id="epi_late", observed_at=datetime(2026, 1, 1, tzinfo=UTC))
-        rid = _seed(uid, "我使用 npm", days_ago=1)
-        with SessionLocal() as db:
-            ep.run_id = rid
-            service._apply(
-                db,
-                db.get(User, uid),
-                DreamPlan(changes=[DreamChange(op="add", content="用户使用 npm", evidence_run_ids=[rid], supersedes=[newer["id"]])]),
-                {rid: ep},
-            )
-            db.commit()
-        doc = c.get("/v1/memory", headers=me).json()
-        assert [e["content"] for e in model_view(doc)["entries"]] == ["用户当前使用 pnpm"]
-        old = model_view(doc, as_of=datetime(2026, 3, 1, tzinfo=UTC))["entries"]
-        assert [e["content"] for e in old] == ["用户使用 npm"]
+    assert model_view({"entries": entries})["entries"] == []

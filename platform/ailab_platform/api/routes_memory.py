@@ -4,13 +4,13 @@ from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Query, Response
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..audit import record_audit
+from ..config import settings
 from ..contracts.memory import (
-    MAX_CHARS,
     MAX_ENTRIES,
     MAX_TOMBSTONES,
     MemoryDreamRunOut,
@@ -19,6 +19,7 @@ from ..contracts.memory import (
     MemoryEntryInput,
     MemoryItemPatch,
     MemoryOperation,
+    MemorySettingsOut,
     MemoryUpdate,
     RecallRequest,
 )
@@ -42,7 +43,6 @@ def _entry(entry: dict) -> dict:
     out.setdefault("confidence", 1.0)
     out.setdefault("evidence_run_ids", [])
     out.setdefault("evidence_episode_ids", [])
-    out.setdefault("entities", [])
     out.setdefault("source_quote", "")
     out.setdefault("valid_from", entry.get("updated_at"))
     out.setdefault("invalid_at", None)
@@ -64,7 +64,7 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
         "reference_history": True,
         "entries": [],
         **stored,
-        "limit_chars": MAX_CHARS,
+        "limit_chars": settings.memory_doc_max_chars,
         "limit_entries": MAX_ENTRIES,
     }
     result.pop("project_only", None)
@@ -72,26 +72,6 @@ def memory_for(user: User, *, for_model: bool = False) -> dict:
     from ..memory_recall.store import entries_for
 
     result["entries"] = [_entry(e) for e in entries_for(user)]
-    from sqlalchemy.orm import object_session
-
-    from ..models import MemoryEntity
-
-    session = object_session(user)
-    result["entity_catalog"] = (
-        [
-            {
-                "canonical": e.canonical,
-                "project_id": e.project_id,
-                "conversations": e.conversations,
-                "last_seen_at": e.last_seen_at.isoformat(),
-            }
-            for e in session.scalars(
-                select(MemoryEntity).where(MemoryEntity.user_id == user.id).order_by(MemoryEntity.canonical, MemoryEntity.id)
-            )
-        ]
-        if session
-        else []
-    )
     if user.context_source_epoch:
         from sqlalchemy.orm import object_session
 
@@ -128,7 +108,9 @@ def _refuse_unsafe(content: str, source: str) -> None:
         raise HTTPException(422, f"{said}，不能保存为记忆")
 
 
-def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True, restore: bool = False):
+def write_memory(
+    db, user, body, source, *, explicit: bool = False, tombstone_removed: bool = True, restore: bool = False, allow_overcap: bool = False
+):
     """Replace the memory document. ``explicit``: the user asked for the new entries by name.
 
     ``tombstone_removed``: entries that disappear are remembered as deleted (hash and evidence ids
@@ -143,20 +125,19 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
     now = datetime.now(UTC)
     tombstones = tombstones_of(user)
     entries = []
+    checked_projects = set()
     known_evidence = {rid for entry in old.values() for rid in entry.get("evidence_run_ids", [])}
     for entry in body.entries:
-        if entry.project_id:
+        if entry.project_id and entry.project_id not in checked_projects:
             from ..library import owned_project
 
             owned_project(db, entry.project_id, user)
+            checked_projects.add(entry.project_id)
         if entry.id and entry.id not in old and not entry.id.startswith("mem_"):
             raise HTTPException(422, "unknown memory entry")
         prior = old.get(entry.id)
-        if entry.kind == "artifact" and (prior is None or prior["content"] != entry.content):
-            delivered = delivered_files(db, user.id, entry.evidence_run_ids or [])
-            expected = {f"已交付文件：{f['filename']}"[:300] for files in delivered.values() for f in files}
-            if source != "nightly" or entry.content not in expected:
-                raise HTTPException(422, "交付物记忆只能来自真实交付记录")
+        if prior is not None and "kind" not in entry.model_fields_set:
+            entry.kind = prior["kind"]
         if entry.source_quote:
             _refuse_unsafe(entry.source_quote, source)
         if entry.evidence_run_ids and (prior is None or set(entry.evidence_run_ids) - known_evidence):
@@ -198,18 +179,19 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
             merged["id"] = entry.id
         else:
             merged = dict(prior)
-            changed = prior["content"] != entry.content or prior["kind"] != entry.kind
+            from ..memory_recall.document import kind as canonical_kind
+
+            changed = prior["content"] != entry.content or canonical_kind(prior) != canonical_kind(entry.model_dump())
             for field in (
                 "origin",
-                "tier",
-                "page",
+                "created_by",
+                "superseded_reason",
                 "observed_at",
                 "reinforced_at",
                 "expires_at",
                 "confidence",
                 "evidence_run_ids",
                 "evidence_episode_ids",
-                "entities",
                 "source_quote",
                 "valid_from",
                 "invalid_at",
@@ -226,7 +208,7 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                         if field in {"valid_from", "invalid_at", "last_used_at", "observed_at", "reinforced_at", "expires_at"}
                         else value
                     )
-            for field in ("evidence_run_ids", "evidence_episode_ids", "entities"):
+            for field in ("evidence_run_ids", "evidence_episode_ids"):
                 if merged.get(field):
                     merged[field] = list(dict.fromkeys(merged[field]))
             if changed:
@@ -234,6 +216,7 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                 merged["kind"] = entry.kind
                 merged["updated_at"] = now.isoformat()
                 merged["source"] = source
+                merged["superseded_reason"] = "correction"
                 # An in-place edit invalidates the old quote/episode evidence. The dream applies
                 # append-only facts; this path is for explicit user/agent edits.
                 if entry.source_quote is None:
@@ -244,10 +227,36 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
                     merged["evidence_run_ids"] = []
                 merged["evidence_deleted"] = False
         entries.append(merged)
+
+    def normalized(items):
+        from ..memory_recall.document import kind as canonical_kind
+
+        return sorted(
+            (
+                {
+                    **MemoryEntryInput.model_validate({k: v for k, v in e.items() if k in MemoryEntryInput.model_fields}).model_dump(
+                        mode="json"
+                    ),
+                    "kind": canonical_kind(e),
+                }
+                for e in items
+            ),
+            key=lambda e: e["id"],
+        )
+
+    if (
+        normalized(entries) == normalized(previous["entries"])
+        and body.enabled == previous["enabled"]
+        and body.auto_save == previous["auto_save"]
+        and (body.reference_history is None or body.reference_history == previous["reference_history"])
+    ):
+        return previous
     if tombstone_removed:
         kept = {e["id"] for e in entries}
         for gone in (e for i, e in old.items() if i not in kept):
-            tombstones.append({"hash": fact_hash(gone["content"]), "run_ids": gone.get("evidence_run_ids") or [], "at": now.isoformat()})
+            tombstones.append(
+                {"id": gone["id"], "hash": fact_hash(gone["content"]), "run_ids": gone.get("evidence_run_ids") or [], "at": now.isoformat()}
+            )
     value = {
         "revision": previous["revision"] + 1,
         "enabled": body.enabled,
@@ -255,8 +264,23 @@ def write_memory(db, user, body, source, *, explicit: bool = False, tombstone_re
         "reference_history": body.reference_history if body.reference_history is not None else previous["reference_history"],
         "tombstones": tombstones[-MAX_TOMBSTONES:],
     }
+    from collections import defaultdict
+
+    from ..config import settings
+    from ..memory_recall.document import used_chars
     from ..memory_recall.store import replace_entries
 
+    groups, old_groups = defaultdict(list), defaultdict(list)
+    for entry in entries:
+        groups[entry.get("project_id")].append(entry)
+    for entry in old.values():
+        old_groups[entry.get("project_id")].append(entry)
+    for scope, group in groups.items():
+        new_size = used_chars(group)
+        old_size = used_chars(old_groups[scope])
+        ceiling = int(settings.memory_doc_max_chars * (1.5 if explicit or source == "user" else 1))
+        if not allow_overcap and new_size > ceiling and new_size > old_size:
+            raise HTTPException(422, "记忆容量已满，请先整理记忆再添加")
     replace_entries(db, user, entries)
     user.settings = {**(user.settings or {}), "memory": value}
     if tombstone_removed:
@@ -276,8 +300,8 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "id": entry.id or new_id("mem"),
         "kind": entry.kind,
         "origin": entry.origin,
-        "tier": entry.tier,
-        "page": entry.page,
+        "created_by": entry.created_by or "addition",
+        "superseded_reason": entry.superseded_reason,
         "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
         "observed_at": entry.observed_at.isoformat() if entry.observed_at else now.isoformat(),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
@@ -287,7 +311,6 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "confidence": entry.confidence if entry.confidence is not None else (1.0 if source == "user" else 0.8),
         "evidence_run_ids": list(entry.evidence_run_ids or []),
         "evidence_episode_ids": list(entry.evidence_episode_ids or []),
-        "entities": list(entry.entities or []),
         "source_quote": entry.source_quote or "",
         "valid_from": (entry.valid_from or now).isoformat(),
         "invalid_at": entry.invalid_at.isoformat() if entry.invalid_at else None,
@@ -322,6 +345,17 @@ class MemorySettings(BaseModel):
     reference_history: bool | None = None
 
 
+@router.get("/v1/memory/settings", response_model=MemorySettingsOut)
+def memory_settings(user: User = Depends(current_user)):
+    from ..memory_dream.settings import dream_settings
+
+    stored = (user.settings or {}).get("memory") or {}
+    return {
+        **{key: stored.get(key, True) for key in ("enabled", "auto_save", "reference_history")},
+        "dream": dream_settings(user).model_dump(mode="json"),
+    }
+
+
 @router.patch("/v1/memory/settings")
 def update_memory_settings(body: MemorySettings, user: User = Depends(current_user), db: Session = Depends(get_db)):
     """The switches alone: a toggle must not resend (and race on) every fact the way a full PUT does."""
@@ -329,6 +363,8 @@ def update_memory_settings(body: MemorySettings, user: User = Depends(current_us
         db.refresh(user)
         stored = dict((user.settings or {}).get("memory") or {})
         current = memory_for(user)
+        if all(current.get(key) == value for key, value in body.model_dump(exclude_none=True).items()):
+            return {key: current[key] for key in ("enabled", "auto_save", "reference_history")}
         for key, value in body.model_dump(exclude_none=True).items():
             stored[key] = value
         stored["revision"] = current["revision"] + 1
@@ -382,10 +418,11 @@ def run_dream_now(
         active = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
         if active:
             return {"id": active.id, "status": active.status, "reused": True, "pending_runs": pending}
-        from ..models import Project
+        from ..memory_recall.document import maintenance_needed
 
-        merges = db.scalar(select(Project.id).where(Project.user_id == user.id, Project.memory_merge_requested_at.is_not(None)).limit(1))
-        if not pending and not merges:
+        over_cap = maintenance_needed([e for e in memory["entries"] if e.get("project_id") == project_id], user)
+        if not pending and not over_cap:
+            db.commit()
             return {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
         zone_name = ds.timezone or settings.memory_dream_default_timezone
         run = MemoryDreamRun(
@@ -395,7 +432,7 @@ def run_dream_now(
             timezone=zone_name,
             status="pending",
             trigger="manual",
-            kind="merge" if merges and not pending else "extract",
+            kind="dream",
             project_id=project_id,
             input_run_ids=[],
             token_usage={},
@@ -541,39 +578,26 @@ def run_memory(
         user = db.get(User, run.user_id, populate_existing=True)
         current = memory_for(user)
         project_id = run_project(db, run)
+        write_scope = project_id if project_mode(db, project_id) == "isolated" else None
         permissions = run_permissions(db, run)
         current["read_enabled"] = permissions["read"]
-        if body.action in {"search", "read"}:
-            if not current["enabled"] or not permissions["read"]:
-                raise HTTPException(422, "用户已关闭记忆读取")
-            if body.action == "search":
-                if notice := _query_budget(db, run, "memory.search", body.query):
-                    return notice
-                from ..memory_recall.retrieval import search_memory
-
-                return search_memory(db, user, run, current, body, project_id, project_mode(db, project_id))
-            from ..memory_recall.policy import page_content
-
-            entries = model_view(current, project_id, mode=project_mode(db, project_id))["entries"]
-            return {
-                "revision": current["revision"],
-                "page": guard.model_text(body.page or ""),
-                "content": guard.model_text(page_content(entries, body.page)),
-            }
         if body.action == "list":
-            return model_view(
-                current,
-                project_id,
-                mode=project_mode(db, project_id),
-                query=body.query if body.action == "search" else None,
-                as_of=body.as_of,
-            )
+            from ..memory_recall.document import render
+
+            visible = model_view(current, project_id, mode=project_mode(db, project_id))
+            fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "created_by", "superseded_reason")
+            return {
+                "memory_list": True,
+                "revision": current["revision"],
+                "document": render(visible["entries"]),
+                "entries": [{key: e[key] for key in fields if key in e} for e in visible["entries"]],
+            }
         if not x_delivery_id or not x_delivery_id.startswith(run.id + ":") or len(x_delivery_id) > 160:
             raise HTTPException(422, "stable delivery identity required")
         prior = db.get(RunDelivery, (run.id, x_delivery_id))
         if prior:
             allowed = {e["id"]: e for e in model_view(current, project_id, mode=project_mode(db, project_id))["entries"]}
-            return {**prior.result, "entries": [allowed[e["id"]] for e in prior.result.get("entries", []) if e["id"] in allowed]}
+            return {**prior.result, "entries": [e for e in prior.result.get("entries", []) if e["id"] in allowed]}
         if not current["enabled"] or not permissions["write"] or (not current["auto_save"] and not body.explicit):
             raise HTTPException(422, "用户已关闭自动记忆；只在用户明确要求时操作记忆，关闭记忆时不能操作")
         entries = [
@@ -583,21 +607,59 @@ def run_memory(
             # the run is the evidence, so deleting the conversation can later find and redact this fact
             item = MemoryEntryInput(
                 kind=body.kind,
-                page=body.page,
-                tier="core" if body.explicit else "archive",
-                origin="chat",
+                origin="explicit" if body.explicit else "chat",
                 content=body.content,
                 evidence_run_ids=[run.id],
-                project_id=project_id,
+                project_id=write_scope,
             )
             if not body.explicit and blocked_by_tombstone(tombstones_of(user), item.content):
                 raise HTTPException(422, "用户之前删除过这条记忆；除非用户明确要求，不要再次保存")
-            if not any(e.kind == item.kind and e.content == item.content and e.project_id == project_id for e in entries):
+            from ..memory_recall.document import kind as canonical_kind
+
+            matching = [
+                e
+                for e in entries
+                if e.project_id == write_scope
+                and canonical_kind(e.model_dump()) == canonical_kind(item.model_dump())
+                and fact_hash(e.content) == fact_hash(item.content)
+            ]
+            duplicate = any(e.status == "active" for e in matching)
+            review = next((e for e in matching if e.status == "review"), None) if not duplicate else None
+            if review is not None:
+                if body.explicit:
+                    review.status, review.suppressed, review.origin = "active", False, "explicit"
+                else:
+                    from ..memory_recall.document import write_result
+
+                    visible = model_view(current, project_id, mode=project_mode(db, project_id))
+                    result = {
+                        **write_result(visible, visible),
+                        "awaiting_confirmation": True,
+                        "notice": "该记忆待用户确认，尚未保存为活动记忆",
+                    }
+                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                    db.commit()
+                    return result
+            if duplicate:
+                from ..memory_recall.document import write_result
+
+                visible = model_view(current, project_id, mode=project_mode(db, project_id))
+                result = write_result(visible, visible)
+                db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                db.commit()
+                return result
+            if review is None:
                 entries.append(item)
         else:
             match = next((i for i, e in enumerate(entries) if e.id == body.id), None)
-            if match is None:
-                raise HTTPException(422, "unknown memory entry; list memory again")
+            if (
+                match is None
+                or entries[match].project_id != write_scope
+                or entries[match].status != "active"
+                or entries[match].invalid_at
+                or entries[match].superseded_by
+            ):
+                raise HTTPException(422, "记忆行已变化或不再活动，请先 memory list 再操作")
             if entries[match].id not in {e["id"] for e in model_view(current, project_id, mode=project_mode(db, project_id))["entries"]}:
                 raise HTTPException(422, "这条记忆不在当前可访问范围")
             if body.action == "remove":
@@ -607,33 +669,76 @@ def run_memory(
                     raise HTTPException(422, "只在用户明确要求忘记时删除记忆（explicit=true）；纠正请用 replace")
                 entries.pop(match)
             else:
+                replacement_kind = body.kind if "kind" in body.model_fields_set else entries[match].kind
+                replacement_origin = "explicit" if body.explicit else entries[match].origin
+                if (
+                    body.content.strip() == entries[match].content
+                    and replacement_kind == entries[match].kind
+                    and replacement_origin == entries[match].origin
+                ):
+                    from ..memory_recall.document import write_result
+
+                    visible = model_view(current, project_id, mode=project_mode(db, project_id))
+                    result = write_result(visible, visible)
+                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                    db.commit()
+                    return result
                 corrected = MemoryEntryInput(
-                    id=new_id("mem"), kind=body.kind, content=body.content, evidence_run_ids=[run.id], project_id=project_id
+                    id=new_id("mem"),
+                    kind=replacement_kind,
+                    origin=replacement_origin,
+                    created_by="correction",
+                    content=body.content,
+                    evidence_run_ids=[run.id],
+                    project_id=write_scope,
                 )
                 entries[match].invalid_at = datetime.now(UTC)
                 entries[match].superseded_by = corrected.id
+                entries[match].superseded_reason = "correction"
                 entries.append(corrected)
-        if body.expected_revision is None:
-            raise HTTPException(422, "expected_revision is required; list memory again")
         try:
             update = MemoryUpdate(
-                expected_revision=body.expected_revision, enabled=current["enabled"], auto_save=current["auto_save"], entries=entries
+                expected_revision=current["revision"],
+                enabled=current["enabled"],
+                auto_save=current["auto_save"],
+                entries=entries,
             )
         except ValueError as exc:
             raise HTTPException(422, "记忆内容为空或超出容量，请整理后重试") from exc
         result = write_memory(db, user, update, "agent", explicit=body.explicit)
-        result = model_view(result, project_id, mode=project_mode(db, project_id))
+        from ..memory_recall.document import write_result
+
+        result = write_result(
+            model_view(current, project_id, mode=project_mode(db, project_id)),
+            model_view(result, project_id, mode=project_mode(db, project_id)),
+        )
         db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
         db.commit()
         return result
 
 
 @router.get("/internal/runs/{run_id}/memory-context", dependencies=[Depends(require_scope("runs:read"))])
-def current_memory_context(run_id: str, db: Session = Depends(get_db)):
+def current_memory_context(run_id: str, db: Session = Depends(get_db), known_id: list[str] = Query(default=[], max_length=2000)):
     from .routes_internal import _run_or_404
 
     run = _run_or_404(db, run_id)
-    return memory_for_run(db.get(User, run.user_id), run)
+    document = memory_for_run(db.get(User, run.user_id), run)
+    if known_id:
+        from ..memory_recall.invalidations import for_handles
+
+        project_id = run_project(db, run)
+        document["invalidations"] = for_handles(db, run.user_id, known_id, document, project_id, project_mode(db, project_id))
+    return document
+
+
+class KnownMemory(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    known_ids: list[str] = Field(max_length=2000)
+
+
+@router.post("/internal/runs/{run_id}/memory-context", dependencies=[Depends(require_scope("runs:read"))])
+def memory_invalidations(run_id: str, body: KnownMemory, db: Session = Depends(get_db)):
+    return current_memory_context(run_id, db, body.known_ids)
 
 
 @router.get("/v1/memory/{entry_id}/sources")
@@ -673,8 +778,26 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
     if user is None or not memory_for(user)["enabled"] or not memory_for(user)["reference_history"] or not run_permissions(db, run)["read"]:
         MEMORY_RECALL.labels("disabled").inc()
         raise HTTPException(422, "用户已关闭记忆，不能查询历史对话")
-    if notice := _query_budget(db, run, "recall_history", body.run_id or str(body.before) + str(body.after) + str(body.cursor)):
+    if not body.run_id and (
+        notice := _query_budget(
+            db, run, "recall_history", body.query or body.run_id or str(body.before) + str(body.after) + str(body.cursor)
+        )
+    ):
         return notice
+    if body.query:
+        from ..memory_recall.search import search_history
+
+        result = search_history(
+            db,
+            user,
+            body.query,
+            limit=body.limit,
+            exclude_conversation_id=run.conversation_id,
+            project_id=run_project(db, run),
+            before=body.before,
+            after=body.after,
+        )
+        return {**result, "status": "OK" if result.get("results") else "NO_RELEVANT_MEMORY"}
     if not body.run_id:
         from ..memory_recall.retrieval import browse_history
 
@@ -699,6 +822,8 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
         source = db.get(Run, body.run_id)
         if not readable(source):
             raise HTTPException(404, "历史记录不存在")
+        if notice := _query_budget(db, run, "recall_history", body.run_id):
+            return notice
         out = {
             "run_id": source.id,
             "conversation_id": source.conversation_id,
@@ -746,7 +871,7 @@ def _queue_edit(body: MemoryEdit, background: BackgroundTasks, user: User = Depe
         from ..memory_dream.changes import digest, scope_entries
 
         run = MemoryDreamRun(
-            report={"edit_source_digest": digest(scope_entries(user, body.project_id)), "edit_page": body.page},
+            report={"edit_source_digest": digest(scope_entries(user, body.project_id))},
             user_id=user.id,
             local_date=datetime.now(UTC).astimezone(ZoneInfo(zone)).date().isoformat(),
             timezone=zone,
@@ -805,7 +930,6 @@ def _sources_for(db, user, rows):
             Conversation.deleted_at.is_(None),
             Run.superseded_by_run_id.is_(None),
         )
-        .limit(50)
     ).all()
     return {
         r.id: {"run_id": r.id, "conversation_id": r.conversation_id, "conversation_title": r.title or "历史对话", "date": r.created_at}
@@ -824,18 +948,13 @@ def _item_out(db, user, row, sources=None):
                 "project_id",
                 "kind",
                 "origin",
-                "tier",
-                "page",
                 "content",
                 "status",
                 "observed_at",
-                "reinforced_at",
-                "valid_from",
-                "valid_to",
-                "expires_at",
                 "updated_at",
             )
         },
+        "origin": "edited" if row.origin == "manual" else row.origin,
         "sources": [sources[rid] for rid in row.source_run_ids[:50] if rid in sources],
     }
 
@@ -855,66 +974,37 @@ def memory_view(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    from ..memory_recall.policy import priority
+    from ..config import settings
+    from ..memory_recall.document import SECTIONS, used_chars
+    from ..memory_recall.store import legacy
     from ..models import MemoryItem, Project
 
-    rows = list(db.scalars(_scope_items(db, user, project_id).where(MemoryItem.status == "active")))
-    now = datetime.now(UTC)
-    from ..memory_recall.store import stamp
-
-    rows = [r for r in rows if (not r.expires_at or stamp(r.expires_at) > now) and not r.valid_to]
-    core = sorted((r for r in rows if r.tier == "core"), key=lambda r: (r.page, priority(r.kind, r.origin), r.id))
-    pages = {}
-    for r in rows:
-        page = pages.setdefault(r.page, {"page": r.page, "count": 0, "updated_at": r.updated_at})
-        page["count"] += 1
-        page["updated_at"] = max(page["updated_at"], r.updated_at)
+    query = _scope_items(db, user, project_id)
     project = db.get(Project, project_id) if project_id else None
-    active = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
+    if project and project.memory_mode == "shared":
+        from sqlalchemy import or_
+
+        query = select(MemoryItem).where(
+            MemoryItem.user_id == user.id, or_(MemoryItem.project_id.is_(None), MemoryItem.project_id == project_id)
+        )
+    rows = list(db.scalars(query.where(MemoryItem.status.in_(("active", "review"))).order_by(MemoryItem.id)))
+    rows = [r for r in rows if not r.valid_to and not r.superseded_by]
+    job = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
     document = memory_for(user)
-    sources = _sources_for(db, user, core)
+    sources = _sources_for(db, user, rows)
     return {
         "project_id": project_id,
         "enabled": document["enabled"],
         "memory_mode": project.memory_mode if project else None,
         "merge_pending": bool(project and project.memory_merge_requested_at),
         "revision": document["revision"],
-        "active": {"id": active.id, "status": active.status, "trigger": active.trigger} if active else None,
-        "core": [_item_out(db, user, r, sources) for r in core],
-        "pages": sorted(pages.values(), key=lambda p: (-p["count"], p["page"])),
-    }
-
-
-@router.get("/v1/memory/items")
-def memory_items(
-    project_id: str | None = Query(default=None, min_length=1, max_length=40),
-    page: str | None = None,
-    cursor: str | None = None,
-    limit: int = Query(default=50, ge=1, le=100),
-    user: User = Depends(current_user),
-    db: Session = Depends(get_db),
-):
-    from sqlalchemy import and_, or_
-
-    from ..models import MemoryItem
-
-    query = _scope_items(db, user, project_id).where(MemoryItem.status.in_(("active", "review")))
-    if page is not None:
-        query = query.where(MemoryItem.page == page)
-    if cursor:
-        boundary = db.get(MemoryItem, cursor)
-        if not boundary or boundary.user_id != user.id or boundary.project_id != project_id or (page and boundary.page != page):
-            raise HTTPException(422, "invalid cursor")
-        query = query.where(
-            or_(
-                MemoryItem.updated_at < boundary.updated_at, and_(MemoryItem.updated_at == boundary.updated_at, MemoryItem.id < boundary.id)
-            )
-        )
-    rows = list(db.scalars(query.order_by(MemoryItem.updated_at.desc(), MemoryItem.id.desc()).limit(limit + 1)))
-    sources = _sources_for(db, user, rows[:limit])
-    return {
-        "items": [_item_out(db, user, r, sources) for r in rows[:limit]],
-        "next_cursor": rows[limit - 1].id if len(rows) > limit else None,
+        "active": {"id": job.id, "status": job.status, "trigger": job.trigger} if job else None,
+        "used_chars": used_chars([legacy(r) for r in rows]),
+        "max_chars": settings.memory_doc_max_chars,
+        "review": [_item_out(db, user, r, sources) for r in rows if r.status == "review"],
+        "sections": [
+            {"kind": k, "items": [_item_out(db, user, r, sources) for r in rows if r.kind == k and r.status == "active"]} for k in SECTIONS
+        ],
     }
 
 
@@ -925,13 +1015,14 @@ def patch_memory_item(item_id: str, body: MemoryItemPatch, user: User = Depends(
     with user_critical_section(db, user.id):
         db.refresh(user)
         row = db.get(MemoryItem, item_id)
-        if not row or row.user_id != user.id:
+        if not row or row.user_id != user.id or row.status == "closed":
             raise HTTPException(404, "记忆不存在")
         current = memory_for(user)
         if current["revision"] != body.expected_revision:
             raise HTTPException(409, "记忆已更新，请重新读取")
         entries = current["entries"]
         target = next(e for e in entries if e["id"] == item_id)
+        target["origin"] = "edited"
         target.update(body.model_dump(exclude_none=True, exclude={"expected_revision"}))
         if body.content is not None:
             target.update(source_quote="", evidence_run_ids=[], evidence_episode_ids=[])

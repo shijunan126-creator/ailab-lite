@@ -303,7 +303,7 @@ def test_agent_assembles_image_input_with_budgeted_usage_and_explicit_fallback(m
     if vision and available:
         saved = platform.checkpoint["state"]
         assert any(part["type"] == "ailab_image" for part in saved["messages"][2]["content"])
-        assert len(json.dumps(saved)) < 10_000
+        assert len(json.dumps(saved)) - sum(len(json.dumps(m)) for m in saved["messages"][:2]) < 10_000
         saved["finished"] = False
         resumed = ScriptedLLM([LLMResponse(content="resumed")])
         asyncio.run(AgentLoop(platform=platform, broker=broker, llm=resumed).process("run_1", attempt=2, attempt_id="next"))

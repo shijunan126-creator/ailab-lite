@@ -142,12 +142,11 @@ def rename_project(
         if body.instructions is not None:
             project.instructions = body.instructions
         project.updated_at = utcnow()
-        db.commit()
         if mode_changed and body.memory_mode == "shared" and project.memory_merge_requested_at:
-            from .routes_memory import run_dream_now
+            from ..memory_dream.maintenance import merge_project
 
-            if memory_for(user)["enabled"]:
-                run_dream_now(background, Response(), user, db, project_id=project.id)
+            merge_project(db, user, project)
+        db.commit()
         return _project_rows(db, user.id, project_id)[0]
 
 
