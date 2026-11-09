@@ -1,0 +1,577 @@
+"use client";
+
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { api, errorMessage, MemoryItem, MemoryItems, MemoryView } from "../../lib/api";
+import { confirmDialog } from "../../lib/dialog";
+import { IconArrowUp, IconChevronRight, IconRetry, IconTrash } from "../icons";
+import Modal from "../library/modal";
+import RowMenu from "../row-menu";
+
+const POLL_MS = 1500;
+const FOLLOW_MS = 10 * 60_000; // a consolidation of several batches fits well inside this
+const INSTRUCTION_CHARS = 500; // the API's limit
+const PAGE_ITEMS = 50;
+
+type Run = {
+  id: string;
+  status: string;
+  trigger?: string;
+  error?: string;
+  report?: { reply?: string; changes?: { removed?: number }; runs_seen?: number; added?: number; next_id?: string };
+};
+const DONE = new Set(["applied", "skipped", "failed", "reverted", "evaluated"]);
+const scopeQuery = (projectId: string | null) => (projectId ? `?project_id=${encodeURIComponent(projectId)}` : "");
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** One scope, followed while a consolidation or an edit is running (started here, in another tab, or at night). */
+export function useMemoryView(projectId: string | null, paused = false) {
+  const [view, setView] = useState<MemoryView | null>(null);
+  const [error, setError] = useState("");
+  const loads = useRef<AbortController | null>(null);
+
+  const load = useCallback(async () => {
+    loads.current?.abort();
+    const controller = new AbortController();
+    loads.current = controller;
+    try {
+      const value = await api<MemoryView>(`/v1/memory/view${scopeQuery(projectId)}`, { signal: controller.signal });
+      if (controller.signal.aborted) return null;
+      setView(value);
+      setError("");
+      return value;
+    } catch (e) {
+      if (!controller.signal.aborted) setError(errorMessage(e));
+      return null;
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    if (paused) return;
+    load();
+    const refresh = () => document.visibilityState === "visible" && load();
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      loads.current?.abort();
+    };
+  }, [load, paused]);
+
+  const active = view?.active?.id || null;
+  useEffect(() => {
+    if (!active || paused) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const until = Date.now() + FOLLOW_MS;
+    const tick = async () => {
+      if (stopped || Date.now() > until) return;
+      const next = await load();
+      if (!stopped && next?.active) timer = setTimeout(tick, POLL_MS);
+    };
+    timer = setTimeout(tick, POLL_MS);
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [active, load, paused]);
+
+  return { view, error, load };
+}
+
+/** "11-03" this year, "2025-11-03" otherwise. */
+export function shortDate(value: string | null, now = new Date()): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const md = `${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}-${md}`;
+}
+
+/** What a finished "立即整理" did, in one line. */
+export function organizeNote(run: Run): string {
+  const seen = run.report?.runs_seen;
+  if (typeof seen !== "number" || seen <= 0) return "已整理";
+  const added = run.report?.added || 0;
+  return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
+}
+
+/** The entry on a page: the beginning of what is always used; all of it, and changing it, in the dialog. */
+export function MemoryCard({ projectId, title, disabled }: { projectId: string | null; title: string; disabled?: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { view, load } = useMemoryView(projectId, open);
+  const preview = view ? (view.core.length ? view.core.map((i) => i.content).join("；") : view.pages.map((p) => p.page).join("、")) : "";
+  return (
+    <>
+      <div className={`mrow memory-card ${disabled ? "off" : ""}`}>
+        <button className="mrow-main" onClick={() => setOpen(true)} aria-label={title}>
+          <span className="mrow-title"><span>{title}</span></span>
+          {view ? (
+            <span className={`memory-preview ${preview ? "" : "empty"}`}>{preview || (view.active ? "正在整理…" : "还没有记忆")}</span>
+          ) : null}
+        </button>
+        <span className="mrow-trail memory-chevron" aria-hidden>
+          <IconChevronRight size={16} />
+        </span>
+      </div>
+      {open ? <MemoryDialog projectId={projectId} title={title} onClose={() => (setOpen(false), load())} /> : null}
+    </>
+  );
+}
+
+type Change = { content?: string; tier?: "core" | "archive"; origin?: "explicit"; status?: "active" };
+
+function ItemRow({ item, busy, onChange, onRemove }: { item: MemoryItem; busy: boolean; onChange: (c: Change) => void; onRemove: () => void }) {
+  const [open, setOpen] = useState(false);
+  const actions = [
+    ...(item.status === "review" ? [{ label: "确认", onSelect: () => onChange({ status: "active" }) }] : []),
+    ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => onChange({ origin: "explicit" }) }] : []),
+    { label: "始终使用", checked: item.tier === "core", onSelect: () => onChange({ tier: item.tier === "core" ? "archive" : "core" }) },
+    "sep" as const,
+    { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: onRemove },
+  ];
+  return (
+    <li className={`memory-item ${item.status === "review" ? "review" : ""}`}>
+      <div className="memory-item-row">
+        <button className="memory-item-main" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+          <span className="memory-item-text">{item.content}</span>
+          {item.status === "review" ? <span className="memory-tag">待确认</span> : item.origin === "inferred" ? <span className="memory-tag">推断</span> : null}
+        </button>
+        <span className="memory-item-date">{shortDate(item.observed_at || item.updated_at)}</span>
+        <RowMenu label={item.content} actions={actions} disabled={busy} />
+      </div>
+      {open ? (
+        <div className="memory-sources">
+          {item.sources.length ? (
+            item.sources.map((s) =>
+              s.conversation_id ? (
+                <Link key={s.run_id} href={`/c/${s.conversation_id}`}>
+                  <span>{s.conversation_title || "对话"}</span>
+                  <span className="memory-item-date">{shortDate(s.date)}</span>
+                </Link>
+              ) : (
+                <span key={s.run_id}>{shortDate(s.date)}</span>
+              )
+            )
+          ) : (
+            <span className="memory-sources-none">{item.origin === "manual" ? "你添加的" : "来源对话已删除"}</span>
+          )}
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+/** A topic page: closed until asked for, then its items newest first, a page at a time. */
+function PageSection({
+  projectId,
+  page,
+  count,
+  version,
+  busy,
+  onChange,
+  onRemove,
+}: {
+  projectId: string | null;
+  page: string;
+  count: number;
+  version: number;
+  busy: boolean;
+  onChange: (item: MemoryItem, c: Change) => void;
+  onRemove: (item: MemoryItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [items, setItems] = useState<MemoryItem[] | null>(null);
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const loads = useRef<AbortController | null>(null);
+
+  const fetchPage = useCallback(
+    async (after: string | null) => {
+      loads.current?.abort();
+      const controller = new AbortController();
+      loads.current = controller;
+      const q = new URLSearchParams({ page, limit: String(PAGE_ITEMS) });
+      if (projectId) q.set("project_id", projectId);
+      if (after) q.set("cursor", after);
+      try {
+        const value = await api<MemoryItems>(`/v1/memory/items?${q}`, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        setItems((list) => (after ? [...(list || []), ...value.items] : value.items));
+        setCursor(value.next_cursor);
+        setError("");
+      } catch (e) {
+        if (!controller.signal.aborted) setError(errorMessage(e));
+      }
+    },
+    [page, projectId]
+  );
+
+  // opened, or the scope changed while open: read it again from the start
+  useEffect(() => {
+    if (open) fetchPage(null);
+    return () => loads.current?.abort();
+  }, [open, version, fetchPage]);
+
+  return (
+    <section className="memory-page">
+      <button className="memory-page-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <IconChevronRight size={14} className={`memory-page-mark ${open ? "open" : ""}`} />
+        <span className="memory-page-name">{page}</span>
+        <span className="memory-page-count">{count}</span>
+      </button>
+      {open ? (
+        <>
+          {error ? <div className="alert error">{error}</div> : null}
+          {items === null ? null : (
+            <ul className="memory-items">
+              {items.map((item) => (
+                <ItemRow key={item.id} item={item} busy={busy} onChange={(c) => onChange(item, c)} onRemove={() => onRemove(item)} />
+              ))}
+            </ul>
+          )}
+          {cursor ? (
+            <button className="link sm memory-more" onClick={() => fetchPage(cursor)}>
+              更多
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+}
+
+type Turn = { key: number; role: "user" | "ai"; text: string; run?: string; state?: "working" | "applied" | "done" | "failed" | "reverted" };
+
+/**
+ * Everything one scope remembers: what is always used, then the topic pages. The user changes it by saying what to
+ * remember, correct or forget, or item by item; the API is the only writer, so the page never drifts from what the AI uses.
+ */
+export function MemoryDialog({
+  projectId,
+  title,
+  onClose,
+  top,
+  editable = true,
+}: {
+  projectId: string | null;
+  title: string;
+  onClose: () => void;
+  top?: (reload: () => void) => React.ReactNode;
+  editable?: boolean; // a shared project's items are changed from the account page
+}) {
+  const { view, error: loadError, load } = useMemoryView(projectId);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [note, setNote] = useState(""); // what the last "立即整理" did
+  const [organizing, setOrganizing] = useState(false);
+  const [latest, setLatest] = useState(false); // "立即整理" found nothing to do
+  const [version, setVersion] = useState(0); // bumped after every change, so open pages read again
+  const alive = useRef(true);
+  const follows = useRef(new Set<AbortController>());
+  const thread = useRef<HTMLDivElement | null>(null);
+  const field = useRef<HTMLTextAreaElement | null>(null);
+  const keys = useRef(0);
+
+  useEffect(() => {
+    alive.current = true;
+    const pending = follows.current;
+    return () => {
+      alive.current = false;
+      pending.forEach((c) => c.abort());
+    };
+  }, []);
+
+  useEffect(() => {
+    thread.current?.lastElementChild?.scrollIntoView({ block: "nearest" });
+  }, [turns]);
+
+  useEffect(() => {
+    if (!latest) return;
+    const timer = setTimeout(() => setLatest(false), 2500);
+    return () => clearTimeout(timer);
+  }, [latest]);
+
+  const working = !!view?.active;
+  const editing = turns.some((t) => t.state === "working");
+
+  const refresh = useCallback(async () => {
+    const next = await load();
+    setVersion((v) => v + 1);
+    return next;
+  }, [load]);
+
+  /** Poll a run (and the runs it hands over to) until it and the scope's lease have ended. */
+  const settle = useCallback(
+    async (first: string, signal: AbortSignal): Promise<Run | null> => {
+      let id = first;
+      const until = Date.now() + FOLLOW_MS;
+      while (Date.now() < until) {
+        await sleep(POLL_MS);
+        if (signal.aborted) return null;
+        let run: Run;
+        try {
+          run = await api<Run>(`/v1/memory/dreams/${id}`, { signal });
+        } catch {
+          if (signal.aborted) return null;
+          continue; // a missed poll is retried
+        }
+        if (!DONE.has(run.status)) continue;
+        if (run.report?.next_id) {
+          id = run.report.next_id;
+          continue;
+        }
+        const refreshed = await api<MemoryView>(`/v1/memory/view${scopeQuery(projectId)}`, { signal }).catch(() => null);
+        if (signal.aborted) return null;
+        if (!refreshed || refreshed.active) continue;
+        return run;
+      }
+      return null;
+    },
+    [projectId]
+  );
+
+  const track = useCallback(async <T,>(work: (signal: AbortSignal) => Promise<T>) => {
+    const controller = new AbortController();
+    follows.current.add(controller);
+    try {
+      return await work(controller.signal);
+    } finally {
+      follows.current.delete(controller);
+    }
+  }, []);
+
+  async function organize() {
+    setBusy(true);
+    setError("");
+    setNote("");
+    setLatest(false);
+    try {
+      const started = await api<{ id?: string | null; status: string }>(`/v1/memory/dream/run${scopeQuery(projectId)}`, { method: "POST" });
+      if (started.status === "nothing" || !started.id) {
+        setLatest(true);
+        return;
+      }
+      setOrganizing(true);
+      await load();
+      const run = await track((signal) => settle(started.id!, signal));
+      if (!alive.current) return;
+      if (run?.status === "failed") setError(run.error || "整理未完成，请稍后重试");
+      else if (run) setNote(organizeNote(run));
+      await refresh();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      if (alive.current) {
+        setBusy(false);
+        setOrganizing(false);
+      }
+    }
+  }
+
+  const patch = (key: number, change: Partial<Turn>) => setTurns((list) => list.map((t) => (t.key === key ? { ...t, ...change } : t)));
+
+  async function send() {
+    const instruction = text.trim();
+    if (!instruction || !view || busy || editing || working) return;
+    setBusy(true);
+    setError("");
+    setNote("");
+    try {
+      const run = await api<{ id: string }>("/v1/memory/edit", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, instruction, expected_revision: view.revision }),
+      });
+      const asked = ++keys.current;
+      const key = ++keys.current;
+      setTurns((list) => [
+        ...list.map((t) => (t.state === "applied" ? { ...t, state: "done" as const } : t)), // only the newest change can be undone
+        { key: asked, role: "user", text: instruction },
+        { key, role: "ai", text: "", run: run.id, state: "working" },
+      ]);
+      setText("");
+      track((signal) => settle(run.id, signal)).then(async (value) => {
+        if (!alive.current) return;
+        if (!value) return patch(key, { text: "还在处理，稍后回来查看", state: "done" });
+        const reply = value.report?.reply || (value.status === "failed" ? value.error || "没能修改，请重试" : "已更新");
+        // forgetting is final (every copy is cleared), so only a change without removals offers an undo
+        const undoable = value.status === "applied" && !value.report?.changes?.removed;
+        patch(key, { text: reply, state: undoable ? "applied" : value.status === "failed" ? "failed" : "done" });
+        await refresh();
+      });
+    } catch (e) {
+      setError(errorMessage(e));
+      await load();
+    } finally {
+      if (alive.current) setBusy(false);
+      field.current?.focus();
+    }
+  }
+
+  async function undo(turn: Turn) {
+    if (!turn.run) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/v1/memory/dreams/${turn.run}/revert`, { method: "POST" });
+      patch(turn.key, { state: "reverted" });
+      await refresh();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function mutate(request: () => Promise<unknown>) {
+    setBusy(true);
+    setError("");
+    setNote("");
+    try {
+      await request();
+    } catch (e) {
+      setError(errorMessage(e)); // a stale revision says so; the reload below shows what changed
+    } finally {
+      await refresh();
+      if (alive.current) setBusy(false);
+    }
+  }
+
+  const change = (item: MemoryItem, body: Change) =>
+    view &&
+    mutate(() => api(`/v1/memory/items/${item.id}`, { method: "PATCH", body: JSON.stringify({ expected_revision: view.revision, ...body }) }));
+
+  async function remove(item: MemoryItem) {
+    if (!view) return;
+    const ok = await confirmDialog({ title: "删除这条记忆？", body: item.content, action: "删除", danger: true });
+    if (ok) mutate(() => api(`/v1/memory/items/${item.id}?expected_revision=${view.revision}`, { method: "DELETE" }));
+  }
+
+  async function clear() {
+    const ok = await confirmDialog({
+      title: projectId ? "清空这个项目的记忆？" : "清空你的记忆？",
+      body: projectId ? "只删除本项目的记忆，无法恢复。" : "项目里的记忆不受影响。删除后无法恢复。",
+      action: "清空",
+      danger: true,
+    });
+    if (!ok) return;
+    setTurns([]);
+    mutate(() => api(`/v1/memory/entries${scopeQuery(projectId)}`, { method: "DELETE" }));
+  }
+
+  const blocked = busy || editing || working;
+  const shownError = error || loadError;
+  const empty = view && !view.core.length && !view.pages.length;
+  const itemBusy = blocked || !editable;
+  return (
+    <Modal
+      title={title}
+      onClose={onClose}
+      className="memory-dialog"
+      actions={
+        <>
+          <button className="secondary sm memory-organize" onClick={organize} disabled={blocked || !view?.enabled}>
+            {organizing || (working && !editing) ? <span className="draft-spin" aria-hidden /> : <IconRetry size={14} />}
+            {organizing || (working && !editing) ? "整理中" : latest ? "已是最新" : "立即整理"}
+          </button>
+          {editable ? (
+            <RowMenu
+              label={title}
+              disabled={blocked || !!empty}
+              actions={[{ label: "清空", icon: <IconTrash size={15} />, danger: true, onSelect: clear }]}
+            />
+          ) : null}
+        </>
+      }
+      footer={
+        editable ? (
+          <form
+            className="memory-ask"
+            onSubmit={(e) => {
+              e.preventDefault();
+              send();
+            }}
+          >
+            <textarea
+              ref={field}
+              rows={1}
+              value={text}
+              maxLength={INSTRUCTION_CHARS}
+              placeholder="告诉 AI 要记住、修改或忘记什么"
+              aria-label="修改记忆"
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  send();
+                }
+              }}
+            />
+            <button type="submit" className="icon-btn memory-send" aria-label="发送" disabled={!text.trim() || blocked}>
+              <IconArrowUp size={16} />
+            </button>
+          </form>
+        ) : undefined
+      }
+    >
+      {top?.(load)}
+      {shownError ? <div className="alert error">{shownError}</div> : null}
+      {note ? <div className="memory-note" role="status">{note}</div> : null}
+      <div className={`memory-view ${working ? "working" : ""}`} aria-busy={working}>
+        {view === null ? (
+          shownError ? null : <div className="memory-empty">加载中…</div>
+        ) : empty ? (
+          <div className="memory-empty">{working ? "正在整理…" : "还没有记忆"}</div>
+        ) : (
+          <>
+            {view.core.length ? (
+              <section className="memory-core">
+                <h3>始终记得</h3>
+                <ul className="memory-items">
+                  {view.core.map((item) => (
+                    <ItemRow key={item.id} item={item} busy={itemBusy} onChange={(c) => change(item, c)} onRemove={() => remove(item)} />
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {view.pages.length ? (
+              <div className="memory-pages">
+                {view.pages.map((p) => (
+                  <PageSection
+                    key={p.page}
+                    projectId={projectId}
+                    page={p.page}
+                    count={p.count}
+                    version={version}
+                    busy={itemBusy}
+                    onChange={change}
+                    onRemove={remove}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
+      {turns.length ? (
+        <div className="memory-thread" ref={thread} aria-live="polite">
+          {turns.map((t) =>
+            t.role === "user" ? (
+              <div key={t.key} className="memory-turn user">{t.text}</div>
+            ) : (
+              <div key={t.key} className={`memory-turn ai ${t.state}`}>
+                {t.state === "working" ? <span className="memory-typing" aria-label="正在修改"><i /><i /><i /></span> : <span>{t.text}</span>}
+                {t.state === "applied" ? (
+                  <button className="link sm" onClick={() => undo(t)} disabled={busy}>撤销</button>
+                ) : t.state === "reverted" ? (
+                  <span className="memory-turn-note">已撤销</span>
+                ) : null}
+              </div>
+            )
+          )}
+        </div>
+      ) : null}
+    </Modal>
+  );
+}
