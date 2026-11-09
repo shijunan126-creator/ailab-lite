@@ -14,6 +14,7 @@ from ailab_platform.agent.prompts import PLATFORM_PROMPT_VERSION, memory_prompt,
 from ailab_platform.agent.tools import tools_for_turn
 from ailab_platform.catalog import Catalog, ModelSpec
 from ailab_platform.contracts.context_summary import ContextSummary, canonical_summary
+from ailab_platform.contracts.model_context import CONTEXT_ABI_VERSION
 from ailab_platform.llm import LLMResponse
 from ailab_platform.model_transport import ModelTransport
 from tests.prefix_harness import assert_extension, scripted_server
@@ -950,20 +951,13 @@ def test_carried_skill_must_match_version_and_mode():
     assert not _carried_skills(failed, {"platform.pptx": "v1"}, "work")
 
 
-def test_memory_editor_receives_displayed_snapshot_without_adding_it_to_chat(monkeypatch):
-    from datetime import UTC, datetime
-
+def test_memory_editor_receives_page_snapshot_without_adding_it_to_chat(monkeypatch):
     from fastapi.testclient import TestClient
 
     from ailab_platform.api.main import app
-    from ailab_platform.api.routes_memory import memory_for
-    from ailab_platform.db import SessionLocal
     from ailab_platform.memory_dream import service
     from ailab_platform.memory_dream.prompts import EDIT_SYSTEM
-    from ailab_platform.memory_dream.summary import digest
-    from ailab_platform.models import MemorySummary, User
     from tests.test_memory_hardening import put
-    from tests.test_memory_recall import _uid
     from tests.test_skill_settings import _user
 
     requests = []
@@ -973,26 +967,17 @@ def test_memory_editor_receives_displayed_snapshot_without_adding_it_to_chat(mon
         return json.dumps({"ops": [], "reply": "请明确要修改的内容。"}), {}
 
     monkeypatch.setattr(service, "_chat", chat)
-    with TestClient(app) as c:
-        me = _user(c)
-        uid = _uid(c, me)
-        doc = put(c, me, [{"content": "喜欢中文回答"}])
-        snapshot = "### 偏好\n- 中文回答。\n### 工作\n- 摘要中的旧信息。"
-        with SessionLocal() as db:
-            db.add(MemorySummary(user_id=uid, text=snapshot, source_digest=digest(doc["entries"]), generated_at=datetime.now(UTC)))
-            db.commit()
-        wrong = c.post("/v1/memory/summary/edit", headers=me, json={"instruction": "删除第二段", "summary_text": "另一个摘要"})
+    with TestClient(app) as client:
+        headers = _user(client)
+        doc = put(client, headers, [{"content": "喜欢中文回答", "page": "偏好"}])
+        wrong = client.post("/v1/memory/edit", headers=headers, json={"instruction": "修改第一条", "expected_revision": 0})
         assert wrong.status_code == 409 and requests == []
-        response = c.post("/v1/memory/summary/edit", headers=me, json={"instruction": "删除第二段", "summary_text": snapshot})
+        response = client.post("/v1/memory/edit", headers=headers, json={"instruction": "修改第一条", "expected_revision": doc["revision"]})
         assert response.status_code == 202
-        assert len(requests) == 1
         assert requests[0][0] == {"role": "system", "content": EDIT_SYSTEM}
         payload = json.loads(requests[0][1]["content"])
-        assert payload["summary"] == snapshot and payload["instruction"] == "删除第二段"
-        assert payload["entries"] == [{k: doc["entries"][0][k] for k in ("id", "kind", "content")}]
-        with SessionLocal() as db:
-            context = memory_prompt(memory_for(db.get(User, uid), for_model=True))
-        assert "摘要中的旧信息" not in context and snapshot not in context
+        assert payload["entries"][0]["content"] == "喜欢中文回答"
+        assert payload["instruction"] == "修改第一条"
 
 
 @pytest.mark.parametrize("mode", ["chat", "work"])
@@ -1731,7 +1716,7 @@ def test_work_twenty_steps_strictly_extend_wire_bytes():
     assert platform.checkpoint["state"]["context_epoch"] == 0
 
 
-@pytest.mark.parametrize("abi", [None, 1, 999])
+@pytest.mark.parametrize("abi", [None, 1, 2, 999])
 def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
     class Platform(FakePlatform):
         async def get_run(self, run_id):
@@ -1755,8 +1740,8 @@ def test_parent_abi_match_exact_reuse_mismatch_rebuild(monkeypatch, abi):
         platform = Platform()
         asyncio.run(AgentLoop(platform=platform, llm=ModelTransport(url)).process("r", attempt_id="a"))
     state = platform.checkpoint["state"]
-    assert state["context_abi_version"] == 1
-    if abi in (None, 1):
+    assert state["context_abi_version"] == CONTEXT_ABI_VERSION
+    if abi in (None, CONTEXT_ABI_VERSION):
         assert requests[0]["messages"][:-1] == platform.previous["messages"]
         assert state["context_epoch"] == 8
     else:

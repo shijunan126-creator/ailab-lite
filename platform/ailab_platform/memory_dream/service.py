@@ -1160,17 +1160,13 @@ async def process_dream(run_id: str) -> None:
 
             completed = await asyncio.to_thread(complete)
             if completed:
-                editing, summary_user, summary_project = completed
+                editing, _summary_user, _summary_project = completed
                 summary_context = summary_call.set(True)
                 try:
-                    if editing:
-                        from .summary import regenerate
+                    if not editing:
+                        from .consolidation import consolidate
 
-                        await regenerate(summary_user, summary_project)
-                    else:
-                        from .maintenance import finish_summaries
-
-                        await finish_summaries(run_id, token)
+                        await consolidate(run_id, token)
                 except Exception:
                     log.warning("memory summary generation failed run=%s", run_id)
 

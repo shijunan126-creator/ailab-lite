@@ -1,7 +1,7 @@
 """Synthetic regressions for memory v2; never contains user history."""
 
-from ailab_platform.memory_recall.text import query_tokens
 from ailab_platform.memory_dream.service import _assistant_context
+from ailab_platform.memory_recall.text import query_tokens
 
 
 def test_query_cues_preserve_word_boundaries():
@@ -19,9 +19,10 @@ def test_extraction_context_is_short_and_has_no_code_or_images():
 
 def test_view_items_revision_and_delete_contract():
     from fastapi.testclient import TestClient
+
     from ailab_platform.api.main import app
-    from tests.test_skill_settings import _user
     from tests.test_memory_hardening import put
+    from tests.test_skill_settings import _user
 
     with TestClient(app) as client:
         headers = _user(client)

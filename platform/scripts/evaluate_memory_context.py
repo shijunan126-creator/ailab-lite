@@ -47,7 +47,31 @@ def evaluate(path: Path | None = None) -> dict:
     }
 
 
+def evaluate_v2(path=None):
+    """Synthetic lexical/freshness checks; trigger fixtures require actual model tool decisions."""
+    from ailab_platform.memory_recall import text
+    from ailab_platform.memory_recall.policy import visible
+
+    dataset = json.loads((path or Path(__file__).resolve().parents[1] / "tests/golden/memory_v2.json").read_text())
+    retrieval = []
+    for case in dataset["retrieval"]:
+        hits = text.search(text.query_tokens(case["query"]), [text.build_doc("synthetic", (case["content"], 1.0))])
+        retrieval.append(any(h.coverage >= 0.3 for h in hits) == case["expected"])
+    freshness = [not visible({"status": "active", **c["old"]}) and visible({"status": "active", **c["new"]}) for c in dataset["freshness"]]
+    return {
+        "retrieval_correct": sum(retrieval),
+        "retrieval_cases": len(retrieval),
+        "freshness_correct": sum(freshness),
+        "freshness_cases": len(freshness),
+        "trigger_fixture_cases": len(dataset["trigger"]),
+        "trigger_evaluated": False,
+        "real_model_evaluated": False,
+    }
+
+
 if __name__ == "__main__":
-    result = evaluate()
+    import sys
+
+    result = evaluate_v2() if "--v2" in sys.argv else evaluate()
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    raise SystemExit(any(r["missed"] or r["harmful"] for r in result["results"]))
+    raise SystemExit(any(r["missed"] or r["harmful"] for r in result.get("results", [])))

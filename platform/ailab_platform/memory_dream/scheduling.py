@@ -2,13 +2,12 @@
 
 import hashlib
 import threading
-from datetime import timedelta
 from contextlib import contextmanager
 
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 
 from ..config import settings
-from ..models import MemoryDreamRun, PlatformSetting, Run, RunStatus, utcnow
+from ..models import MemoryDreamRun, PlatformSetting, Run, RunStatus
 
 _guard = threading.Lock()
 

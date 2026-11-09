@@ -87,3 +87,26 @@ def replace_entries(db, user, entries):
         row.content_hash = fact_hash(row.content)
         row.updated_at = stamp(e.get("updated_at"), now)
         row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
+    db.flush()
+    from collections import defaultdict
+
+    from ..models import MemoryEntity, Run
+
+    names = defaultdict(list)
+    for row in db.scalars(select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status == "active")):
+        for name in row.entities:
+            if isinstance(name, str) and 0 < len(name) <= 120:
+                names[(row.project_id, name)].append(row)
+    existing = {(r.project_id, r.canonical): r for r in db.scalars(select(MemoryEntity).where(MemoryEntity.user_id == user.id))}
+    for key, row in existing.items():
+        if key not in names:
+            db.delete(row)
+    for (pid, name), items in names.items():
+        row = existing.get((pid, name))
+        if row is None:
+            row = MemoryEntity(user_id=user.id, project_id=pid, canonical=name, aliases=[])
+            db.add(row)
+        ids = {rid for item in items for rid in item.source_run_ids}
+        runs = list(db.scalars(select(Run).where(Run.user_id == user.id, Run.id.in_(ids)))) if ids else []
+        row.conversations = len({r.conversation_id for r in runs if r.conversation_id})
+        row.last_seen_at = max(stamp(item.observed_at) for item in items)

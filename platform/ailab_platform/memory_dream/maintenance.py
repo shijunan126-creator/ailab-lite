@@ -73,8 +73,13 @@ async def edit(run_id, token):
                 entries = scope_entries(user, run.project_id)
                 if (run.report or {}).get("edit_source_digest", digest(entries)) != digest(entries):
                     raise DreamError("记忆已变化，请重试")
+                page = (run.report or {}).get("edit_page")
+                entries = [e for e in entries if not page or e.get("page") == page]
                 before = memory_for(user)
-                if run.before_memory and _facts(run.before_memory, run.project_id) != entries:
+                if (
+                    run.before_memory
+                    and [e for e in _facts(run.before_memory, run.project_id) if not page or e.get("page") == page] != entries
+                ):
                     raise DreamError("记忆已变化，请重试")
                 row = summary_row(db, user.id, run.project_id)
                 snapshot = {
@@ -103,7 +108,8 @@ async def edit(run_id, token):
                 run = _check_claim(db, run_id, token)
                 owner = db.get(User, user.id, populate_existing=True)
                 current = memory_for(owner)
-                if scope_entries(owner, pid) != entries:
+                page = (run.report or {}).get("edit_page")
+                if [e for e in scope_entries(owner, pid) if not page or e.get("page") == page] != entries:
                     raise DreamError("记忆已变化，请重试")
                 if owner.disabled_at or not current["enabled"] or (pid and not db.get(Project, pid)):
                     raise DreamError("记忆未开启或项目已删除")

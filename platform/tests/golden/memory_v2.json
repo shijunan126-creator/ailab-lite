@@ -1,0 +1,292 @@
+{
+  "trigger": [
+    {
+      "query": "Atlas 项目现在进展如何",
+      "should_search": true
+    },
+    {
+      "query": "按我的习惯安排下一周",
+      "should_search": true
+    },
+    {
+      "query": "那个方案最终选了什么",
+      "should_search": true
+    },
+    {
+      "query": "我们公司的部署约束是什么",
+      "should_search": true
+    },
+    {
+      "query": "他后来怎么答复的",
+      "should_search": true
+    },
+    {
+      "query": "Bluefin 报告还要改哪里",
+      "should_search": true
+    },
+    {
+      "query": "我的数据库方案",
+      "should_search": true
+    },
+    {
+      "query": "上周的迁移结论",
+      "should_search": true
+    },
+    {
+      "query": "还是那个集群的故障",
+      "should_search": true
+    },
+    {
+      "query": "继续 Orion 的分析",
+      "should_search": true
+    },
+    {
+      "query": "按我的口味推荐一本书",
+      "should_search": true
+    },
+    {
+      "query": "我常用的交付格式",
+      "should_search": true
+    },
+    {
+      "query": "我的项目下一步做什么",
+      "should_search": true
+    },
+    {
+      "query": "最近 Atlas 怎么样了",
+      "should_search": true
+    },
+    {
+      "query": "当时为什么没有选 Redis",
+      "should_search": true
+    },
+    {
+      "query": "给我适合的学习计划",
+      "should_search": true
+    },
+    {
+      "query": "回头看那个决定",
+      "should_search": true
+    },
+    {
+      "query": "第一次聊 Orion 是何时",
+      "should_search": true
+    },
+    {
+      "query": "上周讨论的版本",
+      "should_search": true
+    },
+    {
+      "query": "公司那个客户的名字",
+      "should_search": true
+    },
+    {
+      "query": "旧方案的预算",
+      "should_search": true
+    },
+    {
+      "query": "我以前要求过的报告风格",
+      "should_search": true
+    },
+    {
+      "query": "替我的工作流程排优先级",
+      "should_search": true
+    },
+    {
+      "query": "有关 Atlas 的限制",
+      "should_search": true
+    },
+    {
+      "query": "上次的交付物放哪里了",
+      "should_search": true
+    },
+    {
+      "query": "我说的那块硬件",
+      "should_search": true
+    },
+    {
+      "query": "延续 Bluefin 的审计",
+      "should_search": true
+    },
+    {
+      "query": "我的职位适合什么课程",
+      "should_search": true
+    },
+    {
+      "query": "之前那个配置再给我",
+      "should_search": true
+    },
+    {
+      "query": "按我的表达习惯润色",
+      "should_search": true
+    },
+    {
+      "query": "水的化学式是什么",
+      "should_search": false
+    },
+    {
+      "query": "今天的国际新闻",
+      "should_search": false
+    },
+    {
+      "query": "解释二分查找",
+      "should_search": false
+    },
+    {
+      "query": "把 hello 翻译成中文",
+      "should_search": false
+    },
+    {
+      "query": "计算 12 加 19",
+      "should_search": false
+    },
+    {
+      "query": "写一个接收两个数的加法函数",
+      "should_search": false
+    },
+    {
+      "query": "世界上最高的山是什么",
+      "should_search": false
+    },
+    {
+      "query": "介绍光合作用",
+      "should_search": false
+    },
+    {
+      "query": "今天的天气",
+      "should_search": false
+    },
+    {
+      "query": "最新汇率是多少",
+      "should_search": false
+    },
+    {
+      "query": "总结本条给出的文章：春天来了",
+      "should_search": false
+    },
+    {
+      "query": "写一句生日祝福",
+      "should_search": false
+    },
+    {
+      "query": "地球为什么有四季",
+      "should_search": false
+    },
+    {
+      "query": "列出三种常见排序算法",
+      "should_search": false
+    },
+    {
+      "query": "什么是 HTTP",
+      "should_search": false
+    },
+    {
+      "query": "把这句话改成过去时：I walk",
+      "should_search": false
+    },
+    {
+      "query": "当前会话上文已给出答案，请复述",
+      "should_search": false
+    },
+    {
+      "query": "给数字 1 2 3 求和",
+      "should_search": false
+    },
+    {
+      "query": "常识问题：一年有几个月",
+      "should_search": false
+    },
+    {
+      "query": "时事问题：今天的股市",
+      "should_search": false
+    },
+    {
+      "query": "为新任务写一个猫的故事",
+      "should_search": false
+    },
+    {
+      "query": "将红绿蓝按字母顺序排列",
+      "should_search": false
+    },
+    {
+      "query": "解释 SQL JOIN 的通用概念",
+      "should_search": false
+    },
+    {
+      "query": "一分钟等于多少秒",
+      "should_search": false
+    },
+    {
+      "query": "现在的金价",
+      "should_search": false
+    },
+    {
+      "query": "描述这次提供的完整 JSON：{}",
+      "should_search": false
+    },
+    {
+      "query": "写一个完整自足的正则验证数字",
+      "should_search": false
+    },
+    {
+      "query": "把本条清单去重：甲甲乙",
+      "should_search": false
+    },
+    {
+      "query": "回答当前消息的定义：圆半径是中心到圆周距离",
+      "should_search": false
+    },
+    {
+      "query": "当前上下文完整：把给定标题改短：春日旅行安排",
+      "should_search": false
+    }
+  ],
+  "retrieval": [
+    {
+      "query": "Atlas 部署",
+      "content": "Atlas 项目部署使用两台独立服务器",
+      "expected": true
+    },
+    {
+      "query": "蓝色主题",
+      "content": "用户偏好蓝色主题",
+      "expected": true
+    },
+    {
+      "query": "Orion 报告",
+      "content": "Orion 项目报告按月交付",
+      "expected": true
+    },
+    {
+      "query": "火星旅游",
+      "content": "Atlas 项目部署使用两台独立服务器",
+      "expected": false
+    }
+  ],
+  "freshness": [
+    {
+      "name": "纠正",
+      "old": {
+        "valid_from": "2026-01-01T00:00:00+00:00",
+        "invalid_at": "2026-09-01T00:00:00+00:00"
+      },
+      "new": {
+        "valid_from": "2026-09-01T00:00:00+00:00"
+      }
+    },
+    {
+      "name": "过期",
+      "old": {
+        "expires_at": "2020-01-01T00:00:00+00:00"
+      },
+      "new": {}
+    },
+    {
+      "name": "偏好改变",
+      "old": {
+        "invalid_at": "2026-09-01T00:00:00+00:00"
+      },
+      "new": {}
+    }
+  ]
+}

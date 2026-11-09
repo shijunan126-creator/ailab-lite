@@ -150,7 +150,7 @@ def core_catalog(memory):
     entries = memory.get("entries", [])
     core = sorted(
         (e for e in entries if e.get("tier", "core") == "core"),
-        key=lambda e: (e.get("page", ""), priority(e["kind"], e.get("origin")), e["id"]),
+        key=lambda e: (e.get("page", ""), priority(e.get("kind", "memory"), e.get("origin")), e["id"]),
     )
     chosen, used = [], 0
     for entry in core:

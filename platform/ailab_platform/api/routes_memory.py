@@ -15,7 +15,9 @@ from ..contracts.memory import (
     MAX_TOMBSTONES,
     MemoryDreamRunOut,
     MemoryDreamSettings,
+    MemoryEdit,
     MemoryEntryInput,
+    MemoryItemPatch,
     MemoryOperation,
     MemoryUpdate,
     RecallRequest,
@@ -503,22 +505,6 @@ def revert_dream_run(run_id: str, user: User = Depends(current_user), db: Sessio
             tombstone_removed=False,
             restore=True,
         )
-        from ..memory_dream.summary import summary_row
-        from ..models import MemorySummary
-
-        if run.trigger == "edit" and "summary_before" in (run.report or {}):
-            saved = run.report["summary_before"]
-            row = summary_row(db, user.id, run.project_id)
-            if row is None:
-                row = MemorySummary(user_id=user.id, project_id=run.project_id)
-                db.add(row)
-            row.text = saved.get("text", "")
-            row.source_digest = saved.get("source_digest", "")
-            row.generated_at = datetime.fromisoformat(saved["generated_at"]) if saved.get("generated_at") else None
-            row.updated_at = datetime.now(UTC)
-        else:
-            for row in db.scalars(select(MemorySummary).where(MemorySummary.user_id == user.id)):
-                row.source_digest = ""
         run.status = "reverted"
         run.after_memory = result
         db.commit()
@@ -742,12 +728,12 @@ def run_recall(run_id: str, body: RecallRequest, db: Session = Depends(get_db)):
 
 
 class SummaryEdit(BaseModel):
+    page: str | None = Field(default=None, max_length=120)
     project_id: str | None = Field(default=None, min_length=1, max_length=40)
     instruction: str = Field(min_length=1, max_length=500)
     summary_text: str | None = Field(default=None, max_length=1200)
 
 
-@router.get("/v1/memory/summary")
 def get_summary(
     project_id: str | None = Query(default=None, min_length=1, max_length=40),
     user: User = Depends(current_user),
@@ -774,7 +760,6 @@ def get_summary(
     }
 
 
-@router.post("/v1/memory/summary/edit", status_code=202)
 def edit_summary(body: SummaryEdit, background: BackgroundTasks, user: User = Depends(current_user), db: Session = Depends(get_db)):
     from ..config import settings
     from ..library import owned_project
@@ -806,7 +791,11 @@ def edit_summary(body: SummaryEdit, background: BackgroundTasks, user: User = De
         }
         run = MemoryDreamRun(
             before_memory=memory_for(user),
-            report={"summary_before": summary_before, "edit_source_digest": digest(scope_entries(user, body.project_id))},
+            report={
+                "summary_before": summary_before,
+                "edit_source_digest": digest(scope_entries(user, body.project_id)),
+                "edit_page": body.page,
+            },
             user_id=user.id,
             local_date=datetime.now(UTC).astimezone(ZoneInfo(zone)).date().isoformat(),
             timezone=zone,
@@ -830,7 +819,6 @@ def clear_summary_scope(
 ):
     from ..library import owned_project
     from ..memory_dream.maintenance import inputs
-    from ..memory_dream.summary import summary_row
 
     with user_critical_section(db, user.id):
         db.refresh(user)
@@ -845,19 +833,16 @@ def clear_summary_scope(
             "user",
             explicit=True,
         )
-        row = summary_row(db, user.id, project_id)
-        if row:
-            db.delete(row)
         from ..memory_recall.lineage import clear_memory_scope_copies
 
         clear_memory_scope_copies(db, user.id, project_id)
         db.commit()
-    return get_summary(project_id, user, db)
+    return memory_view(project_id, user, db)
 
 
 def _item_out(db, user, row):
-    from .source_lifecycle import invalid_sources_query
     from ..models import Conversation
+    from .source_lifecycle import invalid_sources_query
 
     sources = db.execute(
         select(Run.id, Run.conversation_id, Run.created_at, Conversation.title)
@@ -898,8 +883,8 @@ def _item_out(db, user, row):
 
 
 def _scope_items(db, user, project_id):
-    from ..models import MemoryItem
     from ..library import owned_project
+    from ..models import MemoryItem
 
     if project_id:
         owned_project(db, project_id, user)
@@ -908,8 +893,8 @@ def _scope_items(db, user, project_id):
 
 @router.get("/v1/memory/view")
 def memory_view(project_id: str | None = None, user: User = Depends(current_user), db: Session = Depends(get_db)):
-    from ..models import MemoryItem, Project
     from ..memory_recall.policy import priority
+    from ..models import MemoryItem, Project
 
     rows = list(db.scalars(_scope_items(db, user, project_id).where(MemoryItem.status == "active")))
     now = datetime.now(UTC)
@@ -946,7 +931,8 @@ def memory_items(
     user: User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
-    from sqlalchemy import or_, and_
+    from sqlalchemy import and_, or_
+
     from ..models import MemoryItem
 
     query = _scope_items(db, user, project_id).where(MemoryItem.status.in_(("active", "review")))
@@ -963,9 +949,6 @@ def memory_items(
         )
     rows = list(db.scalars(query.order_by(MemoryItem.updated_at.desc(), MemoryItem.id.desc()).limit(limit + 1)))
     return {"items": [_item_out(db, user, r) for r in rows[:limit]], "next_cursor": rows[limit - 1].id if len(rows) > limit else None}
-
-
-from ..contracts.memory import MemoryItemPatch, MemoryEdit
 
 
 @router.patch("/v1/memory/items/{item_id}")
@@ -1035,7 +1018,7 @@ def edit_memory(body: MemoryEdit, background: BackgroundTasks, user: User = Depe
         db.refresh(user)
         if memory_for(user)["revision"] != body.expected_revision:
             raise HTTPException(409, "记忆已更新，请重新读取")
-        return edit_summary(SummaryEdit(instruction=body.instruction, project_id=body.project_id), background, user, db)
+        return edit_summary(SummaryEdit(instruction=body.instruction, project_id=body.project_id, page=body.page), background, user, db)
 
 
 def _query_budget(db, run, tool, query):

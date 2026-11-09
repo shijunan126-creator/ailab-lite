@@ -1,11 +1,10 @@
 """Bounded lexical retrieval across facts and history; no automatic injection."""
 
 from datetime import UTC, datetime
-from collections import defaultdict
 
 from . import text
 from .policy import model_view
-from .search import search_history, _rows
+from .search import _rows, search_history
 
 
 def search_memory(db, user, run, document, request, project_id, mode):
@@ -17,8 +16,9 @@ def search_memory(db, user, run, document, request, project_id, mode):
         and (not request.after or datetime.fromisoformat(e["observed_at"]).replace(tzinfo=UTC) >= request.after)
     ]
     query = text.query_tokens(request.query)
+    from sqlalchemy import or_, select
+
     from ..models import MemoryEntity
-    from sqlalchemy import select, or_
 
     scopes = [MemoryEntity.project_id == project_id]
     if project_id and mode == "shared":
