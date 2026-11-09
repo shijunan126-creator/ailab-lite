@@ -563,6 +563,15 @@ button.memory-topic-head:is(:hover, :focus-visible) { background: none; color: v
 .memory-topic-preview { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: var(--text-sm); }
 .memory-topic-body { display: flex; flex-direction: column; padding: 0 0 8px 24px; }
 .memory-settings { margin-top: 40px; }
+.memory-search { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--popover); color: var(--faint-foreground); }
+.memory-search:focus-within { border-color: color-mix(in srgb, var(--ring) 55%, var(--border-strong)); }
+.memory-search input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; background: none; box-shadow: none; font-size: var(--text-ui); color: var(--foreground); }
+.memory-search input:focus { box-shadow: none; }
+.memory-results { margin-top: -12px; }
+.memory-item.editing { display: block; }
+.memory-edit { display: flex; flex-direction: column; gap: 8px; }
+.memory-edit textarea { width: 100%; min-height: 64px; max-height: 200px; field-sizing: content; resize: none; font-size: var(--text-ui); line-height: 1.6; }
+.memory-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 640px) {
   .memory-item { flex-wrap: wrap; row-gap: 2px; }
   .memory-item-text { flex-basis: calc(100% - 40px); }

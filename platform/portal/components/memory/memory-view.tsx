@@ -4,13 +4,15 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, errorMessage, MemoryItem, MemoryItems, MemorySection, MemoryView } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
-import { IconArrowUp, IconChevronRight, IconRetry, IconTrash } from "../icons";
+import { IconArrowUp, IconChevronRight, IconPencil, IconRetry, IconSearch, IconTrash } from "../icons";
 import RowMenu from "../row-menu";
 
 const POLL_MS = 1500;
 const FOLLOW_MS = 10 * 60_000; // a consolidation of several batches fits well inside this
 const INSTRUCTION_CHARS = 500; // the API's limit
 const PAGE_ITEMS = 50;
+const SEARCH_DELAY_MS = 250;
+const SEARCH_FROM = 8; // a short memory reads at a glance; a search box only earns its place once there is more
 
 /** What each kind of remembered thing is called on the page, in the order the API sends sections. */
 export const KIND_TITLE: Record<MemorySection["kind"], string> = {
@@ -104,7 +106,8 @@ export function organizeNote(run: Run): string {
 }
 
 type Change = { content?: string; tier?: "core" | "archive"; origin?: "explicit"; status?: "active" };
-type Act = { change: (item: MemoryItem, c: Change) => void; remove: (item: MemoryItem) => void; busy: boolean };
+type Act = { change: (item: MemoryItem, c: Change) => Promise<boolean>; remove: (item: MemoryItem) => void; busy: boolean };
+const CONTENT_CHARS = 300; // the API's limit for one item
 
 /** Where an item came from: the conversation it was learned in (a link), how many more, and when. */
 function Provenance({ item }: { item: MemoryItem }) {
@@ -124,12 +127,53 @@ function Provenance({ item }: { item: MemoryItem }) {
 }
 
 function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable: boolean }) {
+  const [draft, setDraft] = useState<string | null>(null); // the text being edited in place
   const actions = [
+    { label: "编辑", icon: <IconPencil size={15} />, onSelect: () => setDraft(item.content) },
     ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => act.change(item, { origin: "explicit" }) }] : []),
     { label: "每次对话都用", checked: item.tier === "core", onSelect: () => act.change(item, { tier: item.tier === "core" ? "archive" : "core" }) },
     "sep" as const,
     { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: () => act.remove(item) },
   ];
+
+  async function save() {
+    const content = (draft || "").trim();
+    if (!content || content === item.content) return setDraft(null);
+    if (await act.change(item, { content })) setDraft(null);
+  }
+
+  if (draft !== null)
+    return (
+      <li className="memory-item editing">
+        <form
+          className="memory-edit"
+          onSubmit={(e) => {
+            e.preventDefault();
+            save();
+          }}
+        >
+          <textarea
+            autoFocus
+            rows={2}
+            value={draft}
+            maxLength={CONTENT_CHARS}
+            aria-label="编辑记忆"
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setDraft(null);
+              else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                save();
+              }
+            }}
+          />
+          <div className="memory-edit-actions">
+            <button type="button" className="secondary sm" onClick={() => setDraft(null)}>取消</button>
+            <button type="submit" className="sm" disabled={act.busy || !draft.trim()}>保存</button>
+          </div>
+        </form>
+      </li>
+    );
   return (
     <li className="memory-item">
       <div className="memory-item-text">
@@ -140,6 +184,29 @@ function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable
       {editable ? <RowMenu label={item.content} actions={actions} disabled={act.busy} /> : null}
     </li>
   );
+}
+
+/** Items in this scope that match what the user typed, best first; stale answers to an older query are dropped. */
+function useSearch(projectId: string | null, query: string, version: number) {
+  const [result, setResult] = useState<{ q: string; items: MemoryItem[] } | null>(null);
+  const [error, setError] = useState("");
+  const q = query.trim();
+  useEffect(() => {
+    if (!q) return setResult(null);
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      const params = new URLSearchParams({ q, limit: "50" });
+      if (projectId) params.set("project_id", projectId);
+      try {
+        const value = await api<MemoryItems>(`/v1/memory/items?${params}`, { signal: controller.signal });
+        if (!controller.signal.aborted) (setResult({ q, items: value.items }), setError(""));
+      } catch (e) {
+        if (!controller.signal.aborted) setError(errorMessage(e));
+      }
+    }, SEARCH_DELAY_MS);
+    return () => (clearTimeout(timer), controller.abort());
+  }, [q, projectId, version]);
+  return { result: result && result.q === q ? result : null, error };
 }
 
 /** A list read from /v1/memory/items, a page at a time; read again whenever the scope changes. */
@@ -269,6 +336,8 @@ export function MemoryPanel({
   const [organizing, setOrganizing] = useState(false);
   const [latest, setLatest] = useState(false); // "立即整理" found nothing to do
   const [version, setVersion] = useState(0); // bumped after every change, so opened lists read again
+  const [query, setQuery] = useState("");
+  const search = useSearch(projectId, query, version);
   const alive = useRef(true);
   const follows = useRef(new Set<AbortController>());
   const thread = useRef<HTMLDivElement | null>(null);
@@ -425,22 +494,24 @@ export function MemoryPanel({
     }
   }
 
-  async function mutate(request: () => Promise<unknown>) {
+  async function mutate(request: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     setError("");
     setNote("");
     try {
       await request();
+      return true;
     } catch (e) {
       setError(errorMessage(e)); // a stale revision says so; the reload below shows what changed
+      return false;
     } finally {
       await refresh();
       if (alive.current) setBusy(false);
     }
   }
 
-  const change = (item: MemoryItem, body: Change) =>
-    view &&
+  const change = async (item: MemoryItem, body: Change) =>
+    !!view &&
     mutate(() => api(`/v1/memory/items/${item.id}`, { method: "PATCH", body: JSON.stringify({ expected_revision: view.revision, ...body }) }));
 
   async function remove(item: MemoryItem) {
@@ -465,6 +536,46 @@ export function MemoryPanel({
   const shownError = error || loadError;
   const act: Act = { change, remove, busy: blocked };
   const archived = view ? view.sections.reduce((n, s) => n + s.count, 0) : 0;
+  // What the scope holds when nobody is searching: what waits for the user, what is always used, what is looked up.
+  const overview = view ? (
+    <>
+      {view.review.map((item) => (
+        <div key={item.id} className="memory-review">
+          <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
+          {editable ? (
+            <>
+              <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
+              <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
+            </>
+          ) : null}
+        </div>
+      ))}
+
+      <section className="memory-core">
+        <h3>
+          每次对话都记着 <span className="memory-count">{view.core.length ? `${view.core.length} 条` : ""}</span>
+        </h3>
+        {view.core.length ? (
+          <ItemList items={view.core} act={act} editable={editable} />
+        ) : (
+          <p className="memory-core-empty">还没有。说一句“记住……”，或在下面的条目上选“每次对话都用”。</p>
+        )}
+      </section>
+
+      {view.sections.length ? (
+        <div className="memory-archive">
+          <h3 className="memory-tier">
+            需要时会想起 <span className="memory-count">{archived} 条</span>
+          </h3>
+          {view.sections.map((s) => (
+            <Section key={s.kind} projectId={projectId} section={s} version={version} act={act} editable={editable} />
+          ))}
+        </div>
+      ) : !view.core.length && !view.review.length ? (
+        <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。AI 会在对话中和每晚整理时记下关于你的事。"}</div>
+      ) : null}
+    </>
+  ) : null;
   return (
     <div className={`memory-panel ${view && !view.enabled ? "off" : ""}`}>
       <div className="memory-head">
@@ -488,41 +599,31 @@ export function MemoryPanel({
         shownError ? null : <div className="memory-empty">加载中…</div>
       ) : (
         <div className={`memory-body ${working ? "working" : ""}`} aria-busy={working}>
-          {view.review.map((item) => (
-            <div key={item.id} className="memory-review">
-              <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
-              {editable ? (
-                <>
-                  <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
-                  <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
-                </>
-              ) : null}
-            </div>
-          ))}
-
-          <section className="memory-core">
-            <h3>
-              每次对话都记着 <span className="memory-count">{view.core.length ? `${view.core.length} 条` : ""}</span>
-            </h3>
-            {view.core.length ? (
-              <ItemList items={view.core} act={act} editable={editable} />
-            ) : (
-              <p className="memory-core-empty">还没有。说一句“记住……”，或在下面的条目上选“每次对话都用”。</p>
-            )}
-          </section>
-
-          {view.sections.length ? (
-            <div className="memory-archive">
-              <h3 className="memory-tier">
-                需要时会想起 <span className="memory-count">{archived} 条</span>
-              </h3>
-              {view.sections.map((s) => (
-                <Section key={s.kind} projectId={projectId} section={s} version={version} act={act} editable={editable} />
-              ))}
-            </div>
-          ) : !view.core.length && !view.review.length ? (
-            <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。AI 会在对话中和每晚整理时记下关于你的事。"}</div>
+          {view.total >= SEARCH_FROM || query ? (
+            <label className="memory-search">
+              <IconSearch size={15} />
+              <input
+                type="search"
+                value={query}
+                placeholder="搜索记忆"
+                aria-label="搜索记忆"
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Escape" && setQuery("")}
+              />
+            </label>
           ) : null}
+          {query.trim() ? (
+            <section className="memory-results" aria-live="polite">
+              {search.error ? <div className="alert error">{search.error}</div> : null}
+              {search.result === null ? null : search.result.items.length ? (
+                <ItemList items={search.result.items} act={act} editable={editable} />
+              ) : (
+                <div className="memory-empty">没有找到相关的记忆</div>
+              )}
+            </section>
+          ) : (
+            overview
+          )}
         </div>
       )}
 

@@ -135,3 +135,42 @@ test("a shared project's memory is read-only", async () => {
   assert.equal(screen.queryByLabelText("修改记忆"), null);
   assert.equal(screen.queryByLabelText("更多操作 回答先给结论"), null);
 });
+
+test("an item is edited in place and saved with the revision it was read at", async () => {
+  vi.mocked(api).mockResolvedValue(view);
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
+  fireEvent.click(screen.getByLabelText("更多操作 回答先给结论"));
+  fireEvent.click(screen.getByText("编辑"));
+  fireEvent.change(screen.getByLabelText("编辑记忆"), { target: { value: "回答先给结论，再给依据" } });
+  await act(async () => { fireEvent.keyDown(screen.getByLabelText("编辑记忆"), { key: "Enter" }); });
+  const patch = vi.mocked(api).mock.calls.find(([path, o]) => path === "/v1/memory/items/mem_core" && o?.method === "PATCH");
+  assert.deepEqual(JSON.parse(patch![1]!.body as string), { expected_revision: 7, content: "回答先给结论，再给依据" });
+  await waitFor(() => assert.equal(screen.queryByLabelText("编辑记忆"), null));
+});
+
+test("search appears once there is enough to search, and drops answers to an older query", async () => {
+  vi.mocked(api).mockResolvedValue({ ...view, total: 3 });
+  const small = render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("回答先给结论")));
+  assert.equal(screen.queryByLabelText("搜索记忆"), null);
+  small.unmount();
+  vi.mocked(api).mockImplementation(async (path) => {
+    const q = new URLSearchParams(String(path).split("?")[1] || "").get("q");
+    if (q === "乐信") return { items: [item("mem_fin", "关注乐信季度业绩", { kind: "interest" })], next_cursor: null };
+    if (q) return { items: [], next_cursor: null };
+    return { ...view, total: 30 };
+  });
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByLabelText("搜索记忆")));
+  vi.useFakeTimers();
+  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "乐" } });
+  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "乐信" } });
+  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+  assert.ok(screen.getByText("关注乐信季度业绩"));
+  assert.equal(screen.queryByText("每次对话都记着"), null);
+  assert.equal(vi.mocked(api).mock.calls.filter(([path]) => String(path).includes("q=")).length, 1); // the first keystroke never left
+  fireEvent.change(screen.getByLabelText("搜索记忆"), { target: { value: "无关" } });
+  await act(async () => { await vi.advanceTimersByTimeAsync(300); });
+  assert.ok(screen.getByText("没有找到相关的记忆"));
+});
