@@ -455,9 +455,9 @@ export type MemoryMode = "shared" | "isolated";
 export type MemoryItem = {
   id: string;
   project_id: string | null;
-  kind: "preference" | "fact" | "interest" | "project" | "artifact" | "reference";
+  kind: "preference" | "fact" | "interest" | "project" | "reference";
   origin: "explicit" | "inferred" | "chat" | "manual";
-  tier: "core" | "archive";
+  tier: "core" | "archive"; // core: in every conversation; archive: looked up when a conversation touches it
   page: string;
   content: string;
   status: "active" | "review" | "suppressed" | "closed";
@@ -466,10 +466,19 @@ export type MemoryItem = {
   valid_to: string | null;
   expires_at: string | null;
   updated_at: string;
+  support_conversations: number;
   sources: { run_id: string; conversation_id: string | null; conversation_title: string | null; date: string }[];
 };
 
-/** GET /v1/memory/view: one scope (the account, or one project) as people see it: what is always used, then topic pages. */
+/** The archive items of one kind: the first few, and for interests the topics they fall under. */
+export type MemorySection = {
+  kind: MemoryItem["kind"];
+  count: number;
+  items: MemoryItem[];
+  groups: { name: string; count: number; preview: string[] }[];
+};
+
+/** GET /v1/memory/view: one scope (the account, or one project) laid out the way the AI uses it. */
 export type MemoryView = {
   project_id: string | null;
   enabled: boolean;
@@ -477,11 +486,13 @@ export type MemoryView = {
   merge_pending: boolean; // an isolated project became shared and its items are waiting to be merged
   revision: number; // the compare-and-set fence every change sends back
   active: { id: string; status: string; trigger: string } | null; // a consolidation or edit in progress
+  total: number;
   core: MemoryItem[];
-  pages: { page: string; count: number; updated_at: string | null }[];
+  review: MemoryItem[]; // sensitive items the AI may not use until the user confirms them
+  sections: MemorySection[];
 };
 
-/** GET /v1/memory/items: one page of a topic, newest first. */
+/** GET /v1/memory/items: a filtered list, newest first. */
 export type MemoryItems = { items: MemoryItem[]; next_cursor: string | null };
 
 export type EventItem = {

@@ -8,8 +8,9 @@ import { api, type Project } from "../lib/api";
 vi.mock("../lib/api", () => ({ api: vi.fn(), errorMessage: String }));
 vi.mock("../lib/dialog", () => ({ confirmDialog: vi.fn(async () => true) }));
 vi.mock("../lib/projects", () => ({ projectsChanged: vi.fn() }));
+vi.mock("../components/library/modal", () => ({ default: ({ children }: { children: React.ReactNode }) => <div>{children}</div> }));
 vi.mock("../components/memory/memory-view", () => ({
-  MemoryDialog: ({ editable, top }: { editable: boolean; top: () => React.ReactNode }) => <div>{top()}{editable ? "可编辑" : "只读"}</div>,
+  MemoryPanel: ({ editable }: { editable: boolean }) => <div>{editable ? "可编辑" : "只读"}</div>,
 }));
 const project = { id: "project", memory_mode: "shared" } as Project;
 afterEach(() => { cleanup(); vi.resetAllMocks(); });

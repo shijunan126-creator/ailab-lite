@@ -2,16 +2,24 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, errorMessage, MemoryItem, MemoryItems, MemoryView } from "../../lib/api";
+import { api, errorMessage, MemoryItem, MemoryItems, MemorySection, MemoryView } from "../../lib/api";
 import { confirmDialog } from "../../lib/dialog";
 import { IconArrowUp, IconChevronRight, IconRetry, IconTrash } from "../icons";
-import Modal from "../library/modal";
 import RowMenu from "../row-menu";
 
 const POLL_MS = 1500;
 const FOLLOW_MS = 10 * 60_000; // a consolidation of several batches fits well inside this
 const INSTRUCTION_CHARS = 500; // the API's limit
 const PAGE_ITEMS = 50;
+
+/** What each kind of remembered thing is called on the page, in the order the API sends sections. */
+export const KIND_TITLE: Record<MemorySection["kind"], string> = {
+  fact: "关于你",
+  preference: "偏好",
+  project: "在做的事",
+  interest: "关注的话题",
+  reference: "资料",
+};
 
 type Run = {
   id: string;
@@ -95,102 +103,59 @@ export function organizeNote(run: Run): string {
   return added > 0 ? `看了 ${seen} 段对话，新增 ${added} 条` : `看了 ${seen} 段对话，没有需要长期记住的内容`;
 }
 
-/** The entry on a page: the beginning of what is always used; all of it, and changing it, in the dialog. */
-export function MemoryCard({ projectId, title, disabled }: { projectId: string | null; title: string; disabled?: boolean }) {
-  const [open, setOpen] = useState(false);
-  const { view, load } = useMemoryView(projectId, open);
-  const preview = view ? (view.core.length ? view.core.map((i) => i.content).join("；") : view.pages.map((p) => p.page).join("、")) : "";
+type Change = { content?: string; tier?: "core" | "archive"; origin?: "explicit"; status?: "active" };
+type Act = { change: (item: MemoryItem, c: Change) => void; remove: (item: MemoryItem) => void; busy: boolean };
+
+/** Where an item came from: the conversation it was learned in (a link), how many more, and when. */
+function Provenance({ item }: { item: MemoryItem }) {
+  const first = item.sources.find((s) => s.conversation_id);
+  const others = Math.max(item.support_conversations || item.sources.length, item.sources.length) - (first ? 1 : 0);
   return (
-    <>
-      <div className={`mrow memory-card ${disabled ? "off" : ""}`}>
-        <button className="mrow-main" onClick={() => setOpen(true)} aria-label={title}>
-          <span className="mrow-title"><span>{title}</span></span>
-          {view ? (
-            <span className={`memory-preview ${preview ? "" : "empty"}`}>{preview || (view.active ? "正在整理…" : "还没有记忆")}</span>
-          ) : null}
-        </button>
-        <span className="mrow-trail memory-chevron" aria-hidden>
-          <IconChevronRight size={16} />
-        </span>
-      </div>
-      {open ? <MemoryDialog projectId={projectId} title={title} onClose={() => (setOpen(false), load())} /> : null}
-    </>
+    <span className="memory-meta">
+      {first ? (
+        <Link href={`/c/${first.conversation_id}`} title="打开来源对话">{first.conversation_title || "对话"}</Link>
+      ) : item.origin === "manual" ? (
+        <span>你添加的</span>
+      ) : null}
+      {others > 0 ? <span>{first ? `等 ${others + 1} 段对话` : `${others} 段对话`}</span> : null}
+      <span>{shortDate(item.observed_at || item.updated_at)}</span>
+    </span>
   );
 }
 
-type Change = { content?: string; tier?: "core" | "archive"; origin?: "explicit"; status?: "active" };
-
-function ItemRow({ item, busy, onChange, onRemove }: { item: MemoryItem; busy: boolean; onChange: (c: Change) => void; onRemove: () => void }) {
-  const [open, setOpen] = useState(false);
+function ItemRow({ item, act, editable }: { item: MemoryItem; act: Act; editable: boolean }) {
   const actions = [
-    ...(item.status === "review" ? [{ label: "确认", onSelect: () => onChange({ status: "active" }) }] : []),
-    ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => onChange({ origin: "explicit" }) }] : []),
-    { label: "始终使用", checked: item.tier === "core", onSelect: () => onChange({ tier: item.tier === "core" ? "archive" : "core" }) },
+    ...(item.origin === "inferred" ? [{ label: "确认无误", onSelect: () => act.change(item, { origin: "explicit" }) }] : []),
+    { label: "每次对话都用", checked: item.tier === "core", onSelect: () => act.change(item, { tier: item.tier === "core" ? "archive" : "core" }) },
     "sep" as const,
-    { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: onRemove },
+    { label: "删除", icon: <IconTrash size={15} />, danger: true, onSelect: () => act.remove(item) },
   ];
   return (
-    <li className={`memory-item ${item.status === "review" ? "review" : ""}`}>
-      <div className="memory-item-row">
-        <button className="memory-item-main" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-          <span className="memory-item-text">{item.content}</span>
-          {item.status === "review" ? <span className="memory-tag">待确认</span> : item.origin === "inferred" ? <span className="memory-tag">推断</span> : null}
-        </button>
-        <span className="memory-item-date">{shortDate(item.observed_at || item.updated_at)}</span>
-        <RowMenu label={item.content} actions={actions} disabled={busy} />
+    <li className="memory-item">
+      <div className="memory-item-text">
+        {item.content}
+        {item.origin === "inferred" ? <span className="memory-tag" title="AI 从多段对话中归纳的">推断</span> : null}
       </div>
-      {open ? (
-        <div className="memory-sources">
-          {item.sources.length ? (
-            item.sources.map((s) =>
-              s.conversation_id ? (
-                <Link key={s.run_id} href={`/c/${s.conversation_id}`}>
-                  <span>{s.conversation_title || "对话"}</span>
-                  <span className="memory-item-date">{shortDate(s.date)}</span>
-                </Link>
-              ) : (
-                <span key={s.run_id}>{shortDate(s.date)}</span>
-              )
-            )
-          ) : (
-            <span className="memory-sources-none">{item.origin === "manual" ? "你添加的" : "来源对话已删除"}</span>
-          )}
-        </div>
-      ) : null}
+      <Provenance item={item} />
+      {editable ? <RowMenu label={item.content} actions={actions} disabled={act.busy} /> : null}
     </li>
   );
 }
 
-/** A topic page: closed until asked for, then its items newest first, a page at a time. */
-function PageSection({
-  projectId,
-  page,
-  count,
-  version,
-  busy,
-  onChange,
-  onRemove,
-}: {
-  projectId: string | null;
-  page: string;
-  count: number;
-  version: number;
-  busy: boolean;
-  onChange: (item: MemoryItem, c: Change) => void;
-  onRemove: (item: MemoryItem) => void;
-}) {
-  const [open, setOpen] = useState(false);
+/** A list read from /v1/memory/items, a page at a time; read again whenever the scope changes. */
+function useItems(projectId: string | null, filter: Record<string, string>, open: boolean, version: number) {
   const [items, setItems] = useState<MemoryItem[] | null>(null);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState("");
   const loads = useRef<AbortController | null>(null);
+  const key = JSON.stringify(filter);
 
   const fetchPage = useCallback(
     async (after: string | null) => {
       loads.current?.abort();
       const controller = new AbortController();
       loads.current = controller;
-      const q = new URLSearchParams({ page, limit: String(PAGE_ITEMS) });
+      const q = new URLSearchParams({ ...JSON.parse(key), limit: String(PAGE_ITEMS) });
       if (projectId) q.set("project_id", projectId);
       if (after) q.set("cursor", after);
       try {
@@ -203,39 +168,77 @@ function PageSection({
         if (!controller.signal.aborted) setError(errorMessage(e));
       }
     },
-    [page, projectId]
+    [key, projectId]
   );
 
-  // opened, or the scope changed while open: read it again from the start
   useEffect(() => {
     if (open) fetchPage(null);
     return () => loads.current?.abort();
   }, [open, version, fetchPage]);
 
+  return { items, cursor, error, more: () => fetchPage(cursor) };
+}
+
+function ItemList({ items, act, editable }: { items: MemoryItem[]; act: Act; editable: boolean }) {
   return (
-    <section className="memory-page">
-      <button className="memory-page-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
-        <IconChevronRight size={14} className={`memory-page-mark ${open ? "open" : ""}`} />
-        <span className="memory-page-name">{page}</span>
-        <span className="memory-page-count">{count}</span>
+    <ul className="memory-items">
+      {items.map((item) => (
+        <ItemRow key={item.id} item={item} act={act} editable={editable} />
+      ))}
+    </ul>
+  );
+}
+
+/** A topic inside "关注的话题": its name and a few examples, opened to the items themselves. */
+function TopicRow({ projectId, group, version, act, editable }: { projectId: string | null; group: MemorySection["groups"][number]; version: number; act: Act; editable: boolean }) {
+  const [open, setOpen] = useState(false);
+  const { items, cursor, error, more } = useItems(projectId, { kind: "interest", group: group.name, tier: "archive" }, open, version);
+  return (
+    <div className={`memory-topic ${open ? "open" : ""}`}>
+      <button className="memory-topic-head" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+        <IconChevronRight size={14} className="memory-topic-mark" />
+        <span className="memory-topic-name">{group.name}</span>
+        <span className="memory-topic-preview">{group.preview.join("、")}</span>
+        <span className="memory-count">{group.count}</span>
       </button>
       {open ? (
+        <div className="memory-topic-body">
+          {error ? <div className="alert error">{error}</div> : null}
+          {items ? <ItemList items={items} act={act} editable={editable} /> : null}
+          {cursor ? <button className="link sm memory-more" onClick={more}>更多</button> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function Section({ projectId, section, version, act, editable }: { projectId: string | null; section: MemorySection; version: number; act: Act; editable: boolean }) {
+  const [all, setAll] = useState(false);
+  const { items, cursor, error, more } = useItems(projectId, { kind: section.kind, tier: "archive" }, all, version);
+  const topics = section.kind === "interest" && section.groups.length > 0;
+  const shown = all && items ? items : section.items;
+  return (
+    <section className="memory-section">
+      <h3>
+        {KIND_TITLE[section.kind]} <span className="memory-count">{section.count}</span>
+      </h3>
+      {topics ? (
+        <div className="memory-topics">
+          {section.groups.map((g) => (
+            <TopicRow key={g.name} projectId={projectId} group={g} version={version} act={act} editable={editable} />
+          ))}
+        </div>
+      ) : (
         <>
           {error ? <div className="alert error">{error}</div> : null}
-          {items === null ? null : (
-            <ul className="memory-items">
-              {items.map((item) => (
-                <ItemRow key={item.id} item={item} busy={busy} onChange={(c) => onChange(item, c)} onRemove={() => onRemove(item)} />
-              ))}
-            </ul>
-          )}
-          {cursor ? (
-            <button className="link sm memory-more" onClick={() => fetchPage(cursor)}>
-              更多
-            </button>
+          <ItemList items={shown} act={act} editable={editable} />
+          {!all && section.count > section.items.length ? (
+            <button className="link sm memory-more" onClick={() => setAll(true)}>查看全部 {section.count} 条</button>
+          ) : all && cursor ? (
+            <button className="link sm memory-more" onClick={more}>更多</button>
           ) : null}
         </>
-      ) : null}
+      )}
     </section>
   );
 }
@@ -243,21 +246,19 @@ function PageSection({
 type Turn = { key: number; role: "user" | "ai"; text: string; run?: string; state?: "working" | "applied" | "done" | "failed" | "reverted" };
 
 /**
- * Everything one scope remembers: what is always used, then the topic pages. The user changes it by saying what to
- * remember, correct or forget, or item by item; the API is the only writer, so the page never drifts from what the AI uses.
+ * Everything one scope remembers, laid out the way the AI uses it: what it sees in every conversation, what it looks
+ * up when a conversation touches it, and what waits for the user's confirmation. The API is the only writer.
  */
-export function MemoryDialog({
+export function MemoryPanel({
   projectId,
   title,
-  onClose,
-  top,
   editable = true,
+  heading = "h1",
 }: {
   projectId: string | null;
   title: string;
-  onClose: () => void;
-  top?: (reload: () => void) => React.ReactNode;
   editable?: boolean; // a shared project's items are changed from the account page
+  heading?: "h1" | "none"; // inside a dialog the dialog's own title names the scope
 }) {
   const { view, error: loadError, load } = useMemoryView(projectId);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -267,7 +268,7 @@ export function MemoryDialog({
   const [note, setNote] = useState(""); // what the last "立即整理" did
   const [organizing, setOrganizing] = useState(false);
   const [latest, setLatest] = useState(false); // "立即整理" found nothing to do
-  const [version, setVersion] = useState(0); // bumped after every change, so open pages read again
+  const [version, setVersion] = useState(0); // bumped after every change, so opened lists read again
   const alive = useRef(true);
   const follows = useRef(new Set<AbortController>());
   const thread = useRef<HTMLDivElement | null>(null);
@@ -462,98 +463,69 @@ export function MemoryDialog({
 
   const blocked = busy || editing || working;
   const shownError = error || loadError;
-  const empty = view && !view.core.length && !view.pages.length;
-  const itemBusy = blocked || !editable;
+  const act: Act = { change, remove, busy: blocked };
+  const archived = view ? view.sections.reduce((n, s) => n + s.count, 0) : 0;
   return (
-    <Modal
-      title={title}
-      onClose={onClose}
-      className="memory-dialog"
-      actions={
-        <>
-          <button className="secondary sm memory-organize" onClick={organize} disabled={blocked || !view?.enabled}>
-            {organizing || (working && !editing) ? <span className="draft-spin" aria-hidden /> : <IconRetry size={14} />}
-            {organizing || (working && !editing) ? "整理中" : latest ? "已是最新" : "立即整理"}
-          </button>
-          {editable ? (
-            <RowMenu
-              label={title}
-              disabled={blocked || !!empty}
-              actions={[{ label: "清空", icon: <IconTrash size={15} />, danger: true, onSelect: clear }]}
-            />
-          ) : null}
-        </>
-      }
-      footer={
-        editable ? (
-          <form
-            className="memory-ask"
-            onSubmit={(e) => {
-              e.preventDefault();
-              send();
-            }}
-          >
-            <textarea
-              ref={field}
-              rows={1}
-              value={text}
-              maxLength={INSTRUCTION_CHARS}
-              placeholder="告诉 AI 要记住、修改或忘记什么"
-              aria-label="修改记忆"
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            <button type="submit" className="icon-btn memory-send" aria-label="发送" disabled={!text.trim() || blocked}>
-              <IconArrowUp size={16} />
-            </button>
-          </form>
-        ) : undefined
-      }
-    >
-      {top?.(load)}
-      {shownError ? <div className="alert error">{shownError}</div> : null}
-      {note ? <div className="memory-note" role="status">{note}</div> : null}
-      <div className={`memory-view ${working ? "working" : ""}`} aria-busy={working}>
-        {view === null ? (
-          shownError ? null : <div className="memory-empty">加载中…</div>
-        ) : empty ? (
-          <div className="memory-empty">{working ? "正在整理…" : "还没有记忆"}</div>
-        ) : (
-          <>
-            {view.core.length ? (
-              <section className="memory-core">
-                <h3>始终记得</h3>
-                <ul className="memory-items">
-                  {view.core.map((item) => (
-                    <ItemRow key={item.id} item={item} busy={itemBusy} onChange={(c) => change(item, c)} onRemove={() => remove(item)} />
-                  ))}
-                </ul>
-              </section>
-            ) : null}
-            {view.pages.length ? (
-              <div className="memory-pages">
-                {view.pages.map((p) => (
-                  <PageSection
-                    key={p.page}
-                    projectId={projectId}
-                    page={p.page}
-                    count={p.count}
-                    version={version}
-                    busy={itemBusy}
-                    onChange={change}
-                    onRemove={remove}
-                  />
-                ))}
-              </div>
-            ) : null}
-          </>
-        )}
+    <div className={`memory-panel ${view && !view.enabled ? "off" : ""}`}>
+      <div className="memory-head">
+        {heading === "h1" ? <h1>{title}</h1> : <span className="memory-head-gap" />}
+        <button className="secondary sm memory-organize" onClick={organize} disabled={blocked || !view?.enabled}>
+          {organizing || (working && !editing) ? <span className="draft-spin" aria-hidden /> : <IconRetry size={14} />}
+          {organizing || (working && !editing) ? "整理中" : latest ? "已是最新" : "立即整理"}
+        </button>
+        {editable ? (
+          <RowMenu
+            label={title}
+            disabled={blocked || !view?.total}
+            actions={[{ label: "清空", icon: <IconTrash size={15} />, danger: true, onSelect: clear }]}
+          />
+        ) : null}
       </div>
+      {note ? <div className="memory-note" role="status">{note}</div> : null}
+      {shownError ? <div className="alert error">{shownError}</div> : null}
+
+      {view === null ? (
+        shownError ? null : <div className="memory-empty">加载中…</div>
+      ) : (
+        <div className={`memory-body ${working ? "working" : ""}`} aria-busy={working}>
+          {view.review.map((item) => (
+            <div key={item.id} className="memory-review">
+              <span className="memory-review-text">“{item.content}” 涉及敏感信息，确认后 AI 才会使用</span>
+              {editable ? (
+                <>
+                  <button className="secondary sm" disabled={blocked} onClick={() => change(item, { status: "active" })}>确认</button>
+                  <button className="secondary sm" disabled={blocked} onClick={() => remove(item)}>删除</button>
+                </>
+              ) : null}
+            </div>
+          ))}
+
+          <section className="memory-core">
+            <h3>
+              每次对话都记着 <span className="memory-count">{view.core.length ? `${view.core.length} 条` : ""}</span>
+            </h3>
+            {view.core.length ? (
+              <ItemList items={view.core} act={act} editable={editable} />
+            ) : (
+              <p className="memory-core-empty">还没有。说一句“记住……”，或在下面的条目上选“每次对话都用”。</p>
+            )}
+          </section>
+
+          {view.sections.length ? (
+            <div className="memory-archive">
+              <h3 className="memory-tier">
+                需要时会想起 <span className="memory-count">{archived} 条</span>
+              </h3>
+              {view.sections.map((s) => (
+                <Section key={s.kind} projectId={projectId} section={s} version={version} act={act} editable={editable} />
+              ))}
+            </div>
+          ) : !view.core.length && !view.review.length ? (
+            <div className="memory-empty">{working ? "正在整理…" : "还没有记忆。AI 会在对话中和每晚整理时记下关于你的事。"}</div>
+          ) : null}
+        </div>
+      )}
+
       {turns.length ? (
         <div className="memory-thread" ref={thread} aria-live="polite">
           {turns.map((t) =>
@@ -572,6 +544,35 @@ export function MemoryDialog({
           )}
         </div>
       ) : null}
-    </Modal>
+
+      {editable ? (
+        <form
+          className="memory-ask"
+          onSubmit={(e) => {
+            e.preventDefault();
+            send();
+          }}
+        >
+          <textarea
+            ref={field}
+            rows={1}
+            value={text}
+            maxLength={INSTRUCTION_CHARS}
+            placeholder="告诉 AI 要记住、修改或忘记什么"
+            aria-label="修改记忆"
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                send();
+              }
+            }}
+          />
+          <button type="submit" className="icon-btn memory-send" aria-label="发送" disabled={!text.trim() || blocked}>
+            <IconArrowUp size={16} />
+          </button>
+        </form>
+      ) : null}
+    </div>
   );
 }
