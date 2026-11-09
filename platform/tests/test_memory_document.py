@@ -279,3 +279,15 @@ def test_forgetting_current_version_redacts_closed_ancestors_and_undo():
         with SessionLocal() as db:
             assert db.get(MemoryItem, "mem_private_ancestor") is None
             assert db.get(User, uid).settings["memory"]["tombstones"]
+
+
+def test_dream_dedup_uses_kind_and_normalized_content_without_losing_other_ops():
+    shown = [entry(content="PostgreSQL")]
+    ops = [
+        {"op": "add", "kind": "fact", "content": "postgresql!", "quote": "我住在上海", "run": "run_one"},
+        {"op": "add", "kind": "interest", "content": "PostgreSQL", "quote": "我住在上海", "run": "run_one"},
+        {"op": "add", "kind": "fact", "content": "住在上海", "quote": "我住在上海", "run": "run_one"},
+    ]
+    result, audit = apply_ops(shown, shown, [episode()], ops, SimpleNamespace(settings={}), None)
+    assert len(audit) == 2
+    assert [(e["kind"], e["content"]) for e in result] == [("fact", "PostgreSQL"), ("interest", "PostgreSQL"), ("fact", "住在上海")]

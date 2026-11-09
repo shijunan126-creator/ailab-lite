@@ -28,7 +28,7 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 
 ## 存储、迁移与成本
 
-0065 选择移植冻结 WIP 的 artifact 清理（包括 undo 副本），不创建墓碑。0066 删除 entity/alias 表以及 tier/page/entities/support_conversations/support_dates 列；这些列可直接 DROP COLUMN，不做 SQLite referenced-table batch rebuild。保留仍有读者的 confidence/expires 等字段，不为清理而改动它们。0066 同时加入 context 来源索引、活动 scope `(user_id,project_id,status)`、retention/content/supersession 索引和含 kind 的活动唯一键；双向迁移。
+0065 选择移植冻结 WIP 的 artifact 清理（包括 undo 副本），不创建墓碑。0066 删除 entity/alias 表以及 tier/page/entities/support_conversations/support_dates 列；这些列可直接 DROP COLUMN，不做 SQLite referenced-table batch rebuild。保留仍有读者的 confidence/expires 等字段，不为清理而改动它们。0066 同时加入 context 来源索引、活动 scope `(user_id,project_id,status)`、跨scope写入 `(user_id,status)`、retention/content/supersession 索引和含 kind 的活动唯一键；双向迁移。
 
 渲染、used_chars、Dreaming 与每次写入只读取 active/review/suppressed 集合，closed/superseded 通过显式 id 或祖先索引访问，每次写入成本为 O(活动行数)，不随旧版本累积增长。SQLite/PG EXPLAIN 回归检查 scope 索引。现有 lifecycle 每批删除90天以前 closed 行；仍满足 revision fence 的 undo 引用受保护（原撤销没有额外时间 TTL）。删除当前行时沿索引清理祖先与撤销副本，防止旧内容复活。
 

@@ -28,33 +28,42 @@ def test_closed_history_is_indexed_and_never_loaded_by_writes():
             db.add_all(MemoryItem(user_id=peer.id, content=f"peer{i}", content_hash=f"peer{i}", status="active") for i in range(50))
         db.add(MemoryItem(id="mem_hot", user_id=user.id, content="active", content_hash="active", status="active"))
         db.commit()
-        db.execute(text("ANALYZE memory_items"))
-        plan = " ".join(
-            str(row)
-            for row in db.execute(
-                text(
-                    "EXPLAIN QUERY PLAN SELECT id FROM memory_items WHERE user_id=:uid AND project_id IS NULL AND status='active'"
-                    if db.get_bind().dialect.name == "sqlite"
-                    else "EXPLAIN SELECT id FROM memory_items WHERE user_id=:uid AND project_id IS NULL AND status='active'"
-                ),
-                {"uid": user.id},
+        try:
+            db.execute(text("ANALYZE memory_items"))
+            plan = " ".join(
+                str(row)
+                for row in db.execute(
+                    text(
+                        "EXPLAIN QUERY PLAN SELECT id FROM memory_items WHERE user_id=:uid AND project_id IS NULL AND status='active'"
+                        if db.get_bind().dialect.name == "sqlite"
+                        else "EXPLAIN SELECT id FROM memory_items WHERE user_id=:uid AND project_id IS NULL AND status='active'"
+                    ),
+                    {"uid": user.id},
+                )
             )
-        )
-        assert any(index in plan for index in ("ix_memory_items_scope", "uq_memory_items_hash")), plan
-        assert "Seq Scan" not in plan
-        entries = entries_for(user)
-        assert len(entries) == 1 and entries[0]["id"] == "mem_hot"
-        entries[0]["content"] = "changed"
-        replace_entries(db, user, entries)
-        db.commit()
-        assert len(entries_for(user)) == 1
-        assert db.scalar(
-            select(MemoryItem.content).where(MemoryItem.user_id == user.id, MemoryItem.status == "closed").limit(1)
-        ).startswith("history")
-        for peer in peers:
-            db.delete(peer)
-        db.delete(user)
-        db.commit()
+            assert any(index in plan for index in ("ix_memory_items_scope", "uq_memory_items_hash", "ix_memory_items_user_status")), plan
+            assert "Seq Scan" not in plan
+            # Account writes load all active scopes. With project_id unconstrained the scope
+            # index alone cannot bound the historical part of that user's range.
+            query = select(MemoryItem).where(MemoryItem.user_id == user.id, MemoryItem.status.in_(("active", "review", "suppressed")))
+            sql = str(query.compile(db.get_bind(), compile_kwargs={"literal_binds": True}))
+            prefix = "EXPLAIN QUERY PLAN " if db.get_bind().dialect.name == "sqlite" else "EXPLAIN "
+            write_plan = " ".join(str(row) for row in db.execute(text(prefix + sql)))
+            assert "ix_memory_items_user_status" in write_plan, write_plan
+            entries = entries_for(user)
+            assert len(entries) == 1 and entries[0]["id"] == "mem_hot"
+            entries[0]["content"] = "changed"
+            replace_entries(db, user, entries)
+            db.commit()
+            assert len(entries_for(user)) == 1
+            assert db.scalar(
+                select(MemoryItem.content).where(MemoryItem.user_id == user.id, MemoryItem.status == "closed").limit(1)
+            ).startswith("history")
+        finally:
+            for peer in peers:
+                db.delete(peer)
+            db.delete(user)
+            db.commit()
 
 
 def test_retention_preserves_revision_valid_undo_then_collects():

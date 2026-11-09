@@ -19,6 +19,7 @@ def upgrade():
     for name in ("entities", "support_conversations", "support_dates"):
         op.drop_column("memory_items", name)
     op.create_index("ix_memory_items_scope", "memory_items", ["user_id", "project_id", "status"])
+    op.create_index("ix_memory_items_user_status", "memory_items", ["user_id", "status"])
     op.create_index("ix_memory_items_retention", "memory_items", ["status", "valid_to", "id"])
     op.drop_index("uq_memory_items_hash", table_name="memory_items")
     op.create_index(
@@ -38,6 +39,7 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_index("ix_memory_items_user_status", table_name="memory_items")
     op.drop_index("ix_memory_items_superseded", table_name="memory_items")
     op.drop_index("ix_memory_episodes_context_run_id", table_name="memory_episodes")
     op.drop_column("memory_episodes", "context_run_id")

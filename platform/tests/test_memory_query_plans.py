@@ -53,7 +53,7 @@ def test_memory_pending_and_history_queries_use_bounded_indexed_paths(engine):
         event.listen(engine, "before_cursor_execute", capture)
         try:
             assert len(_rows(db, uid, None, None)) == 400
-            assert len(service._new_runs(db, uid, None, now)) == 30
+            assert len(service._new_runs(db, uid, None, now)) == 100
             assert len(service._new_runs(db, uid, None, now, limit=201)) == 100
         finally:
             event.remove(engine, "before_cursor_execute", capture)

@@ -1436,6 +1436,7 @@ class MemoryItem(Base):
     __tablename__ = "memory_items"
     __table_args__ = (
         Index("ix_memory_items_scope", "user_id", "project_id", "status"),
+        Index("ix_memory_items_user_status", "user_id", "status"),
         Index("ix_memory_items_retention", "status", "valid_to", "id"),
         Index("ix_memory_items_content", "user_id", "content_hash"),
         Index("ix_memory_items_superseded", "user_id", "superseded_by"),

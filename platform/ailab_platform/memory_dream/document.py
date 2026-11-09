@@ -8,7 +8,7 @@ from ..memory_recall.document import active, kind, render, used_chars
 from ..memory_recall.guard import reject_reason
 from ..memory_recall.policy import review_required
 from ..memory_recall.store import stamp
-from ..memory_recall.tombstones import blocked_by_tombstone, tombstones_of
+from ..memory_recall.tombstones import blocked_by_tombstone, fact_hash, tombstones_of
 from ..models import new_id, utcnow
 from .prompts import DOCUMENT_SYSTEM
 
@@ -78,10 +78,13 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
                 continue
             if blocked_by_tombstone(tombstones, content, [episode.run_id] if episode else []):
                 continue
-            if any(e["content"] == content and e.get("project_id") == scope and e["id"] not in ids for e in active(entries)):
-                continue
             section = kind(targets[0]) if targets else op.get("kind")
             if section not in {"fact", "preference", "project", "interest", "reference"}:
+                continue
+            if any(
+                kind(e) == section and fact_hash(e["content"]) == fact_hash(content) and e.get("project_id") == scope and e["id"] not in ids
+                for e in active(entries)
+            ):
                 continue
             fresh = {
                 "id": new_id("mem"),

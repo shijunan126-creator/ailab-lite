@@ -4,7 +4,7 @@
 - 用户另行批准条件空闲刷新：最终 assistant 完成超过24h **且文档变化**才 memory_refreshed；无变化禁止时间驱动重绘。旧“绝不TTL”仅适用无条件刷新，不应盖过此新合同。
 - tag 防伪同时覆盖存储、用户、网页和工具内容；保留旧 ailab_memory checkpoint 检测。完整文档是必需上下文，不能用旧 memory 子预算静默丢行。
 - 前序 episode context 只帮助理解，quote 只能来自当前 user_said。复制来源建立 context_run_id 索引；删/脱敏 run 要同时清理后续 episode 中的 context，不能只删其本身 episode。hash 必须包括精确 digest；模型等待后复核来源。
-- closed 版本不能进入每写扫描；按 scope/status 与 supersession 索引访问，撤销仅加载明确id。90天回收保护 revision fence 仍有效的 undo；删除当前行还须清理祖先/副本并保留 tombstone，防旧行复活。
+- scope索引 `(user_id,project_id,status)` 在跨scope读取时缺project_id不能保证跳过历史范围，真实写入查询还要 `(user_id,status)` 索引与EXPLAIN。closed 版本不能进入每写扫描；按 scope/status 与 supersession 索引访问，撤销仅加载明确id。90天回收保护 revision fence 仍有效的 undo；删除当前行还须清理祖先/副本并保留 tombstone，防旧行复活。
 - add 去重统一 legacy user/memory→preference/fact，活动唯一键包含kind。删 item retrieval 时同步清理lineage导入，项目融合须程序事务/精确去重/来源union/undo，不能遗留旧模型merge。
 - PG EXPLAIN fixture 必须有跨账号选择性：单账号所有closed时全局status索引可能更优，不能强制planner；fixture失败也须清理，避免污染后续GC。
 - 当前OpenCode端点相同正文/工具Work同session重放4992/5106，跨user同session仍4992/5106，同user换session0/5106；短Chat重放0/4474。后续稳定追加仍观察一次Work全冷。不能自动归因系统一混入用户数据，也不能删必需session header凑命中。证据和测量边界见[记录](docs/progress/updates/2026-11-09-memory-document.md)。

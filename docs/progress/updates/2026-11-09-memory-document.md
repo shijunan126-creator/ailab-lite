@@ -13,11 +13,11 @@
 
 ## 检查与失败修复
 
-本地只跑 Ruff 和改动模块，没有重复全套 Python/Portal build/E2E。`cd platform && .venv/bin/ruff check . && .venv/bin/ruff format --check .` 通过（676 files）。分组定向检查通过 memory document/dream/hardening/summary/v2/recall/retention、episode context、migrations、fault chain 与 prefix；模块收集规模分别10/11/24/45/14/30/2/8/139（收集数不是额外通过数）。最终维护组64项通过。较早联合 prefix 组有1个旧测试把 system1 中标签说明也计为 block，改为仅计用户 turn 后定点通过；不将此前失败运行写为全绿。
+本地只跑 Ruff 和改动模块，没有重复全套 Python/Portal build/E2E。`cd platform && .venv/bin/ruff check . && .venv/bin/ruff format --check .` 通过（676 files）。分组定向检查通过 memory document/dream/hardening/summary/v2/recall/retention、episode context、migrations、fault chain 与 prefix；模块收集规模分别11/11/24/45/14/30/2/8/139（收集数不是额外通过数）。最终维护组64项通过。补充索引/去重后的定向组：SQLite 65 passed /48 skipped（PG环境未启用的参数），PG文档/保留13 passed，显式PG迁移URL的双库查询计划/迁移专项14 passed /86 deselected。较早联合 prefix 组有1个旧测试把 system1 中标签说明也计为 block，改为仅计用户 turn 后定点通过；不将此前失败运行写为全绿。
 
-临时 PostgreSQL16（独立15443端口）定向 document/episode/retention 19项通过，另运行迁移/索引回归。SQLite/PG EXPLAIN 均验证活动 scope 查询走 `(user_id,project_id,status)`，closed 行不会进入逐写扫描。PG 初版 fixture 只堆同一账号旧行，planner 合理选择全局 status 索引且失败后污染后续 GC；修为跨账号真实选择性并清理 fixture，未强制 planner 或放宽阈值。
+临时 PostgreSQL16（独立15443端口）定向 document/episode/retention 19项通过，另运行迁移/索引回归。SQLite/PG EXPLAIN 覆盖 scope 与真实跨scope适配层查询：补 `(user_id,status)` 索引避免 scope 索引中 project_id 缺省时扫描账号历史范围；closed 行不会进入逐写扫描。PG 初版 fixture 只堆同一账号旧行，planner 合理选择全局 status 索引且失败后污染后续 GC；修为跨账号真实选择性并清理 fixture，未强制 planner 或放宽阈值。
 
-早期76项旧模块失败已迁移。保留安全、并发、删除/脱敏、undo、ledger 与 fence 行为；只删下文失去生产路径的内部断言。旧 E2E 因 memory.list 被移除失败，按新批准合同恢复只读 list，并更新 scripted fixture。最终全套由 [PR CI](https://github.com/shijunan126-creator/ailab-lite/pull/174/checks) 验收，本文不把历史 SHA 的通过冒充最终 head。
+后续代码复核补齐查询计划中旧30候选断言（默认现100），以及Dreaming按kind+normalized content去重（一个重复op不应让整批失效，跨kind同文允许）。早期76项旧模块失败已迁移。保留安全、并发、删除/脱敏、undo、ledger 与 fence 行为；只删下文失去生产路径的内部断言。旧 E2E 因 memory.list 被移除失败，按新批准合同恢复只读 list，并更新 scripted fixture。最终全套由 [PR CI](https://github.com/shijunan126-creator/ailab-lite/pull/174/checks) 验收，本文不把历史 SHA 的通过冒充最终 head。
 
 ## 真模型：删除失效与短时恢复
 
