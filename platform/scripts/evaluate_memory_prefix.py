@@ -3,7 +3,8 @@
 
 API/Broker are in-memory doubles. Uses actual AgentLoop and serialized provider requests;
 this measures model caching, not live service/sandbox integration. Configure credentials
-externally. Every warm call and every scenario must reach 95%; no retries or padding.
+externally. Each scenario's warm cached/prompt ratio must reach 95%. Each call must
+cache the old prefix within one configured cache block; no retries or padding.
 """
 
 import argparse
@@ -20,6 +21,45 @@ from tests.prefix_harness import assert_extension
 from tests.test_agent_loop import FakeBroker, FakePlatform
 
 QUESTIONS = ["请用一句话解释什么是哈希表。", "用一句话说明它的查找速度。", "再用一句话说一个使用场景。", "用一句话总结。"]
+
+
+def cache_acceptance(usages, first_turn_calls, cache_block_tokens=128):
+    """Use provider token counts, never a local tokenizer, to price the appended suffix.
+
+    128 is the observed block quantum of the configured OpenCode DeepSeek endpoint.
+    Other endpoints must supply their own block size; this is not a universal limit.
+    """
+    if cache_block_tokens < 1:
+        raise ValueError("cache block must be positive")
+    warm = usages[first_turn_calls:]
+    prompt = sum(u.get("prompt_tokens", 0) for u in warm)
+    cached = sum(u.get("cached_tokens", 0) for u in warm)
+    checks = []
+    for index in range(1, len(usages)):
+        previous, current = usages[index - 1], usages[index]
+        old_prompt = previous.get("prompt_tokens", 0)
+        new_prompt = current.get("prompt_tokens", 0)
+        hit = current.get("cached_tokens", 0)
+        added = new_prompt - old_prompt
+        miss = new_prompt - hit
+        checks.append(
+            {
+                "call": index + 1,
+                "appended_tokens": added,
+                "uncached_tokens": miss,
+                "old_prefix_uncached_tokens": max(0, old_prompt - hit),
+                "passed": old_prompt > 0 and added >= 0 and 0 <= hit <= new_prompt and miss <= added + cache_block_tokens - 1,
+            }
+        )
+    return {
+        "cached_tokens": cached,
+        "prompt_tokens": prompt,
+        "ratio": cached / prompt if prompt else 0,
+        "warm_call_ratios": [u.get("cached_tokens", 0) / u["prompt_tokens"] if u.get("prompt_tokens") else 0 for u in warm],
+        "cache_block_tokens": cache_block_tokens,
+        "prefix_cache_checks": checks,
+        "passed": bool(warm) and prompt > 0 and cached / prompt >= 0.95 and bool(checks) and all(c["passed"] for c in checks),
+    }
 
 
 def scenarios():
@@ -146,7 +186,7 @@ class Recorder:
         return result
 
 
-async def evaluate(model):
+async def evaluate(model, cache_block_tokens=128):
     spec = get_catalog().get(model)
     if not spec or not spec.available or spec.provider == "mock":
         raise ValueError("real available model required")
@@ -180,22 +220,17 @@ async def evaluate(model):
                             assert previous.get(key) == current.get(key), key
                     assert len(set(recorder.sessions)) == 1
                     assert all(r["messages"][:2] == recorder.requests[0]["messages"][:2] for r in recorder.requests)
-                    usage = recorder.usages[boundaries[0] :]
-                    prompt = sum(u.get("prompt_tokens", 0) for u in usage)
-                    cached = sum(u.get("cached_tokens", 0) for u in usage)
-                    warm_ratios = [u.get("cached_tokens", 0) / u["prompt_tokens"] for u in usage if u.get("prompt_tokens")]
+                    assert len(recorder.requests) == len(recorder.usages)
+                    acceptance = cache_acceptance(recorder.usages, boundaries[0], cache_block_tokens)
                     completed = sum(s == "succeeded" for s, _ in platform.statuses)
                     out[f"{mode}/{case}"] = {
+                        **acceptance,
                         "calls": recorder.usages,
                         "turn_call_boundaries": boundaries,
-                        "cached_tokens": cached,
-                        "prompt_tokens": prompt,
-                        "ratio": cached / prompt if prompt else 0,
-                        "warm_call_ratios": warm_ratios,
                         "prefix_extensions": True,
                         "stable_session": True,
                         "completed_turns": completed,
-                        "passed": completed == 4 and bool(warm_ratios) and min(warm_ratios) >= 0.95,
+                        "passed": completed == 4 and acceptance["passed"],
                     }
                 finally:
                     recorder.close()
@@ -207,7 +242,8 @@ async def evaluate(model):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--model")
+    parser.add_argument("--cache-block-tokens", type=int, default=128, help="Configured endpoint's cache quantum (OpenCode DeepSeek: 128)")
     args = parser.parse_args()
-    result = asyncio.run(evaluate(args.model or get_catalog().default_id()))
+    result = asyncio.run(evaluate(args.model or get_catalog().default_id(), args.cache_block_tokens))
     print(json.dumps(result, ensure_ascii=False, indent=2))
     raise SystemExit(0 if all(r["passed"] for r in result.values()) else 1)

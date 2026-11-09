@@ -2681,3 +2681,24 @@ def test_deletion_between_context_read_and_list_records_one_authoritative_delta(
     assert platform.checkpoints["turn2"]["state"]["memory_observed"]["entries"] == []
     updates = [m for m in requests[-1]["messages"] if "平台记忆更新" in str(m.get("content"))]
     assert len(updates) == 1 and "mem_core 已删除，不得再使用" in updates[0]["content"]
+
+
+def test_cache_acceptance_rejects_old_prefix_misses_even_when_scenario_ratio_passes():
+    from scripts.evaluate_memory_prefix import cache_acceptance
+
+    with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
+        platform = MemoryPrefixPlatform([memory_prefix_fixture()] * 2)
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("turn0", attempt_id="a0"))
+        asyncio.run(loop.process("turn1", attempt_id="a1"))
+    assert_extension(*requests)
+    # Unchanged wire prefix alone is insufficient: the provider must actually hit it.
+    old = {"prompt_tokens": 8758, "cached_tokens": 8576}
+    valid = cache_acceptance([old, {"prompt_tokens": 9218, "cached_tokens": 8704}], 1)
+    assert valid["warm_call_ratios"][0] < 0.95
+    assert valid["prefix_cache_checks"][0]["passed"]  # 460 appended, 54-token partial cache block
+    assert not valid["passed"]  # one-call scenario still fails the cumulative 95% gate
+    missed = cache_acceptance([old, {"prompt_tokens": 9000, "cached_tokens": 8576}], 1)
+    assert missed["ratio"] > 0.95 and not missed["passed"]  # 182 old tokens lost, beyond one 128-token block
+    accepted = cache_acceptance([{"prompt_tokens": 8520, "cached_tokens": 8448}, old, {"prompt_tokens": 9218, "cached_tokens": 8704}], 1)
+    assert accepted["passed"] and all(c["passed"] for c in accepted["prefix_cache_checks"])
