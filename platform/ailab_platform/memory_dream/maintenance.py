@@ -181,7 +181,17 @@ def merge_project(db, user, project):
             for field in ("evidence_run_ids", "evidence_episode_ids"):
                 target[field] = list(dict.fromkeys([*target.get(field, []), *e.get(field, [])]))
                 if len(target[field]) > 50:
-                    raise ValueError("项目融合来源超出容量")
+                    from sqlalchemy import select
+
+                    from ..models import MemoryEpisode, Run
+
+                    table = Run if field == "evidence_run_ids" else MemoryEpisode
+                    ordered = list(
+                        db.scalars(
+                            select(table.id).where(table.id.in_(target[field])).order_by(table.created_at.desc(), table.id.desc()).limit(50)
+                        )
+                    )
+                    target[field] = ordered
             if e.get("origin") in {"explicit", "manual", "edited"} and target.get("origin") == "inferred":
                 target["origin"] = e["origin"]
             target["reinforced_at"] = utcnow().isoformat()

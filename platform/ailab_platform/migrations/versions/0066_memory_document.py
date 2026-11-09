@@ -10,6 +10,23 @@ depends_on = None
 
 
 def upgrade():
+    op.create_table(
+        "memory_item_sources",
+        sa.Column("memory_id", sa.String(40), sa.ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True),
+        sa.Column("run_id", sa.String(40), primary_key=True),
+    )
+    op.create_index("ix_memory_item_sources_run_id", "memory_item_sources", ["run_id"])
+    db = op.get_bind()
+    rows = db.execute(sa.text("SELECT id, source_run_ids FROM memory_items")).mappings()
+    import json
+
+    for row in rows:
+        ids = json.loads(row["source_run_ids"]) if isinstance(row["source_run_ids"], str) else row["source_run_ids"]
+        for rid in set(ids or []):
+            db.execute(sa.text("INSERT INTO memory_item_sources(memory_id,run_id) VALUES (:mid,:rid)"), {"mid": row["id"], "rid": rid})
+
+    op.add_column("memory_items", sa.Column("created_by", sa.String(20), nullable=False, server_default="addition"))
+    op.add_column("memory_items", sa.Column("superseded_reason", sa.String(20), nullable=True))
     op.add_column("memory_episodes", sa.Column("context_run_id", sa.String(40), nullable=True))
     op.create_index("ix_memory_episodes_context_run_id", "memory_episodes", ["context_run_id"])
     op.drop_index("ix_memory_items_scope", table_name="memory_items")
@@ -39,6 +56,9 @@ def upgrade():
 
 
 def downgrade():
+    op.drop_table("memory_item_sources")
+    op.drop_column("memory_items", "superseded_reason")
+    op.drop_column("memory_items", "created_by")
     op.drop_index("ix_memory_items_user_status", table_name="memory_items")
     op.drop_index("ix_memory_items_superseded", table_name="memory_items")
     op.drop_index("ix_memory_episodes_context_run_id", table_name="memory_episodes")

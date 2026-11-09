@@ -223,13 +223,12 @@ def claim_due(now: datetime | None = None) -> list[str]:
             if local.hour * 60 + local.minute < start + offset(user.id, end - start):
                 continue
             runs = _new_runs(db, user.id, _last_success(db, user.id), now) if document["auto_save"] else []
-            from ..memory_recall.document import used_chars
+            from ..memory_recall.document import maintenance_needed
 
             scopes = {e.get("project_id") for e in document["entries"]}
-            maintenance = any(
-                used_chars([e for e in document["entries"] if e.get("project_id") == pid]) > settings.memory_doc_max_chars for pid in scopes
-            )
+            maintenance = any(maintenance_needed([e for e in document["entries"] if e.get("project_id") == pid], user) for pid in scopes)
             if not runs and not maintenance:
+                db.commit()
                 continue
             local_date = local.date().isoformat()
             active = db.scalar(select(MemoryDreamRun.id).where(MemoryDreamRun.user_id == user.id, active_job(now)).limit(1))
@@ -561,7 +560,7 @@ async def process_dream(run_id: str) -> None:
     token = new_id("claim")
 
     def prepare():
-        from ..memory_recall.document import active, used_chars
+        from ..memory_recall.document import active, maintenance_needed, used_chars
         from .scheduling import admission, can_start
 
         with SessionLocal() as db, admission(db) as scheduler:
@@ -607,7 +606,7 @@ async def process_dream(run_id: str) -> None:
                 runs = [x for x in runs if run_project(db, x) == pid]
                 scope = pid if mode == "isolated" else None
                 entries = active([e for e in document["entries"] if e.get("project_id") == scope])
-                if not runs and used_chars(entries) <= settings.memory_doc_max_chars:
+                if not runs and not maintenance_needed(entries, owner):
                     _finish(db, job, "skipped", report={"runs_seen": 0, "added": 0})
                     job.claimed_until = None
                     db.commit()
@@ -672,9 +671,9 @@ async def process_dream(run_id: str) -> None:
                         ignored[item["run"]] = item["reason"]
                 from ..memory_recall.lineage import redact_episode_context
 
-                stale_context = {e.run_id for e in episodes if e.context_run_id in ignored}
+                stale_context = {e.run_id for e in episodes if ignored.get(e.context_run_id) in {"test", "repro"}}
                 evidence = [e for e in episodes if e.run_id not in ignored and e.run_id not in stale_context]
-                redact_episode_context(db, list(ignored))
+                redact_episode_context(db, [rid for rid, reason in ignored.items() if reason in {"test", "repro"}])
                 changed, audit = apply_ops(current["entries"], entries, evidence, result.get("ops", []), user, scope)
                 after = save(db, user, current, changed)
                 record(job, current, after)

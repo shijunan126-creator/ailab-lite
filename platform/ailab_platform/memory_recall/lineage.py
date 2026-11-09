@@ -39,6 +39,7 @@ def forget_conversations(db: Session, user: User, conversation_ids: list[str]) -
 
     _doc.cache_clear()
     run_ids = set(db.scalars(select(Run.id).where(Run.conversation_id.in_(conversation_ids), Run.user_id == user.id)))
+    redact_closed_sources(db, user.id, run_ids)
     redact_episode_context(db, run_ids)
     embeddings.delete_for_runs(db, list(run_ids))
     db.execute(delete(MemoryWorkItem).where(MemoryWorkItem.run_id.in_(run_ids)))
@@ -176,7 +177,7 @@ def redact_memory_copies(db: Session, user_id: str, removed: list[dict]) -> None
         tombstones = list(stored.get("tombstones") or [])
         for row in ancestors:
             hashes.add((row.project_id, row.content_hash))
-            tombstones.append({"hash": row.content_hash, "run_ids": row.source_run_ids, "at": utcnow().isoformat()})
+            tombstones.append({"id": row.id, "hash": row.content_hash, "run_ids": row.source_run_ids, "at": utcnow().isoformat()})
         from ..contracts.memory import MAX_TOMBSTONES
 
         stored["tombstones"] = tombstones[-MAX_TOMBSTONES:]
@@ -258,3 +259,34 @@ def redact_episode_context(db, run_ids):
         source_start = payload.get("source_end", len(payload.get("user_said", ""))) - len(payload.get("user_said", ""))
         episode.content_hash = _hash(str(episode.run_id) + "\n" + str(source_start) + "\n" + episode.digest)
         episode.context_run_id = None
+
+
+def redact_closed_sources(db, user_id, run_ids):
+    """Join indexed source references in bounded pages, including superseded versions."""
+    from ..models import MemoryItemSource
+
+    if not run_ids:
+        return
+    while True:
+        rows = list(
+            db.scalars(
+                select(MemoryItem)
+                .where(
+                    MemoryItem.user_id == user_id,
+                    MemoryItem.status == "closed",
+                    MemoryItem.id.in_(select(MemoryItemSource.memory_id).where(MemoryItemSource.run_id.in_(run_ids))),
+                )
+                .limit(200)
+            )
+        )
+        if not rows:
+            break
+        for row in rows:
+            remaining = [rid for rid in row.source_run_ids if rid not in run_ids]
+            if not remaining and (row.metadata_ or {}).get("source") != "user":
+                db.delete(row)
+            else:
+                row.source_run_ids = remaining
+                row.source_quote = ""
+                db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id == row.id, MemoryItemSource.run_id.in_(run_ids)))
+        db.flush()

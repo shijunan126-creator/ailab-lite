@@ -83,7 +83,7 @@ def test_agent_memory_replay_conflict_and_fence():
         assert added.status_code == 200 and added.json()["revision"] == 1
         assert _tool(c, run).json() == added.json()  # committed write, lost response
         assert _tool(c, run, delivery="stale").json()["revision"] == 1
-        assert _tool(c, run, action="replace", revision=0, delivery="stale-replace", id=added.json()["entries"][0]["id"]).status_code == 422
+        assert _tool(c, run, action="replace", revision=0, delivery="stale-replace", id=added.json()["entries"][0]["id"]).status_code == 200
         entry = added.json()["entries"][0]
         assert entry["source"] == "agent"
         assert _tool(c, _running(c, other), action="remove", id=entry["id"]).status_code == 422

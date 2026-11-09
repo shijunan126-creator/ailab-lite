@@ -76,3 +76,13 @@ Work 首次有一次 cached=0，尽管请求是严格追加且 session/settings 
 - `test_memory_hardening.py::test_judge_sees_every_existing_fact_so_a_paraphrase_is_a_duplicate`：独立judge与fuzzy门槛已删除；完整文档输入和程序merge/dedup验证替代。
 - `test_memory_summary.py::test_failed_extraction_still_refreshes_stale_summary`：抽取失败后再调用摘要的阶段已删除，单调用失败原子回归保留。
 - `test_memory_summary.py::test_pages_are_derived_without_model_calls_when_auto_save_off`：主题页taxonomy已删除；view直接分节及无工作不调用验证替代。
+
+## 独立审查修正（基线7d9a503e）
+
+一次性处理用户8组意见：suppressed全路径输入兼容；0066拆 created_by/superseded_reason（0064不动）；no-op不写、scope渲染签名不含revision、ABI5工具按活动handle围栏；保护行超限无可整理时记录签名并停止纯维护；新增来源反向索引分批清closed隐私；空闲刷新仍走parent compaction；用户删除快照行下一run memory_forgotten；no_signal不重读context、融合取最新50来源。运行中外部变化仅下一run送达，是明确边界。
+
+新增 test_memory_review 参数回归覆盖 PATCH/DELETE、工具add/replace/remove、Dreaming save/edit/undo、项目模式/融合；prefix录制覆盖用户忘记重建与Dreaming删除block、闲置刷新进入压缩。定向组128 passed /45 skipped（SQLite migrations，PG参数环境未启用）；此前测试 fixture 使用固定全局id冲突已改为用户唯一id，未放宽产品约束。真实请求前缀与双库新迁移仍待本轮核对。
+
+前轮CI E2E通过；SQLite唯一失败为OCR checkpoint把新增静态记忆规则计入图片载荷固定10KB上限。修正断言扣除两条固定系统消息，仍保留非静态checkpoint 10KB约束及图片占位断言，不增加上限。全套只由最终head CI验收，不复用历史head通过。
+
+本轮补充结果：prefix/summary/episode/review/OCR联合227 passed；升级运行时构建依赖后source-context/user/review安全组49 passed（此前3个文档fixture失败因本地缺少Office reader dist，未修改产品跳过）；PG审查/retention/迁移组23 passed /92 deselected，SQLite+PG查询计划8 passed（含closed source反向索引）。ABI5真模型第二次调用起Chat36608/37343=98.03%、Work34432/34820=98.89%，逐请求追加与会话设置检查通过；仍为服务doubles，不据此消除历史供应商冷失效边界。新增MemoryItemSource投影带来每条来源一行磁盘/索引开销，来源最多50，内容不复制，写入成本仍随活动行/有界来源数增长。

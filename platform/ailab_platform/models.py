@@ -1470,5 +1470,13 @@ class MemoryItem(Base):
     content_hash: Mapped[str] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    created_by: Mapped[str] = mapped_column(String(20), default="addition", server_default="addition")
+    superseded_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Legacy adapter metadata, not another copy of the fact text.
     metadata_: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
+
+
+class MemoryItemSource(Base):
+    __tablename__ = "memory_item_sources"
+    memory_id: Mapped[str] = mapped_column(ForeignKey("memory_items.id", ondelete="CASCADE"), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(40), primary_key=True, index=True)

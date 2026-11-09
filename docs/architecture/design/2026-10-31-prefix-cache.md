@@ -13,3 +13,7 @@
 当前会话最新 checkpoint 保留，子快照成功后父快照七天到期；单个 checkpoint 未压缩默认上限 4 MiB，配置上限 16 MiB。磁盘消耗取决于对话、分支和压缩率。新消息、助手输出、摘要边界和模型或工具版本变化仍会造成未命中；供应商的最短前缀、路由和 TTL 也影响命中。标题、记忆整理和技能草稿是独立调用；指标按模式和调用类型累计 prompt/cached tokens，不使用用户或会话 ID 标签。真实模型命中率、成本和摘要质量未测。
 
 2026-11-04：压缩触发、压缩后区间、纪元/ABI、结构化摘要、失败合同与实际值计数以 [ADR 0033](../adr/0033-context-epoch-band-process-snapshot.md) 为准；本文的追加与同形侧调用规则仍有效。
+
+### 记忆删除优先于缓存（PR174）
+
+用户明确删除的记忆不得继续保留在会话系统快照中以追求缓存命中。下一 run 开始重建 system2，记录 memory_forgotten，将同轮变化折入且不追加 memory_update；不改 system1、tools 和历史消息。Dreaming 的 duplicate/outdated 删除及纠正仍通过新用户 turn 开头的 block 失效；condense/空间淘汰不推。具体合同见 [ADR0035](../adr/0035-memory-v2.md)。运行中外部变化延至下一 run，闲置刷新也必须经过父上下文压缩检查。

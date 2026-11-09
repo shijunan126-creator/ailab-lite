@@ -6,7 +6,7 @@
 
 `memory_items` 是唯一内容来源；账号与 isolated 项目分别组成完整文档，按 fact/preference/project/interest/reference 分节，每行保留稳定 handle、origin、绝对日期和来源。没有 tier/page/catalog 或条目向量。默认渲染上限 `AILAB_MEMORY_DOC_MAX_CHARS=6000`；明确用户添加允许到 9000 字，超过返回清理记忆的 422。升级时已有超限文档不截断，首次 Dreaming 整理。全量文档作为必需上下文计入整份请求容量，不能用旧 memory 子预算静默丢行。
 
-工具 ABI 为 **4**。`memory` 提供 list/add/replace/remove；list 仅在用户询问记了什么、引用其他会话记忆、需要修改快照外条目时调用，返回当前完整文档。add 无须 revision，按 kind+normalized content+scope 去重；replace/remove 仍需 revision。写结果只返回实际 delta，不重发全文。保留墓碑、敏感 review、delivery-id、来源授权与 undo。仅用户明确要求记住时简短确认，自主保存静默。关键词/指定 run/时间窗口查原始历史只用 `recall_history`。
+工具 ABI 为 **5**。`memory` 提供 list/add/replace/remove；list 仅在用户询问记了什么、引用其他会话记忆、需要修改快照外条目时调用，返回当前完整文档。add 无须 revision，按 kind+normalized content+scope 去重；replace/remove 以活动行 handle 围栏；失效时明确要求 list，Portal 编辑仍需 revision。写结果只返回实际 delta，不重发全文。保留墓碑、敏感 review、delivery-id、来源授权与 undo。仅用户明确要求记住时简短确认，自主保存静默。关键词/指定 run/时间窗口查原始历史只用 `recall_history`。
 
 ## 会话快照与失效
 
@@ -37,3 +37,13 @@ isolated→shared 项目融合为**程序事务**，没有模型调用：活动�
 参考：[OpenAI Dreaming](https://openai.com/index/chatgpt-memory-dreaming/)、[Claude memory 与历史搜索](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context)、[Mastra Observational Memory](https://mastra.ai/research/observational-memory)。借鉴后台综合、稳定上下文和原始历史按需查询，不声称产品采用相同存储或单调用实现；Mastra 报告的94.87%不是本项目质量证明。
 
 检查基线、测量与边界：[实施记录](../../progress/updates/2026-11-09-memory-document.md)。
+
+## PR174 审查修正（2026-11-09）
+
+存储暂停态 suppressed 可往返输入适配层。创建原因 `created_by` 与旧行替换原因 `superseded_reason` 为0066独立列，不能复用；失效链只读后者，后续用户/工具纠正始终标为 correction。容量淘汰原因 evicted 不推送：事实仍真，只因空间移出文档。
+
+无变化不写、不增 revision；快照不渲染 revision，signature 仅由该 scope 渲染文档和 policies 决定。Portal 保留全局 CAS，Agent ABI5 的 replace/remove 只认当前活动 handle。保护行本身已超过 cap 时，记录 nothing_condensable signature，不为纯维护反复调用模型；手动返回 nothing，有新对话仍正常处理。
+
+用户明确删除（页面、forget edit、explicit tool remove、clear）优先于缓存：下一 run 若快照包含被删 handle，重建 system2，记录 memory_forgotten，其他变化一并折入且不发 block。Dreaming duplicate/outdated 删除仍推 block；condense/evicted 不推。空闲刷新后仍执行 parent compaction，发生压缩时只记录 compaction 边界。运行中的外部变化到下一 run 才送达，不改已发请求。
+
+0066新增 memory_item_sources 反向索引投影，来源删除通过 run_id 索引分批清理 closed 版本；只剩被删来源的派生行删除，其余清 quote/已删来源。该投影从 source_run_ids 派生，没有第二份内容。no_signal 不取消后续 episode context；test/repro 才重读。项目来源超过50保留最新50，不使融合失败。

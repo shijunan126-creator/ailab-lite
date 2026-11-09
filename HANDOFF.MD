@@ -1,3 +1,9 @@
+## 2026-11-09 PR174 审查陷阱
+
+- 存储 status=suppressed 必须能经 MemoryEntryInput 往返；不能只修单个 HTTP 入口。created_by 不等于 superseded_reason，合并后用户再编辑仍是 correction；evicted 不推，因为仅移出空间。
+- revision 只做 Portal CAS，不能进入 scope signature 或 memory 系统块；no-op 不写。用户删除快照行下一 run 必须 memory_forgotten，不能为了缓存继续保留旧 system2；空闲刷新不能绕过 parent compaction。
+- active 读取过滤 closed 后，删除传播必须另用 indexed source→item 投影清理历史，不能重新每写整表扫描。test/repro context 才重读，no_signal 只是没有新事实；项目合并保留最新50来源。
+
 ## 2026-11-09 有界记忆文档
 
 - 会话快照不是 Run 快照：复用 previous_model_context 系统消息，只在批准边界刷新。新增不推，删除/纠正只在新用户 turn 开头写一个 memory_update，用户文字最后；工具自己写入只折入 observed 一次。每次模型迭代重放 observed 会回声旧改动，已发首请求后插入 block 会破坏前缀。

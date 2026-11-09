@@ -129,6 +129,7 @@ def test_one_model_call_per_batch_and_no_call_without_work(monkeypatch):
             assert row.status == "applied", row.error
             assert db.get(User, uid)
         assert len(calls) == 1
+        assert client.get("/v1/memory", headers=headers).json()["revision"] == 0  # rejected/empty ops do not write
         asyncio.run(service.process_dream_chain(job()))
         assert len(calls) == 1
 
@@ -186,7 +187,7 @@ def test_add_without_revision_is_deduplicated_and_enforces_hard_ceiling(monkeypa
                 headers={**delivery, "X-Delivery-Id": run + ":replace"},
                 json={"action": "replace", "id": item["id"], "content": "改正"},
             ).status_code
-            == 422
+            == 200
         )
 
 
@@ -219,16 +220,16 @@ def test_list_is_read_only_full_document_and_correction_chain_resolves_net_state
         assert c.get("/v1/memory", headers=me).json()["revision"] == doc["revision"]
         with SessionLocal() as db:
             user = db.get(User, uid)
-            left = {**old, "invalid_at": utcnow().isoformat(), "superseded_by": "mem_middle", "change_type": "correction"}
+            left = {**old, "invalid_at": utcnow().isoformat(), "superseded_by": "mem_middle", "superseded_reason": "correction"}
             middle = {
                 **old,
                 "id": "mem_middle",
                 "content": "中间状态",
                 "invalid_at": utcnow().isoformat(),
                 "superseded_by": "mem_final",
-                "change_type": "correction",
+                "superseded_reason": "correction",
             }
-            final = {**old, "id": "mem_final", "content": "最终状态", "change_type": "correction"}
+            final = {**old, "id": "mem_final", "content": "最终状态", "superseded_reason": "correction"}
             replace_entries(db, user, [left, middle, final])
             db.commit()
         result = c.post(f"/internal/runs/{rid}/memory-context", headers=SERVICE, json={"known_ids": [old["id"]]}).json()

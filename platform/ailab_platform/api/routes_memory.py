@@ -176,10 +176,13 @@ def write_memory(
             merged["id"] = entry.id
         else:
             merged = dict(prior)
-            changed = prior["content"] != entry.content or prior["kind"] != entry.kind
+            from ..memory_recall.document import kind as canonical_kind
+
+            changed = prior["content"] != entry.content or canonical_kind(prior) != canonical_kind(entry.model_dump())
             for field in (
                 "origin",
-                "change_type",
+                "created_by",
+                "superseded_reason",
                 "observed_at",
                 "reinforced_at",
                 "expires_at",
@@ -210,7 +213,7 @@ def write_memory(
                 merged["kind"] = entry.kind
                 merged["updated_at"] = now.isoformat()
                 merged["source"] = source
-                merged["change_type"] = entry.change_type or "correction"
+                merged["superseded_reason"] = "correction"
                 # An in-place edit invalidates the old quote/episode evidence. The dream applies
                 # append-only facts; this path is for explicit user/agent edits.
                 if entry.source_quote is None:
@@ -221,10 +224,36 @@ def write_memory(
                     merged["evidence_run_ids"] = []
                 merged["evidence_deleted"] = False
         entries.append(merged)
+
+    def normalized(items):
+        from ..memory_recall.document import kind as canonical_kind
+
+        return sorted(
+            (
+                {
+                    **MemoryEntryInput.model_validate({k: v for k, v in e.items() if k in MemoryEntryInput.model_fields}).model_dump(
+                        mode="json"
+                    ),
+                    "kind": canonical_kind(e),
+                }
+                for e in items
+            ),
+            key=lambda e: e["id"],
+        )
+
+    if (
+        normalized(entries) == normalized(previous["entries"])
+        and body.enabled == previous["enabled"]
+        and body.auto_save == previous["auto_save"]
+        and (body.reference_history is None or body.reference_history == previous["reference_history"])
+    ):
+        return previous
     if tombstone_removed:
         kept = {e["id"] for e in entries}
         for gone in (e for i, e in old.items() if i not in kept):
-            tombstones.append({"hash": fact_hash(gone["content"]), "run_ids": gone.get("evidence_run_ids") or [], "at": now.isoformat()})
+            tombstones.append(
+                {"id": gone["id"], "hash": fact_hash(gone["content"]), "run_ids": gone.get("evidence_run_ids") or [], "at": now.isoformat()}
+            )
     value = {
         "revision": previous["revision"] + 1,
         "enabled": body.enabled,
@@ -268,7 +297,8 @@ def _stored_entry(entry: MemoryEntryInput, source: str, now: datetime) -> dict:
         "id": entry.id or new_id("mem"),
         "kind": entry.kind,
         "origin": entry.origin,
-        "change_type": entry.change_type or "addition",
+        "created_by": entry.created_by or "addition",
+        "superseded_reason": entry.superseded_reason,
         "reinforced_at": entry.reinforced_at.isoformat() if entry.reinforced_at else now.isoformat(),
         "observed_at": entry.observed_at.isoformat() if entry.observed_at else now.isoformat(),
         "expires_at": entry.expires_at.isoformat() if entry.expires_at else None,
@@ -319,6 +349,8 @@ def update_memory_settings(body: MemorySettings, user: User = Depends(current_us
         db.refresh(user)
         stored = dict((user.settings or {}).get("memory") or {})
         current = memory_for(user)
+        if all(current.get(key) == value for key, value in body.model_dump(exclude_none=True).items()):
+            return {key: current[key] for key in ("enabled", "auto_save", "reference_history")}
         for key, value in body.model_dump(exclude_none=True).items():
             stored[key] = value
         stored["revision"] = current["revision"] + 1
@@ -372,10 +404,11 @@ def run_dream_now(
         active = db.scalar(select(MemoryDreamRun).where(MemoryDreamRun.user_id == user.id, active_job()).limit(1))
         if active:
             return {"id": active.id, "status": active.status, "reused": True, "pending_runs": pending}
-        from ..memory_recall.document import used_chars
+        from ..memory_recall.document import maintenance_needed
 
-        over_cap = used_chars([e for e in memory["entries"] if e.get("project_id") == project_id]) > settings.memory_doc_max_chars
+        over_cap = maintenance_needed([e for e in memory["entries"] if e.get("project_id") == project_id], user)
         if not pending and not over_cap:
+            db.commit()
             return {"id": None, "status": "nothing", "reused": False, "pending_runs": 0}
         zone_name = ds.timezone or settings.memory_dream_default_timezone
         run = MemoryDreamRun(
@@ -537,7 +570,7 @@ def run_memory(
             from ..memory_recall.document import render
 
             visible = model_view(current, project_id, mode=project_mode(db, project_id))
-            fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "change_type")
+            fields = ("id", "project_id", "kind", "origin", "content", "observed_at", "updated_at", "created_by", "superseded_reason")
             return {
                 "memory_list": True,
                 "revision": current["revision"],
@@ -585,8 +618,8 @@ def run_memory(
             entries.append(item)
         else:
             match = next((i for i, e in enumerate(entries) if e.id == body.id), None)
-            if match is None:
-                raise HTTPException(422, "unknown memory entry; list memory again")
+            if match is None or entries[match].status != "active" or entries[match].invalid_at or entries[match].superseded_by:
+                raise HTTPException(422, "记忆行已变化或不再活动，请先 memory list 再操作")
             if entries[match].id not in {e["id"] for e in model_view(current, project_id, mode=project_mode(db, project_id))["entries"]}:
                 raise HTTPException(422, "这条记忆不在当前可访问范围")
             if body.action == "remove":
@@ -596,17 +629,24 @@ def run_memory(
                     raise HTTPException(422, "只在用户明确要求忘记时删除记忆（explicit=true）；纠正请用 replace")
                 entries.pop(match)
             else:
+                if body.content.strip() == entries[match].content:
+                    from ..memory_recall.document import write_result
+
+                    visible = model_view(current, project_id, mode=project_mode(db, project_id))
+                    result = write_result(visible, visible)
+                    db.add(RunDelivery(run_id=run.id, delivery_id=x_delivery_id, result=result))
+                    db.commit()
+                    return result
                 corrected = MemoryEntryInput(
                     id=new_id("mem"), kind=body.kind, content=body.content, evidence_run_ids=[run.id], project_id=project_id
                 )
                 entries[match].invalid_at = datetime.now(UTC)
                 entries[match].superseded_by = corrected.id
+                entries[match].superseded_reason = "correction"
                 entries.append(corrected)
-        if body.action != "add" and body.expected_revision is None:
-            raise HTTPException(422, "expected_revision is required; list memory again")
         try:
             update = MemoryUpdate(
-                expected_revision=current["revision"] if body.action == "add" else body.expected_revision,
+                expected_revision=current["revision"],
                 enabled=current["enabled"],
                 auto_save=current["auto_save"],
                 entries=entries,
@@ -631,6 +671,7 @@ def current_memory_context(run_id: str, db: Session = Depends(get_db), known_id:
 
     run = _run_or_404(db, run_id)
     document = memory_for_run(db.get(User, run.user_id), run)
+    document["forgotten_ids"] = [t["id"] for t in tombstones_of(db.get(User, run.user_id)) if t.get("id") in known_id]
     if known_id:
         from ..memory_recall.invalidations import for_handles
 

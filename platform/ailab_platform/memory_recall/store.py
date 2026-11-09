@@ -2,10 +2,10 @@
 
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import object_session
 
-from ..models import MemoryItem, utcnow
+from ..models import MemoryItem, MemoryItemSource, utcnow
 from .tombstones import fact_hash
 
 
@@ -24,6 +24,8 @@ def legacy(row):
         "project_id": row.project_id,
         "kind": {"preference": "user", "fact": "memory"}.get(row.kind, row.kind),
         "origin": row.origin,
+        "created_by": row.created_by,
+        "superseded_reason": row.superseded_reason,
         "content": row.content,
         "evidence_run_ids": row.source_run_ids,
         "source_quote": row.source_quote,
@@ -84,6 +86,8 @@ def replace_entries(db, user, entries):
         row.project_id = e.get("project_id")
         row.kind = {"user": "preference", "memory": "fact"}.get(e["kind"], e["kind"])
         row.origin = e.get("origin") or ("explicit" if e.get("source") == "nightly" else "chat" if e.get("source") == "agent" else "edited")
+        row.created_by = e.get("created_by") or "addition"
+        row.superseded_reason = e.get("superseded_reason")
         row.content = e["content"]
         row.source_run_ids = e.get("evidence_run_ids") or []
         row.source_quote = e.get("source_quote") or ""
@@ -97,5 +101,10 @@ def replace_entries(db, user, entries):
         row.reinforced_at = stamp(e.get("reinforced_at"), row.reinforced_at if not fresh else now)
         row.content_hash = fact_hash(row.content)
         row.updated_at = stamp(e.get("updated_at"), now)
-        row.metadata_ = {k: e[k] for k in ("source", "change_type", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
+        row.metadata_ = {k: e[k] for k in ("source", "evidence_episode_ids", "evidence_deleted", "last_used_at") if k in e}
+    db.flush()
+    for e in entries:
+        db.execute(delete(MemoryItemSource).where(MemoryItemSource.memory_id == e["id"]))
+        for rid in set(e.get("evidence_run_ids") or []):
+            db.add(MemoryItemSource(memory_id=e["id"], run_id=rid))
     db.flush()

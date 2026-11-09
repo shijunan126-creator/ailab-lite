@@ -822,28 +822,34 @@ class ContextManager:
 
                 finished = stamp(previous.get("finished_at"))
                 idle = finished and (datetime.now(UTC) - finished).total_seconds() > settings.memory_snapshot_idle_hours * 3600
-                refresh = idle and state["memory_snapshot_signature"] != self._memory_signature(boundary_memory)
+                import re
+
+                snapshot_ids = re.findall(r"\[(mem_[^\]]+)\]", str(prior["messages"][1].get("content", "")))
+                forgotten = False
+                if snapshot_ids and hasattr(self.platform, "get_memory_invalidations"):
+                    invalidations = await self.platform.get_memory_invalidations(run_id, snapshot_ids)
+                    forgotten = bool(invalidations.get("forgotten_ids"))
+                refresh = forgotten or (idle and state["memory_snapshot_signature"] != self._memory_signature(boundary_memory))
                 if refresh:
                     prior["messages"] = list(prior["messages"])
                     prior["messages"][1] = self._memory_block(prior["messages"][1], boundary_memory)
                     state["memory_observed"] = boundary_memory
                     state["memory_snapshot_signature"] = self._memory_signature(boundary_memory)
-                    state["messages"] = [*prior["messages"], messages[-1]]
-                    run["context_boundary"] = "memory_refreshed"
+                    run["context_boundary"] = "memory_forgotten" if forgotten else "memory_refreshed"
+                state["messages"] = await self._compact_parent_context(
+                    run_id,
+                    run,
+                    llm,
+                    model,
+                    prior["messages"],
+                    messages[-1],
+                    state["tool_catalog_v1"],
+                    previous.get("delivered"),
+                    previous.get("delivery_names"),
+                    previous.get("operational_state"),
+                )
+                if refresh:
                     state["memory_update_turn"] = [run_id, len(state["messages"]) - 1]
-                else:
-                    state["messages"] = await self._compact_parent_context(
-                        run_id,
-                        run,
-                        llm,
-                        model,
-                        prior["messages"],
-                        messages[-1],
-                        state["tool_catalog_v1"],
-                        previous.get("delivered"),
-                        previous.get("delivery_names"),
-                        previous.get("operational_state"),
-                    )
             else:
                 if previous:
                     run["context_boundary"] = (
@@ -883,11 +889,11 @@ class ContextManager:
     def _memory_signature(document):
         from hashlib import sha256
 
-        fields = ("content", "kind", "origin", "observed_at", "updated_at", "status", "suppressed", "invalid_at")
+        from ..memory_recall.document import render
+
         value = (
-            document.get("revision", 0),
             [(key, document.get(key, True)) for key in ("enabled", "auto_save", "read_enabled", "write_enabled", "reference_history")],
-            sorted((e["id"], [str(e.get(key, "")) for key in fields]) for e in document.get("entries", []) if e.get("id")),
+            render(document.get("entries", [])),
         )
         return sha256(json.dumps(value, ensure_ascii=False).encode()).hexdigest()
 
@@ -952,7 +958,7 @@ class ContextManager:
                 if entry is None:
                     lines.append("已删除，不得再使用：[" + model_text(handle) + "]")
                     continue
-                change = resolved.get("change_type") or entry.get("change_type")
+                change = resolved.get("change_type") or entry.get("superseded_reason")
                 corrected = old.get("content") != entry.get("content") and change != "condense"
                 if corrected:
                     date = str(entry.get("updated_at") or entry.get("observed_at") or entry.get("valid_from") or "")[:10]

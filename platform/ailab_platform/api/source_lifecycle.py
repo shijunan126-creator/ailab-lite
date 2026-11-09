@@ -169,6 +169,9 @@ def _drain_invalidation(db, file_id, limit):
 
         stored = {**((owner.settings or {}).get("memory") or {}), "entries": entries_for(owner)}
         removed_ids = {run.id for run in runs}
+        from ..memory_recall.lineage import redact_closed_sources
+
+        redact_closed_sources(db, item.user_id, removed_ids)
         entries = []
         changed = False
         for entry in stored.get("entries") or []:

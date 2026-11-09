@@ -2362,7 +2362,7 @@ def test_changed_memory_records_one_delta_and_preserves_system(origin):
     changed = copy.deepcopy(initial)
     changed["revision"] = 5
     changed["entries"] = changed["entries"][1:]
-    changed["entries"][0].update(content="最终更正内容", origin=origin, change_type="correction", updated_at="2026-11-09")
+    changed["entries"][0].update(content="最终更正内容", origin=origin, superseded_reason="correction", updated_at="2026-11-09")
     changed["entries"].append({"id": "mem_added", "kind": "fact", "content": "不推送新增"})
     platform = MemoryPrefixPlatform([initial, changed, changed])
     with scripted_server([{"content": "1"}, {"content": "2"}, {"content": "3"}]) as (url, requests):
@@ -2611,8 +2611,8 @@ def test_conversation_document_snapshot_external_diff_and_own_write_no_echo(mode
     changed = copy.deepcopy(saved)
     changed["revision"] = 7
     changed["entries"] = [e for e in changed["entries"] if e["id"] != "mem_core"]
-    changed["entries"][0].update(content="更正最终状态", change_type="correction", updated_at="2026-11-09")
-    next(e for e in changed["entries"] if e["id"] == "mem_page").update(content="页面最终修改", change_type="correction")
+    changed["entries"][0].update(content="更正最终状态", superseded_reason="correction", updated_at="2026-11-09")
+    next(e for e in changed["entries"] if e["id"] == "mem_page").update(content="页面最终修改", superseded_reason="correction")
     changed["entries"].append({"id": "mem_external", "kind": "fact", "content": "外部新增不推送"})
 
     class Platform(MemoryPrefixPlatform):
@@ -2642,7 +2642,7 @@ def test_conversation_document_snapshot_external_diff_and_own_write_no_echo(mode
     assert text.endswith("请简短回复收到")
 
 
-@pytest.mark.parametrize("hours,changed,refresh", [(25, True, True), (25, False, False), (2, True, False)])
+@pytest.mark.parametrize("hours,changed,refresh", [(25, True, True), (25, False, False), (2, True, False), (25, "revision", False)])
 def test_idle_memory_refresh_is_conditional_recorded_boundary(hours, changed, refresh):
     from datetime import UTC, datetime, timedelta
 
@@ -2650,7 +2650,8 @@ def test_idle_memory_refresh_is_conditional_recorded_boundary(hours, changed, re
     latest = copy.deepcopy(initial)
     if changed:
         latest["revision"] = 2
-        latest["entries"][0].update(content="闲置后更正", change_type="correction", updated_at="2026-11-09")
+        if changed is True:
+            latest["entries"][0].update(content="闲置后更正", superseded_reason="correction", updated_at="2026-11-09")
     platform = MemoryPrefixPlatform([initial, latest])
     platform.previous_finished_at = (datetime.now(UTC) - timedelta(hours=hours)).isoformat()
     with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
@@ -2669,7 +2670,7 @@ def test_idle_memory_refresh_is_conditional_recorded_boundary(hours, changed, re
         assert not events
         assert_extension(before, after)
         blocks = [m for m in after["messages"] if str(m.get("content", "")).startswith("<memory_update>")]
-        assert len(blocks) == int(changed)
+        assert len(blocks) == int(changed is True)
 
 
 def test_condensation_is_not_pushed_but_later_correction_of_version_is():
@@ -2679,7 +2680,7 @@ def test_condensation_is_not_pushed_but_later_correction_of_version_is():
     condensed["entries"][0].update(id="mem_condensed", content="合并后的同义表达", change_type="condense")
     corrected = copy.deepcopy(condensed)
     corrected["revision"] = 3
-    corrected["entries"][0].update(content="后来真实更正", change_type="correction", updated_at="2026-11-09")
+    corrected["entries"][0].update(content="后来真实更正", superseded_reason="correction", updated_at="2026-11-09")
 
     class Platform(MemoryPrefixPlatform):
         async def get_memory_invalidations(self, run_id, handles):
@@ -2724,3 +2725,57 @@ def test_untrusted_memory_tag_forging_is_encoded_in_user_and_tool_requests():
     assert "<memory>" not in user and "&lt;memory&gt;" in user
     result = next(m["content"] for m in requests[-1]["messages"] if m.get("role") == "tool")
     assert "<memory_update>" not in result and "&lt;memory_update&gt;" in result
+
+
+@pytest.mark.parametrize("user_deleted", [True, False])
+def test_forgotten_snapshot_boundary_vs_dream_delete_block(user_deleted):
+    initial = memory_prefix_fixture()
+    latest = {**copy.deepcopy(initial), "entries": [], "revision": 2}
+
+    class Platform(MemoryPrefixPlatform):
+        async def get_memory_invalidations(self, run_id, handles):
+            document = await self.get_memory_context(run_id)
+            return {**document, "forgotten_ids": handles if user_deleted and run_id == "turn1" else []}
+
+    platform = Platform([initial, latest])
+    with scripted_server([{"content": "1"}, {"content": "2"}]) as (url, requests):
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("turn0", attempt_id="a0"))
+        asyncio.run(loop.process("turn1", attempt_id="a1"))
+    events = [p for name, p in platform.events if name == "agent.context_boundary" and p.get("reason") == "memory_forgotten"]
+    if user_deleted:
+        assert len(events) == 1
+        assert initial["entries"][0]["content"] not in requests[-1]["messages"][1]["content"]
+        assert not requests[-1]["messages"][-1]["content"].startswith("<memory_update>")
+    else:
+        assert not events
+        assert_extension(*requests)
+        assert requests[-1]["messages"][-1]["content"].startswith("<memory_update>")
+
+
+def test_idle_refresh_still_enters_parent_compaction(monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from ailab_platform.agent.context import ContextManager
+
+    spec = ModelSpec("m", "m", provider="mock", context_tokens=100000, max_output_tokens=4096, capabilities=frozenset({"tools"}))
+    monkeypatch.setattr("ailab_platform.agent.loop.get_catalog", lambda: Catalog([spec]))
+    # Put the resumed parent over its compaction trigger without also overflowing the
+    # summary call's input budget. Exercise the real summary and staging path.
+    monkeypatch.setattr(
+        ContextManager, "should_compact", lambda self, *args, **kw: self.run_id == "turn1" and not self.state.get("compaction")
+    )
+    initial = memory_prefix_fixture()
+    latest = copy.deepcopy(initial)
+    latest["entries"][0]["content"] = "新事实"
+    platform = MemoryPrefixPlatform([initial, latest])
+    platform.previous_finished_at = (datetime.now(UTC) - timedelta(hours=25)).isoformat()
+    script = [{"content": "1"}, {"content": canonical_summary(ContextSummary(objective="summary"))}, {"content": "2"}]
+    with scripted_server(script) as (url, requests):
+        loop = AgentLoop(platform=platform, broker=FakeBroker(), llm=ModelTransport(url))
+        asyncio.run(loop.process("turn0", attempt_id="a0"))
+        asyncio.run(loop.process("turn1", attempt_id="a1"))
+    assert len(requests) == 3
+    assert "新事实" in requests[1]["messages"][1]["content"]
+    events = [p for name, p in platform.events if name == "agent.context_boundary"]
+    assert len(events) == 1 and events[0]["reason"] == "compacted"

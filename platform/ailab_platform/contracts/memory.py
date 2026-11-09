@@ -30,7 +30,8 @@ class MemoryEntryInput(BaseModel):
     id: str | None = Field(default=None, max_length=40)
     kind: Literal["user", "memory", "preference", "fact", "interest", "project", "reference"] = "memory"
     origin: Literal["explicit", "inferred", "chat", "manual", "edited"] | None = None
-    change_type: Literal["addition", "correction", "condense"] | None = None
+    created_by: Literal["addition", "correction", "condense"] | None = None
+    superseded_reason: Literal["correction", "condense", "evicted", "deleted"] | None = None
     reinforced_at: datetime | None = None
     observed_at: datetime | None = None
     expires_at: datetime | None = None
@@ -48,7 +49,7 @@ class MemoryEntryInput(BaseModel):
     # "Pause": kept and visible to the user, never shown to the model. Not the same as deleting.
     suppressed: bool | None = None
     project_id: str | None = Field(default=None, max_length=40)
-    status: Literal["active", "review"] | None = None
+    status: Literal["active", "review", "suppressed"] | None = None
 
     @field_validator("content")
     @classmethod

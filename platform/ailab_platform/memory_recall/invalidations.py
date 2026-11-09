@@ -25,9 +25,9 @@ def for_handles(db, user_id, handles, document, project_id, mode):
         while current in rows and current not in seen:
             seen.add(current)
             row = rows[current]
-            change = (row.metadata_ or {}).get("change_type")
+            change = row.superseded_reason
             correction |= change == "correction"
-            condensed |= change == "condense"
+            condensed |= change in {"condense", "evicted"}
             if not row.superseded_by:
                 break
             current = row.superseded_by
@@ -38,6 +38,6 @@ def for_handles(db, user_id, handles, document, project_id, mode):
             target = None
         out[handle] = {
             "current": target,
-            "change_type": "correction" if correction else "condense" if condensed else (target or {}).get("change_type"),
+            "change_type": "correction" if correction else "condense" if condensed else (target or {}).get("superseded_reason"),
         }
     return out

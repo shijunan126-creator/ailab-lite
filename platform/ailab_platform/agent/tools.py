@@ -366,12 +366,11 @@ MEMORY = {
     "function": {
         "name": "memory",
         "description": "只在用户询问记忆、提到别处记下的内容或要修改快照外条目时list读完整当前文档；"
-        "add无需revision；replace/remove需expected_revision与id。仅用户要求时explicit=true；自主保存静默。",
+        "写操作无需revision；replace/remove用活动行id，行已变化时先list。仅用户要求时explicit=true；自主保存静默。",
         "parameters": {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": ["list", "add", "replace", "remove"]},
-                "expected_revision": {"type": "integer", "minimum": 0},
                 "id": {"type": "string"},
                 "kind": {"type": "string", "enum": ["fact", "preference", "project", "interest", "reference"]},
                 "content": {"type": "string", "maxLength": 200},

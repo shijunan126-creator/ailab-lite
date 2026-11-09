@@ -102,11 +102,11 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
                 else sorted({rid for e in targets for rid in e.get("evidence_run_ids", [])})[:50],
                 "source_quote": quote,
                 "source": "nightly",
-                "change_type": "correction" if action == "update" else "condense" if action == "merge" else "addition",
+                "created_by": "correction" if action == "update" else "condense" if action == "merge" else "addition",
             }
             entries.append(fresh)
         for target in targets:
-            target["change_type"] = "correction" if action == "update" else "condense" if action == "merge" else "addition"
+            target["superseded_reason"] = "correction" if action == "update" else "condense" if action == "merge" else "deleted"
             target["invalid_at"] = now
             target["updated_at"] = now
             if action != "delete":
@@ -125,6 +125,6 @@ def apply_ops(all_entries, shown, episodes, ops, user, scope):
         if used_chars(scoped()) <= settings.memory_doc_max_chars:
             break
         entry["invalid_at"] = now
-        entry["change_type"] = "condense"
+        entry["superseded_reason"] = "evicted"
         audit.append({"op": "delete", "ids": [entry["id"]], "reason": "capacity"})
     return entries, audit

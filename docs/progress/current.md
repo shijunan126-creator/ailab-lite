@@ -1,8 +1,8 @@
 # 有界记忆文档：最终 CI 验收中（2026-11-09）
 
-- 分支 `feat/memory-doc`，base `origin/main@c4e88613`，产品/测试基线 `74215bf1`；[PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174)。授权实现、真模型、只读部署库副本、前端 merge、推送与 CI；不合并、不部署。
-- 已完成有界文档/ABI4/单调用 Dreaming、程序融合/保留撤销、历史行索引回收、会话失效/条件空闲刷新、前序 turn context 与脱敏；76项旧失败已按新路径迁移。前端 `4bf62947` 经 merge commit 合入并保留菜单修复。
-- 测量、检查、最小 Portal 修正与边界统一见[本轮记录](updates/2026-11-09-memory-document.md)，设计见[ADR0035](../architecture/adr/0035-memory-v2.md)。下一步：更新 PR 为 ready，核对最终 head 全套 CI，修复实际失败并清理临时库/模型输出；不得把历史通过当作最终验收。
+- 分支 `feat/memory-doc`，base `origin/main@c4e88613`，审查修复基线 `7d9a503e`；[PR #174](https://github.com/shijunan126-creator/ailab-lite/pull/174)。授权实现、真模型、只读部署库副本、前端 merge、推送与 CI；不合并、不部署。
+- 已完成有界文档/ABI5/单调用 Dreaming、程序融合/保留撤销、历史行索引回收、会话失效/条件空闲刷新、前序 turn context 与脱敏；76项旧失败已按新路径迁移。前端 `4bf62947` 经 merge commit 合入并保留菜单修复。
+- 测量、检查、最小 Portal 修正与边界统一见[本轮记录](updates/2026-11-09-memory-document.md)，设计见[ADR0035](../architecture/adr/0035-memory-v2.md)。PR 已 ready；本轮修复暂停写入、原因拆分、无变化/行围栏、无效维护、closed隐私、空闲压缩和用户删除边界。下一步核对审查修复最终 head 全套 CI，修复实际失败；不得把历史通过当作最终验收。
 
 # Memory v2 后端质量与评测（2026-11-09）
 

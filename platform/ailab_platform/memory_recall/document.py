@@ -45,3 +45,21 @@ def write_result(before, after):
         "entries": [{key: e[key] for key in fields if key in e} for e in changed],
         "removed_ids": sorted(left.keys() - right.keys()),
     }
+
+
+def maintenance_needed(entries, user=None):
+    """Protected content cannot be shrunk by a maintenance-only call."""
+    from hashlib import sha256
+
+    from ..config import settings
+
+    signature = sha256(render(entries).encode()).hexdigest()
+    if used_chars(entries) <= settings.memory_doc_max_chars:
+        return False
+    protected = [e for e in active(entries) if e.get("origin") in {"explicit", "edited", "manual"}]
+    possible = used_chars(protected) <= settings.memory_doc_max_chars and len(protected) < len(active(entries))
+    if not possible and user is not None:
+        memory = dict((user.settings or {}).get("memory") or {})
+        memory["nothing_condensable"] = signature
+        user.settings = {**(user.settings or {}), "memory": memory}
+    return possible
