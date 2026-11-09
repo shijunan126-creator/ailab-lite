@@ -551,9 +551,10 @@ button.mrow-main:hover, button.mrow-main:focus-visible { background: none; color
 .memory-edit textarea { width: 100%; min-height: 64px; max-height: 200px; field-sizing: content; resize: none; font-size: var(--text-ui); line-height: 1.6; }
 .memory-edit-actions { display: flex; justify-content: flex-end; gap: 8px; }
 @media (max-width: 640px) {
-  .memory-item { flex-wrap: wrap; row-gap: 2px; }
-  .memory-item-text { flex-basis: calc(100% - 40px); }
-  .memory-meta { order: 3; max-width: calc(100% - 40px); }
+  /* text and its menu share the first row; where it came from sits under the text */
+  .memory-item:not(.editing) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; }
+  .memory-item:not(.editing) .row-more { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
+  .memory-meta { grid-column: 1; max-width: none; }
 }
 .memory-thread { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--border); }
 .memory-turn { max-width: 85%; font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }

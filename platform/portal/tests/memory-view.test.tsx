@@ -47,6 +47,16 @@ test("shows the whole document by kind, each line with its source conversation, 
   assert.equal(screen.queryByText(/快满了/), null);
 });
 
+test("lines of a kind are listed newest first", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...view,
+    sections: [{ kind: "fact", items: [item("mem_a", "旧的", { observed_at: "2026-10-01T00:00:00Z" }), item("mem_b", "新的", { observed_at: "2026-11-01T00:00:00Z" })] }],
+  });
+  render(<MemoryPanel projectId={null} title="记忆" />);
+  await waitFor(() => assert.ok(screen.getByText("新的")));
+  assert.deepEqual([...document.querySelectorAll(".memory-item-text")].map((n) => n.textContent), ["新的", "旧的"]);
+});
+
 test("nothing at all says where memory comes from; a nearly full document says it will be condensed", async () => {
   vi.mocked(api).mockResolvedValue({ ...view, sections: [] });
   const first = render(<MemoryPanel projectId={null} title="记忆" />);

@@ -400,7 +400,11 @@ export function MemoryPanel({
   const blocked = busy || editing || working;
   const shownError = error || loadError;
   const act: Act = { change, remove, busy: blocked };
-  const sections = view?.sections.filter((s) => s.items.length) || [];
+  // newest first inside a kind; the API's order is only stable, not meaningful to a reader
+  const time = (item: MemoryItem) => Date.parse(item.observed_at || item.updated_at) || 0;
+  const sections = (view?.sections || [])
+    .filter((s) => s.items.length)
+    .map((s) => ({ ...s, items: [...s.items].sort((a, b) => time(b) - time(a) || a.id.localeCompare(b.id)) }));
   const empty = !!view && !sections.length && !view.review.length;
   const full = !!view && view.max_chars > 0 && view.used_chars >= view.max_chars * NEARLY_FULL;
   return (
